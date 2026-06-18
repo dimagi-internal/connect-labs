@@ -1896,9 +1896,12 @@
   on('btn-mode-coverage', 'click', () => setMode('coverage'));
   on('btn-mode-sampling', 'click', () => setMode('sampling'));
   // Post-creation exclusion filters: live preview as inputs change, persist on Apply.
-  ['flt-min-roof', 'flt-exclude-isolated', 'flt-isolation-dist'].forEach((id) =>
-    on(id, 'input', previewFilters),
-  );
+  [
+    'flt-min-roof',
+    'flt-max-roof',
+    'flt-exclude-isolated',
+    'flt-isolation-dist',
+  ].forEach((id) => on(id, 'input', previewFilters));
   on('btn-apply-filters', 'click', applyFilters);
   // Clicking the suggestion fills the population field with the picked wards' total,
   // overriding whatever's there (the user asked for this number explicitly).
@@ -2062,6 +2065,7 @@
   function filterParams() {
     return {
       minRoof: parseFloat($('flt-min-roof')?.value || '0') || 0,
+      maxRoof: parseFloat($('flt-max-roof')?.value || '0') || 0,
       isoOn: !!$('flt-exclude-isolated')?.checked,
       isoDist: parseFloat($('flt-isolation-dist')?.value || '150') || 150,
     };
@@ -2071,6 +2075,7 @@
     const roof = parseFloat(props.roof_area_m2);
     const dist = parseFloat(props.dist_to_multi_m);
     if (p.minRoof > 0 && !isNaN(roof) && roof < p.minRoof) return true;
+    if (p.maxRoof > 0 && !isNaN(roof) && roof > p.maxRoof) return true;
     if (p.isoOn && w.building_count === 1 && !isNaN(dist) && dist > p.isoDist)
       return true;
     return false;
@@ -2110,7 +2115,9 @@
       await edit({
         action: 'exclude',
         wa_ids: toExclude,
-        reason: `${FILTER_REASON}: rooftop<${p.minRoof || 0}m² / isolated`,
+        reason: `${FILTER_REASON}: rooftop ${p.minRoof || 0}–${
+          p.maxRoof || '∞'
+        }m² / isolated`,
       });
     $(
       'filter-status',
