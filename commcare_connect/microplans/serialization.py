@@ -77,7 +77,8 @@ def plan_summary_row(plan) -> dict:
     """Compact per-plan row for the workspace (status, region, headline KPIs)."""
     from commcare_connect.microplans.core import plan as plan_lib
 
-    k = plan_lib.plan_kpis(plan.work_areas, input_areas=plan.data.get("input_areas") or [])
+    input_areas = plan.data.get("input_areas") or []
+    k = plan_lib.plan_kpis(plan.work_areas, input_areas=input_areas)
     # Travel/balance KPIs are only meaningful once areas are split across workers.
     # Pre-assignment everything collapses to one territory, so flag it so the UI can
     # show the area count instead of a misleading "1 worker / whole-region travel".
@@ -92,6 +93,11 @@ def plan_summary_row(plan) -> dict:
         "opportunity_id": plan.data.get("opportunity_id"),
         "assigned": assigned,
         "work_areas": len(plan.work_areas),
+        # Count of named coverage wards (input_areas) this plan defines — e.g. a
+        # two-arm study plan has 2 (intervention + comparison). The workspace sums
+        # this across a study group's member plans so the group card can report the
+        # real ward count instead of the number of member plans.
+        "ward_count": len([a for a in input_areas if isinstance(a, dict) and a.get("name")]),
         "max_spread_km": k["plan"]["max_spread_km"],
         "coverage_pct": k["coverage_pct"],
         "excluded": k["excluded"]["count"],
