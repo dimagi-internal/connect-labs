@@ -71,17 +71,63 @@ ENSURERS: dict[str, Callable] = {
 resolve_env_path = get_env_path
 
 
-def ensure_synthetic_data(env_path: str, out: str | None = None) -> dict:
+# LabsLocalRecord types the ensurers regenerate on every run. A ``fresh`` rebuild
+# wipes exactly these for the env's opps before re-seeding, so records stranded by
+# a prior window (e.g. duplicated audits/tasks, flags glued to a slid-past week)
+# are cleared. Scaffolding that must keep stable ids — ``workflow_definition``,
+# ``workflow_render_code``, ``pipeline_definition`` — is deliberately NOT listed.
+_FRESH_RESET_TYPES = ("workflow_run", "Flag", "AuditSession", "Task")
+
+
+def _env_opportunity_ids(em: EnvManifest) -> set[int]:
+    """Every opportunity_id the manifest's resources touch (singular + plural)."""
+    opps: set[int] = set()
+    for r in em.resources:
+        oid = getattr(r, "opportunity_id", None)
+        if oid is not None:
+            opps.add(int(oid))
+        for oid in getattr(r, "opportunity_ids", None) or []:
+            opps.add(int(oid))
+    return opps
+
+
+def _reset_env_records(em: EnvManifest) -> int:
+    """Delete the regenerable records for this env's opps; return the deleted count.
+
+    Local import of the model keeps the engine importable without Django set up
+    (mirrors how the ensurers defer their backend imports).
+    """
+    from commcare_connect.labs.synthetic.models import LabsLocalRecord
+
+    opps = _env_opportunity_ids(em)
+    if not opps:
+        return 0
+    deleted, _ = LabsLocalRecord.objects.filter(opportunity_id__in=opps, type__in=_FRESH_RESET_TYPES).delete()
+    return deleted
+
+
+def ensure_synthetic_data(env_path: str, out: str | None = None, *, fresh: bool = False) -> dict:
     """Realize the env manifest at ``env_path``; return the cumulative realized map.
 
     Walks the manifest's resources in declared order, dispatching each by
     ``kind`` to :data:`ENSURERS`. Raises ``KeyError`` if a resource declares a
     kind with no registered ensurer. If ``out`` is given, writes the realized
     map there as indented JSON.
+
+    ``fresh=True`` deletes the env's regenerable records (runs/flags/audits/tasks
+    for its opps) before re-seeding — use it to rebuild cleanly when prior records
+    no longer match the manifest (e.g. after pinning a window that used to slide).
+    Stable scaffolding (definitions, render code, pipelines) is preserved.
     """
     path = Path(env_path)
     em = EnvManifest.from_yaml(path.read_text())
-    weeks, current = resolve_window(em.timeline.completed_weeks, em.timeline.include_current_week)
+    weeks, current = resolve_window(
+        em.timeline.completed_weeks,
+        em.timeline.include_current_week,
+        start_monday=em.timeline.start_monday,
+    )
+    if fresh:
+        _reset_env_records(em)
     ctx = EnsureContext(weeks=weeks, current_week=current, env_dir=path.parent)
 
     for resource in em.resources:
