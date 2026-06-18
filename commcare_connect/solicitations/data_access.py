@@ -57,6 +57,7 @@ class SolicitationsDataAccess:
         """
         self.program_id = program_id
         self.organization_id = organization_id
+        self.opportunity_id: int | None = None
 
         # Use labs_context from middleware if available
         if request and hasattr(request, "labs_context"):
@@ -65,9 +66,29 @@ class SolicitationsDataAccess:
                 self.program_id = str(labs_context["program_id"])
             if not organization_id and "organization_id" in labs_context:
                 self.organization_id = str(labs_context["organization_id"])
+            if "opportunity_id" in labs_context:
+                self.opportunity_id = labs_context["opportunity_id"]
 
         # Determine the experiment scope: prefer program_id, fall back to organization_id
         self.experiment = self.program_id or self.organization_id
+
+        # Labs-only routing: a synthetic opportunity exposes itself as a program whose
+        # program_id == opportunity_id (>= LABS_ONLY_OPP_ID_FLOOR). The data store for
+        # such opps is the in-process local-records backend, NOT the prod Labs Record
+        # API — but LabsRecordAPIClient only short-circuits to it when an opportunity_id
+        # is supplied (it keys is_labs_only() on opportunity_id, not program_id). Without
+        # this, every solicitation read/write on a labs-only program hits prod and 404s.
+        # So resolve a labs-only opportunity_id from labs_context, else from a labs-only
+        # program_id, and pass it through to engage the local backend.
+        if self.opportunity_id is None and self.program_id:
+            try:
+                from commcare_connect.labs.synthetic.local_records_backend import is_labs_only_opportunity_id
+
+                candidate = int(self.program_id)
+            except (TypeError, ValueError):
+                candidate = None
+            if candidate is not None and is_labs_only_opportunity_id(candidate):
+                self.opportunity_id = candidate
 
         # Get OAuth token from labs session
         if not access_token and request:
@@ -86,6 +107,7 @@ class SolicitationsDataAccess:
             access_token,
             program_id=int(self.program_id) if self.program_id else None,
             organization_id=self.organization_id,
+            opportunity_id=self.opportunity_id,
         )
 
     # =========================================================================
