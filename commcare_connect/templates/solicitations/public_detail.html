@@ -25,13 +25,7 @@
 
         <div class="flex items-center gap-3 mb-4">
             <span class="badge badge-md {% if solicitation.solicitation_type == 'eoi' %}primary-light{% else %}warning-light{% endif %}">
-                {% if solicitation.solicitation_type == 'eoi' %}
-                    Expression of Interest
-                {% elif solicitation.solicitation_type == 'rfp' %}
-                    Request for Proposal
-                {% else %}
-                    {{ solicitation.solicitation_type|upper }}
-                {% endif %}
+                {{ solicitation.type_label }}
             </span>
             {% if solicitation.status == 'active' %}
                 <div class="flex items-center gap-1.5 text-sm text-green-600">

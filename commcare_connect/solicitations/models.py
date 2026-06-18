@@ -30,6 +30,17 @@ class SolicitationRecord(LocalLabsRecord):
         return self.data.get("solicitation_type", "")
 
     @property
+    def type_label(self):
+        """Human-readable solicitation type for UI badges — never a raw code.
+
+        An outside firm shouldn't have to decode "EOI"; spell it out.
+        """
+        return {
+            "eoi": "Expression of Interest",
+            "rfp": "Request for Proposal",
+        }.get(self.solicitation_type, (self.solicitation_type or "").upper())
+
+    @property
     def status(self):
         return self.data.get("status", "draft")
 
@@ -178,6 +189,28 @@ class ResponseRecord(LocalLabsRecord):
     @property
     def selected_plan_names(self):
         return self.data.get("selected_plan_names", [])
+
+    @property
+    def reward_budget(self):
+        return self.data.get("reward_budget")
+
+    @property
+    def awarded_at(self):
+        date_str = self.data.get("awarded_at")
+        if date_str:
+            try:
+                return datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+            except (ValueError, TypeError):
+                return None
+        return None
+
+    @property
+    def awardee_notified(self):
+        return bool(self.data.get("awardee_notified", False))
+
+    @property
+    def is_awarded(self):
+        return self.status == "awarded"
 
 
 class ReviewRecord(LocalLabsRecord):
