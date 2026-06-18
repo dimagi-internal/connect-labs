@@ -102,6 +102,22 @@ class SolicitationRecord(LocalLabsRecord):
     def connect_opportunity_id(self):
         return self.data.get("connect_opportunity_id")
 
+    @property
+    def plans(self):
+        return self.data.get("plans", [])
+
+    @property
+    def source_program_id(self):
+        return self.data.get("source_program_id")
+
+    @property
+    def source_group_id(self):
+        return self.data.get("source_group_id")
+
+    @property
+    def source_plan_ids(self):
+        return self.data.get("source_plan_ids", [])
+
     def can_accept_responses(self):
         return self.status == "active"
 
@@ -154,6 +170,14 @@ class ResponseRecord(LocalLabsRecord):
             except (ValueError, TypeError):
                 return None
         return None
+
+    @property
+    def selected_plan_ids(self):
+        return self.data.get("selected_plan_ids", [])
+
+    @property
+    def selected_plan_names(self):
+        return self.data.get("selected_plan_names", [])
 
 
 class ReviewRecord(LocalLabsRecord):

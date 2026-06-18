@@ -391,3 +391,91 @@ def test_partial_does_not_require_solicitation_type():
     validate_solicitation_payload({"status": "active"}, partial=True)
     with pytest.raises(ValidationError):
         validate_solicitation_payload({"status": "active"}, partial=False)
+
+
+# ---------------------------------------------------------------------------
+# plans[] + source refs (create-from-microplan)
+# ---------------------------------------------------------------------------
+
+
+def _plan_entry(**overrides) -> dict:
+    base = {
+        "plan_id": 123,
+        "name": "Ikorodu",
+        "region": "Lagos",
+        "wards": ["Ikorodu North", "Ikorodu South"],
+        "arms": ["intervention", "control"],
+        "work_area_count": 42,
+        "population": 50000,
+    }
+    base.update(overrides)
+    return base
+
+
+def test_plans_full_entry_passes():
+    payload = _minimal_valid()
+    payload["plans"] = [_plan_entry()]
+    payload["source_program_id"] = 25
+    payload["source_group_id"] = 88
+    payload["source_plan_ids"] = [123, 124]
+    validate_solicitation_payload(payload)
+
+
+def test_plans_minimal_entry_passes():
+    payload = _minimal_valid()
+    payload["plans"] = [{"plan_id": 1, "name": "Solo"}]
+    payload["source_group_id"] = None  # single-plan origin
+    validate_solicitation_payload(payload)
+
+
+def test_no_plans_still_valid():
+    validate_solicitation_payload(_minimal_valid())
+
+
+def test_plans_must_be_list():
+    payload = _minimal_valid()
+    payload["plans"] = {"plan_id": 1}
+    with pytest.raises(ValidationError):
+        validate_solicitation_payload(payload)
+
+
+def test_plan_entry_unknown_key_rejected():
+    payload = _minimal_valid()
+    payload["plans"] = [_plan_entry(geometry={"type": "Polygon"})]
+    with pytest.raises(ValidationError):
+        validate_solicitation_payload(payload)
+
+
+def test_plan_missing_name_rejected():
+    payload = _minimal_valid()
+    payload["plans"] = [{"plan_id": 1}]
+    with pytest.raises(ValidationError):
+        validate_solicitation_payload(payload)
+
+
+def test_plan_missing_plan_id_rejected():
+    payload = _minimal_valid()
+    payload["plans"] = [{"name": "No id"}]
+    with pytest.raises(ValidationError):
+        validate_solicitation_payload(payload)
+
+
+def test_plan_duplicate_plan_id_rejected():
+    payload = _minimal_valid()
+    payload["plans"] = [{"plan_id": 1, "name": "A"}, {"plan_id": 1, "name": "B"}]
+    with pytest.raises(ValidationError):
+        validate_solicitation_payload(payload)
+
+
+def test_source_program_id_bool_rejected():
+    payload = _minimal_valid()
+    payload["source_program_id"] = True
+    with pytest.raises(ValidationError):
+        validate_solicitation_payload(payload)
+
+
+def test_source_plan_ids_must_be_int_list():
+    payload = _minimal_valid()
+    payload["source_plan_ids"] = ["123"]
+    with pytest.raises(ValidationError):
+        validate_solicitation_payload(payload)

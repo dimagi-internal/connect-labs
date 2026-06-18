@@ -1224,6 +1224,9 @@ class ProgramGroupPageView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateVi
             context["map_url"] = reverse("microplans:program_group_map", args=[program_id, group_id])
             context["generate_url"] = reverse("microplans:program_group_generate", args=[program_id, group_id])
             context["back_url"] = reverse("microplans:program_workspace", args=[program_id])
+            context["create_solicitation_url"] = (
+                reverse("solicitations:create") + f"?source_program_id={program_id}&source_group_id={group_id}"
+            )
         except Exception:  # noqa: BLE001
             logger.exception("microplans group page failed (program=%s group=%s)", program_id, group_id)
             context["error"] = "Could not load the group."
@@ -1269,6 +1272,9 @@ class ProgramReviewView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView)
         context["compare_url"] = reverse("microplans:program_compare_page", args=[program_id]) + f"?plans={plan_id}"
         context.update(_sd_urls())
         context["back_url"] = reverse("microplans:program_workspace", args=[program_id])
+        context["create_solicitation_url"] = (
+            reverse("solicitations:create") + f"?source_program_id={program_id}&source_plan_id={plan_id}"
+        )
         return context
 
 

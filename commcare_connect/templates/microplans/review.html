@@ -457,6 +457,9 @@
 
     </div><!-- /railscroll -->
     <div class="railfoot">
+      {% if create_solicitation_url %}
+      <a href="{{ create_solicitation_url }}" class="button button-sm outline-style w-full mb-2">Create solicitation</a>
+      {% endif %}
       <button type="button" id="btn-export" class="button button-sm outline-style w-full" disabled>Download Connect import CSV</button>
       <div id="status" class="text-xs text-gray-500 mt-2"></div>
     </div>

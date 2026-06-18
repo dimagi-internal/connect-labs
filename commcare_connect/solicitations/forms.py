@@ -140,11 +140,33 @@ class SolicitationForm(forms.Form):
         widget=forms.HiddenInput(),
     )
 
+    plans_json = forms.CharField(
+        required=False,
+        widget=forms.HiddenInput(),
+    )
+
+    source_program_id = forms.IntegerField(
+        required=False,
+        widget=forms.HiddenInput(),
+    )
+
+    source_group_id = forms.IntegerField(
+        required=False,
+        widget=forms.HiddenInput(),
+    )
+
+    source_plan_ids_json = forms.CharField(
+        required=False,
+        widget=forms.HiddenInput(),
+    )
+
     def to_data_dict(self) -> dict:
         """Convert cleaned form data to a dict for the data access layer.
 
-        Serializes date fields to ISO strings and parses questions_json
-        into a Python list.
+        Serializes date fields to ISO strings, parses questions_json and
+        evaluation_criteria_json into Python lists, and parses plans_json
+        plus source-reference fields (source_program_id, source_group_id,
+        source_plan_ids), omitting them when absent.
         """
         data = self.cleaned_data.copy()
 
@@ -176,6 +198,32 @@ class SolicitationForm(forms.Form):
         else:
             data["evaluation_criteria"] = []
 
+        # Plans snapshot + origin refs (create-from-microplan). Only emit keys
+        # when present so back-compat payloads stay byte-identical to before.
+        raw_plans = data.pop("plans_json", "")
+        source_program_id = data.pop("source_program_id", None)
+        source_group_id = data.pop("source_group_id", None)
+        raw_source_plan_ids = data.pop("source_plan_ids_json", "")
+
+        if raw_plans:
+            try:
+                parsed_plans = json.loads(raw_plans)
+            except (json.JSONDecodeError, TypeError):
+                parsed_plans = []
+            if parsed_plans:
+                data["plans"] = parsed_plans
+        if source_program_id is not None:
+            data["source_program_id"] = source_program_id
+        if source_group_id is not None:
+            data["source_group_id"] = source_group_id
+        if raw_source_plan_ids:
+            try:
+                parsed_ids = json.loads(raw_source_plan_ids)
+            except (json.JSONDecodeError, TypeError):
+                parsed_ids = []
+            if parsed_ids:
+                data["source_plan_ids"] = parsed_ids
+
         return data
 
 
@@ -192,9 +240,18 @@ class SolicitationResponseForm(forms.Form):
     and dynamically creates form fields based on each question's type.
     """
 
-    def __init__(self, questions=None, *args, **kwargs):
+    def __init__(self, questions=None, plans=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.questions = questions or []
+        self.plans = plans or []
+
+        if self.plans:
+            self.fields["select_plans"] = forms.MultipleChoiceField(
+                label="Which areas can you cover?",
+                required=False,
+                choices=[(str(p["plan_id"]), p["name"]) for p in self.plans],
+                widget=forms.CheckboxSelectMultiple(),
+            )
 
         for question in self.questions:
             q_id = question.get("id", "")
@@ -247,6 +304,20 @@ class SolicitationResponseForm(forms.Form):
                 # Include the value even if empty (it was explicitly submitted)
                 responses[q_id] = value
         return responses
+
+    def get_selected_plans(self, solicitation_plans) -> tuple:
+        """Return (selected_plan_ids: list[int], selected_plan_names: list[str]).
+
+        Resolves the posted plan ids against the solicitation's snapshot so the
+        stored names are authoritative (not client-supplied)."""
+        raw = self.cleaned_data.get("select_plans", []) if hasattr(self, "cleaned_data") else []
+        chosen = {int(x) for x in raw}
+        ids, names = [], []
+        for p in solicitation_plans:
+            if p["plan_id"] in chosen:
+                ids.append(p["plan_id"])
+                names.append(p["name"])
+        return ids, names
 
 
 # =========================================================================

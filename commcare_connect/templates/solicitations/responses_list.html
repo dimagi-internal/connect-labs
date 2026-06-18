@@ -285,6 +285,13 @@
                                 <div class="text-sm font-medium text-gray-900">
                                     {{ response.org_name|default:response.llo_entity_name|default:"Unknown Organization" }}
                                 </div>
+                                {% if response.selected_plan_names %}
+                                <div class="mt-1 flex flex-wrap gap-1">
+                                  {% for name in response.selected_plan_names %}
+                                  <span class="px-2 py-0.5 text-xs rounded bg-indigo-50 text-indigo-700">{{ name }}</span>
+                                  {% endfor %}
+                                </div>
+                                {% endif %}
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap">
                                 <div class="text-sm text-gray-900">{{ response.submitted_by_name|default:response.submitted_by_email|default:"-" }}</div>

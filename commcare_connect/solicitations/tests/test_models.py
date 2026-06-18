@@ -119,6 +119,27 @@ class TestSolicitationRecord:
         rec.data.pop("evaluation_criteria", None)
         assert rec.evaluation_criteria == []
 
+    def test_solicitation_plans_accessors_default_empty(self):
+        rec = self._make()
+        assert rec.plans == []
+        assert rec.source_program_id is None
+        assert rec.source_group_id is None
+        assert rec.source_plan_ids == []
+
+    def test_solicitation_plans_accessors_read_data(self):
+        rec = self._make(
+            data={
+                "plans": [{"plan_id": 7, "name": "P"}],
+                "source_program_id": 25,
+                "source_group_id": 88,
+                "source_plan_ids": [7],
+            }
+        )
+        assert rec.plans == [{"plan_id": 7, "name": "P"}]
+        assert rec.source_program_id == 25
+        assert rec.source_group_id == 88
+        assert rec.source_plan_ids == [7]
+
 
 class TestSolicitationRecordFundId:
     def test_fund_id(self):
@@ -234,6 +255,16 @@ class TestResponseRecord:
     def test_submission_date(self):
         rec = self._make()
         assert rec.submission_date is not None
+
+    def test_response_selected_plan_accessors_default_empty(self):
+        rec = self._make()
+        assert rec.selected_plan_ids == []
+        assert rec.selected_plan_names == []
+
+    def test_response_selected_plan_accessors_read_data(self):
+        rec = self._make(data={"selected_plan_ids": [7, 8], "selected_plan_names": ["A", "B"]})
+        assert rec.selected_plan_ids == [7, 8]
+        assert rec.selected_plan_names == ["A", "B"]
 
 
 class TestReviewRecord:

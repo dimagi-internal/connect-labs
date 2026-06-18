@@ -181,6 +181,51 @@ class TestSolicitationForm:
         assert data.get("expected_start_date") is None
         assert data.get("expected_end_date") is None
 
+    def test_to_data_dict_parses_plans_and_source_refs(self):
+        plans = [{"plan_id": 7, "name": "Ikorodu", "region": "Lagos"}]
+        form = SolicitationForm(
+            data={
+                "title": "T",
+                "description": "D",
+                "solicitation_type": "rfp",
+                "status": "draft",
+                "plans_json": json.dumps(plans),
+                "source_program_id": "25",
+                "source_group_id": "88",
+                "source_plan_ids_json": json.dumps([7]),
+            }
+        )
+        assert form.is_valid(), form.errors
+        data = form.to_data_dict()
+        assert data["plans"] == plans
+        assert data["source_program_id"] == 25
+        assert data["source_group_id"] == 88
+        assert data["source_plan_ids"] == [7]
+
+    def test_to_data_dict_omits_plan_keys_when_absent(self):
+        form = SolicitationForm(data={"title": "T", "description": "D", "solicitation_type": "rfp", "status": "draft"})
+        assert form.is_valid(), form.errors
+        data = form.to_data_dict()
+        for key in ("plans", "source_program_id", "source_group_id", "source_plan_ids"):
+            assert key not in data
+
+    def test_to_data_dict_single_plan_null_group(self):
+        form = SolicitationForm(
+            data={
+                "title": "T",
+                "description": "D",
+                "solicitation_type": "rfp",
+                "status": "draft",
+                "plans_json": json.dumps([{"plan_id": 1, "name": "Solo"}]),
+                "source_program_id": "25",
+                "source_plan_ids_json": json.dumps([1]),
+            },
+        )
+        assert form.is_valid(), form.errors
+        data = form.to_data_dict()
+        assert "source_group_id" not in data  # blank → omitted, validator treats absent as fine
+        assert data["plans"][0]["plan_id"] == 1
+
 
 class TestSolicitationResponseForm:
     def _questions(self):
@@ -337,3 +382,28 @@ class TestReviewForm:
         for choice in ["under_review", "approved", "rejected", "needs_revision"]:
             form = ReviewForm(data={"score": 50, "recommendation": choice})
             assert form.is_valid(), f"Failed for recommendation: {choice}, errors: {form.errors}"
+
+
+class TestResponseFormPlans:
+    PLANS = [{"plan_id": 7, "name": "Ikorodu"}, {"plan_id": 8, "name": "Ikeja"}]
+
+    def test_no_plans_means_no_field(self):
+        form = SolicitationResponseForm(questions=[], plans=[])
+        assert "select_plans" not in form.fields
+
+    def test_plans_add_optional_multichoice(self):
+        form = SolicitationResponseForm(questions=[], plans=self.PLANS)
+        assert "select_plans" in form.fields
+        assert form.fields["select_plans"].required is False
+
+    def test_get_selected_plans_resolves_ids_and_names(self):
+        form = SolicitationResponseForm(questions=[], plans=self.PLANS, data={"select_plans": ["7"]})
+        assert form.is_valid(), form.errors
+        ids, names = form.get_selected_plans(self.PLANS)
+        assert ids == [7]
+        assert names == ["Ikorodu"]
+
+    def test_get_selected_plans_empty_when_none_chosen(self):
+        form = SolicitationResponseForm(questions=[], plans=self.PLANS, data={})
+        assert form.is_valid(), form.errors
+        assert form.get_selected_plans(self.PLANS) == ([], [])

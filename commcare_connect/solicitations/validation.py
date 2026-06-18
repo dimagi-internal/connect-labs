@@ -65,6 +65,10 @@ ALLOWED_FIELDS: frozenset[str] = frozenset(
         "questions",
         "evaluation_criteria",
         "created_by",
+        "plans",
+        "source_program_id",
+        "source_group_id",
+        "source_plan_ids",
     }
 )
 
@@ -73,6 +77,9 @@ REQUIRED_FIELDS: tuple[str, ...] = ("title", "description", "solicitation_type")
 _QUESTION_FIELDS: frozenset[str] = frozenset({"id", "text", "type", "required", "options", "framing"})
 _CRITERION_FIELDS: frozenset[str] = frozenset(
     {"id", "name", "weight", "description", "scoring_guide", "linked_questions"}
+)
+_PLAN_FIELDS: frozenset[str] = frozenset(
+    {"plan_id", "name", "region", "wards", "arms", "work_area_count", "population"}
 )
 
 
@@ -182,6 +189,48 @@ def _validate_evaluation_criteria(criteria, question_ids: set[str]) -> None:
             raise ValidationError({f"{prefix}.linked_questions": f"{dangling} reference unknown question IDs"})
 
 
+def _validate_plans(plans) -> None:
+    """Validate the snapshotted plans[] list carried from a micro-plan.
+
+    plan_id must be unique within the list — selections are keyed by it.
+    """
+    if not isinstance(plans, list):
+        raise ValidationError({"plans": "must be a list"})
+    seen_ids: set[int] = set()
+    for i, p in enumerate(plans):
+        prefix = f"plans[{i}]"
+        if not isinstance(p, dict):
+            raise ValidationError({prefix: "must be an object"})
+        unknown = set(p.keys()) - _PLAN_FIELDS
+        if unknown:
+            raise ValidationError({prefix: f"unknown keys {sorted(unknown)}"})
+
+        p_id = p.get("plan_id")
+        if not isinstance(p_id, int) or isinstance(p_id, bool):
+            raise ValidationError({f"{prefix}.plan_id": "must be an integer"})
+        if p_id in seen_ids:
+            raise ValidationError({f"{prefix}.plan_id": f"{p_id} duplicates an earlier plan"})
+        seen_ids.add(p_id)
+
+        if not isinstance(p.get("name"), str) or not p["name"]:
+            raise ValidationError({f"{prefix}.name": "must be a non-empty string"})
+
+        if "region" in p and not isinstance(p["region"], str):
+            raise ValidationError({f"{prefix}.region": "must be a string"})
+
+        for list_field in ("wards", "arms"):
+            if list_field in p:
+                val = p[list_field]
+                if not isinstance(val, list) or not all(isinstance(x, str) for x in val):
+                    raise ValidationError({f"{prefix}.{list_field}": "must be a list of strings"})
+
+        for int_field in ("work_area_count", "population"):
+            if int_field in p:
+                val = p[int_field]
+                if not isinstance(val, int) or isinstance(val, bool):
+                    raise ValidationError({f"{prefix}.{int_field}": "must be an integer"})
+
+
 # =========================================================================
 # Public entry point
 # =========================================================================
@@ -258,6 +307,20 @@ def validate_solicitation_payload(data, *, partial: bool = False) -> None:
     fid = data.get("fund_id")
     if fid is not None and (not isinstance(fid, int) or isinstance(fid, bool)):
         raise ValidationError({"fund_id": "must be an integer"})
+
+    for ref_field in ("source_program_id", "source_group_id"):
+        val = data.get(ref_field)
+        if val is not None and (not isinstance(val, int) or isinstance(val, bool)):
+            raise ValidationError({ref_field: "must be an integer"})
+
+    spids = data.get("source_plan_ids")
+    if spids is not None:
+        if not isinstance(spids, list) or not all(isinstance(x, int) and not isinstance(x, bool) for x in spids):
+            raise ValidationError({"source_plan_ids": "must be a list of integers"})
+
+    plans = data.get("plans")
+    if plans is not None:
+        _validate_plans(plans)
 
     questions = data.get("questions")
     question_ids = _validate_questions(questions) if questions is not None else set()

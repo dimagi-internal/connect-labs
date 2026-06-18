@@ -123,6 +123,24 @@
         </div>
         {% endif %}
 
+        <!-- Coverage Areas (from micro-plan) -->
+        {% if solicitation.plans %}
+        <div class="bg-white rounded-xl shadow-sm p-8">
+            <h2 class="text-lg font-semibold text-brand-deep-purple mb-6 pb-3 border-b border-gray-100">
+                <i class="fa-solid fa-map-location-dot mr-2 text-brand-cornflower-blue"></i>Coverage areas
+            </h2>
+            <ul class="divide-y divide-gray-100 border border-gray-200 rounded-lg">
+              {% for p in solicitation.plans %}
+              <li class="px-3 py-2 text-sm">
+                <span class="font-medium text-gray-800">{{ p.name }}</span>
+                {% if p.region %}<span class="text-gray-400">· {{ p.region }}</span>{% endif %}
+                {% if p.wards %}<div class="text-xs text-gray-500 mt-0.5">{{ p.wards|join:", " }}</div>{% endif %}
+              </li>
+              {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
         <!-- Application Questions -->
         {% if solicitation.questions %}
         <div class="bg-white rounded-xl shadow-sm p-8">
