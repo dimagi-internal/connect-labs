@@ -252,6 +252,18 @@
             </div>
 
             <div class="border-t border-gray-100 pt-2 mt-2">
+              <div class="text-gray-600 mb-1 font-medium">Building data source</div>
+              <p class="text-[10px] text-gray-500 mb-1 leading-snug">Which building footprints to grid into work areas. All on = most complete coverage; narrow to one provider to compare.</p>
+              <div class="space-y-0.5 text-[11px]">
+                <label class="flex items-center gap-1"><input type="checkbox" class="cov-src-cb" value="Google Open Buildings" checked> Google Open Buildings</label>
+                <label class="flex items-center gap-1"><input type="checkbox" class="cov-src-cb" value="OpenStreetMap" checked> OpenStreetMap</label>
+                <label class="flex items-center gap-1"><input type="checkbox" class="cov-src-cb" value="Microsoft ML Buildings" checked> Microsoft ML Buildings</label>
+              </div>
+              <label class="block mt-1"><span class="text-[10px] text-gray-500">Min Google confidence (blank = keep all)</span>
+                <input id="cfg-cov-min-confidence" type="number" min="0" max="1" step="0.05" class="base-input mt-0.5 text-xs" placeholder="—"></label>
+            </div>
+
+            <div class="border-t border-gray-100 pt-2 mt-2">
               <div class="text-gray-600 mb-1 font-medium">Exclude noise work areas</div>
               <p class="text-[10px] text-gray-500 mb-1 leading-snug">Building data isn't perfect. These drop work areas that are likely false detections — so FLWs aren't sent to empty squares.</p>
               <label class="block"><span class="text-[10px] text-gray-500">Min total rooftop area per work area (m²) — 0 keeps all</span>
