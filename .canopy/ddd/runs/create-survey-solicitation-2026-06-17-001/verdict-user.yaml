@@ -1,37 +1,98 @@
 schema_version: 1
 rubric_name: user-artifact
-ran_at: 2026-06-18T06:30:00Z
+ran_at: 2026-06-18T07:30:00Z
 run_dir: .canopy/ddd/runs/create-survey-solicitation-2026-06-17-001/
-# Per-scene lowest-of-3, then lowest-across-scenes.
+iteration: 2
+judge: canopy:visual-judge
+audience: feature user
+methodology: tough-judge
+domain: create-survey-solicitation
+# Per-scene lowest-of-3, then lowest-across-scenes. Conservative from a 3/5 default.
 dimensions:
   task_completion:
-    score: 2
+    score: 4
     weight: 0.40
-    justification: "Scene 3 = 2: the coverage-area selector (the task) isn't on the captured detail-page frame; it lives on /respond/. Other scenes 3-4."
-    fix_recommendation: "Re-point scene 3's capture to /solicitations/4495/respond/ so the coverage-checkbox selector (blocked-submit + ticked states) is shown."
+    justification: >
+      The full task is completable first-try across the five scenes. Scene 1 surfaces a
+      per-card "Create solicitation" button on the R6 — Attakar × Gura study-group card (and
+      every plan card) — Maya launches the call directly from her finished micro-plan (iter-1
+      fix landed). Scene 2 pre-fills the title and attaches coverage as a first-class card.
+      Scene 3 puts the required "Which areas can you cover? — Select one or more. Required to
+      submit." checkbox on-screen with a working Submit Response button (iter-1 fix landed —
+      prior capture stopped one click short). Scene 4 shows the submitted response tied to the
+      exact coverage. Scene 5's award→live-opportunity honesty beat is in-scope per the brief
+      and is NOT scored as a broken task. One minor friction blocks a 5: scene 1's "Plan groups
+      & studies" list shows many near-duplicate "Untitled study" cards reading "1 wards" /
+      "0 wards" / "(plans not in this program)", so the correct populated R6 study card is
+      harder to pick out on first scan.
+    fix_recommendation: >
+      Suppress or collapse the empty "Untitled study" / "0 wards" / "(plans not in this
+      program)" cards in scene 1's "Plan groups & studies" list (or hide them behind a
+      "show empty studies" toggle) so the named, populated R6 — Attakar × Gura study card is
+      the obvious launch target.
     fix_kind: mechanical
   clarity:
-    score: 2
+    score: 4
     weight: 0.35
-    justification: "Scenes 1, 2, 5 = 2. Scene 1: SMD/PSU/'out of tolerance' jargon dominates the create-solicitation viewport. Scene 2: the coverage panel is visually demoted (uncarded gray text, no 'attached' state). Scene 5: 'Award' is an undifferentiated peer action; the planning-vs-execution boundary isn't legible on the reused frame."
-    fix_recommendation: "Scene 1: gloss/de-emphasize the stat jargon near the Create solicitation CTA. Scene 2: promote the coverage panel to a first-class card with an 'attached' chip. Scene 5: give Award distinct weight + an honest 'next step (coming soon)' framing."
+    justification: >
+      Labels and CTAs self-explain to a non-technical program owner throughout:
+      "Create solicitation", "Submit Response", "Save Draft", "Which areas can you cover?",
+      "SELECTED COVERAGE", and the AI-coach helper text are plain English. The iter-1 jargon
+      problem is largely resolved on the in-scope frames — "EOI" is expanded to "Expression of
+      Interest (EOI)" in scene 2, and coverage provenance reads clearly ("Your micro-plan is
+      attached to this call... Snapshotted at creation — later plan edits won't change this
+      solicitation."). One affordance keeps this off a 5: scene 1 still carries internal
+      vocabulary in section/status chrome — "PLANNING · labs — being designed & reviewed with
+      the LLO/funder", terse "areas 823" counts, and a "defining" study status — that a
+      first-time non-technical user must pause to parse before locating the right card.
+    fix_recommendation: >
+      Soften scene-1 portfolio chrome for the non-technical reader: drop or tooltip the
+      internal "labs" tag, label counts as "839 work areas" rather than "areas 839", and
+      rename the study "defining" status to a plainer term (e.g. "Draft — being defined").
     fix_kind: mechanical
   trust:
-    score: 2
+    score: 4
     weight: 0.25
-    justification: "Scene 4 = 2: the submitter email shown is 'jjackson@dimagi.com' (a dev address) under applicant 'Amina Okafor / Health Bridge Nigeria' — a placeholder/test-data tell. Other scenes 3."
-    fix_recommendation: "Set the response's submitted_by_email to a realistic firm contact (e.g. amina.okafor@healthbridge.ng) so the applicant identity is internally consistent."
+    justification: >
+      The iter-1 trust deduction is resolved: the submitter email is now
+      amina.okafor@healthbridge.ng (the dev address jjackson@dimagi.com is gone), the org reads
+      "Health Bridge Nigeria", and the date "Jun 18, 2026" is current and consistent. The
+      response is unambiguously bound to the designed coverage via the green "SELECTED COVERAGE
+      — R6 — Attakar × Gura" chip, and scene 2 states the snapshot semantics explicitly, so
+      source and recency are clear. No placeholder/test-data tells remain on the in-scope
+      frames. One provenance signal blocks a 5: a count mismatch across scenes — scene 1's R6
+      study card reads "1 wards" while scene 2's attached coverage card reads "2 wards / 840
+      work areas". A feature user comparing the two screens cannot tell which ward count is
+      authoritative.
+    fix_recommendation: >
+      Reconcile the R6 — Attakar × Gura ward count so scene 1's study card ("1 wards") and
+      scene 2's attached coverage card ("2 wards / 840 work areas") report the same figure;
+      align the group-card count to the attached-coverage truth.
     fix_kind: mechanical
-overall_score: 2
+overall_score: 4
 overall_rule: lowest
-verdict: fail
+verdict: pass
 self_assessed: false
 fix_recommendation: |
-  [DATA mechanical] Scene 4: replace the submitter email jjackson@dimagi.com with a
-  realistic firm contact (amina.okafor@healthbridge.ng) — the one trust-killer in the row.
-  [SPEC mechanical] Scene 3: re-point the capture to /solicitations/4495/respond/ so the
-  coverage-checkbox selector is shown (matches the narration; lifts task_completion).
-  [PRODUCT mechanical] Scene 1: the map canvas rendered empty and SMD/PSU jargon dominates
-  the Create-solicitation viewport — gloss the jargon + ensure plan geometry/layers render.
-  [PRODUCT mechanical] Scene 2: promote the 'Coverage areas (from micro-plan)' panel to a
-  first-class card with an explicit 'attached' chip so the user can confirm the coverage.
+  All three iteration-1 blockers verified FIXED in this capture (scene-1 portfolio CTAs,
+  scene-2 first-class coverage card, scene-3 /respond/ checkbox on-screen, scene-4 firm email).
+  Remaining polish (all non-blocking, score 4):
+  [PRODUCT mechanical] Scene 1: collapse/suppress empty "Untitled study" / "0 wards" cards so
+  the populated R6 study card is the obvious launch target.
+  [PRODUCT mechanical] Scene 1: de-jargon portfolio chrome (tooltip "labs" tag, "N work areas"
+  counts, plainer "defining" status label).
+  [DATA mechanical] Reconcile the R6 ward count between scene 1 ("1 wards") and scene 2
+  ("2 wards / 840 work areas") so the two screens agree.
+findings:
+  - dimension: task_completion
+    score: 4
+    fix_recommendation: "Collapse/suppress empty 'Untitled study' / '0 wards' / '(plans not in this program)' cards in scene 1 so the populated R6 study card is the obvious launch target."
+    fix_kind: mechanical
+  - dimension: clarity
+    score: 4
+    fix_recommendation: "De-jargon scene-1 portfolio chrome: tooltip/drop the 'labs' tag, label counts as 'N work areas', rename the study 'defining' status."
+    fix_kind: mechanical
+  - dimension: trust
+    score: 4
+    fix_recommendation: "Reconcile the R6 ward count between scene 1 ('1 wards') and scene 2 ('2 wards / 840 work areas')."
+    fix_kind: mechanical
