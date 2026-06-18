@@ -140,6 +140,26 @@ class SolicitationForm(forms.Form):
         widget=forms.HiddenInput(),
     )
 
+    plans_json = forms.CharField(
+        required=False,
+        widget=forms.HiddenInput(),
+    )
+
+    source_program_id = forms.IntegerField(
+        required=False,
+        widget=forms.HiddenInput(),
+    )
+
+    source_group_id = forms.IntegerField(
+        required=False,
+        widget=forms.HiddenInput(),
+    )
+
+    source_plan_ids_json = forms.CharField(
+        required=False,
+        widget=forms.HiddenInput(),
+    )
+
     def to_data_dict(self) -> dict:
         """Convert cleaned form data to a dict for the data access layer.
 
@@ -175,6 +195,32 @@ class SolicitationForm(forms.Form):
                 data["evaluation_criteria"] = []
         else:
             data["evaluation_criteria"] = []
+
+        # Plans snapshot + origin refs (create-from-microplan). Only emit keys
+        # when present so back-compat payloads stay byte-identical to before.
+        raw_plans = data.pop("plans_json", "")
+        source_program_id = data.pop("source_program_id", None)
+        source_group_id = data.pop("source_group_id", None)
+        raw_source_plan_ids = data.pop("source_plan_ids_json", "")
+
+        if raw_plans:
+            try:
+                parsed_plans = json.loads(raw_plans)
+            except (json.JSONDecodeError, TypeError):
+                parsed_plans = []
+            if parsed_plans:
+                data["plans"] = parsed_plans
+        if source_program_id is not None:
+            data["source_program_id"] = source_program_id
+        if source_group_id is not None:
+            data["source_group_id"] = source_group_id
+        if raw_source_plan_ids:
+            try:
+                parsed_ids = json.loads(raw_source_plan_ids)
+            except (json.JSONDecodeError, TypeError):
+                parsed_ids = []
+            if parsed_ids:
+                data["source_plan_ids"] = parsed_ids
 
         return data
 
