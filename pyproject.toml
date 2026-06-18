@@ -1,19 +1,7 @@
 # ==== pytest ====
 [tool.pytest.ini_options]
 minversion = "6.0"
-# mbw_v4_v5_parity/test_parity.py is excluded: it shells out to `node` to run the
-# legacy v4 JS renderer and diff it against the v5 SQL port, and currently fails on a
-# real v4<->v5 aggregation divergence (e.g. followup_rate_denom, num_mothers_five_plus)
-# — pre-existing on main, unrelated to other work. Skips silently where node is absent;
-# ignored here so CI (node present) isn't blocked. Re-enable once the port is reconciled.
-#
-# mbw_parity/test_v3_e2e_parity.py and test_v3_template.py are excluded: they import the
-# mbw_monitoring_v3 template module, which was removed in 361d6d37 ("remove deprecated MBW
-# Auditing V4 and Monitoring V2/V3 templates"). The tests are dead (the module is gone for
-# good) and were left dangling, turning main's pytest red. Ignored here to restore a green
-# main; delete them in the eventual MBW v3 parity-harness cleanup. The rest of mbw_parity
-# stays active — it runs against the self-contained v3_python_port, not the removed module.
-addopts = "--ds=config.settings.test --reuse-db --ignore=commcare_connect/workflow/tests/e2e --ignore=commcare_connect/labs/tests/e2e --ignore=commcare_connect/solicitations/tests/e2e --ignore=commcare_connect/funder_dashboard/tests/e2e --ignore=commcare_connect/audit/management/commands/test_search_readers.py --ignore=commcare_connect/workflow/tests/mbw_v4_v5_parity/test_parity.py --ignore=commcare_connect/workflow/tests/mbw_parity/test_v3_e2e_parity.py --ignore=commcare_connect/workflow/tests/mbw_parity/test_v3_template.py"
+addopts = "--ds=config.settings.test --reuse-db --ignore=commcare_connect/workflow/tests/e2e --ignore=commcare_connect/labs/tests/e2e --ignore=commcare_connect/solicitations/tests/e2e --ignore=commcare_connect/funder_dashboard/tests/e2e --ignore=commcare_connect/audit/management/commands/test_search_readers.py"
 norecursedirs = ["management"]
 python_files = [
     "tests.py",

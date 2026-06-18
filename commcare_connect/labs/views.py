@@ -216,13 +216,6 @@ class LabsOverviewView(LoginRequiredMixin, TemplateView):
                 "color": "blue",
             },
             {
-                "name": "MBW GPS Analysis",
-                "url": "/custom_analysis/mbw/gps/",
-                "icon": "fa-location-dot",
-                "description": "GPS distance metrics and travel analysis for Mother Baby Wellness",
-                "color": "emerald",
-            },
-            {
                 "name": "RUTF Timeline",
                 "url": "/custom_analysis/rutf/children/",
                 "icon": "fa-weight-scale",

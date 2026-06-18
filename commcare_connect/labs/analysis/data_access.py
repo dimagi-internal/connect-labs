@@ -145,6 +145,36 @@ def get_flw_names_for_opportunity(request: HttpRequest) -> dict[str, str]:
     return fetch_flw_names(access_token, opportunity_id)
 
 
+def fetch_opportunity_detail(access_token: str, opportunity_id: int) -> dict:
+    """
+    Fetch the raw opportunity record from Connect's export API.
+
+    ``GET /export/opportunity/{id}/`` -> the opportunity dict (includes the
+    ``learn_app`` / ``deliver_app`` sub-objects). Single owner of this call so
+    callers (cc_domain resolution, the explorer app-downloader) don't each
+    re-implement it.
+
+    Raises:
+        ValueError: on HTTP error or timeout.
+    """
+    url = f"{settings.CONNECT_PRODUCTION_URL}/export/opportunity/{opportunity_id}/"
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    logger.info(f"Fetching opportunity detail from {url}")
+
+    try:
+        response = httpx.get(url, headers=headers, timeout=30.0)
+        response.raise_for_status()
+    except httpx.HTTPStatusError as e:
+        logger.error(f"Failed to fetch opportunity detail: {e}")
+        raise ValueError(f"Failed to fetch opportunity detail: {e.response.status_code}") from e
+    except httpx.TimeoutException as e:
+        logger.error(f"Timeout fetching opportunity detail: {e}")
+        raise ValueError("Timeout fetching opportunity detail") from e
+
+    return response.json()
+
+
 def fetch_opportunity_metadata(access_token: str, opportunity_id: int) -> dict:
     """
     Fetch opportunity metadata from Connect API and resolve its CommCare domain.
@@ -169,22 +199,7 @@ def fetch_opportunity_metadata(access_token: str, opportunity_id: int) -> dict:
         logger.debug(f"Opportunity metadata cache hit for {opportunity_id}")
         return cached
 
-    url = f"{settings.CONNECT_PRODUCTION_URL}/export/opportunity/{opportunity_id}/"
-    headers = {"Authorization": f"Bearer {access_token}"}
-
-    logger.info(f"Fetching opportunity metadata from {url}")
-
-    try:
-        response = httpx.get(url, headers=headers, timeout=30.0)
-        response.raise_for_status()
-    except httpx.HTTPStatusError as e:
-        logger.error(f"Failed to fetch opportunity metadata: {e}")
-        raise ValueError(f"Failed to fetch opportunity metadata: {e.response.status_code}") from e
-    except httpx.TimeoutException as e:
-        logger.error(f"Timeout fetching opportunity metadata: {e}")
-        raise ValueError("Timeout fetching opportunity metadata") from e
-
-    data = response.json()
+    data = fetch_opportunity_detail(access_token, opportunity_id)
 
     # Extract cc_domain from deliver_app or learn_app
     deliver_app = data.get("deliver_app") or {}
