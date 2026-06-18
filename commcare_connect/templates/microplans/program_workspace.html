@@ -18,8 +18,31 @@
 
   <div id="status" class="text-sm text-gray-500"></div>
 
-  <!-- Plans by lifecycle phase -->
-  <div id="phases" class="space-y-6"></div>
+  <!-- Studies & plan groups — the finished, ready-to-solicit studies lead the page so a
+       viewer sees the study that's ready to recruit a firm against FIRST. The loose
+       draft-plan inventory (#phases) sits below and is collapsed by default. -->
+  <section>
+    <div class="flex items-center justify-between mb-2">
+      <h2 class="text-lg font-semibold text-gray-900">Studies &amp; plan groups</h2>
+      <div class="flex gap-2">
+        <button type="button" id="new-study" class="button button-sm primary-dark" title="Start a controlled two-arm study (intervention + control), then add its wards">+ New study</button>
+        <button type="button" id="new-group" class="button button-sm outline-style" disabled title="Select plans below to bundle">+ Group selected plans</button>
+      </div>
+    </div>
+    <p class="text-xs text-gray-500 mb-3">A <b>study</b> is a controlled set of wards (intervention + control) sampled together — a finished study is ready to recruit a survey firm against. A <b>bundle</b> offers a chosen LLO a read-only set of existing plans — tick draft plans below, then group them.</p>
+    <div id="groups" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
+  </section>
+
+  <!-- Plans by lifecycle phase — the in-progress draft inventory, secondary to the
+       finished studies above. Collapsed by default so it doesn't bury the hero study. -->
+  <details id="phases-disclosure" class="border-t border-gray-200 pt-5 group">
+    <summary class="cursor-pointer select-none text-sm font-semibold text-gray-700 hover:text-gray-900 list-none flex items-center gap-2">
+      <i class="fa-solid fa-chevron-right text-xs transition-transform group-open:rotate-90"></i>
+      <span>Candidate plans in progress</span>
+      <span id="phases-count" class="text-xs font-normal text-gray-400"></span>
+    </summary>
+    <div id="phases" class="space-y-6 mt-4"></div>
+  </details>
 
   <!-- Deploy picker: bind an approved plan to a live Connect opportunity (click, don't type an id) -->
   <div id="deploy-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/40 p-4">
@@ -36,18 +59,6 @@
     </div>
   </div>
 
-  <!-- Plan groups -->
-  <section class="border-t border-gray-200 pt-5">
-    <div class="flex items-center justify-between mb-2">
-      <h2 class="text-lg font-semibold text-gray-900">Plan groups &amp; studies</h2>
-      <div class="flex gap-2">
-        <button type="button" id="new-study" class="button button-sm primary-dark" title="Start a controlled two-arm study (intervention + control), then add its wards">+ New study</button>
-        <button type="button" id="new-group" class="button button-sm outline-style" disabled title="Select plans below to bundle">+ Group selected plans</button>
-      </div>
-    </div>
-    <p class="text-xs text-gray-500 mb-3">A <b>study</b> is a controlled set of wards (intervention + control) sampled together. A <b>bundle</b> offers a chosen LLO a read-only set of existing plans — tick plans above, then group them.</p>
-    <div id="groups" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
-  </section>
 </div>
 {% endblock %}
 
@@ -159,6 +170,9 @@
       if (grouped.has(p.plan_id)) return; // lives under its group, not the flat list
       (byStatus[p.status] = byStatus[p.status] || []).push(p);
     });
+    // Count the ungrouped (loose) candidate plans — these are what fill the
+    // collapsible draft inventory below the studies.
+    const looseCount = Object.values(byStatus).reduce((n, arr) => n + arr.length, 0);
     $("phases").innerHTML = PHASES.map((ph) => {
       const plans = ph.statuses.flatMap((s) => byStatus[s] || []);
       if (!plans.length && ph.key === "archived") return "";
@@ -179,7 +193,23 @@
       const wards = members.reduce((n, p) => n + (p.ward_count || 0), 0);
       return wards > 0;
     };
-    const visibleGroups = (DATA.groups || []).filter(groupHasContent);
+    // A study whose members are all approved AND whose status has reached
+    // review/export is finished design work — ready to recruit a firm against.
+    const FINISHED_STATUSES = new Set(["reviewed", "exported"]);
+    const isReadyToSolicit = (g) => {
+      if (g.kind !== "study") return false;
+      const members = (g.plan_ids || []).map((pid) => planById[pid]).filter(Boolean);
+      const allApproved = members.length > 0 && members.every((p) => p.status === "approved" || p.status === "deployed");
+      return allApproved && FINISHED_STATUSES.has(g.status);
+    };
+    // Lead with the finished, ready-to-solicit studies — they're the hero of this
+    // page (a viewer should see what's ready to recruit a firm against first), then
+    // other studies, then bundles.
+    const visibleGroups = (DATA.groups || []).filter(groupHasContent).sort((a, b) => {
+      const ra = isReadyToSolicit(a) ? 0 : (a.kind === "study" ? 1 : 2);
+      const rb = isReadyToSolicit(b) ? 0 : (b.kind === "study" ? 1 : 2);
+      return ra - rb;
+    });
     $("groups").innerHTML = visibleGroups.map((g) => {
       // List the group's member plans here (they're hidden from the top columns)
       // so each grouped plan stays one click from its review page.
@@ -203,22 +233,28 @@
       const countLabel = isStudy
         ? `${wardCount} ${wardCount === 1 ? "ward" : "wards"}`
         : `${g.plan_ids.length} ${g.plan_ids.length === 1 ? "plan" : "plans"}`;
-      // A study whose members are all approved AND whose status has reached
-      // review/export is finished design work — ready to recruit a firm against.
-      const finishedStatuses = new Set(["reviewed", "exported"]);
-      const allApproved = members.length > 0 && members.every((p) => p.status === "approved" || p.status === "deployed");
-      const readyToSolicit = isStudy && allApproved && finishedStatuses.has(g.status);
+      const readyToSolicit = isReadyToSolicit(g);
       const readyChip = readyToSolicit
         ? '<span class="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-green-50 text-green-700 border border-green-200 ml-1">ready to solicit</span>'
         : '';
       const solicitBtn = `<a class="button button-sm ${readyToSolicit ? "primary-dark" : "outline-style"}" href="${groupSolicitationUrl(g.group_id)}" title="Create a survey solicitation covering this group's plans">Create solicitation</a>`;
-      return `<div class="border rounded-lg p-3 bg-white${readyToSolicit ? " ring-1 ring-green-200" : ""}">
+      // A finished, ready-to-solicit study is the page's hero: span the full grid
+      // width, lift it with a stronger ring + green accent, and lead its title.
+      const heroCls = readyToSolicit
+        ? " md:col-span-2 ring-2 ring-green-300 shadow-sm border-green-200"
+        : "";
+      const titleCls = readyToSolicit ? "text-base" : "";
+      const heroLede = readyToSolicit
+        ? '<p class="text-xs text-green-700 mb-2"><i class="fa-solid fa-circle-check mr-1"></i>Finished study — ready to recruit a survey firm against this coverage.</p>'
+        : '';
+      return `<div class="border rounded-lg p-3 bg-white${heroCls}">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2 min-w-0">
-            <a class="font-semibold text-brand-cornflower-blue truncate" href="${primaryLink}">${esc(g.name)}</a>${badge}${readyChip}
+            <a class="font-semibold text-brand-cornflower-blue truncate ${titleCls}" href="${primaryLink}">${esc(g.name)}</a>${badge}${readyChip}
           </div>
           <span class="text-xs ${g.shared ? "text-green-600" : "text-gray-400"}">${isStudy ? esc(g.status || "") : (g.shared ? "shared" : "not shared")}</span>
         </div>
+        ${heroLede}
         <div class="text-xs text-gray-500">${countLabel}${g.offered_to ? " · for " + esc(g.offered_to) : ""}</div>
         <div class="mt-2 divide-y divide-gray-100 border-y border-gray-100">${memberRows}</div>
         <div class="mt-2 flex flex-wrap gap-2">
@@ -230,7 +266,15 @@
                  <button class="button button-sm outline-style" data-share="${g.group_id}" data-shared="${g.shared}">${g.shared ? "Unshare" : "Mark shared"}</button>${solicitBtn}`}
         </div>
       </div>`;
-    }).join("") || '<p class="text-sm text-gray-400">No groups yet.</p>';
+    }).join("") || '<p class="text-sm text-gray-400">No studies or groups yet.</p>';
+
+    // The draft inventory is collapsed by default so the finished study leads. But
+    // if there are no visible studies/groups to lead with, auto-open it (and when
+    // there are loose plans, show the count on the summary).
+    const phasesCount = $("phases-count");
+    if (phasesCount) phasesCount.textContent = looseCount ? `(${looseCount})` : "";
+    const disclosure = $("phases-disclosure");
+    if (disclosure && !visibleGroups.length && looseCount) disclosure.open = true;
     document.querySelectorAll(".plan-sel").forEach((cb) => cb.addEventListener("change", () => {
       const id = +cb.value; if (cb.checked) selected.add(id); else selected.delete(id);
       $("new-group").disabled = selected.size === 0;
