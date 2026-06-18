@@ -40,6 +40,12 @@ class TestSolicitationRecord:
         rec = self._make()
         assert rec.solicitation_type == "rfp"
 
+    def test_type_label_spells_out_codes(self):
+        assert self._make(data={"solicitation_type": "eoi"}).type_label == "Expression of Interest"
+        assert self._make(data={"solicitation_type": "rfp"}).type_label == "Request for Proposal"
+        # Unknown codes fall back to upper-case rather than rendering blank.
+        assert self._make(data={"solicitation_type": "other"}).type_label == "OTHER"
+
     def test_is_public(self):
         rec = self._make()
         assert rec.is_public is True

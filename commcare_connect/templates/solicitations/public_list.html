@@ -27,11 +27,11 @@
             </a>
             <a href="{% url 'solicitations:public_list' %}?type=rfp"
                class="button button-sm {% if selected_type == 'rfp' %}primary-dark{% else %}outline-style{% endif %}">
-                <i class="fa-solid fa-file-contract mr-1"></i> RFP
+                <i class="fa-solid fa-file-contract mr-1"></i> Requests for Proposal
             </a>
             <a href="{% url 'solicitations:public_list' %}?type=eoi"
                class="button button-sm {% if selected_type == 'eoi' %}primary-dark{% else %}outline-style{% endif %}">
-                <i class="fa-solid fa-hand mr-1"></i> EOI
+                <i class="fa-solid fa-hand mr-1"></i> Expressions of Interest
             </a>
         </div>
     </div>
@@ -47,13 +47,7 @@
                     <div class="mb-4">
                         <div class="flex items-start justify-between mb-3">
                             <span class="badge badge-md {% if solicitation.solicitation_type == 'eoi' %}primary-light{% else %}warning-light{% endif %}">
-                                {% if solicitation.solicitation_type == 'eoi' %}
-                                    Expression of Interest
-                                {% elif solicitation.solicitation_type == 'rfp' %}
-                                    Request for Proposal
-                                {% else %}
-                                    {{ solicitation.solicitation_type|upper }}
-                                {% endif %}
+                                {{ solicitation.type_label }}
                             </span>
                         </div>
 
