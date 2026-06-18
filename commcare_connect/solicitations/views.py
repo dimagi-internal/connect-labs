@@ -9,6 +9,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 from django.views.generic import TemplateView
 
+from commcare_connect.microplans.core.solicitation_snapshot import build_plan_snapshot
 from commcare_connect.solicitations.data_access import SolicitationsDataAccess
 from commcare_connect.solicitations.forms import ReviewForm, SolicitationForm, SolicitationResponseForm
 
@@ -356,11 +357,50 @@ class SolicitationCreateView(ManagerRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         ctx["has_context"] = _has_context(self.request)
-        ctx["form"] = SolicitationForm()
         ctx["is_create"] = True
         ctx["existing_questions"] = []
         ctx["existing_criteria"] = []
+
+        snapshot = self._snapshot_from_query()
+        if snapshot:
+            ctx["form"] = SolicitationForm(
+                initial={
+                    "title": snapshot["suggested_title"],
+                    "scope_of_work": snapshot["suggested_scope"],
+                    "plans_json": json.dumps(snapshot["plans"]),
+                    "source_program_id": snapshot["source_program_id"],
+                    "source_group_id": snapshot["source_group_id"],
+                    "source_plan_ids_json": json.dumps(snapshot["source_plan_ids"]),
+                }
+            )
+            ctx["snapshot_plans"] = snapshot["plans"]
+        else:
+            ctx.setdefault("form", SolicitationForm())
+            ctx.setdefault("snapshot_plans", [])
         return ctx
+
+    def _snapshot_from_query(self):
+        """Build a plan snapshot from ?source_program_id=&source_group_id|source_plan_id=.
+
+        Returns None when params are absent or the lookup fails (the form then
+        renders blank — create-from-scratch still works).
+        """
+        q = self.request.GET
+        program_id = q.get("source_program_id")
+        group_id = q.get("source_group_id")
+        plan_id = q.get("source_plan_id")
+        if not program_id or not (group_id or plan_id):
+            return None
+        try:
+            from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
+
+            da = ProgramPlanDataAccess(int(program_id), request=self.request)
+            if group_id:
+                return build_plan_snapshot(da, group_id=int(group_id))
+            return build_plan_snapshot(da, plan_id=int(plan_id))
+        except Exception:
+            logger.exception("create-from-microplan snapshot failed (program=%s)", program_id)
+            return None
 
     def post(self, request, *args, **kwargs):
         if not _has_context(request):
