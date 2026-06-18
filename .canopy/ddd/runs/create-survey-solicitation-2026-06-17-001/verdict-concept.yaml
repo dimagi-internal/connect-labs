@@ -1,140 +1,144 @@
 schema_version: 1
 rubric_name: ddd-concept-eval
-ran_at: '2026-06-18T19:50:08Z'
+ran_at: 2026-06-18T15:05:00Z
 run_dir: /Users/jjackson/emdash/worktrees/connect-labs/emdash/solicitation-rntwj/.canopy/ddd/runs/create-survey-solicitation-2026-06-17-001/
-iteration: 4
+scenes_evaluated: 5
+judge_independence: all five per-scene visual-judge verdicts returned self_assessed=false (fresh, build-context-free)
 
-# Re-eval against the 2026-06-18 13:42-13:43 re-rendered snapshots (scenes 4 & 5
-# fixed: scene 4 now coherent — STATUS Awarded / RECOMMENDATION Awarded / ACTIONS
-# View + Awarded only, no contradictory Review action; scene 5 is now a distinct
-# award-confirmation page with the "Next step - not yet built" boundary on screen,
-# no longer byte-identical to scene 4).
-#
-# Per-scene dimension scores (5 scenes; weakest-link aggregation across the five
-# GATING dimensions only — claim_reality_coherence is advisory and excluded).
-# All 5 per-scene judges ran as fresh independent sub-agents; none self_assessed.
-#
-# scene_scores:
-#   dim                      S1  S2  S3  S4  S5   min
-#   concept_clarity           4   4   4   4   4    4
-#   design_soundness          3   3   4   4   4    3
-#   visual_polish             3   3   4   3   4    3
-#   why_groundedness          4   4   5   5   5    4
-#   claim_reality_coherence   4   3   5   5   4    3   (advisory; excluded from overall)
-#   motion_friction           4   4   4   4   5    4
-#   per-scene overall (lowest of 5 gating):  3   3   4   3   4
+# Per-scene dimension scores (gating dims + advisory claim_reality_coherence)
+per_scene:
+  scene_1:
+    {
+      concept_clarity: 4,
+      design_soundness: 4,
+      visual_polish: 3,
+      why_groundedness: 4,
+      claim_reality_coherence: 3,
+      motion_friction: 4,
+      overall: 3,
+      verdict: warn,
+    }
+  scene_2:
+    {
+      concept_clarity: 3,
+      design_soundness: 4,
+      visual_polish: 3,
+      why_groundedness: 4,
+      claim_reality_coherence: 4,
+      motion_friction: 3,
+      overall: 3,
+      verdict: warn,
+    }
+  scene_3:
+    {
+      concept_clarity: 3,
+      design_soundness: 4,
+      visual_polish: 2,
+      why_groundedness: 4,
+      claim_reality_coherence: 4,
+      motion_friction: 4,
+      overall: 2,
+      verdict: fail,
+    }
+  scene_4:
+    {
+      concept_clarity: 3,
+      design_soundness: 4,
+      visual_polish: 3,
+      why_groundedness: 3,
+      claim_reality_coherence: 4,
+      motion_friction: 3,
+      overall: 3,
+      verdict: warn,
+    }
+  scene_5:
+    {
+      concept_clarity: 3,
+      design_soundness: 4,
+      visual_polish: 4,
+      why_groundedness: 4,
+      claim_reality_coherence: 5,
+      motion_friction: 4,
+      overall: 3,
+      verdict: warn,
+    }
 
+# Aggregate (weakest-link across all scenes; claim_reality_coherence advisory, EXCLUDED from overall_score)
 dimensions:
   concept_clarity:
-    score: 4
-    weight: 0.20
-    justification: >-
-      Every scene names a concrete role (Maya the program planner / Amina the
-      survey-firm director) and a legible action; a smart outsider can state
-      what the product does and why it matters, and scene 5's honest
-      "Next step - not yet built" boundary is a clarity strength. Held off 5
-      across the board mainly by scene 2, whose all-empty solicitation shell
-      mutes the "exact thing being published" half. Weakest-link = 4.
+    {
+      score: 3,
+      weight: 0.20,
+      justification: "Lowest at scenes 2-5: clear to a viewer familiar with the M&E survey-recruitment space, but a cold outsider would need one question answered (the 'R6 — Attakar x Gura' / 'Snapshotted' shorthand, and no explicit named actor/role on-screen on the award + responses + create surfaces). Scene 1's card text earns a 4; the rest sit at the default 3.",
+    }
   design_soundness:
-    score: 3
-    weight: 0.20
-    justification: >-
-      Interaction model is now coherent end-to-end (launch -> create -> respond
-      -> review -> award): scene 4's awarded row correctly shows View + an
-      Awarded indicator with NO contradictory live Review/Award action, and
-      scene 5's deferred provisioning is an honestly bounded end-state, not a
-      dead-end. Held to 3 by scenes 1 and 2 — scene 1 shows disabled
-      "Compare/Group selected" actions with no narrated precondition, and scene
-      2's coverage map has unlabeled, near-identical ward polygons, so the
-      "confirm the exact coverage" interaction is incomplete. Weakest-link = 3.
+    {
+      score: 4,
+      weight: 0.20,
+      justification: "Strongest dimension and consistent across all five scenes. The plan->solicitation->respond->review->award interaction model holds together with no dead ends or contradictory affordances. Scene 4's prior incoherence (duplicated 'Awarded', clickable-looking 'Awarded'/'Review' action) is RESOLVED: 'Awarded' now reads as a muted grey checkmark status, RECOMMENDATION shows '—', no leftover 'Review' action, header badge reads 'Awarded'.",
+    }
   visual_polish:
-    score: 3
-    weight: 0.15
-    justification: >-
-      Functional and clean throughout with grounding host chrome and real Mapbox
-      renders (scenes 2,3). Three scenes carry observable polish gaps: scene 1
-      floats one card over ~70% dead whitespace with four redundant "done"
-      markers; scene 2's two ward fills are near-identical low-contrast pastels
-      (the one place color is load-bearing) with no legend; scene 4 prints the
-      token "Awarded" three times on one row (STATUS/RECOMMENDATION/ACTIONS) and
-      a captured cursor collides with a clipped breadcrumb. No scene is
-      unshippable. Weakest-link = 3.
+    {
+      score: 2,
+      weight: 0.15,
+      justification: "WEAKEST-LINK / verdict driver. Scene 3 (respond form): the arm legend's second row ('Comparison' blue swatch) is CLIPPED at the legend box edge and collides with the Mapbox attribution wordmark, breaking the load-bearing color key that decodes the two study arms (a pointable product defect at normal viewport => max 2). The same legend-vs-attribution collision recurs as a polish nit in scene 2. Scenes 1 and 4 sit at the default 3 (dead whitespace, redundant status labels, '-' vs '—' empty-state glyph mismatch). Scene 5 is the cleanest at 4.",
+    }
   why_groundedness:
-    score: 4
-    weight: 0.20
-    justification: >-
-      Every scene's concept_claim traces to its declared why_brief spine item
-      (S3-S7) with matching rationale and implemented (non-assumed) evidence.
-      Scenes 3/4/5 are exemplary (5): the "Which areas can you cover?" selector,
-      the resolved SELECTED COVERAGE chip, and the on-screen "Next step - not yet
-      built" panel literally substantiate S5/S6/S7. Held to 4 by scenes 1-2,
-      where the "carries the plan as source" / snapshot-fidelity provenance is
-      asserted in microcopy rather than independently shown. Weakest-link = 4.
+    {
+      score: 3,
+      weight: 0.20,
+      justification: "Every scene's concept_claim traces to a grounded+implemented why_brief spine item (S3-S7) and is realized on-screen. Held to 3 only by scene 4: the S6 claim is about 'every application' but the single-row view demonstrates only one firm's resolved coverage, so the generality is asserted more than shown. Scenes 1,2,3,5 each score 4.",
+    }
   claim_reality_coherence:
-    score: 3
-    weight: 0.10
-    blocking: false
-    justification: >-
-      ADVISORY (excluded from overall_score, never blocks). Most narration claims
-      are demonstrated: scenes 3 and 4 are 5 (map drawn + checklist ticked; the
-      SELECTED COVERAGE chip resolves exactly the designed R6 - Attakar x Gura
-      coverage). Scene 2 is 3 — the map IS rendered but the narrated "Attakar
-      green / Gura blue" per-ward color identity is not verifiable on-screen
-      (fills near-identical, no legend). Scenes 1 and 5 are 4 (scene 5's
-      "notified" claim is shown via a bell + timeline row but lacks an explicit
-      delivery-channel proof in the hero). Weakest-link = 3.
+    {
+      score: 3,
+      weight: 0.10,
+      blocking: false,
+      justification: "Advisory, non-blocking, EXCLUDED from overall_score. Lowest at scene 1 (the 'bundle / tick draft plans' helper half and 'carries that plan as the source' are narrated but not visibly evidenced in-frame). Scene 5 is a perfect 5 (every narrated claim — awardee, notified, budget, coverage, deferred-step panel — present in-frame). Advisory note on scene 4: narration 'show' text mentions View/Review/Award actions 'ready' but the response is already AWARDED in-frame.",
+    }
   motion_friction:
-    score: 4
-    weight: 0.15
-    justification: >-
-      No spinners dominating frames, no nav dead-ends (every terminal scene has a
-      working exit), no backwards scene ordering. Scene 5 is now a distinct
-      confirmation frame (no longer byte-identical to scene 4), so the closing
-      beat shows real visual progression. The five-scene arc flows naturally from
-      portfolio to award. Weakest-link = 4.
+    {
+      score: 3,
+      weight: 0.15,
+      justification: 'Clean settled renders throughout — no dominating spinners, no error/404 states, no mid-transition jank. Held to 3 at scenes 2 and 4 (ordinary, no flow distinction; plus a stray captured mouse cursor over the heading/breadcrumb in scenes 1,4,5). Scenes 1,3,5 score 4.',
+    }
 
-overall_score: 3
+overall_score: 2
 overall_rule: lowest
+# overall_score = min over the FIVE gating dims (claim_reality_coherence excluded):
+#   min(concept_clarity 3, design_soundness 4, visual_polish 2, why_groundedness 3, motion_friction 3) = 2
 
-verdict: warn
+verdict: fail
 blocking_reason: null
 
 fix_recommendation: |
-  Verdict is WARN, driven by design_soundness (3) and visual_polish (3). The
-  concept is sound and well-grounded (concept_clarity 4, why_groundedness 4), and
-  the previously-flagged scene 4 / scene 5 regressions are RESOLVED — scene 4's
-  awarded row is coherent (View + Awarded only, no contradictory Review action),
-  and scene 5 is a distinct, honestly-bounded award-confirmation page. The
-  remaining warn is concentrated in scenes 1 and 2.
+  Overall is dragged to fail (2) by a SINGLE, mechanical visual_polish defect — fix it and
+  the run lifts to warn (3) with no concept change required.
 
-  Highest-leverage fixes (all PRODUCT, none camera-side):
+  [PRODUCT] Scene 3 (respond form) — the arm legend's 'Comparison' (blue) row is clipped at
+  the legend box's bottom edge and overlaps the Mapbox attribution wordmark, so the color key
+  that decodes intervention vs comparison is half-unreadable. Give the legend control enough
+  height to show BOTH rows fully and offset it off the attribution logo (move the legend to a
+  top corner, or push attribution to the opposite corner). This is the weakest-link driver.
 
-  [PRODUCT] Scene 2 (create form) — the load-bearing fix. The two ward polygons
-  (Attakar / Gura) render in near-identical low-contrast pastels with no
-  per-polygon labels or legend, so the owner cannot confirm WHICH polygon is
-  which ward — the exact "confirm the coverage the firm will bid on" job of the
-  scene. Raise fill contrast to saturated green vs saturated blue and add on-map
-  labels + a color legend swatch in the panel header. Lifts scene 2
-  design_soundness AND visual_polish AND advisory claim_reality_coherence
-  together. (mechanical)
+  [PRODUCT] Scene 2 (create form) — the same legend-vs-attribution collision recurs; apply the
+  same legend reposition. Also color-key the footer arm chip ('Comparison | Intervention') to the
+  green/blue map fills and reconcile the arm ordering between legend and chip.
 
-  [PRODUCT] Scene 2 — pre-fill the title/description/dates with the R6 example so
-  the scene shows a real solicitation being created, not a blank shell whose
-  empty Questions/Criteria stubs leave large dead regions. (mechanical)
+  [PRODUCT] Scene 4 (responses) — unify the empty-state glyph: use '—' for BOTH RECOMMENDATION and
+  SCORE (currently '—' vs '-'), and give the muted 'Awarded' ACTIONS status a non-color affordance
+  cue so it is unmistakably non-clickable. (Core interaction coherence is already sound — the prior
+  duplication/contradiction is gone.)
 
-  [PRODUCT] Scene 1 (portfolio) — add helper text/tooltips on the disabled
-  "Compare selected" / "Group selected plans" actions ("select plans first"),
-  and collapse the redundant "done" signals (STUDY pill + READY TO SOLICIT pill +
-  "reviewed" + the finished-study line) into one badge; optionally surface the
-  collapsed "Candidate plans in progress (9)" inline to fill the empty viewport.
-  (options)
+  [PRODUCT] Scenes 1 & 4 — re-capture without the stray mouse cursor sitting over the heading /
+  breadcrumb; tighten the portfolio surface (scene 1) so the lone finished-study card isn't
+  stranded in ~55% dead whitespace (preview the in-progress plans inline or use a denser grid).
 
-  [PRODUCT] Scene 4 (responses) — the token "Awarded" prints three times on one
-  row (STATUS / RECOMMENDATION / ACTIONS); differentiate the ACTIONS lockup to a
-  checkmark-only indicator and fix the breadcrumb ellipsis so the captured cursor
-  doesn't collide with clipped crumb text. (mechanical)
+  [CONCEPT-lite] Lift concept_clarity off the default 3: surface an explicit named actor/role on
+  the award + responses surfaces (e.g. 'Awarded by Maya, Program Owner') and add a one-line plain
+  summary under the 'R6 — Attakar x Gura' shorthand so a cold outsider needs no question answered.
 
-  [DEFER] claim_reality_coherence (advisory, non-blocking): scene 2's narrated
-  per-ward color identity is resolved by the scene-2 legend/contrast fix above;
-  scene 5's "notified" lacks a visible delivery channel in the hero. Note for
-  later triage; does not gate.
+  [DEFER] claim_reality_coherence (advisory): scene 1's 'bundle / draft-plan' helper text and
+  'carries that plan as the source' are narrated but not shown; scene 4 narration references
+  View/Review/Award actions as 'ready' though the response is already awarded in-frame. Triage
+  the narration-vs-frame wording later; non-blocking.

@@ -1,12 +1,21 @@
 [
   {
-    "scene": "2 — Maya finds the plan already waiting as the coverage area",
-    "dimension": "design_soundness",
+    "scene": "3 — Amina reads the open call and ticks the area she can staff",
+    "dimension": "visual_polish",
     "severity": "medium",
     "route": "PRODUCT",
-    "fix_kind": "options",
-    "detail": "The Coverage-areas panel renders a real map (good), but offers no affordance to confirm WHICH polygon is which ward — the two ward fills are near-identical pastels with no per-polygon labels or legend — so the core 'confirm the exact coverage the firm will bid on' interaction is incomplete. The rest of the solicitation form is also an empty shell, so a worked example of a real call is only half-shown.",
-    "fix_recommendation": "Add per-polygon map labels ('Attakar', 'Gura') and a small color legend in the panel header so the owner can verify ward identity on the map itself; pre-fill the title/description/dates with the R6 example so the scene shows a real solicitation being created, not a blank shell."
+    "fix_kind": "mechanical",
+    "detail": "The arm legend's second row ('Comparison', blue swatch) is CLIPPED at the legend box's bottom edge and overlaps the Mapbox attribution wordmark, so the blue swatch + label are cut off / hard to read. The color key that decodes the two study arms — the load-bearing visual on this interactive coverage map — is broken on screen. Distinct saturated green/blue ward polygons and clean buttons keep it from a 1, but a clipped legend on the central control is a real, pointable defect (max 2). This is the weakest-link driver for the whole run.",
+    "fix_recommendation": "Give the legend control enough height to show BOTH rows (Intervention green / Comparison blue) fully, and offset it vertically off the Mapbox attribution logo (move the legend to a top corner, or push attribution to the opposite corner). Secondary: add a text halo to the 'Attakar'/'Gura' map labels for projector legibility and reflow the helper text so 'required to submit' does not strand on its own line."
+  },
+  {
+    "scene": "2 — Maya finds the plan already waiting as the coverage area",
+    "dimension": "concept_clarity",
+    "severity": "low",
+    "route": "CONCEPT",
+    "fix_kind": "mechanical",
+    "detail": "An outsider can state what+why in one sentence and a concrete role (study planner) is named, but the 'Snapshotted' framing needs the helper text to parse — clear to the familiar, not self-evident to a cold outsider. Held at the default 3.",
+    "fix_recommendation": "Add a one-line plain-language gloss for 'Snapshotted at creation' (e.g. 'frozen copy — later plan edits won't change this call') inline next to the Attached pill so the freeze concept lands without reading the full helper paragraph."
   },
   {
     "scene": "2 — Maya finds the plan already waiting as the coverage area",
@@ -14,35 +23,44 @@
     "severity": "low",
     "route": "PRODUCT",
     "fix_kind": "mechanical",
-    "detail": "The green (Attakar) and blue (Gura) ward fills are too close in hue/value to read as two distinct, named areas — the one place color is load-bearing — and several empty stub sections (Application Questions, Evaluation Criteria, all dates) leave large dead whitespace blocks.",
-    "fix_recommendation": "Increase the fill-color contrast between the two wards (saturated green vs saturated blue) and add legend swatches tying color to ward name."
+    "detail": "The load-bearing coverage map renders well (two distinct saturated ward fills, named labels, real basemap, arm legend present), but the Comparison legend row collides with the Mapbox attribution wordmark and the footer arm chip ('Comparison | Intervention') is plain text not color-keyed to the green/blue fills — functional but unremarkable. Full-page strip flagged as a capture artifact, not deducted.",
+    "fix_recommendation": "Lift the map legend clear of the Mapbox attribution wordmark (top-corner overlay or pad above attribution), color-key the footer arm chip to the green/blue map fills, and reconcile arm ordering between legend (Intervention->Comparison) and chip ('Comparison | Intervention')."
   },
   {
     "scene": "2 — Maya finds the plan already waiting as the coverage area",
+    "dimension": "motion_friction",
+    "severity": "low",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "In-frame flow signals are present but ordinary — an 'Attached' status pill, 'Respondents select the areas they can cover', and a clear Cancel / Create Solicitation terminal action — with no visible progress, streaming, or transition cue. Rough edges at the default 3.",
+    "fix_recommendation": "Add a small 'frozen / read-only' affordance (or disable the +/- map zoom) to reinforce the 'snapshotted' claim, so the interactive map does not visually undercut the frozen-coverage message."
+  },
+  {
+    "scene": "1 — Maya turns her finished study into a call for a firm",
+    "dimension": "visual_polish",
+    "severity": "low",
+    "route": "PRODUCT",
+    "fix_kind": "options",
+    "detail": "Functional and clean with consistent buttons and a well-aimed green highlight, but ~55% of the viewport below the single study card is dead whitespace (only one card renders, page reads near-empty), the heading hierarchy is flat, four redundant status signals stack on one card (STUDY tag, READY TO SOLICIT pill, 'reviewed' label, green-check 'Finished study' sentence), and a stray mouse cursor is captured over the 'Microplan portfolio' heading.",
+    "fix_recommendation": "Tighten the portfolio surface so the finished-study card is not stranded: either expand/preview the 'Candidate plans in progress (9)' list inline OR render the cards in a denser grid to kill the empty frame and give the finished study peer context. Collapse the four redundant per-card status signals into one clear state badge. Re-capture without the stray cursor."
+  },
+  {
+    "scene": "1 — Maya turns her finished study into a call for a firm",
     "dimension": "claim_reality_coherence",
     "severity": "low",
     "route": "DEFER",
     "fix_kind": "mechanical",
-    "detail": "ADVISORY (non-blocking). Narration claims a Coverage panel that DRAWS the two wards as a map with 'Attakar green / Gura blue'. The map IS present with two polygons (claim largely demonstrated), but the specific per-ward color identity is not verifiable on-screen — the two fills are near-identical and unlabeled.",
-    "fix_recommendation": "Resolved by the scene-2 legend + contrast fix (saturated green/blue fills, on-map labels, legend swatches). Note for later triage; does not gate the verdict."
+    "detail": "Advisory / non-blocking. Finished/reviewed state, the one-click 'Create solicitation' button, and stay-in-workspace are all shown in-frame, but the 'bundle / tick draft plans' half of the helper paragraph describes a flow not visible anywhere in the frame, and 'carries that plan as the source' is implied but not visually confirmed (no source preview).",
+    "fix_recommendation": "Move the bundle-vs-study definition paragraph behind an opt-in info affordance so the action surface leads with the card rather than editorial prose describing an unshown flow; optionally show a small source-plan chip on the card to evidence 'carries that plan as the source'. Triage later — non-blocking."
   },
   {
-    "scene": "1 — Maya turns her finished study into a call for a firm",
-    "dimension": "design_soundness",
+    "scene": "4 — Maya sees the firm tied to the coverage she designed",
+    "dimension": "concept_clarity",
     "severity": "low",
-    "route": "PRODUCT",
+    "route": "CONCEPT",
     "fix_kind": "mechanical",
-    "detail": "Core launch affordance is coherent (primary 'Create solicitation' + secondary 'Open study'), but two top-bar actions ('Compare selected', '+ Group selected plans') appear disabled with no narration of the precondition, and the consequence of the primary action isn't previewed — a mild dead-end-adjacent ambiguity.",
-    "fix_recommendation": "Add helper text / tooltip on the disabled buttons stating the precondition (e.g. 'Select plans to compare or group'); optionally preview what 'Create solicitation' carries forward (e.g. 'Source: R6 — Attakar × Gura')."
-  },
-  {
-    "scene": "1 — Maya turns her finished study into a call for a firm",
-    "dimension": "visual_polish",
-    "severity": "low",
-    "route": "PRODUCT",
-    "fix_kind": "options",
-    "detail": "Functional and clean but unremarkable: one study card floats over ~70% empty whitespace below the fold, and the card stacks four redundant 'done' signals (STUDY pill, READY TO SOLICIT pill, 'reviewed' text, and a green 'Finished study — ready to recruit' line) — three ways of saying the same state.",
-    "fix_recommendation": "Collapse the three 'done' signals into a single badge, and surface the collapsed 'Candidate plans in progress (9)' inline (a compact list/grid) to fill the viewport instead of one card over a half-empty page."
+    "detail": "An outsider can state what+why ('a program owner sees which firm applied to which exact coverage area and its award state'), and a concrete role is present, but the two unlabeled header chips ('Expression of Interest' + 'Awarded') add a momentary 'what do these represent?' that keeps it at the default 3.",
+    "fix_recommendation": "Label the two header chips (solicitation type vs state) so a first-time reviewer immediately understands they are type + state, not two competing statuses."
   },
   {
     "scene": "4 — Maya sees the firm tied to the coverage she designed",
@@ -50,7 +68,34 @@
     "severity": "low",
     "route": "PRODUCT",
     "fix_kind": "mechanical",
-    "detail": "Functional and clean, but the token 'Awarded' prints three times on a single row (STATUS, RECOMMENDATION, and the ACTIONS column's 'Awarded' indicator), reading repetitive; and the captured cursor collides with a clipped/truncated breadcrumb crumb ('...Household survey firm — Round 6 (Attakar × ...'). Note: the awarded row's ACTIONS are now coherent (View + Awarded only, NO contradictory live Review action) — the prior-iteration interaction defect is resolved.",
-    "fix_recommendation": "Differentiate the ACTIONS 'Awarded' lockup to a checkmark-only indicator (distinct from the STATUS badge) so the same word doesn't render three times per row; add proper ellipsis padding to the breadcrumb clear of the cursor zone."
+    "detail": "Functional but unremarkable: columns align, the green Awarded pill and the SELECTED COVERAGE chip are tidy, but the empty-state glyphs are inconsistent ('—' in RECOMMENDATION vs '-' in SCORE in adjacent columns), ~70% of the lower frame is empty whitespace, and the muted 'Awarded' ACTIONS status distinction rides entirely on color (thin separation from the blue 'View').",
+    "fix_recommendation": "Unify the empty-state glyph — use '—' for BOTH RECOMMENDATION and SCORE. Give the muted 'Awarded' ACTIONS status a non-color affordance cue (e.g. removed underline / disabled styling) so it is unmistakably non-clickable beyond color alone."
+  },
+  {
+    "scene": "4 — Maya sees the firm tied to the coverage she designed",
+    "dimension": "why_groundedness",
+    "severity": "low",
+    "route": "CONCEPT",
+    "fix_kind": "mechanical",
+    "detail": "The concept_claim ('owner sees each firm's selected coverage resolved from the authoritative snapshot') traces to spine S6 and the SELECTED COVERAGE chip visibly backs it, but the single-row view shows only one firm's resolved coverage, so the 'every application' generality of the claim is asserted more than demonstrated.",
+    "fix_recommendation": "Either narrow the on-screen claim/narration to the one application actually shown, or seed a second applicant row with a different selected coverage so the 'each firm's selected coverage' generality is demonstrated rather than asserted."
+  },
+  {
+    "scene": "4 — Maya sees the firm tied to the coverage she designed",
+    "dimension": "motion_friction",
+    "severity": "low",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "In-frame flow signals are adequate (a clear 'View' action and a 'Back to Manage Solicitations' link), but a stray mouse cursor sits mid-breadcrumb (capture artifact) and the muted 'Awarded' action could read as a dead-end with no signal of what 'View' opens. Default 3.",
+    "fix_recommendation": "Re-capture without the cursor over the breadcrumb; optionally add a hover/tooltip on 'View' indicating it opens the full response, so the row's next-step is unambiguous."
+  },
+  {
+    "scene": "5 — Maya awards the firm and sees it was notified",
+    "dimension": "concept_clarity",
+    "severity": "low",
+    "route": "CONCEPT",
+    "fix_kind": "mechanical",
+    "detail": "What+why-deferred is clear to a familiar reader and the deferred-step panel is honest, but no explicit named user/role is on-screen, so per the rubric deduction rule ('no scene names a concrete user or role' => max 3) concept_clarity is capped at 3. This is the cap that drives the run's concept_clarity aggregate.",
+    "fix_recommendation": "Surface the awarding owner/role explicitly on the confirmation (e.g. 'Awarded by Maya, Program Owner' or a 'Decision recorded by …' line) so a cold outsider can name the concrete actor."
   }
 ]

@@ -9,7 +9,7 @@
       "target": "css:#sol-respond-map canvas.mapboxgl-canvas",
       "value": null,
       "note": "the coverage map paints the Attakar (green) + Gura (blue) ward polygons",
-      "elapsed_ms": 98,
+      "elapsed_ms": 118,
       "error_kind": null,
       "error_message": null,
       "scene_index": 3
@@ -20,7 +20,7 @@
       "target": null,
       "value": null,
       "note": "let the map settle and fit to the two wards",
-      "elapsed_ms": 1502,
+      "elapsed_ms": 1503,
       "error_kind": null,
       "error_message": null,
       "scene_index": 3
@@ -31,7 +31,7 @@
       "target": "css:#sol-plan-checklist label:has-text(\"R6 \u2014 Attakar\") input[type=checkbox]",
       "value": null,
       "note": "select the coverage area \u2014 synced two-way with the map; this enables Submit (\u22651 required)",
-      "elapsed_ms": 1260,
+      "elapsed_ms": 1264,
       "error_kind": null,
       "error_message": null,
       "scene_index": 3
@@ -64,7 +64,7 @@
       "target": null,
       "value": null,
       "note": "let Maya read the \"You're awarding\" summary before she commits",
-      "elapsed_ms": 1000,
+      "elapsed_ms": 1002,
       "error_kind": null,
       "error_message": null,
       "scene_index": 5
@@ -75,7 +75,7 @@
       "target": "css:input[name=reward_budget]",
       "value": "500000",
       "note": "optional budget for the awarded firm",
-      "elapsed_ms": 6001,
+      "elapsed_ms": 6002,
       "error_kind": "target_not_found",
       "error_message": null,
       "scene_index": 5
@@ -86,7 +86,7 @@
       "target": "css:button[type=submit]:has-text(\"Award\")",
       "value": null,
       "note": "award the firm \u2014 records the decision and notifies the organization",
-      "elapsed_ms": 6001,
+      "elapsed_ms": 6000,
       "error_kind": "target_not_found",
       "error_message": null,
       "scene_index": 5
@@ -97,7 +97,7 @@
       "target": "text:has been notified",
       "value": null,
       "note": "the in-place confirmation \"Awarded to Health Bridge Nigeria \u2014 the organization has been notified\" renders",
-      "elapsed_ms": 17,
+      "elapsed_ms": 16,
       "error_kind": null,
       "error_message": null,
       "scene_index": 5
@@ -119,7 +119,7 @@
       "scene_index": 1,
       "title": "Maya turns her finished study into a call for a firm",
       "start_seconds": 0.0,
-      "duration_seconds": 3.337,
+      "duration_seconds": 2.989,
       "urls_visited": [
         "https://labs.connect.dimagi.com/microplans/program/10008/"
       ]
@@ -127,8 +127,8 @@
     {
       "scene_index": 2,
       "title": "Maya finds the plan already waiting as the coverage area",
-      "start_seconds": 3.337,
-      "duration_seconds": 3.822,
+      "start_seconds": 2.989,
+      "duration_seconds": 3.46,
       "urls_visited": [
         "https://labs.connect.dimagi.com/solicitations/create/?source_program_id=10008&source_group_id=4492&program_id=10008"
       ]
@@ -136,8 +136,8 @@
     {
       "scene_index": 3,
       "title": "Amina reads the open call and ticks the area she can staff",
-      "start_seconds": 7.159,
-      "duration_seconds": 4.79,
+      "start_seconds": 6.449,
+      "duration_seconds": 4.718,
       "urls_visited": [
         "https://labs.connect.dimagi.com/solicitations/4495/respond/?program_id=10008"
       ]
@@ -145,8 +145,8 @@
     {
       "scene_index": 4,
       "title": "Maya sees the firm tied to the coverage she designed",
-      "start_seconds": 11.949,
-      "duration_seconds": 2.212,
+      "start_seconds": 11.168,
+      "duration_seconds": 2.143,
       "urls_visited": [
         "https://labs.connect.dimagi.com/solicitations/4495/responses/?program_id=10008"
       ]
@@ -154,8 +154,8 @@
     {
       "scene_index": 5,
       "title": "Maya awards the firm and sees it was notified",
-      "start_seconds": 14.161,
-      "duration_seconds": 27.367,
+      "start_seconds": 13.31,
+      "duration_seconds": 27.297,
       "urls_visited": [
         "https://labs.connect.dimagi.com/solicitations/response/4496/award/?program_id=10008"
       ]

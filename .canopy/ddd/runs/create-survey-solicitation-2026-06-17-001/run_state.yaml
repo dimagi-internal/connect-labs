@@ -1,169 +1,189 @@
 auto_iterate_next_action: stop_unclear
-auto_iterate_reason: 4 options/redesign finding(s) — need a user pick.
+auto_iterate_reason: 1 options/redesign finding(s) — need a user pick.
 findings:
   - detail:
-      Status redundancy (READY TO SOLICIT badge + 'reviewed' label + a third restated
-      sentence 'Finished study — ready to recruit a survey firm against this coverage')
-      plus a lower frame that is ~50% empty leave the opener functional-not-polished
-      — nothing embarrassing, nothing delightful.
+      The arm legend's second row ('Comparison', blue swatch) is CLIPPED at the
+      legend box's bottom edge and overlaps the Mapbox attribution wordmark, so the
+      blue swatch + label are cut off / hard to read. The color key that decodes the
+      two study arms — the load-bearing visual on this interactive coverage map — is
+      broken on screen. Distinct saturated green/blue ward polygons and clean buttons
+      keep it from a 1, but a clipped legend on the central control is a real, pointable
+      defect (max 2). This is the weakest-link driver for the whole run.
     dimension: visual_polish
     fix_kind: mechanical
     fix_recommendation:
-      Collapse the three restatements of 'ready to recruit a survey
-      firm' into one, and tighten the empty lower frame (surface the candidate-plans
-      list or a next-step hint).
+      "Give the legend control enough height to show BOTH rows (Intervention
+      green / Comparison blue) fully, and offset it vertically off the Mapbox attribution
+      logo (move the legend to a top corner, or push attribution to the opposite corner).
+      Secondary: add a text halo to the 'Attakar'/'Gura' map labels for projector
+      legibility and reflow the helper text so 'required to submit' does not strand
+      on its own line."
+    route: PRODUCT
+    scene: 3 — Amina reads the open call and ticks the area she can staff
+    severity: medium
+  - detail:
+      An outsider can state what+why in one sentence and a concrete role (study
+      planner) is named, but the 'Snapshotted' framing needs the helper text to parse
+      — clear to the familiar, not self-evident to a cold outsider. Held at the default
+      3.
+    dimension: concept_clarity
+    fix_kind: mechanical
+    fix_recommendation:
+      Add a one-line plain-language gloss for 'Snapshotted at creation'
+      (e.g. 'frozen copy — later plan edits won't change this call') inline next to
+      the Attached pill so the freeze concept lands without reading the full helper
+      paragraph.
+    route: CONCEPT
+    scene: 2 — Maya finds the plan already waiting as the coverage area
+    severity: low
+  - detail:
+      The load-bearing coverage map renders well (two distinct saturated ward
+      fills, named labels, real basemap, arm legend present), but the Comparison legend
+      row collides with the Mapbox attribution wordmark and the footer arm chip ('Comparison
+      | Intervention') is plain text not color-keyed to the green/blue fills — functional
+      but unremarkable. Full-page strip flagged as a capture artifact, not deducted.
+    dimension: visual_polish
+    fix_kind: mechanical
+    fix_recommendation:
+      Lift the map legend clear of the Mapbox attribution wordmark
+      (top-corner overlay or pad above attribution), color-key the footer arm chip to
+      the green/blue map fills, and reconcile arm ordering between legend (Intervention->Comparison)
+      and chip ('Comparison | Intervention').
+    route: PRODUCT
+    scene: 2 — Maya finds the plan already waiting as the coverage area
+    severity: low
+  - detail:
+      In-frame flow signals are present but ordinary — an 'Attached' status pill,
+      'Respondents select the areas they can cover', and a clear Cancel / Create Solicitation
+      terminal action — with no visible progress, streaming, or transition cue. Rough
+      edges at the default 3.
+    dimension: motion_friction
+    fix_kind: mechanical
+    fix_recommendation:
+      Add a small 'frozen / read-only' affordance (or disable the
+      +/- map zoom) to reinforce the 'snapshotted' claim, so the interactive map does
+      not visually undercut the frozen-coverage message.
+    route: PRODUCT
+    scene: 2 — Maya finds the plan already waiting as the coverage area
+    severity: low
+  - detail:
+      Functional and clean with consistent buttons and a well-aimed green highlight,
+      but ~55% of the viewport below the single study card is dead whitespace (only
+      one card renders, page reads near-empty), the heading hierarchy is flat, four
+      redundant status signals stack on one card (STUDY tag, READY TO SOLICIT pill,
+      'reviewed' label, green-check 'Finished study' sentence), and a stray mouse cursor
+      is captured over the 'Microplan portfolio' heading.
+    dimension: visual_polish
+    fix_kind: options
+    fix_recommendation:
+      "Tighten the portfolio surface so the finished-study card is
+      not stranded: either expand/preview the 'Candidate plans in progress (9)' list
+      inline OR render the cards in a denser grid to kill the empty frame and give the
+      finished study peer context. Collapse the four redundant per-card status signals
+      into one clear state badge. Re-capture without the stray cursor."
     route: PRODUCT
     scene: 1 — Maya turns her finished study into a call for a firm
     severity: low
   - detail:
-      ADVISORY. The concept_claim asserts submission is blocked until an area
-      is chosen with the message 'Select at least one coverage area to submit,' but
-      that error/blocked state is NOT visible in this frame — nothing is ticked, Submit
-      appears active, no error string shown. The static helper line 'Select one or more
-      — required to submit' is present and consistent, so it is not self-contradicting,
-      but the asserted blocked behavior is unverifiable from this still.
+      Advisory / non-blocking. Finished/reviewed state, the one-click 'Create
+      solicitation' button, and stay-in-workspace are all shown in-frame, but the 'bundle
+      / tick draft plans' half of the helper paragraph describes a flow not visible
+      anywhere in the frame, and 'carries that plan as the source' is implied but not
+      visually confirmed (no source preview).
     dimension: claim_reality_coherence
     fix_kind: mechanical
     fix_recommendation:
-      Add a scene/frame showing the blocked submit with the exact
-      'Select at least one coverage area to submit.' message so the gating half of S5
-      is demonstrated, not just asserted.
+      Move the bundle-vs-study definition paragraph behind an opt-in
+      info affordance so the action surface leads with the card rather than editorial
+      prose describing an unshown flow; optionally show a small source-plan chip on
+      the card to evidence 'carries that plan as the source'. Triage later — non-blocking.
     route: DEFER
-    scene: 3 — Amina reads the open call and ticks the area she can staff
-    severity: medium
-  - detail:
-      "Incoherent state combo: STATUS shows a green 'Awarded' pill while RECOMMENDATION
-      reads 'Not reviewed' AND a live 'Review' action is still offered — an already-awarded
-      item cannot simultaneously be un-reviewed and still invite review (you review
-      before you award). The ACTIONS strip also mixes verbs with a state label ('View
-      / Review / Awarded'), so 'Awarded' masquerades as a sibling action."
-    dimension: design_soundness
-    fix_kind: mechanical
-    fix_recommendation:
-      "Make status the single source of truth: when a response is
-      Awarded, suppress/disable the 'Review' action, resolve RECOMMENDATION to the
-      actual decision (or hide it), and move 'Awarded' out of the action strip into
-      the STATUS cell only so ACTIONS holds exclusively verbs."
-    route: PRODUCT
-    scene: 4 — Maya sees the firm tied to the coverage she designed
-    severity: medium
-  - detail:
-      The single-row 7-column table leaves SCORE ('-') and RECOMMENDATION columns
-      visibly empty (~30% blank), the EOI/Active header pills float far right of the
-      title across dead whitespace, and the captured mouse cursor overlaps and occludes
-      the breadcrumb text.
-    dimension: visual_polish
-    fix_kind: mechanical
-    fix_recommendation:
-      Add explicit em-dash empty-states for the SCORE/RECOMMENDATION
-      columns, pull the EOI/Active pills closer to the title, and re-capture without
-      the cursor occluding the breadcrumb.
-    route: PRODUCT
-    scene: 4 — Maya sees the firm tied to the coverage she designed
+    scene: 1 — Maya turns her finished study into a call for a firm
     severity: low
   - detail:
-      ADVISORY. The narrative frames this as a FRESH application Maya is reviewing/comparing
-      ('the loop from a study plan to a real applicant closed'), but the row is already
-      'Awarded' with RECOMMENDATION 'Not reviewed' — the captured state is ahead of
-      the narrated review moment and internally contradicts itself (awarded yet not
-      reviewed). The screenshot depicts a post-decision state, not the live review-and-compare
-      moment the scene narrates.
-    dimension: claim_reality_coherence
-    fix_kind: mechanical
-    fix_recommendation:
-      Re-capture this scene with the response in a pre-award state
-      (status 'Submitted' or 'Under review', Review action live, no Awarded pill) to
-      match the narrated reviewing/comparing moment.
-    route: DEFER
-    scene: 4 — Maya sees the firm tied to the coverage she designed
-    severity: medium
-  - detail:
-      Static frame is clean and loaded (no spinners/error), but the contradictory
-      live 'Review' action on an already-awarded row implies a click path that leads
-      to a confusing state — latent interaction friction.
-    dimension: motion_friction
-    fix_kind: mechanical
-    fix_recommendation:
-      Ensure awarded rows present a single coherent next action (e.g.
-      'View award') so a click never lands the owner in a review flow for an already-decided
-      response.
-    route: PRODUCT
-    scene: 4 — Maya sees the firm tied to the coverage she designed
-    severity: low
-  - detail:
-      The closing beat is the planning-vs-execution boundary, but nothing in the
-      frame signals 'next step' or 'not yet built' — the 5-second read is 'firm awarded,'
-      a wrong read for this beat. The concept lives only in narration.
+      An outsider can state what+why ('a program owner sees which firm applied
+      to which exact coverage area and its award state'), and a concrete role is present,
+      but the two unlabeled header chips ('Expression of Interest' + 'Awarded') add
+      a momentary 'what do these represent?' that keeps it at the default 3.
     dimension: concept_clarity
     fix_kind: mechanical
     fix_recommendation:
-      Add a visible forward affordance — a disabled 'Provision Connect
-      opportunity (coming soon)' control or a post-award callout — so the UI itself
-      carries the not-yet-built next step instead of leaving it to narration.
+      Label the two header chips (solicitation type vs state) so a
+      first-time reviewer immediately understands they are type + state, not two competing
+      statuses.
     route: CONCEPT
-    scene: 5 — Maya looks ahead to standing up the real opportunity
-    severity: medium
+    scene: 4 — Maya sees the firm tied to the coverage she designed
+    severity: low
   - detail:
-      "Same incoherent state combo as scene 4: an 'Awarded' row still offers
-      a 'Review' action and shows RECOMMENDATION 'Not reviewed'; STATUS 'Awarded'
-      is duplicated by the green Awarded pill in ACTIONS; SCORE is empty."
-    dimension: design_soundness
+      "Functional but unremarkable: columns align, the green Awarded pill and
+      the SELECTED COVERAGE chip are tidy, but the empty-state glyphs are inconsistent
+      ('—' in RECOMMENDATION vs '-' in SCORE in adjacent columns), ~70% of the lower
+      frame is empty whitespace, and the muted 'Awarded' ACTIONS status distinction
+      rides entirely on color (thin separation from the blue 'View')."
+    dimension: visual_polish
     fix_kind: mechanical
     fix_recommendation:
-      On award, suppress/disable the Review action, resolve 'Not reviewed'
-      to the actual review state, and collapse the duplicate Awarded status/action so
-      the row is internally consistent.
+      Unify the empty-state glyph — use '—' for BOTH RECOMMENDATION
+      and SCORE. Give the muted 'Awarded' ACTIONS status a non-color affordance cue
+      (e.g. removed underline / disabled styling) so it is unmistakably non-clickable
+      beyond color alone.
     route: PRODUCT
-    scene: 5 — Maya looks ahead to standing up the real opportunity
-    severity: medium
+    scene: 4 — Maya sees the firm tied to the coverage she designed
+    severity: low
   - detail:
-      Traces to spine S7 (recruiting/reviewing a firm is the shipped step; the
-      row is a real awarded response captured for review), but the frame omits S7's
-      whole second half — the not-yet-built provisioning tail — so the grounding is
-      only half-present on screen.
+      The concept_claim ('owner sees each firm's selected coverage resolved from
+      the authoritative snapshot') traces to spine S6 and the SELECTED COVERAGE chip
+      visibly backs it, but the single-row view shows only one firm's resolved coverage,
+      so the 'every application' generality of the claim is asserted more than demonstrated.
     dimension: why_groundedness
     fix_kind: mechanical
     fix_recommendation:
-      Surface the 'next step, not yet built' half of S7 in the frame
-      (e.g. the disabled provisioning affordance from the concept_clarity fix) rather
-      than leaving it to narration.
+      Either narrow the on-screen claim/narration to the one application
+      actually shown, or seed a second applicant row with a different selected coverage
+      so the 'each firm's selected coverage' generality is demonstrated rather than
+      asserted.
     route: CONCEPT
-    scene: 5 — Maya looks ahead to standing up the real opportunity
+    scene: 4 — Maya sees the firm tied to the coverage she designed
     severity: low
   - detail:
-      ADVISORY. The 'next step, not yet built' boundary is asserted only in narration;
-      the frame shows a live, already-taken 'Awarded' action, which reads as completion
-      and undercuts 'field execution is the aspirational next step.'
-    dimension: claim_reality_coherence
-    fix_kind: mechanical
-    fix_recommendation:
-      Make the aspirational boundary visible (disabled provisioning
-      control / 'no live opportunity yet' note) so the claim is coherent with the frame.
-    route: DEFER
-    scene: 5 — Maya looks ahead to standing up the real opportunity
-    severity: medium
-  - detail:
-      scene_5.png is byte-identical to scene_4.png (same md5) — a second consecutive
-      identical still with zero visual progression; the closing beat reuses the prior
-      frame, so the viewer gets no signal a new beat occurred.
+      In-frame flow signals are adequate (a clear 'View' action and a 'Back to
+      Manage Solicitations' link), but a stray mouse cursor sits mid-breadcrumb (capture
+      artifact) and the muted 'Awarded' action could read as a dead-end with no signal
+      of what 'View' opens. Default 3.
     dimension: motion_friction
     fix_kind: mechanical
     fix_recommendation:
-      Give scene 5 a distinct frame (scroll, highlight/hover the Award
-      action, or render a post-award state with the deferred-provisioning affordance)
-      so the closing beat advances visually.
+      Re-capture without the cursor over the breadcrumb; optionally
+      add a hover/tooltip on 'View' indicating it opens the full response, so the row's
+      next-step is unambiguous.
     route: PRODUCT
-    scene: 5 — Maya looks ahead to standing up the real opportunity
-    severity: medium
+    scene: 4 — Maya sees the firm tied to the coverage she designed
+    severity: low
+  - detail:
+      What+why-deferred is clear to a familiar reader and the deferred-step panel
+      is honest, but no explicit named user/role is on-screen, so per the rubric deduction
+      rule ('no scene names a concrete user or role' => max 3) concept_clarity is capped
+      at 3. This is the cap that drives the run's concept_clarity aggregate.
+    dimension: concept_clarity
+    fix_kind: mechanical
+    fix_recommendation:
+      Surface the awarding owner/role explicitly on the confirmation
+      (e.g. 'Awarded by Maya, Program Owner' or a 'Decision recorded by …' line) so
+      a cold outsider can name the concrete actor.
+    route: CONCEPT
+    scene: 5 — Maya awards the firm and sees it was notified
+    severity: low
 findings_review_id: null
 findings_review_url: null
-iteration: 4
+iteration: 5
 iteration_clips:
   3: https://canopy-web-ujpz2cuyxq-uc.a.run.app/w/f83063d9-cd47-45b5-bf87-a4245d926fdd
   4: https://canopy-web-ujpz2cuyxq-uc.a.run.app/w/ff328531-01df-4d12-9012-1abf17c9234b
+  5: https://canopy-web-ujpz2cuyxq-uc.a.run.app/w/53ace65c-8415-4bec-8bb0-038890e59192
 iteration_decks:
   3: https://canopy-web-ujpz2cuyxq-uc.a.run.app/w/75685479-f39c-41c5-91b3-ce7066e9abf9
   4: https://canopy-web-ujpz2cuyxq-uc.a.run.app/w/c9df8914-662a-4565-97ad-9cae8d96640e
+  5: https://canopy-web-ujpz2cuyxq-uc.a.run.app/w/b20e09f3-9ed3-4d64-8cb1-9d702caf9480
 last_actor: null
 last_actor_at: null
 narrative_review_id: acd53ae4-c44c-4c0a-98dd-f766b9358acc
@@ -185,6 +205,7 @@ score_history:
   - 2.0
   - 2.0
   - 3.0
+  - 2.0
 verdicts:
   concept: /Users/jjackson/emdash/worktrees/connect-labs/emdash/solicitation-rntwj/.canopy/ddd/runs/create-survey-solicitation-2026-06-17-001/verdict-concept.yaml
   user_artifact: /Users/jjackson/emdash/worktrees/connect-labs/emdash/solicitation-rntwj/.canopy/ddd/runs/create-survey-solicitation-2026-06-17-001/verdict-user.yaml
