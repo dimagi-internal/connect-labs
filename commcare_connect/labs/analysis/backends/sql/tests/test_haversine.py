@@ -1,7 +1,7 @@
 """End-to-end Postgres execution tests for the haversine_meters function.
 
 Bounds the correctness of the Python mirror in
-commcare_connect/workflow/tests/mbw_parity/runners.haversine_meters
+commcare_connect/labs/analysis/backends/sql/tests/reference_aggregation.haversine_meters
 against the actual SQL function defined in migration 0012.
 
 The test runs once per scenario rather than per-data-point; its job is
@@ -12,7 +12,7 @@ exhaustive geographic coverage.
 import pytest
 from django.db import connection
 
-from commcare_connect.workflow.tests.mbw_parity.runners import haversine_meters as py_haversine
+from commcare_connect.labs.analysis.backends.sql.tests.reference_aggregation import haversine_meters as py_haversine
 
 
 @pytest.mark.django_db

@@ -83,13 +83,13 @@ def push_render(
 
     Reads the file from disk and POSTs it via the same labs_record API
     the connect_labs MCP `workflow_update_render_code` tool uses. The
-    local task path is preferred for v3-class templates (~380KB) because
+    local task path is preferred for large templates (~380KB) because
     round-tripping the content through Claude's context is expensive
     (~100k tokens). For small templates the MCP tool is fine.
 
     Usage:
         inv push-render --workflow-id=2787 \\
-            --file=commcare_connect/workflow/templates/mbw_monitoring_v3_render.js
+            --file=commcare_connect/workflow/templates/mbw_auditing_v5_render.js
     """
     import os
 
