@@ -6,12 +6,17 @@ Provides utility functions for fetching data from Connect API.
 
 import logging
 
+import httpx
+from django.conf import settings
 from django.core.cache import cache
 from django.http import HttpRequest
 
 from commcare_connect.labs.analysis.utils import DJANGO_CACHE_TTL
 
 logger = logging.getLogger(__name__)
+
+# TTL for cached opportunity metadata (cc_domain / cc_app_id resolution).
+METADATA_CACHE_TTL = 3600  # 1 hour
 
 
 def fetch_flw_names(
@@ -138,3 +143,73 @@ def get_flw_names_for_opportunity(request: HttpRequest) -> dict[str, str]:
         raise ValueError("No opportunity selected in labs context")
 
     return fetch_flw_names(access_token, opportunity_id)
+
+
+def fetch_opportunity_metadata(access_token: str, opportunity_id: int) -> dict:
+    """
+    Fetch opportunity metadata from Connect API and resolve its CommCare domain.
+
+    Generic helper (not MBW-specific): reads ``/export/opportunity/{id}/`` and
+    extracts ``cc_domain`` / ``cc_app_id`` from the deliver or learn app. Cached
+    for ``METADATA_CACHE_TTL`` seconds.
+
+    Args:
+        access_token: Connect OAuth token
+        opportunity_id: Opportunity ID
+
+    Returns:
+        Dict with cc_domain, cc_app_id, opportunity_name, opportunity_id, raw.
+
+    Raises:
+        ValueError: If metadata cannot be fetched or cc_domain not found
+    """
+    cache_key = f"opp_metadata:{opportunity_id}"
+    cached = cache.get(cache_key)
+    if cached:
+        logger.debug(f"Opportunity metadata cache hit for {opportunity_id}")
+        return cached
+
+    url = f"{settings.CONNECT_PRODUCTION_URL}/export/opportunity/{opportunity_id}/"
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    logger.info(f"Fetching opportunity metadata from {url}")
+
+    try:
+        response = httpx.get(url, headers=headers, timeout=30.0)
+        response.raise_for_status()
+    except httpx.HTTPStatusError as e:
+        logger.error(f"Failed to fetch opportunity metadata: {e}")
+        raise ValueError(f"Failed to fetch opportunity metadata: {e.response.status_code}") from e
+    except httpx.TimeoutException as e:
+        logger.error(f"Timeout fetching opportunity metadata: {e}")
+        raise ValueError("Timeout fetching opportunity metadata") from e
+
+    data = response.json()
+
+    # Extract cc_domain from deliver_app or learn_app
+    deliver_app = data.get("deliver_app") or {}
+    learn_app = data.get("learn_app") or {}
+
+    cc_domain = deliver_app.get("cc_domain") or learn_app.get("cc_domain")
+
+    if not cc_domain:
+        logger.error(
+            f"No cc_domain in opportunity {opportunity_id} metadata. "
+            f"deliver_app keys: {list(deliver_app.keys())}, learn_app keys: {list(learn_app.keys())}"
+        )
+        raise ValueError(f"Opportunity {opportunity_id} is missing CommCare domain configuration.")
+
+    cc_app_id = deliver_app.get("cc_app_id") or learn_app.get("cc_app_id")
+
+    result = {
+        "cc_domain": cc_domain,
+        "cc_app_id": cc_app_id,
+        "opportunity_name": data.get("name", ""),
+        "opportunity_id": opportunity_id,
+        "raw": data,
+    }
+
+    cache.set(cache_key, result, METADATA_CACHE_TTL)
+    logger.info(f"Fetched opportunity metadata: cc_domain={cc_domain}")
+
+    return result
