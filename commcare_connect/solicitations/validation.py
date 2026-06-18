@@ -28,8 +28,8 @@ from django.core.validators import validate_email
 # =========================================================================
 
 SOLICITATION_TYPE_CHOICES: tuple[tuple[str, str], ...] = (
-    ("eoi", "Expression of Interest (EOI)"),
-    ("rfp", "Request for Proposal (RFP)"),
+    ("eoi", "Expression of Interest"),
+    ("rfp", "Request for Proposal"),
 )
 STATUS_CHOICES: tuple[tuple[str, str], ...] = (
     ("draft", "Draft"),

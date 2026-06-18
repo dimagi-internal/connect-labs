@@ -29,7 +29,7 @@
         <button type="button" id="new-group" class="button button-sm outline-style" disabled title="Select plans below to bundle">+ Group selected plans</button>
       </div>
     </div>
-    <p class="text-xs text-gray-500 mb-3">A <b>study</b> is a controlled set of wards (intervention + control) sampled together — a finished study is ready to recruit a survey firm against. A <b>bundle</b> offers a chosen LLO a read-only set of existing plans — tick draft plans below, then group them.</p>
+    <p class="text-xs text-gray-500 mb-3">A <b>study</b> is a controlled set of wards (intervention + control) sampled together — a finished study is ready to recruit a survey firm against. A <b>bundle</b> offers a survey firm a read-only set of existing plans — tick draft plans below, then group them.</p>
     <div id="groups" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
   </section>
 
@@ -214,12 +214,18 @@
       // List the group's member plans here (they're hidden from the top columns)
       // so each grouped plan stays one click from its review page.
       const members = (g.plan_ids || []).map((pid) => planById[pid]).filter(Boolean);
-      const memberRows = members.map((p) =>
-        `<a class="flex items-center justify-between gap-2 py-1 text-xs hover:bg-gray-50 rounded px-1" href="${reviewUrl(p.plan_id)}">
+      const isStudy = g.kind === "study";
+      // A single-plan two-arm study's member row just duplicates the study title (same
+      // name) and leaks the plan's lifecycle badge — redundant and contradictory next
+      // to the study's own status. Skip it for single-plan studies; the coverage is
+      // already summarised by the ward count + the Open study drill-in.
+      const memberRows = (isStudy && members.length <= 1)
+        ? ""
+        : members.map((p) =>
+            `<a class="flex items-center justify-between gap-2 py-1 text-xs hover:bg-gray-50 rounded px-1" href="${reviewUrl(p.plan_id)}">
           <span class="truncate text-brand-cornflower-blue">${esc(p.name)}</span>
           <span class="px-1.5 py-0.5 rounded whitespace-nowrap ${BADGE[p.status] || ''}">${esc(p.status_label)}</span>
-        </a>`).join("") || '<p class="text-xs text-gray-400 py-1">(plans not in this program)</p>';
-      const isStudy = g.kind === "study";
+        </a>`).join("") || (isStudy ? "" : '<p class="text-xs text-gray-400 py-1">(plans not in this program)</p>');
       const primaryLink = isStudy ? groupManageUrl(g.group_id) : groupShareUrl(g.group_id);
       const badge = isStudy
         ? '<span class="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">study</span>'
@@ -241,7 +247,7 @@
       // A finished, ready-to-solicit study is the page's hero: span the full grid
       // width, lift it with a stronger ring + green accent, and lead its title.
       const heroCls = readyToSolicit
-        ? " md:col-span-2 ring-2 ring-green-300 shadow-sm border-green-200"
+        ? " ring-2 ring-green-300 shadow-sm border-green-200"
         : "";
       const titleCls = readyToSolicit ? "text-base" : "";
       const heroLede = readyToSolicit
@@ -256,7 +262,7 @@
         </div>
         ${heroLede}
         <div class="text-xs text-gray-500">${countLabel}${g.offered_to ? " · for " + esc(g.offered_to) : ""}</div>
-        <div class="mt-2 divide-y divide-gray-100 border-y border-gray-100">${memberRows}</div>
+        ${memberRows ? `<div class="mt-2 divide-y divide-gray-100 border-y border-gray-100">${memberRows}</div>` : ""}
         <div class="mt-2 flex flex-wrap gap-2">
           ${readyToSolicit
             ? `${solicitBtn}<a class="button button-sm outline-style" href="${groupManageUrl(g.group_id)}">Open study</a>`

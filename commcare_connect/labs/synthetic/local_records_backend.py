@@ -13,6 +13,8 @@ to flow over HTTP to production Connect.
 
 from __future__ import annotations
 
+from django.db.models import Q
+
 from commcare_connect.labs.models import LocalLabsRecord
 from commcare_connect.labs.synthetic.models import LABS_ONLY_OPP_ID_FLOOR, LabsLocalRecord, SyntheticOpportunity
 
@@ -31,9 +33,29 @@ def is_labs_only_opportunity_id(opportunity_id: int | None) -> bool:
     return SyntheticOpportunity.objects.filter(opportunity_id=opportunity_id, labs_only=True).exists()
 
 
+def is_labs_only_program_id(program_id: int | None) -> bool:
+    """Return True if ``program_id`` is a labs-only program (reserved >= 10_000 range).
+
+    Mirrors the opp-id check for program-scoped requests — e.g. loading the
+    Workflows list with only a synthetic program selected and no opportunity.
+    A program is labs-only when some ``labs_only=True`` opp either is filed under
+    it explicitly (``program_id`` matches) or, when its ``program_id`` is unset,
+    is its own program (``opportunity_id`` matches). Without this, program-scoped
+    reads fall through to production Connect and 404 (the user isn't a member of
+    the synthetic program).
+    """
+    if program_id is None or program_id < LABS_ONLY_OPP_ID_FLOOR:
+        return False
+    return (
+        SyntheticOpportunity.objects.filter(labs_only=True)
+        .filter(Q(program_id=program_id) | Q(program_id__isnull=True, opportunity_id=program_id))
+        .exists()
+    )
+
+
 def get_records(
     *,
-    opportunity_id: int,
+    opportunity_id: int | None = None,
     experiment: str | None = None,
     type: str | None = None,
     username: str | None = None,
@@ -44,7 +66,11 @@ def get_records(
     public: bool | None = None,
     **data_filters,
 ) -> list[LocalLabsRecord]:
-    qs = LabsLocalRecord.objects.filter(opportunity_id=opportunity_id)
+    # opportunity_id is optional: program-scoped reads (a synthetic program with
+    # no opp selected) filter by program_id alone across the program's opps.
+    qs = LabsLocalRecord.objects.all()
+    if opportunity_id is not None:
+        qs = qs.filter(opportunity_id=opportunity_id)
     if experiment is not None:
         qs = qs.filter(experiment=experiment)
     if type is not None:
@@ -70,12 +96,16 @@ def get_records(
 def get_record_by_id(
     *,
     record_id: int,
-    opportunity_id: int,
+    opportunity_id: int | None = None,
     experiment: str | None = None,
     type: str | None = None,
     model_class: type[LocalLabsRecord] | None = None,
 ) -> LocalLabsRecord | None:
-    qs = LabsLocalRecord.objects.filter(id=record_id, opportunity_id=opportunity_id)
+    # record_id is the global PK; opportunity_id is an optional scoping guard so
+    # program-scoped lookups (no opp selected) can still resolve a record.
+    qs = LabsLocalRecord.objects.filter(id=record_id)
+    if opportunity_id is not None:
+        qs = qs.filter(opportunity_id=opportunity_id)
     if experiment is not None:
         qs = qs.filter(experiment=experiment)
     if type is not None:
