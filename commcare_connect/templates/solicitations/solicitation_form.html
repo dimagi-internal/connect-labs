@@ -245,23 +245,42 @@
         {{ form.source_plan_ids_json }}
 
         {% if snapshot_plans %}
-        <section class="mt-6">
-          <h3 class="text-sm font-semibold text-gray-700 mb-2">Coverage areas (from micro-plan)</h3>
-          <p class="text-xs text-gray-500 mb-3">These plans are offered to respondents, who select the ones they can cover. Snapshotted at creation — later plan edits won't change this solicitation.</p>
-          <ul class="divide-y divide-gray-100 border border-gray-200 rounded-lg" id="coverage-plans">
-            {% for p in snapshot_plans %}
-            <li class="px-3 py-2 text-sm flex items-center justify-between">
-              <span>
-                <span class="font-medium text-gray-800">{{ p.name }}</span>
-                {% if p.region %}<span class="text-gray-400">· {{ p.region }}</span>{% endif %}
-                <span class="text-gray-400">· {{ p.wards|length }} ward{{ p.wards|length|pluralize }}</span>
-                {% if p.work_area_count %}<span class="text-gray-400">· {{ p.work_area_count }} work area{{ p.work_area_count|pluralize }}</span>{% endif %}
-                {% if p.arms %}<span class="text-indigo-500">· {{ p.arms|join:", " }}</span>{% endif %}
-              </span>
-            </li>
-            {% endfor %}
-          </ul>
-        </section>
+        <div class="bg-white rounded-xl shadow-sm p-8" id="coverage-card">
+            <h2 class="text-xl font-semibold text-brand-deep-purple mb-6 pb-2 border-b border-gray-200">
+                <i class="fa-solid fa-map-location-dot mr-2"></i>
+                Coverage areas (from micro-plan)
+                <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 align-middle">
+                    <i class="fa-solid fa-paperclip mr-1"></i> Attached
+                </span>
+            </h2>
+            <p class="text-sm text-gray-600 mb-4">
+                Your micro-plan is attached to this call. Respondents select the areas they can cover.
+                Snapshotted at creation — later plan edits won't change this solicitation.
+            </p>
+            <ul class="space-y-3" id="coverage-plans">
+                {% for p in snapshot_plans %}
+                <li class="flex items-start gap-3 bg-indigo-50/60 border border-indigo-100 rounded-lg px-4 py-3">
+                    <div class="flex items-center justify-center w-9 h-9 rounded-lg bg-indigo-600 text-white text-sm shadow-sm shrink-0">
+                        <i class="fa-solid fa-location-dot"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <div class="text-base font-semibold text-gray-900">{{ p.name }}{% if p.region %} <span class="font-normal text-gray-500">· {{ p.region }}</span>{% endif %}</div>
+                        <div class="mt-1 flex flex-wrap items-center gap-2 text-sm">
+                            <span class="inline-flex items-center px-2 py-0.5 rounded bg-white border border-gray-200 text-gray-700 font-medium">{{ p.wards|length }} ward{{ p.wards|length|pluralize }}</span>
+                            {% if p.work_area_count %}<span class="inline-flex items-center px-2 py-0.5 rounded bg-white border border-gray-200 text-gray-700 font-medium">{{ p.work_area_count }} work area{{ p.work_area_count|pluralize }}</span>{% endif %}
+                            {% if p.wards %}<span class="text-gray-400">{{ p.wards|join:" · " }}</span>{% endif %}
+                        </div>
+                        {% if p.arms %}
+                        <div class="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs">
+                            <span class="text-gray-500 font-medium">Study arms:</span>
+                            {% for arm in p.arms %}<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-medium capitalize">{{ arm }}</span>{% endfor %}
+                        </div>
+                        {% endif %}
+                    </div>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
         {% endif %}
 
         <!-- Evaluation Criteria Builder -->
