@@ -69,6 +69,13 @@
   const groupManageUrl = (gid) => base + "group/" + gid + "/manage/";
   const groupUpdateUrl = (gid) => base + "group/" + gid + "/";
   const compareUrl = () => base + "compare/?plans=" + [...selected].join(",");
+  // Entry points into the "create a solicitation from a micro-plan" feature, carried
+  // straight from the portfolio so it lives where the owner browses plans/groups (not
+  // buried in a plan's review/edit screen). The solicitation form pre-seeds its
+  // coverage areas from the source plan/group.
+  const SOL_CREATE = "{% url 'solicitations:create' %}";
+  const planSolicitationUrl = (pid) => SOL_CREATE + "?source_program_id=" + PROGRAM + "&source_plan_id=" + pid;
+  const groupSolicitationUrl = (gid) => SOL_CREATE + "?source_program_id=" + PROGRAM + "&source_group_id=" + gid;
   const $ = (id) => document.getElementById(id);
   Microplans.setCsrf(CSRF);
   const esc = Microplans.esc;
@@ -138,7 +145,7 @@
       <div class="flex flex-wrap gap-1 mt-2">
         ${countChip}${travelChip}${p.coverage_pct < 100 ? chip("coverage", p.coverage_pct + "%") : ""}${exclChip}
       </div>
-      <div class="flex flex-wrap gap-1 mt-3">${actions}${p.status !== "deployed" ? `<button class="button button-sm outline-style text-red-600 border-red-200 hover:bg-red-50" data-delete="${p.plan_id}" title="Permanently delete this plan">Delete</button>` : ""}</div>
+      <div class="flex flex-wrap gap-1 mt-3">${actions}${p.status !== "archived" ? `<a class="button button-sm outline-style" href="${planSolicitationUrl(p.plan_id)}" title="Create a survey solicitation for this plan's coverage area">Create solicitation</a>` : ""}${p.status !== "deployed" ? `<button class="button button-sm outline-style text-red-600 border-red-200 hover:bg-red-50" data-delete="${p.plan_id}" title="Permanently delete this plan">Delete</button>` : ""}</div>
     </div>`;
   }
 
@@ -185,11 +192,12 @@
         </div>
         <div class="text-xs text-gray-500">${g.plan_ids.length} ${isStudy ? "wards" : "plans"}${g.offered_to ? " · for " + esc(g.offered_to) : ""}</div>
         <div class="mt-2 divide-y divide-gray-100 border-y border-gray-100">${memberRows}</div>
-        <div class="mt-2 flex gap-2">
+        <div class="mt-2 flex flex-wrap gap-2">
           ${isStudy
             ? `<a class="button button-sm primary-dark" href="${groupManageUrl(g.group_id)}">Open study</a>`
             : `<a class="button button-sm outline-style" href="${groupShareUrl(g.group_id)}">Open share page</a>
                <button class="button button-sm outline-style" data-share="${g.group_id}" data-shared="${g.shared}">${g.shared ? "Unshare" : "Mark shared"}</button>`}
+          <a class="button button-sm outline-style" href="${groupSolicitationUrl(g.group_id)}" title="Create a survey solicitation covering this group's plans">Create solicitation</a>
         </div>
       </div>`;
     }).join("") || '<p class="text-sm text-gray-400">No groups yet.</p>';
