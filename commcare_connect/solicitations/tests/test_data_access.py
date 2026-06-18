@@ -141,7 +141,18 @@ class TestConstructor:
     @patch("commcare_connect.solicitations.data_access.LabsRecordAPIClient")
     def test_creates_api_client_with_token(self, MockClient):
         SolicitationsDataAccess(program_id="42", access_token="tok")
-        MockClient.assert_called_once_with("tok", program_id=42, organization_id=None)
+        # program 42 is below the labs-only floor, so opportunity_id stays None and
+        # the client routes to the prod Labs Record API as before.
+        MockClient.assert_called_once_with("tok", program_id=42, organization_id=None, opportunity_id=None)
+
+    @patch("commcare_connect.labs.synthetic.local_records_backend.is_labs_only_opportunity_id", return_value=True)
+    @patch("commcare_connect.solicitations.data_access.LabsRecordAPIClient")
+    def test_labs_only_program_routes_via_opportunity_id(self, MockClient, _mock_is_labs_only):
+        """A labs-only program (program_id == synthetic opp id) is passed through as
+        opportunity_id so LabsRecordAPIClient short-circuits to the local-records backend
+        instead of the prod API (which 404s on a synthetic opp the user can't access)."""
+        SolicitationsDataAccess(program_id="10008", access_token="tok")
+        MockClient.assert_called_once_with("tok", program_id=10008, organization_id=None, opportunity_id=10008)
 
     @patch("commcare_connect.solicitations.data_access.LabsRecordAPIClient")
     def test_extracts_context_from_request(self, MockClient):
