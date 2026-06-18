@@ -169,7 +169,18 @@
         </div></section>`;
     }).join("");
     const planById = Object.fromEntries(DATA.plans.map((p) => [p.plan_id, p]));
-    $("groups").innerHTML = (DATA.groups || []).map((g) => {
+    // Suppress empty scratch study placeholders: a study group with no resolvable
+    // member plans, or whose only members are 0-ward drafts, is leftover scaffolding
+    // (e.g. an "Untitled study · 0 wards" card). Shown as a first-class peer it
+    // distracts from the finished, ready-to-solicit studies the page is about.
+    const groupHasContent = (g) => {
+      const members = (g.plan_ids || []).map((pid) => planById[pid]).filter(Boolean);
+      if (!members.length) return false;
+      const wards = members.reduce((n, p) => n + (p.ward_count || 0), 0);
+      return wards > 0;
+    };
+    const visibleGroups = (DATA.groups || []).filter(groupHasContent);
+    $("groups").innerHTML = visibleGroups.map((g) => {
       // List the group's member plans here (they're hidden from the top columns)
       // so each grouped plan stays one click from its review page.
       const members = (g.plan_ids || []).map((pid) => planById[pid]).filter(Boolean);
@@ -183,21 +194,40 @@
       const badge = isStudy
         ? '<span class="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">study</span>'
         : '<span class="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 border border-gray-200">bundle</span>';
-      return `<div class="border rounded-lg p-3 bg-white">
+      // For a study, count the actual coverage wards across member plans (a two-arm
+      // plan has 2: intervention + comparison), not the number of member plans —
+      // otherwise a one-plan two-arm study reads a misleading "1 wards".
+      const wardCount = isStudy
+        ? members.reduce((n, p) => n + (p.ward_count || 0), 0)
+        : g.plan_ids.length;
+      const countLabel = isStudy
+        ? `${wardCount} ${wardCount === 1 ? "ward" : "wards"}`
+        : `${g.plan_ids.length} ${g.plan_ids.length === 1 ? "plan" : "plans"}`;
+      // A study whose members are all approved AND whose status has reached
+      // review/export is finished design work — ready to recruit a firm against.
+      const finishedStatuses = new Set(["reviewed", "exported"]);
+      const allApproved = members.length > 0 && members.every((p) => p.status === "approved" || p.status === "deployed");
+      const readyToSolicit = isStudy && allApproved && finishedStatuses.has(g.status);
+      const readyChip = readyToSolicit
+        ? '<span class="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-green-50 text-green-700 border border-green-200 ml-1">ready to solicit</span>'
+        : '';
+      const solicitBtn = `<a class="button button-sm ${readyToSolicit ? "primary-dark" : "outline-style"}" href="${groupSolicitationUrl(g.group_id)}" title="Create a survey solicitation covering this group's plans">Create solicitation</a>`;
+      return `<div class="border rounded-lg p-3 bg-white${readyToSolicit ? " ring-1 ring-green-200" : ""}">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2 min-w-0">
-            <a class="font-semibold text-brand-cornflower-blue truncate" href="${primaryLink}">${esc(g.name)}</a>${badge}
+            <a class="font-semibold text-brand-cornflower-blue truncate" href="${primaryLink}">${esc(g.name)}</a>${badge}${readyChip}
           </div>
           <span class="text-xs ${g.shared ? "text-green-600" : "text-gray-400"}">${isStudy ? esc(g.status || "") : (g.shared ? "shared" : "not shared")}</span>
         </div>
-        <div class="text-xs text-gray-500">${g.plan_ids.length} ${isStudy ? "wards" : "plans"}${g.offered_to ? " · for " + esc(g.offered_to) : ""}</div>
+        <div class="text-xs text-gray-500">${countLabel}${g.offered_to ? " · for " + esc(g.offered_to) : ""}</div>
         <div class="mt-2 divide-y divide-gray-100 border-y border-gray-100">${memberRows}</div>
         <div class="mt-2 flex flex-wrap gap-2">
-          ${isStudy
-            ? `<a class="button button-sm primary-dark" href="${groupManageUrl(g.group_id)}">Open study</a>`
-            : `<a class="button button-sm outline-style" href="${groupShareUrl(g.group_id)}">Open share page</a>
-               <button class="button button-sm outline-style" data-share="${g.group_id}" data-shared="${g.shared}">${g.shared ? "Unshare" : "Mark shared"}</button>`}
-          <a class="button button-sm outline-style" href="${groupSolicitationUrl(g.group_id)}" title="Create a survey solicitation covering this group's plans">Create solicitation</a>
+          ${readyToSolicit
+            ? `${solicitBtn}<a class="button button-sm outline-style" href="${groupManageUrl(g.group_id)}">Open study</a>`
+            : isStudy
+              ? `<a class="button button-sm primary-dark" href="${groupManageUrl(g.group_id)}">Open study</a>${solicitBtn}`
+              : `<a class="button button-sm outline-style" href="${groupShareUrl(g.group_id)}">Open share page</a>
+                 <button class="button button-sm outline-style" data-share="${g.group_id}" data-shared="${g.shared}">${g.shared ? "Unshare" : "Mark shared"}</button>${solicitBtn}`}
         </div>
       </div>`;
     }).join("") || '<p class="text-sm text-gray-400">No groups yet.</p>';

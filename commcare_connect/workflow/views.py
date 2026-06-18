@@ -589,11 +589,6 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                     "saveWorkerResult": f"/labs/workflow/api/run/{run_data['id']}/worker-result/",
                     # Single completion verb — handles snapshot build + status flip atomically.
                     "completeRun": (None if is_edit_mode else f"/labs/workflow/api/run/{run_data['id']}/complete/"),
-                    # Back-compat alias for mbw_monitoring_v3 render code (it calls
-                    # `links.buildSnapshot` to drive completion). Points at the same
-                    # /complete/ endpoint as `completeRun`. Don't add new callers —
-                    # render code should use `view.complete()` from the view helper.
-                    "buildSnapshot": (None if is_edit_mode else f"/labs/workflow/api/run/{run_data['id']}/complete/"),
                     "updateOpportunityIds": f"/labs/workflow/api/{definition_id}/opportunity-ids/",
                     # Read-only snapshot inspection (debug); render code reads
                     # instance.snapshot via the useRunView helper, not this URL.
@@ -1482,8 +1477,6 @@ def complete_run_api(request, run_id):
                 "success": True,
                 "status": completed_run.status,
                 "completed_at": completed_run.completed_at,
-                # Legacy alias for pre-rename callers (mbw_monitoring_v3 render).
-                "frozen_at": completed_run.completed_at,
                 "snapshot": completed_run.snapshot,
             }
         )
@@ -1545,10 +1538,6 @@ def get_snapshot_api(request, run_id):
                 "has_snapshot": bool(run.snapshot),
                 "snapshot": run.snapshot,
                 "completed_at": run.completed_at,
-                # Legacy alias — pre-rename callers (e.g. mbw_monitoring_v3 render)
-                # read `frozen_at` off this response. New callers should use
-                # `completed_at`. Drop after the v3 render migrates.
-                "frozen_at": run.completed_at,
                 "status": run.status,
             }
         )

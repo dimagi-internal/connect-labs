@@ -34,6 +34,25 @@ def test_plan_summary_row_flags_unassigned_plan():
     assert row["assigned"] is False
 
 
+def test_plan_summary_row_counts_named_input_areas_as_wards():
+    # A two-arm study plan defines two named coverage wards. ward_count must report
+    # 2 so the workspace group card reads "2 wards", not "1" (the member-plan count).
+    plan = _Plan(
+        id=9,
+        data={"input_areas": [{"name": "Attakar", "arm": "intervention"}, {"name": "Gura", "arm": "comparison"}]},
+    )
+    assert serialization.plan_summary_row(plan)["ward_count"] == 2
+
+
+def test_plan_summary_row_ward_count_ignores_unnamed_areas():
+    plan = _Plan(id=10, data={"input_areas": [{"name": "Attakar"}, {"arm": "x"}, {}]})
+    assert serialization.plan_summary_row(plan)["ward_count"] == 1
+
+
+def test_plan_summary_row_ward_count_zero_without_input_areas():
+    assert serialization.plan_summary_row(_Plan(id=11))["ward_count"] == 0
+
+
 def test_plan_lookup_geometry_unions_cells_when_no_input_areas():
     plan = _Plan(work_areas=[{"geometry": _poly(0)}, {"geometry": _poly(2)}])
     geom = serialization.plan_lookup_geometry(plan)

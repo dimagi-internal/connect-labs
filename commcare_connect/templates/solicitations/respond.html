@@ -126,7 +126,11 @@
                 </div>
             {% endif %}
 
-            <!-- AI Coach Panel — always visible, inviting -->
+            <!-- AI Coach Panel — only when the solicitation has written-answer
+                 questions for it to review. A coverage-only application (just the
+                 area selector, no questions) has nothing to coach, so showing the
+                 panel would promise to review "draft answers" that don't exist. -->
+            {% if question_fields %}
             <div class="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl border border-indigo-200 overflow-hidden">
                 <div class="p-5">
                     <div class="flex items-start gap-4">
@@ -171,6 +175,7 @@
                     </div>
                 </div>
             </div>
+            {% endif %}
 
             <!-- Form Actions -->
             <div class="flex justify-end gap-4 pt-2 pb-8">
