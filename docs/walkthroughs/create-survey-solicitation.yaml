@@ -64,6 +64,19 @@ scenes:
     group card — reviewed, 2 wards, flagged "ready to solicit" with Create solicitation
     as its primary action — and clicks it; the app carries that group's approved plan
     straight into a new solicitation.
+  actions:
+  - kind: wait_for
+    target: css:a.primary-dark:has-text("Create solicitation")
+    note: the finished R6 study-group card's primary "Create solicitation" CTA paints
+  - kind: hold
+    seconds: 1.0
+    note: let the ready-to-solicit study card settle as the page hero
+  - kind: hover
+    target: css:a.primary-dark:has-text("Create solicitation")
+    seconds: 1.5
+    note: glide the cursor to the R6 group's primary "Create solicitation" CTA — the
+      next step is clicking it; we hover (not click) so the capture stays on the
+      portfolio that scene 1 is about
   title: Maya turns her finished study into a call for a firm
   url: /microplans/program/10008/
 - concept_claim: The create form pre-seeds the source plan into a Coverage areas panel
@@ -90,6 +103,22 @@ scenes:
     the R6 — Attakar x Gura coverage as a map (Attakar green / Gura blue ward polygons,
     not just names); she confirms the survey scope and the form is ready to publish
     with that plan attached.
+  actions:
+  - kind: wait_for
+    target: css:#sol-coverage-map canvas.mapboxgl-canvas
+    note: the pre-seeded Coverage-areas map paints the Attakar/Gura ward polygons
+  - kind: hover
+    target: css:#sol-coverage-map
+    seconds: 1.5
+    note: glide the cursor over the snapshotted Coverage-areas panel — Maya confirms
+      the exact coverage the firm will bid on
+  - kind: scroll_to
+    target: css:button[type=submit]:has-text("Create Solicitation")
+    note: bring the publish button into frame
+  - kind: hover
+    target: css:button[type=submit]:has-text("Create Solicitation")
+    seconds: 1.5
+    note: "rest the cursor on the publish button — NON-DESTRUCTIVE, we do NOT click; clicking would create a duplicate of solicitation #4495, so the hover just shows the form is ready to publish with the plan attached"
   title: Maya finds the plan already waiting as the coverage area
   url: /solicitations/create/?source_program_id=10008&source_group_id=4492
 - concept_claim: A survey firm reads the public solicitation and applies by selecting
@@ -153,6 +182,20 @@ scenes:
   provenance: S6
   show: On the responses page Maya sees the submitted application showing the selected
     coverage "R6 — Attakar x Gura", with View, Review, and Award actions ready.
+  actions:
+  - kind: wait_for
+    target: css:span:has-text("R6 — Attakar")
+    note: the response row's "Selected coverage" chip resolves to R6 — Attakar × Gura
+  - kind: hover
+    target: css:span:has-text("R6 — Attakar")
+    seconds: 1.5
+    note: glide the cursor onto the firm's selected-coverage chip — every application
+      tied to a concrete designed coverage area; NON-DESTRUCTIVE (read-only hover)
+  - kind: hover
+    target: css:a:has-text("Award")
+    seconds: 1.5
+    note: move to the Award action Maya is reaching for next — hover only, the award
+      itself happens in scene 5; reading the row does not mutate state
   title: Maya sees the firm tied to the coverage she designed
   url: /solicitations/4495/responses/?program_id=10008
 - concept_claim: Awarding the chosen firm records the decision and notifies the organization,
@@ -208,4 +251,8 @@ scenes:
     next step, not done for her today.
   title: Maya awards the firm and sees it was notified
   url: /solicitations/response/4496/award/?program_id=10008
+setup:
+  command: python scripts/walkthroughs/create-survey-solicitation/reset_award.py
+  rerun: per_render
+  timeout_seconds: 600
 why_brief: ../../.canopy/ddd/runs/create-survey-solicitation-2026-06-17-001/why_brief.yaml

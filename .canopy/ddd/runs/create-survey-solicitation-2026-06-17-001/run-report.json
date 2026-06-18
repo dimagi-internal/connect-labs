@@ -1,15 +1,92 @@
 {
-  "total": 10,
-  "ok": 7,
-  "failed": 3,
+  "total": 20,
+  "ok": 20,
+  "failed": 0,
   "actions": [
+    {
+      "kind": "wait_for",
+      "ok": true,
+      "target": "css:a.primary-dark:has-text(\"Create solicitation\")",
+      "value": null,
+      "note": "the finished R6 study-group card's primary \"Create solicitation\" CTA paints",
+      "elapsed_ms": 801,
+      "error_kind": null,
+      "error_message": null,
+      "scene_index": 1
+    },
+    {
+      "kind": "hold",
+      "ok": true,
+      "target": null,
+      "value": null,
+      "note": "let the ready-to-solicit study card settle as the page hero",
+      "elapsed_ms": 1002,
+      "error_kind": null,
+      "error_message": null,
+      "scene_index": 1
+    },
+    {
+      "kind": "hover",
+      "ok": true,
+      "target": "css:a.primary-dark:has-text(\"Create solicitation\")",
+      "value": null,
+      "note": "glide the cursor to the R6 group's primary \"Create solicitation\" CTA \u2014 the next step is clicking it; we hover (not click) so the capture stays on the portfolio that scene 1 is about",
+      "elapsed_ms": 1882,
+      "error_kind": null,
+      "error_message": null,
+      "scene_index": 1
+    },
+    {
+      "kind": "wait_for",
+      "ok": true,
+      "target": "css:#sol-coverage-map canvas.mapboxgl-canvas",
+      "value": null,
+      "note": "the pre-seeded Coverage-areas map paints the Attakar/Gura ward polygons",
+      "elapsed_ms": 209,
+      "error_kind": null,
+      "error_message": null,
+      "scene_index": 2
+    },
+    {
+      "kind": "hover",
+      "ok": true,
+      "target": "css:#sol-coverage-map",
+      "value": null,
+      "note": "glide the cursor over the snapshotted Coverage-areas panel \u2014 Maya confirms the exact coverage the firm will bid on",
+      "elapsed_ms": 2679,
+      "error_kind": null,
+      "error_message": null,
+      "scene_index": 2
+    },
+    {
+      "kind": "scroll_to",
+      "ok": true,
+      "target": "css:button[type=submit]:has-text(\"Create Solicitation\")",
+      "value": null,
+      "note": "bring the publish button into frame",
+      "elapsed_ms": 1301,
+      "error_kind": null,
+      "error_message": null,
+      "scene_index": 2
+    },
+    {
+      "kind": "hover",
+      "ok": true,
+      "target": "css:button[type=submit]:has-text(\"Create Solicitation\")",
+      "value": null,
+      "note": "rest the cursor on the publish button \u2014 NON-DESTRUCTIVE, we do NOT click; clicking would create a duplicate of solicitation #4495, so the hover just shows the form is ready to publish with the plan attached",
+      "elapsed_ms": 1832,
+      "error_kind": null,
+      "error_message": null,
+      "scene_index": 2
+    },
     {
       "kind": "wait_for",
       "ok": true,
       "target": "css:#sol-respond-map canvas.mapboxgl-canvas",
       "value": null,
       "note": "the coverage map paints the Attakar (green) + Gura (blue) ward polygons",
-      "elapsed_ms": 114,
+      "elapsed_ms": 106,
       "error_kind": null,
       "error_message": null,
       "scene_index": 3
@@ -20,7 +97,7 @@
       "target": null,
       "value": null,
       "note": "let the map settle and fit to the two wards",
-      "elapsed_ms": 1505,
+      "elapsed_ms": 1501,
       "error_kind": null,
       "error_message": null,
       "scene_index": 3
@@ -31,7 +108,7 @@
       "target": "css:#sol-plan-checklist label:has-text(\"R6 \u2014 Attakar\") input[type=checkbox]",
       "value": null,
       "note": "select the coverage area \u2014 synced two-way with the map; this enables Submit (\u22651 required)",
-      "elapsed_ms": 1253,
+      "elapsed_ms": 1322,
       "error_kind": null,
       "error_message": null,
       "scene_index": 3
@@ -42,19 +119,52 @@
       "target": null,
       "value": null,
       "note": "the R6 area is now selected and Submit is enabled",
-      "elapsed_ms": 1001,
+      "elapsed_ms": 1002,
       "error_kind": null,
       "error_message": null,
       "scene_index": 3
     },
     {
       "kind": "wait_for",
-      "ok": false,
+      "ok": true,
+      "target": "css:span:has-text(\"R6 \u2014 Attakar\")",
+      "value": null,
+      "note": "the response row's \"Selected coverage\" chip resolves to R6 \u2014 Attakar \u00d7 Gura",
+      "elapsed_ms": 19,
+      "error_kind": null,
+      "error_message": null,
+      "scene_index": 4
+    },
+    {
+      "kind": "hover",
+      "ok": true,
+      "target": "css:span:has-text(\"R6 \u2014 Attakar\")",
+      "value": null,
+      "note": "glide the cursor onto the firm's selected-coverage chip \u2014 every application tied to a concrete designed coverage area; NON-DESTRUCTIVE (read-only hover)",
+      "elapsed_ms": 1994,
+      "error_kind": null,
+      "error_message": null,
+      "scene_index": 4
+    },
+    {
+      "kind": "hover",
+      "ok": true,
+      "target": "css:a:has-text(\"Award\")",
+      "value": null,
+      "note": "move to the Award action Maya is reaching for next \u2014 hover only, the award itself happens in scene 5; reading the row does not mutate state",
+      "elapsed_ms": 1824,
+      "error_kind": null,
+      "error_message": null,
+      "scene_index": 4
+    },
+    {
+      "kind": "wait_for",
+      "ok": true,
       "target": "css:input[name=reward_budget]",
       "value": null,
       "note": "the award form with the firm summary (org name + coverage) has loaded",
-      "elapsed_ms": 12001,
-      "error_kind": "timeout",
+      "elapsed_ms": 13,
+      "error_kind": null,
       "error_message": null,
       "scene_index": 5
     },
@@ -64,30 +174,30 @@
       "target": null,
       "value": null,
       "note": "let Maya read the \"You're awarding\" summary before she commits",
-      "elapsed_ms": 1003,
+      "elapsed_ms": 1002,
       "error_kind": null,
       "error_message": null,
       "scene_index": 5
     },
     {
       "kind": "fill",
-      "ok": false,
+      "ok": true,
       "target": "css:input[name=reward_budget]",
       "value": "500000",
       "note": "optional budget for the awarded firm",
-      "elapsed_ms": 6001,
-      "error_kind": "target_not_found",
+      "elapsed_ms": 723,
+      "error_kind": null,
       "error_message": null,
       "scene_index": 5
     },
     {
       "kind": "click",
-      "ok": false,
+      "ok": true,
       "target": "css:button[type=submit]:has-text(\"Award\")",
       "value": null,
       "note": "award the firm \u2014 records the decision and notifies the organization",
-      "elapsed_ms": 6002,
-      "error_kind": "target_not_found",
+      "elapsed_ms": 1516,
+      "error_kind": null,
       "error_message": null,
       "scene_index": 5
     },
@@ -97,7 +207,7 @@
       "target": "text:has been notified",
       "value": null,
       "note": "the in-place confirmation \"Awarded to Health Bridge Nigeria \u2014 the organization has been notified\" renders",
-      "elapsed_ms": 15,
+      "elapsed_ms": 19,
       "error_kind": null,
       "error_message": null,
       "scene_index": 5
@@ -108,7 +218,7 @@
       "target": null,
       "value": null,
       "note": "settle on the confirmation + the \"Next step \u2014 not yet built\" panel",
-      "elapsed_ms": 1501,
+      "elapsed_ms": 1503,
       "error_kind": null,
       "error_message": null,
       "scene_index": 5
@@ -119,7 +229,7 @@
       "scene_index": 1,
       "title": "Maya turns her finished study into a call for a firm",
       "start_seconds": 0.0,
-      "duration_seconds": 3.277,
+      "duration_seconds": 5.187,
       "urls_visited": [
         "https://labs.connect.dimagi.com/microplans/program/10008/"
       ]
@@ -127,8 +237,8 @@
     {
       "scene_index": 2,
       "title": "Maya finds the plan already waiting as the coverage area",
-      "start_seconds": 3.277,
-      "duration_seconds": 3.849,
+      "start_seconds": 5.187,
+      "duration_seconds": 7.601,
       "urls_visited": [
         "https://labs.connect.dimagi.com/solicitations/create/?source_program_id=10008&source_group_id=4492&program_id=10008"
       ]
@@ -136,8 +246,8 @@
     {
       "scene_index": 3,
       "title": "Amina reads the open call and ticks the area she can staff",
-      "start_seconds": 7.126,
-      "duration_seconds": 4.842,
+      "start_seconds": 12.789,
+      "duration_seconds": 4.844,
       "urls_visited": [
         "https://labs.connect.dimagi.com/solicitations/4495/respond/?program_id=10008"
       ]
@@ -145,8 +255,8 @@
     {
       "scene_index": 4,
       "title": "Maya sees the firm tied to the coverage she designed",
-      "start_seconds": 11.968,
-      "duration_seconds": 2.23,
+      "start_seconds": 17.633,
+      "duration_seconds": 4.675,
       "urls_visited": [
         "https://labs.connect.dimagi.com/solicitations/4495/responses/?program_id=10008"
       ]
@@ -154,11 +264,22 @@
     {
       "scene_index": 5,
       "title": "Maya awards the firm and sees it was notified",
-      "start_seconds": 14.197,
-      "duration_seconds": 27.578,
+      "start_seconds": 22.308,
+      "duration_seconds": 5.609,
       "urls_visited": [
         "https://labs.connect.dimagi.com/solicitations/response/4496/award/?program_id=10008"
       ]
     }
-  ]
+  ],
+  "setup": {
+    "command": "python scripts/walkthroughs/create-survey-solicitation/reset_award.py",
+    "cwd": "/Users/jjackson/emdash/worktrees/connect-labs/emdash/solicitation-rntwj",
+    "rerun": "per_render",
+    "outputs": null,
+    "skipped": false,
+    "skip_reason": null,
+    "exit_code": 0,
+    "duration_seconds": 86.76,
+    "variables": {}
+  }
 }
