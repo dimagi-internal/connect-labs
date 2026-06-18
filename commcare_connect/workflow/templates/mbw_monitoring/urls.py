@@ -1,7 +1,7 @@
 from django.urls import path
 
 from commcare_connect.workflow.templates.mbw_monitoring import views
-from commcare_connect.workflow.templates.mbw_monitoring.flw_api import OpportunityFLWListAPIView
+from commcare_connect.workflow.views import OpportunityFLWListAPIView  # canonical home: workflow app
 
 app_name = "mbw"
 

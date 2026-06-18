@@ -667,21 +667,26 @@
       'bulk-regroup',
       'bulk-reassign',
       'btn-export',
+      'btn-apply-filters',
     ].forEach((id) => {
       const el = $(id);
       if (el) el.disabled = !hasWAs;
     });
-    ['group-strategy-card', 'assign-workers-card', 'bulk-card'].forEach(
-      (id) => {
-        const el = $(id);
-        if (el) {
-          el.classList.toggle('opacity-50', !hasWAs);
-          el.classList.toggle('pointer-events-none', !hasWAs);
-        }
-      },
-    );
+    [
+      'group-strategy-card',
+      'assign-workers-card',
+      'bulk-card',
+      'filter-card',
+    ].forEach((id) => {
+      const el = $(id);
+      if (el) {
+        el.classList.toggle('opacity-50', !hasWAs);
+        el.classList.toggle('pointer-events-none', !hasWAs);
+      }
+    });
     const hint = $('plan-tools-hint');
     if (hint) hint.classList.toggle('hidden', hasWAs);
+    if (typeof previewFilters === 'function') previewFilters();
   }
 
   // --- sampling overlay replay (load / create-in-place / regenerate) -----------
@@ -1874,6 +1879,8 @@
     // + Bulk regroup stay available for both.)
     $('group-strategy-card')?.classList.toggle('hidden', samp);
     $('sampling-group-note')?.classList.toggle('hidden', !samp);
+    // Post-creation exclusion filters are a coverage concept (grid cells).
+    $('filter-card')?.classList.toggle('hidden', samp);
     // Show/hide the per-boundary arm pills as we enter/leave two-arm sampling.
     try {
       adminBoundaries?.renderSelected?.();
@@ -1881,12 +1888,23 @@
   }
   on('btn-mode-coverage', 'click', () => setMode('coverage'));
   on('btn-mode-sampling', 'click', () => setMode('sampling'));
+  // Post-creation exclusion filters: live preview as inputs change, persist on Apply.
+  ['flt-min-roof', 'flt-exclude-isolated', 'flt-isolation-dist'].forEach((id) =>
+    on(id, 'input', previewFilters),
+  );
+  on('btn-apply-filters', 'click', applyFilters);
   // Clicking the suggestion fills the population field with the picked wards' total,
   // overriding whatever's there (the user asked for this number explicitly).
   on('cfg-pop-suggest', 'click', () => {
     const inp = $('cfg-population');
     const btn = $('cfg-pop-suggest');
     if (inp && btn && btn.dataset.pop) inp.value = btn.dataset.pop;
+  });
+  // Changing the population source re-totals the picked wards for that source.
+  on('cfg-pop-source', 'change', () => {
+    const inp = $('cfg-population');
+    if (inp) inp.value = ''; // let the new source's total pre-fill
+    refreshPopulationSuggestion();
   });
 
   function setArm(a) {
@@ -1928,17 +1946,30 @@
   // We sum it across the selected wards and offer it as a one-click fill for the
   // coverage population field, so visits are driven by real numbers instead of a
   // blind guess. The field stays freely editable (manual override always wins).
-  const pickedWardPops = new Map(); // boundaryId -> { pop, source, name }
+  // boundaryId -> { name, pops: {source -> number} }. `pops` merges the boundary's
+  // per-source bag (extra.populations) with its GeoPoDe under-5 (the population field).
+  const pickedWardPops = new Map();
+  const POP_SOURCE_LABELS = {
+    geopode_u5: 'GeoPoDe (under-5)',
+    worldpop_u5: 'WorldPop (under-5)',
+    meta_u5: 'Meta (under-5)',
+    worldpop_total: 'WorldPop (total)',
+    meta_total: 'Meta (total)',
+    grid3_v3_total: 'GRID3 v3 (total)',
+  };
+  const POP_SOURCE_ORDER = Object.keys(POP_SOURCE_LABELS);
 
   function recordWardPopulation(boundaryId, feature) {
     const f = feature || {};
-    if (f.population != null && !isNaN(+f.population)) {
-      pickedWardPops.set(boundaryId, {
-        pop: +f.population,
-        source: f.source || '',
-        name: f.name || '',
-      });
-    }
+    const pops = Object.assign({}, f.populations || {});
+    if (
+      pops.geopode_u5 == null &&
+      f.population != null &&
+      !isNaN(+f.population)
+    )
+      pops.geopode_u5 = +f.population;
+    if (Object.keys(pops).length)
+      pickedWardPops.set(boundaryId, { name: f.name || '', pops });
     refreshPopulationSuggestion();
   }
 
@@ -1947,23 +1978,50 @@
     refreshPopulationSuggestion();
   }
 
+  // Sources available across the picked wards, in canonical order.
+  function availablePopSources() {
+    const seen = new Set();
+    pickedWardPops.forEach((r) =>
+      Object.keys(r.pops).forEach((k) => seen.add(k)),
+    );
+    return POP_SOURCE_ORDER.filter((k) => seen.has(k));
+  }
+
   function refreshPopulationSuggestion() {
+    const sel = $('cfg-pop-source');
     const btn = $('cfg-pop-suggest');
-    if (!btn) return;
-    const rows = [...pickedWardPops.values()];
-    if (!rows.length) {
+    if (!sel || !btn) return;
+    const avail = availablePopSources();
+    // Rebuild the dropdown options (keep the current pick if still available).
+    const prev = sel.value;
+    sel.innerHTML =
+      '<option value="">— pick a population source —</option>' +
+      avail
+        .map((k) => `<option value="${k}">${POP_SOURCE_LABELS[k]}</option>`)
+        .join('');
+    if (avail.includes(prev)) sel.value = prev;
+    else if (avail.includes('geopode_u5')) sel.value = 'geopode_u5';
+    sel.parentElement.style.display = avail.length ? '' : 'none';
+
+    const src = sel.value;
+    if (!src) {
       btn.classList.add('hidden');
       return;
     }
-    const total = Math.round(rows.reduce((s, r) => s + r.pop, 0));
-    const sources = [...new Set(rows.map((r) => r.source).filter(Boolean))];
-    const srcLabel = sources.length === 1 ? sources[0] : 'mixed sources';
+    let total = 0;
+    let n = 0;
+    pickedWardPops.forEach((r) => {
+      if (r.pops[src] != null) {
+        total += r.pops[src];
+        n += 1;
+      }
+    });
+    total = Math.round(total);
     btn.dataset.pop = String(total);
-    btn.textContent = `Use ${total.toLocaleString()} (${srcLabel}, ${
-      rows.length
-    } ward${rows.length === 1 ? '' : 's'})`;
+    btn.textContent = `Use ${total.toLocaleString()} — ${
+      POP_SOURCE_LABELS[src]
+    } across ${n} ward${n === 1 ? '' : 's'}`;
     btn.classList.remove('hidden');
-    // Pre-fill only when the user hasn't typed their own number.
     const inp = $('cfg-population');
     if (inp && !String(inp.value || '').trim()) inp.value = total;
   }
@@ -1974,15 +2032,82 @@
   // for the filter + expected-visit math.
   function coverageConfig() {
     const pop = parseFloat($('cfg-population')?.value);
+    const sources = [...document.querySelectorAll('.cov-src-cb:checked')].map(
+      (c) => c.value,
+    );
+    const conf = parseFloat($('cfg-cov-min-confidence')?.value);
     return {
       cell_size_m: cellSizeM,
-      min_cell_roof_area_m2:
-        parseFloat($('cfg-min-cell-roof')?.value || '0') || 0,
-      exclude_isolated_singletons: !!$('cfg-exclude-isolated')?.checked,
-      isolation_dist_m:
-        parseFloat($('cfg-isolation-dist')?.value || '150') || 150,
+      // Empty/all-checked → null = every provider (the backend default).
+      sources: sources.length && sources.length < 3 ? sources : null,
+      min_confidence: isNaN(conf) ? null : conf,
+      // Generation produces ALL occupied cells; the exclusion filters are applied
+      // AFTER creation (the "Exclude work areas" card) so they can update live.
       population: isNaN(pop) || pop <= 0 ? null : pop,
     };
+  }
+
+  // ---- Post-creation exclusion filters (#7) --------------------------------
+  // Each coverage work area carries properties.roof_area_m2 + .dist_to_multi_m
+  // (persisted at creation). A work area is a filter match when its total rooftop
+  // area is below the threshold, or it's a lone building too far from any cluster.
+  const FILTER_REASON = 'auto-filter';
+  function filterParams() {
+    return {
+      minRoof: parseFloat($('flt-min-roof')?.value || '0') || 0,
+      isoOn: !!$('flt-exclude-isolated')?.checked,
+      isoDist: parseFloat($('flt-isolation-dist')?.value || '150') || 150,
+    };
+  }
+  function matchesExclusion(w, p) {
+    const props = w.properties || {};
+    const roof = parseFloat(props.roof_area_m2);
+    const dist = parseFloat(props.dist_to_multi_m);
+    if (p.minRoof > 0 && !isNaN(roof) && roof < p.minRoof) return true;
+    if (p.isoOn && w.building_count === 1 && !isNaN(dist) && dist > p.isoDist)
+      return true;
+    return false;
+  }
+  function previewFilters() {
+    const el = $('filter-preview');
+    if (!el) return;
+    const p = filterParams();
+    const n = (WAS || []).filter((w) => matchesExclusion(w, p)).length;
+    const total = (WAS || []).length;
+    el.textContent = total
+      ? `${n} of ${total} work areas would be excluded (${total - n} kept).`
+      : '';
+  }
+  async function applyFilters() {
+    const p = filterParams();
+    // Cells that should now be excluded vs auto-excluded cells that no longer match
+    // (filter loosened) → re-include. Manual exclusions (other reasons) are untouched.
+    const toExclude = (WAS || [])
+      .filter((w) => w.status !== 'EXCLUDED' && matchesExclusion(w, p))
+      .map((w) => w.id);
+    const toInclude = (WAS || [])
+      .filter(
+        (w) =>
+          w.status === 'EXCLUDED' &&
+          String(w.excluded_reason || '').startsWith(FILTER_REASON) &&
+          !matchesExclusion(w, p),
+      )
+      .map((w) => w.id);
+    if (!toExclude.length && !toInclude.length) {
+      $('filter-status').textContent = 'No change.';
+      return;
+    }
+    if (toInclude.length)
+      await edit({ action: 'unexclude', wa_ids: toInclude });
+    if (toExclude.length)
+      await edit({
+        action: 'exclude',
+        wa_ids: toExclude,
+        reason: `${FILTER_REASON}: rooftop<${p.minRoof || 0}m² / isolated`,
+      });
+    $(
+      'filter-status',
+    ).textContent = `Excluded ${toExclude.length}, re-included ${toInclude.length}.`;
   }
 
   // Summarise the coverage preview's exclusion + visit stats under the controls.

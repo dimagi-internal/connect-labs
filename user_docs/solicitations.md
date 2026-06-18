@@ -159,3 +159,6 @@ No — applicants select only the areas they can cover. They must select at leas
 
 **What does it mean that a plan is selected "as a whole unit"?**
 If a micro-plan bundles multiple wards, or includes both intervention and control areas, an applicant who selects that plan is committing to all of it. There is no option to select only part of a plan.
+
+**I clicked "Create solicitation" from a plan and got a "Failed to create solicitation" error — what should I do?**
+This error could previously occur on certain Labs-managed study programs. It has been fixed, so clicking **Create solicitation** from a plan on any program should now work. If you still see this error, try refreshing the page and attempting again. If the problem persists, contact your Labs administrator.

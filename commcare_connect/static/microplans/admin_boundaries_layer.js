@@ -540,6 +540,7 @@
         ref,
         area_km2: a.area_km2,
         population: a.population != null ? a.population : null,
+        populations: a.populations || null,
       };
     }
     // Fetch geometry + add a boundary to the selected set under a given arm. The
@@ -1369,12 +1370,14 @@
             (d.areas || []).forEach((a) =>
               items.push({
                 desc: rowToDesc(a),
-                // Show the parent (LGA / state) so same-named wards across different
-                // LGAs/states are distinguishable.
+                // Lead with the admin hierarchy (e.g. "Dabi — Nigeria › Jigawa ›
+                // Gwiwa") so same-named wards across different LGAs/states are
+                // distinguishable; fall back to the level label only when no chain.
                 label:
                   `${a.name}` +
-                  (a.parent_name ? ` — ${a.parent_name}` : '') +
-                  ` · ${a.level_label || 'ADM' + a.level}` +
+                  (a.parent_name
+                    ? ` — ${a.parent_name}`
+                    : ` · ${a.level_label || 'ADM' + a.level}`) +
                   (a.area_km2 ? ` · ${Math.round(a.area_km2)} km²` : ''),
               }),
             );
