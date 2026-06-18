@@ -1,215 +1,182 @@
 schema_version: 1
 rubric_name: user-artifact
-audience: feature user
+ran_at: '2026-06-18T21:07:52.448387+00:00'
+audience:
+  name: feature user
+  decision: deciding whether this feature solves their day-to-day problem
 domain: create-survey-solicitation
-overall_rule: lowest
-ran_at: '2026-06-18T14:45:00Z'
-run_dir: /Users/jjackson/emdash/worktrees/connect-labs/emdash/solicitation-rntwj/.canopy/ddd/runs/create-survey-solicitation-2026-06-17-001
-judge: canopy:visual-judge
-overall_score: 3
-verdict: fail
-scene_scores:
-  - scene: 1
-    url: https://labs.connect.dimagi.com/microplans/program/10008/
-    score: 3
+artifact_kind: product_walkthrough
+overall_rule: lowest (weakest-link across scenes = the lowest scene's weighted overall)
+overall_score: 3.25
+weakest_scene: scene_2
+verdict: warn
+self_assessed: false
+scenes:
+  scene_1:
+    url: /microplans/program/10008/
+    title: Maya turns her finished study into a call for a firm
     dimensions:
       task_completion:
         score: 4
+        weight: 0.4
         justification:
-          One ready study with a prominent, correctly-labeled blue "Create solicitation" primary
-          CTA makes the entry point findable first-try; minor friction is the green "READY TO SOLICIT" pill
-          and green card outline pulling the eye before the actual blue CTA.
+          "Target task (turn a finished study into a solicitation) completes first try —
+          the filled blue 'Create solicitation' is the obvious primary CTA on a card flagged READY TO
+          SOLICIT. Minor friction: the program is shown only as raw 'Program #10008', not a human name."
       clarity:
         score: 4
+        weight: 0.35
         justification:
-          "Copy and CTA self-explain the recruit-a-firm flow (\"Finished study \u2014 ready\
-          \ to recruit a survey firm against this coverage\"), but \"2 wards\" is a bare metric and \"intervention\
-          \ + control sampled together\" is research shorthand a non-technical PM parses with a beat of\
-          \ thought."
+          "'READY TO SOLICIT', 'reviewed', the green-check 'Finished study — ready to
+          recruit a survey firm against this coverage', and the 'Create solicitation' CTA all self-explain.
+          One affordance could be sharper: the intro paragraph defines 'bundle', a concept not used
+          on this card, adding noise."
       trust:
         score: 3
+        weight: 0.25
         justification:
-          "Data reads as genuine production (Program #10008, R6 \u2014 Attakar \xD7 Gura) and\
-          \ status signals are internally consistent, but \"reviewed\" and \"Finished study\" carry no provenance\
-          \ (reviewed by whom, when) so a PM may wonder how current \"finished\" is."
+          "'reviewed' + green check + '2 wards' give reasonable trust, but the card carries
+          no ward names (Attakar/Gura appear only downstream), no 'as of' recency, and the program is
+          a bare numeric ID — a feature user may wonder how fresh/which program this is."
         fix_recommendation:
-          "Attach a provenance line to the status \u2014 e.g. \"reviewed by <name> \xB7\
-          \ <date>\" next to the \"reviewed\" label \u2014 and add a tooltip on \"2 wards\" giving the expected/target\
-          \ ward count for context."
+          "On the R6 card show the ward names (Attakar, Gura) and a short 'reviewed
+          <date>' stamp, and render the program by name rather than 'Program #10008'."
         fix_kind: mechanical
-  - scene: 2
-    url: https://labs.connect.dimagi.com/solicitations/create/?source_program_id=10008&source_group_id=4492&program_id=10008
-    score: 3
+    weighted_overall: 3.75
+    lowest_dimension_score: 3
+  scene_2:
+    url: /solicitations/create/?source_program_id=10008&source_group_id=4492
+    title: Maya finds the plan already waiting as the coverage area
+    dimensions:
+      task_completion:
+        score: 3
+        weight: 0.4
+        justification:
+          Title and Scope-of-Work are pre-seeded and the Coverage-areas panel is attached,
+          so Maya only sets scope and publishes — but the long form (Description, Dates, Estimated Scale,
+          Contact Email, Application Questions, Evaluation Criteria) shows many empty fields with no clear
+          indicator of which are required to publish, so completing it takes trial-and-error.
+        fix_recommendation:
+          Mark which fields are required to publish (or collapse optional sections)
+          so the owner knows the minimum to publish a solicitation seeded from a plan.
+        fix_kind: mechanical
+      clarity:
+        score: 3
+        weight: 0.35
+        justification:
+          The 'Coverage areas (from micro-plan) · Attached' panel, the snapshot note, and
+          the map legend are clear, but at this full-page zoom the form is dense and the hierarchy of
+          'what I must fill vs. what's optional' needs a moment of thought.
+        fix_recommendation:
+          'Tighten the create-form hierarchy: lead with the pre-seeded title + coverage
+          panel and visually de-emphasize/collapse the empty optional sections so the publish path is
+          obvious at a glance.'
+        fix_kind: mechanical
+      trust:
+        score: 4
+        weight: 0.25
+        justification:
+          "The snapshot note ('Snapshotted at creation — later plan edits won't change
+          this solicitation') is a strong, explicit provenance+freshness signal, backed by a real Mapbox
+          map of the two arms and '2 wards · 840 work areas'. One signal missing: no visible source-plan
+          id/link to confirm exactly which plan was snapshotted."
+    weighted_overall: 3.25
+    lowest_dimension_score: 3
+  scene_3:
+    url: /solicitations/4495/respond/
+    title: Amina reads the open call and ticks the area she can staff
     dimensions:
       task_completion:
         score: 4
+        weight: 0.4
         justification:
-          'Form is completable and the coverage area verifiably carried over (Attached badge
-          + "Snapshotted at creation" note + rendered named-ward map give the PM their confirmation); one
-          minor friction: that confirmation sits below a wall of empty form fields so it takes a scan to
-          find.'
+          "Amina selects coverage via the map or the synced checklist and Submit enables
+          on first try with no help; the legend's move to top-left no longer clips the Mapbox logo. One
+          minor cosmetic: the single checklist row under the map reads slightly disconnected from it."
       clarity:
-        score: 3
+        score: 4
+        weight: 0.35
         justification:
-          "The micro-plan coverage card stacks \"R6 \u2014 Attakar \xD7 Gura \xB7 Attakar\"\
-          , \"2 wards / 840 work areas\", \"Attakar \xB7 Gura\", and \"Study arms: Comparison/Intervention\"\
-          \ in one cramped block \u2014 repeating the same names 3-4x and showing the arm legend twice \u2014\
-          \ so a non-technical PM gets a partial \"wait, what am I reading?\" (5-second wrong read)."
-        fix_recommendation:
-          "Restructure the coverage card into three labeled rows \u2014 plan name (once),\
-          \ a single arm key with one color swatch each, and ward / work-area counts with a denominator\
-          \ \u2014 and drop the duplicate \"Study arms\" line and the trailing \"\xB7 Attakar\"."
-        fix_kind: redesign
+          "The instruction 'Each option is a whole study — selecting it covers all of its
+          wards together. Select one or more — required to submit' plus the top-left Intervention/Comparison
+          legend and on-map ward labels make the action self-explanatory to a non-technical firm director.
+          One affordance could be sharper: the lone checklist-row styling."
       trust:
         score: 4
+        weight: 0.25
         justification:
-          "Excellent provenance for the carried-over data (Attached badge, \"Snapshotted at\
-          \ creation \u2014 later plan edits won't change this solicitation\", real named wards on a real\
-          \ map, real program/group IDs in the URL); one missing signal is that \"840 work areas\" has no\
-          \ denominator or context to confirm the count is right."
-  - scene: 3
-    url: https://labs.connect.dimagi.com/solicitations/4495/respond/?program_id=10008
-    score: 3
+          Real Mapbox basemap with real place names (Manchok, Rim), named Attakar/Gura ward
+          polygons, and a color legend make the coverage on offer unambiguous and clearly tied to the
+          call; a firm director can see exactly what they'd be staffing.
+    weighted_overall: 4.0
+    lowest_dimension_score: 4
+  scene_4:
+    url: /solicitations/4495/responses/
+    title: Maya sees the firm tied to the coverage she designed
     dimensions:
       task_completion:
         score: 4
+        weight: 0.4
         justification:
-          'Respondent reads the call, sees the area on a real map, ticks the single whole-study
-          option, and submits first-try; one minor friction: the prompt says "Select one or more" but only
-          one indivisible study option exists, so a firm wanting to staff only Attakar finds no sub-area
-          to pick.'
+          "Maya opens the responses and immediately sees the firm tied to her exact coverage
+          via the green 'SELECTED COVERAGE · R6 — Attakar × Gura' pill — the loop-closing payoff lands
+          first try. Minor: the empty Recommendation/Score columns add noise to the row."
       clarity:
-        score: 3
+        score: 4
+        weight: 0.35
         justification:
-          "Understandable with a moment of thought, but three parallel naming systems \u2014\
-          \ legend \"Intervention/Comparison\" vs map \"Attakar/Gura\" vs row \"R6 \u2014 Attakar \xD7 Gura\"\
-          \ \u2014 must be reconciled for one selection, and the legend box reads as clipped/overlapping\
-          \ the Mapbox attribution."
-        fix_recommendation:
-          Relabel the map legend to the area names ("Attakar"/"Gura") matching the checkbox
-          instead of study-design terms "Intervention/Comparison", and ensure the legend box renders fully
-          without clipping or overlapping the attribution.
-        fix_kind: mechanical
+          "Columns are labelled and the 'SELECTED COVERAGE' pill is self-explanatory, tying
+          the application to a concrete designed area. One affordance could be sharper: the '—'/'-'
+          in Recommendation and Score read as 'is something missing?'"
       trust:
         score: 3
+        weight: 0.25
         justification:
-          Real map with named wards and real admin boundaries and no placeholder data, but
-          the clipped legend overlapping the Mapbox logo looks like an unfinished render, and "Round 6"
-          carries no provenance for why it is round six.
+          Real org name, real contact email, a concrete coverage pill resolved from the snapshot,
+          and a submit date give reasonable trust — but the two empty Recommendation/Score columns make
+          a reviewer wonder whether the data is incomplete or the scoring step was skipped.
         fix_recommendation:
-          Render the legend fully without clipping/attribution overlap, and add a one-line
-          provenance subtitle for the call (dates / what Round 6 covers).
+          Either populate Recommendation/Score, or hide/label those columns as 'not
+          scored yet' so empty cells don't read as missing data on an awarded response.
         fix_kind: mechanical
-  - scene: 4
-    url: https://labs.connect.dimagi.com/solicitations/4495/responses/?program_id=10008
-    score: 4
+    weighted_overall: 3.75
+    lowest_dimension_score: 3
+  scene_5:
+    url: /solicitations/response/4496/award/
+    title: Maya awards the firm and sees it was notified (already-awarded confirmation)
     dimensions:
       task_completion:
         score: 4
+        weight: 0.4
         justification:
-          "Manager opens the list and immediately sees the awarded firm (Health Bridge Nigeria)\
-          \ and its tied coverage (R6 \u2014 Attakar \xD7 Gura); completes the task first-try \u2014 would\
-          \ be a 5, but the send-test \"NO\" (residual glyph inconsistency) caps it at 4 per the sanity\
-          \ floor."
+          "The award outcome is fully realized as the task result: a green 'Awarded to Health
+          Bridge Nigeria — The organization has been notified' banner, a complete summary, and an honest
+          'Next step — not yet built' panel bounding what's deferred. Capped from 5 by the CEO-send
+          gate: post-award the primary next action is ambiguous ('Back to responses' vs 'View response'
+          are both low-emphasis)."
       clarity:
         score: 4
+        weight: 0.35
         justification:
-          "All three prior confusions are genuinely fixed \u2014 RECOMMENDATION now shows \"\
-          \u2014\" (no longer duplicating STATUS \"Awarded\"), ACTIONS is a muted grey \"\u2713 Awarded\"\
-          \ status rather than a button-looking element, and the header badge now reads \"\U0001F3C6 Awarded\"\
-          \ not \"Active\"; the one residual sharpenable element is the SCORE column rendering a bare ASCII\
-          \ \"-\" next to RECOMMENDATION's em-dash \"\u2014\"."
-        fix_recommendation:
-          "Render the empty SCORE cell with the same em-dash placeholder (\"\u2014\")\
-          \ used by RECOMMENDATION so the two empty columns are visually identical."
-        fix_kind: mechanical
+          "Every field self-explains (Awarded organization, Contact, Survey call, Award budget,
+          Coverage area, Awarded & notified) and the dashed 'Next step — not yet built' panel is plain-language
+          and honest about the planning-vs-execution boundary. One nit: which button is the intended next
+          step isn't visually signalled."
       trust:
         score: 4
+        weight: 0.25
         justification:
-          "Sourcing is unambiguous (real org, real submitter email amina.okafor@healthbridge.ng,\
-          \ concrete coverage R6 \u2014 Attakar \xD7 Gura, submission date Jun 18 2026) with zero placeholder\
-          \ data; the one missing provenance signal is an award / last-updated timestamp (the view shows\
-          \ submission date, not when the award was recorded)."
-  - scene: 5
-    url: https://labs.connect.dimagi.com/solicitations/response/4496/award/?program_id=10008
-    score: 3
-    dimensions:
-      task_completion:
-        score: 4
-        justification:
-          "The PM fully confirms the award went through (green hero), sees the firm was notified\
-          \ (timestamped notification line to Health Bridge Nigeria), and understands what happens next\
-          \ (honest \"Next step \u2014 not yet built\" disclosure) first-try; one minor friction: no award\
-          \ ID/reference to cite leaves the audit-trail loop slightly incomplete."
-      clarity:
-        score: 3
-        justification:
-          Understandable with a moment's thought, but the "Survey call" field label is vocab
-          drift from the "solicitation"/"response" language the rest of the flow uses and forces the PM
-          to mentally map it, and "Coverage area" redundantly restates the round/area already in the Survey-call
-          value.
-        fix_recommendation:
-          Rename the "Survey call" field to "Solicitation" (or "Solicitation title") to
-          match the vocab used elsewhere in the flow, and either drop "Coverage area" or remove the duplicated
-          round/area from the Survey-call value so the two fields do not overlap.
-        fix_kind: mechanical
-      trust:
-        score: 4
-        justification:
-          Real named org, real-shaped contact email, an explicit notification timestamp naming
-          the recipient, and an honest "not yet built" disclosure all read as genuine production data with
-          no placeholders; one provenance gap is the timestamp lacking a timezone and the absence of an
-          award reference ID to anchor the record.
-summary:
-  "Re-rendered run. Scene 4 clarity recovered from the prior round's 3 to a 4 \u2014 all three\
-  \ PR #647 fixes are confirmed live in scene_4.png: RECOMMENDATION now shows \"\u2014\" (no longer duplicating\
-  \ STATUS), the ACTIONS \"Awarded\" is now a muted grey \"\u2713\" status rather than a button-looking\
-  \ element, and the header badge reads \"\U0001F3C6 Awarded\" not \"Active\". Scene 4 itself now scores\
-  \ 4/4/4 (overall 4). However, the run still does NOT converge on the user-artifact judge: the weakest-link\
-  \ aggregate is task_completion 4 / clarity 3 / trust 3 \u2192 overall 3 (FAIL; convergence bar is 4.0).\
-  \ The fix moved off the specific scene that gated the prior round, but clarity is now floored by scenes\
-  \ 2, 3 and 5 (cramped/redundant coverage-card legend; three parallel area-naming systems plus a clipped\
-  \ map legend; \"Survey call\" vocab drift with a redundant Coverage area field), and trust is floored\
-  \ by scenes 1 and 3 (missing review provenance; clipped-legend / no-round-provenance). No placeholder/test\
-  \ data anywhere \u2014 all records are real production entities \u2014 so the residual gaps are clarity\
-  \ and provenance polish, not fabricated data. Five mostly-mechanical fixes (one S2 redesign) would clear\
-  \ the clarity and trust floors to 4 and converge the run."
-dimensions:
-  task_completion:
-    score: 4
-    weight: 0.4
-    justification:
-      Every scene's target task is completable first-try with at most one named minor friction
-      (status pill out-competing the CTA in S1, the attached-coverage confirmation buried below empty
-      fields in S2, the "select one or more" / single-option mismatch in S3, the residual glyph in S4
-      capping it from 5, the missing award ID in S5). Weakest scene score is 4; no scene drops to trial-and-error
-      or assistance.
-  clarity:
-    score: 3
-    weight: 0.35
-    justification:
-      "Weakest-link is 3, set by three scenes: S2's cramped, triply-redundant coverage-card\
-      \ legend (5-second wrong read), S3's three parallel naming systems (Intervention/Comparison vs Attakar/Gura\
-      \ vs R6 \u2014 Attakar \xD7 Gura) plus the clipped legend, and S5's \"Survey call\" vocab drift\
-      \ from \"solicitation\" with a redundant \"Coverage area\" field. Scene 4's clarity recovered to\
-      \ 4 (all three PR #647 fixes confirmed) but cannot lift the floor."
-    fix_recommendation:
-      "Land three fixes: (S2) restructure the coverage card into one plan-name row +\
-      \ a single arm key + counts with a denominator, dropping the duplicate \"Study arms\" line and trailing\
-      \ \"\xB7 Attakar\"; (S3) relabel the map legend to the area names (Attakar/Gura) matching the checkbox\
-      \ and render it un-clipped; (S5) rename \"Survey call\" to \"Solicitation\" and de-duplicate the\
-      \ \"Coverage area\" field."
-    fix_kind: options
-  trust:
-    score: 3
-    weight: 0.25
-    justification:
-      "Weakest-link is 3, set by S1 (status asserted \"reviewed\"/\"finished\" with no by-whom/when\
-      \ provenance) and S3 (clipped legend overlapping the Mapbox attribution reads as an unfinished render,\
-      \ and \"Round 6\" lacks provenance). All data is real production data \u2014 no placeholders \u2014\
-      \ but recency/provenance signals are thin in those two scenes."
-    fix_recommendation:
-      "Add a provenance line to the S1 study status (\"reviewed by <name> \xB7 <date>\"\
-      ), and in S3 render the legend fully without attribution overlap plus add a one-line provenance\
-      \ subtitle for the call (dates / what Round 6 covers)."
-    fix_kind: mechanical
+          Provenance and recency are unambiguous — named org and contact, ₦500,000 budget
+          consistently formatted, concrete coverage, and an exact 'Jun 18, 2026 16:56 — notification sent'
+          timestamp, plus an honest deferral of the un-built step. Strongest trust scene; capped from
+          5 only by the send-test gate (no dimension reaches 5 when the binary send test is NO).
+    weighted_overall: 4.0
+    lowest_dimension_score: 4
+notes:
+  - 'Judged as product_walkthrough: product chrome (nav, breadcrumbs, Select Context, account menu) is grounding,
+    not penalized.'
+  - Scene 3 legend moved bottom-left -> top-left; it no longer clips the Mapbox logo and the scene reads
+    cleanly (4/4/4).
+  - Scene 5 judged in already-awarded confirmation state per instruction; the absent form is expected and
+    the confirmation is treated as the task outcome.
+  - All fix findings are fix_kind=mechanical; no options/redesign findings surfaced.

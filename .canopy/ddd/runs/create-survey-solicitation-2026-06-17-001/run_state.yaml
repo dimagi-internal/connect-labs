@@ -2,188 +2,237 @@ auto_iterate_next_action: stop_unclear
 auto_iterate_reason: 1 options/redesign finding(s) — need a user pick.
 findings:
   - detail:
-      The arm legend's second row ('Comparison', blue swatch) is CLIPPED at the
-      legend box's bottom edge and overlaps the Mapbox attribution wordmark, so the
-      blue swatch + label are cut off / hard to read. The color key that decodes the
-      two study arms — the load-bearing visual on this interactive coverage map — is
-      broken on screen. Distinct saturated green/blue ward polygons and clean buttons
-      keep it from a 1, but a clipped legend on the central control is a real, pointable
-      defect (max 2). This is the weakest-link driver for the whole run.
-    dimension: visual_polish
-    fix_kind: mechanical
-    fix_recommendation:
-      "Give the legend control enough height to show BOTH rows (Intervention
-      green / Comparison blue) fully, and offset it vertically off the Mapbox attribution
-      logo (move the legend to a top corner, or push attribution to the opposite corner).
-      Secondary: add a text halo to the 'Attakar'/'Gura' map labels for projector
-      legibility and reflow the helper text so 'required to submit' does not strand
-      on its own line."
-    route: PRODUCT
-    scene: 3 — Amina reads the open call and ticks the area she can staff
-    severity: medium
-  - detail:
-      An outsider can state what+why in one sentence and a concrete role (study
-      planner) is named, but the 'Snapshotted' framing needs the helper text to parse
-      — clear to the familiar, not self-evident to a cold outsider. Held at the default
-      3.
+      Score 3. The portfolio opening hedges with a subtitle 'before any opportunity
+      is live' that signals this is pre-operational, and the intro paragraph describes
+      a 'bundle' concept ('A bundle offers a survey firm a read-only set of existing
+      plans — tick draft plans below, then group them') for which no element exists
+      on this surface. A cold outsider gets what-but-not-why-now and asks 'where is
+      the bundle?'. Clear to someone familiar with the M&E survey-recruitment space;
+      default 3 holds.
     dimension: concept_clarity
     fix_kind: mechanical
     fix_recommendation:
-      Add a one-line plain-language gloss for 'Snapshotted at creation'
-      (e.g. 'frozen copy — later plan edits won't change this call') inline next to
-      the Attached pill so the freeze concept lands without reading the full helper
-      paragraph.
+      Drop or reframe the 'before any opportunity is live' subtitle
+      hedge, and remove the 'bundle' sentence from the intro paragraph since no bundle
+      is shown — describe only what is on screen, so a cold viewer reads 'turn a finished
+      study into a call for a firm right here' without an unexplained concept.
     route: CONCEPT
-    scene: 2 — Maya finds the plan already waiting as the coverage area
+    scene: 1 — Maya turns her finished study into a call for a firm
     severity: low
   - detail:
-      The load-bearing coverage map renders well (two distinct saturated ward
-      fills, named labels, real basemap, arm legend present), but the Comparison legend
-      row collides with the Mapbox attribution wordmark and the footer arm chip ('Comparison
-      | Intervention') is plain text not color-keyed to the green/blue fills — functional
-      but unremarkable. Full-page strip flagged as a capture artifact, not deducted.
-    dimension: visual_polish
+      Score 3. The core input->output chain is coherent (finished study -> 'Create
+      solicitation' carries the plan), but a dead-weight 'Open study' sibling action
+      sits next to the primary CTA with no affordance disambiguating them, five competing
+      top controls ('Compare selected', '+ Bulk paste list', '+ New plan', '+ New study',
+      '+ Group selected plans') crowd one card, and the intro references a 'Group selected
+      plans'/bundle affordance with no tickable draft plans visible to act on.
+    dimension: design_soundness
     fix_kind: mechanical
     fix_recommendation:
-      Lift the map legend clear of the Mapbox attribution wordmark
-      (top-corner overlay or pad above attribution), color-key the footer arm chip to
-      the green/blue map fills, and reconcile arm ordering between legend (Intervention->Comparison)
-      and chip ('Comparison | Intervention').
-    route: PRODUCT
-    scene: 2 — Maya finds the plan already waiting as the coverage area
-    severity: low
-  - detail:
-      In-frame flow signals are present but ordinary — an 'Attached' status pill,
-      'Respondents select the areas they can cover', and a clear Cancel / Create Solicitation
-      terminal action — with no visible progress, streaming, or transition cue. Rough
-      edges at the default 3.
-    dimension: motion_friction
-    fix_kind: mechanical
-    fix_recommendation:
-      Add a small 'frozen / read-only' affordance (or disable the
-      +/- map zoom) to reinforce the 'snapshotted' claim, so the interactive map does
-      not visually undercut the frozen-coverage message.
-    route: PRODUCT
-    scene: 2 — Maya finds the plan already waiting as the coverage area
-    severity: low
-  - detail:
-      Functional and clean with consistent buttons and a well-aimed green highlight,
-      but ~55% of the viewport below the single study card is dead whitespace (only
-      one card renders, page reads near-empty), the heading hierarchy is flat, four
-      redundant status signals stack on one card (STUDY tag, READY TO SOLICIT pill,
-      'reviewed' label, green-check 'Finished study' sentence), and a stray mouse cursor
-      is captured over the 'Microplan portfolio' heading.
-    dimension: visual_polish
-    fix_kind: options
-    fix_recommendation:
-      "Tighten the portfolio surface so the finished-study card is
-      not stranded: either expand/preview the 'Candidate plans in progress (9)' list
-      inline OR render the cards in a denser grid to kill the empty frame and give the
-      finished study peer context. Collapse the four redundant per-card status signals
-      into one clear state badge. Re-capture without the stray cursor."
+      Demote 'Open study' to a text link so 'Create solicitation'
+      is the single clear primary action, and hide the 'Group selected plans'/bundle
+      language until at least one draft plan is actually tickable on this surface.
     route: PRODUCT
     scene: 1 — Maya turns her finished study into a call for a firm
     severity: low
   - detail:
-      Advisory / non-blocking. Finished/reviewed state, the one-click 'Create
-      solicitation' button, and stay-in-workspace are all shown in-frame, but the 'bundle
-      / tick draft plans' half of the helper paragraph describes a flow not visible
-      anywhere in the frame, and 'carries that plan as the source' is implied but not
-      visually confirmed (no source preview).
+      Score 3. Functional and clean with consistent buttons and a well-aimed green
+      card highlight, but the card stacks four redundant 'ready' signals (STUDY tag,
+      READY TO SOLICIT pill, 'reviewed' label, green-check 'Finished study' sentence),
+      disabled buttons ('Compare selected', 'Group selected plans') are not visually
+      distinguished from active ones, and the lone finished-study card is stranded with
+      the 'Candidate plans in progress (9)' list collapsed, leaving most of the viewport
+      empty.
+    dimension: visual_polish
+    fix_kind: mechanical
+    fix_recommendation:
+      Collapse the four redundant per-card status signals into one
+      clear 'READY TO SOLICIT' badge, give disabled buttons a clearly muted style, and
+      surface the collapsed 9 candidate plans (inline preview or denser grid) so the
+      portfolio is not mostly blank below the one card.
+    route: PRODUCT
+    scene: 1 — Maya turns her finished study into a call for a firm
+    severity: low
+  - detail:
+      Score 3 — static-frame floor. No spinner, 404, or dead-end is visible; the
+      judge held the rubric default of 3 because a single still offers no positive motion
+      evidence. This is a capture-shape floor shared by all five scenes, not a product-friction
+      defect.
+    dimension: motion_friction
+    fix_kind: mechanical
+    fix_recommendation:
+      No product change required for friction per se; if a richer
+      signal is wanted, capture a short transition (card click -> create form) so the
+      one-click plan->solicitation flow is shown in motion rather than inferred from
+      a still.
+    route: PRODUCT
+    scene: 1 — Maya turns her finished study into a call for a firm
+    severity: low
+  - detail:
+      Score 3. The Coverage-areas panel renders a REAL map with two ward polygons
+      (not labels-only), a top-left legend, zoom control, basemap attribution, and the
+      R6 data row — but the green(Intervention)/blue(Comparison) arm fills read as a
+      similar muted teal at this scale, so the arm assignment the legend promises (the
+      whole point of a DiD coverage panel) is not legibly delivered. A duplicate 'Study
+      arms' chip row also lists the arms in the opposite order from the legend. Full-page
+      strip flagged once as a capture artifact, not deducted.
+    dimension: visual_polish
+    fix_kind: mechanical
+    fix_recommendation:
+      Give the two arms saturated, clearly distinct fills (a true
+      green for Intervention, a true blue for Comparison) with on-polygon labels so
+      the arm assignment is legible at the real viewport, and remove the duplicate 'Study
+      arms' chip row or align its order to the legend (Intervention -> Comparison).
+    route: PRODUCT
+    scene: 2 — Maya finds the plan already waiting as the coverage area
+    severity: low
+  - detail:
+      Score 3 — static-frame floor. No spinner, 404, or transition jank visible;
+      the judge held the rubric default of 3 because a single still offers no positive
+      motion evidence. Capture-shape floor shared across all scenes, not a friction
+      defect.
+    dimension: motion_friction
+    fix_kind: mechanical
+    fix_recommendation:
+      No product change required for friction per se; optionally add
+      a small 'frozen / read-only' affordance to the snapshot map so the 'snapshotted
+      at creation' claim is reinforced rather than implied.
+    route: PRODUCT
+    scene: 2 — Maya finds the plan already waiting as the coverage area
+    severity: low
+  - detail:
+      "Score 3. The map<->checklist affordance is not a clean 1:1: the map exposes
+      two visibly distinct arms (Attakar/Gura) but the checklist collapses them into
+      a single 'R6 — Attakar × Gura' row, so 'click an area on the map OR tick it
+      below' does not read as a coherent mapping, and the 'blocked until >=1 selected'
+      Submit-gating rule is not signaled in-frame (no '1 area selected — ready to submit'
+      state, no enabled/disabled cue on Submit). (The arm legend itself is correct —
+      see visual_polish, score 4, the prior-pass clip regression is resolved.)"
+    dimension: design_soundness
+    fix_kind: options
+    fix_recommendation:
+      Make the map<->checklist a clean 1:1 affordance — either render
+      one checklist row per selectable area, OR clearly label the single row as 'whole
+      study = both arms' — and surface an explicit 'N area(s) selected — ready to submit'
+      state tied to the Submit button so the >=1-required gating is visible. (Two paths;
+      needs a product pick.)
+    route: PRODUCT
+    scene: 3 — Amina reads the open call and ticks the area she can staff
+    severity: low
+  - detail:
+      Score 3 — static-frame floor. No spinner, 404, or dead-end visible; default
+      3 held because a single still offers no positive motion evidence. Capture-shape
+      floor shared across all scenes.
+    dimension: motion_friction
+    fix_kind: mechanical
+    fix_recommendation:
+      No product change required for friction per se; a captured 'area
+      selected + Submit enabled' frame would show the gating in motion and raise confidence.
+    route: PRODUCT
+    scene: 3 — Amina reads the open call and ticks the area she can staff
+    severity: low
+  - detail:
+      Score 3. The responses table coherently shows org, SELECTED COVERAGE, and
+      a View action, but STATUS 'Awarded' is double-stamped (STATUS column AND a disabled
+      'Awarded' in the ACTIONS column), the RECOMMENDATION ('—') and SCORE ('-') columns
+      ship empty, and the ACTIONS column's second slot is a dead, non-clickable affordance
+      — leaving the row with no real next step beyond 'View'.
+    dimension: design_soundness
+    fix_kind: mechanical
+    fix_recommendation:
+      Suppress the empty RECOMMENDATION/SCORE columns (or render an
+      explicit 'Not scored' state), and replace the redundant disabled 'Awarded' in
+      the ACTIONS column with a single canonical status badge or a real next-step action.
+    route: PRODUCT
+    scene: 4 — Maya sees the firm tied to the coverage she designed
+    severity: low
+  - detail:
+      "Score 3. Type and the load-bearing SELECTED COVERAGE pill are clean and
+      legible, but the breadcrumb is clipped/overlapped ('...sponses: Household survey
+      firm — Round 6 (Attakar × ...'), the empty-state glyphs are inconsistent ('—'
+      in RECOMMENDATION vs '-' in SCORE in adjacent columns), and a large empty lower
+      canvas leaves the one-row queue floating in dead space."
+    dimension: visual_polish
+    fix_kind: mechanical
+    fix_recommendation:
+      Fix the breadcrumb truncation/overlap, standardize the empty-cell
+      glyph (use '—' for BOTH RECOMMENDATION and SCORE), and tighten the vertical layout
+      so a one-row queue does not float in dead space.
+    route: PRODUCT
+    scene: 4 — Maya sees the firm tied to the coverage she designed
+    severity: low
+  - detail:
+      "Score 3 — ADVISORY, non-blocking. All required elements ('Health Bridge
+      Nigeria', 'Amina Okafor', 'SELECTED COVERAGE: R6 — Attakar × Gura') are present,
+      but the row STATUS already reads 'Awarded' while the scene narrates Maya REVIEWING
+      a fresh application tied to its coverage (the award happens in scene 5). The frame
+      shows the post-award end-state, not the review moment the narration describes."
     dimension: claim_reality_coherence
     fix_kind: mechanical
     fix_recommendation:
-      Move the bundle-vs-study definition paragraph behind an opt-in
-      info affordance so the action surface leads with the card rather than editorial
-      prose describing an unshown flow; optionally show a small source-plan chip on
-      the card to evidence 'carries that plan as the source'. Triage later — non-blocking.
+      "Triage for spec/capture alignment: either capture this scene
+      from a pre-award (submitted/under-review) state so the frame matches the 'reviewing
+      the application' narration, or adjust the scene narration to acknowledge the
+      row is already awarded. Non-blocking; surface to the spec owner."
     route: DEFER
-    scene: 1 — Maya turns her finished study into a call for a firm
-    severity: low
-  - detail:
-      An outsider can state what+why ('a program owner sees which firm applied
-      to which exact coverage area and its award state'), and a concrete role is present,
-      but the two unlabeled header chips ('Expression of Interest' + 'Awarded') add
-      a momentary 'what do these represent?' that keeps it at the default 3.
-    dimension: concept_clarity
-    fix_kind: mechanical
-    fix_recommendation:
-      Label the two header chips (solicitation type vs state) so a
-      first-time reviewer immediately understands they are type + state, not two competing
-      statuses.
-    route: CONCEPT
     scene: 4 — Maya sees the firm tied to the coverage she designed
     severity: low
   - detail:
-      "Functional but unremarkable: columns align, the green Awarded pill and
-      the SELECTED COVERAGE chip are tidy, but the empty-state glyphs are inconsistent
-      ('—' in RECOMMENDATION vs '-' in SCORE in adjacent columns), ~70% of the lower
-      frame is empty whitespace, and the muted 'Awarded' ACTIONS status distinction
-      rides entirely on color (thin separation from the blue 'View')."
-    dimension: visual_polish
-    fix_kind: mechanical
-    fix_recommendation:
-      Unify the empty-state glyph — use '—' for BOTH RECOMMENDATION
-      and SCORE. Give the muted 'Awarded' ACTIONS status a non-color affordance cue
-      (e.g. removed underline / disabled styling) so it is unmistakably non-clickable
-      beyond color alone.
-    route: PRODUCT
-    scene: 4 — Maya sees the firm tied to the coverage she designed
-    severity: low
-  - detail:
-      The concept_claim ('owner sees each firm's selected coverage resolved from
-      the authoritative snapshot') traces to spine S6 and the SELECTED COVERAGE chip
-      visibly backs it, but the single-row view shows only one firm's resolved coverage,
-      so the 'every application' generality of the claim is asserted more than demonstrated.
-    dimension: why_groundedness
-    fix_kind: mechanical
-    fix_recommendation:
-      Either narrow the on-screen claim/narration to the one application
-      actually shown, or seed a second applicant row with a different selected coverage
-      so the 'each firm's selected coverage' generality is demonstrated rather than
-      asserted.
-    route: CONCEPT
-    scene: 4 — Maya sees the firm tied to the coverage she designed
-    severity: low
-  - detail:
-      In-frame flow signals are adequate (a clear 'View' action and a 'Back to
-      Manage Solicitations' link), but a stray mouse cursor sits mid-breadcrumb (capture
-      artifact) and the muted 'Awarded' action could read as a dead-end with no signal
-      of what 'View' opens. Default 3.
+      Score 3 — static-frame floor. No spinner, 404, or dead-end (View + Back
+      are live); default 3 held because a single still offers no positive motion evidence.
+      Capture-shape floor shared across all scenes.
     dimension: motion_friction
     fix_kind: mechanical
     fix_recommendation:
-      Re-capture without the cursor over the breadcrumb; optionally
-      add a hover/tooltip on 'View' indicating it opens the full response, so the row's
-      next-step is unambiguous.
+      No product change required for friction per se; optionally add
+      a hover/tooltip on 'View' indicating it opens the full response so the row's next
+      step is unambiguous.
     route: PRODUCT
     scene: 4 — Maya sees the firm tied to the coverage she designed
     severity: low
   - detail:
-      What+why-deferred is clear to a familiar reader and the deferred-step panel
-      is honest, but no explicit named user/role is on-screen, so per the rubric deduction
-      rule ('no scene names a concrete user or role' => max 3) concept_clarity is capped
-      at 3. This is the cap that drives the run's concept_clarity aggregate.
-    dimension: concept_clarity
+      Score 3. Clean type, a strong green confirmation hero, and legible fields,
+      but the dashed 'Next step — not yet built' panel sits close enough to the 'Awarded
+      & notified' timeline row that the two nearly read as peers rather than confirmation-fact
+      vs forward-looking aside, the right field column has unbalanced whitespace under
+      'Award budget', and the amber 'Select Context' chrome pill out-shouts the page.
+      (The honest 'not yet built' disclosure itself is GROUNDING per gap G1 — keep it;
+      only its visual weight needs work.)
+    dimension: visual_polish
     fix_kind: mechanical
     fix_recommendation:
-      Surface the awarding owner/role explicitly on the confirmation
-      (e.g. 'Awarded by Maya, Program Owner' or a 'Decision recorded by …' line) so
-      a cold outsider can name the concrete actor.
-    route: CONCEPT
+      Recede the 'Next step — not yet built' panel (lighter ground,
+      smaller type, more vertical separation from the timeline row) so it reads as clearly
+      secondary, and balance the two-column field block so the right column is not half-empty.
+    route: PRODUCT
+    scene: 5 — Maya awards the firm and sees it was notified
+    severity: low
+  - detail:
+      "Score 3 — static-frame floor. Static confirmation frame, no spinner, not
+      a dead-end (two working exits: 'Back to responses' / 'View response'); default
+      3 held because a still offers no positive motion evidence. Capture-shape floor
+      shared across all scenes."
+    dimension: motion_friction
+    fix_kind: mechanical
+    fix_recommendation:
+      No product change required for friction per se; the screen is
+      a clean terminal confirmation.
+    route: PRODUCT
     scene: 5 — Maya awards the firm and sees it was notified
     severity: low
 findings_review_id: null
 findings_review_url: null
-iteration: 5
+iteration: 6
 iteration_clips:
   3: https://canopy-web-ujpz2cuyxq-uc.a.run.app/w/f83063d9-cd47-45b5-bf87-a4245d926fdd
   4: https://canopy-web-ujpz2cuyxq-uc.a.run.app/w/ff328531-01df-4d12-9012-1abf17c9234b
   5: https://canopy-web-ujpz2cuyxq-uc.a.run.app/w/53ace65c-8415-4bec-8bb0-038890e59192
+  6: https://canopy-web-ujpz2cuyxq-uc.a.run.app/w/c3db8a20-4010-47de-bcf3-664ee7a78d0a
 iteration_decks:
   3: https://canopy-web-ujpz2cuyxq-uc.a.run.app/w/75685479-f39c-41c5-91b3-ce7066e9abf9
   4: https://canopy-web-ujpz2cuyxq-uc.a.run.app/w/c9df8914-662a-4565-97ad-9cae8d96640e
   5: https://canopy-web-ujpz2cuyxq-uc.a.run.app/w/b20e09f3-9ed3-4d64-8cb1-9d702caf9480
+  6: https://canopy-web-ujpz2cuyxq-uc.a.run.app/w/1044f603-948f-4635-a747-000c5b711cdb
 last_actor: null
 last_actor_at: null
 narrative_review_id: acd53ae4-c44c-4c0a-98dd-f766b9358acc
@@ -206,6 +255,7 @@ score_history:
   - 2.0
   - 3.0
   - 2.0
+  - 3.0
 verdicts:
   concept: /Users/jjackson/emdash/worktrees/connect-labs/emdash/solicitation-rntwj/.canopy/ddd/runs/create-survey-solicitation-2026-06-17-001/verdict-concept.yaml
   user_artifact: /Users/jjackson/emdash/worktrees/connect-labs/emdash/solicitation-rntwj/.canopy/ddd/runs/create-survey-solicitation-2026-06-17-001/verdict-user.yaml

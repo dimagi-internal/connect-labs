@@ -1,26 +1,35 @@
 schema_version: 1
 rubric_name: ddd-concept-eval
-ran_at: 2026-06-18T15:05:00Z
+ran_at: '2026-06-18T16:12:00Z'
 run_dir: /Users/jjackson/emdash/worktrees/connect-labs/emdash/solicitation-rntwj/.canopy/ddd/runs/create-survey-solicitation-2026-06-17-001/
 scenes_evaluated: 5
-judge_independence: all five per-scene visual-judge verdicts returned self_assessed=false (fresh, build-context-free)
+judge_independence: all five per-scene visual judges ran as fresh build-context-free sub-agents; all returned self_assessed=false
 
-# Per-scene dimension scores (gating dims + advisory claim_reality_coherence)
+# QA gate note: ddd-spec-qa reported "fail" ONLY because the spec's declared
+# why_brief path ("../../.canopy/ddd/runs/.../why_brief.yaml") doubles the
+# .canopy/ddd segment when resolved relative to the spec file, so it points at a
+# non-existent path. The actual why_brief.yaml is present and valid in the run
+# dir; spec_qa returns "pass" once the path resolves (verified against a corrected
+# copy). The structural spec is sound — this eval was NOT run against a broken
+# spec. Per task instruction the spec was NOT edited and the captures were NOT
+# re-rendered.
+
+# Per-scene dimension scores (five gating dims + advisory claim_reality_coherence)
 per_scene:
   scene_1:
     {
-      concept_clarity: 4,
-      design_soundness: 4,
+      concept_clarity: 3,
+      design_soundness: 3,
       visual_polish: 3,
       why_groundedness: 4,
-      claim_reality_coherence: 3,
-      motion_friction: 4,
+      claim_reality_coherence: 5,
+      motion_friction: 3,
       overall: 3,
       verdict: warn,
     }
   scene_2:
     {
-      concept_clarity: 3,
+      concept_clarity: 4,
       design_soundness: 4,
       visual_polish: 3,
       why_groundedness: 4,
@@ -31,34 +40,34 @@ per_scene:
     }
   scene_3:
     {
-      concept_clarity: 3,
-      design_soundness: 4,
-      visual_polish: 2,
+      concept_clarity: 4,
+      design_soundness: 3,
+      visual_polish: 4,
       why_groundedness: 4,
       claim_reality_coherence: 4,
-      motion_friction: 4,
-      overall: 2,
-      verdict: fail,
+      motion_friction: 3,
+      overall: 3,
+      verdict: warn,
     }
   scene_4:
     {
-      concept_clarity: 3,
-      design_soundness: 4,
+      concept_clarity: 4,
+      design_soundness: 3,
       visual_polish: 3,
-      why_groundedness: 3,
-      claim_reality_coherence: 4,
+      why_groundedness: 4,
+      claim_reality_coherence: 3,
       motion_friction: 3,
       overall: 3,
       verdict: warn,
     }
   scene_5:
     {
-      concept_clarity: 3,
+      concept_clarity: 4,
       design_soundness: 4,
-      visual_polish: 4,
+      visual_polish: 3,
       why_groundedness: 4,
-      claim_reality_coherence: 5,
-      motion_friction: 4,
+      claim_reality_coherence: 4,
+      motion_friction: 3,
       overall: 3,
       verdict: warn,
     }
@@ -66,79 +75,78 @@ per_scene:
 # Aggregate (weakest-link across all scenes; claim_reality_coherence advisory, EXCLUDED from overall_score)
 dimensions:
   concept_clarity:
-    {
-      score: 3,
-      weight: 0.20,
-      justification: "Lowest at scenes 2-5: clear to a viewer familiar with the M&E survey-recruitment space, but a cold outsider would need one question answered (the 'R6 — Attakar x Gura' / 'Snapshotted' shorthand, and no explicit named actor/role on-screen on the award + responses + create surfaces). Scene 1's card text earns a 4; the rest sit at the default 3.",
-    }
+    score: 3
+    weight: 0.20
+    justification: "Weakest at scene 1 (3): the portfolio opening hedges with 'before any opportunity is live' and references a 'bundle' concept absent from the frame, so a cold outsider gets what-but-not-why-now; scenes 2-5 are clearer (4) with concrete roles (solicitation author / responding firm / reviewing owner) and tasks legible in-frame."
   design_soundness:
-    {
-      score: 4,
-      weight: 0.20,
-      justification: "Strongest dimension and consistent across all five scenes. The plan->solicitation->respond->review->award interaction model holds together with no dead ends or contradictory affordances. Scene 4's prior incoherence (duplicated 'Awarded', clickable-looking 'Awarded'/'Review' action) is RESOLVED: 'Awarded' now reads as a muted grey checkmark status, RECOMMENDATION shows '—', no leftover 'Review' action, header badge reads 'Awarded'.",
-    }
+    score: 3
+    weight: 0.20
+    justification: "Weakest at scenes 3 and 4 (3). Scene 3: the response form's checklist collapses a visibly two-arm map (Attakar/Gura) into one combined row and gives no explicit Submit-gating signal, so 'click an area on the map OR tick it; >=1 required' doesn't read as a clean 1:1 affordance. Scene 4: STATUS 'Awarded' is double-stamped in the ACTIONS column and the RECOMMENDATION/SCORE columns ship empty, leaving a dead action slot. Scenes 2 and 5 are coherent (4)."
   visual_polish:
-    {
-      score: 2,
-      weight: 0.15,
-      justification: "WEAKEST-LINK / verdict driver. Scene 3 (respond form): the arm legend's second row ('Comparison' blue swatch) is CLIPPED at the legend box edge and collides with the Mapbox attribution wordmark, breaking the load-bearing color key that decodes the two study arms (a pointable product defect at normal viewport => max 2). The same legend-vs-attribution collision recurs as a polish nit in scene 2. Scenes 1 and 4 sit at the default 3 (dead whitespace, redundant status labels, '-' vs '—' empty-state glyph mismatch). Scene 5 is the cleanest at 4.",
-    }
+    score: 3
+    weight: 0.15
+    justification: "Weakest at scenes 1, 2, 4, 5 (3). Scene 3 RECOVERED to 4 — the arm legend now reads clean top-left with BOTH rows (Intervention green / Comparison blue) visible and the Mapbox logo/attribution unobstructed at bottom-left; no occlusion. Remaining 3s: scene 2's green/blue arm fills are too similar to read the DiD assignment; scene 4 has a clipped/overlapped breadcrumb, inconsistent empty-state glyphs ('—' vs '-'), and a dead lower canvas; scene 5's 'not yet built' panel sits too close to the timeline row with an unbalanced right column; scene 1 stacks redundant 'ready' signals and strands one card in mostly-empty space."
   why_groundedness:
-    {
-      score: 3,
-      weight: 0.20,
-      justification: "Every scene's concept_claim traces to a grounded+implemented why_brief spine item (S3-S7) and is realized on-screen. Held to 3 only by scene 4: the S6 claim is about 'every application' but the single-row view demonstrates only one firm's resolved coverage, so the generality is asserted more than shown. Scenes 1,2,3,5 each score 4.",
-    }
+    score: 4
+    weight: 0.20
+    justification: "Strongest dimension and consistent across all five scenes. Every concept_claim traces cleanly to its grounded+implemented why_brief spine item (S3-S7) and is realized on-screen (the Create-solicitation button on a READY-TO-SOLICIT card; the snapshotted Coverage-areas panel; the 'Which areas can you cover?' selector; the resolved SELECTED COVERAGE pill; the honest 'not yet built' award disclosure matching gap G1). Held from 5 because the snapshot's 'frozen at creation' has no visible ID/timestamp to verify in-frame (scene 2)."
   claim_reality_coherence:
-    {
-      score: 3,
-      weight: 0.10,
-      blocking: false,
-      justification: "Advisory, non-blocking, EXCLUDED from overall_score. Lowest at scene 1 (the 'bundle / tick draft plans' helper half and 'carries that plan as the source' are narrated but not visibly evidenced in-frame). Scene 5 is a perfect 5 (every narrated claim — awardee, notified, budget, coverage, deferred-step panel — present in-frame). Advisory note on scene 4: narration 'show' text mentions View/Review/Award actions 'ready' but the response is already AWARDED in-frame.",
-    }
+    score: 3
+    weight: 0.10
+    blocking: false
+    justification: "Advisory, non-blocking, EXCLUDED from overall_score. Mostly demonstrated (4-5) except scene 4 (3): the responses row STATUS reads 'Awarded' while the scene narrates Maya REVIEWING a fresh application tied to its coverage — the frame shows the post-award end-state, not the review moment. Surfaced for spec/capture triage; does not gate. Scene 1 is a clean 5 (every narrated element present)."
   motion_friction:
-    {
-      score: 3,
-      weight: 0.15,
-      justification: 'Clean settled renders throughout — no dominating spinners, no error/404 states, no mid-transition jank. Held to 3 at scenes 2 and 4 (ordinary, no flow distinction; plus a stray captured mouse cursor over the heading/breadcrumb in scenes 1,4,5). Scenes 1,3,5 score 4.',
-    }
+    score: 3
+    weight: 0.15
+    justification: 'Every scene is a single static frame with no spinner, 404, or dead-end, so all five judges held the rubric default of 3 (no positive motion evidence is observable from a still). This is a capture-shape floor common to all scenes, not a product-friction finding — it does not by itself indicate a usability problem.'
 
-overall_score: 2
+overall_score: 3
 overall_rule: lowest
 # overall_score = min over the FIVE gating dims (claim_reality_coherence excluded):
-#   min(concept_clarity 3, design_soundness 4, visual_polish 2, why_groundedness 3, motion_friction 3) = 2
+#   min(concept_clarity 3, design_soundness 3, visual_polish 3, why_groundedness 4, motion_friction 3) = 3
 
-verdict: fail
+verdict: warn
 blocking_reason: null
 
 fix_recommendation: |
-  Overall is dragged to fail (2) by a SINGLE, mechanical visual_polish defect — fix it and
-  the run lifts to warn (3) with no concept change required.
+  Verdict is WARN (weakest-link = 3). The concept itself is well-grounded
+  (why_groundedness 4 across all scenes) — the remaining gaps are presentation
+  and one interaction-affordance, not the idea. The previous pass's fail-driver
+  (scene 3 clipped arm legend colliding with the Mapbox attribution) is now FIXED
+  and confirmed clean — do not re-touch it. Highest-leverage product fixes:
 
-  [PRODUCT] Scene 3 (respond form) — the arm legend's 'Comparison' (blue) row is clipped at
-  the legend box's bottom edge and overlaps the Mapbox attribution wordmark, so the color key
-  that decodes intervention vs comparison is half-unreadable. Give the legend control enough
-  height to show BOTH rows fully and offset it off the attribution logo (move the legend to a
-  top corner, or push attribution to the opposite corner). This is the weakest-link driver.
+  [PRODUCT] Scene 2 (visual_polish): give the two study arms saturated, clearly
+  distinct fills (a true green for Intervention, a true blue for Comparison) with
+  on-polygon labels, so the DiD arm assignment — the whole point of the coverage
+  panel — is legible at the real viewport. Currently both polygons read as a
+  similar muted teal.
 
-  [PRODUCT] Scene 2 (create form) — the same legend-vs-attribution collision recurs; apply the
-  same legend reposition. Also color-key the footer arm chip ('Comparison | Intervention') to the
-  green/blue map fills and reconcile the arm ordering between legend and chip.
+  [PRODUCT] Scene 4 (design_soundness + visual_polish): suppress the empty
+  RECOMMENDATION/SCORE columns (or render an explicit "Not scored" state),
+  replace the redundant ACTIONS "Awarded" with a single canonical status badge or
+  a real next action, and fix the clipped/overlapped breadcrumb plus the dead
+  lower canvas.
 
-  [PRODUCT] Scene 4 (responses) — unify the empty-state glyph: use '—' for BOTH RECOMMENDATION and
-  SCORE (currently '—' vs '-'), and give the muted 'Awarded' ACTIONS status a non-color affordance
-  cue so it is unmistakably non-clickable. (Core interaction coherence is already sound — the prior
-  duplication/contradiction is gone.)
+  [PRODUCT] Scene 3 (design_soundness): make the map<->checklist a clean 1:1
+  affordance — render one checklist row per selectable area, or clearly label the
+  single row as "whole study = both arms" — and surface an explicit "1 area
+  selected — ready to submit" state tied to the Submit button so the "blocked
+  until >=1" rule is visible. (Legend regression is FIXED; this is the interaction
+  affordance, not the legend.)
 
-  [PRODUCT] Scenes 1 & 4 — re-capture without the stray mouse cursor sitting over the heading /
-  breadcrumb; tighten the portfolio surface (scene 1) so the lone finished-study card isn't
-  stranded in ~55% dead whitespace (preview the in-progress plans inline or use a denser grid).
+  [CONCEPT] Scene 1 (concept_clarity): drop or reframe the "before any opportunity
+  is live" subtitle hedge and remove the "bundle" sentence from the intro (no
+  bundle is shown on this surface), so a cold viewer reads "turn a finished study
+  into a call for a firm right here" without an unexplained concept.
 
-  [CONCEPT-lite] Lift concept_clarity off the default 3: surface an explicit named actor/role on
-  the award + responses surfaces (e.g. 'Awarded by Maya, Program Owner') and add a one-line plain
-  summary under the 'R6 — Attakar x Gura' shorthand so a cold outsider needs no question answered.
+  [PRODUCT] Scene 5 (visual_polish): recede the "Next step — not yet built" panel
+  (lighter ground, smaller type, more separation from the "Awarded & notified"
+  timeline row) and balance the two-column field block. (The honest disclosure
+  itself is GROUNDING per gap G1 — keep it; only its visual weight needs work.)
 
-  [DEFER] claim_reality_coherence (advisory): scene 1's 'bundle / draft-plan' helper text and
-  'carries that plan as the source' are narrated but not shown; scene 4 narration references
-  View/Review/Award actions as 'ready' though the response is already awarded in-frame. Triage
-  the narration-vs-frame wording later; non-blocking.
+  [DEFER] Scene 4 (claim_reality_coherence, advisory): the responses row shows
+  STATUS "Awarded" while the scene narrates the review moment — note for spec/
+  capture triage; non-blocking.
+
+  Note: motion_friction sits at the static-frame floor of 3 for all five scenes;
+  it cannot rise from a still capture and is not a product-readiness signal here.
