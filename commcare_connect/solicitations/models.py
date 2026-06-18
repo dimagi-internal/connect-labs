@@ -179,6 +179,28 @@ class ResponseRecord(LocalLabsRecord):
     def selected_plan_names(self):
         return self.data.get("selected_plan_names", [])
 
+    @property
+    def reward_budget(self):
+        return self.data.get("reward_budget")
+
+    @property
+    def awarded_at(self):
+        date_str = self.data.get("awarded_at")
+        if date_str:
+            try:
+                return datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+            except (ValueError, TypeError):
+                return None
+        return None
+
+    @property
+    def awardee_notified(self):
+        return bool(self.data.get("awardee_notified", False))
+
+    @property
+    def is_awarded(self):
+        return self.status == "awarded"
+
 
 class ReviewRecord(LocalLabsRecord):
     """Proxy model for review records."""

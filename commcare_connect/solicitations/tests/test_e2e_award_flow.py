@@ -219,11 +219,12 @@ class TestStep3AwardForm:
     @_CONTEXT_PATCH
     @patch("commcare_connect.solicitations.views.SolicitationsDataAccess")
     def test_award_form_renders(self, MockDA):
-        """Award form shows org_id and budget fields."""
+        """Award form shows org name, budget field, and the org-id advanced field."""
         resp = _make_response(pk=10)
         solicitation = _make_solicitation(pk=1)
         MockDA.return_value.get_response_by_id.return_value = resp
         MockDA.return_value.get_solicitation_by_id.return_value = solicitation
+        MockDA.return_value.get_reviews_for_response.return_value = []
 
         request = _make_request("/solicitations/response/10/award/")
         response = AwardView.as_view()(request, pk=10)
@@ -231,17 +232,22 @@ class TestStep3AwardForm:
         assert response.status_code == 200
         response.render()
         content = response.content.decode()
-        assert "Award Response" in content
-        assert 'name="org_id"' in content
+        assert "Award this survey firm" in content
+        # Org NAME is shown (never a slug); budget + advanced org-id are both present.
+        assert "Health Org" in content
         assert 'name="reward_budget"' in content
+        assert 'name="org_id"' in content
 
+    @_CONTEXT_PATCH
     @patch("commcare_connect.solicitations.views.SolicitationsDataAccess")
-    def test_award_submit_redirects(self, MockDA):
-        """POST with valid data awards the response and redirects."""
-        _make_response(pk=10, solicitation_id=1)
+    def test_award_submit_shows_confirmation(self, MockDA):
+        """POST awards the response and renders the in-place confirmation state."""
         awarded_resp = _make_response(pk=10, status="awarded", org_id="org_77", reward_budget=50000)
+        solicitation = _make_solicitation(pk=1)
         MockDA.return_value.award_response.return_value = awarded_resp
         MockDA.return_value.get_response_by_id.return_value = awarded_resp
+        MockDA.return_value.get_solicitation_by_id.return_value = solicitation
+        MockDA.return_value.get_reviews_for_response.return_value = []
 
         request = _make_request(
             "/solicitations/response/10/award/",
@@ -250,7 +256,12 @@ class TestStep3AwardForm:
         )
         response = AwardView.as_view()(request, pk=10)
 
-        assert response.status_code == 302
+        assert response.status_code == 200
+        response.render()
+        content = response.content.decode()
+        # Confirmation names the awarded org and states it was notified.
+        assert "Awarded to Health Org" in content
+        assert "has been notified" in content
         MockDA.return_value.award_response.assert_called_once_with(10, reward_budget=50000, org_id="org_77")
 
 
@@ -295,6 +306,7 @@ class TestFullAwardFlow:
         # -- Step 3: Award the response --
         MockDA.return_value.award_response.return_value = resp_awarded
         MockDA.return_value.get_response_by_id.return_value = resp_awarded
+        MockDA.return_value.get_reviews_for_response.return_value = []
 
         request = _make_request(
             "/solicitations/response/10/award/",
@@ -302,7 +314,9 @@ class TestFullAwardFlow:
             data={"org_id": "org_77", "reward_budget": "50000"},
         )
         response = AwardView.as_view()(request, pk=10)
-        assert response.status_code == 302
+        assert response.status_code == 200
+        response.render()
+        assert "has been notified" in response.content.decode()
 
         # -- Step 4: Verify awarded status on detail --
         MockDA.return_value.get_response_by_id.return_value = resp_awarded
