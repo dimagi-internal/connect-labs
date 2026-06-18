@@ -75,7 +75,7 @@
             {% if solicitation.plans %}
             <fieldset class="mb-6">
               <legend class="text-sm font-semibold text-gray-800 mb-1">Which areas can you cover?</legend>
-              <p class="text-xs text-gray-500 mb-3">Click the areas on the map, or tick them below. Select one or more — required to submit.</p>
+              <p class="text-xs text-gray-500 mb-3">Click the areas on the map, or tick them below. Each option is a whole study — selecting it covers all of its wards together. Select one or more — required to submit.</p>
               <div id="sol-respond-map" class="w-full h-96 rounded-lg overflow-hidden border border-gray-200 mb-3"></div>
               <div class="space-y-1" id="sol-plan-checklist">
                 {% for choice in form.select_plans %}

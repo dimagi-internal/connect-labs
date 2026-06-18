@@ -62,6 +62,40 @@ def test_is_labs_only_false_for_disabled_labs_only(db):
     assert backend.is_labs_only_opportunity_id(10_001) is True
 
 
+# ─── is_labs_only_program_id ───────────────────────────────────────────────
+
+
+@pytest.mark.django_db
+def test_is_labs_only_program_id_returns_false_for_none():
+    assert backend.is_labs_only_program_id(None) is False
+
+
+@pytest.mark.django_db
+def test_is_labs_only_program_id_fast_path_for_low_ids():
+    """Program ids below the reserved floor are real Connect programs — skip the DB."""
+    assert backend.is_labs_only_program_id(25) is False
+    assert backend.is_labs_only_program_id(9_999) is False
+
+
+@pytest.mark.django_db
+def test_is_labs_only_program_id_true_for_explicit_program(db):
+    """An opp filed under an explicit labs-only program id matches that program."""
+    SyntheticOpportunity.objects.create(opportunity_id=10_009, program_id=10_008, gdrive_folder_id="f", labs_only=True)
+    assert backend.is_labs_only_program_id(10_008) is True
+
+
+@pytest.mark.django_db
+def test_is_labs_only_program_id_true_for_implicit_program(db):
+    """When program_id is unset, the opp is its own program (program_id == opp id)."""
+    SyntheticOpportunity.objects.create(opportunity_id=10_005, gdrive_folder_id="f", labs_only=True)
+    assert backend.is_labs_only_program_id(10_005) is True
+
+
+@pytest.mark.django_db
+def test_is_labs_only_program_id_false_for_unregistered(db):
+    assert backend.is_labs_only_program_id(99_999) is False
+
+
 # ─── direct backend CRUD ───────────────────────────────────────────────────
 
 
@@ -179,6 +213,44 @@ def test_client_routes_labs_only_delete_to_local(labs_only_opp):
     finally:
         client.close()
     assert LabsLocalRecord.objects.filter(id=row.id).count() == 0
+
+
+@pytest.mark.django_db
+def test_backend_get_records_program_scoped_without_opp(db):
+    """Program-scoped read (no opportunity_id) filters by program_id across opps."""
+    backend.create_record(opportunity_id=10_009, program_id=10_008, experiment="workflow", type="t", data={})
+    backend.create_record(opportunity_id=10_010, program_id=10_008, experiment="workflow", type="t", data={})
+    backend.create_record(opportunity_id=10_011, program_id=10_007, experiment="workflow", type="t", data={})
+
+    records = backend.get_records(program_id=10_008, experiment="workflow")
+    assert len(records) == 2
+    assert {r.opportunity_id for r in records} == {10_009, 10_010}
+
+
+@pytest.mark.django_db
+def test_client_routes_labs_only_program_scoped_get_to_local(monkeypatch):
+    """Regression: a program-scoped client for a labs-only program (no opp selected)
+    must dispatch to the local backend, not the production HTTP API.
+
+    Mirrors loading the Workflows page with only a synthetic program selected
+    (?program_id=10008) — previously this 404'd against connect.dimagi.com.
+    """
+    SyntheticOpportunity.objects.create(opportunity_id=10_009, program_id=10_008, gdrive_folder_id="f", labs_only=True)
+    LabsLocalRecord.objects.create(
+        opportunity_id=10_009, program_id=10_008, experiment="workflow", type="workflow_definition", data={"v": 1}
+    )
+    client = LabsRecordAPIClient(access_token="dummy", program_id=10_008)
+
+    def _no_http(*args, **kwargs):
+        raise AssertionError("program-scoped labs-only read must not hit the production HTTP API")
+
+    monkeypatch.setattr(client.http_client, "get", _no_http)
+    try:
+        records = client.get_records(experiment="workflow", type="workflow_definition")
+    finally:
+        client.close()
+    assert len(records) == 1
+    assert records[0].data == {"v": 1}
 
 
 @pytest.mark.django_db

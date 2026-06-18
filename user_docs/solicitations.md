@@ -25,17 +25,17 @@ Click **Solicitations** in the top navigation, then **Manage Solicitations**, th
 
 Fill in:
 
-| Field               | Description                                                             |
-| ------------------- | ----------------------------------------------------------------------- |
-| Title               | Name of the solicitation (e.g., "EOI: OCS Implementation – Niger 2026") |
-| Type                | EOI (Expression of Interest) or RFP (Request for Proposals)             |
-| Description         | Full context: program background and what you're looking for            |
-| Scope of Work       | What the implementing organization must do                              |
-| Budget              | Maximum funding available                                               |
-| Deadline            | When responses are due                                                  |
-| Evaluation criteria | What you'll score responses on                                          |
-| Response template   | Questions responding organizations must answer                          |
-| Status              | Draft (not yet public) or Published                                     |
+| Field               | Description                                                                          |
+| ------------------- | ------------------------------------------------------------------------------------ |
+| Title               | Name of the solicitation (e.g., "Expression of Interest: OCS Implementation – Niger 2026") |
+| Type                | Expression of Interest or Request for Proposals                                      |
+| Description         | Full context: program background and what you're looking for                         |
+| Scope of Work       | What the implementing organization must do                                           |
+| Budget              | Maximum funding available                                                            |
+| Deadline            | When responses are due                                                               |
+| Evaluation criteria | What you'll score responses on                                                       |
+| Response template   | Questions responding organizations must answer                                       |
+| Status              | Draft (not yet public) or Published                                                  |
 
 **AI-assisted criteria generation:**
 Click **Generate Criteria** and paste in text describing your program requirements, or upload a PDF. The AI will suggest a structured set of evaluation criteria and scoring weights. Review and adjust the suggestions before saving.
@@ -84,7 +84,7 @@ When the team agrees on a winner:
 
 1. Open the winning response
 2. Click **Award Response**
-3. Confirm the award amount
+3. Confirm the award amount — this is displayed as a formatted currency value (for example, $25,000.00)
 4. Optionally link the award to a fund to track disbursements over time
 
 !!! info "Coverage area assignments after award"
@@ -96,18 +96,18 @@ In the current version, the coverage areas selected by an applicant are captured
 
 ### Finding Solicitations
 
-Published solicitations are visible on the Labs solicitations page without logging in. Filter by type (EOI or RFP) to find relevant opportunities. Where a solicitation was created from micro-plans, the specific geographic areas on offer are shown on a map with ward boundaries drawn, as well as in a list, on the solicitation page.
+Published solicitations are visible on the Labs solicitations page without logging in. Filter by type (Expression of Interest or Request for Proposals) to find relevant opportunities. Where a solicitation was created from micro-plans, the specific geographic areas on offer are shown on a map with ward boundaries drawn, as well as in a list, on the solicitation page.
 
 ### Submitting a Response
 
 1. Open a solicitation and read the full description and scope of work
 2. Click **Submit Response**
 3. Answer each question in the response template — where present, read the italicised framing above each question to understand what the program team is looking for
-4. If the solicitation includes coverage areas, select the areas you can cover by clicking the ward boundaries directly on the map, or by checking the boxes in the checklist alongside it — both controls are kept in sync, so selecting an area in one automatically updates the other. You must select at least one plan to submit
+4. If the solicitation includes coverage areas, select the areas you can cover by clicking the ward boundaries directly on the map, or by checking the boxes in the checklist alongside it — both controls are kept in sync, so selecting an area in one automatically updates the other. Selected areas are highlighted on the map so you can clearly see which plans you have chosen. You must select at least one plan to submit
 5. Review your answers, then click **Submit**
 
 !!! info "Selecting coverage areas"
-Each plan is offered as a whole unit. Clicking any part of a plan's boundary on the map selects that entire plan — you cannot select only part of a plan. If a plan includes multiple wards or intervention and control areas, you take all of it. If you are unsure what a plan covers, read the solicitation description or contact the program team before submitting.
+Each plan is offered as a whole unit. Clicking any part of a plan's boundary on the map selects that entire plan — you cannot select only part of a plan. Selected plans are highlighted in a distinct colour on the map so it is easy to see at a glance what you have chosen. If a plan includes multiple wards or intervention and control areas, you take all of it. If you are unsure what a plan covers, read the solicitation description or contact the program team before submitting.
 
 !!! warning "Submissions are final"
 Responses cannot be edited after submission. Make sure your response is complete before submitting. If you need to make a correction, contact the program team directly.
@@ -155,13 +155,16 @@ Framing is an optional one-to-two sentence note you can attach to any question i
 You can, but the coverage areas are fixed as a snapshot at the moment you save the solicitation. If your plans change after that point, the published solicitation will not update automatically. Wait until your plans are stable before creating the solicitation, or be prepared to update the coverage areas manually if things change before the deadline.
 
 **Do applicants have to cover all the areas listed in a solicitation?**
-No — applicants select only the areas they can cover. They must select at least one plan to submit a response, but they do not need to take all areas on offer. Applicants can select areas by clicking the boundaries on the map or by using the checklist — both show the same options and stay in sync. The program team can see each applicant's selected areas when reviewing responses.
+No — applicants select only the areas they can cover. They must select at least one plan to submit a response, but they do not need to take all areas on offer. Applicants can select areas by clicking the boundaries on the map or by using the checklist — both show the same options and stay in sync. Selected areas are highlighted on the map so applicants can see their choices at a glance. The program team can see each applicant's selected areas when reviewing responses.
 
 **What does it mean that a plan is selected "as a whole unit"?**
 If a micro-plan bundles multiple wards, or includes both intervention and control areas, an applicant who selects that plan is committing to all of it. Clicking any part of that plan's boundary on the map selects the entire plan — there is no option to select only part of it.
 
 **I clicked "Create solicitation" from a plan and got a "Failed to create solicitation" error — what should I do?**
 This error could previously occur on certain Labs-managed study programs. It has been fixed, so clicking **Create solicitation** from a plan on any program should now work. If you still see this error, try refreshing the page and attempting again. If the problem persists, contact your Labs administrator.
+
+
+---
 
 
 ---

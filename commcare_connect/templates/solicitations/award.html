@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load humanize %}
 
 {% block content %}
 <div class="max-w-4xl mx-auto px-4 py-6">
@@ -55,7 +56,7 @@
                 {% if response.reward_budget %}
                 <div>
                     <dt class="text-gray-500">Award budget</dt>
-                    <dd class="font-medium text-gray-900">{{ response.reward_budget }}</dd>
+                    <dd class="font-medium text-gray-900">₦{{ response.reward_budget|intcomma }}</dd>
                 </div>
                 {% endif %}
                 {% if summary.coverage_areas %}
