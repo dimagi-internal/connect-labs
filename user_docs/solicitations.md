@@ -63,9 +63,22 @@ The coverage areas are displayed on the public solicitation page — both as a m
 !!! info "Plans are captured as a snapshot"
 Because coverage areas are fixed at the time the solicitation is created, any changes you make to a micro-plan after that point will not be reflected in the solicitation. If your plans change significantly before the deadline, you will need to update the solicitation's coverage areas manually or create a new solicitation.
 
+### Reading the Coverage Map Legend
+
+Wherever a coverage map appears — on the solicitation page, the response submission form, and the responses review pages — a small legend is displayed on the map showing how areas are colour-coded:
+
+| Colour | Meaning       |
+| ------ | ------------- |
+| Green  | Intervention area |
+| Blue   | Comparison area   |
+
+This applies to all coverage maps across the solicitations module.
+
 ### Reviewing Responses
 
 Once the deadline passes, go to the solicitation and click **Responses**.
+
+The page header shows the solicitation's current state. Once a winner has been awarded, the header updates to show **Awarded** so you can see at a glance that the process is complete.
 
 For each response:
 
@@ -77,6 +90,8 @@ For each response:
 6. Set your recommendation: Approve / Reject / Needs Revision
 
 Multiple reviewers can score independently — average scores are calculated automatically.
+
+The responses list shows a **Status** column and a **Recommendation** column for each submission. For an awarded response, **Awarded** appears only in the Status column — the Recommendation column shows your reviewer recommendation as normal, without repeating "Awarded".
 
 ### Awarding a Response
 
@@ -96,7 +111,7 @@ In the current version, the coverage areas selected by an applicant are captured
 
 ### Finding Solicitations
 
-Published solicitations are visible on the Labs solicitations page without logging in. Filter by type (Expression of Interest or Request for Proposals) to find relevant opportunities. Where a solicitation was created from micro-plans, the specific geographic areas on offer are shown on a map with ward boundaries drawn, as well as in a list, on the solicitation page.
+Published solicitations are visible on the Labs solicitations page without logging in. Filter by type (Expression of Interest or Request for Proposals) to find relevant opportunities. Where a solicitation was created from micro-plans, the specific geographic areas on offer are shown on a map with ward boundaries drawn, as well as in a list, on the solicitation page. The map includes a legend showing intervention areas in green and comparison areas in blue.
 
 ### Submitting a Response
 
@@ -162,6 +177,18 @@ If a micro-plan bundles multiple wards, or includes both intervention and contro
 
 **I clicked "Create solicitation" from a plan and got a "Failed to create solicitation" error — what should I do?**
 This error could previously occur on certain Labs-managed study programs. It has been fixed, so clicking **Create solicitation** from a plan on any program should now work. If you still see this error, try refreshing the page and attempting again. If the problem persists, contact your Labs administrator.
+
+**The responses page header still shows "Active" after I awarded a response — is something wrong?**
+This display issue has been fixed. Once you award a response, the responses page header updates immediately to show **Awarded**. If you are viewing a page that was loaded before the award was made, refresh your browser to see the updated status.
+
+**The awarded response shows "Awarded" in both the Status and Recommendation columns — is that correct?**
+No — this duplicate display has been fixed. **Awarded** now appears only in the Status column for an awarded response. The Recommendation column shows the reviewer recommendation as normal.
+
+**What do the colours on the coverage map mean?**
+Green areas are intervention areas and blue areas are comparison areas. A small legend on every coverage map explains this colour coding.
+
+
+---
 
 
 ---
