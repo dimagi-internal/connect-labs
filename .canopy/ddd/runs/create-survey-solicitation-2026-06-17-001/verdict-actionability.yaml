@@ -1,0 +1,51 @@
+schema_version: 1
+rubric_name: ddd-narrative-actionability-eval
+ran_at: 2026-06-17T23:45:00Z
+spec_path: docs/walkthroughs/create-survey-solicitation.yaml
+
+dimensions:
+  coverage:
+    score: 5
+    weight: 0.35
+    justification: >-
+      Across all 5 scenes, every declared feature was independently inferred by all 3
+      cold derivations: the Create-solicitation button + source_plan_id route (S1), the
+      Coverage-areas-from-micro-plan snapshot panel (S2), the "Which areas can you cover?"
+      checklist with the block-until-selected gate (S3), the responses list resolving the
+      selected coverage label from the snapshot with View/Review/Award (S4), and the Award
+      action with provisioning explicitly NOT built (S5).
+  specificity:
+    score: 5
+    weight: 0.25
+    justification: >-
+      Derivations named concrete elements/routes/fields without seeing them: a
+      /solicitations/create?source_plan=<id> route, a "Coverage areas (from micro-plan)"
+      panel, a snapshotted coverage data structure, a required-checkbox guard, a
+      responses list join from selected ids to the snapshot label, and an Award action that
+      records but does not provision.
+  correctness:
+    score: 5
+    weight: 0.20
+    justification: >-
+      No wrong inferences. The derivations matched each declared feature's intent,
+      including the load-bearing snapshot-at-creation invariant and the honest boundary in
+      S5 (Award is shipped; opportunity provisioning is the deferred next step) — none
+      over-claimed provisioning or invented reviewer scoring.
+  consistency:
+    score: 5
+    weight: 0.20
+    justification: >-
+      All three independent derivations agreed on every scene's build plan, including the
+      cross-scene coverage-snapshot spine and the explicit out-of-scope provisioning; one
+      derivation even flagged that internal identifiers (not labels) were its only
+      placeholders, confirming the narration fixed the observable contract unambiguously.
+
+overall_score: 5
+overall_rule: lowest
+
+verdict: pass
+blocking_reason: null
+
+fix_recommendation: null
+
+actionability_findings: []

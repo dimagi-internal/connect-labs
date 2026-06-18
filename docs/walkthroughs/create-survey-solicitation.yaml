@@ -1,0 +1,172 @@
+name: create-survey-solicitation
+base_url: https://labs.connect.dimagi.com
+auth:
+  type: session
+why_brief: ../../.canopy/ddd/runs/create-survey-solicitation-2026-06-17-001/why_brief.yaml
+review_mode: autonomous
+narrative: >-
+  Maya has just finished designing her Round 6 study — the two-arm Attakar-versus-Gura
+  household survey that her Vitamin-A programme will use to check whether its visits
+  are actually changing coverage. She has the plan; what she does not yet have is the
+  independent survey firm to run it. So from the plan she just built, Maya clicks
+  "Create solicitation" and lets the plan itself become the call for a firm. On the
+  create form the R6 plan is already waiting as the coverage area, so Maya only sets
+  the survey scope and publishes the open call. Across the country, Amina — who runs an
+  independent survey firm — opens the public solicitation, reads the coverage on offer,
+  ticks the Attakar-and-Gura area as the work her enumerators can staff, and submits her
+  firm's application. Back in her workspace, Maya opens the responses and sees Amina's
+  firm tied to the exact coverage area she designed — the loop from a study plan to a
+  real applicant closed. Awarding that firm and standing up the live Connect opportunity
+  her enumerators would actually run is the step Maya is reaching for next; today she has
+  recruited and can compare applicants against the real coverage.
+personas:
+  maya:
+    name: Maya
+    role: Program study planner
+    color: "#7C3AED"
+    intro: >-
+      Maya designed the Round 6 two-arm Attakar-versus-Gura study for her Vitamin-A
+      programme and now needs to recruit the independent firm that will run the
+      household survey on it.
+  amina:
+    name: Amina Okafor
+    role: Director, independent survey firm (Health Bridge Nigeria)
+    color: "#059669"
+    intro: >-
+      Amina runs an independent household-survey firm and is looking for survey work
+      she can staff; she answers public solicitations with the coverage her enumerators
+      can commit to.
+scenes:
+  - persona: maya
+    title: Maya turns her finished study into a call for a firm
+    url: /microplans/program/10008/plan/4494/review/
+    narrative: >-
+      Maya stands on the Round 6 plan she just designed — Attakar as the intervention
+      arm, Gura as the comparison — and instead of hunting for a survey firm in a
+      separate tool, she clicks "Create solicitation" right from the plan to turn it
+      into an open call.
+    show: >-
+      On the R6 plan review page Maya finds the "Create solicitation" action and clicks
+      it; the app carries the plan she is looking at straight into a new solicitation.
+    concept_claim: >-
+      A program owner launches a solicitation directly from a finished micro-plan via a
+      Create solicitation button that carries that plan as the source, without leaving
+      the planning workspace.
+    provenance: S3
+    design_intent: >-
+      Bet: recruiting a firm is a continuation of designing the study, so the call
+      starts from the plan the owner just built — not from a blank solicitation form.
+    features:
+      - id: create-solicitation-from-plan-button
+        description: >-
+          The micro-plan review page renders a "Create solicitation" link to
+          /solicitations/create/?source_program_id=<pid>&source_plan_id=<plan>
+        verify: >-
+          Playwright: on /microplans/program/10008/plan/4494/review/, assert an anchor
+          with text "Create solicitation" whose href contains source_plan_id=4494
+  - persona: maya
+    title: Maya finds the plan already waiting as the coverage area
+    url: /solicitations/create/?source_program_id=10008&source_plan_id=4494
+    narrative: >-
+      On the create form Maya sees her R6 plan already sitting in a "Coverage areas (from
+      micro-plan)" panel — the title and scope pre-filled from it — so she only writes the
+      survey scope and publishes the call rather than re-describing the area she just
+      designed.
+    show: >-
+      Maya reads the pre-seeded title and the "Coverage areas (from micro-plan)" panel
+      listing the R6 — Attakar x Gura plan, confirms the survey scope, and the form is
+      ready to publish with that plan attached.
+    concept_claim: >-
+      The create form pre-seeds the source plan into a Coverage areas panel snapshotted at
+      creation, so the owner publishes the exact coverage the firm will bid on.
+    provenance: S4
+    design_intent: >-
+      Bet: the owner should confirm the coverage the firm will see, frozen at creation, so
+      later plan edits never silently change a published solicitation.
+    features:
+      - id: coverage-panel-from-snapshot
+        description: >-
+          The create form renders a "Coverage areas (from micro-plan)" panel populated from
+          the snapshotted plans_json (source_plan_ids=[4494])
+        verify: >-
+          Playwright: on the create form with source_plan_id=4494, assert text "Coverage
+          areas (from micro-plan)" and that "R6 — Attakar" appears in the coverage list
+  - persona: amina
+    title: Amina reads the open call and ticks the area she can staff
+    url: /solicitations/4495/
+    narrative: >-
+      Amina opens the public solicitation, reads that the work is the Attakar-and-Gura
+      household survey, and on the application form ticks that exact coverage area as the
+      one her enumerators can staff before submitting her firm's application.
+    show: >-
+      On the public solicitation Amina clicks through to respond, finds the "Which areas
+      can you cover?" selector listing the R6 — Attakar x Gura area, ticks it, and submits
+      her application bound to that coverage.
+    concept_claim: >-
+      A survey firm reads the public solicitation and applies by selecting a specific
+      coverage area from a checklist, and submission is blocked until one area is chosen.
+    provenance: S5
+    design_intent: >-
+      Bet: an application should commit to a concrete coverage area, not a free-text claim,
+      so the owner compares applicants on the real area they will work.
+    features:
+      - id: respondent-coverage-selector
+        description: >-
+          The public response form shows a "Which areas can you cover?" checkbox list bound
+          to the solicitation's snapshot plans, and blocks submit when none is selected
+        verify: >-
+          Playwright: on /solicitations/4495/respond/, assert label "Which areas can you
+          cover?" with a checkbox for the R6 plan; submitting with none selected shows
+          "Select at least one coverage area to submit."
+  - persona: maya
+    title: Maya sees the firm tied to the coverage she designed
+    url: /solicitations/4495/responses/?program_id=10008
+    narrative: >-
+      Back in her workspace Maya opens the responses and reads, on the one application,
+      the exact coverage area she designed — R6 Attakar x Gura — so she is comparing a real
+      firm against the real survey, the loop from study plan to applicant closed.
+    show: >-
+      On the responses page Maya sees the submitted application showing the selected
+      coverage "R6 — Attakar x Gura", with View, Review, and Award actions ready.
+    concept_claim: >-
+      The owner reviewing responses sees each firm's selected coverage area resolved from
+      the authoritative snapshot, tying every application to a concrete designed coverage.
+    provenance: S6
+    design_intent: >-
+      Bet: the reviewer should compare applicants against the designed coverage, so the
+      selected area the firm committed to is shown directly on the response.
+    features:
+      - id: reviewer-sees-selected-coverage
+        description: >-
+          The responses list shows each response's selected_plan_names resolved against the
+          solicitation snapshot
+        verify: >-
+          Playwright: on /solicitations/4495/responses/, assert the submitted response row
+          shows "R6 — Attakar" as its selected coverage area
+  - persona: maya
+    title: Maya looks ahead to standing up the real opportunity
+    url: /solicitations/4495/responses/?program_id=10008
+    narrative: >-
+      With a firm tied to her coverage, Maya looks at the Award action and knows the next
+      step she is reaching for — turning an award into the live Connect opportunity her
+      enumerators would actually run — is the work ahead, not something today's call has
+      done for her.
+    show: >-
+      Maya hovers the Award action on the application and reads it as the boundary between
+      what she has recruited today and the live opportunity she would stand up next.
+    concept_claim: >-
+      Recruiting and reviewing a firm against the designed coverage is the shipped step,
+      while provisioning a live Connect opportunity from an award is the next step, not yet
+      built.
+    provenance: S7
+    design_intent: >-
+      Bet: the demo must be honest about the planning-versus-execution boundary, framing
+      field execution as the aspirational next step rather than a shipped mechanism.
+    features:
+      - id: award-action-present-provision-deferred
+        description: >-
+          The response row exposes an Award action; there is no code that, on award,
+          provisions a Connect opportunity or pushes the plan's work areas into one
+        verify: >-
+          Playwright: on /solicitations/4495/responses/, assert an "Award" control exists;
+          grep: no create_opportunity/WorkArea-provision call in commcare_connect/solicitations/
