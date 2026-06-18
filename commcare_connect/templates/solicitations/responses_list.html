@@ -23,7 +23,7 @@
             </div>
             <div class="flex items-center gap-3">
                 <span class="badge badge-md {% if solicitation.solicitation_type == 'eoi' %}primary-light{% else %}warning-light{% endif %}">
-                    {{ solicitation.solicitation_type|upper }}
+                    {{ solicitation.type_label }}
                 </span>
                 {% if solicitation.status == 'active' %}
                     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
@@ -285,7 +285,7 @@
                         <tr class="hover:bg-gray-50 transition">
                             <td class="px-3 py-4 whitespace-nowrap">
                                 <div class="text-sm font-medium text-gray-900">
-                                    {{ response.org_name|default:response.llo_entity_name|default:"Unknown Organization" }}
+                                    {{ response.llo_entity_name|default:response.org_name|default:"Unknown Organization" }}
                                 </div>
                                 {% if response.selected_plan_names %}
                                 <div class="mt-1.5 flex flex-wrap items-center gap-1">
