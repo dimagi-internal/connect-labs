@@ -11,8 +11,8 @@ from datetime import datetime
 from django.http import HttpRequest
 
 from commcare_connect.labs.analysis.config import DataSourceConfig
+from commcare_connect.labs.analysis.data_access import fetch_opportunity_metadata
 from commcare_connect.labs.integrations.commcare.api_client import CommCareDataAccess
-from commcare_connect.workflow.templates.mbw_monitoring.data_fetchers import fetch_opportunity_metadata
 
 logger = logging.getLogger(__name__)
 
