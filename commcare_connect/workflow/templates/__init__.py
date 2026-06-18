@@ -115,7 +115,11 @@ def get_template(template_key: str) -> dict | None:
 
 def list_templates() -> list[dict]:
     """
-    List all available templates.
+    List available templates for creation/listing surfaces.
+
+    Excludes templates flagged ``deprecated`` — those stay in the registry
+    (so existing instances resolve via ``get_template``) but must not be
+    presented as creatable starters or reference patterns.
 
     Returns:
         List of dicts with 'key', 'name', 'description', 'icon', 'color',
@@ -132,6 +136,7 @@ def list_templates() -> list[dict]:
             "supports_saved_runs": bool(t.get("supports_saved_runs", False)),
         }
         for key, t in TEMPLATES.items()
+        if not t.get("deprecated")
     ]
 
 
@@ -431,6 +436,8 @@ def create_workflow_from_template(
     template = get_template(template_key)
     if not template:
         raise ValueError(f"Unknown template: {template_key}")
+    if template.get("deprecated"):
+        raise ValueError(f"Template '{template_key}' is deprecated and can no longer be instantiated.")
 
     template_def = template["definition"]
     pipeline_schema = template.get("pipeline_schema")

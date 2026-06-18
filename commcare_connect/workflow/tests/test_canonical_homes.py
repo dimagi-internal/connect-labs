@@ -53,6 +53,33 @@ def test_v5_render_does_not_call_mbw_monitoring_namespace():
     assert "/custom_analysis/mbw_monitoring/api/opportunity-flws/" not in render
 
 
+def test_mbw_monitoring_v1_is_deprecated_and_delisted():
+    """v1 mbw_monitoring stays in the registry (live instances) but is hidden
+    from the creatable list and cannot be instantiated anew."""
+    import pytest
+
+    from commcare_connect.workflow.templates import (
+        TEMPLATES,
+        create_workflow_from_template,
+        get_template,
+        list_templates,
+    )
+
+    # Still registered so existing instances resolve.
+    assert "mbw_monitoring" in TEMPLATES
+    assert get_template("mbw_monitoring") is not None
+    assert get_template("mbw_monitoring").get("deprecated") is True
+
+    # Hidden from the creatable/listing surface (UI menu + MCP list_templates).
+    listed = {t["key"] for t in list_templates()}
+    assert "mbw_monitoring" not in listed
+    assert "mbw_auditing_v5" in listed  # the current pattern is still listed
+
+    # Cannot be created anew.
+    with pytest.raises(ValueError, match="deprecated"):
+        create_workflow_from_template(data_access=None, template_key="mbw_monitoring")
+
+
 def test_opportunity_detail_is_single_owner_of_the_get():
     """fetch_opportunity_metadata is built on the shared fetch_opportunity_detail primitive."""
     from commcare_connect.labs.analysis import data_access
