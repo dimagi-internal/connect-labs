@@ -12,6 +12,18 @@ def _plan_entry(plan) -> dict:
     input_areas = (plan.data or {}).get("input_areas", []) or []
     wards = [a.get("name", "") for a in input_areas if a.get("name")]
     arms = sorted({a.get("arm") for a in input_areas if a.get("arm")})
+    # Coverage boundary polygons (ward-level), carried into the snapshot so the
+    # solicitation can draw a real map without re-reading the live plan. Geometry
+    # is GeoJSON (Polygon/MultiPolygon) stored inline on each input_area.
+    boundaries = []
+    for a in input_areas:
+        geom = a.get("geometry")
+        if not geom:
+            continue
+        b = {"name": a.get("name", ""), "geometry": geom}
+        if a.get("arm"):
+            b["arm"] = a["arm"]
+        boundaries.append(b)
     entry = {
         "plan_id": int(plan.id),
         "name": plan.name or f"Plan #{plan.id}",
@@ -21,6 +33,8 @@ def _plan_entry(plan) -> dict:
     }
     if arms:
         entry["arms"] = arms
+    if boundaries:
+        entry["boundaries"] = boundaries
     return entry
 
 

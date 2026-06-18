@@ -56,9 +56,9 @@ Go to the plan group's management page and click **Create solicitation**. The so
 **From a single plan:**
 Go to the plan's review page and click **Create solicitation**. The form opens pre-filled in the same way, with that one plan attached as a coverage area.
 
-In both cases, you can edit any pre-filled field before publishing. Once you save the solicitation, the attached plans become a fixed snapshot — later edits to the underlying micro-plans will not change what is shown on the published solicitation.
+In both cases, the coverage areas are shown on a map on the creation form, with the actual ward boundaries drawn for each attached plan. You can edit any pre-filled field before publishing. Once you save the solicitation, the attached plans become a fixed snapshot — later edits to the underlying micro-plans will not change what is shown on the published solicitation.
 
-The coverage areas are listed on the public solicitation page so applicants can see exactly which areas are on the table.
+The coverage areas are displayed on the public solicitation page — both as a map showing the ward boundaries and as a list — so applicants can see exactly which areas are on the table.
 
 !!! info "Plans are captured as a snapshot"
 Because coverage areas are fixed at the time the solicitation is created, any changes you make to a micro-plan after that point will not be reflected in the solicitation. If your plans change significantly before the deadline, you will need to update the solicitation's coverage areas manually or create a new solicitation.
@@ -96,18 +96,18 @@ In the current version, the coverage areas selected by an applicant are captured
 
 ### Finding Solicitations
 
-Published solicitations are visible on the Labs solicitations page without logging in. Filter by type (EOI or RFP) to find relevant opportunities. Where a solicitation was created from micro-plans, the specific geographic areas on offer are listed on the solicitation page.
+Published solicitations are visible on the Labs solicitations page without logging in. Filter by type (EOI or RFP) to find relevant opportunities. Where a solicitation was created from micro-plans, the specific geographic areas on offer are shown on a map with ward boundaries drawn, as well as in a list, on the solicitation page.
 
 ### Submitting a Response
 
 1. Open a solicitation and read the full description and scope of work
 2. Click **Submit Response**
 3. Answer each question in the response template — where present, read the italicised framing above each question to understand what the program team is looking for
-4. If the solicitation includes coverage areas, select the areas you can cover by choosing one or more plans from the list — you must select at least one to submit
+4. If the solicitation includes coverage areas, select the areas you can cover by clicking the ward boundaries directly on the map, or by checking the boxes in the checklist alongside it — both controls are kept in sync, so selecting an area in one automatically updates the other. You must select at least one plan to submit
 5. Review your answers, then click **Submit**
 
 !!! info "Selecting coverage areas"
-Each plan is offered as a whole unit. If a plan includes multiple wards or intervention and control areas, you take all of it — you cannot select only part of a plan. If you are unsure what a plan covers, read the solicitation description or contact the program team before submitting.
+Each plan is offered as a whole unit. Clicking any part of a plan's boundary on the map selects that entire plan — you cannot select only part of a plan. If a plan includes multiple wards or intervention and control areas, you take all of it. If you are unsure what a plan covers, read the solicitation description or contact the program team before submitting.
 
 !!! warning "Submissions are final"
 Responses cannot be edited after submission. Make sure your response is complete before submitting. If you need to make a correction, contact the program team directly.
@@ -155,10 +155,13 @@ Framing is an optional one-to-two sentence note you can attach to any question i
 You can, but the coverage areas are fixed as a snapshot at the moment you save the solicitation. If your plans change after that point, the published solicitation will not update automatically. Wait until your plans are stable before creating the solicitation, or be prepared to update the coverage areas manually if things change before the deadline.
 
 **Do applicants have to cover all the areas listed in a solicitation?**
-No — applicants select only the areas they can cover. They must select at least one plan to submit a response, but they do not need to take all areas on offer. The program team can see each applicant's selected areas when reviewing responses.
+No — applicants select only the areas they can cover. They must select at least one plan to submit a response, but they do not need to take all areas on offer. Applicants can select areas by clicking the boundaries on the map or by using the checklist — both show the same options and stay in sync. The program team can see each applicant's selected areas when reviewing responses.
 
 **What does it mean that a plan is selected "as a whole unit"?**
-If a micro-plan bundles multiple wards, or includes both intervention and control areas, an applicant who selects that plan is committing to all of it. There is no option to select only part of a plan.
+If a micro-plan bundles multiple wards, or includes both intervention and control areas, an applicant who selects that plan is committing to all of it. Clicking any part of that plan's boundary on the map selects the entire plan — there is no option to select only part of it.
 
 **I clicked "Create solicitation" from a plan and got a "Failed to create solicitation" error — what should I do?**
 This error could previously occur on certain Labs-managed study programs. It has been fixed, so clicking **Create solicitation** from a plan on any program should now work. If you still see this error, try refreshing the page and attempting again. If the problem persists, contact your Labs administrator.
+
+
+---

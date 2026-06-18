@@ -48,6 +48,36 @@ def _plan(pid, name="Ward", region="Lagos"):
     )
 
 
+def test_snapshot_carries_boundary_geometry():
+    """input_areas geometry is captured into plans[].boundaries for the map."""
+    geom_n = {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 0]]]}
+    geom_s = {"type": "Polygon", "coordinates": [[[2, 2], [3, 2], [3, 3], [2, 2]]]}
+    plan = _FakePlan(
+        1,
+        "Ikorodu",
+        "Lagos",
+        input_areas=[
+            {"name": "North", "arm": "intervention", "geometry": geom_n},
+            {"name": "South", "arm": "control", "geometry": geom_s},
+        ],
+        work_areas=[],
+    )
+    da = _FakeDA(25, [plan])
+    snap = build_plan_snapshot(da, plan_id=1)
+    boundaries = snap["plans"][0]["boundaries"]
+    assert boundaries == [
+        {"name": "North", "arm": "intervention", "geometry": geom_n},
+        {"name": "South", "arm": "control", "geometry": geom_s},
+    ]
+
+
+def test_snapshot_omits_boundaries_when_no_geometry():
+    """A plan whose input_areas carry no geometry yields no boundaries key."""
+    da = _FakeDA(25, [_plan(1, "Ikorodu")])  # _plan's input_areas have name/arm but no geometry
+    snap = build_plan_snapshot(da, plan_id=1)
+    assert "boundaries" not in snap["plans"][0]
+
+
 def test_group_snapshot_lists_every_member_plan():
     plans = [_plan(1, "Ikorodu"), _plan(2, "Ikeja")]
     da = _FakeDA(25, plans, group=_FakeGroup("Lagos Study", [1, 2]))
