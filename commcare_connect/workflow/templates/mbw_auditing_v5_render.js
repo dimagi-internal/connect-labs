@@ -1341,17 +1341,14 @@ function WorkflowUI({
       if (savedSelectedWorkers.length > 0) return;
       setHistoryLoading(true);
 
-      var historyPromise = fetch(
-        '/custom_analysis/mbw_monitoring/api/opportunity-flws/',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-CSRFToken': getCSRF(),
-          },
-          body: JSON.stringify({ opportunities: [instance.opportunity_id] }),
+      var historyPromise = fetch('/labs/workflow/api/opportunity-flws/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': getCSRF(),
         },
-      )
+        body: JSON.stringify({ opportunities: [instance.opportunity_id] }),
+      })
         .then(function (r) {
           return r.json();
         })

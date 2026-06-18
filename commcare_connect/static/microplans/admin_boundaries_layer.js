@@ -24,34 +24,34 @@
  *   });
  */
 (function (global) {
-  "use strict";
+  'use strict';
 
-  const COLOR = "#a855f7";
+  const COLOR = '#a855f7';
   // Two-arm sampling: per-boundary study arm. Matches review.html ARM_COLOR.
-  const ARMS = ["intervention", "comparison"];
-  const ARM_COLOR = { intervention: "#10b981", comparison: "#3b82f6" };
-  const ARM_LABEL = { intervention: "Interv", comparison: "Control" };
-  const SRC = "mp-admin";
-  const LINE = "mp-admin-line";
-  const FILL = "mp-admin-fill";
-  const FILL_HOVER = "mp-admin-fill-hover";
-  const HOVER = "mp-admin-hover";
-  const SEL_SRC = "mp-admin-sel";
-  const SEL_FILL = "mp-admin-sel-fill";
-  const SEL_LINE = "mp-admin-sel-line";
+  const ARMS = ['intervention', 'comparison'];
+  const ARM_COLOR = { intervention: '#10b981', comparison: '#3b82f6' };
+  const ARM_LABEL = { intervention: 'Interv', comparison: 'Control' };
+  const SRC = 'mp-admin';
+  const LINE = 'mp-admin-line';
+  const FILL = 'mp-admin-fill';
+  const FILL_HOVER = 'mp-admin-fill-hover';
+  const HOVER = 'mp-admin-hover';
+  const SEL_SRC = 'mp-admin-sel';
+  const SEL_FILL = 'mp-admin-sel-fill';
+  const SEL_LINE = 'mp-admin-sel-line';
   // Surrounding-ward compare overlay — per-candidate coloured fills so each row in
   // the results panel maps to a boundary on the map.
-  const CMP_SRC = "mp-admin-cmp";
-  const CMP_FILL = "mp-admin-cmp-fill";
-  const CMP_LINE = "mp-admin-cmp-line";
-  const CMP_LABEL = "mp-admin-cmp-label";
+  const CMP_SRC = 'mp-admin-cmp';
+  const CMP_FILL = 'mp-admin-cmp-fill';
+  const CMP_LINE = 'mp-admin-cmp-line';
+  const CMP_LABEL = 'mp-admin-cmp-label';
 
   function register(opts) {
     const map = opts.map;
     const panel = opts.panel;
     const urls = opts.urls || {};
     const M = global.Microplans;
-    const esc = (M && M.esc) || ((s) => String(s == null ? "" : s));
+    const esc = (M && M.esc) || ((s) => String(s == null ? '' : s));
     const getCountryIso = opts.getCountryIso || (() => null);
     const isAreaPhase = opts.isAreaPhase || (() => false);
     const onAreaAdd = opts.onAreaAdd || function () {};
@@ -90,7 +90,7 @@
     // the map layer, so they live in the map-panel layer body. The rail
     // (controlsHost) keeps only the plan-building output: the selected-boundary
     // summary + x-deletable list.
-    const sourceBody = document.createElement("div");
+    const sourceBody = document.createElement('div');
     sourceBody.innerHTML = `
       <label class="block mb-1.5">
         <span class="text-gray-600">Source</span>
@@ -100,18 +100,18 @@
              placeholder="search a ward / LGA / state by name, then click to add…">
       <div class="mp-ab-status text-[10px] text-gray-500 mt-1"></div>
       <div class="mp-ab-results max-h-32 overflow-y-auto"></div>`;
-    const body = document.createElement("div");
+    const body = document.createElement('div');
     body.innerHTML = `
       <div class="mp-ab-summary text-[11px] font-medium text-purple-700 mt-1"></div>
       <div class="mp-ab-selected space-y-0.5 mt-1"></div>
       <p class="mp-ab-hint text-[10px] text-gray-400 mt-1"></p>`;
-    const sourceSel = sourceBody.querySelector(".mp-ab-source");
-    const searchEl = sourceBody.querySelector(".mp-ab-search");
-    const statusEl = sourceBody.querySelector(".mp-ab-status");
-    const resultsEl = sourceBody.querySelector(".mp-ab-results");
-    const summaryEl = body.querySelector(".mp-ab-summary");
-    const hintEl = body.querySelector(".mp-ab-hint");
-    const selectedListEl = body.querySelector(".mp-ab-selected");
+    const sourceSel = sourceBody.querySelector('.mp-ab-source');
+    const searchEl = sourceBody.querySelector('.mp-ab-search');
+    const statusEl = sourceBody.querySelector('.mp-ab-status');
+    const resultsEl = sourceBody.querySelector('.mp-ab-results');
+    const summaryEl = body.querySelector('.mp-ab-summary');
+    const hintEl = body.querySelector('.mp-ab-hint');
+    const selectedListEl = body.querySelector('.mp-ab-selected');
 
     if (controlsHost) {
       controlsHost.appendChild(body); // search + selected list mount in the rail
@@ -120,23 +120,23 @@
     }
 
     function setStatus(t) {
-      statusEl.textContent = t || "";
+      statusEl.textContent = t || '';
     }
     function renderSourceOptions() {
       sourceSel.innerHTML = (availableSources || [])
         .map(
           (n) =>
-            `<option value="${esc(n)}"${n === source ? " selected" : ""}>${esc(
+            `<option value="${esc(n)}"${n === source ? ' selected' : ''}>${esc(
               sourceLabels[n] || n,
             )}</option>`,
         )
-        .join("");
+        .join('');
       sourceSel.parentElement.style.display =
-        availableSources.length > 1 ? "" : "none";
+        availableSources.length > 1 ? '' : 'none';
     }
     function renderSummary() {
       if (!selected.size) {
-        summaryEl.textContent = "";
+        summaryEl.textContent = '';
       } else {
         let km2 = 0;
         selected.forEach((v) => {
@@ -149,29 +149,29 @@
       // x-deletable list of the selected boundaries (lives in the rail). In
       // sampling mode each row also carries a per-boundary arm pill.
       if (!selectedListEl) return;
-      selectedListEl.innerHTML = "";
+      selectedListEl.innerHTML = '';
       const showArm = armEnabled();
       selected.forEach((v, id) => {
-        const row = document.createElement("div");
+        const row = document.createElement('div');
         row.className =
-          "flex items-center justify-between gap-1.5 text-[11px] px-1.5 py-0.5 rounded bg-gray-50 border border-gray-200";
-        const name = document.createElement("span");
-        name.className = "truncate flex-1";
+          'flex items-center justify-between gap-1.5 text-[11px] px-1.5 py-0.5 rounded bg-gray-50 border border-gray-200';
+        const name = document.createElement('span');
+        name.className = 'truncate flex-1';
         // Include the parent (LGA/state) so identically-named wards are distinguishable.
         name.textContent =
-          ((v.desc && v.desc.name) || "(area)") +
-          (v.desc && v.desc.parent_name ? ` — ${v.desc.parent_name}` : "");
+          ((v.desc && v.desc.name) || '(area)') +
+          (v.desc && v.desc.parent_name ? ` — ${v.desc.parent_name}` : '');
         if (v.desc && v.desc.parent_name)
           name.title = `${v.desc.name} — ${v.desc.parent_name}`;
         row.appendChild(name);
         if (showArm) row.appendChild(armPill(id, v));
-        const x = document.createElement("button");
-        x.type = "button";
+        const x = document.createElement('button');
+        x.type = 'button';
         x.className =
-          "text-gray-400 hover:text-red-600 leading-none px-1 shrink-0";
-        x.textContent = "×";
-        x.title = "Remove from plan area";
-        x.addEventListener("click", () => toggleSelect(v.desc));
+          'text-gray-400 hover:text-red-600 leading-none px-1 shrink-0';
+        x.textContent = '×';
+        x.title = 'Remove from plan area';
+        x.addEventListener('click', () => toggleSelect(v.desc));
         row.appendChild(x);
         selectedListEl.appendChild(row);
       });
@@ -181,7 +181,7 @@
       if (
         lastCompareState &&
         comparePanel &&
-        !comparePanel.classList.contains("hidden")
+        !comparePanel.classList.contains('hidden')
       )
         renderComparePanel(lastCompareState);
     }
@@ -196,20 +196,20 @@
       renderSummary();
     }
     function armPill(id, v) {
-      const arm = v.arm || "intervention";
-      const wrap = document.createElement("div");
+      const arm = v.arm || 'intervention';
+      const wrap = document.createElement('div');
       wrap.className =
-        "inline-flex rounded overflow-hidden border border-gray-200 text-[9px] font-semibold leading-none shrink-0";
-      wrap.title = "Study arm for this ward (intervention vs control)";
+        'inline-flex rounded overflow-hidden border border-gray-200 text-[9px] font-semibold leading-none shrink-0';
+      wrap.title = 'Study arm for this ward (intervention vs control)';
       ARMS.forEach((a) => {
-        const b = document.createElement("button");
-        b.type = "button";
+        const b = document.createElement('button');
+        b.type = 'button';
         const on = a === arm;
-        b.className = "px-1.5 py-0.5 transition-colors";
-        b.style.background = on ? ARM_COLOR[a] : "#fff";
-        b.style.color = on ? "#fff" : "#6b7280";
+        b.className = 'px-1.5 py-0.5 transition-colors';
+        b.style.background = on ? ARM_COLOR[a] : '#fff';
+        b.style.color = on ? '#fff' : '#6b7280';
         b.textContent = ARM_LABEL[a];
-        b.addEventListener("click", (e) => {
+        b.addEventListener('click', (e) => {
           e.stopPropagation();
           setArm(id, a);
         });
@@ -219,49 +219,49 @@
     }
     function renderHint() {
       hintEl.textContent = isAreaPhase()
-        ? "Click a boundary on the map, OR use the search box above (by ward/LGA/state name) and click a result, to add it to the plan area."
-        : "Click a boundary to inspect it.";
+        ? 'Click a boundary on the map, OR use the search box above (by ward/LGA/state name) and click a result, to add it to the plan area.'
+        : 'Click a boundary to inspect it.';
     }
 
     // ---- map layers ----
     function ensureLayers() {
       if (!map.getSource(SRC)) {
-        map.addSource(SRC, { type: "geojson", data: empty() });
+        map.addSource(SRC, { type: 'geojson', data: empty() });
         // Invisible fill over every boundary so a click/hover INSIDE a polygon
         // (not only on its line) hits the layer and can toggle selection.
         map.addLayer({
           id: FILL,
-          type: "fill",
+          type: 'fill',
           source: SRC,
-          paint: { "fill-color": COLOR, "fill-opacity": 0 },
+          paint: { 'fill-color': COLOR, 'fill-opacity': 0 },
         });
         // Fill the hovered boundary so it's visible even when you're zoomed
         // INSIDE it (its outline off-screen). Filtered to the hovered id.
         map.addLayer({
           id: FILL_HOVER,
-          type: "fill",
+          type: 'fill',
           source: SRC,
-          filter: ["==", ["get", "boundary_id"], "__none__"],
-          paint: { "fill-color": COLOR, "fill-opacity": 0.22 },
+          filter: ['==', ['get', 'boundary_id'], '__none__'],
+          paint: { 'fill-color': COLOR, 'fill-opacity': 0.22 },
         });
         map.addLayer({
           id: LINE,
-          type: "line",
+          type: 'line',
           source: SRC,
           paint: {
-            "line-color": COLOR,
+            'line-color': COLOR,
             // coarser level (lower number) = thicker; finer = thinner
             // Scale with zoom so fine (ward) outlines stay clearly visible when
             // zoomed in, instead of staying hair-thin on the satellite imagery.
-            "line-width": [
-              "interpolate",
-              ["linear"],
-              ["zoom"],
+            'line-width': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
               6,
               [
-                "interpolate",
-                ["linear"],
-                ["coalesce", ["get", "admin_level"], 1],
+                'interpolate',
+                ['linear'],
+                ['coalesce', ['get', 'admin_level'], 1],
                 1,
                 2.4,
                 2,
@@ -271,9 +271,9 @@
               ],
               13,
               [
-                "interpolate",
-                ["linear"],
-                ["coalesce", ["get", "admin_level"], 1],
+                'interpolate',
+                ['linear'],
+                ['coalesce', ['get', 'admin_level'], 1],
                 1,
                 4,
                 2,
@@ -282,40 +282,40 @@
                 2,
               ],
             ],
-            "line-opacity": 1,
+            'line-opacity': 1,
           },
         });
         map.addLayer({
           id: HOVER,
-          type: "line",
+          type: 'line',
           source: SRC,
-          filter: ["==", ["get", "boundary_id"], "__none__"],
-          paint: { "line-color": COLOR, "line-width": 3.2, "line-opacity": 1 },
+          filter: ['==', ['get', 'boundary_id'], '__none__'],
+          paint: { 'line-color': COLOR, 'line-width': 3.2, 'line-opacity': 1 },
         });
       }
       if (!map.getSource(SEL_SRC)) {
-        map.addSource(SEL_SRC, { type: "geojson", data: empty() });
+        map.addSource(SEL_SRC, { type: 'geojson', data: empty() });
         map.addLayer({
           id: SEL_FILL,
-          type: "fill",
+          type: 'fill',
           source: SEL_SRC,
-          paint: { "fill-color": COLOR, "fill-opacity": 0.3 },
+          paint: { 'fill-color': COLOR, 'fill-opacity': 0.3 },
         });
         map.addLayer({
           id: SEL_LINE,
-          type: "line",
+          type: 'line',
           source: SEL_SRC,
-          paint: { "line-color": COLOR, "line-width": 1.6 },
+          paint: { 'line-color': COLOR, 'line-width': 1.6 },
         });
       }
     }
     function empty() {
-      return { type: "FeatureCollection", features: [] };
+      return { type: 'FeatureCollection', features: [] };
     }
     function setVisible(on) {
       [FILL, FILL_HOVER, LINE, HOVER, SEL_FILL, SEL_LINE].forEach((id) => {
         if (map.getLayer(id))
-          map.setLayoutProperty(id, "visibility", on ? "visible" : "none");
+          map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
       });
     }
     function teardown() {
@@ -330,7 +330,7 @@
       const b = map.getBounds();
       const bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]
         .map((n) => n.toFixed(5))
-        .join(",");
+        .join(',');
       const params = new URLSearchParams({
         bbox,
         zoom: map.getZoom().toFixed(1),
@@ -344,17 +344,17 @@
       // a *detected* country: it's inferred from a wide first view and can be a
       // neighbour, which then wrongly empties the map when you zoom into the
       // program's real country (the bbox already scopes labs geographically).
-      if (iso && (hostIso || source !== "labs")) params.set("iso", iso);
-      if (source) params.set("source", source);
+      if (iso && (hostIso || source !== 'labs')) params.set('iso', iso);
+      if (source) params.set('source', source);
       if (fetchCtrl) fetchCtrl.abort();
       fetchCtrl = new AbortController();
-      setStatus("Loading boundaries…");
+      setStatus('Loading boundaries…');
       try {
-        const data = await M.apiGet(urls.viewport + "?" + params.toString(), {
+        const data = await M.apiGet(urls.viewport + '?' + params.toString(), {
           signal: fetchCtrl.signal,
         });
-        if (data.status !== "ok") {
-          setStatus(data.detail || "Could not load boundaries");
+        if (data.status !== 'ok') {
+          setStatus(data.detail || 'Could not load boundaries');
           return;
         }
         features = data.features || [];
@@ -375,17 +375,17 @@
         sourceLabels = data.source_labels || {};
         source = data.source || source;
         ensureLayers();
-        map.getSource(SRC).setData({ type: "FeatureCollection", features });
+        map.getSource(SRC).setData({ type: 'FeatureCollection', features });
         renderSourceOptions();
         // search is country-wide + user-driven, so it doesn't re-run on viewport refresh
         setStatus(
           `${features.length.toLocaleString()} boundaries from ${
-            sourceLabels[source] || source || "default"
-          }${truncated ? " · zoom in to see all" : ""}`,
+            sourceLabels[source] || source || 'default'
+          }${truncated ? ' · zoom in to see all' : ''}`,
         );
       } catch (e) {
-        if (e && e.name === "AbortError") return;
-        setStatus("Failed: " + e);
+        if (e && e.name === 'AbortError') return;
+        setStatus('Failed: ' + e);
       }
     }
     const refreshDebounced = M.debounce(refresh, 350);
@@ -418,23 +418,23 @@
     function inspectHTML(f, point) {
       const p = f.properties || {};
       const rows = [];
-      if (p.parent_name) rows.push(["Parent", p.parent_name]);
+      if (p.parent_name) rows.push(['Parent', p.parent_name]);
       rows.push([
-        "Admin level",
-        "ADM" + (p.admin_level != null ? p.admin_level : "?"),
+        'Admin level',
+        'ADM' + (p.admin_level != null ? p.admin_level : '?'),
       ]);
-      if (p.iso_code) rows.push(["Country", p.iso_code]);
+      if (p.iso_code) rows.push(['Country', p.iso_code]);
       if (p.area_km2 != null)
-        rows.push(["Area", Math.round(p.area_km2).toLocaleString() + " km²"]);
+        rows.push(['Area', Math.round(p.area_km2).toLocaleString() + ' km²']);
       if (p.population != null)
-        rows.push(["Population", Math.round(p.population).toLocaleString()]);
+        rows.push(['Population', Math.round(p.population).toLocaleString()]);
       const isSel = selected.has(p.boundary_id);
       const body = [
         `<div style="font-weight:700;margin-bottom:.25rem">${esc(
-          p.name || "Boundary",
+          p.name || 'Boundary',
         )}</div>`,
         `<div style="font-size:.62rem;color:#6b7280">via ${esc(
-          sourceLabels[p.source] || p.source || "",
+          sourceLabels[p.source] || p.source || '',
         )}</div>`,
         '<table style="margin-top:.35rem;font-size:.66rem;color:#374151">' +
           rows
@@ -444,15 +444,15 @@
                   k,
                 )}</td><td>${esc(v)}</td></tr>`,
             )
-            .join("") +
-          "</table>",
+            .join('') +
+          '</table>',
       ];
       if (isAreaPhase()) {
         body.push(
           `<button type="button" class="mp-ab-act button button-sm ${
-            isSel ? "outline-style" : "primary-dark"
+            isSel ? 'outline-style' : 'primary-dark'
           } text-xs mt-2 w-full">` +
-            `${isSel ? "Remove from area" : "Add to area"}</button>`,
+            `${isSel ? 'Remove from area' : 'Add to area'}</button>`,
         );
         const par = point ? parentOf(point, p.admin_level || 0) : null;
         if (par) {
@@ -463,13 +463,13 @@
           );
         }
       }
-      const node = document.createElement("div");
-      node.innerHTML = body.join("");
-      const act = node.querySelector(".mp-ab-act");
-      if (act) act.addEventListener("click", () => toggleSelect(featToDesc(f)));
-      const par = node.querySelector(".mp-ab-parent");
+      const node = document.createElement('div');
+      node.innerHTML = body.join('');
+      const act = node.querySelector('.mp-ab-act');
+      if (act) act.addEventListener('click', () => toggleSelect(featToDesc(f)));
+      const par = node.querySelector('.mp-ab-parent');
       if (par && point) {
-        par.addEventListener("click", () => {
+        par.addEventListener('click', () => {
           const pf = parentOf(point, p.admin_level || 0);
           if (pf) pinInspect(pf, point);
         });
@@ -478,13 +478,13 @@
     }
 
     function showHover(f, point) {
-      const filt = ["==", ["get", "boundary_id"], f.properties.boundary_id];
+      const filt = ['==', ['get', 'boundary_id'], f.properties.boundary_id];
       if (map.getLayer(HOVER)) map.setFilter(HOVER, filt);
       if (map.getLayer(FILL_HOVER)) map.setFilter(FILL_HOVER, filt);
       panel.setInspect(inspectHTML(f, point), false);
     }
     function clearHover() {
-      const none = ["==", ["get", "boundary_id"], "__none__"];
+      const none = ['==', ['get', 'boundary_id'], '__none__'];
       if (map.getLayer(HOVER)) map.setFilter(HOVER, none);
       if (map.getLayer(FILL_HOVER)) map.setFilter(FILL_HOVER, none);
       if (pinned) panel.setInspect(pinned, false);
@@ -494,8 +494,8 @@
       const node = inspectHTML(f, point);
       pinned = node.cloneNode(true);
       // re-bind handlers on the pinned clone
-      const act = pinned.querySelector(".mp-ab-act");
-      if (act) act.addEventListener("click", () => toggleSelect(featToDesc(f)));
+      const act = pinned.querySelector('.mp-ab-act');
+      if (act) act.addEventListener('click', () => toggleSelect(featToDesc(f)));
       panel.setInspect(node, true);
     }
 
@@ -508,7 +508,7 @@
       // so `ref` (a dict) comes back as a string from queryRenderedFeatures.
       // Parse it back, else the geometry lookup 404s ("Area not found").
       let ref = p.ref || {};
-      if (typeof ref === "string") {
+      if (typeof ref === 'string') {
         try {
           ref = JSON.parse(ref);
         } catch (e) {
@@ -519,7 +519,7 @@
         key: p.boundary_id,
         name: p.name,
         level: p.admin_level,
-        parent_name: p.parent_name || "",
+        parent_name: p.parent_name || '',
         source: p.source,
         country: p.iso_code,
         ref: ref,
@@ -529,12 +529,12 @@
     }
     function rowToDesc(a) {
       const ref = a.ref || {};
-      const key = ref.boundary_id || `${a.source}:${a.region || ""}:${a.name}`;
+      const key = ref.boundary_id || `${a.source}:${a.region || ''}:${a.name}`;
       return {
         key,
         name: a.name,
         level: a.level,
-        parent_name: a.parent_name || ref.parent_name || "",
+        parent_name: a.parent_name || ref.parent_name || '',
         source: a.source,
         country: a.country,
         ref,
@@ -549,12 +549,12 @@
     // re-tag the arm. Returns true on success.
     async function addBoundary(desc, arm) {
       const id = desc.key;
-      arm = arm || "intervention";
+      arm = arm || 'intervention';
       if (selected.has(id)) {
         setArm(id, arm);
         return true;
       }
-      setStatus("Fetching geometry…");
+      setStatus('Fetching geometry…');
       try {
         const area = {
           name: desc.name,
@@ -565,18 +565,18 @@
         };
         const resp = await post(urls.geometry, { area });
         const d = await resp.json();
-        if (!resp.ok || d.status !== "ok" || !d.geometry) {
-          setStatus(d.detail || "Geometry lookup failed");
+        if (!resp.ok || d.status !== 'ok' || !d.geometry) {
+          setStatus(d.detail || 'Geometry lookup failed');
           return false;
         }
         selected.set(id, { desc, geometry: d.geometry, arm });
         onAreaAdd(id, d.geometry, desc, arm);
         syncSelectedSource();
         renderSummary();
-        setStatus("");
+        setStatus('');
         return true;
       } catch (e) {
-        setStatus("Failed: " + e);
+        setStatus('Failed: ' + e);
         return false;
       }
     }
@@ -590,17 +590,17 @@
         return;
       }
       // New picks default to the intervention arm; the per-row pill changes it.
-      await addBoundary(desc, "intervention");
+      await addBoundary(desc, 'intervention');
     }
     function syncSelectedSource() {
       ensureLayers();
       const feats = [];
       selected.forEach((v) =>
-        feats.push({ type: "Feature", geometry: v.geometry, properties: {} }),
+        feats.push({ type: 'Feature', geometry: v.geometry, properties: {} }),
       );
       map
         .getSource(SEL_SRC)
-        .setData({ type: "FeatureCollection", features: feats });
+        .setData({ type: 'FeatureCollection', features: feats });
     }
 
     // ---- surrounding-ward control finder -------------------------------------
@@ -613,7 +613,7 @@
       selected.forEach((v, id) => {
         count += 1;
         only = { v, id };
-        if (!interv && (v.arm || "intervention") === "intervention")
+        if (!interv && (v.arm || 'intervention') === 'intervention')
           interv = { v, id };
       });
       const pick = interv || (count === 1 ? only : null);
@@ -624,9 +624,9 @@
       if (!bid) return null;
       return {
         boundary_id: bid,
-        name: d.name || "",
-        source: d.source || "",
-        country: d.country || "",
+        name: d.name || '',
+        source: d.source || '',
+        country: d.country || '',
         level: d.level,
         ref: ref.boundary_id ? ref : { boundary_id: bid, source: d.source },
       };
@@ -639,51 +639,51 @@
           key: cand.boundary_id,
           name: cand.name,
           level: ref.level,
-          parent_name: "",
+          parent_name: '',
           source: ref.source,
           country: ref.country,
           ref: { boundary_id: cand.boundary_id, source: ref.source },
           area_km2: null,
           population: cand.population != null ? cand.population : null,
         },
-        "comparison",
+        'comparison',
       );
     }
 
-    const compareBtn = document.createElement("button");
-    compareBtn.type = "button";
+    const compareBtn = document.createElement('button');
+    compareBtn.type = 'button';
     compareBtn.className =
-      "mp-ab-compare hidden w-full mt-2 text-[11px] font-medium px-2 py-1.5 rounded border " +
-      "border-purple-200 text-purple-700 bg-purple-50 hover:bg-purple-100 disabled:opacity-60";
-    compareBtn.textContent = "Compare surrounding boundaries";
-    compareBtn.addEventListener("click", runCompare);
+      'mp-ab-compare hidden w-full mt-2 text-[11px] font-medium px-2 py-1.5 rounded border ' +
+      'border-purple-200 text-purple-700 bg-purple-50 hover:bg-purple-100 disabled:opacity-60';
+    compareBtn.textContent = 'Compare surrounding boundaries';
+    compareBtn.addEventListener('click', runCompare);
     body.insertBefore(compareBtn, hintEl);
 
     function updateCompareBtn() {
       if (!compareBtn) return;
       const ok = !!compareUrl && armEnabled() && !!referenceForCompare();
-      compareBtn.classList.toggle("hidden", !ok);
+      compareBtn.classList.toggle('hidden', !ok);
     }
 
     const BANDS = {
       good: [
-        "bg-emerald-50",
-        "text-emerald-700",
-        "border-emerald-200",
-        "strong match",
+        'bg-emerald-50',
+        'text-emerald-700',
+        'border-emerald-200',
+        'strong match',
       ],
       ok: [
-        "bg-amber-50",
-        "text-amber-700",
-        "border-amber-200",
-        "partial match",
+        'bg-amber-50',
+        'text-amber-700',
+        'border-amber-200',
+        'partial match',
       ],
-      poor: ["bg-red-50", "text-red-700", "border-red-200", "poor match"],
+      poor: ['bg-red-50', 'text-red-700', 'border-red-200', 'poor match'],
       insufficient: [
-        "bg-gray-100",
-        "text-gray-500",
-        "border-gray-200",
-        "too few clusters",
+        'bg-gray-100',
+        'text-gray-500',
+        'border-gray-200',
+        'too few clusters',
       ],
     };
     function bandBadge(band) {
@@ -696,40 +696,40 @@
     // ---- map overlay: one coloured fill per candidate boundary ----
     function ensureCompareLayers() {
       if (map.getSource(CMP_SRC)) return;
-      map.addSource(CMP_SRC, { type: "geojson", data: empty() });
+      map.addSource(CMP_SRC, { type: 'geojson', data: empty() });
       map.addLayer({
         id: CMP_FILL,
-        type: "fill",
+        type: 'fill',
         source: CMP_SRC,
         paint: {
-          "fill-color": ["coalesce", ["get", "color"], "#9ca3af"],
+          'fill-color': ['coalesce', ['get', 'color'], '#9ca3af'],
           // solid once scored, faint while still analysing
-          "fill-opacity": ["case", ["get", "scored"], 0.32, 0.1],
+          'fill-opacity': ['case', ['get', 'scored'], 0.32, 0.1],
         },
       });
       map.addLayer({
         id: CMP_LINE,
-        type: "line",
+        type: 'line',
         source: CMP_SRC,
         paint: {
-          "line-color": ["coalesce", ["get", "color"], "#9ca3af"],
-          "line-width": 2.2,
+          'line-color': ['coalesce', ['get', 'color'], '#9ca3af'],
+          'line-width': 2.2,
         },
       });
       try {
         map.addLayer({
           id: CMP_LABEL,
-          type: "symbol",
+          type: 'symbol',
           source: CMP_SRC,
           layout: {
-            "text-field": ["get", "label"],
-            "text-size": 11,
-            "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
+            'text-field': ['get', 'label'],
+            'text-size': 11,
+            'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
           },
           paint: {
-            "text-color": ["coalesce", ["get", "color"], "#374151"],
-            "text-halo-color": "#ffffff",
-            "text-halo-width": 1.4,
+            'text-color': ['coalesce', ['get', 'color'], '#374151'],
+            'text-halo-color': '#ffffff',
+            'text-halo-width': 1.4,
           },
         });
       } catch (e) {
@@ -746,20 +746,20 @@
         const feats = (results || [])
           .filter((r) => r && r.geometry)
           .map((r) => ({
-            type: "Feature",
+            type: 'Feature',
             geometry: r.geometry,
             properties: {
-              color: r.color || "#9ca3af",
-              scored: r.status !== "error" && r.overlap != null,
+              color: r.color || '#9ca3af',
+              scored: r.status !== 'error' && r.overlap != null,
               label:
                 r.overlap != null
                   ? `${r.name} · ${Math.round(r.overlap * 100)}%`
-                  : r.name || "",
+                  : r.name || '',
             },
           }));
         const src = map.getSource(CMP_SRC);
         if (src) {
-          src.setData({ type: "FeatureCollection", features: feats });
+          src.setData({ type: 'FeatureCollection', features: feats });
           if (!compareOverlayFitted && feats.length) {
             compareOverlayFitted = true;
             // Include the selected (intervention) ward so it stays centred.
@@ -767,14 +767,14 @@
             selected.forEach((v) => {
               if (v && v.geometry)
                 fitFeats.push({
-                  type: "Feature",
+                  type: 'Feature',
                   geometry: v.geometry,
                   properties: {},
                 });
             });
             M.fitTo(
               map,
-              { type: "FeatureCollection", features: fitFeats },
+              { type: 'FeatureCollection', features: fitFeats },
               { padding: 60, maxZoom: 12, duration: 600 },
             );
           }
@@ -792,7 +792,7 @@
     // Overlaid mini-histogram: reference (grey) behind, this candidate (its colour)
     // in front, over the SAME bins the overlap score uses — so the picture IS the score.
     function sparkline(spark, color) {
-      if (!spark || !spark.ref || !spark.cand || !spark.ref.length) return "";
+      if (!spark || !spark.ref || !spark.cand || !spark.ref.length) return '';
       const n = spark.ref.length;
       const w = 124;
       const h = 26;
@@ -801,7 +801,7 @@
       for (let i = 0; i < n; i++)
         max = Math.max(max, spark.ref[i] || 0, spark.cand[i] || 0);
       max = max || 1;
-      let bars = "";
+      let bars = '';
       for (let i = 0; i < n; i++) {
         const x = i * bw;
         const rh = ((spark.ref[i] || 0) / max) * (h - 1);
@@ -823,60 +823,60 @@
     // click-toggled popover on each header.
     const COL_INFO = {
       ward:
-        "The candidate control ward. It’s filled on the map in this row’s colour, so you can see which " +
-        "boundary it is. The ward you’re matching against is the green <b>baseline</b> row at the top.",
+        'The candidate control ward. It’s filled on the map in this row’s colour, so you can see which ' +
+        'boundary it is. The ward you’re matching against is the green <b>baseline</b> row at the top.',
       pop:
-        "Estimated population of the ward, from the admin-boundary dataset (Enriched Boundaries). A rough " +
-        "size indicator only — it is <b>not</b> part of the match score, which is based on building density.",
+        'Estimated population of the ward, from the admin-boundary dataset (Enriched Boundaries). A rough ' +
+        'size indicator only — it is <b>not</b> part of the match score, which is based on building density.',
       buildings:
-        "Every building footprint inside the ward, from Google Open Buildings (via Overture Maps). Very small " +
-        "or oversized footprints are dropped as noise / non-residential first. What remains is the " +
-        "<b>sampling frame</b> — the structures the survey design draws from.",
+        'Every building footprint inside the ward, from Google Open Buildings (via Overture Maps). Very small ' +
+        'or oversized footprints are dropped as noise / non-residential first. What remains is the ' +
+        '<b>sampling frame</b> — the structures the survey design draws from.',
       clusters:
-        "<b>What it is.</b> The candidate PSUs (primary sampling units) — the units a survey would actually " +
-        "visit. <b>How they’re formed.</b> The ward’s buildings are grouped by location with k-means " +
-        "clustering: we deliberately over-cluster into 3× the target number of PSUs, then merge any cluster " +
-        "with fewer than 16 buildings into its nearest neighbour, so every final cluster is big enough to be a " +
-        "viable survey unit. When you draw the sample, a subset of these clusters are selected with probability " +
-        "proportional to their building count (PPS). This column is shown for context — the density column is " +
-        "measured per building, independent of this grouping.",
+        '<b>What it is.</b> The candidate PSUs (primary sampling units) — the units a survey would actually ' +
+        'visit. <b>How they’re formed.</b> The ward’s buildings are grouped by location with k-means ' +
+        'clustering: we deliberately over-cluster into 3× the target number of PSUs, then merge any cluster ' +
+        'with fewer than 16 buildings into its nearest neighbour, so every final cluster is big enough to be a ' +
+        'viable survey unit. When you draw the sample, a subset of these clusters are selected with probability ' +
+        'proportional to their building count (PPS). This column is shown for context — the density column is ' +
+        'measured per building, independent of this grouping.',
       median:
-        "<b>The number.</b> The typical building’s local density, in buildings per km². " +
-        "<b>How it’s computed.</b> For every building we find its 8 nearest neighbours and measure d₈, the " +
-        "distance to the 8th; the local density there is 8 ÷ (π · d₈²) — eight buildings spread over the circle " +
-        "that reaches them — converted to per-km². The median is the middle of all those per-building values: " +
-        "half the ward’s buildings sit somewhere denser, half sparser. This k-nearest-neighbour intensity is " +
-        "the standard, robust point-density estimator: because it’s measured locally at each building it isn’t " +
-        "thrown off by a cluster’s outline shape or a few stray edge buildings (the weakness of the old " +
-        "convex-hull density).",
+        '<b>The number.</b> The typical building’s local density, in buildings per km². ' +
+        '<b>How it’s computed.</b> For every building we find its 8 nearest neighbours and measure d₈, the ' +
+        'distance to the 8th; the local density there is 8 ÷ (π · d₈²) — eight buildings spread over the circle ' +
+        'that reaches them — converted to per-km². The median is the middle of all those per-building values: ' +
+        'half the ward’s buildings sit somewhere denser, half sparser. This k-nearest-neighbour intensity is ' +
+        'the standard, robust point-density estimator: because it’s measured locally at each building it isn’t ' +
+        'thrown off by a cluster’s outline shape or a few stray edge buildings (the weakness of the old ' +
+        'convex-hull density).',
       distribution:
-        "<b>What it shows.</b> A histogram of <b>every</b> building’s local density (computed as in “Median " +
-        "density”), so you see the whole spread, not just the middle. " +
-        "<b>How to read it.</b> Both wards are binned on one shared axis — anchored to the intervention ward’s " +
+        '<b>What it shows.</b> A histogram of <b>every</b> building’s local density (computed as in “Median ' +
+        'density”), so you see the whole spread, not just the middle. ' +
+        '<b>How to read it.</b> Both wards are binned on one shared axis — anchored to the intervention ward’s ' +
         '2nd–98th percentile — so the <span class="text-gray-400">grey bars (intervention)</span> are identical ' +
-        "in every row and the coloured bars (this ward) line up for comparison. " +
-        "<b>The score.</b> Each histogram is normalised to sum to 1; we add up the smaller of the two bars in " +
-        "every bin, and that shared (overlapping) area is the Match %. A wide spread = a mixed ward (some " +
-        "sparse, some dense).",
+        'in every row and the coloured bars (this ward) line up for comparison. ' +
+        '<b>The score.</b> Each histogram is normalised to sum to 1; we add up the smaller of the two bars in ' +
+        'every bin, and that shared (overlapping) area is the Match %. A wide spread = a mixed ward (some ' +
+        'sparse, some dense).',
       match:
-        "How much this ward’s local-density distribution <b>overlaps</b> the intervention’s (0–100%, the shared " +
-        "area of the bars), banded as strong (≥ 70%) / partial (≥ 50%) / poor. High overlap = a similar " +
-        "built-up texture, so a fairer counterfactual. This is the ranking key (best match first); density is " +
-        "the one axis a matched design can’t correct after the fact.",
+        'How much this ward’s local-density distribution <b>overlaps</b> the intervention’s (0–100%, the shared ' +
+        'area of the bars), banded as strong (≥ 70%) / partial (≥ 50%) / poor. High overlap = a similar ' +
+        'built-up texture, so a fairer counterfactual. This is the ranking key (best match first); density is ' +
+        'the one axis a matched design can’t correct after the fact.',
     };
 
     // One persistent column-info popover + a single outside-click closer (declared
     // here, once per register, so re-renders don't stack document listeners).
     let activeColPop = null;
-    document.addEventListener("click", (e) => {
+    document.addEventListener('click', (e) => {
       if (
         activeColPop &&
-        !activeColPop.classList.contains("hidden") &&
+        !activeColPop.classList.contains('hidden') &&
         e.target.closest &&
-        !e.target.closest(".mp-ab-col-i") &&
-        !e.target.closest(".mp-ab-col-popover")
+        !e.target.closest('.mp-ab-col-i') &&
+        !e.target.closest('.mp-ab-col-popover')
       )
-        activeColPop.classList.add("hidden");
+        activeColPop.classList.add('hidden');
     });
     // The last rendered compare state, so a selection change (add/remove a boundary
     // anywhere) can re-render the table and keep each row's "Add / added" accurate.
@@ -885,18 +885,18 @@
     function renderComparePanel(state) {
       if (!comparePanel) return;
       const st = state || {};
-      comparePanel.classList.remove("hidden");
-      if (st.kind === "error") {
+      comparePanel.classList.remove('hidden');
+      if (st.kind === 'error') {
         comparePanel.innerHTML =
           '<div class="px-3 py-2.5 text-[12px] text-red-700 bg-red-50 border border-red-200 rounded-lg">' +
-          esc(st.detail || "Comparison failed.") +
-          "</div>";
+          esc(st.detail || 'Comparison failed.') +
+          '</div>';
         return;
       }
       const ref = st.ref || {};
       const reference = st.reference || {};
-      const refName = reference.name || ref.name || "selected ward";
-      const running = st.kind === "running";
+      const refName = reference.name || ref.name || 'selected ward';
+      const running = st.kind === 'running';
       const results = st.results || [];
       const num = (x) => (x == null ? null : Math.round(x).toLocaleString());
       const dash = '<span class="text-gray-300">—</span>';
@@ -906,14 +906,14 @@
       // processing (and progress through them), instead of a vague "analysing…".
       const total = st.total != null ? st.total : results.length;
       const doneCount = results.filter(
-        (r) => r.status === "ok" || r.status === "error",
+        (r) => r.status === 'ok' || r.status === 'error',
       ).length;
       const runMsg =
         total > 0
-          ? `Processing ${total} surrounding area${total === 1 ? "" : "s"}${
-              doneCount ? ` · ${doneCount}/${total} done` : ""
+          ? `Processing ${total} surrounding area${total === 1 ? '' : 's'}${
+              doneCount ? ` · ${doneCount}/${total} done` : ''
             }`
-          : st.message || "Analysing…";
+          : st.message || 'Analysing…';
       const head =
         '<div class="flex items-center justify-between gap-2 px-3 py-2 border-b border-gray-100">' +
         '<div class="text-[12px] font-semibold text-gray-700 flex items-center gap-1.5">Surrounding wards vs ' +
@@ -923,23 +923,23 @@
         (running
           ? `<span class="text-[11px] text-gray-400">${esc(runMsg)}</span>`
           : '<span class="text-[11px] text-gray-400">best match first</span>') +
-        "</div>";
+        '</div>';
 
       // Methodology popup (toggled by the "?"), hidden by default.
       const method =
         '<div class="mp-ab-method hidden px-3 py-2.5 text-[11px] text-gray-600 leading-snug bg-gray-50 border-b border-gray-100">' +
-        "<b>What this measures.</b> We pull every building footprint in each ward and, for <b>each building</b>, estimate the local " +
-        "building density around it — from the distance to its nearest neighbours (a k-nearest-neighbour intensity, k = 8). " +
-        "We then compare the whole <b>distribution</b> of those local densities — not just the average — between the intervention ward " +
-        "and each neighbour. <b>Overlap</b> is how much the two distributions coincide (the shared area in the bars); a high overlap " +
-        "means a similar built-up texture, so a fairer control. Measuring per building (not per cluster) keeps it robust to settlement " +
-        "shape and stray edge buildings." +
-        "<br><br><b>Clusters / PSUs.</b> Separately, we group nearby buildings into <b>clusters</b> — the candidate PSUs you’d actually " +
-        "sample (the “Clusters” column counts them). The density above is measured per building, independent of this grouping. They’re " +
-        "algorithmic clusters, not official settlements." +
-        "<br><br><b>Where it’s from.</b> Building-footprint frames + two-stage PPS cluster sampling are standard household-survey " +
-        "practice (DHS / MICS / LSMS); k-NN intensity is the standard nonparametric density estimator for point patterns. Ranking " +
-        "control wards by density-distribution overlap is our own heuristic, grounded in matched-design / covariate-balance methods.</div>";
+        '<b>What this measures.</b> We pull every building footprint in each ward and, for <b>each building</b>, estimate the local ' +
+        'building density around it — from the distance to its nearest neighbours (a k-nearest-neighbour intensity, k = 8). ' +
+        'We then compare the whole <b>distribution</b> of those local densities — not just the average — between the intervention ward ' +
+        'and each neighbour. <b>Overlap</b> is how much the two distributions coincide (the shared area in the bars); a high overlap ' +
+        'means a similar built-up texture, so a fairer control. Measuring per building (not per cluster) keeps it robust to settlement ' +
+        'shape and stray edge buildings.' +
+        '<br><br><b>Clusters / PSUs.</b> Separately, we group nearby buildings into <b>clusters</b> — the candidate PSUs you’d actually ' +
+        'sample (the “Clusters” column counts them). The density above is measured per building, independent of this grouping. They’re ' +
+        'algorithmic clusters, not official settlements.' +
+        '<br><br><b>Where it’s from.</b> Building-footprint frames + two-stage PPS cluster sampling are standard household-survey ' +
+        'practice (DHS / MICS / LSMS); k-NN intensity is the standard nonparametric density estimator for point patterns. Ranking ' +
+        'control wards by density-distribution overlap is our own heuristic, grounded in matched-design / covariate-balance methods.</div>';
 
       // Table-row builder shared by the intervention baseline + each candidate.
       const sparkCell = (spark, color) =>
@@ -950,18 +950,18 @@
         '<td class="px-2 py-1.5"><div class="flex items-center gap-1.5">' +
         `<span class="inline-block w-3 h-3 rounded-sm shrink-0" style="background:${color}"></span>` +
         `<span class="text-gray-800 font-medium truncate">${esc(
-          name || "(ward)",
+          name || '(ward)',
         )}</span>` +
         (suffix
           ? `<span class="text-[10px] text-gray-400">${esc(suffix)}</span>`
-          : "") +
-        "</div></td>";
+          : '') +
+        '</div></td>';
 
       // Intervention baseline row, so every candidate number has something to read against.
       const refQ = reference.q || null;
       const baseRow =
         '<tr class="bg-emerald-50/50 border-t border-gray-100 align-middle">' +
-        wardCell("#10b981", refName, "intervention") +
+        wardCell('#10b981', refName, 'intervention') +
         `<td class="px-2 py-1.5 text-right tabular-nums">${cell(
           num(reference.population),
         )}</td>` +
@@ -974,33 +974,33 @@
         `<td class="px-2 py-1.5 text-right tabular-nums">${cell(
           refQ ? num(refQ[1]) : null,
         )}</td>` +
-        sparkCell(reference.spark, "#9ca3af") +
+        sparkCell(reference.spark, '#9ca3af') +
         '<td class="px-2 py-1.5 text-[11px] text-gray-400">baseline</td>' +
         '<td class="px-2 py-1.5"></td>' +
-        "</tr>";
+        '</tr>';
 
       const candRows = results
         .map((r) => {
-          const isErr = r.status === "error";
+          const isErr = r.status === 'error';
           const ok = !isErr && r.overlap != null;
           // Live selection state (re-rendered on every add/remove), so it can't go stale.
           const inPlan = selected.has(r.boundary_id);
-          const color = r.color || "#9ca3af";
+          const color = r.color || '#9ca3af';
           const cq = r.q_cand;
           const action = !ok
-            ? ""
+            ? ''
             : inPlan
-              ? '<span class="text-[11px] text-emerald-600 whitespace-nowrap">✓ added</span>'
-              : '<button type="button" class="mp-ab-addbnd text-[11px] font-medium px-2 py-0.5 rounded ' +
-                'border border-gray-300 text-gray-700 bg-white hover:bg-gray-50" ' +
-                `data-bid="${esc(r.boundary_id)}" data-name="${esc(r.name)}" ` +
-                `data-pop="${
-                  r.population != null ? esc(r.population) : ""
-                }">Add boundary</button>`;
+            ? '<span class="text-[11px] text-emerald-600 whitespace-nowrap">✓ added</span>'
+            : '<button type="button" class="mp-ab-addbnd text-[11px] font-medium px-2 py-0.5 rounded ' +
+              'border border-gray-300 text-gray-700 bg-white hover:bg-gray-50" ' +
+              `data-bid="${esc(r.boundary_id)}" data-name="${esc(r.name)}" ` +
+              `data-pop="${
+                r.population != null ? esc(r.population) : ''
+              }">Add boundary</button>`;
           let matchCell;
           if (isErr)
             matchCell = `<td class="px-2 py-1.5 text-[11px] text-red-500">${esc(
-              r.detail || "failed",
+              r.detail || 'failed',
             )}</td>`;
           else if (!ok)
             matchCell =
@@ -1029,16 +1029,16 @@
             sparkCell(r.spark, color) +
             matchCell +
             `<td class="px-2 py-1.5 text-right">${action}</td>` +
-            "</tr>"
+            '</tr>'
           );
         })
-        .join("");
+        .join('');
 
       // Each header shows the label + an ⓘ that opens a full-explanation popover (the
       // text lives in COL_INFO, keyed by colKey).
       const th = (label, colKey, extra) =>
         `<th class="px-2 py-1.5 font-semibold text-gray-500 ${
-          extra || "text-right"
+          extra || 'text-right'
         }">` +
         (colKey
           ? `<span class="inline-flex items-center gap-1">${label}` +
@@ -1047,30 +1047,30 @@
               label,
             )}">ⓘ</button></span>`
           : label) +
-        "</th>";
+        '</th>';
       const table =
         '<div class="overflow-x-auto"><table class="w-full text-[12px]">' +
         '<thead class="bg-gray-50 text-[10px] uppercase tracking-wide"><tr>' +
-        th("Ward", "ward", "text-left") +
-        th("Pop.", "pop") +
-        th("Buildings", "buildings") +
-        th("Clusters", "clusters") +
-        th("Median density", "median") +
-        th("Distribution", "distribution", "text-left") +
-        th("Match", "match", "text-left") +
-        th("", "", "text-left") +
-        "</tr></thead><tbody>" +
+        th('Ward', 'ward', 'text-left') +
+        th('Pop.', 'pop') +
+        th('Buildings', 'buildings') +
+        th('Clusters', 'clusters') +
+        th('Median density', 'median') +
+        th('Distribution', 'distribution', 'text-left') +
+        th('Match', 'match', 'text-left') +
+        th('', '', 'text-left') +
+        '</tr></thead><tbody>' +
         baseRow +
         candRows +
-        "</tbody></table></div>";
+        '</tbody></table></div>';
 
       const empty =
         !results.length && !running
           ? `<p class="px-3 py-3 text-[12px] text-gray-500">${esc(
               st.detail ||
-                "No neighbouring wards at the same level were found.",
+                'No neighbouring wards at the same level were found.',
             )}</p>`
-          : "";
+          : '';
 
       // Remember this state so a selection change elsewhere can re-render (keeping
       // each row's Add / ✓ added accurate).
@@ -1081,16 +1081,16 @@
         head +
         method +
         (results.length ? table : empty) +
-        "</div>";
+        '</div>';
 
       // Colour-fill each candidate's boundary on the map to match the rows.
       renderCompareOverlay(results);
 
-      const methodEl = comparePanel.querySelector(".mp-ab-method");
-      const methodBtn = comparePanel.querySelector(".mp-ab-method-toggle");
+      const methodEl = comparePanel.querySelector('.mp-ab-method');
+      const methodBtn = comparePanel.querySelector('.mp-ab-method-toggle');
       if (methodEl && methodBtn)
-        methodBtn.addEventListener("click", () =>
-          methodEl.classList.toggle("hidden"),
+        methodBtn.addEventListener('click', () =>
+          methodEl.classList.toggle('hidden'),
         );
 
       // Per-column info popover — absolutely positioned within comparePanel (which
@@ -1098,42 +1098,42 @@
       // scrolls WITH the page (a fixed/viewport one runs off-screen with no way to
       // reach its bottom). comparePanel is the table's sibling container, so its
       // overflow-x doesn't clip this.
-      comparePanel.classList.add("relative");
-      const colPop = document.createElement("div");
+      comparePanel.classList.add('relative');
+      const colPop = document.createElement('div');
       colPop.className =
-        "mp-ab-col-popover hidden absolute z-50 w-64 max-w-[88vw] bg-white border border-gray-200 rounded-lg " +
-        "shadow-xl p-3 text-[11px] font-normal normal-case tracking-normal text-left text-gray-600 leading-snug";
+        'mp-ab-col-popover hidden absolute z-50 w-64 max-w-[88vw] bg-white border border-gray-200 rounded-lg ' +
+        'shadow-xl p-3 text-[11px] font-normal normal-case tracking-normal text-left text-gray-600 leading-snug';
       comparePanel.appendChild(colPop);
       activeColPop = colPop;
-      comparePanel.querySelectorAll(".mp-ab-col-i").forEach((btn) => {
-        btn.addEventListener("click", (e) => {
+      comparePanel.querySelectorAll('.mp-ab-col-i').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
           e.stopPropagation();
           const key = btn.dataset.col;
           if (
-            !colPop.classList.contains("hidden") &&
+            !colPop.classList.contains('hidden') &&
             colPop.dataset.col === key
           ) {
-            colPop.classList.add("hidden"); // toggle off
+            colPop.classList.add('hidden'); // toggle off
             return;
           }
           colPop.dataset.col = key;
-          colPop.innerHTML = COL_INFO[key] || "";
-          colPop.classList.remove("hidden");
+          colPop.innerHTML = COL_INFO[key] || '';
+          colPop.classList.remove('hidden');
           // Position relative to comparePanel so it tracks the header on scroll.
           const panelRect = comparePanel.getBoundingClientRect();
           const rect = btn.getBoundingClientRect();
           const w = colPop.offsetWidth || 256;
           let left = rect.left - panelRect.left;
           left = Math.max(4, Math.min(left, comparePanel.clientWidth - w - 4));
-          colPop.style.left = left + "px";
-          colPop.style.top = rect.bottom - panelRect.top + 4 + "px";
+          colPop.style.left = left + 'px';
+          colPop.style.top = rect.bottom - panelRect.top + 4 + 'px';
         });
       });
 
-      comparePanel.querySelectorAll(".mp-ab-addbnd").forEach((btn) => {
-        btn.addEventListener("click", async () => {
+      comparePanel.querySelectorAll('.mp-ab-addbnd').forEach((btn) => {
+        btn.addEventListener('click', async () => {
           btn.disabled = true;
-          btn.textContent = "Adding…";
+          btn.textContent = 'Adding…';
           // On success addBoundary() calls renderSummary(), which re-renders this
           // panel → the row flips to "✓ added". Only reset the button on failure.
           const done = await selectCandidateAsControl(
@@ -1146,7 +1146,7 @@
           );
           if (!done) {
             btn.disabled = false;
-            btn.textContent = "Add boundary";
+            btn.textContent = 'Add boundary';
           }
         });
       });
@@ -1158,8 +1158,8 @@
       const ref = referenceForCompare();
       if (!ref) {
         renderComparePanel({
-          kind: "error",
-          detail: "Select an intervention ward first.",
+          kind: 'error',
+          detail: 'Select an intervention ward first.',
         });
         return;
       }
@@ -1167,8 +1167,8 @@
       compareBtn.disabled = true;
       clearCompareOverlay();
       renderComparePanel({
-        kind: "running",
-        message: "Finding neighbouring wards…",
+        kind: 'running',
+        message: 'Finding neighbouring wards…',
         results: [],
         reference: { name: ref.name },
         ref,
@@ -1183,8 +1183,8 @@
         const pollUrl = enq && enq.poll_url;
         if (!enqResp.ok || !pollUrl) {
           renderComparePanel({
-            kind: "error",
-            detail: (enq && enq.detail) || "Could not start.",
+            kind: 'error',
+            detail: (enq && enq.detail) || 'Could not start.',
             ref,
           });
           return;
@@ -1193,36 +1193,36 @@
           await new Promise((r) => setTimeout(r, 1200));
           if (Date.now() > deadline) {
             renderComparePanel({
-              kind: "error",
-              detail: "Timed out analysing wards.",
+              kind: 'error',
+              detail: 'Timed out analysing wards.',
               ref,
             });
             return;
           }
           const stt = await M.apiGet(pollUrl);
-          if (stt.state === "completed") {
+          if (stt.state === 'completed') {
             const res = stt.result || {};
-            if (res.status === "error") {
+            if (res.status === 'error') {
               renderComparePanel({
-                kind: "error",
-                detail: res.detail || "Comparison failed.",
+                kind: 'error',
+                detail: res.detail || 'Comparison failed.',
                 ref,
               });
             } else {
-              renderComparePanel(Object.assign({ kind: "done", ref }, res));
+              renderComparePanel(Object.assign({ kind: 'done', ref }, res));
             }
             return;
           }
-          if (stt.state === "failed") {
+          if (stt.state === 'failed') {
             renderComparePanel({
-              kind: "error",
-              detail: stt.detail || "Comparison failed.",
+              kind: 'error',
+              detail: stt.detail || 'Comparison failed.',
               ref,
             });
             return;
           }
           renderComparePanel({
-            kind: "running",
+            kind: 'running',
             message: stt.message,
             results: stt.results || [],
             reference: stt.reference || { name: ref.name },
@@ -1230,7 +1230,7 @@
           });
         }
       } catch (e) {
-        renderComparePanel({ kind: "error", detail: String(e), ref });
+        renderComparePanel({ kind: 'error', detail: String(e), ref });
       } finally {
         comparing = false;
         compareBtn.disabled = false;
@@ -1244,30 +1244,30 @@
     // the country (e.g. before the first viewport load) or the endpoint is absent.
     let searchCtrl = null;
     function renderResults(items) {
-      resultsEl.innerHTML = "";
+      resultsEl.innerHTML = '';
       items.slice(0, 40).forEach(({ desc, label }) => {
-        const b = document.createElement("button");
-        b.type = "button";
+        const b = document.createElement('button');
+        b.type = 'button';
         b.className =
-          "block w-full text-left truncate text-purple-700 text-xs px-1 py-0.5 hover:bg-purple-50";
+          'block w-full text-left truncate text-purple-700 text-xs px-1 py-0.5 hover:bg-purple-50';
         b.textContent = label;
-        b.addEventListener("click", () => {
+        b.addEventListener('click', () => {
           if (isAreaPhase()) toggleSelect(desc);
-          else setStatus("Switch to the area phase to add boundaries.");
+          else setStatus('Switch to the area phase to add boundaries.');
         });
         resultsEl.appendChild(b);
       });
     }
     function clientFilter(q) {
       return features
-        .filter((f) => (f.properties.name || "").toLowerCase().includes(q))
+        .filter((f) => (f.properties.name || '').toLowerCase().includes(q))
         .map((f) => {
           const p = f.properties;
           return {
             desc: featToDesc(f),
             label:
               `${p.name} · ADM${p.admin_level}` +
-              (p.area_km2 ? ` · ${Math.round(p.area_km2)} km²` : ""),
+              (p.area_km2 ? ` · ${Math.round(p.area_km2)} km²` : ''),
           };
         });
     }
@@ -1277,66 +1277,66 @@
     // works from a blank new-plan page.
     let geocodeCtrl = null;
     async function geocodeAndFly(q) {
-      const token = (window.mapboxgl && mapboxgl.accessToken) || "";
+      const token = (window.mapboxgl && mapboxgl.accessToken) || '';
       if (!token) {
         renderResults(clientFilter(q.toLowerCase()));
         return;
       }
       if (geocodeCtrl) geocodeCtrl.abort();
       geocodeCtrl = new AbortController();
-      setStatus("Searching places…");
+      setStatus('Searching places…');
       try {
         const url =
-          "https://api.mapbox.com/geocoding/v5/mapbox.places/" +
+          'https://api.mapbox.com/geocoding/v5/mapbox.places/' +
           encodeURIComponent(q) +
-          ".json?limit=6&types=region,district,place,locality&access_token=" +
+          '.json?limit=6&types=region,district,place,locality&access_token=' +
           encodeURIComponent(token);
         const r = await fetch(url, { signal: geocodeCtrl.signal });
         const d = await r.json();
         const feats = (d && d.features) || [];
-        resultsEl.innerHTML = "";
+        resultsEl.innerHTML = '';
         if (!feats.length) {
-          setStatus("No places found");
+          setStatus('No places found');
           return;
         }
         feats.forEach((f) => {
-          const b = document.createElement("button");
-          b.type = "button";
+          const b = document.createElement('button');
+          b.type = 'button';
           b.className =
-            "block w-full text-left truncate text-purple-700 text-xs px-1 py-0.5 hover:bg-purple-50";
+            'block w-full text-left truncate text-purple-700 text-xs px-1 py-0.5 hover:bg-purple-50';
           b.textContent = f.place_name || f.text;
-          b.addEventListener("click", () => {
+          b.addEventListener('click', () => {
             // Seed the country from the geocode result so the boundary layer can
             // load on arrival — the global Overture source needs an iso, and it's
             // otherwise only inferred from boundaries that haven't loaded yet. The
             // viewport endpoint normalizes alpha-2 (Mapbox) → alpha-3 (resolver).
             const ctry = (f.context || []).find((c) =>
-              (c.id || "").startsWith("country"),
+              (c.id || '').startsWith('country'),
             );
             const code =
               (ctry && ctry.short_code) ||
               (f.properties && f.properties.short_code) ||
-              "";
+              '';
             if (code && !detectedIso) detectedIso = code.toUpperCase();
             map.flyTo({ center: f.center, zoom: 9 });
-            searchEl.value = "";
-            resultsEl.innerHTML = "";
-            setStatus("Moved — click a boundary on the map to add it.");
+            searchEl.value = '';
+            resultsEl.innerHTML = '';
+            setStatus('Moved — click a boundary on the map to add it.');
           });
           resultsEl.appendChild(b);
         });
-        setStatus(feats.length + " place(s) — click to go there");
+        setStatus(feats.length + ' place(s) — click to go there');
       } catch (e) {
-        if (e && e.name === "AbortError") return;
+        if (e && e.name === 'AbortError') return;
         renderResults(clientFilter(q.toLowerCase()));
       }
     }
 
     async function runSearch() {
-      const q = (searchEl.value || "").trim();
-      resultsEl.innerHTML = "";
+      const q = (searchEl.value || '').trim();
+      resultsEl.innerHTML = '';
       if (!q) {
-        setStatus("");
+        setStatus('');
         return;
       }
       const country = getCountryIso() || detectedIso;
@@ -1351,7 +1351,7 @@
       }
       if (searchCtrl) searchCtrl.abort();
       searchCtrl = new AbortController();
-      setStatus("Searching…");
+      setStatus('Searching…');
       try {
         const perLevel = await Promise.all(
           [1, 2, 3].map((level) =>
@@ -1366,7 +1366,7 @@
         );
         const items = [];
         perLevel.forEach((d) => {
-          if (d && d.status === "ok")
+          if (d && d.status === 'ok')
             (d.areas || []).forEach((a) =>
               items.push({
                 desc: rowToDesc(a),
@@ -1377,21 +1377,21 @@
                   `${a.name}` +
                   (a.parent_name
                     ? ` — ${a.parent_name}`
-                    : ` · ${a.level_label || "ADM" + a.level}`) +
-                  (a.area_km2 ? ` · ${Math.round(a.area_km2)} km²` : ""),
+                    : ` · ${a.level_label || 'ADM' + a.level}`) +
+                  (a.area_km2 ? ` · ${Math.round(a.area_km2)} km²` : ''),
               }),
             );
         });
         renderResults(items);
-        setStatus(items.length ? `${items.length} match(es)` : "No matches");
+        setStatus(items.length ? `${items.length} match(es)` : 'No matches');
       } catch (e) {
-        if (e && e.name === "AbortError") return;
+        if (e && e.name === 'AbortError') return;
         renderResults(clientFilter(q.toLowerCase())); // network error → best-effort
       }
     }
-    searchEl.addEventListener("input", M.debounce(runSearch, 250));
+    searchEl.addEventListener('input', M.debounce(runSearch, 250));
 
-    sourceSel.addEventListener("change", () => {
+    sourceSel.addEventListener('change', () => {
       source = sourceSel.value || null;
       refresh();
     });
@@ -1401,18 +1401,18 @@
     function wireMap() {
       if (wired) return;
       wired = true;
-      map.on("mousemove", FILL, (e) => {
+      map.on('mousemove', FILL, (e) => {
         if (!layer.on || !e.features.length) return;
-        map.getCanvas().style.cursor = "pointer";
+        map.getCanvas().style.cursor = 'pointer';
         const f = smallestAt(e.point) || e.features[0];
         showHover(f, e.point);
       });
-      map.on("mouseleave", FILL, () => {
+      map.on('mouseleave', FILL, () => {
         if (!layer.on) return;
-        map.getCanvas().style.cursor = "";
+        map.getCanvas().style.cursor = '';
         clearHover();
       });
-      map.on("click", FILL, (e) => {
+      map.on('click', FILL, (e) => {
         if (!layer.on) return;
         const f = smallestAt(e.point);
         if (!f) return;
@@ -1424,14 +1424,14 @@
         }
         pinInspect(f, e.point);
       });
-      map.on("moveend", () => {
+      map.on('moveend', () => {
         if (layer.on) refreshDebounced();
       });
     }
 
     const layer = panel.registerLayer({
-      id: "admin",
-      label: "Boundaries",
+      id: 'admin',
+      label: 'Boundaries',
       color: COLOR,
       onToggle: (on) => {
         if (on) {
@@ -1466,7 +1466,7 @@
             ref: a.ref || {},
           },
           geometry: a.geometry,
-          arm: a.arm || "intervention",
+          arm: a.arm || 'intervention',
         });
         added++;
       });
