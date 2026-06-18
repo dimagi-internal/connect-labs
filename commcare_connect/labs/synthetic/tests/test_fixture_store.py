@@ -78,7 +78,6 @@ def test_endpoint_files_covers_all_supported_endpoints():
         "completed_works": "completed_works.json",
         "completed_module": "completed_module.json",
         "app_structure": "app_structure.json",
-        "app_structure_learn": "app_structure_learn.json",
     }
 
 

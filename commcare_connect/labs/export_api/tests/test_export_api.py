@@ -250,41 +250,48 @@ def test_opportunities_lists_only_visible(monkeypatch):
 
 
 # --------------------------------------------------------------------------- #
-# app_structure — conditionally present, app_type aware
+# app_structure — parity with real Connect's {learn_app, deliver_app} wrapper
 # --------------------------------------------------------------------------- #
+_WRAPPER = {"learn_app": {"modules": ["L"]}, "deliver_app": {"modules": ["D"]}}
+
+
 @pytest.mark.django_db
-def test_app_structure_present_returns_bare_dict(monkeypatch):
-    structure = {"modules": [{"name": "m1"}], "app_id": "abc"}
-    _install(monkeypatch, {"folder-a": {"app_structure.json": structure}})
+def test_app_structure_default_both_returns_wrapper(monkeypatch):
+    _install(monkeypatch, {"folder-a": {"app_structure.json": _WRAPPER}})
     _make_opp()
     resp = _client_for(_user()).get(APP_STRUCTURE_URL)
     assert resp.status_code == 200
-    assert resp.json() == structure
+    assert resp.json() == _WRAPPER
 
 
 @pytest.mark.django_db
-def test_app_structure_absent_returns_404(monkeypatch):
+def test_app_structure_app_type_learn_nulls_deliver(monkeypatch):
+    _install(monkeypatch, {"folder-a": {"app_structure.json": _WRAPPER}})
+    _make_opp()
+    body = _client_for(_user()).get(APP_STRUCTURE_URL + "?app_type=learn").json()
+    assert body == {"learn_app": {"modules": ["L"]}, "deliver_app": None}
+
+
+@pytest.mark.django_db
+def test_app_structure_app_type_deliver_nulls_learn(monkeypatch):
+    _install(monkeypatch, {"folder-a": {"app_structure.json": _WRAPPER}})
+    _make_opp()
+    body = _client_for(_user()).get(APP_STRUCTURE_URL + "?app_type=deliver").json()
+    assert body == {"learn_app": None, "deliver_app": {"modules": ["D"]}}
+
+
+@pytest.mark.django_db
+def test_app_structure_absent_returns_200_with_nulls(monkeypatch):
     _install(monkeypatch, {"folder-a": {"user_visits.json": []}})
     _make_opp()
     resp = _client_for(_user()).get(APP_STRUCTURE_URL)
-    assert resp.status_code == 404
+    assert resp.status_code == 200
+    assert resp.json() == {"learn_app": None, "deliver_app": None}
 
 
 @pytest.mark.django_db
-def test_app_structure_learn_app_type(monkeypatch):
-    learn = {"modules": [{"name": "learn-m1"}]}
-    _install(monkeypatch, {"folder-a": {"app_structure_learn.json": learn}})
-    _make_opp()
-    client = _client_for(_user())
-    # learn fixture present -> served for app_type=learn
-    assert client.get(APP_STRUCTURE_URL + "?app_type=learn").json() == learn
-    # default app_type=deliver has no fixture here -> 404
-    assert client.get(APP_STRUCTURE_URL).status_code == 404
-
-
-@pytest.mark.django_db
-def test_app_structure_invalid_app_type_returns_404(monkeypatch):
-    _install(monkeypatch, {"folder-a": {"app_structure.json": {"x": 1}}})
+def test_app_structure_invalid_app_type_returns_400(monkeypatch):
+    _install(monkeypatch, {"folder-a": {"app_structure.json": _WRAPPER}})
     _make_opp()
     resp = _client_for(_user()).get(APP_STRUCTURE_URL + "?app_type=bogus")
-    assert resp.status_code == 404
+    assert resp.status_code == 400

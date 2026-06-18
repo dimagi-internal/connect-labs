@@ -14,10 +14,11 @@ mirrors that model's validation style (pydantic v2, ``from_yaml``, a
 
 from __future__ import annotations
 
+import datetime as dt
 from typing import Annotated, Literal, Union
 
 import yaml
-from pydantic import BaseModel, Field, PositiveInt, ValidationError
+from pydantic import BaseModel, Field, PositiveInt, ValidationError, field_validator
 
 
 class EnvManifestError(ValueError):
@@ -30,6 +31,18 @@ class EnvManifestError(ValueError):
 class Timeline(BaseModel):
     completed_weeks: PositiveInt
     include_current_week: bool = False
+    # When set, the window is PINNED to these fixed weeks (the ``completed_weeks``
+    # Mondays from here) instead of sliding off *today*. Pin demos that tell a
+    # fixed calendar story so a re-seed stays idempotent — a moving window strands
+    # already-seeded runs/flags/audits/tasks on the wrong week. Must be a Monday.
+    start_monday: dt.date | None = None
+
+    @field_validator("start_monday")
+    @classmethod
+    def _start_monday_must_be_monday(cls, v: dt.date | None) -> dt.date | None:
+        if v is not None and v.weekday() != 0:
+            raise ValueError(f"start_monday must be a Monday, got {v.isoformat()} ({v.strftime('%A')})")
+        return v
 
 
 # ---------- Shared sub-parts ----------
