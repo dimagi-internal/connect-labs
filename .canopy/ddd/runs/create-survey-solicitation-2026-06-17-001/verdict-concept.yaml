@@ -1,90 +1,116 @@
 schema_version: 1
 rubric_name: ddd-concept-eval
-ran_at: 2026-06-18T17:05:00Z
+ran_at: 2026-06-18T17:25:00Z
 run_dir: /Users/jjackson/emdash/worktrees/connect-labs/emdash/solicitation-rntwj/.canopy/ddd/runs/create-survey-solicitation-2026-06-17-001
-iteration: 4
+iteration: 5
 scenes_evaluated: 5
-judge_independence: fresh_subagents # 5 fresh general-purpose judges invoked canopy:visual-judge; none self_assessed
+judge_independence: fresh_subagents # 5 fresh independent judges; none self_assessed
+spec_qa: pass # canonical docs/walkthroughs/create-survey-solicitation.yaml passes; run-dir copy's relative why_brief path is a non-blocking path artifact
+
+# Per-scene gating-dimension matrix (lowest per dim drives overall):
+#                       S1  S2  S3  S4  S5   min
+# concept_clarity        3   4   4   4   3    3
+# design_soundness       3   4   4   4   4    3
+# visual_polish          3   3   4   4   3    3
+# why_groundedness       4   5   4   4   3    3
+# motion_friction        4   4   4   4   4    4
+# claim_reality_coh.     4   5   5   5   4    4  (advisory, EXCLUDED)
 
 dimensions:
   concept_clarity:
     score: 3
     weight: 0.20
     justification: >-
-      Weakest at scene 1 (3): the five-second read lands on the wall of Draft
-      cards rather than the one finished R6 study the scene is about, and
-      round/study/solicitation go unexplained for a true outsider. Scenes 2-5
-      are clear (4) — the create form, respond map, responses row, and award
-      screen each state plainly what they are for.
+      Min from S1 and S5. S1 (3): no concrete actor/role named on the portfolio
+      page (only abstract "LLO/funder"); problem framing lands but the cold-outsider
+      read is gated. S5 (3): the Award screen communicates the award action but not
+      the load-bearing second half of the concept_claim — that live-opportunity
+      provisioning is the deferred next step — which lives only in narration, not the
+      UI. Scenes 2-4 read clearly at 4.
   design_soundness:
-    score: 4
+    score: 3
     weight: 0.20
     justification: >-
-      Coherent across all five scenes (all 4). The plan-to-solicitation-to-
-      response-to-award flow holds together; inputs lead to expected outputs.
-      Minor off-notes (Create solicitation also offered on unfinished Draft
-      cards; the respond checklist bundles both wards into one row) do not break
-      the idea.
+      Min from S1 (3): the identical "Create solicitation" button appears on all
+      eight Draft (not-ready) plan cards as well as the finished R6 study card — a
+      contradictory affordance implying you can solicit from an unfinished plan,
+      undercutting the "from a finished plan" concept. No dead ends/errors, so 3 not
+      2. Scenes 2-5 interaction models are coherent (4).
   visual_polish:
-    score: 2
+    score: 3
     weight: 0.15
     justification: >-
-      WEAKEST-LINK, bound at scene 1 (2): the load-bearing READY TO SOLICIT R6
-      study card has no visual prominence over a placeholder 'Untitled study —
-      0 wards' card beside it and a dense grid of pale Draft cards, and the
-      strongest-colored CTA in the frame ('Deploy →') is not the scene action.
-      Scene 4 also dips (3): the selected-coverage badge is under-emphasized and
-      the one-row table reads sparse. Scenes 2/3/5 are polished (4) — the maps
-      render with real polygons + basemap, the award screen is a clean distinct
-      frame.
+      Min shared by S1, S2, S5 — all 3. S1 is UP from iter4's 2: the empty
+      "Untitled study · 0 wards" placeholder seed-noise card is gone and the finished
+      R6 study card is clean, but it is small and sits at the bottom under a dense
+      8-card Draft grid that dominates the viewport, so the load-bearing finished
+      study is still buried (cap 3, not lifted to 4). S2 (3): the real two-ward map
+      (Attakar green / Gura blue) renders correctly, but in the tall full-page strip
+      the load-bearing coverage panel sits small/low under mostly-empty form fields
+      (PRODUCT fix — present coverage prominently, NOT a capture/zoom workaround).
+      S5 (3): amber callout body text is low-contrast orange-on-pale-yellow (WCAG
+      concern). Scenes 3-4 clean at 4 (S3 full Mapbox canvas renders).
   why_groundedness:
-    score: 4
+    score: 3
     weight: 0.20
     justification: >-
-      Every scene's concept_claim traces to its why_brief spine item (S3-S7);
-      scene 5 is a 5 (claim + the honest G1 CAPABILITY deferral both grounded).
-      Held at 4 overall because most scenes give a single provenance ref rather
-      than an independently verifiable end-to-end chain from a single frame.
+      Min from S5 (3): traces to S7's first clause (the shipped award step) but
+      S7's second clause — provisioning a live Connect opportunity is the deferred
+      next step (Gap G1) — has zero on-screen provenance; the gap-honesty half is
+      narration-only. No contradiction, so 3 not 2. Scenes 1/3/4 ground at 4; S2 at
+      5 ("Coverage areas (from micro-plan)" + "Snapshotted at creation" verbatim).
   claim_reality_coherence:
     score: 4
     weight: 0.10
     blocking: false
     justification: >-
-      ADVISORY (excluded from overall). Narration matches footage well: scenes
-      2, 4, 5 are 5 (maps render, the response row + award screen show exactly
-      what is narrated). Scenes 1 and 3 are 4 — 'in one click / carries the plan
-      as source' and the Submit enabled-state transition rest partly on the
-      narrator since a static frame cannot show the behavior.
+      ADVISORY (excluded from overall). Strong. S2/S3/S4 = 5: claimed maps actually
+      render (S2 two colored ward polygons; S3 full Mapbox canvas with Attakar/Gura
+      polygons + checked state + enabled Submit). S1=4, S5=4. Lone note: S5
+      screenshot shows a filled Organization ID ("health_bridge_ng") absent from the
+      captured page_text — minor capture/DOM mismatch, not a misstatement.
   motion_friction:
     score: 4
     weight: 0.15
     justification: >-
-      All five scenes 4: no spinners, errors, dead-ends, or backwards scene
-      ordering; fully-rendered frames throughout. Held off 5 by mild eye-travel
-      friction (scene 1 the actionable study sits below a draft grid + an empty
-      'LIVE · none' band; scenes 4/5 have dead whitespace below the content).
+      Uniformly 4. No dominating spinners, no 404s/dead-ends, no backwards
+      conceptual ordering; each frame is a settled, forward-moving state with a clear
+      primary action.
 
-overall_score: 2
+overall_score: 3
 overall_rule: lowest
 
-verdict: fail
+verdict: warn
 blocking_reason: null
 
 fix_recommendation: |
-  Weakest link is visual_polish on SCENE 1 (2/5), which drives the fail.
-  [PRODUCT, mechanical] Make the finished/ready R6 study the visual hero of the
-  portfolio: a stronger card treatment for READY TO SOLICIT, a high-contrast
-  primary 'Create solicitation' button, and suppress/de-emphasize empty
-  placeholder cards ('Untitled study — 0 wards') so the actionable study is not
-  lost in the draft grid. The persistent seed-noise (other Draft plan cards, the
-  Untitled study) still caps scene 1 even though the finished-state contradiction
-  from the prior iteration is resolved.
-  Secondary, scene 4 [PRODUCT, mechanical]: promote the selected-coverage tie to
-  a dedicated 'COMMITTED COVERAGE' column with a 'matches your design' marker and
-  tighten vertical rhythm so the one-row responses table reads as an intentional
-  focused view.
-  Secondary, scene 1 [CONCEPT, mechanical]: add a 'Ready to solicit' grouping/
-  filter plus a one-line plain-language header so a cold planner lands on the
-  finished study first.
-  All three open findings are fix_kind: mechanical (auto-applicable). No options/
-  redesign findings — nothing is loop-blocking on a concept-rethink basis.
+  Overall gated at 3/warn (up from iter4's 2/fail) by the weakest gating dim
+  recurring across S1 (concept/design/visual), S5 (concept/why), and S2 (visual).
+  Highest-leverage fixes:
+
+  [PRODUCT] Scene 1 visual hierarchy + affordance (design_soundness + visual_polish):
+    the 8-card Draft "PLANNING" grid dominates the viewport and buries the one
+    finished "R6 — Attakar × Gura" study card at the bottom. Lead with the finished
+    study — move "Plan groups & studies" above the planning grid OR give the finished
+    study a hero treatment so the READY-TO-SOLICIT card is the focal point. AND
+    suppress/disable "Create solicitation" on Draft (not-approved) plan cards so the
+    affordance only appears where the concept holds. [options/redesign — LOOP-BLOCKING]
+
+  [CONCEPT] Scene 1 concept_clarity: name the actor on the page (a "Maya / Program
+    owner" label or a one-line "recruiting a survey firm from your finished study"
+    intro). [mechanical]
+
+  [PRODUCT] Scene 2 visual_polish: present the rendered coverage map + "2 wards /
+    840 work areas" provenance prominently in the create form (focused/expanded
+    coverage section, progressive disclosure of the long form) — a PRODUCT change,
+    NOT a capture/anchor workaround. [options]
+
+  [PRODUCT] Scene 5 visual_polish: darken the amber callout body text to meet WCAG
+    AA on the yellow background. [mechanical]
+
+  [CONCEPT] Scene 5 concept_clarity + why_groundedness: surface the planning-vs-
+    execution boundary (Gap G1) in the award UI itself — a muted helper line
+    ("Awarding records this firm; standing up their live Connect opportunity is a
+    separate next step, not yet built") or a stepper stopping at Award with the next
+    stage greyed out — so the artifact carries S7's gap-honesty half, not just the
+    narration. [options]

@@ -1,64 +1,122 @@
-auto_iterate_next_action: stop_max_iter
-auto_iterate_reason:
-  Score stalled/regressed across the last 2 iterations (history=[2.0,
-  2.0, 2.0]) — mechanical fixes aren't converging; needs a human look.
+auto_iterate_next_action: stop_unclear
+auto_iterate_reason: 5 options/redesign finding(s) — need a user pick.
 findings:
-  - detail:
-      "The load-bearing READY TO SOLICIT R6 study card does not pop: it sits at
-      equal visual weight beside an 'Untitled study — 0 wards' placeholder card, beneath
-      a dense grid of near-identical pale Draft cards, and the most strongly colored
-      CTA in the frame ('Deploy →', blue) is not the scene's intended action. These
-      are product-presentation problems a careful viewer catches in the UI itself; host
-      chrome is grounding and not counted."
-    dimension: visual_polish
-    fix_kind: mechanical
-    fix_recommendation:
-      In the product, make the finished/ready study the visual hero
-      of its row — a stronger card treatment and a high-contrast primary 'Create solicitation'
-      button — and suppress or de-emphasize empty placeholder cards ('Untitled study
-      — 0 wards') so the actionable study stands out from the draft grid. Fix the product's
-      hierarchy; do not crop the capture.
-    route: PRODUCT
-    scene: Scene 1 — Maya turns her finished study into a call for a firm
-    severity: medium
-  - detail:
-      A viewer familiar with M&E sampling can read that finished plans turn into
-      solicitations, and concrete objects (plans, studies, 'Create solicitation') are
-      on screen, but the five-second read lands on the wall of Draft cards rather than
-      the one finished study the scene is about, and 'round/study/solicitation' go unexplained
-      for a true outsider. Wrong-read sanity floor caps this at 3.
-    dimension: concept_clarity
-    fix_kind: mechanical
-    fix_recommendation:
-      Give the portfolio a clear 'Ready to solicit' grouping or filter
-      so a cold planner's eye lands on the finished R6 study first, and add a one-line
-      plain-language header explaining that approved plans become solicitations.
-    route: CONCEPT
-    scene: Scene 1 — Maya turns her finished study into a call for a firm
-    severity: low
-  - detail:
-      "Clean typography and consistent table styling, and the host chrome is grounding
-      (not a flaw). But the load-bearing 'SELECTED COVERAGE: R6 — Attakar × Gura'
-      badge is small and quiet relative to its importance, and the single-row table
-      leaves the lower ~60% of the frame empty so the page reads sparse rather than
-      intentionally minimal — a designer would have notes here."
-    dimension: visual_polish
-    fix_kind: mechanical
-    fix_recommendation:
-      Make the selected-coverage tie more prominent in the product
-      — promote it to a dedicated 'COMMITTED COVERAGE' column with a 'matches your design'
-      marker — and tighten the page's vertical rhythm so a one-row result reads as an
-      intentional focused view rather than a half-empty table.
-    route: PRODUCT
-    scene: Scene 4 — Maya sees the firm tied to the coverage she designed
-    severity: low
+- detail: 'The identical ''Create solicitation'' button appears on all eight Draft
+    (not-ready) plan cards in the PLANNING grid, as well as on the finished R6 study
+    card. This is a contradictory affordance: it implies you can launch a solicitation
+    from an unfinished/unapproved plan, which undercuts the scene''s concept that
+    the call starts from a FINISHED plan. No dead end or error, so capped at 3 rather
+    than 2.'
+  dimension: design_soundness
+  fix_kind: options
+  fix_recommendation: 'Suppress or disable the ''Create solicitation'' affordance
+    on Draft (not-approved) plan cards so it only appears where the concept holds
+    — on approved plans/studies. Alternative: keep it visible but disabled with a
+    tooltip (''approve this plan to solicit''). Needs a product pick between hide-entirely
+    / disable-with-tooltip / only-on-approved.'
+  route: PRODUCT
+  scene: Scene 1 — Maya turns her finished study into a call for a firm
+  severity: low
+- detail: 'Up from iter4''s 2: the empty ''Untitled study · 0 wards'' placeholder
+    card is gone and the finished R6 study card is clean. But it is held at 3 — the
+    load-bearing finished ''R6 — Attakar × Gura'' study card is small and sits at
+    the very bottom under a dense 8-card Draft ''PLANNING'' grid that dominates the
+    viewport. Visual hierarchy fights the narrative: a viewer scanning top-down hits
+    the muted Draft cards first and the finished study card last. Host chrome is grounding,
+    not counted.'
+  dimension: visual_polish
+  fix_kind: redesign
+  fix_recommendation: 'Make the finished R6 study card the focal point of the page:
+    either move the ''Plan groups & studies'' section above the PLANNING grid, or
+    give the finished study a hero treatment (larger card, top placement) so the READY-TO-SOLICIT
+    card leads rather than the draft inventory. Product hierarchy change — not a capture
+    crop.'
+  route: PRODUCT
+  scene: Scene 1 — Maya turns her finished study into a call for a firm
+  severity: low
+- detail: No concrete user/role is named on screen (only the abstract 'LLO/funder');
+    the problem framing ('before any opportunity is live') lands but a true outsider
+    must infer the actor. Per the deduction rule (no concrete user/role named), capped
+    at 3.
+  dimension: concept_clarity
+  fix_kind: mechanical
+  fix_recommendation: Name the actor on the page — a 'Maya / Program owner' context
+    label or a one-line intro ('recruiting a survey firm from your finished study')
+    in the header — so a cold viewer gets the role without narration.
+  route: CONCEPT
+  scene: Scene 1 — Maya turns her finished study into a call for a firm
+  severity: low
+- detail: The real two-ward map (Attakar green / Gura blue polygons) renders correctly
+    and the 'Coverage areas (from micro-plan)' panel with 'Snapshotted at creation'
+    is present and legible. Held at 3 because, in the tall full-page create-form strip,
+    the load-bearing coverage panel (the one thing this scene must prove) sits small
+    and low under several mostly-empty form fields competing for the eye. Capture-strip
+    caveat noted (do not deduct the product for the full-page-strip artifact itself),
+    but the product would benefit from presenting the coverage panel more prominently
+    in a normal viewport.
+  dimension: visual_polish
+  fix_kind: options
+  fix_recommendation: Present the rendered coverage map + '2 wards / 840 work areas'
+    provenance prominently in the create form — a focused/expanded coverage section,
+    or progressive disclosure that surfaces the attached-coverage proof above the
+    long form body. This is a PRODUCT presentation change; do NOT 'fix' it with a
+    camera zoom/crop/anchor or full_page:false.
+  route: PRODUCT
+  scene: Scene 2 — Maya finds the plan already waiting as the coverage area
+  severity: low
+- detail: The Award screen names the grantee (Amina Okafor) and the R6 survey and
+    makes the award action clear, so the role/action half of the concept is present.
+    But the load-bearing second half of the concept_claim — that provisioning a live
+    Connect opportunity is the DEFERRED next step (not done today) — is entirely absent
+    from the UI; it lives only in the narration. A one-sentence on-screen read gets
+    'award a firm', not 'award is shipped, live-opp is next'. Held at 3.
+  dimension: concept_clarity
+  fix_kind: options
+  fix_recommendation: 'Surface the planning-vs-execution boundary in the award UI:
+    a muted helper line (''Awarding records this firm; standing up their live Connect
+    opportunity is a separate next step, not yet built''), or a small disabled ''Provision
+    opportunity (coming soon)'' chip. Needs a product pick between a helper line /
+    disabled chip / a two-step indicator.'
+  route: CONCEPT
+  scene: Scene 5 — Maya looks ahead to standing up the real opportunity
+  severity: low
+- detail: The amber/yellow warning callout renders its body line ('The grantee's organization
+    ID and budget allocation will be recorded...') in low-contrast orange text on
+    a pale-yellow background — a likely WCAG AA failure on a load-bearing explanatory
+    line. Per the low-contrast deduction rule, capped at 3. Layout, type hierarchy,
+    and control consistency are otherwise good.
+  dimension: visual_polish
+  fix_kind: mechanical
+  fix_recommendation: Darken the callout body text (a darker amber / near-black) to
+    meet WCAG AA contrast against the yellow background. One concrete CSS/token change.
+  route: PRODUCT
+  scene: Scene 5 — Maya looks ahead to standing up the real opportunity
+  severity: low
+- detail: The screen traces cleanly to S7's first clause (the shipped recruit-and-review→award
+    step — it names the reviewed firm and records org ID + budget). But S7's second
+    clause — turning an award into a live Connect opportunity is the intended next
+    step, not yet built (Gap G1) — has zero on-screen provenance; the gap-honesty
+    half is represented only in narration. The screen correctly does NOT claim to
+    provision an opportunity (no contradiction), so capped at 3 rather than 2.
+  dimension: why_groundedness
+  fix_kind: options
+  fix_recommendation: 'Carry S7''s gap-honesty half into the artifact itself: a stepper
+    that visually stops at ''Award'' with the next ''Provision live opportunity''
+    stage greyed/disabled, or a post-award success state that explicitly says provisioning
+    is a separate not-yet-built step. Needs a product pick between stepper / disabled
+    next-stage button / post-award note.'
+  route: CONCEPT
+  scene: Scene 5 — Maya looks ahead to standing up the real opportunity
+  severity: low
 findings_review_id: null
 findings_review_url: null
-iteration: 4
+iteration: 5
 iteration_clips:
   4: https://canopy-web-ujpz2cuyxq-uc.a.run.app/w/e11c080a-56c5-4efd-b84a-8c8ddabcbd8c
+  5: https://canopy-web-ujpz2cuyxq-uc.a.run.app/w/9091c662-8800-493b-aaba-fda7aa6c13fc
 iteration_decks:
   4: https://canopy-web-ujpz2cuyxq-uc.a.run.app/w/1deceab2-ca62-4128-af0a-089b64bfd3d7
+  5: https://canopy-web-ujpz2cuyxq-uc.a.run.app/w/6b620f68-fd74-44f0-840e-e420fe66264f
 last_actor: null
 last_actor_at: null
 narrative_review_id: d2078a4a-ff23-4ff8-b09b-a68fae9fd907
@@ -69,16 +127,17 @@ phase: judged
 run_id: create-survey-solicitation-2026-06-17-001
 scene_filter: null
 scenes_run:
-  - 1
-  - 2
-  - 3
-  - 4
-  - 5
+- 1
+- 2
+- 3
+- 4
+- 5
 schema_version: 1
 score_history:
-  - 2.0
-  - 2.0
-  - 2.0
+- 2.0
+- 2.0
+- 2.0
+- 2.0
 verdicts:
   concept: /Users/jjackson/emdash/worktrees/connect-labs/emdash/solicitation-rntwj/.canopy/ddd/runs/create-survey-solicitation-2026-06-17-001/verdict-concept.yaml
   user_artifact: /Users/jjackson/emdash/worktrees/connect-labs/emdash/solicitation-rntwj/.canopy/ddd/runs/create-survey-solicitation-2026-06-17-001/verdict-user.yaml

@@ -9,7 +9,7 @@
       "target": "css:#sol-respond-map canvas.mapboxgl-canvas",
       "value": null,
       "note": "the coverage map paints the Attakar (green) + Gura (blue) ward polygons",
-      "elapsed_ms": 83,
+      "elapsed_ms": 121,
       "error_kind": null,
       "error_message": null,
       "scene_index": 3
@@ -20,7 +20,7 @@
       "target": null,
       "value": null,
       "note": "let the map settle and fit to the two wards",
-      "elapsed_ms": 1503,
+      "elapsed_ms": 1502,
       "error_kind": null,
       "error_message": null,
       "scene_index": 3
@@ -31,7 +31,7 @@
       "target": "css:#sol-plan-checklist label:has-text(\"R6 \u2014 Attakar\") input[type=checkbox]",
       "value": null,
       "note": "select the coverage area \u2014 synced two-way with the map; this enables Submit (\u22651 required)",
-      "elapsed_ms": 1263,
+      "elapsed_ms": 1270,
       "error_kind": null,
       "error_message": null,
       "scene_index": 3
@@ -42,7 +42,7 @@
       "target": null,
       "value": null,
       "note": "the R6 area is now selected and Submit is enabled",
-      "elapsed_ms": 1002,
+      "elapsed_ms": 1001,
       "error_kind": null,
       "error_message": null,
       "scene_index": 3
@@ -53,7 +53,7 @@
       "scene_index": 1,
       "title": "Maya turns her finished study into a call for a firm",
       "start_seconds": 0.0,
-      "duration_seconds": 3.209,
+      "duration_seconds": 5.075,
       "urls_visited": [
         "https://labs.connect.dimagi.com/microplans/program/10008/"
       ]
@@ -61,8 +61,8 @@
     {
       "scene_index": 2,
       "title": "Maya finds the plan already waiting as the coverage area",
-      "start_seconds": 3.209,
-      "duration_seconds": 3.841,
+      "start_seconds": 5.075,
+      "duration_seconds": 3.853,
       "urls_visited": [
         "https://labs.connect.dimagi.com/solicitations/create/?source_program_id=10008&source_group_id=4492&program_id=10008"
       ]
@@ -70,8 +70,8 @@
     {
       "scene_index": 3,
       "title": "Amina reads the open call and ticks the area she can staff",
-      "start_seconds": 7.051,
-      "duration_seconds": 4.783,
+      "start_seconds": 8.929,
+      "duration_seconds": 4.769,
       "urls_visited": [
         "https://labs.connect.dimagi.com/solicitations/4495/respond/?program_id=10008"
       ]
@@ -79,8 +79,8 @@
     {
       "scene_index": 4,
       "title": "Maya sees the firm tied to the coverage she designed",
-      "start_seconds": 11.833,
-      "duration_seconds": 2.301,
+      "start_seconds": 13.697,
+      "duration_seconds": 2.202,
       "urls_visited": [
         "https://labs.connect.dimagi.com/solicitations/4495/responses/?program_id=10008"
       ]
@@ -88,8 +88,8 @@
     {
       "scene_index": 5,
       "title": "Maya looks ahead to standing up the real opportunity",
-      "start_seconds": 14.135,
-      "duration_seconds": 2.264,
+      "start_seconds": 15.899,
+      "duration_seconds": 2.2,
       "urls_visited": [
         "https://labs.connect.dimagi.com/solicitations/response/4496/award/?program_id=10008"
       ]

@@ -1,79 +1,232 @@
 overall_score: 2.0
 verdict: fail
-# DDD user-artifact judge — iteration 4. rubric=user-artifact, audience="feature user",
+# DDD user-artifact judge — iteration 5. rubric=user-artifact, audience="feature user",
 # overall_rule=lowest (weakest-link across all 5 scenes). Each scene judged by an
 # independent canopy:visual-judge sub-agent under artifact_kind=product_walkthrough
 # (so product chrome is grounding, not penalized; real org slugs treated as real data).
-# Two scenes tie at the floor (scene_1 and scene_5, both overall 2.0). The dimensions
-# block below is scene_5 — the binding gate — because its weakest dimension is
-# task_completion (weight 0.40, the heaviest of the three).
+# iter4 was also 2.0 -> NO movement on the weakest link. Four of five scenes
+# (1, 3, 4, 5) tie at the floor of 2.0, every one gated by CLARITY=2 triggered by the
+# jargon-visible-to-non-technical-user hard cap (max 2). The product flow is functionally
+# completable end-to-end (task_completion never below 3 anywhere) and trust is mostly
+# grounded (real maps, real coverage data, no fixture/placeholder artifacts). What blocks
+# promotion is non-technical-user CLARITY, not task completion or trust.
+#
+# Note vs iter4: scene_1 trust improved 2 -> 3 (the empty "Untitled study" placeholder was
+# removed this iteration, so the placeholder-data cap no longer fires), and scene_5
+# task_completion improved 2 -> 3 (judged as self-resolvable trial-and-error rather than
+# requiring a workaround). But scenes 3 and 4 regressed 3 -> 2 on clarity (the
+# jargon/label caps now bind there too), so the weakest-link aggregate is unchanged at 2.0.
+#
+# dimensions block reflects the WEAKEST scene (scene_1, overall 2, gated by clarity —
+# the canonical portfolio scene and the most structural clarity failure of the four ties).
 dimensions:
   task_completion:
-    score: 2
+    score: 3
     weight: 0.40
     justification: >
-      Scene 5 (Award page). Completable in principle, but a non-technical program owner
-      needs a workaround to finish: the required "Organization ID" field demands a raw
-      system slug ("health_bridge_ng") she is unlikely to have memorized, with no picker,
-      lookup, or "where to find this" affordance on the page. The required "Award Budget"
-      is empty with no in-frame reference value (firm's bid, solicitation ceiling, fund
-      balance). The free-text raw-ID-required pattern is the "needs assistance/workaround"
-      anchor (2), not self-resolvable trial-and-error.
+      Scene 1 (portfolio). The target study's "Create solicitation" primary button works and
+      is marked by the green READY-TO-SOLICIT chip + border, but Maya reaches it only by
+      scrolling past a grid of 9 Draft plan cards that each offer an identical "Create
+      solicitation" button with no guard telling her those un-reviewed Drafts are the wrong
+      target. Completable, but with real trial-and-error about which of ~10 identical CTAs is
+      correct. No unlabelled required field and no broken flow, so no hard cap fires.
     fix_recommendation: >
-      Replace the free-text "Organization ID" input with a name-first typeahead picker that
-      searches grantee organizations by display name ("HealthBridge", "Amina Okafor's firm")
-      and resolves to the org ID behind the scenes, defaulting to the org already attached to
-      the response being awarded — the owner selects a name and never types a slug.
-    fix_kind: mechanical
+      Stop presenting an identical primary "Create solicitation" on un-reviewed Draft cards.
+      Gate the action behind review state (Drafts get "Submit for review" only; "Create
+      solicitation" appears solely once a plan is reviewed / bound into a ready study) or
+      demote it to a secondary affordance on Drafts. Promote the READY-TO-SOLICIT study above
+      the draft grid (and above the empty "LIVE / none" band) so the one correct next action
+      is the first thing Maya sees.
+    fix_kind: CODE
   clarity:
     score: 2
     weight: 0.35
     justification: >
-      Scene 5. An element confuses the target user: "Organization ID" / "the Connect
-      organization ID of the awarded grantee" is jargon for a non-technical program owner who
-      does not think in org IDs — the "jargon visible to non-technical users: max 2" deduction
-      fires. Secondary confusions: the budget field carries no currency unit (₦500,000 vs
-      $500,000 differ ~1000x in a Nigeria context), and the banner's "can be updated later"
-      mildly contradicts the committing green "Award Grantee" CTA.
+      Scene 1. Multiple elements confuse a non-technical user: "R6 — Attakar × Gura" is
+      listed three times (Draft plan card, study title, study member row) in contradictory
+      states (Draft / Submit-for-review vs READY TO SOLICIT / reviewed / Approved); "areas N"
+      vs "wards" are two unexplained units; and the lifecycle vocabulary (Draft / Approved /
+      Submit / Deploy / In review) has no plain-language key. The jargon-visible-to-non-
+      technical-user deduction binds (max 2) and the 5-second test produced a wrong read
+      (eye lands on a grid of near-identical Drafts, not the one ready study).
     fix_recommendation: >
-      Relabel the field to the user's vocabulary ("Awarded organization", showing the firm's
-      display name) and demote the raw ID to a small grey confirmation line ("Connect ID:
-      health_bridge_ng"). Add a currency prefix/suffix to "Award Budget" plus a one-line
-      reference ("Firm's proposed budget: <X>") so the required number has context.
-    fix_kind: mechanical
+      Disambiguate the duplicated R6 and the parallel vocabularies. (1) Do not render the same
+      plan as both a standalone Draft card AND a study member with full independent action
+      sets — when a plan is bound into a study, show it once (or visibly link the two and
+      suppress the Draft card's contradictory "Submit for review"). (2) Give "areas N" a
+      plain-language label ("N survey areas") and reconcile it with the study's "wards"
+      vocabulary. (3) Collapse Draft/Approved/Submit/Deploy/In-review into a single visible
+      lifecycle legend so a non-technical user can read the state machine.
+    fix_kind: CODE
   trust:
-    score: 4
+    score: 3
     weight: 0.25
     justification: >
-      Scene 5. High trust with one provenance signal missing. The pre-filled "health_bridge_ng"
-      is a real-looking org slug for a real-looking grantee in a running product (grounding
-      under product_walkthrough, not placeholder/test data — so no max-2 cap), and the named
-      response ("Amina Okafor", "Household survey firm — Round 6 (Attakar × Gura)") is consistent
-      and concrete. The one missing signal: the page never states where the pre-filled org ID
-      came from (auto-resolved from the response vs a default the user must overwrite).
+      Scene 1. Reads as real production data in a live product (real region names
+      Riyom > Plateau > Nigeria, varied area counts, genuine lifecycle states) — no
+      test-user / Untitled / lorem placeholder artifacts (the empty "Untitled study"
+      placeholder was removed this iteration), so no placeholder-data cap. But the
+      triple-listed R6 with contradictory states reads as a data-model inconsistency, and
+      there is no freshness/recency signal — "reasonable trust, may wonder," the default.
+    fix_recommendation: >
+      Resolve the same-entity-two-states inconsistency (see clarity fix) so a careful viewer
+      does not read it as a data-model bug, and add a freshness/recency signal
+      (e.g. "reviewed <date>") on the study card.
+    fix_kind: CODE
+
 scenes:
   - scene: 1
+    title: "Microplan program portfolio (hero = R6 study, READY TO SOLICIT)"
     overall: 2.0
+    verdict: fail
     task_completion: 3
     clarity: 2
-    trust: 2
+    trust: 3
+    gating_dimension: clarity
   - scene: 2
+    title: "Create-solicitation form, pre-filled from R6 plan + coverage map"
     overall: 3.0
+    verdict: warn
     task_completion: 3
     clarity: 3
     trust: 4
+    gating_dimension: task_completion
   - scene: 3
-    overall: 3.0
-    task_completion: 3
-    clarity: 3
-    trust: 3
-  - scene: 4
-    overall: 3.0
-    task_completion: 4
-    clarity: 3
-    trust: 3
-  - scene: 5
+    title: "Public respond form — interactive coverage map + 'which areas can you cover?'"
     overall: 2.0
-    task_completion: 2
+    verdict: warn
+    task_completion: 3
     clarity: 2
-    trust: 4
+    trust: 3
+    gating_dimension: clarity
+  - scene: 4
+    title: "Responses list — Amina Okafor / Health Bridge Nigeria tied to R6"
+    overall: 2.0
+    verdict: warn
+    task_completion: 4
+    clarity: 2
+    trust: 3
+    gating_dimension: clarity
+  - scene: 5
+    title: "Award page — Award Response / Organization ID / Award Budget"
+    overall: 2.0
+    verdict: fail
+    task_completion: 3
+    clarity: 2
+    trust: 3
+    gating_dimension: clarity
+
+# Every finding <= 3 (scene, dimension, score, fix_recommendation, fix_kind)
+findings:
+  - scene: 1
+    dimension: task_completion
+    score: 3
+    fix_recommendation: >
+      Gate/demote "Create solicitation" on un-reviewed Draft cards and promote the
+      READY-TO-SOLICIT study above the draft grid + empty "LIVE / none" band, so the one
+      correct next action is the first thing Maya sees instead of one of ~10 identical CTAs.
+    fix_kind: CODE
+  - scene: 1
+    dimension: clarity
+    score: 2
+    fix_recommendation: >
+      Disambiguate the triple-listed "R6 — Attakar × Gura" (don't render the same plan as
+      both a Draft card and a study member with contradictory states), give "areas N" a
+      plain-language label and reconcile it with "wards", and provide a single lifecycle
+      legend for Draft/Approved/Submit/Deploy/In-review.
+    fix_kind: CODE
+  - scene: 1
+    dimension: trust
+    score: 3
+    fix_recommendation: >
+      Resolve the same-entity-two-states inconsistency so it doesn't read as a data bug, and
+      add a freshness signal (e.g. "reviewed <date>") on the study card.
+    fix_kind: CODE
+  - scene: 2
+    dimension: task_completion
+    score: 3
+    fix_recommendation: >
+      Make "pre-filled" actually true (populate Title/Description/Scope/Deadline from the R6
+      plan instead of gray placeholders), seed Application Questions and Evaluation Criteria
+      with 2-3 sensible defaults so neither ships empty, and add required-field markers +
+      inline validation so Maya is not completing by trial-and-error against validation.
+    fix_kind: SPEC
+  - scene: 2
+    dimension: clarity
+    score: 3
+    fix_recommendation: >
+      Clarify "Estimated Scale" units (e.g. "Estimated Scale (households)") and the
+      relationship between the editable "Scope of Work" text and the separate snapshotted
+      "Coverage areas" attachment, and add an on-map legend keying green->Attakar /
+      blue->Gura.
+    fix_kind: CODE
+  - scene: 3
+    dimension: task_completion
+    score: 3
+    fix_recommendation: >
+      Split the single combined "R6 — Attakar × Gura" checklist row into one row per
+      coverage area (Attakar; Gura), each bound to its own polygon, so a firm that can cover
+      only one area can honestly say so — delivering the promised "select one or more".
+    fix_kind: CODE
+  - scene: 3
+    dimension: clarity
+    score: 2
+    fix_recommendation: >
+      Relabel the selectable items in plain language matching the map ("Attakar", "Gura")
+      instead of the coded "R6 — Attakar × Gura"; move the round identifier into the
+      title/breadcrumb. Add a color legend (green=Attakar, blue=Gura) and a visible
+      selected-state highlight on a polygon when its row is ticked.
+    fix_kind: CODE
+  - scene: 3
+    dimension: trust
+    score: 3
+    fix_recommendation: >
+      Add lightweight quantitative grounding per area (household count or approximate size)
+      and a map scale bar so Amina can judge the size of the coverage commitment she accepts.
+    fix_kind: DATA
+  - scene: 4
+    dimension: clarity
+    score: 2
+    fix_recommendation: >
+      Expand or tooltip the "EOI" badge to "Expression of Interest (EOI)", and replace the
+      bare Score "-" and gray "Not reviewed" with an explicit "Review pending" state pill +
+      tooltip noting the score populates after review, so the two empty columns stop reading
+      as broken.
+    fix_kind: CODE
+  - scene: 4
+    dimension: trust
+    score: 3
+    fix_recommendation: >
+      Add a response count ("1 response") and normalize the round label ("Round 6"
+      everywhere, not "R6" in the chip); consider a firm-verification mark. Re-capture with
+      the cursor off the un-truncated breadcrumb.
+    fix_kind: CODE
+  - scene: 5
+    dimension: task_completion
+    score: 3
+    fix_recommendation: >
+      Pre-fill Award Budget from the response's proposed/quoted amount and add an explicit
+      currency indicator (e.g. "Award Budget (NGN) *") with live thousands-separator
+      formatting, removing the guess-the-figure-and-unit trial-and-error on a real-money
+      required field.
+    fix_kind: CODE
+  - scene: 5
+    dimension: clarity
+    score: 2
+    fix_recommendation: >
+      Resolve the Organization ID label/value mismatch: show the friendly org name alongside
+      the slug ("Health Bridge Nigeria · health_bridge_ng") and align the helper text with
+      what the field accepts, or make it a read-only confirmed-org display pulled from the
+      awarded response rather than an editable "ID" a non-technical user must validate.
+    fix_kind: CODE
+  - scene: 5
+    dimension: trust
+    score: 3
+    fix_recommendation: >
+      Add a compact read-only summary of the response being awarded (respondent, firm,
+      proposed price, review score) above the form so the budget commitment is anchored in
+      shown context, and reconcile the "Amina Okafor" / "Household survey firm" /
+      "health_bridge_ng" identifiers into one clearly-labelled grantee block.
+    fix_kind: CODE
+
+self_assessed: false
