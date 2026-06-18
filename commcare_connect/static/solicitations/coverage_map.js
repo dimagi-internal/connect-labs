@@ -160,8 +160,10 @@
       var armKeys = Object.keys(arms);
       if (armKeys.length) {
         var legend = document.createElement('div');
+        // Top-left: clear of the Mapbox logo/attribution (bottom corners) and the
+        // navigation control (top-right), so the color key never clips or overlaps.
         legend.style.cssText =
-          'position:absolute;bottom:8px;left:8px;background:rgba(255,255,255,0.92);' +
+          'position:absolute;top:8px;left:8px;background:rgba(255,255,255,0.92);' +
           'border:1px solid #e5e7eb;border-radius:6px;padding:6px 8px;font-size:11px;' +
           'line-height:1.5;color:#374151;box-shadow:0 1px 2px rgba(0,0,0,0.08);z-index:1;';
         legend.innerHTML = armKeys
