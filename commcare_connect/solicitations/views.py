@@ -538,6 +538,9 @@ class ResponsesListView(ManagerRequiredMixin, TemplateView):
                 except Exception:
                     r.latest_review = None
             ctx["responses"] = responses
+            # Once a response is awarded, the call has effectively been awarded —
+            # surface that in the header instead of a stale "Active" badge.
+            ctx["has_awarded"] = any(getattr(r, "status", None) == "awarded" for r in responses)
         except Http404:
             raise
         except Exception:

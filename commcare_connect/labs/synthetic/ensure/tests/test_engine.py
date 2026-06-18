@@ -40,3 +40,41 @@ def test_unknown_kind_raises(tmp_path, monkeypatch):
     )
     with pytest.raises(KeyError):
         engine.ensure_synthetic_data(str(env))
+
+
+@pytest.mark.django_db
+def test_fresh_wipes_regenerable_records_for_env_opps(tmp_path, monkeypatch):
+    """fresh=True deletes runs/flags/audits/tasks for the env's opps, keeps
+    scaffolding (definitions/pipelines) and other opps' records untouched."""
+    from commcare_connect.labs.synthetic.models import LabsLocalRecord
+
+    # Env opps 10000 + 10001: regenerable records (deleted) + scaffolding (kept).
+    for opp in (10000, 10001):
+        for t in ("workflow_run", "Flag", "AuditSession", "Task"):
+            LabsLocalRecord.objects.create(opportunity_id=opp, experiment="x", type=t, data={})
+        LabsLocalRecord.objects.create(opportunity_id=opp, experiment="x", type="workflow_definition", data={})
+        LabsLocalRecord.objects.create(opportunity_id=opp, experiment="x", type="pipeline_definition", data={})
+    # An unrelated opp must be left completely alone.
+    LabsLocalRecord.objects.create(opportunity_id=99999, experiment="x", type="workflow_run", data={})
+
+    monkeypatch.setattr(engine, "ENSURERS", {"weekly_runs": lambda r, c: None, "rollup": lambda r, c: None})
+    env = tmp_path / "e.yaml"
+    env.write_text(
+        "env: d\ntimeline: {completed_weeks: 1}\nresources:\n"
+        "  - {kind: weekly_runs, opportunity_ids: [10000, 10001], template: t}\n"
+        "  - {kind: rollup, opportunity_ids: [10000], template: t}\n"
+    )
+
+    engine.ensure_synthetic_data(str(env), fresh=True)
+
+    # Regenerable types gone for env opps; scaffolding + the unrelated opp survive.
+    assert not LabsLocalRecord.objects.filter(
+        opportunity_id__in=[10000, 10001], type__in=["workflow_run", "Flag", "AuditSession", "Task"]
+    ).exists()
+    assert (
+        LabsLocalRecord.objects.filter(
+            opportunity_id__in=[10000, 10001], type__in=["workflow_definition", "pipeline_definition"]
+        ).count()
+        == 4
+    )
+    assert LabsLocalRecord.objects.filter(opportunity_id=99999).count() == 1

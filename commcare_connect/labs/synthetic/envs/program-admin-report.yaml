@@ -20,9 +20,15 @@
 
 env: program-admin-report
 
+# Window is PINNED to a fixed May 2026 story (Mondays May 4/11/18/25, with the
+# current in-progress week falling on Jun 1). Pinning — rather than a trailing
+# window anchored to today — keeps the env idempotent: a re-seed days later
+# targets the SAME weeks, so flags/audits/tasks never drift onto a slid-past
+# week. The four Mondays match each manifest's `timeline.start_date: 2026-05-04`.
 timeline:
   completed_weeks: 4
   include_current_week: true
+  start_monday: 2026-05-04
 
 resources:
   # --- Per-opp data: parse + stash each opp's generator Manifest. ---

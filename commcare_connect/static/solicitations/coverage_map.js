@@ -151,6 +151,37 @@
       if (bounds)
         map.fitBounds(bounds, { padding: 36, duration: 0, maxZoom: 12 });
 
+      // Arm legend (only when the boundaries carry study arms).
+      var arms = {};
+      features.forEach(function (f) {
+        var a = (f.properties.arm || '').toLowerCase();
+        if (a) arms[a] = armColor(a);
+      });
+      var armKeys = Object.keys(arms);
+      if (armKeys.length) {
+        var legend = document.createElement('div');
+        legend.style.cssText =
+          'position:absolute;bottom:8px;left:8px;background:rgba(255,255,255,0.92);' +
+          'border:1px solid #e5e7eb;border-radius:6px;padding:6px 8px;font-size:11px;' +
+          'line-height:1.5;color:#374151;box-shadow:0 1px 2px rgba(0,0,0,0.08);z-index:1;';
+        legend.innerHTML = armKeys
+          .map(function (a) {
+            var label = a.charAt(0).toUpperCase() + a.slice(1);
+            return (
+              '<div style="display:flex;align-items:center;gap:6px;">' +
+              '<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:' +
+              arms[a] +
+              ';"></span>' +
+              label +
+              '</div>'
+            );
+          })
+          .join('');
+        if (getComputedStyle(el).position === 'static')
+          el.style.position = 'relative';
+        el.appendChild(legend);
+      }
+
       if (opts.interactive && typeof opts.onToggle === 'function') {
         map.on('click', 'coverage-fill', function (e) {
           if (e.features && e.features[0])
