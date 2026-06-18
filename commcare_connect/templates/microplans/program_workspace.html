@@ -169,7 +169,18 @@
         </div></section>`;
     }).join("");
     const planById = Object.fromEntries(DATA.plans.map((p) => [p.plan_id, p]));
-    $("groups").innerHTML = (DATA.groups || []).map((g) => {
+    // Suppress empty scratch study placeholders: a study group with no resolvable
+    // member plans, or whose only members are 0-ward drafts, is leftover scaffolding
+    // (e.g. an "Untitled study · 0 wards" card). Shown as a first-class peer it
+    // distracts from the finished, ready-to-solicit studies the page is about.
+    const groupHasContent = (g) => {
+      const members = (g.plan_ids || []).map((pid) => planById[pid]).filter(Boolean);
+      if (!members.length) return false;
+      const wards = members.reduce((n, p) => n + (p.ward_count || 0), 0);
+      return wards > 0;
+    };
+    const visibleGroups = (DATA.groups || []).filter(groupHasContent);
+    $("groups").innerHTML = visibleGroups.map((g) => {
       // List the group's member plans here (they're hidden from the top columns)
       // so each grouped plan stays one click from its review page.
       const members = (g.plan_ids || []).map((pid) => planById[pid]).filter(Boolean);
