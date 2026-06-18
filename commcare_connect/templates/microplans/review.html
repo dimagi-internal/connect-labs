@@ -103,7 +103,6 @@
   .mp-rail .railscroll > * { flex-shrink:0; }
   .mp-rail .railscroll::-webkit-scrollbar { width:8px; }
   .mp-rail .railscroll::-webkit-scrollbar-thumb { background:#e3e6eb; border-radius:8px; }
-  .mp-rail .railfoot { flex:0 0 auto; border-top:1px solid var(--line2); background:#fff; padding:11px 13px; }
   .mp-rail > section { margin:0; }
 
   /* accordion steps as bordered cards with an icon chip + display-font title + rotating chevron */
@@ -484,14 +483,11 @@
     </section>
     {% endif %}
 
+      <div class="mt-1 pt-2 border-t border-[color:var(--line2)]">
+        <button type="button" id="btn-export" class="button button-sm outline-style w-full" disabled>Download Connect import CSV</button>
+        <div id="status" class="text-xs text-gray-500 mt-2"></div>
+      </div>
     </div><!-- /railscroll -->
-    <div class="railfoot">
-      {% if create_solicitation_url %}
-      <a href="{{ create_solicitation_url }}" class="button button-sm outline-style w-full mb-2">Create solicitation</a>
-      {% endif %}
-      <button type="button" id="btn-export" class="button button-sm outline-style w-full" disabled>Download Connect import CSV</button>
-      <div id="status" class="text-xs text-gray-500 mt-2"></div>
-    </div>
   </aside>
 
   <!-- Center: map + metrics + table -->
