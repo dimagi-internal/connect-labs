@@ -1,113 +1,68 @@
 schema_version: 1
 rubric_name: ddd-concept-eval
-ran_at: 2026-06-18T08:20:00Z
-run_dir: /Users/jjackson/emdash/worktrees/connect-labs/emdash/solicitation-rntwj/.canopy/ddd/runs/create-survey-solicitation-2026-06-17-001/
-iteration: 3
+ran_at: 2026-06-18T17:05:00Z
+run_dir: /Users/jjackson/emdash/worktrees/connect-labs/emdash/solicitation-rntwj/.canopy/ddd/runs/create-survey-solicitation-2026-06-17-001
+iteration: 4
 scenes_evaluated: 5
-
-# Per-scene gating-dimension scores (claim_reality_coherence is advisory, excluded from overall):
-#   dim                  S1  S2  S3  S4  S5   min
-#   concept_clarity       2   3   3   4   2    2
-#   design_soundness      2   3   2   4   3    2
-#   visual_polish         2   3   2   3   3    2
-#   why_groundedness      2   4   4   4   4    2
-#   claim_reality (adv)   2   4   2   5   2   (2)
-#   motion_friction       2   3   4   4   2    2
-
-# RESOLVED vs iter-2 (verified in this capture):
-#   - Scene 3 respond form: the empty "Application Questions" stub card is GONE.
-#     The form now reads coverage selector → AI-coach helper → submit buttons,
-#     with no dangling empty section. (iter-2 design_soundness=2 driver REMOVED.)
-#   - Scenes 4 & 5 responses table: the ACTIONS column (View / Review / Award
-#     trophy) is now FULLY in-frame — no right-edge clipping. Scene 4 visual_polish
-#     rose 2 -> 3 and design_soundness rose 3 -> 4; the iter-2 "Award clipped
-#     off-frame / ACTIONS header truncated to 'A'" finding is RESOLVED (#629/#630).
-# NEW this iteration (weakest-link shifted):
-#   - Scene 1 why_groundedness fell 3 -> 2: the "FINISHED micro-plan" precondition
-#     the concept_claim rests on (spine S3 "the approved plan") is contradicted by
-#     the still — every plan card reads "Draft" and the R6 study reads
-#     "defining * 1 wards". Scene 1 is now the broadest weakest-link, hitting four
-#     gating dims (concept_clarity, design_soundness, visual_polish, why_groundedness).
+judge_independence: fresh_subagents # 5 fresh general-purpose judges invoked canopy:visual-judge; none self_assessed
 
 dimensions:
   concept_clarity:
-    score: 2
+    score: 3
     weight: 0.20
     justification: >-
-      Strong in the responses view (S4 = 4: header sentence + per-row SELECTED
-      COVERAGE pill make what+why legible at a glance). Weakest-link is scene 1 (2)
-      and scene 5 (2). Scene 1: a 5-second glance returns a wall of undifferentiated
-      "Draft" cards — two literally named "Attakar / Attakar" — so the hero
-      "finished plan -> one-click solicitation" story is not findable and the
-      opening fails to establish the problem. Scene 5: a near-duplicate of scene 4
-      that returns a "nothing new happened" read — the look-ahead/honesty beat adds
-      nothing visually distinct from the prior responses frame.
+      Weakest at scene 1 (3): the five-second read lands on the wall of Draft
+      cards rather than the one finished R6 study the scene is about, and
+      round/study/solicitation go unexplained for a true outsider. Scenes 2-5
+      are clear (4) — the create form, respond map, responses row, and award
+      screen each state plainly what they are for.
   design_soundness:
-    score: 2
+    score: 4
     weight: 0.20
     justification: >-
-      Weakest-link is scene 1 (2) and scene 3 (2). Scene 1: "Create solicitation"
-      has zero primacy — it is the 3rd of four equal-weight text actions
-      (Archive * Submit for review * Create solicitation * Delete) on every card,
-      visually identical to Delete, with an empty LIVE lane and near-empty R1-R4
-      cards. Scene 3: the "Which areas can you cover? — Select one or more" prompt
-      renders exactly ONE checkbox (a degenerate, near-contradictory affordance),
-      and the AI-coach card promises to review "your draft answers" for which no
-      fields exist on the page (a capability/UI mismatch). RESOLVED from iter-2: the
-      empty "Application Questions" stub card is gone, and scene 4's clipped Award
-      action is now fully in-frame (S4 rose to 4).
+      Coherent across all five scenes (all 4). The plan-to-solicitation-to-
+      response-to-award flow holds together; inputs lead to expected outputs.
+      Minor off-notes (Create solicitation also offered on unfinished Draft
+      cards; the respond checklist bundles both wards into one row) do not break
+      the idea.
   visual_polish:
     score: 2
     weight: 0.15
     justification: >-
-      Weakest-link is scene 1 (2) and scene 3 (2). Scene 1: fixture noise — duplicate
-      "Attakar / Attakar" cards, "1 wards" (broken pluralization that also
-      contradicts the page's own intervention+control definition), a ragged grid of
-      full-vs-empty cards, and faint low-contrast area/status metadata. Scene 3: two
-      saturated filled CTAs ("Get Feedback on My Answers" and "Submit Response")
-      collide for primary status, and ~40% of the frame is dead whitespace with the
-      form floating in the upper third. Scene 4 improved 2 -> 3 (ACTIONS now in-frame)
-      but is held to 3 by green over-loaded across coverage pill, SELECTED-COVERAGE
-      check, "Active" status dot, AND the Review icon (four greens, four meanings).
-      All fixes are PRODUCT-side (suppress placeholder/seed cards, demote the coach
-      CTA, reserve green for one meaning); never camera tricks.
+      WEAKEST-LINK, bound at scene 1 (2): the load-bearing READY TO SOLICIT R6
+      study card has no visual prominence over a placeholder 'Untitled study —
+      0 wards' card beside it and a dense grid of pale Draft cards, and the
+      strongest-colored CTA in the frame ('Deploy →') is not the scene action.
+      Scene 4 also dips (3): the selected-coverage badge is under-emphasized and
+      the one-row table reads sparse. Scenes 2/3/5 are polished (4) — the maps
+      render with real polygons + basemap, the award screen is a clean distinct
+      frame.
   why_groundedness:
-    score: 2
+    score: 4
     weight: 0.20
     justification: >-
-      Weakest-link is scene 1 (2). Spine S3 rests on "the approved plan" /
-      "a FINISHED micro-plan", but every visible plan card reads "Draft" and the R6
-      study reads "defining * 1 wards". The Create-solicitation mechanism is genuinely
-      present, but the finished-plan precondition the concept_claim depends on is
-      contradicted by the still, so the claim's anchor is not shown. Scenes 2-5 (4)
-      trace cleanly to S4-S7 with the literal panels rendered on screen
-      ("Coverage areas (from micro-plan) — Attached", the "Which areas can you cover?"
-      selector + "Required to submit" rule, the SELECTED COVERAGE pill, and the
-      honest Award-deferral boundary).
+      Every scene's concept_claim traces to its why_brief spine item (S3-S7);
+      scene 5 is a 5 (claim + the honest G1 CAPABILITY deferral both grounded).
+      Held at 4 overall because most scenes give a single provenance ref rather
+      than an independently verifiable end-to-end chain from a single frame.
   claim_reality_coherence:
-    score: 2
+    score: 4
     weight: 0.10
     blocking: false
     justification: >-
-      ADVISORY / non-blocking — excluded from overall_score. Scene 1 (2): the
-      "launch from a finished plan" narration is not demonstrated — the button sits
-      on Draft cards and a "defining / 1 wards" study. Scene 3 (2): the
-      "blocked until one area chosen" rule fires only on submit (correctly not visible
-      in a still — not deducted), but the AI-coach card references "draft answers"
-      with no corresponding answer fields on the page. Scene 5 (2): the
-      "Award as next-step boundary" look-ahead is narrated but not visible/distinct in
-      the still. The honest deferral of opportunity-provisioning (G1) is correct
-      behavior and was NOT penalized in any scene.
+      ADVISORY (excluded from overall). Narration matches footage well: scenes
+      2, 4, 5 are 5 (maps render, the response row + award screen show exactly
+      what is narrated). Scenes 1 and 3 are 4 — 'in one click / carries the plan
+      as source' and the Submit enabled-state transition rest partly on the
+      narrator since a static frame cannot show the behavior.
   motion_friction:
-    score: 2
+    score: 4
     weight: 0.15
     justification: >-
-      Weakest-link is scene 1 (2) and scene 5 (2). Scene 1: a strong seed-data smell
-      in a single still — duplicate-named cards, "1 wards", empty R1-R4 cards, and an
-      empty "LIVE ... none" lane read as a half-populated fixture. Scene 5: the
-      sequence does not visibly ADVANCE — the final beat is near-identical to the
-      immediately prior responses scene with no distinct affordance/hover/focus on the
-      Award control, so it reads static.
+      All five scenes 4: no spinners, errors, dead-ends, or backwards scene
+      ordering; fully-rendered frames throughout. Held off 5 by mild eye-travel
+      friction (scene 1 the actionable study sits below a draft grid + an empty
+      'LIVE · none' band; scenes 4/5 have dead whitespace below the content).
 
 overall_score: 2
 overall_rule: lowest
@@ -116,46 +71,20 @@ verdict: fail
 blocking_reason: null
 
 fix_recommendation: |
-  Iteration 3 RESOLVED both shipped iter-2 mechanical fixes (verified live): the
-  scene-3 empty "Application Questions" stub card is gone, and the scenes 4 & 5
-  ACTIONS column (View / Review / Award trophy) is now fully in-frame with no
-  right-edge clipping (#629/#630) — scene 4 rose to design_soundness 4 / visual_polish 3.
-  But the weakest-link is still 2/5 (fail), now driven primarily by scene 1, which
-  hits four gating dimensions:
-
-  [CONCEPT/RESEARCH] Scene 1 — the "FINISHED micro-plan" precondition is contradicted
-  by the capture (why_groundedness 2, claim_reality 2): every plan card reads "Draft"
-  and the R6 study reads "defining * 1 wards". Capture this scene with the R6 study in
-  an Approved/Reviewed/finished state (and a ward count that satisfies the
-  intervention+control definition) so the "launch from a finished plan" claim is
-  visible, not just the Create-solicitation button. Mechanical (re-seed/re-capture).
-
-  [PRODUCT] Scene 1 portfolio (visual_polish 2, design_soundness 2, concept_clarity 2):
-  suppress/de-dupe the duplicate "Attakar / Attakar" and seed-noise cards, fix the
-  "1 wards" pluralization, lead with the one finished R6 study in a distinct
-  "ready-to-solicit" lane, and promote "Create solicitation" to a single primary
-  button (demote Archive/Submit/Delete into an overflow) so the hero path is findable
-  in 5 seconds. Seed-data + template fix. Mechanical.
-
-  [PRODUCT] Scene 3 respond form (design_soundness 2, visual_polish 2): the
-  "Select one or more" prompt shows a single degenerate checkbox — relabel the
-  single-area case honestly (or surface the real sub-areas), demote "Get Feedback on
-  My Answers" to a secondary/outline button so it stops colliding with "Submit
-  Response", and tighten the form so ~40% of dead lower whitespace is not the
-  dominant region. Also scope the AI-coach copy to what the page contains. Mechanical.
-
-  [PRODUCT] Scene 4 responses table (visual_polish 3): green is overloaded across the
-  coverage pill, the SELECTED-COVERAGE check, the "Active" status dot, AND the Review
-  icon — reserve green for a single meaning (status) and make the coverage pill a calm
-  neutral/indigo. Mechanical.
-
-  [PRODUCT/options] Scene 5 (concept_clarity 2, motion_friction 2): the look-ahead beat
-  is a near-duplicate of scene 4 with no distinct on-screen state. Either re-point to a
-  genuinely distinct capture (the Award control focused/hovered with an aspirational
-  "provision a live opportunity — next step" treatment) or give the final beat a
-  distinct affordance so the sequence visibly advances. Options — surface to the user,
-  do not auto-apply.
-
-  [DEFER] claim_reality_coherence gaps (scenes 1, 3, 5) are advisory only and did not
-  drive the verdict. The honest deferral of opportunity-provisioning (G1) is correct
-  and was not penalized.
+  Weakest link is visual_polish on SCENE 1 (2/5), which drives the fail.
+  [PRODUCT, mechanical] Make the finished/ready R6 study the visual hero of the
+  portfolio: a stronger card treatment for READY TO SOLICIT, a high-contrast
+  primary 'Create solicitation' button, and suppress/de-emphasize empty
+  placeholder cards ('Untitled study — 0 wards') so the actionable study is not
+  lost in the draft grid. The persistent seed-noise (other Draft plan cards, the
+  Untitled study) still caps scene 1 even though the finished-state contradiction
+  from the prior iteration is resolved.
+  Secondary, scene 4 [PRODUCT, mechanical]: promote the selected-coverage tie to
+  a dedicated 'COMMITTED COVERAGE' column with a 'matches your design' marker and
+  tighten vertical rhythm so the one-row responses table reads as an intentional
+  focused view.
+  Secondary, scene 1 [CONCEPT, mechanical]: add a 'Ready to solicit' grouping/
+  filter plus a one-line plain-language header so a cold planner lands on the
+  finished study first.
+  All three open findings are fix_kind: mechanical (auto-applicable). No options/
+  redesign findings — nothing is loop-blocking on a concept-rethink basis.

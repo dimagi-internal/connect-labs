@@ -1,115 +1,79 @@
-schema_version: 1
-rubric_name: user-artifact
-ran_at: 2026-06-18T08:10:00Z
-run_dir: .canopy/ddd/runs/create-survey-solicitation-2026-06-17-001/
-iteration: 3
-judge: canopy:visual-judge
-audience: feature user
-methodology: tough-judge
-domain: create-survey-solicitation
-# Per-scene lowest-of-3, then lowest-across-scenes. Conservative from a 3/5 default.
-# Iter-3: two mechanical fixes verified resolved (scene-3 stub gone, scene-4/5 actions in-frame).
-# Three known-open items remain by deliberate human direction — scored honestly, not penalized as regressions.
+overall_score: 2.0
+verdict: fail
+# DDD user-artifact judge — iteration 4. rubric=user-artifact, audience="feature user",
+# overall_rule=lowest (weakest-link across all 5 scenes). Each scene judged by an
+# independent canopy:visual-judge sub-agent under artifact_kind=product_walkthrough
+# (so product chrome is grounding, not penalized; real org slugs treated as real data).
+# Two scenes tie at the floor (scene_1 and scene_5, both overall 2.0). The dimensions
+# block below is scene_5 — the binding gate — because its weakest dimension is
+# task_completion (weight 0.40, the heaviest of the three).
 dimensions:
   task_completion:
-    score: 4
+    score: 2
     weight: 0.40
     justification: >
-      The full Maya→Amina→Maya task is completable first-try across all five scenes. Scene 1's
-      portfolio gives every plan card AND the R6 — Attakar × Gura study-group card a per-card
-      "Create solicitation" button — Maya launches the call directly from her finished
-      micro-plan. Scene 2 pre-fills the title ("Solicitation for R6 — Attakar × Gura") and Scope
-      of Work, and attaches coverage as a first-class "Attached" card. Scene 3 (now corrected)
-      presents the respondent flow cleanly: the required "Which areas can you cover? — Select one
-      or more. Required to submit." checkbox, the AI-coach helper, and a working Submit Response
-      button — the empty "Application Questions" stub card that previously sat mid-flow is GONE
-      (verified resolved this iteration). Scene 4 shows the submitted Health Bridge Nigeria
-      response bound to the exact coverage, with the View / Review / Award actions now fully
-      in-frame (verified resolved — was clipped in iter-2). Scene 5 reuses scene 4's frame for
-      the deferred award→live-opportunity look-ahead and is NOT scored as a broken task. One
-      minor friction blocks a 5 (the same deliberately-deferred call from iter-2): scene 1's
-      "Plan groups & studies" list and the two unnumbered duplicate "Attakar" planning cards
-      add scan noise, so picking the correct populated R6 study card is not instant on first
-      glance.
+      Scene 5 (Award page). Completable in principle, but a non-technical program owner
+      needs a workaround to finish: the required "Organization ID" field demands a raw
+      system slug ("health_bridge_ng") she is unlikely to have memorized, with no picker,
+      lookup, or "where to find this" affordance on the page. The required "Award Budget"
+      is empty with no in-frame reference value (firm's bid, solicitation ceiling, fund
+      balance). The free-text raw-ID-required pattern is the "needs assistance/workaround"
+      anchor (2), not self-resolvable trial-and-error.
     fix_recommendation: >
-      In scene 1, disambiguate the launch target: number or label the two bare "Attakar"
-      planning cards, and collapse/quiet the lower "Plan groups & studies" R6 entry (or hide
-      empty/near-duplicate study cards behind a toggle) so the named, populated R6 — Attakar ×
-      Gura card is the obvious place to click "Create solicitation".
+      Replace the free-text "Organization ID" input with a name-first typeahead picker that
+      searches grantee organizations by display name ("HealthBridge", "Amina Okafor's firm")
+      and resolves to the org ID behind the scenes, defaulting to the org already attached to
+      the response being awarded — the owner selects a name and never types a slug.
     fix_kind: mechanical
   clarity:
-    score: 4
+    score: 2
     weight: 0.35
     justification: >
-      Labels and CTAs self-explain to a non-technical program owner throughout: "Create
-      solicitation", "Submit Response", "Save Draft", "Which areas can you cover?", "SELECTED
-      COVERAGE", and the AI-coach copy ("Our AI coach reviews your draft answers against the
-      evaluation criteria... Your answers are never changed or submitted") are plain English.
-      "EOI" is expanded to "Expression of Interest (EOI)" in scene 2, and coverage provenance
-      reads clearly ("Your micro-plan is attached to this call. Respondents select the areas
-      they can cover. Snapshotted at creation — later plan edits won't change this
-      solicitation."). Scene 3's de-cluttered respondent form is now unambiguous end-to-end.
-      One affordance keeps this off a 5: scene 1 still carries internal vocabulary in its
-      section/status chrome — "PLANNING · labs — being designed & reviewed with the LLO/funder",
-      terse "areas 823" counts, and a "defining" study status — that a first-time non-technical
-      user must pause to parse. This is visible chrome only (not in the core task path), so it
-      stays a single sharpenable affordance rather than a confusing element; no jargon-deduction
-      to 2 is warranted.
+      Scene 5. An element confuses the target user: "Organization ID" / "the Connect
+      organization ID of the awarded grantee" is jargon for a non-technical program owner who
+      does not think in org IDs — the "jargon visible to non-technical users: max 2" deduction
+      fires. Secondary confusions: the budget field carries no currency unit (₦500,000 vs
+      $500,000 differ ~1000x in a Nigeria context), and the banner's "can be updated later"
+      mildly contradicts the committing green "Award Grantee" CTA.
     fix_recommendation: >
-      Soften scene-1 portfolio chrome for the non-technical reader: drop or tooltip the internal
-      "labs" tag, label counts as "823 work areas" rather than "areas 823", and rename the study
-      "defining" status to a plainer term (e.g. "Draft — being defined").
+      Relabel the field to the user's vocabulary ("Awarded organization", showing the firm's
+      display name) and demote the raw ID to a small grey confirmation line ("Connect ID:
+      health_bridge_ng"). Add a currency prefix/suffix to "Award Budget" plus a one-line
+      reference ("Firm's proposed budget: <X>") so the required number has context.
     fix_kind: mechanical
   trust:
     score: 4
     weight: 0.25
     justification: >
-      Sourcing and recency are clear and consistent on the response frames. The submitter is
-      Amina Okafor / amina.okafor@healthbridge.ng under org "Health Bridge Nigeria" (no dev/test
-      address remains), the date "Jun 18, 2026" is current, and the response is unambiguously
-      bound to the designed coverage via the green "SELECTED COVERAGE — R6 — Attakar × Gura"
-      chip. Scene 2 states the snapshot semantics explicitly, so provenance and recency read
-      cleanly. No placeholder/test-data tells appear on any in-scope frame. One provenance signal
-      blocks a 5 — the known-open, deliberately-deferred ward-count mismatch: scene 1's R6 study
-      card reads "1 wards" while scene 2's attached coverage card reads "2 wards / 840 work
-      areas". A feature user comparing the two screens cannot tell which ward count is
-      authoritative. This is the single residual trust gap; it does not rise to stale/unclear
-      sourcing (score 2) because every other number, source, and date is internally consistent
-      and current.
-    fix_recommendation: >
-      Reconcile the R6 — Attakar × Gura ward count so scene 1's study card ("1 wards") and scene
-      2's attached coverage card ("2 wards / 840 work areas") report the same figure; align the
-      group-card count to the attached-coverage truth (the snapshot the respondent actually
-      selects against).
-    fix_kind: mechanical
-overall_score: 4
-overall_rule: lowest
-verdict: pass
-self_assessed: false
-resolved_since_iter_2:
-  - "Scene 3: the empty 'Application Questions' stub card mid-flow is GONE — the respondent form now reads coverage selector → AI coach → Submit Response. VERIFIED in capture."
-  - 'Scene 4/5: the responses ACTIONS column (View / Review / Award) is fully in-frame — no longer clipped at the right edge. VERIFIED in capture.'
-fix_recommendation: |
-  Two iter-2 mechanical fixes verified RESOLVED this iteration (scene-3 stub removed; scene-4/5
-  actions un-clipped). Overall holds at 4/5 PASS — the three remaining 4-capping items are the
-  deliberately-deferred human-direction calls, not regressions:
-  [PRODUCT mechanical] Scene 1: disambiguate the launch target — number the bare "Attakar"
-  cards and collapse/quiet the lower "Plan groups & studies" R6 entry so the populated R6 study
-  card is the obvious click.
-  [PRODUCT mechanical] Scene 1: de-jargon portfolio chrome (tooltip/drop the "labs" tag,
-  "N work areas" counts, plainer "defining" status label).
-  [DATA mechanical] Reconcile the R6 ward count between scene 1 ("1 wards") and scene 2
-  ("2 wards / 840 work areas") so the two screens agree.
-findings:
-  - dimension: task_completion
-    score: 4
-    fix_recommendation: "Scene 1: number the bare 'Attakar' planning cards and collapse/quiet the lower 'Plan groups & studies' R6 entry (or toggle-hide empty/near-duplicate study cards) so the populated R6 — Attakar × Gura card is the obvious launch target."
-    fix_kind: mechanical
-  - dimension: clarity
-    score: 4
-    fix_recommendation: "De-jargon scene-1 portfolio chrome: tooltip/drop the 'labs' tag, label counts as 'N work areas', rename the study 'defining' status to 'Draft — being defined'."
-    fix_kind: mechanical
-  - dimension: trust
-    score: 4
-    fix_recommendation: "Reconcile the R6 ward count between scene 1 ('1 wards') and scene 2 ('2 wards / 840 work areas'); align the group-card count to the attached-coverage snapshot truth."
-    fix_kind: mechanical
+      Scene 5. High trust with one provenance signal missing. The pre-filled "health_bridge_ng"
+      is a real-looking org slug for a real-looking grantee in a running product (grounding
+      under product_walkthrough, not placeholder/test data — so no max-2 cap), and the named
+      response ("Amina Okafor", "Household survey firm — Round 6 (Attakar × Gura)") is consistent
+      and concrete. The one missing signal: the page never states where the pre-filled org ID
+      came from (auto-resolved from the response vs a default the user must overwrite).
+scenes:
+  - scene: 1
+    overall: 2.0
+    task_completion: 3
+    clarity: 2
+    trust: 2
+  - scene: 2
+    overall: 3.0
+    task_completion: 3
+    clarity: 3
+    trust: 4
+  - scene: 3
+    overall: 3.0
+    task_completion: 3
+    clarity: 3
+    trust: 3
+  - scene: 4
+    overall: 3.0
+    task_completion: 4
+    clarity: 3
+    trust: 3
+  - scene: 5
+    overall: 2.0
+    task_completion: 2
+    clarity: 2
+    trust: 4
