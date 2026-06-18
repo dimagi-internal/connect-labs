@@ -163,8 +163,10 @@ class SolicitationForm(forms.Form):
     def to_data_dict(self) -> dict:
         """Convert cleaned form data to a dict for the data access layer.
 
-        Serializes date fields to ISO strings and parses questions_json
-        into a Python list.
+        Serializes date fields to ISO strings, parses questions_json and
+        evaluation_criteria_json into Python lists, and parses plans_json
+        plus source-reference fields (source_program_id, source_group_id,
+        source_plan_ids), omitting them when absent.
         """
         data = self.cleaned_data.copy()
 

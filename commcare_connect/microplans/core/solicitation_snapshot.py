@@ -34,13 +34,13 @@ def build_plan_snapshot(da, *, group_id: int | None = None, plan_id: int | None 
         ordered = [by_id[pid] for pid in group.plan_ids if pid in by_id]
         plans = [_plan_entry(p) for p in ordered]
         title = f"Solicitation for {group.name}".strip()
-        scope = f"Coverage areas drawn from plan group “{group.name}”."
+        scope = f'Coverage areas drawn from plan group "{group.name}".'
     else:
         plan = da.get_plan(plan_id)
         plans = [_plan_entry(plan)]
         region = f" ({plan.region})" if plan.region else ""
         title = f"Solicitation for {plan.name}{region}".strip()
-        scope = f"Coverage area drawn from plan “{plan.name}”."
+        scope = f'Coverage area drawn from plan "{plan.name}".'
 
     return {
         "plans": plans,

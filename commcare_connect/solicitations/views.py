@@ -392,6 +392,7 @@ class SolicitationCreateView(ManagerRequiredMixin, TemplateView):
         if not program_id or not (group_id or plan_id):
             return None
         try:
+            # Imported here (not at module top) so tests can patch it and to avoid import-time geo-stack cost.
             from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
 
             da = ProgramPlanDataAccess(int(program_id), request=self.request)
