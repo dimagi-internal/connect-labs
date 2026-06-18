@@ -134,6 +134,7 @@
                 transition: opacity 0.3s ease;
             }
         </style>
+        {% if responses|length > 1 %}
         <div class="bg-white rounded-xl shadow-sm border border-indigo-100 overflow-hidden mb-6">
             <!-- Card header -->
             <div class="bg-gradient-to-r from-indigo-50 to-blue-50 px-5 py-4 flex items-center justify-between border-b border-indigo-100">
@@ -263,6 +264,7 @@
             };
         })();
         </script>
+        {% endif %}
 
         <!-- Responses Table -->
         <div class="bg-white rounded-lg shadow-sm overflow-hidden">
@@ -286,9 +288,14 @@
                                     {{ response.org_name|default:response.llo_entity_name|default:"Unknown Organization" }}
                                 </div>
                                 {% if response.selected_plan_names %}
-                                <div class="mt-1 flex flex-wrap gap-1">
+                                <div class="mt-1.5 flex flex-wrap items-center gap-1">
+                                  <span class="text-[10px] font-semibold uppercase tracking-wide text-emerald-600 mr-0.5">
+                                    <i class="fa-solid fa-circle-check mr-0.5"></i>Selected coverage
+                                  </span>
                                   {% for name in response.selected_plan_names %}
-                                  <span class="px-2 py-0.5 text-xs rounded bg-indigo-50 text-indigo-700">{{ name }}</span>
+                                  <span class="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                    <i class="fa-solid fa-location-dot mr-1 text-emerald-500"></i>{{ name }}
+                                  </span>
                                   {% endfor %}
                                 </div>
                                 {% endif %}
