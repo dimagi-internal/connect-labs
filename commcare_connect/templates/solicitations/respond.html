@@ -82,8 +82,8 @@
             </fieldset>
             {% endif %}
 
-            <!-- Questions Section -->
-            {% if form.fields %}
+            <!-- Questions Section — only when the solicitation defines custom questions -->
+            {% if question_fields %}
                 <div class="bg-white rounded-xl shadow-sm p-8">
                     <h2 class="text-xl font-semibold text-brand-deep-purple mb-6 pb-2 border-b border-gray-200">
                         <i class="fa-solid fa-clipboard-list mr-2"></i>
