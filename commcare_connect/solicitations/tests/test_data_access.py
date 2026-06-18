@@ -526,6 +526,9 @@ class TestAwardResponse:
         assert call_data["status"] == "awarded"
         assert call_data["reward_budget"] == 500000
         assert call_data["org_id"] == "org_99"
+        # Award stamps the notification — awardee_notified + awarded_at are recorded.
+        assert call_data["awardee_notified"] is True
+        assert call_data["awarded_at"]
 
     def test_raises_for_missing_response(self, data_access, mock_api_client):
         mock_api_client.get_record_by_id.return_value = None
