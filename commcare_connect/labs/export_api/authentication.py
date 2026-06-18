@@ -3,6 +3,7 @@
 Reuses the MCP Personal Access Token machinery: an external consumer (Scout)
 sends ``Authorization: Bearer <pat>`` exactly as it would against the MCP server.
 """
+from drf_spectacular.extensions import OpenApiAuthenticationExtension
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import AuthenticationFailed
 
@@ -34,3 +35,17 @@ class MCPTokenAuthentication(BaseAuthentication):
 
     def authenticate_header(self, request):
         return f'Bearer realm="{self.realm}"'
+
+
+class MCPTokenScheme(OpenApiAuthenticationExtension):
+    """Document the PAT bearer scheme in the OpenAPI spec (auto-discovered)."""
+
+    target_class = "commcare_connect.labs.export_api.authentication.MCPTokenAuthentication"
+    name = "MCPToken"
+
+    def get_security_definition(self, auto_schema):
+        return {
+            "type": "http",
+            "scheme": "bearer",
+            "description": "MCP Personal Access Token. Mint one at /labs/mcp/tokens/.",
+        }
