@@ -21,10 +21,10 @@ ENDPOINT_FILES: dict[str, str] = {
     "user_data": "user_data.json",
     "completed_works": "completed_works.json",
     "completed_module": "completed_module.json",
-    # app_structure is served by the HTTP export API; one file per CommCare
-    # app type (deliver is the default). Absent file => the opp has no app.
+    # app_structure is served by the HTTP export API. The file holds the
+    # {"learn_app", "deliver_app"} wrapper (each value the app JSON or null),
+    # mirroring real Connect. Absent file => the opp has no app (served as nulls).
     "app_structure": "app_structure.json",
-    "app_structure_learn": "app_structure_learn.json",
 }
 
 

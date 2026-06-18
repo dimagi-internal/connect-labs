@@ -7,6 +7,7 @@ authorize, paginate, and shape the response.
 """
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
+from rest_framework import status
 from rest_framework.exceptions import NotFound
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -20,11 +21,11 @@ from .authentication import MCPTokenAuthentication
 from .pagination import ExportPageNumberPagination
 from .serializers import ExportPageSerializer
 
-# app_type query value -> FixtureStore endpoint key (CommCare has exactly two).
-_APP_STRUCTURE_KEYS = {
-    "deliver": "app_structure",
-    "learn": "app_structure_learn",
-}
+# app_structure parity with real Connect (data_export/const.py).
+_APP_TYPE_LEARN = "learn"
+_APP_TYPE_DELIVER = "deliver"
+_APP_TYPE_BOTH = "both"
+_VALID_APP_TYPES = (_APP_TYPE_LEARN, _APP_TYPE_DELIVER, _APP_TYPE_BOTH)
 
 _PAGE_PARAMS = [
     OpenApiParameter("page", OpenApiTypes.INT, description="1-based page number."),
@@ -117,34 +118,41 @@ class OpportunityDataView(_ExportView):
 
 
 class AppStructureView(_ExportView):
-    """GET /api/export/opportunity/<id>/app_structure/ — present-or-404.
+    """GET /api/export/opportunity/<id>/app_structure/.
 
-    Honors ``?app_type=deliver|learn`` (default deliver). 404 when the opp has
-    no fixture for that app type, matching real Connect's "no app linked".
+    Mirrors real Connect: always returns the ``{"learn_app", "deliver_app"}``
+    wrapper (each value is the app JSON or null), honoring
+    ``?app_type=learn|deliver|both`` (default ``both``). An opp with no app
+    fixture returns 200 with both keys null. An invalid app_type returns 400.
     """
 
     @extend_schema(
-        summary="App structure (deliver or learn)",
+        summary="App structure (learn and/or deliver)",
         parameters=[
             OpenApiParameter(
                 "app_type",
                 OpenApiTypes.STR,
-                enum=["deliver", "learn"],
-                description="Which CommCare app's structure to return (default deliver).",
+                enum=list(_VALID_APP_TYPES),
+                description="Which app(s) to include: learn, deliver, or both (default both).",
             )
         ],
-        responses={
-            200: OpenApiTypes.OBJECT,
-            404: OpenApiResponse(description="No app of that type for this opportunity."),
-        },
+        responses={200: OpenApiTypes.OBJECT, 400: OpenApiResponse(description="Invalid app_type.")},
     )
     def get(self, request, opportunity_id):
         _visible_opp_or_404(request.user, opportunity_id)
-        app_type = request.query_params.get("app_type", "deliver")
-        key = _APP_STRUCTURE_KEYS.get(app_type)
-        if key is None:
-            raise NotFound("Unknown app_type.")
-        rows = _synthetic_client(opportunity_id).fetch_all(key)
-        if not rows:
-            raise NotFound("No app structure for this opportunity.")
-        return Response(rows[0])
+        app_type = request.query_params.get("app_type", _APP_TYPE_BOTH)
+        if app_type not in _VALID_APP_TYPES:
+            return Response(
+                {"error": f"Invalid app_type. Must be one of: {', '.join(_VALID_APP_TYPES)}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        rows = _synthetic_client(opportunity_id).fetch_all("app_structure")
+        wrapper = rows[0] if rows and isinstance(rows[0], dict) else {}
+        include_learn = app_type in (_APP_TYPE_LEARN, _APP_TYPE_BOTH)
+        include_deliver = app_type in (_APP_TYPE_DELIVER, _APP_TYPE_BOTH)
+        return Response(
+            {
+                "learn_app": wrapper.get("learn_app") if include_learn else None,
+                "deliver_app": wrapper.get("deliver_app") if include_deliver else None,
+            }
+        )
