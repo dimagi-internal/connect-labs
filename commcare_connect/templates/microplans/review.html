@@ -351,15 +351,17 @@
     <details class="mp-acc mp-card" open id="filter-card">
       <summary><span class="ic">⛒</span><span class="lbl">Exclude work areas</span><span class="chev">›</span></summary>
       <p class="text-[11px] text-gray-500 leading-snug mb-2">Hide work areas that look like bad building data. Excluded ones drop from the map, list, and export.</p>
-      <div class="text-[11px] text-gray-600">Rooftop area per work area (m²)</div>
-      <div class="grid grid-cols-2 gap-2 mt-0.5">
+      <div class="text-[11px] font-semibold text-gray-700 border-t border-gray-100 pt-2">Footprint Size</div>
+      <div class="text-[10px] text-gray-400 mb-0.5">Total rooftop area per work area (m²)</div>
+      <div class="grid grid-cols-2 gap-2">
         <label class="block text-[11px]"><span class="text-gray-500">Min (0 = none)</span>
           <input id="flt-min-roof" type="number" value="0" min="0" step="5" class="base-input mt-0.5 text-xs"></label>
         <label class="block text-[11px]"><span class="text-gray-500">Max (0 = none)</span>
           <input id="flt-max-roof" type="number" value="0" min="0" step="5" class="base-input mt-0.5 text-xs"></label>
       </div>
       <p class="text-[10px] text-gray-400 mt-0.5 leading-snug">Drops areas with too little rooftop (likely noise) or too much (likely not housing).</p>
-      <label class="flex items-center gap-1.5 mt-2 text-[11px] text-gray-700">
+      <div class="text-[11px] font-semibold text-gray-700 border-t border-gray-100 pt-2 mt-2">Density and Distance</div>
+      <label class="flex items-center gap-1.5 mt-1 text-[11px] text-gray-700">
         <input id="flt-exclude-isolated" type="checkbox"> Drop lone buildings far from any cluster
       </label>
       <label class="block mt-0.5 text-[11px]"><span class="text-gray-500">Farther than (m) from a work area with 2+ buildings</span>
