@@ -9,6 +9,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 from django.views.generic import TemplateView
 
+from commcare_connect.microplans.core.solicitation_snapshot import build_plan_snapshot
 from commcare_connect.solicitations.data_access import SolicitationsDataAccess
 from commcare_connect.solicitations.forms import ReviewForm, SolicitationForm, SolicitationResponseForm
 
@@ -356,11 +357,51 @@ class SolicitationCreateView(ManagerRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         ctx["has_context"] = _has_context(self.request)
-        ctx["form"] = SolicitationForm()
         ctx["is_create"] = True
         ctx["existing_questions"] = []
         ctx["existing_criteria"] = []
+
+        snapshot = self._snapshot_from_query()
+        if snapshot:
+            ctx["form"] = SolicitationForm(
+                initial={
+                    "title": snapshot["suggested_title"],
+                    "scope_of_work": snapshot["suggested_scope"],
+                    "plans_json": json.dumps(snapshot["plans"]),
+                    "source_program_id": snapshot["source_program_id"],
+                    "source_group_id": snapshot["source_group_id"],
+                    "source_plan_ids_json": json.dumps(snapshot["source_plan_ids"]),
+                }
+            )
+            ctx["snapshot_plans"] = snapshot["plans"]
+        else:
+            ctx.setdefault("form", SolicitationForm())
+            ctx.setdefault("snapshot_plans", [])
         return ctx
+
+    def _snapshot_from_query(self):
+        """Build a plan snapshot from ?source_program_id=&source_group_id|source_plan_id=.
+
+        Returns None when params are absent or the lookup fails (the form then
+        renders blank — create-from-scratch still works).
+        """
+        q = self.request.GET
+        program_id = q.get("source_program_id")
+        group_id = q.get("source_group_id")
+        plan_id = q.get("source_plan_id")
+        if not program_id or not (group_id or plan_id):
+            return None
+        try:
+            # Imported here (not at module top) so tests can patch it and to avoid import-time geo-stack cost.
+            from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
+
+            da = ProgramPlanDataAccess(int(program_id), request=self.request)
+            if group_id:
+                return build_plan_snapshot(da, group_id=int(group_id))
+            return build_plan_snapshot(da, plan_id=int(plan_id))
+        except Exception:
+            logger.exception("create-from-microplan snapshot failed (program=%s)", program_id)
+            return None
 
     def post(self, request, *args, **kwargs):
         if not _has_context(request):
@@ -521,7 +562,7 @@ class RespondView(LabsLoginRequiredMixin, TemplateView):
             if not solicitation.can_accept_responses():
                 ctx["not_accepting"] = True
             ctx["solicitation"] = solicitation
-            form = SolicitationResponseForm(questions=solicitation.questions)
+            form = SolicitationResponseForm(questions=solicitation.questions, plans=solicitation.plans)
             ctx["form"] = form
 
             # Build zipped question + field + criteria list for template rendering
@@ -567,13 +608,22 @@ class RespondView(LabsLoginRequiredMixin, TemplateView):
         if not solicitation.can_accept_responses():
             return redirect("solicitations:public_detail", pk=pk)
 
-        form = SolicitationResponseForm(questions=solicitation.questions, data=request.POST)
+        form = SolicitationResponseForm(questions=solicitation.questions, plans=solicitation.plans, data=request.POST)
         if form.is_valid():
             # Determine status based on which button was pressed
             if "save_draft" in request.POST:
                 status = "draft"
             else:
                 status = "submitted"
+
+            selected_plan_ids, selected_plan_names = form.get_selected_plans(solicitation.plans)
+
+            # Submitting a plans-based solicitation requires choosing >=1 plan.
+            if status == "submitted" and solicitation.plans and not selected_plan_ids:
+                form.add_error(None, "Select at least one coverage area to submit.")
+                ctx = self.get_context_data(**kwargs)
+                ctx["form"] = form
+                return self.render_to_response(ctx)
 
             # Pull org info from context for display on responses list
             labs_context = getattr(request, "labs_context", {})
@@ -589,6 +639,9 @@ class RespondView(LabsLoginRequiredMixin, TemplateView):
                 "org_name": org.get("name", ""),
                 "submission_date": timezone.now().isoformat(),
             }
+            if solicitation.plans:
+                data["selected_plan_ids"] = selected_plan_ids
+                data["selected_plan_names"] = selected_plan_names
 
             try:
                 da.create_response(
