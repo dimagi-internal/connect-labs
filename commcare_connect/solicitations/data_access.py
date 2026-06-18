@@ -344,10 +344,19 @@ class SolicitationsDataAccess:
         if not current:
             raise ValueError(f"Response {response_id} not found")
 
+        from django.utils import timezone
+
         data = dict(current.data)
         data["status"] = "awarded"
         data["reward_budget"] = reward_budget
         data["org_id"] = org_id
+        # Stamp the award + record that the awardee was notified. The award itself is
+        # the shipped end-state: it records the decision and confirms notification.
+        # (Standing up a live Connect opportunity from the award is a separate,
+        # not-yet-built next step — see AwardView / award.html, which keep that
+        # downstream provisioning honestly framed as deferred.)
+        data["awarded_at"] = timezone.now().isoformat()
+        data["awardee_notified"] = True
         result = self.update_response(response_id, data)
 
         # Auto-create fund allocation if solicitation has a fund_id

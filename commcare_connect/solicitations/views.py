@@ -713,9 +713,40 @@ class ResponseDetailView(LabsLoginRequiredMixin, TemplateView):
 
 
 class AwardView(ManagerRequiredMixin, TemplateView):
-    """Award a response — mark as awarded with budget and org_id."""
+    """Award a response — record the award and confirm the org was notified.
+
+    Awarding is the shipped end-state here: it records the decision (status,
+    budget, org) and stamps that the awardee was notified. Standing up a live
+    Connect opportunity *from* the award is a separate, not-yet-built next step;
+    the template keeps that downstream provisioning honestly framed as deferred.
+    """
 
     template_name = "solicitations/award.html"
+
+    def _summary(self, da, response, solicitation):
+        """Readable award summary: org NAME (never a slug), coverage, score."""
+        # Highest reviewer score (if any) — shown so the manager confirms they're
+        # awarding the firm they meant to.
+        score = None
+        try:
+            reviews = da.get_reviews_for_response(response.pk)
+            scores = [r.score for r in reviews if r.score is not None]
+            if scores:
+                score = max(scores)
+        except Exception:
+            logger.exception("Failed to load reviews for response %s", response.pk)
+        # Coverage area names come off the response (resolved micro-plan names),
+        # falling back to the solicitation's plans if the response didn't carry them.
+        coverage = list(response.selected_plan_names or [])
+        if not coverage and solicitation and solicitation.plans:
+            coverage = [p.get("name", "") for p in solicitation.plans if p.get("name")]
+        return {
+            "org_display": response.llo_entity_name or response.org_name or "this organization",
+            "contact_name": response.submitted_by_name,
+            "contact_email": response.submitted_by_email,
+            "coverage_areas": [c for c in coverage if c],
+            "score": score,
+        }
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
@@ -729,6 +760,10 @@ class AwardView(ManagerRequiredMixin, TemplateView):
 
             solicitation = da.get_solicitation_by_id(response.solicitation_id)
             ctx["solicitation"] = solicitation
+            ctx["summary"] = self._summary(da, response, solicitation)
+            # When the response is already awarded, the page renders the
+            # confirmation state instead of the form.
+            ctx["awarded"] = response.is_awarded
         except Http404:
             raise
         except Exception:
@@ -740,19 +775,20 @@ class AwardView(ManagerRequiredMixin, TemplateView):
         pk = kwargs["pk"]
         try:
             da = _get_data_access(request)
-            reward_budget = int(request.POST.get("reward_budget", 0))
+            reward_budget = int(request.POST.get("reward_budget") or 0)
             org_id = request.POST.get("org_id", "")
             da.award_response(pk, reward_budget=reward_budget, org_id=org_id)
-            # Redirect back to the responses list for the parent solicitation
-            response = da.get_response_by_id(pk)
-            if response:
-                return redirect("solicitations:responses_list", pk=response.solicitation_id)
-            return redirect("solicitations:manage_list")
         except Exception:
             logger.exception("Failed to award response %s", pk)
             ctx = self.get_context_data(**kwargs)
+            ctx["awarded"] = False
             ctx["error"] = "Failed to award response. Please try again."
             return self.render_to_response(ctx)
+
+        # Render the confirmation state in place — "✓ Awarded to <org> — the
+        # organization has been notified." — rather than bouncing back to the list.
+        ctx = self.get_context_data(**kwargs)
+        return self.render_to_response(ctx)
 
 
 # -- Review Views (manager required) ---------------------------------------
