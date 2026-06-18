@@ -2,6 +2,11 @@
 {% load crispy_forms_tags %}
 {% load static %}
 
+{% block css %}
+  {{ block.super }}
+  <link href="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.css" rel="stylesheet">
+{% endblock css %}
+
 {% block content %}
 <!-- AI Chat Mount Point -->
 <div id="solicitation-chat-root"></div>
@@ -257,6 +262,7 @@
                 Your micro-plan is attached to this call. Respondents select the areas they can cover.
                 Snapshotted at creation — later plan edits won't change this solicitation.
             </p>
+            <div id="sol-coverage-map" class="w-full h-80 rounded-lg overflow-hidden border border-gray-200 mb-4"></div>
             <ul class="space-y-3" id="coverage-plans">
                 {% for p in snapshot_plans %}
                 <li class="flex items-start gap-3 bg-indigo-50/60 border border-indigo-100 rounded-lg px-4 py-3">
@@ -408,11 +414,28 @@
 {% block javascript %}
   {{ block.super }}
   <script src="{% static 'bundles/js/solicitation-chat-bundle.js' %}" defer></script>
+  <script src="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.js"></script>
+  <script src="{% static 'solicitations/coverage_map.js' %}"></script>
 {% endblock javascript %}
 
 {% block inline_javascript %}
 {{ existing_questions|json_script:"existing-questions-data" }}
 {{ existing_criteria|json_script:"existing-criteria-data" }}
+{{ snapshot_plans|json_script:"sol-coverage-data" }}
+<script>
+  (function () {
+    var el = document.getElementById("sol-coverage-data");
+    if (!el || !window.SolCoverageMap) return;
+    var plans = [];
+    try { plans = JSON.parse(el.textContent || "[]"); } catch (e) { plans = []; }
+    SolCoverageMap.init({
+      container: "sol-coverage-map",
+      token: "{{ mapbox_token|escapejs }}",
+      plans: plans,
+      interactive: false,
+    });
+  })();
+</script>
 <script>
 function questionBuilder() {
     return {

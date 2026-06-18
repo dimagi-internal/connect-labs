@@ -127,7 +127,9 @@ Templates can set `multi_opp: True` on their `TEMPLATE` dict to opt into multi-o
 
 Templates that produce a periodic review with a definite "moment of completion" can set `supports_saved_runs: True` to opt into the **in_progress | completed** run lifecycle. They declare what the snapshot captures via `snapshot_inputs` (a manifest of pipelines/workers/state_keys), render code reads run data via the `view` helper (`view.workers`, `view.pipelines.<alias>`, `view.state.<key>`, `view.isCompleted`, `view.asOf`), and triggers completion via `view.complete({confirm})`. The framework atomically builds the snapshot, flips status, stamps `completed_at`, and write-protects the run. Reference: `commcare_connect/workflow/templates/performance_review.py`. Full contract: [WORKFLOW_REFERENCE.md §9](commcare_connect/workflow/WORKFLOW_REFERENCE.md#9-saved-runs-templates).
 
-**Existing templates:** `audit_with_ai_review`, `bulk_image_audit`, `kmc_flw_flags`, `kmc_longitudinal`, `kmc_project_metrics`, `mbw_monitoring_v2`, `ocs_outreach`, `performance_review` (multi-opp), `sam_followup`
+**Existing templates:** `audit_with_ai_review`, `bulk_image_audit`, `chc_nutrition_analysis`, `interviews_reporting_v2`, `kmc_flw_flags`, `kmc_longitudinal`, `kmc_project_metrics`, `llo_weekly_review`, `mbw_auditing_v5`, `ocs_outreach`, `performance_review` (multi-opp), `program_admin_report` (multi-opp), `sam_followup`, `verified_monitoring`
+
+**Legacy — do NOT use as patterns:** the `mbw_monitoring` package (MBW v1: Python job handler + SSE + in-template React) is **deprecated** and retained only to keep a few pre-existing prod instances renderable. It's flagged `TEMPLATE["deprecated"] = True`, so it's hidden from `list_templates()` / the create menu and can't be instantiated anew (see its `DEPRECATED.md`). The v2/v3 monitoring and v4 auditing templates were already removed. For any MBW or dashboard work, copy from **`mbw_auditing_v5`** (SQL-native, pipeline-pure, saved-runs) — never from `mbw_monitoring`.
 
 Use the MCP server's `get_form_json_paths` tool to discover correct field paths when building pipeline schemas.
 

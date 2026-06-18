@@ -1,6 +1,18 @@
 """
 MBW Monitoring Workflow Template.
 
+============================================================================
+DEPRECATED — LEGACY v1. DO NOT USE AS A PATTERN.
+----------------------------------------------------------------------------
+This is the original v1 MBW dashboard (Python job handler + SSE + in-template
+React). It is retained ONLY to keep a small number of pre-existing production
+workflow instances renderable (e.g. defs 897 / 2642 on opp 765, which hold
+real review data). It is NOT a reference architecture and is hidden from the
+creatable-template list (TEMPLATE["deprecated"] = True). The current,
+SQL-native, pipeline-pure pattern is `mbw_auditing_v5`. Build new MBW work —
+and copy patterns — from that, never from here. See DEPRECATED.md.
+============================================================================
+
 Select FLWs for monitoring and launch a full in-page dashboard with three tabs:
   - Overview (metrics table + FLW assessment)
   - GPS Analysis (visit GPS metrics per FLW)
@@ -4472,4 +4484,8 @@ TEMPLATE = {
     "definition": DEFINITION,
     "render_code": RENDER_CODE,
     "pipeline_schema": None,
+    # DEPRECATED legacy v1 (see DEPRECATED.md). Still registered so existing
+    # prod instances render via get_template(), but excluded from
+    # list_templates() and uncreatable via create_workflow_from_template().
+    "deprecated": True,
 }
