@@ -735,6 +735,10 @@
         /* style has no glyphs → skip labels; fills + lines still draw */
       }
     }
+    // Fit the map to the candidate wards ONCE per compare run, the first time they
+    // have geometry — so the colour-fills are actually visible (the map may have
+    // been zoomed out to the country) without re-fitting (jumping) on every poll.
+    let compareOverlayFitted = false;
     function renderCompareOverlay(results) {
       try {
         ensureCompareLayers();
@@ -753,12 +757,33 @@
             },
           }));
         const src = map.getSource(CMP_SRC);
-        if (src) src.setData({ type: 'FeatureCollection', features: feats });
+        if (src) {
+          src.setData({ type: 'FeatureCollection', features: feats });
+          if (!compareOverlayFitted && feats.length) {
+            compareOverlayFitted = true;
+            // Include the selected (intervention) ward so it stays centred.
+            const fitFeats = feats.slice();
+            selected.forEach((v) => {
+              if (v && v.geometry)
+                fitFeats.push({
+                  type: 'Feature',
+                  geometry: v.geometry,
+                  properties: {},
+                });
+            });
+            M.fitTo(
+              map,
+              { type: 'FeatureCollection', features: fitFeats },
+              { padding: 60, maxZoom: 12, duration: 600 },
+            );
+          }
+        }
       } catch (e) {
         /* map/style not ready — the panel still renders */
       }
     }
     function clearCompareOverlay() {
+      compareOverlayFitted = false;
       const src = map.getSource(CMP_SRC);
       if (src) src.setData(empty());
     }
