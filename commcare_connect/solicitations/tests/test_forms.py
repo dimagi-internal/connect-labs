@@ -382,3 +382,28 @@ class TestReviewForm:
         for choice in ["under_review", "approved", "rejected", "needs_revision"]:
             form = ReviewForm(data={"score": 50, "recommendation": choice})
             assert form.is_valid(), f"Failed for recommendation: {choice}, errors: {form.errors}"
+
+
+class TestResponseFormPlans:
+    PLANS = [{"plan_id": 7, "name": "Ikorodu"}, {"plan_id": 8, "name": "Ikeja"}]
+
+    def test_no_plans_means_no_field(self):
+        form = SolicitationResponseForm(questions=[], plans=[])
+        assert "select_plans" not in form.fields
+
+    def test_plans_add_optional_multichoice(self):
+        form = SolicitationResponseForm(questions=[], plans=self.PLANS)
+        assert "select_plans" in form.fields
+        assert form.fields["select_plans"].required is False
+
+    def test_get_selected_plans_resolves_ids_and_names(self):
+        form = SolicitationResponseForm(questions=[], plans=self.PLANS, data={"select_plans": ["7"]})
+        assert form.is_valid(), form.errors
+        ids, names = form.get_selected_plans(self.PLANS)
+        assert ids == [7]
+        assert names == ["Ikorodu"]
+
+    def test_get_selected_plans_empty_when_none_chosen(self):
+        form = SolicitationResponseForm(questions=[], plans=self.PLANS, data={})
+        assert form.is_valid(), form.errors
+        assert form.get_selected_plans(self.PLANS) == ([], [])

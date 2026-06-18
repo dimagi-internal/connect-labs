@@ -238,9 +238,18 @@ class SolicitationResponseForm(forms.Form):
     and dynamically creates form fields based on each question's type.
     """
 
-    def __init__(self, questions=None, *args, **kwargs):
+    def __init__(self, questions=None, plans=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.questions = questions or []
+        self.plans = plans or []
+
+        if self.plans:
+            self.fields["select_plans"] = forms.MultipleChoiceField(
+                label="Which areas can you cover?",
+                required=False,
+                choices=[(str(p["plan_id"]), p["name"]) for p in self.plans],
+                widget=forms.CheckboxSelectMultiple(),
+            )
 
         for question in self.questions:
             q_id = question.get("id", "")
@@ -293,6 +302,20 @@ class SolicitationResponseForm(forms.Form):
                 # Include the value even if empty (it was explicitly submitted)
                 responses[q_id] = value
         return responses
+
+    def get_selected_plans(self, solicitation_plans) -> tuple:
+        """Return (selected_plan_ids: list[int], selected_plan_names: list[str]).
+
+        Resolves the posted plan ids against the solicitation's snapshot so the
+        stored names are authoritative (not client-supplied)."""
+        raw = self.cleaned_data.get("select_plans", []) if hasattr(self, "cleaned_data") else []
+        chosen = {int(x) for x in raw}
+        ids, names = [], []
+        for p in solicitation_plans:
+            if p["plan_id"] in chosen:
+                ids.append(p["plan_id"])
+                names.append(p["name"])
+        return ids, names
 
 
 # =========================================================================

@@ -61,9 +61,27 @@
                 </div>
             </div>
         {% endif %}
+        {{ form.non_field_errors }}
 
         <form method="post" class="space-y-8">
             {% csrf_token %}
+
+            <!-- Coverage Plan Selection -->
+            {% if solicitation.plans %}
+            <fieldset class="mb-6">
+              <legend class="text-sm font-semibold text-gray-800 mb-1">Which areas can you cover?</legend>
+              <p class="text-xs text-gray-500 mb-3">Select one or more. Required to submit.</p>
+              <div class="space-y-2">
+                {% for choice in form.select_plans %}
+                <label class="flex items-start gap-2 text-sm">
+                  {{ choice.tag }}
+                  <span class="text-gray-700">{{ choice.choice_label }}</span>
+                </label>
+                {% endfor %}
+              </div>
+              {{ form.select_plans.errors }}
+            </fieldset>
+            {% endif %}
 
             <!-- Questions Section -->
             {% if form.fields %}

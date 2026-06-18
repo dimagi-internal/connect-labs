@@ -561,7 +561,7 @@ class RespondView(LabsLoginRequiredMixin, TemplateView):
             if not solicitation.can_accept_responses():
                 ctx["not_accepting"] = True
             ctx["solicitation"] = solicitation
-            form = SolicitationResponseForm(questions=solicitation.questions)
+            form = SolicitationResponseForm(questions=solicitation.questions, plans=solicitation.plans)
             ctx["form"] = form
 
             # Build zipped question + field + criteria list for template rendering
@@ -607,13 +607,22 @@ class RespondView(LabsLoginRequiredMixin, TemplateView):
         if not solicitation.can_accept_responses():
             return redirect("solicitations:public_detail", pk=pk)
 
-        form = SolicitationResponseForm(questions=solicitation.questions, data=request.POST)
+        form = SolicitationResponseForm(questions=solicitation.questions, plans=solicitation.plans, data=request.POST)
         if form.is_valid():
             # Determine status based on which button was pressed
             if "save_draft" in request.POST:
                 status = "draft"
             else:
                 status = "submitted"
+
+            selected_plan_ids, selected_plan_names = form.get_selected_plans(solicitation.plans)
+
+            # Submitting a plans-based solicitation requires choosing >=1 plan.
+            if status == "submitted" and solicitation.plans and not selected_plan_ids:
+                form.add_error(None, "Select at least one coverage area to submit.")
+                ctx = self.get_context_data(**kwargs)
+                ctx["form"] = form
+                return self.render_to_response(ctx)
 
             # Pull org info from context for display on responses list
             labs_context = getattr(request, "labs_context", {})
@@ -629,6 +638,9 @@ class RespondView(LabsLoginRequiredMixin, TemplateView):
                 "org_name": org.get("name", ""),
                 "submission_date": timezone.now().isoformat(),
             }
+            if solicitation.plans:
+                data["selected_plan_ids"] = selected_plan_ids
+                data["selected_plan_names"] = selected_plan_names
 
             try:
                 da.create_response(
