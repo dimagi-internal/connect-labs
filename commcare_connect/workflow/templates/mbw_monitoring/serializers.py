@@ -1,7 +1,5 @@
 """
-Serializers for GPS analysis data.
-
-Extracted from custom_analysis/mbw/views.py for use in the workflow template package.
+Serializers for GPS analysis data, used by the MBW monitoring workflow template.
 """
 
 from datetime import date

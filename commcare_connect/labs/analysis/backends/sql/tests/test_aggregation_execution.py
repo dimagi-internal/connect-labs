@@ -1,7 +1,7 @@
 """End-to-end Postgres execution test for new aggregations.
 
-Bounds the correctness of the in-memory aggregation runner used by the
-mbw_parity harness. We seed a minimal visit set into labs_raw_visit_cache,
+Bounds the correctness of the in-memory aggregation runner in
+reference_aggregation.py. We seed a minimal visit set into labs_raw_visit_cache,
 run the SQL aggregation query, and assert the result matches what an
 in-memory mirror produces for the same input.
 
@@ -260,9 +260,9 @@ class TestAggregationSqlExecution:
         on the same input for median, mode, and mode_share.
 
         If this test ever fails, either the SQL builder or the in-memory
-        runners.aggregate has drifted. Both must be fixed in lockstep.
+        reference_aggregation.aggregate has drifted. Both must be fixed in lockstep.
         """
-        from commcare_connect.workflow.tests.mbw_parity.runners import aggregate
+        from commcare_connect.labs.analysis.backends.sql.tests.reference_aggregation import aggregate
 
         # Mixed numeric + categorical for one composite check.
         rows_num = [
