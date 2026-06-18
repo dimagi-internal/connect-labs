@@ -19,9 +19,9 @@ narrative: Maya has just finished designing her Round 6 study — the two-arm At
   real coverage.
 narrative_locked: true
 narrative_locked_at: '2026-06-18T12:12:32.891224+00:00'
-narrative_synced_at: '2026-06-18T15:32:30.621584+00:00'
-narrative_synced_hash: 6697f1f38eb155f0593cf26bb0ee24c977b279cd91f94bb7c0ae56ff565a206f
-narrative_synced_version: 3
+narrative_synced_at: '2026-06-18T16:51:38.224974+00:00'
+narrative_synced_hash: 1ea9ad997c3ea75f715e88c631d11ebe5e6986928c3dd0822a57018f70b91f20
+narrative_synced_version: 4
 personas:
   amina:
     color: '#059669'
@@ -155,41 +155,41 @@ scenes:
     coverage "R6 — Attakar x Gura", with View, Review, and Award actions ready.
   title: Maya sees the firm tied to the coverage she designed
   url: /solicitations/4495/responses/?program_id=10008
-- concept_claim: Awarding the chosen firm records the decision and notifies the
-    organization, while standing up the live Connect opportunity that firm would
-    run is the next step, not yet built.
+- concept_claim: Awarding the chosen firm records the decision and notifies the organization,
+    while standing up the live Connect opportunity that firm would run is the next
+    step, not yet built.
   design_intent: 'Bet: the demo must be honest about the planning-versus-execution
-    boundary — awarding a firm is a real, shipped end-state, and field execution
-    (provisioning the live opportunity) is the aspirational next step, not a
-    shipped mechanism dressed up as done.'
+    boundary — awarding a firm is a real, shipped end-state, and field execution (provisioning
+    the live opportunity) is the aspirational next step, not a shipped mechanism dressed
+    up as done.'
   features:
   - description: The award screen summarizes the firm by NAME (Health Bridge Nigeria)
-      with its selected coverage, and on award records the decision and confirms
-      the organization was notified ("Awarded to <org> — the organization has been
-      notified"); it does NOT, on award, provision a Connect opportunity or push the
-      plan's work areas into one — that downstream step is deferred (G1)
+      with its selected coverage, and on award records the decision and confirms the
+      organization was notified ("Awarded to <org> — the organization has been notified");
+      it does NOT, on award, provision a Connect opportunity or push the plan's work
+      areas into one — that downstream step is deferred (G1)
     id: award-records-and-notifies-provision-deferred
     verify: 'Playwright: on /solicitations/response/4496/award/, after award assert
-      a confirmation reading "Awarded to Health Bridge Nigeria" and "has been
-      notified", plus a "Next step — not yet built" panel; grep: no
-      create_opportunity/WorkArea-provision call in commcare_connect/solicitations/'
+      a confirmation reading "Awarded to Health Bridge Nigeria" and "has been notified",
+      plus a "Next step — not yet built" panel; grep: no create_opportunity/WorkArea-provision
+      call in commcare_connect/solicitations/'
   narrative: With a firm tied to her coverage, Maya awards Amina's firm — the screen
     records the decision and confirms Health Bridge Nigeria has been notified, so
     the recruit-review-award loop is real and shipped end-to-end. The screen stays
-    honest about what comes next — standing up the live Connect opportunity her
-    enumerators would actually run is the work ahead, explicitly framed as not-yet-built.
+    honest about what comes next — standing up the live Connect opportunity her enumerators
+    would actually run is the work ahead, explicitly framed as not-yet-built.
   persona: maya
   provenance: S7
   actions:
   - kind: wait_for
-    target: css:button[type=submit]
+    target: css:input[name=reward_budget]
     note: the award form with the firm summary (org name + coverage) has loaded
   - kind: hold
     seconds: 1.0
     note: let Maya read the "You're awarding" summary before she commits
   - kind: fill
     target: css:input[name=reward_budget]
-    value: "500000"
+    value: '500000'
     note: optional budget for the awarded firm
   - kind: click
     target: css:button[type=submit]:has-text("Award")
@@ -202,10 +202,10 @@ scenes:
     seconds: 1.5
     note: settle on the confirmation + the "Next step — not yet built" panel
   show: Maya awards Amina Okafor's firm and lands on the confirmation — "Awarded to
-    Health Bridge Nigeria — the organization has been notified" — with the award
-    summary (org name, coverage) and a dashed "Next step — not yet built" panel that
-    keeps provisioning the live Connect opportunity (G1) honestly framed as the
-    deferred next step, not done for her today.
+    Health Bridge Nigeria — the organization has been notified" — with the award summary
+    (org name, coverage) and a dashed "Next step — not yet built" panel that keeps
+    provisioning the live Connect opportunity (G1) honestly framed as the deferred
+    next step, not done for her today.
   title: Maya awards the firm and sees it was notified
   url: /solicitations/response/4496/award/?program_id=10008
 why_brief: ../../.canopy/ddd/runs/create-survey-solicitation-2026-06-17-001/why_brief.yaml
