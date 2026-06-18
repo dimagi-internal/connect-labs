@@ -1,0 +1,150 @@
+"""DRF views serving synthetic opportunity data in real-Connect export shape.
+
+Scope: ``labs_only=True`` synthetic opps (IDs >= 10_000), gated by
+``SyntheticOpportunity.is_visible_to``. All data is read through the existing
+``SyntheticExportClient`` / ``FixtureStore`` — these views only authenticate,
+authorize, paginate, and shape the response.
+"""
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
+from rest_framework.exceptions import NotFound
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from commcare_connect.labs.integrations.connect.factory import get_export_client
+from commcare_connect.labs.synthetic.client import SyntheticExportClient
+from commcare_connect.labs.synthetic.models import SyntheticOpportunity
+
+from .authentication import MCPTokenAuthentication
+from .pagination import ExportPageNumberPagination
+from .serializers import ExportPageSerializer
+
+# app_type query value -> FixtureStore endpoint key (CommCare has exactly two).
+_APP_STRUCTURE_KEYS = {
+    "deliver": "app_structure",
+    "learn": "app_structure_learn",
+}
+
+_PAGE_PARAMS = [
+    OpenApiParameter("page", OpenApiTypes.INT, description="1-based page number."),
+    OpenApiParameter("page_size", OpenApiTypes.INT, description="Rows per page (default 2500)."),
+]
+
+
+def _visible_opp_or_404(user, opportunity_id):
+    """Return the opp if it's a labs-only opp visible to ``user``, else 404.
+
+    Uses a 404 (not 403) for not-visible/not-registered alike, mirroring real
+    Connect's 404-on-no-access and avoiding leaking which opp IDs exist.
+    """
+    opp = SyntheticOpportunity.objects.filter(opportunity_id=opportunity_id).first()
+    if opp is None or not opp.is_visible_to(user):
+        raise NotFound("Opportunity not found.")
+    return opp
+
+
+def _synthetic_client(opportunity_id):
+    """Build the fixture-backed client for a registered, enabled synthetic opp."""
+    client = get_export_client(opportunity_id, access_token="")
+    if not isinstance(client, SyntheticExportClient):
+        # A visible opp is always registered + enabled, so this is defensive
+        # only — never serve real Connect data through this surface.
+        raise NotFound("Opportunity not found.")
+    return client
+
+
+class _ExportView(APIView):
+    authentication_classes = [MCPTokenAuthentication]
+    permission_classes = [IsAuthenticated]
+
+
+class OpportunityListView(_ExportView):
+    """GET /api/export/opportunities/ — discovery list of visible synthetic opps."""
+
+    @extend_schema(
+        summary="List synthetic opportunities visible to the token user",
+        responses=ExportPageSerializer,
+        parameters=_PAGE_PARAMS,
+    )
+    def get(self, request):
+        results = []
+        for opp in SyntheticOpportunity.objects.filter(labs_only=True, enabled=True):
+            if not opp.is_visible_to(request.user):
+                continue
+            rows = _synthetic_client(opp.opportunity_id).fetch_all("")
+            if rows:
+                results.append(rows[0])
+        paginator = ExportPageNumberPagination()
+        page = paginator.paginate_queryset(results, request, view=self)
+        return paginator.get_paginated_response(page)
+
+
+class OpportunityDetailView(_ExportView):
+    """GET /api/export/opportunity/<id>/ — bare opportunity dict."""
+
+    @extend_schema(
+        summary="Opportunity detail",
+        responses={200: OpenApiTypes.OBJECT, 404: OpenApiResponse(description="Not found or not visible.")},
+    )
+    def get(self, request, opportunity_id):
+        _visible_opp_or_404(request.user, opportunity_id)
+        rows = _synthetic_client(opportunity_id).fetch_all("")
+        if not rows:
+            raise NotFound("Opportunity not found.")
+        return Response(rows[0])
+
+
+class OpportunityDataView(_ExportView):
+    """GET a paginated export endpoint (user_visits / user_data / ...).
+
+    The fixture endpoint key is bound per-URL via ``as_view(endpoint=...)``.
+    """
+
+    endpoint = None
+
+    @extend_schema(
+        summary="Paginated export endpoint",
+        responses=ExportPageSerializer,
+        parameters=_PAGE_PARAMS,
+    )
+    def get(self, request, opportunity_id):
+        _visible_opp_or_404(request.user, opportunity_id)
+        rows = _synthetic_client(opportunity_id).fetch_all(self.endpoint)
+        paginator = ExportPageNumberPagination()
+        page = paginator.paginate_queryset(rows, request, view=self)
+        return paginator.get_paginated_response(page)
+
+
+class AppStructureView(_ExportView):
+    """GET /api/export/opportunity/<id>/app_structure/ — present-or-404.
+
+    Honors ``?app_type=deliver|learn`` (default deliver). 404 when the opp has
+    no fixture for that app type, matching real Connect's "no app linked".
+    """
+
+    @extend_schema(
+        summary="App structure (deliver or learn)",
+        parameters=[
+            OpenApiParameter(
+                "app_type",
+                OpenApiTypes.STR,
+                enum=["deliver", "learn"],
+                description="Which CommCare app's structure to return (default deliver).",
+            )
+        ],
+        responses={
+            200: OpenApiTypes.OBJECT,
+            404: OpenApiResponse(description="No app of that type for this opportunity."),
+        },
+    )
+    def get(self, request, opportunity_id):
+        _visible_opp_or_404(request.user, opportunity_id)
+        app_type = request.query_params.get("app_type", "deliver")
+        key = _APP_STRUCTURE_KEYS.get(app_type)
+        if key is None:
+            raise NotFound("Unknown app_type.")
+        rows = _synthetic_client(opportunity_id).fetch_all(key)
+        if not rows:
+            raise NotFound("No app structure for this opportunity.")
+        return Response(rows[0])
