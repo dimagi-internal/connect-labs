@@ -340,17 +340,6 @@
     </section>
 
 
-    {% if plan_id %}
-    <details class="mp-acc mp-card" open>
-      <summary><span class="ic">◑</span><span class="lbl">Map colors</span><span class="chev">›</span></summary>
-      <div class="seg-row" style="display:grid;grid-template-columns:repeat(2,1fr);gap:0.25rem;">
-        <button type="button" id="dim-worker" class="seg-tab is-on">By worker</button>
-        <button type="button" id="dim-group" class="seg-tab">By group</button>
-      </div>
-      <p class="text-[10px] text-gray-400 mt-1">Fill colors the chosen dimension; outline always carries the other.</p>
-    </details>
-    {% endif %}
-
     <!-- Grouping / assignment / bulk / export act on a plan's work areas. They're
          always shown but stay disabled (greyed) until work areas exist — i.e. until
          Generate plan runs — then syncPlanTools() enables them and hides this hint. -->
@@ -459,6 +448,17 @@
         <span id="sel-count" class="text-xs text-gray-400">0 selected</span>
       </div>
     </details>
+
+    {% if plan_id %}
+    <details class="mp-acc mp-card">
+      <summary><span class="ic">◑</span><span class="lbl">Map colors</span><span class="chev">›</span></summary>
+      <div class="seg-row" style="display:grid;grid-template-columns:repeat(2,1fr);gap:0.25rem;">
+        <button type="button" id="dim-worker" class="seg-tab is-on">By worker</button>
+        <button type="button" id="dim-group" class="seg-tab">By group</button>
+      </div>
+      <p class="text-[10px] text-gray-400 mt-1">Fill colors the chosen dimension; outline always carries the other.</p>
+    </details>
+    {% endif %}
 
     {% if not plan_id %}
     <!-- Connect-import labels (LGA / State). Auto-filled from the picked admin
