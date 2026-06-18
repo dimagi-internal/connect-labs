@@ -1,6 +1,7 @@
 import json
 import logging
 
+from django.conf import settings
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.core.exceptions import ValidationError
 from django.http import Http404, JsonResponse
@@ -311,6 +312,7 @@ class PublicSolicitationDetailView(LabsLoginRequiredMixin, TemplateView):
             if not solicitation:
                 raise Http404("Solicitation not found")
             ctx["solicitation"] = solicitation
+            ctx["mapbox_token"] = settings.MAPBOX_TOKEN or ""
         except Http404:
             raise
         except Exception:
@@ -360,6 +362,7 @@ class SolicitationCreateView(ManagerRequiredMixin, TemplateView):
         ctx["is_create"] = True
         ctx["existing_questions"] = []
         ctx["existing_criteria"] = []
+        ctx["mapbox_token"] = settings.MAPBOX_TOKEN or ""
 
         snapshot = self._snapshot_from_query()
         if snapshot:
@@ -562,6 +565,7 @@ class RespondView(LabsLoginRequiredMixin, TemplateView):
             if not solicitation.can_accept_responses():
                 ctx["not_accepting"] = True
             ctx["solicitation"] = solicitation
+            ctx["mapbox_token"] = settings.MAPBOX_TOKEN or ""
             form = SolicitationResponseForm(questions=solicitation.questions, plans=solicitation.plans)
             ctx["form"] = form
 

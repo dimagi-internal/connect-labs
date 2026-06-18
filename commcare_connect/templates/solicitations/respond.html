@@ -1,5 +1,11 @@
 {% extends "base.html" %}
 {% load crispy_forms_tags %}
+{% load static %}
+
+{% block css %}
+  {{ block.super }}
+  <link href="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.css" rel="stylesheet">
+{% endblock css %}
 
 {% block content %}
 <div class="max-w-4xl mx-auto px-4 py-6">
@@ -69,10 +75,11 @@
             {% if solicitation.plans %}
             <fieldset class="mb-6">
               <legend class="text-sm font-semibold text-gray-800 mb-1">Which areas can you cover?</legend>
-              <p class="text-xs text-gray-500 mb-3">Select one or more. Required to submit.</p>
-              <div class="space-y-2">
+              <p class="text-xs text-gray-500 mb-3">Click the areas on the map, or tick them below. Select one or more — required to submit.</p>
+              <div id="sol-respond-map" class="w-full h-96 rounded-lg overflow-hidden border border-gray-200 mb-3"></div>
+              <div class="space-y-1" id="sol-plan-checklist">
                 {% for choice in form.select_plans %}
-                <label class="flex items-start gap-2 text-sm">
+                <label class="flex items-start gap-2 text-sm rounded px-2 py-1 transition-colors" data-plan-id="{{ choice.data.value }}">
                   {{ choice.tag }}
                   <span class="text-gray-700">{{ choice.choice_label }}</span>
                 </label>
@@ -297,3 +304,63 @@
 
 </div>
 {% endblock %}
+
+{% block javascript %}
+  {{ block.super }}
+  <script src="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.js"></script>
+  <script src="{% static 'solicitations/coverage_map.js' %}"></script>
+{% endblock javascript %}
+
+{% block inline_javascript %}
+{{ solicitation.plans|json_script:"sol-coverage-data" }}
+<script>
+  (function () {
+    var el = document.getElementById("sol-coverage-data");
+    if (!el || !window.SolCoverageMap) return;
+    var plans = [];
+    try { plans = JSON.parse(el.textContent || "[]"); } catch (e) { plans = []; }
+
+    function checkboxFor(pid) {
+      return document.querySelector('input[name="select_plans"][value="' + pid + '"]');
+    }
+    function selectedIds() {
+      return Array.prototype.slice
+        .call(document.querySelectorAll('input[name="select_plans"]:checked'))
+        .map(function (cb) { return cb.value; });
+    }
+    function highlightRows() {
+      document.querySelectorAll("#sol-plan-checklist label[data-plan-id]").forEach(function (lbl) {
+        var cb = lbl.querySelector('input[name="select_plans"]');
+        lbl.classList.toggle("bg-indigo-50", !!(cb && cb.checked));
+      });
+    }
+
+    var map = SolCoverageMap.init({
+      container: "sol-respond-map",
+      token: "{{ mapbox_token|escapejs }}",
+      plans: plans,
+      interactive: true,
+      onToggle: function (pid) {
+        var cb = checkboxFor(pid);
+        if (cb) {
+          cb.checked = !cb.checked;
+          cb.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+      },
+      onReady: function (m) {
+        SolCoverageMap.setSelected(m, selectedIds());
+        highlightRows();
+      },
+    });
+
+    function sync() {
+      if (map) SolCoverageMap.setSelected(map, selectedIds());
+      highlightRows();
+    }
+    document.querySelectorAll('input[name="select_plans"]').forEach(function (cb) {
+      cb.addEventListener("change", sync);
+    });
+    highlightRows();
+  })();
+</script>
+{% endblock inline_javascript %}

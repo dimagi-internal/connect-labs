@@ -467,6 +467,28 @@ def test_plan_duplicate_plan_id_rejected():
         validate_solicitation_payload(payload)
 
 
+def test_plan_boundaries_geometry_passes():
+    geom = {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 0]]]}
+    payload = _minimal_valid()
+    payload["plans"] = [_plan_entry(boundaries=[{"name": "North", "arm": "intervention", "geometry": geom}])]
+    validate_solicitation_payload(payload)
+
+
+def test_plan_boundary_unknown_key_rejected():
+    geom = {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 0]]]}
+    payload = _minimal_valid()
+    payload["plans"] = [_plan_entry(boundaries=[{"name": "North", "geometry": geom, "color": "red"}])]
+    with pytest.raises(ValidationError):
+        validate_solicitation_payload(payload)
+
+
+def test_plan_boundary_geometry_must_be_geojson():
+    payload = _minimal_valid()
+    payload["plans"] = [_plan_entry(boundaries=[{"name": "North", "geometry": "not-a-geometry"}])]
+    with pytest.raises(ValidationError):
+        validate_solicitation_payload(payload)
+
+
 def test_source_program_id_bool_rejected():
     payload = _minimal_valid()
     payload["source_program_id"] = True

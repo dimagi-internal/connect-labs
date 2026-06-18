@@ -1,5 +1,11 @@
 {% extends "base.html" %}
 {% load markdown_filters %}
+{% load static %}
+
+{% block css %}
+  {{ block.super }}
+  <link href="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.css" rel="stylesheet">
+{% endblock css %}
 
 {% block content %}
 <div class="max-w-screen-xl mx-auto px-4 py-6">
@@ -129,6 +135,7 @@
             <h2 class="text-lg font-semibold text-brand-deep-purple mb-6 pb-3 border-b border-gray-100">
                 <i class="fa-solid fa-map-location-dot mr-2 text-brand-cornflower-blue"></i>Coverage areas
             </h2>
+            <div id="sol-coverage-map" class="w-full h-80 rounded-lg overflow-hidden border border-gray-200 mb-4"></div>
             <ul class="divide-y divide-gray-100 border border-gray-200 rounded-lg">
               {% for p in solicitation.plans %}
               <li class="px-3 py-2 text-sm">
@@ -274,3 +281,27 @@
     </div>
 </div>
 {% endblock %}
+
+{% block javascript %}
+  {{ block.super }}
+  <script src="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.js"></script>
+  <script src="{% static 'solicitations/coverage_map.js' %}"></script>
+{% endblock javascript %}
+
+{% block inline_javascript %}
+{{ solicitation.plans|json_script:"sol-coverage-data" }}
+<script>
+  (function () {
+    var el = document.getElementById("sol-coverage-data");
+    if (!el || !window.SolCoverageMap) return;
+    var plans = [];
+    try { plans = JSON.parse(el.textContent || "[]"); } catch (e) { plans = []; }
+    SolCoverageMap.init({
+      container: "sol-coverage-map",
+      token: "{{ mapbox_token|escapejs }}",
+      plans: plans,
+      interactive: false,
+    });
+  })();
+</script>
+{% endblock inline_javascript %}
