@@ -20,9 +20,9 @@ narrative:
   real coverage.
 narrative_locked: true
 narrative_locked_at: '2026-06-18T12:12:32.891224+00:00'
-narrative_synced_at: '2026-06-18T05:08:31.992071+00:00'
-narrative_synced_hash: 30b053beeae660fca654eaac64edcacfc94e51a8aa08f253d0d9aa4a95bdee54
-narrative_synced_version: 1
+narrative_synced_at: '2026-06-18T15:32:30.621584+00:00'
+narrative_synced_hash: 6697f1f38eb155f0593cf26bb0ee24c977b279cd91f94bb7c0ae56ff565a206f
+narrative_synced_version: 3
 personas:
   amina:
     color: '#059669'
@@ -53,20 +53,19 @@ scenes:
     features:
       - description:
           The program workspace (portfolio) renders a "Create solicitation"
-          link on every plan card and study-group card, to
-          /solicitations/create/?source_program_id=<pid>&source_group_id=<gid>
+          link on every plan card and study-group card, to /solicitations/create/?source_program_id=<pid>&source_group_id=<gid>
         id: create-solicitation-from-portfolio
         verify:
-          'Playwright: on /microplans/program/10008/, assert the R6 — Attakar × Gura
-          study-group card reads as finished (a "ready to solicit" cue, "2 wards", reviewed)
-          and renders a primary "Create solicitation" anchor whose href contains
+          'Playwright: on /microplans/program/10008/, assert the R6 — Attakar ×
+          Gura study-group card reads as finished (a "ready to solicit" cue, "2 wards",
+          reviewed) and renders a primary "Create solicitation" anchor whose href contains
           source_group_id=4492'
     narrative:
       Maya stands in her programme portfolio, where the Round 6 study she just
-      finished — Attakar as the intervention arm, Gura as the comparison, both approved —
-      sits as a reviewed study group flagged ready to solicit; instead of hunting for a
-      survey firm in a separate tool, she clicks "Create solicitation" right on that R6
-      group card to turn it into an open call.
+      finished — Attakar as the intervention arm, Gura as the comparison, both approved
+      — sits as a reviewed study group flagged ready to solicit; instead of hunting
+      for a survey firm in a separate tool, she clicks "Create solicitation" right on
+      that R6 group card to turn it into an open call.
     persona: maya
     provenance: S3
     show:
@@ -86,23 +85,24 @@ scenes:
     features:
       - description:
           The create form renders a Coverage-areas panel populated from the
-          snapshotted plans (source_plan_ids=[4494]), drawing the wards as a real map —
-          Attakar (intervention, green) and Gura (comparison, blue) polygons fit to bounds
+          snapshotted plans (source_plan_ids=[4494]), drawing the wards as a real map
+          — Attakar (intervention, green) and Gura (comparison, blue) polygons fit to
+          bounds
         id: coverage-panel-from-snapshot
         verify:
-          'Playwright: on the create form with source_group_id=4492, assert a
-          "#sol-coverage-map" element renders a mapbox canvas and that the page text
-          includes "Attakar" and "Gura"'
+          'Playwright: on the create form with source_group_id=4492, assert a "#sol-coverage-map"
+          element renders a mapbox canvas and that the page text includes "Attakar" and
+          "Gura"'
     narrative:
       On the create form Maya sees her R6 plan already sitting in a Coverage-areas
-      panel that draws the two wards as a map — Attakar in green, Gura in blue — so she
-      confirms the exact coverage at a glance and only writes the survey scope rather
+      panel that draws the two wards as a map — Attakar in green, Gura in blue — so
+      she confirms the exact coverage at a glance and only writes the survey scope rather
       than re-describing the area she just designed.
     persona: maya
     provenance: S4
     show:
-      Maya reads the pre-seeded title and the Coverage-areas panel, which shows the
-      R6 — Attakar x Gura coverage as a map (Attakar green / Gura blue ward polygons,
+      Maya reads the pre-seeded title and the Coverage-areas panel, which shows
+      the R6 — Attakar x Gura coverage as a map (Attakar green / Gura blue ward polygons,
       not just names); she confirms the survey scope and the form is ready to publish
       with that plan attached.
     title: Maya finds the plan already waiting as the coverage area
@@ -117,10 +117,10 @@ scenes:
       work.'
     features:
       - description:
-          The public response form draws the coverage as an interactive map —
-          clicking a ward boundary toggles its whole parent plan, synced two-way with the
-          "Which areas can you cover?" checklist; submit is blocked until at least one area
-          is selected
+          The public response form draws the coverage as an interactive map
+          — clicking a ward boundary toggles its whole parent plan, synced two-way with
+          the "Which areas can you cover?" checklist; submit is blocked until at least
+          one area is selected
         id: respondent-coverage-selector
         verify:
           'Playwright: on /solicitations/4495/respond/, assert a "#sol-respond-map"
@@ -134,31 +134,25 @@ scenes:
     persona: amina
     provenance: S5
     show:
-      On the application form Amina sees the R6 — Attakar x Gura coverage drawn as
-      an interactive map (Attakar green / Gura blue); she selects the coverage by clicking
-      the boundary on the map, which ticks the matching checklist entry, and only then is
-      the submit enabled (at least one area is required to submit).
+      On the application form Amina sees the R6 — Attakar x Gura coverage drawn
+      as an interactive map (Attakar green / Gura blue); she selects the coverage by
+      clicking the boundary on the map, which ticks the matching checklist entry, and
+      only then is the submit enabled (at least one area is required to submit).
     actions:
-      - {
-          kind: wait_for,
-          target: 'css:#sol-respond-map canvas.mapboxgl-canvas',
-          note: 'the coverage map paints the Attakar (green) + Gura (blue) ward polygons',
-        }
-      - {
-          kind: hold,
-          seconds: 1.5,
-          note: 'let the map settle and fit to the two wards',
-        }
-      - {
-          kind: click,
-          target: 'css:#sol-plan-checklist label:has-text("R6 — Attakar") input[type=checkbox]',
-          note: 'select the coverage area — synced two-way with the map; this enables Submit (≥1 required)',
-        }
-      - {
-          kind: hold,
-          seconds: 1.0,
-          note: 'the R6 area is now selected and Submit is enabled',
-        }
+      - kind: wait_for
+        target: css:#sol-respond-map canvas.mapboxgl-canvas
+        note: the coverage map paints the Attakar (green) + Gura (blue) ward polygons
+      - kind: hold
+        seconds: 1.5
+        note: let the map settle and fit to the two wards
+      - kind: click
+        target: css:#sol-plan-checklist label:has-text("R6 — Attakar") input[type=checkbox]
+        note:
+          select the coverage area — synced two-way with the map; this enables Submit
+          (≥1 required)
+      - kind: hold
+        seconds: 1.0
+        note: the R6 area is now selected and Submit is enabled
     title: Amina reads the open call and ticks the area she can staff
     url: /solicitations/4495/respond/?program_id=10008
   - concept_claim:
@@ -190,36 +184,63 @@ scenes:
     title: Maya sees the firm tied to the coverage she designed
     url: /solicitations/4495/responses/?program_id=10008
   - concept_claim:
-      Recruiting and reviewing a firm against the designed coverage is
-      the shipped step, while provisioning a live Connect opportunity from an award
-      is the next step, not yet built.
+      Awarding the chosen firm records the decision and notifies the
+      organization, while standing up the live Connect opportunity that firm would
+      run is the next step, not yet built.
     design_intent:
       'Bet: the demo must be honest about the planning-versus-execution
-      boundary, framing field execution as the aspirational next step rather than a
-      shipped mechanism.'
+      boundary — awarding a firm is a real, shipped end-state, and field execution
+      (provisioning the live opportunity) is the aspirational next step, not a
+      shipped mechanism dressed up as done.'
     features:
       - description:
-          The award screen (Award Response) names the firm being awarded and
-          takes budget + org; there is no code that, on award, provisions a Connect
-          opportunity or pushes the plan's work areas into one — that step is deferred (G1)
-        id: award-action-present-provision-deferred
+          The award screen summarizes the firm by NAME (Health Bridge Nigeria)
+          with its selected coverage, and on award records the decision and confirms
+          the organization was notified ("Awarded to <org> — the organization has been
+          notified"); it does NOT, on award, provision a Connect opportunity or push the
+          plan's work areas into one — that downstream step is deferred (G1)
+        id: award-records-and-notifies-provision-deferred
         verify:
-          'Playwright: on /solicitations/response/4496/award/, assert an "Award
-          Response" screen naming "Amina Okafor" with an "Award Grantee" submit; grep: no
+          'Playwright: on /solicitations/response/4496/award/, after award assert
+          a confirmation reading "Awarded to Health Bridge Nigeria" and "has been
+          notified", plus a "Next step — not yet built" panel; grep: no
           create_opportunity/WorkArea-provision call in commcare_connect/solicitations/'
     narrative:
-      With a firm tied to her coverage, Maya opens the Award screen for Amina's
-      firm — the recruit-and-review step is real and shipped — and knows the next step
-      she is reaching for, turning that award into the live Connect opportunity her
-      enumerators would actually run, is the work ahead, not something today's call has
-      done for her.
+      With a firm tied to her coverage, Maya awards Amina's firm — the screen
+      records the decision and confirms Health Bridge Nigeria has been notified, so
+      the recruit-review-award loop is real and shipped end-to-end. The screen stays
+      honest about what comes next — standing up the live Connect opportunity her
+      enumerators would actually run is the work ahead, explicitly framed as not-yet-built.
     persona: maya
     provenance: S7
+    actions:
+      - kind: wait_for
+        target: css:button[type=submit]
+        note: the award form with the firm summary (org name + coverage) has loaded
+      - kind: hold
+        seconds: 1.0
+        note: let Maya read the "You're awarding" summary before she commits
+      - kind: fill
+        target: css:input[name=reward_budget]
+        value: '500000'
+        note: optional budget for the awarded firm
+      - kind: click
+        target: css:button[type=submit]:has-text("Award")
+        note: award the firm — records the decision and notifies the organization
+      - kind: wait_for
+        target: text:has been notified
+        note:
+          the in-place confirmation "Awarded to Health Bridge Nigeria — the organization
+          has been notified" renders
+      - kind: hold
+        seconds: 1.5
+        note: settle on the confirmation + the "Next step — not yet built" panel
     show:
-      Maya lands on the Award Response screen for Amina Okafor's firm — the distinct
-      award frame, naming the grantee and the R6 survey — and reads it as the honest
-      boundary, where awarding is shipped but provisioning the live Connect opportunity
-      her enumerators would run is the deferred next step (G1), not done for her today.
-    title: Maya looks ahead to standing up the real opportunity
+      Maya awards Amina Okafor's firm and lands on the confirmation — "Awarded to
+      Health Bridge Nigeria — the organization has been notified" — with the award
+      summary (org name, coverage) and a dashed "Next step — not yet built" panel that
+      keeps provisioning the live Connect opportunity (G1) honestly framed as the
+      deferred next step, not done for her today.
+    title: Maya awards the firm and sees it was notified
     url: /solicitations/response/4496/award/?program_id=10008
 why_brief: ../../.canopy/ddd/runs/create-survey-solicitation-2026-06-17-001/why_brief.yaml

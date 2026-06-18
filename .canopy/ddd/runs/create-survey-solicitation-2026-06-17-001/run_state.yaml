@@ -1,143 +1,234 @@
 auto_iterate_next_action: stop_unclear
-auto_iterate_reason: 5 options/redesign finding(s) — need a user pick.
+auto_iterate_reason: 1 options/redesign finding(s) — need a user pick.
 findings:
-- detail: 'The identical ''Create solicitation'' button appears on all eight Draft
-    (not-ready) plan cards in the PLANNING grid, as well as on the finished R6 study
-    card. This is a contradictory affordance: it implies you can launch a solicitation
-    from an unfinished/unapproved plan, which undercuts the scene''s concept that
-    the call starts from a FINISHED plan. No dead end or error, so capped at 3 rather
-    than 2.'
-  dimension: design_soundness
-  fix_kind: options
-  fix_recommendation: 'Suppress or disable the ''Create solicitation'' affordance
-    on Draft (not-approved) plan cards so it only appears where the concept holds
-    — on approved plans/studies. Alternative: keep it visible but disabled with a
-    tooltip (''approve this plan to solicit''). Needs a product pick between hide-entirely
-    / disable-with-tooltip / only-on-approved.'
-  route: PRODUCT
-  scene: Scene 1 — Maya turns her finished study into a call for a firm
-  severity: low
-- detail: 'Up from iter4''s 2: the empty ''Untitled study · 0 wards'' placeholder
-    card is gone and the finished R6 study card is clean. But it is held at 3 — the
-    load-bearing finished ''R6 — Attakar × Gura'' study card is small and sits at
-    the very bottom under a dense 8-card Draft ''PLANNING'' grid that dominates the
-    viewport. Visual hierarchy fights the narrative: a viewer scanning top-down hits
-    the muted Draft cards first and the finished study card last. Host chrome is grounding,
-    not counted.'
-  dimension: visual_polish
-  fix_kind: redesign
-  fix_recommendation: 'Make the finished R6 study card the focal point of the page:
-    either move the ''Plan groups & studies'' section above the PLANNING grid, or
-    give the finished study a hero treatment (larger card, top placement) so the READY-TO-SOLICIT
-    card leads rather than the draft inventory. Product hierarchy change — not a capture
-    crop.'
-  route: PRODUCT
-  scene: Scene 1 — Maya turns her finished study into a call for a firm
-  severity: low
-- detail: No concrete user/role is named on screen (only the abstract 'LLO/funder');
-    the problem framing ('before any opportunity is live') lands but a true outsider
-    must infer the actor. Per the deduction rule (no concrete user/role named), capped
-    at 3.
-  dimension: concept_clarity
-  fix_kind: mechanical
-  fix_recommendation: Name the actor on the page — a 'Maya / Program owner' context
-    label or a one-line intro ('recruiting a survey firm from your finished study')
-    in the header — so a cold viewer gets the role without narration.
-  route: CONCEPT
-  scene: Scene 1 — Maya turns her finished study into a call for a firm
-  severity: low
-- detail: The real two-ward map (Attakar green / Gura blue polygons) renders correctly
-    and the 'Coverage areas (from micro-plan)' panel with 'Snapshotted at creation'
-    is present and legible. Held at 3 because, in the tall full-page create-form strip,
-    the load-bearing coverage panel (the one thing this scene must prove) sits small
-    and low under several mostly-empty form fields competing for the eye. Capture-strip
-    caveat noted (do not deduct the product for the full-page-strip artifact itself),
-    but the product would benefit from presenting the coverage panel more prominently
-    in a normal viewport.
-  dimension: visual_polish
-  fix_kind: options
-  fix_recommendation: Present the rendered coverage map + '2 wards / 840 work areas'
-    provenance prominently in the create form — a focused/expanded coverage section,
-    or progressive disclosure that surfaces the attached-coverage proof above the
-    long form body. This is a PRODUCT presentation change; do NOT 'fix' it with a
-    camera zoom/crop/anchor or full_page:false.
-  route: PRODUCT
-  scene: Scene 2 — Maya finds the plan already waiting as the coverage area
-  severity: low
-- detail: The Award screen names the grantee (Amina Okafor) and the R6 survey and
-    makes the award action clear, so the role/action half of the concept is present.
-    But the load-bearing second half of the concept_claim — that provisioning a live
-    Connect opportunity is the DEFERRED next step (not done today) — is entirely absent
-    from the UI; it lives only in the narration. A one-sentence on-screen read gets
-    'award a firm', not 'award is shipped, live-opp is next'. Held at 3.
-  dimension: concept_clarity
-  fix_kind: options
-  fix_recommendation: 'Surface the planning-vs-execution boundary in the award UI:
-    a muted helper line (''Awarding records this firm; standing up their live Connect
-    opportunity is a separate next step, not yet built''), or a small disabled ''Provision
-    opportunity (coming soon)'' chip. Needs a product pick between a helper line /
-    disabled chip / a two-step indicator.'
-  route: CONCEPT
-  scene: Scene 5 — Maya looks ahead to standing up the real opportunity
-  severity: low
-- detail: The amber/yellow warning callout renders its body line ('The grantee's organization
-    ID and budget allocation will be recorded...') in low-contrast orange text on
-    a pale-yellow background — a likely WCAG AA failure on a load-bearing explanatory
-    line. Per the low-contrast deduction rule, capped at 3. Layout, type hierarchy,
-    and control consistency are otherwise good.
-  dimension: visual_polish
-  fix_kind: mechanical
-  fix_recommendation: Darken the callout body text (a darker amber / near-black) to
-    meet WCAG AA contrast against the yellow background. One concrete CSS/token change.
-  route: PRODUCT
-  scene: Scene 5 — Maya looks ahead to standing up the real opportunity
-  severity: low
-- detail: The screen traces cleanly to S7's first clause (the shipped recruit-and-review→award
-    step — it names the reviewed firm and records org ID + budget). But S7's second
-    clause — turning an award into a live Connect opportunity is the intended next
-    step, not yet built (Gap G1) — has zero on-screen provenance; the gap-honesty
-    half is represented only in narration. The screen correctly does NOT claim to
-    provision an opportunity (no contradiction), so capped at 3 rather than 2.
-  dimension: why_groundedness
-  fix_kind: options
-  fix_recommendation: 'Carry S7''s gap-honesty half into the artifact itself: a stepper
-    that visually stops at ''Award'' with the next ''Provision live opportunity''
-    stage greyed/disabled, or a post-award success state that explicitly says provisioning
-    is a separate not-yet-built step. Needs a product pick between stepper / disabled
-    next-stage button / post-award note.'
-  route: CONCEPT
-  scene: Scene 5 — Maya looks ahead to standing up the real opportunity
-  severity: low
+  - detail:
+      The hero study card prints 'R6 — Attakar × Gura' twice (as the card title
+      AND its single plan row, a render-bug smell); status is treated inconsistently
+      within one card ('STUDY'/'Draft' are pills but 'reviewed' is plain grey text);
+      and the card is stranded above ~250px of dead whitespace so the 'decluttered hero'
+      reads as sparse rather than focused.
+    dimension: visual_polish
+    fix_kind: mechanical
+    fix_recommendation:
+      De-duplicate the study identity (show the study title once;
+      label any plan row distinctly), render 'reviewed' as a semantic status pill consistent
+      with the other badges, and let the candidate-plans section or a compact study
+      gallery fill the canvas so the finished study reads as the focused hero. Product
+      change, not a capture crop.
+    route: PRODUCT
+    scene: Scene 1 — Maya turns her finished study into a call for a firm
+    severity: medium
+  - detail:
+      "Legible to someone familiar with the space but a cold viewer stumbles:
+      the card badges the study 'reviewed' while its inner plan row reads 'Draft',
+      and the helper text introduces the orphan term 'bundle' which appears nowhere
+      in the visible UI."
+    dimension: concept_clarity
+    fix_kind: mechanical
+    fix_recommendation:
+      Resolve the status contradiction so the card states one unambiguous
+      'ready to solicit' state, and either show a bundle affordance or drop 'bundle'
+      from the helper copy.
+    route: CONCEPT
+    scene: Scene 1 — Maya turns her finished study into a call for a firm
+    severity: low
+  - detail: "'Compare selected' and '+ Group selected plans' read as actionable
+      with no visible selection mechanism (no checkboxes), and the primary-button weight
+      points at the filled 'Open study' rather than the scene's own concept action
+      'Create solicitation', which is the de-emphasized outline button."
+    dimension: design_soundness
+    fix_kind: mechanical
+    fix_recommendation:
+      Make selection affordances (checkboxes) visible on rows and
+      disable the bulk buttons until a selection exists; promote 'Create solicitation'
+      to the primary visual action on a finished study card.
+    route: PRODUCT
+    scene: Scene 1 — Maya turns her finished study into a call for a firm
+    severity: low
+  - detail:
+      The narrated 'finished study' is partially undercut on-screen by the visible
+      'Draft' plan row alongside the 'reviewed' label, so the viewer must trust the
+      narration to reconcile the study's actual state. (Advisory; non-blocking.)
+    dimension: claim_reality_coherence
+    fix_kind: mechanical
+    fix_recommendation:
+      Align the on-card state language ('reviewed' / 'Draft') with
+      the narration's 'finished study' so the footage backs the claim without a verbal
+      bridge.
+    route: DEFER
+    scene: Scene 1 — Maya turns her finished study into a call for a firm
+    severity: low
+  - detail:
+      A mouse-cursor artifact is captured over the page title ('Microplan portfolio'),
+      and a single static frame shows no affirmative smooth-transition evidence. No
+      spinner, 404, or dead-end.
+    dimension: motion_friction
+    fix_kind: mechanical
+    fix_recommendation:
+      Capture without the cursor parked over the H1, and verify the
+      Create-solicitation click transitions smoothly (no full reload/spinner) across
+      scenes.
+    route: PRODUCT
+    scene: Scene 1 — Maya turns her finished study into a call for a firm
+    severity: low
+  - detail:
+      The load-bearing 'already attached, frozen at creation' confirmation is
+      set in small secondary type in the lower third of a long create form, so the 5-second
+      test yields only a partial read of the scene's core point.
+    dimension: concept_clarity
+    fix_kind: mechanical
+    fix_recommendation:
+      Promote the 'Coverage areas (from micro-plan) / Attached' panel
+      toward the top of the form (or pin a compact coverage summary near the title)
+      so the frozen-plan confirmation is read first, not last.
+    route: CONCEPT
+    scene: Scene 2 — Maya finds the plan already waiting as the coverage area
+    severity: low
+  - detail:
+      The load-bearing coverage summary ('R6 — Attakar × Gura · 2 wards · 840
+      work areas · Study arms') is cramped into a small-type pill, and the map has no
+      on-figure color->ward legend keying green=Attakar / blue=Gura, so the scene's
+      color-coded wards are under-supported.
+    dimension: visual_polish
+    fix_kind: mechanical
+    fix_recommendation:
+      Give the coverage summary a larger, structured presentation
+      — ward chips colored to match the map as an on-figure legend, work-area count
+      as a stat — so the frozen coverage reads at a glance.
+    route: PRODUCT
+    scene: Scene 2 — Maya finds the plan already waiting as the coverage area
+    severity: low
+  - detail:
+      "The promised two-way map<->checklist sync is not coherent in the captured
+      frame: ticking the R6 checklist row produces NO visible selected-state on the
+      corresponding map polygons (no fill/outline change), so the core 'click the map
+      or tick below, synced' affordance is hand-waved and unverified."
+    dimension: design_soundness
+    fix_kind: mechanical
+    fix_recommendation:
+      When the R6 checklist row is checked, drive a visible selected
+      state on the corresponding map polygon(s) — heavier outline + fill shift — so
+      the sync the concept promises is observable.
+    route: PRODUCT
+    scene: Scene 3 — Amina reads the open call and ticks the area she can staff
+    severity: low
+  - detail:
+      The map shows two distinctly colored wards (Attakar green, Gura blue) but
+      the checklist offers a single bundled 'R6 — Attakar × Gura' row, so a true outsider
+      asks 'can I commit to one arm or only the combined block?'. The '×' notation is
+      also cryptic.
+    dimension: concept_clarity
+    fix_kind: options
+    fix_recommendation:
+      Either split the checklist into per-area rows (Attakar / Gura)
+      to match the two map colors, or add a one-line label clarifying 'Attakar × Gura
+      = the combined R6 coverage block' so the single row reads intentionally.
+    route: CONCEPT
+    scene: Scene 3 — Amina reads the open call and ticks the area she can staff
+    severity: low
+  - detail:
+      The selected checklist row has only a faint blue background (weak active
+      affordance), the Attakar/Gura area labels are tiny and low-contrast against competing
+      basemap labels, and a mouse cursor is captured frozen over the checkbox.
+    dimension: visual_polish
+    fix_kind: mechanical
+    fix_recommendation:
+      Strengthen the selected-row affordance (border/checkmark + bolder
+      fill), increase the weight/contrast of the Attakar/Gura area labels above basemap
+      labels, and capture without the cursor over the control.
+    route: PRODUCT
+    scene: Scene 3 — Amina reads the open call and ticks the area she can staff
+    severity: low
+  - detail:
+      "The narration's 'submission is blocked until one area is chosen' requires
+      viewer trust: the captured frame already has the box ticked and Submit enabled,
+      so the block itself is asserted, not shown. 'A specific coverage area' is also
+      partially undercut by the single bundled row. (Advisory; non-blocking.)"
+    dimension: claim_reality_coherence
+    fix_kind: mechanical
+    fix_recommendation:
+      Capture or add a prior frame with no area selected + Submit
+      visibly disabled, so the block-until-selected mechanic is demonstrated rather
+      than narrated.
+    route: DEFER
+    scene: Scene 3 — Amina reads the open call and ticks the area she can staff
+    severity: low
+  - detail:
+      A mouse-cursor glyph frozen over the checkbox mid-click reads as a slight
+      hesitation cue, and the map shows no selected-state animation on tick, so the
+      interaction doesn't read as fluid. No spinner/404/dead-end.
+    dimension: motion_friction
+    fix_kind: mechanical
+    fix_recommendation:
+      Ensure the click resolves cleanly (no lingering cursor) and
+      that the map's selected-state animates on tick so the interaction reads as fluid.
+    route: PRODUCT
+    scene: Scene 3 — Amina reads the open call and ticks the area she can staff
+    severity: low
+  - detail:
+      A single-row table sits in a large card with heavy empty space below, and
+      two of seven columns ('RECOMMENDATION' -> 'Not reviewed', 'SCORE' -> '-') render
+      as hollow placeholders, so the comparison view reads as under-populated and slightly
+      broken. Minor breadcrumb truncation / cursor occlusion. Real firm and contact
+      names are grounding, not flaws.
+    dimension: visual_polish
+    fix_kind: mechanical
+    fix_recommendation:
+      "Soften not-yet-applicable cells (lighter '—'), tighten the
+      card to the loaded rows so one sparse row doesn't read as a broken table, and
+      add a small '1 response' count. Do not crop the capture. (Upstream: seeding
+      2-3 responses would let the 'compare applicants' premise actually show.)"
+    route: PRODUCT
+    scene: Scene 4 — Maya sees the firm tied to the coverage she designed
+    severity: low
+  - detail:
+      "The load-bearing 'Award budget: 500000' renders as a bare unformatted
+      integer with no thousands separator and no currency symbol — the most important
+      number on the screen forces the reader to mentally insert commas/currency. Compounded
+      by an asymmetric two-column detail grid that leaves a large empty gap under the
+      right column. Host chrome and the honest 'Next step — not yet built' panel are
+      grounding, not flaws."
+    dimension: visual_polish
+    fix_kind: mechanical
+    fix_recommendation:
+      Format the budget as currency with separators (e.g. ₦500,000),
+      and balance the detail grid so the right column does not leave a large empty gap.
+    route: PRODUCT
+    scene: Scene 5 — Maya awards the firm and sees it was notified
+    severity: low
 findings_review_id: null
 findings_review_url: null
-iteration: 5
+iteration: 6
 iteration_clips:
   4: https://canopy-web-ujpz2cuyxq-uc.a.run.app/w/e11c080a-56c5-4efd-b84a-8c8ddabcbd8c
   5: https://canopy-web-ujpz2cuyxq-uc.a.run.app/w/9091c662-8800-493b-aaba-fda7aa6c13fc
+  6: https://canopy-web-ujpz2cuyxq-uc.a.run.app/w/e912dd97-eaee-4bbc-9cd6-5a8f215919d1
 iteration_decks:
   4: https://canopy-web-ujpz2cuyxq-uc.a.run.app/w/1deceab2-ca62-4128-af0a-089b64bfd3d7
   5: https://canopy-web-ujpz2cuyxq-uc.a.run.app/w/6b620f68-fd74-44f0-840e-e420fe66264f
+  6: https://canopy-web-ujpz2cuyxq-uc.a.run.app/w/e912dd97-eaee-4bbc-9cd6-5a8f215919d1
 last_actor: null
 last_actor_at: null
-narrative_review_id: d2078a4a-ff23-4ff8-b09b-a68fae9fd907
-narrative_review_url: /review/d2078a4a-ff23-4ff8-b09b-a68fae9fd907/
+narrative_review_id: 0d9d5277-1581-455a-b1df-5e7dd5ec6a6d
+narrative_review_url: /review/0d9d5277-1581-455a-b1df-5e7dd5ec6a6d/
 narrative_slug: create-survey-solicitation
 pending_review: null
 phase: judged
 run_id: create-survey-solicitation-2026-06-17-001
 scene_filter: null
 scenes_run:
-- 1
-- 2
-- 3
-- 4
-- 5
+  - 1
+  - 2
+  - 3
+  - 4
+  - 5
 schema_version: 1
 score_history:
-- 2.0
-- 2.0
-- 2.0
-- 2.0
+  - 2.0
+  - 2.0
+  - 2.0
+  - 2.0
+  - 2.0
 verdicts:
   concept: /Users/jjackson/emdash/worktrees/connect-labs/emdash/solicitation-rntwj/.canopy/ddd/runs/create-survey-solicitation-2026-06-17-001/verdict-concept.yaml
   user_artifact: /Users/jjackson/emdash/worktrees/connect-labs/emdash/solicitation-rntwj/.canopy/ddd/runs/create-survey-solicitation-2026-06-17-001/verdict-user.yaml

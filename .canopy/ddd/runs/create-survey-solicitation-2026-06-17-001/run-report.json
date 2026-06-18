@@ -1,6 +1,6 @@
 {
-  "total": 4,
-  "ok": 4,
+  "total": 10,
+  "ok": 10,
   "failed": 0,
   "actions": [
     {
@@ -9,7 +9,7 @@
       "target": "css:#sol-respond-map canvas.mapboxgl-canvas",
       "value": null,
       "note": "the coverage map paints the Attakar (green) + Gura (blue) ward polygons",
-      "elapsed_ms": 121,
+      "elapsed_ms": 116,
       "error_kind": null,
       "error_message": null,
       "scene_index": 3
@@ -20,7 +20,7 @@
       "target": null,
       "value": null,
       "note": "let the map settle and fit to the two wards",
-      "elapsed_ms": 1502,
+      "elapsed_ms": 1500,
       "error_kind": null,
       "error_message": null,
       "scene_index": 3
@@ -31,7 +31,7 @@
       "target": "css:#sol-plan-checklist label:has-text(\"R6 \u2014 Attakar\") input[type=checkbox]",
       "value": null,
       "note": "select the coverage area \u2014 synced two-way with the map; this enables Submit (\u22651 required)",
-      "elapsed_ms": 1270,
+      "elapsed_ms": 1254,
       "error_kind": null,
       "error_message": null,
       "scene_index": 3
@@ -46,6 +46,72 @@
       "error_kind": null,
       "error_message": null,
       "scene_index": 3
+    },
+    {
+      "kind": "wait_for",
+      "ok": true,
+      "target": "css:input[name=reward_budget]",
+      "value": null,
+      "note": "the award form with the firm summary (org name + coverage) has loaded",
+      "elapsed_ms": 12,
+      "error_kind": null,
+      "error_message": null,
+      "scene_index": 5
+    },
+    {
+      "kind": "hold",
+      "ok": true,
+      "target": null,
+      "value": null,
+      "note": "let Maya read the \"You're awarding\" summary before she commits",
+      "elapsed_ms": 1001,
+      "error_kind": null,
+      "error_message": null,
+      "scene_index": 5
+    },
+    {
+      "kind": "fill",
+      "ok": true,
+      "target": "css:input[name=reward_budget]",
+      "value": "500000",
+      "note": "optional budget for the awarded firm",
+      "elapsed_ms": 707,
+      "error_kind": null,
+      "error_message": null,
+      "scene_index": 5
+    },
+    {
+      "kind": "click",
+      "ok": true,
+      "target": "css:button[type=submit]:has-text(\"Award\")",
+      "value": null,
+      "note": "award the firm \u2014 records the decision and notifies the organization",
+      "elapsed_ms": 1490,
+      "error_kind": null,
+      "error_message": null,
+      "scene_index": 5
+    },
+    {
+      "kind": "wait_for",
+      "ok": true,
+      "target": "text:has been notified",
+      "value": null,
+      "note": "the in-place confirmation \"Awarded to Health Bridge Nigeria \u2014 the organization has been notified\" renders",
+      "elapsed_ms": 14,
+      "error_kind": null,
+      "error_message": null,
+      "scene_index": 5
+    },
+    {
+      "kind": "hold",
+      "ok": true,
+      "target": null,
+      "value": null,
+      "note": "settle on the confirmation + the \"Next step \u2014 not yet built\" panel",
+      "elapsed_ms": 1501,
+      "error_kind": null,
+      "error_message": null,
+      "scene_index": 5
     }
   ],
   "scenes": [
@@ -53,7 +119,7 @@
       "scene_index": 1,
       "title": "Maya turns her finished study into a call for a firm",
       "start_seconds": 0.0,
-      "duration_seconds": 5.075,
+      "duration_seconds": 2.753,
       "urls_visited": [
         "https://labs.connect.dimagi.com/microplans/program/10008/"
       ]
@@ -61,8 +127,8 @@
     {
       "scene_index": 2,
       "title": "Maya finds the plan already waiting as the coverage area",
-      "start_seconds": 5.075,
-      "duration_seconds": 3.853,
+      "start_seconds": 2.753,
+      "duration_seconds": 3.277,
       "urls_visited": [
         "https://labs.connect.dimagi.com/solicitations/create/?source_program_id=10008&source_group_id=4492&program_id=10008"
       ]
@@ -70,8 +136,8 @@
     {
       "scene_index": 3,
       "title": "Amina reads the open call and ticks the area she can staff",
-      "start_seconds": 8.929,
-      "duration_seconds": 4.769,
+      "start_seconds": 6.029,
+      "duration_seconds": 4.721,
       "urls_visited": [
         "https://labs.connect.dimagi.com/solicitations/4495/respond/?program_id=10008"
       ]
@@ -79,17 +145,17 @@
     {
       "scene_index": 4,
       "title": "Maya sees the firm tied to the coverage she designed",
-      "start_seconds": 13.697,
-      "duration_seconds": 2.202,
+      "start_seconds": 10.75,
+      "duration_seconds": 2.186,
       "urls_visited": [
         "https://labs.connect.dimagi.com/solicitations/4495/responses/?program_id=10008"
       ]
     },
     {
       "scene_index": 5,
-      "title": "Maya looks ahead to standing up the real opportunity",
-      "start_seconds": 15.899,
-      "duration_seconds": 2.2,
+      "title": "Maya awards the firm and sees it was notified",
+      "start_seconds": 12.936,
+      "duration_seconds": 5.539,
       "urls_visited": [
         "https://labs.connect.dimagi.com/solicitations/response/4496/award/?program_id=10008"
       ]
