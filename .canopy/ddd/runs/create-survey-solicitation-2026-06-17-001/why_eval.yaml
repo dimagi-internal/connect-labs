@@ -1,0 +1,50 @@
+schema_version: 1
+rubric_name: ddd-why-brief
+ran_at: 2026-06-17T23:20:00Z
+why_brief_path: .canopy/ddd/runs/create-survey-solicitation-2026-06-17-001/why_brief.yaml
+
+adversarial:
+  weakest_claims:
+    - 'Until now the survey firm that runs that coverage existed only as framing, so there was no step that turns a designed study plan into an open call a firm can answer.'
+    - "Recruiting and reviewing a firm against the designed coverage is the shipped step; turning an award into a live Connect opportunity that the firm's enumerators actually run is the intended next step, not yet built."
+    - 'The R6 Attakar x Gura study plan defines a concrete two-arm household-survey coverage area that a real survey firm must staff and run.'
+  gap_honesty_concerns:
+    - 'The award->provision->run-R6 tail is correctly surfaced as G1 (CAPABILITY) rather than overclaimed as shipped — the load-bearing honesty point is handled.'
+    - 'S7 is marked grounded (citing EV-009, the verified ABSENCE of provisioning code) while carrying G1 — correct split: the shipped half is grounded, the deferred half is the gap, no DECISION gap masquerading as CAPABILITY.'
+    - "No assumed evidence anywhere (0 assumed items), so no spine claim is silently left unverified; the only stretch ('exact sample VM R6 consumes') rests on documented demo-config continuity, appropriately a documented (not assumed) ref."
+  narrative_test: YES
+  narrative_test_reason: "A program director reading S1->S7 in order sees a real survey to staff, the missing recruitment step, the one-click create-from-plan, the coverage riding along, firms applying by selecting the area, the reviewer comparing on real coverage, and an honest 'not-yet-built' execution tail."
+
+dimensions:
+  problem_clarity:
+    score: 5
+    weight: 0.20
+    justification: 'Names the actor (program owner who designed the R6 plan), the pain (no in-workspace way to recruit the firm; coverage never reaches a real applicant), and is falsifiable in one specific sentence with no hedge language.'
+  rationale_soundness:
+    score: 5
+    weight: 0.25
+    justification: 'Each rationale is a direct logical step from the prior claim — designed sample is real (S1) -> nobody recruited (S2) -> one-click launch (S3) -> snapshot rides along (S4) -> firm selects+applies (S5) -> reviewer sees it (S6) -> honest execution boundary (S7); a skeptic reading only rationales would accept the chain.'
+  evidence_sufficiency:
+    score: 4
+    weight: 0.25
+    justification: 'Every grounded claim has >=1 real (implemented/documented) evidence item and most have >=2 independent ones; S2 leans on a single documented ref (EV-008), which keeps it at 4 rather than 5.'
+  gap_honesty:
+    score: 5
+    weight: 0.15
+    justification: 'The one deferral (award->provision->run) is surfaced as a correctly-typed CAPABILITY gap with an actionable proposed_action and a resolving claim_ref; no assumed item is left ungapped, and the shipped/deferred split inside S7 is explicit.'
+  user_narrative_strength:
+    score: 5
+    weight: 0.15
+    justification: 'Seven beats read as a memorable story — observed pain, the missing-middle insight, a concrete one-click solution, and an honest end-state — that a non-technical stakeholder would follow and retell.'
+
+overall_score: 4
+overall_rule: lowest
+
+verdict: pass
+blocking_reason: null
+
+fix_recommendation: |
+  [SPEC] Optional polish only (already passes): strengthen S2 by attaching EV-009
+  (the verified absence of any prior recruitment/provisioning code) as a second
+  evidence ref, so the "existed only as framing" claim rests on two independent
+  sources rather than one documented continuity note. Not required to proceed.

@@ -1,0 +1,125 @@
+schema_version: 1
+narrative_slug: create-survey-solicitation
+problem: >-
+  A program owner who has designed a two-arm household-survey study (the R6
+  Attakar x Gura plan) has no way inside the planning workspace to recruit the
+  independent survey firm that must run it — the firm exists only as narrative
+  framing, so the designed coverage area never reaches a real applicant and the
+  hand-off from study design to field execution is a manual, off-platform gap.
+spine:
+  - id: S1
+    claim: >-
+      The R6 Attakar x Gura study plan defines a concrete two-arm household-survey
+      coverage area that a real survey firm must staff and run.
+    rationale: >-
+      The plan is a single two-arm micro-plan whose input areas carry both wards
+      arm-tagged (Attakar intervention, Gura comparison), sampled into 840 work
+      areas; this is the exact sample the Round 6 verified-monitoring survey
+      consumes, so the coverage is a real operational unit, not an abstraction.
+    status: grounded
+    evidence:
+      - kind: implemented
+        ref: EV-007
+      - kind: documented
+        ref: EV-008
+  - id: S2
+    claim: >-
+      Until now the survey firm that runs that coverage existed only as framing,
+      so there was no step that turns a designed study plan into an open call a
+      firm can answer.
+    rationale: >-
+      The verified-monitoring narrative assumes enumerators are already in the
+      field, but nothing in the planning workspace recruits them; the recruitment
+      step is the missing middle between the design demo and the monitoring demo.
+    status: grounded
+    evidence:
+      - kind: documented
+        ref: EV-008
+      - kind: implemented
+        ref: EV-009
+  - id: S3
+    claim: >-
+      From the approved plan, the program owner can launch a solicitation in one
+      click without leaving the planning workspace.
+    rationale: >-
+      The plan review and study group pages surface a 'Create solicitation'
+      button that carries the plan as the source, so recruiting a firm is a
+      continuation of designing the study, not a separate tool or hand-off.
+    status: grounded
+    evidence:
+      - kind: implemented
+        ref: EV-001
+      - kind: implemented
+        ref: EV-002
+      - kind: documented
+        ref: EV-011
+  - id: S4
+    claim: >-
+      The designed plan rides into the solicitation as a snapshotted coverage
+      area the owner confirms before publishing.
+    rationale: >-
+      The create form snapshots the source plan into the solicitation and renders
+      a 'Coverage areas (from micro-plan)' panel, so the owner publishes the exact
+      coverage the firm will bid on, frozen at creation time.
+    status: grounded
+    evidence:
+      - kind: implemented
+        ref: EV-003
+      - kind: implemented
+        ref: EV-004
+  - id: S5
+    claim: >-
+      An independent survey firm reads the public solicitation and applies by
+      selecting the specific coverage area it can staff.
+    rationale: >-
+      The public response form presents the coverage areas as a 'Which areas can
+      you cover?' selector and blocks submission until the firm picks at least
+      one, so an application is bound to a concrete coverage commitment rather
+      than a free-text claim.
+    status: grounded
+    evidence:
+      - kind: implemented
+        ref: EV-005
+      - kind: implemented
+        ref: EV-006
+  - id: S6
+    claim: >-
+      The program owner reviewing responses sees exactly which coverage area each
+      firm committed to.
+    rationale: >-
+      The response stores selected_plan_names resolved against the authoritative
+      snapshot, so the reviewer compares applicants against the real designed
+      coverage — closing the loop from plan to applicant.
+    status: grounded
+    evidence:
+      - kind: implemented
+        ref: EV-006
+  - id: S7
+    claim: >-
+      Recruiting and reviewing a firm against the designed coverage is the
+      shipped step; turning an award into a live Connect opportunity that the
+      firm's enumerators actually run is the intended next step, not yet built.
+    rationale: >-
+      v1 captures the response for review; there is no mechanism that, on award,
+      provisions a Connect opportunity or pushes the plan's work areas into a live
+      opp, so the field-execution tail is an honest, aspirational end-state.
+    status: grounded
+    evidence:
+      - kind: implemented
+        ref: EV-009
+gaps:
+  - id: G1
+    type: CAPABILITY
+    claim_ref: S7
+    detail: >-
+      On award there is no code that provisions a Connect opportunity from the
+      awarded response or pushes the plan's work areas into that opportunity's
+      WorkArea set, so the awarded firm cannot actually run R6 through the
+      platform yet. This is the same planning-vs-execution boundary noted in
+      context.md: labs owns planning, Connect owns execution, and the transfer is
+      deferred.
+    proposed_action: >-
+      Track a future capability: on award_response, provision (or link) a Connect
+      opportunity for the awarded firm and transfer the snapshotted coverage plan
+      into its WorkArea set. Until then, the narrative must frame field execution
+      as aspirational end-state, never as a shipped mechanism.

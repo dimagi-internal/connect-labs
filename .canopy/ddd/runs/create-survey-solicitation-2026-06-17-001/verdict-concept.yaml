@@ -1,0 +1,117 @@
+schema_version: 1
+rubric_name: ddd-concept-eval
+ran_at: 2026-06-18T07:45:00Z
+run_dir: /Users/jjackson/emdash/worktrees/connect-labs/emdash/solicitation-rntwj/.canopy/ddd/runs/create-survey-solicitation-2026-06-17-001/
+iteration: 2
+scenes_evaluated: 5
+
+# Per-scene gating-dimension scores (claim_reality_coherence is advisory, excluded from overall):
+#   dim                  S1  S2  S3  S4  S5   min
+#   concept_clarity       3   4   4   4   2    2
+#   design_soundness      3   3   2   3   3    2
+#   visual_polish         2   3   3   2   2    2
+#   why_groundedness      3   4   4   4   4    3
+#   claim_reality (adv)   3   4   2   4   2   (2)
+#   motion_friction       3   4   4   3   2    2
+
+dimensions:
+  concept_clarity:
+    score: 2
+    weight: 0.20
+    justification: >-
+      Strong in the middle scenes (S2-S4 = 4: the create form, respond form, and
+      responses row each read clearly), but the weakest-link is scene 5 (2): it is
+      a byte-for-byte duplicate of scene 4, so the look-ahead/honesty beat returns
+      a "nothing new happened" 5-second read and the Award cue the beat is about is
+      clipped off-frame. Scene 1 (3) is understandable to someone familiar but the
+      hero R6 study is lost among repeated "Untitled study" placeholder cards.
+  design_soundness:
+    score: 2
+    weight: 0.20
+    justification: >-
+      Weakest-link is scene 3 (2): the "Which areas can you cover? — Select one or
+      more" coverage selector renders exactly ONE checkbox (a degenerate choice),
+      and the "Application Questions" card is empty (header + divider, no fields),
+      reading as a stubbed/unfinished section. Scene 4 (3) clips the load-bearing
+      Award action at the viewport edge; scene 1 (3) gives "Create solicitation" no
+      primacy among four equally-weighted buttons.
+  visual_polish:
+    score: 2
+    weight: 0.15
+    justification: >-
+      Three scenes land at 2. Scenes 4 and 5 overflow the viewport — the ACTIONS
+      column header is clipped to "A" and the Award trophy is cut at the right edge
+      (a PRODUCT layout bug), with green overloaded across coverage pill, status
+      pill, and action icons. Scene 1 shows repeated "Untitled study"/0-ward
+      placeholder cards (fixture noise), duplicate "Attakar" cards, and a logo/H1
+      overlap. Fixes are all PRODUCT-side (responsive table, suppress placeholder
+      studies), never camera tricks.
+  why_groundedness:
+    score: 3
+    weight: 0.20
+    justification: >-
+      Lowest is scene 1 (3): the concept_claim traces to spine S3 and the "Create
+      solicitation" button is genuinely present on every card, but the "from a
+      FINISHED micro-plan" precondition is asserted, not shown — every plan reads
+      "Draft" and every study "defining". Scenes 2-5 (4) trace cleanly to S4-S7 with
+      real production naming (R6 — Attakar x Gura, sol #4495, Health Bridge Nigeria).
+  claim_reality_coherence:
+    score: 2
+    weight: 0.10
+    blocking: false
+    justification: >-
+      ADVISORY / non-blocking — excluded from overall_score. Scene 3 (2): the
+      "blocked until one area chosen" behavior and its error string are not visible
+      in the still (they fire only on submit), and the AI-coach card claims it
+      reviews answers that don't exist (empty Questions card). Scene 5 (2): the
+      forward-looking narration leans on the Award control, which is clipped
+      off-frame. The honest deferral of opportunity-provisioning (G1) is correct
+      behavior and was NOT penalized.
+  motion_friction:
+    score: 2
+    weight: 0.15
+    justification: >-
+      Weakest-link is scene 5 (2): identical to scene 4, the viewer experiences a
+      "nothing new happened" beat and must conceptually re-derive the progression —
+      the sequence reads static rather than advancing. Scenes 1 and 4 (3) are clean
+      single stills with minor rough edges (placeholder-card noise; cursor parked on
+      the breadcrumb, clipped action column).
+
+overall_score: 2
+overall_rule: lowest
+
+verdict: fail
+blocking_reason: null
+
+fix_recommendation: |
+  Iteration 2 fixed the mechanical re-pointing (scenes now hit the right routes and
+  the coverage panel / selected-coverage pill / realistic submitter all render), but
+  three PRODUCT-side gaps drive the weakest-link to 2/5 and must be addressed before
+  promotion:
+
+  [PRODUCT] Responses table overflow (scenes 4 & 5, visual_polish/design_soundness):
+  the ACTIONS column (View / Review / Award) is clipped at the right viewport edge —
+  Award, the load-bearing action for the final beat, is cut off. Wrap the table in an
+  overflow-x container or pin the ACTIONS column sticky-right / reduce column widths so
+  all three actions render fully in a normal viewport. Mechanical.
+
+  [PRODUCT] Scene 5 is identical to scene 4 (concept_clarity/motion_friction): the
+  honesty/look-ahead beat reuses the responses frame with no distinct on-screen state,
+  so it reads as a repeated screen. Either re-point scene 5 to a genuinely distinct
+  capture (e.g. the Award control focused/hovered with its aspirational treatment
+  visible) or give the final beat a distinct on-screen affordance. Options — surface to
+  the user, do not auto-apply.
+
+  [PRODUCT] Scene 3 respond form (design_soundness): the "Select one or more" coverage
+  selector shows a single degenerate checkbox and the "Application Questions" card is an
+  empty stub. Render the solicitation's actual questions (or an explicit "No additional
+  questions" empty-state), and label the single-area case honestly. Mechanical.
+
+  [PRODUCT] Scene 1 portfolio (visual_polish): suppress/collapse the repeated "Untitled
+  study" / 0-ward / out-of-program placeholder study cards (seed-data noise), de-dupe the
+  two "Attakar" plan cards, and promote "Create solicitation" to a single primary button
+  so the hero R6 path is findable. Seed-data + template fix.
+
+  [DEFER] claim_reality_coherence gaps (scenes 3 & 5) are advisory only: the blocked-
+  submit error and the Award-as-next-step cue aren't visible in their stills. The honest
+  deferral of opportunity-provisioning (G1) is correct and was not penalized.

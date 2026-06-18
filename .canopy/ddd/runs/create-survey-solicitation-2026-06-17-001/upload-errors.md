@@ -1,0 +1,1 @@
+iter 2: deck upload to canopy-web SKIPPED by controller directive (STOP at external_release gate; do not publish to canopy-web before the gate). Deck generated locally at iter2_deck.html. Findings deep-links use local deck + scene anchors for the in-session report only.

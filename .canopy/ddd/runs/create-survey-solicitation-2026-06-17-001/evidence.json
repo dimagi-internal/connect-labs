@@ -1,0 +1,83 @@
+{
+  "feature": "create-survey-solicitation",
+  "generated_at": "2026-06-17T23:10:00Z",
+  "items": [
+    {
+      "id": "EV-001",
+      "kind": "implemented",
+      "ref": "commcare_connect/microplans/views.py:1227-1228,1275-1276",
+      "summary": "The micro-plan study/plan review pages and group page set create_solicitation_url = /solicitations/create/?source_program_id=<pid>&source_plan_id=<plan>|source_group_id=<grp>, surfaced as a 'Create solicitation' button.",
+      "claim_hint": "A program owner can launch a solicitation directly from an approved micro-plan, carrying the plan as the source."
+    },
+    {
+      "id": "EV-002",
+      "kind": "implemented",
+      "ref": "commcare_connect/templates/microplans/group.html:39, review.html",
+      "summary": "The 'Create solicitation' button renders on the study group + plan review pages (verified live on labs prod: plan 4494 review page shows the button with href source_plan_id=4494).",
+      "claim_hint": "The recruit-a-firm action is reachable from the plan the owner just designed — no separate tool, same workspace."
+    },
+    {
+      "id": "EV-003",
+      "kind": "implemented",
+      "ref": "commcare_connect/solicitations/views.py:382-406 (_snapshot_from_query) + forms.py:201-225",
+      "summary": "The create view snapshots the source plan via ProgramPlanDataAccess into plans_json/source_plan_ids_json; verified live the form pre-seeds title, scope_of_work, and plans_json={plan_id:4494, name:'R6 — Attakar × Gura'}.",
+      "claim_hint": "The R6 plan rides into the solicitation as a snapshotted coverage area at creation time (later plan edits don't change this solicitation)."
+    },
+    {
+      "id": "EV-004",
+      "kind": "implemented",
+      "ref": "commcare_connect/templates/solicitations/solicitation_form.html:247-252",
+      "summary": "The create form shows a 'Coverage areas (from micro-plan)' panel listing the snapshotted plans, with helper text that respondents select the ones they can cover (verified live: coverage_panel=true, plan 'R6 — Attakar' listed).",
+      "claim_hint": "The owner sees and confirms the coverage area the firm will bid on, before publishing."
+    },
+    {
+      "id": "EV-005",
+      "kind": "implemented",
+      "ref": "commcare_connect/solicitations/forms.py:248-253 (ResponseForm.select_plans)",
+      "summary": "When a solicitation carries plans, the public response form adds a 'Which areas can you cover?' CheckboxSelectMultiple bound to the snapshot plans.",
+      "claim_hint": "An independent survey firm reads the public solicitation and selects the specific coverage area(s) it can staff."
+    },
+    {
+      "id": "EV-006",
+      "kind": "implemented",
+      "ref": "commcare_connect/solicitations/views.py:619-644 + forms.py:308-322 (get_selected_plans)",
+      "summary": "On submit, the response stores selected_plan_ids/selected_plan_names resolved against the solicitation's authoritative snapshot; submission is blocked unless at least one coverage area is selected.",
+      "claim_hint": "The firm's application is bound to a concrete coverage area, captured for the reviewer — not a free-text claim."
+    },
+    {
+      "id": "EV-007",
+      "kind": "implemented",
+      "ref": "commcare_connect/microplans/study_seed.py + MCP microplans_study_ensure (live)",
+      "summary": "The R6 'Attakar × Gura' two-arm study is a single plan (id 4494) whose input_areas carry both wards arm-tagged (Attakar=intervention 403 WA, Gura=comparison 437 WA), sampled with the shared size-balanced config (840 work areas, 596 primary/244 alternate).",
+      "claim_hint": "The coverage area offered to the firm is the exact two-arm sample the household survey must run — the same plan verified-monitoring R6 consumes."
+    },
+    {
+      "id": "EV-008",
+      "kind": "documented",
+      "ref": ".canopy/ddd/context.md (## This run + Planning vs execution boundary) + scripts/walkthroughs/verified-monitoring/demo_config.json",
+      "summary": "The R6 plan grounds the verified-monitoring Round 6 household-survey records (68.1% verified vs 8.9% self-report hero round, ~300 households/round). The survey firm is the recruitment step that was previously only narrative framing.",
+      "claim_hint": "Recruiting the firm is the missing middle that connects the design demo (study-design) to the monitoring demo (verified-monitoring)."
+    },
+    {
+      "id": "EV-009",
+      "kind": "implemented",
+      "ref": "grep: no provision/create_opportunity/WorkArea-push in commcare_connect/solicitations/ (only award_response in data_access.py)",
+      "summary": "v1 captures the response for review; there is NO code that, on award, provisions a Connect opportunity or pushes the plan's work areas into a live opp's WorkArea set. The award flow is untouched by PR #616.",
+      "claim_hint": "Award -> provision a Connect opportunity -> enumerators actually run R6 is a DEFERRED capability gap (aspirational end-state), not a shipped mechanism."
+    },
+    {
+      "id": "EV-010",
+      "kind": "implemented",
+      "ref": "commcare_connect/solicitations/data_access.py:43-89 (fixed in PR #618) + labs/synthetic/local_records_backend.py",
+      "summary": "Before PR #618, SolicitationsDataAccess only passed program_id (not opportunity_id) to LabsRecordAPIClient, so labs-only programs (10008) hit the prod API and 404'd; create-from-plan failed on the demo program. PR #618 routes labs-only programs to the local-records backend.",
+      "claim_hint": "The shipped create-from-plan flow now actually persists on the synthetic demo program it is demonstrated on."
+    },
+    {
+      "id": "EV-011",
+      "kind": "documented",
+      "ref": "commcare_connect/microplans/tests/test_create_solicitation_link.py:26-72",
+      "summary": "Tests assert the review and group contexts emit create_solicitation_url with the source_program_id + source_plan_id/source_group_id contract.",
+      "claim_hint": "The create-from-plan entry point is contract-tested, not incidental."
+    }
+  ]
+}
