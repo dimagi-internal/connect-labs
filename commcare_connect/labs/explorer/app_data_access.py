@@ -128,10 +128,13 @@ class AppDownloaderDataAccess:
         Returns:
             Opportunity dict with learn_app and deliver_app details, or None
         """
+        # Delegate to the single canonical owner of GET /export/opportunity/{id}/
+        # (see labs.analysis.data_access) so this fetch isn't re-implemented here.
+        from commcare_connect.labs.analysis.data_access import fetch_opportunity_detail
+
         try:
-            response = self._call_connect_api(f"/export/opportunity/{opp_id}/")
-            return response.json()
-        except httpx.HTTPStatusError as e:
+            return fetch_opportunity_detail(self.access_token, opp_id)
+        except ValueError as e:
             logger.error(f"Failed to fetch opportunity {opp_id}: {e}")
             return None
 
