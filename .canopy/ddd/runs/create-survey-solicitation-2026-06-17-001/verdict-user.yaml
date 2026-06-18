@@ -1,0 +1,37 @@
+schema_version: 1
+rubric_name: user-artifact
+ran_at: 2026-06-18T06:30:00Z
+run_dir: .canopy/ddd/runs/create-survey-solicitation-2026-06-17-001/
+# Per-scene lowest-of-3, then lowest-across-scenes.
+dimensions:
+  task_completion:
+    score: 2
+    weight: 0.40
+    justification: "Scene 3 = 2: the coverage-area selector (the task) isn't on the captured detail-page frame; it lives on /respond/. Other scenes 3-4."
+    fix_recommendation: "Re-point scene 3's capture to /solicitations/4495/respond/ so the coverage-checkbox selector (blocked-submit + ticked states) is shown."
+    fix_kind: mechanical
+  clarity:
+    score: 2
+    weight: 0.35
+    justification: "Scenes 1, 2, 5 = 2. Scene 1: SMD/PSU/'out of tolerance' jargon dominates the create-solicitation viewport. Scene 2: the coverage panel is visually demoted (uncarded gray text, no 'attached' state). Scene 5: 'Award' is an undifferentiated peer action; the planning-vs-execution boundary isn't legible on the reused frame."
+    fix_recommendation: "Scene 1: gloss/de-emphasize the stat jargon near the Create solicitation CTA. Scene 2: promote the coverage panel to a first-class card with an 'attached' chip. Scene 5: give Award distinct weight + an honest 'next step (coming soon)' framing."
+    fix_kind: mechanical
+  trust:
+    score: 2
+    weight: 0.25
+    justification: "Scene 4 = 2: the submitter email shown is 'jjackson@dimagi.com' (a dev address) under applicant 'Amina Okafor / Health Bridge Nigeria' — a placeholder/test-data tell. Other scenes 3."
+    fix_recommendation: "Set the response's submitted_by_email to a realistic firm contact (e.g. amina.okafor@healthbridge.ng) so the applicant identity is internally consistent."
+    fix_kind: mechanical
+overall_score: 2
+overall_rule: lowest
+verdict: fail
+self_assessed: false
+fix_recommendation: |
+  [DATA mechanical] Scene 4: replace the submitter email jjackson@dimagi.com with a
+  realistic firm contact (amina.okafor@healthbridge.ng) — the one trust-killer in the row.
+  [SPEC mechanical] Scene 3: re-point the capture to /solicitations/4495/respond/ so the
+  coverage-checkbox selector is shown (matches the narration; lifts task_completion).
+  [PRODUCT mechanical] Scene 1: the map canvas rendered empty and SMD/PSU jargon dominates
+  the Create-solicitation viewport — gloss the jargon + ensure plan geometry/layers render.
+  [PRODUCT mechanical] Scene 2: promote the 'Coverage areas (from micro-plan)' panel to a
+  first-class card with an explicit 'attached' chip so the user can confirm the coverage.

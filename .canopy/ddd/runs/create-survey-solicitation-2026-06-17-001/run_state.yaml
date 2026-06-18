@@ -1,0 +1,197 @@
+auto_iterate_next_action: stop_unclear
+auto_iterate_reason: 1 options/redesign finding(s) — need a user pick.
+findings:
+  - detail:
+      The scene's core interaction — ticking a 'Which areas can you cover?' checkbox
+      that blocks submit — is not in the capture. The captured page is the public solicitation
+      DETAIL page (/solicitations/4495/), which shows a READ-ONLY coverage panel; the
+      actual selector lives on the /respond/ form. The capture stops one click short
+      of the feature the scene is about.
+    dimension: design_soundness
+    fix_kind: options
+    fix_recommendation:
+      "Re-point this scene's capture to /solicitations/4495/respond/
+      and capture the coverage-checkbox selector (blocked-submit state + ticked state).
+      Alternative: rewrite the scene narration to not claim a tick/blocked-submit action
+      on the detail frame — but that abandons the scene's differentiating bet, so re-pointing
+      the capture is the right fix."
+    route: PRODUCT
+    scene: 3 — Amina reads the open call and ticks the area she can staff
+    severity: medium
+  - detail:
+      Narration says Amina 'ticks that exact coverage area on the application
+      form' and the declared feature blocks submit until one area is chosen — neither
+      the tickable checklist nor the blocked-submit is present in the captured footage
+      (advisory).
+    dimension: claim_reality_coherence
+    fix_kind: options
+    fix_recommendation:
+      'Same as the design_soundness finding: re-point scene 3 to the
+      /respond/ form so the demonstrated UI matches the narration.'
+    route: DEFER
+    scene: 3 — Amina reads the open call and ticks the area she can staff
+    severity: medium
+  - detail:
+      The scene's load-bearing 'Coverage areas (from micro-plan)' panel is the
+      least prominent thing on the page — an unstyled faint strip with tiny gray run-on
+      text, no card, no icon, inverted against the bold iconned cards around it. A planner
+      doing the 5-second scan reads 'generic create form', not 'my plan is already attached'.
+    dimension: visual_polish
+    fix_kind: mechanical
+    fix_recommendation:
+      "Promote the 'Coverage areas (from micro-plan)' panel to a
+      first-class card with the same visual weight as the other sections: bold iconned
+      card header, card chrome, and the R6 plan rendered as a prominent chip with real
+      typographic weight on '840 work areas · 2 wards'. Label the 'comparison, intervention'
+      tokens (e.g. 'Study arms:'). Consider rendering the snapshotted coverage as
+      a ConnectMap so the owner can visually confirm the exact area."
+    route: PRODUCT
+    scene: 2 — Maya finds the plan already waiting as the coverage area
+    severity: medium
+  - detail:
+      The 'Create solicitation' hero action is the 7th element down the left rail,
+      below 5 collapsed config accordions, styled as a near-twin of a 'Download Connect
+      import CSV' outlined pill. The 5-second read lands on the amber 'out of tolerance'
+      comparability card, not the hero action.
+    dimension: concept_clarity
+    fix_kind: mechanical
+    fix_recommendation:
+      Promote 'Create solicitation' to the visually dominant PRIMARY
+      action on a finished micro-plan (primary button, raised in the rail or in a plan-header
+      action bar), distinct from the secondary 'Download CSV'.
+    route: PRODUCT
+    scene: 1 — Maya turns her finished study into a call for a firm
+    severity: low
+  - detail:
+      The hero CTA is a low-prominence outlined pill buried 7th in the rail; the
+      arm-comparability card out-weights it; PLAN METRICS labels are a flat uppercase
+      row.
+    dimension: visual_polish
+    fix_kind: mechanical
+    fix_recommendation:
+      Promote the 'Create solicitation' CTA to a primary button with
+      clear visual hierarchy over secondary/export actions, and give the plan-review
+      header a stronger title/identity treatment.
+    route: PRODUCT
+    scene: 1 — Maya turns her finished study into a call for a firm
+    severity: low
+  - detail:
+      The firm's selected-coverage pill 'R6 — Attakar × Gura' is textually identical
+      to the page title, so the load-bearing 'firm's chosen area resolved from the snapshot'
+      reads as an echo of the solicitation, not an independent selection. Comparative
+      chrome ('Compare all applicants side by side', 'Review All (1 responses)') is
+      dead weight at n=1.
+    dimension: concept_clarity
+    fix_kind: mechanical
+    fix_recommendation:
+      Differentiate the firm's selected coverage from the solicitation
+      it answers — show a snapshot-provenance marker (e.g. 'Selected · 2 wards') so
+      the concept is visible not asserted. Collapse/reframe the comparative chrome when
+      there is a single response.
+    route: PRODUCT
+    scene: 4 — Maya sees the firm tied to the coverage she designed
+    severity: low
+  - detail:
+      The destructive 'Award' action sits as an undifferentiated equal-weight
+      inline link beside View/Review; the 'Compare all applicants' CTA leads nowhere
+      at n=1.
+    dimension: design_soundness
+    fix_kind: mechanical
+    fix_recommendation:
+      Give the 'Award' action distinct, non-peer weight (or confirm-gate
+      it) versus View/Review; hide comparative chrome until n>1.
+    route: PRODUCT
+    scene: 4 — Maya sees the firm tied to the coverage she designed
+    severity: low
+  - detail:
+      The honesty beat re-uses scene 4's exact frame; the planning-vs-execution
+      boundary message is 100% narration-dependent and the frame reads as a duplicate.
+      The page does NOT overclaim auto-provisioning (good/honest), but the boundary
+      is not made legible on-screen.
+    dimension: concept_clarity
+    fix_kind: options
+    fix_recommendation:
+      "Options: (a) re-target the scene to a frame showing a 'Next:
+      stand up the live Connect opportunity (coming soon)' affordance; (b) give 'Award'
+      an inline 'what happens next' note naming live-opportunity provisioning as the
+      deferred step; (c) keep the frame and add a deck callout framing Award as the
+      shipped/next-step boundary (accepts concept_clarity capped at 3)."
+    route: DEFER
+    scene: 5 — Maya looks ahead to standing up the real opportunity
+    severity: low
+  - detail:
+      "'Review All (1 responses)' grammar; scenes 4 and 5 reuse the identical
+      frame (non-advancing, 'didn't I just see this?')."
+    dimension: motion_friction
+    fix_kind: mechanical
+    fix_recommendation:
+      Fix '(1 responses)' -> '(1 response)'; suppress the 'Compare
+      all applicants side by side' CTA when there is exactly one applicant.
+    route: PRODUCT
+    scene: 5 — Maya looks ahead to standing up the real opportunity
+    severity: low
+  - detail:
+      "Scene 3 = 2: the coverage-area selector (the task) isn't on the captured
+      detail-page frame; it lives on /respond/. Other scenes 3-4."
+    dimension: task_completion
+    fix_kind: mechanical
+    fix_recommendation:
+      Re-point scene 3's capture to /solicitations/4495/respond/ so
+      the coverage-checkbox selector (blocked-submit + ticked states) is shown.
+    route: PRODUCT
+    scene: user-artifact:task_completion
+    severity: medium
+  - detail:
+      "Scenes 1, 2, 5 = 2. Scene 1: SMD/PSU/'out of tolerance' jargon dominates
+      the create-solicitation viewport. Scene 2: the coverage panel is visually demoted
+      (uncarded gray text, no 'attached' state). Scene 5: 'Award' is an undifferentiated
+      peer action; the planning-vs-execution boundary isn't legible on the reused frame."
+    dimension: clarity
+    fix_kind: mechanical
+    fix_recommendation:
+      "Scene 1: gloss/de-emphasize the stat jargon near the Create
+      solicitation CTA. Scene 2: promote the coverage panel to a first-class card with
+      an 'attached' chip. Scene 5: give Award distinct weight + an honest 'next step
+      (coming soon)' framing."
+    route: PRODUCT
+    scene: user-artifact:clarity
+    severity: medium
+  - detail:
+      "Scene 4 = 2: the submitter email shown is 'jjackson@dimagi.com' (a dev
+      address) under applicant 'Amina Okafor / Health Bridge Nigeria' — a placeholder/test-data
+      tell. Other scenes 3."
+    dimension: trust
+    fix_kind: mechanical
+    fix_recommendation:
+      Set the response's submitted_by_email to a realistic firm contact
+      (e.g. amina.okafor@healthbridge.ng) so the applicant identity is internally consistent.
+    route: PRODUCT
+    scene: user-artifact:trust
+    severity: medium
+findings_review_id: null
+findings_review_url: null
+iteration: 0
+iteration_clips: {}
+iteration_decks: {}
+last_actor: null
+last_actor_at: null
+narrative_review_id: acd53ae4-c44c-4c0a-98dd-f766b9358acc
+narrative_review_url: /review/acd53ae4-c44c-4c0a-98dd-f766b9358acc/
+narrative_slug: create-survey-solicitation
+pending_review: null
+phase: judged
+run_id: create-survey-solicitation-2026-06-17-001
+scene_filter: null
+scenes_run:
+  - 1
+  - 2
+  - 3
+  - 4
+  - 5
+schema_version: 1
+score_history:
+  - 2.0
+verdicts:
+  concept: /Users/jjackson/emdash/worktrees/connect-labs/emdash/solicitation-rntwj/.canopy/ddd/runs/create-survey-solicitation-2026-06-17-001/verdict-concept.yaml
+  user_artifact: /Users/jjackson/emdash/worktrees/connect-labs/emdash/solicitation-rntwj/.canopy/ddd/runs/create-survey-solicitation-2026-06-17-001/verdict-user.yaml
+why_brief: null

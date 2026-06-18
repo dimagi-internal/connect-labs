@@ -401,3 +401,8 @@ scripts/walkthroughs/**/scenes.json
 .gstack/
 .claude/settings.local.json
 .superpowers/
+
+# DDD run heavy artifacts (regenerable; keep verdicts/findings/manifest tracked)
+.canopy/ddd/runs/**/*.mp4
+.canopy/ddd/runs/**/*.webm
+.canopy/ddd/runs/**/snapshots/*.png
