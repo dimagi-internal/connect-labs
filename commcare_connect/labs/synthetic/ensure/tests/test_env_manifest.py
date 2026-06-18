@@ -19,6 +19,23 @@ def test_parses_golden():
     assert [r.kind for r in em.resources] == ["opp_data", "weekly_runs", "rollup"]
 
 
+def test_start_monday_pins_window():
+    em = EnvManifest.from_yaml(
+        "env: d\ntimeline: {completed_weeks: 4, include_current_week: true, start_monday: 2026-05-04}\n"
+        "resources: [{kind: opp_data, opportunity_id: 1, manifest: m.yaml}]"
+    )
+    assert em.timeline.start_monday is not None
+    assert em.timeline.start_monday.isoformat() == "2026-05-04"
+
+
+def test_start_monday_must_be_a_monday():
+    with pytest.raises(EnvManifestError, match="must be a Monday"):
+        EnvManifest.from_yaml(
+            "env: d\ntimeline: {completed_weeks: 4, start_monday: 2026-05-05}\n"  # Tuesday
+            "resources: [{kind: opp_data, opportunity_id: 1, manifest: m.yaml}]"
+        )
+
+
 def test_unknown_kind_rejected():
     with pytest.raises(EnvManifestError):
         EnvManifest.from_yaml("env: d\ntimeline: {completed_weeks: 1}\nresources: [{kind: nope}]")
