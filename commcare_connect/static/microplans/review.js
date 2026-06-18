@@ -1895,6 +1895,12 @@
     const btn = $("cfg-pop-suggest");
     if (inp && btn && btn.dataset.pop) inp.value = btn.dataset.pop;
   });
+  // Changing the population source re-totals the picked wards for that source.
+  on("cfg-pop-source", "change", () => {
+    const inp = $("cfg-population");
+    if (inp) inp.value = ""; // let the new source's total pre-fill
+    refreshPopulationSuggestion();
+  });
 
   function setArm(a) {
     currentArm = a;
@@ -1935,17 +1941,30 @@
   // We sum it across the selected wards and offer it as a one-click fill for the
   // coverage population field, so visits are driven by real numbers instead of a
   // blind guess. The field stays freely editable (manual override always wins).
-  const pickedWardPops = new Map(); // boundaryId -> { pop, source, name }
+  // boundaryId -> { name, pops: {source -> number} }. `pops` merges the boundary's
+  // per-source bag (extra.populations) with its GeoPoDe under-5 (the population field).
+  const pickedWardPops = new Map();
+  const POP_SOURCE_LABELS = {
+    geopode_u5: "GeoPoDe (under-5)",
+    worldpop_u5: "WorldPop (under-5)",
+    meta_u5: "Meta (under-5)",
+    worldpop_total: "WorldPop (total)",
+    meta_total: "Meta (total)",
+    grid3_v3_total: "GRID3 v3 (total)",
+  };
+  const POP_SOURCE_ORDER = Object.keys(POP_SOURCE_LABELS);
 
   function recordWardPopulation(boundaryId, feature) {
     const f = feature || {};
-    if (f.population != null && !isNaN(+f.population)) {
-      pickedWardPops.set(boundaryId, {
-        pop: +f.population,
-        source: f.source || "",
-        name: f.name || "",
-      });
-    }
+    const pops = Object.assign({}, f.populations || {});
+    if (
+      pops.geopode_u5 == null &&
+      f.population != null &&
+      !isNaN(+f.population)
+    )
+      pops.geopode_u5 = +f.population;
+    if (Object.keys(pops).length)
+      pickedWardPops.set(boundaryId, { name: f.name || "", pops });
     refreshPopulationSuggestion();
   }
 
@@ -1954,23 +1973,48 @@
     refreshPopulationSuggestion();
   }
 
+  // Sources available across the picked wards, in canonical order.
+  function availablePopSources() {
+    const seen = new Set();
+    pickedWardPops.forEach((r) =>
+      Object.keys(r.pops).forEach((k) => seen.add(k)),
+    );
+    return POP_SOURCE_ORDER.filter((k) => seen.has(k));
+  }
+
   function refreshPopulationSuggestion() {
+    const sel = $("cfg-pop-source");
     const btn = $("cfg-pop-suggest");
-    if (!btn) return;
-    const rows = [...pickedWardPops.values()];
-    if (!rows.length) {
+    if (!sel || !btn) return;
+    const avail = availablePopSources();
+    // Rebuild the dropdown options (keep the current pick if still available).
+    const prev = sel.value;
+    sel.innerHTML =
+      '<option value="">— pick a population source —</option>' +
+      avail
+        .map((k) => `<option value="${k}">${POP_SOURCE_LABELS[k]}</option>`)
+        .join("");
+    if (avail.includes(prev)) sel.value = prev;
+    else if (avail.includes("geopode_u5")) sel.value = "geopode_u5";
+    sel.parentElement.style.display = avail.length ? "" : "none";
+
+    const src = sel.value;
+    if (!src) {
       btn.classList.add("hidden");
       return;
     }
-    const total = Math.round(rows.reduce((s, r) => s + r.pop, 0));
-    const sources = [...new Set(rows.map((r) => r.source).filter(Boolean))];
-    const srcLabel = sources.length === 1 ? sources[0] : "mixed sources";
+    let total = 0;
+    let n = 0;
+    pickedWardPops.forEach((r) => {
+      if (r.pops[src] != null) {
+        total += r.pops[src];
+        n += 1;
+      }
+    });
+    total = Math.round(total);
     btn.dataset.pop = String(total);
-    btn.textContent = `Use ${total.toLocaleString()} (${srcLabel}, ${
-      rows.length
-    } ward${rows.length === 1 ? "" : "s"})`;
+    btn.textContent = `Use ${total.toLocaleString()} — ${POP_SOURCE_LABELS[src]} across ${n} ward${n === 1 ? "" : "s"}`;
     btn.classList.remove("hidden");
-    // Pre-fill only when the user hasn't typed their own number.
     const inp = $("cfg-population");
     if (inp && !String(inp.value || "").trim()) inp.value = total;
   }
