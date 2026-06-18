@@ -1,288 +1,271 @@
-auto_iterate_next_action: stop_concept_change
-auto_iterate_reason: Concept-change finding — needs user judgment on direction.
+auto_iterate_next_action: stop_unclear
+auto_iterate_reason: 2 options/redesign finding(s) — need a user pick.
 findings:
   - detail:
-      The 5-second read is 'a long, repetitive list of Untitled draft studies'
-      — the hero R6 study is the 9th plan card and is not findable amid the clutter,
-      and the 'why' (finished plan -> recruit a firm) is not established on-screen because
-      nothing reads as finished (every plan 'Draft', every study 'defining').
+      A 5-second glance returns a wall of undifferentiated 'Draft' cards — two
+      literally named 'Attakar / Attakar' — so the hero 'finished plan -> one-click
+      solicitation' story is not findable; the opening fails to establish the problem.
     dimension: concept_clarity
-    fix_kind: redesign
+    fix_kind: mechanical
     fix_recommendation:
-      Add a status filter/sort or a 'Ready to solicit' section that
-      floats the one finished/approved plan to the top, with a clear ready-vs-draft
-      cue, so an outsider sees the finished->solicit path instead of an undifferentiated
-      draft list.
+      Lead the portfolio with the one finished R6 study in a distinct
+      'ready-to-solicit' lane with a one-line problem framing, so the scene's purpose
+      reads in 5 seconds.
     route: CONCEPT
-    scene: 1 — Maya turns her finished study into a call for a firm
-    severity: low
+    route_url: /microplans/program/10008/
+    scene: scene_1 — Maya turns her finished study into a call for a firm
+    severity: medium
   - detail:
-      "'Create solicitation' sits as one of four equally-weighted buttons (Archive
-      / Submit for review / Create solicitation / Delete) with no primacy next to Delete,
-      so the one-click launch claim is not emphasized; the post-click solicitation-with-source-attached
-      is never shown in this frame."
+      "'Create solicitation' has zero primacy — it is the 3rd of four equal-weight
+      text actions (Archive * Submit for review * Create solicitation * Delete) on every
+      card, visually identical to Delete; the LIVE lane is an empty dead end and R1-R4
+      cards are near-empty."
     dimension: design_soundness
     fix_kind: mechanical
     fix_recommendation:
-      Promote 'Create solicitation' to a single primary (filled) button
-      per card with Archive/Submit/Delete collapsed into an overflow menu, so the launch
-      affordance is unambiguously the primary action.
+      Promote 'Create solicitation' to a single styled primary button
+      and demote Archive/Submit/Delete into a '...' overflow; surface it primarily on
+      the finished study.
     route: PRODUCT
-    scene: 1 — Maya turns her finished study into a call for a firm
-    severity: low
-  - detail:
-      "Multiple visible issues in one frame: a column of 7+ identical 'Untitled
-      study' cards (placeholder/fixture data signalling an unfinished build), three
-      '0 wards / (plans not in this program)' cross-scope rows, two duplicate 'Attakar'
-      plan cards, the logo mark overlapping the 'Microplan portfolio' H1, and a flat
-      type hierarchy where titles/badges/counts are similarly weighted."
-    dimension: visual_polish
-    fix_kind: redesign
-    fix_recommendation:
-      Suppress or collapse Untitled/0-ward/out-of-program studies
-      (rename-on-create or hide until named), de-duplicate the Attakar cards, fix the
-      header logo/H1 overlap, and introduce a clear type scale so study titles anchor
-      each card. PRODUCT/seed-data fix — never crop the capture.
-    route: PRODUCT
-    scene: 1 — Maya turns her finished study into a call for a firm
+    route_url: /microplans/program/10008/
+    scene: scene_1 — Maya turns her finished study into a call for a firm
     severity: medium
   - detail:
-      The concept_claim traces to spine S3 and the 'Create solicitation' button
-      is genuinely present on every card, but the 'from a FINISHED micro-plan' half
-      of the claim is asserted, not evidenced — every plan reads 'Draft' and every study
-      'defining', so the finished-state precondition the why depends on is not visible.
+      "Fixture noise: duplicate 'Attakar / Attakar' cards, '1 wards' (broken
+      pluralization that contradicts the page's own intervention+control study definition),
+      a ragged grid of full-vs-empty cards, and faint low-contrast area/status metadata."
+    dimension: visual_polish
+    fix_kind: mechanical
+    fix_recommendation:
+      Suppress/de-dupe the seed-noise cards, fix singular/plural ('1
+      ward'), normalize card density, and raise contrast on area-count + status metadata.
+      Product/seed-data fix, never a camera crop.
+    route: PRODUCT
+    route_url: /microplans/program/10008/
+    scene: scene_1 — Maya turns her finished study into a call for a firm
+    severity: medium
+  - detail:
+      Spine S3 rests on 'the approved plan' / 'a FINISHED micro-plan', but every
+      visible plan card reads 'Draft' and the R6 study reads 'defining * 1 wards' —
+      the finished-plan precondition the concept_claim depends on is contradicted by
+      the still.
     dimension: why_groundedness
-    fix_kind: options
+    fix_kind: mechanical
     fix_recommendation:
-      Surface an approved/finished state on the R6 plan and study
-      (e.g. a 'Reviewed'/'Ready' badge replacing 'Draft'/'defining') so the 'launch
-      from a finished plan' provenance is demonstrated on-screen, not assumed. Alternatively
-      soften the narration to 'a draft plan'.
+      Re-seed/re-capture this scene with the R6 study in an Approved/Reviewed/finished
+      state (and a ward count satisfying the intervention+control definition) so the
+      'launch from a finished plan' claim is visible, not just the button.
+    route: RESEARCH
+    route_url: /microplans/program/10008/
+    scene: scene_1 — Maya turns her finished study into a call for a firm
+    severity: medium
+  - detail:
+      Strong seed-data smell in a single still — duplicate-named cards, '1 wards',
+      empty R1-R4 cards, and an empty 'LIVE ... none' lane read as a half-populated
+      fixture rather than a clean capture.
+    dimension: motion_friction
+    fix_kind: mechanical
+    fix_recommendation:
+      Seed a realistic, de-duplicated portfolio with at least one
+      finished study (and suppress empty placeholder lanes) before capture.
+    route: PRODUCT
+    route_url: /microplans/program/10008/
+    scene: scene_1 — Maya turns her finished study into a call for a firm
+    severity: medium
+  - detail:
+      ADVISORY (non-blocking). The 'launch from a finished plan' narration is
+      not demonstrated — the Create-solicitation button sits on Draft cards and a 'defining
+      / 1 wards' study; '1 ward' also contradicts the page's own intervention+control
+      definition.
+    dimension: claim_reality_coherence
+    fix_kind: mechanical
+    fix_recommendation:
+      Show the button on a genuinely finished study whose ward count
+      satisfies the intervention+control definition.
+    route: DEFER
+    route_url: /microplans/program/10008/
+    scene: scene_1 — Maya turns her finished study into a call for a firm
+    severity: medium
+  - detail:
+      What+why is legible (create form pre-attaches snapshotted coverage) but
+      NO concrete user/role is named on screen — no owner identity/persona label — which
+      caps concept_clarity at 3.
+    dimension: concept_clarity
+    fix_kind: mechanical
+    fix_recommendation:
+      Name the planner on screen (an owner avatar/byline, e.g. 'Maya
+      — Program Planner') so the role anchors the 'why'.
     route: CONCEPT
-    scene: 1 — Maya turns her finished study into a call for a firm
+    route_url: /solicitations/create/?source_program_id=10008&source_group_id=4492
+    scene: scene_2 — Maya finds the plan already waiting as the coverage area
     severity: low
   - detail:
-      ADVISORY. The 'Create solicitation' button is genuinely present, but 'her
-      finished study' is not demonstrated (R6 study reads 'defining', '1 wards') and
-      the one-click result (solicitation carrying the plan as source) is off-frame,
-      so a viewer must trust the narrator that the click finishes the path.
-    dimension: claim_reality_coherence
-    fix_kind: options
+      The Coverage-areas panel is a coherent, clearly-attached affordance (green
+      'Attached' badge, 'Snapshotted at creation' note, 2 wards / 840 work areas / study
+      arms), but the surrounding form is a sea of empty required-looking fields (deadline,
+      contact email) with no required/optional distinction, and two empty sections (Questions,
+      Criteria) give no preview.
+    dimension: design_soundness
+    fix_kind: mechanical
     fix_recommendation:
-      Capture the R6 study in a finished/approved state and show the
-      immediate post-click state (solicitation draft with the plan pre-attached) so
-      the narration's 'finished study -> call for a firm' is visibly demonstrated.
-    route: DEFER
-    scene: 1 — Maya turns her finished study into a call for a firm
+      Pre-fill or visibly mark required fields and de-emphasize optional
+      ones — or capture one step later with key fields filled so the form reads as a
+      confirm-and-publish moment, not a blank mid-fill.
+    route: PRODUCT
+    route_url: /solicitations/create/?source_program_id=10008&source_group_id=4492
+    scene: scene_2 — Maya finds the plan already waiting as the coverage area
     severity: low
   - detail:
-      No spinner/error/dead-end in the still, but the lower half is dominated
-      by a repetitive near-empty list of Untitled/0-ward cards that reads as seed noise
-      rather than a curated flow — a visible rough edge in the frame itself.
+      Clean type hierarchy and consistent controls, but the middle third is dominated
+      by empty placeholder inputs (whitespace reads as 'unfinished'), and the coverage
+      card's mini-map is a generic pin-in-a-square glyph rather than an actual map of
+      the 2 wards / 840 work areas it claims.
+    dimension: visual_polish
+    fix_kind: mechanical
+    fix_recommendation:
+      Replace the coverage card's generic pin glyph with a real mini-map
+      of the wards, and reduce the empty-placeholder dominance by pre-filling/marking
+      required fields.
+    route: PRODUCT
+    route_url: /solicitations/create/?source_program_id=10008&source_group_id=4492
+    scene: scene_2 — Maya finds the plan already waiting as the coverage area
+    severity: low
+  - detail:
+      Clean static frame with no render artifacts, but the all-empty mid-fill
+      form state reads as mid-interaction rather than a settled confirm step; cursor
+      parked oddly in the breadcrumb whitespace.
     dimension: motion_friction
     fix_kind: mechanical
     fix_recommendation:
-      Trim the placeholder study cards so the portfolio shows curated,
-      named studies; a clean list removes the 'is this half-built?' friction a viewer
-      feels on first scroll.
+      Capture the frame in a more settled (partly-filled) state and
+      park the cursor off the breadcrumb text.
     route: PRODUCT
-    scene: 1 — Maya turns her finished study into a call for a firm
+    route_url: /solicitations/create/?source_program_id=10008&source_group_id=4492
+    scene: scene_2 — Maya finds the plan already waiting as the coverage area
     severity: low
   - detail:
-      "The pre-seed is coherent (title/scope arrive filled, the coverage panel
-      renders attached and snapshotted), but the audience's decision is 'set scope
-      and publish' and the form as shown is not publishable: Description, all three
-      dates, Estimated Scale, Contact Email, Application Questions, and Evaluation Criteria
-      are empty with no visible required-field validation, so the path to 'publish'
-      has unexplained gaps."
+      The 'Which areas can you cover? — Select one or more' prompt renders exactly
+      ONE checkbox (a degenerate, near-contradictory affordance), and the AI-coach card
+      promises to review 'your draft answers against the evaluation criteria' for which
+      no answer fields exist on the page — a capability/UI mismatch.
     dimension: design_soundness
     fix_kind: mechanical
     fix_recommendation:
-      Mark required fields and show inline validation state so the
-      owner sees exactly what remains before Create Solicitation is enabled; consider
-      pre-seeding a default deadline/scale from the plan group to reinforce the 'already
-      waiting' promise.
+      Relabel the single-area case honestly (or surface the real sub-areas
+      so 'one or more' is true), and scope the AI-coach copy to what the page actually
+      contains (the coverage selection), not 'draft answers'.
     route: PRODUCT
-    scene: 2 — Maya finds the plan already waiting as the coverage area
-    severity: low
-  - detail:
-      Clean, consistent card system, but the load-bearing coverage detail (2 wards
-      / 840 work areas / study arms) is rendered in small muted-gray text that sits
-      quieter than the empty form scaffolding above it, so the hierarchy under-weights
-      the one panel the scene exists to sell.
-    dimension: visual_polish
-    fix_kind: mechanical
-    fix_recommendation:
-      Increase size/weight and contrast of the coverage card's stat
-      line (wards / work areas / study arms) and give the card a stronger container
-      so the attached plan reads as the focal point of the page.
-    route: PRODUCT
-    scene: 2 — Maya finds the plan already waiting as the coverage area
-    severity: low
-  - detail:
-      "The core interaction has a visible incoherence: 'Which areas can you cover?
-      / Select one or more' presents exactly ONE checkbox (a degenerate choice with
-      nothing to select between), and the 'Application Questions' card is EMPTY (header
-      + divider, no fields), reading as a stubbed/unfinished section."
-    dimension: design_soundness
-    fix_kind: mechanical
-    fix_recommendation:
-      Render the Application Questions the solicitation actually defines
-      inside that card (or replace the empty card with an explicit 'No additional questions
-      for this solicitation' state); and when only one coverage area exists, label it
-      honestly ('This solicitation covers one area — confirm you can staff it') rather
-      than 'Select one or more'.
-    route: PRODUCT
-    scene: 3 — Amina reads the open call and ticks the area she can staff
+    route_url: /solicitations/4495/respond/
+    scene: scene_3 — Amina reads the open call and ticks the area she can staff
     severity: medium
   - detail:
-      'Functional and clean, but hierarchy is flat where it matters: the load-bearing
-      required checkbox is the smallest, least prominent element while the secondary
-      AI-coach card is the visual heavyweight of the page, and the empty Application
-      Questions card is a large block of dead space mid-frame.'
+      Two saturated filled CTAs ('Get Feedback on My Answers' and 'Submit Response')
+      collide for primary status, and ~40% of the frame is dead whitespace with the
+      form floating in the upper third — a balance/hierarchy failure a careful viewer
+      catches immediately.
     dimension: visual_polish
     fix_kind: mechanical
     fix_recommendation:
-      Elevate the coverage selector (card it, add a required asterisk/colored
-      marker, give the checkbox more weight) so the must-do field outranks the optional
-      AI-coach helper, and eliminate the empty-card dead space.
+      Demote 'Get Feedback on My Answers' to a secondary/outline button
+      and constrain/center the form card to remove the dead lower whitespace. Product
+      change, never a camera crop.
     route: PRODUCT
-    scene: 3 — Amina reads the open call and ticks the area she can staff
+    route_url: /solicitations/4495/respond/
+    scene: scene_3 — Amina reads the open call and ticks the area she can staff
+    severity: medium
+  - detail:
+      States what+why with a concrete role (survey firm) and clear problem (apply
+      by picking coverage), but the single-option selector and the AI card referencing
+      nonexistent 'answers' blur the one-sentence read.
+    dimension: concept_clarity
+    fix_kind: mechanical
+    fix_recommendation:
+      Give the coverage option a distinct, self-describing label (geography
+      + scope) so the choice is legibly a coverage AREA, not an echo of the solicitation
+      title.
+    route: CONCEPT
+    route_url: /solicitations/4495/respond/
+    scene: scene_3 — Amina reads the open call and ticks the area she can staff
     severity: low
   - detail:
-      "ADVISORY. The concept_claim's second clause — 'submission is blocked
-      until one area is chosen' — is NOT demonstrated: the blocked-submit error string
-      is absent and Submit Response is not visibly disabled in the still. Secondary
-      mismatch: the AI-coach card claims it 'reviews your draft answers' but there
-      are no answer fields (empty Questions card)."
+      ADVISORY (non-blocking). The AI-coach card claims to review 'your draft
+      answers against the evaluation criteria', but the page exposes no answer fields/questions
+      — only a single coverage checkbox; nothing for the coach to review as captured.
+      The 'blocked until chosen' error string is correctly not visible (fires on submit)
+      and was not deducted.
     dimension: claim_reality_coherence
     fix_kind: mechanical
     fix_recommendation:
-      Capture the scene at the moment Submit is attempted with nothing
-      ticked (showing the disabled state or the 'Select at least one coverage area to
-      submit.' error) so the blocking claim is visibly demonstrated; ensure answer fields
-      exist before the AI-coach card asserts it reviews them.
+      Make the coach copy reference what's actually on the page (the
+      coverage selection), or add the answer fields the coach implies.
     route: DEFER
-    scene: 3 — Amina reads the open call and ticks the area she can staff
+    route_url: /solicitations/4495/respond/
+    scene: scene_3 — Amina reads the open call and ticks the area she can staff
     severity: medium
   - detail:
-      The core review affordances exist and the row is readable, but the load-bearing
-      'Award' action is visually clipped at the viewport's right edge — a real interaction-soundness
-      gap for the very next step the demo reaches for.
-    dimension: design_soundness
-    fix_kind: mechanical
-    fix_recommendation:
-      'Make the responses table responsive: wrap it in an overflow-x
-      container or pin the ACTIONS column sticky-right so View/Review/Award are never
-      clipped at the viewport, and ensure the Award trophy renders fully.'
-    route: PRODUCT
-    scene: 4 — Maya sees the firm tied to the coverage she designed
-    severity: low
-  - detail:
-      Content overflows the viewport — the ACTIONS header is clipped to 'A' and
-      the Award icon is cut at the right edge (a product layout bug, max 2-3), compounded
-      by green being overloaded across four unrelated elements (SELECTED COVERAGE eyebrow,
-      coverage pill, Active status pill, action icons).
+      ACTIONS header is complete and all three actions (View / Review / Award
+      trophy) are fully in-frame (iter-2 clipping RESOLVED), but green is over-used
+      across the coverage pill, the SELECTED-COVERAGE check, the 'Active' status dot,
+      AND the Review icon — four greens with four unrelated meanings flatten the signal.
     dimension: visual_polish
     fix_kind: mechanical
     fix_recommendation:
-      Fix the table layout so the ACTIONS column fits inside the viewport
-      (responsive widths / overflow container / sticky action column), and disambiguate
-      the green usage so coverage pills, status pills, and action icons don't all read
-      as the same signal.
+      Reserve green for a single meaning (status). Make the coverage
+      pill a calm neutral/indigo and use one consistent action accent with the primary
+      highlighted.
     route: PRODUCT
-    scene: 4 — Maya sees the firm tied to the coverage she designed
-    severity: medium
-  - detail:
-      Single still of a clean default page with no spinners or error states; the
-      parked cursor occluding the breadcrumb mid-word and the half-clipped action column
-      keep it at the clean-default baseline rather than above it.
-    dimension: motion_friction
-    fix_kind: mechanical
-    fix_recommendation:
-      Park the cursor off load-bearing text during capture, and ensure
-      the actions column is fully in-frame (driven by the same responsive-table product
-      fix).
-    route: PRODUCT
-    scene: 4 — Maya sees the firm tied to the coverage she designed
+    route_url: /solicitations/4495/responses/?program_id=10008
+    scene: scene_4 — Maya sees the firm tied to the coverage she designed
     severity: low
   - detail:
-      The honesty/look-ahead beat is conveyed by the Award action being present-but-not-wired,
-      yet Award is the exact element clipped off the right edge and the frame is byte-for-byte
-      identical to scene 4, so a fresh viewer cannot read 'recruiting is done, live
-      opportunity is the next step' from the screen — the 5-second read returns the
-      wrong (no-change) message.
+      The beat must ADD the look-ahead/honesty about provisioning-as-next-step,
+      but the frame is a near-duplicate of scene 4's responses table (byte-identical
+      capture) with NO distinct on-screen affordance for the Award boundary — the 5-second
+      read is 'same responses screen', a 'nothing new happened' result.
     dimension: concept_clarity
     fix_kind: options
     fix_recommendation:
-      "Make the Award action fully visible and the look-ahead legible:
-      either re-point scene 5 to a distinct capture (Award control focused/hovered with
-      its aspirational treatment), or add an inline 'Next step: stand up the live opportunity'
-      affordance/tooltip on Award so the beat is carried by pixels, not the scene title.
-      Options — surface to user."
+      Either re-point scene 5 to a genuinely distinct capture (the
+      Award control focused/hovered with an aspirational 'provision a live opportunity
+      — next step' treatment) or give the final beat a distinct on-screen affordance.
+      Surface to the user; do not auto-apply.
     route: CONCEPT
-    scene: 5 — Maya looks ahead to standing up the real opportunity
+    route_url: /solicitations/4495/responses/?program_id=10008
+    scene: scene_5 — Maya looks ahead to standing up the real opportunity
     severity: medium
   - detail:
-      The review table is a sound surface and the honest deferral of provisioning
-      is correct (not penalized), but reusing a frame identical to scene 4 for a distinct
-      narrative beat is a real narrative-distinctness weakness — the viewer must be
-      told, not shown, that anything advanced.
-    dimension: design_soundness
-    fix_kind: options
-    fix_recommendation:
-      Give the last beat a distinct on-screen state from scene 4 —
-      surface the Award control prominently with an aspirational/'coming soon' treatment,
-      or add a small forward-looking panel — so the 'next step' beat reads as a deliberate
-      progression. Options — surface to user.
-    route: PRODUCT
-    scene: 5 — Maya looks ahead to standing up the real opportunity
-    severity: low
-  - detail:
-      "Content overflow/occlusion: the ACTIONS header is clipped to 'A' and
-      the Award trophy/label runs off the right viewport edge — and it is the load-bearing
-      control of this beat — plus the cursor occludes the breadcrumb text."
-    dimension: visual_polish
-    fix_kind: mechanical
-    fix_recommendation:
-      Fix the responses-table layout so the ACTIONS column (View /
-      Review / Award) is fully within the viewport at the capture width (reduce column
-      widths, allow wrapping, or set a max content width), and position the cursor off
-      the breadcrumb during capture.
-    route: PRODUCT
-    scene: 5 — Maya looks ahead to standing up the real opportunity
-    severity: medium
-  - detail:
-      ADVISORY. The scene's forward-looking 'standing up the real opportunity'
-      narration references the Award action as the next-step cue, but that element is
-      clipped off-frame and no provisioning UI is shown — narration references a UI
-      element not legibly present in the still. Honest deferral of provisioning (G1)
-      is correct and not penalized.
-    dimension: claim_reality_coherence
-    fix_kind: mechanical
-    fix_recommendation:
-      Ensure the Award control the narration leans on is visible in-frame
-      so the still corroborates the look-ahead claim; honest deferral of provisioning
-      stays as-is.
-    route: DEFER
-    scene: 5 — Maya looks ahead to standing up the real opportunity
-    severity: medium
-  - detail:
-      Because scene 5 is identical to scene 4, the viewer experiences a 'nothing
-      new happened' beat and must conceptually re-derive the progression themselves
-      — the scene order forces a static/backwards conceptual step rather than advancing.
+      The sequence does not visibly ADVANCE — this final beat is near-identical
+      to (byte-identical capture of) the immediately prior responses scene with no distinct
+      affordance, hover, focus, or aspirational treatment on the Award control, so it
+      reads static.
     dimension: motion_friction
     fix_kind: options
     fix_recommendation:
-      Differentiate scene 5's captured state from scene 4 (a distinct
-      Award-focused or look-ahead affordance) so the sequence reads as forward motion
-      into the 'next step', not a repeated frame. Options — surface to user.
+      Differentiate the final frame from scene 4 with a state change
+      on Award (focus/hover/annotation) so the viewer perceives a deliberate forward
+      step into the look-ahead. Surface to the user; do not auto-apply.
     route: PRODUCT
-    scene: 5 — Maya looks ahead to standing up the real opportunity
+    route_url: /solicitations/4495/responses/?program_id=10008
+    scene: scene_5 — Maya looks ahead to standing up the real opportunity
+    severity: medium
+  - detail:
+      ADVISORY (non-blocking). The 'Award as next-step boundary' look-ahead is
+      narrated but NOT visible/distinct in the still — the Award control is identical
+      to two fully-working actions with no boundary treatment. The honest deferral of
+      opportunity-provisioning (G1) is correct behavior and was NOT penalized.
+    dimension: claim_reality_coherence
+    fix_kind: options
+    fix_recommendation:
+      Optionally surface the deferral in-frame (a small 'provisioning
+      a live opportunity — not yet built' note near Award) so the still carries the
+      S7 provenance rather than only the voiceover.
+    route: DEFER
+    route_url: /solicitations/4495/responses/?program_id=10008
+    scene: scene_5 — Maya looks ahead to standing up the real opportunity
     severity: medium
 findings_review_id: null
 findings_review_url: null
-iteration: 2
+iteration: 3
 iteration_clips: {}
 iteration_decks: {}
 last_actor: null
@@ -302,6 +285,7 @@ scenes_run:
   - 5
 schema_version: 1
 score_history:
+  - 2.0
   - 2.0
   - 2.0
 verdicts:
