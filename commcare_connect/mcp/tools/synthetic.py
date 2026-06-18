@@ -885,7 +885,10 @@ def synthetic_env_get(user, *, env: str) -> dict[str, Any]:
         "the realized id map (the ${...} vars a walkthrough spec interpolates: "
         "par_run_id, par_url, good_*/incomplete_* drill targets, wk4_*, etc.). "
         "Re-running does not duplicate or churn ids (current-week runs may reset "
-        "per the manifest). Use env='program-admin-report' for the PAR demo."
+        "per the manifest). Pass fresh=true to first DELETE the env's regenerable "
+        "records (runs/flags/audits/tasks for its opps) and rebuild cleanly — use "
+        "it when prior records no longer match the manifest (ids will churn). "
+        "Use env='program-admin-report' for the PAR demo."
     ),
     input_schema={
         "type": "object",
@@ -899,13 +902,22 @@ def synthetic_env_get(user, *, env: str) -> dict[str, Any]:
                     "separators and '..' are rejected."
                 ),
             },
+            "fresh": {
+                "type": "boolean",
+                "description": (
+                    "When true, delete the env's regenerable records (workflow "
+                    "runs, flags, audits, tasks) for its opportunities before "
+                    "re-seeding, then rebuild. Definitions, render code, and "
+                    "pipelines are preserved. Churns run/audit/task ids. Default false."
+                ),
+            },
         },
         "required": ["env"],
         "additionalProperties": False,
     },
     is_write=True,
 )
-def synthetic_env_ensure(user, *, env: str) -> dict[str, Any]:
+def synthetic_env_ensure(user, *, env: str, fresh: bool = False) -> dict[str, Any]:
     from commcare_connect.labs.synthetic.ensure.engine import ensure_synthetic_data
     from commcare_connect.labs.synthetic.ensure.registry import get_env_path
 
@@ -913,4 +925,4 @@ def synthetic_env_ensure(user, *, env: str) -> dict[str, Any]:
         env_path = get_env_path(env)
     except ValueError as exc:
         raise MCPToolError("NOT_FOUND", str(exc))
-    return ensure_synthetic_data(str(env_path))
+    return ensure_synthetic_data(str(env_path), fresh=fresh)
