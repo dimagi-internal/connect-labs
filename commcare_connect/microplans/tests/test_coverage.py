@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from commcare_connect.microplans.core.plan import materialize_work_areas
 from commcare_connect.microplans.core.workarea import (
     CSV_HEADERS,
     build_coverage_work_areas,
@@ -190,6 +191,40 @@ class TestCoverageExpectedVisits:
             n = f["properties"]["building_count"]
             assert f["properties"]["expected_visit_count"] == max(1, math.ceil(n * ppb))
             assert f["properties"]["target_population"] == round(n * ppb)
+
+
+class TestCoverageWorkAreaMetrics:
+    """The exclusion-filter metrics (roof_area_m2, dist_to_multi_m) must persist on
+    each coverage work area so the review page can filter live after creation (#7)."""
+
+    def test_metrics_persist_in_properties(self):
+        fc = {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [
+                            [[13.15, 11.82], [13.16, 11.82], [13.16, 11.83], [13.15, 11.83], [13.15, 11.82]]
+                        ],
+                    },
+                    "properties": {
+                        "cluster": "C1",
+                        "building_count": 10,
+                        "expected_visit_count": 7,
+                        "target_population": 7,
+                        "roof_area_m2": 420.5,
+                        "dist_to_multi_m": 0.0,
+                        "cell_size_m": 50.0,
+                    },
+                }
+            ],
+        }
+        was = materialize_work_areas("coverage", {}, fc, grouping={})
+        props = was[0]["properties"]
+        assert props["roof_area_m2"] == 420.5
+        assert props["dist_to_multi_m"] == 0.0
 
 
 class TestCoverageEndToEndCSV:

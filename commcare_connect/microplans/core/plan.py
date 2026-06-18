@@ -257,10 +257,16 @@ def _sampling_properties(props: dict) -> dict:
 
 def _coverage_properties(props: dict) -> dict:
     """Coverage provenance for the work area's ``properties`` bag. (``building_count``
-    / ``expected_visit_count`` are first-class fields, not repeated here.)"""
+    / ``expected_visit_count`` are first-class fields, not repeated here.)
+
+    ``roof_area_m2`` (total footprint in the cell) and ``dist_to_multi_m`` (metres to
+    the nearest >=2-building cell) are persisted so the review page can apply the
+    exclusion filters live, after creation, without re-generating."""
     fields = {
         "cluster": props.get("cluster"),  # the grid cluster the cell belongs to
         "cell_size_m": props.get("cell_size_m"),
+        "roof_area_m2": props.get("roof_area_m2"),
+        "dist_to_multi_m": props.get("dist_to_multi_m"),
     }
     return {k: v for k, v in fields.items() if v is not None}
 
