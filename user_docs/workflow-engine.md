@@ -231,3 +231,6 @@ You can toggle Work areas and Building footprints independently of each other â€
 When you turn on the **Work areas** layer, the ward and cluster area fills fade back so the individual buildings stand out against the map â€” the ward and cluster outlines remain visible for context, but the colour fills no longer compete with the building shapes. Buildings themselves render with a crisp dark edge so they are clearly legible when you zoom in, whether they are solid (primary) or dashed (alternate).
 
 **Toggling any layer on or off keeps your current pan and zoom position.** The
+
+!!! note "New Verified Monitoring workflows match the live dashboard"
+    If your program administrator creates a new Verified Monitoring workflow from
