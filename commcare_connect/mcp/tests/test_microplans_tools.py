@@ -90,3 +90,61 @@ def test_plan_work_areas_are_compact_and_carry_sample_type(study, user):
         assert w["cluster"] == "C0"
         assert isinstance(w["lon"], float) and isinstance(w["lat"], float)
         assert w["order_in_cluster"] is not None
+
+
+@pytest.mark.django_db
+def test_delete_plan_removes_it(study, user):
+    out = get_tool("microplans_delete_plan").handler(user=user, program_id=PROG, plan_id=study["tse"])
+    assert out == {"program_id": PROG, "plan_id": study["tse"], "deleted": True}
+    remaining = {p["id"] for p in get_tool("microplans_list_plans").handler(user=user, program_id=PROG)["plans"]}
+    assert study["tse"] not in remaining
+    assert study["danto"] in remaining
+
+
+@pytest.mark.django_db
+def test_delete_plan_refuses_plan_not_in_program(study, user):
+    from commcare_connect.mcp.tool_registry import MCPToolError
+
+    with pytest.raises(MCPToolError):
+        get_tool("microplans_delete_plan").handler(user=user, program_id=PROG, plan_id=999_999)
+
+
+@pytest.mark.django_db
+def test_delete_group_removes_container_not_member_plans(study, user):
+    out = get_tool("microplans_delete_group").handler(user=user, program_id=PROG, group_id=study["group"])
+    assert out == {"program_id": PROG, "group_id": study["group"], "deleted": True}
+    listed = get_tool("microplans_list_plans").handler(user=user, program_id=PROG)
+    assert listed["groups"] == []
+    # member plans survive the group delete
+    assert {p["id"] for p in listed["plans"]} == {study["tse"], study["danto"]}
+
+
+@pytest.mark.django_db
+def test_transition_plan_advances_status(study, user):
+    out = get_tool("microplans_transition_plan").handler(
+        user=user, program_id=PROG, plan_id=study["tse"], to="in_review"
+    )
+    assert out["plan_status"] == "in_review"
+    out = get_tool("microplans_transition_plan").handler(
+        user=user, program_id=PROG, plan_id=study["tse"], to="approved"
+    )
+    assert out["plan_status"] == "approved"
+
+
+@pytest.mark.django_db
+def test_transition_plan_rejects_illegal_jump(study, user):
+    from commcare_connect.mcp.tool_registry import MCPToolError
+
+    # draft -> approved skips in_review: illegal
+    with pytest.raises(MCPToolError):
+        get_tool("microplans_transition_plan").handler(user=user, program_id=PROG, plan_id=study["tse"], to="approved")
+
+
+@pytest.mark.django_db
+def test_transition_deploy_requires_opportunity_id(study, user):
+    from commcare_connect.mcp.tool_registry import MCPToolError
+
+    for to in ("in_review", "approved"):
+        get_tool("microplans_transition_plan").handler(user=user, program_id=PROG, plan_id=study["tse"], to=to)
+    with pytest.raises(MCPToolError):
+        get_tool("microplans_transition_plan").handler(user=user, program_id=PROG, plan_id=study["tse"], to="deployed")
