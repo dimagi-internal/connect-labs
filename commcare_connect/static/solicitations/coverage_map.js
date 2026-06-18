@@ -108,11 +108,12 @@
         source: 'coverage',
         paint: {
           'fill-color': ['get', 'color'],
+          // Selected boundaries read much hotter than unselected so a tick is obvious.
           'fill-opacity': [
             'case',
             ['boolean', ['feature-state', 'selected'], false],
-            0.5,
-            0.2,
+            0.65,
+            0.12,
           ],
         },
       });
@@ -125,8 +126,8 @@
           'line-width': [
             'case',
             ['boolean', ['feature-state', 'selected'], false],
-            3,
-            1.4,
+            4,
+            1.2,
           ],
         },
       });
