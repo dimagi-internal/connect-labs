@@ -969,23 +969,30 @@
     const tr = document.createElement('tr');
     tr.className = 'wa-group-hdr' + (collapsed ? ' is-collapsed' : '');
     tr.dataset.groupToggle = name;
-    tr.innerHTML = `<td colspan="8">
-      <label class="ghdr-check" title="${
-        allSelected ? 'Deselect all in group' : 'Select all in group'
-      }">
-        <input type="checkbox" class="grp-sel" data-group-sel="${esc(name)}" ${
-          allSelected ? 'checked' : ''
-        }>
-      </label>
-      <span class="chev">${collapsed ? '▶' : '▼'}</span>
-      <span class="gn-sw" style="background:${swatch}"></span>
-      <span class="gn">${esc(name)}</span>
-      <span class="meta">${
-        items.length
-      } work areas · ${buildings.toLocaleString()} buildings · ${visits.toLocaleString()} visits · ${workerTxt}${
-        noneSelected ? '' : ` · ${selInGroup} selected`
-      }</span>
-    </td>`;
+    // Lay the group summary out in per-column cells so each figure lines up
+    // directly under its header (Work area / Worker / Buildings / Expected
+    // visits / Status) — same column widths as the detail rows below it.
+    tr.innerHTML = `
+      <td class="p-2">
+        <label class="ghdr-check" title="${
+          allSelected ? 'Deselect all in group' : 'Select all in group'
+        }">
+          <input type="checkbox" class="grp-sel" data-group-sel="${esc(
+            name,
+          )}" ${allSelected ? 'checked' : ''}>
+        </label>
+        <span class="chev">${collapsed ? '▶' : '▼'}</span>
+      </td>
+      <td class="p-2">
+        <span class="gn-sw" style="background:${swatch}"></span>
+        <span class="gn">${esc(name)}</span>
+      </td>
+      <td class="p-2 meta">${items.length} work areas</td>
+      <td class="p-2 meta">${workerTxt}</td>
+      <td class="p-2 meta">${buildings.toLocaleString()}</td>
+      <td class="p-2 meta">${visits.toLocaleString()}</td>
+      <td class="p-2 meta">${noneSelected ? '' : `${selInGroup} selected`}</td>
+      <td class="p-2"></td>`;
     // .indeterminate isn't a serializable attribute; set it after construct.
     const cb = tr.querySelector('.grp-sel');
     if (cb) cb.indeterminate = !allSelected && !noneSelected;
