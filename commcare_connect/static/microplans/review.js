@@ -667,21 +667,26 @@
       "bulk-regroup",
       "bulk-reassign",
       "btn-export",
+      "btn-apply-filters",
     ].forEach((id) => {
       const el = $(id);
       if (el) el.disabled = !hasWAs;
     });
-    ["group-strategy-card", "assign-workers-card", "bulk-card"].forEach(
-      (id) => {
-        const el = $(id);
-        if (el) {
-          el.classList.toggle("opacity-50", !hasWAs);
-          el.classList.toggle("pointer-events-none", !hasWAs);
-        }
-      },
-    );
+    [
+      "group-strategy-card",
+      "assign-workers-card",
+      "bulk-card",
+      "filter-card",
+    ].forEach((id) => {
+      const el = $(id);
+      if (el) {
+        el.classList.toggle("opacity-50", !hasWAs);
+        el.classList.toggle("pointer-events-none", !hasWAs);
+      }
+    });
     const hint = $("plan-tools-hint");
     if (hint) hint.classList.toggle("hidden", hasWAs);
+    if (typeof previewFilters === "function") previewFilters();
   }
 
   // --- sampling overlay replay (load / create-in-place / regenerate) -----------
@@ -1869,6 +1874,8 @@
     // + Bulk regroup stay available for both.)
     $("group-strategy-card")?.classList.toggle("hidden", samp);
     $("sampling-group-note")?.classList.toggle("hidden", !samp);
+    // Post-creation exclusion filters are a coverage concept (grid cells).
+    $("filter-card")?.classList.toggle("hidden", samp);
     // Show/hide the per-boundary arm pills as we enter/leave two-arm sampling.
     try {
       adminBoundaries?.renderSelected?.();
@@ -1876,6 +1883,11 @@
   }
   on("btn-mode-coverage", "click", () => setMode("coverage"));
   on("btn-mode-sampling", "click", () => setMode("sampling"));
+  // Post-creation exclusion filters: live preview as inputs change, persist on Apply.
+  ["flt-min-roof", "flt-exclude-isolated", "flt-isolation-dist"].forEach((id) =>
+    on(id, "input", previewFilters),
+  );
+  on("btn-apply-filters", "click", applyFilters);
   // Clicking the suggestion fills the population field with the picked wards' total,
   // overriding whatever's there (the user asked for this number explicitly).
   on("cfg-pop-suggest", "click", () => {
@@ -1978,13 +1990,72 @@
       // Empty/all-checked → null = every provider (the backend default).
       sources: sources.length && sources.length < 3 ? sources : null,
       min_confidence: isNaN(conf) ? null : conf,
-      min_cell_roof_area_m2:
-        parseFloat($("cfg-min-cell-roof")?.value || "0") || 0,
-      exclude_isolated_singletons: !!$("cfg-exclude-isolated")?.checked,
-      isolation_dist_m:
-        parseFloat($("cfg-isolation-dist")?.value || "150") || 150,
+      // Generation produces ALL occupied cells; the exclusion filters are applied
+      // AFTER creation (the "Exclude work areas" card) so they can update live.
       population: isNaN(pop) || pop <= 0 ? null : pop,
     };
+  }
+
+  // ---- Post-creation exclusion filters (#7) --------------------------------
+  // Each coverage work area carries properties.roof_area_m2 + .dist_to_multi_m
+  // (persisted at creation). A work area is a filter match when its total rooftop
+  // area is below the threshold, or it's a lone building too far from any cluster.
+  const FILTER_REASON = "auto-filter";
+  function filterParams() {
+    return {
+      minRoof: parseFloat($("flt-min-roof")?.value || "0") || 0,
+      isoOn: !!$("flt-exclude-isolated")?.checked,
+      isoDist: parseFloat($("flt-isolation-dist")?.value || "150") || 150,
+    };
+  }
+  function matchesExclusion(w, p) {
+    const props = w.properties || {};
+    const roof = parseFloat(props.roof_area_m2);
+    const dist = parseFloat(props.dist_to_multi_m);
+    if (p.minRoof > 0 && !isNaN(roof) && roof < p.minRoof) return true;
+    if (p.isoOn && w.building_count === 1 && !isNaN(dist) && dist > p.isoDist)
+      return true;
+    return false;
+  }
+  function previewFilters() {
+    const el = $("filter-preview");
+    if (!el) return;
+    const p = filterParams();
+    const n = (WAS || []).filter((w) => matchesExclusion(w, p)).length;
+    const total = (WAS || []).length;
+    el.textContent = total
+      ? `${n} of ${total} work areas would be excluded (${total - n} kept).`
+      : "";
+  }
+  async function applyFilters() {
+    const p = filterParams();
+    // Cells that should now be excluded vs auto-excluded cells that no longer match
+    // (filter loosened) → re-include. Manual exclusions (other reasons) are untouched.
+    const toExclude = (WAS || [])
+      .filter((w) => w.status !== "EXCLUDED" && matchesExclusion(w, p))
+      .map((w) => w.id);
+    const toInclude = (WAS || [])
+      .filter(
+        (w) =>
+          w.status === "EXCLUDED" &&
+          String(w.excluded_reason || "").startsWith(FILTER_REASON) &&
+          !matchesExclusion(w, p),
+      )
+      .map((w) => w.id);
+    if (!toExclude.length && !toInclude.length) {
+      $("filter-status").textContent = "No change.";
+      return;
+    }
+    if (toInclude.length)
+      await edit({ action: "unexclude", wa_ids: toInclude });
+    if (toExclude.length)
+      await edit({
+        action: "exclude",
+        wa_ids: toExclude,
+        reason: `${FILTER_REASON}: rooftop<${p.minRoof || 0}m² / isolated`,
+      });
+    $("filter-status").textContent =
+      `Excluded ${toExclude.length}, re-included ${toInclude.length}.`;
   }
 
   // Summarise the coverage preview's exclusion + visit stats under the controls.
