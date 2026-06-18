@@ -40,7 +40,7 @@ Token (PAT).
 | `GET /api/export/opportunity/<id>/user_data/` | paginated envelope | FLW roster |
 | `GET /api/export/opportunity/<id>/completed_works/` | paginated envelope | |
 | `GET /api/export/opportunity/<id>/completed_module/` | paginated envelope | |
-| `GET /api/export/opportunity/<id>/app_structure/` | bare dict **or 404** | honors `?app_type=deliver\|learn` (default `deliver`); 404 when the opp has no fixture for that app type |
+| `GET /api/export/opportunity/<id>/app_structure/` | `{"learn_app", "deliver_app"}` wrapper | parity with real Connect: always 200 with both keys (each app JSON or null); honors `?app_type=learn\|deliver\|both` (default `both`); invalid app_type → 400; no app fixture → both keys null |
 
 ### Response shapes
 
@@ -131,12 +131,15 @@ All set `authentication_classes = [MCPTokenAuthentication]` and
 - **`OpportunityDataView`** — one class serving the four paginated endpoints
   (`endpoint` kwarg bound per URL). Authorize → build client → `fetch_all` →
   paginate the in-memory list → envelope.
-- **`AppStructureView`** — `GET /opportunity/<id>/app_structure/`. Reads
-  `?app_type=` (default `deliver`; only `deliver`/`learn` are valid — anything
-  else → 404). Authorize → resolve the fixture key for that app type →
-  `fetch_all(key)`. If a fixture exists it returns `[dict]` → respond with
-  `rows[0]`; on miss it returns `[]` → respond **404** (parity with real
-  Connect's "no app linked").
+- **`AppStructureView`** — `GET /opportunity/<id>/app_structure/`. Mirrors real
+  Connect's `AppStructureView` exactly: always returns the
+  `{"learn_app": <json|null>, "deliver_app": <json|null>}` wrapper. Reads
+  `?app_type=` (default `both`; valid `learn`/`deliver`/`both`; anything else →
+  **400** with `{"error": ...}`). Loads the single `app_structure.json` wrapper
+  fixture via `fetch_all("app_structure")` and nulls out the key(s) the
+  requested `app_type` excludes. A missing fixture yields `{}`, so both keys
+  come back null at **200** (an opp that exists but has no app — matching prod's
+  shape rather than 404-ing).
 
 ### Data flow (paginated endpoint)
 
@@ -156,19 +159,18 @@ The detail endpoint unwraps the single-element list to a bare dict.
 
 ### One data-logic change: `FixtureStore.ENDPOINT_FILES`
 
-Add one key per app type (CommCare has exactly two — a bounded set):
+Add one key:
 
 ```python
-"app_structure": "app_structure.json",                # app_type=deliver (default)
-"app_structure_learn": "app_structure_learn.json",    # app_type=learn
+"app_structure": "app_structure.json",
 ```
 
-`AppStructureView` maps `app_type=deliver` → key `"app_structure"` and
-`app_type=learn` → key `"app_structure_learn"`. This is the only change to
-existing fixture code. With the keys present, `load_endpoint` returns the parsed
-dict when the file exists in the opp's Drive folder, and `[]` on miss (its
-standard sentinel) — which the view maps to 404. Writing these files into fixture
-folders is the generation side's job and is out of scope here.
+`app_structure.json` holds the full `{"learn_app", "deliver_app"}` wrapper (the
+shape real Connect returns for `app_type=both`). This is the only change to
+existing fixture code. `load_endpoint` returns the parsed wrapper when the file
+exists and `[]` on miss — which the view treats as "no app" (200 with null
+keys). Writing this file into fixture folders is the generation side's job and is
+out of scope here.
 
 ## Errors
 
@@ -176,8 +178,8 @@ folders is the generation side's job and is out of scope here.
 |---|---|
 | Missing or invalid PAT | **401** (`WWW-Authenticate: Bearer realm="labs-export"`) |
 | Opp not visible / not registered / not labs_only | **404** |
-| `app_structure` requested for an app type the opp has no fixture for | **404** |
-| `app_structure?app_type=` other than `deliver`/`learn` | **404** |
+| `app_structure?app_type=` other than `learn`/`deliver`/`both` | **400** + `{"error": ...}` |
+| `app_structure` for an opp with no app fixture | **200** with both keys null |
 | Empty fixture (paginated endpoint) | **200** `{results: [], next: null, count: 0}` |
 | Page number past the end | **404** (DRF standard) |
 
@@ -201,8 +203,9 @@ Coverage:
   total equals `count`.
 - **Shape parity:** fixture rows are returned verbatim in `results` (field
   names/types preserved); single-object endpoints return the bare dict.
-- **app_structure:** deliver fixture present → 200 bare dict; absent (or
-  `app_type=learn` with no learn fixture) → 404; invalid `app_type` → 404.
+- **app_structure:** wrapper fixture present → 200 with both keys; `app_type`
+  filters to the requested key(s) (others null); no fixture → 200 with both
+  null; invalid `app_type` → 400.
 
 ## Acceptance criteria (from the issue)
 
@@ -217,4 +220,4 @@ Coverage:
 - [ ] No PAT → 401; opp the user can't see → 404.
 - [ ] Response field shapes match `ExportAPIClient` for the same endpoints.
 - [ ] Tests cover auth failure, visibility gating, pagination correctness, and
-  shape parity against a fixture, plus app_structure present/absent.
+  shape parity against a fixture, plus app_structure wrapper/app_type/absent/400.
