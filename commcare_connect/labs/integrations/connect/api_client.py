@@ -88,7 +88,12 @@ class LabsRecordAPIClient:
         return opportunity_id if opportunity_id is not None else self.opportunity_id
 
     def _is_labs_only(self, opportunity_id: int | None = None) -> bool:
-        return _local_backend.is_labs_only_opportunity_id(self._effective_opportunity_id(opportunity_id))
+        if _local_backend.is_labs_only_opportunity_id(self._effective_opportunity_id(opportunity_id)):
+            return True
+        # Program-scoped requests with no opportunity selected (e.g. the Workflows
+        # list for a synthetic program) must also dispatch to the local backend —
+        # otherwise they fall through to production Connect and 404.
+        return _local_backend.is_labs_only_program_id(self.program_id)
 
     def __enter__(self):
         """Context manager entry."""
