@@ -151,22 +151,23 @@ scenes:
     target: Pick opportunities
   - kind: wait_for
     must_succeed: false
-    note: wait for the Alpine opp list to render before clicking the row
-    seconds: 10
-    target: css:[data-testid=sd-opp-10010]
+    note: the opp row in the OPEN modal (the picker has a hidden template + the visible
+      modal — :visible targets the real one, not the hidden duplicate)
+    seconds: 15
+    target: 'css:[data-testid=sd-opp-10010]:visible'
   - kind: click
     must_succeed: false
     note: select the Kaura CHC service-delivery opp (10010, same programme)
-    target: css:[data-testid=sd-opp-10010]
+    target: 'css:[data-testid=sd-opp-10010]:visible'
   - kind: click
     must_succeed: false
     note: close the opportunity picker
     target: Done
   - kind: click
     must_succeed: false
-    note: Show service delivery points; the map flies to Attakar where the programme
-      worked
-    target: testid:sd-show
+    note: Show service delivery points (the visible button, not the hidden template
+      duplicate); the map flies to Attakar where the programme worked
+    target: 'css:[data-testid=sd-show]:visible'
   - kind: hold
     note: the delivery cloud saturates the whole Attakar ward
     seconds: 6
