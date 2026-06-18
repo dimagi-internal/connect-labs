@@ -65,6 +65,16 @@
         </dl>
     </div>
 
+    <!-- Selected Coverage Areas (from micro-plan response) -->
+    {% if response.selected_plan_names %}
+    <div class="bg-white rounded-xl shadow-sm p-8 mb-6">
+        <div class="mb-4">
+          <h4 class="text-sm font-semibold text-gray-700">Selected coverage areas</h4>
+          <p class="text-sm text-gray-600">{{ response.selected_plan_names|join:", " }}</p>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Q&A Pairs -->
     {% if qa_pairs %}
         <div class="bg-white rounded-xl shadow-sm p-8 mb-6">

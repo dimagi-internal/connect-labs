@@ -35,6 +35,9 @@
     {% if entries %}
     <a href="{{ compare_url }}" class="px-3 py-1.5 rounded-lg border border-gray-300 bg-white hover:bg-gray-50">Compare</a>
     {% endif %}
+    {% if entries %}
+    <a href="{{ create_solicitation_url }}" class="px-3 py-1.5 rounded-lg border border-indigo-300 text-indigo-700 bg-indigo-50 hover:bg-indigo-100">Create solicitation</a>
+    {% endif %}
     {% if entries %}<a href="{{ map_url }}" class="px-3 py-1.5 rounded-lg border border-gray-300 bg-white hover:bg-gray-50">View on map</a>
     <button type="button" class="px-3 py-1.5 rounded-lg border border-indigo-300 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-50"
             :disabled="busy" @click="generateSamples()" x-text="busy ? 'Generating…' : '{% if all_sampled %}Re-generate samples{% else %}Generate samples{% endif %}'"
