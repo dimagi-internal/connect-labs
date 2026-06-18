@@ -266,7 +266,9 @@
             <div class="border-t border-gray-100 pt-2 mt-2">
               <div class="text-gray-600 mb-1 font-medium">Population for visit calc</div>
               <p class="text-[10px] text-gray-500 mb-1 leading-snug">Sets each work area's Expected Visit Count. The population you enter is spread over the retained buildings (people ÷ buildings), so each area gets visits ∝ its building count. Blank = 1 visit per building.</p>
-              <input id="cfg-population" type="number" min="0" step="1" class="base-input text-xs w-full" placeholder="blank = 1 visit / building">
+              <label class="block" style="display:none"><span class="text-[10px] text-gray-500">Population source (totals the selected wards)</span>
+                <select id="cfg-pop-source" class="base-input mt-0.5 text-xs w-full"></select></label>
+              <input id="cfg-population" type="number" min="0" step="1" class="base-input text-xs w-full mt-1" placeholder="blank = 1 visit / building">
               <button type="button" id="cfg-pop-suggest" class="hidden text-[10px] text-indigo-600 underline decoration-dotted underline-offset-2 mt-0.5 text-left"></button>
               <p class="text-[10px] text-gray-500 mt-0.5" id="coverage-visit-readout"></p>
             </div>

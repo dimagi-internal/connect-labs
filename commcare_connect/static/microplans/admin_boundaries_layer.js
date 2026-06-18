@@ -540,6 +540,7 @@
         ref,
         area_km2: a.area_km2,
         population: a.population != null ? a.population : null,
+        populations: a.populations || null,
       };
     }
     // Fetch geometry + add a boundary to the selected set under a given arm. The

@@ -83,6 +83,9 @@ class AdminArea:
     region: str = ""
     area_km2: float | None = None
     population: float | None = None
+    # Per-source populations (e.g. {"worldpop_u5": 1234, "meta_u5": 1180, ...}) for
+    # the microplan population-source picker. None when the boundary has no such bag.
+    populations: dict | None = None
     ref: dict = field(default_factory=dict)
 
     def to_json(self) -> dict:
@@ -95,6 +98,7 @@ class AdminArea:
             "region": self.region,
             "area_km2": self.area_km2,
             "population": self.population,
+            "populations": self.populations,
             "ref": self.ref,
         }
 
@@ -102,6 +106,7 @@ class AdminArea:
     def from_json(cls, d: dict) -> AdminArea:
         """Rebuild from a (client-supplied) dict, whitelisting fields."""
         ref = d.get("ref")
+        pops = d.get("populations")
         return cls(
             name=str(d.get("name", "")),
             level=int(d.get("level", 0)),
@@ -110,6 +115,7 @@ class AdminArea:
             region=str(d.get("region", "")),
             area_km2=d.get("area_km2"),
             population=d.get("population"),
+            populations=pops if isinstance(pops, dict) else None,
             ref=ref if isinstance(ref, dict) else {},
         )
 
@@ -301,7 +307,7 @@ class LabsAdminBoundarySource(BoundarySource):
             from django.contrib.gis.db.models.functions import Centroid
 
             qs = qs.annotate(_centroid=Centroid("geometry")).filter(_centroid__within=parent_geom)
-        rows = qs.order_by("name").values("name", "boundary_id", "population")[: int(limit)]
+        rows = qs.order_by("name").values("name", "boundary_id", "population", "extra")[: int(limit)]
         return [
             AdminArea(
                 name=r["name"],
@@ -310,6 +316,7 @@ class LabsAdminBoundarySource(BoundarySource):
                 country=a3,
                 region=r["boundary_id"],
                 population=r.get("population"),
+                populations=(r.get("extra") or {}).get("populations"),
                 ref={"boundary_id": r["boundary_id"]},
             )
             for r in rows
