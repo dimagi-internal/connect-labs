@@ -138,7 +138,7 @@ class TestAuthStatusCCHQProbe:
         request = _make_request(rf, dimagi_user, "?opportunity_id=765", session)
 
         with patch(
-            "commcare_connect.workflow.templates.mbw_monitoring.data_fetchers.fetch_opportunity_metadata",
+            "commcare_connect.labs.analysis.data_access.fetch_opportunity_metadata",
             return_value={"cc_domain": "ccc-mbw-production"},
         ), patch("commcare_connect.labs.integrations.commcare.api_client.CommCareDataAccess") as MockCDA:
             mock_client = MagicMock()
@@ -170,7 +170,7 @@ class TestAuthStatusCCHQProbe:
         request = _make_request(rf, dimagi_user, "?opportunity_id=765", session)
 
         with patch(
-            "commcare_connect.workflow.templates.mbw_monitoring.data_fetchers.fetch_opportunity_metadata",
+            "commcare_connect.labs.analysis.data_access.fetch_opportunity_metadata",
             return_value={"cc_domain": "ccc-mbw-production"},
         ), patch("commcare_connect.labs.integrations.commcare.api_client.CommCareDataAccess") as MockCDA:
             mock_client = MagicMock()
@@ -203,7 +203,7 @@ class TestAuthStatusCCHQProbe:
         request = _make_request(rf, dimagi_user, "?opportunity_id=765", session)
 
         with patch(
-            "commcare_connect.workflow.templates.mbw_monitoring.data_fetchers.fetch_opportunity_metadata",
+            "commcare_connect.labs.analysis.data_access.fetch_opportunity_metadata",
             return_value={"cc_domain": "ccc-mbw-production"},
         ), patch("commcare_connect.labs.integrations.commcare.api_client.CommCareDataAccess") as MockCDA:
             mock_client = MagicMock()
