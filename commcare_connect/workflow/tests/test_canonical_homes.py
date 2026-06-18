@@ -14,7 +14,9 @@ These tests lock that in so the coupling can't silently regress.
 
 import inspect
 from pathlib import Path
+from unittest import mock
 
+from django.core.cache import cache
 from django.urls import reverse
 
 
@@ -49,3 +51,34 @@ def test_v5_render_does_not_call_mbw_monitoring_namespace():
         encoding="utf-8"
     )
     assert "/custom_analysis/mbw_monitoring/api/opportunity-flws/" not in render
+
+
+def test_opportunity_detail_is_single_owner_of_the_get():
+    """fetch_opportunity_metadata is built on the shared fetch_opportunity_detail primitive."""
+    from commcare_connect.labs.analysis import data_access
+
+    payload = {"name": "Opp", "deliver_app": {"cc_domain": "ccc-x", "cc_app_id": "app1"}}
+    resp = mock.Mock()
+    resp.json.return_value = payload
+    resp.raise_for_status.return_value = None
+
+    cache.delete("opp_metadata:42")
+    with mock.patch.object(data_access.httpx, "get", return_value=resp) as mocked_get:
+        assert data_access.fetch_opportunity_detail("tok", 42) == payload
+        meta = data_access.fetch_opportunity_metadata("tok", 42)
+
+    assert mocked_get.call_count == 2  # one per call; metadata reuses the same primitive
+    assert meta["cc_domain"] == "ccc-x"
+    assert meta["raw"] == payload
+
+
+def test_explorer_get_opportunity_details_delegates_to_canonical():
+    """The explorer no longer re-implements the opportunity GET; it delegates."""
+    from commcare_connect.labs.analysis import data_access
+    from commcare_connect.labs.explorer.app_data_access import AppDownloaderDataAccess
+
+    da = AppDownloaderDataAccess(access_token="tok")
+    payload = {"name": "Opp", "deliver_app": {}}
+    with mock.patch.object(data_access, "fetch_opportunity_detail", return_value=payload) as m:
+        assert da.get_opportunity_details(99) == payload
+    m.assert_called_once_with("tok", 99)
