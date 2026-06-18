@@ -79,8 +79,9 @@ _CRITERION_FIELDS: frozenset[str] = frozenset(
     {"id", "name", "weight", "description", "scoring_guide", "linked_questions"}
 )
 _PLAN_FIELDS: frozenset[str] = frozenset(
-    {"plan_id", "name", "region", "wards", "arms", "work_area_count", "population"}
+    {"plan_id", "name", "region", "wards", "arms", "work_area_count", "population", "boundaries"}
 )
+_BOUNDARY_FIELDS: frozenset[str] = frozenset({"name", "arm", "geometry"})
 
 
 # =========================================================================
@@ -229,6 +230,25 @@ def _validate_plans(plans) -> None:
                 val = p[int_field]
                 if not isinstance(val, int) or isinstance(val, bool):
                     raise ValidationError({f"{prefix}.{int_field}": "must be an integer"})
+
+        if "boundaries" in p:
+            bounds = p["boundaries"]
+            if not isinstance(bounds, list):
+                raise ValidationError({f"{prefix}.boundaries": "must be a list"})
+            for j, b in enumerate(bounds):
+                bprefix = f"{prefix}.boundaries[{j}]"
+                if not isinstance(b, dict):
+                    raise ValidationError({bprefix: "must be an object"})
+                unknown_b = set(b.keys()) - _BOUNDARY_FIELDS
+                if unknown_b:
+                    raise ValidationError({bprefix: f"unknown keys {sorted(unknown_b)}"})
+                if "name" in b and not isinstance(b["name"], str):
+                    raise ValidationError({f"{bprefix}.name": "must be a string"})
+                if "arm" in b and not isinstance(b["arm"], str):
+                    raise ValidationError({f"{bprefix}.arm": "must be a string"})
+                geom = b.get("geometry")
+                if not isinstance(geom, dict) or "type" not in geom or "coordinates" not in geom:
+                    raise ValidationError({f"{bprefix}.geometry": "must be a GeoJSON geometry object"})
 
 
 # =========================================================================
