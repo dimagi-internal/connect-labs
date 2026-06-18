@@ -75,6 +75,9 @@ if "django.contrib.admin" in settings.INSTALLED_APPS:
 
 # API URLS
 urlpatterns += [
+    # Synthetic-opportunity export API — must precede the "api/" router include
+    # below, since include() does not backtrack to later patterns on a miss.
+    path("api/export/", include("commcare_connect.labs.export_api.urls")),
     # API base url
     path("api/", include("config.api_router")),
     # DRF auth token
