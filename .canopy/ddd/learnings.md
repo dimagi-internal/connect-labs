@@ -5,6 +5,7 @@
 - [create-survey-solicitation] recorder note: scenes with no `actions` (navigation+capture only) need `--snapshot-empty-scenes` or the snapshots dir stays empty (no PNG/page_text for the judges). Do NOT pass --skip-empty-scenes for an all-navigation spec — it drops every scene ("no scenes resolved").
 
 - [2026-06-18T15:40:00Z] create-survey-solicitation iter4 (RESUME convergence pass): maps + scene-1 finished-state + award scene all LIVE & verified.
+
   - Data: re-seeded R6 plan 4494 → approved, group 4492 → reviewed; refreshed sol #4495 snapshot with Attakar(green)/Gura(blue) boundary geometry; re-opened #4495 to status=active. Response #4496 (Health Bridge Nigeria / Amina Okafor, coverage 4494) preserved.
   - GOTCHA: local backend update_record does FULL data replace (row.data = data or {}), NOT merge — a partial update_solicitation({status}) WIPED plans. Must send the COMPLETE solicitation data dict on every update for labs-only records.
   - GOTCHA: respond/detail/create maps only render when web reads the labs-only record via program_id context (SolicitationsDataAccess(program_id=10008) → local backend); web's get_solicitation_by_id(public=True) hits PROD api and 401s/returns empty for labs-only. Scene URLs need ?program_id=10008.
@@ -18,4 +19,4 @@
   - Scene-1 visual_polish 2→3 (placeholder gone). Remaining scene-1 blockers are NOT mechanical: (a) redesign — finished R6 study buried under the 8-card Draft PLANNING grid (portfolio hierarchy leads with plans not studies); (b) options — "Create solicitation" CTA on every Draft card (hide vs disable vs only-on-approved).
   - User-judge floor is a CLARITY/jargon pattern recurring across scenes: raw "R6 — Attakar × Gura" coded label (vs plain "Attakar & Gura"), "EOI" badge unexpanded, "Organization ID" pre-filled with a slug not a name, no lifecycle legend. De-jargoning user-facing labels would lift 4 scenes off the floor at once — but it's a content/label-direction call, surfaced.
   - Scene-5 award honesty (options): the deferred live-opp-provisioning boundary (G1) is narration-only, not surfaced in-UI (stepper / disabled "coming soon" chip).
-  [gate-tracking] class=stop_unclear decision=surfaced run=create-survey-solicitation-2026-06-17-001 (portfolio hierarchy redesign; Create-solicitation-on-Draft options; de-jargon labels; award G1 in-UI)
+    [gate-tracking] class=stop_unclear decision=surfaced run=create-survey-solicitation-2026-06-17-001 (portfolio hierarchy redesign; Create-solicitation-on-Draft options; de-jargon labels; award G1 in-UI)
