@@ -1,7 +1,5 @@
-auto_iterate_next_action: stop_max_iter
-auto_iterate_reason:
-  Score stalled/regressed across the last 2 iterations (history=[2.0,
-  2.0, 2.0]) — mechanical fixes aren't converging; needs a human look.
+auto_iterate_next_action: stop_unclear
+auto_iterate_reason: 4 options/redesign finding(s) — need a user pick.
 findings:
   - detail:
       Status redundancy (READY TO SOLICIT badge + 'reviewed' label + a third restated
@@ -159,11 +157,13 @@ findings:
     severity: medium
 findings_review_id: null
 findings_review_url: null
-iteration: 3
+iteration: 4
 iteration_clips:
   3: https://canopy-web-ujpz2cuyxq-uc.a.run.app/w/f83063d9-cd47-45b5-bf87-a4245d926fdd
+  4: https://canopy-web-ujpz2cuyxq-uc.a.run.app/w/ff328531-01df-4d12-9012-1abf17c9234b
 iteration_decks:
   3: https://canopy-web-ujpz2cuyxq-uc.a.run.app/w/75685479-f39c-41c5-91b3-ce7066e9abf9
+  4: https://canopy-web-ujpz2cuyxq-uc.a.run.app/w/c9df8914-662a-4565-97ad-9cae8d96640e
 last_actor: null
 last_actor_at: null
 narrative_review_id: acd53ae4-c44c-4c0a-98dd-f766b9358acc
@@ -184,6 +184,7 @@ score_history:
   - 2.0
   - 2.0
   - 2.0
+  - 3.0
 verdicts:
   concept: /Users/jjackson/emdash/worktrees/connect-labs/emdash/solicitation-rntwj/.canopy/ddd/runs/create-survey-solicitation-2026-06-17-001/verdict-concept.yaml
   user_artifact: /Users/jjackson/emdash/worktrees/connect-labs/emdash/solicitation-rntwj/.canopy/ddd/runs/create-survey-solicitation-2026-06-17-001/verdict-user.yaml

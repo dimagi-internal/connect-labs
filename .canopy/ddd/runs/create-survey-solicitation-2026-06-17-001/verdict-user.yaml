@@ -1,387 +1,219 @@
 schema_version: 1
 rubric_name: user-artifact
-ran_at: '2026-06-18T12:00:00Z'
-run_dir: .canopy/ddd/runs/create-survey-solicitation-2026-06-17-001/
-judge: canopy:visual-judge
 audience: feature user
-methodology: tough-judge
-artifact_kind: product_walkthrough
 domain: create-survey-solicitation
 overall_rule: lowest
-self_assessed: false
+ran_at: '2026-06-18T13:45:00Z'
+run_dir: .canopy/ddd/runs/create-survey-solicitation-2026-06-17-001/
+judge: canopy:visual-judge
 
-# ---------------------------------------------------------------------------
-# Fresh independent judge (no build stake). Per-scene adversarial pass +
-# per-dimension scores from a 3/5 default. Run verdict = LOWEST score per
-# dimension across all 5 scenes.
-# ---------------------------------------------------------------------------
+overall_score: 3
+verdict: fail
 
-scenes:
-  - scene_index: 1
-    title: "Program workspace — green 'ready to solicit' hero"
-    screenshot: snapshots/scene_1.png
-    adversarial:
-      embarrassing:
-        - "'reviewed' tag floats top-right of the card with no explanation of who reviewed it or when — unexplained provenance label."
-        - "'Program #10008' is the only program identity shown — a numeric id, no human program name, so a first-time viewer can't tell what program this is."
-        - "'Compare selected' button is greyed with no selection context — a dead-looking affordance in the hero region."
-        - "The intro paragraph teaches two concepts (study vs bundle); the hero card only uses 'study' — 'bundle' is defined but absent from view."
-        - "'Candidate plans in progress (9)' is collapsed — the 9 in-progress plans are hidden, understating program activity."
-        - "Stray capture cursor rendered over the H1 ('Microp|lan portfolio')."
-        - "'2 wards' is the only scale number; no work-area/population context at this level (scene 2 shows 840)."
-        - "Green card border + green 'READY TO SOLICIT' pill + green check stack the same signal redundantly."
-      claim_scrutiny:
-        inferred_claim: 'This finished study is ready, and I can start recruiting a survey firm from here in one click.'
-        survives_expert: YES
-        triggers: []
-      competitors_better:
-        - {
-            product: 'Linear',
-            what: "would give the program a real name + icon, not a bare '#10008'.",
-          }
-        - {
-            product: 'Notion',
-            what: "would inline-explain the 'reviewed' badge instead of leaving it unlabelled.",
-          }
-        - {
-            product: 'Height',
-            what: 'would roll up the (9) in-progress plans with a one-line status rather than a bare caret.',
-          }
-      five_second_read:
-        got_intended_message: YES
-        actual_first_read: "A finished study is ready and I should click 'Create solicitation'."
-      projector_test: NO
-      projector_test_reason: "The bare '#10008' identity and the unexplained 'reviewed' tag are small things an owner would tidy before forwarding."
+scene_scores:
+  - scene: 1
+    url: 'https://labs.connect.dimagi.com/microplans/program/10008/'
+    score: 4
     dimensions:
       task_completion:
-        {
-          score: 4,
-          justification: "The 'Create solicitation' primary CTA sits on the highlighted, clearly-finished study card — a user starts the target task first try unaided; redundant 'Open study' secondary is the only friction.",
-        }
+        score: 4
+        justification: >-
+          The "Create solicitation" primary CTA is prominent on the green-bordered
+          READY TO SOLICIT card and the path to act is obvious first-try; one minor
+          friction: the study's "ready" state is asserted three times (READY TO SOLICIT
+          badge + "reviewed" + green-check sentence), adding a beat of redundancy before
+          the click.
       clarity:
-        {
-          score: 4,
-          justification: "'READY TO SOLICIT' + 'Finished study — ready to recruit a survey firm against this coverage' + 'Create solicitation' self-explain the next step; the undefined 'reviewed' label holds it off a 5.",
-        }
+        score: 4
+        justification: >-
+          Labels self-explain and the card hierarchy is clear; one affordance could be
+          sharper: "Compare selected" / "+ Group selected plans" look enabled with no
+          selection context, and the intro defines "bundle" terminology that never
+          appears on this single-study view.
       trust:
-        {
-          score: 4,
-          justification: "'2 wards' and 'Program #10008' are real production identifiers (grounding, not placeholder); missing recency/source on 'reviewed' is the only gap below a 5.",
-        }
+        score: 4
+        justification: >-
+          Real, coherent data ("2 wards", "reviewed", real program scope); one
+          data-provenance signal missing — there is no last-reviewed / last-edited
+          timestamp, so the owner cannot confirm recency of the "finished" study.
+        fix_recommendation: >-
+          Add a "reviewed <date>" recency stamp to the study card so the owner can see
+          how fresh the finished state is before soliciting.
+        fix_kind: mechanical
 
-  - scene_index: 2
-    title: 'Create-solicitation form — coverage pre-attached'
-    screenshot: snapshots/scene_2.png
-    adversarial:
-      embarrassing:
-        - "Every authored field is empty — Title, Description, Scope of Work show placeholder text only; the captured frame is an unstarted form, so the 'create the call' task is not shown performed."
-        - "Title (the solicitation's name, required) shows only faint placeholder 'Solicitation for R6 — Attakar × Gura' — ambiguous whether it's a value or a ghost."
-        - "'Expression of Interest' / 'Request for Proposal' procurement jargon as the Type toggle with no plain-language gloss for a first-time owner."
-        - 'Full-page capture renders the coverage map — the demo payoff — as a small thumbnail, easy to miss mid-form.'
-        - "'Estimated Scale' / 'Contact Email' show example placeholders 'e.g. 1000 beneficiaries' / 'contact@example.com'."
-        - "'Generate with AI' is styled nearly as prominently as the real 'Create Solicitation' submit, competing for the primary action."
-        - "Application Questions section is empty ('Add Question'), reinforcing the 'nothing filled in yet' read."
-        - "'Publicly Listed' + helper competes for attention with the coverage panel, pushing the one thing that matters (attached coverage) down the attention order."
-      claim_scrutiny:
-        inferred_claim: "When I create a solicitation from a finished study, the study's coverage is already attached — I don't redraw it."
-        survives_expert: YES
-        triggers: []
-      competitors_better:
-        - {
-            product: 'Stripe',
-            what: 'would pre-fill a sensible default Title from the source study so the form opens partially complete.',
-          }
-        - {
-            product: 'Linear',
-            what: "would surface the attached-coverage panel at the top as the form's hero, not midway at thumbnail size.",
-          }
-        - {
-            product: 'Notion',
-            what: "would hide the procurement Type jargon behind a plain 'What kind of call is this?' helper.",
-          }
-      five_second_read:
-        got_intended_message: PARTIAL
-        actual_first_read: 'A long empty create form; only on a second look do you spot coverage is already attached at the bottom.'
-      projector_test: NO
-      projector_test_reason: "A blank form with placeholder example text in every field isn't something an owner forwards as 'here's the call I made'."
+  - scene: 2
+    url: 'https://labs.connect.dimagi.com/solicitations/create/'
+    score: 4
     dimensions:
       task_completion:
-        {
-          score: 3,
-          justification: "The demoed value — coverage pre-attached ('Attached' + map + 'R6 — Attakar × Gura · 2 wards · 840 work areas') — is present and correct, but the captured frame is an entirely blank form, so the create task reads as mid-way rather than completed; completable but not shown done.",
-        }
+        score: 4
+        justification: >-
+          The form is completable first-try with an auto-filled title/scope and the
+          micro-plan coverage pre-attached (green "Attached" badge + map); one friction:
+          it is a long single-page form and required-vs-optional fields (e.g. Contact
+          Email) are not marked, so the user guesses what is mandatory before the bottom
+          "Create Solicitation".
       clarity:
-        {
-          score: 3,
-          justification: "The coverage panel and snapshot note are clear, but the rest leans on procurement jargon ('Expression of Interest' / 'Request for Proposal') and the payoff map is a small mid-page thumbnail a user must hunt for — understandable only after a moment's thought (jargon visible).",
-        }
+        score: 4
+        justification: >-
+          Sections (Basic Information, Dates & Details, Coverage areas, Evaluation
+          Criteria) are well labelled and the coverage explanation is plain; one sharper
+          label: "Expression of Interest / Request for Proposal" is procurement jargon
+          shown without a one-line plain-language read.
       trust:
-        {
-          score: 4,
-          justification: "The coverage panel carries strong provenance — '2 wards · 840 work areas · Study arms: Comparison/Intervention' + 'Snapshotted at creation — later plan edits won't change this solicitation' — which answers the freshness question directly; empty input fields are user blanks, not fabricated data.",
-        }
+        score: 5
+        justification: >-
+          The coverage map shows real named admin wards (Attakar green / Gura blue),
+          exact counts ("2 wards · 840 work areas"), study arms, and an explicit
+          snapshot-provenance note ("Snapshotted at creation — later plan edits won't
+          change this solicitation") — sources, scope, and immutability are all
+          unambiguous.
 
-  - scene_index: 3
-    title: 'Respond page — Mapbox map of Attakar/Gura wards + coverage checkbox'
-    screenshot: snapshots/scene_3.png
-    adversarial:
-      embarrassing:
-        - "The coverage checkbox 'R6 — Attakar × Gura' is UNTICKED in the capture, yet the beat is 'Amina ticks the area she can staff' — the demoed action isn't shown performed."
-        - "'Select one or more — required to submit' over-promises optionality when only one option is present."
-        - 'The map dominates ~80% of the frame for what is effectively one checkbox decision.'
-        - 'Ward fills (green Attakar / blue Gura) carry no legend explaining the colors to a firm reading cold.'
-        - 'Stray capture cursor parked in the breadcrumb whitespace.'
-        - "'Save Draft' and 'Submit Response' sit adjacent at similar weight — a firm could mis-click Save thinking they submitted."
-        - "Breadcrumb truncates the title ('Household survey firm — Round 6 (Attakar × …')."
-        - "No scope detail of what 'covering' an area commits the firm to on this page."
-      claim_scrutiny:
-        inferred_claim: 'A survey firm sees exactly the geography it would staff and selects it on a real map before applying.'
-        survives_expert: YES
-        triggers: []
-      competitors_better:
-        - {
-            product: 'Airbnb',
-            what: 'would show a legend/key for the colored regions so the map self-explains.',
-          }
-        - {
-            product: 'Linear',
-            what: 'would bind the map selection to the checkbox (tick lights up the polygon) so the two read as one control.',
-          }
-        - {
-            product: 'Superhuman',
-            what: 'would weight Submit vs Save Draft distinctly to prevent a mis-submit.',
-          }
-      five_second_read:
-        got_intended_message: YES
-        actual_first_read: 'A firm is asked which mapped area it can cover, with Attakar and Gura shown.'
-      projector_test: NO
-      projector_test_reason: "The unticked box under a 'select to submit' instruction shows an in-between state, not a clean 'here's how a firm applies' moment."
+  - scene: 3
+    url: 'https://labs.connect.dimagi.com/solicitations/4495/respond/'
+    score: 4
     dimensions:
       task_completion:
-        {
-          score: 4,
-          justification: "Map renders, the coverage option and Submit Response are both present and clearly the path to apply — a firm completes the application unaided; the demoed tick simply isn't shown ticked.",
-        }
+        score: 4
+        justification: >-
+          A firm can complete the response first-try — tick the coverage area, "Submit
+          Response" enables; one friction: the selected checkbox row has only a faint
+          blue highlight and there is no "1 selected" summary, so the respondent gets
+          weak confirmation their pick registered before committing.
       clarity:
-        {
-          score: 4,
-          justification: "'Click the areas on the map, or tick them below. Each option is a whole study — selecting it covers all of its wards together' is genuinely self-explanatory to a non-technical firm; only a missing color legend keeps it off a 5.",
-        }
+        score: 4
+        justification: >-
+          The "Which areas can you cover?" prompt and instructions are plain-language and
+          the Mapbox map is self-explanatory; one sharper affordance: ticking the
+          checkbox does not visibly light up the corresponding map polygon, so the
+          tick-to-map link is not reinforced.
       trust:
-        {
-          score: 4,
-          justification: 'Real Mapbox basemap with labelled ward polygons (Attakar/Gura) + visible Mapbox attribution shows honest geographic sourcing; holds at 4 only because the wards carry no date/source caption.',
-        }
+        score: 5
+        justification: >-
+          Real Mapbox basemap with real named admin boundaries (Attakar, Gura) and
+          surrounding towns (Manchok, Rim) plus visible Mapbox attribution — the
+          respondent sees exactly the real geography they are committing to, with
+          unambiguous sourcing.
 
-  - scene_index: 4
-    title: 'Responses list — Health Bridge Nigeria, selected coverage R6'
-    screenshot: snapshots/scene_4.png
-    adversarial:
-      embarrassing:
-        - "STATUS shows a green 'Awarded' pill while RECOMMENDATION reads 'Not reviewed' and SCORE reads '-' — the firm is marked awarded with no review and no score: an internally contradictory row."
-        - "Scene-4 beat is 'Maya sees the firm tied to her coverage' (firm just applied), but the captured STATUS is already 'Awarded' — the state runs ahead of the story it illustrates."
-        - "ACTIONS repeats 'Awarded' as a button beside View/Review, duplicating the STATUS pill and blurring state vs action."
-        - "RECOMMENDATION 'Not reviewed' is greyed to look disabled, yet a 'Review' action is offered — mixed signal."
-        - "Top-right solicitation badge reads 'Active' while a response is already 'Awarded' — an active call with an awarded firm is a confusing combination."
-        - "SCORE '-' next to 'Awarded' implies an award made with no scoring rationale — a trust gap for an owner justifying the choice."
-        - 'Single-row table with six columns is heavy chrome for one applicant.'
-        - "Stray capture cursor overlaps the breadcrumb 'Responses' label."
-      claim_scrutiny:
-        inferred_claim: 'Maya sees, in one row, which firm responded and which coverage they selected — tied back to the study she designed.'
-        survives_expert: NO
-        triggers:
-          - "Self-contradicting row: STATUS 'Awarded' with RECOMMENDATION 'Not reviewed' and SCORE '-' — an award with no review/score undercuts the row's credibility."
-          - "State drift vs narrative: the beat is 'firm applied', but the row already says 'Awarded'."
-      competitors_better:
-        - {
-            product: 'Linear',
-            what: "gates state transitions so a row can't show 'Awarded' alongside 'Not reviewed'.",
-          }
-        - {
-            product: 'Notion',
-            what: 'would collapse the duplicate Status pill and Action into one source of truth.',
-          }
-        - {
-            product: 'Stripe',
-            what: "would show the decision basis inline so 'Awarded' is justified, not asserted.",
-          }
-      five_second_read:
-        got_intended_message: PARTIAL
-        actual_first_read: 'Health Bridge Nigeria responded for R6 coverage — but it says Awarded AND Not reviewed? Which is it?'
-      projector_test: NO
-      projector_test_reason: 'The Awarded / Not-reviewed / no-score contradiction is exactly what an owner would fix before forwarding.'
+  - scene: 4
+    url: 'https://labs.connect.dimagi.com/solicitations/4495/responses/'
+    score: 3
     dimensions:
       task_completion:
-        {
-          score: 4,
-          justification: "The core task — see the firm tied to the coverage — is met: 'Health Bridge Nigeria · SELECTED COVERAGE · R6 — Attakar × Gura' is unambiguous; completable first try. The state contradiction is a trust/clarity issue, not a task blocker.",
-        }
+        score: 4
+        justification: >-
+          The owner can review and confirm the award first-try (View to inspect, award
+          state clear); one friction: "Awarded" sitting in the ACTIONS column looks like
+          a button but is a non-actionable status label, a momentary "what does this do?"
+          pause.
       clarity:
-        {
-          score: 2,
-          justification: "A target user is confused by STATUS 'Awarded' beside RECOMMENDATION 'Not reviewed' and SCORE '-', plus an 'Awarded' action duplicating the status — at least one element actively confuses the user about the response's state.",
-        }
+        score: 3
+        justification: >-
+          Understandable with a moment of thought, but two elements confuse the target
+          user: the STATUS column ("Awarded") and the RECOMMENDATION column ("Awarded")
+          are identical adjacent columns with no explained distinction, and the
+          solicitation badge top-right still reads "Active" despite the only response
+          being awarded.
+        fix_recommendation: >-
+          Collapse STATUS and RECOMMENDATION into a single source-of-truth column (or
+          label them so the distinction is explicit), make the ACTIONS "Awarded" entry a
+          real action or remove it, and flip the solicitation badge to "Awarded"/"Closed"
+          once a response is awarded so the page state is internally consistent.
+        fix_kind: options
       trust:
-        {
-          score: 2,
-          justification: "The row is internally inconsistent — 'Awarded' with no review and no score — and the state runs ahead of the scene-4 narrative (firm just applied), so outputs look inconsistent/stale rather than trustworthy (claim-scrutiny trigger fired).",
-        }
+        score: 4
+        justification: >-
+          Real org (Health Bridge Nigeria), real contact (amina.okafor@healthbridge.ng),
+          real coverage pill (R6 — Attakar × Gura) and date all cohere; one provenance
+          gap: the SCORE column is blank ("–") with no indication whether scoring was
+          skipped or is pending, leaving the reviewer to wonder.
+        fix_recommendation: >-
+          Show "Not scored" (or "N/A for Expression of Interest") instead of a bare "–"
+          in the SCORE column so the reviewer knows scoring was intentionally skipped,
+          not missing.
+        fix_kind: mechanical
 
-  - scene_index: 5
-    title: 'Responses list — same URL/state as scene 4'
-    screenshot: snapshots/scene_5.png
-    adversarial:
-      embarrassing:
-        - "Identical capture to scene 4 — same 'Awarded' + 'Not reviewed' + '-' contradiction, now under a forward-looking 'standing up the real opportunity' beat the static page does nothing to advance."
-        - "Scene 5's narrative is illustrated by the exact same frame as scene 4 — two distinct beats, one identical screenshot, so scene 5 shows no new information."
-        - "STATUS 'Awarded' with RECOMMENDATION 'Not reviewed' and SCORE '-' — same self-contradicting row."
-        - "No 'create opportunity / next step' affordance is visible despite the beat being about moving to a real opportunity."
-        - "'Active' solicitation badge persists alongside an 'Awarded' response — same active-yet-awarded contradiction."
-        - "ACTIONS still duplicates 'Awarded' as a button beside View/Review."
-        - "Stray capture cursor again overlaps the breadcrumb 'Responses' label."
-        - "Single-row table with dashed Recommendation/Score cells looks sparse for a 'looking ahead' summary."
-      claim_scrutiny:
-        inferred_claim: 'From this responses view Maya is positioned to move forward and stand up the real opportunity.'
-        survives_expert: NO
-        triggers:
-          - "The page shows no forward affordance toward a 'real opportunity', so it doesn't support the beat's claim."
-          - 'Same self-contradicting Awarded / Not-reviewed / no-score row.'
-      competitors_better:
-        - {
-            product: 'Linear',
-            what: "would give the 'next step' beat its own distinct view/CTA rather than re-using the prior frame.",
-          }
-        - {
-            product: 'Height',
-            what: "would show a clear 'convert to opportunity' action for the forward-looking narration to land on.",
-          }
-        - {
-            product: 'Stripe',
-            what: "would gate 'Awarded' behind a recorded decision so the status is never shown without its basis.",
-          }
-      five_second_read:
-        got_intended_message: NO
-        actual_first_read: "The same responses table as before — nothing signals 'looking ahead to a real opportunity'."
-      projector_test: NO
-      projector_test_reason: "Re-using scene 4's exact frame for a different beat, plus the unresolved Awarded/Not-reviewed contradiction, are both fixes-before-forwarding."
+  - scene: 5
+    url: 'https://labs.connect.dimagi.com/solicitations/response/4496/award/'
+    score: 4
     dimensions:
       task_completion:
-        {
-          score: 3,
-          justification: "Responses are visible and the firm/coverage tie is clear, but the scene's actual task — looking ahead to standing up the real opportunity — has no on-screen affordance to act on; the user can read state but cannot advance the stated task from this frame.",
-        }
+        score: 5
+        justification: >-
+          The award reaches an unambiguous terminal confirmation first-try: green success
+          hero with check icon, every detail present (org, contact, budget, coverage,
+          notified timestamp), and the "Next step — not yet built" panel honestly states
+          exactly what is and isn't automated — nothing to retry or work around.
       clarity:
-        {
-          score: 2,
-          justification: "Same confusing 'Awarded' vs 'Not reviewed' vs '-' row as scene 4, and re-using the identical frame for a forward-looking beat gives the user no cue about the 'next opportunity' step the narration promises.",
-        }
+        score: 4
+        justification: >-
+          Labels and the success state self-explain and the green hero is unmistakable;
+          one sharper-label opportunity: "Survey call" drifts from the "solicitation"
+          vocabulary used on the prior screens, a small inconsistency.
       trust:
-        {
-          score: 2,
-          justification: "Identical self-contradicting row (Awarded with no review/score) plus a page that cannot support its 'standing up the real opportunity' claim — outputs look inconsistent and the beat is unsupported by what's shown (claim-scrutiny trigger fired).",
-        }
-
-# ---------------------------------------------------------------------------
-# Run verdict — LOWEST score per dimension across all 5 scenes
-# ---------------------------------------------------------------------------
+        score: 5
+        justification: >-
+          Provenance is unambiguous: ₦500,000 correctly formatted with the naira symbol
+          and thousands separator, a precise "Jun 18, 2026 16:56 — notification sent"
+          recency stamp, a real contact email, and an explicit honest statement of what
+          the system did versus did not do.
 
 dimensions:
   task_completion:
-    score: 3
+    score: 4
     weight: 0.40
-    driven_by_scene: 2
-    justification: >
-      Lowest at Scene 2 (also 3 at Scene 5). The create-solicitation task's demoed value
-      (coverage pre-attached) is present and correct, but the captured frame is an entirely
-      blank form — Title/Description/Scope unfilled — so the create task reads as
-      completable-with-trial-and-error rather than completed first try. No scene hits a hard
-      blocker, so task_completion holds at the DEFAULT 3.
-    fix_recommendation: >
-      Capture Scene 2 with the form pre-filled from the source study (default Title
-      'Household survey firm — Round 6 (Attakar × Gura)', a short scope, a deadline) so the
-      frame shows a created call, not a blank form — and auto-derive the required Title on
-      create so it is never empty. For Scene 5, capture a frame that carries the 'next step'
-      (a convert-to-opportunity / award-confirmation view) so the beat has an action to land on.
+    justification: >-
+      Weakest-link across scenes (scenes 1-4 each scored 4; scene 5 scored 5). Every
+      scene is completable first-try, but each carries one minor friction — the most
+      representative being the ACTIONS "Awarded" pseudo-button on the responses list
+      (scene 4) and the weak selection-confirmation on the respond map (scene 3).
+    fix_recommendation: >-
+      Tighten the one-friction-per-screen issues: make the ACTIONS "Awarded" entry a
+      real action or status (not an ambiguous button), add a "1 selected" confirmation on
+      the respond map, and mark required-vs-optional fields on the create form.
     fix_kind: options
-
   clarity:
-    score: 2
-    weight: 0.35
-    driven_by_scene: 4
-    justification: >
-      Lowest at Scenes 4 and 5. A target user is actively confused by the responses row
-      showing STATUS 'Awarded' next to RECOMMENDATION 'Not reviewed' and SCORE '-', compounded
-      by an 'Awarded' action duplicating the status pill. A non-technical program owner cannot
-      tell what state the response is in. Scene 5 inherits the same confusion and adds a frame
-      that doesn't match its forward-looking narration.
-    fix_recommendation: >
-      Make the response row state self-consistent for the capture: show the firm as
-      'Applied'/'Submitted' (matching the 'firm just responded' narrative) with
-      RECOMMENDATION/SCORE either populated or hidden until a review exists — OR, if 'Awarded'
-      is intentional, populate a recommendation + score and drop the duplicate 'Awarded' action
-      so STATUS is the single source of truth.
-    fix_kind: options
-
-  trust:
-    score: 2
-    weight: 0.25
-    driven_by_scene: 4
-    justification: >
-      Lowest at Scenes 4 and 5. The responses row is internally inconsistent — 'Awarded' with
-      no review and a '-' score — and the captured state runs ahead of the scene-4 narrative
-      (the firm has supposedly just applied). The award is asserted without any visible basis,
-      so outputs read as inconsistent/stale. Claim-scrutiny trigger fired on both scenes.
-    fix_recommendation: >
-      Drive the capture to a coherent state: either (a) freeze the response at
-      'Applied/Submitted' with no award until a review+score is recorded, so the scene-4
-      'firm just applied' beat matches the data; or (b) if showing an award, render the
-      recommendation and score that justify it so 'Awarded' is never displayed without its
-      basis. Resolve the 'Active solicitation + Awarded response' combination so the call's
-      status and the row agree.
-    fix_kind: options
-
-overall_score: 2
-verdict: fail
-
-sanity_floors_applied:
-  - {
-      dimension: 'clarity (scenes 4,5)',
-      rule: 'five_second_test_wrong_read',
-      from: 3,
-      to: 2,
-    }
-  - {
-      dimension: 'trust (scenes 4,5)',
-      rule: 'claim_scrutiny_trigger (self-contradicting Awarded/Not-reviewed row)',
-      from: 3,
-      to: 2,
-    }
-
-findings:
-  - dimension: task_completion
     score: 3
-    driven_by_scene: 2
-    fix_recommendation: "Capture Scene 2 with the form pre-filled (and auto-derive the required Title) so it shows a created call, not a blank form; give Scene 5 a forward 'convert to opportunity' affordance."
+    weight: 0.35
+    justification: >-
+      Weakest-link is scene 4: STATUS and RECOMMENDATION are duplicate adjacent columns
+      both reading "Awarded" with no explained distinction, and the solicitation badge
+      still shows "Active" after the response is awarded — both confuse the target user.
+      Other scenes scored 4 (procurement jargon and "Survey call"/"solicitation"
+      vocabulary drift are the lesser issues).
+    fix_recommendation: >-
+      On the responses list, collapse STATUS/RECOMMENDATION into one clear column (or
+      label the distinction), make/remove the ACTIONS "Awarded" entry, and flip the
+      solicitation badge to "Awarded"/"Closed" on award so the page is internally
+      consistent. Separately, align "Survey call" with "solicitation" across screens.
     fix_kind: options
-  - dimension: clarity
-    score: 2
-    driven_by_scene: 4
-    fix_recommendation: "Make the responses row state self-consistent — either show 'Applied/Submitted' with review/score hidden, or populate recommendation+score for 'Awarded' and drop the duplicate 'Awarded' action."
-    fix_kind: options
-  - dimension: trust
-    score: 2
-    driven_by_scene: 4
-    fix_recommendation: "Drive the capture to a coherent state: freeze at 'Applied/Submitted' to match the 'firm just applied' beat, or render the score/recommendation that justifies an 'Awarded' status; reconcile 'Active solicitation' vs 'Awarded' response."
-    fix_kind: options
+  trust:
+    score: 4
+    weight: 0.25
+    justification: >-
+      Weakest-link 4 (scenes 1 and 4). Data is real and coherent everywhere — real wards,
+      real org/contact, correctly formatted budget, precise notification timestamp — but
+      two provenance signals are missing: no last-reviewed stamp on the study card (scene
+      1) and a bare "–" SCORE on the responses list (scene 4) that doesn't say whether
+      scoring was skipped or pending.
+    fix_recommendation: >-
+      Add a "reviewed <date>" recency stamp to the study card (scene 1) and replace the
+      bare "–" SCORE with "Not scored"/"N/A for Expression of Interest" on the responses
+      list (scene 4) so every data point is unambiguous about freshness and intent.
+    fix_kind: mechanical
 
-summary: >
-  The two-sided flow lands strongly in the middle scenes — Scene 1's 'ready to solicit' hero,
-  Scene 2's snapshotted coverage attach, and Scene 3's real Mapbox ward map all score 3–4 and
-  clearly demonstrate the feature's value. The flow breaks at the responses list (Scenes 4 & 5,
-  identical capture): the row shows STATUS 'Awarded' alongside RECOMMENDATION 'Not reviewed' and
-  SCORE '-', a self-contradicting state that confuses a non-technical owner (clarity → 2) and
-  reads as inconsistent/asserted-without-basis (trust → 2). The state also runs ahead of the
-  scene-4 narrative (the firm has 'just applied'), and Scene 5 re-uses the identical frame for a
-  different forward-looking beat it cannot support. Because the run verdict is the lowest
-  dimension across all scenes, the overall user-artifact score is 2 → fail, driven by the
-  responses-list capture state, not by the underlying feature design.
+summary: >-
+  The create-survey-solicitation flow holds together end-to-end as a real, shipping
+  product: a microplan owner can go from a finished study (scene 1) to a coverage-attached
+  solicitation (scene 2) to a firm's map-driven response (scene 3) to a coherent responses
+  list (scene 4) and a clean, honest award confirmation (scene 5). Trust is a genuine
+  strength — every scene shows real named admin boundaries, real org/contact data, a
+  correctly formatted ₦500,000 budget, and a precise notification timestamp, with the
+  award page's "Next step — not yet built" panel notably increasing honesty rather than
+  overclaiming. The weakest link, and the reason for an overall weakest-link score of 3
+  (fail), is clarity on the responses list (scene 4): duplicate STATUS and RECOMMENDATION
+  columns both reading "Awarded", an ACTIONS "Awarded" entry that looks clickable but
+  isn't, and a solicitation badge still reading "Active" after award. These are
+  consistency/labelling fixes (options-class), not a broken flow. Secondary, lower-cost
+  items: add recency/score provenance stamps (scenes 1 and 4) and align "Survey call" with
+  "solicitation" vocabulary (scene 5).
