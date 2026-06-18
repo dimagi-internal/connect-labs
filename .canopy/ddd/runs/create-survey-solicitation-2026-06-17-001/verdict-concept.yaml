@@ -1,91 +1,81 @@
 schema_version: 1
 rubric_name: ddd-concept-eval
-ran_at: '2026-06-18T17:12:00Z'
-run_dir: /Users/jjackson/emdash/worktrees/connect-labs/emdash/solicitation-rntwj/.canopy/ddd/runs/create-survey-solicitation-2026-06-17-001
-iteration: 6
+ran_at: '2026-06-18T19:30:00Z'
+run_dir: /Users/jjackson/emdash/worktrees/connect-labs/emdash/solicitation-rntwj/.canopy/ddd/runs/create-survey-solicitation-2026-06-17-001/
+iteration: 3
 
-# Per-scene gating-dimension scores (claim_reality_coherence advisory, excluded from overall):
-#   scene  concept design visual_polish why_grounded motion  (claim_reality)
-#   1      3       3      2             4            3       (3)
-#   2      3       4      3             4            4       (4)
-#   3      3       3      3             4            3       (3)
-#   4      4       4      3             4            4       (4)
-#   5      4       4      3             4            4       (5)
-# overall_rule: lowest across all scenes for the 5 gating dims.
+# Per-scene dimension scores (5 scenes; weakest-link aggregation across the five
+# GATING dimensions only — claim_reality_coherence is advisory and excluded).
+#
+# scene_scores:
+#   dim                      S1  S2  S3  S4  S5
+#   concept_clarity           4   4   4   4   2
+#   design_soundness          4   4   4   2   2
+#   visual_polish             3   4   4   3   4
+#   why_groundedness          4   5   4   4   3
+#   claim_reality_coherence   4   4   3   2   2   (advisory; excluded from overall)
+#   motion_friction           4   4   4   3   2
 
 dimensions:
   concept_clarity:
-    score: 3
-    weight: 0.20
-    justification: >-
-      Across scenes the concept is legible to someone familiar with the space but
-      a cold outsider needs a question answered. Scene 1's hero study card carries
-      a "reviewed" badge while its plan row reads "Draft" (mixed finished/draft
-      signal), and the helper text mentions an orphan term ("bundle") with no
-      matching affordance; scene 3's checklist offers a single bundled
-      "Attakar x Gura" row while the map shows two distinctly colored wards, so an
-      outsider asks "can I pick one arm or only the combined block?". Scenes 4-5
-      read cleanly (full firm name, full "Expression of Interest" phrase).
-  design_soundness:
-    score: 3
-    weight: 0.20
-    justification: >-
-      The recruit-review-award interaction model holds together end to end with
-      no dead ends. The weakest links: scene 1 surfaces "Compare selected" /
-      "+ Group selected plans" as actionable with no visible selection mechanism,
-      and de-emphasizes the concept's own "Create solicitation" action below the
-      filled "Open study" button; scene 3's promised two-way map<->checklist sync
-      is not observable (ticking the area produces no selected-state on the map),
-      so the core map affordance is hand-waved in the captured frame.
-  visual_polish:
     score: 2
+    weight: 0.20
+    justification: >-
+      Scenes 1-3 are clear (4): the opening establishes the problem and names the
+      program-owner role, the create form and respond page read in five seconds.
+      Scene 5 collapses to 2 — its closing beat is the planning-vs-execution
+      boundary, but nothing in the frame signals "next step / not yet built"; the
+      5-second read is "firm awarded," a wrong read for the beat. The concept lives
+      only in narration. Weakest-link = 2.
+  design_soundness:
+    score: 2
+    weight: 0.20
+    justification: >-
+      Scenes 1-3 are interaction-coherent (4). Scenes 4 and 5 drop to 2: the
+      response row shows STATUS "Awarded" while RECOMMENDATION reads "Not reviewed"
+      and a live "Review" action is still offered — an awarded-yet-unreviewed item
+      that still invites review is a self-contradicting state. "Awarded" is also
+      mixed into the View/Review action strip as if it were a verb. Weakest-link = 2.
+  visual_polish:
+    score: 3
     weight: 0.15
     justification: >-
-      Weakest link is scene 1 (2/5): the study name is duplicated as both the card
-      title and its single plan row (render-bug smell), status is treated
-      inconsistently within one card ("STUDY"/"Draft" are pills but "reviewed" is
-      plain grey text), and the hero card is stranded above ~250px of dead
-      whitespace, so the "decluttered hero" reads as sparse. Other scenes sit at 3
-      (functional, designer notes): scene 2's load-bearing coverage summary is a
-      cramped small-type pill with no on-map color->ward legend; scene 4 is a
-      single-row table with two hollow placeholder columns; scene 5 renders the
-      load-bearing award budget as a bare unformatted "500000" with no currency or
-      separators plus an asymmetric detail grid. Host-product chrome was treated as
-      grounding, not deducted.
+      Type, color, pill/chip styling and alignment are clean throughout; the real
+      Mapbox renders (scenes 2,3) and the green SELECTED COVERAGE chip ground the
+      product. Held to 3 by scene 1 (three restatements of "ready to recruit a
+      survey firm" plus a ~50% empty lower frame reads functional-not-polished) and
+      scene 4 (single-row 7-column table leaves SCORE/RECOMMENDATION visibly empty;
+      a captured cursor occludes the breadcrumb). No scene is unshippable.
   why_groundedness:
-    score: 4
+    score: 3
     weight: 0.20
     justification: >-
-      Every scene's concept_claim traces cleanly to its named why_brief spine item
-      (S3-S7) and the on-screen UI matches the rationale - the per-study "Create
-      solicitation" button (S3), the "Coverage areas (from micro-plan) / Attached"
-      panel with the verbatim snapshot caveat (S4), the "Which areas can you
-      cover?" selector (S5), the resolved "R6 - Attakar x Gura" coverage pill on
-      the response row (S6), and the award-records-and-notifies confirmation with
-      the honest "Next step - not yet built" panel (S7). Held to 4 because a few
-      claims (the freeze, the snapshot resolution, block-until-selected) are
-      asserted in copy rather than demonstrably shown in a single frame.
+      Every scene's concept_claim traces to a grounded why_brief spine item
+      (S3-S7). Scene 2 is exemplary (5) — the "Coverage areas (from micro-plan)"
+      panel and "Snapshotted at creation" microcopy realize S4 verbatim. Held to 3
+      by scene 5, which traces to S7 but omits S7's whole second half (the
+      not-yet-built provisioning tail) from the frame, so the grounding is only
+      half-present on screen.
   claim_reality_coherence:
-    score: 3
+    score: 2
     weight: 0.10
     blocking: false
     justification: >-
-      Advisory, excluded from overall. Scene 5 is fully demonstrated (5/5) - every
-      narrated element including the honest deferral is on screen. Scenes 2/4 are
-      strong (4/5). Scenes 1 and 3 sit at 3/5: scene 1's "finished study" narration
-      is partially undercut by the visible "Draft" plan row, and scene 3's
-      "submission blocked until one area is chosen" is asserted by helper text but
-      not shown (the captured frame already has the box ticked and Submit enabled),
-      and "a specific coverage area" is muddied by the single bundled row.
+      ADVISORY (excluded from overall). Scene 3 (3): the asserted submit-blocked
+      message "Select at least one coverage area to submit." is not visible in the
+      still. Scenes 4 and 5 (2): the response is shown already "Awarded" with
+      RECOMMENDATION "Not reviewed," ahead of and internally contradicting the
+      narrated fresh-review moment; scene 5's "next step, not yet built" boundary is
+      asserted only in narration while the frame shows a completed award.
   motion_friction:
-    score: 3
+    score: 2
     weight: 0.15
     justification: >-
-      No spinners, 404s, or dead-ends in any frame; scene order follows the
-      narrative arc. Held to 3 by the weakest scenes: scene 1 and scene 3 each
-      show a mouse-cursor artifact parked over a control/title and no affirmative
-      smooth-transition evidence, and scene 3's map shows no selected-state
-      animation on tick. Scenes 2/4/5 are settled, navigable states (4/5).
+      Scenes 1-3 flow cleanly (4) — real maps fully rendered, correct order, no
+      spinners. Scene 5 drops to 2: it is byte-identical to scene 4 (same md5), so
+      the closing beat shows zero visual progression — the viewer gets no signal a
+      new beat occurred. Scene 4 (3) has latent friction (a live "Review" action on
+      an awarded row leads to a confusing state).
 
 overall_score: 2
 overall_rule: lowest
@@ -94,36 +84,33 @@ verdict: fail
 blocking_reason: null
 
 fix_recommendation: |
-  Weakest link is visual_polish on scene 1 (2/5), which drags the whole run to
-  fail under lowest-rule scoring. Fix the scene-1 portfolio hero card first:
+  The concept is sound and the first three scenes land — the regression is
+  concentrated in the two response-page scenes (4 and 5), both captured in an
+  already-AWARDED state that fights their own narratives.
 
-  [PRODUCT] Scene 1 — De-duplicate the study identity: the card currently prints
-  "R6 — Attakar × Gura" as both the card title AND its single plan row. Show the
-  study title once; if the plan row must appear, label it distinctly (e.g. the
-  plan name vs. the study name) so it doesn't read as a duplicate render.
+  [PRODUCT] Re-capture scenes 4 and 5 with the response in a PRE-AWARD state
+  (status "Submitted"/"Under review", a live Review action, no Awarded pill, a
+  resolved-not-"Not reviewed" recommendation). The narrative for both scenes is
+  the review/compare moment and the look-ahead — neither should show the award
+  already taken.
 
-  [PRODUCT] Scene 1 — Resolve the "reviewed" vs "Draft" contradiction. The card
-  header badges the study "reviewed" while the inner row reads "Draft", so the
-  single "ready to solicit" signal is ambiguous. Render one unambiguous status and
-  present "reviewed" as a semantic status pill consistent with the other badges.
-  This also lifts concept_clarity and claim_reality_coherence, which inherit the
-  same wrinkle.
+  [PRODUCT] Make response status the single source of truth: once a response is
+  Awarded, suppress/disable the "Review" action and stop showing "Not reviewed";
+  move "Awarded" out of the View/Review action strip into the STATUS cell so the
+  ACTIONS column holds only verbs. (Fixes design_soundness 2 in scenes 4 & 5.)
 
-  [PRODUCT] Scene 1 — The decluttered hero card is stranded above ~250px of dead
-  whitespace. Let the candidate-plans section (or a compact study gallery) fill the
-  canvas so the finished study reads as the focused hero, not a lonely card.
+  [PRODUCT] Give scene 5 a DISTINCT frame from scene 4 and let the UI carry the
+  "next step, not yet built" boundary instead of leaving it to narration — e.g. a
+  disabled "Provision Connect opportunity (coming soon)" affordance or a post-award
+  callout. (Fixes concept_clarity 2 and motion_friction 2 in scene 5, and lifts
+  why_groundedness by surfacing S7's second half on screen.)
 
-  [PRODUCT] Scene 1 — Promote "Create solicitation" to the primary visual action
-  on a finished study (currently the outline/secondary button under the filled
-  "Open study"); the scene's whole concept is launching the call.
+  [PRODUCT] Scene 1: collapse the three restatements of "ready to recruit a survey
+  firm" into one and tighten the ~50%-empty lower frame (surface the candidate
+  plans or a next-step hint). Scene 4: add explicit empty-states for the
+  SCORE/RECOMMENDATION columns and re-capture without the cursor occluding the
+  breadcrumb. (Lifts visual_polish toward 4.)
 
-  [PRODUCT] Scene 3 — Drive a visible selected-state on the map polygon(s) when the
-  checklist row is ticked, so the promised two-way map<->checklist sync is
-  observable (lifts design_soundness + concept_clarity + claim_reality).
-
-  [PRODUCT] Scene 2 — Give the load-bearing coverage summary a larger, structured
-  presentation (Attakar=green / Gura=blue chips as an on-map legend, work-area
-  count as a stat) so the frozen coverage reads at a glance.
-
-  [PRODUCT] Scene 5 — Format the award budget as currency with separators
-  (e.g. ₦500,000) instead of the bare "500000".
+  [DEFER] (advisory, non-blocking) Scene 3: add a frame or state showing the
+  blocked submit with the exact "Select at least one coverage area to submit."
+  message so the gating claim is demonstrated, not just asserted.

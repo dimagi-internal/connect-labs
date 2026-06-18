@@ -1,128 +1,101 @@
 [
   {
-    "scene": "Scene 1 — Maya turns her finished study into a call for a firm",
+    "scene": "1 — Maya turns her finished study into a call for a firm",
     "dimension": "visual_polish",
+    "severity": "low",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "Status redundancy (READY TO SOLICIT badge + 'reviewed' label + a third restated sentence 'Finished study — ready to recruit a survey firm against this coverage') plus a lower frame that is ~50% empty leave the opener functional-not-polished — nothing embarrassing, nothing delightful.",
+    "fix_recommendation": "Collapse the three restatements of 'ready to recruit a survey firm' into one, and tighten the empty lower frame (surface the candidate-plans list or a next-step hint)."
+  },
+  {
+    "scene": "3 — Amina reads the open call and ticks the area she can staff",
+    "dimension": "claim_reality_coherence",
+    "severity": "medium",
+    "route": "DEFER",
+    "fix_kind": "mechanical",
+    "detail": "ADVISORY. The concept_claim asserts submission is blocked until an area is chosen with the message 'Select at least one coverage area to submit,' but that error/blocked state is NOT visible in this frame — nothing is ticked, Submit appears active, no error string shown. The static helper line 'Select one or more — required to submit' is present and consistent, so it is not self-contradicting, but the asserted blocked behavior is unverifiable from this still.",
+    "fix_recommendation": "Add a scene/frame showing the blocked submit with the exact 'Select at least one coverage area to submit.' message so the gating half of S5 is demonstrated, not just asserted."
+  },
+  {
+    "scene": "4 — Maya sees the firm tied to the coverage she designed",
+    "dimension": "design_soundness",
     "severity": "medium",
     "route": "PRODUCT",
     "fix_kind": "mechanical",
-    "detail": "The hero study card prints 'R6 — Attakar × Gura' twice (as the card title AND its single plan row, a render-bug smell); status is treated inconsistently within one card ('STUDY'/'Draft' are pills but 'reviewed' is plain grey text); and the card is stranded above ~250px of dead whitespace so the 'decluttered hero' reads as sparse rather than focused.",
-    "fix_recommendation": "De-duplicate the study identity (show the study title once; label any plan row distinctly), render 'reviewed' as a semantic status pill consistent with the other badges, and let the candidate-plans section or a compact study gallery fill the canvas so the finished study reads as the focused hero. Product change, not a capture crop."
+    "detail": "Incoherent state combo: STATUS shows a green 'Awarded' pill while RECOMMENDATION reads 'Not reviewed' AND a live 'Review' action is still offered — an already-awarded item cannot simultaneously be un-reviewed and still invite review (you review before you award). The ACTIONS strip also mixes verbs with a state label ('View / Review / Awarded'), so 'Awarded' masquerades as a sibling action.",
+    "fix_recommendation": "Make status the single source of truth: when a response is Awarded, suppress/disable the 'Review' action, resolve RECOMMENDATION to the actual decision (or hide it), and move 'Awarded' out of the action strip into the STATUS cell only so ACTIONS holds exclusively verbs."
   },
   {
-    "scene": "Scene 1 — Maya turns her finished study into a call for a firm",
-    "dimension": "concept_clarity",
-    "severity": "low",
-    "route": "CONCEPT",
-    "fix_kind": "mechanical",
-    "detail": "Legible to someone familiar with the space but a cold viewer stumbles: the card badges the study 'reviewed' while its inner plan row reads 'Draft', and the helper text introduces the orphan term 'bundle' which appears nowhere in the visible UI.",
-    "fix_recommendation": "Resolve the status contradiction so the card states one unambiguous 'ready to solicit' state, and either show a bundle affordance or drop 'bundle' from the helper copy."
-  },
-  {
-    "scene": "Scene 1 — Maya turns her finished study into a call for a firm",
-    "dimension": "design_soundness",
+    "scene": "4 — Maya sees the firm tied to the coverage she designed",
+    "dimension": "visual_polish",
     "severity": "low",
     "route": "PRODUCT",
     "fix_kind": "mechanical",
-    "detail": "'Compare selected' and '+ Group selected plans' read as actionable with no visible selection mechanism (no checkboxes), and the primary-button weight points at the filled 'Open study' rather than the scene's own concept action 'Create solicitation', which is the de-emphasized outline button.",
-    "fix_recommendation": "Make selection affordances (checkboxes) visible on rows and disable the bulk buttons until a selection exists; promote 'Create solicitation' to the primary visual action on a finished study card."
+    "detail": "The single-row 7-column table leaves SCORE ('-') and RECOMMENDATION columns visibly empty (~30% blank), the EOI/Active header pills float far right of the title across dead whitespace, and the captured mouse cursor overlaps and occludes the breadcrumb text.",
+    "fix_recommendation": "Add explicit em-dash empty-states for the SCORE/RECOMMENDATION columns, pull the EOI/Active pills closer to the title, and re-capture without the cursor occluding the breadcrumb."
   },
   {
-    "scene": "Scene 1 — Maya turns her finished study into a call for a firm",
+    "scene": "4 — Maya sees the firm tied to the coverage she designed",
     "dimension": "claim_reality_coherence",
-    "severity": "low",
+    "severity": "medium",
     "route": "DEFER",
     "fix_kind": "mechanical",
-    "detail": "The narrated 'finished study' is partially undercut on-screen by the visible 'Draft' plan row alongside the 'reviewed' label, so the viewer must trust the narration to reconcile the study's actual state. (Advisory; non-blocking.)",
-    "fix_recommendation": "Align the on-card state language ('reviewed' / 'Draft') with the narration's 'finished study' so the footage backs the claim without a verbal bridge."
+    "detail": "ADVISORY. The narrative frames this as a FRESH application Maya is reviewing/comparing ('the loop from a study plan to a real applicant closed'), but the row is already 'Awarded' with RECOMMENDATION 'Not reviewed' — the captured state is ahead of the narrated review moment and internally contradicts itself (awarded yet not reviewed). The screenshot depicts a post-decision state, not the live review-and-compare moment the scene narrates.",
+    "fix_recommendation": "Re-capture this scene with the response in a pre-award state (status 'Submitted' or 'Under review', Review action live, no Awarded pill) to match the narrated reviewing/comparing moment."
   },
   {
-    "scene": "Scene 1 — Maya turns her finished study into a call for a firm",
+    "scene": "4 — Maya sees the firm tied to the coverage she designed",
     "dimension": "motion_friction",
     "severity": "low",
     "route": "PRODUCT",
     "fix_kind": "mechanical",
-    "detail": "A mouse-cursor artifact is captured over the page title ('Microplan portfolio'), and a single static frame shows no affirmative smooth-transition evidence. No spinner, 404, or dead-end.",
-    "fix_recommendation": "Capture without the cursor parked over the H1, and verify the Create-solicitation click transitions smoothly (no full reload/spinner) across scenes."
+    "detail": "Static frame is clean and loaded (no spinners/error), but the contradictory live 'Review' action on an already-awarded row implies a click path that leads to a confusing state — latent interaction friction.",
+    "fix_recommendation": "Ensure awarded rows present a single coherent next action (e.g. 'View award') so a click never lands the owner in a review flow for an already-decided response."
   },
   {
-    "scene": "Scene 2 — Maya finds the plan already waiting as the coverage area",
+    "scene": "5 — Maya looks ahead to standing up the real opportunity",
     "dimension": "concept_clarity",
-    "severity": "low",
+    "severity": "medium",
     "route": "CONCEPT",
     "fix_kind": "mechanical",
-    "detail": "The load-bearing 'already attached, frozen at creation' confirmation is set in small secondary type in the lower third of a long create form, so the 5-second test yields only a partial read of the scene's core point.",
-    "fix_recommendation": "Promote the 'Coverage areas (from micro-plan) / Attached' panel toward the top of the form (or pin a compact coverage summary near the title) so the frozen-plan confirmation is read first, not last."
+    "detail": "The closing beat is the planning-vs-execution boundary, but nothing in the frame signals 'next step' or 'not yet built' — the 5-second read is 'firm awarded,' a wrong read for this beat. The concept lives only in narration.",
+    "fix_recommendation": "Add a visible forward affordance — a disabled 'Provision Connect opportunity (coming soon)' control or a post-award callout — so the UI itself carries the not-yet-built next step instead of leaving it to narration."
   },
   {
-    "scene": "Scene 2 — Maya finds the plan already waiting as the coverage area",
-    "dimension": "visual_polish",
-    "severity": "low",
-    "route": "PRODUCT",
-    "fix_kind": "mechanical",
-    "detail": "The load-bearing coverage summary ('R6 — Attakar × Gura · 2 wards · 840 work areas · Study arms') is cramped into a small-type pill, and the map has no on-figure color->ward legend keying green=Attakar / blue=Gura, so the scene's color-coded wards are under-supported.",
-    "fix_recommendation": "Give the coverage summary a larger, structured presentation — ward chips colored to match the map as an on-figure legend, work-area count as a stat — so the frozen coverage reads at a glance."
-  },
-  {
-    "scene": "Scene 3 — Amina reads the open call and ticks the area she can staff",
+    "scene": "5 — Maya looks ahead to standing up the real opportunity",
     "dimension": "design_soundness",
-    "severity": "low",
+    "severity": "medium",
     "route": "PRODUCT",
     "fix_kind": "mechanical",
-    "detail": "The promised two-way map<->checklist sync is not coherent in the captured frame: ticking the R6 checklist row produces NO visible selected-state on the corresponding map polygons (no fill/outline change), so the core 'click the map or tick below, synced' affordance is hand-waved and unverified.",
-    "fix_recommendation": "When the R6 checklist row is checked, drive a visible selected state on the corresponding map polygon(s) — heavier outline + fill shift — so the sync the concept promises is observable."
+    "detail": "Same incoherent state combo as scene 4: an 'Awarded' row still offers a 'Review' action and shows RECOMMENDATION 'Not reviewed'; STATUS 'Awarded' is duplicated by the green Awarded pill in ACTIONS; SCORE is empty.",
+    "fix_recommendation": "On award, suppress/disable the Review action, resolve 'Not reviewed' to the actual review state, and collapse the duplicate Awarded status/action so the row is internally consistent."
   },
   {
-    "scene": "Scene 3 — Amina reads the open call and ticks the area she can staff",
-    "dimension": "concept_clarity",
+    "scene": "5 — Maya looks ahead to standing up the real opportunity",
+    "dimension": "why_groundedness",
     "severity": "low",
     "route": "CONCEPT",
-    "fix_kind": "options",
-    "detail": "The map shows two distinctly colored wards (Attakar green, Gura blue) but the checklist offers a single bundled 'R6 — Attakar × Gura' row, so a true outsider asks 'can I commit to one arm or only the combined block?'. The '×' notation is also cryptic.",
-    "fix_recommendation": "Either split the checklist into per-area rows (Attakar / Gura) to match the two map colors, or add a one-line label clarifying 'Attakar × Gura = the combined R6 coverage block' so the single row reads intentionally."
-  },
-  {
-    "scene": "Scene 3 — Amina reads the open call and ticks the area she can staff",
-    "dimension": "visual_polish",
-    "severity": "low",
-    "route": "PRODUCT",
     "fix_kind": "mechanical",
-    "detail": "The selected checklist row has only a faint blue background (weak active affordance), the Attakar/Gura area labels are tiny and low-contrast against competing basemap labels, and a mouse cursor is captured frozen over the checkbox.",
-    "fix_recommendation": "Strengthen the selected-row affordance (border/checkmark + bolder fill), increase the weight/contrast of the Attakar/Gura area labels above basemap labels, and capture without the cursor over the control."
+    "detail": "Traces to spine S7 (recruiting/reviewing a firm is the shipped step; the row is a real awarded response captured for review), but the frame omits S7's whole second half — the not-yet-built provisioning tail — so the grounding is only half-present on screen.",
+    "fix_recommendation": "Surface the 'next step, not yet built' half of S7 in the frame (e.g. the disabled provisioning affordance from the concept_clarity fix) rather than leaving it to narration."
   },
   {
-    "scene": "Scene 3 — Amina reads the open call and ticks the area she can staff",
+    "scene": "5 — Maya looks ahead to standing up the real opportunity",
     "dimension": "claim_reality_coherence",
-    "severity": "low",
+    "severity": "medium",
     "route": "DEFER",
     "fix_kind": "mechanical",
-    "detail": "The narration's 'submission is blocked until one area is chosen' requires viewer trust: the captured frame already has the box ticked and Submit enabled, so the block itself is asserted, not shown. 'A specific coverage area' is also partially undercut by the single bundled row. (Advisory; non-blocking.)",
-    "fix_recommendation": "Capture or add a prior frame with no area selected + Submit visibly disabled, so the block-until-selected mechanic is demonstrated rather than narrated."
+    "detail": "ADVISORY. The 'next step, not yet built' boundary is asserted only in narration; the frame shows a live, already-taken 'Awarded' action, which reads as completion and undercuts 'field execution is the aspirational next step.'",
+    "fix_recommendation": "Make the aspirational boundary visible (disabled provisioning control / 'no live opportunity yet' note) so the claim is coherent with the frame."
   },
   {
-    "scene": "Scene 3 — Amina reads the open call and ticks the area she can staff",
+    "scene": "5 — Maya looks ahead to standing up the real opportunity",
     "dimension": "motion_friction",
-    "severity": "low",
+    "severity": "medium",
     "route": "PRODUCT",
     "fix_kind": "mechanical",
-    "detail": "A mouse-cursor glyph frozen over the checkbox mid-click reads as a slight hesitation cue, and the map shows no selected-state animation on tick, so the interaction doesn't read as fluid. No spinner/404/dead-end.",
-    "fix_recommendation": "Ensure the click resolves cleanly (no lingering cursor) and that the map's selected-state animates on tick so the interaction reads as fluid."
-  },
-  {
-    "scene": "Scene 4 — Maya sees the firm tied to the coverage she designed",
-    "dimension": "visual_polish",
-    "severity": "low",
-    "route": "PRODUCT",
-    "fix_kind": "mechanical",
-    "detail": "A single-row table sits in a large card with heavy empty space below, and two of seven columns ('RECOMMENDATION' -> 'Not reviewed', 'SCORE' -> '-') render as hollow placeholders, so the comparison view reads as under-populated and slightly broken. Minor breadcrumb truncation / cursor occlusion. Real firm and contact names are grounding, not flaws.",
-    "fix_recommendation": "Soften not-yet-applicable cells (lighter '—'), tighten the card to the loaded rows so one sparse row doesn't read as a broken table, and add a small '1 response' count. Do not crop the capture. (Upstream: seeding 2-3 responses would let the 'compare applicants' premise actually show.)"
-  },
-  {
-    "scene": "Scene 5 — Maya awards the firm and sees it was notified",
-    "dimension": "visual_polish",
-    "severity": "low",
-    "route": "PRODUCT",
-    "fix_kind": "mechanical",
-    "detail": "The load-bearing 'Award budget: 500000' renders as a bare unformatted integer with no thousands separator and no currency symbol — the most important number on the screen forces the reader to mentally insert commas/currency. Compounded by an asymmetric two-column detail grid that leaves a large empty gap under the right column. Host chrome and the honest 'Next step — not yet built' panel are grounding, not flaws.",
-    "fix_recommendation": "Format the budget as currency with separators (e.g. ₦500,000), and balance the detail grid so the right column does not leave a large empty gap."
+    "detail": "scene_5.png is byte-identical to scene_4.png (same md5) — a second consecutive identical still with zero visual progression; the closing beat reuses the prior frame, so the viewer gets no signal a new beat occurred.",
+    "fix_recommendation": "Give scene 5 a distinct frame (scroll, highlight/hover the Award action, or render a post-award state with the deferred-provisioning affordance) so the closing beat advances visually."
   }
 ]
