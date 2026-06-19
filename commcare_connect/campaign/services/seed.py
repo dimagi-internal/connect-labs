@@ -19,6 +19,7 @@ from commcare_connect.campaign.models import (
     Microplan,
     Region,
     RegionPlan,
+    ReportDay,
     Worker,
     WorkerRole,
     Workspace,
@@ -336,6 +337,23 @@ def _inject_fraud(rng, workers):
             w["fraud_rules"].append("Failed KYC verification")
 
 
+def _seed_report_days(rng, campaign):
+    rows = []
+    for d in range(16):
+        daily = rng.randint(120000, 210000) * (0.6 if d < 3 else 1.0)
+        rows.append(
+            ReportDay(
+                campaign=campaign,
+                day=f"D{d + 1}",
+                order=d,
+                enrolled=round(daily),
+                attended=round(daily * (0.88 + rng.random() * 0.1)),
+                paid=round(daily * (0.7 + rng.random() * 0.15)),
+            )
+        )
+    ReportDay.objects.bulk_create(rows)
+
+
 @transaction.atomic
 def seed_campaign(fresh: bool = False) -> Campaign:
     ws, _ = Workspace.objects.get_or_create(slug="nigeria", defaults={"country": "Nigeria", "name": "Nigeria"})
@@ -383,4 +401,5 @@ def seed_campaign(fresh: bool = False) -> Campaign:
     region_objs = list(c.regions.select_related("plan").all())
     _seed_activities(rng, c)
     _seed_microplans(rng, c, region_objs, ROLES)
+    _seed_report_days(rng, c)
     return c
