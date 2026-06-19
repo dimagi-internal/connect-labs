@@ -262,15 +262,7 @@
                 <input id="cfg-cov-min-confidence" type="number" min="0" max="1" step="0.05" class="base-input mt-0.5 text-xs" placeholder="—"></label>
             </div>
 
-            <div class="border-t border-gray-100 pt-2 mt-2">
-              <div class="text-gray-600 mb-1 font-medium">Population for visit calc</div>
-              <p class="text-[10px] text-gray-500 mb-1 leading-snug">Sets each work area's Expected Visit Count. The population you enter is spread over the retained buildings (people ÷ buildings), so each area gets visits ∝ its building count. Blank = 1 visit per building.</p>
-              <label class="block" style="display:none"><span class="text-[10px] text-gray-500">Population source (totals the selected wards)</span>
-                <select id="cfg-pop-source" class="base-input mt-0.5 text-xs w-full"></select></label>
-              <input id="cfg-population" type="number" min="0" step="1" class="base-input text-xs w-full mt-1" placeholder="blank = 1 visit / building">
-              <button type="button" id="cfg-pop-suggest" class="hidden text-[10px] text-indigo-600 underline decoration-dotted underline-offset-2 mt-0.5 text-left"></button>
-              <p class="text-[10px] text-gray-500 mt-0.5" id="coverage-visit-readout"></p>
-            </div>
+            <p class="text-[10px] text-gray-400 leading-snug mt-2 pt-2 border-t border-gray-100">Expected visit counts are set per ward after the work areas are created (see <b>Expected visits per ward</b> below).</p>
           </div>
 
           <div id="sampling-config" class="hidden space-y-2">
@@ -369,6 +361,25 @@
       <p class="text-[10px] text-gray-500 mt-1" id="filter-preview"></p>
       <button type="button" id="btn-apply-filters" class="button button-sm primary-dark w-full mt-1">Apply exclusions</button>
       <p class="text-[10px] text-gray-500 mt-0.5" id="filter-status"></p>
+    </details>
+
+    <!-- Per-ward expected-visit targets (#9/#15). One row per source ward: enter (or
+         auto-fill from a population source) the total expected visits for the ward;
+         Apply spreads it across the ward's RETAINED buildings → per-work-area visits.
+         Coverage-only; hidden in sampling. -->
+    <details class="mp-acc mp-card" open id="visits-card">
+      <summary><span class="ic">◴</span><span class="lbl">Expected visits per ward</span><span class="chev">›</span></summary>
+      <p class="text-[11px] text-gray-500 leading-snug mb-1">Per ward, the total expected visits are spread over its retained buildings, so each work area gets visits ∝ its building count (rounded up). Auto-fill from a population source, then edit any value.</p>
+      <label class="block text-[11px]"><span class="text-gray-600">Auto-fill from population source</span>
+        <select id="visits-pop-source" class="base-input mt-0.5 text-xs w-full"></select></label>
+      <div class="overflow-x-auto mt-1">
+        <table class="w-full text-[11px]" id="visits-table">
+          <thead><tr class="text-gray-400 text-left"><th class="pr-1">State</th><th class="pr-1">LGA</th><th class="pr-1">Ward</th><th>Exp. visits</th></tr></thead>
+          <tbody id="visits-tbody"></tbody>
+        </table>
+      </div>
+      <button type="button" id="btn-apply-visits" class="button button-sm primary-dark w-full mt-1">Apply expected visits</button>
+      <p class="text-[10px] text-gray-500 mt-0.5" id="visits-status"></p>
     </details>
 
     <!-- Sampling note: groups are the PSUs from generation; geometric auto-grouping
@@ -690,6 +701,7 @@
     map_country_iso: "{{ map_country_iso|default:''|escapejs }}",
     plan_url: "{{ plan_url|escapejs }}",
     edit_url: "{{ edit_url|escapejs }}",
+    area_targets_url: "{{ area_targets_url|default:''|escapejs }}",
     csv_url: "{{ csv_url|escapejs }}",
     compare_url: "{{ compare_url|escapejs }}",
     footprints_url: "{{ footprints_url|default:''|escapejs }}",

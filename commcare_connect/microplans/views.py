@@ -1249,6 +1249,7 @@ class ProgramReviewView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView)
         context["mapbox_token"] = settings.MAPBOX_TOKEN or ""
         context["plan_url"] = reverse("microplans:program_plan", args=[program_id, plan_id])
         context["edit_url"] = reverse("microplans:program_plan_edit", args=[program_id, plan_id])
+        context["area_targets_url"] = reverse("microplans:program_plan_area_targets", args=[program_id, plan_id])
         context["csv_url"] = reverse("microplans:program_plan_csv", args=[program_id, plan_id])
         context["footprints_url"] = reverse("microplans:program_plan_footprints", args=[program_id, plan_id])
         context["regroup_url"] = reverse("microplans:program_plan_regroup", args=[program_id, plan_id])
@@ -1347,6 +1348,36 @@ class ProgramPlanEditView(LoginRequiredMixin, View):
         except Exception:  # noqa: BLE001
             logger.exception("microplans program plan edit failed (%s/%s)", program_id, plan_id)
             return JsonResponse({"status": "error", "detail": "Edit failed."}, status=502)
+        return JsonResponse(serialization.plan_to_json(plan))
+
+
+class ProgramPlanAreaTargetsView(LoginRequiredMixin, View):
+    """Set per-area expected-visit targets {ward: total_expected_visits} and re-spread
+    them across each area's retained buildings (#9/#15)."""
+
+    def post(self, request, program_id, plan_id):
+        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess, StalePlanError
+
+        try:
+            payload = json.loads(request.body)
+            targets = payload.get("targets") or {}
+            if not isinstance(targets, dict):
+                raise ValueError("targets must be an object {ward: number}")
+        except (json.JSONDecodeError, ValueError, TypeError) as e:
+            return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
+
+        da = ProgramPlanDataAccess(program_id, request=request)
+        try:
+            plan = da.set_area_targets(
+                int(plan_id), targets, request.user.get_username(), base_revision=payload.get("revision")
+            )
+        except StalePlanError as e:
+            return JsonResponse({"status": "error", "detail": str(e)}, status=409)
+        except ValueError as e:
+            return JsonResponse({"status": "error", "detail": str(e)}, status=400)
+        except Exception:  # noqa: BLE001
+            logger.exception("microplans area targets failed (%s/%s)", program_id, plan_id)
+            return JsonResponse({"status": "error", "detail": "Could not set visit targets."}, status=502)
         return JsonResponse(serialization.plan_to_json(plan))
 
 

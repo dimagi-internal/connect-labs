@@ -103,6 +103,14 @@ class ProgramPlanDataAccess(BaseDataAccess):
             "mode": mode,
             "work_areas": work_areas,
             "input_areas": list(input_areas or []),
+            # Per-area populations by source ({ward: {worldpop_u5: …, …}}), captured
+            # from the picked boundaries so the review-page per-area visit table can
+            # auto-fill expected-visit targets from a chosen population source (#15).
+            "area_populations": {
+                str(a.get("ward")): a["populations"]
+                for a in (input_areas or [])
+                if a.get("ward") and isinstance(a.get("populations"), dict)
+            },
             "grouping": dict(grouping or {}),
             "status_log": [],
             # Optimistic-concurrency counter; bumped on every _save_plan.
@@ -289,6 +297,35 @@ class ProgramPlanDataAccess(BaseDataAccess):
             if wa is None:
                 raise ValueError(f"work area {wa_id!r} not in plan {plan_id}")
             plan_lib.apply_action(wa, action, params, actor)
+        # Exclusions change the retained-buildings denominator, so re-spread the
+        # per-area expected-visit targets across what's left (#9).
+        if action in ("exclude", "unexclude") and data.get("area_targets"):
+            plan_lib.recompute_area_visits(work_areas, data["area_targets"])
+        data["work_areas"] = work_areas
+        return self._save_plan(plan, data, base_revision)
+
+    def set_area_targets(
+        self,
+        plan_id: int,
+        targets: dict,
+        actor: str,
+        base_revision: int | None = None,
+    ) -> PlanRecord:
+        """Store per-area expected-visit targets {ward: total_expected_visits} on the
+        plan and re-spread them across each area's retained buildings (#9/#15)."""
+        plan = self.get_plan(plan_id)
+        data = dict(plan.data)
+        clean = {}
+        for k, v in (targets or {}).items():
+            try:
+                fv = float(v)
+            except (TypeError, ValueError):
+                continue
+            if fv > 0:
+                clean[str(k)] = fv
+        data["area_targets"] = clean
+        work_areas = [dict(w) for w in data.get("work_areas", [])]
+        plan_lib.recompute_area_visits(work_areas, clean)
         data["work_areas"] = work_areas
         return self._save_plan(plan, data, base_revision)
 

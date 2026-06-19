@@ -329,6 +329,40 @@ def find(work_areas: list[dict], wa_id: str) -> dict | None:
     return next((w for w in work_areas if w.get("id") == wa_id), None)
 
 
+def _wa_ward(w: dict) -> str:
+    return ((w.get("properties") or {}).get("ward") or "(area)").strip() or "(area)"
+
+
+def recompute_area_visits(work_areas: list[dict], area_targets: dict) -> list[dict]:
+    """Set each NON-EXCLUDED work area's expected_visit_count + target_population from
+    its area's target, spread over that area's RETAINED buildings (#9):
+
+        rate(area)   = target(area) / retained_buildings(area)   # retained = not excluded
+        EVC(wa)      = ceil(wa_buildings * rate),  min 1
+        target_pop   = round(wa_buildings * rate)
+
+    Per-area (not pooled) and retained-aware, so it re-spreads correctly after
+    exclusions. Areas without a target are left untouched. Mutates in place."""
+    retained: dict[str, int] = {}
+    for w in work_areas:
+        if w.get("status") == STATUS_EXCLUDED:
+            continue
+        retained[_wa_ward(w)] = retained.get(_wa_ward(w), 0) + int(w.get("building_count", 0))
+    for w in work_areas:
+        if w.get("status") == STATUS_EXCLUDED:
+            continue
+        ward = _wa_ward(w)
+        target = area_targets.get(ward)
+        denom = retained.get(ward, 0)
+        if not target or not denom:
+            continue
+        rate = float(target) / denom
+        n = int(w.get("building_count", 0))
+        w["expected_visit_count"] = max(1, math.ceil(n * rate))
+        w["target_population"] = round(n * rate)
+    return work_areas
+
+
 def summarize(work_areas: list[dict]) -> dict:
     """Headline counts for the review UI: status tallies + per-worker / per-group
     workload (active = not excluded)."""
