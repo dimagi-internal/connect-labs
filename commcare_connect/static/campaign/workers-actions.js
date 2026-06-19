@@ -1,6 +1,11 @@
 // workers-actions.js — fetch wrappers for worker mutations (CSRF-aware).
 (function () {
   function csrf() {
+    // This project uses CSRF_USE_SESSIONS (+ HttpOnly cookie), so there is no
+    // readable csrftoken cookie — the token is rendered into a <meta> tag by
+    // app.html ({{ csrf_token }}). Fall back to the cookie just in case.
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    if (meta && meta.content) return meta.content;
     const m = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
     return m ? m[1] : '';
   }

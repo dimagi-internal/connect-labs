@@ -126,3 +126,35 @@ def test_investigation_note_only_preserves_status(client, campaign):
     # note-only update (no status) must succeed and not 400
     resp = _post(client, reverse("campaign:kyc_investigation", args=[w.worker_id]), {"note": "checking"})
     assert resp.status_code == 200
+
+
+@pytest.mark.django_db
+def test_csrf_round_trip_via_meta_token(campaign):
+    # This project uses CSRF_USE_SESSIONS (no csrftoken cookie); the token is
+    # rendered into a <meta> tag the JS reads. Verify the full round-trip under
+    # real CSRF enforcement — the default test client disables CSRF, which is why
+    # the cookie-based transport silently 403'd on the deployed site.
+    import re
+
+    from django.test import Client
+
+    c = Client(enforce_csrf_checks=True)
+    _login(c)
+
+    page = c.get(reverse("campaign:app"))
+    assert page.status_code == 200
+    m = re.search(rb'name="csrf-token" content="([^"]+)"', page.content)
+    assert m, "app page must render a csrf-token meta tag"
+    token = m.group(1).decode()
+    assert len(token) >= 30
+
+    w = campaign.workers.filter(fraud_rules=[]).exclude(kyc="rejected").first()
+    body = json.dumps({"worker_ids": [w.worker_id], "status": "approved"})
+
+    # Without the token, CSRF enforcement rejects the write.
+    no_tok = c.post(reverse("campaign:pay_set_status"), data=body, content_type="application/json")
+    assert no_tok.status_code == 403
+
+    # With the rendered token in X-CSRFToken, the write succeeds.
+    ok = c.post(reverse("campaign:pay_set_status"), data=body, content_type="application/json", HTTP_X_CSRFTOKEN=token)
+    assert ok.status_code == 200

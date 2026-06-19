@@ -4,6 +4,8 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    {# CSRF token for JSON POSTs — this project uses CSRF_USE_SESSIONS (no csrftoken cookie). #}
+    <meta name="csrf-token" content="{{ csrf_token }}" />
     <title>Campaign Utility Tool</title>
     <link rel="icon" href="{% static 'campaign/dimagi-favicon-purple.png' %}" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
