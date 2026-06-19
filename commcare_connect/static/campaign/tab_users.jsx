@@ -142,7 +142,9 @@ function UserManagement({ density, role }) {
   const D = window.CUT_DATA;
   const RBAC = window.CUT_RBAC;
   const toast = useToast();
-  const [users, setUsers] = useStateU(SEED_USERS.map((u) => ({ ...u })));
+  const [users, setUsers] = useStateU(
+    (window.CUT_DATA.USERS || []).map((u) => ({ ...u })),
+  );
   const [view, setView] = useStateU('users');
   const [q, setQ] = useStateU('');
   const [roleF, setRoleF] = useStateU('all');
@@ -168,15 +170,25 @@ function UserManagement({ density, role }) {
   };
 
   const setUserRole = (id, r) => {
-    setUsers((us) => us.map((u) => (u.id === id ? { ...u, role: r } : u)));
-    toast('Role updated');
+    window.campaignActions
+      .setUserRole(id, r)
+      .then((res) => {
+        setUsers((us) => us.map((u) => (u.id === res.user.id ? res.user : u)));
+        toast('Role updated');
+      })
+      .catch((e) => toast('Failed: ' + e.message, 'danger'));
   };
   const setStatus = (id, s) => {
-    setUsers((us) => us.map((u) => (u.id === id ? { ...u, status: s } : u)));
-    toast(
-      'Account ' + (s === 'active' ? 'reactivated' : s),
-      s === 'deactivated' ? 'danger' : 'success',
-    );
+    window.campaignActions
+      .setUserStatus(id, s)
+      .then((res) => {
+        setUsers((us) => us.map((u) => (u.id === res.user.id ? res.user : u)));
+        toast(
+          'Account ' + (s === 'active' ? 'reactivated' : s),
+          s === 'deactivated' ? 'danger' : 'success',
+        );
+      })
+      .catch((e) => toast('Failed: ' + e.message, 'danger'));
   };
 
   return (
@@ -506,12 +518,17 @@ function UserManagement({ density, role }) {
         roles={RBAC.ROLES}
         regions={D.REGIONS}
         onInvite={(u) => {
-          setUsers((us) => [
-            { id: 'U' + (us.length + 1), status: 'pending', last: '—', ...u },
-            ...us,
-          ]);
-          toast('Activation email sent to ' + u.email);
-          setInvite(false);
+          window.campaignActions
+            .inviteUser(u)
+            .then((res) => {
+              setUsers((us) => [
+                res.user,
+                ...us.filter((x) => x.id !== res.user.id),
+              ]);
+              toast('User added to whitelist — ' + u.email);
+              setInvite(false);
+            })
+            .catch((e) => toast('Invite failed: ' + e.message, 'danger'));
         }}
       />
     </Page>
