@@ -5,6 +5,43 @@ using the two-phase profile/generate workflow.
 
 ---
 
+## Quick start (spec-driven — recommended)
+
+Describe the cohort once in a YAML spec, then run two commands. Hand the **same file** to
+both — Step 1 records the resolved `bundle_root` back into it.
+
+**`kmc.yaml`:**
+```yaml
+program_id: 10010                       # optional — auto-allocated + written back if omitted
+program_name: "KMC (Synthetic)"
+org_name: "Dimagi-KMC (Synthetic)"
+bundle_root: "gdrive:"                  # Step 1 rewrites this to gdrive:<folder_id>
+opportunity_ids: [523, 524, 675, 874, 938, 1234, 1236, 1487, 1488, 1739, 1790]
+```
+
+**Run it:**
+```
+# Step 1 — safe mode (the only manual, prod-touching step): profile -> GDrive
+synthetic_clone_profile(spec_yaml=<contents of kmc.yaml>)
+#   -> returns the spec with bundle_root resolved; use that for Step 2
+
+# Step 2 — build all 11 opps from the GDrive bundles
+synthetic_clone_generate(spec_yaml=<spec returned by Step 1>)
+```
+
+Or via management command (the spec file is updated in place):
+```bash
+python manage.py synthetic_profile_opps  --spec kmc.yaml --base-url https://connect.dimagi.com
+python manage.py synthetic_generate_opps --spec kmc.yaml
+```
+
+Change the cohort (add an opp, set a different `program_id`) by editing `kmc.yaml` and
+re-running. Resume a partial failure or recreate the data by re-running Step 2 (add
+`--fresh` to rebuild) — no prod access needed. The sections below document the lower-level
+per-opp tools that the spec-driven flow is built on.
+
+---
+
 ## KMC opportunity IDs
 
 ```
