@@ -163,14 +163,18 @@ def _coverage_work_areas(cells: dict, grouping: dict | None) -> list[dict]:
     out: list[dict] = []
     for i, feat in enumerate(cells.get("features", [])):
         props = feat.get("properties", {}) or {}
-        building_count = int(props.get("building_count", 1))
+        # `or default` (not get's default) because population was moved out of
+        # creation: the preview now sends expected_visit_count/target_population
+        # as explicit None, and dict.get returns None — not the default — when the
+        # key is present. int(None) would blow up create_plan.
+        building_count = int(props.get("building_count") or 1)
         out.append(
             _make_work_area(
                 wa_id=_wa_id(props, i),
                 geom=feat.get("geometry"),
                 building_count=building_count,
-                expected=int(props.get("expected_visit_count", building_count)),
-                target_population=int(props.get("target_population", 0)),
+                expected=int(props.get("expected_visit_count") or building_count),
+                target_population=int(props.get("target_population") or 0),
                 # placeholder group; group_work_areas overwrites it below
                 work_area_group=props.get("arm", "intervention"),
                 arm="",
@@ -208,7 +212,7 @@ def _sampling_work_areas(pins: dict) -> list[dict]:
                 geom=geom,
                 building_count=1,
                 expected=1,
-                target_population=int(props.get("target_population", 0)),
+                target_population=int(props.get("target_population") or 0),
                 work_area_group=psu_group[key],
                 arm=arm,
                 properties=_sampling_properties(props),
