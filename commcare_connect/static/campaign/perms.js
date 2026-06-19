@@ -128,6 +128,10 @@
   // Connection Settings is System Administrator only (Campaign Administrator).
   const CONNECTIONS_ROLES = ['admin'];
 
+  // Training MANAGEMENT is Campaign Administrator only; viewing the hub is public
+  // (handled outside RBAC). Mirrors the server matrix in rbac.py.
+  const TRAINING_ROLES = ['admin'];
+
   const roleIdByName = (name) =>
     (ROLES.find((r) => r.name === name || r.short === name) || ROLES[0]).id;
 
@@ -135,6 +139,7 @@
   function can(roleName, moduleId, verb = 'view') {
     const id = roleIdByName(roleName);
     if (moduleId === 'connections') return CONNECTIONS_ROLES.includes(id);
+    if (moduleId === 'training') return TRAINING_ROLES.includes(id);
     const mods = MATRIX[id] || {};
     return (mods[moduleId] || []).includes(verb);
   }
@@ -164,5 +169,6 @@
     accessLabel,
     roleIdByName,
     CONNECTIONS_ROLES,
+    TRAINING_ROLES,
   };
 })();

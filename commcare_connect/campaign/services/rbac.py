@@ -57,7 +57,11 @@ MATRIX: dict[str, dict[str, set]] = {
         workers=_VIEW,
         kyc=_VIEW,
         payments=_VIEW,
-        activities={"create", "edit", "manage"},
+        # Deliberate deviation from the literal §4.4 table (which lists only
+        # Create/Edit/Manage): "view" is implied by manage — a role that manages
+        # activities must be able to read the activities it owns, or any
+        # require_perm("activities", "view") read endpoint would 403 the manager.
+        activities={"view", "create", "edit", "manage"},
         planning=_VIEW,
         reporting=_VIEW_EXPORT,
     ),
