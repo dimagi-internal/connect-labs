@@ -46,13 +46,7 @@ def _folder_url(folder_id: str) -> str:
     return f"https://drive.google.com/drive/folders/{folder_id}"
 
 
-def upload_and_register(
-    *,
-    drive: _Drive,
-    opportunity_id: int,
-    opportunity_name: str,
-    fixtures: dict[str, Any],
-) -> UploadResult:
+def upload_fixtures(*, drive: _Drive, opportunity_id: int, fixtures: dict[str, Any]) -> UploadResult:
     parent_id = getattr(settings, "LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID", "")
     if not parent_id:
         raise RuntimeError("LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID is not set.")
@@ -66,14 +60,29 @@ def upload_and_register(
         drive.upload_file(folder_id, filename, json.dumps(payload).encode())
         counts[key] = len(payload) if isinstance(payload, list) else 1
 
+    app_structure = fixtures.get("app_structure")
+    if app_structure:
+        drive.upload_file(folder_id, "app_structure.json", json.dumps(app_structure).encode())
+        counts["app_structure"] = 1
+
+    return UploadResult(folder_id=folder_id, folder_url=_folder_url(folder_id), record_counts=counts)
+
+
+def upload_and_register(
+    *,
+    drive: _Drive,
+    opportunity_id: int,
+    opportunity_name: str,
+    fixtures: dict[str, Any],
+) -> UploadResult:
+    result = upload_fixtures(drive=drive, opportunity_id=opportunity_id, fixtures=fixtures)
     SyntheticOpportunity.objects.update_or_create(
         opportunity_id=opportunity_id,
         defaults={
             "label": opportunity_name,
-            "gdrive_folder_id": folder_id,
+            "gdrive_folder_id": result.folder_id,
             "enabled": True,
         },
     )
     invalidate_cache()
-
-    return UploadResult(folder_id=folder_id, folder_url=_folder_url(folder_id), record_counts=counts)
+    return result

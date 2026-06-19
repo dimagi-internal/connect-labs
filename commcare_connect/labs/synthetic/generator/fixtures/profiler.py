@@ -16,9 +16,12 @@ import statistics
 from collections import Counter, defaultdict
 from typing import Any
 
+import numpy as np
+import pandas as pd
 import yaml
 
 from .manifest import Manifest, ManifestValidationError
+from .schema_loader import FormSchema, parse_form_schema_from_app_json
 
 
 def _mean_std(values: list[float]) -> tuple[float, float]:
@@ -206,6 +209,144 @@ def _walk_paths(
                     pass
 
 
+def _classify_paths(form_schema: FormSchema) -> dict[str, str]:
+    """Return a mapping of json_path -> kind for all questions in the schema."""
+    return {q.json_path: q.kind for q in form_schema.questions}
+
+
+def _profile_categorical(visits: list[dict], path: str) -> dict[str, float]:
+    """Return value -> rate mapping for a categorical field at dotted path."""
+    counts: Counter[str] = Counter()
+    for v in visits:
+        raw = _extract_nested(v.get("form_json") or {}, path)
+        if raw in (None, ""):
+            continue
+        counts[str(raw)] += 1
+    total = sum(counts.values())
+    if total == 0:
+        return {}
+    return {k: round(c / total, 4) for k, c in counts.items()}
+
+
+def _profile_null_rate(visits: list[dict], path: str) -> float:
+    """Return the fraction of visits where the field at path is None or ''."""
+    present = 0
+    for v in visits:
+        raw = _extract_nested(v.get("form_json") or {}, path)
+        if raw not in (None, ""):
+            present += 1
+    n = len(visits)
+    return round(1.0 - present / n, 4) if n else 0.0
+
+
+def _profile_temporal(visits: list[dict]) -> dict:
+    """Return day-of-week (7) and hour-of-day (24) weight vectors from visit timestamps."""
+    dow = [0.0] * 7
+    hod = [0.0] * 24
+    for v in visits:
+        ds = v.get("visit_date")
+        if not ds:
+            continue
+        try:
+            d = dt.date.fromisoformat(ds[:10])
+        except ValueError:
+            continue
+        dow[d.weekday()] += 1
+        # hour: use date_created if it's a datetime string; otherwise skip
+        created = v.get("date_created")
+        if isinstance(created, str) and "T" in created:
+            try:
+                hod[dt.datetime.fromisoformat(created).hour] += 1
+            except ValueError:
+                pass
+    if sum(hod) == 0:
+        hod = [1.0] * 24
+    if sum(dow) == 0:
+        dow = [1.0] * 7
+    return {"day_of_week": dow, "hour_of_day": hod}
+
+
+def _profile_flag_reasons(visits: list[dict]) -> dict[str, float]:
+    """Return flag_reason -> rate map for flagged visits that carry a reason."""
+    counts: Counter[str] = Counter()
+    for v in visits:
+        if v.get("flagged") and v.get("flag_reason"):
+            counts[str(v["flag_reason"])] += 1
+    total = sum(counts.values())
+    return {k: round(c / total, 4) for k, c in counts.items()} if total else {}
+
+
+def _profile_weekly_volume(visits: list[dict], start_date: dt.date, weeks: int) -> list[float] | None:
+    """Return a per-week relative-volume list (avg = 1.0), or None if < 2 weeks."""
+    if weeks < 2:
+        return None
+    per_week = [0] * weeks
+    for v in visits:
+        ds = v.get("visit_date")
+        if not ds:
+            continue
+        try:
+            d = dt.date.fromisoformat(ds[:10])
+        except ValueError:
+            continue
+        idx = (d - start_date).days // 7
+        if 0 <= idx < weeks:
+            per_week[idx] += 1
+    avg = sum(per_week) / weeks
+    if avg <= 0:
+        return None
+    return [round(c / avg, 3) for c in per_week]
+
+
+_MIN_CORR_COVERAGE = 0.5
+
+
+def _profile_correlation(visits: list[dict], paths: list[str], kinds: dict[str, str]) -> dict | None:
+    """Spearman rank-correlation over numeric + ordinal-encoded categorical paths.
+
+    Categoricals are encoded by frequency rank so a copula can reproduce their
+    rank-association with numeric fields. Returns None if < 2 usable columns.
+    """
+    cols: dict[str, list] = {}
+    n = len(visits)
+    for path in paths:
+        kind = kinds.get(path, "decimal")
+        raw_vals = [_extract_nested(v.get("form_json") or {}, path) for v in visits]
+        present = [r for r in raw_vals if r not in (None, "")]
+        if n == 0 or len(present) / n < _MIN_CORR_COVERAGE:
+            continue
+        if kind in {"select", "multiselect", "text"}:
+            order = {
+                val: i
+                for i, (val, _) in enumerate(
+                    sorted(
+                        Counter(str(r) for r in present).items(),
+                        key=lambda kv: -kv[1],
+                    )
+                )
+            }
+            cols[path] = [order.get(str(r), np.nan) if r not in (None, "") else np.nan for r in raw_vals]
+        else:
+            out = []
+            for r in raw_vals:
+                try:
+                    out.append(float(r))
+                except (TypeError, ValueError):
+                    out.append(np.nan)
+            cols[path] = out
+    if len(cols) < 2:
+        return None
+    df = pd.DataFrame(cols)
+    corr = df.corr(method="spearman").fillna(0.0)
+    mat = corr.to_numpy(copy=True)
+    np.fill_diagonal(mat, 1.0)
+    return {
+        "fields": list(corr.columns),
+        "matrix": [[round(float(x), 4) for x in row] for row in mat.tolist()],
+        "method": "spearman",
+    }
+
+
 def _profile_kpis(
     field_distributions: dict[str, dict[str, Any]],
     all_visits: list[dict],
@@ -255,6 +396,7 @@ def profile(
     user_data: list[dict],
     opportunity_detail: dict,
     form_json_paths: list[str] | None = None,
+    app_structure: dict | None = None,
 ) -> str:
     """Analyze real export data and return a Manifest YAML string.
 
@@ -265,6 +407,10 @@ def profile(
         opportunity_detail: Dict from /export/opportunity/<id>/.
         form_json_paths: Optional explicit list of form_json dot-paths to
             profile. If omitted, auto-discovers numeric fields from a sample.
+        app_structure: Optional dict from /export/opportunity/<id>/app_structure/.
+            When provided, used to type fields — select/multiselect paths get
+            categorical distributions and all profiled paths get null_rate.
+            Callers that omit this arg get identical prior behaviour.
 
     Returns:
         YAML string that validates against Manifest.from_yaml().
@@ -281,10 +427,52 @@ def profile(
     timeline = _profile_timeline(user_visits, visits_by_flw)
     field_dists = _profile_field_distributions(user_visits, form_json_paths)
 
+    kinds: dict[str, str] = {}
+
+    # If caller provided app_structure, derive field types and enrich distributions.
+    if app_structure is not None:
+        form_schema = parse_form_schema_from_app_json(app_structure, app_type="deliver")
+        kinds = _classify_paths(form_schema)
+
+        # Attach null_rate to every numeric distribution we profiled.
+        for path, dist in field_dists.items():
+            dist["null_rate"] = _profile_null_rate(user_visits, path)
+
+        # Add categorical distributions for select/multiselect paths not already covered.
+        for path, kind in kinds.items():
+            if kind in {"select", "multiselect"} and path not in field_dists:
+                values = _profile_categorical(user_visits, path)
+                if values:
+                    field_dists[path] = {
+                        "distribution": "categorical",
+                        "values": values,
+                        "null_rate": _profile_null_rate(user_visits, path),
+                    }
+
     entity_ids = {v.get("entity_id") for v in user_visits if v.get("entity_id")}
     cohort_size = max(len(entity_ids), 10)
 
     kpis = _profile_kpis(field_dists, user_visits)
+
+    # Compute new profiling blocks.
+    correlation = _profile_correlation(user_visits, list(field_dists.keys()), kinds)
+    temporal = _profile_temporal(user_visits)
+    flag_reasons = _profile_flag_reasons(user_visits)
+
+    # Attach weekly volume multipliers to the (mutable) timeline dict.
+    start_date_obj = dt.date.fromisoformat(timeline["start_date"])
+    weekly = _profile_weekly_volume(user_visits, start_date_obj, timeline["weeks"])
+    if weekly is not None:
+        timeline["weekly_volume_multipliers"] = weekly
+
+    cohort: dict = {
+        "id": "primary",
+        "size": cohort_size,
+        "field_distributions": field_dists,
+        "progression": "flat",
+    }
+    if correlation is not None:
+        cohort["correlation"] = correlation
 
     manifest_dict = {
         "opportunity_id": opportunity_id,
@@ -292,17 +480,12 @@ def profile(
         "random_seed": 42,
         "timeline": timeline,
         "flw_personas": personas,
-        "beneficiary_cohorts": [
-            {
-                "id": "primary",
-                "size": cohort_size,
-                "field_distributions": field_dists,
-                "progression": "flat",
-            }
-        ],
+        "beneficiary_cohorts": [cohort],
         "anomalies": [],
         "kpi_config": kpis,
         "coaching_arcs": [],
+        "temporal": temporal,
+        "flag_reason_distribution": flag_reasons,
     }
 
     manifest_yaml = yaml.dump(manifest_dict, default_flow_style=False, sort_keys=False)

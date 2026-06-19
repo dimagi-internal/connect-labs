@@ -43,6 +43,7 @@ def _merge_labs_only_opps(org_data: dict, user) -> dict:
     """Append visible labs-only synthetic opps to org/program/opportunity lists."""
     # Local import to avoid circular dependency with labs.synthetic.models at module load.
     from commcare_connect.labs.synthetic.models import SyntheticOpportunity
+    from commcare_connect.labs.synthetic.org_tree import synthetic_org_slug, synthetic_program_id
 
     try:
         candidates = list(SyntheticOpportunity.objects.filter(labs_only=True, enabled=True))
@@ -69,12 +70,14 @@ def _merge_labs_only_opps(org_data: dict, user) -> dict:
         org_label = opp.org_name or "Labs Synthetic"
         program_label = opp.program_name or "Labs Synthetic"
         # Stable synthetic slug/id so the same opp gets the same shell across requests.
-        org_slug = f"labs-synthetic-{_slugify(org_label)}"
+        # Derivation rules are shared with the /api/export/opp_org_program_list endpoint
+        # (labs.synthetic.org_tree) so the two surfaces can't drift.
+        org_slug = synthetic_org_slug(opp)
         # Labs-only program id, in the reserved >= 10_000 range so it can't collide with
         # real Connect program PKs. Defaults to the opp's own id (1 opp = 1 program), but
         # several opps can share one program by setting SyntheticOpportunity.program_id —
         # the dedup below then files them all under that one program.
-        program_id = opp.program_id or opp.opportunity_id
+        program_id = synthetic_program_id(opp)
 
         opportunities.append(
             {
@@ -123,11 +126,6 @@ def _merge_labs_only_opps(org_data: dict, user) -> dict:
     merged["organizations"] = organizations
     merged["programs"] = programs
     return merged
-
-
-def _slugify(value: str) -> str:
-    """Lowercase, hyphen-separated, alnum-only slug for synthesized org slugs."""
-    return "".join(c if c.isalnum() else "-" for c in value.strip().lower()).strip("-") or "labs"
 
 
 def extract_context_from_url(request: HttpRequest) -> dict:

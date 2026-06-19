@@ -392,3 +392,25 @@ def test_synthetic_set_my_visibility_flips_user_flag(user):
     assert result["view_synthetic_opps"] is False
     user.refresh_from_db()
     assert user.view_synthetic_opps is False
+
+
+# -----------------------------------------------------------------------------
+# Task 19: profile / generate / fidelity tools
+# -----------------------------------------------------------------------------
+
+
+def test_profile_opp_tool_invokes_service(tmp_path):
+    """synthetic_profile_opp calls the service with the user's token + base_url."""
+    from unittest.mock import patch
+
+    from commcare_connect.mcp.tools import synthetic as tools
+
+    class _User:
+        email = "jjackson@dimagi.com"
+
+    with patch.object(tools, "require_connect_token", return_value="tok"), patch.object(
+        tools, "profile_opp_to_bundle", return_value=tmp_path / "523"
+    ) as svc, patch.object(tools, "_require_opportunity_access", return_value=None):
+        out = tools.synthetic_profile_opp(_User(), source_opportunity_id=523, out_dir=str(tmp_path))
+    assert svc.called
+    assert out["bundle_dir"].endswith("523")

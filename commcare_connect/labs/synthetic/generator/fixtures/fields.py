@@ -14,11 +14,14 @@ from .manifest import (
     Anomaly,
     BeneficiaryCohort,
     BinaryDistribution,
+    CategoricalDistribution,
     FlwPersona,
     NormalDistribution,
     UniformDistribution,
 )
 from .schema_loader import FormSchema, QuestionSpec
+
+_OMIT = object()  # sentinel: field rolled its null_rate and should be omitted
 
 
 def _apply_transform(raw: float, transform: str | None, rng: random.Random) -> Any:
@@ -58,6 +61,12 @@ def _outlier(distribution, rng: random.Random) -> float:
         # (rate >= 0.5), the outlier is the failure (0.0), and vice versa.
         return 0.0 if distribution.rate >= 0.5 else 1.0
     raise TypeError(f"unknown distribution: {distribution!r}")
+
+
+def _categorical_value(dist: CategoricalDistribution, rng: random.Random) -> str:
+    names = sorted(dist.values)
+    weights = [dist.values[n] for n in names]
+    return rng.choices(names, weights=weights, k=1)[0]
 
 
 def _binary_choice(spec: QuestionSpec, raw: float) -> Any:
@@ -151,6 +160,7 @@ def fill_form_json(
     rng: random.Random,
     persona: FlwPersona | None = None,
     period: int | None = None,
+    correlated_values: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     anomaly_paths = {a.field_path for a in anomalies_for_visit if a.field_path}
     # Persona overrides take precedence over cohort distributions. Building a
@@ -168,16 +178,27 @@ def fill_form_json(
         leaf = spec.json_path.rsplit(".", 1)[-1]
         leaf_question_counts[leaf] = leaf_question_counts.get(leaf, 0) + 1
 
+    correlated = correlated_values or {}
     out: dict[str, Any] = {}
     covered_paths: set[str] = set()
     consumed_keys: set[str] = set()
     for spec in schema.questions:
         covered_paths.add(spec.json_path)
+        if spec.json_path in correlated:
+            dist = effective.get(spec.json_path)
+            if dist is not None and getattr(dist, "null_rate", 0.0) and rng.random() < dist.null_rate:
+                continue
+            _set_nested(out, spec.json_path, correlated[spec.json_path])
+            continue
         dist, consumed_key = _resolve_dist(effective, spec, leaf_question_counts=leaf_question_counts)
         if consumed_key is not None:
             consumed_keys.add(consumed_key)
         if dist is None:
             value = _default_for_kind(spec, rng)
+        elif getattr(dist, "null_rate", 0.0) and rng.random() < dist.null_rate:
+            continue  # omit this field — matches real missing-data rate
+        elif isinstance(dist, CategoricalDistribution):
+            value = _categorical_value(dist, rng)
         else:
             raw = _outlier(dist, rng) if spec.json_path in anomaly_paths else _draw(dist, rng, period)
             transform = getattr(dist, "transform", None)
@@ -200,6 +221,16 @@ def fill_form_json(
     # must NOT be orphan-written (that would double-write the field).
     for path, dist in effective.items():
         if path in covered_paths or path in consumed_keys:
+            continue
+        if path in correlated:
+            if getattr(dist, "null_rate", 0.0) and rng.random() < dist.null_rate:
+                continue
+            _set_nested(out, path, correlated[path])
+            continue
+        if getattr(dist, "null_rate", 0.0) and rng.random() < dist.null_rate:
+            continue
+        if isinstance(dist, CategoricalDistribution):
+            _set_nested(out, path, _categorical_value(dist, rng))
             continue
         raw = _outlier(dist, rng) if path in anomaly_paths else _draw(dist, rng, period)
         transform = getattr(dist, "transform", None)

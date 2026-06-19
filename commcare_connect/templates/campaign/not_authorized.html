@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Not authorized — Campaign Utility Tool</title>
+  <link rel="stylesheet" href="/static/campaign/campaign.css" />
+</head>
+<body style="font-family:'Work Sans',sans-serif;background:#faf9f5;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0;">
+  <div style="background:#fff;border:1px solid #DEE2E6;border-radius:14px;padding:40px;max-width:420px;text-align:center;box-shadow:0 1px 2px rgba(22,0,109,.06);">
+    <h1 style="color:#16006D;font-size:20px;margin:0 0 12px;">Access not authorized</h1>
+    <p style="color:#5F6A7D;font-size:13.5px;margin:0 0 24px;">{{ reason }}</p>
+    <a href="{% url 'campaign:login' %}" style="color:#5D70D2;font-weight:600;font-size:13.5px;">Back to sign in</a>
+  </div>
+</body>
+</html>

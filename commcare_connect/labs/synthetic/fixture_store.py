@@ -25,6 +25,12 @@ ENDPOINT_FILES: dict[str, str] = {
     # {"learn_app", "deliver_app"} wrapper (each value the app JSON or null),
     # mirroring real Connect. Absent file => the opp has no app (served as nulls).
     "app_structure": "app_structure.json",
+    # #650 gap 2 — Scout's standard connect_sync pipeline materializes these too.
+    # Absent file => empty page (the opp has no such data), letting the same
+    # pipeline run unchanged against synthetic opps.
+    "payment": "payment.json",
+    "invoice": "invoice.json",
+    "assessment": "assessment.json",
 }
 
 

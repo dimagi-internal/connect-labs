@@ -411,6 +411,11 @@ COMMCARE_HQ_URL = env("COMMCARE_HQ_URL", default="https://staging.commcarehq.org
 COMMCARE_API_KEY = env("COMMCARE_API_KEY", default="")
 COMMCARE_USERNAME = env("COMMCARE_USERNAME", default="")
 
+# Campaign Utility Tool — bootstrap admins (auto-provisioned as Campaign Admin)
+CAMPAIGN_BOOTSTRAP_ADMIN_DOMAINS = env.list(
+    "CAMPAIGN_BOOTSTRAP_ADMIN_DOMAINS", default=["dimagi.com", "dimagi-ai.com"]
+)
+
 # ConnectID integration settings
 CONNECTID_URL = env("CONNECTID_URL", default="http://localhost:8080")
 

@@ -422,7 +422,12 @@ class SolicitationCreateView(ManagerRequiredMixin, TemplateView):
             data["program_name"] = labs_context.get("program_name", "")
             try:
                 da = _get_data_access(request)
-                da.create_solicitation(data)
+                created = da.create_solicitation(data)
+                # Land on the new call's responses page — where the owner watches for
+                # applicants — rather than the generic list. Fall back to the list if
+                # the created record has no id for any reason.
+                if created and getattr(created, "id", None):
+                    return redirect("solicitations:responses_list", pk=created.id)
                 return redirect("solicitations:manage_list")
             except ValidationError as e:
                 # Canonical-schema drift caught at the data-access layer.

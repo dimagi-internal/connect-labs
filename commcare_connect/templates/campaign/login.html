@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Campaign Utility Tool — Sign in</title>
+  <link rel="stylesheet" href="/static/campaign/campaign.css" />
+</head>
+<body style="font-family:'Work Sans',sans-serif;background:#faf9f5;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0;">
+  <div style="background:#fff;border:1px solid #DEE2E6;border-radius:14px;padding:40px;max-width:380px;text-align:center;box-shadow:0 1px 2px rgba(22,0,109,.06);">
+    <h1 style="color:#16006D;font-size:22px;margin:0 0 6px;">Campaign Utility Tool</h1>
+    <p style="color:#5F6A7D;font-size:13.5px;margin:0 0 24px;">by Dimagi</p>
+    <a href="{% url 'campaign:oauth_initiate' %}"
+       style="display:inline-block;background:#5D70D2;color:#fff;text-decoration:none;font-weight:600;font-size:14px;padding:11px 22px;border-radius:8px;">
+      Sign in with CommCare
+    </a>
+  </div>
+</body>
+</html>

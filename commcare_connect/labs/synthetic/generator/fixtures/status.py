@@ -36,17 +36,27 @@ _FLAG_REASONS = (
 )
 
 
+def _pick_reason(rng: random.Random, flag_reason_distribution: dict[str, float] | None) -> str:
+    """Sample a flag reason from a distribution, or fall back to _FLAG_REASONS if empty/None."""
+    if flag_reason_distribution:
+        names = sorted(flag_reason_distribution)
+        weights = [flag_reason_distribution[n] for n in names]
+        return rng.choices(names, weights=weights, k=1)[0]
+    return rng.choice(_FLAG_REASONS)
+
+
 def decide_visit_status(
     *,
     persona: FlwPersona,
     has_anomaly: bool,
     rng: random.Random,
+    flag_reason_distribution: dict[str, float] | None = None,
 ) -> VisitStatus:
     if has_anomaly:
         return VisitStatus(
             status="pending",
             flagged=True,
-            flag_reason=rng.choice(_FLAG_REASONS),
+            flag_reason=_pick_reason(rng, flag_reason_distribution),
             review_status="pending",
         )
     if rng.random() < persona.flag_rate:
@@ -54,7 +64,7 @@ def decide_visit_status(
         return VisitStatus(
             status="rejected" if rejected else "pending",
             flagged=True,
-            flag_reason=rng.choice(_FLAG_REASONS),
+            flag_reason=_pick_reason(rng, flag_reason_distribution),
             review_status="rejected" if rejected else "pending",
         )
     return VisitStatus(
