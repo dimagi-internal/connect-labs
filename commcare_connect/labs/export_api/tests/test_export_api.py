@@ -226,7 +226,15 @@ def test_detail_returns_bare_dict(monkeypatch):
     _make_opp()
     resp = _client_for(_user()).get(DETAIL_URL)
     assert resp.status_code == 200
-    assert resp.json() == opp  # bare dict, not enveloped
+    assert resp.json() == {**opp, "visit_count": 0}  # bare dict + injected visit_count
+
+
+@pytest.mark.django_db
+def test_detail_injects_registry_visit_count(monkeypatch):
+    _install(monkeypatch, {"folder-a": {"opportunity.json": {"id": 10001, "name": "X"}}})
+    _make_opp(visit_count=137)
+    body = _client_for(_user()).get(DETAIL_URL).json()
+    assert body["visit_count"] == 137
 
 
 @pytest.mark.django_db

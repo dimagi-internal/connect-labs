@@ -98,11 +98,14 @@ class OpportunityDetailView(_ExportView):
         responses={200: OpenApiTypes.OBJECT, 404: OpenApiResponse(description="Not found or not visible.")},
     )
     def get(self, request, opportunity_id):
-        _visible_opp_or_404(request.user, opportunity_id)
+        opp = _visible_opp_or_404(request.user, opportunity_id)
         rows = _synthetic_client(opportunity_id).fetch_all("")
         if not rows:
             raise NotFound("Opportunity not found.")
-        return Response(rows[0])
+        detail = dict(rows[0])
+        # #650 gap 5 — Scout uses visit_count as the visit-progress denominator.
+        detail["visit_count"] = opp.visit_count if opp.visit_count is not None else detail.get("visit_count", 0)
+        return Response(detail)
 
 
 class OpportunityDataView(_ExportView):
