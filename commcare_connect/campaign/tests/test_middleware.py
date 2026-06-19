@@ -1,8 +1,25 @@
+from types import SimpleNamespace
+
 import pytest
 from django.urls import reverse
 
 from commcare_connect.campaign.models import CampaignUser
 from commcare_connect.users.models import User
+
+
+def test_labs_oauth_middleware_skips_campaign_paths():
+    # The labs OAuth-session middleware must NOT act on /campaign/ — campaign users
+    # log in via CommCare (no labs_oauth), and the labs middleware would otherwise
+    # log them out. Regression guard for the cross-middleware conflict.
+    from commcare_connect.labs.oauth_session import LabsOAuthSessionMiddleware
+
+    authed = SimpleNamespace(is_authenticated=True, username="ace@dimagi-ai.com")
+    assert LabsOAuthSessionMiddleware._should_check(SimpleNamespace(user=authed, path="/campaign/")) is False
+    assert (
+        LabsOAuthSessionMiddleware._should_check(SimpleNamespace(user=authed, path="/campaign/api/bootstrap/"))
+        is False
+    )
+    assert LabsOAuthSessionMiddleware._should_check(SimpleNamespace(user=authed, path="/labs/overview/")) is True
 
 
 @pytest.mark.django_db
