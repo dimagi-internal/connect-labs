@@ -38,6 +38,7 @@ _SKIP_PATH_PREFIXES = (
     "/labs/test-auth/",
     "/labs/commcare/",
     "/labs/ocs/",
+    "/campaign/",
     "/mcp/",
     "/admin/",
     "/o/",
