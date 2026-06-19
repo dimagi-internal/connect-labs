@@ -28,14 +28,18 @@
     const s = document.createElement('style');
     s.id = STYLE_ID;
     s.textContent = `
+      /* Cap the panel to the map pane (max-height + internal scroll) so an expanded
+         Layers tab can't overhang the map's bottom edge and float over the
+         surrounding-ward comparison table's header below the map. */
       .mp-panel{position:absolute;top:.5rem;right:.5rem;z-index:6;width:248px;background:rgba(255,255,255,.97);
         border:1px solid #e5e7eb;border-radius:.6rem;box-shadow:0 10px 30px -12px rgba(16,18,34,.45);
-        font-size:.72rem;color:#111827;overflow:hidden}
+        font-size:.72rem;color:#111827;overflow:hidden;display:flex;flex-direction:column;
+        max-height:calc(100% - 1rem)}
       .mp-panel-tabs{display:flex;border-bottom:1px solid #eceef1}
       .mp-panel-tabs button{flex:1;border:0;background:transparent;cursor:pointer;padding:.5rem .25rem;
         font:700 .66rem/1 inherit;letter-spacing:.04em;color:#8a90a0;text-transform:uppercase}
       .mp-panel-tabs button.on{color:#2d36b3;box-shadow:inset 0 -2px 0 #3843d0}
-      .mp-panel-sec{padding:.55rem .6rem;max-height:340px;overflow:auto}
+      .mp-panel-sec{padding:.55rem .6rem;max-height:340px;overflow:auto;min-height:0}
       .mp-panel-sec[hidden]{display:none}
       .mp-lyr{display:flex;align-items:center;gap:.5rem;padding:.45rem 0;border-bottom:1px solid #f1f2f5}
       .mp-lyr:last-child{border-bottom:0}

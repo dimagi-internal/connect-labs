@@ -639,6 +639,29 @@ def test_program_plans_json_groups_carry_kind(client, django_user_model, monkeyp
     assert g["kind"] == "study" and g["status"] == "defining"
 
 
+def test_program_plans_json_study_carries_arms(client, django_user_model, monkeypatch):
+    # The workspace labels a two-arm study by its arm pair + shows a field-blind
+    # marker, both of which need the per-member arm map in the JSON.
+    _login(client, django_user_model)
+    interv = _FakeProgramPlan(601, "sampling", [], name="Attakar")
+    control = _FakeProgramPlan(602, "sampling", [], name="Gura")
+    groups = {
+        9: _FakeGroup(
+            9,
+            "Kaduna study",
+            [601, 602],
+            kind="study",
+            status="reviewed",
+            arms={601: "intervention", 602: "control"},
+        )
+    }
+    _make_fake_program_da(monkeypatch, {601: interv, 602: control}, groups)
+    resp = client.get(reverse("microplans:program_plans", kwargs={"program_id": 25}))
+    assert resp.status_code == 200
+    g = next(g for g in resp.json()["groups"] if g["group_id"] == 9)
+    assert g["arms"] == {"601": "intervention", "602": "control"}
+
+
 def test_program_create_plan(client, django_user_model, monkeypatch):
     _login(client, django_user_model)
     plans, _ = _make_fake_program_da(monkeypatch, {}, {})

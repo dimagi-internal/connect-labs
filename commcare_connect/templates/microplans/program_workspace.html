@@ -29,7 +29,7 @@
         <button type="button" id="new-group" class="button button-sm outline-style" disabled title="Select plans below to bundle">+ Group selected plans</button>
       </div>
     </div>
-    <p class="text-xs text-gray-500 mb-3">A <b>study</b> is a controlled set of wards (intervention + control) sampled together — a finished study is ready to recruit a survey firm against. A <b>bundle</b> offers a survey firm a read-only set of existing plans — tick draft plans below, then group them.</p>
+    <p class="text-xs text-gray-500 mb-3">A <b>study</b> is a controlled set of wards (intervention + control) sampled together — a finished study is ready to recruit a survey firm against.</p>
     <div id="groups" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
   </section>
 
@@ -110,6 +110,12 @@
     { key: "archived", label: "Archived", statuses: ["archived"], hint: "candidate regions not chosen" },
   ];
   const BADGE = { draft: "bg-gray-100 text-gray-700", in_review: "bg-amber-100 text-amber-800", approved: "bg-green-100 text-green-800", deployed: "bg-cyan-100 text-cyan-800", archived: "bg-gray-100 text-gray-400" };
+  // Study lifecycle vocabulary (the PlanGroupRecord status: defining → sampled →
+  // reviewed → exported), with one label + colour each so a study card's status
+  // reads from the SAME vocabulary everywhere (no "reviewed" card over a "Draft"
+  // member badge mismatch).
+  const STUDY_STATUS_LABEL = { defining: "Defining", sampled: "Sampled", reviewed: "Reviewed", exported: "Exported" };
+  const STUDY_STATUS_BADGE = { defining: "bg-gray-100 text-gray-700", sampled: "bg-amber-100 text-amber-800", reviewed: "bg-green-100 text-green-800", exported: "bg-emerald-100 text-emerald-800" };
   // Lifecycle ordering so we can render forward moves as the primary (solid) action
   // and backward moves as muted "← back" controls.
   const ORDER = { draft: 0, in_review: 1, approved: 2, deployed: 3 };
@@ -202,15 +208,33 @@
       const allApproved = members.length > 0 && members.every((p) => p.status === "approved" || p.status === "deployed");
       return allApproved && FINISHED_STATUSES.has(g.status);
     };
-    // Lead with the finished, ready-to-solicit studies — they're the hero of this
-    // page (a viewer should see what's ready to recruit a firm against first), then
-    // other studies, then bundles.
-    const visibleGroups = (DATA.groups || []).filter(groupHasContent).sort((a, b) => {
-      const ra = isReadyToSolicit(a) ? 0 : (a.kind === "study" ? 1 : 2);
-      const rb = isReadyToSolicit(b) ? 0 : (b.kind === "study" ? 1 : 2);
-      return ra - rb;
-    });
-    $("groups").innerHTML = visibleGroups.map((g) => {
+    // Label a two-arm study by its arm PAIR ("Attakar × Gura" = intervention ×
+    // control ward), derived from the labs-side arm map + each member plan's ward
+    // name. Falls back to the study's own name when arms aren't assigned yet.
+    const armPairLabel = (g) => {
+      const arms = g.arms || {};
+      if (!Object.keys(arms).length) return null;
+      const wardName = (p) => (p && (p.region || p.name)) || "";
+      const pick = (want) => (g.plan_ids || [])
+        .map((pid) => planById[pid])
+        .filter((p) => p && arms[String(p.plan_id)] === want)
+        .map(wardName).filter(Boolean);
+      const interv = pick("intervention");
+      const control = pick("control");
+      if (!interv.length && !control.length) return null;
+      const left = interv.join(", ") || "—";
+      const right = control.join(", ") || "—";
+      return `${left} × ${right}`;
+    };
+    // Split the lane: FINISHED & approved studies lead in their own section (out of
+    // the in-progress disclosure); in-progress studies + bundles follow.
+    const visibleGroups = (DATA.groups || []).filter(groupHasContent);
+    const finishedGroups = visibleGroups.filter(isReadyToSolicit);
+    const inProgressGroups = visibleGroups
+      .filter((g) => !isReadyToSolicit(g))
+      .sort((a, b) => (a.kind === "study" ? 0 : 1) - (b.kind === "study" ? 0 : 1));
+    const orderedGroups = finishedGroups.concat(inProgressGroups);
+    $("groups").innerHTML = orderedGroups.map((g) => {
       // List the group's member plans here (they're hidden from the top columns)
       // so each grouped plan stays one click from its review page.
       const members = (g.plan_ids || []).map((pid) => planById[pid]).filter(Boolean);
@@ -219,13 +243,23 @@
       // name) and leaks the plan's lifecycle badge — redundant and contradictory next
       // to the study's own status. Skip it for single-plan studies; the coverage is
       // already summarised by the ward count + the Open study drill-in.
+      // A study's member row shows the member's ARM (the meaningful axis inside a
+      // study), NOT its plan-level lifecycle badge — a per-plan "Draft" next to a
+      // "Reviewed" study status is a contradiction in vocabulary. Bundles keep the
+      // plan lifecycle badge, since a bundle is a set of independent plans.
+      const armOf = (g.arms || {});
+      const ARM_BADGE = { intervention: "bg-emerald-50 text-emerald-700", control: "bg-blue-50 text-blue-700" };
       const memberRows = (isStudy && members.length <= 1)
         ? ""
-        : members.map((p) =>
-            `<a class="flex items-center justify-between gap-2 py-1 text-xs hover:bg-gray-50 rounded px-1" href="${reviewUrl(p.plan_id)}">
+        : members.map((p) => {
+            const tag = isStudy
+              ? (() => { const a = armOf[String(p.plan_id)]; return a ? `<span class="px-1.5 py-0.5 rounded whitespace-nowrap ${ARM_BADGE[a] || 'bg-gray-50 text-gray-500'}">${esc(a)}</span>` : '<span class="px-1.5 py-0.5 rounded whitespace-nowrap bg-gray-50 text-gray-400">unassigned</span>'; })()
+              : `<span class="px-1.5 py-0.5 rounded whitespace-nowrap ${BADGE[p.status] || ''}">${esc(p.status_label)}</span>`;
+            return `<a class="flex items-center justify-between gap-2 py-1 text-xs hover:bg-gray-50 rounded px-1" href="${reviewUrl(p.plan_id)}">
           <span class="truncate text-brand-cornflower-blue">${esc(p.name)}</span>
-          <span class="px-1.5 py-0.5 rounded whitespace-nowrap ${BADGE[p.status] || ''}">${esc(p.status_label)}</span>
-        </a>`).join("") || (isStudy ? "" : '<p class="text-xs text-gray-400 py-1">(plans not in this program)</p>');
+          ${tag}
+        </a>`;
+          }).join("") || (isStudy ? "" : '<p class="text-xs text-gray-400 py-1">(plans not in this program)</p>');
       const primaryLink = isStudy ? groupManageUrl(g.group_id) : groupShareUrl(g.group_id);
       const badge = isStudy
         ? '<span class="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">study</span>'
@@ -240,12 +274,11 @@
         ? `${wardCount} ${wardCount === 1 ? "ward" : "wards"}`
         : `${g.plan_ids.length} ${g.plan_ids.length === 1 ? "plan" : "plans"}`;
       const readyToSolicit = isReadyToSolicit(g);
-      const readyChip = readyToSolicit
-        ? '<span class="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-green-50 text-green-700 border border-green-200 ml-1">ready to solicit</span>'
-        : '';
       const solicitBtn = `<a class="button button-sm ${readyToSolicit ? "primary-dark" : "outline-style"}" href="${groupSolicitationUrl(g.group_id)}" title="Create a survey solicitation covering this group's plans">Create solicitation</a>`;
       // A finished, ready-to-solicit study is the page's hero: span the full grid
-      // width, lift it with a stronger ring + green accent, and lead its title.
+      // width, lift it with a stronger ring + green accent, and lead its title. The
+      // "ready" state is now stated ONCE — the green hero lede — not also as a badge
+      // chip and a status word (the old triple-statement).
       const heroCls = readyToSolicit
         ? " ring-2 ring-green-300 shadow-sm border-green-200"
         : "";
@@ -253,15 +286,30 @@
       const heroLede = readyToSolicit
         ? '<p class="text-xs text-green-700 mb-2"><i class="fa-solid fa-circle-check mr-1"></i>Finished study — ready to recruit a survey firm against this coverage.</p>'
         : '';
+      // Title: a two-arm study leads with its arm PAIR (intervention × control ward);
+      // a bundle (or an unassigned study) keeps its plain name.
+      const pair = isStudy ? armPairLabel(g) : null;
+      const titleText = pair || g.name;
+      // Field-blind marker: arms are recorded labs-side only and never reach the
+      // field/Connect, so the survey stays blind. Shown once per study that has arms.
+      const blindMarker = (isStudy && Object.keys(g.arms || {}).length)
+        ? '<span class="inline-flex items-center gap-1 text-[10px] text-gray-500 mt-1" title="The intervention/control arm is stored labs-side for analysis and is never written to the plan, work areas, or anything the field organisation sees — the survey stays blind."><i class="fa-solid fa-eye-slash"></i> arms recorded labs-side · field-blind</span>'
+        : '';
+      // Unified study status: one vocabulary (Defining / Sampled / Reviewed /
+      // Exported) as a badge, replacing the bare lowercase status word.
+      const studyStatusBadge = isStudy
+        ? `<span class="text-xs px-2 py-0.5 rounded whitespace-nowrap ${STUDY_STATUS_BADGE[g.status] || 'bg-gray-100 text-gray-500'}">${esc(STUDY_STATUS_LABEL[g.status] || g.status || '')}</span>`
+        : `<span class="text-xs ${g.shared ? "text-green-600" : "text-gray-400"}">${g.shared ? "shared" : "not shared"}</span>`;
       return `<div class="border rounded-lg p-3 bg-white${heroCls}">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2 min-w-0">
-            <a class="font-semibold text-brand-cornflower-blue truncate ${titleCls}" href="${primaryLink}">${esc(g.name)}</a>${badge}${readyChip}
+            <a class="font-semibold text-brand-cornflower-blue truncate ${titleCls}" href="${primaryLink}" title="${esc(g.name)}">${esc(titleText)}</a>${badge}
           </div>
-          <span class="text-xs ${g.shared ? "text-green-600" : "text-gray-400"}">${isStudy ? esc(g.status || "") : (g.shared ? "shared" : "not shared")}</span>
+          ${studyStatusBadge}
         </div>
+        ${blindMarker}
         ${heroLede}
-        <div class="text-xs text-gray-500">${countLabel}${g.offered_to ? " · for " + esc(g.offered_to) : ""}</div>
+        <div class="text-xs text-gray-500 mt-1">${countLabel}${g.offered_to ? " · for " + esc(g.offered_to) : ""}</div>
         ${memberRows ? `<div class="mt-2 divide-y divide-gray-100 border-y border-gray-100">${memberRows}</div>` : ""}
         <div class="mt-2 flex flex-wrap gap-2">
           ${readyToSolicit

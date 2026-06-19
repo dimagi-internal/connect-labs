@@ -29,9 +29,12 @@
 
   <!-- Management actions -->
   <div class="flex flex-wrap gap-2 text-sm">
+    <!-- "Add a plan in the editor" is the recommended path (it's where boundaries +
+         arms + sampling all happen), so it leads as the single PRIMARY action; the
+         two bulk/map shortcuts stay as secondary outline buttons. -->
+    <a href="{{ new_plan_url }}" class="px-3 py-1.5 rounded-lg border border-brand-cornflower-blue bg-brand-cornflower-blue text-white font-medium hover:opacity-90">+ Add a plan in the editor</a>
     <a href="{{ bulk_create_url }}" class="px-3 py-1.5 rounded-lg border border-gray-300 bg-white hover:bg-gray-50">+ Add wards by name</a>
     <a href="{{ add_from_map_url }}" class="px-3 py-1.5 rounded-lg border border-gray-300 bg-white hover:bg-gray-50">+ Add wards from map</a>
-    <a href="{{ new_plan_url }}" class="px-3 py-1.5 rounded-lg border border-gray-300 bg-white hover:bg-gray-50">+ Add a plan in the editor</a>
     {% if entries %}
     <a href="{{ compare_url }}" class="px-3 py-1.5 rounded-lg border border-gray-300 bg-white hover:bg-gray-50">Compare</a>
     {% endif %}
