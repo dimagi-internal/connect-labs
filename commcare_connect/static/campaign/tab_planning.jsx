@@ -113,81 +113,50 @@ function PlanningTab({ density, role }) {
 
   // ---- mutations ----
   const saveMp = (result, orig) => {
-    const plannedToDate = Math.round(result.budget * elapsedFrac);
     if (orig) {
-      setMps((ms) =>
-        ms.map((m) =>
-          m.id === orig.id
-            ? {
-                ...m,
-                ...result,
-                plannedToDate,
-                roles: result.roles.map((r) => ({
-                  ...r,
-                  actual:
-                    (m.roles.find((x) => x.roleId === r.roleId) || {}).actual ||
-                    0,
-                })),
-                actualWf: m.actualWf,
-                updated: 'Jun 4, 2026',
-              }
-            : m,
-        ),
-      );
-      toast('Microplan updated — ' + result.lga);
+      window.campaignActions
+        .updateMicroplan(orig.id, result)
+        .then((res) => {
+          setMps((ms) =>
+            ms.map((m) => (m.id === res.microplan.id ? res.microplan : m)),
+          );
+          toast('Microplan updated — ' + result.lga);
+        })
+        .catch((e) => toast('Update failed: ' + e.message, 'danger'));
     } else {
-      const nm = {
-        ...result,
-        id: 'MP-' + String(200 + mps.length),
-        roles: result.roles.map((r) => ({ ...r, actual: 0 })),
-        actualWf: 0,
-        spent: 0,
-        reached: 0,
-        dosesUsed: 0,
-        plannedToDate: 0,
-        coldBoxes: result.coldBoxes,
-        vehicles: result.vehicles,
-        status: 'Planned',
-        owner: 'You',
-        updated: 'Jun 4, 2026',
-      };
-      setMps((ms) => [nm, ...ms]);
-      toast('Microplan created — ' + result.lga + ', ' + result.region);
+      window.campaignActions
+        .createMicroplan(result)
+        .then((res) => {
+          setMps((ms) => [res.microplan, ...ms]);
+          toast('Microplan created — ' + result.lga + ', ' + result.region);
+        })
+        .catch((e) => toast('Create failed: ' + e.message, 'danger'));
     }
     setMpForm({ open: false, mp: null });
   };
   const saveTarget = (next, orig) => {
-    setMps((ms) =>
-      ms.map((m) =>
-        m.id === orig.id
-          ? {
-              ...m,
-              target: next.target,
-              goalPct: next.goalPct,
-              objective: next.objective,
-              updated: 'Jun 4, 2026',
-            }
-          : m,
-      ),
-    );
-    setTargetMp(null);
-    toast('Target updated — ' + orig.lga);
+    window.campaignActions
+      .setMicroplanTarget(orig.id, next.target, next.goalPct)
+      .then((res) => {
+        setMps((ms) =>
+          ms.map((m) => (m.id === res.microplan.id ? res.microplan : m)),
+        );
+        setTargetMp(null);
+        toast('Target updated — ' + orig.lga);
+      })
+      .catch((e) => toast('Target update failed: ' + e.message, 'danger'));
   };
   const saveBudget = (next, orig) => {
-    setMps((ms) =>
-      ms.map((m) =>
-        m.id === orig.id
-          ? {
-              ...m,
-              budget: next.budget,
-              plannedToDate: Math.round(next.budget * elapsedFrac),
-              updated: 'Jun 4, 2026',
-            }
-          : m,
-      ),
-    );
-    setBudgetMp(null);
-    toast('Budget allocation updated — ' + orig.lga);
+    window.campaignActions
+      .setMicroplanBudget(orig.id, next.budget)
+      .then((res) => {
+        setMps((ms) =>
+          ms.map((m) => (m.id === res.microplan.id ? res.microplan : m)),
+        );
+        setBudgetMp(null);
+        toast('Budget allocation updated — ' + orig.lga);
+      })
+      .catch((e) => toast('Budget update failed: ' + e.message, 'danger'));
   };
 
   return (

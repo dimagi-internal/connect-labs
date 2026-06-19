@@ -5,12 +5,7 @@ function ActivityDetails({ density, role }) {
   const D = window.CUT_DATA;
   const toast = useToast();
   const canManage = window.CUT_RBAC.can(role, 'activities', 'create');
-  const [acts, setActs] = useStateA(
-    D.ACTIVITIES.map((a) => ({
-      ...a,
-      synced: a.status === 'Completed' || a.id === 'ACT-01',
-    })),
-  );
+  const [acts, setActs] = useStateA(D.ACTIVITIES.map((a) => ({ ...a })));
   const [detail, setDetail] = useStateA(null);
   const [createOpen, setCreateOpen] = useStateA(false);
   const [statusF, setStatusF] = useStateA('all');
@@ -169,12 +164,19 @@ function ActivityDetails({ density, role }) {
                     icon="rotate"
                     onClick={(e) => {
                       e.stopPropagation();
-                      setActs((as) =>
-                        as.map((x) =>
-                          x.id === a.id ? { ...x, synced: true } : x,
-                        ),
-                      );
-                      toast(a.id + ' synced to CommCare');
+                      window.campaignActions
+                        .syncActivity(a.id)
+                        .then((res) => {
+                          setActs((as) =>
+                            as.map((x) =>
+                              x.id === res.activity.id ? res.activity : x,
+                            ),
+                          );
+                          toast(a.id + ' synced to CommCare');
+                        })
+                        .catch((e) =>
+                          toast('Sync failed: ' + e.message, 'danger'),
+                        );
                     }}
                   >
                     Sync
@@ -193,24 +195,26 @@ function ActivityDetails({ density, role }) {
         open={createOpen}
         onClose={() => setCreateOpen(false)}
         onCreate={(a, sync) => {
-          setActs((as) => [
-            {
-              ...a,
-              id: 'ACT-0' + (as.length + 1),
-              requests: 0,
-              workers: 0,
-              reached: 0,
-              synced: sync,
-              status: 'Planned',
-            },
-            ...as,
-          ]);
-          toast(
-            sync
-              ? 'Activity created & synced to CommCare'
-              : 'Activity created (not synced)',
-          );
-          setCreateOpen(false);
+          window.campaignActions
+            .createActivity({
+              name: a.name,
+              donor: a.donor,
+              region: a.region,
+              start: a.start,
+              end: a.end,
+              target: a.target,
+              sync: sync,
+            })
+            .then((res) => {
+              setActs((as) => [res.activity, ...as]);
+              toast(
+                sync
+                  ? 'Activity created & synced to CommCare'
+                  : 'Activity created (not synced)',
+              );
+              setCreateOpen(false);
+            })
+            .catch((e) => toast('Create failed: ' + e.message, 'danger'));
         }}
       />
     </Page>
