@@ -7,6 +7,8 @@ from commcare_connect.campaign.auth.decorators import current_campaign_user, req
 from commcare_connect.campaign.models import Campaign, Worker
 from commcare_connect.campaign.services import serializers, worker_actions
 
+INVESTIGATION_STATUSES = {"Open", "Under Review", "Resolved", "False Positive"}
+
 
 def _body(request) -> dict:
     try:
@@ -66,6 +68,8 @@ def kyc_status(request, worker_id):
 @require_perm("kyc", "approve")
 def kyc_resolve_dupe(request, worker_id):
     data = _body(request)
+    if "keep" not in data:
+        return JsonResponse({"error": "missing 'keep'"}, status=400)
     w = get_object_or_404(Worker, campaign=_campaign(), worker_id=worker_id)
     w = worker_actions.resolve_duplicate(w, bool(data.get("keep")))
     return JsonResponse({"worker": _ser(w)})
@@ -74,11 +78,14 @@ def kyc_resolve_dupe(request, worker_id):
 @require_perm("kyc", "approve")
 def kyc_investigation(request, worker_id):
     data = _body(request)
+    status = data.get("status")
+    if status and status not in INVESTIGATION_STATUSES:
+        return JsonResponse({"error": "bad investigation status"}, status=400)
     w = get_object_or_404(Worker, campaign=_campaign(), worker_id=worker_id)
     cu = current_campaign_user(request)
     w = worker_actions.save_investigation(
         w,
-        status=data.get("status", "Open"),
+        status=status or "Open",
         outcome=data.get("outcome"),
         note=data.get("note"),
         by_name=(cu.name or cu.commcare_username),

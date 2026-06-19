@@ -101,3 +101,28 @@ def test_rbac_reporting_user_cannot_write(client, campaign):
     assert resp.status_code == 403
     resp2 = _post(client, reverse("campaign:kyc_status", args=[w.worker_id]), {"status": "review"})
     assert resp2.status_code == 403
+
+
+@pytest.mark.django_db
+def test_resolve_dupe_requires_keep(client, campaign):
+    _login(client)
+    w = campaign.workers.exclude(fraud_rules=[]).first()
+    resp = _post(client, reverse("campaign:kyc_resolve_dupe", args=[w.worker_id]), {})
+    assert resp.status_code == 400
+
+
+@pytest.mark.django_db
+def test_investigation_rejects_bad_status(client, campaign):
+    _login(client)
+    w = campaign.workers.exclude(fraud_rules=[]).first()
+    resp = _post(client, reverse("campaign:kyc_investigation", args=[w.worker_id]), {"status": "banana"})
+    assert resp.status_code == 400
+
+
+@pytest.mark.django_db
+def test_investigation_note_only_preserves_status(client, campaign):
+    _login(client)
+    w = campaign.workers.exclude(fraud_rules=[]).first()
+    # note-only update (no status) must succeed and not 400
+    resp = _post(client, reverse("campaign:kyc_investigation", args=[w.worker_id]), {"note": "checking"})
+    assert resp.status_code == 200
