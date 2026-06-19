@@ -156,10 +156,19 @@ def _profile_field_distributions(
         if std < 0.001:
             continue
 
+        # Robust observed bounds (central 98%) so generated draws stay in the real
+        # range — an unbounded Normal otherwise emits impossible values (e.g. a
+        # negative child_age from N(13.5, 12.9)). p1/p99 also trims data-entry
+        # outliers rather than reproducing them.
+        lo = round(float(np.percentile(values, 1)), 3)
+        hi = round(float(np.percentile(values, 99)), 3)
+
         distributions[path] = {
             "distribution": "normal",
             "mean": round(mean, 3),
             "stddev": round(std, 3),
+            "lo": lo,
+            "hi": hi,
         }
 
     return distributions

@@ -243,3 +243,16 @@ def test_profile_emits_full_manifest(monkeypatch):
     assert m.temporal is not None
     assert m.beneficiary_cohorts[0].correlation is not None
     assert "form.sex" in m.beneficiary_cohorts[0].field_distributions
+
+
+def test_profile_field_distributions_captures_bounds():
+    """Numeric distributions carry observed robust bounds (p1/p99) for clamping."""
+    from commcare_connect.labs.synthetic.generator.fixtures.profiler import _profile_field_distributions
+
+    visits = [{"form_json": {"form": {"age": float(v)}}} for v in range(0, 60)]
+    dists = _profile_field_distributions(visits, ["form.age"])
+    d = dists["form.age"]
+    assert d["distribution"] == "normal"
+    assert "lo" in d and "hi" in d
+    assert d["lo"] >= 0.0  # never below the real observed floor -> no negatives
+    assert d["lo"] <= d["hi"] <= 59.0

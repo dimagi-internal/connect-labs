@@ -38,9 +38,19 @@ def _apply_transform(raw: float, transform: str | None, rng: random.Random) -> A
     return raw
 
 
+def _clamp_normal(raw: float, distribution: NormalDistribution) -> float:
+    """Clamp a draw to the distribution's observed [lo, hi] bounds (if set), so an
+    unbounded Normal can't emit impossible values (negative ages, bad vitals)."""
+    if distribution.lo is not None and raw < distribution.lo:
+        return distribution.lo
+    if distribution.hi is not None and raw > distribution.hi:
+        return distribution.hi
+    return raw
+
+
 def _draw(distribution, rng: random.Random, period: int | None = None) -> float:
     if isinstance(distribution, NormalDistribution):
-        return rng.gauss(distribution.mean, distribution.stddev)
+        return _clamp_normal(rng.gauss(distribution.mean, distribution.stddev), distribution)
     if isinstance(distribution, UniformDistribution):
         return rng.uniform(distribution.low, distribution.high)
     if isinstance(distribution, BinaryDistribution):
@@ -52,7 +62,12 @@ def _outlier(distribution, rng: random.Random) -> float:
     if isinstance(distribution, NormalDistribution):
         # Always at least 4 sigma off the mean, randomly above or below.
         sign = rng.choice([-1, 1])
-        return distribution.mean + sign * (4 + rng.random()) * max(distribution.stddev, 0.01)
+        val = distribution.mean + sign * (4 + rng.random()) * max(distribution.stddev, 0.01)
+        # A seeded outlier may exceed the normal range, but must not flip sign on a
+        # field whose observed minimum is non-negative (no negative-age "outliers").
+        if distribution.lo is not None and distribution.lo >= 0:
+            val = max(val, 0.0)
+        return val
     if isinstance(distribution, UniformDistribution):
         return distribution.low - 1 if rng.random() < 0.5 else distribution.high + 1
     if isinstance(distribution, BinaryDistribution):
