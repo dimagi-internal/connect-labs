@@ -13,7 +13,7 @@ Explicit flags (no spec)::
 
 from django.core.management.base import BaseCommand, CommandError
 
-from commcare_connect.labs.synthetic.clone_from_prod import generate_cohort, generate_opps_bulk
+from commcare_connect.labs.synthetic.clone_from_prod import generate_cohort, generate_fixtures_only, generate_opps_bulk
 from commcare_connect.labs.synthetic.cohort import load_cohort_spec, save_cohort_spec
 from commcare_connect.labs.synthetic.gdrive import DriveClient
 
@@ -27,6 +27,13 @@ class Command(BaseCommand):
         parser.add_argument("--program", default="KMC (Synthetic)", help="Program name for the generated opps.")
         parser.add_argument("--org", default="Dimagi-KMC (Synthetic)", help="Org name for the generated opps.")
         parser.add_argument("--fresh", action="store_true", help="Re-generate even if the opp already exists.")
+        parser.add_argument(
+            "--no-register",
+            action="store_true",
+            help="Generate fixtures to GDrive ONLY — write no database rows. Prints each "
+            "source_opp -> gdrive_folder_id; register them via the connect_labs MCP "
+            "(synthetic_create_labs_only). Lets the heavy generation run locally without DB access.",
+        )
 
     def _print(self, results, summary):
         for r in results:
@@ -36,6 +43,21 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS(summary))
 
     def handle(self, *args, **opts):
+        if opts.get("no_register"):
+            bundle_root = load_cohort_spec(opts["spec"]).bundle_root if opts.get("spec") else opts.get("bundles")
+            if not bundle_root:
+                raise CommandError("--no-register needs --spec or --bundles to locate the bundles.")
+            rows = generate_fixtures_only(bundle_root, drive=DriveClient())
+            for r in rows:
+                self.stdout.write(
+                    f"  {r['source_opportunity_id']} -> {r['gdrive_folder_id']}  ({r['visit_count']} visits)"
+                )
+            self.stdout.write(
+                self.style.SUCCESS(f"Generated {len(rows)} fixture sets to GDrive (no DB rows written).")
+            )
+            self.stdout.write("Register them with the connect_labs MCP: synthetic_create_labs_only per folder.")
+            return
+
         if opts.get("spec"):
             spec = load_cohort_spec(opts["spec"])
             spec, results = generate_cohort(spec, drive=DriveClient(), fresh=opts["fresh"])

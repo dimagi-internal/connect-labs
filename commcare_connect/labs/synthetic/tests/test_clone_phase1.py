@@ -132,3 +132,36 @@ def test_profile_cohort_records_resolved_bundle_root():
     assert out.bundle_root == f"gdrive:{run_folder}"
     store = GDriveBundleStore(drive, run_folder)
     assert {store.read(h).source_opp_id for h in store.list_handles()} == {100, 200}
+
+
+def test_generate_fixtures_only_writes_gdrive_no_db(settings):
+    """generate_fixtures_only uploads fixtures to GDrive and returns a folder map,
+    with NO database write (no SyntheticOpportunity row, no django_db marker)."""
+    settings.LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID = "parent"
+    drive = _FakeDrive()
+    run_folder = drive.create_folder("run", "parent")
+    store = GDriveBundleStore(drive, run_folder)
+    manifest = (
+        "opportunity_id: 523\nopportunity_name: KMC\nrandom_seed: 42\n"
+        "timeline: {start_date: 2026-05-04, end_date: 2026-06-01, weeks: 4,"
+        " visit_cadence_per_week_per_flw: {mean: 5, stddev: 1}}\n"
+        "flw_personas: [{id: a, archetype: steady,"
+        " accuracy_distribution: {mean: 0.8, stddev: 0.05},"
+        " completeness_distribution: {mean: 0.8, stddev: 0.05}, flag_rate: 0.1}]\n"
+        "beneficiary_cohorts: [{id: primary, size: 20, progression: flat,"
+        ' field_distributions: {"form.w": {distribution: normal, mean: 12.0, stddev: 2.0}}}]\n'
+        "kpi_config: [{kpi: a, field_path: form.w, aggregation: mean, threshold_underperform: 1.0}]\n"
+    )
+    store.write(
+        523,
+        manifest_yaml=manifest,
+        app_structure={"learn_app": None, "deliver_app": {"modules": []}},
+        opportunity={"id": 523, "name": "KMC"},
+    )
+
+    rows = clone_from_prod.generate_fixtures_only(f"gdrive:{run_folder}", drive=drive)
+
+    assert len(rows) == 1
+    assert rows[0]["source_opportunity_id"] == 523
+    assert rows[0]["gdrive_folder_id"]
+    assert rows[0]["visit_count"] > 0
