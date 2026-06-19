@@ -68,9 +68,14 @@ Landed this pass:
   identity error (403), missing username (403), inactive-whitelist deny (403), none creating a session.
 - **Stub-seam frontier** — `tests/test_integration_seams.py` (`@pytest.mark.stub`): payment/KYC make no
   outbound HTTP, plus greppable skipped placeholders for the real KYC/payment/CommCare integrations.
-- **Portable e2e scaffold** — `tests/e2e/` (Playwright, cross-process session injection, no labs
-  coupling). Excluded from the default run; **authored without a live run — selectors need first-run
-  verification** (see each file's docstring).
+- **Real, green Playwright e2e** — `tests/e2e/` (no labs coupling). Uses pytest-django `live_server`
+  against the freshly-migrated **test DB** (schema always matches code) + in-process session injection
+  (no `/campaign/` auth-bypass endpoint). **14 tests verified green against headless Chromium:** anon
+  redirect + login render; app mounts and paints seeded Overview; all 6 tabs render with **no JS
+  console/page errors**; RBAC-in-UI (admin sees System Administration, `reporting_user`/`payment_admin`
+  do not); **payment approval persists across a full reload** (the real browser→CSRF-meta→API→guard→DB
+  path — the exact lane PR #662 hid in); **activity sync persists across reload** (Plan 4). Excluded
+  from the default run (browser + server needed); run with the command in `tests/e2e/conftest.py`.
 - **Markers** registered in `pyproject.toml`: `contract`, `stub` (+ existing `e2e`); `tests/e2e` ignored
   by default `addopts`.
 
@@ -81,9 +86,12 @@ Extended after merging `origin/main` (Plan 4 — Activity + Microplanning, #665)
   activities (manage) but is denied microplan create/edit (planning is view-only for it).
 - **Serializer goldens** extended to the new `_activity` and `_microplan` key sets.
 
-Still open (see §9 priorities, §11 questions): the server-as-single-source RBAC refactor (frontend, needs
-a JS/live verify path — not done blind), per-plan checklist wiring into the PR template, and running the
-e2e suite against a live deploy.
+Still open (see §9 priorities, §11 questions): the server-as-single-source RBAC refactor (frontend —
+now that the e2e harness exists, this can be done with a real verify path), per-plan checklist wiring
+into the PR template, and running the e2e suite in CI (needs a Postgres + `playwright install chromium`
+step). Gotcha for first-time/CI runs: the e2e tests use `transactional_db`, so a **drifted test DB with
+orphan tables** (a table whose model was removed) breaks the teardown flush — rebuild with `--create-db`
+if you hit `cannot truncate ... referenced in a foreign key constraint`.
 
 ---
 
@@ -253,19 +261,27 @@ This reproduces PR #661 in-app and forever, even after labs is gone. Pair it wit
 campaign middleware **never** mutates/clears a session lacking `campaign_oauth` on non-`/campaign/`
 paths (so the app is a good citizen in any host).
 
-### 5.4 `campaign/tests/e2e/` — portable browser tests (Playwright)
+### 5.4 `campaign/tests/e2e/` — Playwright browser tests (BUILT, green against Chromium)
 
-House convention; `pytest-playwright` already available. At minimum:
+`pytest-playwright` + `pytest-django`'s `live_server`. The harness (`tests/e2e/conftest.py`) runs the
+app against the **test DB** (schema always matches code — no dev-DB dependency) and authenticates by
+**in-process session injection**: it mints a Django auth + `campaign_oauth` session row with the ORM and
+hands the `sessionid` cookie to Playwright, bypassing the OAuth redirect with **no auth-bypass
+endpoint**. `session_for(role)` / `page_as(role)` mint a page for any role; `approvable_worker` /
+`seeded` expose seeded fixtures. What's covered (14 tests, all green):
 
-- `test_login_gate.py` — anonymous `/campaign/` → 302 to login; static assets 200; login page renders.
-- `test_payment_persists.py` — log in, approve & queue a worker payment, **full reload**, status
-  persisted. (This is the one true end-to-end path through browser→CSRF→API→guard→DB and it caught
-  nothing-by-unit-test before.)
-- `test_tabs_mount.py` — bundle mounts, each tab switches without a console error.
+- `test_smoke.py` — anon `/campaign/` → login redirect; login renders; app **mounts and paints** seeded
+  Overview (Funder card, ₦6.10M).
+- `test_navigation.py` — all six tabs render their expected content with **no JS page errors**
+  (`page.on("pageerror", …)`); Reporting/Training are the expected "Coming soon" placeholders.
+- `test_rbac_ui.py` — admin sees **System Administration**; `reporting_user` and `payment_admin` do not;
+  view/public nav (Workers, Training Hub) still shows. This exercises the `perms.js`↔`app.jsx` show/hide
+  layer the contract test (§7.1) guards.
+- `test_payment_persists.py` — approve a clean, KYC-approved worker in the real drawer, **full reload**,
+  status persisted (the one true browser→CSRF-meta→API→guard→DB→reload path — the lane PR #662 hid in).
+- `test_activity_sync_persists.py` — Plan 4: sync an activity, reload, the unsynced count drops and stays.
 
-Auth in CI is the known hard part (OAuth needs a real CommCare session). Document the
-session-injection approach (seed `campaign_oauth` + Django session cookie directly, bypassing the
-OAuth redirect) so e2e doesn't require interactive login — this is portable and host-independent.
+Run: see the command block in `tests/e2e/conftest.py`. CI needs Postgres + `playwright install chromium`.
 
 ---
 

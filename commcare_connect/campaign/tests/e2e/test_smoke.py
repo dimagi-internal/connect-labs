@@ -34,8 +34,11 @@ def test_app_mounts_and_paints_overview(auth_page, live_server_url):
     # React replaces the "Loading…" fallback in #root once mounted + data-loaded.
     root = auth_page.locator("#root")
     root.get_by_text(re.compile("Measles", re.I)).first.wait_for(state="visible", timeout=30_000)
-    # Real seeded data is on the page: a funder short name + the currency unit.
-    assert auth_page.get_by_text("Gavi").first.is_visible()
-    assert auth_page.get_by_text(re.compile("₦")).first.is_visible()
+    # Real seeded data is painted: the Funder contributions card with a named donor
+    # and the rolled-up total. (Plain "Gavi" also appears in the hidden donor-filter
+    # <option>, which isn't "visible" — assert on the visible card instead.)
+    assert auth_page.get_by_text("Funder contributions").first.is_visible()
+    assert auth_page.get_by_text("Gavi, the Vaccine Alliance").first.is_visible()
+    assert auth_page.get_by_text("₦6.10M").first.is_visible()
     # No fatal render error fallback.
     assert auth_page.get_by_text(re.compile("Could not load campaign data", re.I)).count() == 0
