@@ -16,8 +16,6 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
-from shapely.ops import unary_union
-
 from commcare_connect.microplans.core import clustering
 from commcare_connect.microplans.core.area_input import resolve_area
 from commcare_connect.microplans.core.filters import (
@@ -86,85 +84,136 @@ class CoverageFrameResult:
     stats: list[dict] = field(default_factory=list)
 
 
+def _area_meta(a: dict, idx: int) -> dict:
+    """Per-area identity for tagging work areas. Boundary picks carry ward/lga/state;
+    drawn/custom shapes fall back to a numeric ward name (area_1, area_2, …)."""
+    ward = str(a.get("ward") or a.get("name") or "").strip() or f"area_{idx + 1}"
+    return {
+        "area_id": idx,
+        "ward": ward,
+        "lga": str(a.get("lga") or "").strip(),
+        "state": str(a.get("state") or "").strip(),
+    }
+
+
 def generate_coverage_frame(areas: list[dict], config: CoverageConfig) -> CoverageFrameResult:
-    """areas: [{"geometry": <GeoJSON>}, ...]. The input areas are unioned and tiled
-    into uniform `cell_size_m` grid cells; each cell containing ≥1 building becomes
-    one WorkArea. Coverage has no arms — the whole input is one coverage zone.
+    """areas: [{"geometry": <GeoJSON>, "ward"/"lga"/"state": ...}, ...]. Each selected
+    area is fetched + tiled into `cell_size_m` grid cells INDEPENDENTLY (so two small
+    wards far apart aren't treated as one giant bounding box), and every occupied cell
+    becomes a WorkArea tagged with its source ward/LGA/state. Coverage has no arms.
     """
     import numpy as np
 
-    geoms = [resolve_area(a) for a in areas]
-    area = unary_union(geoms)
-    buildings = fetch_buildings(area, min_confidence=config.min_confidence, sources=config.sources)
-    filtered = apply_frame_filters(
-        buildings, FilterConfig(area_min_m2=config.area_min_m2, area_max_m2=config.area_max_m2)
-    )
-    out = clustering.grid_clusters(filtered.buildings, cell_size_m=config.cell_size_m)
+    # Pass 1: per-area fetch → filter → grid. Per-area fetch keeps each ward's bounding
+    # box small (fixes the false "area too large" on scattered wards) and lets us
+    # attribute every work area to its ward.
+    grids = []  # (meta, filtered, out)
+    fetched_total = after_total = 0
+    raw_cells = 0
+    for idx, a in enumerate(areas):
+        geom = resolve_area(a)
+        meta = _area_meta(a, idx)
+        buildings = fetch_buildings(geom, min_confidence=config.min_confidence, sources=config.sources)
+        filtered = apply_frame_filters(
+            buildings, FilterConfig(area_min_m2=config.area_min_m2, area_max_m2=config.area_max_m2)
+        )
+        out = clustering.grid_clusters(filtered.buildings, cell_size_m=config.cell_size_m)
+        grids.append((meta, filtered, out))
+        fetched_total += filtered.n_in
+        after_total += filtered.n_out
+        raw_cells += len(out.psu_frame)
 
-    n_cells = len(out.psu_frame)
-    if n_cells > MAX_WORK_AREAS:
+    if raw_cells > MAX_WORK_AREAS:
         raise ValueError(
-            f"This area at {config.cell_size_m:.0f} m work areas produces {n_cells:,} work areas "
-            f"(limit {MAX_WORK_AREAS:,}). Increase the work-area size, or split the area into separate plans."
+            f"This selection at {config.cell_size_m:.0f} m work areas produces {raw_cells:,} work areas "
+            f"(limit {MAX_WORK_AREAS:,}). Increase the work-area size, or split into separate plans."
         )
 
-    # Cell-level exclusion filters (drop noise cells), then population-weighted visits.
-    cell_result = apply_cell_filters(
-        out.buildings,
-        out.psu_frame,
-        CellFilterConfig(
-            min_cell_roof_area_m2=config.min_cell_roof_area_m2,
-            exclude_isolated_singletons=config.exclude_isolated_singletons,
-            isolation_dist_m=config.isolation_dist_m,
-        ),
-    )
-    frame = cell_result.psu_frame
+    # Pass 2: cell-level exclusion filters, per area.
+    per_area = []  # (meta, frame_df)
+    cells_before = removed_small = removed_isolated = 0
+    for meta, _filtered, out in grids:
+        cell_result = apply_cell_filters(
+            out.buildings,
+            out.psu_frame,
+            CellFilterConfig(
+                min_cell_roof_area_m2=config.min_cell_roof_area_m2,
+                exclude_isolated_singletons=config.exclude_isolated_singletons,
+                isolation_dist_m=config.isolation_dist_m,
+            ),
+        )
+        per_area.append((meta, cell_result.psu_frame))
+        cells_before += cell_result.n_in
+        removed_small += cell_result.removed_small_area
+        removed_isolated += cell_result.removed_isolated
 
-    retained_buildings = int(frame["n_buildings"].sum()) if len(frame) else 0
-    # people-per-building over the RETAINED set; None → legacy EVC = building_count
+    total_cells = sum(len(f) for _, f in per_area)
+
+    retained_buildings = int(sum(int(f["n_buildings"].sum()) for _, f in per_area if len(f)))
+    # people-per-building over the RETAINED set; None → legacy EVC = building_count.
+    # (Population/visits move to a per-area post-creation step; kept here for parity.)
     ppb = (config.population / retained_buildings) if (config.population and retained_buildings) else None
 
     features: list[dict] = []
-    for _, row in frame.iterrows():
-        cell_polygon = row["cell_polygon"]  # [[lon, lat], ...] closed ring
-        n_b = int(row["n_buildings"])
-        if ppb is not None:
-            expected_visits = max(1, math.ceil(n_b * ppb))
-            target_population = round(n_b * ppb)
-        else:
-            expected_visits = n_b
-            target_population = None
-        features.append(
-            {
-                "type": "Feature",
-                "geometry": {"type": "Polygon", "coordinates": [cell_polygon]},
-                "properties": {
-                    "cluster": row["cluster"],
-                    "building_count": n_b,
-                    "expected_visit_count": expected_visits,
-                    "target_population": target_population,
-                    "roof_area_m2": round(float(row["roof_area_m2"]), 1),
-                    "dist_to_multi_m": round(float(row["dist_to_multi_m"]), 1),
-                    "cell_size_m": float(config.cell_size_m),
-                },
-            }
-        )
-    sizes = frame["n_buildings"].to_numpy() if len(frame) else np.array([0])
+    for meta, frame in per_area:
+        for _, row in frame.iterrows():
+            cell_polygon = row["cell_polygon"]  # [[lon, lat], ...] closed ring
+            n_b = int(row["n_buildings"])
+            if ppb is not None:
+                expected_visits = max(1, math.ceil(n_b * ppb))
+                target_population = round(n_b * ppb)
+            else:
+                expected_visits = n_b
+                target_population = None
+            features.append(
+                {
+                    "type": "Feature",
+                    "geometry": {"type": "Polygon", "coordinates": [cell_polygon]},
+                    "properties": {
+                        # Namespace the cluster by area so ids stay unique across wards.
+                        "cluster": f"{meta['area_id']}-{row['cluster']}",
+                        "area_id": meta["area_id"],
+                        "ward": meta["ward"],
+                        "lga": meta["lga"],
+                        "state": meta["state"],
+                        "building_count": n_b,
+                        "expected_visit_count": expected_visits,
+                        "target_population": target_population,
+                        "roof_area_m2": round(float(row["roof_area_m2"]), 1),
+                        "dist_to_multi_m": round(float(row["dist_to_multi_m"]), 1),
+                        "cell_size_m": float(config.cell_size_m),
+                    },
+                }
+            )
+
+    all_sizes = np.array([int(r["n_buildings"]) for _, fr in per_area for _, r in fr.iterrows()] or [0])
+    # Per-ward breakdown for the per-area metrics/summary.
+    per_ward = [
+        {
+            "ward": m["ward"],
+            "lga": m["lga"],
+            "state": m["state"],
+            "work_areas": len(fr),
+            "buildings": int(fr["n_buildings"].sum()) if len(fr) else 0,
+        }
+        for m, fr in per_area
+    ]
     stats = [
         {
-            "fetched": filtered.n_in,
-            "after_filters": filtered.n_out,
-            "work_areas": len(frame),
-            "cells_before_exclusions": cell_result.n_in,
-            "removed_small_area": cell_result.removed_small_area,
-            "removed_isolated": cell_result.removed_isolated,
+            "fetched": fetched_total,
+            "after_filters": after_total,
+            "work_areas": total_cells,
+            "cells_before_exclusions": cells_before,
+            "removed_small_area": removed_small,
+            "removed_isolated": removed_isolated,
             "retained_buildings": retained_buildings,
             "population": config.population,
             "people_per_building": round(ppb, 4) if ppb is not None else None,
             "cell_size_m": float(config.cell_size_m),
-            "min_buildings": int(sizes.min()),
-            "median_buildings": int(np.median(sizes)),
-            "max_buildings": int(sizes.max()),
+            "min_buildings": int(all_sizes.min()),
+            "median_buildings": int(np.median(all_sizes)),
+            "max_buildings": int(all_sizes.max()),
+            "per_area": per_ward,
         }
     ]
     return CoverageFrameResult(areas_geojson={"type": "FeatureCollection", "features": features}, stats=stats)

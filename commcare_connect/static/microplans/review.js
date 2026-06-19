@@ -529,13 +529,25 @@
     // result) adds the boundary's full geometry to the MapboxDraw area layer.
     if (window.MicroplansAdminBoundaries && BOUNDARY_VIEWPORT_URL) {
       const adminDrawIds = {}; // boundary_id -> [draw feature ids]
-      function adminAddGeometry(boundaryId, geom, arm) {
+      function adminAddGeometry(boundaryId, geom, arm, desc) {
         if (!draw) return;
         // In sampling mode each picked boundary belongs to a study arm (set via the
         // per-boundary pill in the rail). Tag the draw feature so collectArmAreas +
         // the sample paint read it; coverage mode carries no arm.
         const props =
           mpMode === 'sampling' ? { arm: arm || 'intervention' } : {};
+        // Tag with the source ward/LGA/state so coverage can attribute each work
+        // area to its ward (CSV + per-area metrics). LGA = immediate parent, state =
+        // the one above it in the "… › State › LGA" chain (country dropped).
+        if (desc) {
+          const chain = String(desc.parent_name || '')
+            .split('›')
+            .map((s) => s.trim())
+            .filter(Boolean);
+          props.ward = desc.name || '';
+          props.lga = chain.length ? chain[chain.length - 1] : '';
+          props.state = chain.length >= 2 ? chain[chain.length - 2] : '';
+        }
         const polys =
           geom.type === 'MultiPolygon'
             ? geom.coordinates.map((c) => ({ type: 'Polygon', coordinates: c }))
@@ -588,7 +600,7 @@
           return !!(d && d.open);
         },
         onAreaAdd: (boundaryId, geometry, feature, arm) => {
-          adminAddGeometry(boundaryId, geometry, arm);
+          adminAddGeometry(boundaryId, geometry, arm, feature);
           autofillFromBoundary(feature);
           recordWardPopulation(boundaryId, feature);
         },
@@ -1949,6 +1961,11 @@
       .map((f) => ({
         arm: (f.properties && f.properties.arm) || 'intervention',
         geometry: f.geometry,
+        // Per-area identity (set when added from a boundary pick) so coverage can
+        // attribute each work area to its ward; drawn shapes have none → area_N.
+        ward: (f.properties && f.properties.ward) || '',
+        lga: (f.properties && f.properties.lga) || '',
+        state: (f.properties && f.properties.state) || '',
       }));
   }
 
