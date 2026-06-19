@@ -180,3 +180,66 @@ def test_profile_backward_compatible_without_app_structure():
         # no app_structure
     )
     assert "opportunity_id" in manifest_yaml
+
+
+def test_profile_emits_full_manifest(monkeypatch):
+    import random
+
+    from commcare_connect.labs.synthetic.generator.fixtures.manifest import Manifest
+    from commcare_connect.labs.synthetic.generator.fixtures.profiler import profile
+
+    rng = random.Random(0)
+    visits = []
+    for d in range(28):
+        for _ in range(5):
+            a = rng.gauss(10, 2)
+            visits.append(
+                {
+                    "username": rng.choice(["asha", "ben"]),
+                    "visit_date": f"2026-05-{(d % 28) + 1:02d}",
+                    "status": "approved",
+                    "flagged": False,
+                    "entity_id": f"e{rng.randint(1, 40)}",
+                    "form_json": {
+                        "form": {
+                            "a": a,
+                            "b": a * 0.8 + rng.gauss(0, 0.5),
+                            "sex": rng.choice(["m", "f"]),
+                        }
+                    },
+                }
+            )
+    # Use the same app_structure format as the rest of the tests (value/type/options keys)
+    app_structure = {
+        "learn_app": None,
+        "deliver_app": {
+            "modules": [
+                {
+                    "forms": [
+                        {
+                            "questions": [
+                                {"value": "/data/a", "type": "Decimal", "options": []},
+                                {"value": "/data/b", "type": "Decimal", "options": []},
+                                {
+                                    "value": "/data/sex",
+                                    "type": "Select",
+                                    "options": [{"value": "m"}, {"value": "f"}],
+                                },
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+    }
+    yaml_str = profile(
+        opportunity_id=10001,
+        user_visits=visits,
+        user_data=[],
+        opportunity_detail={"name": "X"},
+        app_structure=app_structure,
+    )
+    m = Manifest.from_yaml(yaml_str)
+    assert m.temporal is not None
+    assert m.beneficiary_cohorts[0].correlation is not None
+    assert "form.sex" in m.beneficiary_cohorts[0].field_distributions

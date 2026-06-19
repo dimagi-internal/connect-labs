@@ -239,6 +239,65 @@ def _profile_null_rate(visits: list[dict], path: str) -> float:
     return round(1.0 - present / n, 4) if n else 0.0
 
 
+def _profile_temporal(visits: list[dict]) -> dict:
+    """Return day-of-week (7) and hour-of-day (24) weight vectors from visit timestamps."""
+    dow = [0.0] * 7
+    hod = [0.0] * 24
+    for v in visits:
+        ds = v.get("visit_date")
+        if not ds:
+            continue
+        try:
+            d = dt.date.fromisoformat(ds[:10])
+        except ValueError:
+            continue
+        dow[d.weekday()] += 1
+        # hour: use date_created if it's a datetime string; otherwise skip
+        created = v.get("date_created")
+        if isinstance(created, str) and "T" in created:
+            try:
+                hod[dt.datetime.fromisoformat(created).hour] += 1
+            except ValueError:
+                pass
+    if sum(hod) == 0:
+        hod = [1.0] * 24
+    if sum(dow) == 0:
+        dow = [1.0] * 7
+    return {"day_of_week": dow, "hour_of_day": hod}
+
+
+def _profile_flag_reasons(visits: list[dict]) -> dict[str, float]:
+    """Return flag_reason -> rate map for flagged visits that carry a reason."""
+    counts: Counter[str] = Counter()
+    for v in visits:
+        if v.get("flagged") and v.get("flag_reason"):
+            counts[str(v["flag_reason"])] += 1
+    total = sum(counts.values())
+    return {k: round(c / total, 4) for k, c in counts.items()} if total else {}
+
+
+def _profile_weekly_volume(visits: list[dict], start_date: dt.date, weeks: int) -> list[float] | None:
+    """Return a per-week relative-volume list (avg = 1.0), or None if < 2 weeks."""
+    if weeks < 2:
+        return None
+    per_week = [0] * weeks
+    for v in visits:
+        ds = v.get("visit_date")
+        if not ds:
+            continue
+        try:
+            d = dt.date.fromisoformat(ds[:10])
+        except ValueError:
+            continue
+        idx = (d - start_date).days // 7
+        if 0 <= idx < weeks:
+            per_week[idx] += 1
+    avg = sum(per_week) / weeks
+    if avg <= 0:
+        return None
+    return [round(c / avg, 3) for c in per_week]
+
+
 _MIN_CORR_COVERAGE = 0.5
 
 
@@ -368,6 +427,8 @@ def profile(
     timeline = _profile_timeline(user_visits, visits_by_flw)
     field_dists = _profile_field_distributions(user_visits, form_json_paths)
 
+    kinds: dict[str, str] = {}
+
     # If caller provided app_structure, derive field types and enrich distributions.
     if app_structure is not None:
         form_schema = parse_form_schema_from_app_json(app_structure, app_type="deliver")
@@ -393,23 +454,38 @@ def profile(
 
     kpis = _profile_kpis(field_dists, user_visits)
 
+    # Compute new profiling blocks.
+    correlation = _profile_correlation(user_visits, list(field_dists.keys()), kinds)
+    temporal = _profile_temporal(user_visits)
+    flag_reasons = _profile_flag_reasons(user_visits)
+
+    # Attach weekly volume multipliers to the (mutable) timeline dict.
+    start_date_obj = dt.date.fromisoformat(timeline["start_date"])
+    weekly = _profile_weekly_volume(user_visits, start_date_obj, timeline["weeks"])
+    if weekly is not None:
+        timeline["weekly_volume_multipliers"] = weekly
+
+    cohort: dict = {
+        "id": "primary",
+        "size": cohort_size,
+        "field_distributions": field_dists,
+        "progression": "flat",
+    }
+    if correlation is not None:
+        cohort["correlation"] = correlation
+
     manifest_dict = {
         "opportunity_id": opportunity_id,
         "opportunity_name": opp_name,
         "random_seed": 42,
         "timeline": timeline,
         "flw_personas": personas,
-        "beneficiary_cohorts": [
-            {
-                "id": "primary",
-                "size": cohort_size,
-                "field_distributions": field_dists,
-                "progression": "flat",
-            }
-        ],
+        "beneficiary_cohorts": [cohort],
         "anomalies": [],
         "kpi_config": kpis,
         "coaching_arcs": [],
+        "temporal": temporal,
+        "flag_reason_distribution": flag_reasons,
     }
 
     manifest_yaml = yaml.dump(manifest_dict, default_flow_style=False, sort_keys=False)
