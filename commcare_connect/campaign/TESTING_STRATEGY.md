@@ -74,6 +74,13 @@ Landed this pass:
 - **Markers** registered in `pyproject.toml`: `contract`, `stub` (+ existing `e2e`); `tests/e2e` ignored
   by default `addopts`.
 
+Extended after merging `origin/main` (Plan 4 — Activity + Microplanning, #665):
+
+- **Endpoint RBAC** now covers Plan 4's 6 new endpoints × all 5 roles (`test_endpoint_rbac.py`) — Plan 4's
+  own api tests checked only one role. Confirms the asymmetry: `operations_manager` may create
+  activities (manage) but is denied microplan create/edit (planning is view-only for it).
+- **Serializer goldens** extended to the new `_activity` and `_microplan` key sets.
+
 Still open (see §9 priorities, §11 questions): the server-as-single-source RBAC refactor (frontend, needs
 a JS/live verify path — not done blind), per-plan checklist wiring into the PR template, and running the
 e2e suite against a live deploy.
@@ -87,7 +94,7 @@ e2e suite against a live deploy.
 | 1 — Foundation                  | App, CommCare-HQ OAuth, whitelist, server RBAC, React shell | ✅ merged, live | Auth/RBAC/middleware — **highest security value**, currently weakest live coverage |
 | 2 — Data + Overview             | ORM models, seeder, `bootstrap` API, Overview dashboard     | ✅ merged, live | Serializer contract + seeder fidelity                                              |
 | 3 — Workers vertical            | Payment/KYC write APIs, fraud guards, 3 sub-tabs            | ✅ merged, live | Mutation + CSRF + guard logic — **template for all future verticals**              |
-| 4 — Activity + Microplanning    | Activity/Microplan models, CRUD, tables (map dropped)       | 🚧 in progress  | Apply the full per-plan checklist (§8) as it lands                                 |
+| 4 — Activity + Microplanning    | Activity/Microplan models, CRUD, tables (map dropped)       | ✅ merged, live | Endpoint RBAC × all roles + activity/microplan serializer goldens added            |
 | 5 — Reporting                   | Reporting/monitoring tab                                    | ⏳ unbuilt      | §8 checklist                                                                       |
 | 6 — System Admin + Training Hub | Users, Connections (admin-only), public Training Hub        | ⏳ unbuilt      | §8 checklist + **public-endpoint** auth tests                                      |
 

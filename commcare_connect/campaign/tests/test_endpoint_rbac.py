@@ -85,3 +85,81 @@ def test_every_role_can_read_bootstrap(client, login_as, seeded_campaign, role):
     login_as(client, role)
     resp = client.get(reverse("campaign:bootstrap"))
     assert resp.status_code == 200
+
+
+# --- Plan 4: Activity + Microplanning endpoints --------------------------------
+# Plan 4's own api tests check only a single role; this covers every role. Note the
+# asymmetry the matrix encodes: operations_manager can create activities (manage) but
+# can only VIEW planning — so it is denied microplan create/edit.
+PLAN4_ENDPOINTS = {
+    "activity_create": (
+        "activities",
+        "create",
+        lambda ids: reverse("campaign:activity_create"),
+        lambda ids: {"name": "RBAC probe", "donor": "Gavi", "region": "Kano", "target": 1000},
+    ),
+    "activity_sync": (
+        "activities",
+        "create",
+        lambda ids: reverse("campaign:activity_sync", args=[ids["activity"]]),
+        lambda ids: {},
+    ),
+    "microplan_create": (
+        "planning",
+        "create",
+        lambda ids: reverse("campaign:microplan_create"),
+        lambda ids: {
+            "region": "Kano",
+            "regionId": "kano",
+            "lga": "Dala",
+            "target": 100000,
+            "goalPct": 95,
+            "roles": [],
+        },
+    ),
+    "microplan_update": (
+        "planning",
+        "edit",
+        lambda ids: reverse("campaign:microplan_update", args=[ids["microplan"]]),
+        lambda ids: {
+            "region": "Kano",
+            "regionId": "kano",
+            "lga": "Dala",
+            "target": 123456,
+            "goalPct": 95,
+            "roles": [],
+        },
+    ),
+    "microplan_target": (
+        "planning",
+        "edit",
+        lambda ids: reverse("campaign:microplan_target", args=[ids["microplan"]]),
+        lambda ids: {"target": 200000, "goalPct": 90},
+    ),
+    "microplan_budget": (
+        "planning",
+        "edit",
+        lambda ids: reverse("campaign:microplan_budget", args=[ids["microplan"]]),
+        lambda ids: {"budget": 999000},
+    ),
+}
+
+
+@pytest.fixture
+def seeded_ids(seeded_campaign):
+    activity = seeded_campaign.activities.filter(synced=False).first() or seeded_campaign.activities.first()
+    microplan = seeded_campaign.microplans.first()
+    return {"activity": activity.activity_id, "microplan": microplan.microplan_id}
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("endpoint", sorted(PLAN4_ENDPOINTS))
+@pytest.mark.parametrize("role", rbac.ROLES)
+def test_plan4_endpoint_enforces_rbac(client, login_as, seeded_ids, role, endpoint):
+    module, verb, url_for, body_for = PLAN4_ENDPOINTS[endpoint]
+    login_as(client, role)
+    resp = client.post(url_for(seeded_ids), data=json.dumps(body_for(seeded_ids)), content_type="application/json")
+    if rbac.can(role, module, verb):
+        assert resp.status_code != 403, f"{role} should be allowed {endpoint}, got {resp.status_code}"
+    else:
+        assert resp.status_code == 403, f"{role} should be denied {endpoint}, got {resp.status_code}"
