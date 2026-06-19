@@ -167,6 +167,36 @@ class FlwPersona(BaseModel):
     field_overrides: dict[str, FieldDistribution] = Field(default_factory=dict)
 
 
+# ---------- Repeat groups ----------
+
+
+class RepeatGroupSpec(BaseModel):
+    """A CommCare repeat group — serialized as a JSON array of 0–N sub-records.
+
+    ``count`` maps an instance-count to its rate (sampled per visit, normalized at
+    draw time), so a repeat reproduces the real "how many children / measurements"
+    distribution. ``field_distributions`` are keyed by child path **relative to each
+    array element** (e.g. ``"weight"`` or ``"vitals.temp"``), drawn independently
+    per instance. Empty ``field_distributions`` yields empty-object instances.
+    """
+
+    count: dict[int, float]
+    field_distributions: dict[str, FieldDistribution] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _check_count(self):
+        if not self.count:
+            raise ValueError("repeat group count must have at least one entry")
+        for k, v in self.count.items():
+            if k < 0:
+                raise ValueError(f"repeat count instance keys must be >= 0, got {k}")
+            if v < 0:
+                raise ValueError(f"repeat count rate for {k} must be >= 0, got {v}")
+        if sum(self.count.values()) <= 0:
+            raise ValueError("repeat count rates must sum to > 0")
+        return self
+
+
 # ---------- Beneficiary cohorts ----------
 
 Progression = Literal["improvement_curve", "flat", "regression"]
@@ -178,6 +208,9 @@ class BeneficiaryCohort(BaseModel):
     field_distributions: dict[str, FieldDistribution]
     progression: Progression
     correlation: CorrelationSpec | None = None
+    # Repeat groups keyed by their array base path (e.g. "form.children"). Each emits
+    # a JSON array of sub-records; scalar fields under a repeat base are not filled.
+    repeat_groups: dict[str, RepeatGroupSpec] = Field(default_factory=dict)
 
 
 # ---------- Anomalies ----------

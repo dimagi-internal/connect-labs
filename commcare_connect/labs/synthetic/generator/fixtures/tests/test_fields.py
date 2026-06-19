@@ -35,6 +35,83 @@ def _cohort():
     )
 
 
+def test_fill_form_json_emits_repeat_group_as_array():
+    """A cohort repeat group materializes as a JSON array of sub-records — faithful
+    to how CommCare submits repeats (form.X = [ {child: val}, ... ]) — issue #670 #6."""
+    from commcare_connect.labs.synthetic.generator.fixtures.manifest import CategoricalDistribution, RepeatGroupSpec
+
+    rng = random.Random(7)
+    cohort = BeneficiaryCohort(
+        id="primary",
+        size=50,
+        field_distributions={"form.mother_age": NormalDistribution(mean=27, stddev=4, lo=15, hi=45)},
+        progression="flat",
+        repeat_groups={
+            "form.children": RepeatGroupSpec(
+                count={2: 1.0},  # always exactly two instances -> deterministic assert
+                field_distributions={
+                    "child_weight": NormalDistribution(mean=1800, stddev=200, lo=1000, hi=2500),
+                    "sex": CategoricalDistribution(distribution="categorical", values={"m": 0.5, "f": 0.5}),
+                },
+            )
+        },
+    )
+    schema = FormSchema(questions=[QuestionSpec("form.mother_age", "int")])
+    out = fill_form_json(schema=schema, cohort=cohort, anomalies_for_visit=[], rng=rng)
+
+    children = out["form"]["children"]
+    assert isinstance(children, list), "a repeat group must serialize as a list, not a single object"
+    assert len(children) == 2
+    for el in children:
+        assert isinstance(el, dict)
+        assert 1000 <= el["child_weight"] <= 2500
+        assert el["sex"] in ("m", "f")
+    assert "mother_age" in out["form"], "scalar fields outside the repeat still fill"
+
+
+def test_fill_form_json_repeat_array_wins_over_scalar_leaf():
+    """If the schema also lists a flat leaf under the repeat base, the array wins —
+    the base path must be a list, never a nested scalar dict."""
+    from commcare_connect.labs.synthetic.generator.fixtures.manifest import RepeatGroupSpec
+
+    rng = random.Random(3)
+    cohort = BeneficiaryCohort(
+        id="p",
+        size=10,
+        field_distributions={},
+        progression="flat",
+        repeat_groups={
+            "form.visits": RepeatGroupSpec(
+                count={1: 1.0}, field_distributions={"weight": NormalDistribution(mean=10, stddev=1)}
+            )
+        },
+    )
+    schema = FormSchema(questions=[QuestionSpec("form.visits.weight", "decimal")])
+    out = fill_form_json(schema=schema, cohort=cohort, anomalies_for_visit=[], rng=rng)
+    assert isinstance(out["form"]["visits"], list)
+    assert len(out["form"]["visits"]) == 1
+    assert "weight" in out["form"]["visits"][0]
+
+
+def test_fill_form_json_repeat_count_zero_yields_empty_list():
+    from commcare_connect.labs.synthetic.generator.fixtures.manifest import RepeatGroupSpec
+
+    rng = random.Random(1)
+    cohort = BeneficiaryCohort(
+        id="p",
+        size=10,
+        field_distributions={},
+        progression="flat",
+        repeat_groups={
+            "form.kids": RepeatGroupSpec(
+                count={0: 1.0}, field_distributions={"w": NormalDistribution(mean=1, stddev=0.1)}
+            )
+        },
+    )
+    out = fill_form_json(schema=FormSchema(questions=[]), cohort=cohort, anomalies_for_visit=[], rng=rng)
+    assert out["form"]["kids"] == []
+
+
 def test_fill_form_json_returns_a_value_for_every_question():
     rng = random.Random(7)
     out = fill_form_json(

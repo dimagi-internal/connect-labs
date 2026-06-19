@@ -225,6 +225,43 @@ def _default_for_kind(spec: QuestionSpec, rng: random.Random) -> Any:
     return _fabricate_text(spec.json_path.rsplit(".", 1)[-1], rng)
 
 
+def _sample_count(count: dict[int, float], rng: random.Random) -> int:
+    keys = sorted(count)
+    weights = [count[k] for k in keys]
+    return rng.choices(keys, weights=weights, k=1)[0]
+
+
+def _draw_repeat_value(dist, rng: random.Random) -> Any:
+    """Draw one scalar value for a repeat-group child (no schema kind available, so
+    type is inferred from the distribution: categorical -> label, binary -> yes/no,
+    otherwise a rounded number)."""
+    if isinstance(dist, CategoricalDistribution):
+        return _categorical_value(dist, rng)
+    raw = _draw(dist, rng)
+    transform = getattr(dist, "transform", None)
+    if transform:
+        return _apply_transform(raw, transform, rng)
+    if isinstance(dist, BinaryDistribution):
+        return "yes" if raw >= 0.5 else "no"
+    return round(float(raw), 3)
+
+
+def _build_repeat_element(field_distributions: dict[str, Any], rng: random.Random) -> dict[str, Any]:
+    """Fill one repeat-group instance from child distributions keyed by relative path."""
+    element: dict[str, Any] = {}
+    for rel_path, dist in field_distributions.items():
+        if getattr(dist, "null_rate", 0.0) and rng.random() < dist.null_rate:
+            continue  # this instance legitimately omits the field
+        _set_nested(element, rel_path, _draw_repeat_value(dist, rng))
+    return element
+
+
+def _under_repeat(path: str, bases: set[str]) -> bool:
+    """True if ``path`` is a repeat base or a scalar leaf nested under one — those are
+    owned by the repeat array, not the flat scalar fill."""
+    return any(path == b or path.startswith(b + ".") for b in bases)
+
+
 def _set_nested(obj: dict, dotted_path: str, value: Any) -> None:
     """Set a value in a nested dict using a dotted path.
 
@@ -257,6 +294,9 @@ def fill_form_json(
     # merged map once avoids re-checking the persona on every field.
     overrides = persona.field_overrides if persona else {}
     effective: dict[str, Any] = {**cohort.field_distributions, **overrides}
+    # Repeat-group bases own their subtree — their scalar leaves are filled as array
+    # elements below, not as flat fields here.
+    repeat_bases = set(getattr(cohort, "repeat_groups", {}) or {})
 
     # Count, per leaf, how many questions would rely on leaf-resolution (i.e. lack
     # their own exact effective-map key). A leaf shared by 2+ such questions is
@@ -273,6 +313,8 @@ def fill_form_json(
     covered_paths: set[str] = set()
     consumed_keys: set[str] = set()
     for spec in schema.questions:
+        if _under_repeat(spec.json_path, repeat_bases):
+            continue  # owned by a repeat array, emitted below
         covered_paths.add(spec.json_path)
         if spec.json_path in correlated:
             dist = effective.get(spec.json_path)
@@ -310,7 +352,7 @@ def fill_form_json(
     # Keys consumed by leaf-resolution above already drive a schema question and
     # must NOT be orphan-written (that would double-write the field).
     for path, dist in effective.items():
-        if path in covered_paths or path in consumed_keys:
+        if path in covered_paths or path in consumed_keys or _under_repeat(path, repeat_bases):
             continue
         if path in correlated:
             if getattr(dist, "null_rate", 0.0) and rng.random() < dist.null_rate:
@@ -328,5 +370,12 @@ def fill_form_json(
         if isinstance(value, float):
             value = round(value, 3)
         _set_nested(out, path, value)
+
+    # Repeat groups: emit a JSON array of 0–N filled sub-records at each base path.
+    # Done last so the array authoritatively owns the base path.
+    for base_path, rg in (getattr(cohort, "repeat_groups", {}) or {}).items():
+        n = _sample_count(rg.count, rng)
+        elements = [_build_repeat_element(rg.field_distributions, rng) for _ in range(n)]
+        _set_nested(out, base_path, elements)
 
     return out
