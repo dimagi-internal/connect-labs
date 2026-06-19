@@ -3,8 +3,13 @@
 import pytest
 
 import commcare_connect.mcp.tools.synthetic  # noqa: F401 — trigger @register side effects
-from commcare_connect.labs.synthetic.models import SyntheticOpportunity
+from commcare_connect.labs.synthetic.models import LABS_ONLY_OPP_ID_FLOOR, SyntheticOpportunity
 from commcare_connect.mcp.tool_registry import MCPToolError, get_tool
+
+# Capture the real gate before the autouse ``_allow_opp_access`` fixture stubs
+# the module attribute, so the access-gate tests below exercise the genuine
+# three-path implementation rather than the stub.
+_REAL_REQUIRE_OPPORTUNITY_ACCESS = commcare_connect.mcp.tools.synthetic._require_opportunity_access
 
 
 @pytest.fixture(autouse=True)
@@ -440,3 +445,117 @@ def test_clone_profile_tool_returns_updated_spec():
     assert out["bundle_root"] == "gdrive:run123"
     assert "gdrive:run123" in out["spec_yaml"]
     assert out["opportunity_ids"] == [523, 524]
+
+
+# -----------------------------------------------------------------------------
+# _require_opportunity_access — three-path gate (labs-only id-floor fix)
+#
+# These tests call the REAL gate (captured at import time) rather than the
+# autouse-fixture stub, so they validate the genuine three-path logic.
+# -----------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_require_access_allows_labs_only_id_for_opted_in_user_across_domain(user):
+    """Path 2: an opted-in caller reaches a labs-only id-floor opp even when Path 1
+    (domain visibility) would deny — e.g. an ``@dimagi-ai.com`` user reaching an
+    opp registered for ``@dimagi.com``.
+
+    NOTE: ``is_labs_only_opportunity_id`` is row-dependent — it only returns True
+    when a ``labs_only=True`` ``SyntheticOpportunity`` row exists for the id (the
+    same predicate ``LabsRecordAPIClient`` uses to route to the local backend).
+    So Path 2's job is NOT to grant access to a bare id with no row; it's to
+    decouple gate access from ``allowed_domains`` for opted-in callers, matching
+    the ungated ``workflow_*`` tools. We register the row with a domain the user
+    does not match, so Path 1 fails and only Path 2 can let this through.
+    """
+    user.email = "ace@dimagi-ai.com"
+    user.view_synthetic_opps = True
+    user.save()
+    labs_only_id = LABS_ONLY_OPP_ID_FLOOR + 8  # e.g. 10008
+    SyntheticOpportunity.objects.create(
+        opportunity_id=labs_only_id,
+        gdrive_folder_id="folder-x",
+        labs_only=True,
+        enabled=True,
+        allowed_domains=["@dimagi.com"],  # does NOT include @dimagi-ai.com
+    )
+    # Path 1 would deny (domain mismatch)...
+    opp = SyntheticOpportunity.objects.get(opportunity_id=labs_only_id)
+    assert opp.is_visible_to(user) is False
+    # ...but Path 2 allows the opted-in caller. Does not raise.
+    _REAL_REQUIRE_OPPORTUNITY_ACCESS(user, labs_only_id)
+
+
+@pytest.mark.django_db
+def test_require_access_denies_labs_only_id_for_non_opted_in_user(user):
+    """Path 2: a labs-only id is denied with PERMISSION_DENIED when the caller has
+    NOT opted in (``view_synthetic_opps=False``), even with a registered row whose
+    domain the user doesn't match.
+    """
+    user.email = "ace@dimagi-ai.com"
+    user.view_synthetic_opps = False
+    user.save()
+    labs_only_id = LABS_ONLY_OPP_ID_FLOOR + 8
+    SyntheticOpportunity.objects.create(
+        opportunity_id=labs_only_id,
+        gdrive_folder_id="folder-x",
+        labs_only=True,
+        enabled=True,
+        allowed_domains=["@dimagi.com"],
+    )
+
+    with pytest.raises(MCPToolError) as exc:
+        _REAL_REQUIRE_OPPORTUNITY_ACCESS(user, labs_only_id)
+    assert exc.value.code == "PERMISSION_DENIED"
+
+
+@pytest.mark.django_db
+def test_require_access_allows_registered_visible_labs_only_opp(user):
+    """Path 1: a registered + visible labs-only SyntheticOpportunity passes even
+    though it shares the labs-only id floor (path 1 is checked before path 2).
+    """
+    user.email = "dev@dimagi.com"
+    user.view_synthetic_opps = True
+    user.save()
+    labs_only_id = LABS_ONLY_OPP_ID_FLOOR + 8
+    SyntheticOpportunity.objects.create(
+        opportunity_id=labs_only_id,
+        gdrive_folder_id="folder-x",
+        labs_only=True,
+        enabled=True,
+        allowed_domains=["@dimagi.com"],
+    )
+
+    # Does not raise (visible via path 1).
+    _REAL_REQUIRE_OPPORTUNITY_ACCESS(user, labs_only_id)
+
+
+@pytest.mark.django_db
+def test_require_access_real_opp_allows_member(user, monkeypatch):
+    """Path 3: a real opp id below the labs-only floor goes through the
+    Connect-membership path and is allowed when the user is a member.
+    """
+    from commcare_connect.mcp.tools import synthetic as syn
+
+    real_opp_id = 1821  # below LABS_ONLY_OPP_ID_FLOOR
+    assert real_opp_id < LABS_ONLY_OPP_ID_FLOOR
+    monkeypatch.setattr(syn, "_accessible_opp_ids_for_user", lambda u: {1821, 1822})
+
+    # Does not raise.
+    _REAL_REQUIRE_OPPORTUNITY_ACCESS(user, real_opp_id)
+
+
+@pytest.mark.django_db
+def test_require_access_real_opp_denies_non_member(user, monkeypatch):
+    """Path 3: a real opp id below the floor is denied when the user is not a
+    member (and there's no registered labs-only row for it).
+    """
+    from commcare_connect.mcp.tools import synthetic as syn
+
+    real_opp_id = 1821
+    monkeypatch.setattr(syn, "_accessible_opp_ids_for_user", lambda u: {9999})
+
+    with pytest.raises(MCPToolError) as exc:
+        _REAL_REQUIRE_OPPORTUNITY_ACCESS(user, real_opp_id)
+    assert exc.value.code == "PERMISSION_DENIED"

@@ -263,6 +263,33 @@ def test_list_responses_happy_path(mock_client_cls, client, auth_user):
     )
 
 
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.solicitations.LabsRecordAPIClient")
+def test_list_responses_propagates_scope_to_client(mock_client_cls, client, auth_user):
+    """program_id/organization_id must be threaded into LabsRecordAPIClient init.
+
+    Without scope at init time, a labs-only synthetic program's records never
+    route to the local backend — the read targets production and 404s. This
+    locks in that program_id (and organization_id) forwarding closes that gap.
+    """
+    _, raw = auth_user
+    mock_client = MagicMock()
+    mock_client_cls.return_value = mock_client
+    mock_client.get_records.return_value = []
+
+    _call_tool(client, raw, "list_responses", {"solicitation_id": 42, "program_id": "10008"})
+
+    init_kwargs = mock_client_cls.call_args.kwargs
+    assert init_kwargs["program_id"] == 10008
+    assert init_kwargs.get("organization_id") is None
+
+    mock_client_cls.reset_mock()
+    _call_tool(client, raw, "list_responses", {"solicitation_id": 42, "organization_id": "45"})
+    init_kwargs = mock_client_cls.call_args.kwargs
+    assert init_kwargs["organization_id"] == 45
+    assert init_kwargs.get("program_id") is None
+
+
 # ---------------------------------------------------------------------------
 # get_response
 # ---------------------------------------------------------------------------
@@ -301,6 +328,26 @@ def test_get_response_not_found(mock_client_cls, client, auth_user):
 
     assert data["result"]["isError"] is True, data
     assert data["result"]["structuredContent"]["error"]["code"] == "NOT_FOUND"
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.solicitations.LabsRecordAPIClient")
+def test_get_response_propagates_scope_to_client(mock_client_cls, client, auth_user):
+    """program_id/organization_id must be threaded into LabsRecordAPIClient init.
+
+    get_record_by_id only adds scope params from self.* attributes, so without
+    scope at init time a labs-only synthetic program's response is unreachable
+    (the read targets production and 404s).
+    """
+    _, raw = auth_user
+    mock_client = MagicMock()
+    mock_client_cls.return_value = mock_client
+    mock_client.get_record_by_id.return_value = _make_mock_record(55, "solicitation_response", data={"x": 1})
+
+    _call_tool(client, raw, "get_response", {"response_id": 55, "program_id": "10008"})
+
+    init_kwargs = mock_client_cls.call_args.kwargs
+    assert init_kwargs["program_id"] == 10008
 
 
 # ---------------------------------------------------------------------------
@@ -959,6 +1006,46 @@ def test_award_response_not_found(mock_client_cls, client, auth_user):
 
     assert data["result"]["isError"] is True, data
     assert data["result"]["structuredContent"]["error"]["code"] == "NOT_FOUND"
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.solicitations.LabsRecordAPIClient")
+def test_award_response_propagates_scope_to_client(mock_client_cls, client, auth_user):
+    """program_id/organization_id must be threaded into LabsRecordAPIClient init.
+
+    award_response opens with get_record_by_id then update_record; without scope
+    at init time a labs-only synthetic program's response can't be fetched or
+    updated (the read/write targets production and 404s).
+    """
+    _, raw = auth_user
+    mock_client = MagicMock()
+    mock_client_cls.return_value = mock_client
+
+    existing_response = _make_mock_record(
+        10,
+        "solicitation_response",
+        experiment="llo-entity-1",
+        data={"status": "submitted", "solicitation_id": "42", "llo_entity_name": "Org X"},
+    )
+    awarded_response = _make_mock_record(
+        10,
+        "solicitation_response",
+        experiment="llo-entity-1",
+        data={"status": "awarded", "reward_budget": 1000, "org_id": "org-1"},
+    )
+    mock_client.get_record_by_id.side_effect = lambda record_id, **kw: existing_response if record_id == 10 else None
+    mock_client.update_record.return_value = awarded_response
+
+    data = _call_tool(
+        client,
+        raw,
+        "award_response",
+        {"response_id": 10, "reward_budget": 1000, "org_id": "org-1", "program_id": "10008"},
+    )
+
+    assert data["result"]["isError"] is False, data
+    init_kwargs = mock_client_cls.call_args.kwargs
+    assert init_kwargs["program_id"] == 10008
 
 
 # ---------------------------------------------------------------------------
