@@ -54,3 +54,4 @@ def test_app_renders_for_authorized_user(client):
     assert b"campaign/tab_activity.jsx" in resp.content
     assert b"campaign/tab_planning.jsx" in resp.content
     assert b"campaign/tab_planning_detail.jsx" in resp.content
+    assert b"campaign/tab_reporting.jsx" in resp.content

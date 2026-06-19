@@ -120,6 +120,10 @@ def _activity(a) -> dict:
     }
 
 
+def _report_day(d) -> dict:
+    return {"day": d.day, "enrolled": d.enrolled, "attended": d.attended, "paid": d.paid}
+
+
 def _microplan(m) -> dict:
     return {
         "id": m.microplan_id,
@@ -160,7 +164,7 @@ def bootstrap_payload(c: Campaign) -> dict:
         "ACTIVITIES": [_activity(a) for a in c.activities.all()],
         "PLANNING": [_planning(r) for r in regions],
         "MICROPLANS": [_microplan(m) for m in c.microplans.all()],
-        "REPORT_DAYS": [],
+        "REPORT_DAYS": [_report_day(d) for d in c.report_days.all()],
         "HOUSEHOLDS": _household(c.household_stat),
         "WORKERS": [_worker(w, role_names, region_names) for w in c.workers.all()],
         "KYC_STATES": list(KYC_STATES),

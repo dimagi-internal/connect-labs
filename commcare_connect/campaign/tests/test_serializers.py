@@ -30,7 +30,7 @@ def test_bootstrap_payload_shape():
     assert p["KYC_STATES"] == ["approved", "pending", "rejected", "review"]
     assert p["PAY_STATES"] == ["paid", "approved", "pending", "rejected", "hold"]
     assert p["sharedLabel"]["nin"] == "National ID (NIN)"
-    assert len(p["ACTIVITIES"]) == 6 and len(p["MICROPLANS"]) == 18 and p["REPORT_DAYS"] == []
+    assert len(p["ACTIVITIES"]) == 6 and len(p["MICROPLANS"]) == 18 and len(p["REPORT_DAYS"]) == 16
     # PLANNING: lgas is a COUNT, derived metrics present
     plan0 = next(x for x in p["PLANNING"] if x["id"] == "kano")
     assert plan0["lgas"] == 5 and plan0["plannedWf"] == 820 and plan0["vaccineAlloc"] == 980000

@@ -254,3 +254,19 @@ class Microplan(models.Model):
 
     def __str__(self):
         return f"{self.microplan_id} {self.lga}"
+
+
+class ReportDay(models.Model):
+    campaign = models.ForeignKey(Campaign, on_delete=models.CASCADE, related_name="report_days")
+    day = models.CharField(max_length=8)
+    enrolled = models.BigIntegerField(default=0)
+    attended = models.BigIntegerField(default=0)
+    paid = models.BigIntegerField(default=0)
+    order = models.IntegerField(default=0)
+
+    class Meta:
+        db_table = "campaign_report_day"
+        ordering = ["order"]
+
+    def __str__(self):
+        return f"{self.campaign_id}:{self.day}"
