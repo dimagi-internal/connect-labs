@@ -1,0 +1,45 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Campaign Utility Tool</title>
+    <link rel="icon" href="{% static 'campaign/dimagi-favicon-purple.png' %}" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Work+Sans:ital,wght@0,300..700;1,400&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+    />
+    <link rel="stylesheet" href="{% static 'campaign/campaign.css' %}" />
+  </head>
+  <body>
+    {{ bootstrap|json_script:"campaign-bootstrap" }}
+    <div id="root">
+      <div style="padding: 48px; text-align: center; color: #6c757d; font-family: 'Work Sans', sans-serif">
+        Loading…
+      </div>
+    </div>
+
+    <script>
+      window.__resources = {
+        logoPurple: "{% static 'campaign/dimagi-favicon-purple.png' %}",
+        commcarePinwheel: "{% static 'campaign/commcare-pinwheel.png' %}",
+      };
+    </script>
+
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone@7.23.5/babel.min.js"></script>
+
+    <script type="text/babel" src="{% static 'campaign/perms.js' %}"></script>
+    <script type="text/babel" src="{% static 'campaign/primitives.jsx' %}"></script>
+    <script type="text/babel" src="{% static 'campaign/shell.jsx' %}"></script>
+    <script type="text/babel" src="{% static 'campaign/app.jsx' %}"></script>
+  </body>
+</html>
