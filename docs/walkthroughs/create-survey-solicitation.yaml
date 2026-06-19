@@ -101,26 +101,49 @@ scenes:
   provenance: S4
   show: Maya reads the pre-seeded title and the Coverage-areas panel, which shows
     the R6 — Attakar x Gura coverage as a map (Attakar green / Gura blue ward polygons,
-    not just names); she confirms the survey scope and the form is ready to publish
-    with that plan attached.
+    not just names); she writes the survey scope into the Description, scrolls to the
+    publish button, and clicks "Create Solicitation" to publish the open call —
+    landing on her solicitations list with the call now live.
   actions:
   - kind: wait_for
     target: css:#sol-coverage-map canvas.mapboxgl-canvas
     note: the pre-seeded Coverage-areas map paints the Attakar/Gura ward polygons
   - kind: hover
     target: css:#sol-coverage-map
-    seconds: 1.5
+    seconds: 1.0
     note: glide the cursor over the snapshotted Coverage-areas panel — Maya confirms
       the exact coverage the firm will bid on
   - kind: scroll_to
+    target: css:#id_description
+    note: scroll down to the Description field — REQUIRED to publish; the pre-seed
+      fills the title and scope from the plan but leaves Description for Maya to write
+  - kind: fill
+    target: css:#id_description
+    value: "Independent household survey to verify Vitamin-A program coverage across the Round 6 Attakar × Gura two-arm study — rooftop visits, GPS-stamped, ~285 treatment / 263 comparison surveys per round."
+    note: Maya writes the survey scope into the required Description field, filling
+      out the form so the publish will pass validation
+  - kind: hold
+    seconds: 1.0
+    note: let the filled Description settle so the capture shows the completed form
+  - kind: scroll_to
     target: css:button[type=submit]:has-text("Create Solicitation")
     note: bring the publish button into frame
-  - kind: hover
+  - kind: click
     target: css:button[type=submit]:has-text("Create Solicitation")
+    must_succeed: true
+    note: "Maya clicks Create Solicitation — the REAL publish. This mints a throwaway
+      solicitation on program 10008 (source_group_id=4492) that reset_solicitation.py
+      sweeps before the next render; scenes 3/4/5 stay on the canonical #4495, so the
+      viewer sees a true create→respond→review→award flow"
+  - kind: wait_for
+    target: text:Manage Solicitations
+    note: the post-create redirect lands on Maya's solicitations list ("Manage
+      Solicitations") — the open call is now published and live
+  - kind: hold
     seconds: 1.5
-    note: "rest the cursor on the publish button — NON-DESTRUCTIVE, we do NOT click; clicking would create a duplicate of solicitation #4495, so the hover just shows the form is ready to publish with the plan attached"
+    note: settle on the manage list showing the just-published call
   title: Maya finds the plan already waiting as the coverage area
-  url: /solicitations/create/?source_program_id=10008&source_group_id=4492
+  url: /solicitations/create/?program_id=10008&source_program_id=10008&source_group_id=4492
 - concept_claim: A survey firm reads the public solicitation and applies by selecting
     a specific coverage area from a checklist, and submission is blocked until one
     area is chosen.
@@ -252,7 +275,12 @@ scenes:
   title: Maya awards the firm and sees it was notified
   url: /solicitations/response/4496/award/?program_id=10008
 setup:
-  command: python scripts/walkthroughs/create-survey-solicitation/reset_award.py
+  # Two per-render resets chained (&&): a failure in either aborts the render.
+  # 1. reset_solicitation.py sweeps the throwaway solicitations scene 2 mints
+  #    (source_group_id=4492, keeping canonical #4495) so they never accumulate.
+  # 2. reset_award.py rolls response #4496 back to `submitted` so scene 5's award
+  #    form renders and its fill+click succeed again.
+  command: python scripts/walkthroughs/create-survey-solicitation/reset_solicitation.py && python scripts/walkthroughs/create-survey-solicitation/reset_award.py
   rerun: per_render
-  timeout_seconds: 600
+  timeout_seconds: 900
 why_brief: ../../.canopy/ddd/runs/create-survey-solicitation-2026-06-17-001/why_brief.yaml

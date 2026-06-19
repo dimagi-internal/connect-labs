@@ -1,120 +1,39 @@
 [
   {
-    "scene": "1 — Maya turns her finished study into a call for a firm",
-    "dimension": "design_soundness",
-    "severity": "low",
-    "route": "PRODUCT",
-    "fix_kind": "options",
-    "detail": "Single-card-leads layout is sound but ships rather than delights: an absent-feature explainer ('bundle'), a competing color story (three greens vs a blue CTA), and no coverage visual.",
-    "fix_recommendation": "Expand the candidate-plans section by default or add a coverage map/summary band so the lower viewport isn't dead space; align the primary CTA color with the readiness badges so one accent owns 'ready -> act'."
-  },
-  {
-    "scene": "1 — Maya turns her finished study into a call for a firm",
-    "dimension": "visual_polish",
-    "severity": "low",
-    "route": "PRODUCT",
-    "fix_kind": "options",
-    "detail": "Screenshot dominated by empty lower two-thirds; the hover cursor occludes the CTA label; three stacked greens fight a blue CTA.",
-    "fix_recommendation": "Expand candidate-plans (or add a coverage map) to fill the lower viewport; reposition the hover cursor off the CTA glyphs."
-  },
-  {
-    "scene": "1 — Maya turns her finished study into a call for a firm",
+    "scene": "2 — Maya finds the plan already waiting as the coverage area",
     "dimension": "motion_friction",
-    "severity": "low",
+    "severity": "medium",
     "route": "PRODUCT",
     "fix_kind": "mechanical",
-    "detail": "Hover cursor sits on top of the 'Create solicitation' button text rather than cleanly indicating it; no distinct active/hover state.",
-    "fix_recommendation": "Offset the recorded cursor to the button's edge so the label stays readable, and ensure the hovered CTA shows a distinct hover state (shadow/darken)."
+    "detail": "Fits-but-mis-framed: the narrated create-form/fill moment is gone — the settled still jumped past it to the post-create 'Manage Solicitations' list. The video clip shows scroll+fill+click correctly, but the deck/screenshot still-frame lands on the result, not the act.",
+    "fix_recommendation": "Settle the scene-2 capture ON the create form (Coverage-areas panel + filled Description visible). Keep the create click (must_succeed), but capture the form as the settled frame rather than letting the post-create redirect carry the still to the manage list. Walkthrough-scripting fix."
   },
   {
     "scene": "2 — Maya finds the plan already waiting as the coverage area",
     "dimension": "concept_clarity",
-    "severity": "low",
+    "severity": "medium",
     "route": "CONCEPT",
-    "fix_kind": "options",
-    "detail": "Pre-seeded coverage panel is present and provenance-captioned but under-emphasized; arms/wards labeled three inconsistent ways, yielding a partial 5-second read.",
-    "fix_recommendation": "Give the Coverage panel primary visual weight (taller map, single clear arm legend 'Intervention = Attakar / Comparison = Gura'); collapse the three naming rows into one."
-  },
-  {
-    "scene": "2 — Maya finds the plan already waiting as the coverage area",
-    "dimension": "design_soundness",
-    "severity": "low",
-    "route": "PRODUCT",
-    "fix_kind": "options",
-    "detail": "Three equal-weight empty optional sections (Description, Application Questions, Evaluation Criteria) below the one seeded artifact flatten hierarchy so the seeded content doesn't read as the point.",
-    "fix_recommendation": "Demote/collapse empty optional sections; visually anchor the pre-seeded Scope + Coverage as the filled 'starting point'."
-  },
-  {
-    "scene": "2 — Maya finds the plan already waiting as the coverage area",
-    "dimension": "visual_polish",
-    "severity": "low",
-    "route": "PRODUCT",
     "fix_kind": "mechanical",
-    "detail": "The load-bearing Mapbox panel renders tiny and cramped relative to the empty fields above it.",
-    "fix_recommendation": "Enlarge the Mapbox panel and add breathing room so the Attakar/Gura polygons read at a glance."
+    "detail": "The snapshotted Coverage-areas concept (S4) is invisible in the settled frame because it shows the manage list, not the create form panel.",
+    "fix_recommendation": "Same as the motion_friction fix — settle on the create form so the Coverage-areas panel (the concept's load-bearing artifact) is in frame."
   },
   {
     "scene": "2 — Maya finds the plan already waiting as the coverage area",
-    "dimension": "motion_friction",
-    "severity": "low",
-    "route": "PRODUCT",
-    "fix_kind": "mechanical",
-    "detail": "Static rest frame with a non-destructive cursor implies but doesn't demonstrate the hover/publish interaction.",
-    "fix_recommendation": "Capture a frame mid-hover on the map with a visible focus/tooltip state to evidence the interaction."
-  },
-  {
-    "scene": "3 — Amina reads the open call and ticks the area she can staff",
-    "dimension": "concept_clarity",
-    "severity": "low",
-    "route": "CONCEPT",
-    "fix_kind": "redesign",
-    "detail": "Three competing vocabularies (Intervention/Comparison legend vs Attakar/Gura labels vs the single 'R6 — Attakar × Gura' checkbox) cause a brief 'what am I actually selecting?' hitch.",
-    "fix_recommendation": "Unify the legend with the checklist — label the map swatches with the same names as the checklist option (or drop Intervention/Comparison and color the R6 study as one selectable unit), and add a '1 area selected' count near Submit."
-  },
-  {
-    "scene": "3 — Amina reads the open call and ticks the area she can staff",
-    "dimension": "design_soundness",
-    "severity": "low",
-    "route": "CONCEPT",
-    "fix_kind": "options",
-    "detail": "Map<->checklist two-way sync is the right pattern, but the legend semantics don't reconcile with the one checklist row and the copy promises 'wards' the map never renders.",
-    "fix_recommendation": "Make the legend colors map 1:1 to checklist options, and either show ward sub-boundaries on hover/selection or remove the 'all of its wards together' promise from the helper text."
-  },
-  {
-    "scene": "3 — Amina reads the open call and ticks the area she can staff",
     "dimension": "why_groundedness",
-    "severity": "low",
+    "severity": "medium",
     "route": "CONCEPT",
-    "fix_kind": "options",
-    "detail": "'Select a specific area from a checklist' is weakened by there being exactly one indivisible option, so firm-level territory self-selection is asserted more than shown.",
-    "fix_recommendation": "Offer area-level options (e.g. Attakar and Gura as separately tickable studies, or sub-areas) so the checklist genuinely lets a firm express the specific territory it can staff."
-  },
-  {
-    "scene": "3 — Amina reads the open call and ticks the area she can staff",
-    "dimension": "motion_friction",
-    "severity": "low",
-    "route": "PRODUCT",
     "fix_kind": "mechanical",
-    "detail": "The enabled post-tick state is shown, but a mid-interaction cursor-over-checkbox artifact and no selection-count/enabled-state cue leave the gating behavior implied.",
-    "fix_recommendation": "Capture a clean frame without the cursor occluding the checkbox, and add an explicit enabled-state cue (selection count or a 'ready to submit' hint)."
+    "detail": "The manage-list frame shows no coverage artifact, so the 'exact coverage the firm will bid on' claim is ungrounded in that frame.",
+    "fix_recommendation": "Settle on the create form Coverage-areas panel so the coverage is visibly grounded."
   },
   {
-    "scene": "4 — Maya sees the firm tied to the coverage she designed",
-    "dimension": "visual_polish",
+    "scene": "2 — Maya finds the plan already waiting as the coverage area",
+    "dimension": "design_soundness",
     "severity": "low",
     "route": "PRODUCT",
     "fix_kind": "options",
-    "detail": "Three uncoordinated multicolor action icons (blue/green/brown), a large blank lower frame, and the cursor occluding the 'Award' label.",
-    "fix_recommendation": "Unify the action icons into one consistent style (or monochrome with color only on hover), and reduce dead whitespace below the single row (response-count summary or tighter container)."
-  },
-  {
-    "scene": "4 — Maya sees the firm tied to the coverage she designed",
-    "dimension": "motion_friction",
-    "severity": "low",
-    "route": "PRODUCT",
-    "fix_kind": "mechanical",
-    "detail": "The Award-hover intent is captured, but the cursor obscures the exact action label it rests on.",
-    "fix_recommendation": "Offset the captured cursor so it sits just left of (not over) the 'Award' label; add a visible hover-state highlight on the Award action."
+    "detail": "Two near-duplicate 'R6 — Attakar × Gura' rows (new Draft + canonical Active) appear in the manage list with no disambiguator.",
+    "fix_recommendation": "Disambiguate the freshly-created Draft row from the canonical Active call (distinct title, 'new' indicator) — OR avoid showing the list at all by settling on the create form (preferred; subsumed by the framing fix)."
   },
   {
     "scene": "5 — Maya awards the firm and sees it was notified",
@@ -122,16 +41,7 @@
     "severity": "low",
     "route": "PRODUCT",
     "fix_kind": "mechanical",
-    "detail": "Clean and unembarrassing but sparse: tall dead-space bands, a right-column gap, and 'R6'/'Round 6' + a lone-blue email-link consistency snag.",
-    "fix_recommendation": "Tighten vertical rhythm, balance the right column, canonicalize the coverage-area label ('Round 6 (Attakar × Gura)' vs 'R6 — Attakar × Gura'), and fold the contact email into the navy palette."
-  },
-  {
-    "scene": "5 — Maya awards the firm and sees it was notified",
-    "dimension": "motion_friction",
-    "severity": "low",
-    "route": "PRODUCT",
-    "fix_kind": "options",
-    "detail": "Static confirmation reads cleanly but offers no completion cue or forward-motion affordance.",
-    "fix_recommendation": "Add a completion cue (success-banner enter animation) and/or a disabled forward affordance on the deferred-step panel ('Stand up opportunity — coming soon') so it reads as a transition, not a dead end."
+    "detail": "The contact email / notification timestamp secondary text sits in a low-contrast grey-on-white band; may fail WCAG AA.",
+    "fix_recommendation": "Darken the muted secondary text (contact email, timestamp) on the award confirmation to meet WCAG AA (>=4.5:1)."
   }
 ]

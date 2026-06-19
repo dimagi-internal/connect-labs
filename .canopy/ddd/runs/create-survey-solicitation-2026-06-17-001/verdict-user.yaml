@@ -1,243 +1,32 @@
 schema_version: 1
 rubric_name: user-artifact
-ran_at: '2026-06-18T21:18:00+00:00'
-verdict: warn
-overall_score: 3.25
-audience: feature user
-overall_rule: lowest (weakest-link across scenes = the lowest scene's weighted score)
-artifact_kind: product_walkthrough
-domain: create-survey-solicitation
-self_assessed: false
-weakest_scene: 2
-
-# Flat weakest-link aggregate across all 5 scenes (the shape the Verdict model
-# consumes). Per-scene detail is preserved under `scenes:` below.
+ran_at: '2026-06-19T02:02:25.973127+00:00'
+run_dir: .canopy/ddd/runs/create-survey-solicitation-2026-06-17-001
 dimensions:
-  task_completion: { score: 3, weight: 0.40 }
-  clarity: { score: 3, weight: 0.35 }
-  trust: { score: 3, weight: 0.25 }
+  task_completion:
+    {
+      score: 4,
+      weight: 0.40,
+      justification: 'A feature user completes the whole loop — create call from the study, firm responds with coverage, owner reviews, owner awards + firm notified — every step succeeds on screen.',
+      fix_recommendation: "Scene 2's still lands on the result rather than the fill; settle the create-form frame so a viewer sees the form being completed.",
+      fix_kind: mechanical,
+    }
+  clarity:
+    {
+      score: 4,
+      weight: 0.35,
+      justification: "Labels and CTAs self-explain (Create solicitation, Which areas can you cover?, Award, 'has been notified'). One snag: two near-duplicate R6 rows in scene 2's list.",
+      fix_recommendation: 'Disambiguate the freshly-created Draft row from the canonical Active call.',
+      fix_kind: options,
+    }
+  trust:
+    {
+      score: 4,
+      weight: 0.25,
+      justification: "Real org/contact/coverage/budget data, timestamped notification, and an honest 'Next step — not yet built' panel that doesn't overclaim. Minor: scene-5 secondary text contrast.",
+    }
+overall_score: 4
+overall_rule: lowest
+verdict: pass
 blocking_reason: null
-fix_recommendation: |
-  Flow is fully task-completable end-to-end (scene 5's award succeeds). The 3-floor
-  is presentation: [PRODUCT] scene 2 create form buries the "coverage already
-  attached" payoff under empty optional sections (redesign — lead with the seeded
-  coverage panel); [PRODUCT] scene 4 empty Recommendation/Score columns read as
-  missing data (mechanical — label "not scored yet"); scene 5's honest "Next step —
-  not yet built" panel is the standout trust moment.
-
-scenes:
-  1:
-    url: /microplans/program/10008/
-    title: Maya turns her finished study into a call for a firm
-    weighted_score: 3.75
-    dimensions:
-      task_completion:
-        score: 4
-        weight: 0.40
-        justification: >-
-          Target task (turn a finished study into a solicitation) completes
-          first try - the filled blue "Create solicitation" is the obvious
-          primary CTA on a card flagged READY TO SOLICIT. Minor friction: the
-          program is shown only as raw "Program #10008", not a human name.
-      clarity:
-        score: 4
-        weight: 0.35
-        justification: >-
-          "READY TO SOLICIT", "reviewed", the green-check "Finished study -
-          ready to recruit a survey firm against this coverage", and the
-          "Create solicitation" CTA all self-explain. One affordance could be
-          sharper: the intro paragraph defines "bundle", a concept not used on
-          this card, adding noise.
-      trust:
-        score: 3
-        weight: 0.25
-        justification: >-
-          "reviewed" + green check + "2 wards" give reasonable trust, but the
-          card carries no ward names (Attakar/Gura appear only downstream), no
-          "as of" recency, and the program is a bare numeric ID - a feature
-          user may wonder how fresh / which program this is.
-        fix_recommendation: >-
-          On the R6 card show the ward names (Attakar, Gura) and a short
-          "reviewed <date>" stamp, and render the program by name rather than
-          "Program #10008".
-        fix_kind: mechanical
-
-  2:
-    url: /solicitations/create/?source_program_id=10008&source_group_id=4492
-    title: Maya finds the plan already waiting as the coverage area
-    weighted_score: 3.25
-    dimensions:
-      task_completion:
-        score: 3
-        weight: 0.40
-        justification: >-
-          Title and Scope-of-Work are pre-seeded and the Coverage-areas panel
-          is attached, so Maya only sets scope and publishes - but the long
-          form (Description, Dates, Estimated Scale, Contact Email, Application
-          Questions, Evaluation Criteria) shows many empty fields with no clear
-          indicator of which are required to publish, so completing it takes
-          trial-and-error.
-        fix_recommendation: >-
-          Mark which fields are required to publish (or collapse optional
-          sections) so the owner knows the minimum to publish a solicitation
-          seeded from a plan.
-        fix_kind: mechanical
-      clarity:
-        score: 3
-        weight: 0.35
-        justification: >-
-          The "Coverage areas (from micro-plan) - Attached" panel, the
-          snapshot note, and the map legend are clear, but at this full-page
-          zoom the form is dense and the hierarchy of "what I must fill vs.
-          what's optional" needs a moment of thought; the pre-attached
-          coverage payoff is not the first thing a viewer reads.
-        fix_recommendation: >-
-          Tighten the create-form hierarchy: lead with the pre-seeded title +
-          coverage panel and visually de-emphasize/collapse the empty optional
-          sections so the publish path is obvious at a glance.
-        fix_kind: redesign
-      trust:
-        score: 4
-        weight: 0.25
-        justification: >-
-          The snapshot note ("Snapshotted at creation - later plan edits won't
-          change this solicitation") is a strong, explicit provenance +
-          freshness signal, backed by a real Mapbox map of the two arms and
-          "2 wards - 840 work areas". One signal missing: no visible
-          source-plan id/link to confirm exactly which plan was snapshotted.
-
-  3:
-    url: /solicitations/4495/respond/
-    title: Amina reads the open call and ticks the area she can staff
-    weighted_score: 4.0
-    dimensions:
-      task_completion:
-        score: 4
-        weight: 0.40
-        justification: >-
-          Amina selects coverage via the map or the synced checklist and
-          Submit enables on first try with no help; the legend's top-left
-          position no longer clips the Mapbox logo. One minor cosmetic: the
-          single checklist row under the map reads slightly disconnected
-          from it.
-      clarity:
-        score: 4
-        weight: 0.35
-        justification: >-
-          The instruction "Each option is a whole study - selecting it covers
-          all of its wards together. Select one or more - required to submit"
-          plus the Intervention/Comparison legend and on-map ward labels make
-          the action self-explanatory to a non-technical firm director. One
-          affordance could be sharper: the lone checklist-row styling.
-      trust:
-        score: 4
-        weight: 0.25
-        justification: >-
-          Real Mapbox basemap with real place names (Manchok, Rim), named
-          Attakar/Gura ward polygons, and a color legend make the coverage on
-          offer unambiguous and clearly tied to the call; a firm director can
-          see exactly what they'd be staffing.
-
-  4:
-    url: /solicitations/4495/responses/
-    title: Maya sees the firm tied to the coverage she designed
-    weighted_score: 3.75
-    dimensions:
-      task_completion:
-        score: 4
-        weight: 0.40
-        justification: >-
-          Maya opens the responses and immediately sees the firm tied to her
-          exact coverage via the green "SELECTED COVERAGE - R6 - Attakar x
-          Gura" pill - the loop-closing payoff lands first try. Minor: the
-          empty Recommendation/Score columns add noise to the row.
-      clarity:
-        score: 4
-        weight: 0.35
-        justification: >-
-          Columns are labelled and the "SELECTED COVERAGE" pill is
-          self-explanatory, tying the application to a concrete designed area.
-          One affordance could be sharper: the "-" in Recommendation and Score
-          read as "is something missing?".
-      trust:
-        score: 3
-        weight: 0.25
-        justification: >-
-          Real org name, real contact email, a concrete coverage pill resolved
-          from the snapshot, and a submit date give reasonable trust - but the
-          two empty Recommendation/Score columns make a reviewer wonder whether
-          the data is incomplete or the scoring step was skipped.
-        fix_recommendation: >-
-          Either populate Recommendation/Score, or hide/label those columns as
-          "not scored yet" so empty cells don't read as missing data on a
-          response row.
-        fix_kind: mechanical
-
-  5:
-    url: /solicitations/response/4496/award/
-    title: Maya awards the firm and sees it was notified
-    weighted_score: 4.0
-    dimensions:
-      task_completion:
-        score: 4
-        weight: 0.40
-        justification: >-
-          The award outcome is fully realized as the task result: a green
-          "Awarded to Health Bridge Nigeria - The organization has been
-          notified" banner, a complete summary, and an honest "Next step - not
-          yet built" panel bounding what's deferred. Capped from 5 by the
-          CEO-send gate: post-award the primary next action is ambiguous
-          ("Back to responses" vs "View response" are both low-emphasis).
-      clarity:
-        score: 4
-        weight: 0.35
-        justification: >-
-          Every field self-explains (Awarded organization, Contact, Survey
-          call, Award budget, Coverage area, Awarded & notified) and the dashed
-          "Next step - not yet built" panel is plain-language and honest about
-          the planning-vs-execution boundary. One nit: which button is the
-          intended next step isn't visually signalled.
-      trust:
-        score: 4
-        weight: 0.25
-        justification: >-
-          Provenance and recency are unambiguous - named org and contact,
-          consistently-formatted budget, concrete coverage, and an exact
-          "notification sent" timestamp, plus an honest deferral of the un-built
-          step. Strongest trust scene; capped from 5 only by the send-test gate
-          (no dimension reaches 5 when the binary send test is NO).
-
-top_findings:
-  - scene: 2
-    dimension: clarity
-    score: 3
-    fix_recommendation: >-
-      Tighten the create-form hierarchy: lead with the pre-seeded title +
-      pre-attached coverage panel and visually de-emphasize/collapse the empty
-      optional sections so the "coverage is already done for you" payoff and
-      the publish path are obvious at a glance instead of buried in a dense
-      full-length form.
-    fix_kind: redesign
-  - scene: 2
-    dimension: task_completion
-    score: 3
-    fix_recommendation: >-
-      Mark which fields are required to publish (or collapse optional sections)
-      so the owner knows the minimum to publish a solicitation seeded from a
-      plan, instead of discovering it by trial-and-error.
-    fix_kind: mechanical
-  - scene: 4
-    dimension: trust
-    score: 3
-    fix_recommendation: >-
-      Either populate Recommendation/Score, or hide/label those columns as "not
-      scored yet" so empty cells don't read as missing data on a response row.
-    fix_kind: mechanical
-
-notes:
-  - 'Judged as product_walkthrough: product chrome (nav, breadcrumbs, Select
-    Context, account menu) is grounding, not penalized.'
-  - 'Overall is weakest-link: the lowest scene weighted_score (scene 2 = 3.25).'
-  - Scene 5 is the strongest trust scene - the honest "Next step - not yet
-    built" panel scopes the deferred live-opp provisioning rather than implying
-    it happened.
+fix_recommendation: 'Scene 2 still-frame should settle on the create form (the narrated fill), not the post-create redirect.'
