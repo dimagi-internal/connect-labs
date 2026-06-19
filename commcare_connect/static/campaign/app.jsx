@@ -169,6 +169,12 @@ function App() {
             <PlanningTab density={CONFIG.density} role={role} />
           ) : tab === 'reporting' ? (
             <ReportingTab density={CONFIG.density} />
+          ) : tab === 'sysadmin' && admSub === 'users' ? (
+            <UserManagement density={CONFIG.density} role={role} />
+          ) : tab === 'sysadmin' && admSub === 'connections' ? (
+            <ConnectionSettings density={CONFIG.density} />
+          ) : tab === 'training' ? (
+            <TrainingHub role={role} />
           ) : (
             <TabPlaceholder name={activeName} />
           )}
