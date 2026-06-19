@@ -52,19 +52,31 @@ scenes:
   - kind: scroll
     value: '600'
   - kind: hold
-    seconds: 6
+    seconds: 7
   - kind: click
     target: css:[aria-label="toggle Service delivery"]
   - kind: hold
-    seconds: 2
+    seconds: 1.3
   - kind: click
     target: css:[aria-label="toggle Service delivery"]
   - kind: hold
-    seconds: 1
+    seconds: 0.5
   - kind: click
-    target: css:[aria-label="toggle Work areas"]
+    target: css:[aria-label="toggle Independent survey"]
   - kind: hold
-    seconds: 2
+    seconds: 1.3
+  - kind: click
+    target: css:[aria-label="toggle Independent survey"]
+  - kind: hold
+    seconds: 0.5
+  - kind: click
+    target: css:[aria-label="toggle Plan · sampled PSUs"]
+  - kind: hold
+    seconds: 1.3
+  - kind: click
+    target: css:[aria-label="toggle Plan · sampled PSUs"]
+  - kind: hold
+    seconds: 1.5
   concept_claim: Program delivery is concentrated in the intervention ward and absent in the adjacent control ward, while the independent survey covered both — so the coverage gap tracks where the program went, not where the survey looked.
   design_intent: Real labelled admin boundaries (intervention indigo / control slate) on a light Mapbox basemap via the shared ConnectMap module, with the SAME docked Layers panel the plan editor uses — toggles for service delivery, the independent survey, the designed Plan (arm-coloured selected-PSU hulls), the sampled Work areas, and all Building footprints — drawn through the shared PlanLayers component so the monitoring map and the plan editor render the plan identically. Every survey draws (no per-ward cap), each on the real sampled footprint and within the 15 m GPS gate, distinguishing the unit the surveyor was assigned to try first (primary — larger solid dot) from a substituted backup (alternate — smaller hollow ring). The map re-fits on each cycle but NOT on a layer toggle, so toggling keeps the planner's pan/zoom.
   features:
