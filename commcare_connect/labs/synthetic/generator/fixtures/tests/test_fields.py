@@ -388,3 +388,40 @@ def test_unbounded_normal_still_works():
     rng = random.Random(5)
     vals = [_draw(dist, rng) for _ in range(100)]
     assert 90 < sum(vals) / len(vals) < 110
+
+
+def test_text_fields_are_fabricated_not_stubbed():
+    """Text fields with no distribution get plausible values, never 'sample-N'."""
+    from commcare_connect.labs.synthetic.generator.fixtures.fields import _COUNTRIES, _fabricate_text
+
+    rng = random.Random(11)
+    schema = FormSchema(
+        questions=[
+            QuestionSpec("form.mother_name", "text"),
+            QuestionSpec("form.location.country", "text"),
+            QuestionSpec("form.location.village", "text"),
+            QuestionSpec("form.phone_number", "text"),
+            QuestionSpec("form.notes", "text"),
+            QuestionSpec("form.kind_select", "select"),  # no choices
+        ]
+    )
+    cohort = BeneficiaryCohort(id="primary", size=10, field_distributions={}, progression="flat")
+    out = fill_form_json(schema=schema, cohort=cohort, anomalies_for_visit=[], rng=rng)
+
+    def flat(d, p=""):
+        for k, v in d.items():
+            np = f"{p}.{k}" if p else k
+            if isinstance(v, dict):
+                yield from flat(v, np)
+            else:
+                yield np, v
+
+    vals = dict(flat(out))
+    assert not any(str(v).startswith("sample-") for v in vals.values())
+    assert vals["form.location.country"] in _COUNTRIES
+    assert " " in vals["form.mother_name"]  # first + last
+    assert vals["form.kind_select"] in {"yes", "no"}
+
+    # leaf heuristics
+    assert _fabricate_text("mothers_phone_number", random.Random(1)).isdigit()
+    assert _fabricate_text("country", random.Random(1)) in _COUNTRIES
