@@ -25,6 +25,19 @@ from .user_data import build_user_data
 from .works import build_works_and_modules
 
 
+def _sample_hour(rng: random.Random, temporal) -> int:
+    """Return the base hour for visit timestamps.
+
+    When *temporal* is present and its ``hour_of_day`` weights are non-zero,
+    draw one hour via weighted sampling.  Otherwise return 11 (legacy default)
+    WITHOUT consuming any rng draws — so the None-temporal golden output is
+    byte-identical to the previous hardcoded timestamps.
+    """
+    if temporal and sum(temporal.hour_of_day) > 0:
+        return rng.choices(range(24), weights=temporal.hour_of_day, k=1)[0]
+    return 11  # legacy default base hour
+
+
 def _anomalies_at(week_index: int, flw_id: str, manifest: Manifest):
     out = []
     for a in manifest.anomalies:
@@ -96,6 +109,7 @@ def generate(
     manifest: Manifest,
     opportunity_detail: dict[str, Any],
     form_schema: FormSchema,
+    app_structure: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     rng = random.Random(manifest.random_seed)
     personas = manifest.flw_personas
@@ -147,6 +161,8 @@ def generate(
         # invisible to that pipeline, so mirror it into metadata.location here.
         if location:
             form_json.setdefault("metadata", {})["location"] = location
+        base_hour = _sample_hour(rng, manifest.temporal)
+        created_dt = dt.datetime.combine(slot.visit_date, dt.time(base_hour, 0))
         # Visit id MUST be a PostgreSQL bigint-compatible integer — the audit
         # data-access layer and labs cache both type the column as int, and a
         # UUID-string id breaks `filter_visit_ids=set([...])` lookups + the
@@ -171,11 +187,11 @@ def generate(
                 "flag_reason": status.flag_reason,
                 "form_json": form_json,
                 "completed_work": "",
-                "status_modified_date": dt.datetime.combine(slot.visit_date, dt.time(12, 0)).isoformat(),
+                "status_modified_date": (created_dt + dt.timedelta(hours=1)).isoformat(),
                 "review_status": status.review_status,
-                "review_created_on": dt.datetime.combine(slot.visit_date, dt.time(12, 30)).isoformat(),
+                "review_created_on": (created_dt + dt.timedelta(hours=1, minutes=30)).isoformat(),
                 "justification": None,
-                "date_created": dt.datetime.combine(slot.visit_date, dt.time(11, 0)).isoformat(),
+                "date_created": created_dt.isoformat(),
                 "completed_work_id": None,
                 "images": [],
             }
@@ -204,4 +220,5 @@ def generate(
         "completed_works": works,
         "completed_module": modules,
         "task_records": task_records,
+        "app_structure": app_structure,
     }
