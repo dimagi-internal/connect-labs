@@ -16,6 +16,8 @@ import statistics
 from collections import Counter, defaultdict
 from typing import Any
 
+import numpy as np
+import pandas as pd
 import yaml
 
 from .manifest import Manifest, ManifestValidationError
@@ -235,6 +237,55 @@ def _profile_null_rate(visits: list[dict], path: str) -> float:
             present += 1
     n = len(visits)
     return round(1.0 - present / n, 4) if n else 0.0
+
+
+_MIN_CORR_COVERAGE = 0.5
+
+
+def _profile_correlation(visits: list[dict], paths: list[str], kinds: dict[str, str]) -> dict | None:
+    """Spearman rank-correlation over numeric + ordinal-encoded categorical paths.
+
+    Categoricals are encoded by frequency rank so a copula can reproduce their
+    rank-association with numeric fields. Returns None if < 2 usable columns.
+    """
+    cols: dict[str, list] = {}
+    n = len(visits)
+    for path in paths:
+        kind = kinds.get(path, "decimal")
+        raw_vals = [_extract_nested(v.get("form_json") or {}, path) for v in visits]
+        present = [r for r in raw_vals if r not in (None, "")]
+        if n == 0 or len(present) / n < _MIN_CORR_COVERAGE:
+            continue
+        if kind in {"select", "multiselect", "text"}:
+            order = {
+                val: i
+                for i, (val, _) in enumerate(
+                    sorted(
+                        Counter(str(r) for r in present).items(),
+                        key=lambda kv: -kv[1],
+                    )
+                )
+            }
+            cols[path] = [order.get(str(r), np.nan) if r not in (None, "") else np.nan for r in raw_vals]
+        else:
+            out = []
+            for r in raw_vals:
+                try:
+                    out.append(float(r))
+                except (TypeError, ValueError):
+                    out.append(np.nan)
+            cols[path] = out
+    if len(cols) < 2:
+        return None
+    df = pd.DataFrame(cols)
+    corr = df.corr(method="spearman").fillna(0.0)
+    mat = corr.to_numpy(copy=True)
+    np.fill_diagonal(mat, 1.0)
+    return {
+        "fields": list(corr.columns),
+        "matrix": [[round(float(x), 4) for x in row] for row in mat.tolist()],
+        "method": "spearman",
+    }
 
 
 def _profile_kpis(

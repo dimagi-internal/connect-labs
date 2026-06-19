@@ -139,6 +139,23 @@ def test_profile_numeric_gets_null_rate():
         assert "null_rate" in field_dists["form.weight_kg"]
 
 
+def test_profile_correlation_recovers_positive_relationship():
+    import random
+
+    from commcare_connect.labs.synthetic.generator.fixtures.profiler import _profile_correlation
+
+    rng = random.Random(0)
+    visits = []
+    for _ in range(300):
+        a = rng.gauss(10, 2)
+        b = a * 0.9 + rng.gauss(0, 0.5)  # strongly correlated with a
+        visits.append({"form_json": {"form": {"a": a, "b": b}}})
+    corr = _profile_correlation(visits, ["form.a", "form.b"], {"form.a": "decimal", "form.b": "decimal"})
+    assert corr["fields"] == ["form.a", "form.b"]
+    # off-diagonal correlation is strongly positive
+    assert corr["matrix"][0][1] > 0.7
+
+
 def test_profile_backward_compatible_without_app_structure():
     """profile() without app_structure still works and produces a valid manifest."""
     visits = []
