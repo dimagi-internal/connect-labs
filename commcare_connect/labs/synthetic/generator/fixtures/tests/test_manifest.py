@@ -1,12 +1,15 @@
 import datetime as dt
 
 import pytest
+from pydantic import ValidationError
 
 from commcare_connect.labs.synthetic.generator.fixtures.manifest import (
     CategoricalDistribution,
+    CorrelationSpec,
     Manifest,
     ManifestValidationError,
     NormalDistribution,
+    TemporalProfile,
 )
 
 VALID_MANIFEST_YAML = """
@@ -45,6 +48,17 @@ kpi_config:
     threshold_target: 0.90
 coaching_arcs: []
 """
+
+_YAML_WITH_TEMPORAL = (
+    VALID_MANIFEST_YAML
+    + """
+temporal:
+  day_of_week: [1, 1, 1, 1, 1, 0.2, 0.1]
+  hour_of_day: [0,0,0,0,0,0,0,1,2,3,4,5,6,5,4,3,2,1,0,0,0,0,0,0]
+flag_reason_distribution:
+  "GPS outside service area": 1.0
+"""
+)
 
 
 def test_manifest_parses_valid_yaml():
@@ -189,3 +203,23 @@ def test_categorical_rejects_negative_rate():
 def test_null_rate_on_normal_distribution():
     d = NormalDistribution(mean=1.0, stddev=0.5, null_rate=0.2)
     assert d.null_rate == 0.2
+
+
+def test_correlation_spec_dimension_check():
+    ok = CorrelationSpec(fields=["a", "b"], matrix=[[1.0, 0.5], [0.5, 1.0]])
+    assert ok.method == "spearman"
+    with pytest.raises(ValidationError):
+        CorrelationSpec(fields=["a", "b"], matrix=[[1.0, 0.5]])  # not 2x2
+
+
+def test_temporal_profile_lengths():
+    TemporalProfile(day_of_week=[1] * 7, hour_of_day=[1] * 24)
+    with pytest.raises(ValidationError):
+        TemporalProfile(day_of_week=[1] * 6, hour_of_day=[1] * 24)
+
+
+def test_weekly_volume_multipliers_optional_and_validated():
+    base = Manifest.from_yaml(_YAML_WITH_TEMPORAL)
+    assert base.temporal is not None
+    assert len(base.temporal.day_of_week) == 7
+    assert base.flag_reason_distribution["GPS outside service area"] == 1.0

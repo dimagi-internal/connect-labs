@@ -95,6 +95,33 @@ FieldDistribution = Annotated[
 ]
 
 
+class CorrelationSpec(BaseModel):
+    """Spearman rank-correlation over ``fields``, used to drive a Gaussian copula.
+    ``matrix`` is square (len == len(fields)), symmetric, unit diagonal."""
+
+    fields: list[str] = Field(min_length=1)
+    matrix: list[list[float]]
+    method: Literal["spearman"] = "spearman"
+
+    @model_validator(mode="after")
+    def _check_square(self):
+        n = len(self.fields)
+        if len(self.matrix) != n or any(len(row) != n for row in self.matrix):
+            raise ValueError(f"correlation matrix must be {n}x{n} to match fields")
+        return self
+
+
+class TemporalProfile(BaseModel):
+    day_of_week: list[float] = Field(min_length=7, max_length=7)
+    hour_of_day: list[float] = Field(min_length=24, max_length=24)
+
+    @model_validator(mode="after")
+    def _check_nonneg(self):
+        if any(w < 0 for w in self.day_of_week) or any(w < 0 for w in self.hour_of_day):
+            raise ValueError("temporal weights must be >= 0")
+        return self
+
+
 class MeanStddev(BaseModel):
     mean: float
     stddev: float = Field(ge=0)
@@ -138,6 +165,7 @@ class BeneficiaryCohort(BaseModel):
     size: PositiveInt
     field_distributions: dict[str, FieldDistribution]
     progression: Progression
+    correlation: CorrelationSpec | None = None
 
 
 # ---------- Anomalies ----------
@@ -230,6 +258,7 @@ class Timeline(BaseModel):
     end_date: dt.date
     weeks: PositiveInt
     visit_cadence_per_week_per_flw: MeanStddev
+    weekly_volume_multipliers: list[float] | None = None
 
     @model_validator(mode="after")
     def _check_dates(self):
@@ -241,6 +270,15 @@ class Timeline(BaseModel):
             raise ValueError(
                 f"weeks={self.weeks} is inconsistent with date range " f"({span_days} days = ~{expected_weeks} weeks)"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _check_weekly_multipliers(self):
+        if self.weekly_volume_multipliers is not None:
+            if len(self.weekly_volume_multipliers) != self.weeks:
+                raise ValueError("weekly_volume_multipliers length must equal weeks")
+            if any(m < 0 for m in self.weekly_volume_multipliers):
+                raise ValueError("weekly_volume_multipliers must be >= 0")
         return self
 
 
@@ -297,6 +335,8 @@ class Manifest(BaseModel):
     image_config: ImageConfig | None = None
     # Optional: place visit GPS across a real area (renders on the delivery overlay).
     geography: Geography | None = None
+    temporal: TemporalProfile | None = None
+    flag_reason_distribution: dict[str, float] = Field(default_factory=dict)
 
     @classmethod
     def from_yaml(cls, source: str | bytes) -> Manifest:
