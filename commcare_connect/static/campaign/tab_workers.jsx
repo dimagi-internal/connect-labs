@@ -93,20 +93,20 @@ function PaymentsSub({ density, role }) {
     .reduce((a, w) => a + w.amount, 0);
 
   const setPay = (ids, newStatus) => {
-    setWorkers((ws) =>
-      ws.map((w) =>
-        ids.includes(w.id)
-          ? {
-              ...w,
-              pay: newStatus,
-              daysApproved:
-                newStatus === 'approved' || newStatus === 'paid'
-                  ? w.daysWorked
-                  : w.daysApproved,
-            }
-          : w,
-      ),
-    );
+    window.campaignActions
+      .setPayStatus(ids, newStatus)
+      .then(function (res) {
+        const updated = {};
+        (res.workers || []).forEach(function (w) {
+          updated[w.id] = w;
+        });
+        setWorkers((ws) => ws.map((w) => (updated[w.id] ? updated[w.id] : w)));
+        if ((res.blocked || []).length)
+          toast(res.blocked.length + ' blocked by fraud flags', 'danger');
+      })
+      .catch(function (e) {
+        toast('Action failed: ' + e.message, 'danger');
+      });
   };
   const toggle = (id) =>
     setSel((s) => {
@@ -490,10 +490,18 @@ function PaymentsSub({ density, role }) {
           toast('Payment rejected', 'danger');
           setDrawer(null);
         }}
-        onUpdate={(id, days) =>
-          setWorkers((ws) =>
-            ws.map((w) => (w.id === id ? { ...w, daysApproved: days } : w)),
-          )
+        onQueue={(id, count) =>
+          window.campaignActions
+            .queuePay(id, count)
+            .then(function (res) {
+              setWorkers((ws) =>
+                ws.map((w) => (w.id === res.worker.id ? res.worker : w)),
+              );
+              toast('Approved & queued for payment');
+            })
+            .catch(function (e) {
+              toast('Could not queue: ' + e.message, 'danger');
+            })
         }
       />
     </div>
@@ -507,7 +515,7 @@ function PaymentDrawer({
   onApproveAll,
   onReject,
   canApprove,
-  onUpdate,
+  onQueue,
 }) {
   const D = window.CUT_DATA;
   const toast = useToast();
@@ -859,8 +867,7 @@ function PaymentDrawer({
               icon="paper-plane"
               disabled={worker.fraudRules.length > 0}
               onClick={() => {
-                onUpdate(worker.id, approvedCount);
-                onApproveAll(worker.id);
+                onQueue(worker.id, approvedCount);
                 onClose();
               }}
             >
