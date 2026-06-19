@@ -852,17 +852,33 @@
       .join('');
   }
   function renderSummary(s) {
-    $(
-      'summary',
-    ).innerHTML = `<div class="flex justify-between"><dt class="text-gray-500">Active areas</dt><dd class="font-medium">${
-      s.active ?? 0
-    }</dd></div>
-       <div class="flex justify-between"><dt class="text-gray-500">Excluded</dt><dd class="font-medium">${
-         s.excluded ?? 0
-       }</dd></div>
-       <div class="flex justify-between"><dt class="text-gray-500">Buildings (active)</dt><dd class="font-medium">${(
-         s.buildings_active ?? 0
-       ).toLocaleString()}</dd></div>`;
+    const row = (label, val) =>
+      `<div class="flex justify-between"><dt class="text-gray-500">${label}</dt><dd class="font-medium">${val}</dd></div>`;
+    let html =
+      row('Active areas', s.active ?? 0) +
+      row('Excluded', s.excluded ?? 0) +
+      row('Buildings (active)', (s.buildings_active ?? 0).toLocaleString()) +
+      row('Expected visits', (s.expected_visits_active ?? 0).toLocaleString());
+    // Per-ward breakdown when the plan spans more than one distinct area (#10).
+    const areas = Object.values(s.by_area || {});
+    if (areas.length > 1) {
+      areas.sort((a, b) => b.work_areas - a.work_areas);
+      html +=
+        `<div class="mt-2 pt-2 border-t border-gray-100"><div class="text-[10px] uppercase tracking-wide text-gray-400 mb-1">By ward</div>` +
+        areas
+          .map(
+            (a) =>
+              `<div class="flex justify-between gap-2 text-[11px]"><span class="text-gray-600 truncate" title="${esc(
+                a.ward,
+              )}${a.lga ? ' — ' + esc(a.lga) : ''}">${esc(a.ward)}</span>` +
+              `<span class="text-gray-500 tabular-nums shrink-0">${
+                a.work_areas
+              } WA · ${a.buildings.toLocaleString()} bld · ${a.expected_visits.toLocaleString()} v</span></div>`,
+          )
+          .join('') +
+        `</div>`;
+    }
+    $('summary').innerHTML = html;
     renderDimSidebar(s);
   }
   function renderDimSidebar(s) {

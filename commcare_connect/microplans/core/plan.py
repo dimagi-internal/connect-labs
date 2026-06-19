@@ -345,13 +345,36 @@ def summarize(work_areas: list[dict]) -> dict:
             a["expected_visits"] += int(w.get("expected_visit_count", 0))
         return agg
 
+    # Per source ward/area (#10): grand totals plus a row per distinct ward, keyed on
+    # the work area's source ward (from per-area attribution; falls back to "(area)").
+    by_area: dict[str, dict] = {}
+    for w in active:
+        p = w.get("properties") or {}
+        ward = (p.get("ward") or "(area)").strip() or "(area)"
+        a = by_area.setdefault(
+            ward,
+            {
+                "ward": ward,
+                "lga": p.get("lga", ""),
+                "state": p.get("state", ""),
+                "work_areas": 0,
+                "buildings": 0,
+                "expected_visits": 0,
+            },
+        )
+        a["work_areas"] += 1
+        a["buildings"] += int(w.get("building_count", 0))
+        a["expected_visits"] += int(w.get("expected_visit_count", 0))
+
     return {
         "total": len(work_areas),
         "active": len(active),
         "excluded": len(excluded),
         "buildings_active": sum(int(w.get("building_count", 0)) for w in active),
+        "expected_visits_active": sum(int(w.get("expected_visit_count", 0)) for w in active),
         "by_worker": _load("opportunity_access"),
         "by_group": _load("work_area_group"),
+        "by_area": by_area,
     }
 
 
