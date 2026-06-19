@@ -46,3 +46,5 @@ def test_app_renders_for_authorized_user(client):
     assert 'id="campaign-bootstrap"' in content
     assert 'id="root"' in content
     assert "campaign/app.jsx" in content
+    assert b"campaign/data-api.js" in resp.content
+    assert b"campaign/tab_overview.jsx" in resp.content

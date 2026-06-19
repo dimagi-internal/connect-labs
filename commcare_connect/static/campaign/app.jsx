@@ -150,13 +150,35 @@ function App() {
           showAdmin={showAdmin}
         />
         <main style={{ flex: 1, minWidth: 0 }}>
-          <TabPlaceholder name={activeName} />
+          {tab === 'overview' ? (
+            <OverviewTab
+              scenario={CONFIG.scenario}
+              showAlerts={CONFIG.showAlerts}
+              onJump={jump}
+            />
+          ) : (
+            <TabPlaceholder name={activeName} />
+          )}
         </main>
       </div>
     </div>
   );
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(
-  React.createElement(ToastProvider, null, React.createElement(App)),
-);
+function mount() {
+  ReactDOM.createRoot(document.getElementById('root')).render(
+    React.createElement(ToastProvider, null, React.createElement(App)),
+  );
+}
+if (window.campaignLoadData) {
+  window
+    .campaignLoadData()
+    .then(mount)
+    .catch(function (e) {
+      document.getElementById('root').innerHTML =
+        '<div style="padding:48px;text-align:center;color:#E13019;font-family:sans-serif">Could not load campaign data. Please refresh.</div>';
+      console.error(e);
+    });
+} else {
+  mount();
+}
