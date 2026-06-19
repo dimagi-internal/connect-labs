@@ -101,6 +101,7 @@ _auth_idx = MIDDLEWARE.index("django.contrib.auth.middleware.AuthenticationMiddl
 # commcare_connect/labs/oauth_session.py.
 MIDDLEWARE.insert(_auth_idx + 1, "commcare_connect.labs.oauth_session.LabsOAuthSessionMiddleware")
 MIDDLEWARE.insert(_auth_idx + 2, "commcare_connect.labs.context.LabsContextMiddleware")
+MIDDLEWARE.insert(_auth_idx + 3, "commcare_connect.campaign.middleware.CampaignOAuthSessionMiddleware")
 
 # Gzip-compress responses on the way out — the microplans footprints endpoint
 # ships ~1 MB of GeoJSON polygon coords per ward that compresses 80–90%, but

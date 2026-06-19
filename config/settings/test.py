@@ -35,5 +35,12 @@ STORAGES["staticfiles"]["BACKEND"] = "django.contrib.staticfiles.storage.StaticF
 # files already opt in and double-registration raises ImproperlyConfigured.
 INSTALLED_APPS = INSTALLED_APPS + ["commcare_connect.labs", "commcare_connect.campaign"]  # noqa: F405
 
+# Install the campaign OAuth-session middleware under test settings so its
+# behavior is exercised here (local.py/labs_aws.py add it for runtime; base/test
+# do not include the session middlewares).
+MIDDLEWARE = list(MIDDLEWARE)  # noqa: F405
+_auth_idx = MIDDLEWARE.index("django.contrib.auth.middleware.AuthenticationMiddleware")
+MIDDLEWARE.insert(_auth_idx + 1, "commcare_connect.campaign.middleware.CampaignOAuthSessionMiddleware")
+
 # CommCareConnect
 # ------------------------------------------------------------------------------

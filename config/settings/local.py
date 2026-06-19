@@ -70,6 +70,7 @@ _auth_idx = MIDDLEWARE.index("django.contrib.auth.middleware.AuthenticationMiddl
 # commcare_connect/labs/oauth_session.py.
 MIDDLEWARE.insert(_auth_idx + 1, "commcare_connect.labs.oauth_session.LabsOAuthSessionMiddleware")
 MIDDLEWARE.insert(_auth_idx + 2, "commcare_connect.labs.context.LabsContextMiddleware")
+MIDDLEWARE.insert(_auth_idx + 3, "commcare_connect.campaign.middleware.CampaignOAuthSessionMiddleware")
 
 # Pipeline cache settings for local development
 # 24-hour cache TTL for dev (production default: 1 hour)
