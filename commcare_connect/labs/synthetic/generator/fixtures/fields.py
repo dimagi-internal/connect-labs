@@ -14,11 +14,14 @@ from .manifest import (
     Anomaly,
     BeneficiaryCohort,
     BinaryDistribution,
+    CategoricalDistribution,
     FlwPersona,
     NormalDistribution,
     UniformDistribution,
 )
 from .schema_loader import FormSchema, QuestionSpec
+
+_OMIT = object()  # sentinel: field rolled its null_rate and should be omitted
 
 
 def _apply_transform(raw: float, transform: str | None, rng: random.Random) -> Any:
@@ -58,6 +61,12 @@ def _outlier(distribution, rng: random.Random) -> float:
         # (rate >= 0.5), the outlier is the failure (0.0), and vice versa.
         return 0.0 if distribution.rate >= 0.5 else 1.0
     raise TypeError(f"unknown distribution: {distribution!r}")
+
+
+def _categorical_value(dist: CategoricalDistribution, rng: random.Random) -> str:
+    names = sorted(dist.values)
+    weights = [dist.values[n] for n in names]
+    return rng.choices(names, weights=weights, k=1)[0]
 
 
 def _binary_choice(spec: QuestionSpec, raw: float) -> Any:
@@ -178,6 +187,10 @@ def fill_form_json(
             consumed_keys.add(consumed_key)
         if dist is None:
             value = _default_for_kind(spec, rng)
+        elif getattr(dist, "null_rate", 0.0) and rng.random() < dist.null_rate:
+            continue  # omit this field — matches real missing-data rate
+        elif isinstance(dist, CategoricalDistribution):
+            value = _categorical_value(dist, rng)
         else:
             raw = _outlier(dist, rng) if spec.json_path in anomaly_paths else _draw(dist, rng, period)
             transform = getattr(dist, "transform", None)
@@ -200,6 +213,11 @@ def fill_form_json(
     # must NOT be orphan-written (that would double-write the field).
     for path, dist in effective.items():
         if path in covered_paths or path in consumed_keys:
+            continue
+        if getattr(dist, "null_rate", 0.0) and rng.random() < dist.null_rate:
+            continue
+        if isinstance(dist, CategoricalDistribution):
+            _set_nested(out, path, _categorical_value(dist, rng))
             continue
         raw = _outlier(dist, rng) if path in anomaly_paths else _draw(dist, rng, period)
         transform = getattr(dist, "transform", None)
