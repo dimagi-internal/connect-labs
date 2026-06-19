@@ -28,9 +28,14 @@
 
   const COLOR = '#a855f7';
   // Two-arm sampling: per-boundary study arm. Matches review.html ARM_COLOR.
-  const ARMS = ['intervention', 'comparison'];
   const ARM_COLOR = { intervention: '#10b981', comparison: '#3b82f6' };
   const ARM_LABEL = { intervention: 'Interv', comparison: 'Control' };
+  // Full chip labels for the committed-arm chip in the rail (the two-segment
+  // Interv/Control toggle was misread as "this ward is in both arms").
+  const ARM_CHIP_LABEL = {
+    intervention: 'Intervention',
+    comparison: 'Control',
+  };
   const SRC = 'mp-admin';
   const LINE = 'mp-admin-line';
   const FILL = 'mp-admin-fill';
@@ -195,27 +200,27 @@
       onArmChange(id, arm);
       renderSummary();
     }
+    // A SINGLE committed-arm chip (not a two-segment toggle, which read as "this
+    // ward is in both arms"). Shows the one arm this ward is committed to, coloured
+    // by arm; clicking it flips to the other arm (a one-tap correction), with the
+    // affordance spelled out in the title so it doesn't look like a static badge.
     function armPill(id, v) {
       const arm = v.arm || 'intervention';
-      const wrap = document.createElement('div');
-      wrap.className =
-        'inline-flex rounded overflow-hidden border border-gray-200 text-[9px] font-semibold leading-none shrink-0';
-      wrap.title = 'Study arm for this ward (intervention vs control)';
-      ARMS.forEach((a) => {
-        const b = document.createElement('button');
-        b.type = 'button';
-        const on = a === arm;
-        b.className = 'px-1.5 py-0.5 transition-colors';
-        b.style.background = on ? ARM_COLOR[a] : '#fff';
-        b.style.color = on ? '#fff' : '#6b7280';
-        b.textContent = ARM_LABEL[a];
-        b.addEventListener('click', (e) => {
-          e.stopPropagation();
-          setArm(id, a);
-        });
-        wrap.appendChild(b);
+      const other = arm === 'intervention' ? 'comparison' : 'intervention';
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className =
+        'inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-semibold leading-none shrink-0 transition-colors';
+      b.style.background = ARM_COLOR[arm];
+      b.style.borderColor = ARM_COLOR[arm];
+      b.style.color = '#fff';
+      b.textContent = ARM_CHIP_LABEL[arm] || ARM_LABEL[arm];
+      b.title = `Study arm: ${ARM_CHIP_LABEL[arm]}. Click to switch to ${ARM_CHIP_LABEL[other]}.`;
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        setArm(id, other);
       });
-      return wrap;
+      return b;
     }
     function renderHint() {
       hintEl.textContent = isAreaPhase()
@@ -897,7 +902,45 @@
       const reference = st.reference || {};
       const refName = reference.name || ref.name || 'selected ward';
       const running = st.kind === 'running';
-      const results = st.results || [];
+      // De-duplicate the candidate list to ONE canonical row per ward and drop the
+      // intervention ward from its own candidate list. The admin-boundary table can
+      // hold several rows that resolve to the same ward name (and occasionally a row
+      // for the reference ward itself), so without this the panel shows duplicate,
+      // conflicting rows (e.g. a ward twice) and lists the intervention ward against
+      // itself at 100%. Presentation-only: the underlying results data is untouched.
+      const refId = reference.boundary_id || ref.boundary_id || null;
+      const refKey = String(refName || '')
+        .trim()
+        .toLowerCase();
+      const results = (function dedupeCandidates(rows) {
+        const byName = new Map();
+        const order = [];
+        (rows || []).forEach((r) => {
+          if (!r) return;
+          // Exclude the intervention ward itself (by id or by name).
+          if (refId && r.boundary_id === refId) return;
+          const nameKey = String(r.name || '')
+            .trim()
+            .toLowerCase();
+          if (nameKey && nameKey === refKey) return;
+          const key = nameKey || 'id:' + r.boundary_id;
+          const prev = byName.get(key);
+          if (!prev) {
+            byName.set(key, r);
+            order.push(key);
+            return;
+          }
+          // Keep the better row: an analysed (ok) row beats a pending/errored one;
+          // among analysed rows keep the higher overlap. Ranking already sorted by
+          // overlap, so first-seen-ok wins ties.
+          const prevOk = prev.status === 'ok' && prev.overlap != null;
+          const curOk = r.status === 'ok' && r.overlap != null;
+          if (curOk && !prevOk) byName.set(key, r);
+          else if (curOk && prevOk && (r.overlap || 0) > (prev.overlap || 0))
+            byName.set(key, r);
+        });
+        return order.map((k) => byName.get(k));
+      })(st.results || []);
       const num = (x) => (x == null ? null : Math.round(x).toLocaleString());
       const dash = '<span class="text-gray-300">—</span>';
       const cell = (v) => (v == null ? dash : v);
@@ -1055,7 +1098,7 @@
         th('Pop.', 'pop') +
         th('Buildings', 'buildings') +
         th('Clusters', 'clusters') +
-        th('Median density', 'median') +
+        th('Median density (bldg/km²)', 'median') +
         th('Distribution', 'distribution', 'text-left') +
         th('Match', 'match', 'text-left') +
         th('', '', 'text-left') +

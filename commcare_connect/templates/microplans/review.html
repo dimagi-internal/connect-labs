@@ -622,7 +622,13 @@
       </details>
     </div>
 
-    {% if plan_id %}
+    {% comment %}
+      Plan metrics + summary + per-worker breakdown + work-area table. Rendered
+      unconditionally (NOT gated on plan_id) so the create-in-place flow on a fresh
+      /new/ page can hydrate these sections after "Generate plan" without a reload —
+      otherwise the post-generate render targets missing nodes and throws
+      "Cannot set properties of null". The containers are empty until a plan exists.
+    {% endcomment %}
     <!-- KPI tiles — the headline plan metrics, promoted to sit right under the
          comparability verdict (a scannable stat row, not a chip jumble). -->
     <section class="border-t border-gray-200 bg-white px-3 py-2.5">
@@ -687,7 +693,6 @@
         <tbody id="wa-body"></tbody>
       </table>
     </div>
-    {% endif %}
   </div>
 </div>
 {% endblock %}
