@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 from commcare_connect.campaign.services import rbac
 
@@ -270,3 +271,23 @@ class ReportDay(models.Model):
 
     def __str__(self):
         return f"{self.campaign_id}:{self.day}"
+
+
+class AuditLog(models.Model):
+    """A tool-owned record of an admin action. Written on every privileged write
+    (payments, KYC, user management, activities, microplans) so the Activity log in
+    System Administration reflects what actually happened rather than seeded text."""
+
+    campaign = models.ForeignKey(Campaign, on_delete=models.CASCADE, related_name="audit_logs", null=True, blank=True)
+    at = models.DateTimeField(default=timezone.now)
+    user = models.CharField(max_length=255)  # actor display name (or username)
+    action = models.TextField()
+    module = models.CharField(max_length=64)
+    ip = models.CharField(max_length=64, blank=True, default="")
+
+    class Meta:
+        db_table = "campaign_audit_log"
+        ordering = ["-at", "-id"]
+
+    def __str__(self):
+        return f"{self.at:%Y-%m-%d %H:%M} {self.user}: {self.action}"

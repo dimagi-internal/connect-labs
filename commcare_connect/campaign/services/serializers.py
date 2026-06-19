@@ -1,5 +1,6 @@
 """Serialize a Campaign + its related rows into the window.CUT_DATA shape
 the prototype's React modules consume."""
+
 from __future__ import annotations
 
 from commcare_connect.campaign.models import Campaign, CampaignUser
@@ -166,6 +167,16 @@ def _microplan(m) -> dict:
     }
 
 
+def _audit(a) -> dict:
+    return {
+        "at": a.at.strftime("%b %-d, %Y · %H:%M"),
+        "user": a.user,
+        "action": a.action,
+        "module": a.module,
+        "ip": a.ip,
+    }
+
+
 def bootstrap_payload(c: Campaign, current_username: str | None = None) -> dict:
     # HQ/Connect-owned roster is read through the data-source seam (issue #674);
     # tool-owned entities (activities, microplans, reporting, households, users)
@@ -190,6 +201,7 @@ def bootstrap_payload(c: Campaign, current_username: str | None = None) -> dict:
         "HOUSEHOLDS": _household(c.household_stat),
         "WORKERS": [_worker(w, role_names, region_names) for w in workers],
         "USERS": [_user(u, current_username) for u in CampaignUser.objects.all().order_by("created_at")],
+        "AUDIT_LOG": [_audit(a) for a in c.audit_logs.all()[:50]],
         "KYC_STATES": list(KYC_STATES),
         "PAY_STATES": list(PAY_STATES),
         "sharedLabel": dict(SHARED_LABEL),

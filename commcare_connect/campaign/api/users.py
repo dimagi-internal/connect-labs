@@ -4,8 +4,12 @@ from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 
 from commcare_connect.campaign.auth.decorators import current_campaign_user, require_perm
-from commcare_connect.campaign.models import CampaignUser
-from commcare_connect.campaign.services import roles, serializers
+from commcare_connect.campaign.models import Campaign, CampaignUser
+from commcare_connect.campaign.services import audit, roles, serializers
+
+
+def _campaign():
+    return Campaign.objects.order_by("id").first()
 
 
 def _body(request):
@@ -43,6 +47,8 @@ def user_invite(request):
         if name:
             cu.name = name
         cu.save(update_fields=["role", "scope", "status", "name"])
+    verb = "Invited" if created else "Re-invited"
+    audit.record(request, f"{verb} {email} ({roles.to_label(key)})", "User Management", _campaign())
     return JsonResponse({"user": _ser(cu, request)})
 
 
@@ -56,6 +62,8 @@ def user_set_role(request, username):
     cu = get_object_or_404(CampaignUser, commcare_username=username)
     cu.role = key
     cu.save(update_fields=["role"])
+    who = cu.name or cu.commcare_username
+    audit.record(request, f"Changed {who}'s role to {roles.to_label(key)}", "User Management", _campaign())
     return JsonResponse({"user": _ser(cu, request)})
 
 
@@ -69,4 +77,7 @@ def user_set_status(request, username):
     cu = get_object_or_404(CampaignUser, commcare_username=username)
     cu.status = status
     cu.save(update_fields=["status"])
+    who = cu.name or cu.commcare_username
+    verb = {"active": "Activated", "inactive": "Deactivated", "deactivated": "Deactivated"}[status]
+    audit.record(request, f"{verb} user {who}", "User Management", _campaign())
     return JsonResponse({"user": _ser(cu, request)})

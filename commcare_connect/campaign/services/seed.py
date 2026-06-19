@@ -5,14 +5,18 @@ Deterministic via random.Random(SEED). Honors the prototype's invariants
 donor/region/role/planning/household constants) without byte-matching the
 JS PRNG output.
 """
+
 from __future__ import annotations
 
+import datetime
 import random
 
 from django.db import transaction
+from django.utils import timezone
 
 from commcare_connect.campaign.models import (
     Activity,
+    AuditLog,
     Campaign,
     Donor,
     HouseholdStat,
@@ -377,6 +381,50 @@ def _seed_report_days(rng, campaign):
     ReportDay.objects.bulk_create(rows)
 
 
+AUDIT_SEED = [
+    (datetime.datetime(2026, 6, 3, 9, 41), "Amara Okafor", "Approved 8 worker payments", "Payments", "102.89.x.x"),
+    (datetime.datetime(2026, 6, 3, 9, 12), "Ngozi Eze", "Approved KYC for W10342", "KYC", "197.210.x.x"),
+    (
+        datetime.datetime(2026, 6, 3, 8, 55),
+        "Amara Okafor",
+        "Changed Samuel Okoro's role to Operations Manager",
+        "User Management",
+        "102.89.x.x",
+    ),
+    (datetime.datetime(2026, 6, 2, 17, 30), "Tunde Balogun", "Logged in", "Authentication", "105.112.x.x"),
+    (
+        datetime.datetime(2026, 6, 2, 16, 4),
+        "Amara Okafor",
+        "Invited aisha.lawal@partner.org (Compliance Administrator)",
+        "User Management",
+        "102.89.x.x",
+    ),
+    (datetime.datetime(2026, 6, 2, 14, 48), "Fatima Bello", "Created activity ACT-05", "Activities", "154.113.x.x"),
+    (
+        datetime.datetime(2026, 6, 2, 11, 20),
+        "Amara Okafor",
+        "Deactivated user Joseph Idoko",
+        "User Management",
+        "102.89.x.x",
+    ),
+]
+
+
+def _seed_audit_log(campaign):
+    rows = [
+        AuditLog(
+            campaign=campaign,
+            at=timezone.make_aware(dt) if timezone.is_naive(dt) else dt,
+            user=user,
+            action=action,
+            module=module,
+            ip=ip,
+        )
+        for dt, user, action, module, ip in AUDIT_SEED
+    ]
+    AuditLog.objects.bulk_create(rows)
+
+
 @transaction.atomic
 def seed_campaign(fresh: bool = False, worker_count: int = 64) -> Campaign:
     ws, _ = Workspace.objects.get_or_create(slug="nigeria", defaults={"country": "Nigeria", "name": "Nigeria"})
@@ -426,5 +474,6 @@ def seed_campaign(fresh: bool = False, worker_count: int = 64) -> Campaign:
     _seed_activities(rng, c)
     _seed_microplans(rng, c, region_objs, ROLES)
     _seed_report_days(rng, c)
+    _seed_audit_log(c)
     seed_demo_users()
     return c

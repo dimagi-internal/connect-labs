@@ -1,58 +1,6 @@
 // tab_users.jsx — System Administration › User Management (RBAC)
 const { useState: useStateU } = React;
 
-const AUDIT_LOG = [
-  {
-    at: 'Jun 3, 2026 · 09:41',
-    user: 'Amara Okafor',
-    action: 'Approved 8 worker payments',
-    module: 'Payments',
-    ip: '102.89.x.x',
-  },
-  {
-    at: 'Jun 3, 2026 · 09:12',
-    user: 'Ngozi Eze',
-    action: 'Approved KYC for W10342',
-    module: 'KYC',
-    ip: '197.210.x.x',
-  },
-  {
-    at: 'Jun 3, 2026 · 08:55',
-    user: 'Amara Okafor',
-    action: "Changed Samuel Okoro's role to Operations Manager",
-    module: 'User Management',
-    ip: '102.89.x.x',
-  },
-  {
-    at: 'Jun 2, 2026 · 17:30',
-    user: 'Tunde Balogun',
-    action: 'Logged in',
-    module: 'Authentication',
-    ip: '105.112.x.x',
-  },
-  {
-    at: 'Jun 2, 2026 · 16:04',
-    user: 'Amara Okafor',
-    action: 'Invited aisha.lawal@partner.org (Compliance Administrator)',
-    module: 'User Management',
-    ip: '102.89.x.x',
-  },
-  {
-    at: 'Jun 2, 2026 · 14:48',
-    user: 'Fatima Bello',
-    action: 'Created activity ACT-05',
-    module: 'Activities',
-    ip: '154.113.x.x',
-  },
-  {
-    at: 'Jun 2, 2026 · 11:20',
-    user: 'Amara Okafor',
-    action: 'Deactivated user Joseph Idoko',
-    module: 'User Management',
-    ip: '102.89.x.x',
-  },
-];
-
 function UserManagement({ density, role }) {
   const D = window.CUT_DATA;
   const RBAC = window.CUT_RBAC;
@@ -407,7 +355,7 @@ function UserManagement({ density, role }) {
               { label: 'IP' },
             ]}
           >
-            {AUDIT_LOG.map((e, i) => (
+            {(D.AUDIT_LOG || []).map((e, i) => (
               <Row key={i}>
                 <Cell mono style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
                   {e.at}

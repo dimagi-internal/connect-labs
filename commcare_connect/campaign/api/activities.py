@@ -5,7 +5,7 @@ from django.shortcuts import get_object_or_404
 
 from commcare_connect.campaign.auth.decorators import require_perm
 from commcare_connect.campaign.models import Activity, Campaign
-from commcare_connect.campaign.services import activity_actions, serializers
+from commcare_connect.campaign.services import activity_actions, audit, serializers
 
 
 def _body(request):
@@ -24,7 +24,9 @@ def activity_create(request):
     data = _body(request)
     if not (data.get("name") or "").strip():
         return JsonResponse({"error": "name required"}, status=400)
-    a = activity_actions.create_activity(_campaign(), data, bool(data.get("sync")))
+    c = _campaign()
+    a = activity_actions.create_activity(c, data, bool(data.get("sync")))
+    audit.record(request, f"Created activity {a.activity_id} ({a.name})", "Activities", c)
     return JsonResponse({"activity": serializers._activity(a)})
 
 
