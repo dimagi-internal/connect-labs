@@ -184,11 +184,19 @@
 
           <div>
             <div class="text-gray-600 mb-1">Area input</div>
-            <div class="seg-row" style="grid-template-columns: repeat(3, 1fr);">
+            <div class="seg-row" style="grid-template-columns: repeat(4, 1fr);">
               <button type="button" id="btn-area-admin" class="seg-tab is-on">Boundaries</button>
               <button type="button" id="btn-area-draw" class="seg-tab">Draw</button>
               <button type="button" id="btn-area-pin" class="seg-tab">Pin</button>
+              <button type="button" id="btn-area-upload" class="seg-tab">Upload</button>
             </div>
+          </div>
+
+          <div id="area-upload" class="hidden space-y-2">
+            <p class="text-[10px] text-gray-500 leading-snug">Upload a <b>GeoJSON</b> of one or more ward/area polygons to use as the plan areas. Ward/LGA/State are read from each feature's properties (wardname/lganame/statename and common variants); features without a ward name become area_1, area_2, …</p>
+            <input id="area-upload-file" type="file" accept=".json,.geojson,application/geo+json,application/json" class="text-[11px] w-full">
+            <p class="text-[10px] text-gray-500" id="area-upload-status"></p>
+            <button type="button" id="area-upload-clear" class="hidden text-[10px] text-red-600 underline">Clear uploaded areas</button>
           </div>
 
           <div id="area-draw" class="hidden space-y-2">
