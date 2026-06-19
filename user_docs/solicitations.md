@@ -37,6 +37,8 @@ Fill in:
 | Response template   | Questions responding organizations must answer                                       |
 | Status              | Draft (not yet public) or Published                                                  |
 
+After you save a new solicitation, Labs takes you directly to that solicitation's responses page so you can monitor for incoming submissions right away.
+
 **AI-assisted criteria generation:**
 Click **Generate Criteria** and paste in text describing your program requirements, or upload a PDF. The AI will suggest a structured set of evaluation criteria and scoring weights. Review and adjust the suggestions before saving.
 
@@ -56,7 +58,7 @@ Go to the plan group's management page and click **Create solicitation**. The so
 **From a single plan:**
 Go to the plan's review page and click **Create solicitation**. The form opens pre-filled in the same way, with that one plan attached as a coverage area.
 
-In both cases, the coverage areas are shown on a map on the creation form, with the actual ward boundaries drawn for each attached plan. You can edit any pre-filled field before publishing. Once you save the solicitation, the attached plans become a fixed snapshot — later edits to the underlying micro-plans will not change what is shown on the published solicitation.
+In both cases, the coverage areas are shown on a map on the creation form, with the actual ward boundaries drawn for each attached plan. You can edit any pre-filled field before publishing. Once you save the solicitation, Labs takes you directly to that solicitation's responses page. The attached plans become a fixed snapshot — later edits to the underlying micro-plans will not change what is shown on the published solicitation.
 
 The coverage areas are displayed on the public solicitation page — both as a map showing the ward boundaries and as a list — so applicants can see exactly which areas are on the table.
 
@@ -187,11 +189,13 @@ No — this duplicate display has been fixed. **Awarded** now appears only in th
 **What do the colours on the coverage map mean?**
 Green areas are intervention areas and blue areas are comparison areas. A small legend on every coverage map explains this colour coding.
 
+**Where do I land after creating a solicitation?**
+After you save a new solicitation, Labs takes you directly to that solicitation's responses page. This means you can immediately see whether any responses have come in, without having to navigate back from the general solicitations list.
 
 ---
 
-
 ---
 
+---
 
 ---
