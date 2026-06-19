@@ -163,6 +163,10 @@ function App() {
               density={CONFIG.density}
               role={role}
             />
+          ) : tab === 'activity' && aSub === 'details' ? (
+            <ActivityDetails density={CONFIG.density} role={role} />
+          ) : tab === 'activity' && aSub === 'planning' ? (
+            <PlanningTab density={CONFIG.density} role={role} />
           ) : (
             <TabPlaceholder name={activeName} />
           )}

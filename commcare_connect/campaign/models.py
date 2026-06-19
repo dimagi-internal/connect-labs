@@ -199,3 +199,58 @@ class Worker(models.Model):
     @property
     def is_flagged(self) -> bool:
         return len(self.fraud_rules or []) > 0
+
+
+class Activity(models.Model):
+    campaign = models.ForeignKey(Campaign, on_delete=models.CASCADE, related_name="activities")
+    activity_id = models.CharField(max_length=16)
+    name = models.CharField(max_length=255)
+    donor = models.CharField(max_length=64)  # donor short name
+    status = models.CharField(max_length=16, default="Planned")  # Active|At risk|Planned|Completed
+    start = models.CharField(max_length=32, blank=True)
+    end = models.CharField(max_length=32, blank=True)
+    requests = models.IntegerField(default=0)
+    workers = models.IntegerField(default=0)
+    region = models.CharField(max_length=128)  # region display name
+    target = models.BigIntegerField(default=0)
+    reached = models.BigIntegerField(default=0)
+    synced = models.BooleanField(default=False)
+
+    class Meta:
+        db_table = "campaign_activity"
+
+    def __str__(self):
+        return f"{self.activity_id} {self.name}"
+
+
+class Microplan(models.Model):
+    campaign = models.ForeignKey(Campaign, on_delete=models.CASCADE, related_name="microplans")
+    microplan_id = models.CharField(max_length=16)
+    region_id = models.CharField(max_length=64)
+    region = models.CharField(max_length=128)
+    lga = models.CharField(max_length=128)
+    settlements = models.IntegerField(default=0)
+    wards = models.IntegerField(default=0)
+    planned_wf = models.IntegerField(default=0)
+    actual_wf = models.IntegerField(default=0)
+    roles = models.JSONField(default=list)  # [{roleId, role, rate, planned, actual}]
+    budget = models.BigIntegerField(default=0)
+    spent = models.BigIntegerField(default=0)
+    planned_to_date = models.BigIntegerField(default=0)
+    target = models.BigIntegerField(default=0)
+    objective = models.BigIntegerField(default=0)
+    goal_pct = models.IntegerField(default=95)
+    reached = models.BigIntegerField(default=0)
+    doses = models.BigIntegerField(default=0)
+    doses_used = models.BigIntegerField(default=0)
+    cold_boxes = models.IntegerField(default=0)
+    vehicles = models.IntegerField(default=0)
+    status = models.CharField(max_length=16, default="Planned")
+    owner = models.CharField(max_length=128, blank=True)
+    updated = models.CharField(max_length=32, blank=True)
+
+    class Meta:
+        db_table = "campaign_microplan"
+
+    def __str__(self):
+        return f"{self.microplan_id} {self.lga}"

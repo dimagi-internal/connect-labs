@@ -51,5 +51,28 @@
     saveInvestigation: function (workerId, inv) {
       return post('/campaign/api/kyc/' + workerId + '/investigation/', inv);
     },
+    createActivity: function (data) {
+      return post('/campaign/api/activities/', data);
+    },
+    syncActivity: function (activityId) {
+      return post('/campaign/api/activities/' + activityId + '/sync/', {});
+    },
+    createMicroplan: function (data) {
+      return post('/campaign/api/microplans/', data);
+    },
+    updateMicroplan: function (microplanId, data) {
+      return post('/campaign/api/microplans/' + microplanId + '/', data);
+    },
+    setMicroplanTarget: function (microplanId, target, goalPct) {
+      return post('/campaign/api/microplans/' + microplanId + '/target/', {
+        target: target,
+        goalPct: goalPct,
+      });
+    },
+    setMicroplanBudget: function (microplanId, budget) {
+      return post('/campaign/api/microplans/' + microplanId + '/budget/', {
+        budget: budget,
+      });
+    },
   };
 })();
