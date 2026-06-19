@@ -53,6 +53,13 @@ class SyntheticOpportunity(models.Model):
         "the opp is its own program (program_id = opportunity_id). Set it to file several opps "
         "(e.g. a study + its service-delivery opp) under one program. Ignored when labs_only=False.",
     )
+    cloned_from_opportunity_id = models.IntegerField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="The real Connect opportunity_id this labs-only opp was cloned from "
+        "(provenance + clone idempotency). Null for opps not produced by the clone pipeline.",
+    )
     allowed_domains = ArrayField(
         models.CharField(max_length=100),
         default=list,

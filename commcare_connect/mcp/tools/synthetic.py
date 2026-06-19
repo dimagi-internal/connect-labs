@@ -9,9 +9,17 @@ import httpx
 from django.conf import settings
 
 from commcare_connect.labs.integrations.connect.api_client import LabsRecordAPIClient
+from commcare_connect.labs.synthetic.bundle import read_bundle
+from commcare_connect.labs.synthetic.clone_from_prod import (
+    generate_opp_from_bundle,
+    generate_opps_bulk,
+    profile_opp_to_bundle,
+    profile_opps_bulk,
+)
 from commcare_connect.labs.synthetic.dump import _fetch_endpoint
 from commcare_connect.labs.synthetic.gdrive import DriveClient
 from commcare_connect.labs.synthetic.generator.fixtures.engine import generate as _generate
+from commcare_connect.labs.synthetic.generator.fixtures.fidelity import compare
 from commcare_connect.labs.synthetic.generator.fixtures.manifest import Manifest, ManifestValidationError
 from commcare_connect.labs.synthetic.generator.fixtures.profiler import profile as _profile
 from commcare_connect.labs.synthetic.generator.fixtures.schema_loader import (
@@ -20,6 +28,7 @@ from commcare_connect.labs.synthetic.generator.fixtures.schema_loader import (
 )
 from commcare_connect.labs.synthetic.generator.io.uploader import upload_and_register
 from commcare_connect.labs.synthetic.models import SyntheticOpportunity
+from commcare_connect.labs.synthetic.provisioning import register_labs_only_opp
 from commcare_connect.labs.synthetic.registry import invalidate_cache
 
 from ..connect_token import require_connect_token
@@ -414,9 +423,7 @@ def synthetic_create_labs_only(
     enabled: bool = True,
     notes: str = "",
 ) -> dict[str, Any]:
-    new_opp_id = SyntheticOpportunity.next_labs_only_opp_id()
-    row = SyntheticOpportunity.objects.create(
-        opportunity_id=new_opp_id,
+    row = register_labs_only_opp(
         label=label,
         gdrive_folder_id=gdrive_folder_id,
         org_name=org_name,
@@ -424,11 +431,11 @@ def synthetic_create_labs_only(
         program_id=program_id,
         allowed_domains=allowed_domains if allowed_domains is not None else ["@dimagi.com"],
         enabled=enabled,
-        notes=notes,
-        labs_only=True,
         created_by=user,
     )
-    invalidate_cache()
+    if notes:
+        SyntheticOpportunity.objects.filter(opportunity_id=row.opportunity_id).update(notes=notes)
+        row.refresh_from_db()
     return {
         "opportunity_id": row.opportunity_id,
         "label": row.label,
@@ -504,20 +511,18 @@ def synthetic_clone_to_labs_only(
     # Connect access, the underlying data is already a synthetic fixture, and the
     # clone creates only a second view onto the same GDrive folder (no new data).
     # Visibility of the new opp is controlled by allowed_domains + view_synthetic_opps.
-    new_opp_id = SyntheticOpportunity.next_labs_only_opp_id()
-    row = SyntheticOpportunity.objects.create(
-        opportunity_id=new_opp_id,
+    row = register_labs_only_opp(
         label=label or f"Clone of {source.label or source.opportunity_id}",
         gdrive_folder_id=source.gdrive_folder_id,
         org_name=org_name or source.org_name or "Labs Synthetic",
         program_name=program_name or source.program_name or "Labs Synthetic",
         allowed_domains=(allowed_domains if allowed_domains is not None else ["@dimagi.com", "@dimagi-ai.com"]),
         enabled=True,
-        notes=f"Cloned from opp {source_opportunity_id} via MCP.",
-        labs_only=True,
         created_by=user,
     )
-    invalidate_cache()
+    SyntheticOpportunity.objects.filter(opportunity_id=row.opportunity_id).update(
+        notes=f"Cloned from opp {source_opportunity_id} via MCP."
+    )
     return {
         "opportunity_id": row.opportunity_id,
         "source_opportunity_id": source_opportunity_id,
@@ -926,3 +931,261 @@ def synthetic_env_ensure(user, *, env: str, fresh: bool = False) -> dict[str, An
     except ValueError as exc:
         raise MCPToolError("NOT_FOUND", str(exc))
     return ensure_synthetic_data(str(env_path), fresh=fresh)
+
+
+# =============================================================================
+# Task 19: Two-phase clone tools (profile / generate / fidelity)
+# =============================================================================
+
+
+@register(
+    name="synthetic_profile_opp",
+    description=(
+        "PHASE 1 (prod-touching). Profile one real opportunity into a self-contained "
+        "profile bundle on disk (manifest.yaml + app_structure.json + scrubbed "
+        "opportunity.json). Reads real exports with the caller's OAuth token and "
+        "persists ONLY aggregate stats + program config — no row-level data. "
+        "Run this in safe mode; Phase 2 (synthetic_generate_opp) needs no prod access."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "source_opportunity_id": {"type": "integer"},
+            "out_dir": {
+                "type": "string",
+                "description": "Directory to write <opp_id>/ bundle into.",
+            },
+        },
+        "required": ["source_opportunity_id", "out_dir"],
+        "additionalProperties": False,
+    },
+    is_write=False,
+)
+def synthetic_profile_opp(user, *, source_opportunity_id: int, out_dir: str) -> dict[str, Any]:
+    _require_opportunity_access(user, source_opportunity_id)
+    try:
+        token = require_connect_token(user)
+    except MCPToolError:
+        raise MCPToolError("PERMISSION_DENIED", "No Connect token — cannot fetch production data.")
+    bundle = profile_opp_to_bundle(
+        source_opportunity_id,
+        base_url=settings.CONNECT_PRODUCTION_URL,
+        oauth_token=token,
+        out_dir=out_dir,
+    )
+    return {"bundle_dir": str(bundle), "source_opportunity_id": source_opportunity_id}
+
+
+@register(
+    name="synthetic_profile_opps_bulk",
+    description=(
+        "PHASE 1 (prod-touching). Profile multiple real opportunities into "
+        "self-contained profile bundles on disk. Each opp is profiled independently; "
+        "failures are logged and skipped so a single bad opp doesn't abort the rest. "
+        "Returns a list of successfully-written bundle paths."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "source_opportunity_ids": {
+                "type": "array",
+                "items": {"type": "integer"},
+                "description": "List of real opportunity IDs to profile.",
+            },
+            "out_dir": {
+                "type": "string",
+                "description": "Directory to write <opp_id>/ bundles into.",
+            },
+        },
+        "required": ["source_opportunity_ids", "out_dir"],
+        "additionalProperties": False,
+    },
+    is_write=False,
+)
+def synthetic_profile_opps_bulk(user, *, source_opportunity_ids: list[int], out_dir: str) -> dict[str, Any]:
+    for opp_id in source_opportunity_ids:
+        _require_opportunity_access(user, opp_id)
+    try:
+        token = require_connect_token(user)
+    except MCPToolError:
+        raise MCPToolError("PERMISSION_DENIED", "No Connect token — cannot fetch production data.")
+    bundles = profile_opps_bulk(
+        source_opportunity_ids,
+        base_url=settings.CONNECT_PRODUCTION_URL,
+        oauth_token=token,
+        out_dir=out_dir,
+    )
+    return {
+        "bundle_dirs": [str(b) for b in bundles],
+        "succeeded": len(bundles),
+        "requested": len(source_opportunity_ids),
+    }
+
+
+@register(
+    name="synthetic_generate_opp",
+    description=(
+        "PHASE 2 (offline, no prod). Generate fixture data and register a labs-only "
+        "synthetic opportunity from a profile bundle written by synthetic_profile_opp. "
+        "Idempotent: if a SyntheticOpportunity cloned from the same source already "
+        "exists and fresh=False, returns the existing row immediately (skipped=True). "
+        "Pass fresh=True to regenerate from scratch."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "bundle_dir": {
+                "type": "string",
+                "description": "Path to the bundle directory (e.g. /tmp/bundles/523).",
+            },
+            "program_id": {
+                "type": "integer",
+                "description": "Labs-only program ID to file this opp under.",
+            },
+            "program_name": {"type": "string", "default": "Labs Synthetic"},
+            "org_name": {"type": "string", "default": "Labs Synthetic"},
+            "fresh": {
+                "type": "boolean",
+                "default": False,
+                "description": "If True, regenerate even if a row for this source already exists.",
+            },
+        },
+        "required": ["bundle_dir", "program_id"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def synthetic_generate_opp(
+    user,
+    *,
+    bundle_dir: str,
+    program_id: int,
+    program_name: str = "Labs Synthetic",
+    org_name: str = "Labs Synthetic",
+    fresh: bool = False,
+) -> dict[str, Any]:
+    drive = DriveClient()
+    result = generate_opp_from_bundle(
+        bundle_dir,
+        drive=drive,
+        program_id=program_id,
+        program_name=program_name,
+        org_name=org_name,
+        fresh=fresh,
+    )
+    return {
+        "source_opportunity_id": result.source_opportunity_id,
+        "opportunity_id": result.opportunity_id,
+        "gdrive_folder_id": result.gdrive_folder_id,
+        "folder_url": result.folder_url,
+        "record_counts": result.record_counts,
+        "app_structure_present": result.app_structure_present,
+        "skipped": result.skipped,
+    }
+
+
+@register(
+    name="synthetic_generate_opps_bulk",
+    description=(
+        "PHASE 2 (offline, no prod). Generate fixtures and register labs-only "
+        "synthetic opportunities for every bundle subdirectory under bundle_root. "
+        "Allocates one shared program_id for the cohort. Per-opp failures are "
+        "logged and skipped. Returns a list of CloneResult dicts."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "bundle_root": {
+                "type": "string",
+                "description": "Directory whose immediate subdirectories are bundle dirs.",
+            },
+            "program_name": {"type": "string", "default": "Labs Synthetic"},
+            "org_name": {"type": "string", "default": "Labs Synthetic"},
+            "fresh": {
+                "type": "boolean",
+                "default": False,
+                "description": "If True, regenerate even where a row already exists.",
+            },
+        },
+        "required": ["bundle_root"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def synthetic_generate_opps_bulk(
+    user,
+    *,
+    bundle_root: str,
+    program_name: str = "Labs Synthetic",
+    org_name: str = "Labs Synthetic",
+    fresh: bool = False,
+) -> dict[str, Any]:
+    drive = DriveClient()
+    results = generate_opps_bulk(
+        bundle_root,
+        drive=drive,
+        program_name=program_name,
+        org_name=org_name,
+        fresh=fresh,
+    )
+    return {
+        "results": [
+            {
+                "source_opportunity_id": r.source_opportunity_id,
+                "opportunity_id": r.opportunity_id,
+                "gdrive_folder_id": r.gdrive_folder_id,
+                "folder_url": r.folder_url,
+                "record_counts": r.record_counts,
+                "app_structure_present": r.app_structure_present,
+                "skipped": r.skipped,
+            }
+            for r in results
+        ],
+        "succeeded": len(results),
+    }
+
+
+@register(
+    name="synthetic_fidelity_report",
+    description=(
+        "Compare the synthetic fixtures in a profile bundle against the manifest "
+        "they were generated from. Reads the bundle's manifest.yaml and "
+        "user_visits fixture, then computes per-field mean/std/TVD deltas and a "
+        "correlation Frobenius distance. Use this to verify that a generated "
+        "dataset faithfully reproduces the target statistical shape."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "bundle_dir": {
+                "type": "string",
+                "description": "Path to the bundle directory (e.g. /tmp/bundles/523).",
+            },
+        },
+        "required": ["bundle_dir"],
+        "additionalProperties": False,
+    },
+    is_write=False,
+)
+def synthetic_fidelity_report(user, *, bundle_dir: str) -> dict[str, Any]:
+    bundle = read_bundle(bundle_dir)
+    try:
+        manifest = Manifest.from_yaml(bundle.manifest_yaml)
+    except ManifestValidationError as exc:
+        raise MCPToolError("INVALID_SCHEMA", str(exc))
+
+    form_schema = parse_form_schema_from_app_json(bundle.app_structure, app_type="deliver")
+    synthetic_visits = _generate(
+        manifest=manifest,
+        opportunity_detail=bundle.opportunity,
+        form_schema=form_schema,
+        app_structure=bundle.app_structure,
+    ).get("user_visits", [])
+
+    report = compare(manifest, synthetic_visits)
+    return {
+        "bundle_dir": bundle_dir,
+        "source_opportunity_id": bundle.source_opp_id,
+        "synthetic_visit_count": len(synthetic_visits),
+        **report,
+    }
