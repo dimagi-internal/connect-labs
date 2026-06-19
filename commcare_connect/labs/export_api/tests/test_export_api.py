@@ -151,8 +151,7 @@ def test_visible_opp_returns_envelope(monkeypatch):
     resp = _client_for(_user()).get(VISITS_URL)
     assert resp.status_code == 200
     body = resp.json()
-    assert set(body.keys()) == {"results", "next", "count"}
-    assert body["count"] == 2
+    assert set(body.keys()) == {"results", "next"}
     assert body["next"] is None
     assert body["results"] == rows
 
@@ -171,7 +170,7 @@ def test_empty_fixture_returns_empty_envelope(monkeypatch):
     _install(monkeypatch, {"folder-a": {"user_visits.json": []}})
     _make_opp()
     body = _client_for(_user()).get(VISITS_URL).json()
-    assert body == {"results": [], "next": None, "count": 0}
+    assert body == {"results": [], "next": None}
 
 
 @pytest.mark.django_db
@@ -191,7 +190,6 @@ def test_all_paginated_endpoints_serve_their_fixture(monkeypatch, endpoint, file
     url = f"/api/export/opportunity/10001/{endpoint}/"
     body = _client_for(_user()).get(url).json()
     assert body["results"] == rows
-    assert body["count"] == 1
 
 
 @pytest.mark.django_db
@@ -206,7 +204,6 @@ def test_next_paginates_to_exhaustion_no_dupes(monkeypatch):
     pages = 0
     while url is not None:
         body = client.get(url).json()
-        assert body["count"] == 7
         seen.extend(r["id"] for r in body["results"])
         pages += 1
         if body["next"] is None:
@@ -244,7 +241,7 @@ def test_opportunities_lists_only_visible(monkeypatch):
     _make_opp(opportunity_id=10001, gdrive_folder_id="folder-a", allowed_domains=["@dimagi.com"])
     _make_opp(opportunity_id=10002, gdrive_folder_id="folder-b", allowed_domains=["@example.org"])
     body = _client_for(_user(email="me@dimagi.com")).get(OPPS_URL).json()
-    assert set(body.keys()) == {"results", "next", "count"}
+    assert set(body.keys()) == {"results", "next"}
     ids = [r["id"] for r in body["results"]]
     assert ids == [10001]
 
@@ -295,3 +292,72 @@ def test_app_structure_invalid_app_type_returns_400(monkeypatch):
     _make_opp()
     resp = _client_for(_user()).get(APP_STRUCTURE_URL + "?app_type=bogus")
     assert resp.status_code == 400
+
+
+# --------------------------------------------------------------------------- #
+# Keyset pagination — exact production envelope {next, results}
+# --------------------------------------------------------------------------- #
+@pytest.mark.django_db
+def test_keyset_envelope_has_no_count(monkeypatch):
+    _install(monkeypatch, {"folder-a": {"user_visits.json": [{"id": 1}]}})
+    _make_opp()
+    body = _client_for(_user()).get(VISITS_URL).json()
+    assert set(body.keys()) == {"next", "results"}
+
+
+@pytest.mark.django_db
+def test_keyset_last_id_advances_by_real_id(monkeypatch):
+    rows = [{"id": 10}, {"id": 25}, {"id": 30}]
+    _install(monkeypatch, {"folder-a": {"user_visits.json": rows}})
+    _make_opp()
+    client = _client_for(_user())
+    body = client.get(VISITS_URL + "?page_size=2").json()
+    assert [r["id"] for r in body["results"]] == [10, 25]
+    parts = urlsplit(body["next"])
+    assert "last_id=25" in parts.query
+    body2 = client.get(f"{parts.path}?{parts.query}").json()
+    assert [r["id"] for r in body2["results"]] == [30]
+    assert body2["next"] is None
+
+
+@pytest.mark.django_db
+def test_keyset_index_mode_for_id_less_rows(monkeypatch):
+    # completed_works rows have no "id" — keyset falls back to positional index.
+    rows = [{"entity": f"e{i}"} for i in range(5)]
+    _install(monkeypatch, {"folder-a": {"completed_works.json": rows}})
+    _make_opp()
+    client = _client_for(_user())
+    url = "/api/export/opportunity/10001/completed_works/?page_size=2"
+    seen = []
+    while url is not None:
+        body = client.get(url).json()
+        seen.extend(r["entity"] for r in body["results"])
+        if body["next"] is None:
+            break
+        parts = urlsplit(body["next"])
+        url = f"{parts.path}?{parts.query}"
+    assert seen == [f"e{i}" for i in range(5)]
+    assert len(set(seen)) == 5
+
+
+@pytest.mark.django_db
+def test_keyset_reverse_order(monkeypatch):
+    rows = [{"id": 1}, {"id": 2}, {"id": 3}]
+    _install(monkeypatch, {"folder-a": {"user_visits.json": rows}})
+    _make_opp()
+    body = _client_for(_user()).get(VISITS_URL + "?cursor_order=reverse&page_size=2").json()
+    assert [r["id"] for r in body["results"]] == [3, 2]
+    parts = urlsplit(body["next"])
+    assert "last_id=2" in parts.query
+    assert "cursor_order=reverse" in parts.query
+
+
+@pytest.mark.django_db
+def test_keyset_page_size_clamped_to_max(monkeypatch):
+    rows = [{"id": i} for i in range(10)]
+    _install(monkeypatch, {"folder-a": {"user_visits.json": rows}})
+    _make_opp()
+    # page_size above max (5000) is clamped, not rejected; all 10 rows fit one page.
+    body = _client_for(_user()).get(VISITS_URL + "?page_size=999999").json()
+    assert len(body["results"]) == 10
+    assert body["next"] is None

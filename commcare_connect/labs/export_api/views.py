@@ -18,7 +18,7 @@ from commcare_connect.labs.synthetic.client import SyntheticExportClient
 from commcare_connect.labs.synthetic.models import SyntheticOpportunity
 
 from .authentication import MCPTokenAuthentication
-from .pagination import ExportPageNumberPagination
+from .pagination import IdKeysetPagination
 from .serializers import ExportPageSerializer
 
 # app_structure parity with real Connect (data_export/const.py).
@@ -28,8 +28,16 @@ _APP_TYPE_BOTH = "both"
 _VALID_APP_TYPES = (_APP_TYPE_LEARN, _APP_TYPE_DELIVER, _APP_TYPE_BOTH)
 
 _PAGE_PARAMS = [
-    OpenApiParameter("page", OpenApiTypes.INT, description="1-based page number."),
-    OpenApiParameter("page_size", OpenApiTypes.INT, description="Rows per page (default 2500)."),
+    OpenApiParameter(
+        "last_id", OpenApiTypes.INT, description="Keyset cursor: id of the last row on the previous page."
+    ),
+    OpenApiParameter("page_size", OpenApiTypes.INT, description="Rows per page (default 1000, max 5000)."),
+    OpenApiParameter(
+        "cursor_order",
+        OpenApiTypes.STR,
+        enum=["forward", "reverse"],
+        description="Cursor direction (default forward).",
+    ),
 ]
 
 
@@ -76,7 +84,7 @@ class OpportunityListView(_ExportView):
             rows = _synthetic_client(opp.opportunity_id).fetch_all("")
             if rows:
                 results.append(rows[0])
-        paginator = ExportPageNumberPagination()
+        paginator = IdKeysetPagination()
         page = paginator.paginate_queryset(results, request, view=self)
         return paginator.get_paginated_response(page)
 
@@ -112,7 +120,7 @@ class OpportunityDataView(_ExportView):
     def get(self, request, opportunity_id):
         _visible_opp_or_404(request.user, opportunity_id)
         rows = _synthetic_client(opportunity_id).fetch_all(self.endpoint)
-        paginator = ExportPageNumberPagination()
+        paginator = IdKeysetPagination()
         page = paginator.paginate_queryset(rows, request, view=self)
         return paginator.get_paginated_response(page)
 
