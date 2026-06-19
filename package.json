@@ -66,9 +66,11 @@
     ]
   },
   "scripts": {
-    "build": "NODE_ENV=production webpack --mode production --config webpack/prod.config.js",
-    "dev": "webpack --mode development --config webpack/base.config.js",
-    "dev-watch": "webpack --mode development --config webpack/base.config.js --watch",
+    "build": "NODE_ENV=production webpack --mode production --config webpack/prod.config.js && npm run build:campaign",
+    "build:campaign": "node webpack/build-campaign.js",
+    "watch:campaign": "node webpack/build-campaign.js --watch",
+    "dev": "webpack --mode development --config webpack/base.config.js && npm run build:campaign",
+    "dev-watch": "concurrently -k -n webpack,campaign \"webpack --mode development --config webpack/base.config.js --watch\" \"npm run watch:campaign\"",
     "test": "vitest run && npm run test:units",
     "test:units": "node commcare_connect/static/labs/context_picker.test.mjs && node commcare_connect/static/microplans/shared.test.mjs",
     "test:watch": "vitest"

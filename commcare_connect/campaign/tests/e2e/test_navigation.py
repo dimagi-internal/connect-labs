@@ -2,7 +2,7 @@
 
 Catches the failure mode unit tests can't: a verbatim-React tab that fails to transpile
 or references a missing serializer key (blank/throwing UI). Built tabs assert real
-content; Reporting/Training are intentionally "Coming soon" placeholders (Plans 5–6).
+content (Reporting was built in Plan 5, Training Hub in Plan 6).
 """
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ TABS = [
     ("Activity", "Activity Details"),
     ("Reporting & Monitoring", "Cumulative enrollment"),  # Plan 5 built this tab
     ("System Administration", "User Management"),
-    ("Training Hub", "Coming soon"),
+    ("Training Hub", "Training videos and learning materials"),  # Plan 6 built this tab
 ]
 
 

@@ -45,16 +45,12 @@ def test_app_renders_for_authorized_user(client):
     content = resp.content.decode()
     assert 'id="campaign-bootstrap"' in content
     assert 'id="root"' in content
-    assert "campaign/app.jsx" in content
-    assert b"campaign/data-api.js" in resp.content
-    assert b"campaign/tab_overview.jsx" in resp.content
-    assert b"campaign/tab_workers.jsx" in resp.content
-    assert b"campaign/tab_workers_kyc.jsx" in resp.content
-    assert b"campaign/tab_workers_profile.jsx" in resp.content
-    assert b"campaign/tab_activity.jsx" in resp.content
-    assert b"campaign/tab_planning.jsx" in resp.content
-    assert b"campaign/tab_planning_detail.jsx" in resp.content
-    assert b"campaign/tab_reporting.jsx" in resp.content
-    assert b"campaign/tab_users.jsx" in resp.content
-    assert b"campaign/tab_connections.jsx" in resp.content
-    assert b"campaign/tab_training.jsx" in resp.content
+    # The app now loads a single pre-transpiled bundle (built at build time by
+    # webpack/build-campaign.js) instead of ~15 per-file type="text/babel"
+    # scripts transpiled in the browser via the @babel/standalone CDN.
+    assert "bundles/js/campaign-bundle.js" in content
+    # The old runtime-transpile machinery must be gone: no in-browser Babel,
+    # no per-file JSX <script> tags.
+    assert "@babel/standalone" not in content
+    assert 'type="text/babel"' not in content
+    assert "campaign/app.jsx" not in content
