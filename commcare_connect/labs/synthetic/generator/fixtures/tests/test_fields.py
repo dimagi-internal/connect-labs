@@ -279,6 +279,33 @@ def test_null_rate_one_omits_field():
     assert "w" not in out.get("form", {})
 
 
+def test_fill_form_json_uses_correlated_values():
+    schema = FormSchema(
+        questions=[
+            QuestionSpec(json_path="form.a", kind="decimal"),
+            QuestionSpec(json_path="form.b", kind="decimal"),
+        ]
+    )
+    cohort = BeneficiaryCohort(
+        id="primary",
+        size=10,
+        progression="flat",
+        field_distributions={
+            "form.a": NormalDistribution(mean=1.0, stddev=0.1),
+            "form.b": NormalDistribution(mean=2.0, stddev=0.1),
+        },
+    )
+    out = fill_form_json(
+        schema=schema,
+        cohort=cohort,
+        anomalies_for_visit=[],
+        rng=random.Random(1),
+        correlated_values={"form.a": 42.0, "form.b": 99.0},
+    )
+    assert out["form"]["a"] == 42.0
+    assert out["form"]["b"] == 99.0
+
+
 def test_fill_form_json_anomaly_on_binary_field_does_not_raise():
     # Regression for ace#762: routing a field_outlier through a binary-distributed
     # field used to crash fill_form_json with TypeError. It now yields the rare

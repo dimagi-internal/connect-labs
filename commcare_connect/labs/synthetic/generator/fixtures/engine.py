@@ -12,6 +12,7 @@ import random
 import uuid
 from typing import Any
 
+from .copula import build_copula_sampler
 from .fields import fill_form_json
 from .images import assign_visit_images
 from .manifest import Manifest
@@ -109,10 +110,13 @@ def generate(
     slots = expand_visit_schedule(manifest.timeline, personas, random_seed=manifest.random_seed)
     slots.sort(key=lambda s: (s.visit_date, s.flw_id))
 
+    copula_sampler = build_copula_sampler(cohort.correlation, cohort.field_distributions, seed=manifest.random_seed)
+
     visits: list[dict[str, Any]] = []
     for slot in slots:
         persona = persona_index[slot.flw_id]
         anomalies = _anomalies_at(slot.week_index, slot.flw_id, manifest)
+        correlated_values = copula_sampler.draw() if copula_sampler else None
         form_json = fill_form_json(
             schema=form_schema,
             cohort=cohort,
@@ -120,6 +124,7 @@ def generate(
             rng=rng,
             persona=persona,
             period=slot.week_index,
+            correlated_values=correlated_values,
         )
         status = decide_visit_status(persona=persona, has_anomaly=bool(anomalies), rng=rng)
         # One beneficiary index per visit, reused for the display name AND the

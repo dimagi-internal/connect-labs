@@ -160,6 +160,7 @@ def fill_form_json(
     rng: random.Random,
     persona: FlwPersona | None = None,
     period: int | None = None,
+    correlated_values: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     anomaly_paths = {a.field_path for a in anomalies_for_visit if a.field_path}
     # Persona overrides take precedence over cohort distributions. Building a
@@ -177,11 +178,18 @@ def fill_form_json(
         leaf = spec.json_path.rsplit(".", 1)[-1]
         leaf_question_counts[leaf] = leaf_question_counts.get(leaf, 0) + 1
 
+    correlated = correlated_values or {}
     out: dict[str, Any] = {}
     covered_paths: set[str] = set()
     consumed_keys: set[str] = set()
     for spec in schema.questions:
         covered_paths.add(spec.json_path)
+        if spec.json_path in correlated:
+            dist = effective.get(spec.json_path)
+            if dist is not None and getattr(dist, "null_rate", 0.0) and rng.random() < dist.null_rate:
+                continue
+            _set_nested(out, spec.json_path, correlated[spec.json_path])
+            continue
         dist, consumed_key = _resolve_dist(effective, spec, leaf_question_counts=leaf_question_counts)
         if consumed_key is not None:
             consumed_keys.add(consumed_key)
