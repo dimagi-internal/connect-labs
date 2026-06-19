@@ -66,6 +66,11 @@ class IdKeysetPagination(BasePagination):
 
     @staticmethod
     def _cursor(row, index):
+        # Invariant: rows within a single fixture endpoint are homogeneous —
+        # either ALL carry an int ``id`` (id-mode, e.g. user_visits) or NONE do
+        # (index-mode, e.g. completed_works).  Mixing id-bearing and id-less rows
+        # inside one fixture is unsupported: the two cursor spaces could collide
+        # and cause a row to be skipped during keyset pagination.
         val = row.get("id") if isinstance(row, dict) else None
         return val if isinstance(val, int) else index
 

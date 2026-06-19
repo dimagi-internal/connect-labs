@@ -494,3 +494,33 @@ def test_opp_org_program_list_requires_auth(monkeypatch):
     _install(monkeypatch, {})
     resp = APIClient().get(OPP_ORG_PROGRAM_URL)
     assert resp.status_code == 401
+
+
+@pytest.mark.django_db
+def test_opp_org_program_list_no_flag_returns_empty_tree(monkeypatch):
+    """A user with view_synthetic_opps=False sees an empty tree (all three lists empty)."""
+    _install(
+        monkeypatch,
+        {"folder-a": {"opportunity.json": {"id": 10001, "name": "Hidden"}}},
+    )
+    _make_opp(opportunity_id=10001, gdrive_folder_id="folder-a")
+    body = _client_for(_user(view=False)).get(OPP_ORG_PROGRAM_URL).json()
+    assert body == {"organizations": [], "opportunities": [], "programs": []}
+
+
+@pytest.mark.django_db
+def test_opp_org_program_list_omits_non_labs_only_opp(monkeypatch):
+    """A labs_only=False opp is excluded; a labs_only=True opp appears."""
+    _install(
+        monkeypatch,
+        {
+            "folder-a": {"opportunity.json": {"id": 10001, "name": "Visible"}},
+            "folder-b": {"opportunity.json": {"id": 10002, "name": "Hidden (not labs-only)"}},
+        },
+    )
+    _make_opp(opportunity_id=10001, gdrive_folder_id="folder-a", labs_only=True)
+    _make_opp(opportunity_id=10002, gdrive_folder_id="folder-b", labs_only=False)
+    body = _client_for(_user()).get(OPP_ORG_PROGRAM_URL).json()
+    opp_ids = [o["id"] for o in body["opportunities"]]
+    assert 10001 in opp_ids
+    assert 10002 not in opp_ids

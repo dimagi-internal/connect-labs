@@ -225,6 +225,10 @@ class OppOrgProgramListView(_ExportView):
                     "organization": org_slug,
                     "end_date": detail.get("end_date"),
                     "is_active": detail.get("is_active", True),
+                    # Intentional divergence from production: real Connect's
+                    # OpportunityDataExportSerializer.get_program returns None for
+                    # standalone (non-managed) opps.  Synthetic opps always belong to
+                    # a synthetic program, so program_id always resolves in programs[].
                     "program": program_id,
                     "visit_count": opp.visit_count or 0,
                 }
