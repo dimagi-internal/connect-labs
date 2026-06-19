@@ -37,24 +37,12 @@
 
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-    <script src="https://unpkg.com/@babel/standalone@7.23.5/babel.min.js"></script>
 
-    <script type="text/babel" src="{% static 'campaign/perms.js' %}"></script>
-    <script type="text/babel" src="{% static 'campaign/primitives.jsx' %}"></script>
-    <script type="text/babel" src="{% static 'campaign/shell.jsx' %}"></script>
-    <script type="text/babel" src="{% static 'campaign/data-api.js' %}"></script>
-    <script type="text/babel" src="{% static 'campaign/workers-actions.js' %}"></script>
-    <script type="text/babel" src="{% static 'campaign/tab_overview.jsx' %}"></script>
-    <script type="text/babel" src="{% static 'campaign/tab_workers.jsx' %}"></script>
-    <script type="text/babel" src="{% static 'campaign/tab_workers_kyc.jsx' %}"></script>
-    <script type="text/babel" src="{% static 'campaign/tab_workers_profile.jsx' %}"></script>
-    <script type="text/babel" src="{% static 'campaign/tab_planning_detail.jsx' %}"></script>
-    <script type="text/babel" src="{% static 'campaign/tab_planning.jsx' %}"></script>
-    <script type="text/babel" src="{% static 'campaign/tab_activity.jsx' %}"></script>
-    <script type="text/babel" src="{% static 'campaign/tab_reporting.jsx' %}"></script>
-    <script type="text/babel" src="{% static 'campaign/tab_users.jsx' %}"></script>
-    <script type="text/babel" src="{% static 'campaign/tab_connections.jsx' %}"></script>
-    <script type="text/babel" src="{% static 'campaign/tab_training.jsx' %}"></script>
-    <script type="text/babel" src="{% static 'campaign/app.jsx' %}"></script>
+    {# Pre-transpiled bundle (built by webpack/build-campaign.js). The 17 source #}
+    {# files in static/campaign/*.{jsx,js} are babel-compiled (classic JSX #}
+    {# runtime) and concatenated in load order into one shared-global-scope #}
+    {# script — replacing the old per-file type="text/babel" tags + the #}
+    {# ~2.8 MB @babel/standalone CDN that used to transpile in the browser. #}
+    <script src="{% static 'bundles/js/campaign-bundle.js' %}" defer></script>
   </body>
 </html>
