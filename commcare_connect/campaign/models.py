@@ -157,3 +157,45 @@ class HouseholdStat(models.Model):
 
     def __str__(self):
         return f"households:{self.campaign.code}"
+
+
+class Worker(models.Model):
+    campaign = models.ForeignKey(Campaign, on_delete=models.CASCADE, related_name="workers")
+    worker_id = models.CharField(max_length=16)
+    first = models.CharField(max_length=64)
+    last = models.CharField(max_length=64)
+    name = models.CharField(max_length=128)
+    gender = models.CharField(max_length=1)  # 'M' | 'F'
+    phone = models.CharField(max_length=32, blank=True)
+    region_id = models.CharField(max_length=64)
+    lga = models.CharField(max_length=128)
+    role_id = models.CharField(max_length=64)
+    rate = models.IntegerField(default=0)
+    days_worked = models.IntegerField(default=0)
+    days_approved = models.IntegerField(default=0)
+    amount = models.IntegerField(default=0)
+    kyc = models.CharField(max_length=16)  # approved|pending|rejected|review
+    pay = models.CharField(max_length=16)  # paid|approved|pending|rejected|hold
+    bank = models.CharField(max_length=64, blank=True)
+    acct = models.CharField(max_length=32, blank=True)
+    nin = models.CharField(max_length=32, blank=True)
+    passport = models.CharField(max_length=32, null=True, blank=True)
+    enrolled = models.CharField(max_length=32, blank=True)
+    attendance = models.IntegerField(default=0)
+    prior_campaigns = models.IntegerField(default=0)
+    duplicate = models.BooleanField(default=False)
+    dup_with = models.CharField(max_length=16, null=True, blank=True)
+    fraud_rules = models.JSONField(default=list)
+    linked = models.JSONField(default=list)
+    investigation = models.JSONField(null=True, blank=True)
+    documents = models.JSONField(default=list)
+
+    class Meta:
+        db_table = "campaign_worker"
+
+    def __str__(self):
+        return f"{self.worker_id} {self.name}"
+
+    @property
+    def is_flagged(self) -> bool:
+        return len(self.fraud_rules or []) > 0

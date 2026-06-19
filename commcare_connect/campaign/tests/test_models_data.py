@@ -54,3 +54,46 @@ def test_core_models_roundtrip():
     assert c.regions.first().lgas[0] == "Dala"
     assert r.plan.budget == 1850000
     assert c.household_stat.registered == 486200
+
+
+@pytest.mark.django_db
+def test_worker_model_roundtrip():
+    from commcare_connect.campaign.models import Campaign, Worker, Workspace
+
+    ws = Workspace.objects.create(country="Nigeria", name="Nigeria", slug="nigeria")
+    c = Campaign.objects.create(workspace=ws, name="C", code="X", days_total=28)
+    w = Worker.objects.create(
+        campaign=c,
+        worker_id="W10234",
+        first="Amara",
+        last="Okafor",
+        name="Amara Okafor",
+        gender="F",
+        phone="+234 800 000 0001",
+        region_id="kano",
+        lga="Dala",
+        role_id="vaccinator",
+        rate=4500,
+        days_worked=12,
+        days_approved=10,
+        amount=54000,
+        kyc="approved",
+        pay="approved",
+        bank="GTBank",
+        acct="0123456789",
+        nin="12345678901",
+        passport=None,
+        enrolled="May 12",
+        attendance=75,
+        prior_campaigns=2,
+        duplicate=True,
+        dup_with="W10240",
+        fraud_rules=["Duplicate National ID (NIN)"],
+        linked=[{"id": "W10240", "name": "Bilkisu Okafor", "shared": "nin"}],
+        investigation={"status": "Open", "notes": [], "outcome": None},
+        documents=[{"type": "National ID (NIN)", "status": "verified"}],
+    )
+    assert w.amount == 12 * 4500
+    assert w.is_flagged is True
+    assert w.linked[0]["shared"] == "nin"
+    assert c.workers.count() == 1
