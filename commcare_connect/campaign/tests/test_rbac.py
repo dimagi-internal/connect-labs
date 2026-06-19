@@ -49,3 +49,21 @@ def test_access_label():
     assert rbac.access_label("campaign_admin", "payments") == "Full Access"
     assert rbac.access_label("payment_admin", "payments") == "View, Approve"
     assert rbac.access_label("payment_admin", "kyc") == "No Access"
+
+
+def test_system_administration_is_admin_only():
+    # User Management + Connection Settings live under the System Administration
+    # tab, which the spec restricts to Campaign Administrators.
+    for role in ["payment_admin", "compliance_admin", "operations_manager", "reporting_user"]:
+        assert rbac.can(role, "users", "view") is False
+        assert rbac.can(role, "connections", "view") is False
+    assert rbac.can("campaign_admin", "users", "manage") is True
+    assert rbac.can("campaign_admin", "connections", "manage") is True
+
+
+def test_training_management_is_admin_only():
+    # Training viewing is public (outside RBAC); management is admin-only.
+    for role in ["payment_admin", "compliance_admin", "operations_manager", "reporting_user"]:
+        assert rbac.can(role, "training", "view") is False
+        assert rbac.can(role, "training", "manage") is False
+    assert rbac.can("campaign_admin", "training", "manage") is True

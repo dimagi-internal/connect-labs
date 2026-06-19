@@ -45,14 +45,12 @@ MATRIX: dict[str, dict[str, set]] = {
         workers=_VIEW,
         payments={"view", "approve"},
         reporting=_VIEW_EXPORT,
-        training=_VIEW,
     ),
     "compliance_admin": _row(
         overview=_VIEW,
         workers=_VIEW,
         kyc={"view", "create", "edit", "approve"},
         reporting=_VIEW_EXPORT,
-        training=_VIEW,
     ),
     "operations_manager": _row(
         overview=_VIEW,
@@ -62,7 +60,6 @@ MATRIX: dict[str, dict[str, set]] = {
         activities={"create", "edit", "manage"},
         planning=_VIEW,
         reporting=_VIEW_EXPORT,
-        training=_VIEW,
     ),
     "reporting_user": _row(
         overview=_VIEW,
@@ -72,7 +69,6 @@ MATRIX: dict[str, dict[str, set]] = {
         activities=_VIEW,
         planning=_VIEW,
         reporting=_VIEW_EXPORT,
-        training=_VIEW,
     ),
 }
 
