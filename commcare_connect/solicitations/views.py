@@ -6,6 +6,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.core.exceptions import ValidationError
 from django.http import Http404, JsonResponse
 from django.shortcuts import redirect
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 from django.views.generic import TemplateView
@@ -45,6 +46,31 @@ def _has_context(request):
 def _get_data_access(request):
     """Create data access from request. Works for authed requests."""
     return SolicitationsDataAccess(request=request)
+
+
+def _find_user_response(da, solicitation_id, request):
+    """Return the current user's most-recent response to a solicitation, or None.
+
+    Matches on the submitter email first (what we stamp on every response), then
+    on username. Used to (a) suppress the public "respond / log in to continue"
+    re-invite for an actor who has already submitted, and (b) echo the committed
+    coverage area back to them in a post-submission confirmation banner.
+    """
+    user = request.user
+    user_email = (getattr(user, "email", "") or "").strip().lower()
+    user_name = (getattr(user, "username", "") or "").strip().lower()
+    try:
+        responses = da.get_responses_for_solicitation(solicitation_id)
+    except Exception:
+        logger.exception("Failed to load responses while resolving user's own response")
+        return None
+    match = None
+    for r in responses:
+        r_email = (r.submitted_by_email or "").strip().lower()
+        r_name = (r.submitted_by_name or "").strip().lower()
+        if (user_email and r_email == user_email) or (user_name and r_name and r_name == user_name):
+            match = r  # keep last match (most-recent response wins)
+    return match
 
 
 # -- AI Criteria Generation ------------------------------------------------
@@ -303,6 +329,25 @@ class PublicSolicitationListView(LabsLoginRequiredMixin, TemplateView):
 class PublicSolicitationDetailView(LabsLoginRequiredMixin, TemplateView):
     template_name = "solicitations/public_detail.html"
 
+    @staticmethod
+    def _scope_differs(solicitation):
+        """True when scope_of_work adds content beyond the description.
+
+        Synthetic solicitations sometimes carry a scope_of_work that is the same
+        sentence as the description; rendering both side by side reads as a bug.
+        Normalize whitespace/case and treat one as a substring of the other as
+        "duplicate" so we only show Scope when it's genuinely additive.
+        """
+        scope = (getattr(solicitation, "scope_of_work", "") or "").strip()
+        if not scope:
+            return False
+        desc = (getattr(solicitation, "description", "") or "").strip()
+        if not desc:
+            return True
+        norm_scope = " ".join(scope.lower().split())
+        norm_desc = " ".join(desc.lower().split())
+        return norm_scope not in norm_desc and norm_desc not in norm_scope
+
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         pk = kwargs["pk"]
@@ -313,6 +358,19 @@ class PublicSolicitationDetailView(LabsLoginRequiredMixin, TemplateView):
                 raise Http404("Solicitation not found")
             ctx["solicitation"] = solicitation
             ctx["mapbox_token"] = settings.MAPBOX_TOKEN or ""
+
+            # Suppress the public respond/login invite for an actor who already
+            # submitted, and — if they just submitted — show a confirmation banner
+            # echoing the committed coverage area. `?submitted=1` is set by the
+            # RespondView redirect right after a successful submit.
+            my_response = _find_user_response(da, pk, self.request)
+            ctx["my_response"] = my_response
+            ctx["already_responded"] = my_response is not None and my_response.status != "draft"
+            ctx["just_submitted"] = self.request.GET.get("submitted") == "1"
+
+            # Collapse near-verbatim Description / Scope-of-Work duplication: only
+            # render the Scope block when it adds something beyond the description.
+            ctx["show_scope"] = self._scope_differs(solicitation)
         except Http404:
             raise
         except Exception:
@@ -427,7 +485,11 @@ class SolicitationCreateView(ManagerRequiredMixin, TemplateView):
                 # applicants — rather than the generic list. Fall back to the list if
                 # the created record has no id for any reason.
                 if created and getattr(created, "id", None):
-                    return redirect("solicitations:responses_list", pk=created.id)
+                    # Land on the new call's responses inbox with a published-confirmation
+                    # flag so the page leads with the accomplishment (success banner +
+                    # invite/share action) instead of a bare "No responses yet" inbox.
+                    responses_url = reverse("solicitations:responses_list", kwargs={"pk": created.id})
+                    return redirect(f"{responses_url}?created=1")
                 return redirect("solicitations:manage_list")
             except ValidationError as e:
                 # Canonical-schema drift caught at the data-access layer.
@@ -546,6 +608,12 @@ class ResponsesListView(ManagerRequiredMixin, TemplateView):
             # Once a response is awarded, the call has effectively been awarded —
             # surface that in the header instead of a stale "Active" badge.
             ctx["has_awarded"] = any(getattr(r, "status", None) == "awarded" for r in responses)
+            # Fresh-from-publish confirmation: lead with the accomplishment + a
+            # share action instead of a bare "No responses yet" inbox.
+            ctx["just_created"] = self.request.GET.get("created") == "1"
+            ctx["share_url"] = self.request.build_absolute_uri(
+                reverse("solicitations:public_detail", kwargs={"pk": pk})
+            )
         except Http404:
             raise
         except Exception:
@@ -661,7 +729,14 @@ class RespondView(LabsLoginRequiredMixin, TemplateView):
                     llo_entity_id="individual",
                     data=data,
                 )
-                return redirect("solicitations:public_detail", pk=pk)
+                # Route a *submitted* response to a real confirmation: land back on
+                # the detail page with ?submitted=1, which renders a success banner
+                # and suppresses the public respond/login re-invite. Drafts skip the
+                # confirmation (nothing's been committed yet).
+                detail_url = reverse("solicitations:public_detail", kwargs={"pk": pk})
+                if status == "submitted":
+                    detail_url = f"{detail_url}?submitted=1"
+                return redirect(detail_url)
             except Exception:
                 logger.exception("Failed to create response for solicitation %s", pk)
                 ctx = self.get_context_data(**kwargs)
@@ -748,8 +823,18 @@ class AwardView(ManagerRequiredMixin, TemplateView):
         coverage = list(response.selected_plan_names or [])
         if not coverage and solicitation and solicitation.plans:
             coverage = [p.get("name", "") for p in solicitation.plans if p.get("name")]
+        # Resolve a REAL display name for the awardee: prefer the resolved LLO
+        # entity name, then the org name, then the submitter's own name. Never
+        # emit the literal placeholder "this organization" — it reads as a bug.
+        org_display = (
+            (response.llo_entity_name or "").strip()
+            or (response.org_name or "").strip()
+            or (response.submitted_by_name or "").strip()
+            or (response.submitted_by_email or "").strip()
+            or "the selected organization"
+        )
         return {
-            "org_display": response.llo_entity_name or response.org_name or "this organization",
+            "org_display": org_display,
             "contact_name": response.submitted_by_name,
             "contact_email": response.submitted_by_email,
             "coverage_areas": [c for c in coverage if c],
