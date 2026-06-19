@@ -74,3 +74,74 @@ def test_generate_is_idempotent(tmp_path, settings, monkeypatch):
     assert r2.skipped is True
     assert r1.opportunity_id == r2.opportunity_id
     assert SyntheticOpportunity.objects.filter(cloned_from_opportunity_id=523).count() == 1
+
+
+def test_generate_opps_bulk_shared_program_and_isolation(tmp_path, settings, monkeypatch):
+    """generate_opps_bulk allocates one shared program_id for all opps,
+    no opp_id collides with that program_id, malformed bundles are skipped."""
+    settings.LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID = "parent"
+    monkeypatch.setattr(clone_from_prod, "_fetch_endpoint", lambda *a, **k: None)
+
+    bundle_root = tmp_path / "bundles"
+    bundle_root.mkdir()
+
+    # Build two valid bundles with distinct source_ids (523, 524).
+    def _make_manifest(opp_id: int) -> str:
+        return (
+            f"opportunity_id: {opp_id}\n"
+            f"opportunity_name: KMC-{opp_id}\n"
+            "random_seed: 42\n"
+            "timeline: {start_date: 2026-05-04, end_date: 2026-06-01, weeks: 4,"
+            " visit_cadence_per_week_per_flw: {mean: 5, stddev: 1}}\n"
+            "flw_personas: [{id: a, archetype: steady,"
+            " accuracy_distribution: {mean: 0.8, stddev: 0.05},"
+            " completeness_distribution: {mean: 0.8, stddev: 0.05}, flag_rate: 0.1}]\n"
+            "beneficiary_cohorts: [{id: primary, size: 20, progression: flat,"
+            ' field_distributions: {"form.w": {distribution: normal, mean: 12.0, stddev: 2.0}}}]\n'
+            "kpi_config: [{kpi: a, field_path: form.w, aggregation: mean, threshold_underperform: 1.0}]\n"
+        )
+
+    from commcare_connect.labs.synthetic.bundle import write_bundle
+
+    write_bundle(
+        bundle_root,
+        523,
+        manifest_yaml=_make_manifest(523),
+        app_structure={"learn_app": None, "deliver_app": {"modules": []}},
+        opportunity={"id": 523, "name": "KMC-523"},
+    )
+    write_bundle(
+        bundle_root,
+        524,
+        manifest_yaml=_make_manifest(524),
+        app_structure={"learn_app": None, "deliver_app": {"modules": []}},
+        opportunity={"id": 524, "name": "KMC-524"},
+    )
+
+    # Add a malformed bundle dir (manifest.yaml has invalid YAML / bad fields).
+    bad_dir = bundle_root / "999"
+    bad_dir.mkdir()
+    (bad_dir / "manifest.yaml").write_text("opportunity_id: not_an_integer\n  bad_indent: [\n")
+
+    results = clone_from_prod.generate_opps_bulk(
+        bundle_root,
+        drive=_FakeDrive(),
+        program_name="KMC (Synthetic)",
+        org_name="Dimagi-KMC (Synthetic)",
+    )
+
+    # Two good bundles succeeded; the malformed one was skipped.
+    assert len(results) == 2, f"expected 2 results, got {len(results)}"
+
+    # All results share exactly ONE program_id.
+    program_ids = {SyntheticOpportunity.objects.get(opportunity_id=r.opportunity_id).program_id for r in results}
+    assert len(program_ids) == 1, f"expected one shared program_id, got {program_ids}"
+    shared_program_id = program_ids.pop()
+
+    # No opp_id equals the shared program_id (Fix 2 regression guard).
+    opp_ids = {r.opportunity_id for r in results}
+    assert shared_program_id not in opp_ids, f"program_id {shared_program_id} collides with an opp_id in {opp_ids}"
+
+    # Both source opps are registered in the DB.
+    assert SyntheticOpportunity.objects.filter(cloned_from_opportunity_id=523).exists()
+    assert SyntheticOpportunity.objects.filter(cloned_from_opportunity_id=524).exists()

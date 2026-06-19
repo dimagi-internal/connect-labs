@@ -222,6 +222,11 @@ def fill_form_json(
     for path, dist in effective.items():
         if path in covered_paths or path in consumed_keys:
             continue
+        if path in correlated:
+            if getattr(dist, "null_rate", 0.0) and rng.random() < dist.null_rate:
+                continue
+            _set_nested(out, path, correlated[path])
+            continue
         if getattr(dist, "null_rate", 0.0) and rng.random() < dist.null_rate:
             continue
         if isinstance(dist, CategoricalDistribution):

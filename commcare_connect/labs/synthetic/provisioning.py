@@ -10,8 +10,16 @@ from .registry import invalidate_cache
 
 
 def allocate_shared_program_id() -> int:
-    """Reserve a labs-only program id (>= floor) that won't collide with opp ids.
-    Allocate this BEFORE creating the cohort's opps so subsequent opp ids sit above it."""
+    """Reserve a labs-only program id (>= floor) for a cohort of synthetic opps.
+
+    This id is RESERVED for use as a program identifier and must not be reused as
+    an opportunity id.  ``generate_opp_from_bundle`` allocates opp ids strictly
+    above this value (``max(next_labs_only_opp_id(), program_id + 1)``) so the
+    program id and any opp id in the same cohort can never collide.
+
+    Call this BEFORE creating the cohort's opps so subsequent ``next_labs_only_opp_id``
+    calls land above it.
+    """
     return SyntheticOpportunity.next_labs_only_opp_id()
 
 

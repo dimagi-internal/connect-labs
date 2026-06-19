@@ -154,7 +154,7 @@ def generate_opp_from_bundle(
         app_structure=bundle.app_structure,
     )
 
-    opp_id = existing.opportunity_id if existing else SyntheticOpportunity.next_labs_only_opp_id()
+    opp_id = existing.opportunity_id if existing else max(SyntheticOpportunity.next_labs_only_opp_id(), program_id + 1)
     upload = upload_fixtures(drive=drive, opportunity_id=opp_id, fixtures=fixtures)
 
     row = register_labs_only_opp(

@@ -306,6 +306,27 @@ def test_fill_form_json_uses_correlated_values():
     assert out["form"]["b"] == 99.0
 
 
+def test_correlated_value_still_omitted_by_null_rate():
+    # A correlated path whose distribution has null_rate=1.0 must still be omitted
+    # even when the correlated_values dict supplies a concrete value.
+    schema = FormSchema(questions=[QuestionSpec(json_path="form.x", kind="decimal")])
+    cohort = BeneficiaryCohort(
+        id="primary",
+        size=10,
+        progression="flat",
+        field_distributions={"form.x": NormalDistribution(mean=5.0, stddev=0.5, null_rate=1.0)},
+    )
+    out = fill_form_json(
+        schema=schema,
+        cohort=cohort,
+        anomalies_for_visit=[],
+        rng=random.Random(1),
+        correlated_values={"form.x": 123.0},
+    )
+    # null_rate=1.0 must cause the field to be omitted regardless of the correlated value.
+    assert "x" not in out.get("form", {}), "correlated path with null_rate=1.0 must be omitted"
+
+
 def test_fill_form_json_anomaly_on_binary_field_does_not_raise():
     # Regression for ace#762: routing a field_outlier through a binary-distributed
     # field used to crash fill_form_json with TypeError. It now yields the rare
