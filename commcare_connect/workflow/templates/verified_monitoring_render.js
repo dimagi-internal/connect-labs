@@ -10,7 +10,7 @@
 // scorecard row to switch) — one row per re-surveyed household, columns grouped
 // under Identity / Location / Outcome sections with info buttons (method +
 // source). Objective copy; the viewer draws the conclusion.
-// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V68
+// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V69
 function WorkflowUI(props) {
   var instance = props.instance || {};
   var data = instance.state || {};
@@ -179,8 +179,8 @@ function WorkflowUI(props) {
         if (sdOn && overlay.service_delivery) {
           CM.points(map, 'vm-sd', overlay.service_delivery, {
             color: '#15803d',
-            radius: 4.2,
-            opacity: 0.9,
+            radius: 5.4,
+            opacity: 0.92,
           });
           // Give the program-delivery dots a white edge so they separate from
           // one another (less overlap soup) and read clearly apart from the
@@ -238,16 +238,16 @@ function WorkflowUI(props) {
             map.setPaintProperty('vm-pins', 'circle-radius', [
               'case',
               isAlt,
-              3.2,
-              4.2,
+              3.9,
+              5.2,
             ]);
             // faint fill so the ring dominates — hollow vs the solid delivery dot
-            map.setPaintProperty('vm-pins', 'circle-opacity', 0.16);
+            map.setPaintProperty('vm-pins', 'circle-opacity', 0.14);
             map.setPaintProperty('vm-pins', 'circle-stroke-width', [
               'case',
               isAlt,
-              1.4,
-              2.0,
+              1.8,
+              2.6,
             ]);
             // ring colour carries the survey result (confirmed vs not-reached)
             map.setPaintProperty('vm-pins', 'circle-stroke-color', [
@@ -642,10 +642,10 @@ function WorkflowUI(props) {
     selSurv && sbMap[selSurv]
       ? selSurv
       : bcIds.length
-      ? bcIds.reduce(function (a, b) {
-          return _t3(b) < _t3(a) ? b : a;
-        }, bcIds[0])
-      : null;
+        ? bcIds.reduce(function (a, b) {
+            return _t3(b) < _t3(a) ? b : a;
+          }, bcIds[0])
+        : null;
 
   // scorecard quality metrics: what each checks + the library detail key, so a
   // clicked cell can open a relevant info panel below the table.
@@ -710,8 +710,8 @@ function WorkflowUI(props) {
       val == null
         ? '—'
         : key === 'duplicates'
-        ? val + ' dup'
-        : Number(val).toFixed(1) + '%';
+          ? val + ' dup'
+          : Number(val).toFixed(1) + '%';
 
     function flagged(r) {
       if (key === 'evidence') return r.recv && r.photo !== true;
@@ -1139,18 +1139,41 @@ function WorkflowUI(props) {
           .join(' ');
     }
     var grid = [0, 25, 50, 75, 100].map(function (g) {
+      var isFloor = g === 0;
       return (
         <g key={g}>
-          <line x1={padL} y1={Y(g)} x2={w - padR} y2={Y(g)} stroke={LINE} />
-          <text x={22} y={Y(g) + 4} fill={MUT} fontSize="13" fontFamily={mono}>
+          {/* The 0% baseline is drawn heavier (a real axis, not a faint grid
+              line) so a control line resting on the floor reads against a solid
+              edge instead of vanishing into the bottom grid line. */}
+          <line
+            x1={padL}
+            y1={Y(g)}
+            x2={w - padR}
+            y2={Y(g)}
+            stroke={isFloor ? '#cbd5e1' : LINE}
+            strokeWidth={isFloor ? 1.5 : 1}
+          />
+          <text
+            x={22}
+            y={Y(g) + 4}
+            fill={isFloor ? SUBINK : MUT}
+            fontWeight={isFloor ? 600 : 400}
+            fontSize="13"
+            fontFamily={mono}
+          >
             {g + '%'}
           </text>
         </g>
       );
     });
-    function endLabel(arr, color, label) {
+    // DIRECT end-of-line label: a dot at the final point + the line's name and
+    // value in the gutter (padR reserves room). `dy` nudges the label off the
+    // floor/ceiling when two ends would collide or a line sits at the 0% floor —
+    // so the crushed control line still reads its own name + value.
+    function endLabel(arr, color, label, dy) {
       if (!arr.length) return null;
       var i = arr.length - 1;
+      var ly = Y(arr[i]) + 5 + (dy || 0);
       return (
         <g>
           <circle
@@ -1161,9 +1184,22 @@ function WorkflowUI(props) {
             stroke="#fff"
             strokeWidth="2"
           />
+          {/* connector from the dot to a lifted label, so a floor-crushed line's
+              label can sit above the axis and still point back at its end-dot. */}
+          {dy ? (
+            <line
+              x1={X(i) + 7}
+              y1={Y(arr[i])}
+              x2={X(i) + 16}
+              y2={ly - 4}
+              stroke={color}
+              strokeWidth="1"
+              strokeOpacity="0.5"
+            />
+          ) : null}
           <text
             x={X(i) + 18}
-            y={Y(arr[i]) + 5}
+            y={ly}
             fill={color}
             fontSize="14.5"
             fontWeight="700"
@@ -1173,10 +1209,16 @@ function WorkflowUI(props) {
         </g>
       );
     }
+    // ONE label vocabulary for the three lines, used by the markers' hover
+    // tooltip, the direct end-labels, and the legend below — so the same line is
+    // never called two different things.
+    var L_SD = 'Service delivery',
+      L_IV = 'Intervention survey',
+      L_CP = 'Control survey';
     var SERIES = [
-      { arr: cp, color: COMP, label: 'control arm survey' },
-      { arr: srr, color: AMBER, label: 'service-delivery data' },
-      { arr: iv, color: INDIGO, label: 'intervention arm survey' },
+      { arr: cp, color: COMP, label: L_CP },
+      { arr: srr, color: AMBER, label: L_SD },
+      { arr: iv, color: INDIGO, label: L_IV },
     ];
     function markers() {
       return SERIES.map(function (s) {
@@ -1302,6 +1344,17 @@ function WorkflowUI(props) {
         {/* Label the amber band IN PLACE (not only in the footnote): drop a
             small inline tag at the mid-round, vertically between the two series
             it spans (self-report above, intervention survey below). */}
+        {/* White halo under the control line so where it rests on the 0% floor
+            it still separates from the heavier axis line and reads as its own
+            mark rather than merging into the baseline. */}
+        <polyline
+          points={poly(cp)}
+          fill="none"
+          stroke="#ffffff"
+          strokeWidth="6.5"
+          strokeLinejoin="round"
+          strokeLinecap="round"
+        />
         <polyline
           points={poly(cp)}
           fill="none"
@@ -1369,9 +1422,12 @@ function WorkflowUI(props) {
           );
         })}
         {markers()}
-        {endLabel(srr, AMBER, 'service-delivery')}
-        {endLabel(iv, INDIGO, 'intervention')}
-        {endLabel(cp, COMP, 'control')}
+        {endLabel(srr, AMBER, L_SD)}
+        {endLabel(iv, INDIGO, L_IV)}
+        {/* Control sits at/near the 0% floor; lift its direct label well above
+            the axis (negative dy) so its name + value aren't crushed onto the
+            bottom grid line. */}
+        {endLabel(cp, COMP, L_CP, -26)}
         {tip()}
       </svg>
     );
@@ -1552,18 +1608,21 @@ function WorkflowUI(props) {
     var th = {
       textAlign: 'right',
       color: MUT,
-      fontSize: 10,
+      fontSize: 10.5,
       textTransform: 'uppercase',
       letterSpacing: '.04em',
-      padding: '7px 10px',
+      padding: '9px 12px',
       borderBottom: '1px solid ' + LINE,
       whiteSpace: 'nowrap',
     };
     var th0 = Object.assign({}, th, { textAlign: 'left' });
+    // Larger cell type + taller rows so the values, the REVIEW badge, and the
+    // inline "why flagged" note all read at a normal viewport — the scorecard is
+    // the narrated subject in scene 3 and must be legible, not sub-legible.
     var td = {
       textAlign: 'right',
-      padding: '7px 10px',
-      fontSize: 12.5,
+      padding: '11px 12px',
+      fontSize: 13.5,
       fontFamily: mono,
       borderBottom: '1px solid ' + LINE,
     };
@@ -1610,10 +1669,15 @@ function WorkflowUI(props) {
             background: on
               ? '#eef2ff'
               : isAgg
-              ? '#f8fafc'
-              : fl
-              ? '#fff1f2'
-              : 'transparent',
+                ? '#f8fafc'
+                : fl
+                  ? '#fff1f2'
+                  : 'transparent',
+            // The selection accent (blue) and the flagged STATUS RAIL (rose) are
+            // distinct signals, so they must not collide on the same left edge.
+            // Blue inset stays for "selected"; the flagged row's rose rail is
+            // painted as a left border on its first cell below, a different
+            // channel, so a selected-and-flagged row shows both.
             boxShadow: on ? 'inset 3px 0 0 ' + INDIGO : 'none',
           }}
         >
@@ -1629,29 +1693,48 @@ function WorkflowUI(props) {
             title={isAgg ? null : "Show this surveyor's back-check below"}
             style={Object.assign({}, td0, {
               fontWeight: isAgg ? 700 : 600,
+              fontSize: fl ? 14 : 13.5,
               color: SUBINK,
               cursor: isAgg ? 'default' : 'pointer',
+              // STRONG left-edge STATUS RAIL on a flagged REVIEW row — a solid
+              // rose band, visually distinct from the blue selection inset, so
+              // the flagged row reads heavier than the passing rows and the eye
+              // lands on it. Padding shifts to clear the rail.
+              borderLeft: fl ? '5px solid ' + ROSE : '5px solid transparent',
+              paddingLeft: 14,
             })}
           >
-            {isAgg ? 'Round · all surveyors' : 'Surveyor ' + row.surveyor}
-            {fl ? (
-              <span
-                style={{
-                  marginLeft: 7,
-                  fontSize: 9.5,
-                  color: '#fff',
-                  background: ROSE,
-                  fontFamily: mono,
-                  fontWeight: 800,
-                  letterSpacing: '.05em',
-                  padding: '2px 6px',
-                  borderRadius: 5,
-                  verticalAlign: 'middle',
-                }}
-              >
-                REVIEW
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 9,
+                flexWrap: 'wrap',
+              }}
+            >
+              <span>
+                {isAgg ? 'Round · all surveyors' : 'Surveyor ' + row.surveyor}
               </span>
-            ) : null}
+              {fl ? (
+                <span
+                  style={{
+                    fontSize: 10.5,
+                    color: '#fff',
+                    background: ROSE,
+                    fontFamily: mono,
+                    fontWeight: 800,
+                    letterSpacing: '.06em',
+                    padding: '3px 9px',
+                    borderRadius: 6,
+                    lineHeight: 1.2,
+                    boxShadow: '0 1px 2px rgba(190,18,60,0.35)',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  REVIEW
+                </span>
+              ) : null}
+            </span>
           </td>
           <td style={Object.assign({}, td, { color: MUT })}>{row.n}</td>
           {COLS.map(function (c) {
@@ -1723,8 +1806,8 @@ function WorkflowUI(props) {
                   boxShadow: selCell
                     ? 'inset 0 0 0 1.5px ' + INDIGO
                     : isOffender
-                    ? 'inset 0 0 0 1.5px ' + ROSE
-                    : 'none',
+                      ? 'inset 0 0 0 1.5px ' + ROSE
+                      : 'none',
                 })}
               >
                 {cellTxt(row, c)}
@@ -1738,9 +1821,13 @@ function WorkflowUI(props) {
           <td
             colSpan={2 + COLS.length}
             style={{
-              padding: '0 10px 9px 24px',
+              // carry the rose status rail down onto the note so the badge, the
+              // note, and the row read as one flagged block; larger note type so
+              // the "why flagged" reason is legible, not fine-print.
+              padding: '2px 12px 11px 26px',
+              borderLeft: '5px solid ' + ROSE,
               borderBottom: '1px solid ' + LINE,
-              fontSize: 11,
+              fontSize: 12,
               lineHeight: 1.5,
               color: '#9f1239',
               background: on || fl ? '#fff1f2' : 'transparent',
@@ -2059,24 +2146,24 @@ function WorkflowUI(props) {
             ? 'far faster'
             : 'faster'
           : strong
-          ? 'far slower'
-          : 'slower';
+            ? 'far slower'
+            : 'slower';
       if (kind === 'uniformity')
         return z > 0
           ? strong
             ? 'far more uniform'
             : 'more uniform'
           : strong
-          ? 'far more varied'
-          : 'more varied';
+            ? 'far more varied'
+            : 'more varied';
       // yes-rate
       return z > 0
         ? strong
           ? 'far higher'
           : 'higher'
         : strong
-        ? 'far lower'
-        : 'lower';
+          ? 'far lower'
+          : 'lower';
     }
     // one compact row per signal: PLAIN READ · value · lens · z-chip
     function cell(rawVal, z, valTxt, dom, kind) {
@@ -2164,10 +2251,15 @@ function WorkflowUI(props) {
         <span
           style={{
             display: 'inline-block',
-            padding: '2px 9px',
+            padding: '3px 11px',
             borderRadius: 999,
-            fontSize: 10,
-            fontWeight: 700,
+            fontSize: 11,
+            fontWeight: 800,
+            letterSpacing: '.03em',
+            whiteSpace: 'nowrap',
+            border:
+              '1px solid ' +
+              (c === 'red' ? '#fecdd3' : c === 'amber' ? '#fde68a' : '#a7f3d0'),
             background:
               c === 'red' ? '#fff1f2' : c === 'amber' ? '#fffbeb' : '#ecfdf5',
             color: c === 'red' ? ROSE : c === 'amber' ? '#b45309' : GREEN,
@@ -2207,7 +2299,20 @@ function WorkflowUI(props) {
                 <div style={glossStyle}>how same-y answers are</div>
               </th>
               <th
-                style={Object.assign({}, thD, { cursor: 'help' })}
+                style={Object.assign({}, thD, {
+                  cursor: 'help',
+                  // Pin the Composite column to the right edge with a fixed width
+                  // and no-wrap so the verdict header + RED/AMBER/GREEN pill never
+                  // clip to "COM..." when the table is horizontally constrained.
+                  position: 'sticky',
+                  right: 0,
+                  zIndex: 2,
+                  background: '#fff',
+                  minWidth: 96,
+                  width: 96,
+                  whiteSpace: 'nowrap',
+                  boxShadow: '-6px 0 6px -6px rgba(16,24,40,0.12)',
+                })}
                 title="Overall band, set by the per-signal thresholds at left: RED if any signal clears the flag line (|z| > 3.5), AMBER if any is elevated (|z| >= 2), else GREEN."
               >
                 Composite
@@ -2263,8 +2368,8 @@ function WorkflowUI(props) {
                     background: on
                       ? '#eef2ff'
                       : band === 'red'
-                      ? '#fff1f2'
-                      : 'transparent',
+                        ? '#fff1f2'
+                        : 'transparent',
                     boxShadow: on ? 'inset 3px 0 0 ' + INDIGO : 'none',
                   }}
                 >
@@ -2331,7 +2436,27 @@ function WorkflowUI(props) {
                       'uniformity',
                     )}
                   </td>
-                  <td style={tdD}>{pill(band)}</td>
+                  <td
+                    style={Object.assign({}, tdD, {
+                      // Match the sticky header: pin the verdict pill to the right
+                      // edge so it never scrolls under / clips. Background tracks
+                      // the row's so the pinned cell reads as part of its row.
+                      position: 'sticky',
+                      right: 0,
+                      zIndex: 1,
+                      minWidth: 96,
+                      width: 96,
+                      whiteSpace: 'nowrap',
+                      background: on
+                        ? '#eef2ff'
+                        : band === 'red'
+                          ? '#fff1f2'
+                          : '#fff',
+                      boxShadow: '-6px 0 6px -6px rgba(16,24,40,0.12)',
+                    })}
+                  >
+                    {pill(band)}
+                  </td>
                 </tr>,
                 noteText ? (
                   <tr key={r.surveyor + '-note'}>
@@ -2655,20 +2780,36 @@ function WorkflowUI(props) {
                           style={{
                             color: SUBINK,
                             fontWeight: 700,
-                            fontSize: 12,
+                            fontSize: 12.5,
                           }}
                         >
                           {s.label}
                         </span>
+                        {/* The agreement % is the headline of each section — render
+                            it LARGE so the three section shares carry real visual
+                            rank, not equal-weight fine print. Outcome (the key
+                            result the survey exists to measure) gets the largest. */}
                         <span
                           style={{
                             color: s.pct == null ? MUT : ok ? GREEN : ROSE,
                             fontFamily: mono,
                             fontWeight: 800,
-                            fontSize: 12.5,
+                            fontSize: s.key === 'outcome' ? 22 : 18,
+                            lineHeight: 1.1,
+                            flexBasis: '100%',
                           }}
                         >
                           {s.pct == null ? '—' : s.pct.toFixed(0) + '%'}
+                          <span
+                            style={{
+                              fontSize: 10,
+                              fontWeight: 600,
+                              color: MUT,
+                              marginLeft: 5,
+                            }}
+                          >
+                            agree
+                          </span>
                         </span>
                         {sb.n != null ? (
                           <span
@@ -2679,7 +2820,7 @@ function WorkflowUI(props) {
                               fontSize: 10.5,
                             }}
                           >
-                            · n={sb.n}
+                            n={sb.n}
                           </span>
                         ) : null}
                         {/* For the location section the % is "share within
@@ -2959,37 +3100,68 @@ function WorkflowUI(props) {
           {(trend.rounds || []).length} bi-monthly rounds over time
         </div>
         <div style={{ marginTop: 8 }}>{trendChart()}</div>
+        {/* Compact legend: the three lines' names match the chart's DIRECT
+            end-labels exactly (one vocabulary), each line also direct-labelled at
+            its end. The amber-gap-band definition and the y-axis definition are
+            promoted out of fine-print into a single 'i' bubble (hover) so the
+            chart frame stays clean. */}
         <div
           style={{
             display: 'flex',
             gap: 16,
             flexWrap: 'wrap',
+            alignItems: 'center',
             fontSize: 12.5,
             color: SUBINK,
             marginTop: 8,
           }}
         >
-          <span>{sw(AMBER, true)}service-delivery data</span>
-          <span>{sw(INDIGO)}intervention arm survey</span>
-          <span>{sw(COMP)}control arm survey</span>
-          <span style={{ color: MUT }}>
-            · amber band = self-report − survey gap · highlighted column =
-            selected cycle · click a cycle to open it
+          <span>{sw(AMBER, true)}Service delivery</span>
+          <span>{sw(INDIGO)}Intervention survey</span>
+          <span>{sw(COMP)}Control survey</span>
+          <span
+            title="Y-axis: % of households where vitamin-A delivery was confirmed (survey) or reported (service-delivery data), at each round. Amber band: the gap between the program's service-delivery data and the independent survey. Highlighted column: the selected cycle — click a cycle to open it."
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              color: MUT,
+              cursor: 'help',
+            }}
+          >
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 16,
+                height: 16,
+                borderRadius: 999,
+                border: '1px solid ' + LINE,
+                color: INDIGO,
+                fontSize: 10.5,
+                fontWeight: 800,
+                fontFamily: sans,
+              }}
+            >
+              i
+            </span>
+            <span
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+            >
+              <span
+                style={{
+                  display: 'inline-block',
+                  width: 16,
+                  height: 9,
+                  background: AMBER,
+                  opacity: 0.45,
+                  borderRadius: 2,
+                }}
+              />
+              gap band · axis definitions
+            </span>
           </span>
-        </div>
-        <div
-          style={{
-            marginTop: 6,
-            fontSize: 12,
-            color: MUT,
-            fontFamily: mono,
-            lineHeight: 1.5,
-          }}
-        >
-          {(trend.rounds || []).length} bi-monthly survey rounds over time —
-          earliest at left, most recent at right. The independent survey's
-          coverage tracked against the program's self-report at each round;
-          every round verifies a rotating ward against its adjacent control.
         </div>
       </div>
 
@@ -3063,7 +3235,12 @@ function WorkflowUI(props) {
             <div
               ref={mapDivRef}
               style={{
-                height: 360,
+                // Tall focused map for the delivery-vs-survey beat: when this is
+                // the narrated subject it must read at a normal viewport, so the
+                // solid green delivery dot vs the hollow indigo/rose survey ring
+                // separate clearly. Was a ~250px thumbnail competing with the
+                // scorecard; now it gets the room the encoding needs.
+                height: 520,
                 borderRadius: 8,
                 overflow: 'hidden',
                 background: '#eef2f7',
@@ -3142,46 +3319,49 @@ function WorkflowUI(props) {
                 backdropFilter: 'blur(1px)',
               }}
             >
-              <span style={{ color: SUBINK, fontWeight: 700, fontSize: 12 }}>
+              <span style={{ color: SUBINK, fontWeight: 700, fontSize: 12.5 }}>
                 Map key
               </span>
-              {/* program delivery = larger SOLID dot */}
-              <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+              {/* program delivery = larger SOLID dot — swatch sized to match the
+                  enlarged map marks so the legend reads like the map. */}
+              <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span
                   style={{
                     display: 'inline-block',
-                    width: 12,
-                    height: 12,
+                    width: 14,
+                    height: 14,
                     borderRadius: '50%',
                     background: '#15803d',
+                    border: '1.5px solid #fff',
+                    boxShadow: '0 0 0 1px #15803d',
                     flex: '0 0 auto',
                   }}
                 />
                 service delivery (program){_ct(mmc.delivery)}
               </span>
               {/* survey = smaller HOLLOW ring */}
-              <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span
                   style={{
                     display: 'inline-block',
-                    width: 11,
-                    height: 11,
+                    width: 13,
+                    height: 13,
                     borderRadius: '50%',
-                    border: '2px solid ' + INDIGO,
+                    border: '2.5px solid ' + INDIGO,
                     background: 'transparent',
                     flex: '0 0 auto',
                   }}
                 />
                 survey confirmed{_ct(mmc.confirmed)}
               </span>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span
                   style={{
                     display: 'inline-block',
-                    width: 11,
-                    height: 11,
+                    width: 13,
+                    height: 13,
                     borderRadius: '50%',
-                    border: '2px solid ' + ROSE,
+                    border: '2.5px solid ' + ROSE,
                     background: 'transparent',
                     flex: '0 0 auto',
                   }}
