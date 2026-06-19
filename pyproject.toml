@@ -1,7 +1,7 @@
 # ==== pytest ====
 [tool.pytest.ini_options]
 minversion = "6.0"
-addopts = "--ds=config.settings.test --reuse-db --ignore=commcare_connect/workflow/tests/e2e --ignore=commcare_connect/labs/tests/e2e --ignore=commcare_connect/solicitations/tests/e2e --ignore=commcare_connect/funder_dashboard/tests/e2e --ignore=commcare_connect/audit/management/commands/test_search_readers.py"
+addopts = "--ds=config.settings.test --reuse-db --ignore=commcare_connect/workflow/tests/e2e --ignore=commcare_connect/labs/tests/e2e --ignore=commcare_connect/solicitations/tests/e2e --ignore=commcare_connect/funder_dashboard/tests/e2e --ignore=commcare_connect/campaign/tests/e2e --ignore=commcare_connect/audit/management/commands/test_search_readers.py"
 norecursedirs = ["management"]
 python_files = [
     "tests.py",
@@ -9,6 +9,8 @@ python_files = [
 ]
 markers = [
     "e2e: End-to-end browser tests (require real OAuth token and runserver)",
+    "contract: Cross-boundary contract tests (e.g. server↔frontend matrix/field-name agreement)",
+    "stub: Marks a simulated integration seam (KYC/payment/CommCare) — no external system is wired",
 ]
 
 # ==== Coverage ====
