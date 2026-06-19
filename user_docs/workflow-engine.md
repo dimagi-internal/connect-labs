@@ -214,7 +214,7 @@ The **Verified Monitoring** dashboard contrasts what the program self-reported w
 
 **Trend panel**
 
-The Trend panel shows the self-reported and independently-verified coverage lines over time as a large, legible chart — taller with thicker lines so the trajectories are easy to follow. The right edge of the chart labels each line directly (service-delivery, intervention, and control) at its end, and a bolder amber gap-band highlights the difference between self-reported and verified figures. You can read the current values without needing to cross-reference a legend.
+The Trend panel shows the self-reported and independently-verified coverage lines over time as a large, legible chart — taller with thicker lines so the trajectories are easy to follow. The right edge of the chart labels each line directly (service-delivery, intervention, and control) at its end, and a bolder amber gap-band highlights the difference between self-reported and verified figures. The control line — which sits at the 0% floor — keeps its own readable label and value rather than being crowded onto the bottom axis. The amber gap-band explanation and y-axis definitions are tucked into a compact **i** bubble so the chart frame stays clean. Each line uses one consistent name everywhere it appears — in the hover tooltip, the end-of-line label, and the legend — so there is no ambiguity about which line is which. You can read the current values without needing to cross-reference a legend.
 
 **Per-surveyor quality scorecard**
 
@@ -224,17 +224,8 @@ The quality scorecard uses plain language for each check:
 - **Interview length** — whether interview durations are within the expected range
 - **Re-survey agreement** — whether re-surveyed households matched the original responses
 
-Columns that are always 100% across all surveyors are greyed out so the columns that actually vary stand out. When a surveyor carries a **REVIEW** tag, it includes an inline note stating exactly which two checks triggered it, so you know at a glance why that surveyor has been flagged without having to cross-reference the rest of the row.
+Columns that are always 100% across all surveyors are greyed out so the columns that actually vary stand out. The scorecard uses a larger type scale and taller rows so figures are easy to read at a normal screen size. When a surveyor carries a **REVIEW** tag, it sits clearly apart from the surveyor's name — it will not appear fused to the name — and a rose status rail runs down the left edge of that surveyor's row so flagged rows are immediately visible. The inline note stating exactly which two checks triggered the REVIEW tag is displayed in a larger, easier-to-read size so you know at a glance why that surveyor has been flagged without having to cross-reference the rest of the row.
 
 **"On sampled house" column**
 
-This column shows real per-surveyor substitution rates when the cycle has that data. When the cycle does not include substitution data, the column disappears entirely rather than appearing as an empty headline column.
-
-**Evidence map**
-
-The map shows the program's service delivery as **solid dots** and the independent survey as **hollow rings**, so the control ward — where the program was absent — reads visually as empty. The map key is larger and includes per-category counts alongside each symbol so you can see totals without drilling into individual pins. Per-ward confirmed rates appear in a neutral summary table rather than a verdict-style banner.
-
-The map panel has a docked **Layers** panel — the same chrome used in the sampling-plan editor — so the controls look and behave consistently whether you are reviewing monitoring data or editing a plan. The Layers panel contains the following toggles:
-
-- **Delivery** — shows implementer-reported visit pins
-- **Survey** — shows independent surveyor
+This column shows real per-surveyor substitution rates when the cycle has that data. When the cycle does not include substitution data, the column disapp
