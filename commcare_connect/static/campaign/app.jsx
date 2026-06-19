@@ -156,6 +156,13 @@ function App() {
               showAlerts={CONFIG.showAlerts}
               onJump={jump}
             />
+          ) : tab === 'workers' ? (
+            <WorkersTab
+              sub={wSub}
+              onSub={setWSub}
+              density={CONFIG.density}
+              role={role}
+            />
           ) : (
             <TabPlaceholder name={activeName} />
           )}
