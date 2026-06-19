@@ -38,3 +38,22 @@ def test_anomaly_forces_flag_and_review():
     s = decide_visit_status(persona=persona, has_anomaly=True, rng=rng)
     assert s.flagged is True
     assert s.review_status in {"pending", "rejected"}
+
+
+def test_flag_reason_sampled_from_distribution():
+    rng = random.Random(0)
+    persona = FlwPersona(
+        id="x",
+        archetype="struggling",
+        accuracy_distribution=MeanStddev(mean=0.6, stddev=0.05),
+        completeness_distribution=MeanStddev(mean=0.6, stddev=0.05),
+        flag_rate=1.0,
+    )
+    seen = set()
+    for _ in range(50):
+        s = decide_visit_status(
+            persona=persona, has_anomaly=False, rng=rng, flag_reason_distribution={"only-reason": 1.0}
+        )
+        if s.flag_reason:
+            seen.add(s.flag_reason)
+    assert seen == {"only-reason"}

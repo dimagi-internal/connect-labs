@@ -126,7 +126,12 @@ def generate(
             period=slot.week_index,
             correlated_values=correlated_values,
         )
-        status = decide_visit_status(persona=persona, has_anomaly=bool(anomalies), rng=rng)
+        status = decide_visit_status(
+            persona=persona,
+            has_anomaly=bool(anomalies),
+            rng=rng,
+            flag_reason_distribution=manifest.flag_reason_distribution,
+        )
         # One beneficiary index per visit, reused for the display name AND the
         # household GPS so repeat visits to the same beneficiary share a location.
         beneficiary_idx = rng.randint(1, cohort.size)
