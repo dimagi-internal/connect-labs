@@ -214,23 +214,27 @@ The **Verified Monitoring** dashboard contrasts what the program self-reported w
 
 **Trend panel**
 
-The Trend panel shows the self-reported and independently-verified coverage lines over time. The right edge of the chart labels each line directly with its service-delivery, intervention, and control values, so you can read the current figures without needing to cross-reference a legend.
+The Trend panel shows the self-reported and independently-verified coverage lines over time as a large, legible chart — taller with thicker lines so the trajectories are easy to follow. The right edge of the chart labels each line directly (service-delivery, intervention, and control) at its end, and a bolder amber gap-band highlights the difference between self-reported and verified figures. You can read the current values without needing to cross-reference a legend.
 
-**Map panel**
+**Per-surveyor quality scorecard**
+
+The quality scorecard uses plain language for each check:
+
+- **Passed validation** — whether the surveyor's submissions cleared automated validation
+- **Interview length** — whether interview durations are within the expected range
+- **Re-survey agreement** — whether re-surveyed households matched the original responses
+
+Columns that are always 100% across all surveyors are greyed out so the columns that actually vary stand out. When a surveyor carries a **REVIEW** tag, it includes an inline note stating exactly which two checks triggered it, so you know at a glance why that surveyor has been flagged without having to cross-reference the rest of the row.
+
+**"On sampled house" column**
+
+This column shows real per-surveyor substitution rates when the cycle has that data. When the cycle does not include substitution data, the column disappears entirely rather than appearing as an empty headline column.
+
+**Evidence map**
+
+The map shows the program's service delivery as **solid dots** and the independent survey as **hollow rings**, so the control ward — where the program was absent — reads visually as empty. The map key is larger and includes per-category counts alongside each symbol so you can see totals without drilling into individual pins. Per-ward confirmed rates appear in a neutral summary table rather than a verdict-style banner.
 
 The map panel has a docked **Layers** panel — the same chrome used in the sampling-plan editor — so the controls look and behave consistently whether you are reviewing monitoring data or editing a plan. The Layers panel contains the following toggles:
 
 - **Delivery** — shows implementer-reported visit pins
-- **Survey** — shows independent surveyor visit pins
-- **Plan** — shows the designed study plan: the selected cluster areas (PSUs) from the sampling plan, drawn in the same arm colours used in the plan editor — intervention areas in green and comparison areas in blue — so the plan you designed and the monitoring of it look like one coherent picture
-- **Work areas** — shows the *sampled* buildings coloured by study arm (intervention green / comparison blue); **primary** buildings are drawn as solid shapes and **alternate (substituted)** buildings are drawn as dashed outlines, so you can immediately see which buildings the plan originally selected and which were substitutes
-- **Building footprints** — shows *all* buildings in the area, giving you a complete picture of the built environment regardless of which ones were selected for the study
-
-You can toggle Work areas and Building footprints independently of each other — turning one on or off does not affect the other.
-
-When you turn on the **Work areas** layer, the ward and cluster area fills fade back so the individual buildings stand out against the map — the ward and cluster outlines remain visible for context, but the colour fills no longer compete with the building shapes. Buildings themselves render with a crisp dark edge so they are clearly legible when you zoom in, whether they are solid (primary) or dashed (alternate).
-
-**Toggling any layer on or off keeps your current pan and zoom position.** The
-
-!!! note "New Verified Monitoring workflows match the live dashboard"
-    If your program administrator creates a new Verified Monitoring workflow from
+- **Survey** — shows independent surveyor
