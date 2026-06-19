@@ -49,3 +49,11 @@ MAPBOX_TOKEN={{ op://Employee/Connect Labs .env/MAPBOX_TOKEN }}
 SUPERSET_URL={{ op://Employee/Connect Labs .env/SUPERSET_URL }}
 SUPERSET_USERNAME={{ op://Employee/Connect Labs .env/SUPERSET_USERNAME }}
 SUPERSET_PASSWORD={{ op://Employee/Connect Labs .env/SUPERSET_PASSWORD }}
+
+# Google Drive service account for synthetic-opp fixtures (needed to read profile
+# bundles and run synthetic generation locally). It's the "connect-labs GCP service
+# account key (connect-labs-sa)" DOCUMENT in the AI-Agents vault — a JSON key file.
+# The DriveClient accepts either the JSON contents or a path to the file. NOTE: this
+# value is multi-line JSON; if your .env renderer needs single-line, point
+# LABS_SYNTHETIC_GDRIVE_SA_KEY at a file path instead (op document get ... --out-file).
+LABS_SYNTHETIC_GDRIVE_SA_KEY={{ op://AI-Agents/connect-labs GCP service account key (connect-labs-sa)/connect-labs-11dace7a923c.json }}

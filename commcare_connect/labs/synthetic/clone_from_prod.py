@@ -270,6 +270,47 @@ def generate_opps_bulk(
     return results
 
 
+def generate_fixtures_only(bundle_root, *, drive) -> list[dict]:
+    """Generate fixtures for every bundle and upload them to GDrive, WITHOUT
+    registering any SyntheticOpportunity row (no database write).
+
+    This is the local/offline half of generation: the heavy copula work + GDrive
+    uploads run wherever this is invoked (e.g. a powerful laptop). The labs-only
+    opp rows are then created separately — and cheaply — via the connect_labs MCP
+    (``synthetic_create_labs_only``), pointing each at the folder this produced.
+
+    Returns one dict per opp:
+    ``{source_opportunity_id, gdrive_folder_id, folder_url, visit_count,
+    app_structure_present}``. Per-bundle failures are logged and skipped.
+    """
+    store = make_bundle_store(bundle_root, drive=drive)
+    results: list[dict] = []
+    for handle in store.list_handles():
+        try:
+            bundle = store.read(handle)
+            manifest = Manifest.from_yaml(bundle.manifest_yaml)
+            form_schema = parse_form_schema_from_app_json(bundle.app_structure, app_type="deliver")
+            fixtures = _generate(
+                manifest=manifest,
+                opportunity_detail=bundle.opportunity,
+                form_schema=form_schema,
+                app_structure=bundle.app_structure,
+            )
+            upload = upload_fixtures(drive=drive, opportunity_id=bundle.source_opp_id, fixtures=fixtures)
+            results.append(
+                {
+                    "source_opportunity_id": bundle.source_opp_id,
+                    "gdrive_folder_id": upload.folder_id,
+                    "folder_url": upload.folder_url,
+                    "visit_count": len(fixtures.get("user_visits") or []),
+                    "app_structure_present": bool(fixtures.get("app_structure")),
+                }
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("generate_fixtures_only: failed for bundle %s", handle)
+    return results
+
+
 # ---------------------------------------------------------------------------
 # Cohort spec: one declarative YAML drives both phases (see cohort.py).
 # ---------------------------------------------------------------------------
