@@ -1632,13 +1632,15 @@
       ['draw', 'btn-area-draw', 'area-draw'],
       ['admin', 'btn-area-admin', 'area-admin'],
       ['pin', 'btn-area-pin', 'area-pin'],
+      ['upload', 'btn-area-upload', 'area-upload'],
     ].forEach(([k, btnId, panelId]) => {
-      $(btnId).classList.toggle('is-on', k === i);
-      $(panelId).classList.toggle('hidden', k !== i);
+      $(btnId)?.classList.toggle('is-on', k === i);
+      $(panelId)?.classList.toggle('hidden', k !== i);
     });
     if (i !== 'pin') disarmPin();
   }
   $('btn-area-draw').addEventListener('click', () => setAreaInput('draw'));
+  $('btn-area-upload')?.addEventListener('click', () => setAreaInput('upload'));
   // "Boundaries" mode = reveal the boundary controls in the rail (#area-admin) and
   // turn on the map layer (lines + click-to-select). Controls live in the rail now.
   $('btn-area-admin').addEventListener('click', () => {
@@ -1984,7 +1986,7 @@
 
   function collectArmAreas() {
     const feats = draw ? draw.getAll().features : [];
-    return feats
+    const drawn = feats
       .filter(
         (f) =>
           f.geometry &&
@@ -2000,7 +2002,86 @@
         state: (f.properties && f.properties.state) || '',
         populations: (f.properties && f.properties.populations) || null,
       }));
+    // Uploaded boundary polygons (#11) are areas too, tagged from their properties.
+    return drawn.concat(uploadedAreas);
   }
+
+  // ---- Uploaded boundary file (#11) ----------------------------------------
+  // Parse a GeoJSON of ward/area polygons client-side into plan areas; each polygon
+  // carries ward/LGA/state read from common property names. Shown as a map overlay.
+  let uploadedAreas = [];
+  function _firstProp(p, keys) {
+    for (const k of Object.keys(p || {})) {
+      if (keys.includes(k.toLowerCase())) return String(p[k] || '').trim();
+    }
+    return '';
+  }
+  function handleBoundaryUpload(file) {
+    const st = $('area-upload-status');
+    const reader = new FileReader();
+    reader.onload = () => {
+      let fc;
+      try {
+        fc = JSON.parse(reader.result);
+      } catch (e) {
+        if (st) st.textContent = 'Could not parse file as JSON.';
+        return;
+      }
+      const feats =
+        (fc && fc.features) || (fc && fc.type === 'Feature' ? [fc] : []);
+      uploadedAreas = feats
+        .filter((f) => f.geometry && /Polygon/.test(f.geometry.type))
+        .map((f) => {
+          const p = f.properties || {};
+          return {
+            arm: 'intervention',
+            geometry: f.geometry,
+            ward: _firstProp(p, ['wardname', 'ward', 'ward_name', 'name']),
+            lga: _firstProp(p, ['lganame', 'lga', 'lga_name']),
+            state: _firstProp(p, ['statename', 'state', 'state_name']),
+            populations: null,
+          };
+        });
+      if (st)
+        st.textContent = uploadedAreas.length
+          ? `${uploadedAreas.length} area(s) loaded — they'll be used when you Create work areas.`
+          : 'No polygon features found in the file.';
+      $('area-upload-clear')?.classList.toggle('hidden', !uploadedAreas.length);
+      drawUploadedOverlay();
+      if (typeof refreshAreaStats === 'function') refreshAreaStats();
+    };
+    reader.readAsText(file);
+  }
+  function drawUploadedOverlay() {
+    if (!map || !mapReady) return;
+    const fc = {
+      type: 'FeatureCollection',
+      features: uploadedAreas.map((a) => ({
+        type: 'Feature',
+        geometry: a.geometry,
+        properties: {},
+      })),
+    };
+    if (window.ConnectMap && window.ConnectMap.boundary) {
+      window.ConnectMap.boundary(map, 'uploaded-areas', fc, {
+        color: '#f59e0b',
+      });
+    }
+    if (uploadedAreas.length && window.Microplans && Microplans.fitTo)
+      Microplans.fitTo(map, fc, { maxZoom: 12, animate: false, duration: 0 });
+  }
+  on('area-upload-file', 'change', (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (f) handleBoundaryUpload(f);
+  });
+  on('area-upload-clear', 'click', () => {
+    uploadedAreas = [];
+    $('area-upload-status') && ($('area-upload-status').textContent = '');
+    $('area-upload-clear')?.classList.add('hidden');
+    if (window.ConnectMap && window.ConnectMap.remove)
+      window.ConnectMap.remove(map, ['uploaded-areas']);
+    if (typeof refreshAreaStats === 'function') refreshAreaStats();
+  });
 
   // Picked wards carry a `population` from their boundary source (e.g. GeoPoDe).
   // We sum it across the selected wards and offer it as a one-click fill for the
