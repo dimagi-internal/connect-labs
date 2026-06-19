@@ -5,14 +5,18 @@ Deterministic via random.Random(SEED). Honors the prototype's invariants
 donor/region/role/planning/household constants) without byte-matching the
 JS PRNG output.
 """
+
 from __future__ import annotations
 
+import datetime
 import random
 
 from django.db import transaction
+from django.utils import timezone
 
 from commcare_connect.campaign.models import (
     Activity,
+    AuditLog,
     Campaign,
     Donor,
     HouseholdStat,
@@ -277,9 +281,9 @@ def _seed_microplans(rng, campaign, regions, roles):
             )
 
 
-def _gen_workers(rng, roles, regions):
+def _gen_workers(rng, roles, regions, count=64):
     workers = []
-    for i in range(64):
+    for i in range(count):
         gender = "F" if rng.random() < 0.42 else "M"
         first = rng.choice(FIRST_F if gender == "F" else FIRST_M)
         last = rng.choice(LAST)
@@ -335,9 +339,12 @@ def _gen_workers(rng, roles, regions):
     return workers
 
 
-def _inject_fraud(rng, workers):
-    for _ in range(7):
-        a, b = rng.sample(range(64), 2)
+def _inject_fraud(rng, workers, pairs=7):
+    if len(workers) < 2:
+        return
+    pairs = min(pairs, len(workers) // 2)
+    for _ in range(pairs):
+        a, b = rng.sample(range(len(workers)), 2)
         wa, wb = workers[a], workers[b]
         rule, field, shared = rng.choice(DUP_KINDS)
         for w in (wa, wb):
@@ -374,8 +381,52 @@ def _seed_report_days(rng, campaign):
     ReportDay.objects.bulk_create(rows)
 
 
+AUDIT_SEED = [
+    (datetime.datetime(2026, 6, 3, 9, 41), "Amara Okafor", "Approved 8 worker payments", "Payments", "102.89.x.x"),
+    (datetime.datetime(2026, 6, 3, 9, 12), "Ngozi Eze", "Approved KYC for W10342", "KYC", "197.210.x.x"),
+    (
+        datetime.datetime(2026, 6, 3, 8, 55),
+        "Amara Okafor",
+        "Changed Samuel Okoro's role to Operations Manager",
+        "User Management",
+        "102.89.x.x",
+    ),
+    (datetime.datetime(2026, 6, 2, 17, 30), "Tunde Balogun", "Logged in", "Authentication", "105.112.x.x"),
+    (
+        datetime.datetime(2026, 6, 2, 16, 4),
+        "Amara Okafor",
+        "Invited aisha.lawal@partner.org (Compliance Administrator)",
+        "User Management",
+        "102.89.x.x",
+    ),
+    (datetime.datetime(2026, 6, 2, 14, 48), "Fatima Bello", "Created activity ACT-05", "Activities", "154.113.x.x"),
+    (
+        datetime.datetime(2026, 6, 2, 11, 20),
+        "Amara Okafor",
+        "Deactivated user Joseph Idoko",
+        "User Management",
+        "102.89.x.x",
+    ),
+]
+
+
+def _seed_audit_log(campaign):
+    rows = [
+        AuditLog(
+            campaign=campaign,
+            at=timezone.make_aware(dt) if timezone.is_naive(dt) else dt,
+            user=user,
+            action=action,
+            module=module,
+            ip=ip,
+        )
+        for dt, user, action, module, ip in AUDIT_SEED
+    ]
+    AuditLog.objects.bulk_create(rows)
+
+
 @transaction.atomic
-def seed_campaign(fresh: bool = False) -> Campaign:
+def seed_campaign(fresh: bool = False, worker_count: int = 64) -> Campaign:
     ws, _ = Workspace.objects.get_or_create(slug="nigeria", defaults={"country": "Nigeria", "name": "Nigeria"})
     existing = Campaign.objects.filter(workspace=ws, code=CAMPAIGN["code"]).first()
     if existing and not fresh:
@@ -415,12 +466,14 @@ def seed_campaign(fresh: bool = False) -> Campaign:
         coverage=[{"name": REGIONS[i][1], "hh": HH_HH[i], "visited": round(HH_HH[i] * HH_VIS_F[i])} for i in range(5)],
     )
     roles = [(rid, name, rate) for rid, name, rate in ROLES]
-    workers = _gen_workers(rng, roles, regions)
-    _inject_fraud(rng, workers)
+    workers = _gen_workers(rng, roles, regions, count=worker_count)
+    # Scale fraud clusters with the roster (≈7 pairs at the canonical 64 workers).
+    _inject_fraud(rng, workers, pairs=max(1, round(worker_count * 7 / 64)))
     Worker.objects.bulk_create([Worker(campaign=c, **w) for w in workers])
     region_objs = list(c.regions.select_related("plan").all())
     _seed_activities(rng, c)
     _seed_microplans(rng, c, region_objs, ROLES)
     _seed_report_days(rng, c)
+    _seed_audit_log(c)
     seed_demo_users()
     return c

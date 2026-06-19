@@ -5,7 +5,7 @@ from django.shortcuts import get_object_or_404
 
 from commcare_connect.campaign.auth.decorators import current_campaign_user, require_perm
 from commcare_connect.campaign.models import Campaign, Microplan
-from commcare_connect.campaign.services import microplan_actions, serializers
+from commcare_connect.campaign.services import audit, microplan_actions, serializers
 
 
 def _body(request):
@@ -26,7 +26,9 @@ def _get(mid):
 @require_perm("planning", "create")
 def microplan_create(request):
     cu = current_campaign_user(request)
-    m = microplan_actions.create_microplan(_campaign(), _body(request), cu.name or cu.commcare_username)
+    c = _campaign()
+    m = microplan_actions.create_microplan(c, _body(request), cu.name or cu.commcare_username)
+    audit.record(request, f"Created microplan {m.microplan_id} ({m.lga})", "Microplanning", c)
     return JsonResponse({"microplan": serializers._microplan(m)})
 
 
