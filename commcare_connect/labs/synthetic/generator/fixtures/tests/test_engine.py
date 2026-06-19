@@ -1,3 +1,4 @@
+import datetime as dt
 import json
 from pathlib import Path
 
@@ -143,6 +144,89 @@ def test_generate_flags_visits_when_anomaly_scheduled(tmp_path):
         assert v["flag_reason"]
 
 
+def _in_week2(visit_date: str) -> bool:
+    """Golden timeline starts 2026-02-01, so week 2 spans 02-08..02-14 (1-based)."""
+    d = dt.date.fromisoformat(visit_date)
+    return dt.date(2026, 2, 8) <= d <= dt.date(2026, 2, 14)
+
+
+def _patched(anomaly_yaml: str):
+    base_yaml = (GOLDEN / "manifest.yaml").read_text()
+    manifest = Manifest.from_yaml(base_yaml.replace("anomalies: []", anomaly_yaml))
+    detail = json.loads((GOLDEN / "opportunity_detail.json").read_text())
+    schema_data = json.loads((GOLDEN / "form_schema.json").read_text())
+    schema = FormSchema(questions=[QuestionSpec(**q) for q in schema_data["questions"]])
+    base = Manifest.from_yaml(base_yaml)
+    return manifest, base, detail, schema
+
+
+def test_generate_missing_visits_drops_targeted_flw_week():
+    """A missing_visits anomaly removes the targeted FLW's visits for that week,
+    leaving a detectable coverage gap; other FLWs and other weeks are untouched."""
+    anomaly_yaml = (
+        "anomalies:\n" "  - id: asha_gap\n" "    type: missing_visits\n" "    flw_ids: [asha]\n" "    week: 2\n"
+    )
+    manifest, base, detail, schema = _patched(anomaly_yaml)
+
+    base_out = generate(manifest=base, opportunity_detail=detail, form_schema=schema)
+    out = generate(manifest=manifest, opportunity_detail=detail, form_schema=schema)
+
+    base_asha_w2 = [v for v in base_out["user_visits"] if v["username"] == "asha" and _in_week2(v["visit_date"])]
+    assert len(base_asha_w2) > 0, "baseline should have asha week-2 visits to remove"
+
+    asha_w2 = [v for v in out["user_visits"] if v["username"] == "asha" and _in_week2(v["visit_date"])]
+    assert asha_w2 == [], "missing_visits should drop all of asha's week-2 visits"
+
+    asha_other = [v for v in out["user_visits"] if v["username"] == "asha" and not _in_week2(v["visit_date"])]
+    assert len(asha_other) > 0, "asha's other weeks must remain"
+
+    ravi_w2 = [v for v in out["user_visits"] if v["username"] == "ravi" and _in_week2(v["visit_date"])]
+    assert len(ravi_w2) > 0, "an untargeted FLW must keep its week-2 visits"
+
+
+def test_generate_duplicate_submission_creates_near_identical_pair():
+    """A duplicate_submission anomaly emits a second visit for the same beneficiary
+    with identical form_json on the same date but a distinct id."""
+    anomaly_yaml = (
+        "anomalies:\n" "  - id: asha_dup\n" "    type: duplicate_submission\n" "    flw_ids: [asha]\n" "    week: 2\n"
+    )
+    manifest, base, detail, schema = _patched(anomaly_yaml)
+
+    base_out = generate(manifest=base, opportunity_detail=detail, form_schema=schema)
+    out = generate(manifest=manifest, opportunity_detail=detail, form_schema=schema)
+    assert len(out["user_visits"]) > len(base_out["user_visits"]), "duplicate should add a visit"
+
+    by_entity: dict[str, list] = {}
+    for v in out["user_visits"]:
+        if v["username"] == "asha":
+            by_entity.setdefault(v["entity_id"], []).append(v)
+    dup_groups = [vs for vs in by_entity.values() if len(vs) >= 2]
+    assert dup_groups, "expected a duplicated submission sharing one entity_id"
+
+    pair = dup_groups[0]
+    assert pair[0]["form_json"] == pair[1]["form_json"], "duplicate must carry identical form_json"
+    assert pair[0]["visit_date"] == pair[1]["visit_date"], "duplicate must share the visit date"
+    assert pair[0]["id"] != pair[1]["id"], "duplicate must have a distinct visit id"
+
+
+def test_duplicate_submission_flags_only_the_duplicate_not_the_original():
+    """asha is a rockstar (flag_rate 0): without the anomaly every visit is approved.
+    The dedup event must flag the injected copy, not the genuine original."""
+    anomaly_yaml = (
+        "anomalies:\n" "  - id: asha_dup\n" "    type: duplicate_submission\n" "    flw_ids: [asha]\n" "    week: 2\n"
+    )
+    manifest, base, detail, schema = _patched(anomaly_yaml)
+    out = generate(manifest=manifest, opportunity_detail=detail, form_schema=schema)
+
+    asha = [v for v in out["user_visits"] if v["username"] == "asha"]
+    flagged = [v for v in asha if v["flagged"]]
+    approved = [v for v in asha if v["status"] == "approved" and not v["flagged"]]
+    assert flagged, "the duplicate should be flagged"
+    approved_entities = {v["entity_id"] for v in approved}
+    for v in flagged:
+        assert v["entity_id"] in approved_entities, "a flagged dup must shadow an un-flagged original (same entity)"
+
+
 def test_generate_without_geography_leaves_location_empty():
     """The default manifest (no geography) keeps visit location blank."""
     manifest, detail, schema = _load_inputs()
@@ -198,6 +282,68 @@ def test_generate_with_geography_places_visits_in_polygon():
     # Determinism: same seed → identical locations.
     out2 = generate(manifest=manifest, opportunity_detail=detail, form_schema=schema)
     assert [v["location"] for v in out2["user_visits"]] == [v["location"] for v in visits]
+
+
+def test_curated_profile_seeds_materialize_as_qa_signals_end_to_end():
+    """Composition guard (the part mocked unit tests miss): profile(curate=True)'s
+    seeded anomalies must survive the manifest round-trip and produce real QA signals
+    when generated — a flagged visit (outlier/dedup) and a duplicated-entity pair."""
+    from commcare_connect.labs.synthetic.generator.fixtures.profiler import profile
+    from commcare_connect.labs.synthetic.generator.fixtures.schema_loader import parse_form_schema_from_app_json
+
+    visits = []
+    for i in range(120):
+        visits.append(
+            {
+                "username": f"flw_{i % 3}",
+                "visit_date": f"2026-05-{4 + (i % 24):02d}",
+                "form_json": {"form": {"birth_weight": str(1500 + (i % 30) * 10), "danger_sign": "no"}},
+                "entity_id": f"e{i}",
+                "status": "approved",
+                "flagged": False,
+            }
+        )
+    app_structure = {
+        "deliver_app": {
+            "modules": [
+                {
+                    "forms": [
+                        {
+                            "questions": [
+                                {"value": "/data/birth_weight", "type": "Decimal", "options": []},
+                                {
+                                    "value": "/data/danger_sign",
+                                    "type": "Select",
+                                    "options": [{"value": "no"}, {"value": "yes"}],
+                                },
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+    }
+    manifest = Manifest.from_yaml(
+        profile(
+            opportunity_id=874,
+            user_visits=visits,
+            user_data=[],
+            opportunity_detail={"name": "KMC X"},
+            app_structure=app_structure,
+            curate=True,
+        )
+    )
+    assert manifest.anomalies, "curated manifest should carry seeded anomalies"
+    schema = parse_form_schema_from_app_json(app_structure, app_type="deliver")
+    out = generate(manifest=manifest, opportunity_detail={"name": "KMC X"}, form_schema=schema)
+
+    gen = out["user_visits"]
+    assert any(v["flagged"] for v in gen), "seeded outlier/dedup anomalies should flag at least one visit"
+
+    by_entity: dict[str, int] = {}
+    for v in gen:
+        by_entity[v["entity_id"]] = by_entity.get(v["entity_id"], 0) + 1
+    assert any(c >= 2 for c in by_entity.values()), "the seeded duplicate_submission should yield a shared-entity pair"
 
 
 def test_generate_threads_app_structure_and_hour_distribution():

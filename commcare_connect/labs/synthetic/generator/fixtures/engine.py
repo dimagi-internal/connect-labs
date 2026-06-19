@@ -6,6 +6,7 @@ into the five fixture dicts the labs synthetic system serves.
 
 from __future__ import annotations
 
+import copy
 import datetime as dt
 import math
 import random
@@ -52,6 +53,35 @@ def _anomalies_at(week_index: int, flw_id: str, manifest: Manifest):
 
 def _persona_index(manifest: Manifest):
     return {p.id: p for p in manifest.flw_personas}
+
+
+_DUPLICATE_FLAG_REASON = "Beneficiary already visited this week"
+
+
+def _make_duplicate(visit: dict[str, Any], created_dt: dt.datetime, rng: random.Random) -> dict[str, Any]:
+    """A near-identical resubmission of ``visit`` for the duplicate_submission anomaly.
+
+    Same beneficiary (entity_id), same date, and a deep-copied identical form_json,
+    submitted a few minutes later with a fresh id/xform_id and a dedup flag. The
+    original is left clean; only this copy carries the flag, so a dedup check finds a
+    matched pair rather than two independently-flagged rows.
+    """
+    dup_created = created_dt + dt.timedelta(minutes=rng.randint(2, 25))
+    dup = copy.deepcopy(visit)
+    dup.update(
+        {
+            "id": rng.getrandbits(60),
+            "xform_id": str(uuid.UUID(int=rng.getrandbits(128))),
+            "status": "pending",
+            "flagged": True,
+            "flag_reason": _DUPLICATE_FLAG_REASON,
+            "review_status": "pending",
+            "status_modified_date": (dup_created + dt.timedelta(hours=1)).isoformat(),
+            "review_created_on": (dup_created + dt.timedelta(hours=1, minutes=30)).isoformat(),
+            "date_created": dup_created.isoformat(),
+        }
+    )
+    return dup
 
 
 def _payment_units(detail: dict[str, Any]) -> list[dict[str, Any]]:
@@ -135,6 +165,10 @@ def generate(
     for slot in slots:
         persona = persona_index[slot.flw_id]
         anomalies = _anomalies_at(slot.week_index, slot.flw_id, manifest)
+        # A missing_visits anomaly removes the targeted FLW's visits for this week,
+        # leaving a detectable coverage gap (the visit is simply never emitted).
+        if any(a.type == "missing_visits" for a in anomalies):
+            continue
         correlated_values = copula_sampler.draw() if copula_sampler else None
         form_json = fill_form_json(
             schema=form_schema,
@@ -145,9 +179,12 @@ def generate(
             period=slot.week_index,
             correlated_values=correlated_values,
         )
+        # Only a within-visit anomaly (a seeded field_outlier) flags the genuine
+        # visit. A duplicate_submission flags its injected copy instead (below), so
+        # the original stays clean — mirroring how a real dedup check fires.
         status = decide_visit_status(
             persona=persona,
-            has_anomaly=bool(anomalies),
+            has_anomaly=any(a.type == "field_outlier" for a in anomalies),
             rng=rng,
             flag_reason_distribution=manifest.flag_reason_distribution,
         )
@@ -169,33 +206,38 @@ def generate(
         # `/audit/api/<id>/bulk-data/` rendering path (500s on type mismatch).
         # 60 bits ≈ 1e18, way under bigint max; chance of collision with another
         # synthetic opp is vanishingly small for demo-scale fixture sets.
-        visits.append(
-            {
-                "id": rng.getrandbits(60),
-                "xform_id": str(uuid.UUID(int=rng.getrandbits(128))),
-                "opportunity_id": manifest.opportunity_id,
-                "username": persona.id,
-                "deliver_unit": str(deliver_unit_id) if deliver_unit_id is not None else "",
-                "deliver_unit_id": deliver_unit_id,
-                "entity_id": str(uuid.UUID(int=rng.getrandbits(128))),
-                "entity_name": f"Beneficiary {beneficiary_idx}",
-                "visit_date": slot.visit_date.isoformat(),
-                "status": status.status,
-                "reason": None,
-                "location": location,
-                "flagged": status.flagged,
-                "flag_reason": status.flag_reason,
-                "form_json": form_json,
-                "completed_work": "",
-                "status_modified_date": (created_dt + dt.timedelta(hours=1)).isoformat(),
-                "review_status": status.review_status,
-                "review_created_on": (created_dt + dt.timedelta(hours=1, minutes=30)).isoformat(),
-                "justification": None,
-                "date_created": created_dt.isoformat(),
-                "completed_work_id": None,
-                "images": [],
-            }
-        )
+        visit = {
+            "id": rng.getrandbits(60),
+            "xform_id": str(uuid.UUID(int=rng.getrandbits(128))),
+            "opportunity_id": manifest.opportunity_id,
+            "username": persona.id,
+            "deliver_unit": str(deliver_unit_id) if deliver_unit_id is not None else "",
+            "deliver_unit_id": deliver_unit_id,
+            "entity_id": str(uuid.UUID(int=rng.getrandbits(128))),
+            "entity_name": f"Beneficiary {beneficiary_idx}",
+            "visit_date": slot.visit_date.isoformat(),
+            "status": status.status,
+            "reason": None,
+            "location": location,
+            "flagged": status.flagged,
+            "flag_reason": status.flag_reason,
+            "form_json": form_json,
+            "completed_work": "",
+            "status_modified_date": (created_dt + dt.timedelta(hours=1)).isoformat(),
+            "review_status": status.review_status,
+            "review_created_on": (created_dt + dt.timedelta(hours=1, minutes=30)).isoformat(),
+            "justification": None,
+            "date_created": created_dt.isoformat(),
+            "completed_work_id": None,
+            "images": [],
+        }
+        visits.append(visit)
+
+        # A duplicate_submission anomaly resubmits the same visit minutes later:
+        # same beneficiary, identical form_json, but a new id and a dedup flag — the
+        # signal an audit/QA "already visited" check is meant to catch.
+        if any(a.type == "duplicate_submission" for a in anomalies):
+            visits.append(_make_duplicate(visit, created_dt, rng))
 
     if manifest.image_config:
         assign_visit_images(visits, manifest.image_config, rng)

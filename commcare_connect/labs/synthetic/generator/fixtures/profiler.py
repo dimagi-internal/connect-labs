@@ -299,6 +299,64 @@ def _curate_categorical(values: dict[str, float], target_minority: float) -> dic
     return out
 
 
+# Worst performers carry seeded anomalies most plausibly — order archetypes weakest-first.
+_ARCHETYPE_RANK = {"new_hire": 0, "struggling": 1, "steady": 2, "rockstar": 3}
+
+
+def _seed_anomalies(
+    personas: list[dict[str, Any]],
+    field_distributions: dict[str, dict[str, Any]],
+    *,
+    weeks: int,
+    opp_id: int,
+    jitter: float,
+) -> list[dict[str, Any]]:
+    """Plant a handful of deliberate QA anomalies so audit dashboards and Scout's
+    eval flows have something to find (issue #670 item #10). Only called under
+    ``curate=True``; faithful profiling invents nothing.
+
+    Seeds at least a duplicate_submission and a missing_visits (the coverage/dedup
+    signals), plus field_outliers on a real numeric field when one exists. Carriers
+    skew toward weaker FLWs. A dedicated ``opp_id``-seeded RNG keeps the set
+    deterministic per opp yet distinct opp-to-opp (so cross-opp comparison sees
+    different QA stories), and does NOT disturb the curation RNG stream above.
+    """
+    if not personas:
+        return []
+    rng = random.Random(opp_id * 7919 + 1)
+    ranked = sorted(personas, key=lambda p: _ARCHETYPE_RANK.get(p.get("archetype", ""), 2))
+    carriers = [p["id"] for p in ranked[: max(1, len(ranked) // 2 + 1)]]
+    numeric_paths = sorted(p for p, d in field_distributions.items() if d.get("distribution") == "normal")
+    span = max(1, weeks)
+
+    out: list[dict[str, Any]] = []
+
+    def add(atype: str, **extra: Any) -> None:
+        out.append(
+            {
+                "id": f"seed_{atype}_{len(out) + 1}",
+                "type": atype,
+                "flw_ids": [rng.choice(carriers)],
+                "week": rng.randint(1, span),
+                **extra,
+            }
+        )
+
+    if numeric_paths:
+        add("field_outlier", field_path=rng.choice(numeric_paths))
+    add("duplicate_submission")
+    add("missing_visits")
+
+    # A per-opp number of extra anomalies (0–2), scaled by the opp jitter, so opps
+    # differ in how much QA noise they carry without ever burying the data in it.
+    for _ in range(min(2, int(jitter * rng.uniform(0.4, 1.8)))):
+        if numeric_paths and rng.random() < 0.6:
+            add("field_outlier", field_path=rng.choice(numeric_paths))
+        else:
+            add(rng.choice(["duplicate_submission", "missing_visits"]))
+    return out
+
+
 def _profile_null_rate(visits: list[dict], path: str) -> float:
     """Return the fraction of visits where the field at path is None or ''."""
     present = 0
@@ -554,6 +612,14 @@ def profile(
     if correlation is not None:
         cohort["correlation"] = correlation
 
+    # Seed deliberate QA anomalies (only under curation) so dashboards/evals have
+    # something to find. Faithful profiling leaves this empty.
+    anomalies = (
+        _seed_anomalies(personas, field_dists, weeks=timeline["weeks"], opp_id=opportunity_id, jitter=opp_jitter)
+        if curate
+        else []
+    )
+
     manifest_dict = {
         "opportunity_id": opportunity_id,
         "opportunity_name": opp_name,
@@ -561,7 +627,7 @@ def profile(
         "timeline": timeline,
         "flw_personas": personas,
         "beneficiary_cohorts": [cohort],
-        "anomalies": [],
+        "anomalies": anomalies,
         "kpi_config": kpis,
         "coaching_arcs": [],
         "temporal": temporal,

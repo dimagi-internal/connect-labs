@@ -285,6 +285,150 @@ def test_curate_categorical_injects_minority():
     assert _curate_categorical({"a": 0.6, "b": 0.4}, 0.1) == {"a": 0.6, "b": 0.4}
 
 
+def test_seed_anomalies_targets_real_flws_and_numeric_field():
+    from commcare_connect.labs.synthetic.generator.fixtures.profiler import _seed_anomalies
+
+    personas = [
+        {"id": "flw_001", "archetype": "rockstar"},
+        {"id": "flw_002", "archetype": "struggling"},
+        {"id": "flw_003", "archetype": "new_hire"},
+    ]
+    field_dists = {
+        "form.birth_weight": {"distribution": "normal", "mean": 1800, "stddev": 300, "lo": 1000, "hi": 2500},
+        "form.danger_sign": {"distribution": "categorical", "values": {"no": 0.9, "yes": 0.1}},
+    }
+    out = _seed_anomalies(personas, field_dists, weeks=4, opp_id=874, jitter=1.1)
+    assert out, "curation should seed at least one anomaly"
+
+    ids = {p["id"] for p in personas}
+    for a in out:
+        assert set(a["flw_ids"]) <= ids, "every anomaly must reference a real persona id"
+        assert 1 <= a["week"] <= 4, "seeded week must fall inside the timeline"
+    # field_outliers attach only to a numeric (normal) field, never a categorical.
+    for a in out:
+        if a["type"] == "field_outlier":
+            assert a["field_path"] == "form.birth_weight"
+    # The two newly-wired types are both represented in the seed set.
+    types = {a["type"] for a in out}
+    assert {"duplicate_submission", "missing_visits"} <= types
+    assert len({a["id"] for a in out}) == len(out), "anomaly ids must be unique"
+
+
+def test_seed_anomalies_handles_no_numeric_field():
+    from commcare_connect.labs.synthetic.generator.fixtures.profiler import _seed_anomalies
+
+    personas = [{"id": "flw_001", "archetype": "steady"}]
+    out = _seed_anomalies(
+        personas, {"form.x": {"distribution": "categorical", "values": {"a": 1.0}}}, weeks=2, opp_id=1, jitter=1.0
+    )
+    # No normal field -> no field_outlier, but volume/duplicate signals still seed.
+    assert out
+    assert all(a["type"] != "field_outlier" for a in out)
+
+
+def test_profile_curate_seeds_anomalies_only_when_curating():
+    from commcare_connect.labs.synthetic.generator.fixtures.manifest import Manifest
+
+    visits = []
+    for i in range(60):
+        visits.append(
+            {
+                "username": f"flw_{i % 3}",
+                "visit_date": f"2026-05-{4 + (i % 24):02d}",
+                "form_json": {"form": {"birth_weight": str(1500 + (i % 30) * 10), "danger_sign": "no"}},
+                "entity_id": f"e{i}",
+                "status": "approved",
+                "flagged": False,
+            }
+        )
+    app = {
+        "deliver_app": {
+            "modules": [
+                {
+                    "forms": [
+                        {
+                            "questions": [
+                                {"value": "/data/birth_weight", "type": "Decimal", "options": []},
+                                {
+                                    "value": "/data/danger_sign",
+                                    "type": "Select",
+                                    "options": [{"value": "no"}, {"value": "yes"}],
+                                },
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+    }
+    kwargs = dict(
+        opportunity_id=874, user_visits=visits, user_data=[], opportunity_detail={"name": "X"}, app_structure=app
+    )
+
+    faithful = Manifest.from_yaml(profile(**kwargs, curate=False))
+    curated = Manifest.from_yaml(profile(**kwargs, curate=True))
+
+    assert faithful.anomalies == [], "faithful profiling must not invent anomalies"
+    assert len(curated.anomalies) >= 1, "curation should seed QA anomalies to find"
+    flw_ids = {p.id for p in curated.flw_personas}
+    for a in curated.anomalies:
+        assert set(a.flw_ids) <= flw_ids
+    # A field_outlier must point at a field that actually has a distribution, so the
+    # engine's _outlier path engages (a dangling path would be a silent no-op).
+    dist_paths = set(curated.beneficiary_cohorts[0].field_distributions)
+    for a in curated.anomalies:
+        if a.type == "field_outlier":
+            assert a.field_path in dist_paths
+
+
+def test_profile_curate_anomalies_vary_by_opp():
+    from commcare_connect.labs.synthetic.generator.fixtures.manifest import Manifest
+
+    def _visits():
+        return [
+            {
+                "username": f"flw_{i % 3}",
+                "visit_date": f"2026-05-{4 + (i % 24):02d}",
+                "form_json": {"form": {"birth_weight": str(1500 + (i % 30) * 10)}},
+                "entity_id": f"e{i}",
+                "status": "approved",
+                "flagged": False,
+            }
+            for i in range(60)
+        ]
+
+    app = {
+        "deliver_app": {
+            "modules": [
+                {"forms": [{"questions": [{"value": "/data/birth_weight", "type": "Decimal", "options": []}]}]}
+            ]
+        }
+    }
+    cm1 = Manifest.from_yaml(
+        profile(
+            opportunity_id=874,
+            user_visits=_visits(),
+            user_data=[],
+            opportunity_detail={"name": "X"},
+            app_structure=app,
+            curate=True,
+        )
+    )
+    cm2 = Manifest.from_yaml(
+        profile(
+            opportunity_id=523,
+            user_visits=_visits(),
+            user_data=[],
+            opportunity_detail={"name": "Y"},
+            app_structure=app,
+            curate=True,
+        )
+    )
+    sig1 = sorted((a.type, a.flw_ids[0], a.week) for a in cm1.anomalies)
+    sig2 = sorted((a.type, a.flw_ids[0], a.week) for a in cm2.anomalies)
+    assert sig1 != sig2, "different opps should get distinct seeded anomaly sets"
+
+
 def test_profile_curate_end_to_end_validates_and_adds_signal():
     """profile(curate=True) yields a valid manifest whose flag rates are floored."""
     import yaml as _yaml
