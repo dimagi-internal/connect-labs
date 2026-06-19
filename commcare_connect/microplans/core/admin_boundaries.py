@@ -49,7 +49,7 @@ LEVEL_LABELS = {
 _LEVEL_TO_OVERTURE = {LEVEL_REGION: "region", LEVEL_COUNTY: "county", LEVEL_LOCALITY: "locality"}
 _OVERTURE_TO_LEVEL = {v: k for k, v in _LEVEL_TO_OVERTURE.items()}
 
-DEFAULT_SOURCE_ORDER: tuple[str, ...] = ("labs", "overture")
+DEFAULT_SOURCE_ORDER: tuple[str, ...] = ("labs", "geopode", "grid3", "geoboundaries", "overture")
 
 # Friendly labels for the UI source picker. New sources just add an entry.
 #
@@ -64,7 +64,23 @@ DEFAULT_SOURCE_ORDER: tuple[str, ...] = ("labs", "overture")
 SOURCE_LABELS: dict[str, str] = {
     "labs": "Enriched Boundaries",
     "overture": "Overture",
+    # Individual underlying loaders, selectable on their own (not just merged).
+    "geoboundaries": "geoBoundaries (admin)",
+    "geopode": "GeoPoDe / WHO (wards + pop)",
+    "grid3": "GRID3 (wards)",
 }
+
+
+def _default_boundary_sources():
+    """Enriched (merged) first, then each underlying loader as its own source, then
+    Overture. A specific loader is useful when you want one source, not the blend."""
+    return [
+        LabsAdminBoundarySource(),  # "labs" = Enriched (all sources merged)
+        LabsAdminBoundarySource(db_source="geoboundaries", name="geoboundaries"),
+        LabsAdminBoundarySource(db_source="geopode", name="geopode"),
+        LabsAdminBoundarySource(db_source="grid3", name="grid3"),
+        OvertureBoundarySource(),
+    ]
 
 
 @dataclass(frozen=True)
@@ -280,22 +296,34 @@ class OvertureBoundarySource(BoundarySource):
 
 
 class LabsAdminBoundarySource(BoundarySource):
-    """labs.admin_boundaries (PostGIS) — bespoke per-country, spatial narrowing."""
+    """labs.admin_boundaries (PostGIS) — bespoke per-country, spatial narrowing.
+
+    With ``db_source=None`` this is the merged "Enriched Boundaries" view (every
+    loaded source). Pass a specific ``db_source`` ("geoboundaries"/"geopode"/"grid3")
+    + ``name`` to expose just that underlying loader as its own selectable source."""
 
     name = "labs"
+
+    def __init__(self, db_source: str | None = None, name: str | None = None):
+        self.db_source = db_source
+        if name:
+            self.name = name
 
     def _model(self):
         from commcare_connect.labs.admin_boundaries.models import AdminBoundary
 
         return AdminBoundary
 
+    def _scoped(self, qs):
+        return qs.filter(source=self.db_source) if self.db_source else qs
+
     def covers(self, country3: str, level: int) -> bool:
         a3 = iso.to_alpha3(country3) or country3
-        return self._model().objects.filter(iso_code=a3, admin_level=level).exists()
+        return self._scoped(self._model().objects.filter(iso_code=a3, admin_level=level)).exists()
 
     def list_areas(self, country3, level, *, name_contains=None, parent=None, parent_geom=None, limit=500):
         a3 = iso.to_alpha3(country3) or country3
-        qs = self._model().objects.filter(iso_code=a3, admin_level=level)
+        qs = self._scoped(self._model().objects.filter(iso_code=a3, admin_level=level))
         if name_contains:
             qs = qs.filter(name__icontains=name_contains)
         # Same-source children narrow by the indexed parent_boundary_id (exact, no
@@ -388,7 +416,7 @@ def _geos_from_geojson(geom: dict | None):
 
 class BoundaryResolver:
     def __init__(self, sources=None, country_order: dict[str, tuple[str, ...]] | None = None):
-        srcs = sources if sources is not None else [LabsAdminBoundarySource(), OvertureBoundarySource()]
+        srcs = sources if sources is not None else _default_boundary_sources()
         self._sources = {s.name: s for s in srcs}
         # settings override (per-deployment) layered under any explicit arg.
         configured = dict(getattr(settings, "MICROPLANS_BOUNDARY_SOURCE_ORDER", {}) or {})
