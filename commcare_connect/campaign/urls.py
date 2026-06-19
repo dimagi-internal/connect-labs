@@ -1,6 +1,7 @@
 from django.urls import path
 
 from . import views
+from .api import activities as activities_api
 from .api import bootstrap as bootstrap_api
 from .api import workers as workers_api
 from .auth import oauth_views
@@ -19,5 +20,7 @@ urlpatterns = [
     path("api/kyc/<str:worker_id>/status/", workers_api.kyc_status, name="kyc_status"),
     path("api/kyc/<str:worker_id>/resolve-duplicate/", workers_api.kyc_resolve_dupe, name="kyc_resolve_dupe"),
     path("api/kyc/<str:worker_id>/investigation/", workers_api.kyc_investigation, name="kyc_investigation"),
+    path("api/activities/", activities_api.activity_create, name="activity_create"),
+    path("api/activities/<str:activity_id>/sync/", activities_api.activity_sync, name="activity_sync"),
     path("", views.AppView.as_view(), name="app"),
 ]
