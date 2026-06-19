@@ -12,9 +12,11 @@ import random
 from django.db import transaction
 
 from commcare_connect.campaign.models import (
+    Activity,
     Campaign,
     Donor,
     HouseholdStat,
+    Microplan,
     Region,
     RegionPlan,
     Worker,
@@ -66,6 +68,66 @@ PLAN_VUSED_F = [0.64, 0.57, 0.45, 0.42, 0.26]
 HH_HH = [142000, 98000, 61000, 88000, 97200]
 HH_VIS_F = [0.71, 0.66, 0.58, 0.52, 0.41]
 
+ACTIVITIES = [
+    # (id, name, donor_short, status, start, end, requests, workers, region, target, reached)
+    (
+        "ACT-01",
+        "Fixed-post immunization — Kano metro",
+        "Gavi",
+        "Active",
+        "May 18",
+        "Jun 14",
+        1840,
+        142,
+        "Kano",
+        920000,
+        612000,
+    ),
+    (
+        "ACT-02",
+        "Door-to-door catch-up — Kaduna",
+        "BMGF",
+        "Active",
+        "May 20",
+        "Jun 14",
+        1320,
+        98,
+        "Kaduna",
+        680000,
+        401000,
+    ),
+    (
+        "ACT-03",
+        "Mobile teams — Sokoto rural",
+        "UNICEF",
+        "At risk",
+        "May 22",
+        "Jun 14",
+        760,
+        61,
+        "Sokoto",
+        410000,
+        188000,
+    ),
+    ("ACT-04", "Fixed-post — Bauchi", "Gavi", "Active", "May 18", "Jun 14", 980, 72, "Bauchi", 380000, 152000),
+    ("ACT-05", "IDP camp outreach — Borno", "WHO", "Planned", "Jun 3", "Jun 14", 0, 0, "Borno", 260000, 0),
+    (
+        "ACT-06",
+        "Vitamin A co-delivery — Kano",
+        "UNICEF",
+        "Completed",
+        "May 18",
+        "May 31",
+        1420,
+        120,
+        "Kano",
+        240000,
+        231000,
+    ),
+]
+MP_OWNERS = ["Ngozi Eze", "Amara Okafor", "Ibrahim Sani", "Fatima Bello", "Chidi Okafor"]
+ROLE_MIX = [("vaccinator", 0.40), ("supervisor", 0.10), ("mobilizer", 0.22), ("recorder", 0.16), ("town", 0.12)]
+
 FIRST_F = ["Amara", "Bilkisu", "Chiamaka", "Fatima", "Halima", "Ngozi", "Yetunde", "Zainab"]
 FIRST_M = ["Abubakar", "Chidi", "Emeka", "Ibrahim", "Musa", "Oluwaseun", "Sani", "Tunde"]
 LAST = ["Abubakar", "Adeyemi", "Bello", "Eze", "Garba", "Lawal", "Mohammed", "Okafor", "Sani", "Usman"]
@@ -77,6 +139,121 @@ DUP_KINDS = [
     ("Duplicate phone number", "phone", "phone"),
     ("Matching profile photograph", None, "photo"),
 ]
+
+
+def _split(total, weights):
+    """Distribute an integer total across weights; last bucket takes the remainder."""
+    out, acc = [], 0
+    for w in weights[:-1]:
+        v = round(total * w)
+        out.append(v)
+        acc += v
+    out.append(total - acc)
+    return out
+
+
+def _mp_status(fill, cov, spent, actual_wf):
+    if spent == 0 and actual_wf == 0:
+        return "Planned"
+    if fill < 0.75 or cov < 0.40:
+        return "At risk"
+    if fill < 0.90 or cov < 0.55:
+        return "Behind"
+    return "On track"
+
+
+def _seed_activities(rng, campaign):
+    for aid, name, donor, status, start, end, requests, workers, region, target, reached in ACTIVITIES:
+        Activity.objects.create(
+            campaign=campaign,
+            activity_id=aid,
+            name=name,
+            donor=donor,
+            status=status,
+            start=start,
+            end=end,
+            requests=requests,
+            workers=workers,
+            region=region,
+            target=target,
+            reached=reached,
+            synced=(status == "Completed" or aid == "ACT-01"),
+        )
+
+
+def _seed_microplans(rng, campaign, regions, roles):
+    role_rate = {rid: rate for (rid, _name, rate) in roles}
+    role_name = {rid: nm for (rid, nm, _rate) in roles}
+    elapsed_frac = campaign.days_elapsed / campaign.days_total
+    seq = 100
+    for region in regions:  # Region instances (with .plan, .lgas, .region_id, .name)
+        plan = region.plan
+        lgas = list(region.lgas)
+        wts = [0.7 + rng.random() * 0.7 for _ in lgas]
+        sw = sum(wts)
+        fracs = [w / sw for w in wts]
+
+        # distribute region totals across LGAs (last takes remainder)
+        def dist(total, fracs=fracs):
+            out, acc = [], 0
+            for f in fracs[:-1]:
+                v = round(total * f)
+                out.append(v)
+                acc += v
+            out.append(total - acc)
+            return out
+
+        pw, aw = dist(plan.planned_wf), dist(plan.actual_wf)
+        bud, sp = dist(plan.budget), dist(plan.spent)
+        tgt, rc = dist(plan.target), dist(plan.reached)
+        dz, dzu = dist(plan.vaccine_alloc), dist(plan.vaccine_used)
+        for i, lga in enumerate(lgas):
+            seq += 1
+            planned_wf = pw[i]
+            role_weights = [w for (_rid, w) in ROLE_MIX]
+            role_planned = _split(planned_wf, role_weights)
+            # actual per role scaled by region fill
+            fill_r = (aw[i] / planned_wf) if planned_wf else 0
+            mp_roles = []
+            actual_acc = 0
+            for j, (rid, _w) in enumerate(ROLE_MIX):
+                pl = role_planned[j]
+                ac = round(pl * fill_r) if j < len(ROLE_MIX) - 1 else max(0, aw[i] - actual_acc)
+                actual_acc += ac
+                mp_roles.append(
+                    {"roleId": rid, "role": role_name[rid], "rate": role_rate[rid], "planned": pl, "actual": ac}
+                )
+            goal = 95
+            objective = round(tgt[i] * goal / 100)
+            fill = (aw[i] / planned_wf) if planned_wf else 0
+            cov = (rc[i] / objective) if objective else 0
+            status = _mp_status(fill, cov, sp[i], aw[i])
+            Microplan.objects.create(
+                campaign=campaign,
+                microplan_id=f"MP-{seq}",
+                region_id=region.region_id,
+                region=region.name,
+                lga=lga,
+                settlements=rng.randint(8, 34),
+                wards=rng.randint(3, 11),
+                planned_wf=planned_wf,
+                actual_wf=aw[i],
+                roles=mp_roles,
+                budget=bud[i],
+                spent=sp[i],
+                planned_to_date=round(bud[i] * elapsed_frac),
+                target=tgt[i],
+                objective=objective,
+                goal_pct=goal,
+                reached=rc[i],
+                doses=dz[i],
+                doses_used=dzu[i],
+                cold_boxes=max(2, round(dz[i] / 18000)),
+                vehicles=max(1, round(planned_wf / 60)),
+                status=status,
+                owner=rng.choice(MP_OWNERS),
+                updated=f"Jun {rng.randint(1, 3)}, 2026",
+            )
 
 
 def _gen_workers(rng, roles, regions):
@@ -203,4 +380,7 @@ def seed_campaign(fresh: bool = False) -> Campaign:
     workers = _gen_workers(rng, roles, regions)
     _inject_fraud(rng, workers)
     Worker.objects.bulk_create([Worker(campaign=c, **w) for w in workers])
+    region_objs = list(c.regions.select_related("plan").all())
+    _seed_activities(rng, c)
+    _seed_microplans(rng, c, region_objs, ROLES)
     return c

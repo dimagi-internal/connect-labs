@@ -1959,15 +1959,25 @@
   // boundaryId -> { name, pops: {source -> number} }. `pops` merges the boundary's
   // per-source bag (extra.populations) with its GeoPoDe under-5 (the population field).
   const pickedWardPops = new Map();
+  // NOTE: the key "geopode_u5" is historical; the deployed GeoPoDe (WHO) figure is
+  // TOTAL population, not under-5 — so it's labelled + grouped under Total.
   const POP_SOURCE_LABELS = {
-    geopode_u5: 'GeoPoDe (under-5)',
-    worldpop_u5: 'WorldPop (under-5)',
-    meta_u5: 'Meta (under-5)',
-    worldpop_total: 'WorldPop (total)',
-    meta_total: 'Meta (total)',
-    grid3_v3_total: 'GRID3 v3 (total)',
+    worldpop_u5: 'WorldPop',
+    meta_u5: 'Meta',
+    worldpop_total: 'WorldPop',
+    meta_total: 'Meta',
+    grid3_v3_total: 'GRID3 v3',
+    geopode_u5: 'GeoPoDe',
   };
-  const POP_SOURCE_ORDER = Object.keys(POP_SOURCE_LABELS);
+  // Grouped into Under-5 vs Total for the dropdown.
+  const POP_SOURCE_GROUPS = [
+    { label: 'Under-5', keys: ['worldpop_u5', 'meta_u5'] },
+    {
+      label: 'Total population',
+      keys: ['worldpop_total', 'meta_total', 'grid3_v3_total', 'geopode_u5'],
+    },
+  ];
+  const POP_SOURCE_ORDER = POP_SOURCE_GROUPS.flatMap((g) => g.keys);
 
   function recordWardPopulation(boundaryId, feature) {
     const f = feature || {};
@@ -2002,15 +2012,20 @@
     const btn = $('cfg-pop-suggest');
     if (!sel || !btn) return;
     const avail = availablePopSources();
-    // Rebuild the dropdown options (keep the current pick if still available).
+    // Rebuild the dropdown as Under-5 / Total optgroups (keep the current pick).
     const prev = sel.value;
-    sel.innerHTML =
-      '<option value="">— pick a population source —</option>' +
-      avail
+    const groups = POP_SOURCE_GROUPS.map((g) => {
+      const keys = g.keys.filter((k) => avail.includes(k));
+      if (!keys.length) return '';
+      const opts = keys
         .map((k) => `<option value="${k}">${POP_SOURCE_LABELS[k]}</option>`)
         .join('');
+      return `<optgroup label="${g.label}">${opts}</optgroup>`;
+    }).join('');
+    sel.innerHTML =
+      '<option value="">— pick a population source —</option>' + groups;
     if (avail.includes(prev)) sel.value = prev;
-    else if (avail.includes('geopode_u5')) sel.value = 'geopode_u5';
+    else if (avail.includes('worldpop_u5')) sel.value = 'worldpop_u5'; // prefer a true under-5
     sel.parentElement.style.display = avail.length ? '' : 'none';
 
     const src = sel.value;
@@ -2027,10 +2042,12 @@
       }
     });
     total = Math.round(total);
+    const grp = POP_SOURCE_GROUPS.find((g) => g.keys.includes(src));
+    const qualifier = grp ? ` ${grp.label.toLowerCase()}` : '';
     btn.dataset.pop = String(total);
     btn.textContent = `Use ${total.toLocaleString()} — ${
       POP_SOURCE_LABELS[src]
-    } across ${n} ward${n === 1 ? '' : 's'}`;
+    }${qualifier} across ${n} ward${n === 1 ? '' : 's'}`;
     btn.classList.remove('hidden');
     const inp = $('cfg-population');
     if (inp && !String(inp.value || '').trim()) inp.value = total;
