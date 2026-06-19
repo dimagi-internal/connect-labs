@@ -9,7 +9,7 @@ import httpx
 from django.conf import settings
 
 from commcare_connect.labs.integrations.connect.api_client import LabsRecordAPIClient
-from commcare_connect.labs.synthetic.bundle import read_bundle
+from commcare_connect.labs.synthetic.bundle import make_bundle_store, read_bundle
 from commcare_connect.labs.synthetic.clone_from_prod import (
     generate_opp_from_bundle,
     generate_opps_bulk,
@@ -953,7 +953,11 @@ def synthetic_env_ensure(user, *, env: str, fresh: bool = False) -> dict[str, An
             "source_opportunity_id": {"type": "integer"},
             "out_dir": {
                 "type": "string",
-                "description": "Directory to write <opp_id>/ bundle into.",
+                "description": (
+                    "Where to write the <opp_id>/ bundle: a local directory path, or "
+                    "'gdrive:<folder_id>' (or bare 'gdrive:' to auto-create a run folder) "
+                    "to persist it durably in Google Drive."
+                ),
             },
         },
         "required": ["source_opportunity_id", "out_dir"],
@@ -967,22 +971,31 @@ def synthetic_profile_opp(user, *, source_opportunity_id: int, out_dir: str) -> 
         token = require_connect_token(user)
     except MCPToolError:
         raise MCPToolError("PERMISSION_DENIED", "No Connect token — cannot fetch production data.")
-    bundle = profile_opp_to_bundle(
+    drive = DriveClient() if str(out_dir).startswith("gdrive:") else None
+    store = make_bundle_store(out_dir, drive=drive)
+    handle = profile_opp_to_bundle(
         source_opportunity_id,
         base_url=settings.CONNECT_PRODUCTION_URL,
         oauth_token=token,
-        out_dir=out_dir,
+        store=store,
     )
-    return {"bundle_dir": str(bundle), "source_opportunity_id": source_opportunity_id}
+    resolved = f"gdrive:{store.root_folder_id}" if hasattr(store, "root_folder_id") else str(out_dir)
+    return {
+        "bundle_dir": str(handle),
+        "bundle_root": resolved,
+        "source_opportunity_id": source_opportunity_id,
+    }
 
 
 @register(
     name="synthetic_profile_opps_bulk",
     description=(
         "PHASE 1 (prod-touching). Profile multiple real opportunities into "
-        "self-contained profile bundles on disk. Each opp is profiled independently; "
+        "self-contained profile bundles. Each opp is profiled independently; "
         "failures are logged and skipped so a single bad opp doesn't abort the rest. "
-        "Returns a list of successfully-written bundle paths."
+        "Returns the resolved bundle_root (pass it to synthetic_generate_opps_bulk) "
+        "plus the per-opp bundle handles. Use out_dir='gdrive:' for a durable, "
+        "container-independent run that survives partial failures."
     ),
     input_schema={
         "type": "object",
@@ -994,7 +1007,11 @@ def synthetic_profile_opp(user, *, source_opportunity_id: int, out_dir: str) -> 
             },
             "out_dir": {
                 "type": "string",
-                "description": "Directory to write <opp_id>/ bundles into.",
+                "description": (
+                    "Where to write the bundles: a local directory path, or "
+                    "'gdrive:<folder_id>' (or bare 'gdrive:' to auto-create a run folder) "
+                    "to persist them durably in Google Drive."
+                ),
             },
         },
         "required": ["source_opportunity_ids", "out_dir"],
@@ -1009,15 +1026,18 @@ def synthetic_profile_opps_bulk(user, *, source_opportunity_ids: list[int], out_
         token = require_connect_token(user)
     except MCPToolError:
         raise MCPToolError("PERMISSION_DENIED", "No Connect token — cannot fetch production data.")
-    bundles = profile_opps_bulk(
+    drive = DriveClient() if str(out_dir).startswith("gdrive:") else None
+    resolved, handles = profile_opps_bulk(
         source_opportunity_ids,
         base_url=settings.CONNECT_PRODUCTION_URL,
         oauth_token=token,
-        out_dir=out_dir,
+        bundle_root=out_dir,
+        drive=drive,
     )
     return {
-        "bundle_dirs": [str(b) for b in bundles],
-        "succeeded": len(bundles),
+        "bundle_root": resolved,
+        "bundle_dirs": handles,
+        "succeeded": len(handles),
         "requested": len(source_opportunity_ids),
     }
 
