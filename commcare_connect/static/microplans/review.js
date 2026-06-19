@@ -12,6 +12,9 @@
   // plan's URLs after a fresh Generate plan, without a page reload.
   let PLAN_URL = CFG.plan_url;
   let EDIT_URL = CFG.edit_url;
+  const AREA_TARGETS_URL = CFG.area_targets_url;
+  let AREA_POPS = {}; // {ward: {source: number}} — to seed per-ward visit targets
+  let AREA_TARGETS = {}; // {ward: total_expected_visits} the user has applied
   let CSV_URL = CFG.csv_url;
   const COMPARE_URL = CFG.compare_url;
   let FOOTPRINTS_URL = CFG.footprints_url;
@@ -547,6 +550,9 @@
           props.ward = desc.name || '';
           props.lga = chain.length ? chain[chain.length - 1] : '';
           props.state = chain.length >= 2 ? chain[chain.length - 2] : '';
+          // Per-source populations, so the post-creation per-area visit table can
+          // auto-fill expected-visit targets from a chosen population source.
+          if (desc.populations) props.populations = desc.populations;
         }
         const polys =
           geom.type === 'MultiPolygon'
@@ -659,9 +665,12 @@
   function render(data) {
     if (data && data.revision !== undefined) planRevision = data.revision;
     WAS = data.work_areas || [];
+    if (data && data.area_populations) AREA_POPS = data.area_populations;
+    if (data && data.area_targets) AREA_TARGETS = data.area_targets;
     renderSummary(data.summary || {});
     renderKpis(data.kpis || {});
     renderTable();
+    renderVisitsTable();
     refreshMap();
     setSelState();
     syncPlanTools();
@@ -689,6 +698,7 @@
       'assign-workers-card',
       'bulk-card',
       'filter-card',
+      'visits-card',
     ].forEach((id) => {
       const el = $(id);
       if (el) {
@@ -1916,6 +1926,7 @@
     $('sampling-group-note')?.classList.toggle('hidden', !samp);
     // Post-creation exclusion filters are a coverage concept (grid cells).
     $('filter-card')?.classList.toggle('hidden', samp);
+    $('visits-card')?.classList.toggle('hidden', samp);
     // Show/hide the per-boundary arm pills as we enter/leave two-arm sampling.
     try {
       adminBoundaries?.renderSelected?.();
@@ -1931,6 +1942,11 @@
     'flt-isolation-dist',
   ].forEach((id) => on(id, 'input', previewFilters));
   on('btn-apply-filters', 'click', applyFilters);
+  // Per-ward expected-visit targets: auto-fill from a source, then Apply.
+  on('visits-pop-source', 'change', (e) =>
+    autofillVisitsFromSource(e.target.value),
+  );
+  on('btn-apply-visits', 'click', applyVisitTargets);
   // Clicking the suggestion fills the population field with the picked wards' total,
   // overriding whatever's there (the user asked for this number explicitly).
   on('cfg-pop-suggest', 'click', () => {
@@ -1982,6 +1998,7 @@
         ward: (f.properties && f.properties.ward) || '',
         lga: (f.properties && f.properties.lga) || '',
         state: (f.properties && f.properties.state) || '',
+        populations: (f.properties && f.properties.populations) || null,
       }));
   }
 
@@ -2084,6 +2101,91 @@
     btn.classList.remove('hidden');
     const inp = $('cfg-population');
     if (inp && !String(inp.value || '').trim()) inp.value = total;
+  }
+
+  // ---- Per-ward expected-visit targets (#9/#15) ----------------------------
+  // Distinct source wards in the current (non-excluded) plan, in stable order.
+  function planWards() {
+    const seen = new Map();
+    (WAS || []).forEach((w) => {
+      if (w.status === 'EXCLUDED') return;
+      const p = w.properties || {};
+      const ward = (p.ward || '(area)').trim() || '(area)';
+      if (!seen.has(ward))
+        seen.set(ward, { ward, lga: p.lga || '', state: p.state || '' });
+    });
+    return [...seen.values()];
+  }
+  function renderVisitsTable() {
+    const tb = $('visits-tbody');
+    if (!tb) return;
+    const wards = planWards();
+    // Source dropdown: only sources present across the wards' populations.
+    const sel = $('visits-pop-source');
+    const avail = new Set();
+    wards.forEach((w) =>
+      Object.keys(AREA_POPS[w.ward] || {}).forEach((k) => avail.add(k)),
+    );
+    if (sel) {
+      const prev = sel.value;
+      const groups = POP_SOURCE_GROUPS.map((g) => {
+        const opts = g.keys
+          .filter((k) => avail.has(k))
+          .map((k) => `<option value="${k}">${POP_SOURCE_LABELS[k]}</option>`)
+          .join('');
+        return opts ? `<optgroup label="${g.label}">${opts}</optgroup>` : '';
+      }).join('');
+      sel.innerHTML =
+        '<option value="">— pick a source to auto-fill —</option>' + groups;
+      if ([...sel.options].some((o) => o.value === prev)) sel.value = prev;
+      sel.parentElement.style.display = avail.size ? '' : 'none';
+    }
+    tb.innerHTML = wards
+      .map((w) => {
+        const val =
+          AREA_TARGETS[w.ward] != null ? Math.round(AREA_TARGETS[w.ward]) : '';
+        return `<tr><td class="pr-1 text-gray-500 truncate">${esc(w.state)}</td>
+          <td class="pr-1 text-gray-500 truncate">${esc(w.lga)}</td>
+          <td class="pr-1 text-gray-700 truncate" title="${esc(w.ward)}">${esc(
+            w.ward,
+          )}</td>
+          <td><input type="number" min="0" step="1" class="visits-target base-input text-xs" style="width:6rem"
+                     data-ward="${esc(w.ward)}" value="${val}"></td></tr>`;
+      })
+      .join('');
+  }
+  function autofillVisitsFromSource(src) {
+    if (!src) return;
+    document.querySelectorAll('#visits-tbody .visits-target').forEach((inp) => {
+      const v = (AREA_POPS[inp.dataset.ward] || {})[src];
+      if (v != null) inp.value = Math.round(v);
+    });
+  }
+  async function applyVisitTargets() {
+    if (!AREA_TARGETS_URL) return;
+    const targets = {};
+    document.querySelectorAll('#visits-tbody .visits-target').forEach((inp) => {
+      const v = parseFloat(inp.value);
+      if (!isNaN(v) && v > 0) targets[inp.dataset.ward] = v;
+    });
+    const st = $('visits-status');
+    if (st) st.textContent = 'Saving…';
+    try {
+      const resp = await post(AREA_TARGETS_URL, {
+        targets,
+        revision: planRevision,
+      });
+      const data = await resp.json();
+      if (handleConflict(resp, data, (m) => st && (st.textContent = m))) return;
+      if (!resp.ok || data.status !== 'ok') {
+        if (st) st.textContent = data.detail || 'HTTP ' + resp.status;
+        return;
+      }
+      if (st) st.textContent = 'Expected visits updated.';
+      render(data);
+    } catch (e) {
+      if (st) st.textContent = 'Failed: ' + e;
+    }
   }
 
   // Coverage config: cell size + the two cell-level exclusion filters + an optional

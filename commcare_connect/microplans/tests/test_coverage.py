@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from commcare_connect.microplans.core.plan import materialize_work_areas
+from commcare_connect.microplans.core.plan import materialize_work_areas, recompute_area_visits
 from commcare_connect.microplans.core.workarea import (
     CSV_HEADERS,
     build_coverage_work_areas,
@@ -224,6 +224,40 @@ class TestCoveragePerArea:
         )
         res = generate_coverage_frame(_AREA, CoverageConfig(cell_size_m=150))  # no ward/lga/state
         assert all(f["properties"]["ward"] == "area_1" for f in res.areas_geojson["features"])
+
+
+class TestRecomputeAreaVisits:
+    """Per-area expected-visit spread (#9): EVC = ceil(wa_buildings × target ÷ area
+    RETAINED buildings), per area, recomputed against the non-excluded set."""
+
+    def _wa(self, wid, ward, blds, status="UNASSIGNED"):
+        return {"id": wid, "building_count": blds, "status": status, "properties": {"ward": ward}}
+
+    def test_per_area_spread_and_round_up(self):
+        was = [
+            self._wa("a1", "Dabi", 10),
+            self._wa("a2", "Dabi", 3),
+            self._wa("b1", "Madobi", 20),
+        ]
+        recompute_area_visits(was, {"Dabi": 100, "Madobi": 50})
+        # Dabi: rate 100/13 = 7.69 → 10*=76.9→77, 3*=23.1→24 ; Madobi: 50/20=2.5 → 20*=50
+        assert was[0]["expected_visit_count"] == 77
+        assert was[1]["expected_visit_count"] == 24
+        assert was[2]["expected_visit_count"] == 50
+
+    def test_excluded_dropped_from_denominator(self):
+        was = [
+            self._wa("a1", "Dabi", 10),
+            self._wa("a2", "Dabi", 10, status="EXCLUDED"),
+        ]
+        recompute_area_visits(was, {"Dabi": 100})
+        # retained = 10 (the excluded cell's 10 don't count) → rate 10 → 10*10 = 100
+        assert was[0]["expected_visit_count"] == 100
+
+    def test_min_one_visit(self):
+        was = [self._wa("a1", "Dabi", 1)]
+        recompute_area_visits(was, {"Dabi": 0.4})  # rate <1 → ceil to 1
+        assert was[0]["expected_visit_count"] == 1
 
 
 class TestCoverageWorkAreaMetrics:

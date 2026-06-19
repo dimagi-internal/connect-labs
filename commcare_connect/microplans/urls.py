@@ -82,6 +82,11 @@ urlpatterns = [
         name="program_plan_edit",
     ),
     path(
+        "program/<int:program_id>/plan/<int:plan_id>/area_targets/",
+        views.ProgramPlanAreaTargetsView.as_view(),
+        name="program_plan_area_targets",
+    ),
+    path(
         "program/<int:program_id>/plan/<int:plan_id>/work_areas.csv",
         views.ProgramPlanCSVView.as_view(),
         name="program_plan_csv",
