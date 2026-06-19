@@ -1,0 +1,20 @@
+# Synthetic clone cohort: the 11 production KMC opportunities -> one labs-only
+# "KMC (Synthetic)" program.
+#
+# This is a CLONE cohort spec (distinct from the synthetic_env_ensure templates in
+# ../envs/, which seed workflows into opps that already exist). It is consumed by the
+# two-phase clone via the connect_labs MCP tools:
+#
+#   1. synthetic_clone_profile(spec_yaml = <this file's contents>)
+#        Phase 1 (reads the real opps server-side, writes aggregate bundles to GDrive).
+#        Returns the spec with bundle_root resolved to gdrive:<folder_id>.
+#   2. synthetic_clone_generate(spec_yaml = <the returned spec>)
+#        Phase 2 (offline) — builds the labs-only opps, each with a NEW id (>= 10000)
+#        stamped cloned_from = <source id>; never reuses source ids.
+#
+# program_id is omitted -> auto-allocated on first generate. bundle_root "gdrive:" ->
+# Phase 1 creates a Drive run folder and resolves it. (See docs/synthetic-kmc-clone-runbook.md)
+program_name: 'KMC (Synthetic)'
+org_name: 'Dimagi-KMC (Synthetic)'
+bundle_root: 'gdrive:'
+opportunity_ids: [523, 524, 675, 874, 938, 1234, 1236, 1487, 1488, 1739, 1790]
