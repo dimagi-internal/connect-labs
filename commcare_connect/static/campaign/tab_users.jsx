@@ -1,91 +1,6 @@
 // tab_users.jsx — System Administration › User Management (RBAC)
 const { useState: useStateU } = React;
 
-const SEED_USERS = [
-  {
-    id: 'U1',
-    name: 'Amara Okafor',
-    email: 'amara.okafor@dimagi.com',
-    role: 'admin',
-    scope: 'All regions',
-    status: 'active',
-    last: 'Just now',
-    you: true,
-  },
-  {
-    id: 'U2',
-    name: 'Tunde Balogun',
-    email: 'tunde.balogun@dimagi.com',
-    role: 'payment',
-    scope: 'Kano, Kaduna',
-    status: 'active',
-    last: '12 min ago',
-  },
-  {
-    id: 'U3',
-    name: 'Ngozi Eze',
-    email: 'ngozi.eze@partner.org',
-    role: 'compliance',
-    scope: 'All regions',
-    status: 'active',
-    last: '1 hr ago',
-  },
-  {
-    id: 'U4',
-    name: 'Fatima Bello',
-    email: 'fatima.bello@moh.gov.ng',
-    role: 'operations',
-    scope: 'All regions',
-    status: 'active',
-    last: 'Yesterday',
-  },
-  {
-    id: 'U5',
-    name: 'David Mensah',
-    email: 'david.mensah@dimagi.com',
-    role: 'payment',
-    scope: 'Sokoto, Bauchi',
-    status: 'active',
-    last: '3 hr ago',
-  },
-  {
-    id: 'U6',
-    name: 'Aisha Lawal',
-    email: 'aisha.lawal@partner.org',
-    role: 'compliance',
-    scope: 'Borno',
-    status: 'pending',
-    last: '—',
-  },
-  {
-    id: 'U7',
-    name: 'Grace Adeyemi',
-    email: 'grace.adeyemi@donor.org',
-    role: 'reporting',
-    scope: 'All regions',
-    status: 'active',
-    last: '2 days ago',
-  },
-  {
-    id: 'U8',
-    name: 'Samuel Okoro',
-    email: 'samuel.okoro@dimagi.com',
-    role: 'operations',
-    scope: 'Kano',
-    status: 'inactive',
-    last: '3 weeks ago',
-  },
-  {
-    id: 'U9',
-    name: 'Joseph Idoko',
-    email: 'joseph.idoko@partner.org',
-    role: 'reporting',
-    scope: 'All regions',
-    status: 'deactivated',
-    last: '2 months ago',
-  },
-];
-
 const AUDIT_LOG = [
   {
     at: 'Jun 3, 2026 · 09:41',
@@ -164,7 +79,6 @@ function UserManagement({ density, role }) {
   );
   const statusTone = {
     active: 'success',
-    pending: 'warning',
     inactive: 'neutral',
     deactivated: 'danger',
   };
@@ -223,11 +137,11 @@ function UserManagement({ density, role }) {
           sub={users.filter((u) => u.status === 'active').length + ' active'}
         />
         <Stat
-          label="Pending activation"
-          value={users.filter((u) => u.status === 'pending').length}
-          icon="envelope"
-          delta="Invited"
-          deltaTone="warning"
+          label="Inactive"
+          value={users.filter((u) => u.status === 'inactive').length}
+          icon="user-clock"
+          delta="No recent login"
+          deltaTone="neutral"
         />
         <Stat
           label="Administrators"
@@ -325,7 +239,7 @@ function UserManagement({ density, role }) {
               }}
             >
               <option value="all">All statuses</option>
-              {['active', 'pending', 'deactivated'].map((s) => (
+              {['active', 'inactive', 'deactivated'].map((s) => (
                 <option key={s} value={s}>
                   {s[0].toUpperCase() + s.slice(1)}
                 </option>
@@ -420,7 +334,7 @@ function UserManagement({ density, role }) {
                   <Cell>
                     <Badge
                       tone={statusTone[u.status]}
-                      dot={u.status === 'active' || u.status === 'pending'}
+                      dot={u.status === 'active'}
                     >
                       {u.status[0].toUpperCase() + u.status.slice(1)}
                     </Badge>

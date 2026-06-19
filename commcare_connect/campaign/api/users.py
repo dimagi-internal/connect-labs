@@ -27,16 +27,22 @@ def user_invite(request):
     key = roles.to_key(short)
     if not email or "@" not in email or key is None:
         return JsonResponse({"error": "valid email and role required"}, status=400)
-    cu, _ = CampaignUser.objects.get_or_create(
+    name = (d.get("name") or "").strip()
+    scope = d.get("scope") or "All regions"
+    cu, created = CampaignUser.objects.get_or_create(
         commcare_username=email,
-        defaults={
-            "email": email,
-            "name": (d.get("name") or "").strip(),
-            "role": key,
-            "scope": d.get("scope") or "All regions",
-            "status": "active",
-        },
+        defaults={"email": email, "name": name, "role": key, "scope": scope, "status": "active"},
     )
+    if not created:
+        # Re-inviting an existing user re-roles and reactivates them (idempotent
+        # upsert) rather than silently no-op'ing. Name is only overwritten when a
+        # non-empty one is supplied so a bare re-invite can't wipe it.
+        cu.role = key
+        cu.scope = scope
+        cu.status = "active"
+        if name:
+            cu.name = name
+        cu.save(update_fields=["role", "scope", "status", "name"])
     return JsonResponse({"user": _ser(cu, request)})
 
 
