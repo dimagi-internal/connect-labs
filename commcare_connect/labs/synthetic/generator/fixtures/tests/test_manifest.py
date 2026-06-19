@@ -2,7 +2,12 @@ import datetime as dt
 
 import pytest
 
-from commcare_connect.labs.synthetic.generator.fixtures.manifest import Manifest, ManifestValidationError
+from commcare_connect.labs.synthetic.generator.fixtures.manifest import (
+    CategoricalDistribution,
+    Manifest,
+    ManifestValidationError,
+    NormalDistribution,
+)
 
 VALID_MANIFEST_YAML = """
 opportunity_id: 1237
@@ -168,3 +173,19 @@ tasks:
     )
     with pytest.raises(ManifestValidationError):
         Manifest.from_yaml(yaml_str)
+
+
+def test_categorical_distribution_normalizes_and_validates():
+    d = CategoricalDistribution(distribution="categorical", values={"male": 0.7, "female": 0.3})
+    assert d.values["male"] == 0.7
+    assert d.null_rate == 0.0
+
+
+def test_categorical_rejects_negative_rate():
+    with pytest.raises(Exception):
+        CategoricalDistribution(distribution="categorical", values={"x": -0.1})
+
+
+def test_null_rate_on_normal_distribution():
+    d = NormalDistribution(mean=1.0, stddev=0.5, null_rate=0.2)
+    assert d.null_rate == 0.2

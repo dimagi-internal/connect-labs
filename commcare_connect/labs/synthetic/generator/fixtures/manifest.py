@@ -27,6 +27,7 @@ class NormalDistribution(BaseModel):
     mean: float
     stddev: float = Field(ge=0)
     transform: str | None = None
+    null_rate: float = Field(ge=0, le=1, default=0.0)
 
 
 class UniformDistribution(BaseModel):
@@ -34,6 +35,7 @@ class UniformDistribution(BaseModel):
     low: float
     high: float
     transform: str | None = None
+    null_rate: float = Field(ge=0, le=1, default=0.0)
 
     @model_validator(mode="after")
     def _check_bounds(self):
@@ -51,6 +53,7 @@ class BinaryDistribution(BaseModel):
     rate: float = Field(ge=0, le=1)
     period_rates: dict[int, float] = Field(default_factory=dict)
     transform: str | None = None
+    null_rate: float = Field(ge=0, le=1, default=0.0)
 
     @model_validator(mode="after")
     def _check_period_rates(self):
@@ -65,8 +68,29 @@ class BinaryDistribution(BaseModel):
         return self.period_rates.get(period, self.rate)
 
 
+class CategoricalDistribution(BaseModel):
+    """Draw a category by observed frequency. ``values`` maps category -> rate;
+    rates need not sum to exactly 1 (they are normalized at draw time)."""
+
+    distribution: Literal["categorical"]
+    values: dict[str, float]
+    transform: str | None = None
+    null_rate: float = Field(ge=0, le=1, default=0.0)
+
+    @model_validator(mode="after")
+    def _check_values(self):
+        if not self.values:
+            raise ValueError("categorical distribution needs at least one value")
+        for k, v in self.values.items():
+            if v < 0:
+                raise ValueError(f"categorical rate for {k!r} must be >= 0, got {v}")
+        if sum(self.values.values()) <= 0:
+            raise ValueError("categorical rates must sum to > 0")
+        return self
+
+
 FieldDistribution = Annotated[
-    NormalDistribution | UniformDistribution | BinaryDistribution,
+    NormalDistribution | UniformDistribution | BinaryDistribution | CategoricalDistribution,
     Field(discriminator="distribution"),
 ]
 
