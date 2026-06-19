@@ -38,9 +38,19 @@ def _apply_transform(raw: float, transform: str | None, rng: random.Random) -> A
     return raw
 
 
+def _clamp_normal(raw: float, distribution: NormalDistribution) -> float:
+    """Clamp a draw to the distribution's observed [lo, hi] bounds (if set), so an
+    unbounded Normal can't emit impossible values (negative ages, bad vitals)."""
+    if distribution.lo is not None and raw < distribution.lo:
+        return distribution.lo
+    if distribution.hi is not None and raw > distribution.hi:
+        return distribution.hi
+    return raw
+
+
 def _draw(distribution, rng: random.Random, period: int | None = None) -> float:
     if isinstance(distribution, NormalDistribution):
-        return rng.gauss(distribution.mean, distribution.stddev)
+        return _clamp_normal(rng.gauss(distribution.mean, distribution.stddev), distribution)
     if isinstance(distribution, UniformDistribution):
         return rng.uniform(distribution.low, distribution.high)
     if isinstance(distribution, BinaryDistribution):
@@ -52,7 +62,12 @@ def _outlier(distribution, rng: random.Random) -> float:
     if isinstance(distribution, NormalDistribution):
         # Always at least 4 sigma off the mean, randomly above or below.
         sign = rng.choice([-1, 1])
-        return distribution.mean + sign * (4 + rng.random()) * max(distribution.stddev, 0.01)
+        val = distribution.mean + sign * (4 + rng.random()) * max(distribution.stddev, 0.01)
+        # A seeded outlier may exceed the normal range, but must not flip sign on a
+        # field whose observed minimum is non-negative (no negative-age "outliers").
+        if distribution.lo is not None and distribution.lo >= 0:
+            val = max(val, 0.0)
+        return val
     if isinstance(distribution, UniformDistribution):
         return distribution.low - 1 if rng.random() < 0.5 else distribution.high + 1
     if isinstance(distribution, BinaryDistribution):
@@ -121,18 +136,93 @@ def _resolve_dist(
     return None, None
 
 
+# Small fabrication pools for text fields the profiler can't distribution (names,
+# phones, places). Deterministic given the visit rng. No PII — invented values.
+# Location-ish pools are intentionally small so a group-by on a real categorical
+# dimension (country/village) yields a handful of groups, not 300 unique stubs.
+_FIRST_NAMES = (
+    "Amina Grace John Mary Joseph Fatima Peter Esther David Ruth Samuel Aisha "
+    "Daniel Sarah Ibrahim Janet Emmanuel Hawa Moses Halima"
+).split()
+_LAST_NAMES = (
+    "Okeke Mwangi Abubakar Otieno Bello Achieng Musa Wanjiru Adeyemi Kamau Sani " "Njoroge Yusuf Auma Okafor"
+).split()
+_VILLAGES = (
+    "Kibera Mathare Kawangware Makoko Ajegunle Bwaise Katwe Mukuru Korogocho " "Dandora Githurai Kasarani"
+).split()
+_COUNTRIES = "Kenya Nigeria Uganda Tanzania Ghana Ethiopia".split()
+_GENERIC_TEXT = ["none", "n/a", "ok", "completed", "not recorded", "see notes"]
+
+
+def _fake_date(rng: random.Random) -> str:
+    return f"2026-{rng.randint(1, 6):02d}-{rng.randint(1, 28):02d}"
+
+
+def _fabricate_text(leaf: str, rng: random.Random) -> str:
+    """A plausible (invented, non-PII) value for a text field, keyed off its leaf.
+
+    Replaces the old ``sample-NNN`` stub so categorical group-bys and joins land on
+    realistic-looking values instead of obvious placeholders.
+    """
+    low = leaf.lower()
+    if any(k in low for k in ("phone", "mobile", "msisdn", "contact_number")):
+        return "0" + "".join(str(rng.randint(0, 9)) for _ in range(9))
+    if "name" in low:
+        return f"{rng.choice(_FIRST_NAMES)} {rng.choice(_LAST_NAMES)}"
+    if "country" in low:
+        return rng.choice(_COUNTRIES)
+    if any(
+        k in low
+        for k in (
+            "village",
+            "ward",
+            "district",
+            "county",
+            "settlement",
+            "community",
+            "location",
+            "address",
+            "region",
+            "state",
+            "province",
+            "area",
+        )
+    ):
+        return rng.choice(_VILLAGES)
+    if "email" in low:
+        return f"{rng.choice(_FIRST_NAMES).lower()}{rng.randint(1, 999)}@example.com"
+    if any(k in low for k in ("gps", "geopoint", "geo_point", "coord")):
+        lat, lon = round(rng.uniform(-4, 14), 6), round(rng.uniform(2, 42), 6)
+        alt, acc = round(rng.uniform(400, 600), 1), round(rng.uniform(3, 12), 1)
+        return f"{lat} {lon} {alt} {acc}"
+    if (
+        low == "id"
+        or low.endswith("_id")
+        or any(k in low for k in ("uuid", "instanceid", "case_id", "barcode", "serial"))
+    ):
+        return "".join(rng.choice("0123456789abcdef") for _ in range(12))
+    if "time" in low:
+        return f"{rng.randint(0, 23):02d}:{rng.randint(0, 59):02d}"
+    if "date" in low or low.endswith("dob"):
+        return _fake_date(rng)
+    return rng.choice(_GENERIC_TEXT)
+
+
 def _default_for_kind(spec: QuestionSpec, rng: random.Random) -> Any:
-    if spec.kind in {"select", "multiselect"} and spec.choices:
-        return rng.choice(spec.choices)
+    if spec.kind in {"select", "multiselect"}:
+        # Draw a real option when the schema lists choices; otherwise a neutral
+        # yes/no rather than a stub (the profiler gives most selects a real
+        # categorical distribution, so this only covers all-null selects).
+        return rng.choice(spec.choices) if spec.choices else rng.choice(["yes", "no"])
     if spec.kind == "int":
         return rng.randint(0, 10)
     if spec.kind == "decimal":
         return round(rng.uniform(0, 10), 2)
     if spec.kind == "date":
-        return "2026-01-01"
+        return _fake_date(rng)
     if spec.kind == "image":
         return ""  # synthetic visits do not produce real images
-    return f"sample-{rng.randint(0, 999)}"
+    return _fabricate_text(spec.json_path.rsplit(".", 1)[-1], rng)
 
 
 def _set_nested(obj: dict, dotted_path: str, value: Any) -> None:

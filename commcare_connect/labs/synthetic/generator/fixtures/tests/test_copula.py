@@ -45,3 +45,14 @@ def test_copula_categorical_margin_frequencies():
 
 def test_build_returns_none_without_correlation():
     assert build_copula_sampler(None, {}, seed=1) is None
+
+
+def test_numeric_margin_clamps_to_bounds():
+    """The copula margin clamps to [lo, hi] like the independent draw path."""
+    from commcare_connect.labs.synthetic.generator.fixtures.copula import NumericMargin
+
+    m = NumericMargin(mean=13.5, stddev=12.9, lo=0.0, hi=60.0)
+    # u near 0 -> very negative z -> would be negative without clamping.
+    assert m.value_from_uniform(1e-6) == 0.0
+    assert m.value_from_uniform(1 - 1e-6) == 60.0
+    assert 0.0 <= m.value_from_uniform(0.5) <= 60.0

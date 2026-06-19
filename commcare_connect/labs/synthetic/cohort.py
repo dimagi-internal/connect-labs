@@ -30,6 +30,10 @@ class CohortSpec:
     org_name: str = "Synthetic"
     program_id: int | None = None
     bundle_root: str = "gdrive:"
+    # When True, Phase 1 profiling curates for analytics signal (floors flag rates +
+    # degenerate clinical categoricals, per-opp varied) instead of reproducing the
+    # real opps' degeneracy. Numeric bounds + text fabrication apply regardless.
+    curate: bool = False
 
     @classmethod
     def from_dict(cls, data: dict) -> CohortSpec:
@@ -43,6 +47,7 @@ class CohortSpec:
             org_name=str(data.get("org_name", "Synthetic")),
             program_id=int(data["program_id"]) if data.get("program_id") is not None else None,
             bundle_root=str(data.get("bundle_root", "gdrive:")),
+            curate=bool(data.get("curate", False)),
         )
 
     @classmethod
@@ -61,6 +66,7 @@ class CohortSpec:
                 "program_name": self.program_name,
                 "org_name": self.org_name,
                 "bundle_root": self.bundle_root,
+                "curate": self.curate,
                 "opportunity_ids": self.opportunity_ids,
             },
             sort_keys=False,

@@ -357,3 +357,71 @@ def test_fill_form_json_anomaly_on_binary_field_does_not_raise():
     # Success (1) is the majority for rate=0.9, so the outlier is the rare
     # failure (0). The "int" question kind rounds the 0.0 draw to int 0.
     assert out["form"]["vitamin_a_given"] == 0
+
+
+def test_normal_draw_is_clamped_to_bounds():
+    """A bounded Normal never emits values outside [lo, hi] — kills negative ages."""
+    from commcare_connect.labs.synthetic.generator.fixtures.fields import _draw
+
+    # child_age-like: mean 13.5, big stddev that would otherwise go negative.
+    dist = NormalDistribution(mean=13.5, stddev=12.9, lo=0.0, hi=60.0)
+    rng = random.Random(1)
+    draws = [_draw(dist, rng) for _ in range(2000)]
+    assert min(draws) >= 0.0
+    assert max(draws) <= 60.0
+    # Without clamping this distribution produces negatives ~15% of the time.
+    assert any(d == 0.0 for d in draws)
+
+
+def test_outlier_never_flips_sign_on_nonnegative_field():
+    """A seeded outlier on a non-negative field stays >= 0 (no negative-age outliers)."""
+    dist = NormalDistribution(mean=2.0, stddev=3.0, lo=0.0, hi=20.0)
+    rng = random.Random(3)
+    assert all(_outlier(dist, rng) >= 0.0 for _ in range(500))
+
+
+def test_unbounded_normal_still_works():
+    """Distributions without lo/hi are unchanged (back-compat)."""
+    from commcare_connect.labs.synthetic.generator.fixtures.fields import _draw
+
+    dist = NormalDistribution(mean=100.0, stddev=1.0)
+    rng = random.Random(5)
+    vals = [_draw(dist, rng) for _ in range(100)]
+    assert 90 < sum(vals) / len(vals) < 110
+
+
+def test_text_fields_are_fabricated_not_stubbed():
+    """Text fields with no distribution get plausible values, never 'sample-N'."""
+    from commcare_connect.labs.synthetic.generator.fixtures.fields import _COUNTRIES, _fabricate_text
+
+    rng = random.Random(11)
+    schema = FormSchema(
+        questions=[
+            QuestionSpec("form.mother_name", "text"),
+            QuestionSpec("form.location.country", "text"),
+            QuestionSpec("form.location.village", "text"),
+            QuestionSpec("form.phone_number", "text"),
+            QuestionSpec("form.notes", "text"),
+            QuestionSpec("form.kind_select", "select"),  # no choices
+        ]
+    )
+    cohort = BeneficiaryCohort(id="primary", size=10, field_distributions={}, progression="flat")
+    out = fill_form_json(schema=schema, cohort=cohort, anomalies_for_visit=[], rng=rng)
+
+    def flat(d, p=""):
+        for k, v in d.items():
+            np = f"{p}.{k}" if p else k
+            if isinstance(v, dict):
+                yield from flat(v, np)
+            else:
+                yield np, v
+
+    vals = dict(flat(out))
+    assert not any(str(v).startswith("sample-") for v in vals.values())
+    assert vals["form.location.country"] in _COUNTRIES
+    assert " " in vals["form.mother_name"]  # first + last
+    assert vals["form.kind_select"] in {"yes", "no"}
+
+    # leaf heuristics
+    assert _fabricate_text("mothers_phone_number", random.Random(1)).isdigit()
+    assert _fabricate_text("country", random.Random(1)) in _COUNTRIES

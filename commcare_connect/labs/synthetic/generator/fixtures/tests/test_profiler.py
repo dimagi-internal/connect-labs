@@ -243,3 +243,93 @@ def test_profile_emits_full_manifest(monkeypatch):
     assert m.temporal is not None
     assert m.beneficiary_cohorts[0].correlation is not None
     assert "form.sex" in m.beneficiary_cohorts[0].field_distributions
+
+
+def test_profile_field_distributions_captures_bounds():
+    """Numeric distributions carry observed robust bounds (p1/p99) for clamping."""
+    from commcare_connect.labs.synthetic.generator.fixtures.profiler import _profile_field_distributions
+
+    visits = [{"form_json": {"form": {"age": float(v)}}} for v in range(0, 60)]
+    dists = _profile_field_distributions(visits, ["form.age"])
+    d = dists["form.age"]
+    assert d["distribution"] == "normal"
+    assert "lo" in d and "hi" in d
+    assert d["lo"] >= 0.0  # never below the real observed floor -> no negatives
+    assert d["lo"] <= d["hi"] <= 59.0
+
+
+def test_curate_flag_floor_gives_status_signal():
+    """curate=True floors flag rates so all-approved opps get a status mix."""
+    from commcare_connect.labs.synthetic.generator.fixtures.profiler import _profile_flw_personas
+
+    # An FLW with 50 perfectly-approved visits -> real flag_rate 0.
+    visits_by_flw = {"a": [{"status": "approved", "flagged": False}] * 50}
+    faithful = _profile_flw_personas(visits_by_flw)
+    curated = _profile_flw_personas(visits_by_flw, curate=True, opp_jitter=1.0)
+    assert faithful[0]["flag_rate"] == 0.0
+    assert curated[0]["flag_rate"] > 0.0  # floored -> approval_rate now has variance
+
+
+def test_curate_categorical_injects_minority():
+    from commcare_connect.labs.synthetic.generator.fixtures.profiler import _curate_categorical
+
+    # Degenerate binary 'no' -> gets an affirmative minority.
+    out = _curate_categorical({"no": 1.0}, 0.1)
+    assert out["no"] == 0.9 and out["yes"] == 0.1
+    # Near-degenerate multi-value -> rebalanced to give the minority mass.
+    out2 = _curate_categorical({"yes": 0.98, "no": 0.02}, 0.1)
+    assert out2["yes"] == 0.9 and 0.05 < out2["no"] <= 0.1
+    # Single non-binary value -> left alone (don't invent a category).
+    assert _curate_categorical({"ok": 1.0}, 0.1) == {"ok": 1.0}
+    # Already has signal -> unchanged.
+    assert _curate_categorical({"a": 0.6, "b": 0.4}, 0.1) == {"a": 0.6, "b": 0.4}
+
+
+def test_profile_curate_end_to_end_validates_and_adds_signal():
+    """profile(curate=True) yields a valid manifest whose flag rates are floored."""
+    import yaml as _yaml
+
+    from commcare_connect.labs.synthetic.generator.fixtures.manifest import Manifest
+
+    visits = []
+    for i in range(40):
+        visits.append(
+            {
+                "username": f"flw_{i % 3}",
+                "visit_date": f"2026-05-{4 + (i % 20):02d}",
+                "form_json": {"form": {"weight": str(1500 + i * 5), "danger_sign": "no"}},
+                "entity_id": f"e{i}",
+                "status": "approved",
+                "flagged": False,
+            }
+        )
+    app = {
+        "deliver_app": {
+            "modules": [
+                {
+                    "forms": [
+                        {
+                            "questions": [
+                                {
+                                    "json_path": "form.danger_sign",
+                                    "type": "select",
+                                    "options": [{"value": "no"}, {"value": "yes"}],
+                                },
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+    }
+    ml = profile(
+        opportunity_id=874,
+        user_visits=visits,
+        user_data=[],
+        opportunity_detail={"name": "X"},
+        app_structure=app,
+        curate=True,
+    )
+    Manifest.from_yaml(ml)  # must validate
+    data = _yaml.safe_load(ml)
+    assert any(p["flag_rate"] > 0 for p in data["flw_personas"])  # status signal injected
