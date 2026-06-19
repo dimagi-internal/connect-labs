@@ -143,17 +143,15 @@ Primary: MCP tools `synthetic_clone_from_prod`, `synthetic_clone_from_prod_bulk`
 
 ---
 
-## 6. Phasing / decomposition
+## 6. Phasing (one combined plan)
 
-Two cleanly separable sub-projects with a clear interface (the upgraded generator + manifest):
+**Decision: one combined plan** covering Part A then Part B, sequenced internally so the
+fidelity work lands and is proven before the clone layer consumes it:
 
-- **Plan 1 — generator fidelity upgrade (Part A).** Self-contained, valuable independent of
-  the 11 opps; ships profiler + manifest + copula + generation + fidelity report, tested
-  against a real opp profile. This is the substance.
-- **Plan 2 — clone orchestration (Part B).** Thin once Plan 1 lands; app_structure capture +
-  shared helper + `cloned_from` + service + MCP + run the 11.
+1. Part A — profiler + manifest + **copula (numeric + ordinal-encoded categorical)** + generation + fidelity report; proven against a real opp profile via the fidelity report.
+2. Part B — app_structure capture + shared `register_labs_only_opp` helper + `cloned_from` + clone service + MCP tools + run the 11 under one program.
 
-Recommended order: Plan 1 first (with the fidelity report proving it), then Plan 2.
+Internal interface between the two halves: the upgraded generator + manifest.
 
 ## 7. Idempotency, cross-cutting, testing
 
@@ -191,12 +189,12 @@ Recommended order: Plan 1 first (with the fidelity report proving it), then Plan
 | `labs/management/commands/clone_prod_opps_to_labs_only.py` | **NEW** (optional) |
 | tests | as in §7 |
 
-## 9. Open decisions (confirm at review)
+## 9. Decisions
 
-1. **Split into Plan 1 (fidelity upgrade) + Plan 2 (clone), or one plan?** (Recommend split; build the fidelity upgrade first and prove it with the report.)
-2. **Correlation scope** — copula over numeric + ordinal-encoded categoricals (recommended), or numeric-only first with categoricals independent? (Numeric-only is simpler but leaves the biggest categorical relationships unmodeled.)
-3. **Geography** — leave manual/empty for now (deferred), or add basic GPS-density profiling? (Recommend defer unless the analytics system is spatial.)
-4. MCP tools only, or also the management command?
+- **One combined plan** (Part A then Part B), not split. *(decided)*
+- **Correlation scope: full Gaussian copula over numeric + ordinal-encoded categorical fields.** *(decided)*
+- **Geography: deferred** — leave manual/empty for now (revisit only if the analytics system is spatial). *(decided)*
+- **Entry points:** MCP tools are the primary/required surface; the management command is an optional add for a CI path (can be dropped during implementation if not needed).
 
 ## 10. Out of scope
 
