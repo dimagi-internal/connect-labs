@@ -125,6 +125,28 @@ def test_is_visible_to_multiple_domains(external_user):
     assert opp.is_visible_to(external_user) is True
 
 
+@pytest.mark.django_db
+def test_is_visible_to_dimagi_internal_domains_are_equivalent(dimagi_user, external_user):
+    """An @dimagi-ai.com user sees opps allow-listed for @dimagi.com and vice versa;
+    a non-Dimagi user is unaffected by the equivalence."""
+    ai_user = User.objects.create_user(username="ace", email="ace@dimagi-ai.com", view_synthetic_opps=True)
+    # Opp registered for @dimagi.com → visible to the @dimagi-ai.com user (cross-domain).
+    opp_core = SyntheticOpportunity.objects.create(
+        opportunity_id=10_000, gdrive_folder_id="f", labs_only=True, allowed_domains=["@dimagi.com"]
+    )
+    assert opp_core.is_visible_to(ai_user) is True
+    assert opp_core.is_visible_to(dimagi_user) is True  # exact match still works
+    assert opp_core.is_visible_to(external_user) is False  # equivalence is Dimagi-only
+
+    # Reverse: opp registered for @dimagi-ai.com → visible to the @dimagi.com user.
+    opp_ai = SyntheticOpportunity.objects.create(
+        opportunity_id=10_001, gdrive_folder_id="f", labs_only=True, allowed_domains=["@dimagi-ai.com"]
+    )
+    assert opp_ai.is_visible_to(dimagi_user) is True
+    assert opp_ai.is_visible_to(ai_user) is True
+    assert opp_ai.is_visible_to(external_user) is False
+
+
 # ─── context injection ─────────────────────────────────────────────────────
 
 
