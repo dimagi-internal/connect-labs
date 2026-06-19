@@ -361,3 +361,36 @@ def test_keyset_page_size_clamped_to_max(monkeypatch):
     body = _client_for(_user()).get(VISITS_URL + "?page_size=999999").json()
     assert len(body["results"]) == 10
     assert body["next"] is None
+
+
+# --------------------------------------------------------------------------- #
+# payment / invoice / assessment endpoints (#650 gap 2)
+# --------------------------------------------------------------------------- #
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "endpoint,filename",
+    [
+        ("payment", "payment.json"),
+        ("invoice", "invoice.json"),
+        ("assessment", "assessment.json"),
+    ],
+)
+def test_new_endpoints_serve_their_fixture(monkeypatch, endpoint, filename):
+    rows = [{"id": 3, "endpoint": endpoint}]
+    _install(monkeypatch, {"folder-a": {filename: rows}})
+    _make_opp()
+    url = f"/api/export/opportunity/10001/{endpoint}/"
+    body = _client_for(_user()).get(url).json()
+    assert body["results"] == rows
+    assert set(body.keys()) == {"next", "results"}
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("endpoint", ["payment", "invoice", "assessment"])
+def test_new_endpoints_empty_when_fixture_absent(monkeypatch, endpoint):
+    # Opp exists but folder has no payment/invoice/assessment file -> empty page.
+    _install(monkeypatch, {"folder-a": {"user_visits.json": []}})
+    _make_opp()
+    url = f"/api/export/opportunity/10001/{endpoint}/"
+    body = _client_for(_user()).get(url).json()
+    assert body == {"next": None, "results": []}

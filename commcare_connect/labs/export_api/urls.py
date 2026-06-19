@@ -33,6 +33,21 @@ urlpatterns = [
         name="completed_module",
     ),
     path(
+        "opportunity/<int:opportunity_id>/payment/",
+        views.OpportunityDataView.as_view(endpoint="payment"),
+        name="payment",
+    ),
+    path(
+        "opportunity/<int:opportunity_id>/invoice/",
+        views.OpportunityDataView.as_view(endpoint="invoice"),
+        name="invoice",
+    ),
+    path(
+        "opportunity/<int:opportunity_id>/assessment/",
+        views.OpportunityDataView.as_view(endpoint="assessment"),
+        name="assessment",
+    ),
+    path(
         "opportunity/<int:opportunity_id>/app_structure/",
         views.AppStructureView.as_view(),
         name="app_structure",
