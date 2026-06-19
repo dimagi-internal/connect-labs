@@ -17,7 +17,7 @@ TABS = [
     ("Overview", "Campaign progress"),
     ("Workers", "Worker Payments"),
     ("Activity", "Activity Details"),
-    ("Reporting & Monitoring", "Coming soon"),
+    ("Reporting & Monitoring", "Cumulative enrollment"),  # Plan 5 built this tab
     ("System Administration", "User Management"),
     ("Training Hub", "Coming soon"),
 ]
