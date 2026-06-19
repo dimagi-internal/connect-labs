@@ -418,7 +418,7 @@ CAMPAIGN_BOOTSTRAP_ADMIN_DOMAINS = env.list(
 
 # Campaign Utility Tool — data-source seam for the HQ/Connect-owned roster
 # (campaign/regions/donors/worker-roles/workers). "synthetic" reads our seed rows;
-# "connect" reads live Connect (stub until staging exists). See issue #674.
+# "commcare" reads live CommCare cases (stub until access exists). See issue #674.
 CAMPAIGN_DATA_PROVIDER = env("CAMPAIGN_DATA_PROVIDER", default="synthetic")
 
 # ConnectID integration settings

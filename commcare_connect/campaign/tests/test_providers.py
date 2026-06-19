@@ -3,7 +3,7 @@
 The HQ/Connect-owned roster (campaign, regions, donors, worker roles, workers) is
 read through a CampaignDataProvider so "go real" is a per-entity config flip. These
 tests pin: provider selection by setting, the SyntheticProvider reads our ORM, the
-ConnectProvider is an explicit NotImplementedError stub, and bootstrap_payload
+CommCareProvider is an explicit NotImplementedError stub, and bootstrap_payload
 actually routes the roster through the provider (flipping to the stub makes it raise).
 """
 from __future__ import annotations
@@ -21,10 +21,10 @@ def test_get_provider_defaults_to_synthetic():
 
 
 @pytest.mark.django_db
-@override_settings(CAMPAIGN_DATA_PROVIDER="connect")
+@override_settings(CAMPAIGN_DATA_PROVIDER="commcare")
 def test_get_provider_respects_setting():
     campaign = seed.seed_campaign()
-    assert isinstance(providers.get_provider(campaign), providers.ConnectProvider)
+    assert isinstance(providers.get_provider(campaign), providers.CommCareProvider)
 
 
 @pytest.mark.django_db
@@ -52,7 +52,7 @@ def test_synthetic_provider_matches_orm():
 @pytest.mark.django_db
 def test_connect_provider_stub_raises():
     campaign = seed.seed_campaign()
-    p = providers.ConnectProvider(campaign)
+    p = providers.CommCareProvider(campaign)
     for method in ("campaign", "regions", "donors", "worker_roles", "workers"):
         with pytest.raises(NotImplementedError):
             getattr(p, method)()
@@ -74,7 +74,7 @@ def test_bootstrap_payload_unchanged_under_synthetic():
 
 
 @pytest.mark.django_db
-@override_settings(CAMPAIGN_DATA_PROVIDER="connect")
+@override_settings(CAMPAIGN_DATA_PROVIDER="commcare")
 def test_bootstrap_payload_routes_roster_through_provider():
     """Proof the roster goes through the seam: with the stub provider active,
     building the payload raises NotImplementedError rather than reading the ORM."""
