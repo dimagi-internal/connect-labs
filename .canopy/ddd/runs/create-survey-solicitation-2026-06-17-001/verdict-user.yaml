@@ -1,32 +1,35 @@
 schema_version: 1
 rubric_name: user-artifact
-ran_at: '2026-06-19T02:02:25.973127+00:00'
-run_dir: .canopy/ddd/runs/create-survey-solicitation-2026-06-17-001
+ran_at: '2026-06-19T05:55:00Z'
+run_dir: /Users/jjackson/emdash/worktrees/connect-labs/emdash/solicitation-rntwj/.canopy/ddd/runs/create-survey-solicitation-2026-06-17-001
+overall_rule: lowest
+audience: feature user
+scenes:
+  1: { task_completion: 4, clarity: 3, trust: 3, overall: 3, verdict: pass }
+  2: { task_completion: 4, clarity: 4, trust: 4, overall: 4, verdict: pass }
+  3: { task_completion: 4, clarity: 4, trust: 4, overall: 4, verdict: pass }
+  4: { task_completion: 4, clarity: 4, trust: 3, overall: 3, verdict: warn }
+  5: { task_completion: 4, clarity: 4, trust: 4, overall: 4, verdict: pass }
 dimensions:
   task_completion:
-    {
-      score: 4,
-      weight: 0.40,
-      justification: 'A feature user completes the whole loop — create call from the study, firm responds with coverage, owner reviews, owner awards + firm notified — every step succeeds on screen.',
-      fix_recommendation: "Scene 2's still lands on the result rather than the fill; settle the create-form frame so a viewer sees the form being completed.",
-      fix_kind: mechanical,
-    }
+    score: 4
+    weight: 0.40
+    justification: "Every scene completed its task: the action-aware judges saw genuine fill/click/select/capture (0 failed actions across all 33), so NO action-fidelity 'claimed-not-shown' deduction fired anywhere. Consistently 4 (one minor friction per scene — soft post-action confirmation), never blocked."
   clarity:
-    {
-      score: 4,
-      weight: 0.35,
-      justification: "Labels and CTAs self-explain (Create solicitation, Which areas can you cover?, Award, 'has been notified'). One snag: two near-duplicate R6 rows in scene 2's list.",
-      fix_recommendation: 'Disambiguate the freshly-created Draft row from the canonical Active call.',
-      fix_kind: options,
-    }
+    score: 3
+    weight: 0.35
+    justification: "Floor at scene 1 (3): the study card runs redundant readiness signaling (three greens) and an unanchored 'bundle' explanation. Scenes 2-5 clear at 4 (labels/CTAs/states self-explain)."
+    fix_recommendation: "Unify the scene-1 study card's status signals into one canonical state chip and trim the 'bundle' definition until the bundle affordance is on screen."
+    fix_kind: mechanical
   trust:
-    {
-      score: 4,
-      weight: 0.25,
-      justification: "Real org/contact/coverage/budget data, timestamped notification, and an honest 'Next step — not yet built' panel that doesn't overclaim. Minor: scene-5 secondary text contrast.",
-    }
-overall_score: 4
-overall_rule: lowest
-verdict: pass
+    score: 3
+    weight: 0.25
+    justification: "Floor at scenes 1 and 4 (3). Scene 1: no recency/date signal on the 'finished/reviewed' study. Scene 4: the response row renders the applicant as 'Unknown Organization' submitted by the reviewer's own email — real session data (not a placeholder-deduction trigger) but reads thin for a planner comparing firms. Scenes 2/3/5 at 4 (real ids, real Active status, honest 'not yet built' panel)."
+    fix_recommendation: "Scene 4: render a graceful fallback display name when org_name is empty (submitter's name or 'Your organization') instead of 'Unknown Organization'; scene 1: add a relative recency stamp to the study card."
+    fix_kind: options
+overall_score: 3
+verdict: warn
 blocking_reason: null
-fix_recommendation: 'Scene 2 still-frame should settle on the create form (the narrated fill), not the post-create redirect.'
+fix_recommendation: |
+  [PRODUCT] Scene 4 trust (binding with scene-1): the responses row shows 'Unknown Organization' submitted by the reviewer's own email. Render a fallback display name (submitter's name or 'Your organization') when org_name is empty. fix_kind: options (needs a pick: accept real-session authenticity with a fallback render, or seed a named respondent persona).
+  [PRODUCT] Scene 1 clarity/trust: unify the study card's redundant readiness signals into one state chip and add a relative recency stamp ('reviewed 2 days ago'). fix_kind: mechanical.

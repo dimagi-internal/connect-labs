@@ -1,47 +1,47 @@
 [
   {
-    "scene": "2 — Maya finds the plan already waiting as the coverage area",
-    "dimension": "motion_friction",
-    "severity": "medium",
-    "route": "PRODUCT",
-    "fix_kind": "mechanical",
-    "detail": "Fits-but-mis-framed: the narrated create-form/fill moment is gone — the settled still jumped past it to the post-create 'Manage Solicitations' list. The video clip shows scroll+fill+click correctly, but the deck/screenshot still-frame lands on the result, not the act.",
-    "fix_recommendation": "Settle the scene-2 capture ON the create form (Coverage-areas panel + filled Description visible). Keep the create click (must_succeed), but capture the form as the settled frame rather than letting the post-create redirect carry the still to the manage list. Walkthrough-scripting fix."
-  },
-  {
-    "scene": "2 — Maya finds the plan already waiting as the coverage area",
+    "scene": "3 — A survey firm reads the open call and ticks the area it can staff",
     "dimension": "concept_clarity",
-    "severity": "medium",
-    "route": "CONCEPT",
-    "fix_kind": "mechanical",
-    "detail": "The snapshotted Coverage-areas concept (S4) is invisible in the settled frame because it shows the manage list, not the create form panel.",
-    "fix_recommendation": "Same as the motion_friction fix — settle on the create form so the Coverage-areas panel (the concept's load-bearing artifact) is in frame."
-  },
-  {
-    "scene": "2 — Maya finds the plan already waiting as the coverage area",
-    "dimension": "why_groundedness",
-    "severity": "medium",
-    "route": "CONCEPT",
-    "fix_kind": "mechanical",
-    "detail": "The manage-list frame shows no coverage artifact, so the 'exact coverage the firm will bid on' claim is ungrounded in that frame.",
-    "fix_recommendation": "Settle on the create form Coverage-areas panel so the coverage is visibly grounded."
-  },
-  {
-    "scene": "2 — Maya finds the plan already waiting as the coverage area",
-    "dimension": "design_soundness",
     "severity": "low",
     "route": "PRODUCT",
-    "fix_kind": "options",
-    "detail": "Two near-duplicate 'R6 — Attakar × Gura' rows (new Draft + canonical Active) appear in the manage list with no disambiguator.",
-    "fix_recommendation": "Disambiguate the freshly-created Draft row from the canonical Active call (distinct title, 'new' indicator) — OR avoid showing the list at all by settling on the create form (preferred; subsumed by the framing fix)."
+    "fix_kind": "mechanical",
+    "detail": "The scene's captured AFTER-frame is the public call-to-apply detail page (still showing 'Respond to this Solicitation'), not the post-submission result. The action_trace genuinely ticked the checkbox and clicked a must_succeed Submit that succeeded, but the viewer lands on a page that reads as 'a call you could apply to' rather than 'a firm just applied'. The BEFORE-frame is the responses-management inbox, not the respond form with the checklist.",
+    "fix_recommendation": "Re-script scene 3 so the AFTER-frame is the post-submit confirmation/submitted state (or the respond form mid-flow with the coverage checkbox visibly CHECKED + an active Submit), and use the actual respond form (checklist + empty selection) as the BEFORE-frame, so the before->after delta reads 'unticked -> ticked -> submitted'. This is a scene-scripting (spec actions) change, not a product change."
   },
   {
-    "scene": "5 — Maya awards the firm and sees it was notified",
+    "scene": "4 — Maya sees the firm tied to the coverage she designed",
+    "dimension": "visual_polish",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "fix_kind": "options",
+    "detail": "The single response row renders the applicant org as 'Unknown Organization' and SUBMITTED BY is the reviewer's own account (jonathan / jjackson@dimagi.com). For a scene whose job is tying a REAL FIRM to a coverage area, an anonymous firm submitted by the author's email undercuts the 'real firm vs real survey' narrative. (Stems from the deliberate decision to use the real logged-in session as the applicant — which is honest, but reads thin on the responses list.)",
+    "fix_recommendation": "Either (a) accept the real-session identity but have the product render a clear fallback display name when org_name is empty (e.g. the contact's name or 'Your organization') rather than the bare 'Unknown Organization' string; or (b) seed a named respondent org/persona for the demo. Needs a user pick between authenticity (a) and a scripted firm (b)."
+  },
+  {
+    "scene": "2 — Maya mints the call live and lands on its responses page",
     "dimension": "visual_polish",
     "severity": "low",
     "route": "PRODUCT",
     "fix_kind": "mechanical",
-    "detail": "The contact email / notification timestamp secondary text sits in a low-contrast grey-on-white band; may fail WCAG AA.",
-    "fix_recommendation": "Darken the muted secondary text (contact email, timestamp) on the award confirmation to meet WCAG AA (>=4.5:1)."
+    "detail": "On the freshly-minted call's responses landing, the load-bearing 'Active' status and the new solicitation id are under-surfaced (id only in the cropped URL) while a bare 'No responses yet' empty state dominates the body — softening the 'I just minted a live call' beat.",
+    "fix_recommendation": "Add a one-time create-success affordance on landing ('Solicitation created — now Active') + render the id as a chip near the title, and raise the 'Active' status's visual weight above the empty inbox."
+  },
+  {
+    "scene": "1 — Maya turns her finished study into a call for a firm",
+    "dimension": "visual_polish",
+    "severity": "low",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The R6 study card under-presents its load-bearing facts: the intervention/comparison composition and the '2 wards' count are buried as throwaway secondary text, three near-identical greens do overlapping emphasis work, and ~55% of the viewport is empty.",
+    "fix_recommendation": "Render 'Intervention: Attakar · Comparison: Gura · 2 wards' as a legible key-value block on the card, collapse the redundant readiness signaling to one canonical state chip, and optionally surface the first row of in-progress plans so the portfolio reads as a portfolio."
+  },
+  {
+    "scene": "3 — A survey firm reads the open call and ticks the area it can staff",
+    "dimension": "claim_reality_coherence",
+    "severity": "medium",
+    "route": "DEFER",
+    "fix_kind": "mechanical",
+    "detail": "ADVISORY (non-blocking). Narration claims the firm ticks the area and submits, but the captured after-frame is the pre-application public page with no submitted/confirmation state, and 'submission blocked until one chosen' is shown nowhere. Two load-bearing claims rest on the trace, not the frame.",
+    "fix_recommendation": "Same as the scene-3 concept_clarity finding — landing the after-frame on the submitted state resolves this too. Advisory; logged for later triage."
   }
 ]

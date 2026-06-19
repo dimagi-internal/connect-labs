@@ -1,11 +1,11 @@
 {
-  "command": "python scripts/walkthroughs/create-survey-solicitation/reset_solicitation.py && python scripts/walkthroughs/create-survey-solicitation/reset_award.py",
+  "command": "python scripts/walkthroughs/create-survey-solicitation/ensure_demo.py",
   "cwd": "/Users/jjackson/emdash/worktrees/connect-labs/emdash/solicitation-rntwj",
   "rerun": "per_render",
   "outputs": null,
   "skipped": false,
   "skip_reason": null,
   "exit_code": 0,
-  "duration_seconds": 187.24,
+  "duration_seconds": 88.1,
   "variables": {}
 }

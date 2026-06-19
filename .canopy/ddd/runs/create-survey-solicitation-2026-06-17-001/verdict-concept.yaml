@@ -1,53 +1,108 @@
 schema_version: 1
 rubric_name: ddd-concept-eval
-ran_at: '2026-06-19T02:02:25.973127+00:00'
-run_dir: .canopy/ddd/runs/create-survey-solicitation-2026-06-17-001
+ran_at: '2026-06-19T05:45:00Z'
+run_dir: /Users/jjackson/emdash/worktrees/connect-labs/emdash/solicitation-rntwj/.canopy/ddd/runs/create-survey-solicitation-2026-06-17-001
+overall_rule: lowest
+# Per-scene scores (5 gating dims + advisory claim_reality_coherence)
+scenes:
+  1:
+    {
+      concept_clarity: 4,
+      design_soundness: 4,
+      visual_polish: 3,
+      why_groundedness: 4,
+      claim_reality_coherence: 4,
+      motion_friction: 4,
+      overall: 3,
+      verdict: pass,
+    }
+  2:
+    {
+      concept_clarity: 4,
+      design_soundness: 4,
+      visual_polish: 3,
+      why_groundedness: 4,
+      claim_reality_coherence: 3,
+      motion_friction: 4,
+      overall: 3,
+      verdict: warn,
+    }
+  3:
+    {
+      concept_clarity: 3,
+      design_soundness: 3,
+      visual_polish: 3,
+      why_groundedness: 4,
+      claim_reality_coherence: 2,
+      motion_friction: 3,
+      overall: 3,
+      verdict: warn,
+    }
+  4:
+    {
+      concept_clarity: 4,
+      design_soundness: 4,
+      visual_polish: 3,
+      why_groundedness: 4,
+      claim_reality_coherence: 4,
+      motion_friction: 4,
+      overall: 3,
+      verdict: warn,
+    }
+  5:
+    {
+      concept_clarity: 4,
+      design_soundness: 4,
+      visual_polish: 4,
+      why_groundedness: 4,
+      claim_reality_coherence: 5,
+      motion_friction: 4,
+      overall: 4,
+      verdict: pass,
+    }
+# Aggregate = weakest-link across all scenes' 5 non-advisory dims
 dimensions:
   concept_clarity:
     {
-      score: 2,
+      score: 3,
       weight: 0.20,
-      justification: "Scene 2's settled frame is the post-create manage list, not the create form / Coverage-areas panel the narration centers on — so the snapshotted-coverage concept is absent from that frame (scenes 1/3/4/5 are clear).",
+      justification: "Floor at scene 3 (respond): the after-frame lands on the public call-to-apply page, so the 5-sec read returns 'a call you could apply to' not 'a firm just applied'. Scenes 1/2/4/5 read at 4.",
     }
   design_soundness:
     {
       score: 3,
       weight: 0.20,
-      justification: "Interactions cohere across scenes; scene 2's list shows two near-duplicate 'R6 — Attakar × Gura' rows (new Draft + canonical Active) with no disambiguator.",
+      justification: 'Floor at scene 3: the before/after brackets a surface switch (responses-management -> public detail) rather than a visible tick->submit; other scenes coherent at 4.',
     }
   visual_polish:
     {
       score: 3,
       weight: 0.15,
-      justification: "Clean and on-brand throughout; scene 5's contact email / secondary text sits in a low-contrast grey-on-white band (verify WCAG AA).",
+      justification: "Scenes 1-4 at 3: study card under-presents load-bearing facts (intervention/comparison, ward count), responses pages run a sparse single row over empty frame, 'Unknown Organization' on the response row. Scene 5 at 4.",
     }
   why_groundedness:
     {
-      score: 2,
+      score: 4,
       weight: 0.20,
-      justification: "Scenes 1/3/4/5 trace cleanly; scene 2's frame (manage list) shows no coverage artifact, so the 'exact coverage the firm will bid on' claim is ungrounded in that frame.",
+      justification: "Every scene's concept_claim traces cleanly to its spine item (S3-S7) with real production data (real solicitation 4553, real Attakar x Gura polygons); consistently 4.",
     }
   claim_reality_coherence:
     {
       score: 2,
       weight: 0.10,
-      justification: "Advisory. Scene 2's create form + Coverage-areas panel the narration describes are not in the settled frame (it jumped to the post-create redirect).",
       blocking: false,
+      justification: "ADVISORY (excluded from overall). Floor at scene 3: narration claims tick+submit but the captured after-frame is the pre-application public page, so two load-bearing claims rest on the trace not the frame. Scene 5 at 5 (honest 'not yet built' framing).",
     }
   motion_friction:
     {
-      score: 2,
+      score: 3,
       weight: 0.15,
-      justification: 'Scene 2 is fits-but-mis-framed: the narrated create-form/fill moment is gone — the still jumped past it to the manage list, which also holds two near-identical R6 rows. (The video clip DOES show scroll+fill+click; the still does not.)',
+      justification: 'Floor at scene 3 (after-frame is the wrong landing for the narrated submit); other scenes 4 (narrated artifact framed and settled).',
     }
-overall_score: 2
-overall_rule: lowest
-verdict: fail
+overall_score: 3
+verdict: warn
 blocking_reason: null
 fix_recommendation: |
-  [PRODUCT mechanical] Scene 2: settle the capture ON the create form with the Coverage-areas
-  panel + filled Description visible (the narrated subject), instead of letting the post-create
-  redirect carry the frame to the manage list. The create action still fires (must_succeed click);
-  only the SETTLED FRAME for the deck/screenshot should land on the form, not the result. This is a
-  walkthrough-scripting fix (re-time/scroll the settle), not a product change.
-  [PRODUCT mechanical] Scene 5: darken the low-contrast contact email / timestamp secondary text to meet WCAG AA.
+  [SPEC] Scene 3 (the binding floor): re-script so the AFTER-frame is the post-submit confirmation/submitted state (or the respond form mid-flow with the coverage checkbox visibly CHECKED + an active Submit), and use the actual respond form (checklist + empty selection) as the BEFORE-frame, so the before->after delta reads 'unticked -> ticked -> submitted' instead of a context switch from the responses-management inbox. fix_kind: mechanical (a concrete scene-scripting change).
+  [PRODUCT] Scene 4: the response row renders the applicant as 'Unknown Organization' submitted by the reviewer's own email — weakens the 'real firm vs real survey' beat. fix_kind: options (needs a respondent-persona seed decision vs an org-name fallback render).
+  [PRODUCT] Scene 2: surface the new solicitation id (#4553) + a create-success affordance and raise the 'Active' status prominence above the empty 'No responses yet' state on the responses landing. fix_kind: mechanical.
