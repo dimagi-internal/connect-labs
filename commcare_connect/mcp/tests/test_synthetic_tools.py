@@ -414,3 +414,29 @@ def test_profile_opp_tool_invokes_service(tmp_path):
         out = tools.synthetic_profile_opp(_User(), source_opportunity_id=523, out_dir=str(tmp_path))
     assert svc.called
     assert out["bundle_dir"].endswith("523")
+
+
+def test_clone_profile_tool_returns_updated_spec():
+    """synthetic_clone_profile parses the spec, profiles, and returns the spec with
+    the resolved bundle_root recorded (ready to hand to synthetic_clone_generate)."""
+    from unittest.mock import patch
+
+    from commcare_connect.mcp.tools import synthetic as tools
+
+    class _User:
+        email = "jjackson@dimagi.com"
+
+    def fake_profile_cohort(spec, *, base_url, oauth_token, drive=None):
+        spec.bundle_root = "gdrive:run123"
+        return spec
+
+    spec_yaml = "opportunity_ids: [523, 524]\nbundle_root: 'gdrive:'\nprogram_name: KMC\n"
+    with patch.object(tools, "require_connect_token", return_value="tok"), patch.object(
+        tools, "_require_opportunity_access", return_value=None
+    ), patch.object(tools, "DriveClient", return_value=object()), patch.object(
+        tools, "profile_cohort", side_effect=fake_profile_cohort
+    ):
+        out = tools.synthetic_clone_profile(_User(), spec_yaml=spec_yaml)
+    assert out["bundle_root"] == "gdrive:run123"
+    assert "gdrive:run123" in out["spec_yaml"]
+    assert out["opportunity_ids"] == [523, 524]
