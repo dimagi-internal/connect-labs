@@ -291,3 +291,39 @@ class AuditLog(models.Model):
 
     def __str__(self):
         return f"{self.at:%Y-%m-%d %H:%M} {self.user}: {self.action}"
+
+
+class WorkerCase(models.Model):
+    """A synthetic CommCare *case* for a campaign worker.
+
+    Mirrors how worker data lives in production: CommCare HQ owns the worker as a
+    case (case_type ``campaign_worker``) whose case properties carry every field
+    the Data Model marks CommCare-owned — the Worker dataset plus the embedded KYC
+    Verification dataset. The campaign tool READS these; it does not author them.
+    Here they are synthetic and local, but the shape matches a CommCare Case/Form
+    API read, so the future CommCareProvider is a drop-in swap. Geography
+    (``region_id``/``lga``/``ward``) is sourced from labs ``AdminBoundary``.
+
+    The denormalized columns exist for scale-querying/filtering; ``properties`` is
+    the faithful case-property bag the serializer consumes (snake_case keys match
+    the worker attributes ``serializers._worker`` reads).
+    """
+
+    campaign = models.ForeignKey(Campaign, on_delete=models.CASCADE, related_name="worker_cases")
+    case_id = models.CharField(max_length=64, db_index=True, help_text="CommCare case id")
+    case_type = models.CharField(max_length=64, default="campaign_worker")
+    worker_id = models.CharField(max_length=16, db_index=True, help_text="W##### external id (a case property)")
+    region_id = models.CharField(max_length=100, db_index=True, help_text="AdminBoundary state boundary_id")
+    lga = models.CharField(max_length=128, db_index=True, blank=True)
+    ward = models.CharField(max_length=128, blank=True)
+    properties = models.JSONField(default=dict)
+
+    class Meta:
+        db_table = "campaign_worker_case"
+        indexes = [models.Index(fields=["campaign", "region_id"])]
+        constraints = [
+            models.UniqueConstraint(fields=["campaign", "case_id"], name="campaign_worker_case_uniq"),
+        ]
+
+    def __str__(self):
+        return f"{self.case_type}:{self.worker_id}"
