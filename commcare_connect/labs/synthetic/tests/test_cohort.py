@@ -48,3 +48,14 @@ def test_save_then_load(tmp_path):
     loaded = load_cohort_spec(path)
     assert loaded.bundle_root == "gdrive:abc"
     assert loaded.opportunity_ids == [523, 524, 1790]
+
+
+def test_cohort_spec_curate_roundtrips():
+    from commcare_connect.labs.synthetic.cohort import CohortSpec
+
+    spec = CohortSpec.from_yaml("opportunity_ids: [1, 2]\ncurate: true\n")
+    assert spec.curate is True
+    assert "curate: true" in spec.to_yaml()
+    assert CohortSpec.from_yaml(spec.to_yaml()).curate is True
+    # default stays False
+    assert CohortSpec.from_yaml("opportunity_ids: [1]\n").curate is False

@@ -17,4 +17,9 @@
 program_name: 'KMC (Synthetic)'
 org_name: 'Dimagi-KMC (Synthetic)'
 bundle_root: 'gdrive:'
+# Curate Phase-1 profiling for analytics signal (floor flag rates + degenerate clinical
+# categoricals, per-opp varied) — the real KMC opps are ~100% approved with ~0 recorded
+# danger signs, which leaves those dimensions with no variance for Scout's modeling.
+# Numeric bounds + text fabrication apply regardless of this flag. See issue #670.
+curate: true
 opportunity_ids: [523, 524, 675, 874, 938, 1234, 1236, 1487, 1488, 1739, 1790]

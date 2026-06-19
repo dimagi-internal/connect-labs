@@ -28,6 +28,18 @@ class NormalDistribution(BaseModel):
     stddev: float = Field(ge=0)
     transform: str | None = None
     null_rate: float = Field(ge=0, le=1, default=0.0)
+    # Optional plausible bounds (the profiler captures observed p1/p99). When set,
+    # generated draws are clamped to [lo, hi] so an unbounded Normal can't emit
+    # impossible values (negative ages, out-of-range vitals). Outliers may still
+    # exceed these for seeded anomalies, but never flip sign on a non-negative field.
+    lo: float | None = None
+    hi: float | None = None
+
+    @model_validator(mode="after")
+    def _check_bounds(self):
+        if self.lo is not None and self.hi is not None and self.hi < self.lo:
+            raise ValueError("normal hi must be >= lo")
+        return self
 
 
 class UniformDistribution(BaseModel):

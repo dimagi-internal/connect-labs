@@ -33,11 +33,20 @@ def nearest_psd(matrix: np.ndarray) -> np.ndarray:
 class NumericMargin:
     mean: float
     stddev: float
+    lo: float | None = None
+    hi: float | None = None
 
     def value_from_uniform(self, u: float) -> float:
         # u = Phi(z); Normal ppf gives back the standard normal, then scale/shift.
         z = norm.ppf(min(max(u, 1e-9), 1 - 1e-9))
-        return self.mean + self.stddev * z
+        value = self.mean + self.stddev * z
+        # Clamp to the field's observed bounds so the copula can't emit impossible
+        # values (matches the independent-draw path in fields._clamp_normal).
+        if self.lo is not None and value < self.lo:
+            return self.lo
+        if self.hi is not None and value > self.hi:
+            return self.hi
+        return value
 
 
 @dataclass
@@ -62,7 +71,7 @@ class CategoricalMargin:
 
 def _margin_for(dist):
     if isinstance(dist, NormalDistribution):
-        return NumericMargin(dist.mean, dist.stddev)
+        return NumericMargin(dist.mean, dist.stddev, dist.lo, dist.hi)
     if isinstance(dist, CategoricalDistribution):
         return CategoricalMargin(dict(dist.values))
     return None  # uniform/binary excluded from the copula; drawn independently
