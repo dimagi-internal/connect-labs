@@ -34,6 +34,7 @@ The module exposes:
 
 from __future__ import annotations
 
+import functools
 import json
 import logging
 import traceback
@@ -41,6 +42,7 @@ import uuid
 from typing import Any
 
 from asgiref.sync import sync_to_async
+from django.db import connections
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AccessToken, TokenVerifier
@@ -59,6 +61,51 @@ logger = logging.getLogger(__name__)
 SERVER_INSTRUCTIONS = (
     "CommCare Connect Labs MCP server. Tools run as the authenticated user " "(per-user Personal Access Token)."
 )
+
+
+# ---------------------------------------------------------------------------
+# DB connection cleanup — close per request, since Django's signals don't fire.
+# ---------------------------------------------------------------------------
+
+
+def _closing_connections(fn):
+    """Wrap a sync callable so it closes this thread's DB connections on exit.
+
+    This FastMCP app is mounted in ``config.asgi`` as a Starlette sub-app,
+    OUTSIDE Django's ``ASGIHandler``. Django recycles DB connections via
+    ``close_old_connections``, which is wired to the ``request_started`` /
+    ``request_finished`` signals — signals that ONLY Django's request handling
+    emits. An MCP request never reaches ``ASGIHandler``, so those signals never
+    fire and nothing ever recycles the connection.
+
+    Each MCP call resolves the PAT (``_verify_pat_sync``) and runs a tool
+    (``_run_registry_tool``) inside an asgiref worker thread, which opens a
+    thread-local Django connection. With ``CONN_MAX_AGE > 0`` that connection is
+    kept open for reuse but, absent the request-finished signal, is never
+    closed — it sits ``idle`` on RDS indefinitely, one leaked connection per
+    worker thread, until the instance runs out of slots (issue #667).
+
+    Closing here — in the ``finally``, in the SAME worker thread that opened the
+    connection — restores per-request cleanup. ``close_all()`` (rather than
+    ``close_old_connections()``) is deliberate: the asgiref thread pool churns,
+    so a connection left open by ``CONN_MAX_AGE`` on a thread that never serves
+    another MCP call would still leak; closing unconditionally guarantees it
+    can't.
+
+    Applied ONLY at the ``sync_to_async`` boundary (the production path). The
+    in-process test bridge (``testing.call_tool``) calls the sync core directly
+    on pytest-django's transactional connection — closing that would break test
+    DB visibility — so the wrapper must NOT live inside the sync core itself.
+    """
+
+    @functools.wraps(fn)
+    def _wrapped(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        finally:
+            connections.close_all()
+
+    return _wrapped
 
 
 # ---------------------------------------------------------------------------
@@ -96,7 +143,7 @@ class CommCarePATVerifier(TokenVerifier):
     async def verify_token(self, token: str) -> AccessToken | None:
         if not token:
             return None
-        user = await sync_to_async(_verify_pat_sync, thread_sensitive=True)(token)
+        user = await sync_to_async(_closing_connections(_verify_pat_sync), thread_sensitive=True)(token)
         if user is None:
             return None
         return AccessToken(
@@ -257,7 +304,9 @@ class RegistryTool(Tool):
     model_config = {"arbitrary_types_allowed": True}
 
     async def run(self, arguments: dict[str, Any]) -> ToolResult:
-        return await sync_to_async(_run_registry_tool, thread_sensitive=True)(self.spec, arguments)
+        return await sync_to_async(_closing_connections(_run_registry_tool), thread_sensitive=True)(
+            self.spec, arguments
+        )
 
 
 def _build_registry_tools() -> list[RegistryTool]:
