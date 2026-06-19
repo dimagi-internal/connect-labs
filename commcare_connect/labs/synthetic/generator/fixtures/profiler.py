@@ -368,6 +368,94 @@ def _profile_null_rate(visits: list[dict], path: str) -> float:
     return round(1.0 - present / n, 4) if n else 0.0
 
 
+def _walk_repeat_lists(obj: dict, prefix: str, found: dict[str, list]) -> None:
+    """Collect every list-of-dict value (a CommCare repeat group) keyed by dotted path.
+
+    A list of plain scalars (e.g. a multi-select) is not a repeat — only lists whose
+    entries are all dicts qualify (an empty list is recorded but, on its own, is not
+    enough to call a path a repeat; see ``_profile_repeat_groups``)."""
+    for key, val in obj.items():
+        path = f"{prefix}.{key}" if prefix else key
+        if isinstance(val, list):
+            if all(isinstance(el, dict) for el in val):
+                found.setdefault(path, []).append(val)
+        elif isinstance(val, dict):
+            _walk_repeat_lists(val, path, found)
+
+
+def _flatten_element(obj: dict, prefix: str, acc: dict[str, list]) -> None:
+    """Collect a repeat instance's scalar leaf values by path relative to the element."""
+    for key, val in obj.items():
+        path = f"{prefix}.{key}" if prefix else key
+        if isinstance(val, dict):
+            _flatten_element(val, path, acc)
+        elif isinstance(val, list):
+            continue  # nested repeats are out of scope for v1
+        elif val not in (None, ""):
+            acc.setdefault(path, []).append(val)
+
+
+def _distribution_for_values(values: list) -> dict[str, Any] | None:
+    """Pick a normal (numeric, with robust bounds) or categorical distribution for a
+    repeat child's observed values — mirrors the scalar profiler's typing logic."""
+    nums: list[float] = []
+    numeric = True
+    for x in values:
+        try:
+            nums.append(float(x))
+        except (ValueError, TypeError):
+            numeric = False
+            break
+    if numeric and len(nums) >= 5:
+        mean, std = _mean_std(nums)
+        if std >= 0.001:
+            return {
+                "distribution": "normal",
+                "mean": round(mean, 3),
+                "stddev": round(std, 3),
+                "lo": round(float(np.percentile(nums, 1)), 3),
+                "hi": round(float(np.percentile(nums, 99)), 3),
+            }
+    counts = Counter(str(x) for x in values)
+    total = sum(counts.values())
+    if total == 0:
+        return None
+    return {"distribution": "categorical", "values": {k: round(c / total, 4) for k, c in counts.items()}}
+
+
+def _profile_repeat_groups(all_visits: list[dict]) -> dict[str, dict[str, Any]]:
+    """Detect repeat groups in real form_json and reproduce their shape (issue #670 #6).
+
+    For each path that appears as a list-of-dicts, capture the instance-count
+    distribution and a per-relative-child-field distribution, so the generator can
+    emit faithful JSON arrays of 0–N sub-records instead of a single object. Inert
+    when no repeats exist — purely additive and data-driven."""
+    occurrences: dict[str, list] = {}
+    for v in all_visits:
+        _walk_repeat_lists(v.get("form_json") or {}, "", occurrences)
+
+    out: dict[str, dict[str, Any]] = {}
+    for path, lists in occurrences.items():
+        if not any(len(lst) > 0 for lst in lists):
+            continue  # only ever empty -> no evidence of a dict-structured repeat
+        counts = [len(lst) for lst in lists]
+        total = len(counts)
+        count_dist = {int(k): round(c / total, 4) for k, c in Counter(counts).items()}
+
+        child_values: dict[str, list] = {}
+        for lst in lists:
+            for el in lst:
+                _flatten_element(el, "", child_values)
+        field_dists: dict[str, Any] = {}
+        for rel_path, vals in child_values.items():
+            dist = _distribution_for_values(vals)
+            if dist is not None:
+                field_dists[rel_path] = dist
+
+        out[path] = {"count": count_dist, "field_distributions": field_dists}
+    return out
+
+
 def _profile_temporal(visits: list[dict]) -> dict:
     """Return day-of-week (7) and hour-of-day (24) weight vectors from visit timestamps."""
     dow = [0.0] * 7
@@ -611,6 +699,11 @@ def profile(
     }
     if correlation is not None:
         cohort["correlation"] = correlation
+
+    # Reproduce repeat groups (JSON arrays of sub-records) found in the real data.
+    repeat_groups = _profile_repeat_groups(user_visits)
+    if repeat_groups:
+        cohort["repeat_groups"] = repeat_groups
 
     # Seed deliberate QA anomalies (only under curation) so dashboards/evals have
     # something to find. Faithful profiling leaves this empty.

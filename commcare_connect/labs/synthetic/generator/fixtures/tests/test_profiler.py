@@ -429,6 +429,82 @@ def test_profile_curate_anomalies_vary_by_opp():
     assert sig1 != sig2, "different opps should get distinct seeded anomaly sets"
 
 
+def test_profile_repeat_groups_from_list_valued_data():
+    from commcare_connect.labs.synthetic.generator.fixtures.profiler import _profile_repeat_groups
+
+    visits = []
+    for i in range(30):
+        n = (i % 3) + 1  # 1..3 instances
+        visits.append(
+            {
+                "form_json": {
+                    "form": {
+                        "mother": "x",
+                        "children": [{"weight": 1700 + j * 7 + i, "sex": "m" if j % 2 else "f"} for j in range(n)],
+                    }
+                }
+            }
+        )
+    rgs = _profile_repeat_groups(visits)
+    assert "form.children" in rgs
+    rg = rgs["form.children"]
+    assert set(rg["count"]) <= {1, 2, 3}
+    assert abs(sum(rg["count"].values()) - 1.0) < 0.01
+    assert rg["field_distributions"]["weight"]["distribution"] == "normal"
+    assert rg["field_distributions"]["sex"]["distribution"] == "categorical"
+
+
+def test_profile_ignores_list_of_scalars():
+    """A list of plain scalars (e.g. a multi-select stored as a list) is not a repeat
+    group — only lists of dicts are."""
+    from commcare_connect.labs.synthetic.generator.fixtures.profiler import _profile_repeat_groups
+
+    visits = [{"form_json": {"form": {"tags": ["a", "b"]}}} for _ in range(10)]
+    assert _profile_repeat_groups(visits) == {}
+
+
+def test_profile_then_generate_reproduces_repeat_arrays_end_to_end():
+    """Faithfulness guard: real repeat arrays in source data survive profile -> manifest
+    -> generate as JSON arrays of sub-records, not single objects."""
+    from commcare_connect.labs.synthetic.generator.fixtures.engine import generate
+    from commcare_connect.labs.synthetic.generator.fixtures.manifest import Manifest
+    from commcare_connect.labs.synthetic.generator.fixtures.schema_loader import FormSchema, QuestionSpec
+
+    visits = []
+    for i in range(40):
+        n = (i % 3) + 1
+        day = f"2026-05-{4 + (i % 24):02d}"
+        visits.append(
+            {
+                "username": f"flw_{i % 2}",
+                "visit_date": day,
+                "status": "approved",
+                "flagged": False,
+                "entity_id": f"e{i}",
+                "form_json": {
+                    "form": {
+                        "mother_age": str(25 + (i % 10)),
+                        "children": [{"weight": 1600 + j * 30 + i, "sex": "m" if j % 2 else "f"} for j in range(n)],
+                    }
+                },
+            }
+        )
+    manifest = Manifest.from_yaml(
+        profile(opportunity_id=10042, user_visits=visits, user_data=[], opportunity_detail={"name": "Repeat Opp"})
+    )
+    assert manifest.beneficiary_cohorts[0].repeat_groups, "profiler should capture the repeat group"
+
+    schema = FormSchema(questions=[QuestionSpec("form.mother_age", "int")])
+    out = generate(manifest=manifest, opportunity_detail={"name": "Repeat Opp"}, form_schema=schema)
+    sampled = [v for v in out["user_visits"] if "children" in v["form_json"].get("form", {})]
+    assert sampled, "generated visits should carry the children repeat"
+    for v in sampled:
+        kids = v["form_json"]["form"]["children"]
+        assert isinstance(kids, list)
+        for el in kids:
+            assert isinstance(el, dict) and "weight" in el
+
+
 def test_profile_curate_end_to_end_validates_and_adds_signal():
     """profile(curate=True) yields a valid manifest whose flag rates are floored."""
     import yaml as _yaml
