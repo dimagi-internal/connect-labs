@@ -6,6 +6,11 @@ from django.utils import timezone
 
 LABS_ONLY_OPP_ID_FLOOR = 10_000
 
+# Dimagi-internal email domains treated as a single trust boundary for labs-only
+# synthetic-opp visibility: the AI team uses @dimagi-ai.com, most demo opps are
+# registered for @dimagi.com, and both should see each other's synthetic opps.
+DIMAGI_INTERNAL_DOMAINS = ("@dimagi.com", "@dimagi-ai.com")
+
 
 class SyntheticOpportunity(models.Model):
     """Registry entry marking an opportunity as backed by GDrive fixtures.
@@ -106,7 +111,8 @@ class SyntheticOpportunity(models.Model):
 
         Always False for non-labs-only opps (those gate via real Connect membership).
         For labs-only opps: requires ``view_synthetic_opps`` on AND, when
-        ``allowed_domains`` is non-empty, the user's email to end with one of them.
+        ``allowed_domains`` is non-empty, the user's email to end with one of them
+        — with Dimagi-internal domains treated as equivalent (see below).
         """
         if not self.labs_only or not self.enabled:
             return False
@@ -115,7 +121,17 @@ class SyntheticOpportunity(models.Model):
         if not self.allowed_domains:
             return True
         email = (getattr(user, "email", "") or "").lower()
-        return any(email.endswith(d.lower()) for d in self.allowed_domains)
+        if any(email.endswith(d.lower()) for d in self.allowed_domains):
+            return True
+        # Dimagi-internal equivalence: the AI team uses @dimagi-ai.com while most
+        # demo opps are registered for @dimagi.com (the create form's default).
+        # Treat the Dimagi-internal domains as one trust boundary so an
+        # @dimagi-ai.com user sees opps allow-listed for @dimagi.com and vice
+        # versa — the same reason the MCP labs-only access gate grants opted-in
+        # Dimagi callers regardless of allowed_domains.
+        user_is_dimagi = any(email.endswith(d) for d in DIMAGI_INTERNAL_DOMAINS)
+        allowlist_is_dimagi = any(d.strip().lower() in DIMAGI_INTERNAL_DOMAINS for d in self.allowed_domains)
+        return user_is_dimagi and allowlist_is_dimagi
 
 
 class LabsLocalRecord(models.Model):
