@@ -190,7 +190,11 @@ def get_solicitation(
 
 @register(
     name="list_responses",
-    description="List all responses submitted for a given solicitation.",
+    description=(
+        "List all responses submitted for a given solicitation. Pass program_id "
+        "(or organization_id) to scope the read to a labs-only synthetic program — "
+        "without a scope id the read targets production and 404s for labs-only opps."
+    ),
     input_schema={
         "type": "object",
         "properties": {
@@ -198,15 +202,40 @@ def get_solicitation(
                 "type": "integer",
                 "description": "The Labs Record ID of the parent solicitation.",
             },
+            "program_id": {
+                "type": ["integer", "string"],
+                "description": (
+                    "Program ID owning the solicitation. Required to reach a labs-only "
+                    "synthetic program's local backend (id >= the labs-only floor)."
+                ),
+            },
+            "organization_id": {
+                "type": ["integer", "string"],
+                "description": "Organization ID alternative to program_id for scoping.",
+            },
         },
         "required": ["solicitation_id"],
         "additionalProperties": False,
     },
 )
-def list_responses(user, solicitation_id: int) -> dict:
-    """List responses for a solicitation (child records linked by labs_record_id)."""
+def list_responses(
+    user,
+    solicitation_id: int,
+    program_id: str | None = None,
+    organization_id: str | None = None,
+) -> dict:
+    """List responses for a solicitation (child records linked by labs_record_id).
+
+    Pass ``program_id`` (or ``organization_id``) so the client routes to the
+    labs-only local backend for synthetic programs; without a scope id the read
+    targets production and 404s for labs-only opps.
+    """
     token = require_connect_token(user)
-    client = LabsRecordAPIClient(access_token=token)
+    client = LabsRecordAPIClient(
+        access_token=token,
+        program_id=_coerce_id(program_id),
+        organization_id=_coerce_id(organization_id),
+    )
     try:
         records = client.get_records(
             type="solicitation_response",
@@ -219,7 +248,10 @@ def list_responses(user, solicitation_id: int) -> dict:
 
 @register(
     name="get_response",
-    description="Get a single solicitation response by its Labs Record ID.",
+    description=(
+        "Get a single solicitation response by its Labs Record ID. Pass program_id "
+        "(or organization_id) to reach a labs-only synthetic program's local backend."
+    ),
     input_schema={
         "type": "object",
         "properties": {
@@ -227,15 +259,35 @@ def list_responses(user, solicitation_id: int) -> dict:
                 "type": "integer",
                 "description": "The Labs Record ID of the response.",
             },
+            "program_id": {
+                "type": ["integer", "string"],
+                "description": (
+                    "Program ID owning the response. Required to reach a labs-only "
+                    "synthetic program's local backend (id >= the labs-only floor)."
+                ),
+            },
+            "organization_id": {
+                "type": ["integer", "string"],
+                "description": "Organization ID alternative to program_id for scoping.",
+            },
         },
         "required": ["response_id"],
         "additionalProperties": False,
     },
 )
-def get_response(user, response_id: int) -> dict:
+def get_response(
+    user,
+    response_id: int,
+    program_id: str | None = None,
+    organization_id: str | None = None,
+) -> dict:
     """Get a single response by ID. Returns the record or raises NOT_FOUND."""
     token = require_connect_token(user)
-    client = LabsRecordAPIClient(access_token=token)
+    client = LabsRecordAPIClient(
+        access_token=token,
+        program_id=_coerce_id(program_id),
+        organization_id=_coerce_id(organization_id),
+    )
     try:
         record = client.get_record_by_id(response_id, type="solicitation_response")
         if record is None:
@@ -705,6 +757,18 @@ def delete_solicitation(
                     "so callers have full control."
                 ),
             },
+            "program_id": {
+                "type": ["integer", "string"],
+                "description": (
+                    "Program ID owning the response. Required to award a labs-only "
+                    "synthetic program's response (id >= the labs-only floor); without "
+                    "it the read/write targets production and 404s for labs-only opps."
+                ),
+            },
+            "organization_id": {
+                "type": ["integer", "string"],
+                "description": "Organization ID alternative to program_id for scoping.",
+            },
         },
         "required": ["response_id", "reward_budget", "org_id"],
         "additionalProperties": False,
@@ -717,6 +781,8 @@ def award_response(
     reward_budget: int,
     org_id: str,
     fund_id: int | None = None,
+    program_id: str | None = None,
+    organization_id: str | None = None,
 ) -> dict:
     """Award a response: mark as awarded and optionally allocate from a fund.
 
@@ -725,9 +791,17 @@ def award_response(
     2. Update response: set status=awarded, reward_budget, org_id.
     3. If fund_id: fetch fund record, append allocation, update fund.
     4. Return serialized updated response.
+
+    Pass ``program_id`` (or ``organization_id``) so the client routes to the
+    labs-only local backend for synthetic programs; without a scope id the
+    fetch/update targets production and 404s for labs-only opps.
     """
     token = require_connect_token(user)
-    client = LabsRecordAPIClient(access_token=token)
+    client = LabsRecordAPIClient(
+        access_token=token,
+        program_id=_coerce_id(program_id),
+        organization_id=_coerce_id(organization_id),
+    )
     try:
         # 1. Fetch current response
         current_response = client.get_record_by_id(response_id, type="solicitation_response")

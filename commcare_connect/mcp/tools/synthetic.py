@@ -30,6 +30,7 @@ from commcare_connect.labs.synthetic.generator.fixtures.schema_loader import (
     parse_form_schema_from_app_json,
 )
 from commcare_connect.labs.synthetic.generator.io.uploader import upload_and_register
+from commcare_connect.labs.synthetic.local_records_backend import is_labs_only_opportunity_id
 from commcare_connect.labs.synthetic.models import SyntheticOpportunity
 from commcare_connect.labs.synthetic.provisioning import register_labs_only_opp
 from commcare_connect.labs.synthetic.registry import invalidate_cache
@@ -66,17 +67,29 @@ def _accessible_opp_ids_for_user(user) -> set[int]:
 def _require_opportunity_access(user, opportunity_id: int) -> None:
     """Raise PERMISSION_DENIED if the user has no access to ``opportunity_id``.
 
-    Two paths are accepted:
+    Three paths are accepted:
     1. The opp is a labs-only SyntheticOpportunity the user can see (via
        ``view_synthetic_opps`` + matching ``allowed_domains``). These opps
        have no Connect side and are gated entirely on the labs visibility model.
-    2. The opp is in the user's live Connect membership data (the existing
+    2. The opp is a labs-only opp (``is_labs_only_opportunity_id`` — id at/above
+       ``LABS_ONLY_OPP_ID_FLOOR`` with a matching ``labs_only=True`` row) and the
+       caller has opted in to synthetic data (``view_synthetic_opps``). Labs-only
+       opps have no real Connect side — the data layer routes them to the local
+       backend via this SAME predicate, with no Connect membership behind them —
+       so the access gate uses it too rather than additionally requiring the
+       caller to clear ``allowed_domains``. This matches the ``workflow_*``
+       tools, which apply no gate at all. (Registered opps still honor their
+       ``allowed_domains`` via path 1, so explicit domain scoping is preserved
+       where configured; this path only adds access for opted-in users to
+       cross-domain labs-only opps — e.g. an ``@dimagi-ai.com`` user reaching an
+       opp registered for ``@dimagi.com``.)
+    3. The opp is in the user's live Connect membership data (the existing
        check — same source the labs synthetic UI uses, just without the
        request-bound session detour). Empty set (no token, upstream failure)
        is treated as "no access" so an unauthenticated caller can't slip a
        write through.
     """
-    # Labs-only path first — cheap DB lookup, no upstream call.
+    # Path 1 — registered labs-only opp visible to the user. Cheap DB lookup.
     try:
         opp = SyntheticOpportunity.objects.get(opportunity_id=opportunity_id, labs_only=True)
     except SyntheticOpportunity.DoesNotExist:
@@ -84,6 +97,18 @@ def _require_opportunity_access(user, opportunity_id: int) -> None:
     if opp is not None and opp.is_visible_to(user):
         return
 
+    # Path 2 — a labs-only opp (registered, id-floor), for a synthetic-opted-in
+    # caller, regardless of allowed_domains (same predicate the data layer routes on).
+    if is_labs_only_opportunity_id(opportunity_id):
+        if getattr(user, "view_synthetic_opps", False):
+            return
+        raise MCPToolError(
+            "PERMISSION_DENIED",
+            f"labs-only opportunity_id {opportunity_id}: enable view_synthetic_opps "
+            f"(synthetic_set_my_visibility) to access labs-only synthetic data.",
+        )
+
+    # Path 3 — real Connect opp the caller is a member of.
     accessible = _accessible_opp_ids_for_user(user)
     if opportunity_id not in accessible:
         raise MCPToolError(
