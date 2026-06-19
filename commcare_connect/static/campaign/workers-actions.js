@@ -74,5 +74,20 @@
         budget: budget,
       });
     },
+    inviteUser: function (data) {
+      return post('/campaign/api/users/invite/', data);
+    },
+    setUserRole: function (username, role) {
+      return post(
+        '/campaign/api/users/' + encodeURIComponent(username) + '/role/',
+        { role: role },
+      );
+    },
+    setUserStatus: function (username, status) {
+      return post(
+        '/campaign/api/users/' + encodeURIComponent(username) + '/status/',
+        { status: status },
+      );
+    },
   };
 })();

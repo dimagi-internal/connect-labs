@@ -4,6 +4,7 @@ from . import views
 from .api import activities as activities_api
 from .api import bootstrap as bootstrap_api
 from .api import microplans as microplans_api
+from .api import users as users_api
 from .api import workers as workers_api
 from .auth import oauth_views
 
@@ -27,5 +28,8 @@ urlpatterns = [
     path("api/microplans/<str:microplan_id>/", microplans_api.microplan_update, name="microplan_update"),
     path("api/microplans/<str:microplan_id>/target/", microplans_api.microplan_target, name="microplan_target"),
     path("api/microplans/<str:microplan_id>/budget/", microplans_api.microplan_budget, name="microplan_budget"),
+    path("api/users/invite/", users_api.user_invite, name="user_invite"),
+    path("api/users/<path:username>/role/", users_api.user_set_role, name="user_set_role"),
+    path("api/users/<path:username>/status/", users_api.user_set_status, name="user_set_status"),
     path("", views.AppView.as_view(), name="app"),
 ]

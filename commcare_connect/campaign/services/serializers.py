@@ -2,7 +2,8 @@
 the prototype's React modules consume."""
 from __future__ import annotations
 
-from commcare_connect.campaign.models import Campaign
+from commcare_connect.campaign.models import Campaign, CampaignUser
+from commcare_connect.campaign.services import roles
 
 KYC_STATES = ["approved", "pending", "rejected", "review"]
 PAY_STATES = ["paid", "approved", "pending", "rejected", "hold"]
@@ -120,6 +121,19 @@ def _activity(a) -> dict:
     }
 
 
+def _user(cu, current_username) -> dict:
+    return {
+        "id": cu.commcare_username,
+        "name": cu.name or cu.commcare_username,
+        "email": cu.email,
+        "role": roles.to_short(cu.role),
+        "scope": cu.scope,
+        "status": cu.status,
+        "last": cu.last_login_at.strftime("%b %-d, %Y") if cu.last_login_at else "—",
+        "you": cu.commcare_username == current_username,
+    }
+
+
 def _report_day(d) -> dict:
     return {"day": d.day, "enrolled": d.enrolled, "attended": d.attended, "paid": d.paid}
 
@@ -152,7 +166,7 @@ def _microplan(m) -> dict:
     }
 
 
-def bootstrap_payload(c: Campaign) -> dict:
+def bootstrap_payload(c: Campaign, current_username: str | None = None) -> dict:
     regions = list(c.regions.select_related("plan").all())
     role_names = {r.role_id: r.name for r in c.worker_roles.all()}
     region_names = {r.region_id: r.name for r in regions}
@@ -167,6 +181,7 @@ def bootstrap_payload(c: Campaign) -> dict:
         "REPORT_DAYS": [_report_day(d) for d in c.report_days.all()],
         "HOUSEHOLDS": _household(c.household_stat),
         "WORKERS": [_worker(w, role_names, region_names) for w in c.workers.all()],
+        "USERS": [_user(u, current_username) for u in CampaignUser.objects.all().order_by("created_at")],
         "KYC_STATES": list(KYC_STATES),
         "PAY_STATES": list(PAY_STATES),
         "sharedLabel": dict(SHARED_LABEL),
