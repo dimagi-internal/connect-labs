@@ -38,6 +38,12 @@ class Command(BaseCommand):
         )
         parser.add_argument("--token-env", default="CONNECT_OAUTH_TOKEN", help="Env var holding the OAuth token.")
         parser.add_argument("--base-url", required=True, help="Connect base URL (e.g. https://connect.dimagi.com).")
+        parser.add_argument(
+            "--curate",
+            action="store_true",
+            help="Curate for analytics signal (floor flag rates + degenerate clinical categoricals, "
+            "per-opp varied) for the --opps path. With --spec, set 'curate: true' in the YAML instead.",
+        )
 
     def handle(self, *args, **opts):
         token = os.environ.get(opts["token_env"])
@@ -58,7 +64,12 @@ class Command(BaseCommand):
         drive = DriveClient() if str(opts["out"]).startswith("gdrive:") else None
         ids = [int(x) for x in opts["opps"].split(",") if x.strip()]
         resolved, handles = profile_opps_bulk(
-            ids, base_url=opts["base_url"], oauth_token=token, bundle_root=opts["out"], drive=drive
+            ids,
+            base_url=opts["base_url"],
+            oauth_token=token,
+            bundle_root=opts["out"],
+            drive=drive,
+            curate=opts["curate"],
         )
         self.stdout.write(self.style.SUCCESS(f"Wrote {len(handles)} bundles."))
         self.stdout.write(f"Phase-2 bundle_root: {resolved}")

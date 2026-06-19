@@ -12,6 +12,7 @@ reduced to numbers, and discarded.
 from __future__ import annotations
 
 import datetime as dt
+import random
 import statistics
 from collections import Counter, defaultdict
 from typing import Any
@@ -54,8 +55,18 @@ def _classify_archetype(approval_rate: float, flag_rate: float) -> str:
     return "new_hire"
 
 
+# Per-archetype minimum flag rate applied only when curate=True. Real KMC opps are
+# ~100% approved, which leaves approval_rate with no variance for analytics; flooring
+# (scaled per-opp) gives a realistic approved/pending/rejected mix without inventing
+# a story per FLW. Floors stay modest so most visits remain approved.
+_ARCHETYPE_FLAG_FLOOR = {"rockstar": 0.03, "steady": 0.08, "struggling": 0.16, "new_hire": 0.27}
+
+
 def _profile_flw_personas(
     visits_by_flw: dict[str, list[dict]],
+    *,
+    curate: bool = False,
+    opp_jitter: float = 1.0,
 ) -> list[dict[str, Any]]:
     personas = []
     for i, (username, visits) in enumerate(sorted(visits_by_flw.items(), key=lambda kv: -len(kv[1]))):
@@ -66,6 +77,13 @@ def _profile_flw_personas(
         approval_rate = _safe_rate(approved, total)
         flag_rate = _safe_rate(flagged, total)
         archetype = _classify_archetype(approval_rate, flag_rate)
+
+        if curate:
+            # Floor the flag rate (scaled by the per-opp jitter so opps differ) and
+            # keep approval consistent with it.
+            floor = min(0.6, _ARCHETYPE_FLAG_FLOOR[archetype] * opp_jitter)
+            flag_rate = round(max(flag_rate, floor), 3)
+            approval_rate = round(1.0 - flag_rate, 3)
 
         acc_mean = approval_rate
         acc_std = min(0.08, acc_mean * 0.1)
@@ -237,6 +255,50 @@ def _profile_categorical(visits: list[dict], path: str) -> dict[str, float]:
     return {k: round(c / total, 4) for k, c in counts.items()}
 
 
+_NEGATIVE_TOKENS = {"no", "0", "false", "absent", "none", "negative", "n", "normal"}
+_AFFIRMATIVE_FOR = {
+    "no": "yes",
+    "0": "1",
+    "false": "true",
+    "absent": "present",
+    "none": "present",
+    "negative": "positive",
+    "n": "y",
+    "normal": "abnormal",
+}
+
+
+def _curate_categorical(values: dict[str, float], target_minority: float) -> dict[str, float]:
+    """Give a degenerate categorical realistic minority mass so it carries signal.
+
+    Real KMC clinical flags (danger signs, referrals) are ~0% in the export, so the
+    derived rates have no variance. When one value dominates (>= 95%):
+    - multi-value field: rebalance so the minority values share ``target_minority``;
+    - single binary-negative field (all 'no'/'0'): inject the affirmative outcome at
+      ``target_minority`` (e.g. danger_sign 'yes' ~ 10%).
+    A single non-binary value (e.g. an 'ok' label) is left unchanged — we won't invent
+    a meaningless second category.
+    """
+    if not values:
+        return values
+    items = sorted(values.items(), key=lambda kv: -kv[1])
+    top, top_rate = items[0]
+    if top_rate < 0.95:
+        return values  # already has signal
+    keep_top = round(1.0 - target_minority, 4)
+    if len(items) == 1:
+        aff = _AFFIRMATIVE_FOR.get(top.lower())
+        if aff is None:
+            return values  # single non-binary value -> nothing meaningful to add
+        return {top: keep_top, aff: round(target_minority, 4)}
+    minority = dict(items[1:])
+    msum = sum(minority.values()) or 1.0
+    out = {top: keep_top}
+    for k, v in minority.items():
+        out[k] = round(target_minority * v / msum, 4)
+    return out
+
+
 def _profile_null_rate(visits: list[dict], path: str) -> float:
     """Return the fraction of visits where the field at path is None or ''."""
     present = 0
@@ -406,6 +468,7 @@ def profile(
     opportunity_detail: dict,
     form_json_paths: list[str] | None = None,
     app_structure: dict | None = None,
+    curate: bool = False,
 ) -> str:
     """Analyze real export data and return a Manifest YAML string.
 
@@ -432,7 +495,12 @@ def profile(
 
     opp_name = opportunity_detail.get("name", f"Opportunity {opportunity_id}")
 
-    personas = _profile_flw_personas(visits_by_flw)
+    # Per-opp deterministic jitter so a curated cohort varies opp-to-opp (one opp
+    # runs hotter on flags / clinical prevalence than another) without hand-authoring.
+    opp_rng = random.Random(opportunity_id)
+    opp_jitter = round(opp_rng.uniform(0.7, 1.4), 3) if curate else 1.0
+
+    personas = _profile_flw_personas(visits_by_flw, curate=curate, opp_jitter=opp_jitter)
     timeline = _profile_timeline(user_visits, visits_by_flw)
     field_dists = _profile_field_distributions(user_visits, form_json_paths)
 
@@ -452,6 +520,9 @@ def profile(
             if kind in {"select", "multiselect"} and path not in field_dists:
                 values = _profile_categorical(user_visits, path)
                 if values:
+                    if curate:
+                        target = round(min(0.3, opp_rng.uniform(0.05, 0.18) * opp_jitter), 4)
+                        values = _curate_categorical(values, target)
                     field_dists[path] = {
                         "distribution": "categorical",
                         "values": values,
