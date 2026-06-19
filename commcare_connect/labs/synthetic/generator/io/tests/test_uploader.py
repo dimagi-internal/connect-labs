@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from django.test import override_settings
 
@@ -119,3 +121,18 @@ def test_upload_fixtures_writes_app_structure(settings):
     }
     upload_fixtures(drive=drive, opportunity_id=10000, fixtures=fixtures)
     assert "app_structure.json" in drive.uploaded
+    assert drive.uploaded["app_structure.json"] == json.dumps(fixtures["app_structure"]).encode()
+
+
+def test_upload_fixtures_skips_app_structure_when_absent(settings):
+    settings.LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID = "parent"
+    drive = _FakeDriveSimple()
+    fixtures = {
+        "opportunity": {},
+        "user_visits": [],
+        "user_data": [],
+        "completed_works": [],
+        "completed_module": [],
+    }
+    upload_fixtures(drive=drive, opportunity_id=10000, fixtures=fixtures)
+    assert "app_structure.json" not in drive.uploaded
