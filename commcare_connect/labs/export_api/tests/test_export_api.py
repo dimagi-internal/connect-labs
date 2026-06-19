@@ -394,3 +394,95 @@ def test_new_endpoints_empty_when_fixture_absent(monkeypatch, endpoint):
     url = f"/api/export/opportunity/10001/{endpoint}/"
     body = _client_for(_user()).get(url).json()
     assert body == {"next": None, "results": []}
+
+
+# --------------------------------------------------------------------------- #
+# opp_org_program_list (#650 gap 1) — purely synthetic org/program/opp tree
+# --------------------------------------------------------------------------- #
+OPP_ORG_PROGRAM_URL = "/api/export/opp_org_program_list/"
+
+
+@pytest.mark.django_db
+def test_opp_org_program_list_shape_and_fields(monkeypatch):
+    _install(
+        monkeypatch,
+        {"folder-a": {"opportunity.json": {"id": 10001, "name": "Baobab Delivery", "end_date": "2026-12-31"}}},
+    )
+    _make_opp(org_name="Baobab Institute", program_name="Nutrition", program_id=10050, visit_count=42)
+    body = _client_for(_user()).get(OPP_ORG_PROGRAM_URL).json()
+    assert set(body.keys()) == {"organizations", "opportunities", "programs"}
+
+    assert body["organizations"] == [
+        {
+            "id": "labs-synthetic-baobab-institute",
+            "slug": "labs-synthetic-baobab-institute",
+            "name": "Baobab Institute",
+        }
+    ]
+    assert body["programs"] == [
+        {
+            "id": 10050,
+            "name": "Nutrition",
+            "delivery_type": None,
+            "currency": None,
+            "organization": "labs-synthetic-baobab-institute",
+        }
+    ]
+    [opp] = body["opportunities"]
+    assert opp["id"] == 10001
+    assert opp["name"] == "Baobab Delivery"
+    assert opp["organization"] == "labs-synthetic-baobab-institute"
+    assert opp["program"] == 10050
+    assert opp["is_active"] is True
+    assert opp["end_date"] == "2026-12-31"
+    assert opp["visit_count"] == 42
+    assert "date_created" in opp
+
+
+@pytest.mark.django_db
+def test_opp_org_program_list_only_visible(monkeypatch):
+    _install(
+        monkeypatch,
+        {
+            "folder-a": {"opportunity.json": {"id": 10001, "name": "Mine"}},
+            "folder-b": {"opportunity.json": {"id": 10002, "name": "Theirs"}},
+        },
+    )
+    _make_opp(opportunity_id=10001, gdrive_folder_id="folder-a", allowed_domains=["@dimagi.com"])
+    _make_opp(opportunity_id=10002, gdrive_folder_id="folder-b", allowed_domains=["@example.org"])
+    body = _client_for(_user(email="me@dimagi.com")).get(OPP_ORG_PROGRAM_URL).json()
+    assert [o["id"] for o in body["opportunities"]] == [10001]
+    assert [o["slug"] for o in body["organizations"]] == ["labs-synthetic-labs-synthetic"]
+
+
+@pytest.mark.django_db
+def test_opp_org_program_list_links_are_consistent(monkeypatch):
+    _install(
+        monkeypatch,
+        {
+            "folder-a": {"opportunity.json": {"id": 10001, "name": "A"}},
+            "folder-b": {"opportunity.json": {"id": 10002, "name": "B"}},
+        },
+    )
+    # Two opps sharing one program under one org -> collapse to 1 org + 1 program.
+    _make_opp(opportunity_id=10001, gdrive_folder_id="folder-a", org_name="Org", program_name="P", program_id=10050)
+    _make_opp(opportunity_id=10002, gdrive_folder_id="folder-b", org_name="Org", program_name="P", program_id=10050)
+    body = _client_for(_user()).get(OPP_ORG_PROGRAM_URL).json()
+
+    org_slugs = {o["slug"] for o in body["organizations"]}
+    program_ids = {p["id"] for p in body["programs"]}
+    assert len(body["organizations"]) == 1
+    assert len(body["programs"]) == 1
+    assert len(body["opportunities"]) == 2
+    for opp in body["opportunities"]:
+        assert opp["organization"] in org_slugs
+        assert opp["program"] in program_ids
+    for program in body["programs"]:
+        assert program["organization"] in org_slugs
+
+
+@pytest.mark.django_db
+def test_opp_org_program_list_requires_auth(monkeypatch):
+    _install(monkeypatch, {})
+    resp = APIClient().get(OPP_ORG_PROGRAM_URL)
+    assert resp.status_code == 401

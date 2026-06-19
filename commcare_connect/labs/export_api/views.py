@@ -6,8 +6,8 @@ Scope: ``labs_only=True`` synthetic opps (IDs >= 10_000), gated by
 authorize, paginate, and shape the response.
 """
 from drf_spectacular.types import OpenApiTypes
-from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
-from rest_framework import status
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, inline_serializer
+from rest_framework import serializers, status
 from rest_framework.exceptions import NotFound
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -16,6 +16,7 @@ from rest_framework.views import APIView
 from commcare_connect.labs.integrations.connect.factory import get_export_client
 from commcare_connect.labs.synthetic.client import SyntheticExportClient
 from commcare_connect.labs.synthetic.models import SyntheticOpportunity
+from commcare_connect.labs.synthetic.org_tree import synthetic_org_slug, synthetic_program_id
 
 from .authentication import MCPTokenAuthentication
 from .pagination import IdKeysetPagination
@@ -162,5 +163,74 @@ class AppStructureView(_ExportView):
             {
                 "learn_app": wrapper.get("learn_app") if include_learn else None,
                 "deliver_app": wrapper.get("deliver_app") if include_deliver else None,
+            }
+        )
+
+
+class OppOrgProgramListView(_ExportView):
+    """GET /api/export/opp_org_program_list/ — org/program/opp tree (purely synthetic).
+
+    Mirrors production Connect's ``ProgramOpportunityOrganizationDataView`` shape so an
+    external consumer's metadata loader works unchanged. Built ONLY from synthetic opps
+    visible to the token user — never reads session/real-Connect org data. Org slugs and
+    program ids come from ``labs.synthetic.org_tree`` (shared with labs_context).
+    """
+
+    @extend_schema(
+        summary="Org / program / opportunity tree for visible synthetic opps",
+        responses=inline_serializer(
+            "SyntheticOppOrgProgramList",
+            {
+                "organizations": serializers.ListField(child=serializers.DictField()),
+                "opportunities": serializers.ListField(child=serializers.DictField()),
+                "programs": serializers.ListField(child=serializers.DictField()),
+            },
+        ),
+    )
+    def get(self, request):
+        organizations: dict[str, dict] = {}
+        programs: dict[int, dict] = {}
+        opportunities = []
+
+        for opp in SyntheticOpportunity.objects.filter(labs_only=True, enabled=True):
+            if not opp.is_visible_to(request.user):
+                continue
+            org_slug = synthetic_org_slug(opp)
+            org_name = opp.org_name or "Labs Synthetic"
+            program_id = synthetic_program_id(opp)
+            program_name = opp.program_name or "Labs Synthetic"
+
+            detail_rows = _synthetic_client(opp.opportunity_id).fetch_all("")
+            detail = detail_rows[0] if detail_rows and isinstance(detail_rows[0], dict) else {}
+
+            organizations.setdefault(org_slug, {"id": org_slug, "slug": org_slug, "name": org_name})
+            programs.setdefault(
+                program_id,
+                {
+                    "id": program_id,
+                    "name": program_name,
+                    "delivery_type": None,
+                    "currency": None,
+                    "organization": org_slug,
+                },
+            )
+            opportunities.append(
+                {
+                    "id": opp.opportunity_id,
+                    "name": detail.get("name") or opp.label or f"Synthetic {opp.opportunity_id}",
+                    "date_created": detail.get("date_created") or opp.created_at.isoformat(),
+                    "organization": org_slug,
+                    "end_date": detail.get("end_date"),
+                    "is_active": detail.get("is_active", True),
+                    "program": program_id,
+                    "visit_count": opp.visit_count or 0,
+                }
+            )
+
+        return Response(
+            {
+                "organizations": list(organizations.values()),
+                "opportunities": opportunities,
+                "programs": list(programs.values()),
             }
         )

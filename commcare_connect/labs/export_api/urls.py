@@ -6,6 +6,7 @@ from . import views
 app_name = "export_api"
 
 urlpatterns = [
+    path("opp_org_program_list/", views.OppOrgProgramListView.as_view(), name="opp_org_program_list"),
     path("opportunities/", views.OpportunityListView.as_view(), name="opportunities"),
     path(
         "opportunity/<int:opportunity_id>/",

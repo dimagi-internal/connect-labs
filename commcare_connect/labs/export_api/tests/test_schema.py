@@ -17,6 +17,7 @@ def _schema():
 def test_export_paths_documented():
     paths = _schema()["paths"]
     for p in (
+        "/api/export/opp_org_program_list/",
         "/api/export/opportunities/",
         "/api/export/opportunity/{opportunity_id}/",
         "/api/export/opportunity/{opportunity_id}/user_visits/",
