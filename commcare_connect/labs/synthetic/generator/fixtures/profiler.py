@@ -19,6 +19,7 @@ from typing import Any
 import yaml
 
 from .manifest import Manifest, ManifestValidationError
+from .schema_loader import FormSchema, parse_form_schema_from_app_json
 
 
 def _mean_std(values: list[float]) -> tuple[float, float]:
@@ -206,6 +207,36 @@ def _walk_paths(
                     pass
 
 
+def _classify_paths(form_schema: FormSchema) -> dict[str, str]:
+    """Return a mapping of json_path -> kind for all questions in the schema."""
+    return {q.json_path: q.kind for q in form_schema.questions}
+
+
+def _profile_categorical(visits: list[dict], path: str) -> dict[str, float]:
+    """Return value -> rate mapping for a categorical field at dotted path."""
+    counts: Counter[str] = Counter()
+    for v in visits:
+        raw = _extract_nested(v.get("form_json") or {}, path)
+        if raw in (None, ""):
+            continue
+        counts[str(raw)] += 1
+    total = sum(counts.values())
+    if total == 0:
+        return {}
+    return {k: round(c / total, 4) for k, c in counts.items()}
+
+
+def _profile_null_rate(visits: list[dict], path: str) -> float:
+    """Return the fraction of visits where the field at path is None or ''."""
+    present = 0
+    for v in visits:
+        raw = _extract_nested(v.get("form_json") or {}, path)
+        if raw not in (None, ""):
+            present += 1
+    n = len(visits)
+    return round(1.0 - present / n, 4) if n else 0.0
+
+
 def _profile_kpis(
     field_distributions: dict[str, dict[str, Any]],
     all_visits: list[dict],
@@ -255,6 +286,7 @@ def profile(
     user_data: list[dict],
     opportunity_detail: dict,
     form_json_paths: list[str] | None = None,
+    app_structure: dict | None = None,
 ) -> str:
     """Analyze real export data and return a Manifest YAML string.
 
@@ -265,6 +297,10 @@ def profile(
         opportunity_detail: Dict from /export/opportunity/<id>/.
         form_json_paths: Optional explicit list of form_json dot-paths to
             profile. If omitted, auto-discovers numeric fields from a sample.
+        app_structure: Optional dict from /export/opportunity/<id>/app_structure/.
+            When provided, used to type fields — select/multiselect paths get
+            categorical distributions and all profiled paths get null_rate.
+            Callers that omit this arg get identical prior behaviour.
 
     Returns:
         YAML string that validates against Manifest.from_yaml().
@@ -280,6 +316,26 @@ def profile(
     personas = _profile_flw_personas(visits_by_flw)
     timeline = _profile_timeline(user_visits, visits_by_flw)
     field_dists = _profile_field_distributions(user_visits, form_json_paths)
+
+    # If caller provided app_structure, derive field types and enrich distributions.
+    if app_structure is not None:
+        form_schema = parse_form_schema_from_app_json(app_structure, app_type="deliver")
+        kinds = _classify_paths(form_schema)
+
+        # Attach null_rate to every numeric distribution we profiled.
+        for path, dist in field_dists.items():
+            dist["null_rate"] = _profile_null_rate(user_visits, path)
+
+        # Add categorical distributions for select/multiselect paths not already covered.
+        for path, kind in kinds.items():
+            if kind in {"select", "multiselect"} and path not in field_dists:
+                values = _profile_categorical(user_visits, path)
+                if values:
+                    field_dists[path] = {
+                        "distribution": "categorical",
+                        "values": values,
+                        "null_rate": _profile_null_rate(user_visits, path),
+                    }
 
     entity_ids = {v.get("entity_id") for v in user_visits if v.get("entity_id")}
     cohort_size = max(len(entity_ids), 10)
