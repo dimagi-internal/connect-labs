@@ -226,6 +226,6 @@ The quality scorecard uses plain language for each check:
 
 Columns that are always 100% across all surveyors are greyed out so the columns that actually vary stand out. The scorecard uses a larger type scale and taller rows so figures are easy to read at a normal screen size. When a surveyor carries a **REVIEW** tag, it sits clearly apart from the surveyor's name — it will not appear fused to the name — and a rose status rail runs down the left edge of that surveyor's row so flagged rows are immediately visible. The inline note stating exactly which two checks triggered the REVIEW tag is displayed in a larger, easier-to-read size so you know at a glance why that surveyor has been flagged without having to cross-reference the rest of the row.
 
-**"On sampled house" column**
+**Independent back-check block**
 
-This column shows real per-surveyor substitution rates when the cycle has that data. When the cycle does not include substitution data, the column disapp
+Each surveyor's panel includes an **Independent back-check — re-survey concordance** block that shows agreement percentages from a small sample of households that were
