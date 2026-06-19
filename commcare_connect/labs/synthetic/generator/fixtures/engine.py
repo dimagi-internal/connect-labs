@@ -107,7 +107,12 @@ def generate(
         _build_household_locations(manifest.geography, cohort.size, rng) if manifest.geography else None
     )
 
-    slots = expand_visit_schedule(manifest.timeline, personas, random_seed=manifest.random_seed)
+    slots = expand_visit_schedule(
+        manifest.timeline,
+        personas,
+        random_seed=manifest.random_seed,
+        day_of_week=(manifest.temporal.day_of_week if manifest.temporal else None),
+    )
     slots.sort(key=lambda s: (s.visit_date, s.flw_id))
 
     copula_sampler = build_copula_sampler(cohort.correlation, cohort.field_distributions, seed=manifest.random_seed)

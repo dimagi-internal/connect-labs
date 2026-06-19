@@ -33,20 +33,29 @@ def expand_visit_schedule(
     personas: list[FlwPersona],
     *,
     random_seed: int,
+    day_of_week: list[float] | None = None,
 ) -> list[VisitSlot]:
     rng = random.Random(random_seed)
     slots: list[VisitSlot] = []
     cadence_mean = timeline.visit_cadence_per_week_per_flw.mean
     cadence_std = timeline.visit_cadence_per_week_per_flw.stddev
+    weekday_choices = list(range(7))
+    weekday_weights = day_of_week if (day_of_week and sum(day_of_week) > 0) else None
 
     for week in range(1, timeline.weeks + 1):
         week_start = timeline.start_date + dt.timedelta(days=(week - 1) * 7)
+        week_mult = 1.0
+        if timeline.weekly_volume_multipliers is not None:
+            week_mult = timeline.weekly_volume_multipliers[week - 1]
         for persona in personas:
             mult = _ARCHETYPE_MULTIPLIER.get(persona.archetype, 1.0)
-            mean = max(0.0, cadence_mean * mult)
+            mean = max(0.0, cadence_mean * mult * week_mult)
             count = max(0, int(round(rng.gauss(mean, cadence_std))))
             for _ in range(count):
-                day_offset = rng.randint(0, 6)
+                if weekday_weights:
+                    day_offset = rng.choices(weekday_choices, weights=weekday_weights, k=1)[0]
+                else:
+                    day_offset = rng.randint(0, 6)
                 slots.append(
                     VisitSlot(
                         flw_id=persona.id,
