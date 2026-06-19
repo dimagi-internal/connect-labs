@@ -151,8 +151,7 @@ def test_visible_opp_returns_envelope(monkeypatch):
     resp = _client_for(_user()).get(VISITS_URL)
     assert resp.status_code == 200
     body = resp.json()
-    assert set(body.keys()) == {"results", "next", "count"}
-    assert body["count"] == 2
+    assert set(body.keys()) == {"results", "next"}
     assert body["next"] is None
     assert body["results"] == rows
 
@@ -171,7 +170,7 @@ def test_empty_fixture_returns_empty_envelope(monkeypatch):
     _install(monkeypatch, {"folder-a": {"user_visits.json": []}})
     _make_opp()
     body = _client_for(_user()).get(VISITS_URL).json()
-    assert body == {"results": [], "next": None, "count": 0}
+    assert body == {"results": [], "next": None}
 
 
 @pytest.mark.django_db
@@ -191,7 +190,6 @@ def test_all_paginated_endpoints_serve_their_fixture(monkeypatch, endpoint, file
     url = f"/api/export/opportunity/10001/{endpoint}/"
     body = _client_for(_user()).get(url).json()
     assert body["results"] == rows
-    assert body["count"] == 1
 
 
 @pytest.mark.django_db
@@ -206,7 +204,6 @@ def test_next_paginates_to_exhaustion_no_dupes(monkeypatch):
     pages = 0
     while url is not None:
         body = client.get(url).json()
-        assert body["count"] == 7
         seen.extend(r["id"] for r in body["results"])
         pages += 1
         if body["next"] is None:
@@ -229,7 +226,15 @@ def test_detail_returns_bare_dict(monkeypatch):
     _make_opp()
     resp = _client_for(_user()).get(DETAIL_URL)
     assert resp.status_code == 200
-    assert resp.json() == opp  # bare dict, not enveloped
+    assert resp.json() == {**opp, "visit_count": 0}  # bare dict + injected visit_count
+
+
+@pytest.mark.django_db
+def test_detail_injects_registry_visit_count(monkeypatch):
+    _install(monkeypatch, {"folder-a": {"opportunity.json": {"id": 10001, "name": "X"}}})
+    _make_opp(visit_count=137)
+    body = _client_for(_user()).get(DETAIL_URL).json()
+    assert body["visit_count"] == 137
 
 
 @pytest.mark.django_db
@@ -244,7 +249,7 @@ def test_opportunities_lists_only_visible(monkeypatch):
     _make_opp(opportunity_id=10001, gdrive_folder_id="folder-a", allowed_domains=["@dimagi.com"])
     _make_opp(opportunity_id=10002, gdrive_folder_id="folder-b", allowed_domains=["@example.org"])
     body = _client_for(_user(email="me@dimagi.com")).get(OPPS_URL).json()
-    assert set(body.keys()) == {"results", "next", "count"}
+    assert set(body.keys()) == {"results", "next"}
     ids = [r["id"] for r in body["results"]]
     assert ids == [10001]
 
@@ -295,3 +300,227 @@ def test_app_structure_invalid_app_type_returns_400(monkeypatch):
     _make_opp()
     resp = _client_for(_user()).get(APP_STRUCTURE_URL + "?app_type=bogus")
     assert resp.status_code == 400
+
+
+# --------------------------------------------------------------------------- #
+# Keyset pagination — exact production envelope {next, results}
+# --------------------------------------------------------------------------- #
+@pytest.mark.django_db
+def test_keyset_envelope_has_no_count(monkeypatch):
+    _install(monkeypatch, {"folder-a": {"user_visits.json": [{"id": 1}]}})
+    _make_opp()
+    body = _client_for(_user()).get(VISITS_URL).json()
+    assert set(body.keys()) == {"next", "results"}
+
+
+@pytest.mark.django_db
+def test_keyset_last_id_advances_by_real_id(monkeypatch):
+    rows = [{"id": 10}, {"id": 25}, {"id": 30}]
+    _install(monkeypatch, {"folder-a": {"user_visits.json": rows}})
+    _make_opp()
+    client = _client_for(_user())
+    body = client.get(VISITS_URL + "?page_size=2").json()
+    assert [r["id"] for r in body["results"]] == [10, 25]
+    parts = urlsplit(body["next"])
+    assert "last_id=25" in parts.query
+    body2 = client.get(f"{parts.path}?{parts.query}").json()
+    assert [r["id"] for r in body2["results"]] == [30]
+    assert body2["next"] is None
+
+
+@pytest.mark.django_db
+def test_keyset_index_mode_for_id_less_rows(monkeypatch):
+    # completed_works rows have no "id" — keyset falls back to positional index.
+    rows = [{"entity": f"e{i}"} for i in range(5)]
+    _install(monkeypatch, {"folder-a": {"completed_works.json": rows}})
+    _make_opp()
+    client = _client_for(_user())
+    url = "/api/export/opportunity/10001/completed_works/?page_size=2"
+    seen = []
+    while url is not None:
+        body = client.get(url).json()
+        seen.extend(r["entity"] for r in body["results"])
+        if body["next"] is None:
+            break
+        parts = urlsplit(body["next"])
+        url = f"{parts.path}?{parts.query}"
+    assert seen == [f"e{i}" for i in range(5)]
+    assert len(set(seen)) == 5
+
+
+@pytest.mark.django_db
+def test_keyset_reverse_order(monkeypatch):
+    rows = [{"id": 1}, {"id": 2}, {"id": 3}]
+    _install(monkeypatch, {"folder-a": {"user_visits.json": rows}})
+    _make_opp()
+    body = _client_for(_user()).get(VISITS_URL + "?cursor_order=reverse&page_size=2").json()
+    assert [r["id"] for r in body["results"]] == [3, 2]
+    parts = urlsplit(body["next"])
+    assert "last_id=2" in parts.query
+    assert "cursor_order=reverse" in parts.query
+
+
+@pytest.mark.django_db
+def test_keyset_page_size_clamped_to_max(monkeypatch):
+    rows = [{"id": i} for i in range(10)]
+    _install(monkeypatch, {"folder-a": {"user_visits.json": rows}})
+    _make_opp()
+    # page_size above max (5000) is clamped, not rejected; all 10 rows fit one page.
+    body = _client_for(_user()).get(VISITS_URL + "?page_size=999999").json()
+    assert len(body["results"]) == 10
+    assert body["next"] is None
+
+
+# --------------------------------------------------------------------------- #
+# payment / invoice / assessment endpoints (#650 gap 2)
+# --------------------------------------------------------------------------- #
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "endpoint,filename",
+    [
+        ("payment", "payment.json"),
+        ("invoice", "invoice.json"),
+        ("assessment", "assessment.json"),
+    ],
+)
+def test_new_endpoints_serve_their_fixture(monkeypatch, endpoint, filename):
+    rows = [{"id": 3, "endpoint": endpoint}]
+    _install(monkeypatch, {"folder-a": {filename: rows}})
+    _make_opp()
+    url = f"/api/export/opportunity/10001/{endpoint}/"
+    body = _client_for(_user()).get(url).json()
+    assert body["results"] == rows
+    assert set(body.keys()) == {"next", "results"}
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("endpoint", ["payment", "invoice", "assessment"])
+def test_new_endpoints_empty_when_fixture_absent(monkeypatch, endpoint):
+    # Opp exists but folder has no payment/invoice/assessment file -> empty page.
+    _install(monkeypatch, {"folder-a": {"user_visits.json": []}})
+    _make_opp()
+    url = f"/api/export/opportunity/10001/{endpoint}/"
+    body = _client_for(_user()).get(url).json()
+    assert body == {"next": None, "results": []}
+
+
+# --------------------------------------------------------------------------- #
+# opp_org_program_list (#650 gap 1) — purely synthetic org/program/opp tree
+# --------------------------------------------------------------------------- #
+OPP_ORG_PROGRAM_URL = "/api/export/opp_org_program_list/"
+
+
+@pytest.mark.django_db
+def test_opp_org_program_list_shape_and_fields(monkeypatch):
+    _install(
+        monkeypatch,
+        {"folder-a": {"opportunity.json": {"id": 10001, "name": "Baobab Delivery", "end_date": "2026-12-31"}}},
+    )
+    _make_opp(org_name="Baobab Institute", program_name="Nutrition", program_id=10050, visit_count=42)
+    body = _client_for(_user()).get(OPP_ORG_PROGRAM_URL).json()
+    assert set(body.keys()) == {"organizations", "opportunities", "programs"}
+
+    assert body["organizations"] == [
+        {
+            "id": "labs-synthetic-baobab-institute",
+            "slug": "labs-synthetic-baobab-institute",
+            "name": "Baobab Institute",
+        }
+    ]
+    assert body["programs"] == [
+        {
+            "id": 10050,
+            "name": "Nutrition",
+            "delivery_type": None,
+            "currency": None,
+            "organization": "labs-synthetic-baobab-institute",
+        }
+    ]
+    [opp] = body["opportunities"]
+    assert opp["id"] == 10001
+    assert opp["name"] == "Baobab Delivery"
+    assert opp["organization"] == "labs-synthetic-baobab-institute"
+    assert opp["program"] == 10050
+    assert opp["is_active"] is True
+    assert opp["end_date"] == "2026-12-31"
+    assert opp["visit_count"] == 42
+    assert "date_created" in opp
+
+
+@pytest.mark.django_db
+def test_opp_org_program_list_only_visible(monkeypatch):
+    _install(
+        monkeypatch,
+        {
+            "folder-a": {"opportunity.json": {"id": 10001, "name": "Mine"}},
+            "folder-b": {"opportunity.json": {"id": 10002, "name": "Theirs"}},
+        },
+    )
+    _make_opp(opportunity_id=10001, gdrive_folder_id="folder-a", allowed_domains=["@dimagi.com"])
+    _make_opp(opportunity_id=10002, gdrive_folder_id="folder-b", allowed_domains=["@example.org"])
+    body = _client_for(_user(email="me@dimagi.com")).get(OPP_ORG_PROGRAM_URL).json()
+    assert [o["id"] for o in body["opportunities"]] == [10001]
+    assert [o["slug"] for o in body["organizations"]] == ["labs-synthetic-labs-synthetic"]
+
+
+@pytest.mark.django_db
+def test_opp_org_program_list_links_are_consistent(monkeypatch):
+    _install(
+        monkeypatch,
+        {
+            "folder-a": {"opportunity.json": {"id": 10001, "name": "A"}},
+            "folder-b": {"opportunity.json": {"id": 10002, "name": "B"}},
+        },
+    )
+    # Two opps sharing one program under one org -> collapse to 1 org + 1 program.
+    _make_opp(opportunity_id=10001, gdrive_folder_id="folder-a", org_name="Org", program_name="P", program_id=10050)
+    _make_opp(opportunity_id=10002, gdrive_folder_id="folder-b", org_name="Org", program_name="P", program_id=10050)
+    body = _client_for(_user()).get(OPP_ORG_PROGRAM_URL).json()
+
+    org_slugs = {o["slug"] for o in body["organizations"]}
+    program_ids = {p["id"] for p in body["programs"]}
+    assert len(body["organizations"]) == 1
+    assert len(body["programs"]) == 1
+    assert len(body["opportunities"]) == 2
+    for opp in body["opportunities"]:
+        assert opp["organization"] in org_slugs
+        assert opp["program"] in program_ids
+    for program in body["programs"]:
+        assert program["organization"] in org_slugs
+
+
+@pytest.mark.django_db
+def test_opp_org_program_list_requires_auth(monkeypatch):
+    _install(monkeypatch, {})
+    resp = APIClient().get(OPP_ORG_PROGRAM_URL)
+    assert resp.status_code == 401
+
+
+@pytest.mark.django_db
+def test_opp_org_program_list_no_flag_returns_empty_tree(monkeypatch):
+    """A user with view_synthetic_opps=False sees an empty tree (all three lists empty)."""
+    _install(
+        monkeypatch,
+        {"folder-a": {"opportunity.json": {"id": 10001, "name": "Hidden"}}},
+    )
+    _make_opp(opportunity_id=10001, gdrive_folder_id="folder-a")
+    body = _client_for(_user(view=False)).get(OPP_ORG_PROGRAM_URL).json()
+    assert body == {"organizations": [], "opportunities": [], "programs": []}
+
+
+@pytest.mark.django_db
+def test_opp_org_program_list_omits_non_labs_only_opp(monkeypatch):
+    """A labs_only=False opp is excluded; a labs_only=True opp appears."""
+    _install(
+        monkeypatch,
+        {
+            "folder-a": {"opportunity.json": {"id": 10001, "name": "Visible"}},
+            "folder-b": {"opportunity.json": {"id": 10002, "name": "Hidden (not labs-only)"}},
+        },
+    )
+    _make_opp(opportunity_id=10001, gdrive_folder_id="folder-a", labs_only=True)
+    _make_opp(opportunity_id=10002, gdrive_folder_id="folder-b", labs_only=False)
+    body = _client_for(_user()).get(OPP_ORG_PROGRAM_URL).json()
+    opp_ids = [o["id"] for o in body["opportunities"]]
+    assert 10001 in opp_ids
+    assert 10002 not in opp_ids
