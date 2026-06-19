@@ -24,7 +24,10 @@ const CUT_DATA = window.CUT_DATA || { campaign: BOOTSTRAP.campaign };
 // Initials for the sidebar avatar: first letter of the first two words, else
 // the first two characters. Falls back to '?' for an empty/missing name.
 const initialsOf = (name) => {
-  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  const parts = String(name || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
   if (parts.length === 0) return '?';
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[1][0]).toUpperCase();
