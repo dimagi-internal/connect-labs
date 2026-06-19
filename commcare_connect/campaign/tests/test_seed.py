@@ -40,3 +40,26 @@ def test_seed_fresh_replaces_not_duplicates():
     seed.seed_campaign(fresh=True)
     assert Campaign.objects.count() == 1
     assert Worker.objects.count() == 64
+
+
+@pytest.mark.django_db
+def test_seed_scales_to_requested_worker_count():
+    """worker_count exercises the UX at realistic scale while preserving invariants."""
+    c = seed.seed_campaign(fresh=True, worker_count=500)
+    assert c.workers.count() == 500
+    rates = {r.role_id: r.rate for r in c.worker_roles.all()}
+    for w in c.workers.all():
+        assert w.amount == w.days_worked * rates[w.role_id]  # invariant holds at scale
+        assert w.region_id in set(c.regions.values_list("region_id", flat=True))  # valid FKs
+    # fraud clusters scale with the roster (≈7 pairs per 64 workers)
+    flagged = [w for w in c.workers.all() if w.duplicate]
+    assert len(flagged) >= 14
+    for w in flagged:
+        assert w.dup_with and len(w.fraud_rules) >= 1
+
+
+@pytest.mark.django_db
+def test_seed_handles_tiny_worker_count_without_crashing():
+    """A degenerate small roster must not blow up fraud injection (edge case)."""
+    c = seed.seed_campaign(fresh=True, worker_count=3)
+    assert c.workers.count() == 3

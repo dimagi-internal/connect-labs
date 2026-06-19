@@ -20,6 +20,7 @@ def test_bootstrap_payload_shape():
         "HOUSEHOLDS",
         "WORKERS",
         "USERS",
+        "AUDIT_LOG",
         "KYC_STATES",
         "PAY_STATES",
         "sharedLabel",

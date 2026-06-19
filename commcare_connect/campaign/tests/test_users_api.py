@@ -40,6 +40,33 @@ def test_invite_creates_whitelisted_user(client, login_as, seeded_campaign):
 
 
 @pytest.mark.django_db
+def test_invite_existing_user_re_roles_and_reactivates(client, login_as, seeded_campaign):
+    login_as(client)  # default campaign_admin
+    CampaignUserFactory(
+        commcare_username="dana@partner.org",
+        email="dana@partner.org",
+        name="Dana",
+        role="reporting_user",
+        status="deactivated",
+    )
+    resp = _post(
+        client,
+        reverse("campaign:user_invite"),
+        {"name": "Dana O.", "email": "dana@partner.org", "role": "operations", "scope": "Yobe"},
+    )
+    assert resp.status_code == 200
+    u = resp.json()["user"]
+    assert u["role"] == "operations"
+    assert u["status"] == "active"  # re-inviting reactivates
+    row = CampaignUser.objects.get(commcare_username="dana@partner.org")
+    assert row.role == "operations_manager"
+    assert row.scope == "Yobe"
+    assert row.name == "Dana O."
+    # still exactly one row — invite is an upsert, not a duplicate
+    assert CampaignUser.objects.filter(commcare_username="dana@partner.org").count() == 1
+
+
+@pytest.mark.django_db
 def test_set_role_maps_short_to_key(client, login_as, seeded_campaign):
     login_as(client)  # default campaign_admin, username="member@dimagi.com"
     CampaignUserFactory(commcare_username="t@x.org", email="t@x.org", name="T", role="reporting_user")

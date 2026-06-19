@@ -5,7 +5,7 @@ from django.shortcuts import get_object_or_404
 
 from commcare_connect.campaign.auth.decorators import current_campaign_user, require_perm
 from commcare_connect.campaign.models import Campaign, Worker
-from commcare_connect.campaign.services import serializers, worker_actions
+from commcare_connect.campaign.services import audit, serializers, worker_actions
 
 INVESTIGATION_STATUSES = {"Open", "Under Review", "Resolved", "False Positive"}
 
@@ -37,6 +37,9 @@ def pay_set_status(request):
         return JsonResponse({"error": "bad status"}, status=400)
     qs = Worker.objects.filter(campaign=_campaign(), worker_id__in=ids)
     updated, blocked = worker_actions.set_pay(qs, status)
+    if updated:
+        verb = {"paid": "Marked paid", "approved": "Approved", "hold": "Held"}.get(status, f"Set {status} on")
+        audit.record(request, f"{verb} {len(updated)} worker payment(s)", "Payments", _campaign())
     return JsonResponse({"workers": [_ser(w) for w in updated], "blocked": blocked})
 
 
@@ -48,6 +51,7 @@ def pay_queue(request, worker_id):
         w = worker_actions.queue_pay(w, data.get("approved_count", 0))
     except worker_actions.FraudGuardError as e:
         return JsonResponse({"error": str(e)}, status=400)
+    audit.record(request, f"Queued payment for {worker_id}", "Payments", _campaign())
     return JsonResponse({"worker": _ser(w)})
 
 
@@ -62,6 +66,7 @@ def kyc_status(request, worker_id):
         w = worker_actions.set_kyc(w, status)
     except worker_actions.FraudGuardError as e:
         return JsonResponse({"error": str(e)}, status=400)
+    audit.record(request, f"Set KYC to {status} for {worker_id}", "KYC", _campaign())
     return JsonResponse({"worker": _ser(w)})
 
 

@@ -1,9 +1,10 @@
 """Serialize a Campaign + its related rows into the window.CUT_DATA shape
 the prototype's React modules consume."""
+
 from __future__ import annotations
 
 from commcare_connect.campaign.models import Campaign, CampaignUser
-from commcare_connect.campaign.services import roles
+from commcare_connect.campaign.services import providers, roles
 
 KYC_STATES = ["approved", "pending", "rejected", "review"]
 PAY_STATES = ["paid", "approved", "pending", "rejected", "hold"]
@@ -166,22 +167,41 @@ def _microplan(m) -> dict:
     }
 
 
+def _audit(a) -> dict:
+    return {
+        "at": a.at.strftime("%b %-d, %Y · %H:%M"),
+        "user": a.user,
+        "action": a.action,
+        "module": a.module,
+        "ip": a.ip,
+    }
+
+
 def bootstrap_payload(c: Campaign, current_username: str | None = None) -> dict:
-    regions = list(c.regions.select_related("plan").all())
-    role_names = {r.role_id: r.name for r in c.worker_roles.all()}
+    # HQ/Connect-owned roster is read through the data-source seam (issue #674);
+    # tool-owned entities (activities, microplans, reporting, households, users)
+    # are read directly from our ORM below.
+    provider = providers.get_provider(c)
+    campaign = provider.campaign()
+    regions = list(provider.regions())
+    donors = list(provider.donors())
+    worker_roles = list(provider.worker_roles())
+    workers = list(provider.workers())
+    role_names = {r.role_id: r.name for r in worker_roles}
     region_names = {r.region_id: r.name for r in regions}
     return {
-        "CAMPAIGN": _campaign(c),
-        "DONORS": [_donor(d) for d in c.donors.all()],
+        "CAMPAIGN": _campaign(campaign),
+        "DONORS": [_donor(d) for d in donors],
         "REGIONS": [_region(r) for r in regions],
-        "ROLES": [_role(r) for r in c.worker_roles.all()],
+        "ROLES": [_role(r) for r in worker_roles],
         "ACTIVITIES": [_activity(a) for a in c.activities.all()],
         "PLANNING": [_planning(r) for r in regions],
         "MICROPLANS": [_microplan(m) for m in c.microplans.all()],
         "REPORT_DAYS": [_report_day(d) for d in c.report_days.all()],
         "HOUSEHOLDS": _household(c.household_stat),
-        "WORKERS": [_worker(w, role_names, region_names) for w in c.workers.all()],
+        "WORKERS": [_worker(w, role_names, region_names) for w in workers],
         "USERS": [_user(u, current_username) for u in CampaignUser.objects.all().order_by("created_at")],
+        "AUDIT_LOG": [_audit(a) for a in c.audit_logs.all()[:50]],
         "KYC_STATES": list(KYC_STATES),
         "PAY_STATES": list(PAY_STATES),
         "sharedLabel": dict(SHARED_LABEL),

@@ -347,8 +347,17 @@ function HhStat({ label, value, pct }) {
 }
 
 function TrendChart({ days, metric, color }) {
+  if (!days || days.length === 0) {
+    return (
+      <Empty
+        icon="chart-line"
+        title="No trend data yet"
+        sub="Daily reporting metrics will appear here once visits are recorded."
+      />
+    );
+  }
   const vals = days.map((d) => d[metric]);
-  const max = Math.max(...vals) * 1.1;
+  const max = (vals.length ? Math.max(...vals) : 0) * 1.1 || 1;
   const W = 1000,
     Hh = 220,
     pad = 8;

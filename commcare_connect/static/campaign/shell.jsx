@@ -1,7 +1,8 @@
 // shell.jsx — app shell: top brand bar + main tab navigation
 const { useState: useStateShell } = React;
 
-function TopBar({ role, onRole, campaign, onCampaign, scenario }) {
+function TopBar({ role, onRole, campaign, onCampaign, scenario, user }) {
+  const currentUser = user || { name: 'User', initials: 'U' };
   const [campOpen, setCampOpen] = useStateShell(false);
   const [roleOpen, setRoleOpen] = useStateShell(false);
   const roles = window.CUT_RBAC.ROLES.map((r) => r.name);
@@ -206,13 +207,13 @@ function TopBar({ role, onRole, campaign, onCampaign, scenario }) {
               fontWeight: 600,
             }}
           >
-            AO
+            {currentUser.initials}
           </div>
           <div style={{ textAlign: 'left', lineHeight: 1.15 }}>
             <div
               style={{ fontSize: 12.5, fontWeight: 600, color: CUTC.purple }}
             >
-              Amara Okafor
+              {currentUser.name}
             </div>
             <div style={{ fontSize: 11, color: CUTC.muted }}>{role}</div>
           </div>

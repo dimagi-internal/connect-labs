@@ -416,6 +416,11 @@ CAMPAIGN_BOOTSTRAP_ADMIN_DOMAINS = env.list(
     "CAMPAIGN_BOOTSTRAP_ADMIN_DOMAINS", default=["dimagi.com", "dimagi-ai.com"]
 )
 
+# Campaign Utility Tool — data-source seam for the HQ/Connect-owned roster
+# (campaign/regions/donors/worker-roles/workers). "synthetic" reads our seed rows;
+# "connect" reads live Connect (stub until staging exists). See issue #674.
+CAMPAIGN_DATA_PROVIDER = env("CAMPAIGN_DATA_PROVIDER", default="synthetic")
+
 # ConnectID integration settings
 CONNECTID_URL = env("CONNECTID_URL", default="http://localhost:8080")
 
