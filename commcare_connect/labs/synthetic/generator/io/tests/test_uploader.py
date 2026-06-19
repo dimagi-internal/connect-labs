@@ -1,7 +1,7 @@
 import pytest
 from django.test import override_settings
 
-from commcare_connect.labs.synthetic.generator.io.uploader import UploadResult, upload_and_register
+from commcare_connect.labs.synthetic.generator.io.uploader import UploadResult, upload_and_register, upload_fixtures
 from commcare_connect.labs.synthetic.models import SyntheticOpportunity
 
 
@@ -93,3 +93,29 @@ def test_upload_and_register_requires_parent_folder_setting():
                 k: [] for k in ("opportunity", "user_visits", "user_data", "completed_works", "completed_module")
             },
         )
+
+
+class _FakeDriveSimple:
+    def __init__(self):
+        self.uploaded = {}
+
+    def create_folder(self, name, parent_id):
+        return "folder123"
+
+    def upload_file(self, folder_id, filename, content):
+        self.uploaded[filename] = content
+
+
+def test_upload_fixtures_writes_app_structure(settings):
+    settings.LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID = "parent"
+    drive = _FakeDriveSimple()
+    fixtures = {
+        "opportunity": {},
+        "user_visits": [],
+        "user_data": [],
+        "completed_works": [],
+        "completed_module": [],
+        "app_structure": {"learn_app": None, "deliver_app": {"modules": []}},
+    }
+    upload_fixtures(drive=drive, opportunity_id=10000, fixtures=fixtures)
+    assert "app_structure.json" in drive.uploaded
