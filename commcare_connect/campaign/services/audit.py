@@ -27,7 +27,7 @@ def mask_ip(ip: str) -> str:
 
 def client_ip(request) -> str:
     """Best-effort client IP behind the ECS load balancer (first XFF hop)."""
-    xff = request.META.get("HTTP_X_FORWARDED_FOR", "")
+    xff = request.headers.get("x-forwarded-for", "")
     if xff:
         return xff.split(",")[0].strip()
     return request.META.get("REMOTE_ADDR", "") or ""

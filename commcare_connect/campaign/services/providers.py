@@ -114,7 +114,5 @@ def get_provider(campaign) -> CampaignDataProvider:
     try:
         provider_cls = _PROVIDERS[name]
     except KeyError as exc:
-        raise ImproperlyConfigured(
-            f"CAMPAIGN_DATA_PROVIDER={name!r} is not one of {sorted(_PROVIDERS)}"
-        ) from exc
+        raise ImproperlyConfigured(f"CAMPAIGN_DATA_PROVIDER={name!r} is not one of {sorted(_PROVIDERS)}") from exc
     return provider_cls(campaign)
