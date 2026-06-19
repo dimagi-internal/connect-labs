@@ -10,7 +10,7 @@
 // scorecard row to switch) — one row per re-surveyed household, columns grouped
 // under Identity / Location / Outcome sections with info buttons (method +
 // source). Objective copy; the viewer draws the conclusion.
-// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V67
+// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V68
 function WorkflowUI(props) {
   var instance = props.instance || {};
   var data = instance.state || {};
@@ -224,41 +224,37 @@ function WorkflowUI(props) {
             strokeColor: 'rgba(255,255,255,0.95)',
           });
           try {
-            // Primary (first-choice) vs alternate (substituted backup) read as a
-            // FILL channel on top of the confirmed/absent colour: a primary is a
-            // solid dot, an alternate a hollow ring — so the substitution mix is
-            // visible on the map without a third colour. Ungrounded rounds carry no
-            // sample_type, so they default to solid (treated as primary).
+            // The independent survey reads as a HOLLOW RING (faint fill, coloured
+            // ring) — visibly a different MARK from the program's solid green
+            // delivery dot. That mark difference (ring vs solid) fights the
+            // overplotting that made both wards look equally dotted, and lets the
+            // control ward — survey rings but no green fill — read as "program
+            // absent". The ring colour still carries confirmed (indigo) vs
+            // not-reached (rose). Within the survey, PRIMARY (first-choice) is a
+            // larger heavier ring and ALTERNATE (substituted backup) a smaller
+            // thinner ring, so the substitution mix stays visible. Ungrounded
+            // rounds carry no sample_type → default to the primary ring.
             var isAlt = ['==', ['get', 'sample_type'], 'alternate'];
-            // PRIMARY (first-choice) is the dominant mark — the data is mostly
-            // primaries, so they must read as the larger SOLID dots. ALTERNATE
-            // (substituted) reads as a SMALLER hollow ring in the SAME hue
-            // (confirmed = indigo, not-reached = rose) — clearly a substituted
-            // variant of that survey, subordinate to the primaries, never bigger.
-            // Ungrounded rounds carry no sample_type → default to the solid primary.
             map.setPaintProperty('vm-pins', 'circle-radius', [
               'case',
               isAlt,
-              2.6,
-              3.4,
+              3.2,
+              4.2,
             ]);
-            map.setPaintProperty('vm-pins', 'circle-opacity', [
-              'case',
-              isAlt,
-              0.12,
-              0.82,
-            ]);
+            // faint fill so the ring dominates — hollow vs the solid delivery dot
+            map.setPaintProperty('vm-pins', 'circle-opacity', 0.16);
             map.setPaintProperty('vm-pins', 'circle-stroke-width', [
               'case',
               isAlt,
-              1.3,
-              1.0,
+              1.4,
+              2.0,
             ]);
+            // ring colour carries the survey result (confirmed vs not-reached)
             map.setPaintProperty('vm-pins', 'circle-stroke-color', [
               'case',
-              isAlt,
-              ['case', ['get', 'confirmed'], INDIGO, ROSE],
-              'rgba(255,255,255,0.95)',
+              ['get', 'confirmed'],
+              INDIGO,
+              ROSE,
             ]);
           } catch (e) {}
         }
@@ -555,6 +551,26 @@ function WorkflowUI(props) {
     indN > 0 ? 1.96 * Math.sqrt((_indP * (1 - _indP)) / indN) * 100 : null;
   var q = rd.quality || {};
   var bc = rd.backcheck || {};
+
+  // Per-category map-mark counts for the dot key, computed from the round's
+  // overlay so the key shows HOW MANY of each mark are on the map (and makes the
+  // control ward's "program absent" legible as a number, not just visual).
+  function mapMarkCounts() {
+    var ov = (rd && rd.overlay) || {};
+    var deliv = ((ov.service_delivery || {}).features || []).length;
+    var pins = (ov.survey_pins || {}).features || [];
+    var conf = 0,
+      notReached = 0;
+    pins.forEach(function (f) {
+      if ((f.properties || {}).confirmed) conf++;
+      else notReached++;
+    });
+    return { delivery: deliv, confirmed: conf, notReached: notReached };
+  }
+  var mmc = mapMarkCounts();
+  function _ct(n) {
+    return n != null ? ' (' + n.toLocaleString() + ')' : '';
+  }
 
   // Per-round, per-surveyor back-check — scoped to THIS round's records only.
   // The program rotates wards each cycle, so a surveyor label (T1..T6) is a
@@ -1087,11 +1103,11 @@ function WorkflowUI(props) {
     var n = Math.max(iv.length, cp.length, srr.length);
     if (n < 2) return null;
     var w = 1040,
-      h = 230,
-      padL = 50,
-      padR = 150,
-      padT = 14,
-      padB = 34;
+      h = 440,
+      padL = 56,
+      padR = 188,
+      padT = 20,
+      padB = 46;
     function X(i) {
       return padL + (i / (n - 1)) * (w - padL - padR);
     }
@@ -1126,7 +1142,7 @@ function WorkflowUI(props) {
       return (
         <g key={g}>
           <line x1={padL} y1={Y(g)} x2={w - padR} y2={Y(g)} stroke={LINE} />
-          <text x={20} y={Y(g) + 3} fill={MUT} fontSize="10" fontFamily={mono}>
+          <text x={22} y={Y(g) + 4} fill={MUT} fontSize="13" fontFamily={mono}>
             {g + '%'}
           </text>
         </g>
@@ -1140,16 +1156,16 @@ function WorkflowUI(props) {
           <circle
             cx={X(i)}
             cy={Y(arr[i])}
-            r="4.5"
+            r="6"
             fill={color}
             stroke="#fff"
-            strokeWidth="1.5"
+            strokeWidth="2"
           />
           <text
-            x={X(i) + 16}
-            y={Y(arr[i]) + 4}
+            x={X(i) + 18}
+            y={Y(arr[i]) + 5}
             fill={color}
-            fontSize="11"
+            fontSize="14.5"
             fontWeight="700"
           >
             {label + ' ' + pct(arr[i])}
@@ -1171,10 +1187,10 @@ function WorkflowUI(props) {
               <circle
                 cx={X(i)}
                 cy={Y(v)}
-                r={on ? 5 : 3.2}
+                r={on ? 7 : 4.6}
                 fill={s.color}
                 stroke="#fff"
-                strokeWidth="1.5"
+                strokeWidth="2"
               />
               <circle
                 cx={X(i)}
@@ -1257,7 +1273,7 @@ function WorkflowUI(props) {
           transform="rotate(-90)"
           textAnchor="middle"
           fill={MUT}
-          fontSize="8.5"
+          fontSize="11.5"
           fontFamily={mono}
           style={{ letterSpacing: '.04em' }}
         >
@@ -1281,7 +1297,7 @@ function WorkflowUI(props) {
           );
         })()}
         {band ? (
-          <polygon points={band} fill={AMBER} fillOpacity="0.12" />
+          <polygon points={band} fill={AMBER} fillOpacity="0.28" />
         ) : null}
         {/* Label the amber band IN PLACE (not only in the footnote): drop a
             small inline tag at the mid-round, vertically between the two series
@@ -1290,30 +1306,36 @@ function WorkflowUI(props) {
           points={poly(cp)}
           fill="none"
           stroke={COMP}
-          strokeWidth="2.2"
+          strokeWidth="3.6"
+          strokeLinejoin="round"
+          strokeLinecap="round"
         />
         <polyline
           points={poly(srr)}
           fill="none"
           stroke={AMBER}
-          strokeWidth="2.6"
-          strokeDasharray="6 4"
+          strokeWidth="4"
+          strokeDasharray="9 5"
+          strokeLinejoin="round"
+          strokeLinecap="round"
         />
         <polyline
           points={poly(iv)}
           fill="none"
           stroke={INDIGO}
-          strokeWidth="3"
+          strokeWidth="4.5"
+          strokeLinejoin="round"
+          strokeLinecap="round"
         />
         {rr.map(function (r, i) {
           return (
             <g key={i}>
               <text
                 x={X(i)}
-                y={h - 14}
+                y={h - 20}
                 fill={i === sel ? INDIGO : MUT}
                 fontWeight={i === sel ? '700' : '400'}
-                fontSize="10"
+                fontSize="13.5"
                 fontFamily={mono}
                 textAnchor="middle"
               >
@@ -1321,9 +1343,9 @@ function WorkflowUI(props) {
               </text>
               <text
                 x={X(i)}
-                y={h - 3}
+                y={h - 5}
                 fill={i === sel ? INDIGO : '#94a3b8'}
-                fontSize="8.5"
+                fontSize="11.5"
                 textAnchor="middle"
               >
                 {(rounds[i] || {}).label ||
@@ -1401,10 +1423,12 @@ function WorkflowUI(props) {
           return a + (s.type3_pct || 0) * (s.n || 0);
         }, 0) / aggBcN
       : null;
-    // [key, label, threshold, lowerIsBetter, isCount, sublabel, tooltip]
+    // [key, label, threshold, lowerIsBetter, isCount, sublabel, tooltip, deemph]
     // Each column carries a plain-language sublabel (shown under the header) and
     // a hover tooltip so a non-technical program lead can read it unaided.
-    var COLS = [
+    // deemph=true greys a column that is a near-universal trust-floor (passes at
+    // ~100% for everyone), so the discriminating columns hold the eye.
+    var COLS_ALL = [
       [
         'evidence',
         'Evidence',
@@ -1416,21 +1440,22 @@ function WorkflowUI(props) {
       ],
       [
         'gps',
-        'GPS ≤15m',
+        'GPS self-report',
         90,
         false,
         false,
-        'at the house',
-        '% of captures whose GPS lands within 15 m of the assigned household — confirms the surveyor was actually there.',
+        'self-reported ≤15 m',
+        "% of the surveyor's OWN captures whose GPS lands within 15 m of the assigned household. The app gates capture at 15 m, so this passes for almost everyone — a trust-floor, not a discriminator. The independent re-survey's location check is the back-check column.",
+        true,
       ],
       [
         'primary_rate',
-        'On primary',
+        'On sampled house',
         85,
         false,
         false,
-        'sampled house',
-        '% surveyed at the originally-sampled (primary) household rather than a substitute.',
+        'not a substitute',
+        '% surveyed at the originally-sampled (primary) household rather than a substitute backup.',
       ],
       [
         'completeness',
@@ -1443,25 +1468,25 @@ function WorkflowUI(props) {
       ],
       [
         'duration',
-        'Duration',
+        'Interview length',
         90,
         false,
         false,
-        'plausible length',
+        'not too fast',
         '% of interviews within a plausible time band — flags records too fast to be real.',
       ],
       [
         'consistency',
-        'Consistency',
+        'Passed validation',
         98,
         false,
         false,
-        'edit rules pass',
+        'no logic errors',
         '% passing internal edit checks (e.g. a "received" record must have an eligible child present).',
       ],
       [
         'duplicates',
-        'Dupes',
+        'Duplicates',
         0,
         true,
         true,
@@ -1470,7 +1495,7 @@ function WorkflowUI(props) {
       ],
       [
         'backcheck',
-        'Back-check',
+        'Re-survey agreement',
         90,
         false,
         false,
@@ -1478,6 +1503,16 @@ function WorkflowUI(props) {
         '% of facts that matched when an independent surveyor re-visited a sample of households.',
       ],
     ];
+    // Drop the On-sampled-house column entirely when the round carries no
+    // primary-rate data (un-grounded rounds): a present-but-empty headline column
+    // is worse than no column. Shows real values (incl. the flagged surveyor's
+    // heavy substitution) on plan-grounded rounds.
+    var hasPrimary = rows.some(function (r) {
+      return r.primary_rate != null;
+    });
+    var COLS = COLS_ALL.filter(function (c) {
+      return c[0] !== 'primary_rate' || hasPrimary;
+    });
     function fail(v, thr, lower) {
       if (v == null) return false;
       return lower ? v > thr : v < thr;
@@ -1491,14 +1526,28 @@ function WorkflowUI(props) {
         s += ' · n=' + row.backcheck_n;
       return s;
     }
-    // flag a surveyor for review when >=2 integrity signals fail together
+    // flag a surveyor for review when >=2 integrity signals fail together.
+    // The criteria + their plain-language read are kept in one place so the
+    // REVIEW badge and the inline "why flagged" note name the SAME failing cells.
+    var FLAG_CRITERIA = [
+      ['evidence', 90, false, 'proof photos missing'],
+      ['gps', 90, false, 'self-reported GPS off'],
+      ['primary_rate', 85, false, 'heavy substitution off the sampled house'],
+      ['backcheck', 90, false, 'the independent re-survey disagreed'],
+    ];
+    function flagReasons(row) {
+      return FLAG_CRITERIA.filter(function (c) {
+        return fail(row[c[0]], c[1], c[2]);
+      });
+    }
     function rowFlagged(row) {
-      var n = 0;
-      if (fail(row.evidence, 90, false)) n++;
-      if (fail(row.gps, 90, false)) n++;
-      if (fail(row.primary_rate, 85, false)) n++;
-      if (fail(row.backcheck, 90, false)) n++;
-      return n >= 2;
+      return flagReasons(row).length >= 2;
+    }
+    // human-readable column label for a criterion key (matches COLS headers)
+    function labelFor(key) {
+      for (var i = 0; i < COLS_ALL.length; i++)
+        if (COLS_ALL[i][0] === key) return COLS_ALL[i][1];
+      return key;
     }
     var th = {
       textAlign: 'right',
@@ -1542,7 +1591,19 @@ function WorkflowUI(props) {
     function dataRow(row, isAgg) {
       var fl = !isAgg && rowFlagged(row);
       var on = !isAgg && effSurv === row.surveyor;
-      return (
+      // Build the inline "why flagged" note: name the trigger cells in plain
+      // language so the REVIEW tag is self-explaining and anchored to its cells.
+      var reasons = fl ? flagReasons(row) : [];
+      var noteText = reasons.length
+        ? 'REVIEW: ' +
+          reasons
+            .map(function (c) {
+              return labelFor(c[0]) + ' — ' + c[3];
+            })
+            .join('; ') +
+          '. Two or more integrity signals failed together.'
+        : null;
+      var mainRow = (
         <tr
           key={row.surveyor}
           style={{
@@ -1629,6 +1690,10 @@ function WorkflowUI(props) {
                 });
               }
             }
+            // Trust-floor columns (deemph) are greyed so the discriminating
+            // columns hold the eye — unless THIS cell is actually below
+            // threshold, in which case it still reads in full rose.
+            var deemph = c[7] && !bad;
             return (
               <td
                 key={c[0]}
@@ -1644,12 +1709,22 @@ function WorkflowUI(props) {
                 style={Object.assign({}, td, {
                   // Below-threshold cells are marked by RED TEXT only — no bright
                   // fill. The value's own colour carries the signal so the table
-                  // reads as clean objective data, not a shouted verdict.
-                  color: v == null ? MUT : bad ? ROSE : GREEN,
-                  fontWeight: bad ? 800 : 500,
+                  // reads as clean objective data, not a shouted verdict. A cell
+                  // that drives the REVIEW flag (isOffender) gets an underline so
+                  // the badge points at concrete cells.
+                  color: v == null ? MUT : bad ? ROSE : deemph ? SLATE : GREEN,
+                  fontWeight: bad ? 800 : deemph ? 400 : 500,
+                  opacity: deemph ? 0.7 : 1,
                   background: 'transparent',
                   cursor: clickable ? 'pointer' : 'default',
-                  boxShadow: selCell ? 'inset 0 0 0 1.5px ' + INDIGO : 'none',
+                  textDecoration: isOffender ? 'underline' : 'none',
+                  textDecorationColor: isOffender ? ROSE : undefined,
+                  textUnderlineOffset: isOffender ? 3 : undefined,
+                  boxShadow: selCell
+                    ? 'inset 0 0 0 1.5px ' + INDIGO
+                    : isOffender
+                    ? 'inset 0 0 0 1.5px ' + ROSE
+                    : 'none',
                 })}
               >
                 {cellTxt(row, c)}
@@ -1658,6 +1733,24 @@ function WorkflowUI(props) {
           })}
         </tr>
       );
+      var noteRow = noteText ? (
+        <tr key={row.surveyor + '-note'}>
+          <td
+            colSpan={2 + COLS.length}
+            style={{
+              padding: '0 10px 9px 24px',
+              borderBottom: '1px solid ' + LINE,
+              fontSize: 11,
+              lineHeight: 1.5,
+              color: '#9f1239',
+              background: on || fl ? '#fff1f2' : 'transparent',
+            }}
+          >
+            {noteText}
+          </td>
+        </tr>
+      ) : null;
+      return [mainRow, noteRow];
     }
     return (
       <div style={{ overflowX: 'auto' }}>
@@ -1675,7 +1768,13 @@ function WorkflowUI(props) {
                 return (
                   <th
                     key={c[0]}
-                    style={Object.assign({}, th, { cursor: 'help' })}
+                    style={Object.assign({}, th, {
+                      cursor: 'help',
+                      // trust-floor columns: greyed header so the eye lands on
+                      // the discriminating columns instead.
+                      color: c[7] ? '#cbd5e1' : MUT,
+                      fontWeight: c[7] ? 400 : 500,
+                    })}
                     title={c[6]}
                   >
                     {c[1]}
@@ -1683,7 +1782,7 @@ function WorkflowUI(props) {
                       <div
                         style={{
                           fontSize: 8.5,
-                          color: '#94a3b8',
+                          color: c[7] ? '#cbd5e1' : '#94a3b8',
                           fontWeight: 400,
                           textTransform: 'none',
                           letterSpacing: 0,
@@ -1720,6 +1819,12 @@ function WorkflowUI(props) {
   function distributionsTable() {
     var rows = rd.surveyor_distributions || [];
     if (!rows.length) return null;
+    // per-surveyor survey count, from the scorecard rows in state (same
+    // surveyors) — the distributions rows don't carry their own n.
+    var scN = {};
+    (rd.surveyor_scorecard || []).forEach(function (r) {
+      scN[r.surveyor] = r.n;
+    });
     var thD = {
       textAlign: 'right',
       color: MUT,
@@ -1760,12 +1865,27 @@ function WorkflowUI(props) {
     function bandColor(b) {
       return b === 'red' ? ROSE : b === 'amber' ? AMBER : GREEN;
     }
+    // Composite band, computed in the render straight from the per-signal z's
+    // against the SAME thresholds the legend states (flag |z|>3.5, elevated
+    // |z|>=2), so the pill can never disagree with the legend. The server's
+    // weighted `band` could read AMBER while a single signal genuinely cleared
+    // the flag bar (e.g. interview-speed |z|=6.5) — that contradiction is what
+    // this removes: ANY signal over the flag line ⇒ the composite is a real flag.
+    var FLAG_Z = 3.5,
+      ELEV_Z = 2;
+    function compositeBand(r) {
+      var zs = [r.yes_z, r.speed_z, r.uniformity_z];
+      var maxA = 0;
+      for (var i = 0; i < zs.length; i++)
+        if (zs[i] != null) maxA = Math.max(maxA, Math.abs(zs[i]));
+      return maxA > FLAG_Z ? 'red' : maxA >= ELEV_Z ? 'amber' : 'green';
+    }
     // Combined lens: each signal on its own RAW-units axis (minutes / % / HHI)
     // with the team-typical median as the centre line, a dark notch at this
     // surveyor's actual value (where they sit + which side), and a coloured bar
     // whose WIDTH is |z| — a thin mark for a normal surveyor, a fat red bar for
     // a clear outlier.
-    var SW = 88; // lens width (px) — wide enough that even a normal-row bar reads
+    var SW = 120; // lens width (px) — wide enough that even a normal-row bar reads at 6-row density
     function _vals(key) {
       return rows
         .map(function (r) {
@@ -1925,46 +2045,99 @@ function WorkflowUI(props) {
         </span>
       );
     }
-    // one compact row per signal: value · z · lens (no vertical stacking)
-    function cell(rawVal, z, valTxt, dom) {
+    // Plain-language read for a signal: lead with WHERE this surveyor sits in
+    // words, so the cell is legible without decoding z. `kind` gives the read its
+    // direction (faster/slower interviews, more/less uniform answers, higher/
+    // lower received-rate).
+    function readWord(kind, z) {
+      var a = Math.abs(z);
+      if (a < 2) return 'typical';
+      var strong = a > 3.5;
+      if (kind === 'speed')
+        return z < 0
+          ? strong
+            ? 'far faster'
+            : 'faster'
+          : strong
+          ? 'far slower'
+          : 'slower';
+      if (kind === 'uniformity')
+        return z > 0
+          ? strong
+            ? 'far more uniform'
+            : 'more uniform'
+          : strong
+          ? 'far more varied'
+          : 'more varied';
+      // yes-rate
+      return z > 0
+        ? strong
+          ? 'far higher'
+          : 'higher'
+        : strong
+        ? 'far lower'
+        : 'lower';
+    }
+    // one compact row per signal: PLAIN READ · value · lens · z-chip
+    function cell(rawVal, z, valTxt, dom, kind) {
       if (z == null) return <span style={{ color: MUT }}>—</span>;
       var a = Math.abs(z);
       var hot = a > 3.5;
       var amb = !hot && a >= 2;
+      var read = readWord(kind, z);
       return (
         <span
           style={{
             display: 'inline-flex',
             alignItems: 'center',
-            gap: 8,
+            gap: 9,
             justifyContent: 'flex-end',
           }}
         >
+          {/* lead: plain-language read (the headline of the cell) */}
+          <span
+            style={{
+              color: hot ? ROSE : amb ? '#b45309' : SUBINK,
+              fontWeight: hot ? 700 : amb ? 600 : 500,
+              fontFamily: sans,
+              fontSize: 11.5,
+              minWidth: 84,
+              textAlign: 'right',
+            }}
+          >
+            {read}
+          </span>
           <span
             style={{
               color: MUT,
               fontSize: 11,
-              minWidth: 32,
+              minWidth: 34,
               textAlign: 'right',
             }}
           >
             {valTxt}
           </span>
+          {lens(rawVal, z, dom)}
+          {/* z demoted to a secondary chip (full definition on hover) */}
           <span
             title="z = standard deviations from the team-typical value. 0 = typical; further from 0 (either sign) = more unusual; past ±3.5 we flag it."
             style={{
-              color: hot ? ROSE : amb ? AMBER : SUBINK,
-              fontWeight: hot ? 700 : amb ? 600 : 500,
-              minWidth: 38,
-              textAlign: 'right',
+              color: hot ? ROSE : amb ? AMBER : MUT,
+              fontWeight: hot ? 700 : 500,
+              fontSize: 9.5,
+              fontFamily: mono,
+              background: hot ? '#fff1f2' : amb ? '#fffbeb' : '#f1f5f9',
+              borderRadius: 5,
+              padding: '1px 5px',
+              minWidth: 30,
+              textAlign: 'center',
               cursor: 'help',
             }}
           >
             {Math.abs(z) > 10
-              ? 'z ' + (z < 0 ? '<−10' : '>10') + ' ·off-scale'
-              : 'z ' + (z >= 0 ? '+' : '') + z.toFixed(1)}
+              ? 'z' + (z < 0 ? '<−10' : '>10')
+              : 'z' + (z >= 0 ? '+' : '') + z.toFixed(1)}
           </span>
-          {lens(rawVal, z, dom)}
         </span>
       );
     }
@@ -2035,26 +2208,33 @@ function WorkflowUI(props) {
               </th>
               <th
                 style={Object.assign({}, thD, { cursor: 'help' })}
-                title="Overall outlier verdict combining the signals at left."
+                title="Overall band, set by the per-signal thresholds at left: RED if any signal clears the flag line (|z| > 3.5), AMBER if any is elevated (|z| >= 2), else GREEN."
               >
                 Composite
+                <div style={glossStyle}>any |z|&gt;3.5 ⇒ red</div>
               </th>
             </tr>
           </thead>
           <tbody>
             {rows.map(function (r) {
               var on = effSurv === r.surveyor;
+              // Composite band computed here from the per-signal z's so it always
+              // agrees with the per-signal thresholds the legend states.
+              var band = compositeBand(r);
+              // per-surveyor survey count, looked up from the scorecard rows in
+              // state (same surveyors) so the row can show its n.
+              var sn = scN[r.surveyor];
               // Plain-language explanation for a flagged (red) row, naming the
               // signal that drives the flag in human terms (e.g. interviews far
               // faster than the team norm).
               var teamSpeed = DOMS.speed_med.center;
               var noteText = null;
-              if (r.band === 'red') {
+              if (band === 'red') {
                 var parts = [];
                 if (
                   r.speed_med != null &&
                   teamSpeed != null &&
-                  Math.abs(r.speed_z || 0) >= 2
+                  Math.abs(r.speed_z || 0) > FLAG_Z
                 ) {
                   parts.push(
                     'interviews ~' +
@@ -2064,12 +2244,16 @@ function WorkflowUI(props) {
                       ' min team norm — implausibly fast',
                   );
                 }
-                if (Math.abs(r.uniformity_z || 0) >= 2)
+                if (Math.abs(r.uniformity_z || 0) > FLAG_Z)
                   parts.push('answers far more uniform than peers');
-                if (Math.abs(r.yes_z || 0) >= 2)
+                if (Math.abs(r.yes_z || 0) > FLAG_Z)
                   parts.push('received-rate well off the team');
                 noteText = parts.length
-                  ? 'Flagged: ' + parts.join('; ') + '.'
+                  ? 'Flagged — a signal cleared |z| > ' +
+                    FLAG_Z +
+                    ': ' +
+                    parts.join('; ') +
+                    '.'
                   : 'Flagged: behaves unlike peers across multiple signals.';
               }
               return [
@@ -2078,7 +2262,7 @@ function WorkflowUI(props) {
                   style={{
                     background: on
                       ? '#eef2ff'
-                      : r.band === 'red'
+                      : band === 'red'
                       ? '#fff1f2'
                       : 'transparent',
                     boxShadow: on ? 'inset 3px 0 0 ' + INDIGO : 'none',
@@ -2098,12 +2282,25 @@ function WorkflowUI(props) {
                         width: 7,
                         height: 7,
                         borderRadius: '50%',
-                        background: bandColor(r.band),
+                        background: bandColor(band),
                         marginRight: 7,
                         verticalAlign: 'middle',
                       }}
                     />
                     {'Surveyor ' + r.surveyor}
+                    {sn != null ? (
+                      <span
+                        style={{
+                          color: MUT,
+                          fontFamily: mono,
+                          fontWeight: 600,
+                          fontSize: 10.5,
+                          marginLeft: 6,
+                        }}
+                      >
+                        n={sn}
+                      </span>
+                    ) : null}
                   </td>
                   <td style={tdD}>
                     {cell(
@@ -2111,6 +2308,7 @@ function WorkflowUI(props) {
                       r.yes_z,
                       r.yes_rate != null ? Math.round(r.yes_rate) + '%' : '—',
                       DOMS.yes_rate,
+                      'yes',
                     )}
                   </td>
                   <td style={tdD}>
@@ -2119,6 +2317,7 @@ function WorkflowUI(props) {
                       r.speed_z,
                       r.speed_med != null ? r.speed_med + 'm' : '—',
                       DOMS.speed_med,
+                      'speed',
                     )}
                   </td>
                   <td style={tdD}>
@@ -2129,9 +2328,10 @@ function WorkflowUI(props) {
                         ? r.uniformity_hhi.toFixed(2)
                         : '—',
                       DOMS.uniformity_hhi,
+                      'uniformity',
                     )}
                   </td>
-                  <td style={tdD}>{pill(r.band)}</td>
+                  <td style={tdD}>{pill(band)}</td>
                 </tr>,
                 noteText ? (
                   <tr key={r.surveyor + '-note'}>
@@ -2144,7 +2344,7 @@ function WorkflowUI(props) {
                         lineHeight: 1.5,
                         color: '#9f1239',
                         background:
-                          on || r.band === 'red' ? '#fff1f2' : 'transparent',
+                          on || band === 'red' ? '#fff1f2' : 'transparent',
                       }}
                     >
                       {noteText}
@@ -2179,11 +2379,11 @@ function WorkflowUI(props) {
       },
       {
         key: 'location',
-        label: 'GPS location match',
+        label: 'GPS re-survey concordance',
         pct: sb.type2_pct,
         thr: 90,
         mode: 'distance',
-        info: 'Distance between the GPS the surveyor logged and where the independent re-survey found the household. A large gap means the recorded location was wrong — a fraud-detection back-check.',
+        info: "Distance between the GPS the surveyor logged and where the INDEPENDENT re-survey found the household — a separate measure from the surveyor's own ≤15 m self-report on the scorecard. A large gap means the recorded location was wrong: a fraud-detection back-check.",
       },
       {
         key: 'outcome',
@@ -2263,14 +2463,18 @@ function WorkflowUI(props) {
           </td>
         );
       var ch = !f.match;
+      // Discordance reads hard: a disagreeing re-survey value is bold rose on a
+      // rose wash with an explicit "≠" so the diff is unmissable at row density.
       return (
         <td
           key={which + key}
           style={Object.assign({}, st, {
             color: ch ? ROSE : MUT,
-            fontWeight: ch ? 700 : 400,
+            fontWeight: ch ? 800 : 400,
+            background: ch ? '#ffe4e6' : 'transparent',
           })}
         >
+          {ch ? '≠ ' : ''}
           {yn(f.backcheck)}
         </td>
       );
@@ -2556,6 +2760,15 @@ function WorkflowUI(props) {
               {rows.map(function (row, ri) {
                 var dm = row.gps_delta_m;
                 var distBad = dm != null && dm > thr;
+                // Count how many checks differ for THIS household (mismatched
+                // identity/outcome fields + a GPS gap beyond threshold), so each
+                // household pair carries a "N differ" badge and a left accent
+                // that gets heavier the more it diverged — discordance salience.
+                var nDiff = (row.fields || []).filter(function (f) {
+                  return !f.match;
+                }).length;
+                if (distBad) nDiff++;
+                var hasDiff = nDiff > 0;
                 return [
                   <tr key={ri + 'o'}>
                     <td
@@ -2565,11 +2778,38 @@ function WorkflowUI(props) {
                           fontFamily: 'inherit',
                           fontWeight: 600,
                           color: SUBINK,
+                          // left accent brackets the household's two rows; rose +
+                          // thicker when the pair disagreed, faint grey when clean.
+                          borderLeft: hasDiff
+                            ? '4px solid ' + ROSE
+                            : '4px solid ' + LINE,
+                          background: hasDiff ? '#fff5f6' : 'transparent',
+                          verticalAlign: 'middle',
                         },
                         true,
                       )}
                     >
-                      {row.household_id}
+                      <div>{row.household_id}</div>
+                      <div
+                        style={{
+                          marginTop: 4,
+                          display: 'inline-block',
+                          fontSize: 9.5,
+                          fontFamily: mono,
+                          fontWeight: 700,
+                          letterSpacing: '.02em',
+                          padding: '2px 6px',
+                          borderRadius: 5,
+                          color: hasDiff ? '#fff' : GREEN,
+                          background: hasDiff ? ROSE : '#ecfdf5',
+                          border: hasDiff ? 'none' : '1px solid #a7f3d0',
+                        }}
+                      >
+                        {hasDiff
+                          ? nDiff +
+                            (nDiff === 1 ? ' field differs' : ' fields differ')
+                          : 'all agree'}
+                      </div>
                     </td>
                     <td style={cell({ color: MUT }, false)}>
                       Original ({row.enumerator})
@@ -2708,8 +2948,9 @@ function WorkflowUI(props) {
       >
         <div
           style={{
-            color: MUT,
-            fontSize: 11,
+            color: SUBINK,
+            fontSize: 13,
+            fontWeight: 700,
             textTransform: 'uppercase',
             letterSpacing: '.05em',
           }}
@@ -2723,7 +2964,7 @@ function WorkflowUI(props) {
             display: 'flex',
             gap: 16,
             flexWrap: 'wrap',
-            fontSize: 11,
+            fontSize: 12.5,
             color: SUBINK,
             marginTop: 8,
           }}
@@ -2731,7 +2972,7 @@ function WorkflowUI(props) {
           <span>{sw(AMBER, true)}service-delivery data</span>
           <span>{sw(INDIGO)}intervention arm survey</span>
           <span>{sw(COMP)}control arm survey</span>
-          <span style={{ color: '#94a3b8' }}>
+          <span style={{ color: MUT }}>
             · amber band = self-report − survey gap · highlighted column =
             selected cycle · click a cycle to open it
           </span>
@@ -2739,8 +2980,8 @@ function WorkflowUI(props) {
         <div
           style={{
             marginTop: 6,
-            fontSize: 10.5,
-            color: '#94a3b8',
+            fontSize: 12,
+            color: MUT,
             fontFamily: mono,
             lineHeight: 1.5,
           }}
@@ -2780,37 +3021,49 @@ function WorkflowUI(props) {
             {/* Layer toggles live in the docked Layers panel (top-right of the
                 map) — the SAME MicroplansMapPanel the plan editor uses. */}
           </div>
-          {/* Per-ward confirmed-rate caption — sits in the title bar, NOT over the
-              map polygons, so the intervention ward's dots are never occluded. */}
-          <div
+          {/* Per-ward confirmed-rate readout — a neutral two-row table (ward ·
+              arm · % confirmed), NOT a verdict banner over the evidence map. The
+              map below is the evidence; this just tabulates the rate per ward so
+              the viewer draws the conclusion. */}
+          <table
             style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              alignItems: 'center',
-              gap: 14,
+              borderCollapse: 'collapse',
               marginBottom: 8,
               fontSize: 12,
               fontFamily: mono,
               color: SUBINK,
             }}
           >
-            <span>
-              <span style={{ color: INDIGO }}>▰</span> {tWard} (intervention) —{' '}
-              <b style={{ color: INDIGO }}>{pct(ver)}</b> confirmed
-            </span>
-            <span>
-              <span style={{ color: AMBER }}>▰</span> {cWard} (control) —{' '}
-              <b style={{ color: COMP }}>
-                {pct((trend.comparison || [])[sel])}
-              </b>{' '}
-              confirmed
-            </span>
-          </div>
+            <tbody>
+              <tr>
+                <td style={{ padding: '2px 12px 2px 0' }}>
+                  <span style={{ color: INDIGO }}>▰</span> {tWard}
+                </td>
+                <td style={{ padding: '2px 12px 2px 0', color: MUT }}>
+                  intervention
+                </td>
+                <td style={{ padding: '2px 0', color: SUBINK }}>
+                  {pct(ver)} confirmed
+                </td>
+              </tr>
+              <tr>
+                <td style={{ padding: '2px 12px 2px 0' }}>
+                  <span style={{ color: AMBER }}>▰</span> {cWard}
+                </td>
+                <td style={{ padding: '2px 12px 2px 0', color: MUT }}>
+                  control
+                </td>
+                <td style={{ padding: '2px 0', color: SUBINK }}>
+                  {pct((trend.comparison || [])[sel])} confirmed
+                </td>
+              </tr>
+            </tbody>
+          </table>
           <div ref={panelMountRef} style={{ position: 'relative' }}>
             <div
               ref={mapDivRef}
               style={{
-                height: 480,
+                height: 360,
                 borderRadius: 8,
                 overflow: 'hidden',
                 background: '#eef2f7',
@@ -2871,38 +3124,72 @@ function WorkflowUI(props) {
             <div
               style={{
                 position: 'absolute',
-                bottom: 26,
-                left: 8,
-                background: 'rgba(255,255,255,0.88)',
+                bottom: 14,
+                left: 10,
+                background: 'rgba(255,255,255,0.94)',
                 border: '1px solid ' + LINE,
-                borderRadius: 8,
-                padding: '7px 10px',
-                fontSize: 11,
+                borderRadius: 9,
+                padding: '10px 13px',
+                fontSize: 12.5,
                 fontFamily: mono,
-                color: MUT,
+                color: SUBINK,
                 display: 'flex',
                 flexDirection: 'column',
-                gap: 3,
+                gap: 6,
                 lineHeight: 1.5,
-                boxShadow: '0 2px 8px rgba(16,24,40,0.14)',
+                boxShadow: '0 2px 10px rgba(16,24,40,0.16)',
                 pointerEvents: 'none',
                 backdropFilter: 'blur(1px)',
               }}
             >
-              <span style={{ color: SUBINK, fontWeight: 700, marginBottom: 1 }}>
+              <span style={{ color: SUBINK, fontWeight: 700, fontSize: 12 }}>
                 Map key
               </span>
-              <span>
-                <span style={{ color: '#15803d' }}>●</span> service delivery
-                (program)
+              {/* program delivery = larger SOLID dot */}
+              <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                <span
+                  style={{
+                    display: 'inline-block',
+                    width: 12,
+                    height: 12,
+                    borderRadius: '50%',
+                    background: '#15803d',
+                    flex: '0 0 auto',
+                  }}
+                />
+                service delivery (program){_ct(mmc.delivery)}
               </span>
-              <span>
-                <span style={{ color: INDIGO }}>●</span> survey confirmed &nbsp;
-                <span style={{ color: ROSE }}>●</span> surveyed · not reached
+              {/* survey = smaller HOLLOW ring */}
+              <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                <span
+                  style={{
+                    display: 'inline-block',
+                    width: 11,
+                    height: 11,
+                    borderRadius: '50%',
+                    border: '2px solid ' + INDIGO,
+                    background: 'transparent',
+                    flex: '0 0 auto',
+                  }}
+                />
+                survey confirmed{_ct(mmc.confirmed)}
               </span>
-              <span>
-                <span style={{ color: SUBINK }}>●</span> primary unit &nbsp;
-                <span style={{ color: SUBINK }}>◌</span> alternate (substituted)
+              <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                <span
+                  style={{
+                    display: 'inline-block',
+                    width: 11,
+                    height: 11,
+                    borderRadius: '50%',
+                    border: '2px solid ' + ROSE,
+                    background: 'transparent',
+                    flex: '0 0 auto',
+                  }}
+                />
+                surveyed · not reached{_ct(mmc.notReached)}
+              </span>
+              <span style={{ color: MUT, fontSize: 11 }}>
+                larger ring = primary unit · smaller = alternate (substituted)
               </span>
             </div>
           </div>
@@ -3009,8 +3296,8 @@ function WorkflowUI(props) {
             scrollMarginTop: 84,
           }}
         >
-          Distributions · {tWard} · R{rd.round} — statistical fabrication
-          screen, one row per surveyor
+          Distributions · {tWard} · R{rd.round} — per-surveyor distribution
+          checks, one row per surveyor
         </div>
         <div
           style={{
@@ -3054,6 +3341,13 @@ function WorkflowUI(props) {
           </span>
           <span style={{ color: INDIGO }}>
             A = compare a number · B = compare a distribution
+          </span>
+          <span style={{ flexBasis: '100%', color: SUBINK }}>
+            Composite band = the strongest single signal: any signal past |z|
+            &gt; 3.5 ⇒ <b style={{ color: ROSE }}>red</b>; any past |z| &ge; 2 ⇒{' '}
+            <b style={{ color: '#b45309' }}>amber</b>; otherwise{' '}
+            <b style={{ color: GREEN }}>green</b>. So the pill always agrees
+            with the per-signal thresholds above.
           </span>
         </div>
         {/* How to read the lens — a labeled mini-axis so the bar/notch/band
@@ -3123,10 +3417,61 @@ function WorkflowUI(props) {
               }}
             />
           </span>
-          <span>
-            shaded = peer range · grey line = team-typical ·{' '}
-            <b style={{ color: SUBINK }}>dark notch</b> = this surveyor ·
-            coloured bar width = how big an outlier (|z|)
+          {/* per-encoding chips — each channel of the lens broken out so the
+              four encodings read one at a time instead of as one packed line. */}
+          <span
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+          >
+            <span
+              style={{
+                display: 'inline-block',
+                width: 18,
+                height: 8,
+                background: '#e2e8f0',
+                borderRadius: 3,
+              }}
+            />
+            shaded = peer range
+          </span>
+          <span
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+          >
+            <span
+              style={{
+                display: 'inline-block',
+                width: 2,
+                height: 12,
+                background: '#94a3b8',
+              }}
+            />
+            grey line = team-typical
+          </span>
+          <span
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+          >
+            <span
+              style={{
+                display: 'inline-block',
+                width: 2,
+                height: 14,
+                background: '#0f172a',
+              }}
+            />
+            <b style={{ color: SUBINK }}>dark notch</b> = this surveyor
+          </span>
+          <span
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+          >
+            <span
+              style={{
+                display: 'inline-block',
+                width: 18,
+                height: 6,
+                background: '#64748b',
+                borderRadius: 3,
+              }}
+            />
+            bar width = how big an outlier (|z|)
           </span>
         </div>
         {distributionsTable()}
