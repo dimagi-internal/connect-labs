@@ -145,3 +145,54 @@ def test_generate_opps_bulk_shared_program_and_isolation(tmp_path, settings, mon
     # Both source opps are registered in the DB.
     assert SyntheticOpportunity.objects.filter(cloned_from_opportunity_id=523).exists()
     assert SyntheticOpportunity.objects.filter(cloned_from_opportunity_id=524).exists()
+
+
+def _manifest(opp_id: int) -> str:
+    return (
+        f"opportunity_id: {opp_id}\n"
+        f"opportunity_name: KMC-{opp_id}\n"
+        "random_seed: 42\n"
+        "timeline: {start_date: 2026-05-04, end_date: 2026-06-01, weeks: 4,"
+        " visit_cadence_per_week_per_flw: {mean: 5, stddev: 1}}\n"
+        "flw_personas: [{id: a, archetype: steady,"
+        " accuracy_distribution: {mean: 0.8, stddev: 0.05},"
+        " completeness_distribution: {mean: 0.8, stddev: 0.05}, flag_rate: 0.1}]\n"
+        "beneficiary_cohorts: [{id: primary, size: 20, progression: flat,"
+        ' field_distributions: {"form.w": {distribution: normal, mean: 12.0, stddev: 2.0}}}]\n'
+        "kpi_config: [{kpi: a, field_path: form.w, aggregation: mean, threshold_underperform: 1.0}]\n"
+    )
+
+
+def test_generate_opps_bulk_gdrive(settings, monkeypatch):
+    """Phase 2 reads bundles from a GDrive run folder (durable handoff) and registers
+    all opps under one shared program. Proves the gdrive: path works end-to-end."""
+    from commcare_connect.labs.synthetic.bundle import GDriveBundleStore
+    from commcare_connect.labs.synthetic.tests.test_bundle import _FakeDrive
+
+    settings.LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID = "parent"
+    monkeypatch.setattr(clone_from_prod, "_fetch_endpoint", lambda *a, **k: None)
+
+    drive = _FakeDrive()
+    run_folder = drive.create_folder("kmc-bundles", "parent")
+    # Seed two bundles into the Drive run folder (as Phase 1 would have).
+    store = GDriveBundleStore(drive, run_folder)
+    for oid in (523, 524):
+        store.write(
+            oid,
+            manifest_yaml=_manifest(oid),
+            app_structure={"learn_app": None, "deliver_app": {"modules": []}},
+            opportunity={"id": oid, "name": f"KMC-{oid}"},
+        )
+
+    results = clone_from_prod.generate_opps_bulk(
+        f"gdrive:{run_folder}",
+        drive=drive,
+        program_name="KMC (Synthetic)",
+        org_name="Dimagi-KMC (Synthetic)",
+    )
+
+    assert len(results) == 2
+    program_ids = {SyntheticOpportunity.objects.get(opportunity_id=r.opportunity_id).program_id for r in results}
+    assert len(program_ids) == 1
+    assert SyntheticOpportunity.objects.filter(cloned_from_opportunity_id=523).exists()
+    assert SyntheticOpportunity.objects.filter(cloned_from_opportunity_id=524).exists()

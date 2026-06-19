@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from pathlib import Path
 
 from .bundle import make_bundle_store, read_bundle
 from .dump import _fetch_endpoint
@@ -145,7 +144,34 @@ def generate_opp_from_bundle(
     Returns:
         :class:`CloneResult` describing the created (or skipped) opportunity.
     """
-    bundle = read_bundle(bundle_dir)
+    return _generate_one(
+        read_bundle(bundle_dir),
+        drive=drive,
+        program_id=program_id,
+        program_name=program_name,
+        org_name=org_name,
+        label=label,
+        allowed_domains=allowed_domains,
+        fresh=fresh,
+    )
+
+
+def _generate_one(
+    bundle,
+    *,
+    drive,
+    program_id: int,
+    program_name: str,
+    org_name: str,
+    label: str | None = None,
+    allowed_domains=None,
+    fresh: bool = False,
+) -> CloneResult:
+    """Generate fixtures + register a labs-only opp from an already-read bundle.
+
+    Backend-agnostic core shared by the single-opp and bulk entry points; makes
+    no prod calls. Idempotent on ``cloned_from_opportunity_id``.
+    """
     source = bundle.source_opp_id
 
     existing = SyntheticOpportunity.objects.filter(cloned_from_opportunity_id=source).first()
@@ -221,15 +247,14 @@ def generate_opps_bulk(
     Returns:
         List of :class:`CloneResult` for every bundle that succeeded.
     """
+    store = make_bundle_store(bundle_root, drive=drive)
     program_id = allocate_shared_program_id()
     results: list[CloneResult] = []
-    for child in sorted(Path(bundle_root).iterdir()):
-        if not child.is_dir():
-            continue
+    for handle in store.list_handles():
         try:
             results.append(
-                generate_opp_from_bundle(
-                    child,
+                _generate_one(
+                    store.read(handle),
                     drive=drive,
                     program_id=program_id,
                     program_name=program_name,
@@ -238,5 +263,5 @@ def generate_opps_bulk(
                 )
             )
         except Exception:  # noqa: BLE001
-            logger.exception("generate_opps_bulk: failed for bundle %s", child)
+            logger.exception("generate_opps_bulk: failed for bundle %s", handle)
     return results
