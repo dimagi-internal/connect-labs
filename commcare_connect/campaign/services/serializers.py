@@ -103,6 +103,51 @@ def _worker(w, role_names: dict, region_names: dict) -> dict:
     }
 
 
+def _activity(a) -> dict:
+    return {
+        "id": a.activity_id,
+        "name": a.name,
+        "donor": a.donor,
+        "status": a.status,
+        "start": a.start,
+        "end": a.end,
+        "requests": a.requests,
+        "workers": a.workers,
+        "region": a.region,
+        "target": a.target,
+        "reached": a.reached,
+        "synced": a.synced,
+    }
+
+
+def _microplan(m) -> dict:
+    return {
+        "id": m.microplan_id,
+        "regionId": m.region_id,
+        "region": m.region,
+        "lga": m.lga,
+        "settlements": m.settlements,
+        "wards": m.wards,
+        "plannedWf": m.planned_wf,
+        "actualWf": m.actual_wf,
+        "roles": list(m.roles or []),
+        "budget": m.budget,
+        "spent": m.spent,
+        "plannedToDate": m.planned_to_date,
+        "target": m.target,
+        "objective": m.objective,
+        "goalPct": m.goal_pct,
+        "reached": m.reached,
+        "doses": m.doses,
+        "dosesUsed": m.doses_used,
+        "coldBoxes": m.cold_boxes,
+        "vehicles": m.vehicles,
+        "status": m.status,
+        "owner": m.owner,
+        "updated": m.updated,
+    }
+
+
 def bootstrap_payload(c: Campaign) -> dict:
     regions = list(c.regions.select_related("plan").all())
     role_names = {r.role_id: r.name for r in c.worker_roles.all()}
@@ -112,9 +157,9 @@ def bootstrap_payload(c: Campaign) -> dict:
         "DONORS": [_donor(d) for d in c.donors.all()],
         "REGIONS": [_region(r) for r in regions],
         "ROLES": [_role(r) for r in c.worker_roles.all()],
-        "ACTIVITIES": [],
+        "ACTIVITIES": [_activity(a) for a in c.activities.all()],
         "PLANNING": [_planning(r) for r in regions],
-        "MICROPLANS": [],
+        "MICROPLANS": [_microplan(m) for m in c.microplans.all()],
         "REPORT_DAYS": [],
         "HOUSEHOLDS": _household(c.household_stat),
         "WORKERS": [_worker(w, role_names, region_names) for w in c.workers.all()],
