@@ -46,3 +46,114 @@ class CampaignUser(models.Model):
     @property
     def is_active_member(self) -> bool:
         return self.status == self.Status.ACTIVE
+
+
+class Workspace(models.Model):
+    country = models.CharField(max_length=128, default="Nigeria")
+    name = models.CharField(max_length=128)
+    slug = models.SlugField(unique=True)
+
+    class Meta:
+        db_table = "campaign_workspace"
+
+    def __str__(self):
+        return self.name
+
+
+class Campaign(models.Model):
+    workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name="campaigns")
+    name = models.CharField(max_length=255)
+    code = models.CharField(max_length=64)
+    round = models.CharField(max_length=64, blank=True)
+    country = models.CharField(max_length=128, default="Nigeria")
+    period = models.CharField(max_length=128, blank=True)
+    status = models.CharField(max_length=32, default="Active")
+    days_elapsed = models.IntegerField(default=0)
+    days_total = models.IntegerField(default=0)
+    target_pop = models.BigIntegerField(default=0)
+
+    class Meta:
+        db_table = "campaign_campaign"
+
+    def __str__(self):
+        return f"{self.name} ({self.code})"
+
+
+class Donor(models.Model):
+    campaign = models.ForeignKey(Campaign, on_delete=models.CASCADE, related_name="donors")
+    donor_id = models.CharField(max_length=64)
+    name = models.CharField(max_length=255)
+    short = models.CharField(max_length=64)
+    committed = models.BigIntegerField(default=0)
+    color = models.CharField(max_length=16, default="#5D70D2")
+    order = models.IntegerField(default=0)
+
+    class Meta:
+        db_table = "campaign_donor"
+        ordering = ["order"]
+
+    def __str__(self):
+        return self.short
+
+
+class Region(models.Model):
+    campaign = models.ForeignKey(Campaign, on_delete=models.CASCADE, related_name="regions")
+    region_id = models.CharField(max_length=64)
+    name = models.CharField(max_length=128)
+    lgas = models.JSONField(default=list)
+    order = models.IntegerField(default=0)
+
+    class Meta:
+        db_table = "campaign_region"
+        ordering = ["order"]
+
+    def __str__(self):
+        return self.name
+
+
+class WorkerRole(models.Model):
+    campaign = models.ForeignKey(Campaign, on_delete=models.CASCADE, related_name="worker_roles")
+    role_id = models.CharField(max_length=64)
+    name = models.CharField(max_length=128)
+    rate = models.IntegerField(default=0)
+    order = models.IntegerField(default=0)
+
+    class Meta:
+        db_table = "campaign_worker_role"
+        ordering = ["order"]
+
+    def __str__(self):
+        return self.name
+
+
+class RegionPlan(models.Model):
+    region = models.OneToOneField(Region, on_delete=models.CASCADE, related_name="plan")
+    planned_wf = models.IntegerField(default=0)
+    actual_wf = models.IntegerField(default=0)
+    budget = models.BigIntegerField(default=0)
+    spent = models.BigIntegerField(default=0)
+    target = models.BigIntegerField(default=0)
+    reached = models.BigIntegerField(default=0)
+    vaccine_alloc = models.BigIntegerField(default=0)
+    vaccine_used = models.BigIntegerField(default=0)
+
+    class Meta:
+        db_table = "campaign_region_plan"
+
+    def __str__(self):
+        return f"plan:{self.region.name}"
+
+
+class HouseholdStat(models.Model):
+    campaign = models.OneToOneField(Campaign, on_delete=models.CASCADE, related_name="household_stat")
+    registered = models.BigIntegerField(default=0)
+    visited = models.BigIntegerField(default=0)
+    members = models.BigIntegerField(default=0)
+    members_reached = models.BigIntegerField(default=0)
+    coverage = models.JSONField(default=list)
+
+    class Meta:
+        db_table = "campaign_household_stat"
+
+    def __str__(self):
+        return f"households:{self.campaign.code}"
