@@ -513,6 +513,11 @@ class ProgramPlansAPIView(LoginRequiredMixin, View):
                     "shared": g.shared,
                     "kind": g.kind,  # "bundle" | "study" — drives the workspace card affordances
                     "status": g.status,
+                    # Per-member arm map ({plan_id: "intervention"|"control"}) so the
+                    # workspace can label a two-arm study by its arm pair and show the
+                    # field-blind marker. Labs-side only — never written to a plan/work
+                    # area (execution stays blind). Always a dict for bundles (empty).
+                    "arms": g.arms,
                 }
                 for g in da.list_groups()
             ]

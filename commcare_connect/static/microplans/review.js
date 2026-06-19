@@ -838,10 +838,15 @@
           : 'No workers assigned yet — metrics shown by group',
       ),
     ].join('');
-    $('flw-dim').textContent = k.dimension === 'worker' ? 'Worker' : 'Group';
+    const flwDim = $('flw-dim');
+    if (flwDim)
+      flwDim.textContent = k.dimension === 'worker' ? 'Worker' : 'Group';
     const showPop = !!p.has_population;
-    $('flw-pop-col').style.display = showPop ? '' : 'none';
-    $('flw-body').innerHTML = (k.territories || [])
+    const flwPopCol = $('flw-pop-col');
+    if (flwPopCol) flwPopCol.style.display = showPop ? '' : 'none';
+    const flwBody = $('flw-body');
+    if (!flwBody) return;
+    flwBody.innerHTML = (k.territories || [])
       .map(
         (t) =>
           `<tr class="border-b"><td class="p-1.5 font-medium">${esc(
@@ -888,10 +893,17 @@
           .join('') +
         `</div>`;
     }
-    $('summary').innerHTML = html;
+    // The summary/metrics DOM is absent until a plan exists (create-in-place on a
+    // fresh /new/ page renders before its first paint), so guard the write.
+    const summaryEl = $('summary');
+    if (summaryEl) summaryEl.innerHTML = html;
     renderDimSidebar(s);
   }
   function renderDimSidebar(s) {
+    // The dim sidebar DOM is absent until a plan exists (create-in-place renders
+    // before its first paint on a fresh /new/ page), so guard the writes.
+    const byDim = $('by-dim');
+    if (!byDim) return;
     // Sidebar contents follow the active dimension (worker | group).
     const bucket = (colorDim === 'worker' ? s.by_worker : s.by_group) || {};
     // Don't list the synthetic "(unassigned)" bucket — empty key is the visual.
@@ -899,11 +911,11 @@
       .filter((k) => k && k !== '(unassigned)')
       .sort((a, b) => bucket[b].work_areas - bucket[a].work_areas);
     if (!rows.length) {
-      $('by-dim').innerHTML = `<span class="text-gray-400 text-xs">no ${
+      byDim.innerHTML = `<span class="text-gray-400 text-xs">no ${
         colorDim === 'worker' ? 'workers assigned' : 'groups defined'
       }</span>`;
     } else {
-      $('by-dim').innerHTML = rows
+      byDim.innerHTML = rows
         .map((name) => {
           const cls =
             'worker-row text-xs ' + (activeDim === name ? 'is-active' : '');
@@ -917,7 +929,8 @@
         })
         .join('');
     }
-    $('dim-clear').classList.toggle('hidden', activeDim === null);
+    const dimClear = $('dim-clear');
+    if (dimClear) dimClear.classList.toggle('hidden', activeDim === null);
   }
   // ---- sort + collapse state for the work-area table ----
   let sortKey = 'work_area_group'; // start grouped by group name
@@ -1039,6 +1052,9 @@
 
   function renderTable() {
     const body = $('wa-body');
+    // Absent until a plan exists (create-in-place renders before the table DOM is
+    // present on a fresh /new/ page) — bail rather than throw on null.innerHTML.
+    if (!body) return;
     body.innerHTML = '';
     const field = DIM_FIELD[colorDim];
     let rows = WAS.slice();
@@ -1079,7 +1095,8 @@
       const ind = th.querySelector('.sort-ind');
       if (ind) ind.textContent = active ? (sortDir === 1 ? '↑' : '↓') : '';
     });
-    $('sel-count').textContent = `${selected.size} selected`;
+    const selCount = $('sel-count');
+    if (selCount) selCount.textContent = `${selected.size} selected`;
   }
 
   // ---- column sort: click toggles asc/desc, clicking a new column starts asc.
