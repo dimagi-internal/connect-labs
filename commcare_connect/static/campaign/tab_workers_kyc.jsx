@@ -20,14 +20,14 @@ function KycSub({ density, role }) {
         w.name.toLowerCase().includes(q.toLowerCase()) ||
         w.nin.includes(q)),
   );
-  const setKyc = (ids, st) =>
+  const applyWorker = (msg, tone) => (res) => {
     setWorkers((ws) =>
-      ws.map((w) => (ids.includes(w.id) ? { ...w, kyc: st } : w)),
+      ws.map((w) => (w.id === res.worker.id ? res.worker : w)),
     );
-  const updateInvestigation = (id, inv) =>
-    setWorkers((ws) =>
-      ws.map((w) => (w.id === id ? { ...w, investigation: inv } : w)),
-    );
+    if (msg) toast(msg, tone);
+    setReview(null);
+  };
+  const failToast = (e) => toast('Action failed: ' + e.message, 'danger');
 
   const statusTabs = [
     { id: 'all', label: 'All', count: workers.length },
@@ -244,37 +244,52 @@ function KycSub({ density, role }) {
         worker={reviewWorker}
         onClose={() => setReview(null)}
         canManage={canManage}
-        onApprove={(id) => {
-          setKyc([id], 'approved');
-          toast('KYC approved');
-          setReview(null);
-        }}
-        onReject={(id) => {
-          setKyc([id], 'rejected');
-          toast('KYC rejected', 'danger');
-          setReview(null);
-        }}
-        onSubmit={(id) => {
-          setKyc([id], 'review');
-          toast('Submitted to verification provider');
-          setReview(null);
-        }}
-        onResolveDupe={(id, keep) => {
-          setWorkers((ws) =>
-            ws.map((w) =>
-              w.id === id
-                ? {
-                    ...w,
-                    duplicate: false,
-                    fraudRules: [],
-                    kyc: keep ? w.kyc : 'rejected',
-                  }
-                : w,
-            ),
-          );
-          toast(keep ? 'Marked as distinct worker' : 'Duplicate archived');
-        }}
-        onInvestigation={updateInvestigation}
+        onApprove={(id) =>
+          window.campaignActions
+            .setKyc(id, 'approved')
+            .then(applyWorker('KYC approved'))
+            .catch(failToast)
+        }
+        onReject={(id) =>
+          window.campaignActions
+            .setKyc(id, 'rejected')
+            .then(applyWorker('KYC rejected', 'danger'))
+            .catch(failToast)
+        }
+        onSubmit={(id) =>
+          window.campaignActions
+            .setKyc(id, 'review')
+            .then(applyWorker('Submitted to verification provider'))
+            .catch(failToast)
+        }
+        onResolveDupe={(id, keep) =>
+          window.campaignActions
+            .resolveDuplicate(id, keep)
+            .then((res) => {
+              setWorkers((ws) =>
+                ws.map((w) => (w.id === res.worker.id ? res.worker : w)),
+              );
+              toast(
+                keep ? 'Marked as distinct worker' : 'Duplicate archived',
+                keep ? undefined : 'danger',
+              );
+            })
+            .catch(failToast)
+        }
+        onInvestigation={(id, payload) =>
+          window.campaignActions
+            .saveInvestigation(id, {
+              status: payload.status,
+              outcome: payload.outcome,
+              note: payload.note,
+            })
+            .then((res) => {
+              setWorkers((ws) =>
+                ws.map((w) => (w.id === res.worker.id ? res.worker : w)),
+              );
+            })
+            .catch(failToast)
+        }
       />
 
       {/* CSV upload modal */}
@@ -639,16 +654,10 @@ function InvestigationPanel({ worker, canManage, onChange }) {
     Resolved: 'success',
     'False Positive': 'neutral',
   };
-  const setStatus = (s) => onChange({ ...inv, status: s });
+  const setStatus = (s) => onChange({ status: s });
   const addNote = () => {
     if (!note.trim()) return;
-    onChange({
-      ...inv,
-      notes: [
-        { at: 'Just now', by: 'You', text: note.trim() },
-        ...(inv.notes || []),
-      ],
-    });
+    onChange({ note: note.trim() });
     setNote('');
   };
   return (
