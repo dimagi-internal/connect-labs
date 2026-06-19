@@ -16,7 +16,7 @@ import pytest
 from django.urls import reverse
 
 from commcare_connect.campaign.services import rbac
-from commcare_connect.campaign.tests.factories import CampaignFactory, WorkerFactory
+from commcare_connect.campaign.tests.factories import CampaignFactory, CampaignUserFactory, WorkerFactory
 
 # name -> (required module, verb, url(worker_id), body(worker_id))
 ENDPOINTS = {
@@ -159,6 +159,54 @@ def test_plan4_endpoint_enforces_rbac(client, login_as, seeded_ids, role, endpoi
     module, verb, url_for, body_for = PLAN4_ENDPOINTS[endpoint]
     login_as(client, role)
     resp = client.post(url_for(seeded_ids), data=json.dumps(body_for(seeded_ids)), content_type="application/json")
+    if rbac.can(role, module, verb):
+        assert resp.status_code != 403, f"{role} should be allowed {endpoint}, got {resp.status_code}"
+    else:
+        assert resp.status_code == 403, f"{role} should be denied {endpoint}, got {resp.status_code}"
+
+
+# --- User Management endpoints ------------------------------------------------
+# All three require ("users", "manage") → campaign_admin only. set_role/set_status
+# target a DIFFERENT user so the no-self-modify 400 guard can't fire before the
+# @require_perm gate. The assertion checks only 403-iff-denied; 200/400 is not
+# asserted (matching the convention of the tables above).
+TARGET_USERNAME = "target@x.org"
+
+USER_ENDPOINTS = {
+    "user_invite": (
+        "users",
+        "manage",
+        lambda _u: reverse("campaign:user_invite"),
+        lambda _u: {"name": "P", "email": "probe@x.org", "role": "reporting", "scope": "All regions"},
+    ),
+    "user_set_role": (
+        "users",
+        "manage",
+        lambda u: reverse("campaign:user_set_role", args=[u]),
+        lambda u: {"role": "reporting"},
+    ),
+    "user_set_status": (
+        "users",
+        "manage",
+        lambda u: reverse("campaign:user_set_status", args=[u]),
+        lambda u: {"status": "deactivated"},
+    ),
+}
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("endpoint", sorted(USER_ENDPOINTS))
+@pytest.mark.parametrize("role", rbac.ROLES)
+def test_user_endpoint_enforces_rbac(client, login_as, db, role, endpoint):
+    module, verb, url_for, body_for = USER_ENDPOINTS[endpoint]
+    # Target must differ from the logged-in user to avoid triggering self-modify guard.
+    CampaignUserFactory(commcare_username=TARGET_USERNAME, email=TARGET_USERNAME, name="T", role="reporting_user")
+    login_as(client, role)
+    resp = client.post(
+        url_for(TARGET_USERNAME),
+        data=json.dumps(body_for(TARGET_USERNAME)),
+        content_type="application/json",
+    )
     if rbac.can(role, module, verb):
         assert resp.status_code != 403, f"{role} should be allowed {endpoint}, got {resp.status_code}"
     else:
