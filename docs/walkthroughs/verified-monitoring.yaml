@@ -8,11 +8,11 @@ build_order:
 - gps-is-clean-the-distributions-screen-catches-the-fabrication
 - the-independent-back-check-confirms-it
 name: verified-monitoring
-narrative: 'David opens the independent survey''s dashboard — the six-round trend. It confirms a big rise in vitamin-A coverage, but below what his program reports. On the map, service delivery points fill only the intervention ward; the survey covered both. He toggles layers — service delivery, survey, the plan''s sampled PSUs — showing where each looked. David checks the surveyors, one row each. GPS clean for everyone (app require you to be within 15 meters), so he reads the rest: photos, on-primary rate, back-checks. One''s flagged. David opens that surveyor''s back-check: an independent enumerator re-visited the same households. Original vs re-survey — sex, age, roof, location, vitamin-A result. Finally the Distributions table: the flagged surveyor''s interviews ran impossibly fast, their roof-type answers collapse onto one value — two more flags. Everyone else varies normally.'
+narrative: 'David opens the independent survey''s dashboard — the six-round trend. It confirms a big rise in vitamin-A coverage, but below what his program reports. On the map, service delivery points fill only the intervention ward; the survey covered both. He toggles layers — service delivery, survey, the plan''s sampled PSUs — showing where each looked. David checks the surveyors, one row each. The Connect app requires you to be within 15 meters to submit a survey, so everyone is 100% compliant. He reads the rest — photos, on-primary rate, back-checks. One''s flagged. David opens that surveyor''s back-check: an independent enumerator re-visited the same households. Original vs re-survey — sex, age, roof, location, vitamin-A result. Finally the Distributions table: the flagged surveyor''s interviews ran impossibly fast, their roof-type answers collapse onto one value — two more flags. Everyone else varies normally.'
 narrative_locked: false
 narrative_synced_at: '2026-06-18T00:00:00+00:00'
-narrative_synced_hash: 29e98b12123d2634918669247ca9496a9d4b92e4cd356ec47afac0f6fe5c861a
-narrative_synced_version: 13
+narrative_synced_hash: df373b732281e9837d4ca4244900ed2162030d17130ab78bebc7a5f1e996ac97
+narrative_synced_version: 14
 personas:
   david:
     color: '#4F46E5'
@@ -97,7 +97,7 @@ scenes:
     id: surveyor-scorecard
     verify: Assert the table renders one row per surveyor with computed values, including an On-primary column and a ~100% GPS-within-15m column for every surveyor; exactly the flagged surveyor (T6) shows a REVIEW tag; its rose cells coincide with sub-threshold non-GPS values.
   full_page: false
-  narrative: 'David checks the surveyors, one row each. GPS clean for everyone (app require you to be within 15 meters), so he reads the rest: photos, on-primary rate, back-checks. One''s flagged.'
+  narrative: David checks the surveyors, one row each. The Connect app requires you to be within 15 meters to submit a survey, so everyone is 100% compliant. He reads the rest — photos, on-primary rate, back-checks. One's flagged.
   persona: david
   provenance: S2
   show: The per-surveyor quality scorecard — evidence, a ~100% GPS-within-15m column (app-gated), completeness, duration, consistency, duplicates, on-primary, and back-check, each computed from that surveyor's own records — with one surveyor flagged REVIEW on the non-GPS signals.
