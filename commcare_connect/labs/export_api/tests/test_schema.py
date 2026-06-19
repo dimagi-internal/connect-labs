@@ -17,6 +17,7 @@ def _schema():
 def test_export_paths_documented():
     paths = _schema()["paths"]
     for p in (
+        "/api/export/opp_org_program_list/",
         "/api/export/opportunities/",
         "/api/export/opportunity/{opportunity_id}/",
         "/api/export/opportunity/{opportunity_id}/user_visits/",
@@ -24,6 +25,9 @@ def test_export_paths_documented():
         "/api/export/opportunity/{opportunity_id}/completed_works/",
         "/api/export/opportunity/{opportunity_id}/completed_module/",
         "/api/export/opportunity/{opportunity_id}/app_structure/",
+        "/api/export/opportunity/{opportunity_id}/payment/",
+        "/api/export/opportunity/{opportunity_id}/invoice/",
+        "/api/export/opportunity/{opportunity_id}/assessment/",
     ):
         assert p in paths, f"{p} missing from OpenAPI schema"
 

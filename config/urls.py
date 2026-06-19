@@ -67,6 +67,7 @@ urlpatterns = [
         include("commcare_connect.custom_analysis.exports.urls", namespace="exports"),
     ),
     path("ai/", include("commcare_connect.ai.urls", namespace="ai")),
+    path("campaign/", include("commcare_connect.campaign.urls", namespace="campaign")),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
 # Django Admin (conditionally include if admin app is installed)

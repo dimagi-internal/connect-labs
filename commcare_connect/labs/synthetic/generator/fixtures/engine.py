@@ -12,6 +12,7 @@ import random
 import uuid
 from typing import Any
 
+from .copula import build_copula_sampler
 from .fields import fill_form_json
 from .images import assign_visit_images
 from .manifest import Manifest
@@ -22,6 +23,19 @@ from .tasks import build_task_records
 from .timeline import expand_visit_schedule
 from .user_data import build_user_data
 from .works import build_works_and_modules
+
+
+def _sample_hour(rng: random.Random, temporal) -> int:
+    """Return the base hour for visit timestamps.
+
+    When *temporal* is present and its ``hour_of_day`` weights are non-zero,
+    draw one hour via weighted sampling.  Otherwise return 11 (legacy default)
+    WITHOUT consuming any rng draws — so the None-temporal golden output is
+    byte-identical to the previous hardcoded timestamps.
+    """
+    if temporal and sum(temporal.hour_of_day) > 0:
+        return rng.choices(range(24), weights=temporal.hour_of_day, k=1)[0]
+    return 11  # legacy default base hour
 
 
 def _anomalies_at(week_index: int, flw_id: str, manifest: Manifest):
@@ -95,6 +109,7 @@ def generate(
     manifest: Manifest,
     opportunity_detail: dict[str, Any],
     form_schema: FormSchema,
+    app_structure: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     rng = random.Random(manifest.random_seed)
     personas = manifest.flw_personas
@@ -106,13 +121,21 @@ def generate(
         _build_household_locations(manifest.geography, cohort.size, rng) if manifest.geography else None
     )
 
-    slots = expand_visit_schedule(manifest.timeline, personas, random_seed=manifest.random_seed)
+    slots = expand_visit_schedule(
+        manifest.timeline,
+        personas,
+        random_seed=manifest.random_seed,
+        day_of_week=(manifest.temporal.day_of_week if manifest.temporal else None),
+    )
     slots.sort(key=lambda s: (s.visit_date, s.flw_id))
+
+    copula_sampler = build_copula_sampler(cohort.correlation, cohort.field_distributions, seed=manifest.random_seed)
 
     visits: list[dict[str, Any]] = []
     for slot in slots:
         persona = persona_index[slot.flw_id]
         anomalies = _anomalies_at(slot.week_index, slot.flw_id, manifest)
+        correlated_values = copula_sampler.draw() if copula_sampler else None
         form_json = fill_form_json(
             schema=form_schema,
             cohort=cohort,
@@ -120,8 +143,14 @@ def generate(
             rng=rng,
             persona=persona,
             period=slot.week_index,
+            correlated_values=correlated_values,
         )
-        status = decide_visit_status(persona=persona, has_anomaly=bool(anomalies), rng=rng)
+        status = decide_visit_status(
+            persona=persona,
+            has_anomaly=bool(anomalies),
+            rng=rng,
+            flag_reason_distribution=manifest.flag_reason_distribution,
+        )
         # One beneficiary index per visit, reused for the display name AND the
         # household GPS so repeat visits to the same beneficiary share a location.
         beneficiary_idx = rng.randint(1, cohort.size)
@@ -132,6 +161,8 @@ def generate(
         # invisible to that pipeline, so mirror it into metadata.location here.
         if location:
             form_json.setdefault("metadata", {})["location"] = location
+        base_hour = _sample_hour(rng, manifest.temporal)
+        created_dt = dt.datetime.combine(slot.visit_date, dt.time(base_hour, 0))
         # Visit id MUST be a PostgreSQL bigint-compatible integer — the audit
         # data-access layer and labs cache both type the column as int, and a
         # UUID-string id breaks `filter_visit_ids=set([...])` lookups + the
@@ -156,11 +187,11 @@ def generate(
                 "flag_reason": status.flag_reason,
                 "form_json": form_json,
                 "completed_work": "",
-                "status_modified_date": dt.datetime.combine(slot.visit_date, dt.time(12, 0)).isoformat(),
+                "status_modified_date": (created_dt + dt.timedelta(hours=1)).isoformat(),
                 "review_status": status.review_status,
-                "review_created_on": dt.datetime.combine(slot.visit_date, dt.time(12, 30)).isoformat(),
+                "review_created_on": (created_dt + dt.timedelta(hours=1, minutes=30)).isoformat(),
                 "justification": None,
-                "date_created": dt.datetime.combine(slot.visit_date, dt.time(11, 0)).isoformat(),
+                "date_created": created_dt.isoformat(),
                 "completed_work_id": None,
                 "images": [],
             }
@@ -189,4 +220,5 @@ def generate(
         "completed_works": works,
         "completed_module": modules,
         "task_records": task_records,
+        "app_structure": app_structure,
     }

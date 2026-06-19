@@ -26,6 +26,7 @@ def test_generate_returns_all_endpoints():
         "completed_works",
         "completed_module",
         "task_records",
+        "app_structure",
     }
 
 
@@ -197,6 +198,15 @@ def test_generate_with_geography_places_visits_in_polygon():
     # Determinism: same seed → identical locations.
     out2 = generate(manifest=manifest, opportunity_detail=detail, form_schema=schema)
     assert [v["location"] for v in out2["user_visits"]] == [v["location"] for v in visits]
+
+
+def test_generate_threads_app_structure_and_hour_distribution():
+    # reuse the golden manifest/detail/schema loaders already used by test_engine
+    manifest, detail, schema = _load_inputs()
+    app_structure = {"learn_app": None, "deliver_app": {"modules": []}}
+    out = generate(manifest=manifest, opportunity_detail=detail, form_schema=schema, app_structure=app_structure)
+    assert out["app_structure"] == app_structure
+    assert "user_visits" in out
 
 
 def test_geography_gps_lands_where_the_service_delivery_pipeline_reads_it():
