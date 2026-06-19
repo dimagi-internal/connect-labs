@@ -13,10 +13,33 @@ using the two-phase profile/generate workflow.
 
 ---
 
+## Where bundles live: local vs. GDrive (durable)
+
+The Phase-1 → Phase-2 handoff is a **profile bundle** per opp. Choose where it's stored
+with the `out_dir` / `bundle_root` string:
+
+| Value | Backend | When |
+|-------|---------|------|
+| a path, e.g. `/tmp/kmc-bundles` | local disk | local testing |
+| `gdrive:` | a new timestamped Drive run folder | **the labs server run (recommended)** |
+| `gdrive:<folder_id>` | an existing Drive run folder | resuming / recreating |
+
+**On the labs server, use `gdrive:`.** Labs runs multiple web containers with ephemeral
+disks, so a local `out_dir` written by Phase 1 may not exist on the container that runs
+Phase 2. GDrive bundles are durable and container-independent, and they let you **resume a
+partial failure or recreate the data without re-touching production** (see below). The
+bundle holds only aggregate stats + program config — strictly less sensitive than the
+per-visit fixtures already in Drive.
+
+When you pass `gdrive:`, Phase 1 **returns the resolved `bundle_root`** (a
+`gdrive:<run_folder_id>`). Copy that value — it's what you pass to Phase 2.
+
+---
+
 ## Phase 1 — Profile (safe mode, prod-touching)
 
 Reads real exports from production and writes **aggregate statistics only** — no
-row-level beneficiary data persists to disk. Requires a valid Connect OAuth token
+row-level beneficiary data persists. Requires a valid Connect OAuth token
 with access to each opportunity.
 
 ### Via MCP tool (one opp at a time)
@@ -28,10 +51,12 @@ synthetic_profile_opp(source_opportunity_id=523, out_dir="/tmp/kmc-bundles")
 Repeat for each of the 11 IDs, or use the bulk variant:
 
 ```
+# Server run — durable bundles in Drive (note the returned bundle_root):
 synthetic_profile_opps_bulk(
     source_opportunity_ids=[523,524,675,874,938,1234,1236,1487,1488,1739,1790],
-    out_dir="/tmp/kmc-bundles"
+    out_dir="gdrive:"        # -> returns bundle_root="gdrive:<run_folder_id>"
 )
+# Local testing instead: out_dir="/tmp/kmc-bundles"
 ```
 
 ### Via management command
@@ -76,7 +101,7 @@ one shared "KMC (Synthetic)" program. **Zero production network calls occur.**
 
 ```
 synthetic_generate_opps_bulk(
-    bundle_root="/tmp/kmc-bundles",
+    bundle_root="gdrive:<run_folder_id>",   # the value Phase 1 returned (or a local path)
     program_name="KMC (Synthetic)",
     org_name="Dimagi-KMC (Synthetic)"
 )
@@ -112,6 +137,22 @@ python manage.py synthetic_generate_opps \
     --org "Dimagi-KMC (Synthetic)" \
     --fresh
 ```
+
+---
+
+## Resume / recreate (durable bundles)
+
+Because Phase 2 is idempotent (keyed on `cloned_from_opportunity_id`) and the bundles
+persist in Drive, you can recover or rebuild **without re-touching production**:
+
+- **Resume a partial failure** — if Phase 2 errors at opp 6 of 11, just re-run
+  `synthetic_generate_opps_bulk(bundle_root="gdrive:<run_folder_id>")` with the same root.
+  Already-cloned opps are skipped; the rest finish.
+- **Recreate from scratch** — re-run the same call with `fresh=True` to regenerate every
+  opp's fixtures from the persisted bundles (e.g. after a wipe, or to re-roll the data).
+  No prod access, no re-profiling.
+- **Re-profile (only if prod itself changed)** — re-run Phase 1 into a fresh `gdrive:`
+  run folder, then point Phase 2 at the new `bundle_root`.
 
 ---
 
