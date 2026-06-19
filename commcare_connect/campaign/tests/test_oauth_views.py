@@ -80,3 +80,4 @@ def test_callback_rejects_bad_state(client):
     _prime_pkce(client)
     resp = client.get(reverse("campaign:oauth_callback"), {"code": "C", "state": "WRONG"})
     assert resp.status_code == 400
+    assert "campaign_oauth" not in client.session
