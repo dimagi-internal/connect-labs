@@ -8,44 +8,34 @@ build_order:
 - maya-compares-the-surrounding-wards-to-find-a-control
 - maya-rejects-the-closest-match-and-adds-the-right-control
 - maya-generates-the-two-arm-plan-in-place
-- maya-validates-the-two-arms-on-the-one-plan
 - maya-completes-the-study
 name: microplans-study-groups
+tagline: Design a controlled two-arm study, right from the map
 narrative: Maya wants to start a brand-new two-arm study, so she creates a new study
-  on her existing Kaura programme. On the empty study Maya clicks “+ Add a plan in
-  the editor”, and in the plan UI she turns on the service-delivery data for the opportunity
-  she's building the study around — the existing Kaura CHC opp. In the editor she
-  opens the map's LAYERS, switches on the Service delivery layer and points it at
-  the Kaura CHC opportunity — hundreds of delivery visits blanket the whole of Attakar,
-  showing the programme worked the entire ward.  So she plans to use Administrative
-  boundaries -- wards -- as the survey unit. Maya clicks on Attakar to select it and
-  tags it as the intervention arm. Maya switches the plan to sampling mode and clicks
-  "Compare surrounding boundaries". The tool finds every ward that shares a border
-  with Attakar, measures each one's local building-density distribution, and ranks
-  them by how closely that distribution overlaps Attakar's - filling each candidate's
-  boundary on the map in its own colour so she can see which ward is which. The tightest
-  density match is Zankan - but Maya knows the programme worked Zankan the previous
-  cycle, so it cannot serve as a clean, un-treated control. She passes over it and
-  takes Gura, the next-closest neighbour the programme never touched. One click of
-  "Add boundary" on Gura's row drops it into the plan as the control arm. Both wards
-  now sit in the one plan, each carrying its arm. She sets the sampling methodology
-  — size-balanced PSU bands and a building-footprint-size filter — and clicks Generate
-  plan. In one action the editor draws the sample for both arms and creates the plan.
-  On the plan's review page the comparability panel now shows both arms side by side
-  — Interv. vs Control on buildings, area, and settlement density — with a matched
-  / not-matched flag and the reason if they diverge. Both arms sit on one map coloured
-  by arm. Maya reads it and satisfies herself the control is a fair counterfactual,
-  all within the single plan. Maya advances the plan through its lifecycle from the
-  program workspace — Submit for review, then Approve. The study is one balanced two-arm
-  plan. Each work area carries its arm labs-side so future analysis can tell intervention
-  from control — but the arm is never shown to the LLO or field and is kept out of
-  the Connect-facing work-area properties, so the people running the survey stay blind
-  while the design keeps its arms.
-narrative_locked: true
-narrative_locked_at: '2026-06-17T18:35:06.625256+00:00'
-narrative_synced_at: '2026-06-17T15:24:28.155063+00:00'
-narrative_synced_hash: 5faf308044af6d6b252bff070c70402d05ae3c93fa8ee6a27905417df589776a
-narrative_synced_version: 8
+  on her existing Kaura programme. Maya clicks “+ Add a plan in the editor”, and in
+  the plan UI she turns on the service-delivery data for the opportunity she's building
+  the study around — a child health campaign. The visits blanket the whole of Attakar
+  ward, showing where Connect has records of service delivery.  She decides she'll
+  use the administrative boundaries — wards — as the survey units. Maya clicks on
+  Attakar to select it and tags it as the intervention arm. Maya switches the plan
+  to sampling mode and clicks "Compare surrounding boundaries". The tool finds every
+  ward that shares a border with Attakar, measures each one's local building-density
+  distribution, and ranks them by how closely that distribution overlaps Attakar's
+  - filling each candidate's boundary on the map in its own colour so she can see
+  which ward is which. The tightest match, Zankan, was the programme's ward last cycle
+  — not a clean, un-treated control — so Maya skips it for Gura, the next-closest
+  neighbour the programme never touched. One click of "Add boundary" on Gura's row
+  adds it as the control arm; both wards now sit in one plan, each carrying its arm.
+  She sets the sampling methodology — size-balanced PSU bands and a building-footprint-size
+  filter — and clicks Generate plan. In one action the editor draws the sample for
+  both arms and creates the plan. From the program workspace Maya can then send the
+  plan to an existing locally led organization to verify if they are already under
+  contact, or create a new solicitation from the plan for local organizations in the
+  Connect network to apply to.
+narrative_locked: false
+narrative_synced_at: '2026-06-18T23:29:08.885180+00:00'
+narrative_synced_hash: ced10a14633786f637b73c3ee756180666234d383115523d3f0328f1678c4164
+narrative_synced_version: 11
 personas:
   maya:
     color: '#7C3AED'
@@ -133,9 +123,9 @@ scenes:
     verify: 'pytest: POST plan/create with group_id=<id> creates the plan and adds
       it to PlanGroupRecord.plan_ids'
   full_page: false
-  narrative: On the empty study Maya clicks “+ Add a plan in the editor”, and in the
-    plan UI she turns on the service-delivery data for the opportunity she's building
-    the study around — the existing Kaura CHC opp.
+  narrative: Maya clicks “+ Add a plan in the editor”, and in the plan UI she turns
+    on the service-delivery data for the opportunity she's building the study around
+    — a child health campaign.
   persona: maya
   provenance: S13
   show: From the empty study Maya opens the single-plan editor via “+ Add a plan in
@@ -154,11 +144,11 @@ scenes:
     note: the opp row in the OPEN modal (the picker has a hidden template + the visible
       modal — :visible targets the real one, not the hidden duplicate)
     seconds: 15
-    target: 'css:[data-testid=sd-opp-10010]:visible'
+    target: css:[data-testid=sd-opp-10010]:visible
   - kind: click
     must_succeed: false
     note: select the Kaura CHC service-delivery opp (10010, same programme)
-    target: 'css:[data-testid=sd-opp-10010]:visible'
+    target: css:[data-testid=sd-opp-10010]:visible
   - kind: click
     must_succeed: false
     note: close the opportunity picker
@@ -167,7 +157,7 @@ scenes:
     must_succeed: false
     note: Show service delivery points (the visible button, not the hidden template
       duplicate); the map flies to Attakar where the programme worked
-    target: 'css:[data-testid=sd-show]:visible'
+    target: css:[data-testid=sd-show]:visible
   - kind: hold
     note: the delivery cloud saturates the whole Attakar ward
     seconds: 6
@@ -191,10 +181,9 @@ scenes:
     verify: 'pytest/HTTP: POST preview_service_delivery {opp_ids:[10010]} returns
       status ok with ~435 points whose bbox falls inside the Attakar polygon'
   full_page: false
-  narrative: In the editor she opens the map's LAYERS, switches on the Service delivery
-    layer and points it at the Kaura CHC opportunity — hundreds of delivery visits
-    blanket the whole of Attakar, showing the programme worked the entire ward.  So
-    she plans to use Administrative boundaries -- wards -- as the survey unit.
+  narrative: The visits blanket the whole of Attakar ward, showing where Connect has
+    records of service delivery.  She decides she'll use the administrative boundaries
+    — wards — as the survey units.
   persona: maya
   provenance: S13
   show: In the single-plan editor Maya picks the Kaura CHC opportunity for the Service
@@ -322,11 +311,10 @@ scenes:
       one plan; each work area stores its arm labs-side while case_properties (and
       the displayed CSV) carry no arm column'
   full_page: false
-  narrative: The tightest density match is Zankan - but Maya knows the programme worked
-    Zankan the previous cycle, so it cannot serve as a clean, un-treated control.
-    She passes over it and takes Gura, the next-closest neighbour the programme never
-    touched. One click of "Add boundary" on Gura's row drops it into the plan as the
-    control arm. Both wards now sit in the one plan, each carrying its arm.
+  narrative: The tightest match, Zankan, was the programme's ward last cycle — not
+    a clean, un-treated control — so Maya skips it for Gura, the next-closest neighbour
+    the programme never touched. One click of "Add boundary" on Gura's row adds it
+    as the control arm; both wards now sit in one plan, each carrying its arm.
   persona: maya
   provenance: S13
   show: Maya reads the ranked table, skips the top row (Zankan - already the programme's
@@ -394,88 +382,36 @@ scenes:
 - actions:
   - kind: wait_for
     must_succeed: true
-    note: still on the create-in-place review page (carry-through) — the Regenerate
-      button is the visible marker it loaded
+    note: the program workspace lifecycle board has loaded AND plan 4493 is in draft
+      — its row-scoped "Submit for review" button (data-transition keyed to the plan)
+      is the precise marker, not the always-present "Planning" column header
     seconds: 20
-    target: Regenerate plan
+    target: css:button[data-transition="4493"][data-to="in_review"]
   - kind: click
-    must_succeed: false
-    note: open the sample-details panel
-    target: Sample details
+    must_succeed: true
+    note: draft → in_review, scoped to plan 4493's card (data-transition); the board
+      POSTs then re-renders in place
+    target: css:button[data-transition="4493"][data-to="in_review"]
   - kind: wait_for
-    must_succeed: false
-    note: the comparability table renders Interv./Control columns
-    seconds: 10
-    target: Control
+    must_succeed: true
+    note: after the in-place re-render, 4493's card now offers Approve (data-to=approved)
+      — only present while the plan is in_review
+    seconds: 15
+    target: css:button[data-transition="4493"][data-to="approved"]
+  - kind: click
+    must_succeed: true
+    note: in_review → approved, still scoped to plan 4493
+    target: css:button[data-transition="4493"][data-to="approved"]
+  - kind: wait_for
+    must_succeed: true
+    note: 'terminal state: 4493 is approved — its card now shows the forward "Deploy
+      →" button (data-to=deployed), which only renders once a plan is approved'
+    seconds: 15
+    target: css:button[data-transition="4493"][data-to="deployed"]
   - kind: hold
-    note: buildings, area, density per arm + a matched / not-matched badge
-    seconds: 3
-  - kind: hold
-    note: both arms painted on one map by arm colour — intervention green, control
-      blue
+    note: the two-arm plan is approved — the study is complete; the green Approved
+      badge sits on 4493's card in the Planning column
     seconds: 4
-  concept_claim: Because the plan holds two arms, its review page renders a comparability
-    panel comparing intervention vs control on buildings, area, and settlement density
-    with a matched / not-matched flag — so Maya validates the control is a fair counterfactual
-    without leaving the plan.
-  design_intent: 'Bet: validation belongs on the plan that holds both arms — one comparability
-    panel over the two arms'' sampled settlements lets the planner judge the counterfactual
-    in place; the flag informs the call, the planner makes it.'
-  features:
-  - description: 'When a plan has two arms, the review page''s Sample details renders
-      a comparability table (Interv vs Control: buildings, area km², density /km²)
-      with a matched / not-matched badge and a reason when they diverge'
-    id: in-plan-arm-comparability
-    verify: 'Playwright: open a two-arm plan''s review page, open ''Sample details'';
-      assert a comparability table shows Interv./Control columns and a ''matched''
-      or ''not matched'' badge'
-  - description: The single plan's map paints both arms by colour (intervention green,
-      comparison blue) so the two arms are seen together in real geography
-    id: both-arms-one-map
-    verify: 'Playwright: assert the plan review map paints work areas in both the
-      intervention and comparison arm colours'
-  narrative: On the plan's review page the comparability panel now shows both arms
-    side by side — Interv. vs Control on buildings, area, and settlement density —
-    with a matched / not-matched flag and the reason if they diverge. Both arms sit
-    on one map coloured by arm. Maya reads it and satisfies herself the control is
-    a fair counterfactual, all within the single plan.
-  persona: maya
-  provenance: S8
-  show: 'On the single plan''s review page Maya opens Sample details: a comparability
-    table compares the intervention and control arms on buildings, area, and density
-    with a matched / not-matched badge, both arms painted on one map by their arm
-    colour.'
-  title: Maya validates the two arms on the one plan
-  viewport:
-    height: 900
-    width: 1440
-- actions:
-  - kind: wait_for
-    must_succeed: false
-    note: the program workspace lifecycle columns
-    seconds: 20
-    target: Planning
-  - kind: click
-    must_succeed: false
-    note: draft → in_review
-    target: Submit for review
-  - kind: hold
-    seconds: 1
-  - kind: click
-    must_succeed: false
-    note: in_review → approved
-    target: Approve
-  - kind: hold
-    note: the two-arm plan is approved — the study is complete
-    seconds: 2
-  - kind: hover
-    must_succeed: false
-    note: 'tooltip: arm kept off the field-facing export — blind to the LLO/field'
-    target: Connect CSV
-  - kind: hold
-    note: the field-facing file hides the arm; the work-area record keeps it labs-side
-      for analysis
-    seconds: 2
   concept_claim: Maya advances the single two-arm plan draft → in_review → approved
     from the workspace, completing a balanced study. Each work area stores its arm
     labs-side so future analysis can distinguish the arms, while the arm is kept off
@@ -498,12 +434,10 @@ scenes:
     verify: 'pytest: each sampling WorkArea stores arm (intervention/comparison) labs-side;
       WorkAreaPayload.arm is NOT in case_properties and the Connect CSV headers carry
       no Arm column'
-  narrative: Maya advances the plan through its lifecycle from the program workspace
-    — Submit for review, then Approve. The study is one balanced two-arm plan. Each
-    work area carries its arm labs-side so future analysis can tell intervention from
-    control — but the arm is never shown to the LLO or field and is kept out of the
-    Connect-facing work-area properties, so the people running the survey stay blind
-    while the design keeps its arms.
+  narrative: From the program workspace Maya can then send the plan to an existing
+    locally led organization to verify if they are already under contact, or create
+    a new solicitation from the plan for local organizations in the Connect network
+    to apply to.
   persona: maya
   provenance: S14
   show: 'From the program workspace Maya advances the two-arm plan: Submit for review,
@@ -511,4 +445,5 @@ scenes:
     the UI nor the Connect-facing export shows it — so the field never sees which
     ward is which arm.'
   title: Maya completes the study
+  url: /microplans/program/10008/
 why_brief: ../../.canopy/ddd/runs/microplans-study-groups-2026-06-05-001/why_brief.yaml
