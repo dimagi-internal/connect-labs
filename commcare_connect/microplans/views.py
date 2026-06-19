@@ -592,9 +592,11 @@ class ProgramCreatePlanView(LoginRequiredMixin, View):
                 state=state,
                 stats=stats,
             )
-        except Exception:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
             logger.exception("microplans create_plan failed (program=%s)", program_id)
-            return JsonResponse({"status": "error", "detail": "Could not create the plan."}, status=502)
+            # Surface the real error: this generic message has repeatedly hidden
+            # actionable failures (e.g. boundary/geometry issues on a single ward).
+            return JsonResponse({"status": "error", "detail": f"Could not create the plan: {e}"}, status=502)
         group_warning = None
         if group_id is not None:
             try:
@@ -1390,6 +1392,9 @@ class ProgramPlanFootprintsView(LoginRequiredMixin, View):
     cache hash → expensive cold Overture query)."""
 
     def get(self, request, program_id, plan_id):
+        import pandas as pd
+
+        from commcare_connect.microplans.core.area_input import resolve_area
         from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
         from commcare_connect.microplans.core.footprints import fetch_buildings
 
@@ -1399,13 +1404,29 @@ class ProgramPlanFootprintsView(LoginRequiredMixin, View):
         except Exception:  # noqa: BLE001
             return JsonResponse({"status": "error", "detail": "Plan not found."}, status=404)
 
-        area = serialization.plan_lookup_geometry(plan)
-        if area is None:
+        # Fetch each input area on its OWN bbox and concat — unioning scattered
+        # wards (e.g. GRID3 wards in different LGAs) makes one giant bbox that
+        # trips the area-size guard. Fall back to the union geometry (cells) only
+        # when the plan has no stored input_areas.
+        inputs = plan.data.get("input_areas") or []
+        geoms = []
+        if inputs:
+            for a in inputs:
+                try:
+                    geoms.append(resolve_area(a))
+                except Exception:  # noqa: BLE001
+                    logger.exception("plan footprints: input area resolve failed")
+        if not geoms:
+            union = serialization.plan_lookup_geometry(plan)
+            if union is not None:
+                geoms = [union]
+        if not geoms:
             return JsonResponse(
                 {"status": "ok", "footprints": {"type": "FeatureCollection", "features": []}, "count": 0}
             )
         try:
-            df = fetch_buildings(area, min_confidence=None, with_geom=True)
+            frames = [fetch_buildings(g, min_confidence=None, with_geom=True) for g in geoms]
+            df = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=["lon", "lat"])
         except Exception:  # noqa: BLE001
             logger.exception("plan footprints fetch failed (program=%s plan=%s)", program_id, plan_id)
             return JsonResponse({"status": "error", "detail": "Footprints fetch failed."}, status=502)

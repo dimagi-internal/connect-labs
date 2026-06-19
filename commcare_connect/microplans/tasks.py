@@ -232,18 +232,21 @@ def compare_surrounding_wards_task(self, selected, config_payload):
 @celery_app.task(bind=True)
 def fetch_footprints_task(self, areas):
     """Building footprints (polygons, centroid-Point fallback) inside the drawn area(s)."""
-    from shapely.ops import unary_union
+    import pandas as pd
 
     from commcare_connect.microplans.core.area_input import resolve_area
     from commcare_connect.microplans.core.footprints import fetch_buildings
 
     set_task_progress(self, _FETCHING)
     try:
-        geom = unary_union([resolve_area(a) for a in areas])
+        # Fetch each area on its OWN bounding box and concat. Unioning scattered
+        # wards (e.g. GRID3 wards in different LGAs) yields one giant bbox that
+        # trips the area-size guard — mirror the per-area coverage generator.
         # with_geom=True surfaces the real building polygon (`geom_json`); the
         # overlay prefers it and only falls back to a centroid Point when a row
         # has no stored geometry (matches the saved-plan footprints path).
-        df = fetch_buildings(geom, min_confidence=None, with_geom=True)
+        frames = [fetch_buildings(resolve_area(a), min_confidence=None, with_geom=True) for a in areas]
+        df = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=["lon", "lat"])
     except ValueError as e:
         return {"status": "error", "detail": str(e)}
     has_geom = "geom_json" in df.columns
