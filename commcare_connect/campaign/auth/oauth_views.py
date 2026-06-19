@@ -122,10 +122,20 @@ def oauth_callback(request: HttpRequest) -> HttpResponse:
             request, "campaign/not_authorized.html", {"reason": "CommCare did not return a username."}, status=403
         )
 
-    django_user, _ = User.objects.update_or_create(
-        username=username,
-        defaults={"email": identity.get("email") or None, "name": identity.get("name") or ""},
-    )
+    # Resolve the Django user by CommCare username first, then by email — the same
+    # person may already exist under a different OAuth username (e.g. a ConnectID
+    # from a prior Connect login) with this email. Reusing that row avoids a
+    # duplicate-email IntegrityError on the unique_user_email constraint.
+    email = identity.get("email") or None
+    name = identity.get("name") or ""
+    django_user = User.objects.filter(username=username).first()
+    if django_user is None and email:
+        django_user = User.objects.filter(email=email).first()
+    if django_user is None:
+        django_user = User.objects.create(username=username, email=email, name=name)
+    elif name and django_user.name != name:
+        django_user.name = name
+        django_user.save(update_fields=["name"])
     campaign_user = resolve_campaign_user(identity, django_user)
     if campaign_user is None:
         return render(

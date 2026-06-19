@@ -26,6 +26,32 @@ def _prime_pkce(client):
 
 
 @pytest.mark.django_db
+@override_settings(
+    CAMPAIGN_BOOTSTRAP_ADMIN_DOMAINS=["dimagi-ai.com"],
+    COMMCARE_OAUTH_CLIENT_ID="cid",
+    COMMCARE_OAUTH_CLIENT_SECRET="sec",
+    COMMCARE_HQ_URL="https://hq.example",
+)
+def test_callback_reuses_existing_user_by_email(client):
+    # A user already exists under a DIFFERENT username (e.g. a ConnectID) with this
+    # email — the callback must reuse it, not create a duplicate (unique_user_email).
+    existing = User.objects.create(username="connectid-xyz", email="ace@dimagi-ai.com", name="ACE")
+    _prime_pkce(client)
+    ident = {"username": "ace@dimagi-ai.com", "email": "ace@dimagi-ai.com", "name": "ACE Bot", "domains": []}
+    with patch("commcare_connect.campaign.auth.oauth_views.httpx.Client") as Client, patch(
+        "commcare_connect.campaign.auth.oauth_views.fetch_identity", return_value=ident
+    ):
+        Client.return_value.__enter__.return_value.post.return_value = _token_resp()
+        resp = client.get(reverse("campaign:oauth_callback"), {"code": "C", "state": "STATE"})
+    assert resp.status_code == 302
+    assert resp.url == reverse("campaign:app")
+    # no duplicate user; the existing row is reused and linked to the CampaignUser
+    assert User.objects.filter(email="ace@dimagi-ai.com").count() == 1
+    cu = CampaignUser.objects.get(commcare_username="ace@dimagi-ai.com")
+    assert cu.user_id == existing.id and cu.role == "campaign_admin"
+
+
+@pytest.mark.django_db
 def test_initiate_redirects_to_commcare(client):
     with override_settings(COMMCARE_OAUTH_CLIENT_ID="cid", COMMCARE_HQ_URL="https://hq.example"):
         resp = client.get(reverse("campaign:oauth_initiate"))
