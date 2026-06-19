@@ -9,13 +9,16 @@ import httpx
 from django.conf import settings
 
 from commcare_connect.labs.integrations.connect.api_client import LabsRecordAPIClient
-from commcare_connect.labs.synthetic.bundle import read_bundle
+from commcare_connect.labs.synthetic.bundle import make_bundle_store, read_bundle
 from commcare_connect.labs.synthetic.clone_from_prod import (
+    generate_cohort,
     generate_opp_from_bundle,
     generate_opps_bulk,
+    profile_cohort,
     profile_opp_to_bundle,
     profile_opps_bulk,
 )
+from commcare_connect.labs.synthetic.cohort import CohortSpec
 from commcare_connect.labs.synthetic.dump import _fetch_endpoint
 from commcare_connect.labs.synthetic.gdrive import DriveClient
 from commcare_connect.labs.synthetic.generator.fixtures.engine import generate as _generate
@@ -953,7 +956,11 @@ def synthetic_env_ensure(user, *, env: str, fresh: bool = False) -> dict[str, An
             "source_opportunity_id": {"type": "integer"},
             "out_dir": {
                 "type": "string",
-                "description": "Directory to write <opp_id>/ bundle into.",
+                "description": (
+                    "Where to write the <opp_id>/ bundle: a local directory path, or "
+                    "'gdrive:<folder_id>' (or bare 'gdrive:' to auto-create a run folder) "
+                    "to persist it durably in Google Drive."
+                ),
             },
         },
         "required": ["source_opportunity_id", "out_dir"],
@@ -967,22 +974,31 @@ def synthetic_profile_opp(user, *, source_opportunity_id: int, out_dir: str) -> 
         token = require_connect_token(user)
     except MCPToolError:
         raise MCPToolError("PERMISSION_DENIED", "No Connect token — cannot fetch production data.")
-    bundle = profile_opp_to_bundle(
+    drive = DriveClient() if str(out_dir).startswith("gdrive:") else None
+    store = make_bundle_store(out_dir, drive=drive)
+    handle = profile_opp_to_bundle(
         source_opportunity_id,
         base_url=settings.CONNECT_PRODUCTION_URL,
         oauth_token=token,
-        out_dir=out_dir,
+        store=store,
     )
-    return {"bundle_dir": str(bundle), "source_opportunity_id": source_opportunity_id}
+    resolved = f"gdrive:{store.root_folder_id}" if hasattr(store, "root_folder_id") else str(out_dir)
+    return {
+        "bundle_dir": str(handle),
+        "bundle_root": resolved,
+        "source_opportunity_id": source_opportunity_id,
+    }
 
 
 @register(
     name="synthetic_profile_opps_bulk",
     description=(
         "PHASE 1 (prod-touching). Profile multiple real opportunities into "
-        "self-contained profile bundles on disk. Each opp is profiled independently; "
+        "self-contained profile bundles. Each opp is profiled independently; "
         "failures are logged and skipped so a single bad opp doesn't abort the rest. "
-        "Returns a list of successfully-written bundle paths."
+        "Returns the resolved bundle_root (pass it to synthetic_generate_opps_bulk) "
+        "plus the per-opp bundle handles. Use out_dir='gdrive:' for a durable, "
+        "container-independent run that survives partial failures."
     ),
     input_schema={
         "type": "object",
@@ -994,7 +1010,11 @@ def synthetic_profile_opp(user, *, source_opportunity_id: int, out_dir: str) -> 
             },
             "out_dir": {
                 "type": "string",
-                "description": "Directory to write <opp_id>/ bundles into.",
+                "description": (
+                    "Where to write the bundles: a local directory path, or "
+                    "'gdrive:<folder_id>' (or bare 'gdrive:' to auto-create a run folder) "
+                    "to persist them durably in Google Drive."
+                ),
             },
         },
         "required": ["source_opportunity_ids", "out_dir"],
@@ -1009,15 +1029,18 @@ def synthetic_profile_opps_bulk(user, *, source_opportunity_ids: list[int], out_
         token = require_connect_token(user)
     except MCPToolError:
         raise MCPToolError("PERMISSION_DENIED", "No Connect token — cannot fetch production data.")
-    bundles = profile_opps_bulk(
+    drive = DriveClient() if str(out_dir).startswith("gdrive:") else None
+    resolved, handles = profile_opps_bulk(
         source_opportunity_ids,
         base_url=settings.CONNECT_PRODUCTION_URL,
         oauth_token=token,
-        out_dir=out_dir,
+        bundle_root=out_dir,
+        drive=drive,
     )
     return {
-        "bundle_dirs": [str(b) for b in bundles],
-        "succeeded": len(bundles),
+        "bundle_root": resolved,
+        "bundle_dirs": handles,
+        "succeeded": len(handles),
         "requested": len(source_opportunity_ids),
     }
 
@@ -1188,4 +1211,97 @@ def synthetic_fidelity_report(user, *, bundle_dir: str) -> dict[str, Any]:
         "source_opportunity_id": bundle.source_opp_id,
         "synthetic_visit_count": len(synthetic_visits),
         **report,
+    }
+
+
+@register(
+    name="synthetic_clone_profile",
+    description=(
+        "PHASE 1 (safe mode) for a whole cohort described by a YAML spec. The spec "
+        "names opportunity_ids, the program (id + names), and bundle_root (use "
+        "'gdrive:' for durable Drive storage). Profiles every opp into bundle_root and "
+        "returns the UPDATED spec_yaml with the resolved bundle_root recorded — hand "
+        "that returned spec straight to synthetic_clone_generate. Persists aggregate "
+        "stats only; no row-level data."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "spec_yaml": {
+                "type": "string",
+                "description": (
+                    "Cohort spec YAML: opportunity_ids (required), program_id, "
+                    "program_name, org_name, bundle_root ('gdrive:' recommended)."
+                ),
+            },
+        },
+        "required": ["spec_yaml"],
+        "additionalProperties": False,
+    },
+    is_write=False,
+)
+def synthetic_clone_profile(user, *, spec_yaml: str) -> dict[str, Any]:
+    try:
+        spec = CohortSpec.from_yaml(spec_yaml)
+    except ValueError as exc:
+        raise MCPToolError("INVALID_SCHEMA", str(exc))
+    for opp_id in spec.opportunity_ids:
+        _require_opportunity_access(user, opp_id)
+    try:
+        token = require_connect_token(user)
+    except MCPToolError:
+        raise MCPToolError("PERMISSION_DENIED", "No Connect token — cannot fetch production data.")
+    drive = DriveClient() if str(spec.bundle_root).startswith("gdrive:") else None
+    spec = profile_cohort(spec, base_url=settings.CONNECT_PRODUCTION_URL, oauth_token=token, drive=drive)
+    return {
+        "spec_yaml": spec.to_yaml(),
+        "bundle_root": spec.bundle_root,
+        "opportunity_ids": spec.opportunity_ids,
+    }
+
+
+@register(
+    name="synthetic_clone_generate",
+    description=(
+        "PHASE 2 (offline, no prod) for a whole cohort described by a YAML spec — the "
+        "spec returned by synthetic_clone_profile. Reads the bundles from bundle_root "
+        "and registers every opp as a labs-only opportunity under the spec's program_id "
+        "(allocated + recorded back if unset) with program_name/org_name. Idempotent; "
+        "pass fresh=true to regenerate."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "spec_yaml": {
+                "type": "string",
+                "description": "The cohort spec YAML returned by synthetic_clone_profile (bundle_root resolved).",
+            },
+            "fresh": {"type": "boolean", "default": False},
+        },
+        "required": ["spec_yaml"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def synthetic_clone_generate(user, *, spec_yaml: str, fresh: bool = False) -> dict[str, Any]:
+    try:
+        spec = CohortSpec.from_yaml(spec_yaml)
+    except ValueError as exc:
+        raise MCPToolError("INVALID_SCHEMA", str(exc))
+    drive = DriveClient()
+    spec, results = generate_cohort(spec, drive=drive, fresh=fresh)
+    return {
+        "spec_yaml": spec.to_yaml(),
+        "program_id": spec.program_id,
+        "program_name": spec.program_name,
+        "generated": sum(1 for r in results if not r.skipped),
+        "skipped": sum(1 for r in results if r.skipped),
+        "opportunities": [
+            {
+                "source_opportunity_id": r.source_opportunity_id,
+                "opportunity_id": r.opportunity_id,
+                "skipped": r.skipped,
+            }
+            for r in results
+        ],
     }

@@ -8,7 +8,7 @@ def test_profile_command_parses_opps_and_calls_service(tmp_path, monkeypatch):
     monkeypatch.setenv("X_TOKEN", "test-token-value")
     with patch(
         "commcare_connect.labs.synthetic.clone_from_prod.profile_opps_bulk",
-        return_value=[],
+        return_value=(str(tmp_path), []),
     ) as svc:
         from django.core.management import call_command
 

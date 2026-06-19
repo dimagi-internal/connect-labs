@@ -5,9 +5,9 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from pathlib import Path
 
-from .bundle import read_bundle, write_bundle
+from .bundle import make_bundle_store, read_bundle
+from .cohort import CohortSpec
 from .dump import _fetch_endpoint
 from .generator.fixtures.engine import generate as _generate
 from .generator.fixtures.manifest import Manifest
@@ -20,7 +20,7 @@ from .provisioning import allocate_shared_program_id, register_labs_only_opp
 logger = logging.getLogger(__name__)
 
 
-def profile_opp_to_bundle(source_opp_id: int, *, base_url: str, oauth_token: str, out_dir) -> Path:
+def profile_opp_to_bundle(source_opp_id: int, *, base_url: str, oauth_token: str, store) -> str:
     """Fetch real prod exports for *source_opp_id* and write a self-contained profile bundle.
 
     All prod network calls go through the module-level ``_fetch_endpoint`` name so that
@@ -29,8 +29,12 @@ def profile_opp_to_bundle(source_opp_id: int, *, base_url: str, oauth_token: str
         with patch.object(clone_from_prod, "_fetch_endpoint", side_effect=...):
             ...
 
+    Args:
+        store: a :class:`~commcare_connect.labs.synthetic.bundle.BundleStore`
+            (local FS or GDrive) the bundle is written to.
+
     Returns:
-        Path to the written bundle directory.
+        The bundle handle (local dir path, or GDrive subfolder id).
 
     Raises:
         ValueError: if the opportunity has no user_visits (cannot profile).
@@ -50,8 +54,7 @@ def profile_opp_to_bundle(source_opp_id: int, *, base_url: str, oauth_token: str
         opportunity_detail=detail if isinstance(detail, dict) else {},
         app_structure=app_structure if isinstance(app_structure, dict) else {},
     )
-    return write_bundle(
-        out_dir,
+    return store.write(
         source_opp_id,
         manifest_yaml=manifest_yaml,
         app_structure=app_structure if isinstance(app_structure, dict) else {},
@@ -59,22 +62,34 @@ def profile_opp_to_bundle(source_opp_id: int, *, base_url: str, oauth_token: str
     )
 
 
-def profile_opps_bulk(source_ids, *, base_url: str, oauth_token: str, out_dir) -> list[Path]:
-    """Profile multiple opportunities, isolating per-opp failures.
+def profile_opps_bulk(
+    source_ids, *, base_url: str, oauth_token: str, bundle_root, drive=None
+) -> tuple[str, list[str]]:
+    """Profile multiple opportunities into one bundle store, isolating per-opp failures.
 
-    A single bad opp (network error, empty visits, etc.) is logged and skipped;
-    the remaining opps are still processed.
+    The store is built ONCE (so a ``gdrive:`` run folder is shared across all opps).
+    A single bad opp (network error, empty visits, etc.) is logged and skipped; the
+    rest are still processed.
+
+    Args:
+        bundle_root: a local path, or ``gdrive:`` / ``gdrive:<folder_id>``. When
+            ``gdrive:``, a run folder is created and its id is returned (below).
+        drive: a Drive client, required when ``bundle_root`` is a ``gdrive:`` uri.
 
     Returns:
-        List of successfully-written bundle Paths (one per succeeded opp).
+        ``(resolved_bundle_root, handles)`` — ``resolved_bundle_root`` is the
+        location Phase 2 should read from (``gdrive:<run_folder_id>`` for GDrive,
+        else the path), and ``handles`` are the per-opp bundle handles written.
     """
-    bundles: list[Path] = []
+    store = make_bundle_store(bundle_root, drive=drive)
+    handles: list[str] = []
     for sid in source_ids:
         try:
-            bundles.append(profile_opp_to_bundle(sid, base_url=base_url, oauth_token=oauth_token, out_dir=out_dir))
+            handles.append(profile_opp_to_bundle(sid, base_url=base_url, oauth_token=oauth_token, store=store))
         except Exception:  # noqa: BLE001
             logger.exception("profile_opps_bulk: failed for opp %s", sid)
-    return bundles
+    resolved = f"gdrive:{store.root_folder_id}" if hasattr(store, "root_folder_id") else str(bundle_root)
+    return resolved, handles
 
 
 # ---------------------------------------------------------------------------
@@ -130,7 +145,34 @@ def generate_opp_from_bundle(
     Returns:
         :class:`CloneResult` describing the created (or skipped) opportunity.
     """
-    bundle = read_bundle(bundle_dir)
+    return _generate_one(
+        read_bundle(bundle_dir),
+        drive=drive,
+        program_id=program_id,
+        program_name=program_name,
+        org_name=org_name,
+        label=label,
+        allowed_domains=allowed_domains,
+        fresh=fresh,
+    )
+
+
+def _generate_one(
+    bundle,
+    *,
+    drive,
+    program_id: int,
+    program_name: str,
+    org_name: str,
+    label: str | None = None,
+    allowed_domains=None,
+    fresh: bool = False,
+) -> CloneResult:
+    """Generate fixtures + register a labs-only opp from an already-read bundle.
+
+    Backend-agnostic core shared by the single-opp and bulk entry points; makes
+    no prod calls. Idempotent on ``cloned_from_opportunity_id``.
+    """
     source = bundle.source_opp_id
 
     existing = SyntheticOpportunity.objects.filter(cloned_from_opportunity_id=source).first()
@@ -188,6 +230,7 @@ def generate_opps_bulk(
     program_name: str = "KMC (Synthetic)",
     org_name: str = "Dimagi-KMC (Synthetic)",
     fresh: bool = False,
+    program_id: int | None = None,
 ) -> list[CloneResult]:
     """Generate fixtures for every bundle subdirectory under *bundle_root*.
 
@@ -206,15 +249,15 @@ def generate_opps_bulk(
     Returns:
         List of :class:`CloneResult` for every bundle that succeeded.
     """
-    program_id = allocate_shared_program_id()
+    store = make_bundle_store(bundle_root, drive=drive)
+    if program_id is None:
+        program_id = allocate_shared_program_id()
     results: list[CloneResult] = []
-    for child in sorted(Path(bundle_root).iterdir()):
-        if not child.is_dir():
-            continue
+    for handle in store.list_handles():
         try:
             results.append(
-                generate_opp_from_bundle(
-                    child,
+                _generate_one(
+                    store.read(handle),
                     drive=drive,
                     program_id=program_id,
                     program_name=program_name,
@@ -223,5 +266,49 @@ def generate_opps_bulk(
                 )
             )
         except Exception:  # noqa: BLE001
-            logger.exception("generate_opps_bulk: failed for bundle %s", child)
+            logger.exception("generate_opps_bulk: failed for bundle %s", handle)
     return results
+
+
+# ---------------------------------------------------------------------------
+# Cohort spec: one declarative YAML drives both phases (see cohort.py).
+# ---------------------------------------------------------------------------
+
+
+def profile_cohort(spec: CohortSpec, *, base_url: str, oauth_token: str, drive=None) -> CohortSpec:
+    """Phase 1 (safe mode) for a whole cohort spec.
+
+    Profiles every ``spec.opportunity_ids`` into ``spec.bundle_root`` and records the
+    resolved bundle_root back on the spec (e.g. a bare ``gdrive:`` becomes
+    ``gdrive:<run_folder_id>``), so the SAME spec can be handed straight to
+    :func:`generate_cohort`. Mutates and returns ``spec``.
+    """
+    resolved, _handles = profile_opps_bulk(
+        spec.opportunity_ids,
+        base_url=base_url,
+        oauth_token=oauth_token,
+        bundle_root=spec.bundle_root,
+        drive=drive,
+    )
+    spec.bundle_root = resolved
+    return spec
+
+
+def generate_cohort(spec: CohortSpec, *, drive, fresh: bool = False) -> tuple[CohortSpec, list[CloneResult]]:
+    """Phase 2 (offline) for a whole cohort spec.
+
+    Generates every bundle under ``spec.bundle_root`` and registers the opps under
+    ``spec.program_id`` (allocated + recorded back on the spec if it was unset) with
+    ``spec.program_name`` / ``spec.org_name``. Returns ``(spec, results)``.
+    """
+    if spec.program_id is None:
+        spec.program_id = allocate_shared_program_id()
+    results = generate_opps_bulk(
+        spec.bundle_root,
+        drive=drive,
+        program_name=spec.program_name,
+        org_name=spec.org_name,
+        program_id=spec.program_id,
+        fresh=fresh,
+    )
+    return spec, results
