@@ -68,7 +68,7 @@ def _household(h) -> dict:
     }
 
 
-def _worker(w) -> dict:
+def _worker(w, role_names: dict, region_names: dict) -> dict:
     return {
         "id": w.worker_id,
         "first": w.first,
@@ -77,8 +77,10 @@ def _worker(w) -> dict:
         "gender": w.gender,
         "phone": w.phone,
         "regionId": w.region_id,
+        "region": region_names.get(w.region_id, ""),
         "lga": w.lga,
         "roleId": w.role_id,
+        "role": role_names.get(w.role_id, ""),
         "rate": w.rate,
         "daysWorked": w.days_worked,
         "daysApproved": w.days_approved,
@@ -103,6 +105,8 @@ def _worker(w) -> dict:
 
 def bootstrap_payload(c: Campaign) -> dict:
     regions = list(c.regions.select_related("plan").all())
+    role_names = {r.role_id: r.name for r in c.worker_roles.all()}
+    region_names = {r.region_id: r.name for r in regions}
     return {
         "CAMPAIGN": _campaign(c),
         "DONORS": [_donor(d) for d in c.donors.all()],
@@ -113,7 +117,7 @@ def bootstrap_payload(c: Campaign) -> dict:
         "MICROPLANS": [],
         "REPORT_DAYS": [],
         "HOUSEHOLDS": _household(c.household_stat),
-        "WORKERS": [_worker(w) for w in c.workers.all()],
+        "WORKERS": [_worker(w, role_names, region_names) for w in c.workers.all()],
         "KYC_STATES": list(KYC_STATES),
         "PAY_STATES": list(PAY_STATES),
         "sharedLabel": dict(SHARED_LABEL),

@@ -24,7 +24,8 @@ def _login(client, role="campaign_admin"):
 def test_bootstrap_requires_login(client):
     resp = client.get(reverse("campaign:bootstrap"))
     assert resp.status_code in (302, 403)
-    assert "campaign" not in resp.json() if resp.status_code == 403 else True
+    if resp.status_code == 403:
+        assert "campaign" not in resp.json()
 
 
 @pytest.mark.django_db
