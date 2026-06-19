@@ -267,6 +267,12 @@ def _coverage_properties(props: dict) -> dict:
         "cell_size_m": props.get("cell_size_m"),
         "roof_area_m2": props.get("roof_area_m2"),
         "dist_to_multi_m": props.get("dist_to_multi_m"),
+        # Source ward/LGA/state, so each work area is attributable to its area for the
+        # CSV "Ward" column + per-area metrics/visit calc.
+        "area_id": props.get("area_id"),
+        "ward": props.get("ward"),
+        "lga": props.get("lga"),
+        "state": props.get("state"),
     }
     return {k: v for k, v in fields.items() if v is not None}
 
@@ -593,19 +599,24 @@ def to_workarea_payloads(work_areas: list[dict], lga: str = "", state: str = "")
         if w.get("status") == STATUS_EXCLUDED:
             continue
         lon, lat = w.get("centroid", [0.0, 0.0])
-        cp = dict(w.get("properties", {}))
+        props = w.get("properties", {}) or {}
+        cp = dict(props)
+        # Prefer the work area's own source ward/LGA/state (per-area attribution);
+        # fall back to the plan-level labels for legacy plans / drawn areas.
+        wa_lga = str(props.get("lga") or lga or "").strip()
+        wa_state = str(props.get("state") or state or "").strip()
         cp.update(
             {
                 "status": w.get("status", STATUS_UNASSIGNED),
                 "opportunity_access": w.get("opportunity_access"),
-                "lga": lga,
-                "state": state,
+                "lga": wa_lga,
+                "state": wa_state,
             }
         )
         payloads.append(
             WorkAreaPayload(
                 slug=w["id"],
-                ward=str(w.get("work_area_group") or ""),
+                ward=str(props.get("ward") or w.get("work_area_group") or "").strip(),
                 centroid_lon=float(lon),
                 centroid_lat=float(lat),
                 boundary_wkt=shape(w["geometry"]).wkt if w.get("geometry") else "",

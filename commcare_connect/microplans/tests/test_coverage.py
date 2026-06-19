@@ -193,6 +193,39 @@ class TestCoverageExpectedVisits:
             assert f["properties"]["target_population"] == round(n * ppb)
 
 
+class TestCoveragePerArea:
+    """Per-area generation (#8/#14): each selected area is fetched + gridded
+    independently and its work areas are tagged with the source ward/LGA/state."""
+
+    def test_each_area_tagged_and_counted(self, monkeypatch):
+        monkeypatch.setattr(
+            coverage_frame, "fetch_buildings", lambda area, min_confidence=None, sources=None: _scatter(40, seed=5)
+        )
+        areas = [
+            {"geometry": _AREA[0]["geometry"], "ward": "Dabi", "lga": "Gwiwa", "state": "Jigawa"},
+            {"geometry": _AREA[0]["geometry"], "ward": "Madobi", "lga": "Madobi", "state": "Kano"},
+        ]
+        res = generate_coverage_frame(areas, CoverageConfig(cell_size_m=150))
+        feats = res.areas_geojson["features"]
+        wards = {f["properties"]["ward"] for f in feats}
+        assert wards == {"Dabi", "Madobi"}
+        # every feature carries its area's LGA/state + a unique area-namespaced cluster
+        for f in feats:
+            p = f["properties"]
+            assert p["state"] in ("Jigawa", "Kano") and p["lga"] in ("Gwiwa", "Madobi")
+            assert "-" in p["cluster"]  # "<area_id>-C<n>"
+        # per-area breakdown present in stats
+        per = {a["ward"]: a for a in res.stats[0]["per_area"]}
+        assert set(per) == {"Dabi", "Madobi"} and all(a["work_areas"] > 0 for a in per.values())
+
+    def test_drawn_area_without_identity_gets_numeric_ward(self, monkeypatch):
+        monkeypatch.setattr(
+            coverage_frame, "fetch_buildings", lambda area, min_confidence=None, sources=None: _scatter(30, seed=6)
+        )
+        res = generate_coverage_frame(_AREA, CoverageConfig(cell_size_m=150))  # no ward/lga/state
+        assert all(f["properties"]["ward"] == "area_1" for f in res.areas_geojson["features"])
+
+
 class TestCoverageWorkAreaMetrics:
     """The exclusion-filter metrics (roof_area_m2, dist_to_multi_m) must persist on
     each coverage work area so the review page can filter live after creation (#7)."""
