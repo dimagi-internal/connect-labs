@@ -109,3 +109,26 @@ def test_profile_opps_bulk_gdrive(tmp_path):
     # The persisted bundles are readable back from Drive:
     store = GDriveBundleStore(drive, run_folder)
     assert {store.read(h).source_opp_id for h in store.list_handles()} == {100, 200}
+
+
+def test_profile_cohort_records_resolved_bundle_root():
+    """profile_cohort profiles the spec's opps into its bundle_root and records the
+    resolved bundle_root back on the spec, so the same spec drives Phase 2."""
+    from commcare_connect.labs.synthetic.cohort import CohortSpec
+
+    drive = _FakeDrive()
+    run_folder = drive.create_folder("run", "parent")
+    spec = CohortSpec(
+        opportunity_ids=[100, 200],
+        program_name="KMC (Synthetic)",
+        org_name="O",
+        bundle_root=f"gdrive:{run_folder}",
+    )
+
+    with patch.object(clone_from_prod, "_fetch_endpoint", side_effect=lambda b, o, k, t: _bulk_fetch(o, k)):
+        out = clone_from_prod.profile_cohort(spec, base_url="https://x", oauth_token="t", drive=drive)
+
+    assert out is spec  # mutated in place
+    assert out.bundle_root == f"gdrive:{run_folder}"
+    store = GDriveBundleStore(drive, run_folder)
+    assert {store.read(h).source_opp_id for h in store.list_handles()} == {100, 200}

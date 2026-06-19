@@ -196,3 +196,40 @@ def test_generate_opps_bulk_gdrive(settings, monkeypatch):
     assert len(program_ids) == 1
     assert SyntheticOpportunity.objects.filter(cloned_from_opportunity_id=523).exists()
     assert SyntheticOpportunity.objects.filter(cloned_from_opportunity_id=524).exists()
+
+
+def test_generate_cohort_uses_spec_program_id(settings, monkeypatch):
+    """generate_cohort registers all opps under the spec's program_id (not auto-allocated)."""
+    from commcare_connect.labs.synthetic.bundle import GDriveBundleStore
+    from commcare_connect.labs.synthetic.cohort import CohortSpec
+    from commcare_connect.labs.synthetic.tests.test_bundle import _FakeDrive
+
+    settings.LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID = "parent"
+    monkeypatch.setattr(clone_from_prod, "_fetch_endpoint", lambda *a, **k: None)
+
+    drive = _FakeDrive()
+    run_folder = drive.create_folder("run", "parent")
+    store = GDriveBundleStore(drive, run_folder)
+    for oid in (523, 524):
+        store.write(
+            oid,
+            manifest_yaml=_manifest(oid),
+            app_structure={"learn_app": None, "deliver_app": {"modules": []}},
+            opportunity={"id": oid, "name": f"KMC-{oid}"},
+        )
+
+    spec = CohortSpec(
+        opportunity_ids=[523, 524],
+        program_id=10010,
+        program_name="KMC (Synthetic)",
+        org_name="Dimagi-KMC (Synthetic)",
+        bundle_root=f"gdrive:{run_folder}",
+    )
+    out_spec, results = clone_from_prod.generate_cohort(spec, drive=drive)
+
+    assert out_spec.program_id == 10010
+    assert len(results) == 2
+    program_ids = {SyntheticOpportunity.objects.get(opportunity_id=r.opportunity_id).program_id for r in results}
+    assert program_ids == {10010}
+    # opp ids sit above the reserved program id (no collision):
+    assert all(r.opportunity_id > 10010 for r in results)

@@ -7,6 +7,7 @@ import logging
 from dataclasses import dataclass
 
 from .bundle import make_bundle_store, read_bundle
+from .cohort import CohortSpec
 from .dump import _fetch_endpoint
 from .generator.fixtures.engine import generate as _generate
 from .generator.fixtures.manifest import Manifest
@@ -229,6 +230,7 @@ def generate_opps_bulk(
     program_name: str = "KMC (Synthetic)",
     org_name: str = "Dimagi-KMC (Synthetic)",
     fresh: bool = False,
+    program_id: int | None = None,
 ) -> list[CloneResult]:
     """Generate fixtures for every bundle subdirectory under *bundle_root*.
 
@@ -248,7 +250,8 @@ def generate_opps_bulk(
         List of :class:`CloneResult` for every bundle that succeeded.
     """
     store = make_bundle_store(bundle_root, drive=drive)
-    program_id = allocate_shared_program_id()
+    if program_id is None:
+        program_id = allocate_shared_program_id()
     results: list[CloneResult] = []
     for handle in store.list_handles():
         try:
@@ -265,3 +268,47 @@ def generate_opps_bulk(
         except Exception:  # noqa: BLE001
             logger.exception("generate_opps_bulk: failed for bundle %s", handle)
     return results
+
+
+# ---------------------------------------------------------------------------
+# Cohort spec: one declarative YAML drives both phases (see cohort.py).
+# ---------------------------------------------------------------------------
+
+
+def profile_cohort(spec: CohortSpec, *, base_url: str, oauth_token: str, drive=None) -> CohortSpec:
+    """Phase 1 (safe mode) for a whole cohort spec.
+
+    Profiles every ``spec.opportunity_ids`` into ``spec.bundle_root`` and records the
+    resolved bundle_root back on the spec (e.g. a bare ``gdrive:`` becomes
+    ``gdrive:<run_folder_id>``), so the SAME spec can be handed straight to
+    :func:`generate_cohort`. Mutates and returns ``spec``.
+    """
+    resolved, _handles = profile_opps_bulk(
+        spec.opportunity_ids,
+        base_url=base_url,
+        oauth_token=oauth_token,
+        bundle_root=spec.bundle_root,
+        drive=drive,
+    )
+    spec.bundle_root = resolved
+    return spec
+
+
+def generate_cohort(spec: CohortSpec, *, drive, fresh: bool = False) -> tuple[CohortSpec, list[CloneResult]]:
+    """Phase 2 (offline) for a whole cohort spec.
+
+    Generates every bundle under ``spec.bundle_root`` and registers the opps under
+    ``spec.program_id`` (allocated + recorded back on the spec if it was unset) with
+    ``spec.program_name`` / ``spec.org_name``. Returns ``(spec, results)``.
+    """
+    if spec.program_id is None:
+        spec.program_id = allocate_shared_program_id()
+    results = generate_opps_bulk(
+        spec.bundle_root,
+        drive=drive,
+        program_name=spec.program_name,
+        org_name=spec.org_name,
+        program_id=spec.program_id,
+        fresh=fresh,
+    )
+    return spec, results
