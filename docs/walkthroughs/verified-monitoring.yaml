@@ -6,12 +6,13 @@ build_order:
 - where-delivery-happened-vs-where-the-survey-checked-the-map-moves
 - the-per-surveyor-quality-scorecard-catches-a-surveyor
 - gps-is-clean-the-distributions-screen-catches-the-fabrication
+- the-independent-back-check-confirms-it
 name: verified-monitoring
-narrative: 'David manages a Connect program delivering vitamin-A home visits, and wants to know how independent difference in difference surveys compare to his program''s data.  David opens the independent survey''s dashboard and sees the six-round trend — the same survey repeated every two months in different intervention and non-intervention geographies.  David sees that the independent survey data is showing a large increase in the Vitamin-A rate, though less than his internal data has reported. David explores further in the map: For the round 6 that he is looking at, he can see he''s program''s logged visits in the relevant survey areas - his program only fills the intervention ward.  David can see the survey points for both the intervention and control wards as well. Using different layers, David can turn on and off data points such as the service delivery data or see the PSUs that were used in the household selection. David then explores the quality of the survey data.  The scorecard gives David one row per surveyor with a KPIs, GPS reads clean for everyone — expected as the Connect app won''t let a survey submit more than 15 m from the assigned household. David scans the additional KPIs, the proof photos, how often each reached the primary household they were assigned or had to move to a secondary household, and the back-checks performed by a second survey to the same household. One row is flagged for review. David then evaluates the Distributions table.  The flagged surveyor''s interviews were completed suspiciously fast and their roof-type answers collapse onto a single value, both flags.  All other surveyors have reasonable dsitributions.'
+narrative: 'David opens the independent survey''s dashboard — the six-round trend. It confirms a big rise in vitamin-A coverage, but below what his program reports. On the map, service delivery points fill only the intervention ward; the survey covered both. He toggles layers — service delivery, survey, the plan''s sampled PSUs — showing where each looked. David checks the surveyors, one row each. GPS clean for everyone (app require you to be within 15 meters), so he reads the rest: photos, on-primary rate, back-checks. One''s flagged. David opens that surveyor''s back-check: an independent enumerator re-visited the same households. Original vs re-survey — sex, age, roof, location, vitamin-A result. Finally the Distributions table: the flagged surveyor''s interviews ran impossibly fast, their roof-type answers collapse onto one value — two more flags. Everyone else varies normally.'
 narrative_locked: false
-narrative_synced_at: '2026-06-17T21:56:14.456683+00:00'
-narrative_synced_hash: 175a8f13f2d0725e9a2e8c2cd8e1c51710186c76026fc19e226ffe4416a39c26
-narrative_synced_version: 11
+narrative_synced_at: '2026-06-18T00:00:00+00:00'
+narrative_synced_hash: 29e98b12123d2634918669247ca9496a9d4b92e4cd356ec47afac0f6fe5c861a
+narrative_synced_version: 13
 personas:
   david:
     color: '#4F46E5'
@@ -42,26 +43,26 @@ scenes:
     id: trend-hero
     verify: Assert three series render across six cycles; the legend reads service-delivery data / intervention arm survey / control arm survey; hovering a point shows a tooltip with the series, cycle, and value; no interpretive verbs on screen.
   full_page: false
-  narrative: David manages a Connect program delivering vitamin-A home visits, and wants to know how independent difference in difference surveys compare to his program's data.  David opens the independent survey's dashboard and sees the six-round trend — the same survey repeated every two months in different intervention and non-intervention geographies.  David sees that the independent survey data is showing a large increase in the Vitamin-A rate, though less than his internal data has reported.
+  narrative: David opens the independent survey's dashboard — the six-round trend. It confirms a big rise in vitamin-A coverage, but below what his program reports.
   persona: david
   provenance: S5
   show: 'The six-round trend over time: the program''s service-delivery line above the independent intervention-arm survey at every bi-monthly round, the control-arm survey far below — earliest round at left, most recent at right.'
   title: Six bi-monthly rounds over time — the gap holds
 - actions:
-  - kind: scroll_to
-    target: Map ·
-  - kind: hold
-    seconds: 1
-  - kind: click
-    target: role:button:R1
-  - kind: hold
-    seconds: 1
-  - kind: click
-    target: role:button:R6
-  - kind: hold
-    seconds: 1
   - kind: scroll
-    value: '470'
+    value: '600'
+  - kind: hold
+    seconds: 6
+  - kind: click
+    target: css:[aria-label="toggle Service delivery"]
+  - kind: hold
+    seconds: 2
+  - kind: click
+    target: css:[aria-label="toggle Service delivery"]
+  - kind: hold
+    seconds: 1
+  - kind: click
+    target: css:[aria-label="toggle Work areas"]
   - kind: hold
     seconds: 2
   concept_claim: Program delivery is concentrated in the intervention ward and absent in the adjacent control ward, while the independent survey covered both — so the coverage gap tracks where the program went, not where the survey looked.
@@ -71,7 +72,7 @@ scenes:
     id: two-ward-map
     verify: Assert both labelled ward boundaries and the Layers panel (delivery / survey / plan / work areas / building footprints) render; toggling Plan draws arm-coloured PSU hulls and does NOT recentre; clicking R1 then R6 re-centres the map on a different program/comparison ward pair.
   full_page: false
-  narrative: 'David explores further in the map: For the round 6 that he is looking at, he can see he''s program''s logged visits in the relevant survey areas - his program only fills the intervention ward.  David can see the survey points for both the intervention and control wards as well. Using different layers, David can turn on and off data points such as the service delivery data or see the PSUs that were used in the household selection.'
+  narrative: On the map, service delivery points fill only the intervention ward; the survey covered both. He toggles layers — service delivery, survey, the plan's sampled PSUs — showing where each looked.
   persona: david
   provenance: S3
   show: The full-width map — program service-delivery filling the intervention ward, every independent survey pin in both wards, the designed plan's arm-coloured PSU clusters toggled on from the shared Layers panel — flying to each cycle's two real wards.
@@ -96,7 +97,7 @@ scenes:
     id: surveyor-scorecard
     verify: Assert the table renders one row per surveyor with computed values, including an On-primary column and a ~100% GPS-within-15m column for every surveyor; exactly the flagged surveyor (T6) shows a REVIEW tag; its rose cells coincide with sub-threshold non-GPS values.
   full_page: false
-  narrative: David then explores the quality of the survey data.  The scorecard gives David one row per surveyor with a KPIs, GPS reads clean for everyone — expected as the Connect app won't let a survey submit more than 15 m from the assigned household. David scans the additional KPIs, the proof photos, how often each reached the primary household they were assigned or had to move to a secondary household, and the back-checks performed by a second survey to the same household. One row is flagged for review.
+  narrative: 'David checks the surveyors, one row each. GPS clean for everyone (app require you to be within 15 meters), so he reads the rest: photos, on-primary rate, back-checks. One''s flagged.'
   persona: david
   provenance: S2
   show: The per-surveyor quality scorecard — evidence, a ~100% GPS-within-15m column (app-gated), completeness, duration, consistency, duplicates, on-primary, and back-check, each computed from that surveyor's own records — with one surveyor flagged REVIEW on the non-GPS signals.
@@ -117,7 +118,7 @@ scenes:
     id: backcheck-sections
     verify: Assert the back-check renders for the flagged surveyor with Identity / Location / Outcome agreement %s; Identity includes a Roof column; the info popup cites dimewiki.worldbank.org/Back_Checks.
   full_page: false
-  narrative: David drills into that flagged surveyor's back-check, where an independent enumerator re-visited a sample of the same households. David reads each household as the original over the re-survey — sex, age, the roof, the location, and the vitamin-A result — with whatever the re-visit disagreed on marked in red.
+  narrative: 'David opens that surveyor''s back-check: an independent enumerator re-visited the same households. Original vs re-survey — sex, age, roof, location, vitamin-A result.'
   persona: david
   provenance: S2
   show: The independent back-check for the flagged surveyor — Identity (incl. roof) / Location / Outcome, original over re-survey, the method behind an info button.
@@ -140,7 +141,7 @@ scenes:
     id: distributions-screen
     verify: Assert the Distributions table renders one row per surveyor with z-scores on interview speed and answer uniformity; the flagged surveyor (T6) reads a red composite band with red speed + uniformity z-scores, while the other surveyors read green.
   full_page: false
-  narrative: David then evaluates the Distributions table.  The flagged surveyor's interviews were completed suspiciously fast and their roof-type answers collapse onto a single value, both flags.  All other surveyors have reasonable dsitributions.
+  narrative: 'Finally the Distributions table: the flagged surveyor''s interviews ran impossibly fast, their roof-type answers collapse onto one value — two more flags. Everyone else varies normally.'
   persona: david
   provenance: S2
   show: The Distributions screen — per-surveyor z-scores on dose yes-rate, interview speed, and answer uniformity, the flagged surveyor red on speed + uniformity and a red composite band, every other surveyor green — fabrication caught from the data's shape with no re-visit.
@@ -149,6 +150,7 @@ setup:
   command: python scripts/walkthroughs/verified-monitoring/regenerate.py
   outputs: scripts/walkthroughs/verified-monitoring/.run_ids.json
   rerun: per_render
+tagline: A demo of continuous independent monitoring on Connect
 video_viewport_height: 1000
 video_viewport_width: 1280
 why_brief: verified-monitoring.why_brief.yaml
