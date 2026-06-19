@@ -27,6 +27,26 @@ from commcare_connect.campaign.models import (
 
 SEED = 20260603
 
+DEMO_USERS = [
+    ("tunde.balogun@dimagi.com", "Tunde Balogun", "payment_admin", "Kano, Kaduna", "active"),
+    ("ngozi.eze@partner.org", "Ngozi Eze", "compliance_admin", "All regions", "active"),
+    ("fatima.bello@moh.gov.ng", "Fatima Bello", "operations_manager", "All regions", "active"),
+    ("david.mensah@dimagi.com", "David Mensah", "payment_admin", "Sokoto, Bauchi", "active"),
+    ("grace.adeyemi@donor.org", "Grace Adeyemi", "reporting_user", "All regions", "active"),
+    ("samuel.okoro@dimagi.com", "Samuel Okoro", "operations_manager", "Kano", "inactive"),
+]
+
+
+def seed_demo_users():
+    from commcare_connect.campaign.models import CampaignUser
+
+    for username, name, role, scope, status in DEMO_USERS:
+        CampaignUser.objects.get_or_create(
+            commcare_username=username,
+            defaults={"email": username, "name": name, "role": role, "scope": scope, "status": status},
+        )
+
+
 CAMPAIGN = dict(
     name="Measles–Rubella Vaccination Campaign",
     code="MR-2026-R2",
@@ -402,4 +422,5 @@ def seed_campaign(fresh: bool = False) -> Campaign:
     _seed_activities(rng, c)
     _seed_microplans(rng, c, region_objs, ROLES)
     _seed_report_days(rng, c)
+    seed_demo_users()
     return c

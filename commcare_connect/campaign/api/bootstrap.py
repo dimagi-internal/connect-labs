@@ -14,7 +14,7 @@ def bootstrap(request):
     cu = current_campaign_user(request)
     return JsonResponse(
         {
-            "campaign": serializers.bootstrap_payload(campaign),
+            "campaign": serializers.bootstrap_payload(campaign, current_username=cu.commcare_username),
             "user": {"name": cu.name or cu.commcare_username, "role": cu.role},
         },
         json_dumps_params={"ensure_ascii": False},

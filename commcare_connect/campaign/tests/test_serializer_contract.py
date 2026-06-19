@@ -100,6 +100,9 @@ MICROPLAN_KEYS = frozenset(
 )
 
 
+USER_KEYS = frozenset({"id", "name", "email", "role", "scope", "status", "last", "you"})
+
+
 @pytest.mark.django_db
 def test_worker_serializer_exact_key_set():
     c = seed.seed_campaign(fresh=True)
@@ -132,3 +135,12 @@ def test_microplan_serializer_exact_key_set():
     assert payload["MICROPLANS"], "Plan 4 seeder should populate MICROPLANS"
     for row in payload["MICROPLANS"]:
         assert set(row.keys()) == MICROPLAN_KEYS, f"microplan key drift: {set(row.keys()) ^ MICROPLAN_KEYS}"
+
+
+@pytest.mark.django_db
+def test_user_serializer_exact_key_set():
+    c = seed.seed_campaign(fresh=True)
+    payload = serializers.bootstrap_payload(c)
+    assert payload["USERS"], "seed_campaign should populate USERS via seed_demo_users"
+    for row in payload["USERS"]:
+        assert set(row.keys()) == USER_KEYS, f"user key drift: {set(row.keys()) ^ USER_KEYS}"
