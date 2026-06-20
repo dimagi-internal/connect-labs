@@ -177,11 +177,11 @@ def _audit(a) -> dict:
     }
 
 
-def bootstrap_payload(c: Campaign, current_username: str | None = None) -> dict:
-    # HQ/Connect-owned roster is read through the data-source seam (issue #674);
-    # tool-owned entities (activities, microplans, reporting, households, users)
-    # are read directly from our ORM below.
-    provider = providers.get_provider(c)
+def bootstrap_payload(c: Campaign, current_username: str | None = None, request=None) -> dict:
+    # CommCare-HQ-owned roster is read through the data-source seam (workers via the
+    # CommCare Case API); tool-owned entities (activities, microplans, reporting,
+    # households, users) are read directly from our ORM below.
+    provider = providers.get_provider(c, request=request)
     campaign = provider.campaign()
     regions = list(provider.regions())
     donors = list(provider.donors())

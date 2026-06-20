@@ -22,9 +22,12 @@ See issue #674 for the rollout plan.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from types import SimpleNamespace
 
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
+
+from commcare_connect.campaign.services import commcare_api, commcare_cases_backend
 
 
 class CampaignDataProvider(ABC):
@@ -81,40 +84,50 @@ class SyntheticProvider(CampaignDataProvider):
 
 
 class CommCareProvider(CampaignDataProvider):
-    """Stub: read the roster live from the CommCare HQ Case/Form API.
+    """Read the roster from the campaign's CommCare project space via the Case API.
 
-    Not implemented until real CommCare access (domain + deliver app) exists. Each
-    method raises :class:`NotImplementedError` so wiring it in is an explicit,
-    greppable TODO rather than a silently empty result. See issue #674.
+    Workers (with embedded KYC) are read as CommCare cases through
+    :mod:`commcare_api` — served in-app from ``WorkerCase`` for a synthetic domain,
+    or from real CommCare HQ otherwise; the campaign code is identical either way.
+    The small reference data (campaign/regions/donors/worker-roles) is read from the
+    tool's ORM, populated by the synthetic pipeline (and, later, a CommCare sync).
     """
 
+    def __init__(self, campaign, request=None):
+        super().__init__(campaign)
+        self._request = request
+
     def campaign(self):
-        raise NotImplementedError("CommCareProvider.campaign: wire to the live CommCare campaign-case read")
+        return self._campaign
 
     def regions(self):
-        raise NotImplementedError("CommCareProvider.regions: wire to the live CommCare region/geography read")
+        return list(self._campaign.regions.select_related("plan").all())
 
     def donors(self):
-        raise NotImplementedError("CommCareProvider.donors: wire to the live CommCare donor read")
+        return list(self._campaign.donors.all())
 
     def worker_roles(self):
-        raise NotImplementedError("CommCareProvider.worker_roles: wire to the live CommCare worker-role read")
+        return list(self._campaign.worker_roles.all())
 
     def workers(self):
-        raise NotImplementedError("CommCareProvider.workers: wire to the live CommCare worker-case + KYC read")
+        cases = commcare_api.fetch_cases(
+            self._campaign.commcare_domain, commcare_cases_backend.WORKER_CASE_TYPE, request=self._request
+        )
+        return [SimpleNamespace(**case["properties"]) for case in cases]
 
 
-_PROVIDERS = {
-    "synthetic": SyntheticProvider,
-    "commcare": CommCareProvider,
-}
+def get_provider(campaign, request=None) -> CampaignDataProvider:
+    """Pick the roster provider for ``campaign``.
 
-
-def get_provider(campaign) -> CampaignDataProvider:
-    """Return the configured roster provider bound to ``campaign``."""
+    A campaign bound to a CommCare project space (``commcare_domain`` set) reads its
+    roster through the Case API (:class:`CommCareProvider`); otherwise it uses the
+    legacy local-ORM :class:`SyntheticProvider`. The ``CAMPAIGN_DATA_PROVIDER`` setting
+    can force the choice for domain-less campaigns (used in tests)."""
+    if campaign.commcare_domain:
+        return CommCareProvider(campaign, request=request)
     name = getattr(settings, "CAMPAIGN_DATA_PROVIDER", "synthetic")
-    try:
-        provider_cls = _PROVIDERS[name]
-    except KeyError as exc:
-        raise ImproperlyConfigured(f"CAMPAIGN_DATA_PROVIDER={name!r} is not one of {sorted(_PROVIDERS)}") from exc
-    return provider_cls(campaign)
+    if name == "commcare":
+        return CommCareProvider(campaign, request=request)
+    if name == "synthetic":
+        return SyntheticProvider(campaign)
+    raise ImproperlyConfigured(f"CAMPAIGN_DATA_PROVIDER={name!r} is not one of ['synthetic', 'commcare']")

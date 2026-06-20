@@ -72,6 +72,11 @@ class Campaign(models.Model):
     days_elapsed = models.IntegerField(default=0)
     days_total = models.IntegerField(default=0)
     target_pop = models.BigIntegerField(default=0)
+    # The CommCare project space (domain) this campaign's workers/KYC are read from
+    # via the Case API. A synthetic domain (registered in SyntheticCommCareDomain) is
+    # served in-app from WorkerCase; a real domain hits CommCare HQ. Blank = the legacy
+    # demo path (workers read from the local Worker ORM).
+    commcare_domain = models.CharField(max_length=128, blank=True, default="", db_index=True)
 
     class Meta:
         db_table = "campaign_campaign"
@@ -327,3 +332,26 @@ class WorkerCase(models.Model):
 
     def __str__(self):
         return f"{self.case_type}:{self.worker_id}"
+
+
+class SyntheticCommCareDomain(models.Model):
+    """Registry of synthetic CommCare project spaces (domains).
+
+    The Case-API analogue of labs' ``SyntheticOpportunity``: when the campaign tool
+    reads cases for a domain registered + enabled here, the request is short-circuited
+    in-app and served from ``WorkerCase`` (Case-API-v2 JSON shape) instead of hitting
+    real CommCare HQ — exactly how ``LabsRecordAPIClient`` short-circuits a labs-only
+    opportunity to ``local_records_backend``. Unregistered domains fall through to the
+    real CommCare Case API.
+    """
+
+    domain = models.CharField(max_length=128, unique=True, db_index=True)
+    label = models.CharField(max_length=200, blank=True)
+    enabled = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "campaign_synthetic_commcare_domain"
+
+    def __str__(self):
+        return self.domain
