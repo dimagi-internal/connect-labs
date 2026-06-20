@@ -3,6 +3,7 @@ from django.urls import path
 from . import views
 from .api import activities as activities_api
 from .api import bootstrap as bootstrap_api
+from .api import map as map_api
 from .api import microplans as microplans_api
 from .api import reports as reports_api
 from .api import users as users_api
@@ -34,5 +35,6 @@ urlpatterns = [
     path("api/users/<path:username>/role/", users_api.user_set_role, name="user_set_role"),
     path("api/users/<path:username>/status/", users_api.user_set_status, name="user_set_status"),
     path("api/reports/export/", reports_api.report_export, name="report_export"),
+    path("api/map/", map_api.map_data, name="map_data"),
     path("", views.AppView.as_view(), name="app"),
 ]
