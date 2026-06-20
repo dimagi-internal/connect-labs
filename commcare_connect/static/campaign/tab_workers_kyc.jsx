@@ -1,36 +1,71 @@
 // tab_workers_kyc.jsx — Worker KYC sub-tab
-const { useState: useStateK } = React;
+const { useState: useStateK, useEffect: useEffectK } = React;
+
+// Debounce a fast-changing value (e.g. a search box) by `ms`.
+function useDebouncedK(value, ms) {
+  const [v, setV] = useStateK(value);
+  useEffectK(() => {
+    const t = setTimeout(() => setV(value), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return v;
+}
 
 function KycSub({ density, role }) {
   const D = window.CUT_DATA;
+  const PAGE_SIZE = D.WORKERS_PAGE_SIZE || 200;
   const toast = useToast();
-  const [workers, setWorkers] = useStateK(D.WORKERS.map((w) => ({ ...w })));
+  const sum = D.WORKERS_SUMMARY;
+  const [workers, setWorkers] = useStateK([]);
+  const [total, setTotal] = useStateK(D.WORKERS_TOTAL || 0);
+  const [page, setPage] = useStateK(1);
+  const [loading, setLoading] = useStateK(true);
   const [status, setStatus] = useStateK('all');
   const [q, setQ] = useStateK('');
   const [review, setReview] = useStateK(null); // worker id under review
   const [csvOpen, setCsvOpen] = useStateK(false);
   const canManage = window.CUT_RBAC.can(role, 'kyc', 'approve');
+  const dq = useDebouncedK(q, 250);
 
-  const sum = D.summarize(workers);
-  const filtered = workers.filter(
-    (w) =>
-      (status === 'all' ||
-        (status === 'flagged' ? w.fraudRules.length > 0 : w.kyc === status)) &&
-      (!q ||
-        w.name.toLowerCase().includes(q.toLowerCase()) ||
-        w.nin.includes(q)),
-  );
-  const applyWorker = (msg, tone) => (res) => {
-    setWorkers((ws) =>
-      ws.map((w) => (w.id === res.worker.id ? res.worker : w)),
-    );
+  // A status pill is either a KYC status filter or the "flagged" fraud filter.
+  const kycParam = status === 'all' || status === 'flagged' ? '' : status;
+  const fraudParam = status === 'flagged' ? 'flagged' : '';
+
+  useEffectK(() => {
+    setPage(1);
+  }, [status, dq]);
+
+  const loadPage = React.useCallback(() => {
+    setLoading(true);
+    return D.fetchWorkers({
+      page,
+      page_size: PAGE_SIZE,
+      q: dq,
+      kyc: kycParam,
+      fraud: fraudParam,
+    })
+      .then((res) => {
+        setWorkers(res.workers || []);
+        setTotal(res.total || 0);
+      })
+      .catch((e) => toast('Could not load workers: ' + e.message, 'danger'))
+      .finally(() => setLoading(false));
+  }, [page, dq, kycParam, fraudParam]);
+
+  useEffectK(() => {
+    loadPage();
+  }, [loadPage]);
+
+  const filtered = workers;
+  const applyWorker = (msg, tone) => () => {
+    loadPage();
     if (msg) toast(msg, tone);
     setReview(null);
   };
   const failToast = (e) => toast('Action failed: ' + e.message, 'danger');
 
   const statusTabs = [
-    { id: 'all', label: 'All', count: workers.length },
+    { id: 'all', label: 'All', count: sum.total },
     { id: 'pending', label: 'Pending', count: sum.kyc.pending },
     { id: 'review', label: 'In review', count: sum.kyc.review },
     { id: 'approved', label: 'Approved', count: sum.kyc.approved },
@@ -38,6 +73,9 @@ function KycSub({ density, role }) {
     { id: 'flagged', label: 'Fraud flagged', count: sum.flagged },
   ];
   const reviewWorker = review ? workers.find((w) => w.id === review) : null;
+  const rangeStart = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const rangeEnd = Math.min(page * PAGE_SIZE, total);
+  const maxPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
     <div>
@@ -235,8 +273,49 @@ function KycSub({ density, role }) {
           })}
         </Table>
         {filtered.length === 0 && (
-          <Empty icon="id-card" title="No records match" />
+          <Empty
+            icon="id-card"
+            title={loading ? 'Loading…' : 'No records match'}
+          />
         )}
+        <div
+          style={{
+            padding: '12px 18px',
+            borderTop: '1px solid ' + CUTC.border,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            fontSize: 12.5,
+            color: CUTC.muted,
+          }}
+        >
+          <span>
+            Showing {rangeStart}–{rangeEnd} of {D.num(total)} records
+          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Button
+              size="sm"
+              variant="secondary"
+              icon="chevron-left"
+              disabled={page <= 1 || loading}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              Prev
+            </Button>
+            <span>
+              Page {page} of {maxPage}
+            </span>
+            <Button
+              size="sm"
+              variant="secondary"
+              icon="chevron-right"
+              disabled={page >= maxPage || loading}
+              onClick={() => setPage((p) => Math.min(maxPage, p + 1))}
+            >
+              Next
+            </Button>
+          </div>
+        </div>
       </Card>
 
       {/* review modal */}
@@ -265,10 +344,8 @@ function KycSub({ density, role }) {
         onResolveDupe={(id, keep) =>
           window.campaignActions
             .resolveDuplicate(id, keep)
-            .then((res) => {
-              setWorkers((ws) =>
-                ws.map((w) => (w.id === res.worker.id ? res.worker : w)),
-              );
+            .then(() => {
+              loadPage();
               toast(
                 keep ? 'Marked as distinct worker' : 'Duplicate archived',
                 keep ? undefined : 'danger',
@@ -283,10 +360,8 @@ function KycSub({ density, role }) {
               outcome: payload.outcome,
               note: payload.note,
             })
-            .then((res) => {
-              setWorkers((ws) =>
-                ws.map((w) => (w.id === res.worker.id ? res.worker : w)),
-              );
+            .then(() => {
+              loadPage();
             })
             .catch(failToast)
         }

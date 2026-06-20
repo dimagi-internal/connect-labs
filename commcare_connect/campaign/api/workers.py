@@ -26,6 +26,36 @@ def _ser(worker, campaign) -> dict:
     return serializers._worker(worker, role_names, region_names)
 
 
+@require_perm("workers", "view")
+def workers_list(request):
+    """Filtered + paginated worker list — the tables fetch from here instead of the
+    bootstrap shipping every worker. Params: page, page_size, q, kyc, pay, role,
+    region, fraud (flagged|clean). Reads the same campaign the bootstrap selected."""
+    from commcare_connect.campaign.api.bootstrap import _select_campaign
+
+    campaign = _select_campaign(request)
+    if campaign is None:
+        return JsonResponse({"workers": [], "total": 0, "page": 1, "page_size": 50})
+    g = request.GET
+    try:
+        page = int(g.get("page", 1) or 1)
+        page_size = int(g.get("page_size", 50) or 50)
+    except (TypeError, ValueError):
+        page, page_size = 1, 50
+    workers, total = worker_cases.query_workers(
+        campaign,
+        q=g.get("q", ""),
+        kyc=g.get("kyc", ""),
+        pay=g.get("pay", ""),
+        role=g.get("role", ""),
+        region=g.get("region", ""),
+        fraud=g.get("fraud", ""),
+        page=page,
+        page_size=page_size,
+    )
+    return JsonResponse({"workers": workers, "total": total, "page": page, "page_size": page_size})
+
+
 @require_perm("payments", "approve")
 def pay_set_status(request):
     data = _body(request)

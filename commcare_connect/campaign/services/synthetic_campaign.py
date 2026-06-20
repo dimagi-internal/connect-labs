@@ -204,6 +204,12 @@ def build_synthetic_campaign(
     campaign = _campaign(workspace, code=code, name=name, target_pop=target_pop)
     campaign.commcare_domain = domain
     campaign.save(update_fields=["commcare_domain"])
+
+    # Region/Donor/WorkerRole are CommCare-owned reference data. They live in the
+    # campaign ORM here as a SYNCED READ-CACHE (sourced from AdminBoundary + config),
+    # NOT a competing primary store — exactly how a real tool caches CommCare
+    # locations/lookup-tables locally for join performance. CommCare stays the source
+    # of truth; this is the local projection the serializer joins worker cases against.
     for o, (did, dname, short, committed, color) in enumerate(seed.DONORS):
         Donor.objects.create(
             campaign=campaign, donor_id=did, name=dname, short=short, committed=committed, color=color, order=o

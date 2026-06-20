@@ -75,8 +75,49 @@
     return out;
   }
 
+  // Fetch a filtered/paginated page of full worker objects from the server,
+  // instead of relying on the (now first-page-only) D.WORKERS bootstrap list.
+  // params: { page, page_size, q, kyc, pay, role, region, fraud }. The current
+  // page's ?campaign=<code> is appended so the same campaign the bootstrap
+  // selected is read.
+  function fetchWorkers(params) {
+    params = params || {};
+    const qs = new URLSearchParams();
+    const keys = [
+      'page',
+      'page_size',
+      'q',
+      'kyc',
+      'pay',
+      'role',
+      'region',
+      'fraud',
+    ];
+    keys.forEach(function (k) {
+      const v = params[k];
+      if (v !== undefined && v !== null && v !== '' && v !== 'all')
+        qs.set(k, v);
+    });
+    const code = new URLSearchParams(window.location.search).get('campaign');
+    if (code) qs.set('campaign', code);
+    const query = qs.toString();
+    const url = '/campaign/api/workers/' + (query ? '?' + query : '');
+    return fetch(url, { headers: { Accept: 'application/json' } }).then(
+      function (r) {
+        if (!r.ok) throw new Error('workers ' + r.status);
+        return r.json();
+      },
+    );
+  }
+
   window.campaignLoadData = function () {
-    return fetch('/campaign/api/bootstrap/', {
+    // Carry a ?campaign=<code> from the page URL through to the bootstrap, so a
+    // specific campaign (e.g. the national one) can be selected for display.
+    const code = new URLSearchParams(window.location.search).get('campaign');
+    const url =
+      '/campaign/api/bootstrap/' +
+      (code ? '?campaign=' + encodeURIComponent(code) : '');
+    return fetch(url, {
       headers: { Accept: 'application/json' },
     })
       .then(function (r) {
@@ -86,6 +127,7 @@
       .then(function (body) {
         const d = body.campaign;
         d.summarize = summarize;
+        d.fetchWorkers = fetchWorkers;
         d.money = money;
         d.moneyK = moneyK;
         d.num = num;

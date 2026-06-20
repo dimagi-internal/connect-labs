@@ -1,5 +1,15 @@
 // tab_workers.jsx — Workers container + Payments sub-tab + daily payment approval drawer
-const { useState: useStateW, useMemo: useMemoW } = React;
+const { useState: useStateW, useEffect: useEffectW } = React;
+
+// Debounce a fast-changing value (e.g. a search box) by `ms`.
+function useDebouncedW(value, ms) {
+  const [v, setV] = useStateW(value);
+  useEffectW(() => {
+    const t = setTimeout(() => setV(value), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return v;
+}
 
 function WorkersTab({
   sub,
@@ -58,8 +68,14 @@ function WorkersTab({
 // ============ PAYMENTS SUB-TAB ============
 function PaymentsSub({ density, role }) {
   const D = window.CUT_DATA;
+  const PAGE_SIZE = D.WORKERS_PAGE_SIZE || 200;
   const toast = useToast();
-  const [workers, setWorkers] = useStateW(D.WORKERS.map((w) => ({ ...w })));
+  // Summary stats come from the server-computed aggregate over ALL workers.
+  const sum = D.WORKERS_SUMMARY;
+  const [workers, setWorkers] = useStateW([]);
+  const [total, setTotal] = useStateW(D.WORKERS_TOTAL || 0);
+  const [page, setPage] = useStateW(1);
+  const [loading, setLoading] = useStateW(true);
   const [status, setStatus] = useStateW('all');
   const [roleF, setRoleF] = useStateW('all');
   const [region, setRegion] = useStateW('all');
@@ -68,41 +84,49 @@ function PaymentsSub({ density, role }) {
   const [sel, setSel] = useStateW(new Set());
   const [drawer, setDrawer] = useStateW(null); // worker id
   const canApprove = window.CUT_RBAC.can(role, 'payments', 'approve');
+  const dq = useDebouncedW(q, 250);
 
-  const filtered = useMemoW(
-    () =>
-      workers.filter(
-        (w) =>
-          (status === 'all' || w.pay === status) &&
-          (roleF === 'all' || w.roleId === roleF) &&
-          (region === 'all' || w.regionId === region) &&
-          (fraudF === 'all' ||
-            (fraudF === 'flagged'
-              ? w.fraudRules.length > 0
-              : w.fraudRules.length === 0)) &&
-          (!q ||
-            w.name.toLowerCase().includes(q.toLowerCase()) ||
-            w.id.toLowerCase().includes(q.toLowerCase())),
-      ),
-    [workers, status, roleF, region, fraudF, q],
-  );
+  // Reset to page 1 whenever a filter/search changes.
+  useEffectW(() => {
+    setPage(1);
+  }, [status, roleF, region, fraudF, dq]);
 
-  const sum = D.summarize(workers);
-  const pendingAmt = workers
-    .filter((w) => w.pay === 'pending')
-    .reduce((a, w) => a + w.amount, 0);
+  const loadPage = React.useCallback(() => {
+    setLoading(true);
+    return D.fetchWorkers({
+      page,
+      page_size: PAGE_SIZE,
+      q: dq,
+      pay: status,
+      role: roleF,
+      region,
+      fraud: fraudF,
+    })
+      .then((res) => {
+        setWorkers(res.workers || []);
+        setTotal(res.total || 0);
+      })
+      .catch((e) => toast('Could not load workers: ' + e.message, 'danger'))
+      .finally(() => setLoading(false));
+  }, [page, dq, status, roleF, region, fraudF]);
+
+  useEffectW(() => {
+    loadPage();
+  }, [loadPage]);
+
+  // The fetched page IS the displayed list (server filtered it).
+  const filtered = workers;
+
+  const pendingAmt = sum.pendingAmount;
 
   const setPay = (ids, newStatus) => {
     window.campaignActions
       .setPayStatus(ids, newStatus)
       .then(function (res) {
-        const updated = {};
-        (res.workers || []).forEach(function (w) {
-          updated[w.id] = w;
-        });
-        setWorkers((ws) => ws.map((w) => (updated[w.id] ? updated[w.id] : w)));
         if ((res.blocked || []).length)
           toast(res.blocked.length + ' blocked by fraud flags', 'danger');
+        // Re-fetch the current page so statuses refresh from the server.
+        loadPage();
       })
       .catch(function (e) {
         toast('Action failed: ' + e.message, 'danger');
@@ -126,7 +150,7 @@ function PaymentsSub({ density, role }) {
     });
 
   const statusTabs = [
-    { id: 'all', label: 'All', count: workers.length },
+    { id: 'all', label: 'All', count: sum.total },
     { id: 'pending', label: 'Pending', count: sum.pay.pending },
     { id: 'approved', label: 'Approved', count: sum.pay.approved },
     { id: 'paid', label: 'Paid', count: sum.pay.paid },
@@ -135,6 +159,9 @@ function PaymentsSub({ density, role }) {
   ];
 
   const drawerWorker = drawer ? workers.find((w) => w.id === drawer) : null;
+  const rangeStart = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const rangeEnd = Math.min(page * PAGE_SIZE, total);
+  const maxPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
     <div>
@@ -455,8 +482,12 @@ function PaymentsSub({ density, role }) {
         {filtered.length === 0 && (
           <Empty
             icon="money-check-dollar"
-            title="No payments match your filters"
-            sub="Try clearing the status or region filter."
+            title={loading ? 'Loading…' : 'No payments match your filters'}
+            sub={
+              loading
+                ? 'Fetching workers from CommCare.'
+                : 'Try clearing the status or region filter.'
+            }
           />
         )}
         <div
@@ -471,9 +502,31 @@ function PaymentsSub({ density, role }) {
           }}
         >
           <span>
-            Showing {filtered.length} of {workers.length} workers
+            Showing {rangeStart}–{rangeEnd} of {D.num(total)} workers
           </span>
-          <span>Synced from CommCare · 38 min ago</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Button
+              size="sm"
+              variant="secondary"
+              icon="chevron-left"
+              disabled={page <= 1 || loading}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              Prev
+            </Button>
+            <span>
+              Page {page} of {maxPage}
+            </span>
+            <Button
+              size="sm"
+              variant="secondary"
+              icon="chevron-right"
+              disabled={page >= maxPage || loading}
+              onClick={() => setPage((p) => Math.min(maxPage, p + 1))}
+            >
+              Next
+            </Button>
+          </div>
         </div>
       </Card>
 
@@ -493,10 +546,8 @@ function PaymentsSub({ density, role }) {
         onQueue={(id, count) =>
           window.campaignActions
             .queuePay(id, count)
-            .then(function (res) {
-              setWorkers((ws) =>
-                ws.map((w) => (w.id === res.worker.id ? res.worker : w)),
-              );
+            .then(function () {
+              loadPage();
               toast('Approved & queued for payment');
             })
             .catch(function (e) {
