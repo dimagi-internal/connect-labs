@@ -1,16 +1,17 @@
 """Full synthetic-campaign pipeline tests.
 
 build_synthetic_campaign() assembles a coherent campaign from CommCare-shaped
-worker cases + real AdminBoundary geography, materialized into the tool's ORM so
-the existing read path (bootstrap_payload) renders it. These tests run at small
-scale against a factory-built NGA hierarchy.
+worker cases (a registered synthetic CommCare project space) + real AdminBoundary
+geography. The tool reads workers via the Case API (CommCareProvider), so
+bootstrap_payload renders them without any local Worker ORM copy. These tests run
+at small scale against a factory-built NGA hierarchy.
 """
 from __future__ import annotations
 
 import pytest
 from django.contrib.gis.geos import GEOSGeometry
 
-from commcare_connect.campaign.models import Microplan, Region, Worker, WorkerCase
+from commcare_connect.campaign.models import Microplan, Region, SyntheticCommCareDomain, Worker, WorkerCase
 from commcare_connect.campaign.services import serializers, synthetic_campaign
 from commcare_connect.labs.admin_boundaries.models import AdminBoundary
 
@@ -51,14 +52,17 @@ def nga_geo():
 
 def test_builds_coherent_campaign_from_real_geography(nga_geo):
     c = synthetic_campaign.build_synthetic_campaign(worker_count=300, seed_value=11)
-    # roster materialized from cases
+    # workers are CommCare cases (no local Worker ORM copy on this path)
     assert WorkerCase.objects.filter(campaign=c).count() == 300
-    assert Worker.objects.filter(campaign=c).count() == 300
+    assert Worker.objects.filter(campaign=c).count() == 0
+    # the campaign is bound to a registered synthetic CommCare project space
+    assert c.commcare_domain
+    assert SyntheticCommCareDomain.objects.filter(domain=c.commcare_domain, enabled=True).exists()
     # regions are the real states (region_id == AdminBoundary boundary_id)
     region_ids = set(Region.objects.filter(campaign=c).values_list("region_id", flat=True))
     assert region_ids == set(AdminBoundary.objects.filter(admin_level=1).values_list("boundary_id", flat=True))
-    # every worker's region_id resolves to a real region
-    assert set(Worker.objects.filter(campaign=c).values_list("region_id", flat=True)) <= region_ids
+    # every worker case's region_id resolves to a real region
+    assert set(WorkerCase.objects.filter(campaign=c).values_list("region_id", flat=True)) <= region_ids
     # microplans exist per populated LGA
     assert Microplan.objects.filter(campaign=c).count() >= 1
 
@@ -66,6 +70,7 @@ def test_builds_coherent_campaign_from_real_geography(nga_geo):
 def test_bootstrap_payload_renders_the_national_campaign(nga_geo):
     c = synthetic_campaign.build_synthetic_campaign(worker_count=200, seed_value=12)
     payload = serializers.bootstrap_payload(c)
+    # WORKERS are read via the CommCare Case API (from WorkerCase), not the Worker ORM
     assert len(payload["WORKERS"]) == 200
     assert len(payload["REGIONS"]) == 3
     assert payload["CAMPAIGN"]["name"].startswith("Measles")
@@ -82,7 +87,7 @@ def test_rebuild_is_idempotent_by_code(nga_geo):
     from commcare_connect.campaign.models import Campaign
 
     assert Campaign.objects.filter(code=synthetic_campaign.DEFAULT_CODE).count() == 1
-    assert Worker.objects.count() == 50  # replaced, not duplicated
+    assert WorkerCase.objects.count() == 50  # replaced, not duplicated
 
 
 def test_raises_without_geography():

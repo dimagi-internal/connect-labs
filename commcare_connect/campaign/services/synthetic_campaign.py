@@ -30,7 +30,7 @@ from commcare_connect.campaign.models import (
     Region,
     RegionPlan,
     ReportDay,
-    Worker,
+    SyntheticCommCareDomain,
     WorkerRole,
     Workspace,
 )
@@ -38,9 +38,6 @@ from commcare_connect.campaign.services import geography, seed, worker_cases
 
 DEFAULT_CODE = "MR-NAT-2026"
 DEFAULT_NAME = "Measles–Rubella Vaccination Campaign (National)"
-
-# Worker ORM columns we materialize from a worker case's properties.
-_WORKER_FIELDS = {f.name for f in Worker._meta.fields} - {"id", "campaign"}
 
 
 def _campaign(workspace, *, code, name, target_pop):
@@ -72,12 +69,6 @@ def _regions_from_boundaries(campaign, states):
             order=order,
         )
     return regions
-
-
-def _materialize_workers(campaign, cases):
-    rows = [Worker(campaign=campaign, **{k: v for k, v in c.properties.items() if k in _WORKER_FIELDS}) for c in cases]
-    Worker.objects.bulk_create(rows, batch_size=2000)
-    return rows
 
 
 def _region_plans(regions, workers_by_region, state_pop):
@@ -198,6 +189,12 @@ def build_synthetic_campaign(
     workspace, _ = Workspace.objects.get_or_create(slug="nigeria", defaults={"country": "Nigeria", "name": "Nigeria"})
     Campaign.objects.filter(workspace=workspace, code=code).delete()
 
+    # Register this campaign's workers as a synthetic CommCare project space, so the
+    # tool reads them through the Case API (served in-app from WorkerCase) — the same
+    # way it would read a real CommCare domain.
+    domain = f"campaign-synthetic-{code.lower()}"
+    SyntheticCommCareDomain.objects.update_or_create(domain=domain, defaults={"label": name, "enabled": True})
+
     states = geography.states()
     if states_limit:
         states = states[:states_limit]
@@ -205,6 +202,8 @@ def build_synthetic_campaign(
     target_pop = round(sum(state_pop.values()) * 0.18) or 1
 
     campaign = _campaign(workspace, code=code, name=name, target_pop=target_pop)
+    campaign.commcare_domain = domain
+    campaign.save(update_fields=["commcare_domain"])
     for o, (did, dname, short, committed, color) in enumerate(seed.DONORS):
         Donor.objects.create(
             campaign=campaign, donor_id=did, name=dname, short=short, committed=committed, color=color, order=o
@@ -215,10 +214,11 @@ def build_synthetic_campaign(
         role_rates[rid] = rate
 
     regions = _regions_from_boundaries(campaign, states)
+    # Workers are generated as CommCare cases (WorkerCase). The tool reads them via
+    # the Case API (CommCareProvider) — no local Worker ORM copy for this path.
     cases = worker_cases.generate_worker_cases(
         campaign, count=worker_count, states_limit=states_limit, seed=seed_value
     )
-    _materialize_workers(campaign, cases)
 
     workers_by_region: dict[str, list] = {}
     workers_by_lga: dict[tuple[str, str], list] = {}
