@@ -129,6 +129,66 @@ def _overlap_coefficient(a, b, bins: int = 12, edges=None) -> float:
     return float(np.minimum(pa, pb).sum())
 
 
+def matched_density_smd(ref_densities, cand_densities, *, edges=None, bins: int = 12) -> dict | None:
+    """The cross-arm density SMD ACHIEVABLE AFTER matching on common support.
+
+    The matched selector restricts BOTH arms to the density bands they share, then
+    samples both there. So the balance the matched design will actually realise is the
+    SMD between the two arms' densities *restricted to the common bands* — not the raw
+    whole-ward SMD. This computes exactly that, so the control finder can rank by the
+    balance you'd get, not the raw overlap.
+
+    Returns ``{"matched_smd": float, "matched_band": good|ok|imbalanced,
+    "common_fraction": float, "incomparable": bool}`` or ``None`` when either ward has
+    too few points to band. ``incomparable`` is True when the wards share no density
+    band at all (even the best match can't reach tolerance — pick a different control).
+    """
+    import numpy as np
+
+    ref = np.asarray(list(ref_densities) if ref_densities is not None else [], dtype=float)
+    cand = np.asarray(list(cand_densities) if cand_densities is not None else [], dtype=float)
+    ref = ref[np.isfinite(ref) & (ref > 0)]
+    cand = cand[np.isfinite(cand) & (cand > 0)]
+    if len(ref) < MIN_DIST_CLUSTERS or len(cand) < MIN_DIST_CLUSTERS:
+        return None
+
+    e = edges if edges is not None else density_bin_edges([float(x) for x in ref], bins=bins)
+    if e is None:
+        return None
+    e = np.asarray(e, dtype=float)
+    lo, hi = float(e[0]), float(e[-1])
+    nb = len(e) - 1
+
+    def _bands_of(arr):
+        # Out-of-support values (outside the intervention-anchored [lo, hi] range) get
+        # band -1 — they are NOT clipped into the boundary bands, so an all-denser arm
+        # reads as out-of-support rather than as sharing the top band.
+        idx = np.clip(np.digitize(arr, e[1:-1]), 0, nb - 1).astype(int)
+        idx[(arr < lo) | (arr > hi)] = -1
+        return idx
+
+    rb = _bands_of(ref)
+    cb = _bands_of(cand)
+    common = sorted((set(rb.tolist()) & set(cb.tolist())) - {-1})
+    if not common:
+        return {"matched_smd": None, "matched_band": "imbalanced", "common_fraction": 0.0, "incomparable": True}
+
+    in_common_ref = np.isin(rb, common)
+    in_common_cand = np.isin(cb, common)
+    rsub, csub = ref[in_common_ref], cand[in_common_cand]
+    smd = _smd(
+        (float(rsub.mean()), float(rsub.std(ddof=1)) if len(rsub) > 1 else 0.0),
+        (float(csub.mean()), float(csub.std(ddof=1)) if len(csub) > 1 else 0.0),
+    )
+    frac = float((in_common_ref.sum() + in_common_cand.sum()) / (len(ref) + len(cand)))
+    return {
+        "matched_smd": round(smd, 3),
+        "matched_band": _band(smd),
+        "common_fraction": round(frac, 3),
+        "incomparable": False,
+    }
+
+
 def density_distribution_match(ref_densities, cand_densities, *, edges=None) -> dict:
     """Compare a candidate control ward's settlement-density distribution to the
     reference (intervention) ward's. Returns the overlap coefficient (the ranking
@@ -192,6 +252,11 @@ def density_distribution_match(ref_densities, cand_densities, *, edges=None) -> 
             "hi": int(round(hi)),
         }
     band = "good" if overlap >= OVL_GOOD else ("ok" if overlap >= OVL_OK else "poor")
+    # The best-achievable matched balance: the cross-arm density SMD the matched
+    # selector would realise after restricting to common support. This is the HEADLINE
+    # ranking score for the control finder — rank candidates by the balance you'd
+    # actually get, with raw distribution overlap kept as secondary context.
+    matched = matched_density_smd(ref, cand, edges=edges) or {}
     return {
         "overlap": round(overlap, 3),
         "band": band,
@@ -199,6 +264,10 @@ def density_distribution_match(ref_densities, cand_densities, *, edges=None) -> 
         "median_cand": int(round(med_cand)),
         "median_gap_pct": round(gap * 100, 1) if gap is not None else None,
         "smd": round(smd, 2),
+        "matched_smd": matched.get("matched_smd"),
+        "matched_band": matched.get("matched_band"),
+        "common_fraction": matched.get("common_fraction"),
+        "incomparable": matched.get("incomparable", False),
         "n_ref": int(len(ref)),
         "n_cand": int(len(cand)),
         "q_ref": q_ref,
@@ -239,6 +308,10 @@ def psu_arms_from_stats(
                 "n_psus": s.get("n_psus") or 0,
                 "ward_density": ward_density.get(arm, 0.0),
                 "name": names.get(arm, ""),
+                # Matched-design diagnostics the joint selector stamps on each arm's
+                # stats (common/excluded density bands, restricted flag). Present →
+                # the selection was coordinated; absent → an independent (legacy) draw.
+                "matched": s.get("matched"),
             }
         )
     return arms
@@ -314,12 +387,42 @@ def arm_comparability_psu(arms: list[dict]) -> dict:
     n_iv = next((a["n_psus"] for a in out_arms if a["arm"] == "intervention"), 0)
     n_ct = next((a["n_psus"] for a in out_arms if a["arm"] in ("control", "comparison")), 0)
     gating = next((m for m in metrics if m["core"]), None)
+
+    # Matched-design state. When the joint matched selector ran, it stamps each arm's
+    # stats with a ``matched`` block (common/excluded density bands + restricted flag).
+    # Presence of that block means the density SMD is in tolerance BY CONSTRUCTION
+    # (the arms were sampled on shared density bands), so the panel can say so and
+    # carry the common-support estimand note. ``restricted`` (no shared band at all)
+    # is genuine incomparability — distinct from the old unconditional fail.
+    matched_meta = next((a.get("matched") for a in arms if a.get("matched")), None)
+    matched_design = matched_meta is not None
+    restricted = bool(matched_meta.get("restricted")) if matched_meta else False
+    excluded_bands = matched_meta.get("excluded_bands", []) if matched_meta else []
+    # Genuine incomparability: the matched draw found no shared density support, OR it
+    # ran but density still reads imbalanced (the best match can't reach tolerance).
+    density_metric = next((m for m in metrics if m["metric"] == "psu_density"), None)
+    density_imbalanced = bool(density_metric and density_metric["band"] == "imbalanced")
+    incomparable = restricted or (matched_design and density_imbalanced)
+    if incomparable:
+        matched = False
+    # The estimand the matched contrast targets: the common-support population (the
+    # density range both arms share), stated as a one-liner the panel renders.
+    estimand_note = (
+        "Contrast is on the common-support population — the settlement-density range both arms share."
+        if matched_design
+        else None
+    )
     return {
         "arms": out_arms,
         "metrics": metrics,
         "matched": matched,
         "reasons": reasons,
         "flags": flags,
+        # Matched-design surface for the panel.
+        "matched_design": matched_design,
+        "incomparable": incomparable,
+        "estimand_note": estimand_note,
+        "excluded_bands": excluded_bands,
         # Sample size the SMDs are computed over (0 = legacy stats; template hides the
         # line). Lets the panel state its own n instead of asserting an SMD whose
         # denominator is invisible — the M&E-reviewer ask.

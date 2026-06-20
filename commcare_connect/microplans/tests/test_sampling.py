@@ -324,3 +324,176 @@ def test_building_knn_density_empty_and_singleton_safe():
 
     assert building_knn_densities(pd.DataFrame(columns=["lon", "lat"])) == []
     assert building_knn_densities(pd.DataFrame({"lon": [8.0], "lat": [9.0]})) == []
+
+
+# --- Matched density-stratified PPS across arms (the methodology change) ------
+
+
+def _cand_frame(densities, sizes=None, prefix="C"):
+    """A candidate-PSU frame with an explicit per-cluster ``density`` column — the
+    stratification axis the matched selector bands on (bypasses footprint k-NN so the
+    sampler can be tested as pure numpy with controlled densities)."""
+    import numpy as np
+
+    densities = list(densities)
+    n = len(densities)
+    sizes = list(sizes) if sizes is not None else [20] * n
+    return pd.DataFrame(
+        {
+            "cluster": [f"{prefix}{i}" for i in range(n)],
+            "n_buildings": sizes,
+            "stratum": ["Low"] * n,
+            "density": np.asarray(densities, dtype=float),
+        }
+    )
+
+
+def _selected_density_smd(sel_iv, sel_ct, frame_iv, frame_ct):
+    """SMD between the two arms' SELECTED clusters' densities — the balance metric the
+    comparability panel gates on, computed directly off the candidate densities."""
+    import numpy as np
+
+    d_iv = frame_iv.set_index("cluster")["density"]
+    d_ct = frame_ct.set_index("cluster")["density"]
+    a = d_iv.loc[sel_iv["cluster"]].to_numpy(dtype=float)
+    b = d_ct.loc[sel_ct["cluster"]].to_numpy(dtype=float)
+    ma, mb = a.mean(), b.mean()
+    sa = a.std(ddof=1) if len(a) > 1 else 0.0
+    sb = b.std(ddof=1) if len(b) > 1 else 0.0
+    pooled = np.sqrt((sa**2 + sb**2) / 2)
+    return abs(ma - mb) / pooled if pooled > 0 else 0.0
+
+
+def test_matched_selector_lowers_density_smd_vs_independent_pps():
+    """TDD-1 (balance produced): two candidate frames whose densities differ enough
+    that INDEPENDENT PPS leaves |density SMD| well above 0.25; the JOINT matched
+    selector pulls it materially lower (into tolerance) on the selected PSUs."""
+    import numpy as np
+
+    from commcare_connect.microplans.sampling.sample import select_psus, select_psus_matched
+
+    rng = np.random.default_rng(0)
+    # Intervention: densities centred low; control: a fat upper tail the intervention
+    # lacks. Independent PPS (size-only) lets the control's draw drift dense.
+    iv_d = np.concatenate([rng.normal(4000, 400, 25), rng.normal(7000, 400, 15)])
+    ct_d = np.concatenate([rng.normal(4000, 400, 15), rng.normal(7000, 400, 25)])
+    # Make the dense clusters also the LARGER ones, so size-PPS chases density.
+    iv = _cand_frame(iv_d, sizes=(10 + iv_d / 200).round().astype(int), prefix="I")
+    ct = _cand_frame(ct_d, sizes=(10 + ct_d / 200).round().astype(int), prefix="C")
+
+    n_take = 16
+    # Independent size-stratified PPS, one draw per arm (today's behaviour).
+    ind_iv = select_psus(iv, n_take=n_take, seed=1, size_balance_bands=3)
+    ind_ct = select_psus(ct, n_take=n_take, seed=2, size_balance_bands=3)
+    smd_independent = _selected_density_smd(ind_iv, ind_ct, iv, ct)
+
+    res = select_psus_matched({"intervention": iv, "control": ct}, n_take=n_take, seed=7, size_balance_bands=3)
+    m_iv, m_ct = res["selected"]["intervention"], res["selected"]["control"]
+    smd_matched = _selected_density_smd(m_iv, m_ct, iv, ct)
+
+    assert smd_independent > 0.25, f"baseline should be imbalanced, got {smd_independent:.3f}"
+    assert smd_matched < smd_independent  # materially lower
+    assert smd_matched < 0.25, f"matched should be in tolerance, got {smd_matched:.3f}"
+    assert not res["restricted"] and res["common_bands"]
+
+
+def test_matched_selector_preserves_within_stratum_inclusion_probability():
+    """TDD-2 (unbiasedness within strata): P_psu is the within-stratum systematic-PPS
+    inclusion probability, and the 1/Pi design weights are computed per stratum. On a
+    controlled single-band frame, the Horvitz–Thompson weighted count of selected PSUs
+    recovers the candidate population (sum of 1/Pi ≈ N candidates)."""
+    import numpy as np
+
+    from commcare_connect.microplans.sampling.sample import select_psus_matched
+
+    # One density band (all equal density), no size sub-banding → a single stratum.
+    # Then sum(1/Pi) over the selected PSUs ≈ N candidates (HT population estimate).
+    n_cand = 30
+    frame = _cand_frame([5000.0] * n_cand, sizes=list(np.arange(20, 50)), prefix="X")
+    res = select_psus_matched(
+        {"intervention": frame, "control": frame.copy()},
+        n_take=12,
+        seed=3,
+        size_balance_bands=0,  # single stratum per band
+        density_bands=4,
+    )
+    sel = res["selected"]["intervention"]
+    sizes = frame.set_index("cluster")["n_buildings"]
+    # P_psu must equal take * size / sum(size) within its stratum (here: one band).
+    take = len(sel)
+    expected_pi = (take * sizes.loc[sel["cluster"]].to_numpy(dtype=float)) / sizes.sum()
+    assert np.allclose(np.sort(sel["P_psu"].to_numpy()), np.sort(expected_pi), atol=1e-9)
+    # HT: sum of inverse inclusion probs ≈ N candidates in the stratum.
+    ht_pop = float((1.0 / sel["P_psu"].to_numpy()).sum())
+    assert abs(ht_pop - n_cand) <= 0.5 * n_cand  # unbiased up to systematic-PPS variance
+
+
+def test_matched_selector_common_support_excludes_nonshared_bands():
+    """TDD-3 (common support): when the arms' densities barely overlap, non-shared
+    bands are excluded and the result flags restricted/incomparable instead of forcing
+    a bad match."""
+    from commcare_connect.microplans.sampling.sample import select_psus_matched
+
+    # Disjoint density ranges: intervention all low, control all high → no shared band.
+    iv = _cand_frame([1000, 1100, 1200, 1300, 1050, 1150], prefix="I")
+    ct = _cand_frame([9000, 9100, 9200, 9300, 9050, 9150], prefix="C")
+    res = select_psus_matched({"intervention": iv, "control": ct}, n_take=4, seed=1)
+    assert res["restricted"] is True
+    assert res["selected"]["intervention"].empty and res["selected"]["control"].empty
+    assert res["excluded_bands"]  # the non-shared bands are recorded
+
+    # Partial overlap: only the middle band is shared → only it gets an allocation.
+    iv2 = _cand_frame([1000, 1100, 5000, 5050, 5100, 5150], prefix="I")
+    ct2 = _cand_frame([5000, 5050, 5100, 5150, 9000, 9100], prefix="C")
+    res2 = select_psus_matched({"intervention": iv2, "control": ct2}, n_take=2, seed=1, density_bands=6)
+    assert not res2["restricted"]
+    assert res2["common_bands"]  # the shared mid band is allocated
+    assert res2["excluded_bands"]  # the low-only / high-only bands are excluded
+    # Every selected cluster on both arms must fall in a shared (mid) band, ~5000.
+    for arm in ("intervention", "control"):
+        frame = iv2 if arm == "intervention" else ct2
+        sel = res2["selected"][arm]
+        d = frame.set_index("cluster")["density"].loc[sel["cluster"]]
+        assert (d.between(4000, 6000)).all()
+
+
+def test_matched_selector_size_balance_retained():
+    """TDD-5 (size balance retained): with density matched, the matched draw still
+    keeps psu_size SMD in tolerance (size sub-banding nested inside density bands)."""
+    import numpy as np
+
+    from commcare_connect.microplans.sampling.sample import select_psus_matched
+
+    rng = np.random.default_rng(11)
+    # Same density profile both arms (so density is trivially matched); sizes span a
+    # wide range. The nested size sub-bands should keep the selected size mix matched.
+    dens = np.linspace(3000, 7000, 40)
+    iv = _cand_frame(dens, sizes=rng.integers(16, 60, 40), prefix="I")
+    ct = _cand_frame(dens, sizes=rng.integers(16, 60, 40), prefix="C")
+    res = select_psus_matched({"intervention": iv, "control": ct}, n_take=16, seed=5, size_balance_bands=3)
+    s_iv = iv.set_index("cluster")["n_buildings"].loc[res["selected"]["intervention"]["cluster"]].to_numpy(float)
+    s_ct = ct.set_index("cluster")["n_buildings"].loc[res["selected"]["control"]["cluster"]].to_numpy(float)
+    pooled = np.sqrt((s_iv.std(ddof=1) ** 2 + s_ct.std(ddof=1) ** 2) / 2)
+    size_smd = abs(s_iv.mean() - s_ct.mean()) / pooled if pooled > 0 else 0.0
+    assert size_smd < 0.25, f"size SMD should stay in tolerance, got {size_smd:.3f}"
+
+
+def test_generate_frame_single_arm_unchanged_selection():
+    """TDD-4 (backward compat): the single-arm selection path is the unchanged
+    size-stratified PPS — generate_frame with one arm calls select_psus exactly as
+    before (no matched coordination), so a pinned seed reproduces the legacy draw."""
+    from commcare_connect.microplans.sampling.frame import attach_candidate_density
+    from commcare_connect.microplans.sampling.sample import select_psus, select_psus_matched
+
+    # A single-arm matched call must defer to plain select_psus on that one frame.
+    frame = _cand_frame(np.linspace(2000, 8000, 30), sizes=list(np.arange(16, 46)), prefix="S")
+    res = select_psus_matched({"intervention": frame}, n_take=10, seed=42, size_balance_bands=3)
+    legacy = select_psus(frame, n_take=10, seed=42, size_balance_bands=3)
+    assert sorted(res["selected"]["intervention"]["cluster"]) == sorted(legacy["cluster"])
+    assert res["common_bands"] == [] and not res["restricted"]
+
+    # attach_candidate_density must not perturb the existing columns the selector reads.
+    pf = pd.DataFrame({"cluster": ["A", "B"], "n_buildings": [20, 30], "stratum": ["Low", "Low"]})
+    bld = pd.DataFrame({"lon": [13.1, 13.1], "lat": [11.8, 11.8], "cluster": ["A", "B"]})
+    out = attach_candidate_density(pf, bld)
+    assert "density" in out.columns and list(out["cluster"]) == ["A", "B"]

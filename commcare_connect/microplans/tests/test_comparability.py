@@ -243,6 +243,137 @@ def test_rank_ward_matches_orders_best_first_errors_last():
     assert [r["name"] for r in ranked] == ["hi", "lo", "err"]
 
 
+# --- Matched-design control finder + panel (the methodology change) ----------
+
+
+def test_matched_density_smd_lower_than_raw_on_partial_overlap():
+    """The best-achievable matched balance restricts to common support, so on two wards
+    that overlap in a broad middle range but each carries an exclusive tail, the matched
+    SMD is materially better than the raw whole-ward SMD."""
+    import numpy as np
+
+    from commcare_connect.microplans.core.comparability import _smd, matched_density_smd
+
+    rng = np.random.default_rng(0)
+    shared = rng.normal(5000, 600, 60)  # the broad common support both wards populate
+    ref = np.concatenate([shared, rng.normal(2200, 200, 30)])  # ref also has a sparse tail
+    cand = np.concatenate([shared + rng.normal(0, 50, 60), rng.normal(8500, 200, 30)])  # cand a dense tail
+    out = matched_density_smd(list(ref), list(cand))
+    assert out is not None and not out["incomparable"]
+    raw = _smd(
+        (float(ref.mean()), float(ref.std(ddof=1))),
+        (float(cand.mean()), float(cand.std(ddof=1))),
+    )
+    # Matched (restricted to the shared ~5000 band) is much better than raw whole-ward.
+    assert out["matched_smd"] < raw
+    assert out["matched_smd"] < 0.25
+    assert 0.0 < out["common_fraction"] < 1.0  # a real subset, not everything
+
+
+def test_matched_density_smd_flags_incomparable_on_disjoint_support():
+    """When two wards share no density band, the matched score is flagged incomparable
+    — even the best match can't reach tolerance; the finder must surface that."""
+    from commcare_connect.microplans.core.comparability import matched_density_smd
+
+    out = matched_density_smd([100, 120, 140, 160, 180], [900, 950, 1000, 1050, 1100])
+    assert out is not None
+    assert out["incomparable"] is True
+    assert out["common_fraction"] == 0.0
+
+
+def test_density_match_surfaces_matched_smd_as_headline():
+    """density_distribution_match now carries the best-achievable matched SMD so the
+    control finder can rank by it (the balance you'd actually get)."""
+    import numpy as np
+
+    from commcare_connect.microplans.core.comparability import density_distribution_match
+
+    rng = np.random.default_rng(1)
+    ref = list(rng.normal(5000, 800, 80))
+    cand = list(rng.normal(5200, 800, 80))  # broadly overlapping → a real matched score
+    out = density_distribution_match(ref, cand)
+    assert "matched_smd" in out and out["matched_smd"] is not None
+    assert "matched_band" in out and "common_fraction" in out
+
+
+def test_rank_ward_matches_ranks_by_matched_smd_then_overlap():
+    """The control finder's headline key is best-achievable matched balance (lower
+    matched SMD first); incomparable / unscored rows sink."""
+    from commcare_connect.microplans.tasks import _rank_ward_matches
+
+    rows = [
+        {"name": "decent_overlap_bad_match", "overlap": 0.8, "matched_smd": 0.30, "incomparable": False},
+        {"name": "best_match", "overlap": 0.6, "matched_smd": 0.05, "incomparable": False},
+        {"name": "incomparable", "overlap": 0.4, "matched_smd": None, "incomparable": True},
+        {"name": "errored", "overlap": None, "status": "error"},
+    ]
+    ranked = [r["name"] for r in _rank_ward_matches(rows)]
+    # Lowest matched SMD leads, even though it has lower raw overlap. Incomparable +
+    # errored sink to the bottom.
+    assert ranked[0] == "best_match"
+    assert ranked[1] == "decent_overlap_bad_match"
+    assert set(ranked[2:]) == {"incomparable", "errored"}
+
+
+def _matched_arm(name, *, size, density, bldg_area, matched_meta=None):
+    arm = {"arm": name, "psu_size": size, "psu_density": density, "bldg_area": bldg_area, "ward_density": 0.0}
+    if matched_meta is not None:
+        arm["matched"] = matched_meta
+    return arm
+
+
+def test_panel_states_matched_design_and_estimand_note():
+    """When the joint matched selector ran, the panel reports density is balanced by
+    design and carries the common-support estimand note."""
+    from commcare_connect.microplans.core.comparability import arm_comparability_psu
+
+    meta = {"common_bands": [{"band": 3}], "excluded_bands": [], "restricted": False}
+    out = arm_comparability_psu(
+        [
+            _matched_arm("intervention", size=(53, 20), density=(8000, 2500), bldg_area=(120, 40), matched_meta=meta),
+            _matched_arm("control", size=(55, 21), density=(8050, 2550), bldg_area=(123, 41), matched_meta=meta),
+        ]
+    )
+    assert out["matched"] is True
+    assert out["matched_design"] is True
+    assert out["incomparable"] is False
+    assert out["estimand_note"] and "common-support" in out["estimand_note"]
+
+
+def test_panel_flags_genuine_incomparability_when_no_shared_support():
+    """A matched run that found no shared density band (restricted) is genuine
+    incomparability — a distinct state from the old unconditional fail."""
+    from commcare_connect.microplans.core.comparability import arm_comparability_psu
+
+    meta = {"common_bands": [], "excluded_bands": [{"band": 0}, {"band": 11}], "restricted": True}
+    out = arm_comparability_psu(
+        [
+            _matched_arm("intervention", size=(53, 20), density=(8000, 2500), bldg_area=(120, 40), matched_meta=meta),
+            _matched_arm("control", size=(55, 21), density=(2200, 800), bldg_area=(123, 41), matched_meta=meta),
+        ]
+    )
+    assert out["incomparable"] is True
+    assert out["matched"] is False
+    assert out["matched_design"] is True
+
+
+def test_panel_no_matched_design_when_meta_absent_is_backward_compatible():
+    """Legacy stats with no matched block behave exactly as before — matched gated on
+    density SMD, no estimand note, no incomparable state."""
+    from commcare_connect.microplans.core.comparability import arm_comparability_psu
+
+    out = arm_comparability_psu(
+        [
+            _matched_arm("intervention", size=(53, 20), density=(8000, 2500), bldg_area=(120, 40)),
+            _matched_arm("control", size=(55, 21), density=(8200, 2600), bldg_area=(123, 41)),
+        ]
+    )
+    assert out["matched"] is True
+    assert out["matched_design"] is False
+    assert out["estimand_note"] is None
+    assert out["incomparable"] is False
+
+
 def test_density_match_returns_quartiles_and_sparkline():
     from commcare_connect.microplans.core.comparability import density_distribution_match
 
