@@ -36,7 +36,10 @@ function ReportingTab({ density }) {
             </Button>
             <Button
               icon="download"
-              onClick={() => toast('Report exported to CSV')}
+              onClick={() => {
+                D.downloadReport({ type: 'reporting_summary' });
+                toast('Exporting reporting data to CSV…');
+              }}
             >
               Export data
             </Button>
@@ -443,10 +446,30 @@ function TrendChart({ days, metric, color }) {
   );
 }
 
+const REPORT_TYPE_KEY = {
+  'Worker payments': 'worker_payments',
+  'KYC status': 'kyc_status',
+  Attendance: 'attendance',
+  'Household coverage': 'household_coverage',
+  'Activity performance': 'activity_performance',
+};
+
 function CustomReportModal({ open, onClose, onRun }) {
   const [fields, setFields] = useStateR(
     new Set(['Worker ID', 'Name', 'Region', 'Payment status']),
   );
+  const [rtype, setRtype] = useStateR('Worker payments');
+  const [range, setRange] = useStateR('This round');
+  const [group, setGroup] = useStateR('Region');
+  const runReport = () => {
+    window.CUT_DATA.downloadReport({
+      type: REPORT_TYPE_KEY[rtype],
+      columns: [...fields].join(','),
+      group_by: group,
+      range: range,
+    });
+    onRun();
+  };
   const all = [
     'Worker ID',
     'Name',
@@ -478,14 +501,14 @@ function CustomReportModal({ open, onClose, onRun }) {
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" icon="play" onClick={onRun}>
+          <Button variant="primary" icon="play" onClick={runReport}>
             Generate report ({fields.size} columns)
           </Button>
         </>
       }
     >
       <Field label="Report type">
-        <Select defaultValue="Worker payments">
+        <Select value={rtype} onChange={(e) => setRtype(e.target.value)}>
           <option>Worker payments</option>
           <option>KYC status</option>
           <option>Attendance</option>
@@ -502,7 +525,7 @@ function CustomReportModal({ open, onClose, onRun }) {
         }}
       >
         <Field label="Date range" style={{ marginBottom: 0 }}>
-          <Select defaultValue="This round">
+          <Select value={range} onChange={(e) => setRange(e.target.value)}>
             <option>This round</option>
             <option>Last 7 days</option>
             <option>Last 30 days</option>
@@ -510,7 +533,7 @@ function CustomReportModal({ open, onClose, onRun }) {
           </Select>
         </Field>
         <Field label="Group by" style={{ marginBottom: 0 }}>
-          <Select defaultValue="Region">
+          <Select value={group} onChange={(e) => setGroup(e.target.value)}>
             <option>Region</option>
             <option>Activity</option>
             <option>Role</option>
