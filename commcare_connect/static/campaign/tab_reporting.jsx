@@ -6,6 +6,7 @@ function ReportingTab({ density }) {
   const toast = useToast();
   const [metric, setMetric] = useStateR('enrolled');
   const [exportOpen, setExportOpen] = useStateR(false);
+  const [mapOpen, setMapOpen] = useStateR(false);
   const days = D.REPORT_DAYS;
   const totals = {
     enrolled: days.reduce((a, d) => a + d.enrolled, 0),
@@ -249,7 +250,12 @@ function ReportingTab({ density }) {
           <SectionTitle sub="Household visit coverage by region">
             Geographic coverage
           </SectionTitle>
-          <Button size="sm" variant="secondary" icon="map">
+          <Button
+            size="sm"
+            variant="secondary"
+            icon="map"
+            onClick={() => setMapOpen(true)}
+          >
             View map
           </Button>
         </div>
@@ -305,10 +311,11 @@ function ReportingTab({ density }) {
         open={exportOpen}
         onClose={() => setExportOpen(false)}
         onRun={() => {
-          toast('Custom report generated');
+          toast('Generating report — your CSV download will start shortly.');
           setExportOpen(false);
         }}
       />
+      <CoverageMapModal open={mapOpen} onClose={() => setMapOpen(false)} />
     </Page>
   );
 }
