@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.http import HttpRequest, JsonResponse
 from django.views.generic import TemplateView
 
@@ -28,4 +29,5 @@ class AppView(CampaignLoginRequiredMixin, TemplateView):
             },
             "perms_matrix": perms_matrix,
         }
+        ctx["mapbox_token"] = getattr(settings, "MAPBOX_TOKEN", None) or ""
         return ctx

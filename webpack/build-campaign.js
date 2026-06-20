@@ -49,6 +49,7 @@ const FILES = [
   'tab_planning.jsx',
   'tab_activity.jsx',
   'tab_reporting.jsx',
+  'tab_map.jsx',
   'tab_users.jsx',
   'tab_connections.jsx',
   'tab_training.jsx',
