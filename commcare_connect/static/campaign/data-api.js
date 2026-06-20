@@ -76,7 +76,13 @@
   }
 
   window.campaignLoadData = function () {
-    return fetch('/campaign/api/bootstrap/', {
+    // Carry a ?campaign=<code> from the page URL through to the bootstrap, so a
+    // specific campaign (e.g. the national one) can be selected for display.
+    const code = new URLSearchParams(window.location.search).get('campaign');
+    const url =
+      '/campaign/api/bootstrap/' +
+      (code ? '?campaign=' + encodeURIComponent(code) : '');
+    return fetch(url, {
       headers: { Accept: 'application/json' },
     })
       .then(function (r) {
