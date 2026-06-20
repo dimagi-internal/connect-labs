@@ -70,6 +70,44 @@ SOURCE_LABELS: dict[str, str] = {
     "grid3": "GRID3 (wards)",
 }
 
+# Total-population keys in a boundary's ``extra.populations`` bag, in fallback
+# preference order. These are whole-population zonal-stat estimates (WorldPop /
+# Meta / GRID3 rasters) — comparable in scale to the scalar ``population`` field
+# (GeoPoDe ``population_1``). Deliberately EXCLUDES under-5 keys (``worldpop_u5``,
+# ``meta_u5``, ``geopode_u5``): substituting a ~5k u5 figure into a column that
+# otherwise shows ~25k totals would silently mislabel u5 as total population. See
+# ``load_ward_populations`` for where the bag is written.
+_TOTAL_POPULATION_KEYS: tuple[str, ...] = ("worldpop_total", "meta_total", "grid3_v3_total")
+
+
+def resolve_population(population, populations: dict | None):
+    """The scalar population to display for a boundary, with a documented fallback.
+
+    Rule (kept consistent so a single column never mixes total- and under-5-scale
+    figures):
+
+      1. Use the boundary's own ``population`` (GeoPoDe ``population_1`` — a
+         whole-area estimate) when it is present.
+      2. Otherwise fall back to the first available TOTAL-population source in the
+         ``populations`` bag, in ``_TOTAL_POPULATION_KEYS`` order
+         (worldpop_total → meta_total → grid3_v3_total).
+      3. Otherwise return ``None`` (the UI renders an honest blank, not a fabricated
+         number; under-5 figures are never promoted to a total here).
+
+    Returns a ``float`` (or ``None``). The caller decides on rounding/int coercion.
+    """
+    if population is not None:
+        return population
+    if isinstance(populations, dict):
+        for key in _TOTAL_POPULATION_KEYS:
+            value = populations.get(key)
+            if value is not None:
+                try:
+                    return float(value)
+                except (TypeError, ValueError):
+                    continue
+    return None
+
 
 def _default_boundary_sources():
     """Enriched (merged) first, then each underlying loader as its own source, then
@@ -336,19 +374,23 @@ class LabsAdminBoundarySource(BoundarySource):
 
             qs = qs.annotate(_centroid=Centroid("geometry")).filter(_centroid__within=parent_geom)
         rows = qs.order_by("name").values("name", "boundary_id", "population", "extra")[: int(limit)]
-        return [
-            AdminArea(
-                name=r["name"],
-                level=level,
-                source=self.name,
-                country=a3,
-                region=r["boundary_id"],
-                population=r.get("population"),
-                populations=(r.get("extra") or {}).get("populations"),
-                ref={"boundary_id": r["boundary_id"]},
+        out = []
+        for r in rows:
+            pops = (r.get("extra") or {}).get("populations")
+            out.append(
+                AdminArea(
+                    name=r["name"],
+                    level=level,
+                    source=self.name,
+                    country=a3,
+                    region=r["boundary_id"],
+                    # Display population: scalar population_1, else a total from the bag.
+                    population=resolve_population(r.get("population"), pops),
+                    populations=pops,
+                    ref={"boundary_id": r["boundary_id"]},
+                )
             )
-            for r in rows
-        ]
+        return out
 
     def _fetch(self, area: AdminArea):
         return self._model().objects.filter(boundary_id=area.ref.get("boundary_id")).first()
@@ -382,7 +424,7 @@ class LabsAdminBoundarySource(BoundarySource):
                     boundary_id=obj.boundary_id,
                     geometry=json.loads(geom.geojson),
                     area_km2=round(obj._area.sq_km, 1) if obj._area is not None else None,
-                    population=obj.population,
+                    population=resolve_population(obj.population, (obj.extra or {}).get("populations")),
                     name_local=obj.name_local or "",
                     parent_name=_labs_parent_name(obj),
                     ref={"boundary_id": obj.boundary_id, "source": self.name},
@@ -560,10 +602,15 @@ def adjacent_boundaries(boundary_id: str, *, limit: int = 10) -> dict:
         return {"supported": False, "reference": None, "candidates": [], "truncated": False}
 
     def _row(b):
+        # Fall back to a total-population source in the populations bag when the
+        # scalar population (GeoPoDe population_1) is absent — otherwise wards that
+        # lack population_1 show "—" in the compare table even though the bag has a
+        # usable total. See resolve_population for the exact rule.
+        pop = resolve_population(b.population, (b.extra or {}).get("populations"))
         return {
             "boundary_id": b.boundary_id,
             "name": b.name,
-            "population": int(b.population) if b.population is not None else None,
+            "population": int(pop) if pop is not None else None,
             "geometry": json.loads(b.geometry.geojson),
         }
 

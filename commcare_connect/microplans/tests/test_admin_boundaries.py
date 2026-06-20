@@ -18,7 +18,37 @@ from commcare_connect.microplans.core.admin_boundaries import (
     BoundarySource,
     LabsAdminBoundarySource,
     OvertureBoundarySource,
+    resolve_population,
 )
+
+
+class TestResolvePopulation:
+    """Population fallback used by the compare table + boundary picker so a ward
+    that lacks the scalar population_1 still shows a number when its populations
+    bag carries a total (and an honest blank when nothing does)."""
+
+    def test_scalar_population_wins_when_present(self):
+        # population_1 present → used as-is, bag ignored even if it has totals.
+        assert resolve_population(22926.0, {"worldpop_total": 28542.9}) == 22926.0
+
+    def test_falls_back_to_total_from_bag_when_scalar_absent(self):
+        assert resolve_population(None, {"worldpop_total": 28542.9, "meta_total": 29287.3}) == 28542.9
+
+    def test_total_key_preference_order(self):
+        # worldpop_total → meta_total → grid3_v3_total.
+        assert resolve_population(None, {"meta_total": 29287.3, "grid3_v3_total": 26068.1}) == 29287.3
+        assert resolve_population(None, {"grid3_v3_total": 26068.1}) == 26068.1
+
+    def test_under_five_keys_never_promoted_to_total(self):
+        # Only u5 sources in the bag → no total → honest None (never mislabel u5).
+        assert resolve_population(None, {"worldpop_u5": 5459.4, "meta_u5": 5729.6, "geopode_u5": 5000.0}) is None
+
+    def test_none_everywhere_is_none(self):
+        assert resolve_population(None, None) is None
+        assert resolve_population(None, {}) is None
+
+    def test_zero_scalar_is_respected_not_treated_as_missing(self):
+        assert resolve_population(0, {"worldpop_total": 100.0}) == 0
 
 
 class TestIso:
@@ -178,7 +208,7 @@ _INSIDE = "POLYGON((13.05 11.05, 13.06 11.05, 13.06 11.06, 13.05 11.06, 13.05 11
 _OUTSIDE = "POLYGON((20.0 20.0, 20.1 20.0, 20.1 20.1, 20.0 20.1, 20.0 20.0))"
 
 
-def _make_boundary(name, level, wkt, bid, *, parent_boundary_id="", population=None, source="grid3"):
+def _make_boundary(name, level, wkt, bid, *, parent_boundary_id="", population=None, source="grid3", extra=None):
     from django.contrib.gis.geos import GEOSGeometry, MultiPolygon
 
     from commcare_connect.labs.admin_boundaries.models import AdminBoundary
@@ -193,6 +223,7 @@ def _make_boundary(name, level, wkt, bid, *, parent_boundary_id="", population=N
         source=source,
         parent_boundary_id=parent_boundary_id,
         population=population,
+        extra=extra or {},
     )
 
 
@@ -237,6 +268,32 @@ class TestLabsSource:
         areas = src.list_areas("NGA", 2, parent=parent)
         assert [a.name for a in areas] == ["Jere"]  # exact, indexed — no spatial work
         assert areas[0].population == 120_000
+
+
+@pytest.mark.django_db
+class TestAdjacentBoundariesPopulationFallback:
+    """The compare-surrounding control finder (adjacent_boundaries) must surface a
+    population for a neighbour that has no scalar population_1 but does carry a
+    total in its populations bag — and an honest None when nothing does."""
+
+    def test_neighbour_population_falls_back_to_bag_total(self):
+        from commcare_connect.microplans.core.admin_boundaries import adjacent_boundaries
+
+        # Reference + three same-level neighbours that touch it:
+        #  - has scalar population_1
+        #  - no scalar, but a worldpop_total in the bag (the bug case)
+        #  - no scalar and only u5 in the bag (cannot invent a total)
+        _make_boundary("Zankan", 3, _SQUARE, "ng-ref", population=22926.0)
+        _make_boundary("WithScalar", 3, _INSIDE, "ng-a", population=15000.0)
+        _make_boundary("BagTotalOnly", 3, _INSIDE, "ng-b", extra={"populations": {"worldpop_total": 28542.9}})
+        _make_boundary("U5Only", 3, _INSIDE, "ng-c", extra={"populations": {"worldpop_u5": 5459.4}})
+
+        adj = adjacent_boundaries("ng-ref")
+        assert adj["supported"] is True
+        by_name = {c["name"]: c["population"] for c in adj["candidates"]}
+        assert by_name["WithScalar"] == 15000  # scalar wins
+        assert by_name["BagTotalOnly"] == 28542  # was "—" before the fix, now the bag total
+        assert by_name["U5Only"] is None  # honest blank — never promote u5 to total
 
 
 @pytest.mark.django_db
