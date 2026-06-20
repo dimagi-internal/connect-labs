@@ -944,6 +944,13 @@
       const num = (x) => (x == null ? null : Math.round(x).toLocaleString());
       const dash = '<span class="text-gray-300">—</span>';
       const cell = (v) => (v == null ? dash : v);
+      // Population is "—" only when NO source (scalar or populations bag) has a
+      // value for the ward — make that honest with a tooltip rather than a bare
+      // blank the reader might mistake for "we forgot to look it up".
+      const popCell = (p) =>
+        p == null
+          ? '<span class="text-gray-300" title="No population source available for this ward">—</span>'
+          : num(p);
 
       // Up-front scope: as soon as the neighbours are known, say how many we're
       // processing (and progress through them), instead of a vague "analysing…".
@@ -1005,8 +1012,8 @@
       const baseRow =
         '<tr class="bg-emerald-50/50 border-t border-gray-100 align-middle">' +
         wardCell('#10b981', refName, 'intervention') +
-        `<td class="px-2 py-1.5 text-right tabular-nums">${cell(
-          num(reference.population),
+        `<td class="px-2 py-1.5 text-right tabular-nums">${popCell(
+          reference.population,
         )}</td>` +
         `<td class="px-2 py-1.5 text-right tabular-nums">${cell(
           num(reference.buildings),
@@ -1057,8 +1064,8 @@
           return (
             '<tr class="border-t border-gray-100 align-middle hover:bg-gray-50">' +
             wardCell(color, r.name) +
-            `<td class="px-2 py-1.5 text-right tabular-nums">${cell(
-              num(r.population),
+            `<td class="px-2 py-1.5 text-right tabular-nums">${popCell(
+              r.population,
             )}</td>` +
             `<td class="px-2 py-1.5 text-right tabular-nums">${cell(
               num(r.buildings),
