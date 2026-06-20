@@ -110,6 +110,22 @@
     );
   }
 
+  // Trigger a CSV download from /api/reports/export/ with the given params
+  // (type, columns, group_by, range), carrying the page's ?campaign= through.
+  function downloadReport(params) {
+    const qs = new URLSearchParams();
+    Object.keys(params || {}).forEach(function (k) {
+      if (params[k] != null && params[k] !== '') qs.set(k, params[k]);
+    });
+    const code = new URLSearchParams(window.location.search).get('campaign');
+    if (code) qs.set('campaign', code);
+    const a = document.createElement('a');
+    a.href = '/campaign/api/reports/export/?' + qs.toString();
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
   window.campaignLoadData = function () {
     // Carry a ?campaign=<code> from the page URL through to the bootstrap, so a
     // specific campaign (e.g. the national one) can be selected for display.
@@ -128,6 +144,7 @@
         const d = body.campaign;
         d.summarize = summarize;
         d.fetchWorkers = fetchWorkers;
+        d.downloadReport = downloadReport;
         d.money = money;
         d.moneyK = moneyK;
         d.num = num;
