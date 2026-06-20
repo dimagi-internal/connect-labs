@@ -17,6 +17,7 @@ urlpatterns = [
     path("login/callback/", oauth_views.oauth_callback, name="oauth_callback"),
     path("logout/", oauth_views.logout_view, name="logout"),
     path("api/bootstrap/", bootstrap_api.bootstrap, name="bootstrap"),
+    path("api/workers/", workers_api.workers_list, name="workers_list"),
     path("api/payments/set-status/", workers_api.pay_set_status, name="pay_set_status"),
     path("api/payments/<str:worker_id>/queue/", workers_api.pay_queue, name="pay_queue"),
     path("api/kyc/<str:worker_id>/status/", workers_api.kyc_status, name="kyc_status"),
