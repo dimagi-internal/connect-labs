@@ -1,5 +1,6 @@
 """Map data for the Reporting tab's 'View map' — region coverage choropleth +
 worker GPS points, served as GeoJSON. Reuses labs' AdminBoundary geometry."""
+
 import json
 
 from django.db.models import Count
@@ -33,8 +34,8 @@ def _worker_points(campaign):
     feats = []
     for wc in WorkerCase.objects.filter(campaign=campaign).order_by("worker_id")[:MAP_POINT_CAP]:
         loc = wc.properties.get("location")
-        if not loc:
-            continue
+        if not loc or len(loc) < 2:
+            continue  # missing or malformed [lng, lat] — skip rather than 500
         feats.append(
             {
                 "type": "Feature",
@@ -59,6 +60,9 @@ def map_data(request):
     max_count = max(counts.values(), default=1) or 1
 
     boundary_feats = []
+    # This tool serves the single national Nigeria measles campaign, so the state
+    # (admin_level=1) choropleth is scoped to NGA/geopode boundaries. If the tool
+    # ever hosts a non-Nigeria campaign, derive the iso_code from the campaign.
     for b in AdminBoundary.objects.filter(iso_code="NGA", admin_level=1, source="geopode", boundary_id__in=region_ids):
         n = counts.get(b.boundary_id, 0)
         boundary_feats.append(

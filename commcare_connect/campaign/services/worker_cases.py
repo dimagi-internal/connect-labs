@@ -11,6 +11,7 @@ pairs — carry over) while scaling across real national geography.
 This is the synthetic stand-in for what a live CommCare Case/Form API read will
 later return; the shape is identical so the CommCareProvider is a drop-in swap.
 """
+
 from __future__ import annotations
 
 import random
@@ -38,8 +39,11 @@ class WorkerCaseHandle:
         object.__setattr__(self, "_wc", worker_case)
 
     def __getattr__(self, name):
+        # Fetch _wc via object.__getattribute__ so a missing _wc invariant raises a
+        # clean AttributeError instead of recursing through __getattr__ forever.
+        wc = object.__getattribute__(self, "_wc")
         try:
-            return self._wc.properties[name]
+            return wc.properties[name]
         except KeyError as exc:
             raise AttributeError(name) from exc
 
