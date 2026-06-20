@@ -1,11 +1,10 @@
 import json
 
 from django.http import JsonResponse
-from django.shortcuts import get_object_or_404
 
 from commcare_connect.campaign.auth.decorators import current_campaign_user, require_perm
-from commcare_connect.campaign.models import Campaign, Worker
-from commcare_connect.campaign.services import audit, serializers, worker_actions
+from commcare_connect.campaign.models import Campaign
+from commcare_connect.campaign.services import audit, serializers, worker_actions, worker_cases
 
 INVESTIGATION_STATUSES = {"Open", "Under Review", "Resolved", "False Positive"}
 
@@ -21,10 +20,9 @@ def _campaign():
     return Campaign.objects.order_by("id").first()
 
 
-def _ser(worker) -> dict:
-    c = worker.campaign
-    role_names = {r.role_id: r.name for r in c.worker_roles.all()}
-    region_names = {r.region_id: r.name for r in c.regions.all()}
+def _ser(worker, campaign) -> dict:
+    role_names = {r.role_id: r.name for r in campaign.worker_roles.all()}
+    region_names = {r.region_id: r.name for r in campaign.regions.all()}
     return serializers._worker(worker, role_names, region_names)
 
 
@@ -35,24 +33,28 @@ def pay_set_status(request):
     ids = data.get("worker_ids") or []
     if status not in ("paid", "approved", "pending", "rejected", "hold"):
         return JsonResponse({"error": "bad status"}, status=400)
-    qs = Worker.objects.filter(campaign=_campaign(), worker_id__in=ids)
-    updated, blocked = worker_actions.set_pay(qs, status)
+    campaign = _campaign()
+    workers = worker_cases.resolve_workers(campaign, ids)
+    updated, blocked = worker_actions.set_pay(workers, status)
     if updated:
         verb = {"paid": "Marked paid", "approved": "Approved", "hold": "Held"}.get(status, f"Set {status} on")
-        audit.record(request, f"{verb} {len(updated)} worker payment(s)", "Payments", _campaign())
-    return JsonResponse({"workers": [_ser(w) for w in updated], "blocked": blocked})
+        audit.record(request, f"{verb} {len(updated)} worker payment(s)", "Payments", campaign)
+    return JsonResponse({"workers": [_ser(w, campaign) for w in updated], "blocked": blocked})
 
 
 @require_perm("payments", "approve")
 def pay_queue(request, worker_id):
     data = _body(request)
-    w = get_object_or_404(Worker, campaign=_campaign(), worker_id=worker_id)
+    campaign = _campaign()
+    w = worker_cases.resolve_worker(campaign, worker_id)
+    if w is None:
+        return JsonResponse({"error": "worker not found"}, status=404)
     try:
         w = worker_actions.queue_pay(w, data.get("approved_count", 0))
     except worker_actions.FraudGuardError as e:
         return JsonResponse({"error": str(e)}, status=400)
-    audit.record(request, f"Queued payment for {worker_id}", "Payments", _campaign())
-    return JsonResponse({"worker": _ser(w)})
+    audit.record(request, f"Queued payment for {worker_id}", "Payments", campaign)
+    return JsonResponse({"worker": _ser(w, campaign)})
 
 
 @require_perm("kyc", "approve")
@@ -61,13 +63,16 @@ def kyc_status(request, worker_id):
     status = data.get("status")
     if status not in ("approved", "pending", "review", "rejected"):
         return JsonResponse({"error": "bad status"}, status=400)
-    w = get_object_or_404(Worker, campaign=_campaign(), worker_id=worker_id)
+    campaign = _campaign()
+    w = worker_cases.resolve_worker(campaign, worker_id)
+    if w is None:
+        return JsonResponse({"error": "worker not found"}, status=404)
     try:
         w = worker_actions.set_kyc(w, status)
     except worker_actions.FraudGuardError as e:
         return JsonResponse({"error": str(e)}, status=400)
-    audit.record(request, f"Set KYC to {status} for {worker_id}", "KYC", _campaign())
-    return JsonResponse({"worker": _ser(w)})
+    audit.record(request, f"Set KYC to {status} for {worker_id}", "KYC", campaign)
+    return JsonResponse({"worker": _ser(w, campaign)})
 
 
 @require_perm("kyc", "approve")
@@ -75,9 +80,12 @@ def kyc_resolve_dupe(request, worker_id):
     data = _body(request)
     if "keep" not in data:
         return JsonResponse({"error": "missing 'keep'"}, status=400)
-    w = get_object_or_404(Worker, campaign=_campaign(), worker_id=worker_id)
+    campaign = _campaign()
+    w = worker_cases.resolve_worker(campaign, worker_id)
+    if w is None:
+        return JsonResponse({"error": "worker not found"}, status=404)
     w = worker_actions.resolve_duplicate(w, bool(data.get("keep")))
-    return JsonResponse({"worker": _ser(w)})
+    return JsonResponse({"worker": _ser(w, campaign)})
 
 
 @require_perm("kyc", "approve")
@@ -86,7 +94,10 @@ def kyc_investigation(request, worker_id):
     status = data.get("status")
     if status and status not in INVESTIGATION_STATUSES:
         return JsonResponse({"error": "bad investigation status"}, status=400)
-    w = get_object_or_404(Worker, campaign=_campaign(), worker_id=worker_id)
+    campaign = _campaign()
+    w = worker_cases.resolve_worker(campaign, worker_id)
+    if w is None:
+        return JsonResponse({"error": "worker not found"}, status=404)
     cu = current_campaign_user(request)
     w = worker_actions.save_investigation(
         w,
@@ -95,4 +106,4 @@ def kyc_investigation(request, worker_id):
         note=data.get("note"),
         by_name=(cu.name or cu.commcare_username),
     )
-    return JsonResponse({"worker": _ser(w)})
+    return JsonResponse({"worker": _ser(w, campaign)})
