@@ -1,18 +1,56 @@
 // tab_workers_profile.jsx — Worker Profile sub-tab (master list + detail)
-const { useState: useStateP } = React;
+const { useState: useStateP, useEffect: useEffectP } = React;
+
+// Debounce a fast-changing value (e.g. a search box) by `ms`.
+function useDebouncedP(value, ms) {
+  const [v, setV] = useStateP(value);
+  useEffectP(() => {
+    const t = setTimeout(() => setV(value), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return v;
+}
 
 function ProfileSub({ density }) {
   const D = window.CUT_DATA;
-  const [selId, setSelId] = useStateP(D.WORKERS[0].id);
+  const PAGE_SIZE = D.WORKERS_PAGE_SIZE || 200;
+  const toast = useToast();
+  const [list, setList] = useStateP([]);
+  const [total, setTotal] = useStateP(D.WORKERS_TOTAL || 0);
+  const [page, setPage] = useStateP(1);
+  const [loading, setLoading] = useStateP(true);
+  const [selId, setSelId] = useStateP(null);
   const [q, setQ] = useStateP('');
   const [section, setSection] = useStateP('participation');
-  const list = D.WORKERS.filter(
-    (w) =>
-      !q ||
-      w.name.toLowerCase().includes(q.toLowerCase()) ||
-      w.id.toLowerCase().includes(q.toLowerCase()),
-  );
-  const w = D.WORKERS.find((x) => x.id === selId);
+  const dq = useDebouncedP(q, 250);
+
+  useEffectP(() => {
+    setPage(1);
+  }, [dq]);
+
+  useEffectP(() => {
+    setLoading(true);
+    D.fetchWorkers({ page, page_size: PAGE_SIZE, q: dq })
+      .then((res) => {
+        const ws = res.workers || [];
+        setList(ws);
+        setTotal(res.total || 0);
+        // Keep the current selection if it's still on this page; else select
+        // the first fetched row so the detail pane always has a worker.
+        setSelId((cur) =>
+          cur && ws.some((x) => x.id === cur)
+            ? cur
+            : ws.length
+            ? ws[0].id
+            : null,
+        );
+      })
+      .catch((e) => toast('Could not load workers: ' + e.message, 'danger'))
+      .finally(() => setLoading(false));
+  }, [page, dq]);
+
+  const w = list.find((x) => x.id === selId);
+  const maxPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
     <div
@@ -60,6 +98,18 @@ function ProfileSub({ density }) {
           </div>
         </div>
         <div style={{ maxHeight: 560, overflowY: 'auto' }}>
+          {list.length === 0 && (
+            <div
+              style={{
+                padding: '24px 14px',
+                fontSize: 12.5,
+                color: CUTC.muted,
+                textAlign: 'center',
+              }}
+            >
+              {loading ? 'Loading…' : 'No workers match.'}
+            </div>
+          )}
           {list.map((x) => (
             <button
               key={x.id}
@@ -103,120 +153,179 @@ function ProfileSub({ density }) {
             </button>
           ))}
         </div>
+        <div
+          style={{
+            padding: '10px 14px',
+            borderTop: '1px solid ' + CUTC.border,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            fontSize: 11.5,
+            color: CUTC.muted,
+          }}
+        >
+          <span>{D.num(total)} total</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Button
+              size="sm"
+              variant="ghost"
+              icon="chevron-left"
+              disabled={page <= 1 || loading}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            />
+            <span>
+              {page}/{maxPage}
+            </span>
+            <Button
+              size="sm"
+              variant="ghost"
+              icon="chevron-right"
+              disabled={page >= maxPage || loading}
+              onClick={() => setPage((p) => Math.min(maxPage, p + 1))}
+            />
+          </div>
+        </div>
       </Card>
 
       {/* detail */}
       <div>
-        <Card style={{ marginBottom: 16 }}>
-          <div style={{ display: 'flex', gap: 18, alignItems: 'flex-start' }}>
-            <Avatar name={w.name} size={64} />
-            <div style={{ flex: 1 }}>
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 12,
-                  flexWrap: 'wrap',
-                }}
-              >
-                <h2
-                  style={{
-                    margin: 0,
-                    fontSize: 23,
-                    color: CUTC.purple,
-                    fontWeight: 600,
-                  }}
-                >
-                  {w.name}
-                </h2>
-                <KycBadge status={w.kyc} />
-                {w.duplicate && (
-                  <Badge tone="danger" dot>
-                    Duplicate flag
-                  </Badge>
-                )}
-              </div>
-              <div style={{ fontSize: 13, color: CUTC.muted, marginTop: 4 }}>
-                {w.id} · {w.role} · {w.region}, {w.lga}
-              </div>
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(4, 1fr)',
-                  gap: 16,
-                  marginTop: 18,
-                }}
-              >
-                {[
-                  ['Phone', w.phone],
-                  ['NIN', w.nin],
-                  ['Bank', w.bank],
-                  ['Enrolled', w.enrolled],
-                  ['Gender', w.gender === 'F' ? 'Female' : 'Male'],
-                  ['Attendance', w.attendance + '%'],
-                  ['Prior campaigns', w.priorCampaigns],
-                  ['Total earned', D.money(w.amount)],
-                ].map(([l, v]) => (
-                  <div key={l}>
-                    <div
-                      style={{
-                        fontSize: 10.5,
-                        color: CUTC.muted,
-                        fontWeight: 600,
-                        textTransform: 'uppercase',
-                        letterSpacing: '.05em',
-                      }}
-                    >
-                      {l}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: 13.5,
-                        color: CUTC.purple,
-                        fontWeight: 500,
-                        marginTop: 3,
-                        fontFamily:
-                          l === 'NIN' ? 'ui-monospace, monospace' : 'inherit',
-                      }}
-                    >
-                      {v}
-                    </div>
-                  </div>
-                ))}
-              </div>
+        {!w ? (
+          <Card>
+            <div
+              style={{
+                padding: '40px 0',
+                textAlign: 'center',
+                fontSize: 13,
+                color: CUTC.muted,
+              }}
+            >
+              {loading ? 'Loading worker…' : 'Select a worker to view details.'}
             </div>
-          </div>
-        </Card>
+          </Card>
+        ) : (
+          <>
+            <Card style={{ marginBottom: 16 }}>
+              <div
+                style={{ display: 'flex', gap: 18, alignItems: 'flex-start' }}
+              >
+                <Avatar name={w.name} size={64} />
+                <div style={{ flex: 1 }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 12,
+                      flexWrap: 'wrap',
+                    }}
+                  >
+                    <h2
+                      style={{
+                        margin: 0,
+                        fontSize: 23,
+                        color: CUTC.purple,
+                        fontWeight: 600,
+                      }}
+                    >
+                      {w.name}
+                    </h2>
+                    <KycBadge status={w.kyc} />
+                    {w.duplicate && (
+                      <Badge tone="danger" dot>
+                        Duplicate flag
+                      </Badge>
+                    )}
+                  </div>
+                  <div
+                    style={{ fontSize: 13, color: CUTC.muted, marginTop: 4 }}
+                  >
+                    {w.id} · {w.role} · {w.region}, {w.lga}
+                  </div>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(4, 1fr)',
+                      gap: 16,
+                      marginTop: 18,
+                    }}
+                  >
+                    {[
+                      ['Phone', w.phone],
+                      ['NIN', w.nin],
+                      ['Bank', w.bank],
+                      ['Enrolled', w.enrolled],
+                      ['Gender', w.gender === 'F' ? 'Female' : 'Male'],
+                      ['Attendance', w.attendance + '%'],
+                      ['Prior campaigns', w.priorCampaigns],
+                      ['Total earned', D.money(w.amount)],
+                    ].map(([l, v]) => (
+                      <div key={l}>
+                        <div
+                          style={{
+                            fontSize: 10.5,
+                            color: CUTC.muted,
+                            fontWeight: 600,
+                            textTransform: 'uppercase',
+                            letterSpacing: '.05em',
+                          }}
+                        >
+                          {l}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 13.5,
+                            color: CUTC.purple,
+                            fontWeight: 500,
+                            marginTop: 3,
+                            fontFamily:
+                              l === 'NIN'
+                                ? 'ui-monospace, monospace'
+                                : 'inherit',
+                          }}
+                        >
+                          {v}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </Card>
 
-        <div style={{ marginBottom: 16 }}>
-          <PillTabs
-            active={section}
-            onChange={setSection}
-            tabs={[
-              {
-                id: 'participation',
-                label: 'Participation',
-                icon: 'clock-rotate-left',
-              },
-              {
-                id: 'verification',
-                label: 'Verification',
-                icon: 'shield-halved',
-              },
-              { id: 'attendance', label: 'Attendance', icon: 'calendar-check' },
-              {
-                id: 'registration',
-                label: 'Registration',
-                icon: 'fingerprint',
-              },
-            ]}
-          />
-        </div>
+            <div style={{ marginBottom: 16 }}>
+              <PillTabs
+                active={section}
+                onChange={setSection}
+                tabs={[
+                  {
+                    id: 'participation',
+                    label: 'Participation',
+                    icon: 'clock-rotate-left',
+                  },
+                  {
+                    id: 'verification',
+                    label: 'Verification',
+                    icon: 'shield-halved',
+                  },
+                  {
+                    id: 'attendance',
+                    label: 'Attendance',
+                    icon: 'calendar-check',
+                  },
+                  {
+                    id: 'registration',
+                    label: 'Registration',
+                    icon: 'fingerprint',
+                  },
+                ]}
+              />
+            </div>
 
-        {section === 'participation' && <ParticipationHistory w={w} />}
-        {section === 'verification' && <VerificationHistory w={w} />}
-        {section === 'attendance' && <AttendanceHistory w={w} />}
-        {section === 'registration' && <RegistrationHistory w={w} />}
+            {section === 'participation' && <ParticipationHistory w={w} />}
+            {section === 'verification' && <VerificationHistory w={w} />}
+            {section === 'attendance' && <AttendanceHistory w={w} />}
+            {section === 'registration' && <RegistrationHistory w={w} />}
+          </>
+        )}
       </div>
     </div>
   );

@@ -223,12 +223,25 @@ function ActivityDetails({ density, role }) {
 
 function ActivityDrawer({ act, onClose }) {
   const D = window.CUT_DATA;
+  const [assigned, setAssigned] = useStateA([]);
+  React.useEffect(() => {
+    if (!act) {
+      setAssigned([]);
+      return;
+    }
+    // Resolve the activity's region name to its regionId, then fetch a small
+    // sample page of workers in that region (D.WORKERS is only the first page
+    // at scale, so we can't filter it client-side anymore).
+    const reg = (D.REGIONS || []).find((r) => r.name === act.region);
+    D.fetchWorkers({ region: reg ? reg.id : '', page_size: 8 })
+      .then((res) => setAssigned(res.workers || []))
+      .catch(() => setAssigned([]));
+  }, [act && act.id]);
   if (!act) return null;
-  const assigned = D.WORKERS.filter((w) => w.region === act.region).slice(0, 8);
+  // Role counts are a sketch derived from the fetched sample page (approximate
+  // by design — we don't aggregate every worker client-side).
   const byRole = {};
-  D.WORKERS.filter((w) => w.region === act.region).forEach(
-    (w) => (byRole[w.role] = (byRole[w.role] || 0) + 1),
-  );
+  assigned.forEach((w) => (byRole[w.role] = (byRole[w.role] || 0) + 1));
   return (
     <Drawer open={!!act} onClose={onClose} width={720}>
       <div

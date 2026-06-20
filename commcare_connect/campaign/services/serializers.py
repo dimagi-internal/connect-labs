@@ -177,6 +177,52 @@ def _audit(a) -> dict:
     }
 
 
+# How many workers ship in the bootstrap (the first table page). The rest are
+# fetched on demand from /api/workers/ — so a 50k-worker campaign isn't a 38 MB
+# bootstrap. The overview/donuts read WORKERS_SUMMARY (computed over ALL workers),
+# never the worker list, so they're accurate at any scale.
+WORKERS_PAGE_SIZE = 200
+
+
+def workers_summary(workers, role_names: dict) -> dict:
+    """Server-computed aggregates over ALL workers (what the overview + donuts read,
+    instead of iterating the full list client-side)."""
+    s = {
+        "total": 0,
+        "kyc": {k: 0 for k in ("approved", "pending", "rejected", "review")},
+        "pay": {k: 0 for k in ("paid", "approved", "pending", "rejected", "hold")},
+        "amount": 0,
+        "paidAmount": 0,
+        "pendingAmount": 0,
+        "duplicates": 0,
+        "female": 0,
+        "flagged": 0,
+        "byRole": {},
+    }
+    for w in workers:
+        s["total"] += 1
+        if w.kyc in s["kyc"]:
+            s["kyc"][w.kyc] += 1
+        if w.pay in s["pay"]:
+            s["pay"][w.pay] += 1
+        amt = w.amount or 0
+        s["amount"] += amt
+        if w.pay == "paid":
+            s["paidAmount"] += amt
+        elif w.pay in ("pending", "approved"):
+            s["pendingAmount"] += amt
+        if w.duplicate:
+            s["duplicates"] += 1
+        if w.gender == "F":
+            s["female"] += 1
+        if w.fraud_rules:
+            s["flagged"] += 1
+        role = role_names.get(w.role_id, "")
+        bucket = s["byRole"].setdefault(role, {"m": 0, "f": 0})
+        bucket["f" if w.gender == "F" else "m"] += 1
+    return s
+
+
 def bootstrap_payload(c: Campaign, current_username: str | None = None, request=None) -> dict:
     # CommCare-HQ-owned roster is read through the data-source seam (workers via the
     # CommCare Case API); tool-owned entities (activities, microplans, reporting,
@@ -199,7 +245,10 @@ def bootstrap_payload(c: Campaign, current_username: str | None = None, request=
         "MICROPLANS": [_microplan(m) for m in c.microplans.all()],
         "REPORT_DAYS": [_report_day(d) for d in c.report_days.all()],
         "HOUSEHOLDS": _household(c.household_stat),
-        "WORKERS": [_worker(w, role_names, region_names) for w in workers],
+        "WORKERS": [_worker(w, role_names, region_names) for w in workers[:WORKERS_PAGE_SIZE]],
+        "WORKERS_TOTAL": len(workers),
+        "WORKERS_PAGE_SIZE": WORKERS_PAGE_SIZE,
+        "WORKERS_SUMMARY": workers_summary(workers, role_names),
         "USERS": [_user(u, current_username) for u in CampaignUser.objects.all().order_by("created_at")],
         "AUDIT_LOG": [_audit(a) for a in c.audit_logs.all()[:50]],
         "KYC_STATES": list(KYC_STATES),

@@ -14,9 +14,12 @@ later return; the shape is identical so the CommCareProvider is a drop-in swap.
 from __future__ import annotations
 
 import random
+from types import SimpleNamespace
+
+from django.db.models import Q
 
 from commcare_connect.campaign.models import Worker, WorkerCase
-from commcare_connect.campaign.services import geography
+from commcare_connect.campaign.services import geography, serializers
 from commcare_connect.campaign.services.geography import GeographyUnavailable
 from commcare_connect.campaign.services.seed import BANKS, DOC_TYPES, FIRST_F, FIRST_M, LAST, ROLES, _inject_fraud
 
@@ -66,6 +69,58 @@ def resolve_workers(campaign, worker_ids):
     if campaign.commcare_domain:
         return [WorkerCaseHandle(wc) for wc in WorkerCase.objects.filter(campaign=campaign, worker_id__in=worker_ids)]
     return list(Worker.objects.filter(campaign=campaign, worker_id__in=worker_ids))
+
+
+def query_workers(campaign, *, q="", kyc="", pay="", role="", region="", fraud="", page=1, page_size=50):
+    """Filtered + paginated worker read for the /api/workers/ endpoint. Queries the
+    right store efficiently at the DB level (WorkerCase for a CommCare-domain campaign,
+    else Worker ORM) so a 50k roster paginates cheaply. Returns (serialized_page, total)."""
+    page = max(1, int(page))
+    page_size = max(1, min(int(page_size), 500))
+    role_names = {r.role_id: r.name for r in campaign.worker_roles.all()}
+    region_names = {r.region_id: r.name for r in campaign.regions.all()}
+    start, end = (page - 1) * page_size, page * page_size
+
+    if campaign.commcare_domain:
+        qs = WorkerCase.objects.filter(campaign=campaign)
+        if kyc:
+            qs = qs.filter(properties__kyc=kyc)
+        if pay:
+            qs = qs.filter(properties__pay=pay)
+        if role:
+            qs = qs.filter(properties__role_id=role)
+        if region:
+            qs = qs.filter(region_id=region)
+        if fraud == "flagged":
+            qs = qs.exclude(properties__fraud_rules=[])
+        elif fraud == "clean":
+            qs = qs.filter(properties__fraud_rules=[])
+        if q:
+            qs = qs.filter(
+                Q(properties__name__icontains=q) | Q(worker_id__icontains=q) | Q(properties__nin__icontains=q)
+            )
+        total = qs.count()
+        workers = [SimpleNamespace(**wc.properties) for wc in qs.order_by("worker_id")[start:end]]
+    else:
+        qs = Worker.objects.filter(campaign=campaign)
+        if kyc:
+            qs = qs.filter(kyc=kyc)
+        if pay:
+            qs = qs.filter(pay=pay)
+        if role:
+            qs = qs.filter(role_id=role)
+        if region:
+            qs = qs.filter(region_id=region)
+        if fraud == "flagged":
+            qs = qs.exclude(fraud_rules=[])
+        elif fraud == "clean":
+            qs = qs.filter(fraud_rules=[])
+        if q:
+            qs = qs.filter(Q(name__icontains=q) | Q(worker_id__icontains=q) | Q(nin__icontains=q))
+        total = qs.count()
+        workers = list(qs.order_by("worker_id")[start:end])
+
+    return [serializers._worker(w, role_names, region_names) for w in workers], total
 
 
 def _placements(states):

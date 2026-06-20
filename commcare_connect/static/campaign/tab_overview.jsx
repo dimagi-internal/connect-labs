@@ -3,7 +3,7 @@ const { useState: useStateOv } = React;
 
 function OverviewTab({ scenario, showAlerts, onJump }) {
   const D = window.CUT_DATA;
-  const sum = D.summarize(D.WORKERS);
+  const sum = D.WORKERS_SUMMARY;
   const atRisk = scenario === 'atrisk';
   const funded = D.DONORS.reduce((a, d) => a + d.committed, 0);
   const budgetTotal = D.PLANNING.reduce((a, p) => a + p.budget, 0);
@@ -607,11 +607,7 @@ function DonutBlock({ title, segments, center, centerSub, total }) {
 
 function WorkforceBars() {
   const D = window.CUT_DATA;
-  const byRole = {};
-  D.WORKERS.forEach((w) => {
-    byRole[w.role] = byRole[w.role] || { m: 0, f: 0 };
-    byRole[w.role][w.gender === 'F' ? 'f' : 'm']++;
-  });
+  const byRole = D.WORKERS_SUMMARY.byRole || {};
   const rows = Object.entries(byRole).sort(
     (a, b) => b[1].m + b[1].f - (a[1].m + a[1].f),
   );
