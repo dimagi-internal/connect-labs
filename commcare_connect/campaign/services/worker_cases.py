@@ -15,12 +15,57 @@ from __future__ import annotations
 
 import random
 
-from commcare_connect.campaign.models import WorkerCase
+from commcare_connect.campaign.models import Worker, WorkerCase
 from commcare_connect.campaign.services import geography
 from commcare_connect.campaign.services.geography import GeographyUnavailable
 from commcare_connect.campaign.services.seed import BANKS, DOC_TYPES, FIRST_F, FIRST_M, LAST, ROLES, _inject_fraud
 
 DEFAULT_SEED = 20260603
+
+
+class WorkerCaseHandle:
+    """Adapts a ``WorkerCase`` to the mutable-worker interface ``worker_actions``
+    expects: attribute reads/writes proxy ``WorkerCase.properties`` and ``save()``
+    persists the case. This lets the SAME payment/KYC mutation logic run on cases —
+    the CommCare-owned store (workers/KYC have a CommCare parallel, so they live on
+    the case, never a tool-local copy) — exactly as it runs on legacy Worker rows.
+    """
+
+    def __init__(self, worker_case: WorkerCase):
+        object.__setattr__(self, "_wc", worker_case)
+
+    def __getattr__(self, name):
+        try:
+            return self._wc.properties[name]
+        except KeyError as exc:
+            raise AttributeError(name) from exc
+
+    def __setattr__(self, name, value):
+        self._wc.properties[name] = value
+
+    def save(self, update_fields=None):
+        # Worker fields all live in the JSON bag, so we persist the whole bag.
+        self._wc.save(update_fields=["properties"])
+
+    @property
+    def case(self) -> WorkerCase:
+        return self._wc
+
+
+def resolve_worker(campaign, worker_id):
+    """One mutable worker for ``campaign`` — a WorkerCaseHandle for a CommCare-domain
+    campaign (writes land on the case), else the legacy Worker ORM row. None if absent."""
+    if campaign.commcare_domain:
+        wc = WorkerCase.objects.filter(campaign=campaign, worker_id=worker_id).first()
+        return WorkerCaseHandle(wc) if wc is not None else None
+    return Worker.objects.filter(campaign=campaign, worker_id=worker_id).first()
+
+
+def resolve_workers(campaign, worker_ids):
+    """Mutable workers for ``campaign`` by id (cases for a domain campaign, else ORM)."""
+    if campaign.commcare_domain:
+        return [WorkerCaseHandle(wc) for wc in WorkerCase.objects.filter(campaign=campaign, worker_id__in=worker_ids)]
+    return list(Worker.objects.filter(campaign=campaign, worker_id__in=worker_ids))
 
 
 def _placements(states):
