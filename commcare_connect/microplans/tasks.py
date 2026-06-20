@@ -78,12 +78,28 @@ def generate_coverage_task(self, areas, config_payload):
 
 
 def _rank_ward_matches(results: list[dict]) -> list[dict]:
-    """Best-match-first: highest distribution overlap leads; rows with no overlap
-    (insufficient data / errored) sink to the bottom."""
+    """Best-match-first ranking for the control finder.
+
+    Headline key is the **best-achievable matched balance** — the cross-arm density
+    SMD the matched selector would realise after restricting to common support
+    (``matched_smd``, lower is better) — so candidates rank by the balance you'd
+    actually get, not raw distribution overlap. Distribution ``overlap`` is the
+    secondary tiebreaker (kept as context). Wards that share no density support
+    (``incomparable``) or have no score (insufficient data / errored) sink to the
+    bottom. Legacy rows with no ``matched_smd`` fall back to overlap-only ordering."""
 
     def key(r):
+        incomparable = bool(r.get("incomparable"))
+        msmd = r.get("matched_smd")
         ov = r.get("overlap")
-        return (1 if ov is not None else 0, ov if ov is not None else -1.0)
+        has_match = msmd is not None and not incomparable
+        # Tier 1: scorable + comparable. Tier 0: everything else (sinks).
+        tier = 1 if (has_match or (ov is not None and not incomparable)) else 0
+        # Within the scorable tier, smaller matched SMD ranks first; -msmd so that the
+        # reverse=True sort puts the smallest SMD on top. Overlap breaks ties.
+        neg_smd = -float(msmd) if msmd is not None else -999.0
+        ov_key = ov if ov is not None else -1.0
+        return (tier, neg_smd, ov_key)
 
     return sorted(results, key=key, reverse=True)
 
@@ -482,25 +498,62 @@ def sample_group_plans(da, group, fcfg, *, progress=None):
             _geom_cache[bid] = _json.loads(b.geometry.geojson) if (b and b.geometry) else None
         return _geom_cache[bid]
 
+    # Resolve every member plan's areas, tagged with its study arm. When the group is
+    # a clean two-arm split (each plan is its own arm, exactly two distinct arms), the
+    # arms are sampled JOINTLY in ONE generate_frame call so the matched density-
+    # stratified selector balances settlement density across arms by construction —
+    # the cross-arm coordination point. Otherwise (single arm, or >1 plan per arm) we
+    # fall back to per-plan independent draws.
+    plan_arm = {p.id: (group.arm_for(p.id) or "intervention") for p in members}
+    plan_input_areas = {p.id: (p.data.get("input_areas") or []) for p in members}
+    plan_areas = {p.id: plan_sample_areas(plan_input_areas[p.id], plan_arm[p.id], resolve_boundary) for p in members}
+    distinct_arms = {plan_arm[p.id] for p in members if plan_areas[p.id]}
+    one_plan_per_arm = len({plan_arm[p.id] for p in members if plan_areas[p.id]}) == len(
+        [p for p in members if plan_areas[p.id]]
+    )
+    coordinated = len(distinct_arms) >= 2 and one_plan_per_arm
+
+    def _write_plan(p, res, status_extra=None):
+        nonlocal ok
+        da.regenerate_plan(
+            p.id,
+            mode="sampling",
+            pins=res.pins_geojson,
+            hulls=res.hulls_geojson,
+            input_areas=plan_input_areas[p.id],
+            stats=res.stats,
+        )
+        ok += 1
+        results.append({"plan_id": p.id, "name": p.name, "status": "ok", **(status_extra or {})})
+
+    if coordinated:
+        joint_areas: list[dict] = []
+        for p in members:
+            joint_areas.extend(plan_areas[p.id])
+        try:
+            res = generate_frame(joint_areas, fcfg)
+            arm_to_res = _split_frame_result_by_arm(res)
+            for index, p in enumerate(members):
+                if not plan_areas[p.id]:
+                    results.append({"plan_id": p.id, "name": p.name, "status": "error", "detail": "no area to sample"})
+                else:
+                    _write_plan(p, arm_to_res[plan_arm[p.id]])
+                if progress is not None:
+                    progress(index + 1, total, results, ok)
+            return {"results": results, "created": ok, "total": total}
+        except Exception:  # noqa: BLE001
+            logger.exception("sample_group_plans: joint sample failed (group=%s); falling back per-plan", group.id)
+            results.clear()
+            ok = 0
+
     for index, p in enumerate(members):
-        arm = group.arm_for(p.id) or "intervention"
-        input_areas = p.data.get("input_areas") or []
-        areas = plan_sample_areas(input_areas, arm, resolve_boundary)
+        areas = plan_areas[p.id]
         if not areas:
             results.append({"plan_id": p.id, "name": p.name, "status": "error", "detail": "no area to sample"})
         else:
             try:
                 res = generate_frame(areas, fcfg)
-                da.regenerate_plan(
-                    p.id,
-                    mode="sampling",
-                    pins=res.pins_geojson,
-                    hulls=res.hulls_geojson,
-                    input_areas=input_areas,
-                    stats=res.stats,
-                )
-                ok += 1
-                results.append({"plan_id": p.id, "name": p.name, "status": "ok"})
+                _write_plan(p, res)
             except ValueError as e:
                 results.append({"plan_id": p.id, "name": p.name, "status": "error", "detail": str(e)})
             except Exception:  # noqa: BLE001
@@ -510,6 +563,28 @@ def sample_group_plans(da, group, fcfg, *, progress=None):
             progress(index + 1, total, results, ok)
 
     return {"results": results, "created": ok, "total": total}
+
+
+def _split_frame_result_by_arm(res):
+    """Partition a multi-arm ``FrameResult`` back into one single-arm ``FrameResult``
+    per arm, so each member plan of a jointly-sampled study group is written with only
+    its own arm's pins/hulls/stats. Used by ``sample_group_plans``' coordinated path."""
+    from commcare_connect.microplans.sampling.frame import FrameResult
+
+    out: dict[str, object] = {}
+    arms = {f["properties"]["arm"] for f in res.pins_geojson.get("features", [])}
+    arms |= {f["properties"]["arm"] for f in res.hulls_geojson.get("features", [])}
+    arms |= {s.get("arm", "intervention") for s in res.stats}
+    for arm in arms:
+        pins = [f for f in res.pins_geojson.get("features", []) if f["properties"].get("arm") == arm]
+        hulls = [f for f in res.hulls_geojson.get("features", []) if f["properties"].get("arm") == arm]
+        stats = [s for s in res.stats if s.get("arm", "intervention") == arm]
+        out[arm] = FrameResult(
+            pins_geojson={"type": "FeatureCollection", "features": pins},
+            hulls_geojson={"type": "FeatureCollection", "features": hulls},
+            stats=stats,
+        )
+    return out
 
 
 def sample_plans(da, plans, fcfg, *, progress=None):

@@ -19,7 +19,7 @@ from commcare_connect.microplans.core.filters import FilterConfig, apply_frame_f
 from commcare_connect.microplans.core.footprints import DEFAULT_SOURCES, fetch_buildings, source_counts
 from commcare_connect.microplans.sampling.cluster import ClusterConfig, cluster_buildings
 from commcare_connect.microplans.sampling.defaults import SAMPLING_DEFAULTS as _D
-from commcare_connect.microplans.sampling.sample import PinConfig, sample_pins, select_psus
+from commcare_connect.microplans.sampling.sample import PinConfig, sample_pins, select_psus, select_psus_matched
 
 logger = logging.getLogger(__name__)
 
@@ -153,6 +153,50 @@ def building_knn_densities(buildings: pd.DataFrame, k: int = 8) -> list[float]:
     return [float(v) for v in arr[np.isfinite(arr)]]
 
 
+def cluster_density_map(buildings: pd.DataFrame) -> dict:
+    """Per-CANDIDATE-cluster mean k-NN local density (buildings/km²).
+
+    ``psu_summary`` measures density only over the SELECTED PSUs, which is too late
+    to *stratify* on — the matched selector needs a density for every candidate
+    cluster up front. This computes per-building k-NN density once over the whole arm
+    (the same robust estimator the ward comparison uses), then averages it within each
+    candidate cluster. Returns ``{cluster: mean_density}`` (clusters with no finite
+    density are omitted).
+    """
+    import numpy as np
+
+    if buildings is None or buildings.empty or "cluster" not in buildings.columns:
+        return {}
+    knn = building_knn_density_array(buildings)
+    out: dict = {}
+    clusters = buildings["cluster"].to_numpy()
+    for c in pd.unique(clusters):
+        vals = knn[(clusters == c)]
+        vals = vals[np.isfinite(vals)]
+        if vals.size:
+            out[c] = float(np.mean(vals))
+    return out
+
+
+def attach_candidate_density(psu_frame: pd.DataFrame, buildings: pd.DataFrame) -> pd.DataFrame:
+    """Return a copy of ``psu_frame`` with a ``density`` column (mean k-NN local
+    density of each candidate cluster's buildings) — the stratification axis the
+    matched selector bands on. Clusters without a finite density get the frame's
+    median density (so they still band somewhere rather than being dropped)."""
+    import numpy as np
+
+    out = psu_frame.copy()
+    if out.empty:
+        out["density"] = pd.Series(dtype=float)
+        return out
+    dmap = cluster_density_map(buildings)
+    dens = out["cluster"].map(dmap).to_numpy(dtype=float)
+    finite = dens[np.isfinite(dens)]
+    fill = float(np.median(finite)) if finite.size else 0.0
+    out["density"] = np.where(np.isfinite(dens), dens, fill)
+    return out
+
+
 def psu_summary(buildings: pd.DataFrame, selected: pd.DataFrame) -> dict:
     """Per-arm balance summary over the SELECTED PSUs, as (mean, sd) tuples.
 
@@ -234,122 +278,199 @@ def ward_density_distribution(geometry: dict, config: FrameConfig) -> dict:
     }
 
 
+@dataclass
+class ArmFrame:
+    """A single arm's CANDIDATE PSU frame — everything up to (but not including) the
+    PPS draw. The composable middle of ``generate_frame``: build one of these per arm,
+    then run a single-arm OR a joint cross-arm matched selector over them, then place
+    pins + stats per arm. ``psu_frame`` carries a per-candidate ``density`` column so
+    the matched selector can band on it."""
+
+    arm: str
+    buildings: pd.DataFrame  # clustered buildings (with projected coords)
+    psu_frame: pd.DataFrame  # candidate clusters + n_buildings + stratum + density
+    geom_by_coord: dict
+    src_counts: dict
+    filtered_n_in: int
+    filtered_n_out: int
+    removed_tiny_isolated: int
+    removed_large: int
+
+
+def build_arm_frame(arm: str, geoms: list, config: FrameConfig) -> ArmFrame:
+    """Stage (a): footprints → filter → cluster → per-candidate density, for ONE arm.
+    No PPS draw here — that's the selection stage, which may be joint across arms."""
+    area = unary_union(geoms)
+    # Fetch once across all providers (confidence-filtered) so we can report the
+    # per-source breakdown, then sample only from the chosen sources.
+    all_buildings = fetch_buildings(area, min_confidence=config.min_confidence, with_geom=True)
+    src_counts = source_counts(all_buildings)
+    geom_by_coord = {
+        (round(float(lo), 7), round(float(la), 7)): gj
+        for lo, la, gj in zip(all_buildings["lon"], all_buildings["lat"], all_buildings["geom_json"])
+    }
+    buildings = (
+        all_buildings
+        if not config.sources
+        else all_buildings[all_buildings["dataset"].isin(config.sources)].reset_index(drop=True)
+    )
+    filtered = apply_frame_filters(
+        buildings,
+        FilterConfig(area_min_m2=config.area_min_m2, area_max_m2=config.area_max_m2),
+    )
+    clustered = cluster_buildings(
+        filtered.buildings,
+        ClusterConfig(target_psus=config.target_clusters),
+        reference_point=config.reference_point,
+    )
+    # Per-candidate-cluster density is the shared stratification axis for matched PPS.
+    psu_frame = attach_candidate_density(clustered.psu_frame, clustered.buildings)
+    return ArmFrame(
+        arm=arm,
+        buildings=clustered.buildings,
+        psu_frame=psu_frame,
+        geom_by_coord=geom_by_coord,
+        src_counts=src_counts,
+        filtered_n_in=filtered.n_in,
+        filtered_n_out=filtered.n_out,
+        removed_tiny_isolated=filtered.removed_tiny_isolated,
+        removed_large=filtered.removed_large,
+    )
+
+
+def _render_arm(arm_frame: ArmFrame, selected: pd.DataFrame, config: FrameConfig, base_seed: int, arm_idx: int):
+    """Stage (c): place pins + build geojson features + per-arm stats for ONE arm's
+    selected PSUs. Returns (pin_features, hull_features, stats_dict)."""
+    arm = arm_frame.arm
+    buildings = arm_frame.buildings
+    geom_by_coord = arm_frame.geom_by_coord
+    pins = sample_pins(
+        buildings,
+        selected,
+        PinConfig(
+            n_primary=config.primary_per_psu,
+            n_alternate=config.alternates_per_psu,
+            seed=base_seed + 1000 + arm_idx,
+        ),
+    )
+    stratum_by_cluster = dict(zip(selected["cluster"], selected["stratum"]))
+
+    pin_features: list[dict] = []
+    for _, p in pins.iterrows():
+        pin_features.append(
+            {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [p["lon"], p["lat"]]},
+                "properties": {
+                    "arm": arm,
+                    "cluster": p["cluster"],
+                    "sample_type": p["sample_type"],
+                    "order_in_cluster": int(p["order_in_cluster"]),
+                    "stratum": stratum_by_cluster.get(p["cluster"], "Low"),
+                    "weight": None if pd.isna(p["weight"]) else round(float(p["weight"]), 4),
+                    "geom_json": geom_by_coord.get((round(float(p["lon"]), 7), round(float(p["lat"]), 7))),
+                },
+            }
+        )
+
+    hull_features: list[dict] = []
+    for cluster in selected["cluster"].tolist():
+        pts = buildings[buildings["cluster"] == cluster]
+        if len(pts) >= 3:
+            hull = MultiPoint(list(zip(pts["lon"], pts["lat"]))).convex_hull
+            hull_features.append(
+                {"type": "Feature", "geometry": mapping(hull), "properties": {"arm": arm, "cluster": cluster}}
+            )
+
+    psu_frame = arm_frame.psu_frame
+    stratum_counts = psu_frame["stratum"].value_counts().to_dict() if len(psu_frame) else {}
+    stats = {
+        "arm": arm,
+        "sources_used": list(config.sources),
+        "source_counts": arm_frame.src_counts,
+        "fetched": arm_frame.filtered_n_in,
+        "after_filters": arm_frame.filtered_n_out,
+        "removed_tiny_isolated": arm_frame.removed_tiny_isolated,
+        "removed_large": arm_frame.removed_large,
+        "clusters_formed": len(psu_frame),
+        "strata": {k: int(v) for k, v in stratum_counts.items()},
+        "psus_selected": len(selected),
+        "pins": len(pins),
+        "primaries": int((pins["sample_type"] == "primary").sum()) if len(pins) else 0,
+        "alternates": int((pins["sample_type"] == "alternate").sum()) if len(pins) else 0,
+        **psu_summary(buildings, selected),
+    }
+    logger.info("rooftop frame arm=%s: %s", arm, stats)
+    return pin_features, hull_features, stats
+
+
 def generate_frame(areas: list[dict], config: FrameConfig) -> FrameResult:
     """areas: [{"arm": "intervention"|"comparison", "geometry": <GeoJSON>}, ...].
 
     Each area may supply a ``geometry`` (drawn polygon or resolved admin area) or
     a ``circle`` ({lon, lat, radius_m}); see core.area_input.resolve_area.
+
+    Decomposed into composable stages: build each arm's candidate PSU frame
+    (footprints → cluster → per-candidate density), select PSUs, then render pins +
+    stats. When TWO arms are present, the PPS draw is COORDINATED — a joint
+    density-stratified matched selection over both arms' candidate frames so the
+    selected PSUs share a settlement-density mix by construction (closing the drift
+    that independent per-arm PPS leaves). A single arm draws exactly as before
+    (size-stratified PPS, unchanged). Matched-design diagnostics (common/excluded
+    density bands, restricted flag) are echoed on each arm's stats under ``matched``.
     """
     by_arm: dict[str, list] = {}
     for a in areas:
         by_arm.setdefault(a.get("arm", "intervention"), []).append(resolve_area(a))
 
-    pin_features: list[dict] = []
-    hull_features: list[dict] = []
-    stats: list[dict] = []
-
     # One base seed per call drives the PPS draw + pin placement. None in the config
     # means re-roll: pick a fresh random base so each "Regenerate" yields a different
-    # sample. Each arm offsets the base so the two arms draw independently.
+    # sample.
     import secrets
 
     base_seed = config.seed if config.seed is not None else secrets.randbelow(2_000_000_000)
 
-    for arm_idx, (arm, geoms) in enumerate(by_arm.items()):
-        area = unary_union(geoms)
-        # Fetch once across all providers (confidence-filtered) so we can report the
-        # per-source breakdown, then sample only from the chosen sources.
-        all_buildings = fetch_buildings(area, min_confidence=config.min_confidence, with_geom=True)
-        src_counts = source_counts(all_buildings)
-        # (lon, lat) → footprint polygon, so each sampled pin's exported work area
-        # can be the real building outline instead of a generic box. Keyed on the
-        # exact centroid the pins carry, so the round-trip join is lossless.
-        geom_by_coord = {
-            (round(float(lo), 7), round(float(la), 7)): gj
-            for lo, la, gj in zip(all_buildings["lon"], all_buildings["lat"], all_buildings["geom_json"])
-        }
-        buildings = (
-            all_buildings
-            if not config.sources
-            else all_buildings[all_buildings["dataset"].isin(config.sources)].reset_index(drop=True)
-        )
-        filtered = apply_frame_filters(
-            buildings,
-            FilterConfig(area_min_m2=config.area_min_m2, area_max_m2=config.area_max_m2),
-        )
-        clustered = cluster_buildings(
-            filtered.buildings,
-            ClusterConfig(target_psus=config.target_clusters),
-            reference_point=config.reference_point,
-        )
-        selected = select_psus(
-            clustered.psu_frame,
+    # Stage (a): build every arm's candidate frame.
+    arm_frames = {arm: build_arm_frame(arm, geoms, config) for arm, geoms in by_arm.items()}
+    arms = list(arm_frames.keys())
+
+    # Stage (b): select PSUs. Two arms → JOINT matched selection on shared density
+    # bands; single arm → the unchanged size-stratified PPS path.
+    matched_meta: dict | None = None
+    if len(arms) >= 2:
+        result = select_psus_matched(
+            {a: arm_frames[a].psu_frame for a in arms},
             n_take=config.target_clusters,
-            seed=base_seed + arm_idx,
+            seed=base_seed,
             size_balance_bands=config.size_balance_bands,
         )
-        pins = sample_pins(
-            clustered.buildings,
-            selected,
-            PinConfig(
-                n_primary=config.primary_per_psu,
-                n_alternate=config.alternates_per_psu,
-                seed=base_seed + 1000 + arm_idx,
-            ),
-        )
-        stratum_by_cluster = dict(zip(selected["cluster"], selected["stratum"]))
-
-        for _, p in pins.iterrows():
-            pin_features.append(
-                {
-                    "type": "Feature",
-                    "geometry": {"type": "Point", "coordinates": [p["lon"], p["lat"]]},
-                    "properties": {
-                        "arm": arm,
-                        "cluster": p["cluster"],
-                        "sample_type": p["sample_type"],
-                        "order_in_cluster": int(p["order_in_cluster"]),
-                        "stratum": stratum_by_cluster.get(p["cluster"], "Low"),
-                        "weight": None if pd.isna(p["weight"]) else round(float(p["weight"]), 4),
-                        "geom_json": geom_by_coord.get((round(float(p["lon"]), 7), round(float(p["lat"]), 7))),
-                    },
-                }
+        selected_by_arm = result["selected"]
+        matched_meta = {
+            "common_bands": result["common_bands"],
+            "excluded_bands": result["excluded_bands"],
+            "restricted": result["restricted"],
+        }
+    else:
+        selected_by_arm = {
+            arms[0]: select_psus(
+                arm_frames[arms[0]].psu_frame,
+                n_take=config.target_clusters,
+                seed=base_seed,
+                size_balance_bands=config.size_balance_bands,
             )
+        }
 
-        for cluster in selected["cluster"].tolist():
-            pts = clustered.buildings[clustered.buildings["cluster"] == cluster]
-            if len(pts) >= 3:
-                hull = MultiPoint(list(zip(pts["lon"], pts["lat"]))).convex_hull
-                hull_features.append(
-                    {
-                        "type": "Feature",
-                        "geometry": mapping(hull),
-                        "properties": {"arm": arm, "cluster": cluster},
-                    }
-                )
-
-        stratum_counts = clustered.psu_frame["stratum"].value_counts().to_dict() if len(clustered.psu_frame) else {}
-        stats.append(
-            {
-                "arm": arm,
-                "sources_used": list(config.sources),
-                "source_counts": src_counts,
-                "fetched": filtered.n_in,
-                "after_filters": filtered.n_out,
-                "removed_tiny_isolated": filtered.removed_tiny_isolated,
-                "removed_large": filtered.removed_large,
-                "clusters_formed": len(clustered.psu_frame),
-                "strata": {k: int(v) for k, v in stratum_counts.items()},
-                "psus_selected": len(selected),
-                "pins": len(pins),
-                "primaries": int((pins["sample_type"] == "primary").sum()) if len(pins) else 0,
-                "alternates": int((pins["sample_type"] == "alternate").sum()) if len(pins) else 0,
-                # Per-arm PSU/building balance summary (mean, sd) for corrected
-                # cross-arm comparability — the selected PSUs the survey visits.
-                **psu_summary(clustered.buildings, selected),
-            }
-        )
-        logger.info("rooftop frame arm=%s: %s", arm, stats[-1])
+    # Stage (c): render pins + stats per arm.
+    pin_features: list[dict] = []
+    hull_features: list[dict] = []
+    stats: list[dict] = []
+    for arm_idx, arm in enumerate(arms):
+        pf, hf, s = _render_arm(arm_frames[arm], selected_by_arm[arm], config, base_seed, arm_idx)
+        if matched_meta is not None:
+            s["matched"] = matched_meta
+        pin_features.extend(pf)
+        hull_features.extend(hf)
+        stats.append(s)
 
     return FrameResult(
         pins_geojson={"type": "FeatureCollection", "features": pin_features},

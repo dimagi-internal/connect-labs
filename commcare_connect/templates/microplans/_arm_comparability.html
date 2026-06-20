@@ -17,8 +17,23 @@ page). The whole-ward density line renders only when a ward_density is present
     {% include "microplans/_info.html" with text="A rooftop survey only visits the sampled settlements (PSUs), so the two arms are compared on those — not the whole ward — as a standardized mean difference (SMD). The verdict is decided by settlement density alone; differences in PSU size and building footprint are corrected at analysis, not used to reject a control. Bands: |SMD| < 0.1 close · < 0.25 acceptable · ≥ 0.25 differs." only %}
   </div>
   {# One-line objective read — what the data shows; the analyst decides + acts. #}
-  {% if comparability.matched is True %}
-  <p class="text-sm text-gray-700 mb-3">Sampled settlements match — density SMD&nbsp;{{ comparability.gating_smd }}{% if comparability.gating_band == "ok" %} <span class="text-amber-700">(marginal)</span>{% endif %}.</p>
+  {% if comparability.incomparable %}
+  {% comment %}
+    Genuine incomparability: even the best match on common support can't bring density
+    into tolerance (the two wards don't share enough settlement-density support). This
+    is distinct from the old unconditional fail — the remedy is a different control,
+    not a fresh draw of the same pair.
+  {% endcomment %}
+  <p class="text-sm text-gray-700 mb-2">These wards don't share enough settlement-density support — density SMD&nbsp;{{ comparability.gating_smd }}.</p>
+  <div class="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 mb-3">
+    <span class="text-amber-600 leading-none mt-0.5 shrink-0">⚠</span>
+    <p class="text-[12px] text-amber-900 leading-snug m-0">
+      <b>What to do:</b> even the best match these two wards allow can't reach tolerance on settlement density — they don't overlap enough on the structure of where people live. A fresh draw won't fix this; pick a <b>different control ward</b> (the surrounding-ward finder ranks candidates by best-achievable matched balance). If none qualifies, proceed and record density as a study limitation.
+    </p>
+  </div>
+  {% elif comparability.matched is True %}
+  <p class="text-sm text-gray-700 {% if comparability.matched_design %}mb-1{% else %}mb-3{% endif %}">Sampled settlements match — density SMD&nbsp;{{ comparability.gating_smd }}{% if comparability.gating_band == "ok" %} <span class="text-amber-700">(marginal)</span>{% endif %}{% if comparability.matched_design %} <span class="text-emerald-700">(balanced by design)</span>{% endif %}.</p>
+  {% if comparability.estimand_note %}<p class="text-[12px] text-gray-500 mb-3">{{ comparability.estimand_note }}</p>{% endif %}
   {% elif comparability.matched is False %}
   <p class="text-sm text-gray-700 mb-2">Sampled settlements differ — density SMD&nbsp;{{ comparability.gating_smd }}.</p>
   {% comment %}
