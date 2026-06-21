@@ -11,9 +11,10 @@ from commcare_connect.campaign.models import Worker, WorkerCase
 from commcare_connect.labs.admin_boundaries.models import AdminBoundary
 
 # Worker GPS points are sampled to this many for the scatter (a coverage picture,
-# not an exhaustive plot); the choropleth uses exact per-region counts. Kept modest
-# so the map paints quickly even on a CPU (SwiftShader) renderer in the headless recorder.
-MAP_POINT_CAP = 3000
+# not an exhaustive plot); the choropleth uses exact per-region counts. Kept small so
+# the WebGL canvas stays light enough that a headless screenshot (CPU/SwiftShader)
+# succeeds while the recorder's video screencast is also reading the GPU.
+MAP_POINT_CAP = 600
 
 KYC_COLOR = {
     "approved": "#1E7B33",
