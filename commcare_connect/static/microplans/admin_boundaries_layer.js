@@ -1063,13 +1063,13 @@
       // whole column can be selected + highlighted from its ⓘ button.
       const sparkCell = (spark, color) =>
         spark
-          ? `<td data-col="distribution" class="px-2 py-1.5">${sparkline(
+          ? `<td data-col="distribution" class="px-1.5 py-1">${sparkline(
               spark,
               color,
             )}</td>`
-          : `<td data-col="distribution" class="px-2 py-1.5">${dash}</td>`;
+          : `<td data-col="distribution" class="px-1.5 py-1">${dash}</td>`;
       const wardCell = (color, name, suffix) =>
-        '<td data-col="ward" class="px-2 py-1.5"><div class="flex items-center gap-1.5">' +
+        '<td data-col="ward" class="px-1.5 py-1"><div class="flex items-center gap-1.5">' +
         `<span class="inline-block w-3 h-3 rounded-sm shrink-0" style="background:${color}"></span>` +
         `<span class="text-gray-800 font-medium truncate">${esc(
           name || '(ward)',
@@ -1084,23 +1084,23 @@
       const baseRow =
         '<tr class="bg-emerald-50/50 border-t border-gray-100 align-middle">' +
         wardCell('#10b981', refName, 'intervention') +
-        `<td data-col="pop" class="px-2 py-1.5 text-right tabular-nums">${popCell(
+        `<td data-col="pop" class="px-1.5 py-1 text-right tabular-nums">${popCell(
           reference.population,
         )}</td>` +
-        `<td data-col="buildings" class="px-2 py-1.5 text-right tabular-nums">${cell(
+        `<td data-col="buildings" class="px-1.5 py-1 text-right tabular-nums">${cell(
           num(reference.buildings),
         )}</td>` +
-        `<td data-col="clusters" class="px-2 py-1.5 text-right tabular-nums">${cell(
+        `<td data-col="clusters" class="px-1.5 py-1 text-right tabular-nums">${cell(
           reference.n_clusters,
         )}</td>` +
-        `<td data-col="median" class="px-2 py-1.5 text-right tabular-nums">${cell(
+        `<td data-col="median" class="px-1.5 py-1 text-right tabular-nums">${cell(
           refQ ? num(refQ[1]) : null,
         )}</td>` +
         sparkCell(reference.spark, '#9ca3af') +
-        '<td data-col="match" class="px-2 py-1.5 text-[11px] text-gray-400">baseline</td>' +
-        '<td data-col="balance" class="px-2 py-1.5 text-[11px] text-gray-400">baseline</td>' +
-        '<td data-col="common" class="px-2 py-1.5"></td>' +
-        '<td class="px-2 py-1.5"></td>' +
+        '<td data-col="match" class="px-1.5 py-1 text-[11px] text-gray-400">baseline</td>' +
+        '<td data-col="balance" class="px-1.5 py-1 text-[11px] text-gray-400">baseline</td>' +
+        '<td data-col="common" class="px-1.5 py-1"></td>' +
+        '<td class="px-1.5 py-1"></td>' +
         '</tr>';
 
       const candRows = results
@@ -1123,15 +1123,15 @@
               }">Add boundary</button>`;
           let matchCell;
           if (isErr)
-            matchCell = `<td data-col="match" class="px-2 py-1.5 text-[11px] text-red-500">${esc(
+            matchCell = `<td data-col="match" class="px-1.5 py-1 text-[11px] text-red-500">${esc(
               r.detail || 'failed',
             )}</td>`;
           else if (!ok)
             matchCell =
-              '<td data-col="match" class="px-2 py-1.5 text-[11px] text-gray-400">analysing…</td>';
+              '<td data-col="match" class="px-1.5 py-1 text-[11px] text-gray-400">analysing…</td>';
           else
             matchCell =
-              '<td data-col="match" class="px-2 py-1.5 whitespace-nowrap">' +
+              '<td data-col="match" class="px-1.5 py-1 whitespace-nowrap">' +
               `<b class="text-gray-700">${Math.round(
                 (r.overlap || 0) * 100,
               )}%</b> ${bandBadge(r.band)}</td>`;
@@ -1140,13 +1140,13 @@
           // share no density support (incomparable) or it couldn't be scored.
           let balanceCell;
           if (isErr || !ok)
-            balanceCell = '<td data-col="balance" class="px-2 py-1.5"></td>';
+            balanceCell = '<td data-col="balance" class="px-1.5 py-1"></td>';
           else if (r.incomparable || r.matched_smd == null)
             balanceCell =
-              '<td data-col="balance" class="px-2 py-1.5 whitespace-nowrap text-[11px] text-gray-400">— incomparable</td>';
+              '<td data-col="balance" class="px-1.5 py-1 whitespace-nowrap text-[11px] text-gray-400">— incomparable</td>';
           else
             balanceCell =
-              '<td data-col="balance" class="px-2 py-1.5 whitespace-nowrap">' +
+              '<td data-col="balance" class="px-1.5 py-1 whitespace-nowrap">' +
               `<b class="text-gray-700">${r.matched_smd.toFixed(
                 2,
               )}</b> ${balanceBadge(r.matched_band)}</td>`;
@@ -1154,8 +1154,8 @@
           // in common (the range matching can actually use).
           const commonCell =
             isErr || !ok
-              ? '<td data-col="common" class="px-2 py-1.5"></td>'
-              : `<td data-col="common" class="px-2 py-1.5 text-right tabular-nums">${
+              ? '<td data-col="common" class="px-1.5 py-1"></td>'
+              : `<td data-col="common" class="px-1.5 py-1 text-right tabular-nums">${
                   r.common_fraction == null
                     ? dash
                     : Math.round(r.common_fraction * 100) + '%'
@@ -1163,23 +1163,23 @@
           return (
             '<tr class="border-t border-gray-100 align-middle hover:bg-gray-50">' +
             wardCell(color, r.name) +
-            `<td data-col="pop" class="px-2 py-1.5 text-right tabular-nums">${popCell(
+            `<td data-col="pop" class="px-1.5 py-1 text-right tabular-nums">${popCell(
               r.population,
             )}</td>` +
-            `<td data-col="buildings" class="px-2 py-1.5 text-right tabular-nums">${cell(
+            `<td data-col="buildings" class="px-1.5 py-1 text-right tabular-nums">${cell(
               num(r.buildings),
             )}</td>` +
-            `<td data-col="clusters" class="px-2 py-1.5 text-right tabular-nums">${cell(
+            `<td data-col="clusters" class="px-1.5 py-1 text-right tabular-nums">${cell(
               r.n_clusters,
             )}</td>` +
-            `<td data-col="median" class="px-2 py-1.5 text-right tabular-nums" style="color:${color}">${
+            `<td data-col="median" class="px-1.5 py-1 text-right tabular-nums" style="color:${color}">${
               cq ? num(cq[1]) : dash
             }</td>` +
             sparkCell(r.spark, color) +
             matchCell +
             balanceCell +
             commonCell +
-            `<td class="px-2 py-1.5 text-right">${action}</td>` +
+            `<td class="px-1.5 py-1 text-right">${action}</td>` +
             '</tr>'
           );
         })
@@ -1190,7 +1190,7 @@
       const th = (label, colKey, extra) =>
         `<th${
           colKey ? ` data-col="${colKey}"` : ''
-        } class="px-2 py-1.5 font-semibold text-gray-500 ${
+        } class="px-1.5 py-1 font-semibold text-gray-500 ${
           extra || 'text-right'
         }">` +
         (colKey
@@ -1208,7 +1208,7 @@
         th('Pop.', 'pop') +
         th('Buildings', 'buildings') +
         th('Clusters', 'clusters') +
-        th('Median (bldg/km²)', 'median') +
+        th('Median', 'median') +
         th('Distribution', 'distribution', 'text-left') +
         th('Match', 'match', 'text-left') +
         th('Matched balance', 'balance', 'text-left') +
