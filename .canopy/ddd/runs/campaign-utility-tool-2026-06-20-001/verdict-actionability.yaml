@@ -1,0 +1,44 @@
+schema_version: 1
+rubric_name: ddd-narrative-actionability-eval
+ran_at: "2026-06-20T20:30:00Z"
+spec_path: docs/walkthroughs/campaign-utility-tool.yaml
+
+dimensions:
+  coverage:
+    score: 5
+    weight: 0.35
+    justification: >-
+      Every one of the 9 declared features was independently inferred by all three cold
+      derivations — server-computed Overview KPIs, the server-side payment guard, NIN
+      duplicate detection, planned-vs-actual microplans, the choropleth+GPS map, real CSV
+      export, the CommCare Case-API worker, paginated national roster, and the audit log.
+  specificity:
+    score: 4
+    weight: 0.25
+    justification: >-
+      Derivations named concrete endpoints (POST payments/approve, GET overview, reporting
+      export.csv), data fields (kyc_status, fraud_flags, NIN, planned/actual), and UI
+      elements (donuts, choropleth, blocked-reason banner). A few items ("real-time
+      recompute") are behavioral rather than a single concrete artifact.
+  correctness:
+    score: 5
+    weight: 0.20
+    justification: >-
+      No wrong inferences — every cold-derived item aligns with a declared feature's intent,
+      including the subtle ones (server-side enforcement of the guard, Case-API read, NIN match).
+  consistency:
+    score: 5
+    weight: 0.20
+    justification: >-
+      The three independent derivations are near-identical per scene; no scene produced
+      divergent build plans, indicating the narration is unambiguous.
+
+overall_score: 4
+overall_rule: lowest
+
+verdict: pass
+blocking_reason: null
+
+fix_recommendation: null
+
+actionability_findings: []

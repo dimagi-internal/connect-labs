@@ -1,0 +1,74 @@
+[
+  {
+    "scene": "9 — Coverage, read off the map",
+    "dimension": "motion_friction",
+    "severity": "high",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The Mapbox map never painted in the recorder's headless Chromium — blank white WebGL canvas + an orphaned broken-image icon. Classic headless-WebGL failure.",
+    "fix_recommendation": "Apply the SwiftShader/WebGL headless fix to the recorder browser and wait on Mapbox map 'idle'/'load' before snapshotting the modal; remove the broken thumbnail img."
+  },
+  {
+    "scene": "9 — Coverage, read off the map",
+    "dimension": "design_soundness",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The map legend reads 'Worker KYC' (Approved/Pending/Review/Rejected), which doesn't explain the reach choropleth the claim describes.",
+    "fix_recommendation": "Add a coverage/reach legend for the choropleth alongside the KYC legend for the points."
+  },
+  {
+    "scene": "4 — Planned versus actual, per area",
+    "dimension": "why_groundedness",
+    "severity": "high",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "Activity tab shows 0 activities, 0 workers, NaN% coverage — unseeded for MR-NAT-2026, and NaN% signals a divide-by-zero.",
+    "fix_recommendation": "Render 0%/'—' instead of NaN% on an empty denominator; seed activities for MR-NAT-2026 (the env already builds 773 microplans — point the scene at Microplanning & Budget which has data, and/or add activities to the campaign env)."
+  },
+  {
+    "scene": "1 — The campaign at a glance",
+    "dimension": "why_groundedness",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "Funding KPIs are internally inconsistent: 'REMAINING ₦-245745K' is a broken negative string; 'TOTAL FUNDING ₦6.10M' is less than 'DISBURSED ₦251.84M' of a '₦314.81M' budget.",
+    "fix_recommendation": "Compute REMAINING = budget − disbursed as a formatted positive value; align the funding total's units with the budget scale so total ≥ disbursed."
+  },
+  {
+    "scene": "8 — The donor's numbers, exported",
+    "dimension": "why_groundedness",
+    "severity": "low",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "Every one of the 37 states shows an identical 64% coverage and 'At risk' status — a uniform synthetic fill that reads as fake.",
+    "fix_recommendation": "Vary per-state coverage with realistic spread (e.g. 40–90%) and derive each row's status from its actual value; vary visited counts independently."
+  },
+  {
+    "scene": "3 — Verification, with the fraud signal attached",
+    "dimension": "concept_clarity",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "Clicking 'KYC' did not switch to the KYC view — the frame shows the Worker Payments table, so verification status + documents + duplicate detection are not demonstrated.",
+    "fix_recommendation": "Fix the scene's action so it reaches the Workers → KYC sub-tab (correct target/selector), then opens a flagged worker showing status, documents, and the shared-identifier duplicate panel."
+  },
+  {
+    "scene": "5 — A worker is a real CommCare case",
+    "dimension": "concept_clarity",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "Clicking 'Workers' landed on the Payments table (default sub-tab), not a single worker profile, so the CommCare-case field set isn't shown.",
+    "fix_recommendation": "Point the scene at a worker profile — click a worker row or the Profiles sub-tab — so the frame shows one case with NIN, role, ward/LGA/state."
+  },
+  {
+    "scene": "7 — Every decision, on the record",
+    "dimension": "concept_clarity",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "Clicking 'Administration' did not reach the audit log — the frame shows Worker Payments. No actor/action/timestamp rows visible.",
+    "fix_recommendation": "Fix the scene action to reach Administration → audit log (correct nav target), showing rows with actor, action, and timestamp."
+  }
+]
