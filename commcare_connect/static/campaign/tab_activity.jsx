@@ -70,7 +70,10 @@ function ActivityDetails({ density, role }) {
         />
         <Stat
           label="Coverage"
-          value={Math.round((totalReached / totalTarget) * 100) + '%'}
+          value={
+            (totalTarget ? Math.round((totalReached / totalTarget) * 100) : 0) +
+            '%'
+          }
           icon="bullseye"
           sub={D.num(totalReached) + ' / ' + D.num(totalTarget)}
           delta="vs target"

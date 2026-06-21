@@ -217,6 +217,29 @@ function CoverageMapModal({ open, onClose }) {
             <div
               style={{ fontWeight: 600, color: CUTC.purple, marginBottom: 4 }}
             >
+              State coverage
+            </div>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                marginBottom: 8,
+              }}
+            >
+              <span
+                style={{
+                  width: 46,
+                  height: 10,
+                  borderRadius: 2,
+                  background: 'linear-gradient(90deg, #E5E8FA, #3F50A8)',
+                }}
+              ></span>
+              <span style={{ color: CUTC.muted }}>fewer → more workers</span>
+            </div>
+            <div
+              style={{ fontWeight: 600, color: CUTC.purple, marginBottom: 4 }}
+            >
               Worker KYC
             </div>
             {[
