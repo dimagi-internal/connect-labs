@@ -682,60 +682,6 @@
       compareBtn.classList.toggle("hidden", !ok);
     }
 
-    const BANDS = {
-      good: [
-        "bg-emerald-50",
-        "text-emerald-700",
-        "border-emerald-200",
-        "strong match",
-      ],
-      ok: [
-        "bg-amber-50",
-        "text-amber-700",
-        "border-amber-200",
-        "partial match",
-      ],
-      poor: ["bg-red-50", "text-red-700", "border-red-200", "poor match"],
-      insufficient: [
-        "bg-gray-100",
-        "text-gray-500",
-        "border-gray-200",
-        "too few clusters",
-      ],
-    };
-    function bandBadge(band) {
-      const [bg, tc, bc, label] = BANDS[band] || BANDS.insufficient;
-      return `<span class="text-[10px] px-1.5 py-0.5 rounded border ${bg} ${tc} ${bc}">${esc(
-        label,
-      )}</span>`;
-    }
-
-    // Matched-balance bands — mirror the post-Generate ARM COMPARABILITY panel's
-    // standardized-mean-difference (SMD) bands: < 0.10 balanced, < 0.25 acceptable,
-    // ≥ 0.25 out of tolerance. LOWER is better here (the inverse of Match %).
-    const MATCHED_BANDS = {
-      good: [
-        "bg-emerald-50",
-        "text-emerald-700",
-        "border-emerald-200",
-        "balanced",
-      ],
-      ok: ["bg-amber-50", "text-amber-700", "border-amber-200", "acceptable"],
-      imbalanced: [
-        "bg-red-50",
-        "text-red-700",
-        "border-red-200",
-        "out of tolerance",
-      ],
-    };
-    function balanceBadge(band) {
-      const [bg, tc, bc, label] =
-        MATCHED_BANDS[band] || MATCHED_BANDS.imbalanced;
-      return `<span class="text-[10px] px-1.5 py-0.5 rounded border ${bg} ${tc} ${bc}">${esc(
-        label,
-      )}</span>`;
-    }
-
     // ---- map overlay: one coloured fill per candidate boundary ----
     function ensureCompareLayers() {
       if (map.getSource(CMP_SRC)) return;
@@ -907,13 +853,12 @@
         "built-up texture overall — context for how alike the two wards look. For the balance a study would " +
         "actually get, see <b>Matched balance</b>.",
       balance:
-        "If you pick this control and matched-sample it, how balanced the two arms come out on settlement " +
-        "density (<b>lower is better</b>; &lt; 0.25 is within tolerance). This is what the study’s comparability " +
-        "check will show — unlike Match %, which is just how similar the wards look overall. We simulate the " +
-        "matched draw: the selector reweights <b>both</b> arms to the intervention’s density-band mix, so the " +
-        "band-mix imbalance is removed and only the within-band density difference remains. Banded as " +
-        "balanced (&lt; 0.10) / acceptable (&lt; 0.25) / out of tolerance (≥ 0.25). “— incomparable” means the " +
-        "wards share no density range, so no matched draw is possible — pick a different control.",
+        "The density SMD you’d get if you matched-sample this control — the standardized mean difference in " +
+        "settlement density between the two arms after the matched draw (0 = identical, higher = more " +
+        "different). We simulate the draw: both arms are reweighted to the intervention’s density-band mix, so " +
+        "only the within-band density difference remains. This is the figure the study’s comparability check " +
+        "reports. “— incomparable” means the two wards share no common density range, so a matched draw isn’t " +
+        "possible.",
       common:
         "Share of settlements in the density range both wards have in <b>common</b> — matching only uses this " +
         "shared range. A great matched balance over a tiny shared range is a weaker control, so read this " +
@@ -1134,7 +1079,7 @@
               '<td data-col="match" class="px-1.5 py-1 whitespace-nowrap">' +
               `<b class="text-gray-700">${Math.round(
                 (r.overlap || 0) * 100,
-              )}%</b> ${bandBadge(r.band)}</td>`;
+              )}%</b></td>`;
           // MATCHED BALANCE — the density SMD the matched draw would actually realise
           // (lower = better; the inverse direction of Match %). "—" when the two wards
           // share no density support (incomparable) or it couldn't be scored.
@@ -1147,9 +1092,7 @@
           else
             balanceCell =
               '<td data-col="balance" class="px-1.5 py-1 whitespace-nowrap">' +
-              `<b class="text-gray-700">${r.matched_smd.toFixed(
-                2,
-              )}</b> ${balanceBadge(r.matched_band)}</td>`;
+              `<b class="text-gray-700">${r.matched_smd.toFixed(2)}</b></td>`;
           // COMMON SUPPORT — share of settlements in the density range both wards have
           // in common (the range matching can actually use).
           const commonCell =
