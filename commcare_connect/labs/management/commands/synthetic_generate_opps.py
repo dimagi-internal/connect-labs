@@ -1,6 +1,18 @@
 """PHASE 2 (offline): generate fixtures from bundles and register labs-only opps.
 
-Spec-driven (recommended) — the same YAML you used for Phase 1::
+PREFERRED (local compute, no prod DB) — run the heavy generation on a fast machine
+with only the GDrive service-account creds, then repoint over the connect_labs MCP::
+
+    LABS_SYNTHETIC_GDRIVE_SA_KEY=<...> LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID=<...> \\
+        python manage.py synthetic_generate_opps --spec kmc.yaml --no-register
+    # prints `source_opp -> gdrive_folder_id` per opp; then for each line call the MCP:
+    #   synthetic_repoint_by_source(source_opportunity_id=<src>, gdrive_folder_id=<folder>)
+    #     -> overwrites the EXISTING labs opp (matched by cloned_from) in place, OR
+    #   synthetic_create_labs_only(gdrive_folder_id=<folder>, ...) for a brand-new opp.
+    # This keeps all DB writes server-side (no prod DB on the generating box) and avoids
+    # the slow / timeout-prone server-side generation path.
+
+Spec-driven, server-side (needs the labs DB — e.g. running inside labs)::
 
     python manage.py synthetic_generate_opps --spec kmc.yaml [--fresh]
 
@@ -31,8 +43,10 @@ class Command(BaseCommand):
             "--no-register",
             action="store_true",
             help="Generate fixtures to GDrive ONLY — write no database rows. Prints each "
-            "source_opp -> gdrive_folder_id; register them via the connect_labs MCP "
-            "(synthetic_create_labs_only). Lets the heavy generation run locally without DB access.",
+            "source_opp -> gdrive_folder_id; then over the connect_labs MCP either "
+            "synthetic_repoint_by_source (overwrite the existing cloned opp in place) or "
+            "synthetic_create_labs_only (new opp). Lets the heavy generation run locally "
+            "without DB access — the PREFERRED path.",
         )
 
     def _print(self, results, summary):
@@ -55,7 +69,12 @@ class Command(BaseCommand):
             self.stdout.write(
                 self.style.SUCCESS(f"Generated {len(rows)} fixture sets to GDrive (no DB rows written).")
             )
-            self.stdout.write("Register them with the connect_labs MCP: synthetic_create_labs_only per folder.")
+            self.stdout.write(
+                "Next, over the connect_labs MCP, per printed line:\n"
+                "  - overwrite an existing cloned opp in place: "
+                "synthetic_repoint_by_source(source_opportunity_id=<src>, gdrive_folder_id=<folder>)\n"
+                "  - or register a brand-new opp: synthetic_create_labs_only(gdrive_folder_id=<folder>, ...)"
+            )
             return
 
         if opts.get("spec"):
