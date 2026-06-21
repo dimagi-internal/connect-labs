@@ -6,8 +6,16 @@ matching boundary's ``extra.populations`` bag, so the microplan population picke
 offer a source dropdown and fill the number for the selected wards.
 
 Matches by ``extra.own_code`` (the ward code GeoPoDe + GRID3 boundaries both carry),
-so the same numbers attach to both ward sources. GeoPoDe's own under-5 figure (the
-boundary ``population`` field) is added to the bag as ``geopode_u5`` where present.
+so the same numbers attach to both ward sources. GeoPoDe's own scalar figure (the
+boundary ``population`` field, sourced from GeoPoDe ``population_1``) is added to the
+bag as ``geopode_total`` where present.
+
+NOTE on the key name: this was historically stored as ``geopode_u5`` on the assumption
+that GeoPoDe ``population_1`` was an under-5 estimate. The data disproves that — e.g.
+ward "Zankan" carries geopode 22,926 against a worldpop_total of ~28,543, i.e. a
+whole-area TOTAL, not the ~5k under-5. So the key is now ``geopode_total`` and is
+treated as a valid total-population fallback. Re-run this command on each deployment
+to rewrite the bags (the resolver accepts either key during the transition).
 
 Usage:
     python manage.py load_ward_populations            # ingest the bundled fixture
@@ -60,9 +68,11 @@ class Command(BaseCommand):
                 continue
             matched += 1
             merged = dict(pops)
-            # GeoPoDe's under-5 estimate lives on the boundary's population field.
+            # GeoPoDe's scalar population_1 (a whole-area TOTAL — see module docstring)
+            # lives on the boundary's population field. Stored under geopode_total so
+            # resolve_population can use it as a legitimate total fallback.
             if b.source == "geopode" and b.population is not None:
-                merged["geopode_u5"] = round(float(b.population), 1)
+                merged["geopode_total"] = round(float(b.population), 1)
             extra = {**extra, "populations": merged}
             b.extra = extra
             updates.append(b)

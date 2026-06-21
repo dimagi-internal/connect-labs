@@ -13,11 +13,14 @@ import pytest
 from commcare_connect.microplans.core import admin_boundaries as ab
 from commcare_connect.microplans.core import iso
 from commcare_connect.microplans.core.admin_boundaries import (
+    LABS_PROVIDER_PREFERENCE,
     AdminArea,
     BoundaryResolver,
     BoundarySource,
     LabsAdminBoundarySource,
     OvertureBoundarySource,
+    _dedupe_by_provider_preference,
+    _provider_rank,
     resolve_population,
 )
 
@@ -40,8 +43,23 @@ class TestResolvePopulation:
         assert resolve_population(None, {"grid3_v3_total": 26068.1}) == 26068.1
 
     def test_under_five_keys_never_promoted_to_total(self):
-        # Only u5 sources in the bag → no total → honest None (never mislabel u5).
-        assert resolve_population(None, {"worldpop_u5": 5459.4, "meta_u5": 5729.6, "geopode_u5": 5000.0}) is None
+        # Only GENUINE u5 sources in the bag → no total → honest None (never mislabel
+        # u5). (geopode_u5 is NOT here — it's the mislabelled GeoPoDe total, handled
+        # by its own test below.)
+        assert resolve_population(None, {"worldpop_u5": 5459.4, "meta_u5": 5729.6}) is None
+
+    def test_geopode_total_used_as_total_fallback(self):
+        # The relabelled GeoPoDe scalar (population_1 — a whole-area TOTAL) is a valid
+        # total fallback when no scalar population is present.
+        assert resolve_population(None, {"geopode_total": 10603.0}) == 10603.0
+
+    def test_legacy_geopode_u5_key_still_surfaces_as_total(self):
+        # Transition: bags written before the loader re-run carry the GeoPoDe total
+        # under the legacy "geopode_u5" key. It must still surface (it's a total), not
+        # render an honest blank.
+        assert resolve_population(None, {"geopode_u5": 10603.0}) == 10603.0
+        # Real totals still take precedence in the documented order.
+        assert resolve_population(None, {"worldpop_total": 28542.9, "geopode_u5": 10603.0}) == 28542.9
 
     def test_none_everywhere_is_none(self):
         assert resolve_population(None, None) is None
@@ -294,6 +312,145 @@ class TestAdjacentBoundariesPopulationFallback:
         assert by_name["WithScalar"] == 15000  # scalar wins
         assert by_name["BagTotalOnly"] == 28542  # was "—" before the fix, now the bag total
         assert by_name["U5Only"] is None  # honest blank — never promote u5 to total
+
+
+class TestProviderPreferenceDedupe:
+    """Pure dedupe helper used to collapse same-ward geopode/grid3 duplicates in the
+    merged (Enriched) view, keeping the most-preferred provider (geopode first)."""
+
+    def test_provider_rank_orders_geopode_first_unlisted_last(self):
+        assert _provider_rank("geopode") < _provider_rank("grid3")
+        assert _provider_rank("grid3") < _provider_rank("geoboundaries")
+        # Unlisted / None sort last (kept only as fallback).
+        assert _provider_rank("somethingelse") == len(LABS_PROVIDER_PREFERENCE)
+        assert _provider_rank(None) == len(LABS_PROVIDER_PREFERENCE)
+
+    def _rows(self):
+        # (name, source) tuples standing in for boundary rows.
+        return [
+            ("Sopp", "grid3"),
+            ("Sopp", "geopode"),  # twin of the above — geopode must win
+            ("Zankan", "geopode"),
+            ("Zankan", "grid3"),
+            ("Grid3Only", "grid3"),  # single provider — must be kept as-is
+        ]
+
+    def test_geopode_wins_over_grid3_for_same_name(self):
+        out = _dedupe_by_provider_preference(self._rows(), name_of=lambda r: r[0], source_of=lambda r: r[1])
+        by_name = {name: src for name, src in out}
+        assert by_name["Sopp"] == "geopode"
+        assert by_name["Zankan"] == "geopode"
+
+    def test_single_provider_ward_is_kept(self):
+        out = _dedupe_by_provider_preference(self._rows(), name_of=lambda r: r[0], source_of=lambda r: r[1])
+        assert ("Grid3Only", "grid3") in out
+
+    def test_one_row_per_name_and_deterministic_order(self):
+        out = _dedupe_by_provider_preference(self._rows(), name_of=lambda r: r[0], source_of=lambda r: r[1])
+        names = [name for name, _ in out]
+        assert names == ["Sopp", "Zankan", "Grid3Only"]  # first-seen order preserved
+
+    def test_name_match_is_case_and_whitespace_insensitive(self):
+        rows = [("  sopp ", "grid3"), ("Sopp", "geopode")]
+        out = _dedupe_by_provider_preference(rows, name_of=lambda r: r[0], source_of=lambda r: r[1])
+        assert len(out) == 1 and out[0][1] == "geopode"
+
+
+@pytest.mark.django_db
+class TestAdjacentBoundariesProviderPreference:
+    """adjacent_boundaries runs over the merged Enriched table, where NGA wards exist
+    as geopode + grid3 duplicates. It must return the geopode (populated) row for a
+    ward, exactly once — and still return a ward that exists only in grid3."""
+
+    def test_geopode_twin_wins_over_grid3_blank(self):
+        from commcare_connect.microplans.core.admin_boundaries import adjacent_boundaries
+
+        # Reference ward (geopode). Two same-name neighbour rows that BOTH touch it:
+        # a geopode row with population, a grid3 twin with population None — the bug.
+        _make_boundary("Zankan", 3, _SQUARE, "ng-ref", source="geopode", population=22926.0)
+        _make_boundary("Sopp", 3, _INSIDE, "ng-sopp-geopode", source="geopode", population=10603.0)
+        _make_boundary("Sopp", 3, _INSIDE, "ng-sopp-grid3", source="grid3", population=None)
+
+        adj = adjacent_boundaries("ng-ref")
+        assert adj["supported"] is True
+        sopp = [c for c in adj["candidates"] if c["name"] == "Sopp"]
+        assert len(sopp) == 1  # collapsed to one row, not two
+        assert sopp[0]["population"] == 10603  # the geopode (populated) twin, not the grid3 blank
+        assert sopp[0]["boundary_id"] == "ng-sopp-geopode"
+
+    def test_grid3_only_ward_is_still_returned(self):
+        from commcare_connect.microplans.core.admin_boundaries import adjacent_boundaries
+
+        _make_boundary("Zankan", 3, _SQUARE, "ng-ref", source="geopode", population=22926.0)
+        # Present in BOTH providers → geopode kept.
+        _make_boundary("Sopp", 3, _INSIDE, "ng-sopp-geopode", source="geopode", population=10603.0)
+        _make_boundary("Sopp", 3, _INSIDE, "ng-sopp-grid3", source="grid3", population=None)
+        # Present ONLY in grid3 → fallback must keep it (no geopode twin to prefer).
+        _make_boundary("Lonely", 3, _INSIDE, "ng-lonely-grid3", source="grid3", population=4200.0)
+
+        adj = adjacent_boundaries("ng-ref")
+        by_name = {c["name"]: c for c in adj["candidates"]}
+        assert "Lonely" in by_name
+        assert by_name["Lonely"]["population"] == 4200
+        assert by_name["Lonely"]["boundary_id"] == "ng-lonely-grid3"
+
+    def test_limit_applies_after_dedupe(self):
+        from commcare_connect.microplans.core.admin_boundaries import adjacent_boundaries
+
+        _make_boundary("Zankan", 3, _SQUARE, "ng-ref", source="geopode", population=22926.0)
+        # Three distinct wards, each a geopode+grid3 duplicate pair (6 rows). After
+        # dedupe there are 3 candidates; limit=2 must yield 2 DISTINCT wards, not a
+        # ward and its own twin.
+        for nm in ("Aaa", "Bbb", "Ccc"):
+            _make_boundary(nm, 3, _INSIDE, f"ng-{nm}-geopode", source="geopode", population=1000.0)
+            _make_boundary(nm, 3, _INSIDE, f"ng-{nm}-grid3", source="grid3", population=None)
+
+        adj = adjacent_boundaries("ng-ref", limit=2)
+        names = [c["name"] for c in adj["candidates"]]
+        assert len(names) == 2
+        assert len(set(names)) == 2  # two distinct wards, no twin leakage
+        assert all(c["population"] == 1000 for c in adj["candidates"])  # geopode rows
+
+
+@pytest.mark.django_db
+class TestLabsListAreasProviderPreference:
+    """The merged Enriched picker (LabsAdminBoundarySource with no db_source) must
+    surface the geopode row for a ward, not a blank grid3 twin — while a source-scoped
+    instance (db_source set) keeps its single-provider rows untouched."""
+
+    def test_merged_picker_prefers_geopode_twin(self):
+        _make_boundary("Sopp", 3, _SQUARE, "ng-sopp-geopode", source="geopode", population=10603.0)
+        _make_boundary("Sopp", 3, _SQUARE, "ng-sopp-grid3", source="grid3", population=None)
+        areas = LabsAdminBoundarySource().list_areas("NGA", 3)
+        sopp = [a for a in areas if a.name == "Sopp"]
+        assert len(sopp) == 1
+        assert sopp[0].population == 10603
+        assert sopp[0].ref["boundary_id"] == "ng-sopp-geopode"
+
+    def test_grid3_only_ward_kept_in_merged_picker(self):
+        _make_boundary("Sopp", 3, _SQUARE, "ng-sopp-geopode", source="geopode", population=10603.0)
+        _make_boundary("Sopp", 3, _SQUARE, "ng-sopp-grid3", source="grid3", population=None)
+        _make_boundary("Lonely", 3, _INSIDE, "ng-lonely-grid3", source="grid3", population=4200.0)
+        areas = LabsAdminBoundarySource().list_areas("NGA", 3)
+        by_name = {a.name: a for a in areas}
+        assert set(by_name) == {"Sopp", "Lonely"}
+        assert by_name["Lonely"].ref["boundary_id"] == "ng-lonely-grid3"
+
+    def test_source_scoped_picker_is_unchanged(self):
+        # A scoped grid3 picker should still return its grid3 row (no cross-source
+        # dedupe — there are no twins within a single provider).
+        _make_boundary("Sopp", 3, _SQUARE, "ng-sopp-geopode", source="geopode", population=10603.0)
+        _make_boundary("Sopp", 3, _SQUARE, "ng-sopp-grid3", source="grid3", population=None)
+        areas = LabsAdminBoundarySource(db_source="grid3", name="grid3").list_areas("NGA", 3)
+        assert [a.ref["boundary_id"] for a in areas] == ["ng-sopp-grid3"]
+
+    def test_limit_applies_after_dedupe_in_picker(self):
+        for nm in ("Aaa", "Bbb", "Ccc"):
+            _make_boundary(nm, 3, _SQUARE, f"ng-{nm}-geopode", source="geopode", population=1000.0)
+            _make_boundary(nm, 3, _SQUARE, f"ng-{nm}-grid3", source="grid3", population=None)
+        areas = LabsAdminBoundarySource().list_areas("NGA", 3, limit=2)
+        names = [a.name for a in areas]
+        assert len(names) == 2 and len(set(names)) == 2
 
 
 @pytest.mark.django_db
