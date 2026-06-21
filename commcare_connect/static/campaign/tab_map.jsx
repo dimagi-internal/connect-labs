@@ -104,11 +104,9 @@ function CoverageMapModal({ open, onClose }) {
               type: 'circle',
               source: 'workers',
               paint: {
-                'circle-radius': 2.6,
+                'circle-radius': 3,
                 'circle-color': ['coalesce', ['get', 'color'], '#5D70D2'],
-                'circle-opacity': 0.7,
-                'circle-stroke-color': '#fff',
-                'circle-stroke-width': 0.3,
+                'circle-opacity': 0.75,
               },
             });
             map.on('click', 'regions-fill', (e) => {
