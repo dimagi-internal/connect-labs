@@ -11,6 +11,7 @@ function CoverageMapModal({ open, onClose }) {
   const mapEl = useRefMap(null);
   const [info, setInfo] = useStateMap(null);
   const [error, setError] = useStateMap(null);
+  const [painted, setPainted] = useStateMap(false);
 
   useEffectMap(() => {
     if (!open) return undefined;
@@ -21,6 +22,7 @@ function CoverageMapModal({ open, onClose }) {
       return undefined;
     }
     setError(null);
+    setPainted(false);
     setInfo(null);
     let map;
     // Let the modal mount + size its container before Mapbox measures it.
@@ -49,7 +51,13 @@ function CoverageMapModal({ open, onClose }) {
         }
       };
       map.on('load', bump);
-      map.on('idle', bump);
+      // 'idle' fires when the map has finished rendering all sources/layers — the
+      // reliable "fully painted" signal. Emit a sentinel the recorder can wait on
+      // (instead of guessing a hold duration on a CPU-rendered SwiftShader map).
+      map.on('idle', () => {
+        bump();
+        setPainted(true);
+      });
       [300, 800, 1500, 3000, 5000].forEach((d) => setTimeout(bump, d));
       map.on('load', () => {
         const code = new URLSearchParams(window.location.search).get(
@@ -179,6 +187,11 @@ function CoverageMapModal({ open, onClose }) {
           <div style={{ fontWeight: 600, color: CUTC.purple, fontSize: 15 }}>
             <i className="fa fa-map" style={{ marginRight: 8 }}></i>
             Geographic coverage
+            {painted && (
+              <span data-testid="map-painted" style={{ position: 'absolute', left: -9999 }}>
+                coverage map ready
+              </span>
+            )}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
             {info && (
