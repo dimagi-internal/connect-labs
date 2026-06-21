@@ -13,9 +13,10 @@ narrative: 'Amara runs Nigeria''s national measles-rubella campaign, and she ope
   on is a real CommCare case on a real ward - not a mock - and sees the campaign holds
   every state in the country. She checks the audit log that recorded every decision
   she just made, and ends on the reporting board - per-state coverage across all 37
-  states - exporting the week''s numbers as a CSV for the donor.'
+  states - exporting the week''s numbers as a CSV for the donor, and ends on the coverage
+  map - all 37 states shaded by reach with every worker plotted on top.'
 narrative_locked: true
-narrative_locked_at: '2026-06-21T05:19:36.958122+00:00'
+narrative_locked_at: '2026-06-21T08:12:04.028890+00:00'
 personas:
   amara:
     color: '#3843D0'
@@ -262,4 +263,39 @@ scenes:
   show: Amara reviews per-state coverage on the Reporting board and exports a CSV
     report
   title: The donor's numbers, exported
+- actions:
+  - kind: click
+    must_succeed: true
+    target: Reporting & Monitoring
+  - kind: wait_for
+    must_succeed: true
+    target: View map
+  - kind: click
+    target: View map
+  - kind: wait_for
+    must_succeed: true
+    seconds: 20
+    target: css:[data-testid="coverage-map-svg"]
+  - kind: hold
+    seconds: 3
+  concept_claim: 'Reporting includes a geographic coverage map: a Nigeria choropleth
+    shaded by reach with worker GPS points.'
+  design_intent: Open the coverage map; the shaded states + worker points answer 'are
+    we reaching everyone' at a glance. Give the map time to paint.
+  features:
+  - description: Coverage map renders a Nigeria choropleth (shaded by worker count)
+      plus worker GPS points
+    id: coverage-map
+    verify: 'Playwright: in Reporting click ''View map''; assert a Mapbox canvas paints
+      with shaded states and worker points.'
+  full_page: false
+  narrative: Amara ends the morning on the coverage map - all 37 of Nigeria's states
+    shaded by how far the campaign has reached, every worker's location dropped on
+    top - reading at a glance where the country still needs her.
+  persona: amara
+  provenance: S5
+  show: Amara opens the geographic coverage map of Nigeria (choropleth shaded by reach
+    + worker GPS points)
+  title: Coverage, read off the map
+  url: /campaign/?campaign=MR-NAT-2026
 tagline: Run a national vaccination campaign from one command center
