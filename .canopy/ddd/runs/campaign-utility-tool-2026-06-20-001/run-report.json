@@ -1,6 +1,6 @@
 {
-  "total": 22,
-  "ok": 22,
+  "total": 35,
+  "ok": 35,
   "failed": 0,
   "actions": [
     {
@@ -9,7 +9,7 @@
       "target": "Overview",
       "value": null,
       "note": null,
-      "elapsed_ms": 1412,
+      "elapsed_ms": 1338,
       "error_kind": null,
       "error_message": null,
       "must_succeed": true,
@@ -23,7 +23,7 @@
       "target": null,
       "value": null,
       "note": null,
-      "elapsed_ms": 4001,
+      "elapsed_ms": 4000,
       "error_kind": null,
       "error_message": null,
       "must_succeed": false,
@@ -37,7 +37,7 @@
       "target": "Workers",
       "value": null,
       "note": null,
-      "elapsed_ms": 1277,
+      "elapsed_ms": 1275,
       "error_kind": null,
       "error_message": null,
       "must_succeed": true,
@@ -48,10 +48,10 @@
     {
       "kind": "wait_for",
       "ok": true,
-      "target": "Payments",
+      "target": "Worker Payments",
       "value": null,
       "note": null,
-      "elapsed_ms": 6016,
+      "elapsed_ms": 26,
       "error_kind": null,
       "error_message": null,
       "must_succeed": false,
@@ -62,42 +62,14 @@
     {
       "kind": "click",
       "ok": true,
-      "target": "Payments",
+      "target": "Worker Payments",
       "value": null,
       "note": null,
-      "elapsed_ms": 4275,
+      "elapsed_ms": 1273,
       "error_kind": null,
       "error_message": null,
       "must_succeed": false,
       "scene_index": 2,
-      "capture_var": null,
-      "capture_value": null
-    },
-    {
-      "kind": "hold",
-      "ok": true,
-      "target": null,
-      "value": null,
-      "note": null,
-      "elapsed_ms": 3002,
-      "error_kind": null,
-      "error_message": null,
-      "must_succeed": false,
-      "scene_index": 2,
-      "capture_var": null,
-      "capture_value": null
-    },
-    {
-      "kind": "click",
-      "ok": true,
-      "target": "KYC",
-      "value": null,
-      "note": null,
-      "elapsed_ms": 1274,
-      "error_kind": null,
-      "error_message": null,
-      "must_succeed": true,
-      "scene_index": 3,
       "capture_var": null,
       "capture_value": null
     },
@@ -111,35 +83,7 @@
       "error_kind": null,
       "error_message": null,
       "must_succeed": false,
-      "scene_index": 3,
-      "capture_var": null,
-      "capture_value": null
-    },
-    {
-      "kind": "click",
-      "ok": true,
-      "target": "Activity",
-      "value": null,
-      "note": null,
-      "elapsed_ms": 1288,
-      "error_kind": null,
-      "error_message": null,
-      "must_succeed": true,
-      "scene_index": 4,
-      "capture_var": null,
-      "capture_value": null
-    },
-    {
-      "kind": "hold",
-      "ok": true,
-      "target": null,
-      "value": null,
-      "note": null,
-      "elapsed_ms": 4001,
-      "error_kind": null,
-      "error_message": null,
-      "must_succeed": false,
-      "scene_index": 4,
+      "scene_index": 2,
       "capture_var": null,
       "capture_value": null
     },
@@ -153,7 +97,91 @@
       "error_kind": null,
       "error_message": null,
       "must_succeed": true,
-      "scene_index": 5,
+      "scene_index": 3,
+      "capture_var": null,
+      "capture_value": null
+    },
+    {
+      "kind": "wait_for",
+      "ok": true,
+      "target": "Worker KYC",
+      "value": null,
+      "note": null,
+      "elapsed_ms": 18,
+      "error_kind": null,
+      "error_message": null,
+      "must_succeed": true,
+      "scene_index": 3,
+      "capture_var": null,
+      "capture_value": null
+    },
+    {
+      "kind": "click",
+      "ok": true,
+      "target": "Worker KYC",
+      "value": null,
+      "note": null,
+      "elapsed_ms": 1272,
+      "error_kind": null,
+      "error_message": null,
+      "must_succeed": false,
+      "scene_index": 3,
+      "capture_var": null,
+      "capture_value": null
+    },
+    {
+      "kind": "hold",
+      "ok": true,
+      "target": null,
+      "value": null,
+      "note": null,
+      "elapsed_ms": 4002,
+      "error_kind": null,
+      "error_message": null,
+      "must_succeed": false,
+      "scene_index": 3,
+      "capture_var": null,
+      "capture_value": null
+    },
+    {
+      "kind": "click",
+      "ok": true,
+      "target": "Activity",
+      "value": null,
+      "note": null,
+      "elapsed_ms": 1270,
+      "error_kind": null,
+      "error_message": null,
+      "must_succeed": true,
+      "scene_index": 4,
+      "capture_var": null,
+      "capture_value": null
+    },
+    {
+      "kind": "wait_for",
+      "ok": true,
+      "target": "Microplanning & Budget",
+      "value": null,
+      "note": null,
+      "elapsed_ms": 7,
+      "error_kind": null,
+      "error_message": null,
+      "must_succeed": true,
+      "scene_index": 4,
+      "capture_var": null,
+      "capture_value": null
+    },
+    {
+      "kind": "click",
+      "ok": true,
+      "target": "Microplanning & Budget",
+      "value": null,
+      "note": null,
+      "elapsed_ms": 1375,
+      "error_kind": null,
+      "error_message": null,
+      "must_succeed": false,
+      "scene_index": 4,
       "capture_var": null,
       "capture_value": null
     },
@@ -167,6 +195,48 @@
       "error_kind": null,
       "error_message": null,
       "must_succeed": false,
+      "scene_index": 4,
+      "capture_var": null,
+      "capture_value": null
+    },
+    {
+      "kind": "click",
+      "ok": true,
+      "target": "Workers",
+      "value": null,
+      "note": null,
+      "elapsed_ms": 2043,
+      "error_kind": null,
+      "error_message": null,
+      "must_succeed": true,
+      "scene_index": 5,
+      "capture_var": null,
+      "capture_value": null
+    },
+    {
+      "kind": "wait_for",
+      "ok": true,
+      "target": "Worker Profiles",
+      "value": null,
+      "note": null,
+      "elapsed_ms": 14,
+      "error_kind": null,
+      "error_message": null,
+      "must_succeed": true,
+      "scene_index": 5,
+      "capture_var": null,
+      "capture_value": null
+    },
+    {
+      "kind": "click",
+      "ok": true,
+      "target": "Worker Profiles",
+      "value": null,
+      "note": null,
+      "elapsed_ms": 1977,
+      "error_kind": null,
+      "error_message": null,
+      "must_succeed": false,
       "scene_index": 5,
       "capture_var": null,
       "capture_value": null
@@ -181,6 +251,34 @@
       "error_kind": null,
       "error_message": null,
       "must_succeed": false,
+      "scene_index": 5,
+      "capture_var": null,
+      "capture_value": null
+    },
+    {
+      "kind": "click",
+      "ok": true,
+      "target": "Workers",
+      "value": null,
+      "note": null,
+      "elapsed_ms": 1837,
+      "error_kind": null,
+      "error_message": null,
+      "must_succeed": true,
+      "scene_index": 6,
+      "capture_var": null,
+      "capture_value": null
+    },
+    {
+      "kind": "wait_for",
+      "ok": true,
+      "target": "Worker Payments",
+      "value": null,
+      "note": null,
+      "elapsed_ms": 7,
+      "error_kind": null,
+      "error_message": null,
+      "must_succeed": true,
       "scene_index": 6,
       "capture_var": null,
       "capture_value": null
@@ -188,13 +286,97 @@
     {
       "kind": "click",
       "ok": true,
-      "target": "Administration",
+      "target": "Worker Payments",
       "value": null,
       "note": null,
-      "elapsed_ms": 1271,
+      "elapsed_ms": 1980,
+      "error_kind": null,
+      "error_message": null,
+      "must_succeed": false,
+      "scene_index": 6,
+      "capture_var": null,
+      "capture_value": null
+    },
+    {
+      "kind": "hold",
+      "ok": true,
+      "target": null,
+      "value": null,
+      "note": null,
+      "elapsed_ms": 4001,
+      "error_kind": null,
+      "error_message": null,
+      "must_succeed": false,
+      "scene_index": 6,
+      "capture_var": null,
+      "capture_value": null
+    },
+    {
+      "kind": "click",
+      "ok": true,
+      "target": "System Administration",
+      "value": null,
+      "note": null,
+      "elapsed_ms": 1865,
       "error_kind": null,
       "error_message": null,
       "must_succeed": true,
+      "scene_index": 7,
+      "capture_var": null,
+      "capture_value": null
+    },
+    {
+      "kind": "wait_for",
+      "ok": true,
+      "target": "User Management",
+      "value": null,
+      "note": null,
+      "elapsed_ms": 6,
+      "error_kind": null,
+      "error_message": null,
+      "must_succeed": true,
+      "scene_index": 7,
+      "capture_var": null,
+      "capture_value": null
+    },
+    {
+      "kind": "click",
+      "ok": true,
+      "target": "User Management",
+      "value": null,
+      "note": null,
+      "elapsed_ms": 1869,
+      "error_kind": null,
+      "error_message": null,
+      "must_succeed": false,
+      "scene_index": 7,
+      "capture_var": null,
+      "capture_value": null
+    },
+    {
+      "kind": "wait_for",
+      "ok": true,
+      "target": "Activity log",
+      "value": null,
+      "note": null,
+      "elapsed_ms": 7,
+      "error_kind": null,
+      "error_message": null,
+      "must_succeed": true,
+      "scene_index": 7,
+      "capture_var": null,
+      "capture_value": null
+    },
+    {
+      "kind": "click",
+      "ok": true,
+      "target": "Activity log",
+      "value": null,
+      "note": null,
+      "elapsed_ms": 1957,
+      "error_kind": null,
+      "error_message": null,
+      "must_succeed": false,
       "scene_index": 7,
       "capture_var": null,
       "capture_value": null
@@ -205,7 +387,7 @@
       "target": null,
       "value": null,
       "note": null,
-      "elapsed_ms": 4002,
+      "elapsed_ms": 4001,
       "error_kind": null,
       "error_message": null,
       "must_succeed": false,
@@ -216,10 +398,10 @@
     {
       "kind": "click",
       "ok": true,
-      "target": "Reporting",
+      "target": "Reporting & Monitoring",
       "value": null,
       "note": null,
-      "elapsed_ms": 4277,
+      "elapsed_ms": 1943,
       "error_kind": null,
       "error_message": null,
       "must_succeed": true,
@@ -233,10 +415,10 @@
       "target": "Export data",
       "value": null,
       "note": null,
-      "elapsed_ms": 5,
+      "elapsed_ms": 6,
       "error_kind": null,
       "error_message": null,
-      "must_succeed": false,
+      "must_succeed": true,
       "scene_index": 8,
       "capture_var": null,
       "capture_value": null
@@ -247,7 +429,7 @@
       "target": "Export data",
       "value": null,
       "note": null,
-      "elapsed_ms": 1359,
+      "elapsed_ms": 1939,
       "error_kind": null,
       "error_message": null,
       "must_succeed": false,
@@ -275,7 +457,7 @@
       "target": "View map",
       "value": null,
       "note": null,
-      "elapsed_ms": 9,
+      "elapsed_ms": 7,
       "error_kind": null,
       "error_message": null,
       "must_succeed": true,
@@ -289,7 +471,7 @@
       "target": "View map",
       "value": null,
       "note": null,
-      "elapsed_ms": 1248,
+      "elapsed_ms": 1741,
       "error_kind": null,
       "error_message": null,
       "must_succeed": false,
@@ -303,7 +485,7 @@
       "target": null,
       "value": null,
       "note": null,
-      "elapsed_ms": 6003,
+      "elapsed_ms": 14004,
       "error_kind": null,
       "error_message": null,
       "must_succeed": false,
@@ -317,7 +499,7 @@
       "scene_index": 1,
       "title": "The campaign at a glance",
       "start_seconds": 0.0,
-      "duration_seconds": 6.364,
+      "duration_seconds": 6.391,
       "urls_visited": [
         "https://labs.connect.dimagi.com/campaign/?campaign=MR-NAT-2026"
       ]
@@ -325,8 +507,8 @@
     {
       "scene_index": 2,
       "title": "The tool stops an ineligible payment",
-      "start_seconds": 6.364,
-      "duration_seconds": 25.77,
+      "start_seconds": 6.391,
+      "duration_seconds": 17.702,
       "urls_visited": [
         "https://labs.connect.dimagi.com/campaign/?campaign=MR-NAT-2026"
       ]
@@ -334,8 +516,8 @@
     {
       "scene_index": 3,
       "title": "Verification, with the fraud signal attached",
-      "start_seconds": 32.134,
-      "duration_seconds": 6.493,
+      "start_seconds": 24.093,
+      "duration_seconds": 7.754,
       "urls_visited": [
         "https://labs.connect.dimagi.com/campaign/?campaign=MR-NAT-2026"
       ]
@@ -343,8 +525,8 @@
     {
       "scene_index": 4,
       "title": "Planned versus actual, per area",
-      "start_seconds": 38.627,
-      "duration_seconds": 6.169,
+      "start_seconds": 31.846,
+      "duration_seconds": 8.848,
       "urls_visited": [
         "https://labs.connect.dimagi.com/campaign/?campaign=MR-NAT-2026"
       ]
@@ -352,8 +534,8 @@
     {
       "scene_index": 5,
       "title": "A worker is a real CommCare case",
-      "start_seconds": 44.796,
-      "duration_seconds": 6.147,
+      "start_seconds": 40.694,
+      "duration_seconds": 9.945,
       "urls_visited": [
         "https://labs.connect.dimagi.com/campaign/?campaign=MR-NAT-2026"
       ]
@@ -361,8 +543,8 @@
     {
       "scene_index": 6,
       "title": "The whole country, and it stays fast",
-      "start_seconds": 50.944,
-      "duration_seconds": 4.869,
+      "start_seconds": 50.639,
+      "duration_seconds": 8.832,
       "urls_visited": [
         "https://labs.connect.dimagi.com/campaign/?campaign=MR-NAT-2026"
       ]
@@ -370,8 +552,8 @@
     {
       "scene_index": 7,
       "title": "Every decision, on the record",
-      "start_seconds": 55.813,
-      "duration_seconds": 6.496,
+      "start_seconds": 59.471,
+      "duration_seconds": 10.726,
       "urls_visited": [
         "https://labs.connect.dimagi.com/campaign/?campaign=MR-NAT-2026"
       ]
@@ -379,8 +561,8 @@
     {
       "scene_index": 8,
       "title": "The donor's numbers, exported",
-      "start_seconds": 62.309,
-      "duration_seconds": 9.595,
+      "start_seconds": 70.197,
+      "duration_seconds": 7.644,
       "urls_visited": [
         "https://labs.connect.dimagi.com/campaign/?campaign=MR-NAT-2026"
       ]
@@ -388,8 +570,8 @@
     {
       "scene_index": 9,
       "title": "Coverage, read off the map",
-      "start_seconds": 71.905,
-      "duration_seconds": 7.824,
+      "start_seconds": 77.841,
+      "duration_seconds": 16.388,
       "urls_visited": [
         "https://labs.connect.dimagi.com/campaign/?campaign=MR-NAT-2026"
       ]

@@ -16,7 +16,7 @@ narrative: 'Amara runs Nigeria''s national measles–rubella campaign, and she o
   the donor, and ends by reading coverage straight off a map of Nigeria shaded by
   reach.'
 narrative_locked: true
-narrative_locked_at: '2026-06-21T04:18:53.328149+00:00'
+narrative_locked_at: '2026-06-21T04:31:14.786166+00:00'
 personas:
   amara:
     color: '#3843D0'
@@ -203,8 +203,11 @@ scenes:
     target: User Management
   - kind: click
     target: User Management
-  - kind: scroll_to
-    target: Activity & audit log
+  - kind: wait_for
+    must_succeed: true
+    target: Activity log
+  - kind: click
+    target: Activity log
   - kind: hold
     seconds: 4
   concept_claim: Every privileged action (payment, KYC, user change) is written to
