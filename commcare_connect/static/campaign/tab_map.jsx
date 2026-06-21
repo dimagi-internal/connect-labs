@@ -31,6 +31,11 @@ function CoverageMapModal({ open, onClose }) {
         style: 'mapbox://styles/mapbox/light-v11',
         center: [8.7, 9.1],
         zoom: 5.1,
+        // Retain the WebGL drawing buffer so an automated screenshot (the DDD
+        // recorder / Playwright) reliably reads painted pixels instead of a
+        // post-composite cleared buffer — the map renders headless via SwiftShader,
+        // but the screenshot read-back races the default buffer clear.
+        preserveDrawingBuffer: true,
       });
       map.addControl(new mapboxgl.NavigationControl(), 'top-left');
       // The modal sizes its container via a CSS transition; Mapbox can measure a
