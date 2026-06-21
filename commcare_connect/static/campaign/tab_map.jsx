@@ -67,7 +67,10 @@ function CoverageMapModal({ open, onClose }) {
       .then((d) => {
         if (alive) setData(d);
       })
-      .catch(() => alive && setError('Could not load map data.'));
+      .catch((e) => {
+        console.error('COVERAGE-MAP-FETCH-FAIL', e && (e.message || e), e);
+        if (alive) setError('Could not load map data.');
+      });
     return () => {
       alive = false;
     };
