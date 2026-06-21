@@ -148,7 +148,9 @@ def _microplans(campaign, regions, workers_by_lga, role_rates, rng):
                 planned_wf=round(actual_wf * 1.15) or 1,
                 actual_wf=actual_wf,
                 roles=list(roles.values()),
-                budget=round(spent * 1.25) or 1,
+                # Vary budget utilization per area (≈72–88% spent) instead of a flat
+                # 1.25× that renders an identical 80% "Budget Used" on every row.
+                budget=round(spent * (1.14 + rng.random() * 0.25)) or 1,
                 spent=spent,
                 planned_to_date=round(spent * 1.1),
                 target=target,
