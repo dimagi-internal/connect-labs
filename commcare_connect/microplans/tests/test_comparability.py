@@ -384,3 +384,148 @@ def test_density_match_returns_quartiles_and_sparkline():
     assert len(out["spark"]["ref"]) == len(out["spark"]["cand"])  # same shared bins
     assert abs(sum(out["spark"]["ref"]) - 1.0) < 0.02  # normalised (rounded to 3dp per bin)
     assert out["spark"]["lo"] <= out["spark"]["hi"]
+
+
+# --- matched-DRAW estimate (band-mix rebalancing) --------------------------
+# These pin the corrected metric: it must simulate the matched SELECTION (both arms
+# reweighted to the intervention's band proportions), not just the all-points
+# common-band SMD. The band-MIX imbalance is what matching removes.
+
+
+def _all_points_common_band_smd(ref, cand, edges=None):
+    """The OLD metric: SMD over every point that lands in a shared band, keeping each
+    arm's own band mix. Kept here as the baseline the corrected metric must beat."""
+    import numpy as np
+
+    from commcare_connect.microplans.core.comparability import _smd, density_bin_edges
+
+    ref = np.asarray([x for x in ref if x and x > 0], dtype=float)
+    cand = np.asarray([x for x in cand if x and x > 0], dtype=float)
+    e = np.asarray(edges if edges is not None else density_bin_edges(list(ref)), dtype=float)
+    nb = len(e) - 1
+
+    def _bands(arr):
+        idx = np.clip(np.digitize(arr, e[1:-1]), 0, nb - 1).astype(int)
+        idx[(arr < e[0]) | (arr > e[-1])] = -1
+        return idx
+
+    rb, cb = _bands(ref), _bands(cand)
+    common = sorted((set(rb.tolist()) & set(cb.tolist())) - {-1})
+    rsub, csub = ref[np.isin(rb, common)], cand[np.isin(cb, common)]
+    return _smd(
+        (float(rsub.mean()), float(rsub.std(ddof=1))),
+        (float(csub.mean()), float(csub.std(ddof=1))),
+    )
+
+
+def test_matched_draw_estimate_lower_than_all_points_when_band_mix_differs():
+    """(a) Two arms share the SAME density support but differ in band-MIX (ref mostly
+    low-density, cand mostly high-density). The matched selector reweights BOTH arms to
+    the intervention's band mix, removing that mix imbalance — so the corrected
+    matched-draw estimate must be MATERIALLY lower than the old all-points common-band
+    SMD (which still carries the mix imbalance)."""
+    import numpy as np
+
+    from commcare_connect.microplans.core.comparability import density_bin_edges, matched_density_smd
+
+    rng = np.random.default_rng(3)
+    # Same two density modes for both arms (so the support — and bands — are shared),
+    # but opposite mixes: ref is 80% low / 20% high, cand is 20% low / 80% high.
+    ref = list(rng.normal(2000, 150, 80)) + list(rng.normal(6000, 150, 20))
+    cand = list(rng.normal(2000, 150, 20)) + list(rng.normal(6000, 150, 80))
+    edges = density_bin_edges(ref)
+
+    out = matched_density_smd(ref, cand, edges=edges)
+    old = _all_points_common_band_smd(ref, cand, edges=edges)
+
+    assert out is not None and not out["incomparable"]
+    # The mix imbalance dominates `old`; the matched draw removes it.
+    assert out["matched_smd"] < old - 0.5
+    # And the within-band residual is small enough to read as a usable control.
+    assert out["matched_smd"] < 0.25
+
+
+def test_matched_draw_estimate_equals_all_points_when_band_mix_already_matches():
+    """(b) When the two arms already share the intervention's band mix, there is nothing
+    for matching to rebalance — the corrected estimate must equal the all-points
+    common-band SMD."""
+    import numpy as np
+
+    from commcare_connect.microplans.core.comparability import density_bin_edges, matched_density_smd
+
+    rng = np.random.default_rng(11)
+    # Same mix (same per-mode counts) for both arms, shifted slightly so there IS a
+    # within-band difference to measure (otherwise both numbers are ~0 trivially).
+    ref = list(rng.normal(2000, 120, 50)) + list(rng.normal(6000, 120, 50))
+    cand = list(rng.normal(2120, 120, 50)) + list(rng.normal(6120, 120, 50))
+    edges = density_bin_edges(ref)
+
+    out = matched_density_smd(ref, cand, edges=edges)
+    old = _all_points_common_band_smd(ref, cand, edges=edges)
+    assert out is not None and not out["incomparable"]
+    # Equal band mix → reweighting is a no-op → the two estimates agree closely.
+    assert abs(out["matched_smd"] - round(old, 3)) < 0.1
+
+
+def test_matched_draw_estimate_incomparable_on_disjoint_support():
+    """(c) Disjoint density support → no shared band → incomparable (the matched draw
+    can't be simulated at all)."""
+    from commcare_connect.microplans.core.comparability import matched_density_smd
+
+    out = matched_density_smd([100, 120, 140, 160, 180], [900, 950, 1000, 1050, 1100])
+    assert out is not None and out["incomparable"] is True
+    assert out["matched_smd"] is None and out["common_fraction"] == 0.0
+
+
+def test_matched_draw_estimate_tracks_brute_force_resample_oracle():
+    """(d) Oracle check: brute-force the proportional matched draw with numpy — for each
+    common band, resample BOTH arms to the intervention's per-band proportion, pool, and
+    take the SMD of the two resampled arms. The closed-form estimate must track that
+    resample SMD in the same direction and magnitude."""
+    import numpy as np
+
+    from commcare_connect.microplans.core.comparability import density_bin_edges, matched_density_smd
+
+    rng = np.random.default_rng(7)
+    ref = list(rng.normal(2000, 200, 70)) + list(rng.normal(6000, 200, 30))
+    cand = list(rng.normal(2050, 220, 25)) + list(rng.normal(6080, 230, 75))
+    edges = np.asarray(density_bin_edges(ref), dtype=float)
+    nb = len(edges) - 1
+
+    def _bands(arr):
+        arr = np.asarray(arr, dtype=float)
+        idx = np.clip(np.digitize(arr, edges[1:-1]), 0, nb - 1).astype(int)
+        idx[(arr < edges[0]) | (arr > edges[-1])] = -1
+        return arr, idx
+
+    ra, rb = _bands(ref)
+    ca, cb = _bands(cand)
+    common = sorted((set(rb.tolist()) & set(cb.tolist())) - {-1})
+    # Intervention band weights (the proportion the selector imposes on BOTH arms).
+    ref_common_n = int(np.isin(rb, common).sum())
+    weights = {b: np.count_nonzero(rb == b) / ref_common_n for b in common}
+
+    # Brute-force matched draw: build a big resample of each arm honouring `weights`.
+    N = 40000
+    oracle = np.random.default_rng(99)
+
+    def _resample(vals, bands):
+        out = []
+        for b in common:
+            pool = vals[bands == b]
+            k = int(round(weights[b] * N))
+            if k > 0 and len(pool):
+                out.append(oracle.choice(pool, size=k, replace=True))
+        return np.concatenate(out)
+
+    rs, cs = _resample(ra, rb), _resample(ca, cb)
+    from commcare_connect.microplans.core.comparability import _smd
+
+    oracle_smd = _smd(
+        (float(rs.mean()), float(rs.std(ddof=1))),
+        (float(cs.mean()), float(cs.std(ddof=1))),
+    )
+    out = matched_density_smd(ref, cand, edges=edges)
+    assert out is not None and not out["incomparable"]
+    # Same ballpark as the brute-force resample (both estimate the matched-draw SMD).
+    assert abs(out["matched_smd"] - oracle_smd) < 0.1
