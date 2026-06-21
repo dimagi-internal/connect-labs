@@ -40,25 +40,20 @@ function CoverageMapModal({ open, onClose }) {
         preserveDrawingBuffer: true,
       });
       map.addControl(new mapboxgl.NavigationControl(), 'top-left');
-      // The modal sizes its container via a CSS transition; Mapbox can measure a
-      // 0-height container and paint blank (notably in a headless recorder). Force
-      // a re-measure on load and as the modal settles so the map always paints.
-      const bump = () => {
+      // One resize after load handles the modal's CSS-transition sizing. Do NOT
+      // resize repeatedly: each resize restarts the render, and on a slow CPU
+      // (SwiftShader) renderer that prevents the map from ever reaching 'idle'.
+      map.on('load', () => {
         try {
           map.resize();
         } catch (e) {
           /* map torn down */
         }
-      };
-      map.on('load', bump);
-      // 'idle' fires when the map has finished rendering all sources/layers — the
-      // reliable "fully painted" signal. Emit a sentinel the recorder can wait on
-      // (instead of guessing a hold duration on a CPU-rendered SwiftShader map).
-      map.on('idle', () => {
-        bump();
-        setPainted(true);
       });
-      [300, 800, 1500, 3000, 5000].forEach((d) => setTimeout(bump, d));
+      // 'idle' = the map finished rendering every source/layer (the reliable
+      // "fully painted" signal). Emit a sentinel the recorder waits on instead of
+      // guessing a hold duration. once() so a later idle can't reset anything.
+      map.once('idle', () => setPainted(true));
       map.on('load', () => {
         const code = new URLSearchParams(window.location.search).get(
           'campaign',
