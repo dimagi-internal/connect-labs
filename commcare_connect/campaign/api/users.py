@@ -3,13 +3,16 @@ import json
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 
+from commcare_connect.campaign.api.bootstrap import _select_campaign
 from commcare_connect.campaign.auth.decorators import current_campaign_user, require_perm
-from commcare_connect.campaign.models import Campaign, CampaignUser
+from commcare_connect.campaign.models import CampaignUser
 from commcare_connect.campaign.services import audit, roles, serializers
 
 
-def _campaign():
-    return Campaign.objects.order_by("id").first()
+def _campaign(request):
+    # CampaignUser is global (not campaign-scoped), so this only decides which
+    # campaign's audit log the entry attaches to — keep it the selected one.
+    return _select_campaign(request)
 
 
 def _body(request):
@@ -48,7 +51,7 @@ def user_invite(request):
             cu.name = name
         cu.save(update_fields=["role", "scope", "status", "name"])
     verb = "Invited" if created else "Re-invited"
-    audit.record(request, f"{verb} {email} ({roles.to_label(key)})", "User Management", _campaign())
+    audit.record(request, f"{verb} {email} ({roles.to_label(key)})", "User Management", _campaign(request))
     return JsonResponse({"user": _ser(cu, request)})
 
 
@@ -63,7 +66,7 @@ def user_set_role(request, username):
     cu.role = key
     cu.save(update_fields=["role"])
     who = cu.name or cu.commcare_username
-    audit.record(request, f"Changed {who}'s role to {roles.to_label(key)}", "User Management", _campaign())
+    audit.record(request, f"Changed {who}'s role to {roles.to_label(key)}", "User Management", _campaign(request))
     return JsonResponse({"user": _ser(cu, request)})
 
 
@@ -79,5 +82,5 @@ def user_set_status(request, username):
     cu.save(update_fields=["status"])
     who = cu.name or cu.commcare_username
     verb = {"active": "Activated", "inactive": "Deactivated", "deactivated": "Deactivated"}[status]
-    audit.record(request, f"{verb} user {who}", "User Management", _campaign())
+    audit.record(request, f"{verb} user {who}", "User Management", _campaign(request))
     return JsonResponse({"user": _ser(cu, request)})

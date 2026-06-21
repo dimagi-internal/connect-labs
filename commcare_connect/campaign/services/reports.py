@@ -5,6 +5,7 @@ CSV. Worker-based reports stream row-by-row over the campaign's worker store
 (WorkerCase for a CommCare-domain campaign, else Worker) so a 50k roster exports
 without buffering in memory.
 """
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -35,8 +36,11 @@ DEFAULT_WORKER_COLUMNS = [
     "KYC status",
     "Payment status",
 ]
-# Group-by label -> the serialized worker key to sort/group rows by.
-GROUP_KEY = {"Region": "region", "Role": "role", "Activity": "region", "Donor": "region"}
+# Group-by label -> the serialized worker key to sort/group rows by. Workers carry
+# no activity/donor attribution, so the UI's "Activity"/"Donor" group-by options
+# have no real worker field to bind to — they fall through to an ungrouped export
+# rather than mislabeling a region column as "Activity"/"Donor".
+GROUP_KEY = {"Region": "region", "Role": "role"}
 
 WORKER_TYPES = {"worker_payments", "kyc_status", "attendance"}
 

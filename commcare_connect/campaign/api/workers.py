@@ -2,8 +2,8 @@ import json
 
 from django.http import JsonResponse
 
+from commcare_connect.campaign.api.bootstrap import _select_campaign
 from commcare_connect.campaign.auth.decorators import current_campaign_user, require_perm
-from commcare_connect.campaign.models import Campaign
 from commcare_connect.campaign.services import audit, serializers, worker_actions, worker_cases
 
 INVESTIGATION_STATUSES = {"Open", "Under Review", "Resolved", "False Positive"}
@@ -16,8 +16,11 @@ def _body(request) -> dict:
         return {}
 
 
-def _campaign():
-    return Campaign.objects.order_by("id").first()
+def _campaign(request):
+    # Resolve the same campaign the bootstrap/list views selected (national
+    # CommCare-domain campaign when one exists), so mutations land on the campaign
+    # the operator is actually looking at — not whatever sorts first by id.
+    return _select_campaign(request)
 
 
 def _ser(worker, campaign) -> dict:
@@ -31,8 +34,6 @@ def workers_list(request):
     """Filtered + paginated worker list — the tables fetch from here instead of the
     bootstrap shipping every worker. Params: page, page_size, q, kyc, pay, role,
     region, fraud (flagged|clean). Reads the same campaign the bootstrap selected."""
-    from commcare_connect.campaign.api.bootstrap import _select_campaign
-
     campaign = _select_campaign(request)
     if campaign is None:
         return JsonResponse({"workers": [], "total": 0, "page": 1, "page_size": 50})
@@ -63,7 +64,7 @@ def pay_set_status(request):
     ids = data.get("worker_ids") or []
     if status not in ("paid", "approved", "pending", "rejected", "hold"):
         return JsonResponse({"error": "bad status"}, status=400)
-    campaign = _campaign()
+    campaign = _campaign(request)
     workers = worker_cases.resolve_workers(campaign, ids)
     updated, blocked = worker_actions.set_pay(workers, status)
     if updated:
@@ -75,7 +76,7 @@ def pay_set_status(request):
 @require_perm("payments", "approve")
 def pay_queue(request, worker_id):
     data = _body(request)
-    campaign = _campaign()
+    campaign = _campaign(request)
     w = worker_cases.resolve_worker(campaign, worker_id)
     if w is None:
         return JsonResponse({"error": "worker not found"}, status=404)
@@ -93,7 +94,7 @@ def kyc_status(request, worker_id):
     status = data.get("status")
     if status not in ("approved", "pending", "review", "rejected"):
         return JsonResponse({"error": "bad status"}, status=400)
-    campaign = _campaign()
+    campaign = _campaign(request)
     w = worker_cases.resolve_worker(campaign, worker_id)
     if w is None:
         return JsonResponse({"error": "worker not found"}, status=404)
@@ -110,7 +111,7 @@ def kyc_resolve_dupe(request, worker_id):
     data = _body(request)
     if "keep" not in data:
         return JsonResponse({"error": "missing 'keep'"}, status=400)
-    campaign = _campaign()
+    campaign = _campaign(request)
     w = worker_cases.resolve_worker(campaign, worker_id)
     if w is None:
         return JsonResponse({"error": "worker not found"}, status=404)
@@ -124,7 +125,7 @@ def kyc_investigation(request, worker_id):
     status = data.get("status")
     if status and status not in INVESTIGATION_STATUSES:
         return JsonResponse({"error": "bad investigation status"}, status=400)
-    campaign = _campaign()
+    campaign = _campaign(request)
     w = worker_cases.resolve_worker(campaign, worker_id)
     if w is None:
         return JsonResponse({"error": "worker not found"}, status=404)
