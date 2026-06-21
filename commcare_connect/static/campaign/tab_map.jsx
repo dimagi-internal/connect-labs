@@ -50,10 +50,6 @@ function CoverageMapModal({ open, onClose }) {
           /* map torn down */
         }
       });
-      // 'idle' = the map finished rendering every source/layer (the reliable
-      // "fully painted" signal). Emit a sentinel the recorder waits on instead of
-      // guessing a hold duration. once() so a later idle can't reset anything.
-      map.once('idle', () => setPainted(true));
       map.on('load', () => {
         const code = new URLSearchParams(window.location.search).get(
           'campaign',
@@ -128,6 +124,12 @@ function CoverageMapModal({ open, onClose }) {
             map.on('mouseleave', 'regions-fill', () => {
               map.getCanvas().style.cursor = '';
             });
+            // Fire the "painted" sentinel only on the idle that follows the DATA
+            // layers (choropleth + worker points) being added — the first idle (base
+            // style) fires too early and would capture an empty base map. This also
+            // means the screenshot is taken once rendering is truly done (the GPU is
+            // free), avoiding the captureScreenshot stall.
+            map.once('idle', () => setPainted(true));
             setInfo({
               regions: d.boundaries.features.length,
               total: d.total_workers,
