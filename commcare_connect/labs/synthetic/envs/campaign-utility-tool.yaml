@@ -1,0 +1,28 @@
+# Campaign Utility Tool — composite environment manifest.
+#
+# The single declarative source of truth for the Campaign Utility Tool DDD demo
+# environment that `ensure_synthetic_data` realizes idempotently on labs via the
+# `synthetic_env_ensure` MCP tool — the same canonical path the program-admin-report
+# env uses, so the campaign DDD gets into the right state in-app (no AWS/ECS, no HTTP),
+# reproducibly.
+#
+# It builds the national synthetic campaign (worker cases on real Nigeria geography,
+# served via the synthetic CommCare project space through the Case API), idempotent by
+# `code`. View it at /campaign/?campaign=MR-NAT-2026 after ensuring.
+#
+# `worker_count` is kept browsable by default (a few thousand). Bump it (e.g. 50000)
+# to exercise the paginated-bootstrap national scale; the map + overview stay accurate
+# either way.
+
+env: campaign-utility-tool
+
+# A campaign env has no weekly window (it is not a workflow-run demo); the minimal
+# timeline satisfies the manifest schema and is ignored by the `campaign` ensurer.
+timeline:
+  completed_weeks: 1
+
+resources:
+  - kind: campaign
+    code: MR-NAT-2026
+    name: "Measles–Rubella Vaccination Campaign (National)"
+    worker_count: 5000

@@ -1,83 +1,31 @@
-# DDD Context — CommCare Connect Labs
+# DDD Context — Campaign Utility Tool
 
 ## Project
+Standalone Django app at `/campaign/` on labs.connect.dimagi.com (CommCare Connect Labs). A "single pane of glass" for running a national measles–rubella vaccination campaign — replacing a fragmented stack (CommCare HQ + an external KYC provider + payment platforms + GIS/spreadsheets) with one tool.
 
-Labs / rapid-prototyping environment for **CommCare Connect**, operating entirely
-via API against production Connect. Deployed at `https://labs.connect.dimagi.com`.
-Auth for walkthroughs is established out-of-band via `/ace:labs-login` (headless
-OAuth-via-CCHQ; cookies imported into the gstack browse profile).
+## base_url
+https://labs.connect.dimagi.com/campaign/  (view the national campaign at /campaign/?campaign=MR-NAT-2026)
+Auth: CommCare HQ OAuth (separate from the labs session). Recording needs a CommCare-authed browser session (Playwright + ACE_HQ creds, or /ace:labs-login establishes the CCHQ session the campaign OAuth reuses).
 
-## Active feature — microplans (full create → push-to-opp cycle)
+## What the tool does (the workflows)
+- **Overview** — real-time KPIs (funding, enrolment/attendance/verification/payments progress, workforce distribution, KYC + payment donuts, fraud/verification alerts), filterable.
+- **Workers › Payments** — review/validate/approve worker payments with daily-level approval; fraud guard blocks payments for duplicate/failed-KYC/flagged workers.
+- **Workers › KYC** — verification status, documents, duplicate/shared-identifier fraud detection, investigations.
+- **Activity › Details + Microplanning & Budget** — activities, per-LGA microplans (workforce planned vs actual, budget vs spent, vaccine doses, coverage targets).
+- **Reporting & Monitoring** — enrolment/attendance/payment trends, household coverage, CSV export, custom-report builder, geographic coverage MAP (region choropleth + worker GPS).
+- **System Administration** — RBAC user management, connection settings, training hub.
 
-`microplans/` is the most actively-developed app. It lets a **program owner** plan
-field-worker microplans _before_ any Connect opportunity is provisioned:
+## Data fidelity (the differentiator)
+Workers are synthetic CommCare **cases** on **real Nigeria geography** (37 states / 774 LGAs / ~9,300 wards from labs AdminBoundary), served via a synthetic CommCare project space through the **Case API** — the exact path real data takes. The tool is the primary store only for things with no CommCare/Connect parallel (payment-approval workflow, activities, microplans, reporting, audit). National scale (up to 50k workers) is usable via a paginated bootstrap.
 
-- **Setup** — pick an admin boundary, choose sampling (building-as-WorkArea) or
-  coverage (cluster/grid-as-WorkArea), generate a grid of work areas.
-- **Two-phase algorithm** — Phase 1 grouping (bbox / BFS-adjacency) + Phase 2
-  assignment (manual / round-robin / Neal-Lesh minimax spread). `/regenerate` is a
-  destructive rebuild; regroup / reassign tune in place (now Celery-offloaded).
-- **Review & tune** — per-FLW metrics table, editable work-area list, exclude /
-  regroup / reassign controls; partner validates before upload.
-- **Portfolio & lifecycle** — program owns a portfolio of candidate plans, each
-  moving Draft → In review → Approved → Deployed via `program_plan_transition`.
-- **Compare** — head-to-head composite fit score (spread / balance / coverage).
-- **Share** — curated plan-group proposal page for an LLO partner.
+## Requirements (evidence)
+- Spec: "Spec: Campaign Management Utility" (Google Doc, drive folder 1cNpjEn_Smy6mHx5rWzflp20hbx65dlbG)
+- Data Model PDF: "Campaign Utility Tool_Data Model.pdf" (12 datasets / 6 domains / 2 owners: CommCare HQ vs the Utility)
+- Design doc: docs/superpowers/specs/2026-06-18-campaign-utility-tool-design.md
+- Shipped PRs this session: #676,#677,#687,#690,#692,#693,#694,#695,#696
 
-Program workspace lives at `/microplans/program/<program_id>/`. Demo program = 133.
+## Narrative direction
+The most compelling overall narrative: a campaign administrator running a national vaccination campaign sees and acts on the whole thing in one place — catch a fraudulent payment before it goes out, validate KYC, watch coverage fill in on the map, export a donor report — instead of stitching together CommCare exports, KYC emails, payment spreadsheets, and GIS tools. Want SETS of videos covering the compelling workflows.
 
-### Planning vs execution boundary (load-bearing for the narrative)
-
-Labs owns **creation + planning** (setup, tuning, lifecycle, LLO edit UI, audit).
-**Connect owns execution.** The actual **transfer of an approved plan into a live
-Connect opportunity is DEFERRED** — there is a `Deployed` lifecycle _status_ but no
-mechanism that pushes work areas into an opportunity's WorkArea set. The Connect side
-models work areas with pghistory; labs mirrors that shape, phase-tagged.
-
-→ Any narrative whose arc ends in "push to an opp" must treat the final push as a
-**CAPABILITY gap** (aspirational end-state), not a shipped feature. Honesty about
-this is the whole point of the why-brief / claim_reality_coherence checks.
-
-## This run
-
-Feature slug: `create-survey-solicitation`. Goal: the **missing middle** between two
-shipped demos. The `study-design` demo (`microplans-study-groups`) produces the **R6
-"Attakar × Gura" two-arm study plan** on program/opp **10008**; the `verified-monitoring`
-demo's **Round 6** consumes that same plan to ground household-survey records (the 68.1%
-vs 8.9% hero round). Today the independent survey firm that runs those household surveys
-exists only as narrative framing — there is no recruitment step. This narrative is that
-step: from the R6 plan, **Maya** (the program owner who designed the study) clicks
-**"Create solicitation"** (the now-shipped _create-a-solicitation-from-a-micro-plan_
-feature, PR #616, deployed) to recruit a household-survey firm; the plan rides over as a
-selectable **coverage area**; the survey firm opens the public solicitation, **selects the
-coverage area and applies**; and Maya sees the firm's selected coverage on the response
-(one reviewer beat). That firm is exactly who would supply the T1–T6/C1–C5 enumerators
-feeding R6.
-
-Scope (tight): create-from-plan → publish → firm applies (selecting the plan) → reviewer
-sees selected coverage. Personas: **Maya** (program owner, continuity with study-design)
-creates; an independent **survey firm** (respondent persona, e.g. Amina Okafor / Health
-Bridge Nigeria) applies. Single auth session (ace CLI token); personas are narrative
-framing across scenes, as in `docs/walkthroughs/solicitations.yaml`.
-
-**Honesty / claim_reality_coherence (load-bearing):** create-from-plan, the coverage-area
-list, respondent selection, and _capture for review_ are SHIPPED (v1 = capture only). The
-downstream **award → provision a Connect opportunity → enumerators actually run R6** is the
-SAME deferred capability gap noted above — the narrative must frame that tail as
-aspirational end-state, not a shipped mechanism. The award flow is intentionally untouched
-by PR #616.
-
-Key live identifiers: program/opp **10008**; R6 plan/group **"R6 — Attakar × Gura"**
-(input_areas: Attakar=intervention, Gura=comparison); SD opp 10010; VM workflow def 3699.
-Seeders: `scripts/walkthroughs/study-design/ensure_study.py` (study/plan) +
-`scripts/walkthroughs/verified-monitoring/demo_config.json` (single source of truth). The
-solicitation + a response are seeded via the labs MCP / `SolicitationsDataAccess` against
-opp 10008 (labs-only → local records backend, no prod permission checks).
-
-## Key references (memory)
-
-- Microplans generalization shipped (PR #299); program portfolio layer #305–#309;
-  unified two-phase architecture #314–#336; service-delivery GPS overlay #324.
-- Clustering uses UTM (intentional divergence from connect-gis degrees).
-- Existing walkthrough specs: `docs/walkthroughs/microplans-portfolio.yaml`,
-  `microplans-service-delivery.yaml` (old walkthrough format, useful as scene source).
+## Current phase
+First DDD run. Tool is built + deployed. National synthetic data exists as a build path (campaign_build_national MCP tool) but may need standing up in labs before rendering for the map/scale scenes.
