@@ -15,7 +15,7 @@ narrative: 'Amara runs Nigeria''s national measles-rubella campaign, and she ope
   she just made, and ends on the reporting board - per-state coverage across all 37
   states - exporting the week''s numbers as a CSV for the donor.'
 narrative_locked: true
-narrative_locked_at: '2026-06-21T04:51:55.994106+00:00'
+narrative_locked_at: '2026-06-21T05:19:36.958122+00:00'
 personas:
   amara:
     color: '#3843D0'
@@ -72,6 +72,7 @@ scenes:
     id: payment-fraud-guard
     verify: 'Playwright: in Workers -> Payments, a worker with rejected KYC shows
       a non-approvable/Rejected payment status.'
+  full_page: false
   narrative: Amara moves to payments to release this week's pay, and the tool stops
     her on a worker it won't let her approve — his identity check came back rejected
     — so the bad payment never leaves.
@@ -80,6 +81,32 @@ scenes:
   show: Amara opens Workers → Worker Payments where flagged/rejected-KYC workers cannot
     be approved
   title: The tool stops an ineligible payment
+- actions:
+  - kind: scroll_to
+    target: Next
+  - kind: click
+    target: Next
+  - kind: hold
+    seconds: 3
+  concept_claim: The tool holds a national-scale campaign (thousands of workers across
+    all 37 states) and stays responsive via a paginated worker list.
+  design_intent: Show the worker roster's scale — the worker count, the 37-state filter,
+    and the pager — proving the single pane of glass holds the real campaign.
+  features:
+  - description: The worker roster is paginated server-side so a national-scale campaign
+      stays usable
+    id: paginated-national-roster
+    verify: 'Playwright: in Workers -> Worker Payments, assert a national worker count,
+      a 37-state filter, and pagination controls are shown.'
+  full_page: false
+  narrative: And it isn't a handful of workers - the same roster holds the whole nation,
+    five thousand across every one of Nigeria's 37 states, and Amara pages straight
+    through it without a stutter.
+  persona: amara
+  provenance: S8
+  show: Amara pages through the national worker roster - 5,000 workers across 37 states
+    - on the Payments view
+  title: The whole country, and it stays fast
 - actions:
   - kind: click
     must_succeed: true
@@ -101,6 +128,7 @@ scenes:
     id: kyc-duplicate-detection
     verify: 'Playwright: in Workers -> Worker KYC, assert verification status, documents,
       and duplicate/shared-identifier flags are shown.'
+  full_page: false
   narrative: Amara opens the worker's KYC to see why, and there it is — a duplicate
     national-ID flag tying him to another record — so she holds him instead of paying.
   persona: amara
@@ -129,6 +157,7 @@ scenes:
     id: microplan-plan-vs-actual
     verify: 'Playwright: in Activity -> Microplanning & Budget, assert a per-area
       row shows planned vs actual workforce and budget vs spent.'
+  full_page: false
   narrative: Before she releases more funds Amara drops into the microplans and reads
     the planned workforce and budget against what's actually been spent and deployed.
   persona: amara
@@ -168,34 +197,6 @@ scenes:
 - actions:
   - kind: click
     must_succeed: true
-    target: Workers
-  - kind: wait_for
-    must_succeed: true
-    target: Worker Payments
-  - kind: click
-    target: Worker Payments
-  - kind: hold
-    seconds: 4
-  concept_claim: The tool holds a national-scale campaign (thousands of workers across
-    all 37 states) and stays responsive via a paginated worker list.
-  design_intent: Show the worker roster's scale — the worker count, the 37-state filter,
-    and the pager — proving the single pane of glass holds the real campaign.
-  features:
-  - description: The worker roster is paginated server-side so a national-scale campaign
-      stays usable
-    id: paginated-national-roster
-    verify: 'Playwright: in Workers -> Worker Payments, assert a national worker count,
-      a 37-state filter, and pagination controls are shown.'
-  narrative: Amara sees the campaign holds the whole nation — thousands of workers
-    across every one of Nigeria's 37 states — and it still moves the moment she filters
-    or pages.
-  persona: amara
-  provenance: S8
-  show: Amara reads the national worker roster (thousands of workers, 37 states, paginated)
-  title: The whole country, and it stays fast
-- actions:
-  - kind: click
-    must_succeed: true
     target: System Administration
   - kind: wait_for
     must_succeed: true
@@ -207,8 +208,10 @@ scenes:
     target: Activity log
   - kind: click
     target: Activity log
+  - kind: scroll_to
+    target: Activity & audit log
   - kind: hold
-    seconds: 4
+    seconds: 3
   concept_claim: Every privileged action (payment, KYC, user change) is written to
     an audit log under role-controlled access.
   design_intent: Open System Administration → User Management and scroll to the Activity
@@ -219,6 +222,7 @@ scenes:
     id: audit-log-rbac
     verify: 'Playwright: in System Administration -> User Management, assert the audit
       log lists actions with actor, action, module and timestamp.'
+  full_page: false
   narrative: Amara opens System Administration and reads the audit log — every payment
     hold and verification decision she just made, written down against the actor's
     name.
@@ -236,6 +240,8 @@ scenes:
     target: Export data
   - kind: click
     target: Export data
+  - kind: scroll_to
+    target: Geographic coverage
   - kind: hold
     seconds: 3
   concept_claim: Reporting exports real CSV reports (and a custom-report builder)
@@ -247,6 +253,7 @@ scenes:
     id: reporting-csv-export
     verify: 'Playwright: in Reporting click ''Export data''; assert a CSV download
       is triggered.'
+  full_page: false
   narrative: Amara ends the morning on the reporting board - per-state coverage shaded
     by reach across all 37 states - and exports the week's numbers as a CSV she can
     hand straight to the donor.
