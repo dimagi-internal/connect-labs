@@ -33,6 +33,19 @@ function CoverageMapModal({ open, onClose }) {
         zoom: 5.1,
       });
       map.addControl(new mapboxgl.NavigationControl(), 'top-left');
+      // The modal sizes its container via a CSS transition; Mapbox can measure a
+      // 0-height container and paint blank (notably in a headless recorder). Force
+      // a re-measure on load and as the modal settles so the map always paints.
+      const bump = () => {
+        try {
+          map.resize();
+        } catch (e) {
+          /* map torn down */
+        }
+      };
+      map.on('load', bump);
+      map.on('idle', bump);
+      [300, 800, 1500, 3000, 5000].forEach((d) => setTimeout(bump, d));
       map.on('load', () => {
         const code = new URLSearchParams(window.location.search).get(
           'campaign',
@@ -115,7 +128,7 @@ function CoverageMapModal({ open, onClose }) {
           })
           .catch(() => setError('Could not load map data.'));
       });
-    }, 60);
+    }, 280);
     return () => {
       clearTimeout(timer);
       if (map) map.remove();
