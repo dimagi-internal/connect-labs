@@ -258,6 +258,77 @@ def test_profile_field_distributions_captures_bounds():
     assert d["lo"] <= d["hi"] <= 59.0
 
 
+def test_profile_covers_sparse_numeric_field_to_block_stub_leak():
+    """A real numeric field with too few samples for a Normal is still modeled as a
+    uniform over its observed range — so the engine never falls back to the
+    randint(0,10) stub and leaks ~5 into a clinical column (issue #713 #4)."""
+    from commcare_connect.labs.synthetic.generator.fixtures.profiler import _profile_field_distributions
+
+    visits = [{"form_json": {"form": {"muac": v}}} for v in (115.0, 122.0, 130.0)]
+    d = _profile_field_distributions(visits, ["form.muac"])["form.muac"]
+    assert d["distribution"] == "uniform"
+    assert d["low"] == 115.0 and d["high"] == 130.0
+
+
+def test_profile_models_near_constant_numeric_field_rather_than_dropping_it():
+    from commcare_connect.labs.synthetic.generator.fixtures.profiler import _profile_field_distributions
+
+    visits = [{"form_json": {"form": {"dose": 1.0}}} for _ in range(20)]
+    d = _profile_field_distributions(visits, ["form.dose"])["form.dose"]
+    assert d["distribution"] == "uniform"  # zero variance -> degenerate uniform, not dropped
+    assert d["low"] == d["high"] == 1.0
+
+
+def test_profile_models_every_numeric_schema_field_even_when_sparsely_present():
+    """A numeric schema field present in too few visits to be auto-discovered must
+    still be modeled (so it can't slip through to the engine's randint(0,10) stub)."""
+    from commcare_connect.labs.synthetic.generator.fixtures.manifest import Manifest
+    from commcare_connect.labs.synthetic.generator.fixtures.profiler import profile
+
+    visits = []
+    for d in range(28):
+        for i in range(5):
+            fj = {"form": {"a": 10.0 + i}}
+            if d == 0:  # 'muac' present in 5/140 visits ~ 3.5% -> below the discovery threshold
+                fj["form"]["muac"] = 118.0 + i
+            visits.append(
+                {
+                    "username": "asha",
+                    "visit_date": f"2026-05-{(d % 28) + 1:02d}",
+                    "status": "approved",
+                    "flagged": False,
+                    "entity_id": f"e{d}",
+                    "form_json": fj,
+                }
+            )
+    app_structure = {
+        "learn_app": None,
+        "deliver_app": {
+            "modules": [
+                {
+                    "forms": [
+                        {
+                            "questions": [
+                                {"value": "/data/a", "type": "Decimal", "options": []},
+                                {"value": "/data/muac", "type": "Decimal", "options": []},
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+    }
+    yaml_str = profile(
+        opportunity_id=10002,
+        user_visits=visits,
+        user_data=[],
+        opportunity_detail={"name": "X"},
+        app_structure=app_structure,
+    )
+    fd = Manifest.from_yaml(yaml_str).beneficiary_cohorts[0].field_distributions
+    assert "form.muac" in fd  # sparse numeric schema field modeled, not left to the stub
+
+
 def test_curate_flag_floor_gives_status_signal():
     """curate=True floors flag rates so all-approved opps get a status mix."""
     from commcare_connect.labs.synthetic.generator.fixtures.profiler import _profile_flw_personas
@@ -553,3 +624,70 @@ def test_profile_curate_end_to_end_validates_and_adds_signal():
     Manifest.from_yaml(ml)  # must validate
     data = _yaml.safe_load(ml)
     assert any(p["flag_rate"] > 0 for p in data["flw_personas"])  # status signal injected
+
+
+def test_profile_mirror_emits_transplant_pool_with_persona_owners():
+    """mirror=True makes the profiler emit a longitudinal transplant pool whose
+    owners are persona ids (not raw source usernames) so the engine can replay
+    the exact source structure (issue #713 #2)."""
+    from commcare_connect.labs.synthetic.generator.fixtures.manifest import Manifest
+    from commcare_connect.labs.synthetic.generator.fixtures.profiler import profile
+
+    # 'asha' runs the most visits (-> flw_001); each entity has a rising weight series.
+    visits = []
+    for e in range(6):
+        owner = "asha" if e < 4 else "ben"
+        for i, d in enumerate(["2026-01-01", "2026-01-08", "2026-01-15"]):
+            visits.append(
+                {
+                    "username": owner,
+                    "visit_date": d,
+                    "status": "approved",
+                    "flagged": False,
+                    "entity_id": f"ent_{e}",
+                    "form_json": {"form": {"weight": 1200.0 + 100 * i + e}},
+                }
+            )
+    app_structure = {
+        "learn_app": None,
+        "deliver_app": {
+            "modules": [{"forms": [{"questions": [{"value": "/data/weight", "type": "Decimal", "options": []}]}]}]
+        },
+    }
+
+    m = Manifest.from_yaml(
+        profile(
+            opportunity_id=10003,
+            user_visits=visits,
+            user_data=[],
+            opportunity_detail={"name": "KMC"},
+            app_structure=app_structure,
+            mirror=True,
+        )
+    )
+    lng = m.beneficiary_cohorts[0].longitudinal
+    assert lng is not None and lng.mode == "mirror"
+    assert len(lng.transplant_pool) == 6  # one series per source entity
+    persona_ids = {p.id for p in m.flw_personas}
+    owners = {s["owner"] for s in lng.transplant_pool}
+    assert owners <= persona_ids  # remapped to persona ids, not "asha"/"ben"
+
+
+def test_profile_without_mirror_emits_no_longitudinal_block():
+    from commcare_connect.labs.synthetic.generator.fixtures.manifest import Manifest
+    from commcare_connect.labs.synthetic.generator.fixtures.profiler import profile
+
+    visits = [
+        {
+            "username": "asha",
+            "visit_date": f"2026-01-{d:02d}",
+            "status": "approved",
+            "entity_id": f"ent_{d}",
+            "form_json": {"form": {"weight": 1200.0 + d}},
+        }
+        for d in range(1, 11)
+    ]
+    m = Manifest.from_yaml(
+        profile(opportunity_id=10004, user_visits=visits, user_data=[], opportunity_detail={"name": "X"})
+    )
+    assert m.beneficiary_cohorts[0].longitudinal is None  # default unchanged

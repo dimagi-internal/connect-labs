@@ -4,12 +4,16 @@ import pytest
 from pydantic import ValidationError
 
 from commcare_connect.labs.synthetic.generator.fixtures.manifest import (
+    BeneficiaryCohort,
     CategoricalDistribution,
     CorrelationSpec,
+    LongitudinalSpec,
     Manifest,
     ManifestValidationError,
+    MeanStddev,
     NormalDistribution,
     TemporalProfile,
+    TrajectoryParams,
 )
 
 VALID_MANIFEST_YAML = """
@@ -71,6 +75,73 @@ def test_manifest_parses_valid_yaml():
     assert m.flw_personas[0].archetype == "rockstar"
     assert m.beneficiary_cohorts[0].size == 100
     assert m.kpi_config[0].kpi == "accuracy"
+
+
+def _normal(mean: float, stddev: float) -> NormalDistribution:
+    return NormalDistribution(mean=mean, stddev=stddev)
+
+
+def test_longitudinal_synthetic_carries_per_field_trajectory_params():
+    spec = LongitudinalSpec(
+        mode="synthetic",
+        fields={
+            "form.weight": TrajectoryParams(
+                model="trajectory",
+                intercept=MeanStddev(mean=1200, stddev=300),
+                slope=MeanStddev(mean=25, stddev=5),
+                residual_std=15.0,
+                x_axis="day",
+            )
+        },
+    )
+    assert spec.mode == "synthetic"
+    assert spec.fields["form.weight"].slope.mean == 25
+    assert spec.fields["form.weight"].autocorr == 0.0  # default for a non-AR field
+
+
+def test_longitudinal_mirror_requires_a_non_empty_transplant_pool():
+    with pytest.raises(ValidationError):
+        LongitudinalSpec(mode="mirror", transplant_pool=[])
+
+
+def test_trajectory_autocorr_must_be_in_unit_interval():
+    with pytest.raises(ValidationError):
+        TrajectoryParams(
+            model="autoregressive",
+            intercept=MeanStddev(mean=0, stddev=1),
+            slope=MeanStddev(mean=0, stddev=0),
+            residual_std=1.0,
+            autocorr=1.5,
+        )
+
+
+def test_cohort_carries_longitudinal_mirror_pool_and_defaults_to_none():
+    plain = BeneficiaryCohort(
+        id="primary",
+        size=10,
+        field_distributions={"form.weight": _normal(1200, 300)},
+        progression="flat",
+    )
+    assert plain.longitudinal is None  # backward compatible — existing cohorts unaffected
+
+    mirror = BeneficiaryCohort(
+        id="primary",
+        size=10,
+        field_distributions={"form.weight": _normal(1200, 300)},
+        progression="improvement_curve",
+        longitudinal=LongitudinalSpec(
+            mode="mirror",
+            transplant_pool=[
+                {
+                    "owner": "flw_001",
+                    "start_date": "2026-01-01",
+                    "visits": [{"day": 0, "values": {"form.weight": 1200.0}}],
+                }
+            ],
+        ),
+    )
+    assert mirror.longitudinal.mode == "mirror"
+    assert mirror.longitudinal.transplant_pool[0]["owner"] == "flw_001"
 
 
 def test_manifest_rejects_unknown_archetype():

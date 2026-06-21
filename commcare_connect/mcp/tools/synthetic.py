@@ -772,6 +772,17 @@ def synthetic_set_my_visibility(user, *, enabled: bool) -> dict[str, Any]:
                     "auto-discovers numeric fields from a sample of visits."
                 ),
             },
+            "mirror": {
+                "type": "boolean",
+                "description": (
+                    "High-fidelity 'close mirror' mode. When true, the manifest carries a "
+                    "de-identified per-entity transplant pool so the clone reproduces the "
+                    "source's exact visits-per-case and cases-per-FLW ratios, timing, and "
+                    "per-entity value trajectories (e.g. an infant growth curve) — not just "
+                    "per-column means. Numerics + structure only; identifiers/text are never "
+                    "copied. Default false (fast marginal mode)."
+                ),
+            },
         },
         "required": ["opportunity_id"],
         "additionalProperties": False,
@@ -783,6 +794,7 @@ def synthetic_profile_from_prod(
     *,
     opportunity_id: int,
     form_json_paths: list[str] | None = None,
+    mirror: bool = False,
 ) -> dict[str, Any]:
     _require_opportunity_access(user, opportunity_id)
 
@@ -820,10 +832,12 @@ def synthetic_profile_from_prod(
         user_data=user_data if isinstance(user_data, list) else [],
         opportunity_detail=detail if isinstance(detail, dict) else {},
         form_json_paths=form_json_paths,
+        mirror=mirror,
     )
 
     return {
         "manifest_yaml": manifest_yaml,
+        "mode": "mirror" if mirror else "marginal",
         "source_visit_count": len(user_visits),
         "source_flw_count": len({v.get("username") for v in user_visits if v.get("username")}),
         "source_entity_count": len({v.get("entity_id") for v in user_visits if v.get("entity_id")}),
