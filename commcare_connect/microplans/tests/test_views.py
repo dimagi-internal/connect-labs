@@ -613,6 +613,26 @@ def test_program_workspace_renders(client, django_user_model, settings):
     assert "Microplan portfolio" in resp.content.decode()
 
 
+def test_program_workspace_does_not_mislabel_approved_plans_as_in_progress(client, django_user_model, settings):
+    """Bucketing-presentation guard: an approved plan is the FINISHED output of the
+    labs review loop, so the candidate-plan inventory must not assert everything inside
+    it is "in progress" (that read an Approved/Reviewed plan as unfinished). The
+    disclosure header is the lifecycle-neutral "Candidate plans", and the embedded
+    lifecycle PHASES split `approved` into its own phase rather than folding it into the
+    in-progress "Planning · being designed & reviewed" bucket."""
+    settings.MAPBOX_TOKEN = "pk.test"
+    _login(client, django_user_model)
+    resp = client.get(reverse("microplans:program_workspace", kwargs={"program_id": 25}))
+    html = resp.content.decode()
+    # The collapsible inventory header no longer claims its contents are all "in progress".
+    assert "Candidate plans in progress" not in html
+    assert ">Candidate plans<" in html
+    # The Planning (in-progress) phase only holds draft + in_review; approved is its own phase.
+    assert 'statuses: ["draft", "in_review"]' in html
+    assert 'key: "approved"' in html
+    assert 'statuses: ["approved"]' in html
+
+
 def test_program_plans_json(client, django_user_model, monkeypatch):
     _login(client, django_user_model)
     _seed_program_plans(monkeypatch)
