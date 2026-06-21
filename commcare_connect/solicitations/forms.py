@@ -5,6 +5,7 @@ These forms work with the LabsRecord API pattern — they produce dicts
 via to_data_dict() / get_responses_dict() for the data access layer.
 No Django ORM models are involved.
 """
+
 import json
 
 from django import forms
@@ -244,6 +245,22 @@ class SolicitationResponseForm(forms.Form):
         super().__init__(*args, **kwargs)
         self.questions = questions or []
         self.plans = plans or []
+
+        # Applicant identity. A firm answering a public call identifies the
+        # organization on whose behalf it is applying — the program owner
+        # reviews and awards a named firm, not the individual account that
+        # happened to submit the form. Pre-fillable; falls back to the
+        # logged-in account in the view when left blank.
+        self.fields["firm_name"] = forms.CharField(
+            label="Survey firm / organization",
+            required=False,
+            widget=forms.TextInput(attrs={"class": _INPUT_CLASSES, "placeholder": "e.g. Sahel Field Research"}),
+        )
+        self.fields["firm_email"] = forms.EmailField(
+            label="Contact email",
+            required=False,
+            widget=forms.EmailInput(attrs={"class": _INPUT_CLASSES, "placeholder": "contact@yourfirm.org"}),
+        )
 
         if self.plans:
             self.fields["select_plans"] = forms.MultipleChoiceField(

@@ -2,159 +2,388 @@ auth:
   type: session
 base_url: https://labs.connect.dimagi.com
 name: create-survey-solicitation
-narrative: Maya has just finished designing her Round 6 study — the two-arm Attakar-versus-Gura
-  household survey that her Vitamin-A programme will use to check whether its visits
-  are actually changing coverage. She has the plan; what she does not yet have is
-  the independent survey firm to run it. So from the plan she just built, Maya clicks
-  "Create solicitation" and lets the plan itself become the call for a firm. On the
-  create form the R6 plan is already waiting as the coverage area, so Maya only sets
-  the survey scope and publishes the open call. Across the country, Amina — who runs
-  an independent survey firm — opens the public solicitation, reads the coverage on
-  offer, ticks the Attakar-and-Gura area as the work her enumerators can staff, and
-  submits her firm's application. Back in her workspace, Maya opens the responses
-  and sees Amina's firm tied to the exact coverage area she designed — the loop from
-  a study plan to a real applicant closed. Awarding that firm and standing up the
-  live Connect opportunity her enumerators would actually run is the step Maya is
-  reaching for next; today she has recruited and can compare applicants against the
-  real coverage.
+narrative: Maya has just finished designing her Round 6 study — the two-arm Attakar-versus-Gura household
+  survey that her Vitamin-A programme will use to check whether its visits are actually changing coverage.
+  She has the plan; what she does not yet have is the independent survey firm to run it. So from the plan
+  she just built, Maya clicks "Create solicitation" and lets the plan itself become the call for a firm.
+  On the create form the R6 plan is already waiting as the coverage area, so Maya only sets the survey
+  scope, marks the call active, and publishes it — minting a brand-new solicitation live, on camera, no
+  fixed record reused. A survey firm then opens that exact public solicitation, reads the coverage on
+  offer, ticks the Attakar-and-Gura area as the work its enumerators can staff, and submits its application.
+  Back in her workspace, Maya opens the responses for the call she just published and sees the applying
+  firm tied to the exact coverage area she designed — the loop from a study plan to a real applicant closed,
+  minted fresh each render. Awarding that firm and standing up the live Connect opportunity her enumerators
+  would actually run is the step Maya is reaching for next; today she has recruited and can compare applicants
+  against the real coverage.
 narrative_locked: true
 narrative_locked_at: '2026-06-18T12:12:32.891224+00:00'
-narrative_synced_at: '2026-06-18T05:08:31.992071+00:00'
-narrative_synced_hash: 30b053beeae660fca654eaac64edcacfc94e51a8aa08f253d0d9aa4a95bdee54
-narrative_synced_version: 1
 personas:
-  amina:
+  firm:
     color: '#059669'
-    intro: Amina runs an independent household-survey firm and is looking for survey
-      work she can staff; she answers public solicitations with the coverage her enumerators
-      can commit to.
-    name: Amina Okafor
-    role: Director, independent survey firm (Health Bridge Nigeria)
+    intro: Sahel Field Research is an independent northern-Nigeria household-survey firm looking for survey
+      work it can staff; it answers public solicitations with the coverage its enumerators can commit to.
+      It names itself in the response form's "Your organization" block, so the owner reviews and awards a
+      named firm rather than the individual account that submitted the application.
+    name: Sahel Field Research
+    role: Independent survey firm
   maya:
     color: '#7C3AED'
-    intro: Maya designed the Round 6 two-arm Attakar-versus-Gura study for her Vitamin-A
-      programme and now needs to recruit the independent firm that will run the household
-      survey on it.
+    intro: Maya designed the Round 6 two-arm Attakar-versus-Gura study for her Vitamin-A programme and
+      now needs to recruit the independent firm that will run the household survey on it.
     name: Maya
     role: Program study planner
 review_mode: autonomous
 scenes:
-- concept_claim: A program owner launches a solicitation directly from a finished
-    micro-plan via a Create solicitation button that carries that plan as the source,
-    without leaving the planning workspace.
-  design_intent: 'Bet: recruiting a firm is a continuation of designing the study,
-    so the call starts from the plan the owner just built — not from a blank solicitation
-    form.'
+- concept_claim: A program owner can launch a call for a firm directly from a finished micro-plan, because
+    the study-group card carries a button that opens the solicitation form with that plan already attached
+    as the source.
+  design_intent: 'Bet: recruiting a firm is a continuation of designing the study, so the call starts
+    from the plan the owner just built — not from a blank solicitation form.'
   features:
-  - description: The program workspace (portfolio) renders a "Create solicitation"
-      link on every plan card and study-group card, to
-      /solicitations/create/?source_program_id=<pid>&source_group_id=<gid>
+  - description: The program workspace (portfolio) renders a "Create solicitation" link on every plan
+      card and study-group card, to /solicitations/create/?source_program_id=<pid>&source_group_id=<gid>
     id: create-solicitation-from-portfolio
-    verify: 'Playwright: on /microplans/program/10008/, assert the R6 study-group card
-      renders a "Create solicitation" anchor whose href contains source_group_id=4492'
-  narrative: Maya stands in her programme portfolio, where the Round 6 study she just
-    designed — Attakar as the intervention arm, Gura as the comparison — sits as a
-    study group; instead of hunting for a survey firm in a separate tool, she clicks
-    "Create solicitation" right on that R6 group card to turn it into an open call.
+    verify: 'Playwright: on /microplans/program/10008/, assert the R6 — Attakar × Gura study-group card
+      reads as finished (the "Attakar × Gura" arm-pair title, a Reviewed/Exported status badge, "field-blind"
+      marker) and renders a primary "Create solicitation" anchor whose href contains source_group_id=4492'
+  narrative: Maya's finished Round 6 study sits in her portfolio, flagged ready to solicit — and right
+    on the card is the way to turn that plan into a call for a survey firm, no separate tool.
   persona: maya
   provenance: S3
-  show: On the program portfolio Maya finds her R6 — Attakar × Gura study group card
-    and clicks its "Create solicitation" action; the app carries that group's plan
-    straight into a new solicitation.
+  show: On the program portfolio Maya finds her finished R6 — Attakar × Gura study group card — the arm-pair
+    title, a Reviewed status badge, "field-blind" marker — with Create solicitation as its primary action;
+    that button carries the group's approved plan straight into a new solicitation.
+  actions:
+  - kind: wait_for
+    target: css:a.primary-dark:has-text("Create solicitation")
+    note: the finished R6 study-group card's primary "Create solicitation" CTA paints
+  - kind: hold
+    seconds: 2.0
+    note: let the ready-to-solicit study card settle as the page hero
+  - kind: hover
+    target: css:a.primary-dark:has-text("Create solicitation")
+    seconds: 1.5
+    note: glide the cursor to the R6 group's primary "Create solicitation" CTA — the next scene navigates
+      to it; we hover (not click) here so this capture stays on the portfolio that scene 1 is about
+  - kind: hold
+    seconds: 10.0
+    note: VO-sized teach hold — this scene's narration runs ~14s; hold the finished study-group card on
+      screen so the footage carries the full line instead of freezing on the last frame
   title: Maya turns her finished study into a call for a firm
   url: /microplans/program/10008/
-- concept_claim: The create form pre-seeds the source plan into a Coverage areas panel
-    snapshotted at creation, so the owner publishes the exact coverage the firm will
-    bid on.
-  design_intent: 'Bet: the owner should confirm the coverage the firm will see, frozen
-    at creation, so later plan edits never silently change a published solicitation.'
+  pace: teach
+- concept_claim: The create form pre-seeds the source plan into a Coverage areas panel snapshotted at
+    creation, and on submit mints a brand-new active solicitation whose id is read off the resulting responses
+    page.
+  design_intent: 'Bet: the owner should confirm the coverage the firm will see, frozen at creation, so
+    later plan edits never silently change a published solicitation; and the call is minted live each
+    render rather than reusing a fixed record.'
   features:
-  - description: The create form renders a "Coverage areas (from micro-plan)" panel
-      populated from the snapshotted plans_json (source_plan_ids=[4494])
+  - description: The create form renders a Coverage-areas panel populated from the snapshotted plans (source_plan_ids=[4494]),
+      drawing the wards as a real map — Attakar (intervention, green) and Gura (comparison, blue) polygons
+      fit to bounds
     id: coverage-panel-from-snapshot
-    verify: 'Playwright: on the create form with source_group_id=4492, assert text
-      "Coverage areas (from micro-plan)" and that "R6 — Attakar" appears in the coverage
-      list'
-  narrative: On the create form Maya sees her R6 plan already sitting in a "Coverage
-    areas (from micro-plan)" panel — the title and scope pre-filled from it — so she
-    only writes the survey scope and publishes the call rather than re-describing
-    the area she just designed.
+    verify: 'Playwright: on the create form with source_group_id=4492, assert a "#sol-coverage-map" element
+      renders a mapbox canvas and that the page text includes "Attakar" and "Gura"'
+  - description: Submitting the create form with status=active mints a new type=solicitation record on
+      program 10008 and redirects to /solicitations/<new-id>/responses/ ("Review and manage responses"),
+      from which the new solicitation_id is captured on camera
+    id: create-mints-active-solicitation
+    verify: 'Playwright: after clicking "Create Solicitation" with status set to Active, assert the URL
+      matches /solicitations/(\d+)/responses/?created=1 and the page reads "Solicitation published — organizations
+      can now apply"'
+  narrative: The create form already has her R6 plan waiting as the coverage area. She sets the scope,
+    marks it active, and publishes — a brand-new call, minted live.
   persona: maya
   provenance: S4
-  show: Maya reads the pre-seeded title and the "Coverage areas (from micro-plan)"
-    panel listing the R6 — Attakar x Gura plan, confirms the survey scope, and the
-    form is ready to publish with that plan attached.
-  title: Maya finds the plan already waiting as the coverage area
-  url: /solicitations/create/?source_program_id=10008&source_group_id=4492
-- concept_claim: A survey firm reads the public solicitation and applies by selecting
-    a specific coverage area from a checklist, and submission is blocked until one
-    area is chosen.
-  design_intent: 'Bet: an application should commit to a concrete coverage area, not
-    a free-text claim, so the owner compares applicants on the real area they will
-    work.'
+  show: Maya reads the pre-seeded title and the Coverage-areas panel, which shows the R6 — Attakar × Gura
+    coverage as a map (Attakar green / Gura blue ward polygons, not just names); she fills the Description,
+    sets Status to Active, scrolls to the publish button, and clicks "Create Solicitation" — minting a
+    fresh call and landing on its "Review and manage responses" page.
+  actions:
+  - kind: scroll_to
+    target: css:#sol-coverage-map
+    note: NON-effecting camera move bringing the Coverage-areas panel into frame. CRITICAL for the before-frame
+      — because this leading action is NOT a wait_for, the recorder runs the full domcontentloaded + load
+      + goto_settle_ms + initial_hold_ms flow (~2.7s of settle) before the before-frame fires, giving
+      the Mapbox canvas time to paint the Attakar (green) / Gura (blue) ward polygons. With a leading
+      wait_for the navigation used wait_until=commit and the before-frame caught the blank, unpainted,
+      zoomed-out canvas. The before/after delta for this scene is the form fill (empty Description + Draft
+      status → filled Description + Active), framed against the painted coverage panel.
+  - kind: wait_for
+    target: css:#sol-coverage-map canvas.mapboxgl-canvas
+    note: the pre-seeded Coverage-areas map paints the Attakar/Gura ward polygons
+  - kind: hover
+    target: css:#sol-coverage-map
+    seconds: 1.0
+    note: glide the cursor over the snapshotted Coverage-areas panel — Maya confirms the exact coverage
+      the firm will bid on
+  - kind: scroll_to
+    target: css:#id_description
+    note: scroll down to the Description field — REQUIRED to publish; the pre-seed fills the title and
+      scope from the plan but leaves Description for Maya to write
+  - kind: fill
+    target: css:#id_description
+    value: Independent household survey to verify Vitamin-A program coverage across the Round 6 Attakar
+      × Gura two-arm study — rooftop visits, GPS-stamped, ~285 treatment / 263 comparison surveys per
+      round.
+    note: Maya writes the survey scope into the required Description field
+  - kind: select
+    target: css:#id_status
+    value: active
+    note: set Status to Active — the form defaults to Draft, and can_accept_responses() requires status=='active',
+      so without this scene 3's respond form would be blocked (a draft call accepts no responses)
+  - kind: scroll_to
+    target: css:button[type=submit]:has-text("Create Solicitation")
+    note: bring the publish button into frame alongside the just-filled form — the ACTION frame for this
+      scene is the completed-but-not-yet-published form (scope written, Status=Active, publish button in
+      view), so the de-dweller has a teach frame ON the effecting act to land the narration on.
+  - kind: hold
+    seconds: 8.0
+    note: ACTION-FRAME teach hold ON the act the narration describes — "she sets the scope, marks it active,
+      and publishes." The footage rests on the FILLED form (Description written, Status=Active, Create
+      Solicitation in frame) so the VO ("sets the scope, marks it active") carries on the act being performed,
+      NOT on the result page. Sized ~8s so the de-dweller keeps this teach frame as the load-bearing one
+      instead of the trailing responses page. The publish click then resolves the act on camera.
+  - kind: click
+    target: css:button[type=submit]:has-text("Create Solicitation")
+    must_succeed: true
+    note: Maya clicks Create Solicitation — the REAL publish. This mints a brand-new active solicitation
+      on program 10008 (source_group_id=4492) live, on camera; the create view redirects to /solicitations/<new-id>/responses/,
+      where the next action captures the fresh id. No fixed record is reused; ensure_demo.py sweeps every
+      render's call before the next render.
+  - kind: wait_for
+    target: text:Solicitation published
+    note: the post-create redirect lands on responses_list?created=1 with the success banner "Solicitation
+      published — organizations can now apply" — the open call is now published and live, with a primary
+      "View public page / Copy share link" action
+  - kind: capture
+    var: solicitation_id
+    source: url
+    pattern: /solicitations/(\d+)/
+    must_succeed: true
+    note: read the brand-new solicitation's id off the responses-page URL the create redirect produced;
+      scenes 3/4/5 thread this fresh id forward via ${solicitation_id}
+  - kind: hold
+    seconds: 2.0
+    note: short RESULT settle — the publish has landed; rest briefly on the "Solicitation published" responses
+      page so the "— a brand-new call, minted live" tail of the narration resolves on the confirmation,
+      then move on. Kept short so the ACTION frame above (the fill) stays the load-bearing teach frame.
+  title: Maya mints the call live and lands on its responses page
+  url: /solicitations/create/?program_id=10008&source_program_id=10008&source_group_id=4492
+  pace: teach
+- concept_claim: A survey firm reads the public solicitation and applies by selecting a specific coverage
+    area from a checklist, and submission is blocked until one area is chosen.
+  design_intent: 'Bet: an application should commit to a concrete coverage area, not a free-text claim,
+    so the owner compares applicants on the real area they will work.'
   features:
-  - description: The public response form shows a "Which areas can you cover?" checkbox
-      list bound to the solicitation's snapshot plans, and blocks submit when none
-      is selected
+  - description: The public response form draws the coverage as an interactive map — clicking a ward boundary
+      toggles its whole parent plan, synced two-way with the "Which areas can you cover?" checklist; submit
+      is blocked until at least one area is selected
     id: respondent-coverage-selector
-    verify: 'Playwright: on /solicitations/4495/respond/, assert label "Which areas
-      can you cover?" with a checkbox for the R6 plan; submitting with none selected
-      shows "Select at least one coverage area to submit."'
-  narrative: Amina opens the public solicitation, reads that the work is the Attakar-and-Gura
-    household survey, and on the application form ticks that exact coverage area as
-    the one her enumerators can staff before submitting her firm's application.
-  persona: amina
+    verify: 'Playwright: on /solicitations/${solicitation_id}/respond/, assert a "#sol-respond-map" mapbox
+      canvas renders the Attakar/Gura wards and a "#sol-plan-checklist" checkbox for the R6 plan; ticking
+      the R6 area enables Submit (≥1 required to submit)'
+  - description: The response form carries a "Your organization" identity block (firm name + contact email)
+      so a firm answering a public call names itself; the entered firm name is stored as the response's
+      org_name / submitted_by_name and shown to the owner on the responses list and award screen, instead
+      of the individual account that submitted the form
+    id: respondent-names-its-firm
+    verify: 'Playwright: on /solicitations/${solicitation_id}/respond/, assert "#id_firm_name" and "#id_firm_email"
+      inputs render; after filling firm name "Sahel Field Research" and submitting, the responses list row
+      reads "Sahel Field Research" (not the operator account email)'
+  - description: Submitting the response redirects to the solicitation's public detail page (/solicitations/${solicitation_id}/?submitted=1)
+      which shows a "Response submitted" confirmation receipt for the coverage the firm committed to
+    id: respond-submit-lands-on-receipt
+    verify: 'Playwright: after clicking "Submit Response", assert the URL is /solicitations/${solicitation_id}/
+      and the page text includes "Response submitted"'
+  narrative: A survey firm opens the public call, ticks the Attakar-and-Gura coverage it can staff, and
+    submits its application.
+  persona: firm
   provenance: S5
-  show: On the application form Amina reaches the "Which areas can you cover?" selector
-    listing the R6 — Attakar x Gura area; with nothing ticked the submit is blocked
-    ("Select at least one coverage area to submit."), and once she ticks the R6 area
-    her application is bound to that coverage and ready to submit.
-  title: Amina reads the open call and ticks the area she can staff
-  url: /solicitations/4495/respond/
-- concept_claim: The owner reviewing responses sees each firm's selected coverage
-    area resolved from the authoritative snapshot, tying every application to a concrete
-    designed coverage.
-  design_intent: 'Bet: the reviewer should compare applicants against the designed
-    coverage, so the selected area the firm committed to is shown directly on the
-    response.'
+  show: On the application form the survey firm names itself in the "Your organization" block (Sahel Field
+    Research) and sees the R6 — Attakar × Gura coverage drawn as an interactive map (Attakar green / Gura
+    blue); it selects the coverage by ticking the checklist entry, which enables the submit (at least one
+    area is required), then submits — landing on the "Response submitted" confirmation receipt for its
+    committed coverage.
+  actions:
+  - kind: scroll_to
+    target: css:#sol-plan-checklist
+    note: NON-effecting camera move scrolling the "Which areas can you cover?" checklist into frame. CRITICAL
+      for the before-frame — because this leading action is NOT a wait_for, the recorder runs the full
+      domcontentloaded + load + goto_settle_ms + initial_hold_ms flow, so the /respond/ form is fully
+      painted and settled (checklist visible, Submit disabled — UNCHECKED state) before the before-frame
+      fires. With a leading wait_for the navigation used wait_until=commit and the before-frame caught
+      the crossfading-out owner manage view instead of this respond form.
+  - kind: wait_for
+    target: css:#sol-plan-checklist input[type=checkbox]
+    note: gate on the coverage CHECKLIST checkbox — the load-bearing, always-present DOM element that
+      proves the respond page (for the just-minted call) has loaded. This is the navigation gate; we do
+      NOT gate on the Mapbox canvas here because the WebGL canvas paints later/asynchronously and a slow
+      canvas must not block the (reliable) checklist click.
+  - kind: wait_for
+    target: css:#sol-respond-map canvas.mapboxgl-canvas
+    seconds: 5
+    note: best-effort wait (≤5s) for the coverage map to paint the Attakar (green) + Gura (blue) ward
+      polygons — NON-blocking; if the WebGL canvas is slow this logs a timeout and we proceed, since the
+      checklist (already present) is what the click needs. Capped at 5s so a slow canvas adds at most
+      5s of dead air, not 12s.
+  - kind: hold
+    seconds: 1.5
+    note: let the map settle and fit to the two wards — the form is now framed in its UNCHECKED state
+      (Submit disabled); the next action ticks the coverage area, so the before/after pair shows the checklist-commit
+      mechanic end-to-end (disabled → submitted)
+  - kind: scroll_to
+    target: css:#id_firm_name
+    note: bring the "Your organization" identity fields into frame — a real firm names itself when it
+      answers a public call; the owner reviews and awards a NAMED survey firm, not the individual account
+      that submitted the form
+  - kind: fill
+    target: css:#id_firm_name
+    value: Sahel Field Research
+    note: the applying firm names itself — Sahel Field Research, a plausible northern-Nigeria independent
+      household-survey firm. This is what renders on the responses list and award screen (org_name), so
+      scenes 4-5 show a believable firm, NOT the operator's own ace@dimagi-ai.com dev account.
+  - kind: fill
+    target: css:#id_firm_email
+    value: bids@sahelfieldresearch.org
+    note: the firm's contact email — stored as submitted_by_email and shown beside the firm name on the
+      responses list, replacing the operator account's email
+  - kind: scroll_to
+    target: css:#sol-plan-checklist
+    note: scroll back to the coverage checklist now that the firm has identified itself, to commit the area
+  - kind: click
+    target: css:#sol-plan-checklist input[type=checkbox]
+    must_succeed: true
+    note: tick the coverage area — synced two-way with the map; this enables Submit (≥1 required). The
+      created call has exactly one plan (R6 — Attakar × Gura), so the first checkbox is that area.
+  - kind: scroll_to
+    target: css:button[type=submit]:has-text("Submit Response")
+    note: bring the Submit Response button into frame alongside the now-completed application — the ACTION
+      frame for this scene is the firm-named, coverage-ticked, Submit-enabled form
+  - kind: hold
+    seconds: 7.0
+    note: ACTION-FRAME teach hold ON the act the narration describes — "ticks the Attakar-and-Gura coverage
+      it can staff, and submits its application." The footage rests on the COMPLETED application (Sahel
+      Field Research named, R6 — Attakar × Gura coverage ticked, Submit enabled) so the VO carries on the
+      act being performed, NOT on the result receipt. Sized ~7s so the de-dweller keeps this teach frame
+      as the load-bearing one. The submit click then resolves the act on camera.
+  - kind: click
+    target: css:button[type=submit]:has-text("Submit Response")
+    must_succeed: true
+    note: submit the firm's application — the REAL submit; redirects to the call's public detail page
+  - kind: wait_for
+    target: text:Response submitted
+    note: the post-submit redirect lands on public_detail?submitted=1 with the "Response submitted" confirmation
+      receipt — the firm's application is recorded and the re-invite to respond/login is suppressed for
+      the already-responded actor
+  - kind: hold
+    seconds: 1.5
+    note: short RESULT settle on the "Response submitted" receipt confirming the application landed — kept
+      short so the ACTION frame above (the completed application) stays the load-bearing teach frame
+  title: A survey firm reads the open call and ticks the area it can staff
+  url: /solicitations/${solicitation_id}/respond/?program_id=10008
+  pace: teach
+- concept_claim: The owner reviewing responses sees each firm's committed coverage area resolved from
+    the authoritative snapshot, tying every application to a concrete designed coverage.
+  design_intent: 'Bet: the reviewer should compare applicants against the designed coverage, so the area
+    the firm committed to is shown directly on the response.'
   features:
-  - description: The responses list shows each response's selected_plan_names resolved
-      against the solicitation snapshot
+  - description: The responses list shows each response's selected_plan_names resolved against the solicitation
+      snapshot, and renders an Award action linking to /solicitations/response/<response-id>/award/
     id: reviewer-sees-selected-coverage
-    verify: 'Playwright: on /solicitations/4495/responses/, assert the submitted response
-      row shows "R6 — Attakar" as its selected coverage area'
-  narrative: Back in her workspace Maya opens the responses and reads, on the one
-    application, the exact coverage area she designed — R6 Attakar x Gura — so she
-    is comparing a real firm against the real survey, the loop from study plan to
-    applicant closed.
+    verify: 'Playwright: on /solicitations/${solicitation_id}/responses/, assert the submitted response
+      row shows "R6 — Attakar" as its selected coverage area and an "Award" link whose href contains response/<id>/award'
+  narrative: Back in her workspace, Maya opens the responses and sees Sahel Field Research tied to the exact
+    coverage she designed.
   persona: maya
   provenance: S6
-  show: On the responses page Maya sees the submitted application showing the selected
-    coverage "R6 — Attakar x Gura", with View, Review, and Award actions ready.
+  show: On the responses page Maya sees Sahel Field Research's submitted application showing the selected
+    coverage "R6 — Attakar × Gura", with View, Review, and Award actions ready; the Award link carries the
+    response's id forward to the award screen.
+  actions:
+  - kind: wait_for
+    target: css:span:has-text("R6 — Attakar")
+    note: the response row's "Selected coverage" chip resolves to R6 — Attakar × Gura
+  - kind: hover
+    target: css:span:has-text("R6 — Attakar")
+    seconds: 3.0
+    note: glide the cursor onto the firm's selected-coverage chip — every application tied to a concrete
+      designed coverage area; NON-DESTRUCTIVE (read-only hover). Dwell sized up as a teach hold — a hover
+      produces an action frame so the explainer segments this footage to scene 4's VO (a trailing hold
+      after the non-visual capture does NOT produce a frame and gets under-counted).
+  - kind: hover
+    target: css:a:has-text("Award")
+    seconds: 3.0
+    note: move to the Award action Maya is reaching for next — hover only, the award itself happens in
+      scene 5; reading the row does not mutate state. Dwell sized up (frame-producing) to carry the "tied
+      to the exact coverage she designed" line.
+  - kind: capture
+    var: response_id
+    source: element
+    target: css:a:has-text("Award")
+    attr: href
+    pattern: response/(\d+)/
+    must_succeed: true
+    note: read the fresh response's id off the Award link's href (/solicitations/response/<id>/award/);
+      scene 5 navigates to that award screen via ${response_id}
   title: Maya sees the firm tied to the coverage she designed
-  url: /solicitations/4495/responses/?program_id=10008
-- concept_claim: Recruiting and reviewing a firm against the designed coverage is
-    the shipped step, while provisioning a live Connect opportunity from an award
-    is the next step, not yet built.
-  design_intent: 'Bet: the demo must be honest about the planning-versus-execution
-    boundary, framing field execution as the aspirational next step rather than a
-    shipped mechanism.'
+  url: /solicitations/${solicitation_id}/responses/?program_id=10008
+  pace: teach
+- concept_claim: Awarding the chosen firm records the decision and notifies the organization, while standing
+    up the live Connect opportunity that firm would run is the next step, not yet built.
+  design_intent: 'Bet: the demo must be honest about the planning-versus-execution boundary — awarding
+    a firm is a real, shipped end-state, and field execution (provisioning the live opportunity) is the
+    aspirational next step, not a shipped mechanism dressed up as done.'
   features:
-  - description: The response row exposes an Award action; there is no code that,
-      on award, provisions a Connect opportunity or pushes the plan's work areas into
-      one
-    id: award-action-present-provision-deferred
-    verify: 'Playwright: on /solicitations/4495/responses/, assert an "Award" control
-      exists; grep: no create_opportunity/WorkArea-provision call in commcare_connect/solicitations/'
-  narrative: With a firm tied to her coverage, Maya looks at the Award action and
-    knows the next step she is reaching for — turning an award into the live Connect
-    opportunity her enumerators would actually run — is the work ahead, not something
-    today's call has done for her.
+  - description: The award screen summarizes the applying firm (Sahel Field Research, the name it entered
+      on its application) with its selected coverage, and on award records the decision and confirms the
+      organization was notified ("Awarded to Sahel Field Research — the organization has been notified");
+      it does NOT, on award, provision a Connect opportunity or push the plan's work areas into one — that
+      downstream step is deferred (G1)
+    id: award-records-and-notifies-provision-deferred
+    verify: 'Playwright: on /solicitations/response/${response_id}/award/, after award assert a confirmation
+      reading "Awarded to Sahel Field Research" and "has been notified", plus a "Next step — not yet built"
+      panel; grep: no create_opportunity/WorkArea-provision call in commcare_connect/solicitations/'
+  narrative: She awards Sahel Field Research — the screen records the decision and notifies the organization.
+    Standing up the live opportunity is the next step, not yet built.
   persona: maya
   provenance: S7
-  show: Maya hovers the Award action on the application and reads it as the boundary
-    between what she has recruited today and the live opportunity she would stand
-    up next.
-  title: Maya looks ahead to standing up the real opportunity
-  url: /solicitations/4495/responses/?program_id=10008
+  show: Maya awards the applying firm and lands on the confirmation — "Awarded to Sahel Field Research —
+    the organization has been notified" — with the award summary (firm name, coverage) and a dashed "Next
+    step — not yet built" panel that keeps provisioning the live Connect opportunity (G1) honestly framed
+    as the deferred next step, not done for her today.
+  actions:
+  - kind: wait_for
+    target: css:input[name=reward_budget]
+    note: the award form with the firm summary (org name + coverage) has loaded
+  - kind: hold
+    seconds: 1.0
+    note: let Maya read the "You're awarding" summary before she commits
+  - kind: fill
+    target: css:input[name=reward_budget]
+    value: '500000'
+    note: optional budget for the awarded firm
+  - kind: click
+    target: css:button[type=submit]:has-text("Award")
+    must_succeed: true
+    note: award the firm — records the decision and notifies the organization
+  - kind: wait_for
+    target: text:has been notified
+    note: the in-place confirmation "Awarded to <org> — the organization has been notified" renders
+  - kind: hold
+    seconds: 7.0
+    note: VO-sized teach hold — settle on the confirmation + the dashed "Next step — not yet built" panel
+      long enough to carry the award + deferred-next-step narration (~10.4s VO; this hold + the award form
+      actions overshoots it slightly)
+  title: Maya awards the firm and sees it was notified
+  url: /solicitations/response/${response_id}/award/?program_id=10008
+  pace: teach
+setup:
+  command: python scripts/walkthroughs/create-survey-solicitation/ensure_demo.py
+  rerun: per_render
+  timeout_seconds: 900
 why_brief: ../../.canopy/ddd/runs/create-survey-solicitation-2026-06-17-001/why_brief.yaml
+narrative_synced_version: 6
+narrative_synced_hash: 5ba3dea5f942e0f80f5ffc43524a7559b73f1b0276cad65490ea7bdf854847d2
+narrative_synced_at: '2026-06-19T05:13:35.821974+00:00'
