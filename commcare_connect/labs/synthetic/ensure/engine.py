@@ -20,6 +20,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .ensurers.campaign import ensure_campaign
 from .ensurers.opp_data import ensure_opp_data
 from .ensurers.rollup import ensure_rollup
 from .ensurers.run_audits import ensure_run_audits
@@ -61,6 +62,7 @@ ENSURERS: dict[str, Callable] = {
     "run_audits": ensure_run_audits,
     "tasks": ensure_tasks,
     "rollup": ensure_rollup,
+    "campaign": ensure_campaign,
 }
 
 
