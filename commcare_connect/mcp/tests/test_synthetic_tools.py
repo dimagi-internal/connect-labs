@@ -58,6 +58,32 @@ def test_synthetic_register_updates_existing_row(user):
 
 
 @pytest.mark.django_db
+def test_synthetic_repoint_by_source_updates_cloned_opp_in_place(user):
+    SyntheticOpportunity.objects.create(
+        opportunity_id=10012,
+        gdrive_folder_id="old-folder",
+        enabled=True,
+        cloned_from_opportunity_id=523,
+    )
+    tool = get_tool("synthetic_repoint_by_source")
+    result = tool.handler(user=user, source_opportunity_id=523, gdrive_folder_id="new-folder")
+    assert result["opportunity_id"] == 10012
+    assert result["previous_gdrive_folder_id"] == "old-folder"
+    assert result["gdrive_folder_id"] == "new-folder"
+    row = SyntheticOpportunity.objects.get(opportunity_id=10012)
+    assert row.gdrive_folder_id == "new-folder"  # repointed in place, same labs opp id
+    assert row.enabled is True
+
+
+@pytest.mark.django_db
+def test_synthetic_repoint_by_source_raises_when_no_clone_exists(user):
+    tool = get_tool("synthetic_repoint_by_source")
+    with pytest.raises(MCPToolError) as exc:
+        tool.handler(user=user, source_opportunity_id=999999, gdrive_folder_id="x")
+    assert exc.value.code == "NOT_FOUND"
+
+
+@pytest.mark.django_db
 def test_synthetic_disable_clears_enabled_flag(user):
     SyntheticOpportunity.objects.create(opportunity_id=4242, gdrive_folder_id="x", enabled=True)
     tool = get_tool("synthetic_disable")
