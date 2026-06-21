@@ -1,0 +1,65 @@
+schema_version: 1
+rubric_name: ddd-concept-eval
+ran_at: "2026-06-20T22:10:00Z"
+run_dir: .canopy/ddd/runs/campaign-utility-tool-2026-06-20-001/
+
+dimensions:
+  concept_clarity:
+    score: 2
+    weight: 0.20
+    justification: >-
+      Scenes 3 (KYC), 5 (worker profile) and 7 (audit log) all captured the Worker
+      Payments table instead of their named view — the nav clicks didn't reach the
+      KYC sub-tab, a worker profile, or Administration → audit log. Scene 9 (map) is blank.
+  design_soundness:
+    score: 2
+    weight: 0.20
+    justification: >-
+      Scene 9's map modal shows a Worker-KYC legend against a (claimed) reach choropleth
+      — mismatched. Otherwise the table/dashboard structures are coherent.
+  visual_polish:
+    score: 2
+    weight: 0.15
+    justification: >-
+      Scene 9 is an empty white canvas with an orphaned broken-image icon. Worker tables
+      are very dense (200 rows) but clean.
+  why_groundedness:
+    score: 1
+    weight: 0.20
+    justification: >-
+      Scene 4 (Activity) is unseeded — 0 activities, NaN% coverage. Scene 1 funding math
+      is broken (REMAINING ₦-245745K; TOTAL FUNDING ₦6.10M < DISBURSED ₦251.84M). Scene 8
+      shows an identical 64% coverage for all 37 states (uniform synthetic fill). Worker
+      data itself (names, LGAs, rate×days math) is strongly real.
+  claim_reality_coherence:
+    score: 1
+    weight: 0.10
+    blocking: false
+    justification: >-
+      Scenes 3/5/7 show the wrong screen vs their claim; scene 9 map is blank vs "choropleth
+      + GPS". Scene 6 (scale) matches its claim precisely.
+  motion_friction:
+    score: 1
+    weight: 0.15
+    justification: >-
+      Scene 9: classic unpainted-Mapbox headless failure (blank WebGL canvas). Other scenes
+      are fully loaded and framed.
+
+overall_score: 1
+overall_rule: lowest
+
+verdict: fail
+blocking_reason: null
+
+fix_recommendation: |
+  [PRODUCT mechanical] Scene 1 funding KPIs: fix the math so REMAINING = budget − disbursed
+    renders as a formatted positive value, and total funding ≥ disbursed (units aligned).
+  [PRODUCT mechanical] Scene 8 reporting coverage: vary per-state coverage realistically
+    (40–90%) instead of a constant 64%, and derive status from each state's value.
+  [PRODUCT mechanical] Scene 4 Activity: render 0%/"—" instead of NaN% on an empty denominator;
+    seed activities for MR-NAT-2026 (or point the scene at Microplanning & Budget, which has 773 plans).
+  [PRODUCT/ENV mechanical] Scene 9 map: the recorder's headless Chromium did not paint Mapbox
+    (WebGL). Apply the SwiftShader/WebGL headless fix + wait for map 'idle' before snapshot; also
+    show a coverage legend (not the KYC legend) for the choropleth.
+  [SCENE-SCRIPTING mechanical] Scenes 3/5/7: the clicks must reach the KYC sub-tab, a worker
+    profile (row click / Profiles sub-tab), and Administration → audit log — they landed on Payments.
