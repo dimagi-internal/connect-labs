@@ -1,0 +1,57 @@
+narrative_slug: verified-monitoring
+schema_version: 1
+problem: A demo of continuous independent monitoring on Connect
+spine:
+- id: S5
+  claim: Across six bi-monthly rounds, the program's self-reported delivery stays
+    above what the independent survey confirms each round, while the control arm stays
+    low — the gap holds over time, not in a single snapshot.
+  rationale: Three labelled lines (service-delivery dashed amber, intervention survey
+    indigo, control survey slate) plotted across six bi-monthly rounds left-to-right
+    as a time axis (earliest at left, most recent at right, each round date-stamped),
+    with a shaded service-delivery-minus-survey gap band and per-point hover tooltips,
+    so the gap's persistence over time reads from the chart without a sentence.
+  status: grounded
+  evidence:
+  - kind: implemented
+    ref: 'verified-monitoring walkthrough scene: Six bi-monthly rounds over time —
+      the gap holds'
+- id: S3
+  claim: Program delivery is concentrated in the intervention ward and absent in the
+    adjacent control ward, while the independent survey covered both — so the coverage
+    gap tracks where the program went, not where the survey looked.
+  rationale: Real labelled admin boundaries (intervention indigo / control slate)
+    on a light Mapbox basemap via the shared ConnectMap module, with the SAME docked
+    Layers panel the plan editor uses — toggles for service delivery, the independent
+    survey, the designed Plan (arm-coloured selected-PSU hulls), the sampled Work
+    areas, and all Building footprints — drawn through the shared PlanLayers component
+    so the monitoring map and the plan editor render the plan identically. Every survey
+    draws (no per-ward cap), each on the real sampled footprint and within the 15
+    m GPS gate, distinguishing the unit the surveyor was assigned to try first (primary
+    — larger solid dot) from a substituted backup (alternate — smaller hollow ring).
+    The map re-fits on each cycle but NOT on a layer toggle, so toggling keeps the
+    planner's pan/zoom.
+  status: grounded
+  evidence:
+  - kind: implemented
+    ref: 'verified-monitoring walkthrough scene: Where delivery happened vs where
+      the survey checked (the map moves)'
+- id: S2
+  claim: 'Quality is computed per surveyor from each surveyor''s own records, so one
+    under-performing surveyor is visible rather than averaged away — flagged on the
+    signals GPS gating can''t fake: evidence, on-primary fidelity, and back-check
+    agreement.'
+  rationale: A dense scorecard, one row per surveyor, green within threshold / rose
+    below, with a REVIEW tag where a surveyor's integrity signals fail together; the
+    back-check column is cumulative across cycles. The GPS-within-15m column reads
+    ~100% for every surveyor — the app blocks any submission beyond 15 m, so it is
+    a passing trust signal, not the discriminator. An On-primary column shows the
+    share of each surveyor's surveys that landed on the assigned first-choice household
+    (vs a substituted alternate) — a sampling-fidelity signal where heavy substitution
+    reads rose.
+  status: grounded
+  evidence:
+  - kind: implemented
+    ref: 'verified-monitoring walkthrough scene: The per-surveyor quality scorecard
+      catches a surveyor'
+gaps: []

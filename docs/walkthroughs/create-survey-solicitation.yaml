@@ -44,15 +44,17 @@ scenes:
       card and study-group card, to /solicitations/create/?source_program_id=<pid>&source_group_id=<gid>
     id: create-solicitation-from-portfolio
     verify: 'Playwright: on /microplans/program/10008/, assert the R6 — Attakar × Gura study-group card
-      reads as finished (the "Attakar × Gura" arm-pair title, a Reviewed/Exported status badge, "field-blind"
-      marker) and renders a primary "Create solicitation" anchor whose href contains source_group_id=4492'
+      reads as finished (the "Attakar × Gura" arm-pair title, a Reviewed status badge, the "Finished study
+      — ready to recruit a survey firm" marker, "2 wards") and renders a primary "Create solicitation"
+      anchor whose href contains source_group_id=4492'
   narrative: Maya's finished Round 6 study sits in her portfolio, flagged ready to solicit — and right
     on the card is the way to turn that plan into a call for a survey firm, no separate tool.
   persona: maya
   provenance: S3
   show: On the program portfolio Maya finds her finished R6 — Attakar × Gura study group card — the arm-pair
-    title, a Reviewed status badge, "field-blind" marker — with Create solicitation as its primary action;
-    that button carries the group's approved plan straight into a new solicitation.
+    title, a Reviewed status badge, the "Finished study — ready to recruit a survey firm" marker, "2 wards"
+    — with Create solicitation as its primary action; that button carries the group's approved plan straight
+    into a new solicitation.
   actions:
   - kind: wait_for
     target: css:a.primary-dark:has-text("Create solicitation")
@@ -165,12 +167,39 @@ scenes:
     note: read the brand-new solicitation's id off the responses-page URL the create redirect produced;
       scenes 3/4/5 thread this fresh id forward via ${solicitation_id}
   - kind: hold
-    seconds: 2.0
-    note: short RESULT settle — the publish has landed; rest briefly on the "Solicitation published" responses
-      page so the "— a brand-new call, minted live" tail of the narration resolves on the confirmation,
-      then move on. Kept short so the ACTION frame above (the fill) stays the load-bearing teach frame.
+    seconds: 1.0
+    note: brief settle on the "Solicitation published" confirmation banner so the publish lands on camera
+  - kind: goto
+    target: /solicitations/${solicitation_id}/?program_id=10008
+    note: navigate to the just-minted call's PUBLIC detail page so the scene's END frame (the judge's
+      after-snapshot) shows the ARTIFACT THE ACT PRODUCED — the live published call with its title, scope,
+      and the Attakar × Gura coverage — rather than the empty "No responses yet" inbox. This makes the
+      static hero frame depict "she published THIS call", aligned to the narration's act, not a blank list.
+  - kind: wait_for
+    target: text:Accepting Responses
+    note: the public detail of the freshly published call has rendered (status badge "Accepting Responses"
+      + the scope + coverage), confirming the call is live and open
+  - kind: scroll_to
+    target: css:#sol-coverage-map
+    note: scroll the published call's Coverage-areas MAP into the viewport so the scene's END frame (the
+      judge's hero) actually SHOWS the Attakar (green) × Gura (blue) ward polygons the narration sells —
+      "the R6 plan already waiting as the coverage area." Without this the map sits below the fold and the
+      hero is text-only; the differentiating visual of the published call belongs in frame.
+  - kind: wait_for
+    target: css:#sol-coverage-map canvas.mapboxgl-canvas
+    seconds: 5
+    note: best-effort (≤5s, non-blocking) wait for the public-detail coverage map to paint the Attakar/Gura
+      polygons before the hero settle
+  - kind: hold
+    seconds: 3.0
+    note: VO-sized teach settle framed ON the published call's coverage map — the minted-live artifact with
+      its Attakar × Gura coverage visible — carrying the "a brand-new call, minted live" tail of the narration
+      on the call Maya just created. This is the frame the judge sees as scene 2's hero.
   title: Maya mints the call live and lands on its responses page
   url: /solicitations/create/?program_id=10008&source_program_id=10008&source_group_id=4492
+  full_page: false  # the scene ENDS on the published call's public detail page, which is long; a full-page
+  # strip downscales to a blurry hero. Capture the VIEWPORT so the published-call header (title, "Accepting
+  # Responses" status, scope) reads sharp at projector scale — the artifact the publish act produced.
   pace: teach
 - concept_claim: A survey firm reads the public solicitation and applies by selecting a specific coverage
     area from a checklist, and submission is blocked until one area is chosen.
@@ -284,6 +313,9 @@ scenes:
   title: A survey firm reads the open call and ticks the area it can staff
   url: /solicitations/${solicitation_id}/respond/?program_id=10008
   pace: teach
+  full_page: false  # the post-submit receipt page is long; a full-page strip downscales to a blurry,
+  # illegible hero. Capture the VIEWPORT only so the "Response submitted" confirmation reads sharp at
+  # projector scale (the receipt header is at the top of the page, in-viewport).
 - concept_claim: The owner reviewing responses sees each firm's committed coverage area resolved from
     the authoritative snapshot, tying every application to a concrete designed coverage.
   design_intent: 'Bet: the reviewer should compare applicants against the designed coverage, so the area
@@ -305,19 +337,6 @@ scenes:
   - kind: wait_for
     target: css:span:has-text("R6 — Attakar")
     note: the response row's "Selected coverage" chip resolves to R6 — Attakar × Gura
-  - kind: hover
-    target: css:span:has-text("R6 — Attakar")
-    seconds: 3.0
-    note: glide the cursor onto the firm's selected-coverage chip — every application tied to a concrete
-      designed coverage area; NON-DESTRUCTIVE (read-only hover). Dwell sized up as a teach hold — a hover
-      produces an action frame so the explainer segments this footage to scene 4's VO (a trailing hold
-      after the non-visual capture does NOT produce a frame and gets under-counted).
-  - kind: hover
-    target: css:a:has-text("Award")
-    seconds: 3.0
-    note: move to the Award action Maya is reaching for next — hover only, the award itself happens in
-      scene 5; reading the row does not mutate state. Dwell sized up (frame-producing) to carry the "tied
-      to the exact coverage she designed" line.
   - kind: capture
     var: response_id
     source: element
@@ -326,7 +345,27 @@ scenes:
     pattern: response/(\d+)/
     must_succeed: true
     note: read the fresh response's id off the Award link's href (/solicitations/response/<id>/award/);
-      scene 5 navigates to that award screen via ${response_id}
+      scene 5 navigates to that award screen via ${response_id}. Done EARLY via a DOM href read (no scroll),
+      so the camera need not scroll the wide table right to the Award column — keeping the firm's
+      Organization column (leftmost) un-clipped in the hero frame below.
+  - kind: hover
+    target: css:a:has-text("Award")
+    seconds: 2.5
+    note: glance at the Award action Maya is reaching for next — hover only, the award itself happens in
+      scene 5; reading the row does not mutate state. (This may scroll the table right; the trailing hover
+      below scrolls it back so the firm-name hero is un-clipped.)
+  - kind: scroll_to
+    target: css:th:has-text("Organization")
+    note: scroll the wide responses table back to its LEFT edge so the Organization column header + the
+      firm's Organization cell are fully in frame for the hero (the earlier Award hover scrolled the table
+      right, clipping "Organization" to "…GANIZATION" and the firm name to "…hel Field Research"). This
+      camera move un-clips the firm identity that finding 1 fixed.
+  - kind: hover
+    target: css:span:has-text("R6 — Attakar")
+    seconds: 3.5
+    note: settle the cursor on the firm's Selected-coverage chip (R6 — Attakar × Gura), now beside a fully
+      visible Organization column reading Sahel Field Research. This is the scene HERO — the named firm tied
+      to the exact coverage Maya designed, un-clipped. Dwell sized up to carry the VO.
   title: Maya sees the firm tied to the coverage she designed
   url: /solicitations/${solicitation_id}/responses/?program_id=10008
   pace: teach
