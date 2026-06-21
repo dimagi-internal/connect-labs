@@ -5,7 +5,37 @@ using the two-phase profile/generate workflow.
 
 ---
 
-## Quick start (spec-driven — recommended)
+## Preferred: local generation + MCP repoint (fast, no prod DB)
+
+Phase 2 is pure compute + GDrive I/O — it does **not** need prod Connect. Run the
+heavy generation on a fast local machine and keep all DB writes server-side via the
+`connect_labs` MCP. This avoids the slow, timeout-prone server-side generation (a
+large cohort can drop the MCP transport mid-run).
+
+Only the **GDrive service-account** creds are needed locally (no prod DB):
+
+```bash
+LABS_SYNTHETIC_GDRIVE_SA_KEY=<json-or-path> \
+LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID=<folder-id> \
+  python manage.py synthetic_generate_opps --spec kmc.yaml --no-register
+```
+
+This reads the Phase-1 bundles, regenerates fixtures locally, uploads each to a new
+GDrive folder, and prints one `source_opp -> gdrive_folder_id` line per opp. Then,
+over the `connect_labs` MCP, per line:
+
+- **Overwrite an existing cloned opp in place** (same labs opp id, matched by
+  `cloned_from`): `synthetic_repoint_by_source(source_opportunity_id=<src>, gdrive_folder_id=<folder>)`
+- **Register a brand-new opp**: `synthetic_create_labs_only(gdrive_folder_id=<folder>, label=..., program_id=...)`
+
+`synthetic_repoint_by_source` is the server-side half: it does the `cloned_from`
+lookup + pointer update with the labs DB, so the generating machine never needs DB
+access. Use this for regenerating the existing KMC opps (10012–10022) after a
+generator change (e.g. enabling `mirror`).
+
+---
+
+## Quick start (spec-driven — server-side, needs the labs DB)
 
 Describe the cohort once in a YAML spec, then run two commands. Hand the **same file** to
 both — Step 1 records the resolved `bundle_root` back into it.

@@ -197,6 +197,73 @@ def synthetic_disable(user, *, opportunity_id: int) -> dict[str, Any]:
     }
 
 
+@register(
+    name="synthetic_repoint_by_source",
+    description=(
+        "Re-point the labs-only synthetic opportunity that was cloned from a given "
+        "SOURCE opportunity to a new GDrive fixture folder. Looks up the "
+        "SyntheticOpportunity by cloned_from_opportunity_id and updates its "
+        "gdrive_folder_id in place (preserving its labs opp id), so a locally-generated "
+        "fixture set overwrites what labs serves. This is the server-side half of the "
+        "PREFERRED local clone flow: run `synthetic_generate_opps --spec <spec> "
+        "--no-register` on a fast machine (heavy copula generation + GDrive upload, no "
+        "DB), then call this once per printed `source_opp -> gdrive_folder_id` line to "
+        "repoint the existing opps — no prod-DB connection needed on the generating box, "
+        "and no slow/timeout-prone server-side generation."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "source_opportunity_id": {
+                "type": "integer",
+                "description": "The real source opp id the labs opp was cloned from (its cloned_from_opportunity_id).",
+            },
+            "gdrive_folder_id": {
+                "type": "string",
+                "description": "New fixture folder id, from `synthetic_generate_opps --no-register` output.",
+            },
+            "enabled": {"type": "boolean", "default": True},
+        },
+        "required": ["source_opportunity_id", "gdrive_folder_id"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def synthetic_repoint_by_source(
+    user,
+    *,
+    source_opportunity_id: int,
+    gdrive_folder_id: str,
+    enabled: bool = True,
+) -> dict[str, Any]:
+    try:
+        row = SyntheticOpportunity.objects.get(cloned_from_opportunity_id=source_opportunity_id)
+    except SyntheticOpportunity.DoesNotExist:
+        raise MCPToolError(
+            "NOT_FOUND",
+            f"No synthetic opportunity cloned from source_opportunity_id={source_opportunity_id}",
+        )
+    except SyntheticOpportunity.MultipleObjectsReturned:
+        raise MCPToolError(
+            "CONFLICT",
+            f"Multiple synthetic opportunities cloned from source_opportunity_id={source_opportunity_id}; "
+            "repoint by opportunity_id with synthetic_register instead",
+        )
+    _require_opportunity_access(user, row.opportunity_id)
+    previous = row.gdrive_folder_id
+    row.gdrive_folder_id = gdrive_folder_id
+    row.enabled = enabled
+    row.save(update_fields=["gdrive_folder_id", "enabled", "updated_at"])
+    invalidate_cache()
+    return {
+        "opportunity_id": row.opportunity_id,
+        "source_opportunity_id": source_opportunity_id,
+        "previous_gdrive_folder_id": previous,
+        "gdrive_folder_id": row.gdrive_folder_id,
+        "enabled": row.enabled,
+    }
+
+
 def _load_opportunity_detail(opportunity_id: int, user) -> dict:
     """Pull live opportunity detail from prod via the user's OAuth token.
 
