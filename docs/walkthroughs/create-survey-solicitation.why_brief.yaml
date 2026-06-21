@@ -1,0 +1,66 @@
+narrative_slug: create-survey-solicitation
+schema_version: 1
+problem: Maya has just finished designing her Round 6 study — the two-arm Attakar-versus-Gura
+  household survey that her Vitamin-A programme will use to check whether its visits
+  are actually changing coverage. She has the plan; what she does not yet have is
+  the independent survey firm to run it. So from the p
+spine:
+- id: S3
+  claim: A program owner can launch a call for a firm directly from a finished micro-plan,
+    because the study-group card carries a button that opens the solicitation form
+    with that plan already attached as the source.
+  rationale: 'Bet: recruiting a firm is a continuation of designing the study, so
+    the call starts from the plan the owner just built — not from a blank solicitation
+    form.'
+  status: grounded
+  evidence:
+  - type: implemented
+    ref: 'create-survey-solicitation walkthrough scene: Maya turns her finished study
+      into a call for a firm'
+- id: S4
+  claim: The create form pre-seeds the source plan into a Coverage areas panel snapshotted
+    at creation, and on submit mints a brand-new active solicitation whose id is read
+    off the resulting responses page.
+  rationale: 'Bet: the owner should confirm the coverage the firm will see, frozen
+    at creation, so later plan edits never silently change a published solicitation;
+    and the call is minted live each render rather than reusing a fixed record.'
+  status: grounded
+  evidence:
+  - type: implemented
+    ref: 'create-survey-solicitation walkthrough scene: Maya mints the call live and
+      lands on its responses page'
+- id: S5
+  claim: A survey firm reads the public solicitation and applies by selecting a specific
+    coverage area from a checklist, and submission is blocked until one area is chosen.
+  rationale: 'Bet: an application should commit to a concrete coverage area, not a
+    free-text claim, so the owner compares applicants on the real area they will work.'
+  status: grounded
+  evidence:
+  - type: implemented
+    ref: 'create-survey-solicitation walkthrough scene: A survey firm reads the open
+      call and ticks the area it can staff'
+- id: S6
+  claim: The owner reviewing responses sees each firm's committed coverage area resolved
+    from the authoritative snapshot, tying every application to a concrete designed
+    coverage.
+  rationale: 'Bet: the reviewer should compare applicants against the designed coverage,
+    so the area the firm committed to is shown directly on the response.'
+  status: grounded
+  evidence:
+  - type: implemented
+    ref: 'create-survey-solicitation walkthrough scene: Maya sees the firm tied to
+      the coverage she designed'
+- id: S7
+  claim: Awarding the chosen firm records the decision and notifies the organization,
+    while standing up the live Connect opportunity that firm would run is the next
+    step, not yet built.
+  rationale: 'Bet: the demo must be honest about the planning-versus-execution boundary
+    — awarding a firm is a real, shipped end-state, and field execution (provisioning
+    the live opportunity) is the aspirational next step, not a shipped mechanism dressed
+    up as done.'
+  status: grounded
+  evidence:
+  - type: implemented
+    ref: 'create-survey-solicitation walkthrough scene: Maya awards the firm and sees
+      it was notified'
+gaps: []

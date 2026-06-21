@@ -1,0 +1,56 @@
+narrative_slug: microplans-study-groups
+schema_version: 1
+problem: Design a controlled two-arm study, right from the map
+spine:
+- id: S12
+  claim: Maya creates an empty two-arm study from scratch on the labs-only Kaura programme
+    with one click and lands on its manage page, ready to add a plan, before any wards
+    are committed.
+  rationale: 'Bet: a study should start as an empty container the planner fills from
+    the map, not a list of names committed up front — so “+ New study” creates it
+    in one click, no name-first form.'
+  status: grounded
+  evidence:
+  - kind: implemented
+    ref: 'microplans-study-groups walkthrough scene: Maya starts a study from scratch'
+- id: S13
+  claim: From the empty study, “+ Add a plan in the editor” opens the polished single-plan
+    editor scoped to the study (?group=<id>), where Maya turns on the Kaura CHC opportunity's
+    service-delivery data — one plan, built in the unified plan UI.
+  rationale: 'Bet: a controlled study is designed in one real plan editor — the planner
+    opens it on the study and grounds it in the opportunity''s own delivery data,
+    rather than starting from a name list; scoping the editor to the study (?group=)
+    files the finished plan back automatically.'
+  status: grounded
+  evidence:
+  - kind: implemented
+    ref: 'microplans-study-groups walkthrough scene: Maya opens the plan editor on
+      the empty study'
+- id: S7
+  claim: With the methodology set (size-balance bands + footprint-size filter), ‘Generate
+    plan’ samples both arms in one action and creates the single two-arm plan in place
+    (no reload) — the editor becomes the plan's review map, work areas and KPIs shown,
+    the plan already in the study.
+  rationale: 'Bet: a two-arm plan should be selected, sampled, and reviewed in one
+    continuous editor — ‘Generate plan’ draws both arms from one shared methodology
+    and creates the plan in place (create-in-place) so the planner never loses context
+    and the arms are comparable by construction.'
+  status: grounded
+  evidence:
+  - kind: implemented
+    ref: 'microplans-study-groups walkthrough scene: Maya generates the two-arm plan
+      in place'
+- id: S14
+  claim: Maya advances the single two-arm plan draft → in_review → approved from the
+    workspace, completing a balanced study. Each work area stores its arm labs-side
+    so future analysis can distinguish the arms, while the arm is kept off the LLO/field-facing
+    surfaces (UI + Connect case properties) — so the study stays blind to the field
+    yet carries its arms forward.
+  rationale: 'Bet: completing the study is approving the one plan that holds both
+    arms; blinding is a display choice, not data loss — each work area keeps its arm
+    labs-side for analysis, while the LLO/field-facing surfaces never show it.'
+  status: grounded
+  evidence:
+  - kind: implemented
+    ref: 'microplans-study-groups walkthrough scene: Maya completes the study'
+gaps: []
