@@ -22,4 +22,8 @@ bundle_root: 'gdrive:'
 # danger signs, which leaves those dimensions with no variance for Scout's modeling.
 # Numeric bounds + text fabrication apply regardless of this flag. See issue #670.
 curate: true
+# High-fidelity 'close mirror' (issue #713): carry a de-identified per-entity
+# transplant pool so each clone reproduces its source opp's exact visits/case,
+# cases/FLW, timing, and per-child weight-vs-age growth curve — not just marginals.
+mirror: true
 opportunity_ids: [523, 524, 675, 874, 938, 1234, 1236, 1487, 1488, 1739, 1790]

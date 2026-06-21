@@ -165,3 +165,28 @@ def test_generate_fixtures_only_writes_gdrive_no_db(settings):
     assert rows[0]["source_opportunity_id"] == 523
     assert rows[0]["gdrive_folder_id"]
     assert rows[0]["visit_count"] > 0
+
+
+def test_profile_opp_to_bundle_threads_mirror_into_profile(tmp_path):
+    """mirror=True must reach the profiler so the bundle carries a transplant pool."""
+    visits = [{"username": "a", "visit_date": "2026-05-04", "form_json": {"form": {"w": 1.0}}}] * 4 + [
+        {"username": "b", "visit_date": "2026-05-11", "form_json": {"form": {"w": 1.5}}}
+    ] * 4
+    fake = {
+        "": {"id": 523, "name": "KMC NAMA"},
+        "user_visits": visits,
+        "user_data": [],
+        "app_structure": {"learn_app": None, "deliver_app": {"modules": []}},
+    }
+    store = make_bundle_store(str(tmp_path))
+    seen = {}
+
+    def fake_profile(**kwargs):
+        seen.update(kwargs)
+        return "opportunity_id: 523\n"
+
+    with patch.object(clone_from_prod, "_fetch_endpoint", side_effect=lambda b, o, k, t: fake[k]):
+        with patch.object(clone_from_prod, "_profile", side_effect=fake_profile):
+            clone_from_prod.profile_opp_to_bundle(523, base_url="https://x", oauth_token="t", store=store, mirror=True)
+
+    assert seen["mirror"] is True
