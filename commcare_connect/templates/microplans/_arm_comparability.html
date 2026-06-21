@@ -1,67 +1,49 @@
 {% comment %}
-Shared arm-comparability panel. Rendered identically on the study-group page
+Shared arm-comparison panel. Rendered identically on the study-group page
 (server-side include) and the single-plan review page (returned by
 ArmComparabilityView and injected client-side after Generate). Both build the
 `comparability` context from the same `arm_comparability_psu` engine, so this is
-the single source of comparability markup. Each arm's row label comes from
+the single source of comparison markup. Each arm's row label comes from
 `comparability.arms[].name` (plan name on the group page; ward name on the plan
 page). The whole-ward density line renders only when a ward_density is present
 (group page) and is omitted on the single plan, where it is context-only and 0.
+
+Presentation is deliberately OBJECTIVE: per-arm metrics + standardized mean
+differences as numbers, with no pass/fail verdict, no "match"/"within tolerance"
+badge, and no per-cell good/ok/bad coloring. The engine still computes `matched`
+/ `incomparable` / the SMD bands (other code, e.g. ArmComparabilityView's JSON,
+reads `matched`); this panel simply does not render a verdict. The viewer reads
+the numbers and judges for themselves.
 {% endcomment %}
 {% if comparability and comparability.metrics %}
 <section class="px-4 pt-4 pb-2">
   <div class="flex items-center gap-2 mb-1.5">
-    <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Arm comparability</h2>
-    {% if comparability.matched is True %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">within tolerance</span>
-    {% elif comparability.matched is False %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-red-50 text-red-700 border border-red-200">out of tolerance</span>{% endif %}
-    {% include "microplans/_info.html" with text="A rooftop survey only visits the sampled settlements (PSUs), so the two arms are compared on those — not the whole ward — as a standardized mean difference (SMD). The verdict is decided by settlement density alone; differences in PSU size and building footprint are corrected at analysis, not used to reject a control. Bands: |SMD| < 0.1 close · < 0.25 acceptable · ≥ 0.25 differs." only %}
+    <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Arm comparison — sampled settlements</h2>
   </div>
-  {# One-line objective read — what the data shows; the analyst decides + acts. #}
+  {# One factual line: what was compared, and the sample size per arm. No verdict. #}
+  <p class="text-sm text-gray-700 mb-3">
+    Compared on the settlements actually sampled, over the density range both arms share.
+    {% if comparability.n_intervention and comparability.n_control %}n&nbsp;= {{ comparability.n_intervention }} intervention · {{ comparability.n_control }} control.{% endif %}
+  </p>
+
   {% if comparability.incomparable %}
-  {% comment %}
-    Genuine incomparability: even the best match on common support can't bring density
-    into tolerance (the two wards don't share enough settlement-density support). This
-    is distinct from the old unconditional fail — the remedy is a different control,
-    not a fresh draw of the same pair.
-  {% endcomment %}
-  <p class="text-sm text-gray-700 mb-2">These wards don't share enough settlement-density support — density SMD&nbsp;{{ comparability.gating_smd }}.</p>
-  <div class="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 mb-3">
-    <span class="text-amber-600 leading-none mt-0.5 shrink-0">⚠</span>
-    <p class="text-[12px] text-amber-900 leading-snug m-0">
-      <b>What to do:</b> even the best match these two wards allow can't reach tolerance on settlement density — they don't overlap enough on the structure of where people live. A fresh draw won't fix this; pick a <b>different control ward</b> (the surrounding-ward finder ranks candidates by best-achievable matched balance). If none qualifies, proceed and record density as a study limitation.
-    </p>
-  </div>
-  {% elif comparability.matched is True %}
-  <p class="text-sm text-gray-700 {% if comparability.matched_design %}mb-1{% else %}mb-3{% endif %}">Sampled settlements match — density SMD&nbsp;{{ comparability.gating_smd }}{% if comparability.gating_band == "ok" %} <span class="text-amber-700">(marginal)</span>{% endif %}{% if comparability.matched_design %} <span class="text-emerald-700">(balanced by design)</span>{% endif %}.</p>
-  {% if comparability.estimand_note %}<p class="text-[12px] text-gray-500 mb-3">{{ comparability.estimand_note }}</p>{% endif %}
-  {% elif comparability.matched is False %}
-  <p class="text-sm text-gray-700 mb-2">Sampled settlements differ — density SMD&nbsp;{{ comparability.gating_smd }}.</p>
-  {% comment %}
-    Out of tolerance on the gating axis -> tell the planner what to do. Density is
-    structural; it can't be re-weighted away at analysis, so the remedy is a
-    better-matched control or a fresh draw, not "adjust later".
-  {% endcomment %}
-  <div class="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 mb-3">
-    <span class="text-amber-600 leading-none mt-0.5 shrink-0">⚠</span>
-    <p class="text-[12px] text-amber-900 leading-snug m-0">
-      <b>What to do:</b> this control isn't a fair match on settlement density — the one axis a matched design can't correct at analysis. Pick a different neighbouring <b>control ward</b>, or <b>Regenerate</b> for a fresh draw. If no better control exists, proceed and record density as a study limitation.
-    </p>
-  </div>
+  {# Genuinely-incomparable case stated as a neutral fact, not a directive: the two
+     wards share little settlement-density range, so the comparison rests on a thin
+     overlap. State the fact; let the viewer interpret. #}
+  <p class="text-[12px] text-gray-600 leading-snug mb-3">
+    The two wards share little settlement-density range{% if comparability.n_control %} (common-support n&nbsp;= {{ comparability.n_control }}){% endif %}; compare with that in mind.
+  </p>
   {% endif %}
 
-  {# One row per arm; attributes as columns; density decides the verdict, the rest adjusted at analysis. #}
+  {# One row per arm; metrics as columns; a final SMD row showing just the numbers. #}
   <div class="overflow-x-auto border border-gray-200 rounded-lg inline-block">
     <table class="text-sm">
       <thead class="bg-gray-50 text-gray-600">
         <tr>
-          <th class="text-left font-semibold px-3 py-2">Plan</th>
+          <th class="text-left font-semibold px-3 py-2">Arm</th>
           {% for m in comparability.metrics %}
-          <th class="text-right font-semibold px-3 py-2 align-bottom">
-            <div class="flex flex-col items-end leading-tight">
-              <span>{{ m.label }}{% if m.metric == "psu_density" %} <span class="text-[10px] text-gray-400">/km²</span>{% elif m.metric == "bldg_area" %} <span class="text-[10px] text-gray-400">m²</span>{% endif %}</span>
-              {% if m.core %}<span class="text-[9px] font-medium uppercase tracking-wide text-gray-500">decides verdict</span>
-              {% else %}<span class="text-[9px] font-medium uppercase tracking-wide text-gray-400">adjusted</span>{% endif %}
-            </div>
+          <th class="text-right font-semibold px-3 py-2">
+            {{ m.label }}{% if m.metric == "psu_density" %} <span class="text-[10px] text-gray-400">/km²</span>{% elif m.metric == "bldg_area" %} <span class="text-[10px] text-gray-400">m²</span>{% endif %}
           </th>
           {% endfor %}
         </tr>
@@ -83,22 +65,13 @@ page). The whole-ward density line renders only when a ward_density is present
         </tr>
         <tr class="bg-gray-50">
           <td class="px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">SMD</td>
-          {% for m in comparability.metrics %}
-          <td class="px-3 py-2 text-right whitespace-nowrap">
-            <span class="tabular-nums">{{ m.smd }}</span>
-            {% if m.band == "good" %}<span class="ml-1 text-[11px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700">close</span>
-            {% elif m.band == "ok" %}<span class="ml-1 text-[11px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700">acceptable</span>
-            {% else %}<span class="ml-1 text-[11px] px-1.5 py-0.5 rounded bg-red-50 text-red-700">differs</span>{% endif %}
-          </td>
-          {% endfor %}
+          {% for m in comparability.metrics %}<td class="px-3 py-2 text-right tabular-nums">{{ m.smd }}</td>{% endfor %}
         </tr>
       </tbody>
     </table>
   </div>
   <p class="text-[11px] text-gray-400 mt-1 flex items-center flex-wrap">
-    {% if comparability.n_intervention and comparability.n_control %}n = {{ comparability.n_intervention }} / {{ comparability.n_control }} selected settlements per arm. {% endif %}
-    Settlement density decides the verdict; PSU size &amp; building footprint are adjusted at analysis, never used to reject a control.
-    {% include "microplans/_info.html" with text="Settlement density = buildings per km² inside each sampled settlement (the convex hull of its buildings), averaged over the selected settlements — structural, so it alone decides comparability. PSU size and building footprint are baseline covariates a difference-in-differences analysis corrects for: recorded and adjusted, never used to reject the control." only %}
+    {% include "microplans/_info.html" with text="SMD = standardized mean difference (0 = identical, higher = more different). Settlement density is the axis the sample is matched on; PSU size and building footprint are baseline covariates recorded for analysis." only %}
   </p>
 
   {% if comparability.arms.0.ward_density or comparability.arms.1.ward_density %}
@@ -106,7 +79,7 @@ page). The whole-ward density line renders only when a ward_density is present
     Whole-ward density:
     {% for a in comparability.arms %}{% if a.arm == "intervention" %}&nbsp;intervention {{ a.ward_density }}/km²{% endif %}{% endfor %}
     vs{% for a in comparability.arms %}{% if a.arm == "control" or a.arm == "comparison" %} control {{ a.ward_density }}/km²{% endif %}{% endfor %}.
-    {% include "microplans/_info.html" with text="The naive measure, shown for context only — not used for matching. A larger, sparser ward can still be a fair control when its sampled settlements match, which is exactly what the comparison above tests." only %}
+    {% include "microplans/_info.html" with text="The whole-ward measure, shown for context only — not what the sample is compared on. The comparison above uses the sampled settlements, so a larger, sparser ward can still share the same sampled-density range." only %}
   </p>
   {% endif %}
 </section>
