@@ -2,21 +2,20 @@ auth:
   type: session
 base_url: https://labs.connect.dimagi.com
 name: campaign-utility-tool
-narrative: 'Amara runs Nigeria''s national measles–rubella campaign, and she opens
+narrative: 'Amara runs Nigeria''s national measles-rubella campaign, and she opens
   the Campaign Utility Tool to her command center: one screen where the whole campaign''s
   funding, enrolment, attendance, verification and payment progress are already current.
   She moves to payments to release this week''s worker pay, and the tool stops her
-  on a worker it won''t let her pay — his identity verification was rejected — so
+  on a worker it won''t let her pay - his identity verification was rejected - so
   she opens his KYC, sees the duplicate national-ID flag behind it, and holds him
-  instead of paying. She drops into a state''s microplan to check planned-versus-actual
+  instead of paying. She drops into the microplans to check planned-versus-actual
   workforce and budget, then opens one worker and confirms what she''s been acting
-  on is a real CommCare case on a real ward — not a mock — and sees the campaign holds
-  every state in the country. She checks the audit log that recorded every payment
-  and verification decision she just made, exports the week''s numbers as a CSV for
-  the donor, and ends by reading coverage straight off a map of Nigeria shaded by
-  reach.'
+  on is a real CommCare case on a real ward - not a mock - and sees the campaign holds
+  every state in the country. She checks the audit log that recorded every decision
+  she just made, and ends on the reporting board - per-state coverage across all 37
+  states - exporting the week''s numbers as a CSV for the donor.'
 narrative_locked: true
-narrative_locked_at: '2026-06-21T04:31:14.786166+00:00'
+narrative_locked_at: '2026-06-21T04:51:55.994106+00:00'
 personas:
   amara:
     color: '#3843D0'
@@ -248,36 +247,12 @@ scenes:
     id: reporting-csv-export
     verify: 'Playwright: in Reporting click ''Export data''; assert a CSV download
       is triggered.'
-  narrative: Amara exports the week's numbers as a CSV she can hand straight to the
-    donor.
+  narrative: Amara ends the morning on the reporting board - per-state coverage shaded
+    by reach across all 37 states - and exports the week's numbers as a CSV she can
+    hand straight to the donor.
   persona: amara
   provenance: S5
-  show: Amara opens Reporting & Monitoring and exports a CSV report
+  show: Amara reviews per-state coverage on the Reporting board and exports a CSV
+    report
   title: The donor's numbers, exported
-- actions:
-  - kind: wait_for
-    must_succeed: true
-    target: View map
-  - kind: click
-    target: View map
-  - kind: hold
-    seconds: 14
-  concept_claim: 'Reporting includes a geographic coverage map: a region choropleth
-    shaded by reach with worker GPS points.'
-  design_intent: Open the coverage map; the Nigeria choropleth + worker points make
-    "are we reaching everyone" answerable at a glance. Give the map time to paint.
-  features:
-  - description: Coverage map renders a region choropleth (by worker count) plus worker
-      GPS points
-    id: coverage-map
-    verify: 'Playwright: in Reporting click ''View map''; assert a Mapbox canvas renders
-      with shaded regions and worker GPS points.'
-  full_page: false
-  narrative: Amara ends the morning reading coverage straight off a map of Nigeria
-    — states shaded by how far the campaign has reached, worker locations plotted
-    on top.
-  persona: amara
-  provenance: S5
-  show: Amara opens the geographic coverage map of Nigeria (choropleth + worker GPS)
-  title: Coverage, read off the map
 tagline: Run a national vaccination campaign from one command center
