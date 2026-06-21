@@ -130,13 +130,35 @@ def _overlap_coefficient(a, b, bins: int = 12, edges=None) -> float:
 
 
 def matched_density_smd(ref_densities, cand_densities, *, edges=None, bins: int = 12) -> dict | None:
-    """The cross-arm density SMD ACHIEVABLE AFTER matching on common support.
+    """The cross-arm density SMD the MATCHED SELECTION would realise — not the raw
+    common-band SMD.
 
-    The matched selector restricts BOTH arms to the density bands they share, then
-    samples both there. So the balance the matched design will actually realise is the
-    SMD between the two arms' densities *restricted to the common bands* — not the raw
-    whole-ward SMD. This computes exactly that, so the control finder can rank by the
-    balance you'd get, not the raw overlap.
+    The real selector (:func:`sampling.sample.select_psus_matched`) does NOT just
+    restrict both arms to their shared density bands and keep every point there. It
+    allocates the per-band sample counts **proportional to the INTERVENTION arm's
+    per-band candidate counts** (Hamilton largest-remainder) and applies that SAME
+    per-band allocation to BOTH arms — so both arms end the draw with the *same band
+    mix* (the intervention's). That is exactly what matching fixes: the band-MIX
+    imbalance is removed, leaving only WITHIN-band density differences. Restricting to
+    common support but keeping each arm's own band mix (the old behaviour) overstates
+    the imbalance and disagrees with the post-Generate ARM COMPARABILITY panel.
+
+    This estimates the realised balance by REWEIGHTING each arm's per-band density
+    contributions to the shared intervention band-proportion, then computing the SMD on
+    the reweighted distributions:
+
+    Let ``B`` be the common bands, ``w_b`` the intervention's share of its common-band
+    points in band ``b`` (so ``Σ w_b = 1`` — the band weights the selector imposes on
+    *both* arms), and for arm ``X`` let ``μ_Xb`` / ``v_Xb`` be the mean / variance of
+    arm ``X``'s densities in band ``b``. The reweighted arm mean is
+    ``μ_X = Σ_b w_b · μ_Xb``. The reweighted variance uses the standard law of total
+    variance for a mixture under weights ``w`` — within-band plus between-band:
+    ``v_X = Σ_b w_b · v_Xb + Σ_b w_b · (μ_Xb − μ_X)²`` (this is exactly the variance the
+    matched DRAW realises once both arms are resampled to the same band mix ``w``). The
+    result is ``SMD = |μ_ref − μ_cand| / sqrt((v_ref + v_cand) / 2)``. Because the
+    band-MIX difference between the arms is removed (both arms now carry ``w``), this is
+    ``≤`` the old all-points common-band SMD, and it equals it when the two arms already
+    share the intervention's band mix.
 
     Returns ``{"matched_smd": float, "matched_band": good|ok|imbalanced,
     "common_fraction": float, "incomparable": bool}`` or ``None`` when either ward has
@@ -175,12 +197,37 @@ def matched_density_smd(ref_densities, cand_densities, *, edges=None, bins: int 
 
     in_common_ref = np.isin(rb, common)
     in_common_cand = np.isin(cb, common)
-    rsub, csub = ref[in_common_ref], cand[in_common_cand]
-    smd = _smd(
-        (float(rsub.mean()), float(rsub.std(ddof=1)) if len(rsub) > 1 else 0.0),
-        (float(csub.mean()), float(csub.std(ddof=1)) if len(csub) > 1 else 0.0),
-    )
-    frac = float((in_common_ref.sum() + in_common_cand.sum()) / (len(ref) + len(cand)))
+
+    # Band weights the selector imposes on BOTH arms: the intervention's share of its
+    # own common-band points per band (∝ anchor per-band candidate count, the same
+    # proportion _hamilton_allocate splits the sample by).
+    ref_common_n = int(in_common_ref.sum())
+    band_w = {b: float(np.count_nonzero(rb == b)) / ref_common_n for b in common}
+
+    def _reweighted(arr, bands):
+        """Reweight an arm's per-band density to the shared band weights ``band_w`` and
+        return (mean, sd) of the resulting mixture. Law of total variance: var =
+        within-band (Σ w_b v_b) + between-band (Σ w_b (μ_b − μ)²). Both arms share the
+        SAME ``w``, so the band-MIX difference between them is gone — what remains is the
+        within-band density difference matching can't fix, exactly what the matched draw
+        leaves on the table."""
+        per_band = []  # (w, mean_b, var_b)
+        for b in common:
+            vals = arr[bands == b]
+            if len(vals) == 0:
+                continue
+            v = float(vals.var(ddof=1)) if len(vals) > 1 else 0.0
+            per_band.append((band_w[b], float(vals.mean()), v))
+        wsum = sum(w for w, _, _ in per_band) or 1.0
+        mean = sum(w * mb for w, mb, _ in per_band) / wsum
+        within = sum(w * vb for w, _, vb in per_band) / wsum
+        between = sum(w * (mb - mean) ** 2 for w, mb, _ in per_band) / wsum
+        return mean, float(np.sqrt(within + between))
+
+    rmean, rsd = _reweighted(ref, rb)
+    cmean, csd = _reweighted(cand, cb)
+    smd = _smd((rmean, rsd), (cmean, csd))
+    frac = float((ref_common_n + int(in_common_cand.sum())) / (len(ref) + len(cand)))
     return {
         "matched_smd": round(smd, 3),
         "matched_band": _band(smd),
