@@ -1,0 +1,118 @@
+{
+  "feature": "Campaign Utility Tool",
+  "generated_at": "2026-06-20T23:40:00Z",
+  "items": [
+    {
+      "id": "EV-001",
+      "kind": "documented",
+      "ref": "Google Doc: Spec: Campaign Management Utility (drive 1cNpjEn_Smy6mHx5rWzflp20hbx65dlbG)",
+      "summary": "Requirements: campaign ops are fragmented across CommCare, KYC systems, payment platforms, reporting/GIS tools and spreadsheets; the tool centralizes them into one unified interface for real-time visibility + admin workflows.",
+      "claim_hint": "The problem is fragmentation across disconnected systems; the tool is the single pane of glass that unifies them."
+    },
+    {
+      "id": "EV-002",
+      "kind": "documented",
+      "ref": "Spec doc §2 Assumptions",
+      "summary": "Worker registration stays in CommCare; KYC validation stays in an external system; the tool is an orchestration/visibility layer that consumes data via APIs and triggers writes through existing system APIs (does not replace payment processing or KYC).",
+      "claim_hint": "The tool reads from systems of record and orchestrates — it never becomes a competing source of truth."
+    },
+    {
+      "id": "EV-003",
+      "kind": "documented",
+      "ref": "Campaign Utility Tool_Data Model.pdf (12 datasets / 6 domains / 2 owners)",
+      "summary": "Ownership split: CommCare HQ owns Campaign/Region/Donor/Worker/KYC/AppUser; the Utility owns Payment/Activity/Microplan/Reporting/AuditLog/Connection. Cross-owner FKs (Payment→Worker, Payment→KYC, Microplan→Region) require a defined API/sync contract.",
+      "claim_hint": "There is a precise, documented data-ownership boundary that the tool must honor."
+    },
+    {
+      "id": "EV-004",
+      "kind": "documented",
+      "ref": "Spec doc §3-5 (tabs, use cases, MVP scope)",
+      "summary": "Tabs: Overview, Workers (Payments/KYC/Profiles), Activity (Details/Microplanning & Budget), Reporting & Monitoring, System Administration. MVP includes payment review+approval, daily approval, fraud flagging on shared identifiers, KYC submission, reporting export.",
+      "claim_hint": "The compelling workflows are payment review-with-fraud-guard, KYC validation, microplanning/budget, and reporting/coverage."
+    },
+    {
+      "id": "EV-005",
+      "kind": "documented",
+      "ref": "docs/superpowers/specs/2026-06-18-campaign-utility-tool-design.md",
+      "summary": "Design doc: standalone Django app at /campaign/, CommCare HQ OAuth login + in-app whitelist + server-side RBAC (5 roles), prototype shipped verbatim, own ORM; later sources Worker/KYC/Region/Donor from live CommCare Case/Form API reads.",
+      "claim_hint": "The architecture is deliberately isolated and reads the roster from CommCare via the Case API."
+    },
+    {
+      "id": "EV-006",
+      "kind": "implemented",
+      "ref": "commcare_connect/campaign/services/worker_cases.py + models.WorkerCase (PR #687)",
+      "summary": "Workers are generated as synthetic CommCare cases (case_type campaign_worker) carrying the full Worker + KYC field set, placed on real Nigeria geography (labs AdminBoundary state→LGA→ward + in-ward GPS), deterministic, national-scale.",
+      "claim_hint": "The synthetic data is faithful: workers are real-shaped CommCare cases on real geography, not invented rows."
+    },
+    {
+      "id": "EV-007",
+      "kind": "implemented",
+      "ref": "commcare_connect/campaign/services/{providers,commcare_api,commcare_cases_backend}.py (PR #690)",
+      "summary": "A synthetic CommCare project space served via the Case API: CommCareProvider reads workers as cases through commcare_api, short-circuited in-app from WorkerCase for a synthetic domain (symmetric to labs synthetic Connect opportunities). 'Go real' is a per-domain config flip.",
+      "claim_hint": "The tool reads workers FROM the CommCare Case API exactly as it will read real CommCare — the demo path == the production path."
+    },
+    {
+      "id": "EV-008",
+      "kind": "implemented",
+      "ref": "commcare_connect/campaign/api/workers.py + services/worker_actions.py (PR #692)",
+      "summary": "Payment + KYC writes run the fraud-guard mutation logic on the CommCare case (WorkerCaseHandle): approving a payment is blocked when a worker has open fraud flags or rejected KYC; writes land on the case, never a tool-local copy.",
+      "claim_hint": "The fraud guard is real and enforced server-side — flagged/failed-KYC workers cannot be paid."
+    },
+    {
+      "id": "EV-009",
+      "kind": "implemented",
+      "ref": "commcare_connect/campaign/services/synthetic_campaign.py + measure_campaign_scale (PR #687/#694)",
+      "summary": "A national campaign builds across all 37 states (worker cases + region plans + microplans + reporting + households). Measured cliff: 50k workers = ~38 MB single-payload bootstrap (queries flat at ~9-11), fixed by a summary bootstrap + paginated /api/workers/.",
+      "claim_hint": "The tool works at true national scale (50k workers) and stays usable in the browser."
+    },
+    {
+      "id": "EV-010",
+      "kind": "implemented",
+      "ref": "static/campaign/tab_overview.jsx + serializers.workers_summary (PR #694)",
+      "summary": "Overview renders server-computed KPIs over ALL workers (KYC/payment donuts, funding, enrolment/attendance/verification/payment progress, workforce by role) — accurate at any scale without shipping the worker list.",
+      "claim_hint": "One screen shows the whole campaign's real-time state."
+    },
+    {
+      "id": "EV-011",
+      "kind": "implemented",
+      "ref": "static/campaign/tab_reporting.jsx + api/reports.py + api/map.py (PR #695/#696)",
+      "summary": "Reporting: enrolment/attendance/payment trends, household coverage, real CSV export + custom-report builder (5 report types, column/group selection), and a geographic coverage MAP (region choropleth shaded by worker count + worker GPS colored by KYC, reusing the labs Mapbox stack).",
+      "claim_hint": "Operational + donor reporting and geographic coverage are first-class — export a CSV, see coverage on a map."
+    },
+    {
+      "id": "EV-012",
+      "kind": "implemented",
+      "ref": "commcare_connect/campaign/auth/ + services/rbac.py + models.AuditLog (PR #672/#676)",
+      "summary": "CommCare HQ OAuth login + in-app whitelist + server-side RBAC (5 roles × module × verb) + real audit logging written on every privileged admin action (payments, KYC, user mgmt, activities, microplans) with masked IP.",
+      "claim_hint": "Access is controlled and every privileged action is audited — accountability is built in."
+    },
+    {
+      "id": "EV-013",
+      "kind": "implemented",
+      "ref": "live tool — https://labs.connect.dimagi.com/campaign/ (deployed; health 200)",
+      "summary": "The tool is deployed and live; the national campaign is viewable at /campaign/?campaign=MR-NAT-2026 once built. Login is CommCare HQ OAuth (separate from the labs Connect session).",
+      "claim_hint": "This is a real, running product a campaign administrator can use today."
+    },
+    {
+      "id": "EV-014",
+      "kind": "implemented",
+      "ref": "commcare_connect/mcp/tools/campaign.py — campaign_build_national (PR #693)",
+      "summary": "The national synthetic campaign is stood up in-app via the connect_labs MCP (campaign_build_national) — direct DB + real GeoPoDe boundaries, no AWS/ECS task.",
+      "claim_hint": "The full national dataset can be generated on demand against real geography."
+    },
+    {
+      "id": "EV-015",
+      "kind": "assumed",
+      "ref": "labs prod DB — national campaign (code MR-NAT-2026) build status",
+      "summary": "The 50k national campaign may not yet be built in labs prod (the MCP tool wasn't callable from the build session). Until built, /campaign/ shows the 64-worker demo; the map's boundaries/GPS need the domain (national) campaign to be populated.",
+      "claim_hint": "GAP: the map + national-scale scenes need the national campaign stood up in labs before recording."
+    },
+    {
+      "id": "EV-016",
+      "kind": "assumed",
+      "ref": "canopy walkthrough recorder ↔ /campaign/ CommCare OAuth",
+      "summary": "Recording /campaign/ requires a CommCare-HQ-authed browser session (the campaign app uses CommCare OAuth, not the labs Connect session). The recorder must establish/import that session (Playwright + ACE_HQ creds, or an /ace:labs-login that primes the CCHQ session the campaign OAuth reuses).",
+      "claim_hint": "GAP: the recorder needs the CommCare-OAuth auth path wired before it can capture the campaign UI."
+    }
+  ]
+}

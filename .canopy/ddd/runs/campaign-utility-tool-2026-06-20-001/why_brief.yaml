@@ -1,0 +1,124 @@
+schema_version: 1
+narrative_slug: campaign-utility-tool
+problem: >-
+  A campaign administrator running a national measles-rubella vaccination campaign needs one place to
+  see the campaign's real-time state and take its consequential actions — approving worker payments,
+  validating KYC, planning workforce and budget, monitoring coverage, and reporting to donors — with
+  confidence that ineligible or fraudulent payments are caught before money moves.
+spine:
+  - id: S1
+    claim: >-
+      The Campaign Utility Tool is a single command center for a national vaccination campaign: one
+      Overview screen shows the campaign's real-time state — funding, enrolment, attendance, verification
+      and payment progress, workforce distribution, and KYC + payment status.
+    rationale: >-
+      Starting from a live, at-a-glance picture of the whole campaign is what lets an administrator move
+      straight to decisions instead of assembling the numbers first.
+    status: grounded
+    evidence:
+      - kind: implemented
+        ref: EV-010
+  - id: S2
+    claim: >-
+      It lets you approve worker payments with confidence: the tool blocks a payment the moment a worker
+      has open fraud flags or rejected KYC, and surfaces the shared-identifier duplicates behind a flag.
+    rationale: >-
+      Enforcing eligibility at the moment of approval — not as an after-the-fact report — is what makes
+      "approve payments" a safe, fast action rather than a risk.
+    status: grounded
+    evidence:
+      - kind: implemented
+        ref: EV-008
+  - id: S3
+    claim: >-
+      It puts worker verification in reach: KYC status, submitted documents, duplicate and
+      shared-identifier fraud detection, and investigation notes — review and act in one view.
+    rationale: >-
+      Verification is the gate to payment; having it beside the worker, with the fraud signals attached,
+      is what lets the administrator clear or hold workers quickly and defensibly.
+    status: grounded
+    evidence:
+      - kind: documented
+        ref: EV-004
+      - kind: implemented
+        ref: EV-008
+  - id: S4
+    claim: >-
+      It turns planning into a managed view: per-area microplans with workforce planned-vs-actual, budget
+      vs spent, vaccine doses, and coverage targets — the plan and its execution side by side.
+    rationale: >-
+      Seeing planned vs actual workforce and budget per LGA is how the administrator steers resources
+      during the campaign rather than discovering shortfalls at the end.
+    status: grounded
+    evidence:
+      - kind: documented
+        ref: EV-004
+      - kind: implemented
+        ref: EV-009
+  - id: S5
+    claim: >-
+      It makes coverage and reporting first-class: a geographic coverage map — states shaded by reach,
+      worker locations plotted — plus real CSV export and a custom-report builder for donors.
+    rationale: >-
+      "Are we reaching everyone, and can I prove it?" is answered by a map you can read at a glance and a
+      report you can hand to a funder — both produced in the tool.
+    status: grounded
+    evidence:
+      - kind: implemented
+        ref: EV-011
+  - id: S6
+    claim: >-
+      What you see is faithful: every worker is a real CommCare CASE on real Nigeria geography, read
+      through the CommCare Case API — the same path the production integration uses.
+    rationale: >-
+      Because the demo reads workers from a CommCare project space via the production Case-API code, the
+      screens a stakeholder sees are exactly what the real integration will render — no mockups.
+    status: grounded
+    evidence:
+      - kind: implemented
+        ref: EV-006
+      - kind: implemented
+        ref: EV-007
+  - id: S7
+    claim: >-
+      It is accountable: access is role-controlled and every privileged action — a payment approval, a KYC
+      decision, a user change — is written to an audit log.
+    rationale: >-
+      Consequential actions on money and verification demand role control and an audit trail; that is the
+      bar for a tool an organization actually runs a campaign on.
+    status: grounded
+    evidence:
+      - kind: implemented
+        ref: EV-012
+  - id: S8
+    claim: >-
+      And it holds the whole national campaign: tens of thousands of workers across all 37 states stay
+      fast and usable, as a real, deployed, running product.
+    rationale: >-
+      A command center is only credible if it scales to the real campaign; staying responsive at 50k
+      workers proves the approach at the size it is meant for.
+    status: grounded
+    evidence:
+      - kind: implemented
+        ref: EV-009
+      - kind: implemented
+        ref: EV-013
+gaps:
+  - id: G1
+    type: CAPABILITY
+    claim_ref: S8
+    detail: >-
+      The national campaign (code MR-NAT-2026) may not yet be built in labs prod, so the map and
+      national-scale scenes would render against the 64-worker demo instead of the 50k national dataset.
+    proposed_action: >-
+      Stand up the national dataset in labs by calling the campaign_build_national MCP tool from a fresh
+      session (the tool catalog is snapshotted per session), then verify /campaign/?campaign=MR-NAT-2026.
+  - id: G2
+    type: CAPABILITY
+    claim_ref: S6
+    detail: >-
+      Recording /campaign/ needs a CommCare-HQ-authed browser session; the campaign app uses CommCare
+      OAuth, separate from the labs Connect session the recorder normally has.
+    proposed_action: >-
+      Establish/import the CommCare session for the recorder (Playwright + ACE_HQ creds, or an
+      /ace:labs-login that primes the CCHQ session the campaign OAuth reuses) before the render step.
