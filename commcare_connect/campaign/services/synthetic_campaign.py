@@ -75,7 +75,7 @@ def _regions_from_boundaries(campaign, states):
     return regions
 
 
-def _region_plans(regions, workers_by_region, state_pop):
+def _region_plans(regions, workers_by_region, state_pop, rng):
     total_budget = 0
     for region_id, region in regions.items():
         ws = workers_by_region.get(region_id, [])
@@ -83,7 +83,9 @@ def _region_plans(regions, workers_by_region, state_pop):
         spent = sum(w["amount"] for w in ws)
         pop = int(state_pop.get(region_id, 0))
         target = max(actual_wf, round(pop * 0.18))  # ~18% of pop is campaign-eligible
-        budget = round(spent * 1.25) or 1
+        # Vary budget utilization per region (≈72–88% spent) so the rollup rows in the
+        # Microplanning & Budget table don't all read an identical 80% "Budget Used".
+        budget = round(spent * (1.14 + rng.random() * 0.25)) or 1
         total_budget += budget
         RegionPlan.objects.create(
             region=region,
@@ -325,7 +327,7 @@ def build_synthetic_campaign(
         workers_by_region.setdefault(p["region_id"], []).append(p)
         workers_by_lga.setdefault((p["region_id"], p["lga"]), []).append(p)
 
-    total_budget = _region_plans(regions, workers_by_region, state_pop)
+    total_budget = _region_plans(regions, workers_by_region, state_pop, rng)
     _donors(campaign, total_budget)
     _microplans(campaign, regions, workers_by_lga, role_rates, rng)
     _report_days(campaign, worker_count, rng)
