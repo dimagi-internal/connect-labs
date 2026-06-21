@@ -33,12 +33,15 @@
     <div id="groups" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
   </section>
 
-  <!-- Plans by lifecycle phase — the in-progress draft inventory, secondary to the
-       finished studies above. Collapsed by default so it doesn't bury the hero study. -->
+  <!-- Plans by lifecycle phase — the candidate-plan inventory, secondary to the
+       finished studies above. Collapsed by default so it doesn't bury the hero study.
+       The header is lifecycle-neutral ("Candidate plans") because the inventory spans
+       every phase — drafts in review AND already-approved plans — so it must not assert
+       everything inside is "in progress" (that mis-labels an Approved plan as unfinished). -->
   <details id="phases-disclosure" class="border-t border-gray-200 pt-5 group">
     <summary class="cursor-pointer select-none text-sm font-semibold text-gray-700 hover:text-gray-900 list-none flex items-center gap-2">
       <i class="fa-solid fa-chevron-right text-xs transition-transform group-open:rotate-90"></i>
-      <span>Candidate plans in progress</span>
+      <span>Candidate plans</span>
       <span id="phases-count" class="text-xs font-normal text-gray-400"></span>
     </summary>
     <div id="phases" class="space-y-6 mt-4"></div>
@@ -105,7 +108,13 @@
   };
 
   const PHASES = [
-    { key: "planning", label: "Planning", statuses: ["draft", "in_review", "approved"], hint: "labs — being designed & reviewed with the LLO/funder" },
+    // Draft + in_review are the genuinely in-progress states (still being designed /
+    // reviewed). Approved is split into its own phase: an approved plan is the FINISHED
+    // output of the labs review loop (ready to deploy), so it must not sit under a
+    // "Planning · being designed & reviewed" header — that read as "in progress" for a
+    // plan whose review is complete (the bucketing bug a Reviewed/Approved study hit).
+    { key: "planning", label: "Planning", statuses: ["draft", "in_review"], hint: "labs — being designed & reviewed with the LLO/funder" },
+    { key: "approved", label: "Approved", statuses: ["approved"], hint: "review complete — ready to deploy to a Connect opportunity" },
     { key: "live", label: "Live", statuses: ["deployed"], hint: "pushed to a Connect opportunity — Connect runs execution" },
     { key: "archived", label: "Archived", statuses: ["archived"], hint: "candidate regions not chosen" },
   ];
@@ -181,7 +190,10 @@
     const looseCount = Object.values(byStatus).reduce((n, arr) => n + arr.length, 0);
     $("phases").innerHTML = PHASES.map((ph) => {
       const plans = ph.statuses.flatMap((s) => byStatus[s] || []);
-      if (!plans.length && ph.key === "archived") return "";
+      // Hide empty optional phases (Approved / Live / Archived) so the inventory doesn't
+      // render a bare "Approved — none" header before any plan reaches that state. Planning
+      // is the always-shown base phase (its "none" placeholder signals an empty inventory).
+      if (!plans.length && ph.key !== "planning") return "";
       return `<section>
         <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wide">${ph.label} <span class="text-gray-400 normal-case font-normal">· ${ph.hint}</span></h2>
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mt-2">
