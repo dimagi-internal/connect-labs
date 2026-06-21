@@ -709,14 +709,23 @@ class RespondView(LabsLoginRequiredMixin, TemplateView):
             labs_context = getattr(request, "labs_context", {})
             org = labs_context.get("organization", {})
 
+            # Applicant identity: a firm answering a public call names the
+            # organization it applies on behalf of. Prefer the firm name/email
+            # the applicant entered; fall back to the logged-in account only when
+            # left blank, so the owner always reviews/awards a named firm rather
+            # than the individual account that submitted the form.
+            firm_name = (form.cleaned_data.get("firm_name") or "").strip()
+            firm_email = (form.cleaned_data.get("firm_email") or "").strip()
+            account_name = (request.user.name or "").strip() or request.user.username
+
             data = {
                 "solicitation_id": pk,
                 "responses": form.get_responses_dict(),
                 "status": status,
-                "submitted_by_name": (request.user.name or "").strip() or request.user.username,
-                "submitted_by_email": request.user.email,
+                "submitted_by_name": firm_name or account_name,
+                "submitted_by_email": firm_email or request.user.email,
                 "org_id": org.get("id", ""),
-                "org_name": org.get("name", ""),
+                "org_name": firm_name or org.get("name", ""),
                 "submission_date": timezone.now().isoformat(),
             }
             if solicitation.plans:
