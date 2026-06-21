@@ -1265,7 +1265,7 @@ def test_program_group_manage_comparability_uses_psu_smd_not_whole_ward(client, 
     assert comp["matched"] is True  # matched on the core (settlement) metrics
     # whole-ward density is echoed as context only (each arm carries it)
     assert all("ward_density" in a for a in comp["arms"])
-    assert "Arm comparability" in resp.content.decode()
+    assert "Arm comparison" in resp.content.decode()
 
 
 def test_program_group_assign_arm(client, django_user_model, monkeypatch):
@@ -1591,11 +1591,15 @@ def test_arm_comparability_renders_shared_smd_panel(client, django_user_model):
     body = resp.json()
     assert body["status"] == "ok"
     assert body["matched"] is True
-    # the rendered, shared comparability partial (same one the group page includes)
-    assert "Arm comparability" in body["html"]
+    # the rendered, shared comparison partial (same one the group page includes)
+    assert "Arm comparison" in body["html"]
     assert "settlement density" in body["html"]
     assert "SMD" in body["html"]
     assert "Attakar" in body["html"] and "Gura" in body["html"]
+    # objective presentation: no pass/fail verdict language is rendered
+    assert "within tolerance" not in body["html"]
+    assert "out of tolerance" not in body["html"]
+    assert "balanced by design" not in body["html"]
 
 
 def test_arm_comparability_density_mismatch_not_matched(client, django_user_model):
@@ -1614,8 +1618,52 @@ def test_arm_comparability_density_mismatch_not_matched(client, django_user_mode
     )
     assert resp.status_code == 200, resp.content
     body = resp.json()
+    # engine still computes the verdict (ArmComparabilityView's JSON exposes `matched`)...
     assert body["matched"] is False
-    assert "out of tolerance" in body["html"]
+    # ...but the panel presents the comparison objectively: no "out of tolerance" verdict
+    # and no "What to do" directive — just the per-arm metrics and SMD numbers.
+    assert "out of tolerance" not in body["html"]
+    assert "What to do" not in body["html"]
+
+
+def test_arm_comparability_incomparable_renders_neutral_note_not_directive(client, django_user_model):
+    # When the matched draw found no shared density support (restricted), the engine flags
+    # `incomparable`. The panel states that as a neutral fact about shared density range —
+    # never a "What to do: pick a different control" directive.
+    _login(client, django_user_model)
+    matched_meta = {"restricted": True, "common_fraction": 0.0, "excluded_bands": []}
+    resp = client.post(
+        reverse("microplans:arm_comparability", kwargs={"opp_id": 123}),
+        data=json.dumps(
+            {
+                "stats": [
+                    {
+                        "arm": "intervention",
+                        "psu_size": [53, 20],
+                        "psu_density": [8000, 2500],
+                        "bldg_area": [120, 40],
+                        "n_psus": 6,
+                        "matched": matched_meta,
+                    },
+                    {
+                        "arm": "comparison",
+                        "psu_size": [60, 30],
+                        "psu_density": [2500, 1500],
+                        "bldg_area": [130, 45],
+                        "n_psus": 6,
+                    },
+                ]
+            }
+        ),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    assert body["matched"] is False  # engine still flags it
+    # neutral factual note, no directive / verdict
+    assert "share little settlement-density range" in body["html"]
+    assert "What to do" not in body["html"]
+    assert "out of tolerance" not in body["html"]
 
 
 def test_arm_comparability_one_arm_returns_empty_panel(client, django_user_model):
