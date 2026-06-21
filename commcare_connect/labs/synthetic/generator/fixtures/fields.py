@@ -225,6 +225,16 @@ def _default_for_kind(spec: QuestionSpec, rng: random.Random) -> Any:
     return _fabricate_text(spec.json_path.rsplit(".", 1)[-1], rng)
 
 
+def _format_forced(value: Any, kind: str | None) -> Any:
+    """Format a transplanted/longitudinal numeric value for its field kind."""
+    if kind == "int":
+        return int(round(float(value)))
+    try:
+        return round(float(value), 3)
+    except (TypeError, ValueError):
+        return value
+
+
 def _sample_count(count: dict[int, float], rng: random.Random) -> int:
     keys = sorted(count)
     weights = [count[k] for k in keys]
@@ -288,6 +298,7 @@ def fill_form_json(
     persona: FlwPersona | None = None,
     period: int | None = None,
     correlated_values: dict[str, Any] | None = None,
+    forced_values: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     anomaly_paths = {a.field_path for a in anomalies_for_visit if a.field_path}
     # Persona overrides take precedence over cohort distributions. Building a
@@ -312,9 +323,26 @@ def fill_form_json(
     out: dict[str, Any] = {}
     covered_paths: set[str] = set()
     consumed_keys: set[str] = set()
+
+    # Forced (transplanted/longitudinal) values win outright: they were really
+    # observed for this entity at this visit, so they bypass distribution draws and
+    # null-omission. Written first; both fill loops then skip these paths.
+    forced = forced_values or {}
+    by_path = schema.by_path()
+    written_forced: set[str] = set()
+    for path, val in forced.items():
+        if _under_repeat(path, repeat_bases):
+            continue
+        kind = by_path[path].kind if path in by_path else None
+        _set_nested(out, path, _format_forced(val, kind))
+        written_forced.add(path)
+    covered_paths |= written_forced
+
     for spec in schema.questions:
         if _under_repeat(spec.json_path, repeat_bases):
             continue  # owned by a repeat array, emitted below
+        if spec.json_path in written_forced:
+            continue  # already set from the transplanted series
         covered_paths.add(spec.json_path)
         if spec.json_path in correlated:
             dist = effective.get(spec.json_path)

@@ -22,6 +22,7 @@ import pandas as pd
 import yaml
 
 from .manifest import Manifest, ManifestValidationError
+from .mirror import profile_entity_structure
 from .schema_loader import FormSchema, parse_form_schema_from_app_json
 
 
@@ -167,27 +168,34 @@ def _profile_field_distributions(
             except (ValueError, TypeError):
                 pass
 
-        if len(values) < 5:
+        if not values:
             continue
 
         mean, std = _mean_std(values)
-        if std < 0.001:
-            continue
-
-        # Robust observed bounds (central 98%) so generated draws stay in the real
-        # range — an unbounded Normal otherwise emits impossible values (e.g. a
-        # negative child_age from N(13.5, 12.9)). p1/p99 also trims data-entry
-        # outliers rather than reproducing them.
-        lo = round(float(np.percentile(values, 1)), 3)
-        hi = round(float(np.percentile(values, 99)), 3)
-
-        distributions[path] = {
-            "distribution": "normal",
-            "mean": round(mean, 3),
-            "stddev": round(std, 3),
-            "lo": lo,
-            "hi": hi,
-        }
+        if len(values) >= 5 and std >= 0.001:
+            # Robust observed bounds (central 98%) so generated draws stay in the real
+            # range — an unbounded Normal otherwise emits impossible values (e.g. a
+            # negative child_age from N(13.5, 12.9)). p1/p99 also trims data-entry
+            # outliers rather than reproducing them.
+            lo = round(float(np.percentile(values, 1)), 3)
+            hi = round(float(np.percentile(values, 99)), 3)
+            distributions[path] = {
+                "distribution": "normal",
+                "mean": round(mean, 3),
+                "stddev": round(std, 3),
+                "lo": lo,
+                "hi": hi,
+            }
+        else:
+            # Too few samples for a Normal, or near-constant: still model the field as
+            # a uniform over its observed range (degenerate when constant). This keeps
+            # a real numeric field from being left unmodeled and silently filled with
+            # the randint(0,10) stub — the "~5 g weight" leak (issue #713 #4).
+            distributions[path] = {
+                "distribution": "uniform",
+                "low": round(min(values), 3),
+                "high": round(max(values), 3),
+            }
 
     return distributions
 
@@ -615,6 +623,7 @@ def profile(
     form_json_paths: list[str] | None = None,
     app_structure: dict | None = None,
     curate: bool = False,
+    mirror: bool = False,
 ) -> str:
     """Analyze real export data and return a Manifest YAML string.
 
@@ -656,6 +665,15 @@ def profile(
     if app_structure is not None:
         form_schema = parse_form_schema_from_app_json(app_structure, app_type="deliver")
         kinds = _classify_paths(form_schema)
+
+        # Model every numeric schema field, even one too sparsely present to be
+        # auto-discovered, so nothing real is left for the engine's randint(0,10)
+        # stub to fill (issue #713 #4). Already-profiled paths are left untouched.
+        for path, kind in kinds.items():
+            if kind in {"int", "decimal"} and path not in field_dists:
+                extra = _profile_field_distributions(user_visits, [path])
+                if path in extra:
+                    field_dists[path] = extra[path]
 
         # Attach null_rate to every numeric distribution we profiled.
         for path, dist in field_dists.items():
@@ -704,6 +722,25 @@ def profile(
     repeat_groups = _profile_repeat_groups(user_visits)
     if repeat_groups:
         cohort["repeat_groups"] = repeat_groups
+
+    # High-fidelity 'close mirror': carry a de-identified per-entity transplant pool
+    # so the engine replays the source's exact visits/case, cases/FLW, timing and
+    # value trajectories (issue #713 #2). Owners are remapped from source usernames
+    # to persona ids (the same volume ranking _profile_flw_personas uses), so the
+    # pool references the manifest's personas and never leaks a real username.
+    if mirror:
+        numeric_paths = {p for p, d in field_dists.items() if d.get("distribution") in ("normal", "uniform")}
+        structure = profile_entity_structure(user_visits, numeric_paths=numeric_paths)
+        ranked = sorted(visits_by_flw.items(), key=lambda kv: -len(kv[1]))
+        username_to_persona = {username: f"flw_{i + 1:03d}" for i, (username, _) in enumerate(ranked)}
+        pool = []
+        for series in structure.transplant_pool:
+            persona = username_to_persona.get(series["owner"])
+            if persona is None:
+                continue
+            pool.append({**series, "owner": persona})
+        if pool:
+            cohort["longitudinal"] = {"mode": "mirror", "transplant_pool": pool}
 
     # Seed deliberate QA anomalies (only under curation) so dashboards/evals have
     # something to find. Faithful profiling leaves this empty.
