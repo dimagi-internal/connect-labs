@@ -59,3 +59,13 @@ def test_cohort_spec_curate_roundtrips():
     assert CohortSpec.from_yaml(spec.to_yaml()).curate is True
     # default stays False
     assert CohortSpec.from_yaml("opportunity_ids: [1]\n").curate is False
+
+
+def test_mirror_flag_parses_and_defaults_false():
+    assert CohortSpec.from_yaml("opportunity_ids: [1]\n").mirror is False
+    assert CohortSpec.from_yaml("opportunity_ids: [1]\nmirror: true\n").mirror is True
+
+
+def test_mirror_survives_yaml_roundtrip():
+    spec = CohortSpec.from_yaml("opportunity_ids: [1, 2]\nmirror: true\n")
+    assert CohortSpec.from_yaml(spec.to_yaml()).mirror is True

@@ -20,7 +20,9 @@ from .provisioning import allocate_shared_program_id, register_labs_only_opp
 logger = logging.getLogger(__name__)
 
 
-def profile_opp_to_bundle(source_opp_id: int, *, base_url: str, oauth_token: str, store, curate: bool = False) -> str:
+def profile_opp_to_bundle(
+    source_opp_id: int, *, base_url: str, oauth_token: str, store, curate: bool = False, mirror: bool = False
+) -> str:
     """Fetch real prod exports for *source_opp_id* and write a self-contained profile bundle.
 
     All prod network calls go through the module-level ``_fetch_endpoint`` name so that
@@ -54,6 +56,7 @@ def profile_opp_to_bundle(source_opp_id: int, *, base_url: str, oauth_token: str
         opportunity_detail=detail if isinstance(detail, dict) else {},
         app_structure=app_structure if isinstance(app_structure, dict) else {},
         curate=curate,
+        mirror=mirror,
     )
     return store.write(
         source_opp_id,
@@ -64,7 +67,7 @@ def profile_opp_to_bundle(source_opp_id: int, *, base_url: str, oauth_token: str
 
 
 def profile_opps_bulk(
-    source_ids, *, base_url: str, oauth_token: str, bundle_root, drive=None, curate: bool = False
+    source_ids, *, base_url: str, oauth_token: str, bundle_root, drive=None, curate: bool = False, mirror: bool = False
 ) -> tuple[str, list[str]]:
     """Profile multiple opportunities into one bundle store, isolating per-opp failures.
 
@@ -87,7 +90,9 @@ def profile_opps_bulk(
     for sid in source_ids:
         try:
             handles.append(
-                profile_opp_to_bundle(sid, base_url=base_url, oauth_token=oauth_token, store=store, curate=curate)
+                profile_opp_to_bundle(
+                    sid, base_url=base_url, oauth_token=oauth_token, store=store, curate=curate, mirror=mirror
+                )
             )
         except Exception:  # noqa: BLE001
             logger.exception("profile_opps_bulk: failed for opp %s", sid)
@@ -334,6 +339,7 @@ def profile_cohort(spec: CohortSpec, *, base_url: str, oauth_token: str, drive=N
         bundle_root=spec.bundle_root,
         drive=drive,
         curate=spec.curate,
+        mirror=spec.mirror,
     )
     spec.bundle_root = resolved
     return spec

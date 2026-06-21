@@ -34,6 +34,10 @@ class CohortSpec:
     # degenerate clinical categoricals, per-opp varied) instead of reproducing the
     # real opps' degeneracy. Numeric bounds + text fabrication apply regardless.
     curate: bool = False
+    # When True, Phase 1 profiling captures a de-identified per-entity transplant pool
+    # so each clone reproduces the source's exact visits/case, cases/FLW, timing, and
+    # per-entity value trajectories (e.g. an infant growth curve), not just marginals.
+    mirror: bool = False
 
     @classmethod
     def from_dict(cls, data: dict) -> CohortSpec:
@@ -48,6 +52,7 @@ class CohortSpec:
             program_id=int(data["program_id"]) if data.get("program_id") is not None else None,
             bundle_root=str(data.get("bundle_root", "gdrive:")),
             curate=bool(data.get("curate", False)),
+            mirror=bool(data.get("mirror", False)),
         )
 
     @classmethod
@@ -67,6 +72,7 @@ class CohortSpec:
                 "org_name": self.org_name,
                 "bundle_root": self.bundle_root,
                 "curate": self.curate,
+                "mirror": self.mirror,
                 "opportunity_ids": self.opportunity_ids,
             },
             sort_keys=False,
