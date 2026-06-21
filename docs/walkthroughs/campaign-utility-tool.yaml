@@ -2,21 +2,21 @@ auth:
   type: session
 base_url: https://labs.connect.dimagi.com
 name: campaign-utility-tool
-narrative: 'Amara runs Nigeria''s national measles-rubella campaign, and she opens
-  the Campaign Utility Tool to her command center: one screen where the whole campaign''s
-  funding, enrolment, attendance, verification and payment progress are already current.
-  She moves to payments to release this week''s worker pay, and the tool stops her
-  on a worker it won''t let her pay - his identity verification was rejected - so
-  she opens his KYC, sees the duplicate national-ID flag behind it, and holds him
-  instead of paying. She drops into the microplans to check planned-versus-actual
-  workforce and budget, then opens one worker and confirms what she''s been acting
-  on is a real CommCare case on a real ward - not a mock - and sees the campaign holds
-  every state in the country. She checks the audit log that recorded every decision
-  she just made, and ends on the reporting board - per-state coverage across all 37
-  states - exporting the week''s numbers as a CSV for the donor, and ends on the coverage
-  map - all 37 states shaded by reach with every worker plotted on top.'
+narrative: 'Amara opens her campaign and the whole picture is already here — funding,
+  enrolment, attendance, verification and payment status, in one read. She moves to
+  release pay, and the tool blocks a worker whose ID check was rejected — the bad
+  payment never leaves. And it''s the whole nation: five thousand workers across all
+  37 states, paged through without a stutter. His KYC shows why — a duplicate national-ID
+  flag — so she holds him instead of paying. Before releasing more funds she checks
+  the microplans: planned budget and workforce against what''s actually been spent.
+  The worker she''s been acting on is a real CommCare case on a real ward — name,
+  role, NIN, location. Not a mock. In System Administration the audit log holds every
+  payment hold and decision she just made, against her name. She ends on the reporting
+  board — per-state coverage across all 37 states — and exports the week''s numbers
+  for the donor. And the coverage map: every state shaded by reach, every worker''s
+  location on top — where the country still needs her.'
 narrative_locked: true
-narrative_locked_at: '2026-06-21T08:12:04.028890+00:00'
+narrative_locked_at: '2026-06-21T20:12:06.616066+00:00'
 personas:
   amara:
     color: '#3843D0'
@@ -43,10 +43,8 @@ scenes:
     id: overview-realtime-kpis
     verify: 'Playwright: load /campaign/?campaign=MR-NAT-2026; assert the Overview
       KPI cards and the KYC/payment donuts render with non-zero values.'
-  narrative: Amara opens her campaign and the whole thing is already in front of her
-    — funding drawn down, enrolment and attendance climbing, verification and payment
-    status broken out — so she starts the morning reading where the campaign actually
-    stands instead of assembling it.
+  narrative: Amara opens her campaign and the whole picture is already here — funding,
+    enrolment, attendance, verification and payment status, in one read.
   persona: amara
   provenance: S1
   show: The national campaign Overview with its KPI cards, progress, and KYC/payment
@@ -74,9 +72,8 @@ scenes:
     verify: 'Playwright: in Workers -> Payments, a worker with rejected KYC shows
       a non-approvable/Rejected payment status.'
   full_page: false
-  narrative: Amara moves to payments to release this week's pay, and the tool stops
-    her on a worker it won't let her approve — his identity check came back rejected
-    — so the bad payment never leaves.
+  narrative: She moves to release pay, and the tool blocks a worker whose ID check
+    was rejected — the bad payment never leaves.
   persona: amara
   provenance: S2
   show: Amara opens Workers → Worker Payments where flagged/rejected-KYC workers cannot
@@ -100,9 +97,8 @@ scenes:
     verify: 'Playwright: in Workers -> Worker Payments, assert a national worker count,
       a 37-state filter, and pagination controls are shown.'
   full_page: false
-  narrative: And it isn't a handful of workers - the same roster holds the whole nation,
-    five thousand across every one of Nigeria's 37 states, and Amara pages straight
-    through it without a stutter.
+  narrative: 'And it''s the whole nation: five thousand workers across all 37 states,
+    paged through without a stutter.'
   persona: amara
   provenance: S8
   show: Amara pages through the national worker roster - 5,000 workers across 37 states
@@ -130,8 +126,8 @@ scenes:
     verify: 'Playwright: in Workers -> Worker KYC, assert verification status, documents,
       and duplicate/shared-identifier flags are shown.'
   full_page: false
-  narrative: Amara opens the worker's KYC to see why, and there it is — a duplicate
-    national-ID flag tying him to another record — so she holds him instead of paying.
+  narrative: His KYC shows why — a duplicate national-ID flag — so she holds him instead
+    of paying.
   persona: amara
   provenance: S3
   show: Amara opens Workers → Worker KYC and reviews verification, documents, and
@@ -159,8 +155,8 @@ scenes:
     verify: 'Playwright: in Activity -> Microplanning & Budget, assert a per-area
       row shows planned vs actual workforce and budget vs spent.'
   full_page: false
-  narrative: Before she releases more funds Amara drops into the microplans and reads
-    the planned workforce and budget against what's actually been spent and deployed.
+  narrative: 'Before releasing more funds she checks the microplans: planned budget
+    and workforce against what''s actually been spent.'
   persona: amara
   provenance: S4
   show: Amara opens Activity → Microplanning & Budget and reads planned-vs-actual
@@ -187,9 +183,8 @@ scenes:
     id: worker-is-commcare-case
     verify: 'Playwright: in Workers -> Worker Profiles, assert CommCare-case fields
       (name, role, NIN) and a real ward/LGA/state placement are shown.'
-  narrative: Amara opens the worker profiles and confirms what she's been acting on
-    all morning is a real CommCare case on a real ward — name, role, NIN, location
-    — not a mock.
+  narrative: The worker she's been acting on is a real CommCare case on a real ward
+    — name, role, NIN, location. Not a mock.
   persona: amara
   provenance: S6
   show: Amara opens Workers → Worker Profiles showing the real CommCare-case fields
@@ -224,9 +219,8 @@ scenes:
     verify: 'Playwright: in System Administration -> User Management, assert the audit
       log lists actions with actor, action, module and timestamp.'
   full_page: false
-  narrative: Amara opens System Administration and reads the audit log — every payment
-    hold and verification decision she just made, written down against the actor's
-    name.
+  narrative: In System Administration the audit log holds every payment hold and decision
+    she just made, against her name.
   persona: amara
   provenance: S7
   show: Amara opens System Administration → User Management and reviews the Activity
@@ -255,9 +249,8 @@ scenes:
     verify: 'Playwright: in Reporting click ''Export data''; assert a CSV download
       is triggered.'
   full_page: false
-  narrative: Amara ends the morning on the reporting board - per-state coverage shaded
-    by reach across all 37 states - and exports the week's numbers as a CSV she can
-    hand straight to the donor.
+  narrative: She ends on the reporting board — per-state coverage across all 37 states
+    — and exports the week's numbers for the donor.
   persona: amara
   provenance: S5
   show: Amara reviews per-state coverage on the Reporting board and exports a CSV
@@ -289,9 +282,8 @@ scenes:
     verify: 'Playwright: in Reporting click ''View map''; assert a Mapbox canvas paints
       with shaded states and worker points.'
   full_page: false
-  narrative: Amara ends the morning on the coverage map - all 37 of Nigeria's states
-    shaded by how far the campaign has reached, every worker's location dropped on
-    top - reading at a glance where the country still needs her.
+  narrative: 'And the coverage map: every state shaded by reach, every worker''s location
+    on top — where the country still needs her.'
   persona: amara
   provenance: S5
   show: Amara opens the geographic coverage map of Nigeria (choropleth shaded by reach
@@ -299,3 +291,6 @@ scenes:
   title: Coverage, read off the map
   url: /campaign/?campaign=MR-NAT-2026
 tagline: Run a national vaccination campaign from one command center
+narrative_synced_version: 4
+narrative_synced_hash: e7d7a7f4d4a96ff7a13a58680528f60566d8984a554c4baac8434490373af17f
+narrative_synced_at: '2026-06-21T20:12:07.425775+00:00'
