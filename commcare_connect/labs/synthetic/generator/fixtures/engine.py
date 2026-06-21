@@ -14,6 +14,7 @@ import uuid
 from typing import Any
 
 from .copula import build_copula_sampler
+from .entities import plan_mirror_visits
 from .fields import fill_form_json
 from .images import assign_visit_images
 from .manifest import Manifest
@@ -134,6 +135,126 @@ def _packed_location(locations, bidx: int, geography, rng: random.Random) -> str
     return f"{lat:.6f} {lon:.6f} {alt:.0f} {acc:.0f}"
 
 
+def _build_mirror_visits(
+    *,
+    manifest: Manifest,
+    cohort,
+    longitudinal,
+    form_schema: FormSchema,
+    rng: random.Random,
+    persona_index: dict[str, Any],
+    personas,
+    deliver_unit_id: int | None,
+) -> list[dict[str, Any]]:
+    """Replay the transplant pool: one stable entity per real case, with its owner
+    FLW, timing, visit count, and (jittered) value trajectory reproduced exactly."""
+    planned = plan_mirror_visits(longitudinal, seed=manifest.random_seed)
+    entity_count = max((pv.beneficiary_idx for pv in planned), default=0)
+    household_locations = (
+        _build_household_locations(manifest.geography, entity_count, rng)
+        if manifest.geography and entity_count
+        else None
+    )
+    start_date = manifest.timeline.start_date
+
+    visits: list[dict[str, Any]] = []
+    for pv in planned:
+        persona = persona_index.get(pv.owner) or personas[0]
+        location = _packed_location(household_locations, pv.beneficiary_idx, manifest.geography, rng)
+        # week index relative to the timeline, for any non-forced period-varying draws.
+        period = max(1, (pv.visit_date - start_date).days // 7 + 1)
+        form_json = fill_form_json(
+            schema=form_schema,
+            cohort=cohort,
+            anomalies_for_visit=[],
+            rng=rng,
+            persona=persona,
+            period=period,
+            forced_values=pv.forced_values,
+        )
+        if location:
+            form_json.setdefault("metadata", {})["location"] = location
+        status = decide_visit_status(
+            persona=persona,
+            has_anomaly=False,
+            rng=rng,
+            flag_reason_distribution=manifest.flag_reason_distribution,
+        )
+        base_hour = _sample_hour(rng, manifest.temporal)
+        created_dt = dt.datetime.combine(pv.visit_date, dt.time(base_hour, 0))
+        visits.append(
+            {
+                "id": rng.getrandbits(60),
+                "xform_id": str(uuid.UUID(int=rng.getrandbits(128))),
+                "opportunity_id": manifest.opportunity_id,
+                "username": persona.id,
+                "deliver_unit": str(deliver_unit_id) if deliver_unit_id is not None else "",
+                "deliver_unit_id": deliver_unit_id,
+                "entity_id": pv.entity_id,
+                "entity_name": pv.entity_name,
+                "visit_date": pv.visit_date.isoformat(),
+                "status": status.status,
+                "reason": None,
+                "location": location,
+                "flagged": status.flagged,
+                "flag_reason": status.flag_reason,
+                "form_json": form_json,
+                "completed_work": "",
+                "status_modified_date": (created_dt + dt.timedelta(hours=1)).isoformat(),
+                "review_status": status.review_status,
+                "review_created_on": (created_dt + dt.timedelta(hours=1, minutes=30)).isoformat(),
+                "justification": None,
+                "date_created": created_dt.isoformat(),
+                "completed_work_id": None,
+                "images": [],
+            }
+        )
+    return visits
+
+
+def _progression_sign(progression: str) -> int:
+    """Trend direction for net-new trajectories: improvement rises, regression falls,
+    flat has no trend (value stays near its per-entity intercept plus noise/AR)."""
+    return {"improvement_curve": 1, "regression": -1, "flat": 0}.get(progression, 0)
+
+
+def _synthetic_traj_step(traj, sign, entity_state, traj_rng, idx, visit_date):
+    """Advance one entity's net-new trajectory and return (forced_values, entity_id).
+
+    On first sight of an entity, sample its latent params (intercept = starting
+    value, slope = per-x change) once and mint a stable id. Each visit's value is
+    ``intercept + sign*slope*x + noise`` (x = days since the entity's first visit,
+    or visit index), blended with the previous value for an autoregressive field.
+    """
+    st = entity_state.get(idx)
+    if st is None:
+        latent = {}
+        for path, tp in traj.fields.items():
+            intercept = traj_rng.gauss(tp.intercept.mean, tp.intercept.stddev)
+            slope = traj_rng.gauss(tp.slope.mean, tp.slope.stddev)
+            latent[path] = (intercept, slope)
+        st = {
+            "first_date": visit_date,
+            "visit_index": 0,
+            "last": {},
+            "latent": latent,
+            "id": str(uuid.UUID(int=traj_rng.getrandbits(128))),
+        }
+        entity_state[idx] = st
+    st["visit_index"] += 1
+    forced: dict[str, float] = {}
+    for path, tp in traj.fields.items():
+        intercept, slope = st["latent"][path]
+        x = (visit_date - st["first_date"]).days if tp.x_axis == "day" else st["visit_index"] - 1
+        base = intercept + sign * slope * x
+        if tp.model == "autoregressive" and path in st["last"]:
+            base = tp.autocorr * st["last"][path] + (1 - tp.autocorr) * base
+        val = base + (traj_rng.gauss(0, tp.residual_std) if tp.residual_std else 0.0)
+        st["last"][path] = val
+        forced[path] = val
+    return forced, st["id"]
+
+
 def generate(
     *,
     manifest: Manifest,
@@ -147,6 +268,32 @@ def generate(
     cohort = manifest.beneficiary_cohorts[0]  # v1 supports the primary cohort
     deliver_unit_id = _default_deliver_unit(opportunity_detail)
     payment_units = _payment_units(opportunity_detail)
+
+    # Mirror mode replays real de-identified case series as stable entities; it
+    # bypasses the FLW-cadence slot schedule because it reproduces the source's
+    # exact owner/timing/visit-count structure directly.
+    longitudinal = cohort.longitudinal
+    if longitudinal is not None and longitudinal.mode == "mirror":
+        visits = _build_mirror_visits(
+            manifest=manifest,
+            cohort=cohort,
+            longitudinal=longitudinal,
+            form_schema=form_schema,
+            rng=rng,
+            persona_index=persona_index,
+            personas=personas,
+            deliver_unit_id=deliver_unit_id,
+        )
+        return _assemble(
+            manifest=manifest,
+            visits=visits,
+            personas=personas,
+            payment_units=payment_units,
+            opportunity_detail=opportunity_detail,
+            app_structure=app_structure,
+            rng=rng,
+        )
+
     household_locations = (
         _build_household_locations(manifest.geography, cohort.size, rng) if manifest.geography else None
     )
@@ -161,6 +308,14 @@ def generate(
 
     copula_sampler = build_copula_sampler(cohort.correlation, cohort.field_distributions, seed=manifest.random_seed)
 
+    # Net-new (synthetic) longitudinal: give each beneficiary a stable id and a
+    # per-entity trajectory threaded across its repeat visits. Inactive (traj None)
+    # leaves every rng draw in its legacy position, so default output is unchanged.
+    traj = longitudinal if (longitudinal is not None and longitudinal.mode == "synthetic") else None
+    traj_sign = _progression_sign(cohort.progression) if traj else 0
+    traj_rng = random.Random(manifest.random_seed ^ 0x7137A1) if traj else None
+    entity_state: dict[int, dict[str, Any]] = {}
+
     visits: list[dict[str, Any]] = []
     for slot in slots:
         persona = persona_index[slot.flw_id]
@@ -170,6 +325,15 @@ def generate(
         if any(a.type == "missing_visits" for a in anomalies):
             continue
         correlated_values = copula_sampler.draw() if copula_sampler else None
+        forced_values = None
+        traj_entity_id = None
+        if traj:
+            # Pick the entity first (so its trajectory can drive this visit), then
+            # advance its per-entity series.
+            beneficiary_idx = rng.randint(1, cohort.size)
+            forced_values, traj_entity_id = _synthetic_traj_step(
+                traj, traj_sign, entity_state, traj_rng, beneficiary_idx, slot.visit_date
+            )
         form_json = fill_form_json(
             schema=form_schema,
             cohort=cohort,
@@ -178,6 +342,7 @@ def generate(
             persona=persona,
             period=slot.week_index,
             correlated_values=correlated_values,
+            forced_values=forced_values,
         )
         # Only a within-visit anomaly (a seeded field_outlier) flags the genuine
         # visit. A duplicate_submission flags its injected copy instead (below), so
@@ -190,7 +355,10 @@ def generate(
         )
         # One beneficiary index per visit, reused for the display name AND the
         # household GPS so repeat visits to the same beneficiary share a location.
-        beneficiary_idx = rng.randint(1, cohort.size)
+        # Under a synthetic trajectory the index was already drawn above (to drive
+        # the entity's series), so don't draw a second one — keeps legacy draw order.
+        if not traj:
+            beneficiary_idx = rng.randint(1, cohort.size)
         location = _packed_location(household_locations, beneficiary_idx, manifest.geography, rng)
         # The service-delivery GPS pipeline (SERVICE_DELIVERY_GPS_SCHEMA) reads the
         # device location from form_json.metadata.location (packed "lat lon alt acc"),
@@ -213,7 +381,7 @@ def generate(
             "username": persona.id,
             "deliver_unit": str(deliver_unit_id) if deliver_unit_id is not None else "",
             "deliver_unit_id": deliver_unit_id,
-            "entity_id": str(uuid.UUID(int=rng.getrandbits(128))),
+            "entity_id": traj_entity_id if traj else str(uuid.UUID(int=rng.getrandbits(128))),
             "entity_name": f"Beneficiary {beneficiary_idx}",
             "visit_date": slot.visit_date.isoformat(),
             "status": status.status,
@@ -239,6 +407,30 @@ def generate(
         if any(a.type == "duplicate_submission" for a in anomalies):
             visits.append(_make_duplicate(visit, created_dt, rng))
 
+    return _assemble(
+        manifest=manifest,
+        visits=visits,
+        personas=personas,
+        payment_units=payment_units,
+        opportunity_detail=opportunity_detail,
+        app_structure=app_structure,
+        rng=rng,
+    )
+
+
+def _assemble(
+    *,
+    manifest: Manifest,
+    visits: list[dict[str, Any]],
+    personas,
+    payment_units: list[dict[str, Any]],
+    opportunity_detail: dict[str, Any],
+    app_structure: dict[str, Any] | None,
+    rng: random.Random,
+) -> dict[str, Any]:
+    """Shared tail: images, tasks, user_data, works/modules, opportunity. Both the
+    legacy slot-based path and the mirror path build a ``visits`` list and assemble
+    the five fixture endpoints the same way from here."""
     if manifest.image_config:
         assign_visit_images(visits, manifest.image_config, rng)
 

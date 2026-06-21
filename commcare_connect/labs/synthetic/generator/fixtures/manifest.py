@@ -202,6 +202,48 @@ class RepeatGroupSpec(BaseModel):
 Progression = Literal["improvement_curve", "flat", "regression"]
 
 
+class TrajectoryParams(BaseModel):
+    """Per-field longitudinal model for *net-new* (synthetic) generation.
+
+    ``trajectory``: each entity samples a latent ``intercept`` (its starting value,
+    e.g. birth weight) and ``slope`` (per-x-unit change, e.g. daily gain); a visit's
+    value is ``intercept + slope * x + N(0, residual_std)``, where ``x`` is the day
+    offset (``x_axis="day"``) or visit index. ``progression`` on the cohort flips the
+    slope's sign (regression → declining). ``autoregressive``: a smooth per-entity
+    series, ``value_t = autocorr*value_{t-1} + (1-autocorr)*draw + N(0, residual_std)``.
+    Mirror mode ignores these — it replays real series from the transplant pool.
+    """
+
+    model: Literal["trajectory", "autoregressive"]
+    intercept: MeanStddev
+    slope: MeanStddev
+    residual_std: float = Field(ge=0, default=0.0)
+    autocorr: float = Field(ge=0, le=1, default=0.0)
+    x_axis: Literal["day", "visit_index"] = "day"
+
+
+class LongitudinalSpec(BaseModel):
+    """How a cohort's per-entity time series are produced.
+
+    ``mirror``: replay real de-identified case series from ``transplant_pool`` (each
+    ``{"owner", "start_date", "visits": [{"day", "values": {path: float}}]}``), with
+    IQR/range-scaled jitter — reproduces visits/case, cases/FLW, timing and trajectory
+    exactly. ``synthetic``: draw per-entity trajectories parametrically from ``fields``.
+    """
+
+    mode: Literal["mirror", "synthetic"] = "synthetic"
+    # Transplant jitter as a fraction of each field's range, applied at replay time.
+    jitter_frac: float = Field(ge=0, default=0.03)
+    transplant_pool: list[dict[str, Any]] = Field(default_factory=list)
+    fields: dict[str, TrajectoryParams] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _check_mode(self):
+        if self.mode == "mirror" and not self.transplant_pool:
+            raise ValueError("longitudinal mode 'mirror' requires a non-empty transplant_pool")
+        return self
+
+
 class BeneficiaryCohort(BaseModel):
     id: str
     size: PositiveInt
@@ -211,6 +253,8 @@ class BeneficiaryCohort(BaseModel):
     # Repeat groups keyed by their array base path (e.g. "form.children"). Each emits
     # a JSON array of sub-records; scalar fields under a repeat base are not filled.
     repeat_groups: dict[str, RepeatGroupSpec] = Field(default_factory=dict)
+    # Per-entity longitudinal behaviour. None → legacy i.i.d. per-visit draws.
+    longitudinal: LongitudinalSpec | None = None
 
 
 # ---------- Anomalies ----------

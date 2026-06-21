@@ -38,6 +38,200 @@ def test_generate_is_deterministic_under_seed():
     assert json.dumps(a, sort_keys=True) == json.dumps(b, sort_keys=True)
 
 
+def _mirror_inputs(pool, *, jitter_frac=0.0, weight_kind="int"):
+    from commcare_connect.labs.synthetic.generator.fixtures.manifest import (
+        BeneficiaryCohort,
+        FlwPersona,
+        KpiSpec,
+        LongitudinalSpec,
+        MeanStddev,
+        NormalDistribution,
+        Timeline,
+    )
+
+    manifest = Manifest(
+        opportunity_id=10007,
+        opportunity_name="KMC Mirror",
+        random_seed=42,
+        timeline=Timeline(
+            start_date=dt.date(2026, 1, 1),
+            end_date=dt.date(2026, 3, 26),
+            weeks=12,
+            visit_cadence_per_week_per_flw=MeanStddev(mean=8, stddev=2),
+        ),
+        flw_personas=[
+            FlwPersona(
+                id="flw_001",
+                archetype="steady",
+                accuracy_distribution=MeanStddev(mean=0.9, stddev=0.05),
+                completeness_distribution=MeanStddev(mean=0.95, stddev=0.03),
+                flag_rate=0.05,
+            )
+        ],
+        beneficiary_cohorts=[
+            BeneficiaryCohort(
+                id="primary",
+                size=1,
+                field_distributions={"form.weight": NormalDistribution(mean=1300, stddev=200, lo=900, hi=1600)},
+                progression="improvement_curve",
+                longitudinal=LongitudinalSpec(mode="mirror", jitter_frac=jitter_frac, transplant_pool=pool),
+            )
+        ],
+        kpi_config=[KpiSpec(kpi="w", field_path="form.weight", aggregation="mean", threshold_underperform=1000)],
+    )
+    schema = FormSchema(questions=[QuestionSpec(json_path="form.weight", kind=weight_kind)])
+    return manifest, {"name": "KMC Mirror"}, schema
+
+
+def test_mirror_mode_replays_a_series_as_one_stable_rising_entity():
+    pool = [
+        {
+            "owner": "flw_001",
+            "start_date": "2026-01-01",
+            "visits": [
+                {"day": 0, "values": {"form.weight": 1200.0}},
+                {"day": 7, "values": {"form.weight": 1300.0}},
+                {"day": 14, "values": {"form.weight": 1400.0}},
+            ],
+        }
+    ]
+    manifest, detail, schema = _mirror_inputs(pool)  # jitter 0 -> exact replay
+
+    out = generate(manifest=manifest, opportunity_detail=detail, form_schema=schema)
+    visits = sorted(out["user_visits"], key=lambda v: v["visit_date"])
+
+    assert len(visits) == 3
+    assert len({v["entity_id"] for v in visits}) == 1  # stable entity across its visits
+    assert len({v["entity_name"] for v in visits}) == 1
+    assert [v["visit_date"] for v in visits] == ["2026-01-01", "2026-01-08", "2026-01-15"]
+    assert [v["username"] for v in visits] == ["flw_001", "flw_001", "flw_001"]
+    weights = [v["form_json"]["form"]["weight"] for v in visits]
+    assert weights == [1200, 1300, 1400]  # rises with age, exact (no jitter), int-cast to the schema kind
+
+
+def test_mirror_jitter_keeps_values_inside_the_cases_own_range():
+    pool = [
+        {
+            "owner": "flw_001",
+            "start_date": "2026-01-01",
+            "visits": [
+                {"day": 0, "values": {"form.weight": 1200.0}},
+                {"day": 7, "values": {"form.weight": 1300.0}},
+                {"day": 14, "values": {"form.weight": 1400.0}},
+            ],
+        }
+    ]
+    manifest, detail, schema = _mirror_inputs(pool, jitter_frac=0.1, weight_kind="decimal")
+
+    out = generate(manifest=manifest, opportunity_detail=detail, form_schema=schema)
+    weights = [v["form_json"]["form"]["weight"] for v in out["user_visits"]]
+
+    assert all(1200.0 <= w <= 1400.0 for w in weights), weights  # never escapes this case's [min,max]
+
+
+def test_mirror_reproduces_cases_per_flw_exactly():
+    # flw_001 owns two cases, flw_002 owns one -> clone must reproduce that split.
+    pool = [
+        {"owner": "flw_001", "start_date": "2026-01-01", "visits": [{"day": 0, "values": {"form.weight": 1200.0}}]},
+        {"owner": "flw_001", "start_date": "2026-01-02", "visits": [{"day": 0, "values": {"form.weight": 1250.0}}]},
+        {"owner": "flw_002", "start_date": "2026-01-03", "visits": [{"day": 0, "values": {"form.weight": 1300.0}}]},
+    ]
+    manifest, detail, schema = _mirror_inputs(pool)
+    # add the second persona the pool references
+    from commcare_connect.labs.synthetic.generator.fixtures.manifest import FlwPersona, MeanStddev
+
+    manifest.flw_personas.append(
+        FlwPersona(
+            id="flw_002",
+            archetype="steady",
+            accuracy_distribution=MeanStddev(mean=0.9, stddev=0.05),
+            completeness_distribution=MeanStddev(mean=0.95, stddev=0.03),
+            flag_rate=0.05,
+        )
+    )
+
+    out = generate(manifest=manifest, opportunity_detail=detail, form_schema=schema)
+    cases_per_flw = {}
+    for v in out["user_visits"]:
+        cases_per_flw.setdefault(v["username"], set()).add(v["entity_id"])
+
+    assert {k: len(s) for k, s in cases_per_flw.items()} == {"flw_001": 2, "flw_002": 1}
+
+
+def test_synthetic_trajectory_gives_each_entity_a_rising_stable_series():
+    from commcare_connect.labs.synthetic.generator.fixtures.manifest import (
+        BeneficiaryCohort,
+        FlwPersona,
+        KpiSpec,
+        LongitudinalSpec,
+        MeanStddev,
+        NormalDistribution,
+        Timeline,
+        TrajectoryParams,
+    )
+
+    manifest = Manifest(
+        opportunity_id=10008,
+        opportunity_name="KMC Synthetic",
+        random_seed=7,
+        timeline=Timeline(
+            start_date=dt.date(2026, 1, 1),
+            end_date=dt.date(2026, 3, 26),
+            weeks=12,
+            visit_cadence_per_week_per_flw=MeanStddev(mean=20, stddev=2),
+        ),
+        flw_personas=[
+            FlwPersona(
+                id="flw_001",
+                archetype="steady",
+                accuracy_distribution=MeanStddev(mean=0.9, stddev=0.05),
+                completeness_distribution=MeanStddev(mean=0.95, stddev=0.03),
+                flag_rate=0.0,
+            )
+        ],
+        beneficiary_cohorts=[
+            BeneficiaryCohort(
+                id="primary",
+                size=4,  # small cohort + many visits -> entities get repeat visits
+                field_distributions={"form.weight": NormalDistribution(mean=1500, stddev=400, lo=900, hi=4000)},
+                progression="improvement_curve",
+                longitudinal=LongitudinalSpec(
+                    mode="synthetic",
+                    fields={
+                        "form.weight": TrajectoryParams(
+                            model="trajectory",
+                            intercept=MeanStddev(mean=1200, stddev=80),
+                            slope=MeanStddev(mean=20, stddev=2),  # ~20 g/day
+                            residual_std=2.0,  # << weekly gain, so the series rises monotonically
+                            x_axis="day",
+                        )
+                    },
+                ),
+            )
+        ],
+        kpi_config=[KpiSpec(kpi="w", field_path="form.weight", aggregation="mean", threshold_underperform=1000)],
+    )
+    schema = FormSchema(questions=[QuestionSpec(json_path="form.weight", kind="decimal")])
+
+    out = generate(manifest=manifest, opportunity_detail={"name": "KMC Synthetic"}, form_schema=schema)
+
+    by_entity = {}
+    for v in out["user_visits"]:
+        by_entity.setdefault(v["entity_id"], []).append(v)
+
+    multi = [vs for vs in by_entity.values() if len(vs) >= 3]
+    assert multi, "expected entities with repeat visits"
+    for vs in multi:
+        # Weight rises with the child's AGE (day offset). Collapse any same-day
+        # visits (identical age) since within-day order isn't trajectory-meaningful.
+        weight_by_day = {}
+        for v in vs:
+            weight_by_day[v["visit_date"]] = v["form_json"]["form"]["weight"]
+        weights = [weight_by_day[d] for d in sorted(weight_by_day)]
+        assert weights == sorted(weights), weights  # monotonic across the child's visit days
+        assert weights[-1] > weights[0]
+
+
 def test_generate_visits_carry_required_fields():
     manifest, detail, schema = _load_inputs()
     out = generate(manifest=manifest, opportunity_detail=detail, form_schema=schema)
