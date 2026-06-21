@@ -1,6 +1,12 @@
 // tab_reporting.jsx — Reporting & Monitoring tab
 const { useState: useStateR } = React;
 
+// Whole-percent of n/d, guarding against a 0 (or missing) denominator so an empty
+// dataset shows 0% instead of "NaN%".
+function pctR(n, d) {
+  return d ? Math.round((n / d) * 100) : 0;
+}
+
 function ReportingTab({ density }) {
   const D = window.CUT_DATA;
   const toast = useToast();
@@ -66,7 +72,7 @@ function ReportingTab({ density }) {
         />
         <Stat
           label="Avg. attendance"
-          value={Math.round((totals.attended / totals.enrolled) * 100) + '%'}
+          value={pctR(totals.attended, totals.enrolled) + '%'}
           icon="calendar-check"
           sub="check-in vs enrolled"
         />
@@ -75,7 +81,7 @@ function ReportingTab({ density }) {
           value={D.num(totals.paid)}
           icon="money-bill-trend-up"
           delta={
-            Math.round((totals.paid / totals.enrolled) * 100) + '% of enrolled'
+            pctR(totals.paid, totals.enrolled) + '% of enrolled'
           }
           deltaTone="primary"
         />
@@ -140,13 +146,13 @@ function ReportingTab({ density }) {
             <HhStat
               label="Households visited"
               value={D.num(H.visited)}
-              pct={Math.round((H.visited / H.registered) * 100)}
+              pct={pctR(H.visited, H.registered)}
             />
             <HhStat label="Members enrolled" value={D.num(H.members)} />
             <HhStat
               label="Members reached"
               value={D.num(H.membersReached)}
-              pct={Math.round((H.membersReached / H.members) * 100)}
+              pct={pctR(H.membersReached, H.members)}
             />
           </div>
           <div
@@ -161,7 +167,7 @@ function ReportingTab({ density }) {
               max={H.registered}
               height={9}
               label="Visit completion"
-              right={Math.round((H.visited / H.registered) * 100) + '%'}
+              right={pctR(H.visited, H.registered) + '%'}
               color="#9A5183"
             />
           </div>
@@ -185,7 +191,7 @@ function ReportingTab({ density }) {
                   color: '#E9ECEF',
                 },
               ]}
-              centerTop={Math.round((H.membersReached / H.members) * 100) + '%'}
+              centerTop={pctR(H.membersReached, H.members) + '%'}
               centerBottom="coverage"
             />
             <div
