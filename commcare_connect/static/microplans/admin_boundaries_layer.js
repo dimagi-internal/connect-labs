@@ -159,16 +159,28 @@
       selected.forEach((v, id) => {
         const row = document.createElement('div');
         row.className =
-          'flex items-center justify-between gap-1.5 text-[11px] px-1.5 py-0.5 rounded bg-gray-50 border border-gray-200';
-        const name = document.createElement('span');
-        name.className = 'truncate flex-1';
-        // Include the parent (LGA/state) so identically-named wards are distinguishable.
-        name.textContent =
-          ((v.desc && v.desc.name) || '(area)') +
-          (v.desc && v.desc.parent_name ? ` — ${v.desc.parent_name}` : '');
-        if (v.desc && v.desc.parent_name)
-          name.title = `${v.desc.name} — ${v.desc.parent_name}`;
-        row.appendChild(name);
+          'flex items-start justify-between gap-1.5 text-[11px] px-1.5 py-1 rounded bg-gray-50 border border-gray-200';
+        // Two-line label so the ward NAME is never clipped by the arm pill: the ward
+        // name wraps onto its own line (always fully readable — the meaningful axis),
+        // and the parent path (LGA › state, the disambiguator) sits below it muted and
+        // truncates if it must. Previously name + parent shared one truncated line, so a
+        // wide "Intervention" pill cut the row mid-parent ("Riyom › Pl…").
+        const nameWrap = document.createElement('span');
+        nameWrap.className = 'min-w-0 flex-1 leading-tight';
+        const wardName = (v.desc && v.desc.name) || '(area)';
+        const parentName = v.desc && v.desc.parent_name;
+        const ward = document.createElement('div');
+        ward.className = 'font-medium text-gray-800 break-words';
+        ward.textContent = wardName;
+        nameWrap.appendChild(ward);
+        if (parentName) {
+          const parent = document.createElement('div');
+          parent.className = 'truncate text-[10px] text-gray-500';
+          parent.textContent = parentName;
+          nameWrap.appendChild(parent);
+          nameWrap.title = `${wardName} — ${parentName}`;
+        }
+        row.appendChild(nameWrap);
         if (showArm) row.appendChild(armPill(id, v));
         const x = document.createElement('button');
         x.type = 'button';
@@ -1102,13 +1114,13 @@
           const action = !ok
             ? ''
             : inPlan
-              ? '<span class="text-[11px] text-emerald-600 whitespace-nowrap">✓ added</span>'
-              : '<button type="button" class="mp-ab-addbnd text-[11px] font-medium px-2 py-0.5 rounded ' +
-                'border border-gray-300 text-gray-700 bg-white hover:bg-gray-50" ' +
-                `data-bid="${esc(r.boundary_id)}" data-name="${esc(r.name)}" ` +
-                `data-pop="${
-                  r.population != null ? esc(r.population) : ''
-                }">Add boundary</button>`;
+            ? '<span class="text-[11px] text-emerald-600 whitespace-nowrap">✓ added</span>'
+            : '<button type="button" class="mp-ab-addbnd text-[11px] font-medium px-2 py-0.5 rounded ' +
+              'border border-gray-300 text-gray-700 bg-white hover:bg-gray-50" ' +
+              `data-bid="${esc(r.boundary_id)}" data-name="${esc(r.name)}" ` +
+              `data-pop="${
+                r.population != null ? esc(r.population) : ''
+              }">Add boundary</button>`;
           let matchCell;
           if (isErr)
             matchCell = `<td data-col="match" class="px-2 py-1.5 text-[11px] text-red-500">${esc(
@@ -1176,7 +1188,9 @@
       // Each header shows the label + an ⓘ that opens a full-explanation popover (the
       // text lives in COL_INFO, keyed by colKey).
       const th = (label, colKey, extra) =>
-        `<th${colKey ? ` data-col="${colKey}"` : ''} class="px-2 py-1.5 font-semibold text-gray-500 ${
+        `<th${
+          colKey ? ` data-col="${colKey}"` : ''
+        } class="px-2 py-1.5 font-semibold text-gray-500 ${
           extra || 'text-right'
         }">` +
         (colKey
