@@ -72,12 +72,80 @@ SOURCE_LABELS: dict[str, str] = {
 
 # Total-population keys in a boundary's ``extra.populations`` bag, in fallback
 # preference order. These are whole-population zonal-stat estimates (WorldPop /
-# Meta / GRID3 rasters) — comparable in scale to the scalar ``population`` field
-# (GeoPoDe ``population_1``). Deliberately EXCLUDES under-5 keys (``worldpop_u5``,
-# ``meta_u5``, ``geopode_u5``): substituting a ~5k u5 figure into a column that
-# otherwise shows ~25k totals would silently mislabel u5 as total population. See
-# ``load_ward_populations`` for where the bag is written.
-_TOTAL_POPULATION_KEYS: tuple[str, ...] = ("worldpop_total", "meta_total", "grid3_v3_total")
+# Meta / GRID3 rasters) plus GeoPoDe's own scalar — comparable in scale to the
+# scalar ``population`` field (GeoPoDe ``population_1``).
+#
+# ``geopode_total`` is the relabelled GeoPoDe scalar (was ``geopode_u5`` — the data
+# proved population_1 is a whole-area TOTAL, e.g. Zankan 22,926 ≈ worldpop_total
+# ~28,543, NOT the ~5k under-5; see ``load_ward_populations``). The legacy
+# ``geopode_u5`` key is kept here as a transitional alias so deployments whose bags
+# predate the loader re-run still surface the GeoPoDe total instead of an honest
+# blank. Both resolve to the same number; the loader writes ``geopode_total`` going
+# forward.
+#
+# Deliberately EXCLUDES the genuine under-5 keys (``worldpop_u5``, ``meta_u5``):
+# substituting a ~5k u5 figure into a column that otherwise shows ~25k totals would
+# silently mislabel u5 as total population.
+_TOTAL_POPULATION_KEYS: tuple[str, ...] = (
+    "worldpop_total",
+    "meta_total",
+    "grid3_v3_total",
+    "geopode_total",
+    "geopode_u5",  # transitional alias for geopode_total (pre-reload bags)
+)
+
+# Provider-preference order for resolving same-ward duplicates in the merged
+# ("Enriched Boundaries" / labs) view. NGA wards are loaded from BOTH ``geopode``
+# and ``grid3`` as separate, overlapping AdminBoundary rows for the same ward, so a
+# geometry-intersect or name search returns two rows per ward. We keep ONE,
+# preferring ``geopode`` because it carries the richest enrichment: its
+# ``extra.populations`` bag is a SUPERSET (it accumulates worldpop_total /
+# meta_total / grid3_v3_total plus its own geopode_total), it has the widest ward
+# coverage for the enriched countries, and its scalar ``population`` is populated
+# where the grid3 twin's is blank. Anything not listed sorts LAST (fallback only),
+# so a ward that exists in a single provider is always kept.
+LABS_PROVIDER_PREFERENCE: tuple[str, ...] = ("geopode", "grid3", "geoboundaries", "osm")
+
+
+def _provider_rank(source: str | None) -> int:
+    """Lower is more preferred. Unlisted providers sort last (kept only as fallback)."""
+    try:
+        return LABS_PROVIDER_PREFERENCE.index(source or "")
+    except ValueError:
+        return len(LABS_PROVIDER_PREFERENCE)
+
+
+def _normalize_ward_name(name: str | None) -> str:
+    """Key for same-ward duplicate detection: case/whitespace-insensitive name.
+
+    Two rows are treated as the same ward (a provider duplicate) only when their
+    normalized names are equal AND they're already among same-level candidates that
+    co-locate (the callers pre-filter to same admin_level + intersecting/same-country
+    rows). Equal-name is the conservative gate — genuinely different wards have
+    different names, so this never collapses distinct wards together."""
+    return " ".join((name or "").strip().casefold().split())
+
+
+def _dedupe_by_provider_preference(rows, *, name_of, source_of):
+    """Collapse same-ward provider duplicates, keeping the most-preferred provider.
+
+    ``rows`` is any iterable; ``name_of(row)`` / ``source_of(row)`` extract the ward
+    name and provider source. Rows are grouped by normalized name; within a group the
+    row whose source ranks best in ``LABS_PROVIDER_PREFERENCE`` wins (geopode over
+    grid3, etc.). A ward present under only one provider is kept unchanged (the group
+    has one row). Deterministic: input order is preserved for the surviving rows, and
+    ties within a name-group are broken by first-seen order (stable)."""
+    best_by_name: dict[str, object] = {}
+    order: list[str] = []
+    for row in rows:
+        key = _normalize_ward_name(name_of(row))
+        if key not in best_by_name:
+            best_by_name[key] = row
+            order.append(key)
+            continue
+        if _provider_rank(source_of(row)) < _provider_rank(source_of(best_by_name[key])):
+            best_by_name[key] = row
+    return [best_by_name[k] for k in order]
 
 
 def resolve_population(population, populations: dict | None):
@@ -373,7 +441,21 @@ class LabsAdminBoundarySource(BoundarySource):
             from django.contrib.gis.db.models.functions import Centroid
 
             qs = qs.annotate(_centroid=Centroid("geometry")).filter(_centroid__within=parent_geom)
-        rows = qs.order_by("name").values("name", "boundary_id", "population", "extra")[: int(limit)]
+        # In the merged ("Enriched") view a ward can appear under multiple providers
+        # (NGA wards are loaded from both geopode AND grid3). Over-fetch, collapse
+        # same-name provider duplicates preferring geopode (richest enrichment — see
+        # LABS_PROVIDER_PREFERENCE), THEN apply the page limit so dedupe doesn't drop
+        # real candidates. A source-scoped picker (db_source set) has no cross-source
+        # twins, so it skips the dedupe and keeps its single-provider rows untouched.
+        ordered = qs.order_by("name").values("name", "boundary_id", "population", "extra", "source")
+        if self.db_source is None:
+            rows = _dedupe_by_provider_preference(
+                list(ordered),
+                name_of=lambda r: r["name"],
+                source_of=lambda r: r.get("source"),
+            )[: int(limit)]
+        else:
+            rows = list(ordered[: int(limit)])
         out = []
         for r in rows:
             pops = (r.get("extra") or {}).get("populations")
@@ -621,12 +703,19 @@ def adjacent_boundaries(boundary_id: str, *, limit: int = 10) -> dict:
         .exclude(boundary_id=ref.boundary_id)
         .order_by("name")
     )
-    rows = list(qs[: int(limit) + 1])
-    truncated = len(rows) > limit
+    # The intersect set is over the merged Enriched table, where a neighbouring ward
+    # can appear twice (geopode + grid3 rows that overlap). Collapse same-ward provider
+    # duplicates to ONE row, preferring geopode (its scalar population is populated
+    # where the grid3 twin's is blank — the "Sopp shows blank pop" bug; see
+    # LABS_PROVIDER_PREFERENCE). Dedupe over the FULL set, then apply the limit, so a
+    # ward isn't dropped just because its twin happened to sort first. A ward present
+    # in only one provider is kept (fallback).
+    deduped = _dedupe_by_provider_preference(list(qs), name_of=lambda b: b.name, source_of=lambda b: b.source)
+    truncated = len(deduped) > limit
     return {
         "supported": True,
         "reference": _row(ref),
-        "candidates": [_row(b) for b in rows[:limit]],
+        "candidates": [_row(b) for b in deduped[:limit]],
         "truncated": truncated,
     }
 

@@ -2107,14 +2107,17 @@
   // boundaryId -> { name, pops: {source -> number} }. `pops` merges the boundary's
   // per-source bag (extra.populations) with its GeoPoDe under-5 (the population field).
   const pickedWardPops = new Map();
-  // NOTE: the key "geopode_u5" is historical; the deployed GeoPoDe (WHO) figure is
-  // TOTAL population, not under-5 — so it's labelled + grouped under Total.
+  // The GeoPoDe (WHO) figure is TOTAL population, not under-5 — so it's labelled +
+  // grouped under Total. The canonical key is "geopode_total"; "geopode_u5" is a
+  // legacy alias kept for bags written before load_ward_populations was re-run (both
+  // carry the same GeoPoDe total).
   const POP_SOURCE_LABELS = {
     worldpop_u5: 'WorldPop',
     meta_u5: 'Meta',
     worldpop_total: 'WorldPop',
     meta_total: 'Meta',
     grid3_v3_total: 'GRID3 v3',
+    geopode_total: 'GeoPoDe',
     geopode_u5: 'GeoPoDe',
   };
   // Grouped into Under-5 vs Total for the dropdown.
@@ -2122,7 +2125,13 @@
     { label: 'Under-5', keys: ['worldpop_u5', 'meta_u5'] },
     {
       label: 'Total population',
-      keys: ['worldpop_total', 'meta_total', 'grid3_v3_total', 'geopode_u5'],
+      keys: [
+        'worldpop_total',
+        'meta_total',
+        'grid3_v3_total',
+        'geopode_total',
+        'geopode_u5',
+      ],
     },
   ];
   const POP_SOURCE_ORDER = POP_SOURCE_GROUPS.flatMap((g) => g.keys);
@@ -2130,12 +2139,15 @@
   function recordWardPopulation(boundaryId, feature) {
     const f = feature || {};
     const pops = Object.assign({}, f.populations || {});
+    // Attach the boundary's scalar GeoPoDe figure under geopode_total only if the bag
+    // doesn't already carry it (under either the canonical or the legacy key).
     if (
+      pops.geopode_total == null &&
       pops.geopode_u5 == null &&
       f.population != null &&
       !isNaN(+f.population)
     )
-      pops.geopode_u5 = +f.population;
+      pops.geopode_total = +f.population;
     if (Object.keys(pops).length)
       pickedWardPops.set(boundaryId, { name: f.name || '', pops });
     refreshPopulationSuggestion();
