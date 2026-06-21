@@ -33,11 +33,11 @@ function CoverageMapModal({ open, onClose }) {
         style: 'mapbox://styles/mapbox/light-v11',
         center: [8.7, 9.1],
         zoom: 5.1,
-        // Retain the WebGL drawing buffer so an automated screenshot (the DDD
-        // recorder / Playwright) reliably reads painted pixels instead of a
-        // post-composite cleared buffer — the map renders headless via SwiftShader,
-        // but the screenshot read-back races the default buffer clear.
-        preserveDrawingBuffer: true,
+        // NOTE: do NOT set preserveDrawingBuffer — on a CPU (SwiftShader) renderer it
+        // makes a headless screenshot read the full preserved buffer, which stalls
+        // captureScreenshot ("GPU stall due to ReadPixels") and hangs the recorder.
+        // The "coverage map ready" sentinel (on map idle) guarantees the composited
+        // frame is fully painted before the recorder screenshots it.
       });
       map.addControl(new mapboxgl.NavigationControl(), 'top-left');
       // One resize after load handles the modal's CSS-transition sizing. Do NOT
