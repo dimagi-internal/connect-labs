@@ -54,7 +54,11 @@ def _load_credentials():
 
 
 class DriveClient:
-    def __init__(self, credentials=None, timeout: float = 30.0):
+    # 300s default: a large opp's user_visits.json can be many MB (e.g. a KMC clone
+    # with ~11.5k visits), and the multipart upload of that single file exceeds a
+    # 30s ceiling. The timeout is a max-wait, not a fixed delay, so small/fast calls
+    # (list/create) are unaffected.
+    def __init__(self, credentials=None, timeout: float = 300.0):
         self.credentials = credentials or _load_credentials()
         if self.credentials is None:
             raise DriveAuthError("LABS_SYNTHETIC_GDRIVE_SA_KEY not set — cannot construct DriveClient.")
