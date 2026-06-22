@@ -7,7 +7,13 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from weekly_changelog import classify_pr, fetch_pr_files, generate_weekly_summary, load_user_visible_prs  # noqa: E402
+from weekly_changelog import (  # noqa: E402
+    classify_pr,
+    fetch_pr_files,
+    generate_weekly_summary,
+    group_prs_by_feature,
+    load_user_visible_prs,
+)
 
 PR_TEMPLATE = {
     "number": 1,
@@ -150,7 +156,7 @@ def test_load_user_visible_prs_defaults_to_app_when_no_repo():
 
 
 def test_generate_weekly_summary_includes_category_annotation():
-    """Verify the PR text block sent to Claude includes [category: X] annotation."""
+    """Verify the group text sent to Claude includes [category: X] annotation."""
     captured_messages = []
 
     class FakeResponse:
@@ -164,23 +170,107 @@ def test_generate_weekly_summary_includes_category_annotation():
     class FakeClient:
         messages = FakeMessages()
 
-    prs = [
+    groups = [
         {
-            "number": 5,
-            "title": "feat(prelogin): nav fix",
+            "title": "Nav fix",
             "description": "Hamburger menu added.",
+            "pr_numbers": [5],
+            "lead_pr": 5,
+            "lead_url": "https://github.com/jjackson/connect-labs/pull/5",
             "category": "marketing",
         },
         {
-            "number": 6,
-            "title": "fix(workflow): dashboard crash",
+            "title": "Dashboard fix",
             "description": "Fixed React crash.",
+            "pr_numbers": [6],
+            "lead_pr": 6,
+            "lead_url": "https://github.com/jjackson/connect-labs/pull/6",
             "category": "app",
         },
     ]
-    generate_weekly_summary(FakeClient(), prs)
+    generate_weekly_summary(FakeClient(), groups)
 
     assert len(captured_messages) == 1
     user_content = captured_messages[0]["messages"][0]["content"]
-    assert "PR #5 [category: marketing]" in user_content
-    assert "PR #6 [category: app]" in user_content
+    assert "Group [category: marketing]" in user_content
+    assert "Group [category: app]" in user_content
+
+
+def test_group_prs_by_feature_returns_groups():
+    """Verify grouping parses JSON and attaches marketing category from source PRs."""
+    fake_json = json.dumps([
+        {
+            "title": "New dashboard",
+            "description": "Overview tab is live.",
+            "pr_numbers": [10, 11],
+            "lead_pr": 10,
+            "type": "New",
+        }
+    ])
+
+    class FakeResponse:
+        content = [MagicMock(text=fake_json)]
+
+    class FakeMessages:
+        def create(self, **kwargs):
+            return FakeResponse()
+
+    class FakeClient:
+        messages = FakeMessages()
+
+    prs = [
+        {
+            "number": 10,
+            "title": "feat: dashboard",
+            "description": "Overview.",
+            "url": "https://github.com/jjackson/connect-labs/pull/10",
+            "category": "app",
+        },
+        {
+            "number": 11,
+            "title": "fix: dashboard crash",
+            "description": "Fixed crash.",
+            "url": "https://github.com/jjackson/connect-labs/pull/11",
+            "category": "app",
+        },
+    ]
+    groups = group_prs_by_feature(FakeClient(), prs)
+
+    assert len(groups) == 1
+    g = groups[0]
+    assert g["title"] == "New dashboard"
+    assert g["lead_pr"] == 10
+    assert g["lead_url"] == "https://github.com/jjackson/connect-labs/pull/10"
+    assert g["category"] == "app"
+    assert set(g["pr_numbers"]) == {10, 11}
+
+
+def test_group_prs_by_feature_fallback_on_bad_json():
+    """Verify graceful fallback when Claude returns invalid JSON."""
+
+    class FakeResponse:
+        content = [MagicMock(text="not valid json at all")]
+
+    class FakeMessages:
+        def create(self, **kwargs):
+            return FakeResponse()
+
+    class FakeClient:
+        messages = FakeMessages()
+
+    prs = [
+        {
+            "number": i,
+            "title": f"PR {i}",
+            "description": f"Desc {i}.",
+            "url": f"https://github.com/jjackson/connect-labs/pull/{i}",
+            "category": "app",
+        }
+        for i in range(1, 15)  # 14 PRs — more than fallback cap of 10
+    ]
+    groups = group_prs_by_feature(FakeClient(), prs)
+
+    # Fallback produces one-group-per-PR, capped at 10
+    assert len(groups) == 10
+    assert groups[0]["lead_pr"] == 1
+    assert groups[0]["pr_numbers"] == [1]
