@@ -245,6 +245,51 @@ def test_group_prs_by_feature_returns_groups():
     assert set(g["pr_numbers"]) == {10, 11}
 
 
+def test_group_prs_by_feature_derives_marketing_category():
+    """Verify group category is derived from constituent PRs (marketing > mixed > app)."""
+    fake_json = json.dumps([
+        {
+            "title": "Homepage update",
+            "description": "Navigation changed.",
+            "pr_numbers": [20, 21],
+            "lead_pr": 20,
+            "type": "Improvement",
+        }
+    ])
+
+    class FakeResponse:
+        content = [MagicMock(text=fake_json)]
+
+    class FakeMessages:
+        def create(self, **kwargs):
+            return FakeResponse()
+
+    class FakeClient:
+        messages = FakeMessages()
+
+    prs = [
+        {
+            "number": 20,
+            "title": "feat: workflow",
+            "description": "Workflow update.",
+            "url": "https://github.com/jjackson/connect-labs/pull/20",
+            "category": "app",
+        },
+        {
+            "number": 21,
+            "title": "feat: prelogin nav",
+            "description": "Navigation change.",
+            "url": "https://github.com/jjackson/connect-labs/pull/21",
+            "category": "marketing",
+        },
+    ]
+    groups = group_prs_by_feature(FakeClient(), prs)
+
+    assert len(groups) == 1
+    # One app PR + one marketing PR → group inherits "marketing"
+    assert groups[0]["category"] == "marketing"
+
+
 def test_group_prs_by_feature_fallback_on_bad_json():
     """Verify graceful fallback when Claude returns invalid JSON."""
 

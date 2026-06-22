@@ -142,6 +142,9 @@ def group_prs_by_feature(client: anthropic.Anthropic, prs: list[dict]) -> list[d
             raise ValueError(f"expected list, got {type(groups).__name__}")
     except Exception as e:
         print(f"  [warn] Grouping parse failed ({e}) — falling back to one-group-per-PR", file=sys.stderr)
+        if len(prs) > 10:
+            dropped = [p["number"] for p in prs[10:]]
+            print(f"  [warn] Fallback capped at 10 of {len(prs)} PRs — skipped: {dropped}", file=sys.stderr)
         return [
             {
                 "title": p["title"],
