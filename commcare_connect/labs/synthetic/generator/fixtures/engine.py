@@ -171,6 +171,7 @@ def _build_mirror_visits(
             persona=persona,
             period=period,
             forced_values=pv.forced_values,
+            mirror=True,
         )
         if location:
             form_json.setdefault("metadata", {})["location"] = location

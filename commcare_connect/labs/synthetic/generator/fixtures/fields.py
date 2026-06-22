@@ -286,6 +286,12 @@ def _set_nested(obj: dict, dotted_path: str, value: Any) -> None:
         if not isinstance(existing, dict):
             obj[part] = {}
         obj = obj[part]
+    # Never let a scalar overwrite an already-populated group. CommCare app structures
+    # sometimes expose a group node as its own (text) question (e.g. "form.anthropometric"
+    # alongside "form.anthropometric.child_weight_visit"); filling that group as a scalar
+    # would wipe out children already written (notably transplanted values in mirror mode).
+    if isinstance(obj.get(parts[-1]), dict) and not isinstance(value, dict):
+        return
     obj[parts[-1]] = value
 
 
@@ -299,6 +305,7 @@ def fill_form_json(
     period: int | None = None,
     correlated_values: dict[str, Any] | None = None,
     forced_values: dict[str, Any] | None = None,
+    mirror: bool = False,
 ) -> dict[str, Any]:
     anomaly_paths = {a.field_path for a in anomalies_for_visit if a.field_path}
     # Persona overrides take precedence over cohort distributions. Building a
@@ -344,6 +351,12 @@ def fill_form_json(
         if spec.json_path in written_forced:
             continue  # already set from the transplanted series
         covered_paths.add(spec.json_path)
+        if mirror and spec.kind in {"int", "decimal"}:
+            # Faithful sparsity (mirror): numeric fields come ONLY from the transplant
+            # (forced). The real visit left this one blank, so leave it blank — don't
+            # invent a value. Inventing at duplicate/sibling numeric paths buries the
+            # real per-entity trajectory when an analysis coalesces by field name (#713).
+            continue
         if spec.json_path in correlated:
             dist = effective.get(spec.json_path)
             if dist is not None and getattr(dist, "null_rate", 0.0) and rng.random() < dist.null_rate:
@@ -382,6 +395,8 @@ def fill_form_json(
     for path, dist in effective.items():
         if path in covered_paths or path in consumed_keys or _under_repeat(path, repeat_bases):
             continue
+        if mirror and isinstance(dist, (NormalDistribution, UniformDistribution)):
+            continue  # mirror: numeric orphans come only from the transplant (forced)
         if path in correlated:
             if getattr(dist, "null_rate", 0.0) and rng.random() < dist.null_rate:
                 continue
