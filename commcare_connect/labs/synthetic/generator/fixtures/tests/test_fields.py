@@ -502,3 +502,80 @@ def test_text_fields_are_fabricated_not_stubbed():
     # leaf heuristics
     assert _fabricate_text("mothers_phone_number", random.Random(1)).isdigit()
     assert _fabricate_text("country", random.Random(1)) in _COUNTRIES
+
+
+def test_mirror_mode_emits_numerics_only_from_transplant_not_iid():
+    """Faithful sparsity (issue #713): in mirror mode a numeric field is emitted ONLY
+    where the real visit had one (the transplanted value). Numeric schema questions
+    not in the transplant are left blank — matching the source's null pattern — instead
+    of i.i.d.-drawn, so inventing values at duplicate paths can't bury the real
+    per-entity trajectory. Categoricals still fill."""
+    schema = FormSchema(
+        questions=[
+            QuestionSpec("form.weight", "decimal"),  # in transplant -> emitted
+            QuestionSpec("form.height", "decimal"),  # numeric, NOT in transplant -> omitted
+            QuestionSpec("form.status", "select", choices=["ok", "bad"]),  # categorical -> still filled
+        ]
+    )
+    cohort = BeneficiaryCohort(
+        id="c",
+        size=1,
+        field_distributions={
+            "form.weight": NormalDistribution(mean=1500, stddev=300),
+            "form.height": NormalDistribution(mean=50, stddev=5),
+        },
+        progression="flat",
+    )
+    out = fill_form_json(
+        schema=schema,
+        cohort=cohort,
+        anomalies_for_visit=[],
+        rng=random.Random(0),
+        forced_values={"form.weight": 1234.0},
+        mirror=True,
+    )
+    assert out["form"]["weight"] == 1234.0  # transplanted value survives
+    assert "height" not in out.get("form", {})  # numeric not in transplant -> omitted (source sparsity)
+    assert out["form"]["status"] in ("ok", "bad")  # categorical still filled
+
+
+def test_non_mirror_still_fills_numeric_fields_iid():
+    """Without mirror, the legacy behaviour is unchanged: numeric fields are filled."""
+    schema = FormSchema(questions=[QuestionSpec("form.height", "decimal")])
+    cohort = BeneficiaryCohort(
+        id="c",
+        size=1,
+        field_distributions={"form.height": NormalDistribution(mean=50, stddev=5)},
+        progression="flat",
+    )
+    out = fill_form_json(schema=schema, cohort=cohort, anomalies_for_visit=[], rng=random.Random(0))
+    assert "height" in out["form"]  # legacy: i.i.d. filled
+
+
+def test_mirror_group_question_does_not_clobber_forced_child():
+    """Regression (issue #713): when a group path also appears as a (text) question —
+    a CommCare app-structure quirk, e.g. 'form.anthropometric' alongside
+    'form.anthropometric.child_weight_visit' — filling the group as a scalar must NOT
+    wipe out the transplanted child written earlier. The forced child must survive."""
+    schema = FormSchema(
+        questions=[
+            QuestionSpec("form.anthropometric", "text"),  # group node leaked in as a question
+            QuestionSpec("form.anthropometric.child_weight_visit", "int"),
+            QuestionSpec("form.anthropometric.note", "text"),
+        ]
+    )
+    cohort = BeneficiaryCohort(
+        id="c",
+        size=1,
+        field_distributions={"form.anthropometric.child_weight_visit": NormalDistribution(mean=1500, stddev=300)},
+        progression="flat",
+    )
+    out = fill_form_json(
+        schema=schema,
+        cohort=cohort,
+        anomalies_for_visit=[],
+        rng=random.Random(0),
+        forced_values={"form.anthropometric.child_weight_visit": 2900.0},
+        mirror=True,
+    )
+    assert out["form"]["anthropometric"]["child_weight_visit"] == 2900  # survives the group-question fill
