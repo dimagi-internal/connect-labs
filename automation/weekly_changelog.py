@@ -75,12 +75,30 @@ def fetch_pr_files(pr_number: int, repo: str) -> list[str]:
     return [line.strip() for line in result.stdout.splitlines() if line.strip()]
 
 
-RANK_SYSTEM_PROMPT = """\
-You rank pull requests by user impact for a program management web app. \
-Return ONLY a JSON array of PR numbers (integers), highest impact first. \
-Rank by: breadth (how many users affected), novelty (new capability > improvement > fix), \
-visibility (noticeable to users > silent backend). No explanation, no markdown — \
-just the raw JSON array.
+GROUP_MAX = 12  # maximum feature groups passed to the summary step
+
+MODEL_GROUPING = "claude-sonnet-4-6"     # needs to reason across many PRs
+MODEL_SUMMARY = "claude-haiku-4-5-20251001"  # short structured task
+
+GROUP_SYSTEM_PROMPT = """\
+You cluster pull requests into logical feature groups for a program-management web app changelog.
+Audience: non-developer program staff.
+
+Return ONLY a JSON array — no markdown fences, no explanation. Each element:
+  {
+    "title": "short noun phrase naming the feature (user-facing, not a PR title)",
+    "description": "1-2 sentences: what the user now sees or can do",
+    "pr_numbers": [list of all PR numbers in this group],
+    "lead_pr": single most representative PR number,
+    "type": "New" | "Improvement" | "Fix" | "Infra"
+  }
+
+Rules:
+- PRs working toward the same feature or initiative belong in one group
+- Infrastructure, developer tooling, and CI changes all merge into a single Infra group
+- Order groups by user impact: broadest/most visible first
+- Maximum 12 groups total
+- Skip PRs with no user-visible effect
 """
 
 WEEKLY_SYSTEM_PROMPT = """\
@@ -89,19 +107,73 @@ Audience: non-developer program staff who use the app regularly.
 
 Format rules:
 - Lead with 1-2 sentences summarizing the week's overall theme
-- Then a bullet list, one bullet per significant user-visible change
+- Then a bullet list, one bullet per feature group (a group may represent multiple related PRs)
 - Use plain language: no code terms, no GitHub references, no jargon
-- "Fixed:" prefix for bug fixes; start other bullets with the capability directly
-- Keep each bullet under 25 words
-- Maximum 8 bullets total
-- Omit infra, refactoring, and developer-tooling changes entirely
+- "Fixed:" prefix for bug-fix-only groups; start other bullets with the capability directly
+- Keep each bullet under 30 words
+- Maximum 10 bullets total
+- Skip "Infra" groups unless the improvement is directly user-visible
 - Do NOT include PR numbers or links in the body text (added separately)
 - Return only the summary text — no preamble, no trailing notes
-- PRs marked [category: marketing]: prefix every bullet from that PR with "[Marketing] "
-- PRs marked [category: mixed]: split the description into separate bullets for the app \
-changes and the marketing/website changes; prefix only the marketing bullets with "[Marketing] "
-- PRs marked [category: app]: no prefix on bullets
+- Groups marked [category: marketing]: prefix every bullet from that group with "[Marketing] "
+- Groups marked [category: mixed]: split into separate bullets for app and marketing changes; \
+prefix only the marketing bullets with "[Marketing] "
+- Groups marked [category: app]: no prefix
 """
+
+
+def group_prs_by_feature(client: anthropic.Anthropic, prs: list[dict]) -> list[dict]:
+    """Cluster PRs into logical feature groups ordered by user impact."""
+    pr_text = "\n\n".join(
+        f"PR #{p['number']} [marketing: {p.get('category', 'app')}]: {p['title']}\n{p['description']}"
+        for p in prs
+    )
+    resp = client.messages.create(
+        model=MODEL_GROUPING,
+        max_tokens=2000,
+        system=GROUP_SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": pr_text}],
+    )
+    raw = resp.content[0].text.strip()
+    raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=re.MULTILINE).strip()
+    try:
+        groups = json.loads(raw)
+        if not isinstance(groups, list):
+            raise ValueError(f"expected list, got {type(groups).__name__}")
+    except Exception as e:
+        print(f"  [warn] Grouping parse failed ({e}) — falling back to one-group-per-PR", file=sys.stderr)
+        if len(prs) > 10:
+            dropped = [p["number"] for p in prs[10:]]
+            print(f"  [warn] Fallback capped at 10 of {len(prs)} PRs — skipped: {dropped}", file=sys.stderr)
+        return [
+            {
+                "title": p["title"],
+                "description": p["description"],
+                "pr_numbers": [p["number"]],
+                "lead_pr": p["number"],
+                "lead_url": p.get("url", ""),
+                "category": p.get("category", "app"),
+            }
+            for p in prs[:10]
+        ]
+
+    pr_by_number = {p["number"]: p for p in prs}
+    for group in groups:
+        pr_nums = group.get("pr_numbers") or []
+        if "lead_pr" not in group and pr_nums:
+            group["lead_pr"] = pr_nums[0]
+        lead = pr_by_number.get(group.get("lead_pr", 0), {})
+        group["lead_url"] = lead.get("url", "")
+        # Derive marketing category from constituent PRs
+        pr_cats = [pr_by_number.get(n, {}).get("category", "app") for n in pr_nums]
+        if "marketing" in pr_cats:
+            group["category"] = "marketing"
+        elif "mixed" in pr_cats:
+            group["category"] = "mixed"
+        else:
+            group["category"] = "app"
+
+    return groups[:GROUP_MAX]
 
 
 def extract_product_description(body: str) -> str:
@@ -144,42 +216,15 @@ def load_user_visible_prs(prs_file: str) -> list[dict]:
     return result
 
 
-RANK_TOP_N = 15  # PRs passed to the summary step
-
-
-def rank_prs_by_impact(client: anthropic.Anthropic, prs: list[dict]) -> list[dict]:
-    """Return prs re-ordered by impact (highest first), capped at RANK_TOP_N."""
-    pr_text = "\n\n".join(f"PR #{p['number']}: {p['title']}\n{p['description']}" for p in prs)
-    resp = client.messages.create(
-        model="claude-haiku-4-5-20251001",
-        max_tokens=500,
-        system=RANK_SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": pr_text}],
-    )
-    try:
-        numbers = json.loads(resp.content[0].text.strip())
-        if not isinstance(numbers, list):
-            raise ValueError(f"expected list, got {type(numbers).__name__}")
-        numbers = [n for n in numbers if isinstance(n, int)]
-    except Exception as e:
-        print(f"  [warn] Ranking parse failed ({e}) — using original order", file=sys.stderr)
-        return prs[:RANK_TOP_N]
-    pr_by_number = {p["number"]: p for p in prs}
-    ranked = [pr_by_number[n] for n in numbers if n in pr_by_number]
-    # Append any PRs Claude omitted so we don't silently drop them
-    seen = {p["number"] for p in ranked}
-    ranked += [p for p in prs if p["number"] not in seen]
-    return ranked[:RANK_TOP_N]
-
-
-def generate_weekly_summary(client: anthropic.Anthropic, prs: list[dict]) -> str:
-    """Ask Claude for a user-friendly weekly summary."""
-    pr_text = "\n\n".join(
-        f"PR #{p['number']} [category: {p.get('category', 'app')}]: {p['title']}\n{p['description']}" for p in prs
+def generate_weekly_summary(client: anthropic.Anthropic, groups: list[dict]) -> str:
+    """Ask Claude for a user-friendly weekly summary, one bullet per feature group."""
+    group_text = "\n\n".join(
+        f"Group [category: {g.get('category', 'app')}]: {g['title']}\n{g['description']}"
+        for g in groups
     )
     resp = client.messages.create(
-        model="claude-haiku-4-5-20251001",
-        max_tokens=800,
+        model=MODEL_SUMMARY,
+        max_tokens=1000,
         system=[
             {
                 "type": "text",
@@ -190,7 +235,7 @@ def generate_weekly_summary(client: anthropic.Anthropic, prs: list[dict]) -> str
         messages=[
             {
                 "role": "user",
-                "content": (f"Changes merged this week:\n\n{pr_text}\n\n" "Write the weekly changelog entry."),
+                "content": f"Feature groups for this week:\n\n{group_text}\n\nWrite the weekly changelog entry.",
             }
         ],
     )
@@ -223,10 +268,14 @@ def markdown_to_storage(text: str) -> str:
     return "\n".join(html_lines)
 
 
-def build_changelog_row(week_date: str, summary: str, prs: list[dict]) -> str:
+def build_changelog_row(week_date: str, summary: str, groups: list[dict]) -> str:
     """Build a Confluence storage format table row for the changelog."""
     summary_html = markdown_to_storage(summary)
-    pr_links = " ".join(f'<a href="{p["url"]}">#{p["number"]}</a>' for p in prs[:10] if p.get("url"))
+    pr_links = " ".join(
+        f'<a href="{g["lead_url"]}">#{g["lead_pr"]}</a>'
+        for g in groups[:10]
+        if g.get("lead_url") and g.get("lead_pr")
+    )
     return (
         "<tr>"
         f'<td><time datetime="{week_date}" /></td>'
@@ -242,9 +291,13 @@ def _to_slack_mrkdwn(text: str) -> str:
     return re.sub(r"\*\*(.*?)\*\*", r"*\1*", text)
 
 
-def post_to_slack(webhook_url: str, week_label: str, summary: str, prs: list[dict]) -> None:
+def post_to_slack(webhook_url: str, week_label: str, summary: str, groups: list[dict]) -> None:
     """Post a Slack Block Kit message to #connect-labs."""
-    pr_links_text = "  |  ".join(f"<{p['url']}|#{p['number']}>" for p in prs[:10] if p.get("url"))
+    pr_links_text = "  |  ".join(
+        f"<{g['lead_url']}|#{g['lead_pr']}>"
+        for g in groups[:10]
+        if g.get("lead_url") and g.get("lead_pr")
+    )
     changelog_url = "https://dimagi.atlassian.net/wiki/spaces/connect/pages/3918528513"
 
     payload = {
@@ -323,17 +376,14 @@ def main() -> None:
     ai_client = anthropic.Anthropic()
     confluence = ConfluenceClient()
 
-    if len(prs) > RANK_TOP_N:
-        print(f"\nRanking {len(prs)} PRs by impact (keeping top {RANK_TOP_N})...")
-        prs_for_summary = rank_prs_by_impact(ai_client, prs)
-        print(f"  Top {len(prs_for_summary)} selected:")
-        for pr in prs_for_summary:
-            print(f"    #{pr['number']}: {pr['title']}")
-    else:
-        prs_for_summary = prs
+    print(f"\nGrouping {len(prs)} PR(s) into feature clusters...")
+    groups = group_prs_by_feature(ai_client, prs)
+    print(f"  {len(groups)} group(s) identified:")
+    for g in groups:
+        print(f"    [{g.get('type', '?')}] {g['title']} (PRs: {g['pr_numbers']})")
 
     print("\nGenerating weekly summary...")
-    summary = generate_weekly_summary(ai_client, prs_for_summary)
+    summary = generate_weekly_summary(ai_client, groups)
     print(f"\n{summary}\n")
 
     print("Updating Confluence changelog...")
@@ -341,7 +391,7 @@ def main() -> None:
     if f'datetime="{week_date}"' in existing.get("body_storage", ""):
         print(f"  [skip] Entry for {week_date} already exists — skipping duplicate run.")
         return
-    row_html = build_changelog_row(week_date, summary, prs_for_summary)
+    row_html = build_changelog_row(week_date, summary, groups)
     confluence.prepend_table_row(CHANGELOG_PAGE_ID, row_html)
     print(f"  ✓ Row prepended to page {CHANGELOG_PAGE_ID}")
 
@@ -349,7 +399,7 @@ def main() -> None:
     if slack_url:
         print("Posting to Slack...")
         try:
-            post_to_slack(slack_url, week_label, summary, prs_for_summary)
+            post_to_slack(slack_url, week_label, summary, groups)
             print("  ✓ Slack message sent to #connect-labs")
         except Exception as e:
             print(f"  [warn] Slack notification failed (non-fatal): {e}")
