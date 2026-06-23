@@ -7,13 +7,14 @@ as LabsRecord objects with React component code for rendering.
 
 import json
 import logging
+import re
 from collections.abc import Generator
 
 import httpx
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
+from django.http import HttpResponse, HttpResponseRedirect, JsonResponse, StreamingHttpResponse
 from django.views import View
 from django.views.decorators.http import require_GET, require_POST
 from django.views.generic import TemplateView
@@ -293,8 +294,73 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
 
         The picker is just the same template with `select_run_mode=True` —
         run.html branches on it.
+
+        Opportunity recovery: a workflow run always belongs to a specific
+        opportunity, yet the only signal this view reads is the labs context.
+        The LabsContextMiddleware silently drops `opportunity_id` from the URL
+        when it isn't a bare integer, so a hand-edited / copy-pasted run link
+        (e.g. `?opportunity_id=1251 stacked bar chart`) lands here with no
+        context and the user is told to re-pick an opportunity the URL already
+        names. Before falling through to that prompt, recover the opp the
+        workflow itself belongs to and redirect to the canonical URL — that way
+        the middleware re-seeds the session and the address bar is corrected,
+        so every downstream link and the runner JS see a clean integer.
         """
+        labs_context = getattr(request, "labs_context", {}) or {}
+        if not labs_context.get("opportunity_id"):
+            recovered = self._recover_opportunity_id(self.kwargs.get("definition_id"))
+            # Only redirect when the recovered id differs from whatever raw
+            # value is already in the URL — guards against a redirect loop if a
+            # future middleware change were to refuse the value.
+            if recovered and (request.GET.get("opportunity_id") or "") != str(recovered):
+                params = request.GET.copy()
+                params["opportunity_id"] = str(recovered)
+                return HttpResponseRedirect(f"{request.path}?{params.urlencode()}")
         return super().get(request, *args, **kwargs)
+
+    def _recover_opportunity_id(self, definition_id):
+        """Best-effort recovery of the opportunity a workflow run belongs to
+        when the labs context is empty. Returns an int the user can access, or
+        None.
+
+        Precedence:
+        1. A leading integer salvaged from the raw (unparsed) URL param. The
+           middleware drops `opportunity_id=1251 stacked bar chart` whole; the
+           id `1251` is still right there.
+        2. The definition's own `opportunity_id`. Only fetchable un-scoped for
+           public workflows — the prod LabsRecord API returns just public=True
+           records when no opportunity/program/organization scope is passed, so
+           a private definition can't be read without the opp we're missing.
+
+        Recovered ids are validated against the user's accessible opportunities
+        when that list is cached; when the OAuth org cache came back empty we
+        pass the id through and let the downstream API enforce access (same
+        philosophy as labs.context.validate_context_access).
+        """
+        org_data = get_org_data(self.request) or {}
+        accessible = {o.get("id") for o in org_data.get("opportunities", [])}
+
+        # 1. Leading integer from the raw URL param.
+        raw = self.request.GET.get("opportunity_id") or ""
+        match = re.match(r"\s*(\d+)", raw)
+        if match:
+            candidate = int(match.group(1))
+            if not accessible or candidate in accessible:
+                logger.info("Recovered opportunity_id %s from URL param %r", candidate, raw)
+                return candidate
+
+        # 2. The definition's own opportunity (public workflows only).
+        try:
+            definition = WorkflowDataAccess(request=self.request).get_definition(definition_id)
+        except Exception:
+            logger.exception("Opp recovery: failed to fetch definition %s", definition_id)
+            definition = None
+        if definition is not None:
+            opp = getattr(definition, "opportunity_id", None)
+            if opp and (not accessible or opp in accessible):
+                logger.info("Recovered opportunity_id %s from workflow definition %s", opp, definition_id)
+                return opp
+        return None
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -317,7 +383,12 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
         context["mapbox_token"] = settings.MAPBOX_TOKEN or ""
 
         if not opportunity_id:
-            context["error"] = "Please select an opportunity to run this workflow."
+            # We get here only when recovery in get() couldn't determine the
+            # opp (no salvageable id in the URL and the workflow isn't public).
+            # Surface the rejected raw value (run.html renders it in the
+            # no-context warning) so a genuinely-mangled link is diagnosable in
+            # one glance instead of a context-less prompt.
+            context["malformed_opportunity_param"] = self.request.GET.get("opportunity_id") or ""
             return context
 
         try:
