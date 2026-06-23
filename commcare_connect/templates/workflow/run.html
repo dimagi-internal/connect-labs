@@ -146,7 +146,12 @@
             </div>
             <div class="ml-3">
                 <p class="text-sm text-yellow-700">
-                    {% if malformed_opportunity_param %}
+                    {% if unauthorized_opportunity_id %}
+                    This workflow belongs to opportunity
+                    <span class="font-mono">{{ unauthorized_opportunity_id }}</span>, which
+                    isn't one of your opportunities. Ask whoever shared it to give you access
+                    to that opportunity, then reopen the link.
+                    {% elif malformed_opportunity_param %}
                     Couldn't read an opportunity from this link (got
                     "<span class="font-mono">{{ malformed_opportunity_param }}</span>").
                     Please select an opportunity from the labs context to run this workflow.
