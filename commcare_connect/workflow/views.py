@@ -383,12 +383,20 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
         context["mapbox_token"] = settings.MAPBOX_TOKEN or ""
 
         if not opportunity_id:
-            # We get here only when recovery in get() couldn't determine the
-            # opp (no salvageable id in the URL and the workflow isn't public).
-            # Surface the rejected raw value (run.html renders it in the
-            # no-context warning) so a genuinely-mangled link is diagnosable in
-            # one glance instead of a context-less prompt.
-            context["malformed_opportunity_param"] = self.request.GET.get("opportunity_id") or ""
+            # We get here only when recovery in get() couldn't adopt an opp.
+            # get() redirects on any id the user can access (or any id at all
+            # when the OAuth opp cache is empty), so if the link still carries a
+            # parseable opportunity id, the user simply isn't a member of the
+            # org that owns it — an access problem, not a parsing one. Say so,
+            # instead of a context-less "pick an opportunity" prompt. If there's
+            # no parseable id, surface the rejected raw value so a genuinely
+            # mangled link is diagnosable. run.html renders both.
+            raw_opp = self.request.GET.get("opportunity_id") or ""
+            match = re.match(r"\s*(\d+)", raw_opp)
+            if match:
+                context["unauthorized_opportunity_id"] = match.group(1)
+            elif raw_opp:
+                context["malformed_opportunity_param"] = raw_opp
             return context
 
         try:
