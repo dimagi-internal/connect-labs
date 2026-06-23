@@ -24,6 +24,7 @@ from commcare_connect.flags.data_access import FlagsDataAccess
 from commcare_connect.labs import s3_export
 from commcare_connect.labs.analysis.sse_streaming import BaseSSEStreamView
 from commcare_connect.labs.context import get_org_data
+from commcare_connect.labs.integrations.connect.api_client import LabsAPIError
 from commcare_connect.tasks.data_access import TaskDataAccess
 from commcare_connect.utils.feature_access import can_create_from_template, get_allowed_templates
 from commcare_connect.workflow.data_access import PipelineCacheMiss, PipelineDataAccess, WorkflowDataAccess
@@ -675,6 +676,23 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                 },
             }
 
+        except LabsAPIError as e:
+            # A 404 here means the scoped opportunity fetch was rejected — the
+            # user isn't a member of the org that owns it (or the workflow was
+            # removed). This is the empty-OAuth-cache path: get() couldn't
+            # access-check the recovered opp, passed it through, and the API
+            # enforced. Show a clean access message instead of the raw wrapped
+            # error (which leaks the internal /export/labs_record/ URL).
+            logger.warning("Workflow %s load failed (status=%s): %s", definition_id, e.status_code, e)
+            if e.status_code == 404:
+                context["error"] = (
+                    f"This workflow couldn't be loaded for opportunity {opportunity_id}. You may not have "
+                    "access to that opportunity, or the workflow may have been removed. Ask whoever shared "
+                    "the link to confirm you have access to its opportunity."
+                )
+            else:
+                context["error"] = "This workflow couldn't be loaded right now. Please try again."
+            return context
         except Exception as e:
             logger.error(f"Failed to load workflow {definition_id}: {e}", exc_info=True)
             context["error"] = str(e)
