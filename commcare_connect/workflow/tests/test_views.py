@@ -7,6 +7,7 @@ middleware, middleware-dependent behaviour (CSRF, session, etc.) is
 simulated by attaching the required attributes to the request in each test.
 """
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -71,9 +72,10 @@ class TestCreateWorkflowOpportunityIds:
 
             setattr(request, "_messages", FallbackStorage(request))
 
-            with patch("commcare_connect.workflow.views.WorkflowDataAccess") as MockWDA, patch(
-                "commcare_connect.workflow.views.create_from_template"
-            ) as mock_create:
+            with (
+                patch("commcare_connect.workflow.views.WorkflowDataAccess") as MockWDA,
+                patch("commcare_connect.workflow.views.create_from_template") as mock_create,
+            ):
                 mock_wda = MagicMock()
                 MockWDA.return_value = mock_wda
                 mock_create.return_value = (
@@ -539,3 +541,111 @@ class TestCompleteRunCacheOnlyPipelines:
         error = _json.loads(response.content)["error"]
         assert "MB" in error and "snapshot_inputs" in error
         mock_wda.complete_run.assert_not_called()
+
+
+class TestWorkflowRunOpportunityRecovery:
+    """The run view recovers the workflow's opportunity when the labs context
+    is empty — so a hand-edited / copy-pasted link (whose opportunity_id param
+    the middleware dropped as non-integer) doesn't dead-end at the context
+    picker. See WorkflowRunView.get / _recover_opportunity_id.
+
+    DB-free: recovery reads the opp list off the session and (for synthetic-opp
+    merging only) the user's view_synthetic_opps flag, so a lightweight fake
+    user with that flag off exercises the real code without Postgres.
+    """
+
+    def _user(self):
+        return SimpleNamespace(is_authenticated=True, view_synthetic_opps=False, username="jo")
+
+    def _view(self, rf, *, url, labs_context, opportunities):
+        from commcare_connect.workflow.views import WorkflowRunView
+
+        request = rf.get(url)
+        request.user = self._user()
+        request.labs_context = labs_context
+        request.session = {
+            "labs_oauth": {"access_token": "t", "organization_data": {"opportunities": opportunities}},
+        }
+        view = WorkflowRunView()
+        view.setup(request, definition_id=3962)
+        return view, request
+
+    def test_salvages_leading_int_from_malformed_param(self, rf):
+        """`opportunity_id=1251 stacked bar chart` → 1251 when accessible."""
+        view, _ = self._view(
+            rf,
+            url="/labs/workflow/3962/run/?run_id=4259&opportunity_id=1251 stacked bar chart",
+            labs_context={},
+            opportunities=[{"id": 1251, "name": "Opp"}],
+        )
+        assert view._recover_opportunity_id(3962) == 1251
+
+    def test_passes_through_leading_int_when_org_cache_empty(self, rf):
+        """Empty OAuth cache → trust the salvaged id, let the API enforce access
+        (mirrors labs.context.validate_context_access pass-through)."""
+        view, _ = self._view(
+            rf,
+            url="/labs/workflow/3962/run/?opportunity_id=1251 junk",
+            labs_context={},
+            opportunities=[],
+        )
+        assert view._recover_opportunity_id(3962) == 1251
+
+    def test_does_not_salvage_inaccessible_leading_int(self, rf):
+        """A salvaged id the user can't access is not adopted from the URL; we
+        fall through to the (private → None) definition lookup."""
+        view, _ = self._view(
+            rf,
+            url="/labs/workflow/3962/run/?opportunity_id=9999 junk",
+            labs_context={},
+            opportunities=[{"id": 1251, "name": "Opp"}],
+        )
+        with patch("commcare_connect.workflow.views.WorkflowDataAccess") as MockWDA:
+            MockWDA.return_value.get_definition.return_value = None  # private/unreadable un-scoped
+            assert view._recover_opportunity_id(3962) is None
+
+    def test_recovers_from_public_definition_when_no_url_id(self, rf):
+        """No opp in the URL at all → read the definition's own opportunity_id
+        (works for public workflows, which the API returns un-scoped)."""
+        view, _ = self._view(
+            rf,
+            url="/labs/workflow/3962/run/?run_id=4259",
+            labs_context={},
+            opportunities=[{"id": 1251, "name": "Opp"}],
+        )
+        with patch("commcare_connect.workflow.views.WorkflowDataAccess") as MockWDA:
+            MockWDA.return_value.get_definition.return_value = MagicMock(opportunity_id=1251)
+            assert view._recover_opportunity_id(3962) == 1251
+
+    def test_get_redirects_to_canonical_url_for_malformed_link(self, rf):
+        """Whole flow: a malformed link 302s to a clean integer param so the
+        middleware re-seeds context on the redirect — and the junk is gone."""
+        from commcare_connect.workflow.views import WorkflowRunView
+
+        request = rf.get("/labs/workflow/3962/run/?run_id=4259&opportunity_id=1251 stacked bar chart")
+        request.user = self._user()
+        request.labs_context = {}
+        request.session = {
+            "labs_oauth": {"access_token": "t", "organization_data": {"opportunities": [{"id": 1251}]}},
+        }
+        response = WorkflowRunView.as_view()(request, definition_id=3962)
+        assert response.status_code == 302
+        assert "opportunity_id=1251" in response.url
+        assert "stacked" not in response.url
+        assert "run_id=4259" in response.url
+
+    def test_get_does_not_redirect_when_context_present(self, rf):
+        """Normal path: a resolved labs context never triggers a recovery
+        redirect — it falls through to the normal render."""
+        from django.http import HttpResponse
+
+        from commcare_connect.workflow.views import TemplateView, WorkflowRunView
+
+        request = rf.get("/labs/workflow/3962/run/?run_id=4259")
+        request.user = self._user()
+        request.labs_context = {"opportunity_id": 1251}
+        request.session = {"labs_oauth": {"access_token": "t", "organization_data": {"opportunities": [{"id": 1251}]}}}
+        sentinel = HttpResponse("rendered")
+        with patch.object(TemplateView, "get", return_value=sentinel):
+            response = WorkflowRunView.as_view()(request, definition_id=3962)
+        assert response is sentinel  # fell through to super().get(), no redirect

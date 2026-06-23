@@ -146,7 +146,13 @@
             </div>
             <div class="ml-3">
                 <p class="text-sm text-yellow-700">
+                    {% if malformed_opportunity_param %}
+                    Couldn't read an opportunity from this link (got
+                    "<span class="font-mono">{{ malformed_opportunity_param }}</span>").
                     Please select an opportunity from the labs context to run this workflow.
+                    {% else %}
+                    Please select an opportunity from the labs context to run this workflow.
+                    {% endif %}
                 </p>
             </div>
         </div>
