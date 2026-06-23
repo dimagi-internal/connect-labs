@@ -158,6 +158,131 @@ def test_mirror_reproduces_cases_per_flw_exactly():
     assert {k: len(s) for k, s in cases_per_flw.items()} == {"flw_001": 2, "flw_002": 1}
 
 
+def test_mirror_replays_date_leaves_as_stable_reconstructed_dates():
+    # A constant per-child DOB is carried as a day-offset; the clone reconstructs
+    # it as (first_visit + offset), identical across the child's visits, so the
+    # age axis (visit_date - dob) is faithful instead of a randomly fabricated date.
+    pool = [
+        {
+            "owner": "flw_001",
+            "start_date": "2026-02-01",
+            "visits": [
+                {"day": 0, "values": {"form.weight": 1200.0}, "dates": {"form.dob": -10}},
+                {"day": 7, "values": {"form.weight": 1300.0}, "dates": {"form.dob": -10}},
+                {"day": 14, "values": {"form.weight": 1400.0}, "dates": {"form.dob": -10}},
+            ],
+        }
+    ]
+    manifest, detail, _schema = _mirror_inputs(pool)
+    schema = FormSchema(
+        questions=[
+            QuestionSpec(json_path="form.weight", kind="int"),
+            QuestionSpec(json_path="form.dob", kind="date"),
+        ]
+    )
+
+    out = generate(manifest=manifest, opportunity_detail=detail, form_schema=schema)
+    visits = sorted(out["user_visits"], key=lambda v: v["visit_date"])
+
+    # 2026-02-01 minus 10 days = 2026-01-22, the SAME reconstructed DOB every visit.
+    assert {v["form_json"]["form"]["dob"] for v in visits} == {"2026-01-22"}
+    ages = [(dt.date.fromisoformat(v["visit_date"]) - dt.date(2026, 1, 22)).days for v in visits]
+    weights = [v["form_json"]["form"]["weight"] for v in visits]
+    assert ages == sorted(ages) and ages[0] < ages[-1]  # age axis climbs
+    assert weights == [1200, 1300, 1400]  # weight climbs with it
+
+
+def test_mirror_round_trips_a_climbing_growth_curve():
+    # Six children, each with a constant DOB + birthweight and a weight that climbs
+    # with age. The faithful clone must keep corr(weight, age) strongly positive
+    # AND each child's own series must rise — the issue's definition of done.
+    import statistics
+
+    pool = []
+    for c in range(6):
+        birthweight = 1000.0 + 25 * c  # one tight band (the issue validates per 250 g band)
+        start = dt.date(2026, 3, 1) + dt.timedelta(days=c)  # staggered enrollment
+        series = []
+        for wk in range(6):
+            day = wk * 7
+            age_days = 3 + day  # born 3 days before the first visit
+            series.append(
+                {"day": day, "values": {"form.weight": birthweight + 18.0 * age_days}, "dates": {"form.dob": -3}}
+            )
+        pool.append({"owner": "flw_001", "start_date": start.isoformat(), "visits": series})
+
+    manifest, detail, _schema = _mirror_inputs(pool)
+    schema = FormSchema(
+        questions=[
+            QuestionSpec(json_path="form.weight", kind="decimal"),
+            QuestionSpec(json_path="form.dob", kind="date"),
+        ]
+    )
+
+    out = generate(manifest=manifest, opportunity_detail=detail, form_schema=schema)
+
+    rows: list[tuple[int, float]] = []
+    by_entity: dict[str, list[tuple[int, float]]] = {}
+    for v in out["user_visits"]:
+        dob = dt.date.fromisoformat(v["form_json"]["form"]["dob"])
+        age = (dt.date.fromisoformat(v["visit_date"]) - dob).days
+        w = v["form_json"]["form"]["weight"]
+        rows.append((age, w))
+        by_entity.setdefault(v["entity_id"], []).append((age, w))
+
+    ages = [a for a, _ in rows]
+    ws = [w for _, w in rows]
+    cov = sum((a - statistics.mean(ages)) * (w - statistics.mean(ws)) for a, w in rows) / len(rows)
+    corr = cov / (statistics.pstdev(ages) * statistics.pstdev(ws))
+    assert corr > 0.8, corr  # weight climbs with age across the population
+
+    assert len(by_entity) == 6
+    for series in by_entity.values():
+        series.sort()
+        series_weights = [w for _, w in series]
+        assert series_weights == sorted(series_weights) and series_weights[-1] > series_weights[0]
+
+
+def test_mirror_applies_seeded_field_outlier_and_duplicate_anomalies():
+    # Faithful replay must still honor seeded QA anomalies, so a curated mirror
+    # clone keeps the signal audits/evals are meant to find (no regression when
+    # mirror became the clone default in #734).
+    from commcare_connect.labs.synthetic.generator.fixtures.manifest import Anomaly
+
+    pool = [
+        {
+            "owner": "flw_001",
+            "start_date": "2026-01-01",
+            "visits": [
+                {"day": 0, "values": {"form.weight": 1200.0}},  # week 1 -> targeted
+                {"day": 7, "values": {"form.weight": 1300.0}},  # week 2 -> untouched
+            ],
+        }
+    ]
+    manifest, detail, schema = _mirror_inputs(pool)  # cohort weight ~ N(1300, 200), timeline starts 2026-01-01
+    manifest.anomalies = [
+        Anomaly(id="o1", type="field_outlier", flw_ids=["flw_001"], field_path="form.weight", week=1),
+        Anomaly(id="d1", type="duplicate_submission", flw_ids=["flw_001"], week=1),
+    ]
+
+    out = generate(manifest=manifest, opportunity_detail=detail, form_schema=schema)
+    visits = out["user_visits"]
+
+    # The duplicate_submission seeds exactly one extra flagged "already visited" copy.
+    dups = [v for v in visits if v.get("flag_reason") == "Beneficiary already visited this week"]
+    assert len(dups) == 1
+
+    # The week-1 visit's weight is a >= 4-sigma outlier (mean 1300, std 200 -> outside [1100, 1500]),
+    # while the untouched week-2 visit keeps its faithful transplanted value.
+    by_date = {}
+    for v in visits:
+        if not v.get("flagged") or v.get("flag_reason") != "Beneficiary already visited this week":
+            by_date.setdefault(v["visit_date"], v["form_json"]["form"]["weight"])
+    assert by_date["2026-01-08"] == 1300  # faithful, untouched
+    w0 = by_date["2026-01-01"]
+    assert w0 < 600 or w0 > 2000, w0  # the seeded outlier landed on the week-1 visit
+
+
 def test_synthetic_trajectory_gives_each_entity_a_rising_stable_series():
     from commcare_connect.labs.synthetic.generator.fixtures.manifest import (
         BeneficiaryCohort,

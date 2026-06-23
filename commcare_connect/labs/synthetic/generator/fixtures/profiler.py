@@ -730,7 +730,12 @@ def profile(
     # pool references the manifest's personas and never leaks a real username.
     if mirror:
         numeric_paths = {p for p, d in field_dists.items() if d.get("distribution") in ("normal", "uniform")}
-        structure = profile_entity_structure(user_visits, numeric_paths=numeric_paths)
+        # Date leaves (e.g. child_dob) carry the longitudinal axis for analyses that
+        # compute age = visit_date - dob. They are never numeric, so the transplant
+        # pool must capture them explicitly — driven by the schema's date-typed
+        # questions, not a hardcoded field name (general for any date-derived axis).
+        date_paths = {p for p, k in kinds.items() if k == "date"}
+        structure = profile_entity_structure(user_visits, numeric_paths=numeric_paths, date_paths=date_paths)
         ranked = sorted(visits_by_flw.items(), key=lambda kv: -len(kv[1]))
         username_to_persona = {username: f"flw_{i + 1:03d}" for i, (username, _) in enumerate(ranked)}
         pool = []

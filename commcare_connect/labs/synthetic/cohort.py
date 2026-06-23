@@ -36,7 +36,9 @@ class CohortSpec:
     curate: bool = False
     # When True, Phase 1 profiling captures a de-identified per-entity transplant pool
     # so each clone reproduces the source's exact visits/case, cases/FLW, timing, and
-    # per-entity value trajectories (e.g. an infant growth curve), not just marginals.
+    # per-entity value trajectories — including date-derived axes like an infant growth
+    # curve (age = visit_date - dob, #734) — not just marginals. Opt-in per cohort
+    # (e.g. cohorts/kmc.yaml sets mirror: true); the curve only reproduces under mirror.
     mirror: bool = False
 
     @classmethod

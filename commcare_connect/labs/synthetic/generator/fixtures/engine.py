@@ -15,7 +15,7 @@ from typing import Any
 
 from .copula import build_copula_sampler
 from .entities import plan_mirror_visits
-from .fields import fill_form_json
+from .fields import _outlier, fill_form_json
 from .images import assign_visit_images
 from .manifest import Manifest
 from .opportunity import build_opportunity
@@ -163,6 +163,21 @@ def _build_mirror_visits(
         location = _packed_location(household_locations, pv.beneficiary_idx, manifest.geography, rng)
         # week index relative to the timeline, for any non-forced period-varying draws.
         period = max(1, (pv.visit_date - start_date).days // 7 + 1)
+        # Seeded QA anomalies still apply under faithful replay (mirror is the clone
+        # default since #734): a missing_visits drops this visit, a field_outlier
+        # corrupts one transplanted measure, a duplicate_submission appends a flagged
+        # copy — so curated mirror clones keep the signal audits/evals look for.
+        anomalies = _anomalies_at(period, persona.id, manifest)
+        if any(a.type == "missing_visits" for a in anomalies):
+            continue
+        forced_values = pv.forced_values
+        outlier_paths = [
+            a.field_path for a in anomalies if a.type == "field_outlier" and a.field_path in cohort.field_distributions
+        ]
+        if outlier_paths:
+            forced_values = dict(forced_values)
+            for path in outlier_paths:
+                forced_values[path] = _outlier(cohort.field_distributions[path], rng)
         form_json = fill_form_json(
             schema=form_schema,
             cohort=cohort,
@@ -170,46 +185,49 @@ def _build_mirror_visits(
             rng=rng,
             persona=persona,
             period=period,
-            forced_values=pv.forced_values,
+            forced_values=forced_values,
             mirror=True,
         )
         if location:
             form_json.setdefault("metadata", {})["location"] = location
         status = decide_visit_status(
             persona=persona,
-            has_anomaly=False,
+            has_anomaly=bool(outlier_paths),
             rng=rng,
             flag_reason_distribution=manifest.flag_reason_distribution,
         )
         base_hour = _sample_hour(rng, manifest.temporal)
         created_dt = dt.datetime.combine(pv.visit_date, dt.time(base_hour, 0))
-        visits.append(
-            {
-                "id": rng.getrandbits(60),
-                "xform_id": str(uuid.UUID(int=rng.getrandbits(128))),
-                "opportunity_id": manifest.opportunity_id,
-                "username": persona.id,
-                "deliver_unit": str(deliver_unit_id) if deliver_unit_id is not None else "",
-                "deliver_unit_id": deliver_unit_id,
-                "entity_id": pv.entity_id,
-                "entity_name": pv.entity_name,
-                "visit_date": pv.visit_date.isoformat(),
-                "status": status.status,
-                "reason": None,
-                "location": location,
-                "flagged": status.flagged,
-                "flag_reason": status.flag_reason,
-                "form_json": form_json,
-                "completed_work": "",
-                "status_modified_date": (created_dt + dt.timedelta(hours=1)).isoformat(),
-                "review_status": status.review_status,
-                "review_created_on": (created_dt + dt.timedelta(hours=1, minutes=30)).isoformat(),
-                "justification": None,
-                "date_created": created_dt.isoformat(),
-                "completed_work_id": None,
-                "images": [],
-            }
-        )
+        visit = {
+            "id": rng.getrandbits(60),
+            "xform_id": str(uuid.UUID(int=rng.getrandbits(128))),
+            "opportunity_id": manifest.opportunity_id,
+            "username": persona.id,
+            "deliver_unit": str(deliver_unit_id) if deliver_unit_id is not None else "",
+            "deliver_unit_id": deliver_unit_id,
+            "entity_id": pv.entity_id,
+            "entity_name": pv.entity_name,
+            "visit_date": pv.visit_date.isoformat(),
+            "status": status.status,
+            "reason": None,
+            "location": location,
+            "flagged": status.flagged,
+            "flag_reason": status.flag_reason,
+            "form_json": form_json,
+            "completed_work": "",
+            "status_modified_date": (created_dt + dt.timedelta(hours=1)).isoformat(),
+            "review_status": status.review_status,
+            "review_created_on": (created_dt + dt.timedelta(hours=1, minutes=30)).isoformat(),
+            "justification": None,
+            "date_created": created_dt.isoformat(),
+            "completed_work_id": None,
+            "images": [],
+        }
+        visits.append(visit)
+        # A duplicate_submission resubmits the same case minutes later with a dedup
+        # flag — the "already visited" signal a QA check is meant to catch.
+        if any(a.type == "duplicate_submission" for a in anomalies):
+            visits.append(_make_duplicate(visit, created_dt, rng))
     return visits
 
 

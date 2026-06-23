@@ -40,9 +40,12 @@ class EntityStructure:
     owner_visit_counts: dict[str, list[int]]
     # One de-identified series per entity. Each is
     # ``{"owner": <source flw>, "start_date": <ISO first visit>, "visits": [...]}``
-    # where each visit is ``{"day": <offset from first visit>, "values": {path: float}}``.
-    # Replaying a series reproduces that case's owner, timing, visit count, and
-    # value trajectory exactly. Numerics only — names/phones/free text never enter.
+    # where each visit is ``{"day": <offset from first visit>, "values": {path: float}}``
+    # plus an optional ``"dates": {path: <signed day-offset from first visit>}`` for
+    # declared date leaves (e.g. ``child_dob``). Replaying a series reproduces that
+    # case's owner, timing, visit count, value trajectory, and date-derived axes
+    # (age = visit_date - dob) exactly. Numerics + date offsets only — names, phones,
+    # free text, and absolute calendar dates never enter.
     transplant_pool: list[dict[str, Any]]
 
 
@@ -87,6 +90,27 @@ def _numeric_leaves(form_json: dict, numeric_paths: set[str] | None) -> dict[str
     return out
 
 
+def _date_offsets(form_json: dict, date_paths: set[str] | None, first: dt.date) -> dict[str, int]:
+    """Declared date leaves as integer day-offsets from this entity's first visit.
+
+    The growth curve's age axis is ``visit_date - child_dob``, where ``child_dob``
+    is a *date*, not a number — so ``_numeric_leaves`` never carries it. Storing
+    each date as a signed offset from the entity's first visit (negative for a DOB
+    that precedes it) lets the clone reconstruct the exact relationship while
+    leaking no absolute calendar date beyond the ``start_date`` the pool already
+    records. Constant per-entity dates (a DOB repeated each visit) yield the same
+    offset every visit, so the replayed date stays stable across the child's series.
+    """
+    out: dict[str, int] = {}
+    if not date_paths:
+        return out
+    for path in date_paths:
+        d = _parse_date(_extract_nested(form_json, path))
+        if d is not None:
+            out[path] = (d - first).days
+    return out
+
+
 def _extract_nested(obj: dict, dotted_path: str) -> Any:
     cur: Any = obj
     for part in dotted_path.split("."):
@@ -96,7 +120,9 @@ def _extract_nested(obj: dict, dotted_path: str) -> Any:
     return cur
 
 
-def profile_entity_structure(visits: list[dict], *, numeric_paths: set[str] | None = None) -> EntityStructure:
+def profile_entity_structure(
+    visits: list[dict], *, numeric_paths: set[str] | None = None, date_paths: set[str] | None = None
+) -> EntityStructure:
     # visits per (entity, flw) so we can both count an entity's visits and find
     # the FLW who did the most of them.
     visits_by_entity_flw: dict[str, Counter[str]] = defaultdict(Counter)
@@ -129,10 +155,14 @@ def profile_entity_structure(visits: list[dict], *, numeric_paths: set[str] | No
         if not dated:
             continue
         first = dated[0][0]
-        series_visits = [
-            {"day": (d - first).days, "values": _numeric_leaves(v.get("form_json") or {}, numeric_paths)}
-            for d, v in dated
-        ]
+        series_visits = []
+        for d, v in dated:
+            fj = v.get("form_json") or {}
+            visit_entry: dict[str, Any] = {"day": (d - first).days, "values": _numeric_leaves(fj, numeric_paths)}
+            dates = _date_offsets(fj, date_paths, first)
+            if dates:  # omit the key entirely when no dates requested/found (legacy shape)
+                visit_entry["dates"] = dates
+            series_visits.append(visit_entry)
         transplant_pool.append({"owner": entity_owner[eid], "start_date": first.isoformat(), "visits": series_visits})
 
     return EntityStructure(
