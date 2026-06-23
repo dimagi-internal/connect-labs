@@ -25,11 +25,11 @@
     <div class="flex items-center justify-between mb-2">
       <h2 class="text-lg font-semibold text-gray-900">Studies &amp; plan groups</h2>
       <div class="flex gap-2">
-        <button type="button" id="new-study" class="button button-sm primary-dark" title="Start a controlled two-arm study (intervention + control), then add its wards">+ New study</button>
+        <button type="button" id="new-study" class="button button-sm primary-dark" title="Start a two-arm matched study (intervention + match), then add its wards">+ New study</button>
         <button type="button" id="new-group" class="button button-sm outline-style" disabled title="Select plans below to bundle">+ Group selected plans</button>
       </div>
     </div>
-    <p class="text-xs text-gray-500 mb-3">A <b>study</b> is a controlled set of wards (intervention + control) sampled together — a finished study is ready to recruit a survey firm against.</p>
+    <p class="text-xs text-gray-500 mb-3">A <b>study</b> is a matched set of wards (intervention + match) sampled together — a finished study is ready to recruit a survey firm against.</p>
     <div id="groups" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
   </section>
 
@@ -261,11 +261,15 @@
       // plan lifecycle badge, since a bundle is a set of independent plans.
       const armOf = (g.arms || {});
       const ARM_BADGE = { intervention: "bg-emerald-50 text-emerald-700", control: "bg-blue-50 text-blue-700" };
+      // Display label only (the stored arm key stays "control"/"comparison"): a
+      // matched quasi-experimental design isn't a randomized control trial, so the
+      // non-intervention arm is shown as "match", never "control".
+      const ARM_LABEL = { intervention: "intervention", control: "match", comparison: "match" };
       const memberRows = (isStudy && members.length <= 1)
         ? ""
         : members.map((p) => {
             const tag = isStudy
-              ? (() => { const a = armOf[String(p.plan_id)]; return a ? `<span class="px-1.5 py-0.5 rounded whitespace-nowrap ${ARM_BADGE[a] || 'bg-gray-50 text-gray-500'}">${esc(a)}</span>` : '<span class="px-1.5 py-0.5 rounded whitespace-nowrap bg-gray-50 text-gray-400">unassigned</span>'; })()
+              ? (() => { const a = armOf[String(p.plan_id)]; return a ? `<span class="px-1.5 py-0.5 rounded whitespace-nowrap ${ARM_BADGE[a] || 'bg-gray-50 text-gray-500'}">${esc(ARM_LABEL[a] || a)}</span>` : '<span class="px-1.5 py-0.5 rounded whitespace-nowrap bg-gray-50 text-gray-400">unassigned</span>'; })()
               : `<span class="px-1.5 py-0.5 rounded whitespace-nowrap ${BADGE[p.status] || ''}">${esc(p.status_label)}</span>`;
             return `<a class="flex items-center justify-between gap-2 py-1 text-xs hover:bg-gray-50 rounded px-1" href="${reviewUrl(p.plan_id)}">
           <span class="truncate text-brand-cornflower-blue">${esc(p.name)}</span>
@@ -305,7 +309,7 @@
       // Field-blind marker: arms are recorded labs-side only and never reach the
       // field/Connect, so the survey stays blind. Shown once per study that has arms.
       const blindMarker = (isStudy && Object.keys(g.arms || {}).length)
-        ? '<span class="inline-flex items-center gap-1 text-[10px] text-gray-500 mt-1" title="The intervention/control arm is stored labs-side for analysis and is never written to the plan, work areas, or anything the field organisation sees — the survey stays blind."><i class="fa-solid fa-eye-slash"></i> arms recorded labs-side · field-blind</span>'
+        ? '<span class="inline-flex items-center gap-1 text-[10px] text-gray-500 mt-1" title="The intervention/match arm is stored labs-side for analysis and is never written to the plan, work areas, or anything the field organisation sees — the survey stays blind."><i class="fa-solid fa-eye-slash"></i> arms recorded labs-side · field-blind</span>'
         : '';
       // Unified study status: one vocabulary (Defining / Sampled / Reviewed /
       // Exported) as a badge, replacing the bare lowercase status word.
