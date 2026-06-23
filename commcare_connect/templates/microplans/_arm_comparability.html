@@ -23,13 +23,11 @@ the numbers and judges for themselves.
   {# One factual line: what was compared, and the sample size per arm. No verdict. #}
   <p class="text-sm text-gray-700 mb-3">
     Compared on the settlements actually sampled, over the density range both arms share.
-    {% if comparability.n_intervention and comparability.n_control %}n&nbsp;= {{ comparability.n_intervention }} intervention · {{ comparability.n_control }} control.{% endif %}
+    {% if comparability.n_intervention and comparability.n_control %}n&nbsp;= {{ comparability.n_intervention }} intervention · {{ comparability.n_control }} match.{% endif %}
   </p>
 
   {% if comparability.incomparable %}
-  {# Genuinely-incomparable case stated as a neutral fact, not a directive: the two
-     wards share little settlement-density range, so the comparison rests on a thin
-     overlap. State the fact; let the viewer interpret. #}
+  {% comment %}Genuinely-incomparable case stated as a neutral fact, not a directive: the two wards share little settlement-density range, so the comparison rests on a thin overlap. State the fact; let the viewer interpret.{% endcomment %}
   <p class="text-[12px] text-gray-600 leading-snug mb-3">
     The two wards share little settlement-density range{% if comparability.n_control %} (common-support n&nbsp;= {{ comparability.n_control }}){% endif %}; compare with that in mind.
   </p>
@@ -58,7 +56,7 @@ the numbers and judges for themselves.
         </tr>
         <tr>
           <td class="px-3 py-2 whitespace-nowrap">
-            <span class="text-[11px] font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">control</span>
+            <span class="text-[11px] font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">match</span>
             {% for a in comparability.arms %}{% if a.arm == "control" or a.arm == "comparison" %}{% if a.name %}<span class="ml-1.5 text-gray-700">{{ a.name }}</span>{% endif %}{% endif %}{% endfor %}
           </td>
           {% for m in comparability.metrics %}<td class="px-3 py-2 text-right tabular-nums">{{ m.ct }}</td>{% endfor %}
@@ -78,7 +76,7 @@ the numbers and judges for themselves.
   <p class="text-[11px] text-gray-400 mt-2 flex items-center flex-wrap">
     Whole-ward density:
     {% for a in comparability.arms %}{% if a.arm == "intervention" %}&nbsp;intervention {{ a.ward_density }}/km²{% endif %}{% endfor %}
-    vs{% for a in comparability.arms %}{% if a.arm == "control" or a.arm == "comparison" %} control {{ a.ward_density }}/km²{% endif %}{% endfor %}.
+    vs{% for a in comparability.arms %}{% if a.arm == "control" or a.arm == "comparison" %} match {{ a.ward_density }}/km²{% endif %}{% endfor %}.
     {% include "microplans/_info.html" with text="The whole-ward measure, shown for context only — not what the sample is compared on. The comparison above uses the sampled settlements, so a larger, sparser ward can still share the same sampled-density range." only %}
   </p>
   {% endif %}
