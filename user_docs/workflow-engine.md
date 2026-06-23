@@ -32,6 +32,16 @@ Click any workflow to open its dashboard.
 
 ---
 
+## Opening a Workflow Run from a Link
+
+If someone shares a direct link to a workflow run, the system will open it automatically — you do not need to select the opportunity from a context picker first. The run page reads the opportunity from the link and goes straight to the dashboard.
+
+If a link was copy-pasted with extra text accidentally appended to it (for example, `?opportunity_id=1251 stacked bar chart`), the system will still recover the correct opportunity and clean up the address bar so everything works normally from that point on.
+
+If the opportunity genuinely cannot be determined from the link, you will see a message explaining exactly what the system could not read, so it is clear the link itself is the problem rather than your access or context settings.
+
+---
+
 ## Reading a Workflow Dashboard
 
 A typical workflow dashboard shows a **table of field workers** with performance columns:
@@ -224,8 +234,4 @@ The quality scorecard uses plain language for each check:
 - **Interview length** — whether interview durations are within the expected range
 - **Re-survey agreement** — whether re-surveyed households matched the original responses
 
-Columns that are always 100% across all surveyors are greyed out so the columns that actually vary stand out. The scorecard uses a larger type scale and taller rows so figures are easy to read at a normal screen size. When a surveyor carries a **REVIEW** tag, it sits clearly apart from the surveyor's name — it will not appear fused to the name — and a rose status rail runs down the left edge of that surveyor's row so flagged rows are immediately visible. The inline note stating exactly which two checks triggered the REVIEW tag is displayed in a larger, easier-to-read size so you know at a glance why that surveyor has been flagged without having to cross-reference the rest of the row.
-
-**Independent back-check block**
-
-Each surveyor's panel includes an **Independent back-check — re-survey concordance** block that shows agreement percentages from a small sample of households that were
+Columns that are always 100% across all surveyors are greyed out so the columns that actually vary stand out. The scorecard uses a larger type scale and t
