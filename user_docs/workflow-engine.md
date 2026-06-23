@@ -40,6 +40,8 @@ If a link was copy-pasted with extra text accidentally appended to it (for examp
 
 If the opportunity genuinely cannot be determined from the link, you will see a message explaining exactly what the system could not read, so it is clear the link itself is the problem rather than your access or context settings.
 
+If the workflow belongs to an opportunity you are not a member of, you will see a message telling you exactly that — for example, *"This workflow belongs to opportunity 1251, which isn't one of your opportunities. Ask whoever shared it to give you access, then reopen the link."* This is different from a broken link: the link is valid, but you need to be added to that opportunity before you can open it. Contact whoever shared the link and ask them to give you access.
+
 ---
 
 ## Reading a Workflow Dashboard
@@ -226,12 +228,4 @@ The **Verified Monitoring** dashboard contrasts what the program self-reported w
 
 The Trend panel shows the self-reported and independently-verified coverage lines over time as a large, legible chart — taller with thicker lines so the trajectories are easy to follow. The right edge of the chart labels each line directly (service-delivery, intervention, and control) at its end, and a bolder amber gap-band highlights the difference between self-reported and verified figures. The control line — which sits at the 0% floor — keeps its own readable label and value rather than being crowded onto the bottom axis. The amber gap-band explanation and y-axis definitions are tucked into a compact **i** bubble so the chart frame stays clean. Each line uses one consistent name everywhere it appears — in the hover tooltip, the end-of-line label, and the legend — so there is no ambiguity about which line is which. You can read the current values without needing to cross-reference a legend.
 
-**Per-surveyor quality scorecard**
-
-The quality scorecard uses plain language for each check:
-
-- **Passed validation** — whether the surveyor's submissions cleared automated validation
-- **Interview length** — whether interview durations are within the expected range
-- **Re-survey agreement** — whether re-surveyed households matched the original responses
-
-Columns that are always 100% across all surveyors are greyed out so the columns that actually vary stand out. The scorecard uses a larger type scale and t
+**Per-surveyor quality
