@@ -17,6 +17,7 @@ import datetime as dt
 import random
 import uuid
 from dataclasses import dataclass
+from typing import Any
 
 from .manifest import LongitudinalSpec
 
@@ -29,7 +30,10 @@ class PlannedVisit:
     owner: str  # persona id
     visit_date: dt.date
     visit_index: int  # 1-based position within this entity's series
-    forced_values: dict[str, float]  # numeric field overrides for this visit
+    # Field overrides for this visit: numeric measures as floats, date leaves as
+    # reconstructed ISO date strings (e.g. a constant child_dob). fill_form_json
+    # writes both directly, bypassing the marginal draws.
+    forced_values: dict[str, Any]
 
 
 def _series_ranges(visits: list[dict]) -> dict[str, tuple[float, float]]:
@@ -61,7 +65,7 @@ def plan_mirror_visits(spec: LongitudinalSpec, *, seed: int) -> list[PlannedVisi
         ranges = _series_ranges(series_visits)
         for vj, visit in enumerate(sorted(series_visits, key=lambda v: v["day"]), start=1):
             vdate = start + dt.timedelta(days=int(visit["day"]))
-            forced: dict[str, float] = {}
+            forced: dict[str, Any] = {}
             for path, val in (visit.get("values") or {}).items():
                 lo, hi = ranges[path]
                 span = hi - lo
@@ -70,5 +74,10 @@ def plan_mirror_visits(spec: LongitudinalSpec, *, seed: int) -> list[PlannedVisi
                     forced[path] = min(max(jittered, lo), hi)
                 else:
                     forced[path] = float(val)
+            # Date leaves are reconstructed as real ISO dates from their day-offset
+            # (relative to this entity's first visit) and never jittered — a constant
+            # DOB stays constant, so age = visit_date - dob is exact across the series.
+            for path, offset in (visit.get("dates") or {}).items():
+                forced[path] = (start + dt.timedelta(days=int(offset))).isoformat()
             planned.append(PlannedVisit(entity_id, entity_name, idx, owner, vdate, vj, forced))
     return planned

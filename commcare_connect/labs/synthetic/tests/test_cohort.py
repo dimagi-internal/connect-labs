@@ -62,6 +62,8 @@ def test_cohort_spec_curate_roundtrips():
 
 
 def test_mirror_flag_parses_and_defaults_false():
+    # Mirror is opt-in per cohort (cohorts/kmc.yaml sets it); the #734 date-axis fix
+    # applies whenever mirror is on, without changing this default.
     assert CohortSpec.from_yaml("opportunity_ids: [1]\n").mirror is False
     assert CohortSpec.from_yaml("opportunity_ids: [1]\nmirror: true\n").mirror is True
 
