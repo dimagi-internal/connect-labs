@@ -679,3 +679,28 @@ class TestWorkflowRunOpportunityRecovery:
             context = view.get_context_data()
         assert context.get("malformed_opportunity_param") == "stacked bar chart"
         assert "unauthorized_opportunity_id" not in context
+
+    def test_definition_404_renders_clean_access_message(self, rf):
+        """Empty OAuth cache → get() passes the recovered opp through, the API
+        404s, and the view shows a clean access message naming the opp instead
+        of the raw wrapped error that leaks the internal /export/ URL."""
+        from commcare_connect.labs.integrations.connect.api_client import LabsAPIError
+        from commcare_connect.workflow.views import WorkflowRunView
+
+        request = rf.get("/labs/workflow/3962/run/?run_id=4259&opportunity_id=1251")
+        request.user = self._user()
+        request.labs_context = {"opportunity_id": 1251}  # passed-through, unvalidated
+        request.session = {"labs_oauth": {"access_token": "t", "organization_data": {"opportunities": []}}}
+        view = WorkflowRunView()
+        view.setup(request, definition_id=3962)
+        with patch("commcare_connect.workflow.views.WorkflowDataAccess") as MockWDA:
+            MockWDA.return_value.get_definition.side_effect = LabsAPIError(
+                "Failed to fetch record 3962: Client error '404 Not Found' for url "
+                "'https://connect.dimagi.com/export/labs_record/?id=3962'",
+                status_code=404,
+            )
+            context = view.get_context_data()
+        err = context.get("error", "")
+        assert "1251" in err and "access" in err.lower()
+        assert "export/labs_record" not in err  # internal URL not leaked
+        assert "404" not in err
