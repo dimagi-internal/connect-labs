@@ -79,7 +79,7 @@
                     :disabled="busy" @change="assignArm({{ e.plan_id }}, $event.target.value)">
               <option value="" {% if not e.arm %}selected{% endif %}>— unassigned</option>
               <option value="intervention" {% if e.arm == "intervention" %}selected{% endif %}>intervention</option>
-              <option value="control" {% if e.arm == "control" %}selected{% endif %}>control</option>
+              <option value="control" {% if e.arm == "control" %}selected{% endif %}>match</option>
             </select>
           </td>
           {% endif %}

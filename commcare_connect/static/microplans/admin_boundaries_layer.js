@@ -29,12 +29,14 @@
   const COLOR = "#a855f7";
   // Two-arm sampling: per-boundary study arm. Matches review.html ARM_COLOR.
   const ARM_COLOR = { intervention: "#10b981", comparison: "#3b82f6" };
-  const ARM_LABEL = { intervention: "Interv", comparison: "Control" };
+  const ARM_LABEL = { intervention: "Interv", comparison: "Match" };
   // Full chip labels for the committed-arm chip in the rail (the two-segment
-  // Interv/Control toggle was misread as "this ward is in both arms").
+  // Interv/Match toggle was misread as "this ward is in both arms").
+  // "Match" not "Control": a matched quasi-experimental design isn't a
+  // randomized control trial, so the non-intervention arm shouldn't imply one.
   const ARM_CHIP_LABEL = {
     intervention: "Intervention",
-    comparison: "Control",
+    comparison: "Match",
   };
   const SRC = "mp-admin";
   const LINE = "mp-admin-line";
@@ -202,7 +204,7 @@
       )
         renderComparePanel(lastCompareState);
     }
-    // Slick per-boundary arm selector: a two-segment Interv / Control pill, the
+    // Slick per-boundary arm selector: a two-segment Interv / Match pill, the
     // active half filled with its arm colour. Changing it re-tags the boundary's
     // draw feature via the host's onArmChange.
     function setArm(id, arm) {
@@ -812,7 +814,7 @@
     // click-toggled popover on each header.
     const COL_INFO = {
       ward:
-        "The candidate control ward. It’s filled on the map in this row’s colour, so you can see which " +
+        "The candidate match ward. It’s filled on the map in this row’s colour, so you can see which " +
         "boundary it is. The ward you’re matching against is the green <b>baseline</b> row at the top.",
       pop:
         "Estimated population of the ward, from the admin-boundary dataset (Enriched Boundaries). A rough " +
@@ -845,7 +847,7 @@
         '2nd–98th percentile — so the <span class="text-gray-400">grey bars (intervention)</span> are identical ' +
         "in every row and the coloured bars (this ward) line up for comparison. " +
         "<b>The score.</b> Each histogram is normalised to sum to 1; we add up the smaller of the two bars in " +
-        "every bin, and that shared (overlapping) area is the Match %. A wide spread = a mixed ward (some " +
+        "every bin, and that shared (overlapping) area is the Overlap %. A wide spread = a mixed ward (some " +
         "sparse, some dense).",
       match:
         "How much this ward’s local-density distribution <b>overlaps</b> the intervention’s (0–100%, the shared " +
@@ -853,7 +855,7 @@
         "built-up texture overall — context for how alike the two wards look. For the balance a study would " +
         "actually get, see <b>Matched balance</b>.",
       balance:
-        "The density SMD you’d get if you matched-sample this control — the standardized mean difference in " +
+        "The density SMD you’d get if you matched-sample this ward — the standardized mean difference in " +
         "settlement density between the two arms after the matched draw (0 = identical, higher = more " +
         "different). We simulate the draw: both arms are reweighted to the intervention’s density-band mix, so " +
         "only the within-band density difference remains. This is the figure the study’s comparability check " +
@@ -861,7 +863,7 @@
         "possible.",
       common:
         "Share of settlements in the density range both wards have in <b>common</b> — matching only uses this " +
-        "shared range. A great matched balance over a tiny shared range is a weaker control, so read this " +
+        "shared range. A great matched balance over a tiny shared range is a weaker match, so read this " +
         "alongside Matched balance.",
     };
 
@@ -994,14 +996,14 @@
         "building density around it — from the distance to its nearest neighbours (a k-nearest-neighbour intensity, k = 8). " +
         "We then compare the whole <b>distribution</b> of those local densities — not just the average — between the intervention ward " +
         "and each neighbour. <b>Overlap</b> is how much the two distributions coincide (the shared area in the bars); a high overlap " +
-        "means a similar built-up texture, so a fairer control. Measuring per building (not per cluster) keeps it robust to settlement " +
+        "means a similar built-up texture, so a fairer match. Measuring per building (not per cluster) keeps it robust to settlement " +
         "shape and stray edge buildings." +
         "<br><br><b>Clusters / PSUs.</b> Separately, we group nearby buildings into <b>clusters</b> — the candidate PSUs you’d actually " +
         "sample (the “Clusters” column counts them). The density above is measured per building, independent of this grouping. They’re " +
         "algorithmic clusters, not official settlements." +
         "<br><br><b>Where it’s from.</b> Building-footprint frames + two-stage PPS cluster sampling are standard household-survey " +
         "practice (DHS / MICS / LSMS); k-NN intensity is the standard nonparametric density estimator for point patterns. Ranking " +
-        "control wards by density-distribution overlap is our own heuristic, grounded in matched-design / covariate-balance methods.</div>";
+        "match wards by density-distribution overlap is our own heuristic, grounded in matched-design / covariate-balance methods.</div>";
 
       // Table-row builder shared by the intervention baseline + each candidate.
       // Each <td> is tagged with data-col="<key>" (matching the header order) so a
@@ -1153,7 +1155,7 @@
         th("Clusters", "clusters") +
         th("Median", "median") +
         th("Distribution", "distribution", "text-left") +
-        th("Match", "match", "text-left") +
+        th("Overlap", "match", "text-left") +
         th("Matched balance", "balance", "text-left") +
         th("Common support", "common") +
         th("", "", "text-left") +

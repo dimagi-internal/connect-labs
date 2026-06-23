@@ -26,7 +26,7 @@
       {% for L in plan_layers %}
       <div class="gm-legend-row">
         <span class="gm-sw" style="background:{{ L.color }}"></span>
-        <span>{{ L.name }}{% if L.arm %} · {{ L.arm }}{% endif %}</span>
+        <span>{{ L.name }}{% if L.arm %} · {% if L.arm == "control" or L.arm == "comparison" %}match{% else %}{{ L.arm }}{% endif %}{% endif %}</span>
         <span class="text-gray-400">· {{ L.work_areas }} area{{ L.work_areas|pluralize }}{% if L.phase == "boundary" %} · boundary only{% endif %}</span>
       </div>
       {% endfor %}
