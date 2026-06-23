@@ -373,7 +373,7 @@ def main() -> None:
     for pr in prs:
         print(f"  #{pr['number']}: {pr['title']}")
 
-    ai_client = anthropic.Anthropic()
+    ai_client = anthropic.Anthropic(max_retries=5)  # 529 overloaded is transient; retry more
     confluence = ConfluenceClient()
 
     print(f"\nGrouping {len(prs)} PR(s) into feature clusters...")
@@ -389,11 +389,11 @@ def main() -> None:
     print("Updating Confluence changelog...")
     existing = confluence.get_page(CHANGELOG_PAGE_ID)
     if f'datetime="{week_date}"' in existing.get("body_storage", ""):
-        print(f"  [skip] Entry for {week_date} already exists — skipping duplicate run.")
-        return
-    row_html = build_changelog_row(week_date, summary, groups)
-    confluence.prepend_table_row(CHANGELOG_PAGE_ID, row_html)
-    print(f"  ✓ Row prepended to page {CHANGELOG_PAGE_ID}")
+        print(f"  [skip] Confluence entry for {week_date} already exists — skipping write.")
+    else:
+        row_html = build_changelog_row(week_date, summary, groups)
+        confluence.prepend_table_row(CHANGELOG_PAGE_ID, row_html)
+        print(f"  ✓ Row prepended to page {CHANGELOG_PAGE_ID}")
 
     slack_url = os.environ.get("SLACK_WEBHOOK_URL", "")
     if slack_url:
