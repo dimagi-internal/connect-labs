@@ -109,3 +109,40 @@ def test_transplant_pool_carries_numerics_only_not_identifiers_or_text():
     assert struct.transplant_pool == [
         {"owner": "flwA", "start_date": "2026-01-01", "visits": [{"day": 0, "values": {"weight": 1200.0}}]}
     ]
+
+
+def test_transplant_pool_captures_date_leaves_as_offsets_from_first_visit():
+    # The KMC growth curve's age axis is computed from a DATE (child_dob), not a
+    # numeric field. So the pool must carry declared date paths too — as integer
+    # day-offsets from this entity's first visit (negative for a DOB before it),
+    # so a clone can reconstruct visit_date - dob faithfully and de-identified.
+    visits = [
+        _visit("e1", "flwA", "2026-02-01", child_weight_visit=1500, child_dob="2026-01-01"),
+        _visit("e1", "flwA", "2026-02-08", child_weight_visit=1650, child_dob="2026-01-01"),
+    ]
+
+    struct = profile_entity_structure(visits, numeric_paths={"child_weight_visit"}, date_paths={"child_dob"})
+
+    assert struct.transplant_pool == [
+        {
+            "owner": "flwA",
+            "start_date": "2026-02-01",
+            "visits": [
+                # 2026-01-01 is 31 days before the 2026-02-01 first visit.
+                {"day": 0, "values": {"child_weight_visit": 1500.0}, "dates": {"child_dob": -31}},
+                {"day": 7, "values": {"child_weight_visit": 1650.0}, "dates": {"child_dob": -31}},
+            ],
+        }
+    ]
+
+
+def test_transplant_pool_omits_dates_key_when_no_date_paths_given():
+    # Backward compatibility: callers that don't ask for dates get the legacy
+    # numerics-only shape with no "dates" key (golden output stays byte-identical).
+    visits = [_visit("e1", "flwA", "2026-01-01", weight=1200, dob="2025-12-01")]
+
+    struct = profile_entity_structure(visits, numeric_paths={"weight"})
+
+    assert struct.transplant_pool == [
+        {"owner": "flwA", "start_date": "2026-01-01", "visits": [{"day": 0, "values": {"weight": 1200.0}}]}
+    ]

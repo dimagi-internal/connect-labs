@@ -673,6 +673,62 @@ def test_profile_mirror_emits_transplant_pool_with_persona_owners():
     assert owners <= persona_ids  # remapped to persona ids, not "asha"/"ben"
 
 
+def test_profile_mirror_captures_date_fields_in_transplant_pool():
+    """A date-typed schema field (e.g. child_dob) is carried in the mirror pool as a
+    per-visit day-offset, so a clone reconstructs the age axis (visit_date - dob)
+    instead of fabricating a random date — the #734 growth-curve fix."""
+    from commcare_connect.labs.synthetic.generator.fixtures.manifest import Manifest
+    from commcare_connect.labs.synthetic.generator.fixtures.profiler import profile
+
+    visits = []
+    for e in range(3):
+        for i, d in enumerate(["2026-02-01", "2026-02-08", "2026-02-15"]):
+            visits.append(
+                {
+                    "username": "asha",
+                    "visit_date": d,
+                    "status": "approved",
+                    "flagged": False,
+                    "entity_id": f"ent_{e}",
+                    "form_json": {"form": {"weight": 1200.0 + 100 * i, "dob": "2026-01-20"}},
+                }
+            )
+    app_structure = {
+        "learn_app": None,
+        "deliver_app": {
+            "modules": [
+                {
+                    "forms": [
+                        {
+                            "questions": [
+                                {"value": "/data/weight", "type": "Decimal", "options": []},
+                                {"value": "/data/dob", "type": "Date", "options": []},
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+    }
+
+    m = Manifest.from_yaml(
+        profile(
+            opportunity_id=10009,
+            user_visits=visits,
+            user_data=[],
+            opportunity_detail={"name": "KMC"},
+            app_structure=app_structure,
+            mirror=True,
+        )
+    )
+    pool = m.beneficiary_cohorts[0].longitudinal.transplant_pool
+    assert len(pool) == 3
+    for series in pool:
+        for v in series["visits"]:
+            # 2026-01-20 is 12 days before the 2026-02-01 first visit.
+            assert v["dates"]["form.dob"] == -12
+
+
 def test_profile_without_mirror_emits_no_longitudinal_block():
     from commcare_connect.labs.synthetic.generator.fixtures.manifest import Manifest
     from commcare_connect.labs.synthetic.generator.fixtures.profiler import profile

@@ -226,7 +226,13 @@ def _default_for_kind(spec: QuestionSpec, rng: random.Random) -> Any:
 
 
 def _format_forced(value: Any, kind: str | None) -> Any:
-    """Format a transplanted/longitudinal numeric value for its field kind."""
+    """Format a transplanted/longitudinal value for its field kind.
+
+    Numerics are rounded (int-cast for ``int`` fields); a date leaf arrives already
+    reconstructed as an ISO string and passes through untouched (so a transplanted
+    ``child_dob`` stays a real date, not a float)."""
+    if kind == "date":
+        return value
     if kind == "int":
         return int(round(float(value)))
     try:
