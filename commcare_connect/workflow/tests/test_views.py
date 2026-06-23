@@ -649,3 +649,33 @@ class TestWorkflowRunOpportunityRecovery:
         with patch.object(TemplateView, "get", return_value=sentinel):
             response = WorkflowRunView.as_view()(request, definition_id=3962)
         assert response is sentinel  # fell through to super().get(), no redirect
+
+    def test_context_names_unauthorized_opportunity(self, rf):
+        """When the link names an opp the user can't access (recovery declined,
+        no redirect), the no-context render explains it's an access problem and
+        names the opportunity — not a generic 'pick an opportunity' prompt."""
+        view, _ = self._view(
+            rf,
+            url="/labs/workflow/3962/run/?run_id=4259&opportunity_id=1251 stacked bar chart",
+            labs_context={},  # opp 1251 absent → user isn't a member
+            opportunities=[{"id": 700, "name": "Other"}],
+        )
+        with patch("commcare_connect.workflow.views.WorkflowDataAccess") as MockWDA:
+            MockWDA.return_value.get_definition.return_value = None
+            context = view.get_context_data()
+        assert context.get("unauthorized_opportunity_id") == "1251"
+        assert "malformed_opportunity_param" not in context
+
+    def test_context_flags_unparseable_param(self, rf):
+        """A link with no parseable opp id surfaces the rejected raw value."""
+        view, _ = self._view(
+            rf,
+            url="/labs/workflow/3962/run/?run_id=4259&opportunity_id=stacked bar chart",
+            labs_context={},
+            opportunities=[{"id": 700, "name": "Other"}],
+        )
+        with patch("commcare_connect.workflow.views.WorkflowDataAccess") as MockWDA:
+            MockWDA.return_value.get_definition.return_value = None
+            context = view.get_context_data()
+        assert context.get("malformed_opportunity_param") == "stacked bar chart"
+        assert "unauthorized_opportunity_id" not in context
