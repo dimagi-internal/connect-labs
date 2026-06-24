@@ -2,15 +2,16 @@ auth:
   type: session
 base_url: https://labs.connect.dimagi.com
 build_order:
+- the-goal-measure-the-program-s-real-effect
 - maya-starts-a-study-from-scratch
 - maya-opens-the-plan-editor-on-the-empty-study
 - maya-sees-the-programme-covered-all-of-attakar
-- maya-compares-the-surrounding-wards-to-find-a-control
-- maya-rejects-the-closest-match-and-adds-the-right-control
+- maya-compares-the-surrounding-wards-to-find-a-match
+- maya-rejects-the-closest-match-and-adds-the-right-match
 - maya-generates-the-two-arm-plan-in-place
 - maya-completes-the-study
 name: microplans-study-groups
-tagline: Design a controlled two-arm study, right from the map
+tagline: Design a matched two-arm study, right from the map
 narrative: Maya wants to start a brand-new two-arm study, so she creates a new study on her existing Kaura
   programme. Maya clicks “+ Add a plan in the editor”, and in the plan UI she turns on the service-delivery
   data for the opportunity she's building the study around — a child health campaign. The visits blanket
@@ -20,10 +21,10 @@ narrative: Maya wants to start a brand-new two-arm study, so she creates a new s
   boundaries". The tool finds every ward that shares a border with Attakar, measures each one's local
   building-density distribution, and ranks them by how closely that distribution overlaps Attakar's -
   filling each candidate's boundary on the map in its own colour so she can see which ward is which. The
-  tightest match, Zankan, was the programme's ward last cycle — not a clean, un-treated control — so Maya
+  tightest match, Zankan, was the programme's ward last cycle — not a clean, un-treated match — so Maya
   skips it for Gura, the next-closest neighbour the programme never touched. One click of "Add boundary"
-  on Gura's row adds it as the control arm; both wards now sit in one plan, each carrying its arm. She
-  sets the sampling methodology — size-balanced PSU bands and a building-footprint-size filter — and clicks
+  on Gura's row adds it as the match arm; both wards now sit in one plan, each carrying its arm. She sets
+  the sampling methodology — size-balanced PSU bands and a building-footprint-size filter — and clicks
   Generate plan. In one action the editor draws the sample for both arms and creates the plan. From the
   program workspace Maya can then send the plan to an existing locally led organization to verify if they
   are already under contact, or create a new solicitation from the plan for local organizations in the
@@ -40,6 +41,32 @@ personas:
     name: Maya
     role: Program study planner
 scenes:
+- title: The goal — measure the program's real effect
+  url: /microplans/program/10008/
+  role: overview
+  persona: maya
+  pace: teach
+  provenance: S0
+  concept_claim: 'From her Kaura vitamin-A program workspace — already holding several study rounds —
+    Maya states her goal: measure the program''s real effect against a matched comparison group, using
+    the Connect network to carry out the surveys and the Connect platform to design a statistically sound,
+    ongoing comparison of household-reported outcomes in intervention versus matched non-intervention
+    areas.'
+  design_intent: 'Bet: lead with the WHY and the ambition — an ongoing, statistically sound matched comparison
+    run on the Connect network/platform — so the build steps read as serving a real measurement goal,
+    not a one-off.'
+  show: 'Open on Maya''s Kaura program workspace and state the goal: measure the program''s real effect
+    against a matched comparison group — leveraging the Connect network to carry it out and the Connect
+    platform to design a statistically sound, ongoing study.'
+  narrative: 'Maya''s goal is to measure her program''s real effect — against a matched comparison group.
+    She wants to leverage the Connect network to carry it out, and the Connect platform to design a statistically
+    sound approach. And she wants this to be ongoing: continually monitoring the household-reported outcomes
+    in her intervention areas against matched non-intervention areas.'
+  actions:
+  - kind: wait_for
+    target: Studies & plan groups
+  - kind: hold
+    seconds: 6
 - actions:
   - kind: wait_for
     target: Studies & plan groups
@@ -107,9 +134,9 @@ scenes:
   concept_claim: From the empty study, “+ Add a plan in the editor” opens the polished single-plan editor
     scoped to the study (?group=<id>), where Maya turns on the Kaura CHC opportunity's service-delivery
     data — one plan, built in the unified plan UI.
-  design_intent: 'Bet: a controlled study is designed in one real plan editor — the planner opens it on
-    the study and grounds it in the opportunity''s own delivery data, rather than starting from a name
-    list; scoping the editor to the study (?group=) files the finished plan back automatically.'
+  design_intent: 'Bet: a matched study is designed in one real plan editor — the planner opens it on the
+    study and grounds it in the opportunity''s own delivery data, rather than starting from a name list;
+    scoping the editor to the study (?group=) files the finished plan back automatically.'
   features:
   - description: “+ Add a plan in the editor” on a study opens the polished single-plan editor (review.html)
       scoped to that study via ?group=<id>
@@ -248,7 +275,7 @@ scenes:
       as the narration explains it's the number the comparability check reports
     target: css:.mp-ab-col-i[data-col="balance"]
   - kind: hold
-    note: Matched balance column highlighted — the number that actually decides the control
+    note: Matched balance column highlighted — the number that actually decides the match
     seconds: 15
   - kind: click
     must_succeed: false
@@ -260,11 +287,11 @@ scenes:
     seconds: 12
   concept_claim: With Attakar tagged intervention, "Compare surrounding boundaries" ranks every bordering
     ward by how much its building-density distribution overlaps Attakar's (best match first) and fills
-    each candidate on the map in its row colour, so the control is chosen from evidence rather than picked
+    each candidate on the map in its row colour, so the match is chosen from evidence rather than picked
     by name.
-  design_intent: 'Bet: a fair control is found by comparing the surrounding wards'' settlement-density
-    distributions against the intervention''s - surfaced as a ranked, on-map comparison - instead of picking
-    an adjacent ward by name.'
+  design_intent: 'Bet: a fair match is found by comparing the surrounding wards'' settlement-density distributions
+    against the intervention''s - surfaced as a ranked, on-map comparison - instead of picking an adjacent
+    ward by name.'
   features:
   - description: In sampling mode, with an intervention ward selected, "Compare surrounding boundaries"
       ranks every same-level ward that borders it by the overlap of their per-building (k-NN) density
@@ -277,17 +304,17 @@ scenes:
   full_page: false
   narrative: 'She tags Attakar as the intervention arm and runs Compare. Every neighbouring ward is ranked
     against it — but look at what the table shows. Match is how similar the two wards look overall. The
-    column that matters is Matched balance: if Maya picks this ward as her control and lets the engine
-    match-sample it, how balanced the two arms actually come out — the very number her study''s comparability
-    check will report. And Common support is how much of the settlement-density range the two wards share,
-    because matching only draws from that shared range. So a ward that''s only a partial overall match
-    can still deliver a perfectly balanced study.'
+    column that matters is Matched balance: if Maya picks this ward as her match and lets the engine match-sample
+    it, how balanced the two arms actually come out — the very number her study''s comparability check
+    will report. And Common support is how much of the settlement-density range the two wards share, because
+    matching only draws from that shared range. So a ward that''s only a partial overall match can still
+    deliver a perfectly balanced study.'
   persona: maya
   provenance: S13
   show: In sampling mode Maya clicks "Compare surrounding boundaries"; a ranked table fills in below the
     map - each bordering ward with its density-overlap percentage, a shared-axis distribution chart, and
     a colour-matched fill on the map.
-  title: Maya compares the surrounding wards to find a control
+  title: Maya compares the surrounding wards to find a match
   pace: teach
 - actions:
   - kind: click
@@ -295,7 +322,7 @@ scenes:
     must_succeed: false
     note: dismiss the column-info popup (open from scene 4) so it doesn't occlude Gura's Add button
   - kind: hold
-    note: Sopp and Gura are the best-balanced controls (0.02); Zankan was last cycle's intervention so
+    note: Sopp and Gura are the best-balanced matches (0.02); Zankan was last cycle's intervention so
       it's excluded — Maya picks Gura (most common support of the two)
     seconds: 2
   - kind: wait_for
@@ -310,19 +337,19 @@ scenes:
     target: css:.mp-ab-addbnd[data-name="Gura"]
   - kind: click
     must_succeed: false
-    note: Add boundary on Gura - the closest un-served neighbour - as the control arm
+    note: Add boundary on Gura - the closest un-served neighbour - as the match arm
     target: css:.mp-ab-addbnd[data-name="Gura"]
   - kind: hold
-    note: Attakar (intervention) and Gura (control) both in one plan, each with its arm pill — Gura's
-      row flipped to its "added" state, legibly framed
+    note: Attakar (intervention) and Gura (match) both in one plan, each with its arm pill — Gura's row
+      flipped to its "added" state, legibly framed
     seconds: 4
   concept_claim: The table ranks candidates by Matched balance, where Sopp and Gura tie best at 0.02 and
     Zankan trails at 0.03; Maya excludes Zankan because the programme treated it last cycle, then picks
-    Gura over Sopp because Gura shares more Common support with Attakar, and clicks "Add boundary" on Gura's
-    row so it joins the same plan tagged control. One plan now carries both study arms.
+    Gura over Sopp because Gura shares more Common support with Attakar, and clicks "Add boundary" on
+    Gura's row so it joins the same plan tagged match. One plan now carries both study arms.
   design_intent: 'Bet: the tool ranks comparability, but the planner applies the constraint it cannot
-    know - a control must be a ward the programme did not treat - and one click on the chosen row adds
-    that ward as the control arm.'
+    know - a match must be a ward the programme did not treat - and one click on the chosen row adds that
+    ward as the match arm.'
   features:
   - description: Each row in the surrounding-ward comparison has an "Add boundary" button that adds that
       ward to the plan as the control (comparison) arm, reflecting the live selection (it shows "added"
@@ -343,15 +370,15 @@ scenes:
     verify: 'pytest: collectArmAreas tags Attakar=intervention, Gura=comparison on one plan; each work
       area stores its arm labs-side while case_properties (and the displayed CSV) carry no arm column'
   full_page: false
-  narrative: Sopp and Gura are the best-balanced controls, both at 0.02. Zankan was the programme's own
+  narrative: Sopp and Gura are the best-balanced matches, both at 0.02. Zankan was the programme's own
     ward last cycle, so it's out. Of the two, Gura shares more common support with Attakar — so Maya makes
-    it the control arm.
+    it the match arm.
   persona: maya
   provenance: S13
   show: Maya reads the ranked table, skips the top row (Zankan - already the programme's ward) and clicks
-    "Add boundary" on Gura; Gura joins the left rail as the control arm beside Attakar, each with its
-    Interv / Control pill.
-  title: Maya rejects the closest match and adds the right control
+    "Add boundary" on Gura; Gura joins the left rail as the match arm beside Attakar, each with its Interv
+    / Match pill.
+  title: Maya rejects the closest match and adds the right match
   pace: teach
 - actions:
   - kind: click
@@ -377,6 +404,37 @@ scenes:
   - kind: wait_for
     seconds: 20
     target: Work areas
+  - kind: click
+    target: css:.mp-panel-tabs button[data-tab="layers"]
+    must_succeed: false
+    note: open the Layers tab (panel auto-switches to Inspect after Generate) so the footprints toggle
+      is visible
+  - kind: click
+    must_succeed: false
+    note: turn ON the Building-footprints (rooftops) overlay in the map Layers panel so the sampled result
+      reads in context — the PSU pins + cluster hulls the sample just drew, sitting over the ward's rooftops.
+      The toggle is the footprints row in the right-hand Layers panel (map_panel.js).
+    target: css:[data-testid="layer-toggle-footprints"]
+  - kind: hold
+    note: 'HOLD ON THE MAP. The sample auto-paints + the map fits to it (renderSample → PlanLayers.pins/hulls
+      + Microplans.fitTo): each pin is one sampled settlement (a PSU); the hull is the cluster of buildings
+      around it. Over the building-footprints/rooftops layer, this shows the survey only visits the rooftops
+      inside the sampled PSUs, not the whole ward — explain the sample BEFORE the table.'
+    seconds: 10
+  - kind: map_zoom
+    zoom: 16.0
+    seconds: 2.5
+    note: push in to the building footprints — the individual rooftops/households drawn from Overture
+  - kind: hold
+    seconds: 4
+    note: 'hold on the rooftops: the households randomly sampled within the settlement'
+  - kind: map_zoom
+    zoom: 13.0
+    seconds: 2.5
+    note: pull back out to the whole ward
+  - kind: hold
+    seconds: 2
+    note: back at the ward view
   - kind: scroll_to
     note: 'frame the create-in-place success state from the TOP of the study read-out — the ARM COMPARABILITY
       verdict/table leads, with the KPI strip following in the same viewport — not the PSU breakdown table
@@ -406,8 +464,10 @@ scenes:
     id: sampling-methodology
     verify: 'pytest: the created plan''s sampling_config carries size_balance_bands>=2 and area_min_m2/area_max_m2,
       and per-arm sampling_stats are stored for both arms on the one plan'
-  narrative: She sets the sampling methodology and clicks Generate — both arms' sample drawn in one pass,
-    balanced by design.
+  narrative: She sets the sampling methodology and clicks Generate — the engine draws the sample in one
+    pass. The map shows it first; each pin is a sampled settlement, a PSU. And within each settlement,
+    the individual households to visit are drawn at random from the building footprints themselves — rooftops
+    from Overture's global open-buildings dataset, so this works anywhere on Earth.
   persona: maya
   provenance: S7
   show: In Sampling mode Maya clicks ‘Generate plan’; the editor samples both arms and creates the single

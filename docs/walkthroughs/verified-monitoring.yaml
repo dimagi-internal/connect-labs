@@ -2,11 +2,12 @@ auth:
   type: session
 base_url: https://labs.connect.dimagi.com
 build_order:
+- the-goal-independent-drillable-proof-the-program-works
 - six-bi-monthly-rounds-over-time-the-gap-holds
 - where-delivery-happened-vs-where-the-survey-checked-the-map-moves
 - the-per-surveyor-quality-scorecard-catches-a-surveyor
-- gps-is-clean-the-distributions-screen-catches-the-fabrication
 - the-independent-back-check-confirms-it
+- gps-is-clean-the-distributions-screen-catches-the-fabrication
 name: verified-monitoring
 narrative: 'David opens the independent survey''s dashboard — the six-round trend. It confirms a big rise
   in vitamin-A coverage, but below what his program reports. On the map, service delivery points fill
@@ -33,6 +34,31 @@ personas:
     role: Program Manager, Connect Program
 prewarm: true
 scenes:
+- title: The goal — independent, drillable proof the program works
+  role: overview
+  persona: david
+  pace: teach
+  provenance: S0
+  concept_claim: David's logged-visit coverage looks high, but he wants independent, drillable proof outcomes
+    actually changed; his goal is to monitor the independent survey's verified results round over round
+    — the trend, per-surveyor quality, and a row-by-row back-check.
+  design_intent: 'Bet: state WHY logged visits aren''t proof and what David actually wants — drillable
+    independent verification — so the dashboard, per-surveyor QA, and back-check read as answering a real
+    question.'
+  show: 'Open on the independent survey''s dashboard and state the goal: independent, drillable proof
+    the program is changing outcomes — not just that visits were logged.'
+  narrative: 'David''s program looks good on paper — his workers log every vitamin-A visit, and the coverage
+    number is high. But a logged visit isn''t proof a household was reached, or that outcomes changed.
+    So he commissioned an independent survey — and he wants to see the verification machinery itself:
+    the trend round over round, each surveyor''s quality, and a back-check he can read row by row. Not
+    ''trust us'' — proof he can drill into.'
+  actions:
+  - kind: goto
+    target: ${runner_path}
+  - kind: wait_for
+    target: service-delivery data
+  - kind: hold
+    seconds: 6
 - actions:
   - kind: goto
     target: ${runner_path}
@@ -50,9 +76,9 @@ scenes:
     seconds: 5.3
   pace: teach
   concept_claim: Across six bi-monthly rounds, the program's self-reported delivery stays above what the
-    independent survey confirms each round, while the control arm stays low — the gap holds over time,
-    not in a single snapshot.
-  design_intent: Three labelled lines (service-delivery dashed amber, intervention survey indigo, control
+    independent survey confirms each round, while the match arm stays low — the gap holds over time, not
+    in a single snapshot.
+  design_intent: Three labelled lines (service-delivery dashed amber, intervention survey indigo, match
     survey slate) plotted across six bi-monthly rounds left-to-right as a time axis (earliest at left,
     most recent at right, each round date-stamped), with a shaded service-delivery-minus-survey gap band
     and per-point hover tooltips, so the gap's persistence over time reads from the chart without a sentence.
@@ -70,8 +96,8 @@ scenes:
   persona: david
   provenance: S5
   show: 'The six-round trend over time: the program''s service-delivery line above the independent intervention-arm
-    survey at every bi-monthly round, the control-arm survey far below — earliest round at left, most
-    recent at right.'
+    survey at every bi-monthly round, the match-arm survey far below — earliest round at left, most recent
+    at right.'
   title: Six bi-monthly rounds over time — the gap holds
 - actions:
   - kind: scroll
@@ -104,9 +130,9 @@ scenes:
     seconds: 4
   pace: teach
   concept_claim: Program delivery is concentrated in the intervention ward and absent in the adjacent
-    control ward, while the independent survey covered both — so the coverage gap tracks where the program
+    match ward, while the independent survey covered both — so the coverage gap tracks where the program
     went, not where the survey looked.
-  design_intent: Real labelled admin boundaries (intervention indigo / control slate) on a light Mapbox
+  design_intent: Real labelled admin boundaries (intervention indigo / match slate) on a light Mapbox
     basemap via the shared ConnectMap module, with the SAME docked Layers panel the plan editor uses —
     toggles for service delivery, the independent survey, the designed Plan (arm-coloured selected-PSU
     hulls), the sampled Work areas, and all Building footprints — drawn through the shared PlanLayers
