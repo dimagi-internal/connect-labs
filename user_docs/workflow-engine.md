@@ -228,4 +228,4 @@ The **Verified Monitoring** dashboard contrasts what the program self-reported w
 
 **Trend panel**
 
-The Trend panel shows the self-reported and independently-verified coverage lines over time as a large, legible chart — taller with thicker lines so the trajectories are easy to follow. The right edge of the chart labels each line directly (service-delivery, intervention, and control) at its end, and a bolder amber gap-band highlights the difference between self-reported and verified figures.
+The Trend panel shows the self-reported and independently-verified coverage lines over time as a large, legible chart — taller with thicker lines so the trajectories are easy to follow. The right edge of the chart labels each line directly (service-delivery, intervention, and match) at its end, and a bolder amber gap-band highlights the difference between self-reported and verified figures.
