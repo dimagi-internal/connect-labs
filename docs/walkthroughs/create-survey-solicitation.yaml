@@ -116,8 +116,12 @@ scenes:
     verify: 'Playwright: after clicking "Create Solicitation" with status set to Active, assert the URL
       matches /solicitations/(\d+)/responses/?created=1 and the page reads "Solicitation published — organizations
       can now apply"'
-  narrative: The create form already has her R6 plan waiting as the coverage area. She sets the scope,
-    marks it active, and publishes — a brand-new call, minted live.
+  narrative: Maya fills out the call itself. The title, scope of work, and coverage area carry straight
+    over from her R6 study. She adds a description, picks the type — a Request for Proposal — sets the
+    timeline, the scale, and her contact, and marks it Active. The 'Publicly Listed' option puts the call
+    out across the whole Connect network, so any qualified survey firm can discover it and respond — and
+    it can also be pointed directly at the organizations already known to work in this area. Then she
+    publishes — a brand-new call, minted live.
   persona: maya
   provenance: S4
   show: Maya reads the pre-seeded title and the Coverage-areas panel, which shows the R6 — Attakar × Gura
@@ -126,37 +130,78 @@ scenes:
     fresh call and landing on its "Review and manage responses" page.
   actions:
   - kind: scroll_to
+    target: css:#id_title
+    note: title carried over from the R6 study
+  - kind: hold
+    seconds: 1.4
+    note: pre-filled title — no retyping
+  - kind: scroll_to
     target: css:#sol-coverage-map
-    note: NON-effecting camera move bringing the Coverage-areas panel into frame. CRITICAL for the before-frame
-      — because this leading action is NOT a wait_for, the recorder runs the full domcontentloaded + load
-      + goto_settle_ms + initial_hold_ms flow (~2.7s of settle) before the before-frame fires, giving
-      the Mapbox canvas time to paint the Attakar (green) / Gura (blue) ward polygons. With a leading
-      wait_for the navigation used wait_until=commit and the before-frame caught the blank, unpainted,
-      zoomed-out canvas. The before/after delta for this scene is the form fill (empty Description + Draft
-      status → filled Description + Active), framed against the painted coverage panel.
+    note: coverage area pre-seeded from the R6 plan
   - kind: wait_for
     target: css:#sol-coverage-map canvas.mapboxgl-canvas
-    note: the pre-seeded Coverage-areas map paints the Attakar/Gura ward polygons
+    note: coverage map paints
   - kind: hover
     target: css:#sol-coverage-map
-    seconds: 1.0
-    note: glide the cursor over the snapshotted Coverage-areas panel — Maya confirms the exact coverage
-      the firm will bid on
+    note: glide over the coverage
   - kind: scroll_to
     target: css:#id_description
-    note: scroll down to the Description field — REQUIRED to publish; the pre-seed fills the title and
-      scope from the plan but leaves Description for Maya to write
+    note: survey description
   - kind: fill
     target: css:#id_description
-    value: Independent household survey to verify Vitamin-A program coverage across the Round 6 Attakar
-      × Gura two-arm study — rooftop visits, GPS-stamped, ~285 treatment / 263 comparison surveys per
-      round.
-    note: Maya writes the survey scope into the required Description field
+    value: Independent household coverage survey across the R6 matched wards — enumerators verify vitamin-A
+      delivery at sampled rooftops in both the intervention and match areas.
+    note: Maya writes the survey description
+  - kind: scroll_to
+    target: css:#id_scope_of_work
+    note: scope of work, also carried from the study
+  - kind: hold
+    seconds: 1.1
+    note: pre-filled scope
+  - kind: select
+    target: css:#id_solicitation_type
+    value: rfp
+    note: pick the call type — a Request for Proposal
   - kind: select
     target: css:#id_status
     value: active
-    note: set Status to Active — the form defaults to Draft, and can_accept_responses() requires status=='active',
-      so without this scene 3's respond form would be blocked (a draft call accepts no responses)
+    note: set Status to Active
+  - kind: scroll_to
+    target: css:#id_is_public
+    note: the Publicly Listed toggle
+  - kind: hold
+    seconds: 2.4
+    note: 'ACTION-FRAME: show the Publicly Listed option — public to the Connect network + can target
+      known orgs (do NOT check it; a public call hides the owner-as-firm response form downstream)'
+  - kind: scroll_to
+    target: css:#id_application_deadline
+    note: application deadline
+  - kind: fill
+    target: css:#id_application_deadline
+    value: 08152026
+    note: set the deadline
+  - kind: fill
+    target: css:#id_expected_start_date
+    value: 09012026
+    note: expected start
+  - kind: fill
+    target: css:#id_expected_end_date
+    value: '11302026'
+    note: expected end
+  - kind: scroll_to
+    target: css:#id_estimated_scale
+    note: estimated scale
+  - kind: fill
+    target: css:#id_estimated_scale
+    value: ~12,000 households across 56 sampled settlements
+    note: the scale
+  - kind: scroll_to
+    target: css:#id_contact_email
+    note: contact email
+  - kind: fill
+    target: css:#id_contact_email
+    value: maya.okafor@kaura-health.gov.ng
+    note: her contact
   - kind: scroll_to
     target: css:button[type=submit]:has-text("Create Solicitation")
     note: bring the publish button into frame alongside the just-filled form — the ACTION frame for this
