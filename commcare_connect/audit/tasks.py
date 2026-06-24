@@ -190,7 +190,7 @@ def _run_ai_review_on_sessions(
                         for rf in related_fields:
                             if rf.get("value"):
                                 reading = str(rf.get("value"))
-                                question_id = rf.get("path", "") or question_id
+                                question_id = rf.get("path") or question_id
                                 break
 
                         if not reading and requires_reading:
@@ -238,6 +238,7 @@ def _run_ai_review_on_sessions(
                                 ai_result = "error"
                                 ai_notes = "; ".join(review_result.errors) if review_result.errors else None
                         except Exception as e:
+                            logger.exception(f"[AIReview] Agent raised exception for blob={blob_id}")
                             ai_result = "error"
                             ai_notes = str(e)
 
