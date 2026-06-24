@@ -71,6 +71,21 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
         instance.state?.config?.selected_image_type_ids || []
     );
 
+    // ── AI Review Agent state ────────────────────────────────────────────────
+    const [selectedAiAgent, setSelectedAiAgent] = React.useState(
+        instance.state?.config?.ai_agent_id || ''
+    );
+
+    // Reset agent selection when image types change and the agent is no longer applicable
+    React.useEffect(() => {
+        if (!selectedAiAgent) return;
+        const selectedTypes = imageQuestions.filter(q => selectedImageTypeIds.includes(q.id));
+        const hasWeight = selectedTypes.some(q => /weight/i.test(q.id));
+        const hasMuac = selectedTypes.some(q => /muac/i.test(q.id));
+        if (selectedAiAgent === 'scale_validation' && !hasWeight) setSelectedAiAgent('');
+        if (selectedAiAgent === 'muac_overzoom' && !hasMuac) setSelectedAiAgent('');
+    }, [selectedImageTypeIds]);
+
     // ── Date helpers ─────────────────────────────────────────────────────────
     const calculateDateRange = (preset) => {
         const today = new Date(); today.setHours(0,0,0,0);
@@ -280,6 +295,7 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
             sample_percentage: samplePct,
             threshold: threshold,
             date_preset: datePreset,
+            ai_agent_id: selectedAiAgent || null,
         };
 
         setIsRunning(true);
@@ -314,6 +330,7 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
                 opportunities: selectedOpps,
                 criteria,
                 workflow_run_id: instance.id,
+                ai_agent_id: selectedAiAgent || undefined,
             });
 
             if (result.success && result.task_id) {
@@ -834,6 +851,44 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
                 </div>
             </div>
 
+            {/* AI Review Agent */}
+            {(() => {
+                const selTypes = imageQuestions.filter(q => selectedImageTypeIds.includes(q.id));
+                const hasWeight = selTypes.some(q => /weight/i.test(q.id));
+                const hasMuac = selTypes.some(q => /muac/i.test(q.id));
+                const agentOpts = [
+                    ...(hasWeight ? [{ v: 'scale_validation', l: 'Scale Image Validation', desc: 'Validates weight readings against scale images using ML vision.' }] : []),
+                    ...(hasMuac ? [{ v: 'muac_overzoom', l: 'MUAC OverZoom', desc: 'Flags MUAC photos that are excessively zoomed in, auto-tagging them as fail.' }] : []),
+                ];
+                if (agentOpts.length === 0) return null;
+                const agentInfo = agentOpts.find(a => a.v === selectedAiAgent);
+                return (
+                    <div>
+                        <h3 className="text-sm font-medium text-gray-700 mb-3">
+                            <i className="fa-solid fa-robot mr-2 text-purple-500"></i>
+                            AI Review Agent
+                        </h3>
+                        <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 space-y-2">
+                            <select
+                                value={selectedAiAgent}
+                                onChange={e => setSelectedAiAgent(e.target.value)}
+                                className="border border-gray-300 rounded px-3 py-2 text-sm w-full md:w-auto"
+                            >
+                                <option value="">None – Skip AI review</option>
+                                {agentOpts.map(a => (
+                                    <option key={a.v} value={a.v}>{a.l}</option>
+                                ))}
+                            </select>
+                            {agentInfo && (
+                                <p className="text-sm text-purple-700 bg-purple-50 px-3 py-2 rounded">
+                                    {agentInfo.desc}
+                                </p>
+                            )}
+                        </div>
+                    </div>
+                );
+            })()}
+
             {/* Submit */}
             <div className="pt-4 border-t border-gray-200">
                 <button
@@ -844,7 +899,7 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
                         'rounded-lg hover:bg-blue-700 disabled:bg-gray-400 font-medium'}
                 >
                     <i className="fa-solid fa-play mr-2"></i>
-                    Create Review
+                    {selectedAiAgent ? 'Create Review with AI' : 'Create Review'}
                 </button>
                 {selectedImageTypeIds.length === 0 && !imageQuestionsLoading &&
                     imageQuestions.length > 0 && !imageQuestionsError && (
