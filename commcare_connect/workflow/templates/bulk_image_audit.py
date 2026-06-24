@@ -84,7 +84,7 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
         const hasMuac = selectedTypes.some(q => /muac/i.test(q.id));
         if (selectedAiAgent === 'scale_validation' && !hasWeight) setSelectedAiAgent('');
         if (selectedAiAgent === 'muac_overzoom' && !hasMuac) setSelectedAiAgent('');
-    }, [selectedImageTypeIds]);
+    }, [selectedImageTypeIds, selectedAiAgent]);
 
     // ── Date helpers ─────────────────────────────────────────────────────────
     const calculateDateRange = (preset) => {

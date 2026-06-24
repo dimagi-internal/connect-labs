@@ -175,6 +175,10 @@ class MUACOverzoomAgent(BaseAIReviewAgent):
             else:
                 # Fallback: handle match:true/false style responses from the same gateway
                 match = result.get("match")
+                if match is not None:
+                    self.logger.warning(
+                        f"MUAC overzoom API returned 'match' format instead of expected 'result' format: {result}"
+                    )
                 if match is True:
                     return ReviewResult.success(api_response=result)
                 elif match is False:

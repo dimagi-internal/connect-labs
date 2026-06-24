@@ -193,6 +193,9 @@ def _run_ai_review_on_sessions(
                                 break
 
                         if not reading and requires_reading:
+                            logger.debug(
+                                f"[AIReview] Skipping blob={blob_id}: no reading value and agent requires one"
+                            )
                             total_skipped += 1
                             images_processed += 1
                             continue
