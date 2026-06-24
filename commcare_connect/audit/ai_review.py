@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 def run_single_ai_review(
     agent,
     image_bytes: bytes,
-    reading: str,
+    reading: str = "",
     metadata: dict | None = None,
 ) -> str:
     """
@@ -36,7 +36,7 @@ def run_single_ai_review(
 
     context = ReviewContext(
         images={"scale": image_bytes},
-        form_data={"reading": reading},
+        form_data={"reading": reading} if reading else {},
         metadata=metadata or {},
     )
 
