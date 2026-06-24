@@ -177,19 +177,20 @@ def _run_ai_review_on_sessions(
                         if not blob_id:
                             continue
 
-                        # Get reading and question_id from related_fields
-                        # The related_fields structure is: [{label, value, path}, ...]
+                        # Get reading and question_id from related_fields.
+                        # Fall back to the image's own question_id for agents that don't
+                        # need a reading (e.g. muac_overzoom).
                         related_fields = image_data.get("related_fields", [])
                         logger.debug(
                             f"[AIReview] Image {blob_id}: related_fields={related_fields}, "
                             f"keys={list(image_data.keys())}"
                         )
                         reading = None
-                        question_id = ""
+                        question_id = image_data.get("question_id", "")
                         for rf in related_fields:
                             if rf.get("value"):
                                 reading = str(rf.get("value"))
-                                question_id = rf.get("path", "")
+                                question_id = rf.get("path", "") or question_id
                                 break
 
                         if not reading and requires_reading:
@@ -213,13 +214,12 @@ def _run_ai_review_on_sessions(
                             images_processed += 1
                             continue
 
-                        # Run AI review using shared utility
-                        from commcare_connect.audit.ai_review import run_single_ai_review
+                        # Run AI review directly so we can capture error details for storage.
+                        from commcare_connect.labs.ai_review_agents.types import ReviewContext
 
-                        ai_result = run_single_ai_review(
-                            agent=agent,
-                            image_bytes=image_bytes,
-                            reading=reading,
+                        context = ReviewContext(
+                            images={"scale": image_bytes},
+                            form_data={"reading": reading} if reading else {},
                             metadata={
                                 "visit_id": visit_id_str,
                                 "blob_id": blob_id,
@@ -227,10 +227,24 @@ def _run_ai_review_on_sessions(
                                 "session_id": session_id,
                             },
                         )
+                        ai_notes = None
+                        try:
+                            review_result = agent.review(context)
+                            if review_result.passed:
+                                ai_result = "match"
+                            elif review_result.failed:
+                                ai_result = "no_match"
+                            else:
+                                ai_result = "error"
+                                ai_notes = "; ".join(review_result.errors) if review_result.errors else None
+                        except Exception as e:
+                            ai_result = "error"
+                            ai_notes = str(e)
+
                         total_reviewed += 1
                         images_processed += 1
 
-                        # Update counters based on result
+                        # Update counters and log at appropriate level
                         if ai_result == "match":
                             total_passed += 1
                             logger.debug(f"[AIReview] PASS: blob={blob_id}, reading={reading}")
@@ -239,7 +253,7 @@ def _run_ai_review_on_sessions(
                             logger.debug(f"[AIReview] FAIL: blob={blob_id}, reading={reading}")
                         else:
                             total_errors += 1
-                            logger.debug(f"[AIReview] ERROR: blob={blob_id}")
+                            logger.error(f"[AIReview] ERROR: blob={blob_id}, reason={ai_notes!r}")
 
                         # Persist AI result to session assessment data.
                         # auto_apply_result agents (e.g. muac_overzoom) pre-populate the
@@ -252,6 +266,7 @@ def _run_ai_review_on_sessions(
                             result=human_result,
                             notes="",
                             ai_result=ai_result,
+                            ai_notes=ai_notes,
                         )
                         session_updated = True
 
