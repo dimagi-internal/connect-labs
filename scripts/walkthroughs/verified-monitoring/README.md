@@ -6,7 +6,7 @@ the durable home for the recipe — **do not seed from ad-hoc `/tmp` scripts.**
 
 The demo is narrative **N1** of the rooftop-survey DDD ("the art of the
 possible"): an independent, funder-facing dashboard showing verified vitamin-A
-coverage in a treatment ward (Kaura) vs an adjacent control ward (Gedawa) over
+coverage in a treatment ward (Kaura) vs an adjacent match ward (Gedawa) over
 six bi-monthly survey rounds, with a service-delivery + survey map overlay.
 
 ## What it produces
