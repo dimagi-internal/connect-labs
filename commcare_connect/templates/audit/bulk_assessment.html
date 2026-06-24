@@ -161,6 +161,14 @@
           <span class="text-sm text-gray-600 w-12" x-text="widgetSize + 'px'"></span>
         </div>
       </div>
+      <!-- AI agent indicator — shown when this review was run with an AI agent -->
+      <template x-if="aiAgentLabel">
+        <div class="flex items-center gap-1.5 px-3 py-1.5 bg-purple-50 border border-purple-200 rounded-lg text-sm text-purple-700">
+          <i class="fa-solid fa-robot"></i>
+          <span>AI: <span class="font-medium" x-text="aiAgentLabel"></span></span>
+        </div>
+      </template>
+
       <div class="flex gap-2 items-center flex-wrap">
         <button @click="passAllPending()"
                 :disabled="isReadOnly || loading || bulkProcessing"
@@ -724,6 +732,7 @@ function bulkAssessmentInterface() {
     bulkAiProcessing: false,
     aiProcessingStatus: '',
     availableAgents: [],
+    aiAgentId: null,
     currentAgentActions: {},
     hasUnsavedChanges: false,
     saving: false,
@@ -769,9 +778,15 @@ function bulkAssessmentInterface() {
         fetch('/labs/workflow/api/run/' + workflowRunId + '/')
           .then(r => r.json())
           .then(data => {
-            if (data.run && data.run.state && data.run.state.flw_tasks) {
-              this.flwTasks = data.run.state.flw_tasks;
-              this.createdTaskFLWs = new Set(Object.keys(data.run.state.flw_tasks));
+            if (data.run && data.run.state) {
+              if (data.run.state.flw_tasks) {
+                this.flwTasks = data.run.state.flw_tasks;
+                this.createdTaskFLWs = new Set(Object.keys(data.run.state.flw_tasks));
+              }
+              const agentId = data.run.state.config?.ai_agent_id;
+              if (agentId) {
+                this.aiAgentId = agentId;
+              }
             }
           })
           .catch(() => {});
@@ -952,6 +967,11 @@ function bulkAssessmentInterface() {
         else flwMap[key].pending++;
       });
       return Object.values(flwMap).sort((a, b) => a.username.localeCompare(b.username));
+    },
+    get aiAgentLabel() {
+      if (!this.aiAgentId) return null;
+      const agent = this.availableAgents.find(a => a.agent_id === this.aiAgentId);
+      return agent ? agent.name : this.aiAgentId;
     },
     recalculateStats() {
       const total = this.allAssessments.length;

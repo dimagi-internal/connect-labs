@@ -109,6 +109,8 @@ class DataSourceConfig:
               and is retained for stable identifiers across pipeline templates).
               "cchq_forms" fetches from CommCare HQ Form API.
               "ocs_sessions" fetches from Open Chat Studio sessions API.
+              "connect_export" fetches from a Connect production export endpoint
+              (e.g. audit_reports, audit_report_entries, assigned_tasks).
         form_name: (cchq_forms only) Form name for xmlns discovery,
                    e.g., "Register Mother", "Gold Standard Visit Checklist"
         app_id: (cchq_forms only) Explicit CommCare app ID.
@@ -120,6 +122,8 @@ class DataSourceConfig:
             so session data is accessible regardless of which OCS team the viewer
             belongs to. Store only in pipeline schemas that are already
             access-controlled via the LabsRecord permission model.
+        endpoint: (connect_export only) The export endpoint path segment,
+            e.g. "audit_reports", "audit_report_entries", "assigned_tasks".
     """
 
     type: str = "connect_csv"
@@ -129,9 +133,10 @@ class DataSourceConfig:
     gs_app_id: str = ""
     experiment_id: str = ""
     api_key: str = ""
+    endpoint: str = ""
 
     def __post_init__(self):
-        if self.type not in ("connect_csv", "cchq_forms", "ocs_sessions"):
+        if self.type not in ("connect_csv", "cchq_forms", "ocs_sessions", "connect_export"):
             raise ValueError(f"Invalid data source type: {self.type}")
 
 
