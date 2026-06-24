@@ -534,6 +534,23 @@ class AnalysisPipeline:
                                 data_source=unfiltered_config.data_source,
                             )
                             raw_data_already_stored = False
+                        elif unfiltered_config.data_source.type == "connect_export":
+                            from commcare_connect.labs.analysis.backends.sql.connect_export_fetcher import (
+                                fetch_connect_export_as_visit_dicts,
+                            )
+
+                            ep = unfiltered_config.data_source.endpoint
+                            yield (
+                                EVENT_STATUS,
+                                {"message": f"Fetching Connect export '{ep}' for opp {opp_id}..."},
+                            )
+                            visit_dicts = fetch_connect_export_as_visit_dicts(
+                                request=self.request,
+                                data_source=unfiltered_config.data_source,
+                                access_token=self.access_token,
+                                opportunity_id=opp_id,
+                            )
+                            raw_data_already_stored = False
                         else:
                             yield from self._consume_raw_visits_stream(
                                 opp_id,
@@ -629,6 +646,23 @@ class AnalysisPipeline:
                         visit_dicts = fetch_ocs_sessions_as_visit_dicts(
                             request=self.request,
                             data_source=unfiltered_config.data_source,
+                        )
+                        raw_data_already_stored = False
+                    elif unfiltered_config.data_source.type == "connect_export":
+                        from commcare_connect.labs.analysis.backends.sql.connect_export_fetcher import (
+                            fetch_connect_export_as_visit_dicts,
+                        )
+
+                        ep = unfiltered_config.data_source.endpoint
+                        yield (
+                            EVENT_STATUS,
+                            {"message": f"Fetching Connect export '{ep}' for opp {opp_id}..."},
+                        )
+                        visit_dicts = fetch_connect_export_as_visit_dicts(
+                            request=self.request,
+                            data_source=unfiltered_config.data_source,
+                            access_token=self.access_token,
+                            opportunity_id=opp_id,
                         )
                         raw_data_already_stored = False
                     else:
@@ -762,6 +796,38 @@ class AnalysisPipeline:
                     return
 
                 yield (EVENT_STATUS, {"message": f"Processing {len(visit_dicts)} sessions..."})
+                result = self.backend.process_and_cache(
+                    self.request,
+                    config,
+                    opp_id,
+                    visit_dicts,
+                    skip_raw_store=False,
+                )
+                yield (EVENT_STATUS, {"message": "Complete!"})
+                yield (EVENT_RESULT, result)
+                return
+
+            # Connect export data source — fetch all records and process in one pass.
+            # Audit/task records are O(hundreds), similar to OCS sessions.
+            if config.data_source.type == "connect_export":
+                from commcare_connect.labs.analysis.backends.sql.connect_export_fetcher import (
+                    fetch_connect_export_as_visit_dicts,
+                )
+
+                ep = config.data_source.endpoint
+                yield (EVENT_STATUS, {"message": f"Fetching Connect export '{ep}' for opp {opp_id}..."})
+                visit_dicts = fetch_connect_export_as_visit_dicts(
+                    request=self.request,
+                    data_source=config.data_source,
+                    access_token=self.access_token,
+                    opportunity_id=opp_id,
+                )
+                if not visit_dicts:
+                    yield (EVENT_STATUS, {"message": f"No {ep} found"})
+                    yield (EVENT_RESULT, VisitAnalysisResult(opportunity_id=opp_id, rows=[], metadata={}))
+                    return
+
+                yield (EVENT_STATUS, {"message": f"Processing {len(visit_dicts)} {ep} records..."})
                 result = self.backend.process_and_cache(
                     self.request,
                     config,
