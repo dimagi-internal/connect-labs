@@ -1214,7 +1214,7 @@ function WorkflowUI(props) {
     // never called two different things.
     var L_SD = 'Service delivery',
       L_IV = 'Intervention survey',
-      L_CP = 'Control survey';
+      L_CP = 'Match survey';
     var SERIES = [
       { arr: cp, color: COMP, label: L_CP },
       { arr: srr, color: AMBER, label: L_SD },
@@ -3090,7 +3090,7 @@ function WorkflowUI(props) {
       <div style={{ color: MUT, fontSize: 13, marginTop: 4, lineHeight: 1.5 }}>
         Independent rooftop survey (an independent team re-measures the same
         households) · {prog.cadence || 'bi-monthly'} · the program rotates wards
-        each cycle, each intervention ward verified against an adjacent control
+        each cycle, each intervention ward verified against an adjacent match
         ward
       </div>
 
@@ -3132,7 +3132,7 @@ function WorkflowUI(props) {
         >
           <span>{sw(AMBER, true)}Service delivery</span>
           <span>{sw(INDIGO)}Intervention survey</span>
-          <span>{sw(COMP)}Control survey</span>
+          <span>{sw(COMP)}Match survey</span>
           <span
             title="Y-axis: % of households where vitamin-A delivery was confirmed (survey) or reported (service-delivery data), at each round. Amber band: the gap between the program's service-delivery data and the independent survey. Highlighted column: the selected cycle — click a cycle to open it."
             style={{
@@ -3202,7 +3202,7 @@ function WorkflowUI(props) {
                 letterSpacing: '.05em',
               }}
             >
-              Map · {tWard} (intervention) vs {cWard} (control)
+              Map · {tWard} (intervention) vs {cWard} (match)
             </div>
             {/* Layer toggles live in the docked Layers panel (top-right of the
                 map) — the SAME MicroplansMapPanel the plan editor uses. */}
