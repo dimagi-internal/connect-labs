@@ -211,21 +211,23 @@ Labs includes pre-built workflow templates for common program types. Your progra
 | **LLO Weekly FLW Review**             | Weekly per-FLW KPI scorecard for LLO programs                                                                               |
 | **Connect Interviews Reporting V2**   | Live funnel dashboard showing Triggered / Started / Completed counts per interview for any cohort                           |
 
+### Bulk Image Audit — AI Review Agent
+
+The Bulk Image Audit template includes an optional **AI Review Agent** step. When a MUAC or weight image type is selected during configuration, an **AI Review Agent** dropdown appears. The dropdown shows only the agents relevant to the image types you have chosen:
+
+| Agent | When it appears | What it does |
+| ----- | --------------- | ------------ |
+| **Scale Image Validation** | A weight-related image type is selected | Compares scale photos against the reading that was entered |
+| **MUAC OverZoom** | A MUAC image type is selected | Classifies photos for excessive zoom; any image identified as overzoomed is automatically pre-tagged **fail** before the reviewer opens the session |
+
+When **MUAC OverZoom** pre-tags an image as fail, the reviewer opens the session with those images already marked — they only need to confirm or override the pre-tagged result rather than assess every image from scratch.
+
+If no AI agent is selected, the workflow behaves exactly as it did before this feature was introduced.
+
 ### Program Admin Report dashboard
 
 The **Program Admin Report** gives program administrators a cross-opportunity compliance view. The demo walkthrough illustrates the following real-world scenarios, which the sample data is built to match:
 
 - **Missed week (no-run cell)** — one region has a week with no run recorded at all, shown as an empty cell in the compliance grid. This represents a week where the review was not completed, not a week with zero visits.
 - **SOP-meeting and below-SOP regions side by side** — the demo includes a region that is healthy and meets the standard of procedure alongside a region that falls below it, so you can see how the compliance colouring distinguishes the two at a glance.
-- **Audit part-way through review** — one audit in the demo is genuinely mid-review: some photos have passed, some have failed, and some are still pending. This reflects the normal state of an audit that a supervisor has started but not yet finished.
-- **Coaching task with a matching summary** — the coaching task shown in the demo has a conversation summary that corresponds directly to the task's stated coaching topic, so the record is internally consistent.
-
-These scenarios are intentional reference points. When you use the demo to train new staff or walk through the report's features, the data you see on screen matches what the narration describes.
-
-### Verified Monitoring dashboard
-
-The **Verified Monitoring** dashboard contrasts what the program self-reported with what an independent survey verified. It is organized into panels:
-
-**Trend panel**
-
-The Trend panel shows the self-reported and independently-verified coverage lines over time as a large, legible chart — taller with thicker lines so the trajectories are easy to follow. The right edge of the chart labels each line directly (service-delivery, intervention, and match) at its end, and a bolder amber gap-band highlights the difference between self-reported and verified figures.
+- **Audit part-way through review** — one audit in the demo is genuinely mid
