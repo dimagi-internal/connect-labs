@@ -104,8 +104,18 @@ def _run_ai_review_on_sessions(
     logger.info(f"[AIReview] Running agent '{ai_agent_id}' on {len(session_ids)} sessions")
     logger.info(f"[AIReview] Session IDs to process: {session_ids}")
 
+    # Whether this agent needs a related-field reading value to operate
+    requires_reading = getattr(agent, "requires_reading", True)
+
+    # Whether this agent should automatically apply its AI result as the human result
+    auto_apply_result = getattr(agent, "auto_apply_result", False)
+    ai_to_human_result: dict[str, str] = {}
+    if auto_apply_result:
+        for action in agent.result_actions.values():
+            if "ai_result" in action and "human_result" in action:
+                ai_to_human_result[action["ai_result"]] = action["human_result"]
+
     # First pass: count only images that will actually be reviewed
-    # (those with related_fields containing a valid reading value)
     total_images_to_review = 0
     session_image_counts = {}
     for session_id in session_ids:
@@ -116,10 +126,10 @@ def _run_ai_review_on_sessions(
                 reviewable_count = 0
                 for images in visit_images.values():
                     for image_data in images:
-                        # Only count images with related_fields that have a reading value
                         related_fields = image_data.get("related_fields", [])
                         has_reading = any(rf.get("value") for rf in related_fields)
-                        if has_reading and image_data.get("blob_id"):
+                        # Agents that don't require a reading count any image with a blob_id
+                        if (has_reading or not requires_reading) and image_data.get("blob_id"):
                             reviewable_count += 1
                 session_image_counts[session_id] = reviewable_count
                 total_images_to_review += reviewable_count
@@ -182,7 +192,10 @@ def _run_ai_review_on_sessions(
                                 question_id = rf.get("path", "")
                                 break
 
-                        if not reading:
+                        if not reading and requires_reading:
+                            logger.debug(
+                                f"[AIReview] Skipping blob={blob_id}: no reading value and agent requires one"
+                            )
                             total_skipped += 1
                             images_processed += 1
                             continue
@@ -228,12 +241,15 @@ def _run_ai_review_on_sessions(
                             total_errors += 1
                             logger.debug(f"[AIReview] ERROR: blob={blob_id}")
 
-                        # Persist AI result to session assessment data
+                        # Persist AI result to session assessment data.
+                        # auto_apply_result agents (e.g. muac_overzoom) pre-populate the
+                        # human result from the AI outcome so reviewers see pre-tagged fails.
+                        human_result = ai_to_human_result.get(ai_result) if auto_apply_result else None
                         session.set_assessment(
                             visit_id=int(visit_id_str),
                             blob_id=blob_id,
                             question_id=question_id,
-                            result=None,  # Don't set human result
+                            result=human_result,
                             notes="",
                             ai_result=ai_result,
                         )
