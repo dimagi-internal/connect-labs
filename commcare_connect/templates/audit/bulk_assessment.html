@@ -783,7 +783,7 @@ function bulkAssessmentInterface() {
                 this.flwTasks = data.run.state.flw_tasks;
                 this.createdTaskFLWs = new Set(Object.keys(data.run.state.flw_tasks));
               }
-              const agentId = data.run.state.config && data.run.state.config.ai_agent_id;
+              const agentId = data.run.state.config?.ai_agent_id;
               if (agentId) {
                 this.aiAgentId = agentId;
               }
