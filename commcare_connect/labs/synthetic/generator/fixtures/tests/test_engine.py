@@ -283,6 +283,40 @@ def test_mirror_applies_seeded_field_outlier_and_duplicate_anomalies():
     assert w0 < 600 or w0 > 2000, w0  # the seeded outlier landed on the week-1 visit
 
 
+def test_mirror_propagates_per_entity_constants_to_all_visits():
+    # A real KMC child records birth weight + DOB only at registration; the clone must
+    # carry those per-child constants onto EVERY follow-up visit (not refabricate them),
+    # so age = visit_date - dob and the birth-weight anchor are stable across the series.
+    pool = [
+        {
+            "owner": "flw_001",
+            "start_date": "2026-02-01",
+            "visits": [
+                {"day": 0, "values": {"form.weight": 1200.0, "form.birthweight": 1100.0}, "dates": {"form.dob": -5}},
+                {"day": 7, "values": {"form.weight": 1300.0}},  # follow-ups: no birthweight/dob recorded
+                {"day": 14, "values": {"form.weight": 1400.0}},
+            ],
+        }
+    ]
+    manifest, detail, _schema = _mirror_inputs(pool)
+    schema = FormSchema(
+        questions=[
+            QuestionSpec(json_path="form.weight", kind="int"),
+            QuestionSpec(json_path="form.birthweight", kind="int"),
+            QuestionSpec(json_path="form.dob", kind="date"),
+        ]
+    )
+
+    out = generate(manifest=manifest, opportunity_detail=detail, form_schema=schema)
+    visits = sorted(out["user_visits"], key=lambda v: v["visit_date"])
+
+    # birth weight + DOB are identical on all three visits (propagated from registration)...
+    assert {v["form_json"]["form"]["birthweight"] for v in visits} == {1100}
+    assert {v["form_json"]["form"]["dob"] for v in visits} == {"2026-01-27"}  # 2026-02-01 minus 5 days
+    # ...while the genuinely per-visit weight still rises with age.
+    assert [v["form_json"]["form"]["weight"] for v in visits] == [1200, 1300, 1400]
+
+
 def test_synthetic_trajectory_gives_each_entity_a_rising_stable_series():
     from commcare_connect.labs.synthetic.generator.fixtures.manifest import (
         BeneficiaryCohort,
