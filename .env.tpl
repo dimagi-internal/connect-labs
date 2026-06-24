@@ -50,10 +50,12 @@ SUPERSET_URL={{ op://Employee/Connect Labs .env/SUPERSET_URL }}
 SUPERSET_USERNAME={{ op://Employee/Connect Labs .env/SUPERSET_USERNAME }}
 SUPERSET_PASSWORD={{ op://Employee/Connect Labs .env/SUPERSET_PASSWORD }}
 
-# Google Drive service account for synthetic-opp fixtures (needed to read profile
-# bundles and run synthetic generation locally). It's the "connect-labs GCP service
-# account key (connect-labs-sa)" DOCUMENT in the AI-Agents vault — a JSON key file.
-# The DriveClient accepts either the JSON contents or a path to the file. NOTE: this
-# value is multi-line JSON; if your .env renderer needs single-line, point
-# LABS_SYNTHETIC_GDRIVE_SA_KEY at a file path instead (op document get ... --out-file).
-LABS_SYNTHETIC_GDRIVE_SA_KEY={{ op://AI-Agents/connect-labs GCP service account key (connect-labs-sa)/connect-labs-11dace7a923c.json }}
+# Google Drive service account (connect-labs-sa) for synthetic-opp fixtures — DriveClient
+# uses it to read profile bundles and upload generated fixtures during the two-phase clone.
+# Lives in the AI-Agents vault item "connect-labs GCP service account key (connect-labs-sa)".
+# Referenced by item ID, NOT title: the title's parentheses are illegal in an op:// secret
+# reference, so a title-based ref (op read / op inject) fails to resolve. This field is the
+# minified single-line JSON (op-inject-friendly); DriveClient json.loads it, or accepts a
+# file path. Also mirrored in AWS Secrets Manager (labs-jj-synthetic-gdrive-sa-key) for the
+# deployed labs environment.
+LABS_SYNTHETIC_GDRIVE_SA_KEY={{ op://AI-Agents/swvkqixqoyprbtleply2p4hnta/LABS_SYNTHETIC_GDRIVE_SA_KEY }}
