@@ -195,7 +195,7 @@ class MUACOverzoomAgent(BaseAIReviewAgent):
                     f"MUAC overzoom API returned 'match' format instead of expected 'class' format: {result}"
                 )
             if match is True:
-                return ReviewResult.success(api_response=result)
+                return ReviewResult.success(pass_label="Not Hyperzoomed", api_response=result)
             elif match is False:
                 return ReviewResult.failure(badge_label="Hyperzoomed", api_response=result)
 
