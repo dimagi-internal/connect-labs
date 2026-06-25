@@ -230,7 +230,7 @@
             <!-- Opp Picker Modal (for multi_opp templates) -->
             <div x-show="showOppPickerModal"
                  x-cloak
-                 class="fixed inset-0 z-50 overflow-y-auto"
+                 class="fixed inset-0 z-50"
                  @keydown.escape.window="cancelCreating()">
                 <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
                      @click="!creating && (showOppPickerModal = false)"></div>
