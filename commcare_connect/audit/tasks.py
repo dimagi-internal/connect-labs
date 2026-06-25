@@ -109,6 +109,10 @@ def _run_ai_review_on_sessions(
 
     # Whether this agent should automatically apply its AI result as the human result
     auto_apply_result = getattr(agent, "auto_apply_result", False)
+
+    # If True, don't store any AI assessment for images that pass (e.g. MUAC not_hyperzoomed
+    # shows as a normal pending image with no AI badge rather than a blue "Match" badge).
+    suppress_pass = getattr(agent, "suppress_pass", False)
     ai_to_human_result: dict[str, str] = {}
     if auto_apply_result:
         for action in agent.result_actions.values():
@@ -234,6 +238,9 @@ def _run_ai_review_on_sessions(
                                 ai_result = "match"
                             elif review_result.failed:
                                 ai_result = "no_match"
+                                # badge_label in details provides the display label for the
+                                # image badge (e.g. "Hyperzoomed" instead of generic "No Match")
+                                ai_notes = review_result.details.get("badge_label")
                             else:
                                 ai_result = "error"
                                 ai_notes = "; ".join(review_result.errors) if review_result.errors else None
@@ -257,19 +264,23 @@ def _run_ai_review_on_sessions(
                             logger.error(f"[AIReview] ERROR: blob={blob_id}, reason={ai_notes!r}")
 
                         # Persist AI result to session assessment data.
-                        # auto_apply_result agents (e.g. muac_overzoom) pre-populate the
-                        # human result from the AI outcome so reviewers see pre-tagged fails.
-                        human_result = ai_to_human_result.get(ai_result) if auto_apply_result else None
-                        session.set_assessment(
-                            visit_id=int(visit_id_str),
-                            blob_id=blob_id,
-                            question_id=question_id,
-                            result=human_result,
-                            notes="",
-                            ai_result=ai_result,
-                            ai_notes=ai_notes,
-                        )
-                        session_updated = True
+                        # auto_apply_result agents pre-populate human result from AI outcome.
+                        # suppress_pass agents skip storage for passing images so they show
+                        # as normal pending images with no AI badge (e.g. MUAC not_hyperzoomed).
+                        if ai_result == "match" and suppress_pass:
+                            logger.debug(f"[AIReview] PASS (suppressed, no badge): blob={blob_id}")
+                        else:
+                            human_result = ai_to_human_result.get(ai_result) if auto_apply_result else None
+                            session.set_assessment(
+                                visit_id=int(visit_id_str),
+                                blob_id=blob_id,
+                                question_id=question_id,
+                                result=human_result,
+                                notes="",
+                                ai_result=ai_result,
+                                ai_notes=ai_notes,
+                            )
+                            session_updated = True
 
                         # Report progress after each review
                         if progress_callback:
