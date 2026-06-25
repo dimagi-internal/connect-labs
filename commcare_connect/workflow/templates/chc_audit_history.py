@@ -49,28 +49,28 @@ AUDIT_REPORTS_SCHEMA = {
 
 AUDIT_ENTRIES_SCHEMA = {
     "data_source": {"type": "connect_export", "endpoint": "audit_report_entries"},
-    "grouping_key": "audit_entry.audit_report",
+    "grouping_key": "audit_entry.id",
     "terminal_stage": "visit_level",
     "fields": [
         {"name": "report_id", "path": "audit_entry.audit_report", "aggregation": "first"},
         {"name": "username", "path": "audit_entry.username", "aggregation": "first"},
         # results is a JSON object — extracted as a JSON string, parsed by the render layer
         {"name": "results", "path": "audit_entry.results", "aggregation": "first"},
-        {"name": "flagged", "path": "audit_entry.flagged", "aggregation": "first"},
+        # "is_flagged" avoids DuckDB treating the column as BOOLEAN (the API returns the string "true"/"false")
+        {"name": "is_flagged", "path": "audit_entry.flagged", "aggregation": "first"},
         {"name": "date_created", "path": "audit_entry.date_created", "aggregation": "first"},
     ],
 }
 
 TASKS_SCHEMA = {
     "data_source": {"type": "connect_export", "endpoint": "assigned_tasks"},
-    "grouping_key": "assigned_task.username",
+    "grouping_key": "assigned_task.id",
     "terminal_stage": "visit_level",
     "fields": [
         {"name": "username", "path": "assigned_task.username", "aggregation": "first"},
-        {"name": "task_status", "path": "assigned_task.status", "aggregation": "first"},
+        {"name": "status", "path": "assigned_task.status", "aggregation": "first"},
         {"name": "date_created", "path": "assigned_task.date_created", "aggregation": "first"},
         {"name": "completed_at", "path": "assigned_task.completed_at", "aggregation": "first"},
-        {"name": "duration", "path": "assigned_task.duration", "aggregation": "first"},
     ],
 }
 
