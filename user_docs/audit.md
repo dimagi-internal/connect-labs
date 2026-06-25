@@ -60,7 +60,7 @@ Once a session is created, open it to start the bulk assessment.
     | Agent | When it appears | What it does |
     | --- | --- | --- |
     | **Scale Image Validation** | A weight-related image type is selected | Compares scale photos against the reading entered by the FLW and flags mismatches |
-    | **MUAC OverZoom** | A MUAC image type is selected | Classifies photos for excessive zoom; images flagged as overzoomed are automatically pre-tagged **Fail** before you open the session |
+    | **MUAC OverZoom** | A MUAC image type is selected | Classifies photos for excessive zoom; images confirmed as hyperzoomed are automatically pre-tagged **Fail** before you open the session |
 
     If no agent is selected, the workflow behaves exactly as before — the AI checks each image for:
 
@@ -71,7 +71,7 @@ Once a session is created, open it to start the bulk assessment.
     AI results appear alongside each image as suggestions — you make the final Pass/Fail call. Images flagged by the AI are highlighted so you can prioritize reviewing them first.
 
     !!! tip "MUAC OverZoom pre-tagging"
-    When the MUAC OverZoom agent is used, images it flags as overzoomed arrive in your review queue already marked **Fail**. You can confirm each one quickly or override the tag if you disagree.
+    When the MUAC OverZoom agent is used, images it identifies as hyperzoomed arrive in your review queue already marked **Fail** with a red **Hyperzoomed** badge. Images the agent determines are not hyperzoomed show no AI badge and appear as normal pending photos for your human review. You can confirm each Fail tag or override it if you disagree.
 
 **Keyboard shortcuts** (work in both review modes):
 
@@ -130,7 +130,7 @@ Yes — your progress saves automatically. Open the session anytime to continue 
 The AI looks at image quality (blur, brightness, framing), whether the measurement shown is within expected ranges, and whether required items are visible. It does not access patient health records — only the images themselves.
 
 **What is the MUAC OverZoom agent?**
-When a MUAC image type is selected, you can choose the **MUAC OverZoom** agent from the AI Review Agent dropdown. It automatically identifies photos taken with excessive zoom and pre-tags them as **Fail** before your review begins. You can confirm or override each tag during your normal review.
+When a MUAC image type is selected, you can choose the **MUAC OverZoom** agent from the AI Review Agent dropdown. It automatically identifies photos taken with excessive zoom and pre-tags them as **Fail** with a red **Hyperzoomed** badge before your review begins. Images the agent determines are not hyperzoomed show no AI badge and appear as normal pending photos. You can confirm or override each Fail tag during your normal review.
 
 **Can I review the same set of visits twice?**
 Yes — create a new session with the same filters. Each session is independent.
