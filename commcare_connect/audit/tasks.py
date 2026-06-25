@@ -110,10 +110,6 @@ def _run_ai_review_on_sessions(
 
     # Whether this agent should automatically apply its AI result as the human result
     auto_apply_result = getattr(agent, "auto_apply_result", False)
-
-    # If True, don't store any AI assessment for images that pass (e.g. MUAC not_hyperzoomed
-    # shows as a normal pending image with no AI badge rather than a blue "Match" badge).
-    suppress_pass = getattr(agent, "suppress_pass", False)
     ai_to_human_result: dict[str, str] = {}
     if auto_apply_result:
         for action in agent.result_actions.values():
@@ -230,9 +226,12 @@ def _run_ai_review_on_sessions(
                     rv = agent.review(ctx)
                     if rv.passed:
                         ai_r = "match"
+                        # pass_label provides a human-readable classification for the tile footer
+                        # (e.g. "Not Hyperzoomed" for muac_overzoom)
+                        ai_n = rv.details.get("pass_label")
                     elif rv.failed:
                         ai_r = "no_match"
-                        # badge_label in details is the display label for the image badge
+                        # badge_label is the display label for the top-left badge and tile footer
                         # (e.g. "Hyperzoomed" instead of generic "No Match")
                         ai_n = rv.details.get("badge_label")
                     else:
@@ -273,22 +272,19 @@ def _run_ai_review_on_sessions(
                             total_errors += 1
                             logger.error(f"[AIReview] ERROR: blob={blob_id}, reason={ai_notes!r}")
 
-                        # Persist AI result. suppress_pass agents skip storage for passing images
-                        # so they appear as normal pending photos with no AI badge.
-                        if ai_result == "match" and suppress_pass:
-                            logger.debug(f"[AIReview] PASS (suppressed, no badge): blob={blob_id}")
-                        else:
-                            human_result = ai_to_human_result.get(ai_result) if auto_apply_result else None
-                            session.set_assessment(
-                                visit_id=int(visit_id_str),
-                                blob_id=blob_id,
-                                question_id=question_id,
-                                result=human_result,
-                                notes="",
-                                ai_result=ai_result,
-                                ai_notes=ai_notes,
-                            )
-                            session_updated = True
+                        # Persist AI result for all outcomes so the classification label
+                        # is always available to display in the tile footer.
+                        human_result = ai_to_human_result.get(ai_result) if auto_apply_result else None
+                        session.set_assessment(
+                            visit_id=int(visit_id_str),
+                            blob_id=blob_id,
+                            question_id=question_id,
+                            result=human_result,
+                            notes="",
+                            ai_result=ai_result,
+                            ai_notes=ai_notes,
+                        )
+                        session_updated = True
 
                     if progress_callback:
                         progress_callback(
