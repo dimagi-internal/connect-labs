@@ -835,6 +835,234 @@ function ChcFLWLongitudinal(props) {
 }
 
 // =========================================================================
+// Tab 4 — Metric Longitudinal
+// Rows: one per completed audit report, grouped by opportunity.
+// Columns: Opportunity | Audit Date | [metrics] | Flags
+// Each cell = count of workers flagged for that metric in that audit.
+// Subtotal row per opportunity; grand total at bottom (sum of all per-audit counts).
+// =========================================================================
+
+function ChcMetricLongitudinal(props) {
+  var reportRows = props.reportRows, entryRows = props.entryRows,
+    oppIds = props.oppIds, oppNames = props.oppNames || {};
+
+  var _oppState = React.useState("all");
+  var oppFilter = _oppState[0], setOppFilter = _oppState[1];
+
+  var _visState = React.useState(function () {
+    var v = {};
+    CHC_METRICS.forEach(function (m) { v[m.key] = true; });
+    return v;
+  });
+  var visibleCols = _visState[0], setVisibleCols = _visState[1];
+
+  var shownMetrics = React.useMemo(function () {
+    return CHC_METRICS.filter(function (m) { return visibleCols[m.key]; });
+  }, [visibleCols]);
+
+  var completedReports = React.useMemo(function () {
+    var base = reportRows.filter(function (r) { return r.status === "completed"; });
+    return oppFilter === "all" ? base : base.filter(function (r) { return String(r.opportunity_id) === oppFilter; });
+  }, [reportRows, oppFilter]);
+
+  var tableData = React.useMemo(function () {
+    // Group reports by opportunity
+    var byOpp = {};
+    completedReports.forEach(function (r) {
+      var oid = String(r.opportunity_id);
+      if (!byOpp[oid]) byOpp[oid] = [];
+      byOpp[oid].push(r);
+    });
+
+    var sortedOppIds = Object.keys(byOpp).sort(function (a, b) {
+      return (oppNames[a] || a).localeCompare(oppNames[b] || b);
+    });
+
+    var groups = sortedOppIds.map(function (oid) {
+      var reports = byOpp[oid].slice().sort(function (a, b) {
+        return (a.date_created || "").localeCompare(b.date_created || "");
+      });
+
+      var auditRows = reports.map(function (r) {
+        var reportId = String(r.report_id || r.id);
+        var entries = entryRows.filter(function (e) {
+          return String(e.report_id) === reportId && String(e.opportunity_id) === oid;
+        });
+
+        var metricFlags = {};
+        CHC_METRICS.forEach(function (m) {
+          var n = 0;
+          entries.forEach(function (e) {
+            var obj = chcParseResults(e.results)[m.key];
+            if (obj && obj.has_sufficient_data && obj.in_range === false) n++;
+          });
+          metricFlags[m.key] = n;
+        });
+
+        var totalFlags = CHC_METRICS.reduce(function (s, m) { return s + metricFlags[m.key]; }, 0);
+        return { report: r, metricFlags: metricFlags, totalFlags: totalFlags };
+      });
+
+      // Subtotal across all audits for this opp
+      var subMetricFlags = {};
+      CHC_METRICS.forEach(function (m) {
+        subMetricFlags[m.key] = auditRows.reduce(function (s, row) { return s + row.metricFlags[m.key]; }, 0);
+      });
+      var subTotalFlags = CHC_METRICS.reduce(function (s, m) { return s + subMetricFlags[m.key]; }, 0);
+
+      return { oppId: oid, oppName: oppNames[oid] || "Opp #" + oid, auditRows: auditRows, subMetricFlags: subMetricFlags, subTotalFlags: subTotalFlags };
+    });
+
+    // Grand total
+    var grandMetricFlags = {};
+    CHC_METRICS.forEach(function (m) {
+      grandMetricFlags[m.key] = groups.reduce(function (s, g) { return s + g.subMetricFlags[m.key]; }, 0);
+    });
+    var grandTotalFlags = CHC_METRICS.reduce(function (s, m) { return s + grandMetricFlags[m.key]; }, 0);
+
+    return { groups: groups, grandMetricFlags: grandMetricFlags, grandTotalFlags: grandTotalFlags };
+  }, [completedReports, entryRows, oppNames]);
+
+  var colCount = shownMetrics.length + 3; // Opp + Date + metrics + Flags
+
+  return ce(
+    "div", { className: "p-4 space-y-3" },
+    // Filter bar
+    ce("div", { className: "flex items-center gap-3 flex-wrap" },
+      ce("span", { className: "text-xs font-semibold uppercase tracking-wider text-gray-500" }, "Opportunity"),
+      ce("select", {
+        className: "text-sm border border-gray-300 rounded px-2 py-1.5 bg-white",
+        value: oppFilter, onChange: function (e) { setOppFilter(e.target.value); },
+      },
+        ce("option", { value: "all" }, "All Opportunities"),
+        oppIds.map(function (id) { return ce("option", { key: id, value: String(id) }, oppNames[id] || "Opp #" + id); }),
+      ),
+      ce("span", { className: "text-xs text-gray-400" },
+        tableData.groups.reduce(function (s, g) { return s + g.auditRows.length; }, 0) + " audits"),
+      // Column picker
+      ce("details", { className: "relative ml-auto" },
+        ce("summary", {
+          className: "cursor-pointer text-xs font-semibold uppercase tracking-wider text-green-800 border border-green-300 rounded px-3 py-1.5 bg-green-50 hover:bg-green-100 list-none",
+        }, "Columns ▾"),
+        ce("div", {
+          className: "absolute right-0 top-full z-30 bg-white border border-gray-200 rounded shadow-lg p-3 min-w-48 mt-1",
+          onClick: function (e) { e.stopPropagation(); },
+        },
+          ce("div", { className: "text-xs font-semibold uppercase text-gray-500 mb-2" }, "Show / Hide Metrics"),
+          CHC_METRICS.map(function (m) {
+            return ce("label", { key: m.key, className: "flex items-center gap-2 py-1 cursor-pointer text-sm hover:text-green-800" },
+              ce("input", {
+                type: "checkbox", checked: visibleCols[m.key],
+                onChange: function () {
+                  setVisibleCols(function (prev) {
+                    var next = Object.assign({}, prev);
+                    next[m.key] = !next[m.key];
+                    return next;
+                  });
+                },
+              }),
+              m.label,
+            );
+          }),
+          ce("div", { className: "border-t border-gray-100 mt-2 pt-2 flex gap-2" },
+            ce("button", {
+              className: "text-xs text-green-700 hover:underline",
+              onClick: function () {
+                setVisibleCols(function () { var v = {}; CHC_METRICS.forEach(function (m) { v[m.key] = true; }); return v; });
+              },
+            }, "All"),
+            ce("button", {
+              className: "text-xs text-gray-500 hover:underline",
+              onClick: function () {
+                setVisibleCols(function () { var v = {}; CHC_METRICS.forEach(function (m) { v[m.key] = false; }); return v; });
+              },
+            }, "None"),
+          ),
+        ),
+      ),
+    ),
+    // Table
+    tableData.groups.length === 0
+      ? ce("div", { className: "rounded-lg border border-gray-200 p-8 text-center text-gray-400 text-sm bg-white" }, "No completed audits found")
+      : ce("div", { className: "rounded-lg overflow-hidden shadow-sm border border-gray-200" },
+        ce("div", { className: "overflow-x-auto" },
+          ce("table", { className: "border-collapse bg-white text-xs" },
+            ce("thead", null,
+              ce("tr", null,
+                ce("th", { className: "bg-green-900 text-green-100 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider whitespace-nowrap" }, "Opportunity"),
+                ce("th", { className: "bg-green-900 text-green-100 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider whitespace-nowrap" }, "Audit Date"),
+                shownMetrics.map(function (m) {
+                  return ce("th", {
+                    key: m.key, title: m.full,
+                    className: "bg-green-900 text-green-100 px-3 py-2 text-center text-xs font-semibold uppercase tracking-wider",
+                    style: { maxWidth: "72px" },
+                  }, m.label);
+                }),
+                ce("th", { className: "bg-green-900 text-green-100 px-3 py-2 text-center text-xs font-semibold uppercase tracking-wider whitespace-nowrap" }, "Flags"),
+              ),
+            ),
+            ce("tbody", null,
+              tableData.groups.map(function (group) {
+                var auditCells = group.auditRows.map(function (row, i) {
+                  var r = row.report;
+                  return ce("tr", { key: i, className: "border-b border-gray-100 hover:bg-gray-50" },
+                    ce("td", { className: "border border-gray-200 px-3 py-1.5 text-left font-medium text-green-900 bg-white whitespace-nowrap" },
+                      group.oppName),
+                    ce("td", { className: "border border-gray-200 px-3 py-1.5 text-left whitespace-nowrap" },
+                      (r.date_created || "—").slice(0, 10)),
+                    shownMetrics.map(function (m) {
+                      var n = row.metricFlags[m.key] || 0;
+                      return ce("td", {
+                        key: m.key,
+                        className: "border border-gray-200 px-2 py-1.5 text-center tabular-nums " + (n > 0 ? "bg-red-50 text-red-700 font-semibold" : "text-gray-400"),
+                      }, n > 0 ? n : "—");
+                    }),
+                    ce("td", { className: "border border-gray-200 px-2 py-1.5 text-center font-bold " + (row.totalFlags > 0 ? "bg-red-100 text-red-800" : "text-gray-400") },
+                      row.totalFlags > 0 ? row.totalFlags : "—"),
+                  );
+                });
+
+                // Subtotal row for this opportunity
+                var subRow = ce("tr", { key: "sub", className: "border-b-2 border-green-200" },
+                  ce("td", { className: "border border-green-200 px-3 py-1.5 text-left font-bold text-green-800 bg-green-50 whitespace-nowrap" },
+                    group.oppName),
+                  ce("td", { className: "border border-green-200 px-3 py-1.5 text-left font-bold text-green-800 bg-green-50 whitespace-nowrap text-xs uppercase" },
+                    "Subtotal"),
+                  shownMetrics.map(function (m) {
+                    var n = group.subMetricFlags[m.key] || 0;
+                    return ce("td", {
+                      key: m.key,
+                      className: "border border-green-200 px-2 py-1.5 text-center font-bold bg-green-50 " + (n > 0 ? "text-red-700" : "text-gray-400"),
+                    }, n > 0 ? n : "—");
+                  }),
+                  ce("td", { className: "border border-green-200 px-2 py-1.5 text-center font-bold bg-green-900 text-white" },
+                    group.subTotalFlags > 0 ? group.subTotalFlags : "—"),
+                );
+
+                return [auditCells, subRow];
+              }),
+            ),
+            ce("tfoot", null,
+              ce("tr", null,
+                ce("td", { colSpan: 2, className: "border border-gray-200 px-3 py-1.5 text-left font-bold text-xs uppercase bg-green-50 text-green-800" }, "Metric Totals"),
+                shownMetrics.map(function (m) {
+                  var n = tableData.grandMetricFlags[m.key] || 0;
+                  return ce("td", {
+                    key: m.key,
+                    className: "border border-gray-200 px-2 py-1.5 text-center font-bold text-xs " + (n > 0 ? "bg-red-100 text-red-800" : "bg-green-50 text-green-700"),
+                  }, n > 0 ? n : "—");
+                }),
+                ce("td", { className: "border border-gray-200 px-2 py-1.5 text-center font-bold bg-green-900 text-white text-xs" },
+                  tableData.grandTotalFlags > 0 ? tableData.grandTotalFlags : "—"),
+              ),
+            ),
+          ),
+        ),
+      ),
+  );
+}
+
+// =========================================================================
 // Main component
 // =========================================================================
 
@@ -880,7 +1108,7 @@ function WorkflowUI(props) {
     return (srcPipelines.tasks && srcPipelines.tasks.rows) || [];
   }, [srcPipelines]);
 
-  var tabs = ["Audit History", "Metric Detail", "FLW Longitudinal"];
+  var tabs = ["Audit History", "Metric Detail", "FLW Longitudinal", "Metric Longitudinal"];
 
   return ce(
     "div", { className: "min-h-screen bg-gray-50" },
@@ -907,5 +1135,6 @@ function WorkflowUI(props) {
     activeTab === 0 && ce(ChcAuditHistory, { reportRows: reportRows, entryRows: entryRows, taskRows: taskRows, oppIds: oppIds, oppNames: oppNames, nameMap: nameMap }),
     activeTab === 1 && ce(ChcMetricDetail, { reportRows: reportRows, entryRows: entryRows, oppIds: oppIds, oppNames: oppNames, nameMap: nameMap }),
     activeTab === 2 && ce(ChcFLWLongitudinal, { reportRows: reportRows, entryRows: entryRows, taskRows: taskRows, workers: workers, oppIds: oppIds, oppNames: oppNames, nameMap: nameMap }),
+    activeTab === 3 && ce(ChcMetricLongitudinal, { reportRows: reportRows, entryRows: entryRows, oppIds: oppIds, oppNames: oppNames }),
   );
 }
