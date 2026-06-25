@@ -231,6 +231,6 @@ The **CHC Audit History** dashboard provides a historical view of CHC audit reco
 
 Across all three tabs — **Audit History**, **Metric Detail**, and **FLW Longitudinal** — opportunities are labelled by their full name (for example, "CHC-RCT Nigeria Opp 1") rather than a numeric identifier, and worker rows show each FLW's display name (for example, "Jumoke Balogun") rather than their system username.
 
-**Metric Detail tab:**
+**Audit History tab:**
 
-The
+The table
