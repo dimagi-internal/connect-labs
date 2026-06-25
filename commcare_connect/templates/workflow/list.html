@@ -64,7 +64,7 @@
                 if (!this.oppFilter) return this.availableOpps;
                 const q = this.oppFilter.toLowerCase();
                 return this.availableOpps.filter(o =>
-                    o.name.toLowerCase().includes(q) || String(o.id).includes(q)
+                    o.name.toLowerCase().includes(q) || String(o.id).toLowerCase().includes(q)
                 );
             },
             submitCreate(templateKey, form) {

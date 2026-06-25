@@ -63,7 +63,7 @@
                 if (!this.oppFilter) return this.availableOpps;
                 const q = this.oppFilter.toLowerCase();
                 return this.availableOpps.filter(o =>
-                    o.name.toLowerCase().includes(q) || String(o.id).includes(q)
+                    o.name.toLowerCase().includes(q) || String(o.id).toLowerCase().includes(q)
                 );
             },
             toggleOpp(oid) {
@@ -90,7 +90,7 @@
          x-show="pickedOppIds.length > 1 || availableOpps.length > 1">
         <span class="font-medium">Opportunities:</span>
         <span x-text="pickedOppIds.length + ' selected'"></span>
-        <button type="button" @click="show = true" class="text-blue-600 hover:text-blue-800">
+        <button type="button" @click="show = true; oppFilter = ''" class="text-blue-600 hover:text-blue-800">
             <i class="fa-solid fa-pen-to-square"></i> Edit
         </button>
 
