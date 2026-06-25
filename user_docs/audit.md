@@ -70,8 +70,19 @@ Once a session is created, open it to start the bulk assessment.
 
     AI results appear alongside each image as suggestions — you make the final Pass/Fail call. Images flagged by the AI are highlighted so you can prioritize reviewing them first.
 
+    **AI classification labels** appear at the bottom of each image tile (below the **Add Note** field) once the AI has reviewed the photo. The label shows the agent name and its classification for that image:
+
+    | Agent | Possible label |
+    | --- | --- |
+    | **MUAC OverZoom** | "MUAC OverZoom: Hyperzoomed" or "MUAC OverZoom: Not Hyperzoomed" |
+    | **Scale Image Validation** | "Scale Validation: Passed" or "Scale Validation: Failed" |
+
+    If the AI encountered a problem reviewing a specific image, the label turns red and shows the error message. Images that have not yet been reviewed by the AI show no label.
+
+    These labels let you see at a glance what the AI classified every image as — not just the ones that were flagged — without relying solely on the red **Hyperzoomed** badge.
+
     !!! tip "MUAC OverZoom pre-tagging"
-    When the MUAC OverZoom agent is used, images it identifies as hyperzoomed arrive in your review queue already marked **Fail** with a red **Hyperzoomed** badge. Images the agent determines are not hyperzoomed show no AI badge and appear as normal pending photos for your human review. You can confirm each Fail tag or override it if you disagree.
+    When the MUAC OverZoom agent is used, images it identifies as hyperzoomed arrive in your review queue already marked **Fail** with a red **Hyperzoomed** badge. Images the agent determines are not hyperzoomed show no AI badge and appear as normal pending photos for your human review. In both cases, the AI classification label at the bottom of the tile confirms the agent's decision. You can confirm each Fail tag or override it if you disagree.
 
 **Keyboard shortcuts** (work in both review modes):
 
@@ -130,7 +141,10 @@ Yes — your progress saves automatically. Open the session anytime to continue 
 The AI looks at image quality (blur, brightness, framing), whether the measurement shown is within expected ranges, and whether required items are visible. It does not access patient health records — only the images themselves.
 
 **What is the MUAC OverZoom agent?**
-When a MUAC image type is selected, you can choose the **MUAC OverZoom** agent from the AI Review Agent dropdown. It automatically identifies photos taken with excessive zoom and pre-tags them as **Fail** with a red **Hyperzoomed** badge before your review begins. Images the agent determines are not hyperzoomed show no AI badge and appear as normal pending photos. You can confirm or override each Fail tag during your normal review.
+When a MUAC image type is selected, you can choose the **MUAC OverZoom** agent from the AI Review Agent dropdown. It automatically identifies photos taken with excessive zoom and pre-tags them as **Fail** with a red **Hyperzoomed** badge before your review begins. Images the agent determines are not hyperzoomed show no AI badge and appear as normal pending photos. In both cases, the AI classification label at the bottom of the image tile confirms what the agent classified that image as. You can confirm or override each Fail tag during your normal review.
+
+**What are the AI classification labels on each image tile?**
+Once the AI agent has reviewed an image, a small label appears at the bottom of the tile (below the **Add Note** field) showing the agent name and its classification — for example, "MUAC OverZoom: Not Hyperzoomed" or "Scale Validation: Passed". If the AI encountered a problem with a specific image, the label turns red and shows the error message. This gives you a clear record of what the AI decided for every image, not just the ones that were flagged.
 
 **How long does AI review take?**
 For a typical session of around 30 images, AI review completes in about 2 minutes. Larger sessions will take a little longer, but the progress indicator on the session page updates as images are processed.
