@@ -6,7 +6,10 @@
       "cpu": 0,
       "portMappings": [],
       "essential": true,
-      "command": ["bash", "/app/docker/start_celery"],
+      "command": [
+        "bash",
+        "/app/docker/start_celery"
+      ],
       "environment": [
         {
           "name": "OCS_URL",
@@ -61,6 +64,10 @@
           "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-openai-api-key-tjvcF2"
         },
         {
+          "name": "ANTHROPIC_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-anthropic-api-key-kly6rK"
+        },
+        {
           "name": "SENTRY_DSN",
           "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs/SENTRY_DSN-xyMCrH"
         },
@@ -99,7 +106,9 @@
   "networkMode": "awsvpc",
   "volumes": [],
   "placementConstraints": [],
-  "requiresCompatibilities": ["FARGATE"],
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
   "cpu": "1024",
   "memory": "8192"
 }
