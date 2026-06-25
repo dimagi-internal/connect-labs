@@ -210,6 +210,7 @@ Labs includes pre-built workflow templates for common program types. Your progra
 | **Verified Monitoring**               | Funder-facing view of independently-surveyed program coverage, contrasting implementer-reported and verified results        |
 | **LLO Weekly FLW Review**             | Weekly per-FLW KPI scorecard for LLO programs                                                                               |
 | **Connect Interviews Reporting V2**   | Live funnel dashboard showing Triggered / Started / Completed counts per interview for any cohort                           |
+| **CHC Audit History**                 | Historical view of CHC audit records across multiple opportunities                                                          |
 
 ### Bulk Image Audit — AI Review Agent
 
@@ -224,10 +225,12 @@ When **MUAC OverZoom** pre-tags an image as fail, the reviewer opens the session
 
 If no AI agent is selected, the workflow behaves exactly as it did before this feature was introduced.
 
-### Program Admin Report dashboard
+### CHC Audit History dashboard
 
-The **Program Admin Report** gives program administrators a cross-opportunity compliance view. The demo walkthrough illustrates the following real-world scenarios, which the sample data is built to match:
+The **CHC Audit History** dashboard provides a historical view of CHC audit records spanning multiple opportunities. Because programs often run across many opportunities, this dashboard is set up to cover more than one at a time.
 
-- **Missed week (no-run cell)** — one region has a week with no run recorded at all, shown as an empty cell in the compliance grid. This represents a week where the review was not completed, not a week with zero visits.
-- **SOP-meeting and below-SOP regions side by side** — the demo includes a region that is healthy and meets the standard of procedure alongside a region that falls below it, so you can see how the compliance colouring distinguishes the two at a glance.
-- **Audit part-way through review** — one audit in the demo is genuinely mid
+**Selecting opportunities when creating a run:**
+
+When your program administrator creates a new CHC Audit History run, Step 3 of the setup dialog asks which opportunities to include. If your program has a large number of opportunities (500 or more), the list is searchable: type any part of an opportunity name or its ID into the search box and the list filters down immediately. Select as many opportunities as needed, then continue.
+
+**Editing opportunities on an existing
