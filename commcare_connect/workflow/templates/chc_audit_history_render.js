@@ -282,21 +282,6 @@ function ChcAuditHistory(props) {
             pendingWorkers[t.username] = true;
           }
         });
-        var durations = closedTasks
-          .map(function (t) {
-            return parseFloat(t.duration);
-          })
-          .filter(function (d) {
-            return !isNaN(d) && d > 0;
-          });
-        var avgMin =
-          durations.length > 0
-            ? Math.round(
-                durations.reduce(function (a, b) {
-                  return a + b;
-                }, 0) / durations.length,
-              )
-            : null;
         return {
           _r: r,
           flwCount: entries.length,
@@ -304,7 +289,6 @@ function ChcAuditHistory(props) {
           totalTasks: periodWorkerTasks.length,
           closedTasks: closedTasks.length,
           pendingWorkers: Object.keys(pendingWorkers).length,
-          avgMin: avgMin,
         };
       });
     },
@@ -339,9 +323,6 @@ function ChcAuditHistory(props) {
         } else if (sort.col === 'ptask') {
           va = a.flwCount ? a.pendingWorkers / a.flwCount : -1;
           vb = b.flwCount ? b.pendingWorkers / b.flwCount : -1;
-        } else if (sort.col === 'time') {
-          va = a.avgMin || 0;
-          vb = b.avgMin || 0;
         } else if (sort.col === 'runby') {
           va =
             nameMap[r.completed_by_username] || r.completed_by_username || '';
@@ -468,13 +449,6 @@ function ChcAuditHistory(props) {
               ),
               ce(
                 ChcSortTh,
-                Object.assign(
-                  { colKey: 'time', label: 'Time to Task Completed' },
-                  thProps,
-                ),
-              ),
-              ce(
-                ChcSortTh,
                 Object.assign({ colKey: 'runby', label: 'Run By' }, thProps),
               ),
             ),
@@ -489,7 +463,7 @@ function ChcAuditHistory(props) {
                   ce(
                     'td',
                     {
-                      colSpan: 9,
+                      colSpan: 8,
                       className: 'px-4 py-8 text-center text-gray-400 text-sm',
                     },
                     'No audit reports found',
@@ -536,13 +510,6 @@ function ChcAuditHistory(props) {
                       den: row.flwCount,
                       higherIsBetter: false,
                     }),
-                    ce(
-                      'td',
-                      {
-                        className: 'px-3 py-2 text-right tabular-nums text-sm',
-                      },
-                      row.avgMin != null ? row.avgMin + ' min' : '—',
-                    ),
                     ce(
                       'td',
                       { className: 'px-3 py-2 text-sm' },
