@@ -266,6 +266,11 @@
                set aiResult(v) { assessment.ai_result = v; },
                get aiNotes() { return assessment.ai_notes || ''; },
                set aiNotes(v) { assessment.ai_notes = v; },
+               get aiClassLabel() {
+                 if (!this.aiResult) return '';
+                 if (this.aiResult === 'error') return this.aiNotes || 'Error';
+                 return this.aiNotes || (this.aiResult === 'match' ? 'Passed' : 'Failed');
+               },
                updateResult(newResult) {
                  if (this.saving) return;
                  this.$dispatch('update-assessment', {
@@ -309,9 +314,9 @@
                  alt="Assessment image"
                  class="w-full h-full object-contain"
                  loading="lazy">
-            <!-- AI Result Badge - Top Left -->
+            <!-- AI Result Badge - Top Left (only for failures/errors; passes are shown in the tile footer) -->
             <div class="absolute top-2 left-2"
-                 x-show="aiResult"
+                 x-show="aiResult && aiResult !== 'match'"
                  x-transition>
               <span class="px-2 py-1 rounded text-xs font-bold text-white"
                     :class="{
@@ -365,8 +370,8 @@
               </div>
             </template>
 
-            <!-- AI Result Section -->
-            <template x-if="aiResult">
+            <!-- AI Result Section (only for failures/errors; passes are shown in the tile footer) -->
+            <template x-if="aiResult && aiResult !== 'match'">
               <div class="rounded px-2 py-1.5 mb-2 text-xs"
                    :class="{
                      'bg-blue-50 border border-blue-200': aiResult === 'match',
@@ -437,6 +442,14 @@
                           rows="2"></textarea>
               </div>
             </div>
+            <!-- AI Classification Footer: always shown when AI agent reviewed this image -->
+            <template x-if="aiAgentId && aiResult">
+              <div class="mt-1.5 pt-1.5 border-t border-gray-100 text-xs"
+                   :class="aiResult === 'error' ? 'text-red-500' : 'text-gray-500'">
+                <i class="fa-solid fa-robot mr-1"></i>
+                <span x-text="aiAgentLabel + ': ' + aiClassLabel"></span>
+              </div>
+            </template>
           </div>
         </div>
       </template>
