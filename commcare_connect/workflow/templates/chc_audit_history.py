@@ -68,6 +68,7 @@ TASKS_SCHEMA = {
     "terminal_stage": "visit_level",
     "fields": [
         {"name": "username", "path": "assigned_task.username", "aggregation": "first"},
+        {"name": "name", "path": "assigned_task.name", "aggregation": "first"},
         {"name": "status", "path": "assigned_task.status", "aggregation": "first"},
         {"name": "date_created", "path": "assigned_task.date_created", "aggregation": "first"},
         {"name": "completed_at", "path": "assigned_task.completed_at", "aggregation": "first"},
