@@ -1005,7 +1005,7 @@ function ChcMetricLongitudinal(props) {
               tableData.groups.map(function (group) {
                 var auditCells = group.auditRows.map(function (row, i) {
                   var r = row.report;
-                  return ce("tr", { key: i, className: "border-b border-gray-100 hover:bg-gray-50" },
+                  return ce("tr", { key: group.oppId + "-" + i, className: "border-b border-gray-100 hover:bg-gray-50" },
                     ce("td", { className: "border border-gray-200 px-3 py-1.5 text-left font-medium text-green-900 bg-white whitespace-nowrap" },
                       group.oppName),
                     ce("td", { className: "border border-gray-200 px-3 py-1.5 text-left whitespace-nowrap" },
@@ -1039,7 +1039,7 @@ function ChcMetricLongitudinal(props) {
                     group.subTotalFlags > 0 ? group.subTotalFlags : "—"),
                 );
 
-                return [auditCells, subRow];
+                return auditCells.concat([subRow]);
               }),
             ),
             ce("tfoot", null,
