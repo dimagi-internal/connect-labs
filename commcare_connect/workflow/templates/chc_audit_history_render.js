@@ -587,7 +587,7 @@ function ChcFLWLongitudinal(props) {
 // Main component
 // =========================================================================
 
-function WorkflowContent(props) {
+function WorkflowUI(props) {
   var definition = props.definition;
   var instance   = props.instance;
   var workers    = props.workers;

@@ -24,6 +24,7 @@
             loadingTemplates: false,
             availableOpps: [],
             pickedOppIds: [],
+            oppFilter: '',
             primaryOppId: {{ opportunity_id|default:'null' }},
             colorClasses: {
                 green: { bg: 'bg-green-100', text: 'text-green-600', hover: 'hover:border-green-400 hover:bg-green-50' },
@@ -55,8 +56,16 @@
                 this.selectedTemplateMultiOpp = true;
                 this.loadAvailableOpps();
                 this.pickedOppIds = this.primaryOppId ? [this.primaryOppId] : [];
+                this.oppFilter = '';
                 this.showTemplateModal = false;
                 this.showOppPickerModal = true;
+            },
+            filteredAvailableOpps() {
+                if (!this.oppFilter) return this.availableOpps;
+                const q = this.oppFilter.toLowerCase();
+                return this.availableOpps.filter(o =>
+                    o.name.toLowerCase().includes(q) || String(o.id).includes(q)
+                );
             },
             submitCreate(templateKey, form) {
                 const isMulti = (this.templates.find(t => t.key === templateKey) || {}).multi_opp;
@@ -231,8 +240,12 @@
                         <p class="text-sm text-gray-500 mb-4">
                             This workflow can pull data from multiple opportunities. Pick the ones you want.
                         </p>
+                        <input type="text"
+                               x-model="oppFilter"
+                               placeholder="Filter by name or ID…"
+                               class="w-full mb-2 px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500">
                         <div class="max-h-96 overflow-y-auto border border-gray-200 rounded p-2 mb-4">
-                            <template x-for="opp in availableOpps" :key="opp.id">
+                            <template x-for="opp in filteredAvailableOpps()" :key="opp.id">
                                 <label class="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer">
                                     <input type="checkbox"
                                            :value="opp.id"

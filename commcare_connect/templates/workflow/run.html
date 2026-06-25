@@ -49,6 +49,7 @@
             saving: false,
             availableOpps: [],
             pickedOppIds: {{ workflow_data.opportunity_ids|default:'[]' }},
+            oppFilter: '',
             definitionId: {{ workflow_data.definition_id }},
             csrf: '{{ csrf_token }}',
             loadOpps() {
@@ -57,6 +58,13 @@
                     const el = document.getElementById('user-opportunities');
                     if (el) this.availableOpps = JSON.parse(el.textContent);
                 } catch (e) { console.error('Failed to parse user-opportunities', e); }
+            },
+            filteredAvailableOpps() {
+                if (!this.oppFilter) return this.availableOpps;
+                const q = this.oppFilter.toLowerCase();
+                return this.availableOpps.filter(o =>
+                    o.name.toLowerCase().includes(q) || String(o.id).includes(q)
+                );
             },
             toggleOpp(oid) {
                 const i = this.pickedOppIds.indexOf(oid);
@@ -92,8 +100,12 @@
                 <div class="relative bg-white rounded-lg shadow-xl max-w-2xl w-full p-6" @click.stop>
                     <h3 class="text-lg font-semibold text-gray-900 mb-2">Edit Opportunities</h3>
                     <p class="text-sm text-gray-500 mb-4">Data will be pulled from the selected opportunities.</p>
+                    <input type="text"
+                           x-model="oppFilter"
+                           placeholder="Filter by name or ID…"
+                           class="w-full mb-2 px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500">
                     <div class="max-h-96 overflow-y-auto border rounded p-2 mb-4">
-                        <template x-for="opp in availableOpps" :key="opp.id">
+                        <template x-for="opp in filteredAvailableOpps()" :key="opp.id">
                             <label class="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer">
                                 <input type="checkbox"
                                        :value="opp.id"
