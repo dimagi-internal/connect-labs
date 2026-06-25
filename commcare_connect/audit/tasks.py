@@ -251,7 +251,9 @@ def _run_ai_review_on_sessions(
                     try:
                         visit_id_str, blob_id, question_id, reading, ai_result, ai_notes, skipped = fut.result()
                     except Exception as exc:
-                        logger.warning(f"[AIReview] Unexpected error reviewing image: {exc}")
+                        failed_item = fut_map.get(fut)
+                        blob_hint = failed_item[1] if failed_item else "unknown"
+                        logger.warning(f"[AIReview] Unexpected error reviewing image {blob_hint}: {exc}")
                         total_errors += 1
                         images_processed += 1
                         continue
