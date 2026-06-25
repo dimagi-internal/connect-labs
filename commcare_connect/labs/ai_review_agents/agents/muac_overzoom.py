@@ -67,10 +67,6 @@ class MUACOverzoomAgent(BaseAIReviewAgent):
     # AI failures (overzoomed) are automatically pre-tagged as human 'fail'
     auto_apply_result = True
 
-    # Don't store any AI marker for images that pass (not_hyperzoomed) — they
-    # show as normal pending images for human review with no AI badge.
-    suppress_pass = True
-
     result_actions = {
         "fail_overzoomed": {
             "ai_result": "no_match",
@@ -179,7 +175,9 @@ class MUACOverzoomAgent(BaseAIReviewAgent):
                 )
             elif class_value == "not_hyperzoomed":
                 self.logger.debug(f"MUAC overzoom: not hyperzoomed (confidence={confidence})")
-                return ReviewResult.success(confidence=confidence, api_response=result)
+                return ReviewResult.success(
+                    confidence=confidence, pass_label="Not Hyperzoomed", api_response=result
+                )
 
             # Secondary fallback: handle result:pass/fail format
             api_result = result.get("result", "")
@@ -188,7 +186,7 @@ class MUACOverzoomAgent(BaseAIReviewAgent):
                 return ReviewResult.failure(badge_label="Hyperzoomed", api_response=result)
             elif api_result == "pass":
                 self.logger.debug("MUAC overzoom: adequate context (pass) via result format")
-                return ReviewResult.success(api_response=result)
+                return ReviewResult.success(pass_label="Not Hyperzoomed", api_response=result)
 
             # Tertiary fallback: handle match:true/false format
             match = result.get("match")
