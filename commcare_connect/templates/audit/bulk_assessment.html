@@ -321,7 +321,7 @@
                     }">
                 <i class="fa-solid fa-robot mr-1"></i>
                 <span x-show="aiResult === 'match'">Match</span>
-                <span x-show="aiResult === 'no_match'">No Match</span>
+                <span x-show="aiResult === 'no_match'" x-text="aiNotes || 'No Match'"></span>
                 <span x-show="aiResult === 'error'">Error</span>
               </span>
             </div>
@@ -386,9 +386,9 @@
                           'text-orange-700': aiResult === 'no_match',
                           'text-gray-600': aiResult === 'error'
                         }"
-                        x-text="aiResult === 'match' ? 'Match' : (aiResult === 'no_match' ? 'No Match' : 'Error')"></span>
+                        x-text="aiResult === 'match' ? 'Match' : (aiResult === 'no_match' ? (aiNotes || 'No Match') : 'Error')"></span>
                 </div>
-                <div class="text-gray-600 mt-0.5 leading-tight" x-show="aiNotes" x-text="aiNotes"></div>
+                <div class="text-gray-600 mt-0.5 leading-tight" x-show="aiNotes && aiResult === 'error'" x-text="aiNotes"></div>
               </div>
             </template>
 

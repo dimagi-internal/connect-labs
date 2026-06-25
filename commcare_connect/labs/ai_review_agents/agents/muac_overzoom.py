@@ -12,9 +12,9 @@ API Details:
 - Endpoint: https://image-pipeline-scale-gw-4pc8jsfa.uc.gateway.dev/classify
 - Auth: API key in x-api-key header (same key as scale validation service)
 - Request: {"image": "<base64>", "task": "muac_overzoom"}
-- Response: {"result": "pass"|"fail"}
-  - "fail" = image is overzoomed (insufficient context) → tag as fail
-  - "pass" = image has adequate context → tag as pass / leave for human review
+- Response: {"class": "hyperzoomed"|"not_hyperzoomed", "confidence": float}
+  - "hyperzoomed"     = image zoomed too tight, context lost → pre-tag as fail
+  - "not_hyperzoomed" = image has adequate context → no AI badge, leave for human review
 """
 
 import base64
@@ -67,11 +67,15 @@ class MUACOverzoomAgent(BaseAIReviewAgent):
     # AI failures (overzoomed) are automatically pre-tagged as human 'fail'
     auto_apply_result = True
 
+    # Don't store any AI marker for images that pass (not_hyperzoomed) — they
+    # show as normal pending images for human review with no AI badge.
+    suppress_pass = True
+
     result_actions = {
         "fail_overzoomed": {
             "ai_result": "no_match",
             "human_result": "fail",
-            "button_label": "Fail all Overzoomed",
+            "button_label": "Fail all Hyperzoomed",
         },
     }
 
@@ -164,27 +168,41 @@ class MUACOverzoomAgent(BaseAIReviewAgent):
             response.raise_for_status()
             result = response.json()
 
-            api_result = result.get("result", "")
+            # Primary: handle class-based response from the /classify endpoint
+            class_value = result.get("class", "")
+            confidence = result.get("confidence")
 
+            if class_value == "hyperzoomed":
+                self.logger.debug(f"MUAC overzoom: hyperzoomed (confidence={confidence})")
+                return ReviewResult.failure(
+                    confidence=confidence, badge_label="Hyperzoomed", api_response=result
+                )
+            elif class_value == "not_hyperzoomed":
+                self.logger.debug(f"MUAC overzoom: not hyperzoomed (confidence={confidence})")
+                return ReviewResult.success(confidence=confidence, api_response=result)
+
+            # Secondary fallback: handle result:pass/fail format
+            api_result = result.get("result", "")
             if api_result == "fail":
-                self.logger.debug("MUAC overzoom: image classified as overzoomed (fail)")
-                return ReviewResult.failure(api_response=result)
+                self.logger.debug("MUAC overzoom: overzoomed (fail) via result format")
+                return ReviewResult.failure(badge_label="Hyperzoomed", api_response=result)
             elif api_result == "pass":
-                self.logger.debug("MUAC overzoom: image has adequate context (pass)")
+                self.logger.debug("MUAC overzoom: adequate context (pass) via result format")
                 return ReviewResult.success(api_response=result)
-            else:
-                # Fallback: handle match:true/false style responses from the same gateway
-                match = result.get("match")
-                if match is not None:
-                    self.logger.warning(
-                        f"MUAC overzoom API returned 'match' format instead of expected 'result' format: {result}"
-                    )
-                if match is True:
-                    return ReviewResult.success(api_response=result)
-                elif match is False:
-                    return ReviewResult.failure(api_response=result)
-                self.logger.warning(f"Unexpected MUAC overzoom API response: {result}")
-                return ReviewResult.error(f"Unexpected API response format: {result}")
+
+            # Tertiary fallback: handle match:true/false format
+            match = result.get("match")
+            if match is not None:
+                self.logger.warning(
+                    f"MUAC overzoom API returned 'match' format instead of expected 'class' format: {result}"
+                )
+            if match is True:
+                return ReviewResult.success(api_response=result)
+            elif match is False:
+                return ReviewResult.failure(badge_label="Hyperzoomed", api_response=result)
+
+            self.logger.warning(f"Unexpected MUAC overzoom API response: {result}")
+            return ReviewResult.error(f"Unexpected API response format: {result}")
 
         except httpx.HTTPStatusError as e:
             error_detail = ""
