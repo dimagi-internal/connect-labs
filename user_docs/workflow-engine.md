@@ -229,8 +229,6 @@ If no AI agent is selected, the workflow behaves exactly as it did before this f
 
 The **CHC Audit History** dashboard provides a historical view of CHC audit records spanning multiple opportunities. Because programs often run across many opportunities, this dashboard is set up to cover more than one at a time.
 
-Across all three tabs — **Audit History**, **Metric Detail**, and **FLW Longitudinal** — opportunities are labelled by their full name (for example, "CHC-RCT Nigeria Opp 1") rather than a numeric identifier, and worker rows show each FLW's display name (for example, "Jumoke Balogun") rather than their system username.
+Across all four tabs — **Audit History**, **Metric Detail**, **FLW Longitudinal**, and **Metric Longitudinal** — opportunities are labelled by their full name (for example, "CHC-RCT Nigeria Opp 1") rather than a numeric identifier, and worker rows show each FLW's display name (for example, "Jumoke Balogun") rather than their system username.
 
-**Audit History tab:**
-
-The table
+**
