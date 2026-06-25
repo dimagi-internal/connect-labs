@@ -12,7 +12,10 @@
         }
       ],
       "essential": true,
-      "command": ["bash", "/app/docker/start"],
+      "command": [
+        "bash",
+        "/app/docker/start"
+      ],
       "environment": [
         {
           "name": "LABS_EXPORTS_BUCKET",
@@ -95,6 +98,10 @@
           "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-openai-api-key-tjvcF2"
         },
         {
+          "name": "ANTHROPIC_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-anthropic-api-key-kly6rK"
+        },
+        {
           "name": "COMMCARE_OAUTH_CLIENT_ID",
           "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-commcare-oauth-client-id-JKsDA0"
         },
@@ -145,7 +152,9 @@
   "networkMode": "awsvpc",
   "volumes": [],
   "placementConstraints": [],
-  "requiresCompatibilities": ["FARGATE"],
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
   "cpu": "1024",
   "memory": "4096"
 }

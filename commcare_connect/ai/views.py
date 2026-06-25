@@ -65,7 +65,7 @@ class AIStreamView(LoginRequiredMixin, View):
         opportunity_id: ID of the opportunity
         current_definition: Current definition/schema object
         current_render_code: Current render code string
-        model: Full model string (e.g., 'anthropic:claude-sonnet-4-20250514', 'openai:gpt-4o')
+        model: Full model string (e.g., 'anthropic:claude-sonnet-4-6', 'openai:gpt-4o')
     """
 
     # Allowed models for security - using latest 2025/2026 models
@@ -77,8 +77,8 @@ class AIStreamView(LoginRequiredMixin, View):
         "openai:gpt-5.2",
         "openai:gpt-5.2-2025-12-11",
         # Legacy models for backwards compatibility
-        "anthropic:claude-sonnet-4-20250514",
-        "anthropic:claude-opus-4-20250514",
+        "anthropic:claude-sonnet-4-6",
+        "anthropic:claude-opus-4-8",
         "openai:gpt-4o",
         "openai:gpt-4o-mini",
     }
