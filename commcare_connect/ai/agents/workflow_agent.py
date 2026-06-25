@@ -112,7 +112,7 @@ def create_workflow_agent_with_model(model: str) -> Agent[WorkflowAgentDeps, str
     Create the workflow agent with a specific model.
 
     Args:
-        model: Full model string (e.g., 'anthropic:claude-sonnet-4-20250514', 'openai:gpt-4o')
+        model: Full model string (e.g., 'anthropic:claude-sonnet-4-6', 'openai:gpt-4o')
 
     Returns:
         Agent configured with the specified model
@@ -241,7 +241,7 @@ def create_workflow_agent_with_model(model: str) -> Agent[WorkflowAgentDeps, str
 # Convenience functions for specific models
 def create_workflow_agent() -> Agent[WorkflowAgentDeps, str]:
     """Create the workflow agent with default Claude Sonnet 4 model."""
-    return create_workflow_agent_with_model("anthropic:claude-sonnet-4-20250514")
+    return create_workflow_agent_with_model("anthropic:claude-sonnet-4-6")
 
 
 def create_workflow_agent_openai() -> Agent[WorkflowAgentDeps, str]:

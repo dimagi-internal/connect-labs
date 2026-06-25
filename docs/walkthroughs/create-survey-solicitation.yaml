@@ -116,12 +116,10 @@ scenes:
     verify: 'Playwright: after clicking "Create Solicitation" with status set to Active, assert the URL
       matches /solicitations/(\d+)/responses/?created=1 and the page reads "Solicitation published — organizations
       can now apply"'
-  narrative: Maya fills out the call itself. The title, scope of work, and coverage area carry straight
-    over from her R6 study. She adds a description, picks the type — a Request for Proposal — sets the
-    timeline, the scale, and her contact, and marks it Active. The 'Publicly Listed' option puts the call
-    out across the whole Connect network, so any qualified survey firm can discover it and respond — and
-    it can also be pointed directly at the organizations already known to work in this area. Then she
-    publishes — a brand-new call, minted live.
+  narrative: Maya builds the call. The title, scope and coverage carry over from her study. She adds a
+    description, the type, timeline, scale and contact - the call can go out publicly across the whole
+    Connect network, or be pointed at organizations she already knows work here - and she writes an application
+    question for the firms.
   persona: maya
   provenance: S4
   show: Maya reads the pre-seeded title and the Coverage-areas panel, which shows the R6 — Attakar × Gura
@@ -203,6 +201,58 @@ scenes:
     value: maya.okafor@kaura-health.gov.ng
     note: her contact
   - kind: scroll_to
+    target: text:Add Question
+    note: the Application Questions section
+  - kind: click
+    target: text:Add Question
+    note: add an application question for the firms
+  - kind: fill
+    target: css:input[x-model="question.text"]
+    value: How many enumerators can you field in Kaura, and what is your experience running household
+      coverage surveys?
+    note: Maya writes a question the firms must answer
+  title: Maya mints the call live and lands on its responses page
+  url: /solicitations/create/?program_id=10008&source_program_id=10008&source_group_id=4492
+  full_page: false
+  pace: teach
+- persona: maya
+  title: Maya generates the scoring criteria with AI
+  role: demo
+  pace: teach
+  provenance: S4
+  concept_claim: Maya clicks Generate with AI and the platform drafts weighted evaluation criteria from
+    her scope and application questions, which she reviews before publishing the call.
+  show: Click Generate with AI on the create form; AI-drafted evaluation criteria (name, weight, scoring
+    guide) appear, then publish.
+  design_intent: 'Bet: the AI-drafted scoring rubric is the standout of the create flow - give it its
+    own beat so the criteria land on camera under narration.'
+  features:
+  - id: generate-with-ai-drafts-evaluation-criteria
+    description: The Generate-with-AI button POSTs scope+questions to /solicitations/api/generate-criteria/
+      and renders AI-drafted criteria in the criteria builder
+    verify: 'Playwright: click Generate with AI and assert an input[x-model=criterion.name] appears within
+      50s'
+  narrative: Then, instead of hand-writing a scoring rubric, she clicks Generate with AI - and the platform
+    drafts the evaluation criteria, weighted, straight from her scope and questions. She reviews them,
+    and publishes the call.
+  actions:
+  - kind: scroll_to
+    target: text:Generate with AI
+    note: the Evaluation Criteria section + Generate with AI
+  - kind: hold
+    seconds: 1.4
+    note: about to AI-generate the scoring rubric
+  - kind: click
+    target: text:Generate with AI
+    note: instead of hand-writing the rubric, Generate with AI
+  - kind: wait_for
+    target: css:input[x-model="criterion.name"]
+    seconds: 50
+    note: AI (Anthropic) drafts evaluation criteria from the scope + questions
+  - kind: hold
+    seconds: 3.5
+    note: 'ACTION-FRAME: the AI-generated scoring criteria appear — name/weight/scoring guide'
+  - kind: scroll_to
     target: css:button[type=submit]:has-text("Create Solicitation")
     note: bring the publish button into frame alongside the just-filled form — the ACTION frame for this
       scene is the completed-but-not-yet-published form (scope written, Status=Active, publish button
@@ -263,10 +313,6 @@ scenes:
     note: VO-sized teach settle framed ON the published call's coverage map — the minted-live artifact
       with its Attakar × Gura coverage visible — carrying the "a brand-new call, minted live" tail of
       the narration on the call Maya just created. This is the frame the judge sees as scene 2's hero.
-  title: Maya mints the call live and lands on its responses page
-  url: /solicitations/create/?program_id=10008&source_program_id=10008&source_group_id=4492
-  full_page: false
-  pace: teach
 - concept_claim: A survey firm reads the public solicitation and applies by selecting a specific coverage
     area from a checklist, and submission is blocked until one area is chosen.
   design_intent: 'Bet: an application should commit to a concrete coverage area, not a free-text claim,
@@ -292,8 +338,8 @@ scenes:
     id: respond-submit-lands-on-receipt
     verify: 'Playwright: after clicking "Submit Response", assert the URL is /solicitations/${solicitation_id}/
       and the page text includes "Response submitted"'
-  narrative: A survey firm opens the public call, ticks the Attakar-and-Gura coverage it can staff, and
-    submits its application.
+  narrative: A survey firm opens the call. The scoring criteria Maya generated show right beside each
+    question, so the firm knows exactly how it will be judged - and it drafts its answer.
   persona: firm
   provenance: S5
   show: On the application form the survey firm names itself in the "Your organization" block (Sahel Field
@@ -354,6 +400,62 @@ scenes:
     note: tick the coverage area — synced two-way with the map; this enables Submit (≥1 required). The
       created call has exactly one plan (R6 — Attakar × Gura), so the first checkbox is that area.
   - kind: scroll_to
+    target: css:textarea[name^="question_"]
+    note: the application question Maya set — with the AI-generated scoring criteria shown right beside
+      it
+  - kind: hold
+    seconds: 1.8
+    note: the firm sees exactly how it will be scored (criteria visible to respondents)
+  - kind: fill
+    target: css:textarea[name^="question_"]
+    value: We field 28 enumerators across Kaura and have run three prior household coverage surveys in
+      northern Nigeria, including a 2025 vitamin-A endline.
+    note: the firm drafts its answer
+  title: A survey firm reads the open call and ticks the area it can staff
+  url: /solicitations/${solicitation_id}/respond/?program_id=10008
+  pace: teach
+  full_page: false
+- persona: firm
+  title: The AI coach sharpens the firm answer
+  role: demo
+  pace: teach
+  provenance: S5
+  concept_claim: Before submitting, the firm clicks Get Feedback and the AI Application Coach reviews
+    the draft answer against the evaluation criteria, returning specific suggestions to strengthen it.
+  show: Click Get Feedback; the AI Application Coach returns suggestions reviewing the draft against the
+    criteria; then submit.
+  design_intent: 'Bet: the AI coach is the standout of the response flow - its own beat so the coaching
+    feedback lands on camera under narration.'
+  features:
+  - id: ai-application-coach-reviews-draft-vs-criteria
+    description: 'The coach POSTs the draft answers to ai:ai_stream (application_coach agent) and renders
+      coaching suggestions in #coach-content'
+    verify: 'Playwright: click #coach-btn and assert the button text flips to Get Feedback Again within
+      55s'
+  narrative: Before submitting, the firm runs the draft through the AI Application Coach - which reviews
+    it against those same criteria and suggests where to strengthen it. The firm picks the coverage it
+    can staff, and submits.
+  actions:
+  - kind: scroll_to
+    target: css:#coach-btn
+    note: the AI Application Coach
+  - kind: hold
+    seconds: 1
+    note: about to get AI feedback on the draft
+  - kind: click
+    target: css:#coach-btn
+    note: Get Feedback — the coach reviews the draft answer against the evaluation criteria
+  - kind: wait_for
+    target: text:Get Feedback Again
+    seconds: 55
+    note: AI coach (Anthropic) finishes reviewing the answer
+  - kind: scroll_to
+    target: css:#coach-content
+    note: frame the coaching feedback
+  - kind: hold
+    seconds: 4
+    note: 'ACTION-FRAME: the AI coach suggestions for strengthening the answer'
+  - kind: scroll_to
     target: css:button[type=submit]:has-text("Submit Response")
     note: bring the Submit Response button into frame alongside the now-completed application — the ACTION
       frame for this scene is the firm-named, coverage-ticked, Submit-enabled form
@@ -377,10 +479,6 @@ scenes:
     seconds: 1.5
     note: short RESULT settle on the "Response submitted" receipt confirming the application landed —
       kept short so the ACTION frame above (the completed application) stays the load-bearing teach frame
-  title: A survey firm reads the open call and ticks the area it can staff
-  url: /solicitations/${solicitation_id}/respond/?program_id=10008
-  pace: teach
-  full_page: false
 - concept_claim: The owner reviewing responses sees each firm's committed coverage area resolved from
     the authoritative snapshot, tying every application to a concrete designed coverage.
   design_intent: 'Bet: the reviewer should compare applicants against the designed coverage, so the area

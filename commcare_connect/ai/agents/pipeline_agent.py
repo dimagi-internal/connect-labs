@@ -223,7 +223,7 @@ def create_pipeline_agent_with_model(model: str) -> Agent[PipelineAgentDeps, str
     Create the pipeline agent with a specific model.
 
     Args:
-        model: Full model string (e.g., 'anthropic:claude-sonnet-4-20250514', 'openai:gpt-4o')
+        model: Full model string (e.g., 'anthropic:claude-sonnet-4-6', 'openai:gpt-4o')
 
     Returns:
         Agent configured with the specified model
@@ -277,7 +277,7 @@ def create_pipeline_agent_with_model(model: str) -> Agent[PipelineAgentDeps, str
 # Convenience functions for specific models
 def create_pipeline_agent() -> Agent[PipelineAgentDeps, str]:
     """Create the pipeline agent with default Claude Sonnet 4 model."""
-    return create_pipeline_agent_with_model("anthropic:claude-sonnet-4-20250514")
+    return create_pipeline_agent_with_model("anthropic:claude-sonnet-4-6")
 
 
 def create_pipeline_agent_openai() -> Agent[PipelineAgentDeps, str]:

@@ -229,6 +229,6 @@ If no AI agent is selected, the workflow behaves exactly as it did before this f
 
 The **CHC Audit History** dashboard provides a historical view of CHC audit records spanning multiple opportunities. Because programs often run across many opportunities, this dashboard is set up to cover more than one at a time.
 
-**Selecting opportunities when creating a run:**
+Across all three tabs — **Audit History**, **Metric Detail**, and **FLW Longitudinal** — opportunities are labelled by their full name (for example, "CHC-RCT Nigeria Opp 1") rather than a numeric identifier, and worker rows show each FLW's display name (for example, "Jumoke Balogun") rather than their system username.
 
-When your program administrator creates a new CHC Audit History run, Step 3 of the setup dialog asks which opportunities to include. If your program has a large number of opportunities (500 or more), the list is searchable: type any part of an opportunity name or its ID into the search box and the list filters down immediately. The search box stays fixed at the top of the modal so it remains visible and usable
+**Selecting opportunities when creating a run:**
