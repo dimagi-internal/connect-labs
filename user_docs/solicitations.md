@@ -192,10 +192,16 @@ Green areas are intervention areas and blue areas are comparison areas. A small 
 **Where do I land after creating a solicitation?**
 After you save a new solicitation, Labs takes you directly to that solicitation's responses page. This means you can immediately see whether any responses have come in, without having to navigate back from the general solicitations list.
 
+**The "Generate Criteria" button or the AI Application Coach isn't working — what should I do?**
+Both AI features were temporarily returning errors for all users on Labs. This has been fixed and both tools should now work as expected. If you click **Generate Criteria** on the solicitation creation form or use the AI Application Coach on the response form and still see an error, try refreshing the page and attempting again. If the problem persists, contact your Labs administrator.
+
+---
+
 ---
 
 ---
 
 ---
+
 
 ---

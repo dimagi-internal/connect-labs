@@ -12,6 +12,7 @@ flowchart LR
     AI --> P[Pipeline Editor\nAssistant]
     AI --> A[Audit Image\nReviewer]
     AI --> S[Solicitation\nCriteria Generator]
+    AI --> C[Application\nCoach]
 ```
 
 ### Workflow & Pipeline Editor Assistant
@@ -50,6 +51,18 @@ Review and edit these suggestions before saving. See [Solicitations](solicitatio
 
 ---
 
+### Application Coach
+
+When filling out a response to a solicitation, the **AI Application Coach** is available on the response form to help applicants strengthen their submissions. It can:
+
+- Review draft answers and suggest improvements
+- Flag sections that may be incomplete or unclear
+- Offer guidance on how to address specific evaluation criteria
+
+See [Solicitations](solicitations.md) for the full process.
+
+---
+
 ## What the AI Can and Can't Do
 
 | Can do                                      | Can't do                                    |
@@ -58,7 +71,8 @@ Review and edit these suggestions before saving. See [Solicitations](solicitatio
 | Update pipeline data fields                 | Change CommCare HQ settings                 |
 | Pre-screen audit images                     | Access individual patient health records    |
 | Suggest solicitation criteria               | Submit responses on behalf of organizations |
-| Answer questions about the current workflow | Make changes in the main CommCare platform  |
+| Coach applicants on response quality        | Make changes in the main CommCare platform  |
+| Answer questions about the current workflow |                                             |
 
 ---
 
@@ -80,4 +94,4 @@ Yes. In the workflow editor, use the **Undo** button or ask the AI to revert its
 The AI used for workflow and pipeline editing does not have access to individual patient records. For audit image review, images are sent to the AI for analysis but processed under ZDR terms — they are not retained by the AI provider.
 
 **Which AI is being used?**
-Labs uses Claude (made by Anthropic) as the AI for workflow editing, pipeline assistance, and solicitation criteria generation. Audit image review also uses Claude's vision capability.
+Labs uses Claude (made by Anthropic) as the AI for workflow editing, pipeline assistance, solicitation criteria generation, and the Application Coach. Audit image review also uses Claude's vision capability.
