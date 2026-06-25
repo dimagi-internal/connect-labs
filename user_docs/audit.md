@@ -53,7 +53,7 @@ Once a session is created, open it to start the bulk assessment.
 
 === "AI-Assisted Review"
 
-    Before you start, click **Run AI Review** to have AI pre-screen all images in the session.
+    Before you start, click **Run AI Review** to have AI pre-screen all images in the session. AI review processes multiple images at the same time, so a session of around 30 images typically completes in about 2 minutes.
 
     When your session includes weight or MUAC image types, an **AI Review Agent** dropdown appears. Select the agent that matches your image type:
 
@@ -131,6 +131,9 @@ The AI looks at image quality (blur, brightness, framing), whether the measureme
 
 **What is the MUAC OverZoom agent?**
 When a MUAC image type is selected, you can choose the **MUAC OverZoom** agent from the AI Review Agent dropdown. It automatically identifies photos taken with excessive zoom and pre-tags them as **Fail** with a red **Hyperzoomed** badge before your review begins. Images the agent determines are not hyperzoomed show no AI badge and appear as normal pending photos. You can confirm or override each Fail tag during your normal review.
+
+**How long does AI review take?**
+For a typical session of around 30 images, AI review completes in about 2 minutes. Larger sessions will take a little longer, but the progress indicator on the session page updates as images are processed.
 
 **Can I review the same set of visits twice?**
 Yes — create a new session with the same filters. Each session is independent.
