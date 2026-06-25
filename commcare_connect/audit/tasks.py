@@ -9,6 +9,7 @@ Provides async audit creation with:
 
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from commcare_connect.utils.celery import set_task_progress
 from config import celery_app
@@ -172,87 +173,94 @@ def _run_ai_review_on_sessions(
             # Track if we made any updates to this session
             session_updated = False
 
-            # Iterate through visits and their images
+            # Phase 1: collect reviewable work items, skip-count the rest.
+            # (reading extraction is cheap and done single-threaded)
+            work_items = []  # (visit_id_str, blob_id, reading, question_id)
             for visit_id_str, images in visit_images.items():
                 logger.debug(f"[AIReview] Visit {visit_id_str}: {len(images)} images")
                 for image_data in images:
-                    try:
-                        blob_id = image_data.get("blob_id")
-                        if not blob_id:
-                            continue
-
-                        # Get reading and question_id from related_fields.
-                        # Fall back to the image's own question_id for agents that don't
-                        # need a reading (e.g. muac_overzoom).
-                        related_fields = image_data.get("related_fields", [])
+                    blob_id = image_data.get("blob_id")
+                    if not blob_id:
+                        continue
+                    related_fields = image_data.get("related_fields", [])
+                    reading = None
+                    question_id = image_data.get("question_id", "")
+                    for rf in related_fields:
+                        if rf.get("value"):
+                            reading = str(rf.get("value"))
+                            question_id = rf.get("path") or question_id
+                            break
+                    if not reading and requires_reading:
                         logger.debug(
-                            f"[AIReview] Image {blob_id}: related_fields={related_fields}, "
-                            f"keys={list(image_data.keys())}"
+                            f"[AIReview] Skipping blob={blob_id}: no reading value and agent requires one"
                         )
-                        reading = None
-                        question_id = image_data.get("question_id", "")
-                        for rf in related_fields:
-                            if rf.get("value"):
-                                reading = str(rf.get("value"))
-                                question_id = rf.get("path") or question_id
-                                break
-
-                        if not reading and requires_reading:
-                            logger.debug(
-                                f"[AIReview] Skipping blob={blob_id}: no reading value and agent requires one"
-                            )
-                            total_skipped += 1
-                            images_processed += 1
-                            continue
-
-                        # Fetch the image from Connect API
-                        try:
-                            image_bytes = data_access.download_image_from_connect(blob_id, opp_id)
-                            if not image_bytes:
-                                total_skipped += 1
-                                images_processed += 1
-                                continue
-                        except Exception as e:
-                            logger.warning(f"[AIReview] Failed to fetch image {blob_id}: {e}")
-                            total_skipped += 1
-                            images_processed += 1
-                            continue
-
-                        # Run AI review directly so we can capture error details for storage.
-                        from commcare_connect.labs.ai_review_agents.types import ReviewContext
-
-                        context = ReviewContext(
-                            images={"scale": image_bytes},
-                            form_data={"reading": reading} if reading else {},
-                            metadata={
-                                "visit_id": visit_id_str,
-                                "blob_id": blob_id,
-                                "opportunity_id": opp_id,
-                                "session_id": session_id,
-                            },
-                        )
-                        ai_notes = None
-                        try:
-                            review_result = agent.review(context)
-                            if review_result.passed:
-                                ai_result = "match"
-                            elif review_result.failed:
-                                ai_result = "no_match"
-                                # badge_label in details provides the display label for the
-                                # image badge (e.g. "Hyperzoomed" instead of generic "No Match")
-                                ai_notes = review_result.details.get("badge_label")
-                            else:
-                                ai_result = "error"
-                                ai_notes = "; ".join(review_result.errors) if review_result.errors else None
-                        except Exception as e:
-                            logger.exception(f"[AIReview] Agent raised exception for blob={blob_id}")
-                            ai_result = "error"
-                            ai_notes = str(e)
-
-                        total_reviewed += 1
+                        total_skipped += 1
                         images_processed += 1
+                        continue
+                    work_items.append((visit_id_str, blob_id, reading, question_id))
 
-                        # Update counters and log at appropriate level
+            # Phase 2: fetch + AI-review all images in parallel.
+            # Both the Connect image download and the ML classification call are HTTP-bound,
+            # so concurrent workers cut wall-clock time roughly proportional to worker count.
+            # httpx.Client (used by both data_access and the agent) is thread-safe.
+            def _fetch_and_review(item):
+                v_id, b_id, rdg, q_id = item
+                try:
+                    img_bytes = data_access.download_image_from_connect(b_id, opp_id)
+                    if not img_bytes:
+                        return (v_id, b_id, q_id, rdg, None, None, True)  # skipped
+                except Exception as exc:
+                    logger.warning(f"[AIReview] Failed to fetch image {b_id}: {exc}")
+                    return (v_id, b_id, q_id, rdg, None, None, True)  # skipped
+
+                from commcare_connect.labs.ai_review_agents.types import ReviewContext
+
+                ctx = ReviewContext(
+                    images={"scale": img_bytes},
+                    form_data={"reading": rdg} if rdg else {},
+                    metadata={
+                        "visit_id": v_id,
+                        "blob_id": b_id,
+                        "opportunity_id": opp_id,
+                        "session_id": session_id,
+                    },
+                )
+                ai_n = None
+                try:
+                    rv = agent.review(ctx)
+                    if rv.passed:
+                        ai_r = "match"
+                    elif rv.failed:
+                        ai_r = "no_match"
+                        # badge_label in details is the display label for the image badge
+                        # (e.g. "Hyperzoomed" instead of generic "No Match")
+                        ai_n = rv.details.get("badge_label")
+                    else:
+                        ai_r = "error"
+                        ai_n = "; ".join(rv.errors) if rv.errors else None
+                except Exception as exc:
+                    logger.exception(f"[AIReview] Agent raised exception for blob={b_id}")
+                    ai_r = "error"
+                    ai_n = str(exc)
+
+                return (v_id, b_id, q_id, rdg, ai_r, ai_n, False)  # not skipped
+
+            with ThreadPoolExecutor(max_workers=5) as pool:
+                fut_map = {pool.submit(_fetch_and_review, item): item for item in work_items}
+                for fut in as_completed(fut_map):
+                    try:
+                        visit_id_str, blob_id, question_id, reading, ai_result, ai_notes, skipped = fut.result()
+                    except Exception as exc:
+                        logger.warning(f"[AIReview] Unexpected error reviewing image: {exc}")
+                        total_errors += 1
+                        images_processed += 1
+                        continue
+
+                    images_processed += 1
+                    if skipped:
+                        total_skipped += 1
+                    else:
+                        total_reviewed += 1
                         if ai_result == "match":
                             total_passed += 1
                             logger.debug(f"[AIReview] PASS: blob={blob_id}, reading={reading}")
@@ -263,10 +271,8 @@ def _run_ai_review_on_sessions(
                             total_errors += 1
                             logger.error(f"[AIReview] ERROR: blob={blob_id}, reason={ai_notes!r}")
 
-                        # Persist AI result to session assessment data.
-                        # auto_apply_result agents pre-populate human result from AI outcome.
-                        # suppress_pass agents skip storage for passing images so they show
-                        # as normal pending images with no AI badge (e.g. MUAC not_hyperzoomed).
+                        # Persist AI result. suppress_pass agents skip storage for passing images
+                        # so they appear as normal pending photos with no AI badge.
                         if ai_result == "match" and suppress_pass:
                             logger.debug(f"[AIReview] PASS (suppressed, no badge): blob={blob_id}")
                         else:
@@ -282,19 +288,13 @@ def _run_ai_review_on_sessions(
                             )
                             session_updated = True
 
-                        # Report progress after each review
-                        if progress_callback:
-                            progress_callback(
-                                images_processed,
-                                total_images_to_review,
-                                f"Reviewed {images_processed}/{total_images_to_review} images "
-                                f"({total_passed} passed, {total_failed} failed)",
-                            )
-
-                    except Exception as e:
-                        logger.warning(f"[AIReview] Failed to review image: {e}")
-                        total_errors += 1
-                        images_processed += 1
+                    if progress_callback:
+                        progress_callback(
+                            images_processed,
+                            total_images_to_review,
+                            f"Reviewed {images_processed}/{total_images_to_review} images "
+                            f"({total_passed} passed, {total_failed} failed)",
+                        )
 
             # Save session if we made any updates
             if session_updated:
