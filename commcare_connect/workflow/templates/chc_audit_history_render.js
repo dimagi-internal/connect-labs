@@ -187,7 +187,7 @@ function ChcAuditHistory(props) {
     var copy = enriched.slice();
     copy.sort(function (a, b) {
       var r = a._r, s = b._r, va, vb;
-      if (sort.col === "opportunity") { va = oppNames[r.opportunity_id] || String(r.opportunity_id) || ""; vb = oppNames[s.opportunity_id] || String(s.opportunity_id) || ""; }
+      if (sort.col === "opportunity") { va = oppNames[r.opportunity_id] || String(r.opportunity_id); vb = oppNames[s.opportunity_id] || String(s.opportunity_id); }
       else if (sort.col === "date_created") { va = r.date_created || ""; vb = s.date_created || ""; }
       else if (sort.col === "period") { va = r.period_start || ""; vb = s.period_start || ""; }
       else if (sort.col === "flws") { va = a.flwCount; vb = b.flwCount; }
@@ -356,8 +356,11 @@ function ChcMetricDetail(props) {
         entries.forEach(function (e) {
           var obj = chcParseResults(e.results)[m.key];
           if (obj && obj.has_sufficient_data && obj.value != null) {
-            values.push(parseFloat(obj.value));
-            if (obj.in_range === false) anyFlagged = true;
+            var parsed = parseFloat(obj.value);
+            if (!isNaN(parsed)) {
+              values.push(parsed);
+              if (obj.in_range === false) anyFlagged = true;
+            }
           }
         });
         if (values.length > 0) {
