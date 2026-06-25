@@ -231,6 +231,4 @@ The **CHC Audit History** dashboard provides a historical view of CHC audit reco
 
 **Selecting opportunities when creating a run:**
 
-When your program administrator creates a new CHC Audit History run, Step 3 of the setup dialog asks which opportunities to include. If your program has a large number of opportunities (500 or more), the list is searchable: type any part of an opportunity name or its ID into the search box and the list filters down immediately. Select as many opportunities as needed, then continue.
-
-**Editing opportunities on an existing
+When your program administrator creates a new CHC Audit History run, Step 3 of the setup dialog asks which opportunities to include. If your program has a large number of opportunities (500 or more), the list is searchable: type any part of an opportunity name or its ID into the search box and the list filters down immediately. The search box stays fixed at the top of the modal so it remains visible and usable
