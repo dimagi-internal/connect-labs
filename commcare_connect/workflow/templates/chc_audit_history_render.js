@@ -187,7 +187,8 @@ function ChcAuditHistory(props) {
     var copy = enriched.slice();
     copy.sort(function (a, b) {
       var r = a._r, s = b._r, va, vb;
-      if (sort.col === "date_created") { va = r.date_created || ""; vb = s.date_created || ""; }
+      if (sort.col === "opportunity") { va = oppNames[r.opportunity_id] || String(r.opportunity_id) || ""; vb = oppNames[s.opportunity_id] || String(s.opportunity_id) || ""; }
+      else if (sort.col === "date_created") { va = r.date_created || ""; vb = s.date_created || ""; }
       else if (sort.col === "period") { va = r.period_start || ""; vb = s.period_start || ""; }
       else if (sort.col === "flws") { va = a.flwCount; vb = b.flwCount; }
       else if (sort.col === "status") { va = r.status || ""; vb = s.status || ""; }
@@ -221,22 +222,24 @@ function ChcAuditHistory(props) {
       ce("div", { className: "overflow-x-auto" },
         ce("table", { className: "w-full border-collapse bg-white text-sm" },
           ce("thead", null, ce("tr", null,
+            ce(ChcSortTh, Object.assign({ colKey: "opportunity", label: "Opportunity" }, thProps)),
             ce(ChcSortTh, Object.assign({ colKey: "date_created", label: "Created Date" }, thProps)),
             ce(ChcSortTh, Object.assign({ colKey: "period", label: "Audit Period" }, thProps)),
             ce(ChcSortTh, Object.assign({ colKey: "flws", label: "FLWs" }, thProps)),
             ce(ChcSortTh, Object.assign({ colKey: "status", label: "Status" }, thProps)),
-            ce(ChcSortTh, Object.assign({ colKey: "passed", label: "% FLWs Passed" }, thProps)),
-            ce(ChcSortTh, Object.assign({ colKey: "tasks", label: "% Tasks Completed" }, thProps)),
-            ce(ChcSortTh, Object.assign({ colKey: "ptask", label: "% FLWs w/ Pending Task" }, thProps)),
+            ce(ChcSortTh, Object.assign({ colKey: "passed", label: "% FLWs Passed", style: { maxWidth: "80px" } }, thProps)),
+            ce(ChcSortTh, Object.assign({ colKey: "tasks", label: "% Tasks Completed", style: { maxWidth: "80px" } }, thProps)),
+            ce(ChcSortTh, Object.assign({ colKey: "ptask", label: "% FLWs w/ Pending Task", style: { maxWidth: "80px" } }, thProps)),
             ce(ChcSortTh, Object.assign({ colKey: "runby", label: "Run By" }, thProps)),
           )),
           ce("tbody", null,
             sorted.length === 0
-              ? ce("tr", null, ce("td", { colSpan: 8, className: "px-4 py-8 text-center text-gray-400" }, "No audit reports found"))
+              ? ce("tr", null, ce("td", { colSpan: 9, className: "px-4 py-8 text-center text-gray-400" }, "No audit reports found"))
               : sorted.map(function (row, i) {
                 var r = row._r;
                 var completed = r.status === "completed";
                 return ce("tr", { key: i, className: "border-b border-gray-100 hover:bg-gray-50" + (!completed ? " text-gray-500" : "") },
+                  ce("td", { className: "px-3 py-2 font-medium text-green-900" }, oppNames[r.opportunity_id] || "Opp #" + r.opportunity_id),
                   ce("td", { className: "px-3 py-2 font-medium whitespace-nowrap" }, (r.date_created || "—").slice(0, 10)),
                   ce("td", { className: "px-3 py-2 whitespace-nowrap" }, chcDateRange(r.period_start, r.period_end)),
                   ce("td", { className: "px-3 py-2 text-right tabular-nums" }, completed ? row.flwCount : "—"),
@@ -329,15 +332,43 @@ function ChcMetricDetail(props) {
     return rows;
   }, [entryRows, oppFilter, repFilter, runDateFilter, completedReports]);
 
-  // One row per (username, opportunity_id) — keep latest entry
+  // One row per (username, opportunity_id).
+  // When multiple audits are in the filter, average each metric across audits with sufficient data.
   var flwRows = React.useMemo(function () {
     var byKey = {};
     filteredEntries.forEach(function (e) {
       if (!e.username) return;
       var key = e.username + ":" + String(e.opportunity_id);
-      if (!byKey[key] || e.date_created > byKey[key].date_created) byKey[key] = e;
+      if (!byKey[key]) byKey[key] = [];
+      byKey[key].push(e);
     });
-    return Object.values(byKey);
+
+    return Object.keys(byKey).map(function (key) {
+      var entries = byKey[key];
+      var latest = entries.reduce(function (best, e) {
+        return !best || e.date_created > best.date_created ? e : best;
+      }, null);
+      if (entries.length === 1) return latest;
+
+      var avgResults = {};
+      CHC_METRICS.forEach(function (m) {
+        var values = [], anyFlagged = false;
+        entries.forEach(function (e) {
+          var obj = chcParseResults(e.results)[m.key];
+          if (obj && obj.has_sufficient_data && obj.value != null) {
+            values.push(parseFloat(obj.value));
+            if (obj.in_range === false) anyFlagged = true;
+          }
+        });
+        if (values.length > 0) {
+          var avg = values.reduce(function (s, v) { return s + v; }, 0) / values.length;
+          avgResults[m.key] = { value: avg, has_sufficient_data: true, in_range: anyFlagged ? false : true };
+        } else {
+          avgResults[m.key] = { value: null, has_sufficient_data: false, in_range: null };
+        }
+      });
+      return Object.assign({}, latest, { results: avgResults, _auditCount: entries.length });
+    });
   }, [filteredEntries]);
 
   var sortedFlwRows = React.useMemo(function () {
@@ -507,7 +538,9 @@ function ChcMetricDetail(props) {
                   ce("td", { className: "border border-gray-200 px-3 py-1.5 text-left whitespace-nowrap font-medium text-green-900 bg-white" },
                     oppNames[row.opportunity_id] || "Opp #" + row.opportunity_id),
                   ce("td", { className: "border border-gray-200 px-3 py-1.5 text-left font-medium whitespace-nowrap bg-white" },
-                    nameMap[row.username] || row.username),
+                    nameMap[row.username] || row.username,
+                    row._auditCount > 1 ? ce("span", { className: "ml-1 text-gray-400 text-xs font-normal", title: row._auditCount + " audits averaged" }, "×" + row._auditCount) : null,
+                  ),
                   cells,
                   ce("td", { className: "border border-gray-200 px-2 py-1.5 text-center font-bold bg-green-900 text-white" }, rowFlagCount),
                 );
