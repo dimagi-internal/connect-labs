@@ -1,9 +1,10 @@
 """CHC Audit History — multi-opp program-level audit view for Program 176.
 
-Three tabs:
-  Audit History    — sortable table of audit reports across all opps
-  Metric Detail    — FLW × metric pivot for a selected report/opp
-  FLW Longitudinal — per-FLW flag trend across audit cycles (newest left)
+Four tabs:
+  Audit History       — sortable table of audit reports across all opps
+  Metric Detail       — FLW × metric pivot; averages across audits when multiple selected
+  FLW Longitudinal    — per-FLW flag trend across audit cycles (newest left)
+  Metric Longitudinal — per-audit flag counts per metric, grouped by opportunity
 
 Data sources:
   audit_reports       — /export/opportunity/<id>/audit_reports/
@@ -102,7 +103,7 @@ TEMPLATE = {
     "key": "chc_audit_history",
     "name": "CHC Audit History",
     "description": "Program-level audit history across all CHC-RCT opportunities. "
-    "Three tabs: Audit History, Metric Detail, FLW Longitudinal.",
+    "Four tabs: Audit History, Metric Detail, FLW Longitudinal, Metric Longitudinal.",
     "icon": "fa-clipboard-list",
     "color": "green",
     "multi_opp": True,
