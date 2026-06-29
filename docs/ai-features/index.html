@@ -10,7 +10,7 @@
       
       
       
-        <link rel="canonical" href="https://jjackson.github.io/connect-labs/docs/ai-features/">
+        <link rel="canonical" href="https://dimagi-internal.github.io/connect-labs/docs/ai-features/">
       
       
         <link rel="prev" href="../coverage-maps/">
@@ -634,6 +634,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#application-coach" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Application Coach
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -874,6 +885,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#application-coach" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Application Coach
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -937,7 +959,8 @@
     AI[Claude AI] --&gt; W[Workflow Editor\nAssistant]
     AI --&gt; P[Pipeline Editor\nAssistant]
     AI --&gt; A[Audit Image\nReviewer]
-    AI --&gt; S[Solicitation\nCriteria Generator]</code></pre>
+    AI --&gt; S[Solicitation\nCriteria Generator]
+    AI --&gt; C[Application\nCoach]</code></pre>
 <h3 id="workflow-pipeline-editor-assistant">Workflow &amp; Pipeline Editor Assistant<a class="headerlink" href="#workflow-pipeline-editor-assistant" title="Permanent link">&para;</a></h3>
 <p>When editing a workflow or pipeline in the Workflow Engine, an AI assistant is available to help make changes. You can describe what you want in plain English:</p>
 <ul>
@@ -965,6 +988,15 @@
 </ul>
 <p>Review and edit these suggestions before saving. See <a href="../solicitations/">Solicitations</a> for the full process.</p>
 <hr />
+<h3 id="application-coach">Application Coach<a class="headerlink" href="#application-coach" title="Permanent link">&para;</a></h3>
+<p>When filling out a response to a solicitation, the <strong>AI Application Coach</strong> is available on the response form to help applicants strengthen their submissions. It can:</p>
+<ul>
+<li>Review draft answers and suggest improvements</li>
+<li>Flag sections that may be incomplete or unclear</li>
+<li>Offer guidance on how to address specific evaluation criteria</li>
+</ul>
+<p>See <a href="../solicitations/">Solicitations</a> for the full process.</p>
+<hr />
 <h2 id="what-the-ai-can-and-cant-do">What the AI Can and Can't Do<a class="headerlink" href="#what-the-ai-can-and-cant-do" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -991,8 +1023,12 @@
 <td>Submit responses on behalf of organizations</td>
 </tr>
 <tr>
-<td>Answer questions about the current workflow</td>
+<td>Coach applicants on response quality</td>
 <td>Make changes in the main CommCare platform</td>
+</tr>
+<tr>
+<td>Answer questions about the current workflow</td>
+<td></td>
 </tr>
 </tbody>
 </table>
@@ -1010,7 +1046,7 @@ Yes. In the workflow editor, use the <strong>Undo</strong> button or ask the AI 
 <p><strong>Can the AI see patient data?</strong>
 The AI used for workflow and pipeline editing does not have access to individual patient records. For audit image review, images are sent to the AI for analysis but processed under ZDR terms — they are not retained by the AI provider.</p>
 <p><strong>Which AI is being used?</strong>
-Labs uses Claude (made by Anthropic) as the AI for workflow editing, pipeline assistance, and solicitation criteria generation. Audit image review also uses Claude's vision capability.</p>
+Labs uses Claude (made by Anthropic) as the AI for workflow editing, pipeline assistance, solicitation criteria generation, and the Application Coach. Audit image review also uses Claude's vision capability.</p>
 
 
 

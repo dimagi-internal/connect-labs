@@ -10,7 +10,7 @@
       
       
       
-        <link rel="canonical" href="https://jjackson.github.io/connect-labs/docs/workflow-engine/">
+        <link rel="canonical" href="https://dimagi-internal.github.io/connect-labs/docs/workflow-engine/">
       
       
         <link rel="prev" href="../audit/">
@@ -472,6 +472,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#opening-a-workflow-run-from-a-link" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Opening a Workflow Run from a Link
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#reading-a-workflow-dashboard" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -584,10 +595,21 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#verified-monitoring-dashboard" class="md-nav__link">
+  <a href="#bulk-image-audit-ai-review-agent" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Verified Monitoring dashboard
+        Bulk Image Audit — AI Review Agent
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#chc-audit-history-dashboard" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CHC Audit History dashboard
       
     </span>
   </a>
@@ -919,6 +941,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#opening-a-workflow-run-from-a-link" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Opening a Workflow Run from a Link
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#reading-a-workflow-dashboard" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1031,10 +1064,21 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#verified-monitoring-dashboard" class="md-nav__link">
+  <a href="#bulk-image-audit-ai-review-agent" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Verified Monitoring dashboard
+        Bulk Image Audit — AI Review Agent
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#chc-audit-history-dashboard" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CHC Audit History dashboard
       
     </span>
   </a>
@@ -1083,6 +1127,13 @@
 <li>Current status</li>
 </ul>
 <p>Click any workflow to open its dashboard.</p>
+<hr />
+<h2 id="opening-a-workflow-run-from-a-link">Opening a Workflow Run from a Link<a class="headerlink" href="#opening-a-workflow-run-from-a-link" title="Permanent link">&para;</a></h2>
+<p>If someone shares a direct link to a workflow run, the system will open it automatically — you do not need to select the opportunity from a context picker first. The run page reads the opportunity from the link and goes straight to the dashboard.</p>
+<p>If a link was copy-pasted with extra text accidentally appended to it (for example, <code>?opportunity_id=1251 stacked bar chart</code>), the system will still recover the correct opportunity and clean up the address bar so everything works normally from that point on.</p>
+<p>If the opportunity genuinely cannot be determined from the link, you will see a message explaining exactly what the system could not read, so it is clear the link itself is the problem rather than your access or context settings.</p>
+<p>If the workflow belongs to an opportunity you are not a member of, you will see a message telling you exactly that — for example, <em>"This workflow belongs to opportunity 1251, which isn't one of your opportunities. Ask whoever shared it to give you access, then reopen the link."</em> This is different from a broken link: the link is valid, but you need to be added to that opportunity before you can open it. Contact whoever shared the link and ask them to give you access.</p>
+<p>If the workflow cannot be loaded at all — for example, because your account has no opportunities listed or you are not a member of the organisation that owns the workflow — you will see a clear message such as: <em>"This workflow couldn't be loaded for opportunity 1251. You may not have access to that opportunity, or the workflow may have been removed. Ask whoever shared the link to confirm you have access to its opportunity."</em> If you see this, contact whoever shared the link and ask them to confirm your access. You will not see a raw technical error or an internal web address.</p>
 <hr />
 <h2 id="reading-a-workflow-dashboard">Reading a Workflow Dashboard<a class="headerlink" href="#reading-a-workflow-dashboard" title="Permanent link">&para;</a></h2>
 <p>A typical workflow dashboard shows a <strong>table of field workers</strong> with performance columns:</p>
@@ -1279,10 +1330,6 @@
 <td>Community health centre nutrition program monitoring</td>
 </tr>
 <tr>
-<td><strong>MBW Auditing V4</strong></td>
-<td>MBW audit reviews with flag and task workflow</td>
-</tr>
-<tr>
 <td><strong>MBW Auditing V5</strong></td>
 <td>MBW audit reviews — faster loads and preserved runs</td>
 </tr>
@@ -1302,33 +1349,41 @@
 <td><strong>Connect Interviews Reporting V2</strong></td>
 <td>Live funnel dashboard showing Triggered / Started / Completed counts per interview for any cohort</td>
 </tr>
+<tr>
+<td><strong>CHC Audit History</strong></td>
+<td>Historical view of CHC audit records across multiple opportunities</td>
+</tr>
 </tbody>
 </table>
-<h3 id="verified-monitoring-dashboard">Verified Monitoring dashboard<a class="headerlink" href="#verified-monitoring-dashboard" title="Permanent link">&para;</a></h3>
-<p>The <strong>Verified Monitoring</strong> dashboard contrasts what the program self-reported with what an independent survey verified. It is organized into panels:</p>
-<p><strong>Trend panel</strong></p>
-<p>The Trend panel shows the self-reported and independently-verified coverage lines over time. The right edge of the chart labels each line directly with its service-delivery, intervention, and control values, so you can read the current figures without needing to cross-reference a legend.</p>
-<p><strong>Map panel</strong></p>
-<p>The map panel has a docked <strong>Layers</strong> panel — the same chrome used in the sampling-plan editor — so the controls look and behave consistently whether you are reviewing monitoring data or editing a plan. The Layers panel contains the following toggles:</p>
-<ul>
-<li><strong>Delivery</strong> — shows implementer-reported visit pins</li>
-<li><strong>Survey</strong> — shows independent surveyor visit pins</li>
-<li><strong>Plan</strong> — shows the designed study plan: the selected cluster areas (PSUs) from the sampling plan, drawn in the same arm colours used in the plan editor — intervention areas in green and comparison areas in blue — so the plan you designed and the monitoring of it look like one coherent picture</li>
-<li><strong>Building footprints</strong> — shows the actual sampled building outlines coloured by study arm (intervention green / comparison blue); <strong>primary</strong> buildings are drawn as solid shapes and <strong>alternate (substituted)</strong> buildings are drawn as dashed outlines, so you can immediately see which buildings the plan originally selected and which were substitutes</li>
-</ul>
-<p>When you turn on the <strong>Building footprints</strong> layer, the ward and cluster area fills fade back so the individual buildings stand out against the map — the ward and cluster outlines remain visible for context, but the colour fills no longer compete with the building shapes. Buildings themselves render with a crisp dark edge so they are clearly legible when you zoom in, whether they are solid (primary) or dashed (alternate).</p>
-<p>Previously the map could only show survey and delivery dots alongside cluster outlines. The building footprints layer now lets you see the real buildings the sampling plan selected, making "what we planned to visit" and "what we monitored" directly comparable on the same map.</p>
-<p>Survey pins on the map use two distinct visual styles to distinguish visit types:</p>
-<ul>
-<li><strong>Solid dots</strong> — primary (first-choice) households</li>
-<li><strong>Hollow rings</strong> — substitute households where the surveyor visited an alternate instead of the originally selected household</li>
-</ul>
-<p>Substitute pins are intentionally lighter so they do not dominate the map, but remain legible when you need to identify them.</p>
-<p><strong>Quality card</strong></p>
-<p>The Quality card is the per-surveyor review tool. Select a surveyor to see their scorecard row marked with a high-contrast <strong>REVIEW</strong> badge so they are immediately identifiable. The back-check detail panel — results from an independent re-survey conducted to validate a flagged surveyor's work — lives inside this card.</p>
-<p>The GPS-location section of the back-check is labelled <strong>"% within 25 m · cells = distance"</strong> so it is clear that the percentage shown is the share of visits whose GPS coordinates fall within 25 metres of the original recorded location, and that each cell in the table represents a distance measurement — not an error or a missing value.</p>
-<p>The GPS drill-down also shows a count chip summarising the full picture at a glance — for example, <em>"12 flagged · 34 ok · 46 total"</em> — alongside a full-census caption so you always know how many visits the percentage is based on.</p>
-<p>Back-check data reflects real discordance across identity, location, and outcome dimensions. When a</p>
+<h3 id="bulk-image-audit-ai-review-agent">Bulk Image Audit — AI Review Agent<a class="headerlink" href="#bulk-image-audit-ai-review-agent" title="Permanent link">&para;</a></h3>
+<p>The Bulk Image Audit template includes an optional <strong>AI Review Agent</strong> step. When a MUAC or weight image type is selected during configuration, an <strong>AI Review Agent</strong> dropdown appears. The dropdown shows only the agents relevant to the image types you have chosen:</p>
+<table>
+<thead>
+<tr>
+<th>Agent</th>
+<th>When it appears</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Scale Image Validation</strong></td>
+<td>A weight-related image type is selected</td>
+<td>Compares scale photos against the reading that was entered</td>
+</tr>
+<tr>
+<td><strong>MUAC OverZoom</strong></td>
+<td>A MUAC image type is selected</td>
+<td>Classifies photos for excessive zoom; any image identified as overzoomed is automatically pre-tagged <strong>fail</strong> before the reviewer opens the session</td>
+</tr>
+</tbody>
+</table>
+<p>When <strong>MUAC OverZoom</strong> pre-tags an image as fail, the reviewer opens the session with those images already marked — they only need to confirm or override the pre-tagged result rather than assess every image from scratch.</p>
+<p>If no AI agent is selected, the workflow behaves exactly as it did before this feature was introduced.</p>
+<h3 id="chc-audit-history-dashboard">CHC Audit History dashboard<a class="headerlink" href="#chc-audit-history-dashboard" title="Permanent link">&para;</a></h3>
+<p>The <strong>CHC Audit History</strong> dashboard provides a historical view of CHC audit records spanning multiple opportunities. Because programs often run across many opportunities, this dashboard is set up to cover more than one at a time.</p>
+<p>Across all four tabs — <strong>Audit History</strong>, <strong>Metric Detail</strong>, <strong>FLW Longitudinal</strong>, and <strong>Metric Longitudinal</strong> — opportunities are labelled by their full name (for example, "CHC-RCT Nigeria Opp 1") rather than a numeric identifier, and worker rows show each FLW's display name (for example, "Jumoke Balogun") rather than their system username.</p>
+<p>**</p>
 
 
 
