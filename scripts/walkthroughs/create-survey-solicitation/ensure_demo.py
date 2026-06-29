@@ -85,8 +85,7 @@ def main() -> int:
         plans_res, perr = call(c, h, "microplans_list_plans", {"program_id": PROGRAM_ID})
         if perr or not isinstance(plans_res, dict):
             print(
-                f"[ensure_demo] FAILED: microplans_list_plans({PROGRAM_ID}) error: "
-                f"{str(plans_res)[:300]}",
+                f"[ensure_demo] FAILED: microplans_list_plans({PROGRAM_ID}) error: " f"{str(plans_res)[:300]}",
                 file=sys.stderr,
             )
             return 1

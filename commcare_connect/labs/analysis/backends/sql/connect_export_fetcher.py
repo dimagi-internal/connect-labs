@@ -164,9 +164,7 @@ def fetch_connect_export_as_visit_dicts(
                     f"opp {opportunity_id}: {e.response.text[:200]}"
                 ) from e
             except Exception as e:
-                raise RuntimeError(
-                    f"Failed to fetch {endpoint} for opp {opportunity_id} (page {page}): {e}"
-                ) from e
+                raise RuntimeError(f"Failed to fetch {endpoint} for opp {opportunity_id} (page {page}): {e}") from e
 
             if isinstance(data, list):
                 records = data
@@ -181,11 +179,6 @@ def fetch_connect_export_as_visit_dicts(
                 f"(total: {len(all_records)})"
             )
 
-    logger.info(
-        f"[ConnectExportFetcher] Fetched {len(all_records)} {endpoint} records for opp {opportunity_id}"
-    )
+    logger.info(f"[ConnectExportFetcher] Fetched {len(all_records)} {endpoint} records for opp {opportunity_id}")
 
-    return [
-        normalize_connect_export_record(r, endpoint, opportunity_id, i)
-        for i, r in enumerate(all_records)
-    ]
+    return [normalize_connect_export_record(r, endpoint, opportunity_id, i) for i, r in enumerate(all_records)]

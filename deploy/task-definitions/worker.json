@@ -6,10 +6,7 @@
       "cpu": 0,
       "portMappings": [],
       "essential": true,
-      "command": [
-        "bash",
-        "/app/docker/start_celery"
-      ],
+      "command": ["bash", "/app/docker/start_celery"],
       "environment": [
         {
           "name": "OCS_URL",
@@ -106,9 +103,7 @@
   "networkMode": "awsvpc",
   "volumes": [],
   "placementConstraints": [],
-  "requiresCompatibilities": [
-    "FARGATE"
-  ],
+  "requiresCompatibilities": ["FARGATE"],
   "cpu": "1024",
   "memory": "8192"
 }

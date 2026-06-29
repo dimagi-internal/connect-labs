@@ -77,7 +77,7 @@ def fetch_pr_files(pr_number: int, repo: str) -> list[str]:
 
 GROUP_MAX = 12  # maximum feature groups passed to the summary step
 
-MODEL_GROUPING = "claude-sonnet-4-6"     # needs to reason across many PRs
+MODEL_GROUPING = "claude-sonnet-4-6"  # needs to reason across many PRs
 MODEL_SUMMARY = "claude-haiku-4-5-20251001"  # short structured task
 
 GROUP_SYSTEM_PROMPT = """\
@@ -125,8 +125,7 @@ prefix only the marketing bullets with "[Marketing] "
 def group_prs_by_feature(client: anthropic.Anthropic, prs: list[dict]) -> list[dict]:
     """Cluster PRs into logical feature groups ordered by user impact."""
     pr_text = "\n\n".join(
-        f"PR #{p['number']} [marketing: {p.get('category', 'app')}]: {p['title']}\n{p['description']}"
-        for p in prs
+        f"PR #{p['number']} [marketing: {p.get('category', 'app')}]: {p['title']}\n{p['description']}" for p in prs
     )
     resp = client.messages.create(
         model=MODEL_GROUPING,
@@ -219,8 +218,7 @@ def load_user_visible_prs(prs_file: str) -> list[dict]:
 def generate_weekly_summary(client: anthropic.Anthropic, groups: list[dict]) -> str:
     """Ask Claude for a user-friendly weekly summary, one bullet per feature group."""
     group_text = "\n\n".join(
-        f"Group [category: {g.get('category', 'app')}]: {g['title']}\n{g['description']}"
-        for g in groups
+        f"Group [category: {g.get('category', 'app')}]: {g['title']}\n{g['description']}" for g in groups
     )
     resp = client.messages.create(
         model=MODEL_SUMMARY,
@@ -272,9 +270,7 @@ def build_changelog_row(week_date: str, summary: str, groups: list[dict]) -> str
     """Build a Confluence storage format table row for the changelog."""
     summary_html = markdown_to_storage(summary)
     pr_links = " ".join(
-        f'<a href="{g["lead_url"]}">#{g["lead_pr"]}</a>'
-        for g in groups[:10]
-        if g.get("lead_url") and g.get("lead_pr")
+        f'<a href="{g["lead_url"]}">#{g["lead_pr"]}</a>' for g in groups[:10] if g.get("lead_url") and g.get("lead_pr")
     )
     return (
         "<tr>"
@@ -294,9 +290,7 @@ def _to_slack_mrkdwn(text: str) -> str:
 def post_to_slack(webhook_url: str, week_label: str, summary: str, groups: list[dict]) -> None:
     """Post a Slack Block Kit message to #connect-labs."""
     pr_links_text = "  |  ".join(
-        f"<{g['lead_url']}|#{g['lead_pr']}>"
-        for g in groups[:10]
-        if g.get("lead_url") and g.get("lead_pr")
+        f"<{g['lead_url']}|#{g['lead_pr']}>" for g in groups[:10] if g.get("lead_url") and g.get("lead_pr")
     )
     changelog_url = "https://dimagi.atlassian.net/wiki/spaces/connect/pages/3918528513"
 
