@@ -10,7 +10,7 @@
       
       
       
-        <link rel="canonical" href="https://jjackson.github.io/connect-labs/docs/audit/">
+        <link rel="canonical" href="https://dimagi-internal.github.io/connect-labs/docs/audit/">
       
       
         <link rel="prev" href="..">
@@ -939,14 +939,61 @@
 </ul>
 </div>
 <div class="tabbed-block">
-<p>Before you start, click <strong>Run AI Review</strong> to have AI pre-screen all images in the session.</p>
-<p>The AI checks each image for:</p>
+<p>Before you start, click <strong>Run AI Review</strong> to have AI pre-screen all images in the session. AI review processes multiple images at the same time, so a session of around 30 images typically completes in about 2 minutes.</p>
+<p>When your session includes weight or MUAC image types, an <strong>AI Review Agent</strong> dropdown appears. Select the agent that matches your image type:</p>
+<table>
+<thead>
+<tr>
+<th>Agent</th>
+<th>When it appears</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Scale Image Validation</strong></td>
+<td>A weight-related image type is selected</td>
+<td>Compares scale photos against the reading entered by the FLW and flags mismatches</td>
+</tr>
+<tr>
+<td><strong>MUAC OverZoom</strong></td>
+<td>A MUAC image type is selected</td>
+<td>Classifies photos for excessive zoom; images confirmed as hyperzoomed are automatically pre-tagged <strong>Fail</strong> before you open the session</td>
+</tr>
+</tbody>
+</table>
+<p>If no agent is selected, the workflow behaves exactly as before — the AI checks each image for:</p>
 <ul>
 <li><strong>Image quality</strong> — blur, poor lighting, or incomplete framing</li>
 <li><strong>Measurement validity</strong> — scale or MUAC readings outside expected ranges</li>
 <li><strong>Required elements</strong> — whether the required items are clearly visible in the photo</li>
 </ul>
 <p>AI results appear alongside each image as suggestions — you make the final Pass/Fail call. Images flagged by the AI are highlighted so you can prioritize reviewing them first.</p>
+<p><strong>AI classification labels</strong> appear at the bottom of each image tile (below the <strong>Add Note</strong> field) once the AI has reviewed the photo. The label shows the agent name and its classification for that image:</p>
+<table>
+<thead>
+<tr>
+<th>Agent</th>
+<th>Possible label</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>MUAC OverZoom</strong></td>
+<td>"MUAC OverZoom: Hyperzoomed" or "MUAC OverZoom: Not Hyperzoomed"</td>
+</tr>
+<tr>
+<td><strong>Scale Image Validation</strong></td>
+<td>"Scale Validation: Passed" or "Scale Validation: Failed"</td>
+</tr>
+</tbody>
+</table>
+<p>If the AI encountered a problem reviewing a specific image, the label turns red and shows the error message. Images that have not yet been reviewed by the AI show no label.</p>
+<p>These labels let you see at a glance what the AI classified every image as — not just the ones that were flagged — without relying solely on the red <strong>Hyperzoomed</strong> badge.</p>
+<div class="admonition tip">
+<p class="admonition-title">MUAC OverZoom pre-tagging</p>
+</div>
+<p>When the MUAC OverZoom agent is used, images it identifies as hyperzoomed arrive in your review queue already marked <strong>Fail</strong> with a red <strong>Hyperzoomed</strong> badge. Images the agent determines are not hyperzoomed show no AI badge and appear as normal pending photos for your human review. In both cases, the AI classification label at the bottom of the tile confirms the agent's decision. You can confirm each Fail tag or override it if you disagree.</p>
 </div>
 </div>
 </div>
@@ -1014,6 +1061,12 @@ Visits only appear if they have images attached to the question types you select
 Yes — your progress saves automatically. Open the session anytime to continue where you left off.</p>
 <p><strong>What does the AI check for?</strong>
 The AI looks at image quality (blur, brightness, framing), whether the measurement shown is within expected ranges, and whether required items are visible. It does not access patient health records — only the images themselves.</p>
+<p><strong>What is the MUAC OverZoom agent?</strong>
+When a MUAC image type is selected, you can choose the <strong>MUAC OverZoom</strong> agent from the AI Review Agent dropdown. It automatically identifies photos taken with excessive zoom and pre-tags them as <strong>Fail</strong> with a red <strong>Hyperzoomed</strong> badge before your review begins. Images the agent determines are not hyperzoomed show no AI badge and appear as normal pending photos. In both cases, the AI classification label at the bottom of the image tile confirms what the agent classified that image as. You can confirm or override each Fail tag during your normal review.</p>
+<p><strong>What are the AI classification labels on each image tile?</strong>
+Once the AI agent has reviewed an image, a small label appears at the bottom of the tile (below the <strong>Add Note</strong> field) showing the agent name and its classification — for example, "MUAC OverZoom: Not Hyperzoomed" or "Scale Validation: Passed". If the AI encountered a problem with a specific image, the label turns red and shows the error message. This gives you a clear record of what the AI decided for every image, not just the ones that were flagged.</p>
+<p><strong>How long does AI review take?</strong>
+For a typical session of around 30 images, AI review completes in about 2 minutes. Larger sessions will take a little longer, but the progress indicator on the session page updates as images are processed.</p>
 <p><strong>Can I review the same set of visits twice?</strong>
 Yes — create a new session with the same filters. Each session is independent.</p>
 <p><strong>Can I use audit sessions to demonstrate the system to funders?</strong>

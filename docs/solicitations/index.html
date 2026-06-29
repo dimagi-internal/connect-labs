@@ -10,7 +10,7 @@
       
       
       
-        <link rel="canonical" href="https://jjackson.github.io/connect-labs/docs/solicitations/">
+        <link rel="canonical" href="https://dimagi-internal.github.io/connect-labs/docs/solicitations/">
       
       
         <link rel="prev" href="../task-management/">
@@ -540,6 +540,28 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#creating-a-solicitation-from-a-micro-plan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Creating a Solicitation from a Micro-Plan
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reading-the-coverage-map-legend" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reading the Coverage Map Legend
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#reviewing-responses" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -903,6 +925,28 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#creating-a-solicitation-from-a-micro-plan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Creating a Solicitation from a Micro-Plan
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reading-the-coverage-map-legend" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reading the Coverage Map Legend
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#reviewing-responses" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1032,11 +1076,11 @@
 <tbody>
 <tr>
 <td>Title</td>
-<td>Name of the solicitation (e.g., "EOI: OCS Implementation – Niger 2026")</td>
+<td>Name of the solicitation (e.g., "Expression of Interest: OCS Implementation – Niger 2026")</td>
 </tr>
 <tr>
 <td>Type</td>
-<td>EOI (Expression of Interest) or RFP (Request for Proposals)</td>
+<td>Expression of Interest or Request for Proposals</td>
 </tr>
 <tr>
 <td>Description</td>
@@ -1068,6 +1112,7 @@
 </tr>
 </tbody>
 </table>
+<p>After you save a new solicitation, Labs takes you directly to that solicitation's responses page so you can monitor for incoming submissions right away.</p>
 <p><strong>AI-assisted criteria generation:</strong>
 Click <strong>Generate Criteria</strong> and paste in text describing your program requirements, or upload a PDF. The AI will suggest a structured set of evaluation criteria and scoring weights. Review and adjust the suggestions before saving.</p>
 <p><strong>Adding context to response questions:</strong>
@@ -1076,36 +1121,81 @@ When building your response template, each question has an optional <strong>Fram
 <p class="admonition-title">Validation errors on the creation form</p>
 </div>
 <p>Labs now checks that all fields are in the correct format when a solicitation is saved. If something is wrong — for example, a deadline that isn't a valid date, an evaluation criterion missing a name, or a response question that references something that no longer exists — you will see an inline error message on the relevant field. Correct the flagged fields and save again. These checks prevent incomplete or misformatted solicitations from being stored silently.</p>
+<h3 id="creating-a-solicitation-from-a-micro-plan">Creating a Solicitation from a Micro-Plan<a class="headerlink" href="#creating-a-solicitation-from-a-micro-plan" title="Permanent link">&para;</a></h3>
+<p>If your solicitation is tied to specific geographic areas already defined in Labs, you can start directly from a micro-plan or plan group rather than writing the solicitation from scratch.</p>
+<p><strong>From a plan group:</strong>
+Go to the plan group's management page and click <strong>Create solicitation</strong>. The solicitation form opens pre-filled with a title and scope of work drawn from the group name and region, and with all plans in the group already attached as coverage areas.</p>
+<p><strong>From a single plan:</strong>
+Go to the plan's review page and click <strong>Create solicitation</strong>. The form opens pre-filled in the same way, with that one plan attached as a coverage area.</p>
+<p>In both cases, the coverage areas are shown on a map on the creation form, with the actual ward boundaries drawn for each attached plan. You can edit any pre-filled field before publishing. Once you save the solicitation, Labs takes you directly to that solicitation's responses page. The attached plans become a fixed snapshot — later edits to the underlying micro-plans will not change what is shown on the published solicitation.</p>
+<p>The coverage areas are displayed on the public solicitation page — both as a map showing the ward boundaries and as a list — so applicants can see exactly which areas are on the table.</p>
+<div class="admonition info">
+<p class="admonition-title">Plans are captured as a snapshot</p>
+</div>
+<p>Because coverage areas are fixed at the time the solicitation is created, any changes you make to a micro-plan after that point will not be reflected in the solicitation. If your plans change significantly before the deadline, you will need to update the solicitation's coverage areas manually or create a new solicitation.</p>
+<h3 id="reading-the-coverage-map-legend">Reading the Coverage Map Legend<a class="headerlink" href="#reading-the-coverage-map-legend" title="Permanent link">&para;</a></h3>
+<p>Wherever a coverage map appears — on the solicitation page, the response submission form, and the responses review pages — a small legend is displayed on the map showing how areas are colour-coded:</p>
+<table>
+<thead>
+<tr>
+<th>Colour</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Green</td>
+<td>Intervention area</td>
+</tr>
+<tr>
+<td>Blue</td>
+<td>Comparison area</td>
+</tr>
+</tbody>
+</table>
+<p>This applies to all coverage maps across the solicitations module.</p>
 <h3 id="reviewing-responses">Reviewing Responses<a class="headerlink" href="#reviewing-responses" title="Permanent link">&para;</a></h3>
 <p>Once the deadline passes, go to the solicitation and click <strong>Responses</strong>.</p>
+<p>The page header shows the solicitation's current state. Once a winner has been awarded, the header updates to show <strong>Awarded</strong> so you can see at a glance that the process is complete.</p>
 <p>For each response:</p>
 <ol>
 <li>Click the response to open it</li>
 <li>Read the organization's answers to each question</li>
+<li>Review the applicant's selected coverage areas — these are shown on the responses list and on the response detail page</li>
 <li>Click <strong>Review</strong> to score the submission</li>
 <li>Score each criterion from 1–10 and add notes</li>
 <li>Set your recommendation: Approve / Reject / Needs Revision</li>
 </ol>
 <p>Multiple reviewers can score independently — average scores are calculated automatically.</p>
+<p>The responses list shows a <strong>Status</strong> column and a <strong>Recommendation</strong> column for each submission. For an awarded response, <strong>Awarded</strong> appears only in the Status column — the Recommendation column shows your reviewer recommendation as normal, without repeating "Awarded".</p>
 <h3 id="awarding-a-response">Awarding a Response<a class="headerlink" href="#awarding-a-response" title="Permanent link">&para;</a></h3>
 <p>When the team agrees on a winner:</p>
 <ol>
 <li>Open the winning response</li>
 <li>Click <strong>Award Response</strong></li>
-<li>Confirm the award amount</li>
+<li>Confirm the award amount — this is displayed as a formatted currency value (for example, $25,000.00)</li>
 <li>Optionally link the award to a fund to track disbursements over time</li>
 </ol>
+<div class="admonition info">
+<p class="admonition-title">Coverage area assignments after award</p>
+</div>
+<p>In the current version, the coverage areas selected by an applicant are captured for your review alongside the rest of their response. Formal area assignment to the awarded organization is handled outside Labs as part of your normal award process.</p>
 <hr />
 <h2 id="for-implementing-organizations-submitting">For Implementing Organizations (Submitting)<a class="headerlink" href="#for-implementing-organizations-submitting" title="Permanent link">&para;</a></h2>
 <h3 id="finding-solicitations">Finding Solicitations<a class="headerlink" href="#finding-solicitations" title="Permanent link">&para;</a></h3>
-<p>Published solicitations are visible on the Labs solicitations page without logging in. Filter by type (EOI or RFP) to find relevant opportunities.</p>
+<p>Published solicitations are visible on the Labs solicitations page without logging in. Filter by type (Expression of Interest or Request for Proposals) to find relevant opportunities. Where a solicitation was created from micro-plans, the specific geographic areas on offer are shown on a map with ward boundaries drawn, as well as in a list, on the solicitation page. The map includes a legend showing intervention areas in green and comparison areas in blue.</p>
 <h3 id="submitting-a-response">Submitting a Response<a class="headerlink" href="#submitting-a-response" title="Permanent link">&para;</a></h3>
 <ol>
 <li>Open a solicitation and read the full description and scope of work</li>
 <li>Click <strong>Submit Response</strong></li>
 <li>Answer each question in the response template — where present, read the italicised framing above each question to understand what the program team is looking for</li>
+<li>If the solicitation includes coverage areas, select the areas you can cover by clicking the ward boundaries directly on the map, or by checking the boxes in the checklist alongside it — both controls are kept in sync, so selecting an area in one automatically updates the other. Selected areas are highlighted on the map so you can clearly see which plans you have chosen. You must select at least one plan to submit</li>
 <li>Review your answers, then click <strong>Submit</strong></li>
 </ol>
+<div class="admonition info">
+<p class="admonition-title">Selecting coverage areas</p>
+</div>
+<p>Each plan is offered as a whole unit. Clicking any part of a plan's boundary on the map selects that entire plan — you cannot select only part of a plan. Selected plans are highlighted in a distinct colour on the map so it is easy to see at a glance what you have chosen. If a plan includes multiple wards or intervention and control areas, you take all of it. If you are unsure what a plan covers, read the solicitation description or contact the program team before submitting.</p>
 <div class="admonition warning">
 <p class="admonition-title">Submissions are final</p>
 </div>
@@ -1156,6 +1246,29 @@ This should no longer occur for solicitations edited through the standard Labs i
 A small number of older solicitations were saved before Labs began enforcing field validation. When you open one of these records for editing, any fields that were stored in the wrong format will be flagged immediately so they can be corrected. Update the highlighted fields to the expected format and save. If you are unsure what a field requires, refer to the table in <a href="#creating-a-solicitation">Creating a Solicitation</a> or contact your Labs administrator.</p>
 <p><strong>What is the Framing field on a response question?</strong>
 Framing is an optional one-to-two sentence note you can attach to any question in your response template. It appears above the question prompt on the public solicitation page in italics, giving respondents context about why you're asking. It has no effect on scoring or submission — it is purely for the benefit of applicants reading the solicitation.</p>
+<p><strong>Can I create a solicitation from a micro-plan if the plans haven't been finalised yet?</strong>
+You can, but the coverage areas are fixed as a snapshot at the moment you save the solicitation. If your plans change after that point, the published solicitation will not update automatically. Wait until your plans are stable before creating the solicitation, or be prepared to update the coverage areas manually if things change before the deadline.</p>
+<p><strong>Do applicants have to cover all the areas listed in a solicitation?</strong>
+No — applicants select only the areas they can cover. They must select at least one plan to submit a response, but they do not need to take all areas on offer. Applicants can select areas by clicking the boundaries on the map or by using the checklist — both show the same options and stay in sync. Selected areas are highlighted on the map so applicants can see their choices at a glance. The program team can see each applicant's selected areas when reviewing responses.</p>
+<p><strong>What does it mean that a plan is selected "as a whole unit"?</strong>
+If a micro-plan bundles multiple wards, or includes both intervention and control areas, an applicant who selects that plan is committing to all of it. Clicking any part of that plan's boundary on the map selects the entire plan — there is no option to select only part of it.</p>
+<p><strong>I clicked "Create solicitation" from a plan and got a "Failed to create solicitation" error — what should I do?</strong>
+This error could previously occur on certain Labs-managed study programs. It has been fixed, so clicking <strong>Create solicitation</strong> from a plan on any program should now work. If you still see this error, try refreshing the page and attempting again. If the problem persists, contact your Labs administrator.</p>
+<p><strong>The responses page header still shows "Active" after I awarded a response — is something wrong?</strong>
+This display issue has been fixed. Once you award a response, the responses page header updates immediately to show <strong>Awarded</strong>. If you are viewing a page that was loaded before the award was made, refresh your browser to see the updated status.</p>
+<p><strong>The awarded response shows "Awarded" in both the Status and Recommendation columns — is that correct?</strong>
+No — this duplicate display has been fixed. <strong>Awarded</strong> now appears only in the Status column for an awarded response. The Recommendation column shows the reviewer recommendation as normal.</p>
+<p><strong>What do the colours on the coverage map mean?</strong>
+Green areas are intervention areas and blue areas are comparison areas. A small legend on every coverage map explains this colour coding.</p>
+<p><strong>Where do I land after creating a solicitation?</strong>
+After you save a new solicitation, Labs takes you directly to that solicitation's responses page. This means you can immediately see whether any responses have come in, without having to navigate back from the general solicitations list.</p>
+<p><strong>The "Generate Criteria" button or the AI Application Coach isn't working — what should I do?</strong>
+Both AI features were temporarily returning errors for all users on Labs. This has been fixed and both tools should now work as expected. If you click <strong>Generate Criteria</strong> on the solicitation creation form or use the AI Application Coach on the response form and still see an error, try refreshing the page and attempting again. If the problem persists, contact your Labs administrator.</p>
+<hr />
+<hr />
+<hr />
+<hr />
+<hr />
 
 
 
