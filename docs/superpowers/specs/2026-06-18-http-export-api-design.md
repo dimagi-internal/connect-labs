@@ -1,6 +1,6 @@
 # HTTP `/api/export/` API for synthetic opportunities
 
-**Issue:** [#637](https://github.com/jjackson/connect-labs/issues/637)
+**Issue:** [#637](https://github.com/dimagi-internal/connect-labs/issues/637)
 **Date:** 2026-06-18
 
 ## Goal

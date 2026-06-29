@@ -717,7 +717,7 @@ class BoundaryMapView(LoginRequiredMixin, TemplateView):
 
         NOTE: The enrichment feature was removed when the old solicitations app
         was deleted in the rename refactor. See the old implementation at:
-        https://github.com/jjackson/connect-labs/blob/8da9b746/commcare_connect/solicitations/data_access.py
+        https://github.com/dimagi-internal/connect-labs/blob/8da9b746/commcare_connect/solicitations/data_access.py
         (SolicitationDataAccess.get_enrichment_record and OppOrgEnrichmentRecord model)
         """
         return []
@@ -917,7 +917,7 @@ class BoundaryMapAPIView(LoginRequiredMixin, View):
 
         NOTE: The enrichment feature was removed when the old solicitations app
         was deleted in the rename refactor. See the old implementation at:
-        https://github.com/jjackson/connect-labs/blob/8da9b746/commcare_connect/solicitations/data_access.py
+        https://github.com/dimagi-internal/connect-labs/blob/8da9b746/commcare_connect/solicitations/data_access.py
         (SolicitationDataAccess.get_enrichment_record and OppOrgEnrichmentRecord model)
         """
         return []

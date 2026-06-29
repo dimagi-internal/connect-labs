@@ -70,7 +70,7 @@ Ask in **#engineering-connect** if you're unsure about any of these.
 ### 2. Clone the repo and set up credentials
 
 ```bash
-git clone https://github.com/jjackson/connect-labs.git
+git clone https://github.com/dimagi-internal/connect-labs.git
 cd connect-labs
 op inject -f -i .env.tpl -o .env
 ```
@@ -125,6 +125,6 @@ In a regular session, you can use `workflow_sync_from_template_file` to push a l
 
 ## More Information
 
-- **[MCP_SETUP.md](https://github.com/jjackson/connect-labs/blob/main/docs/MCP_SETUP.md)** — Labs MCP server and token details
+- **[MCP_SETUP.md](https://github.com/dimagi-internal/connect-labs/blob/main/docs/MCP_SETUP.md)** — Labs MCP server and token details
 - For security guardrails when working with real program data, see [Safe Mode](connect-safe-mode.md)
 - For help, post in **#connect-labs** on Slack

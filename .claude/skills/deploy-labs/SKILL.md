@@ -7,27 +7,27 @@ description: Deploy the labs environment to AWS via GitHub Actions. Use when the
 
 ## Repository & Workflow
 
-- **Repo**: `jjackson/connect-labs`
+- **Repo**: `dimagi-internal/connect-labs`
 - **Branch**: `main`
 - **Workflow**: `Deploy to AWS Labs`
 
 ## Deploy Command
 
 ```powershell
-gh workflow run "Deploy to AWS Labs" -R jjackson/connect-labs --ref main -f run_migrations=false
+gh workflow run "Deploy to AWS Labs" -R dimagi-internal/connect-labs --ref main -f run_migrations=false
 ```
 
 With migrations:
 
 ```powershell
-gh workflow run "Deploy to AWS Labs" -R jjackson/connect-labs --ref main -f run_migrations=true
+gh workflow run "Deploy to AWS Labs" -R dimagi-internal/connect-labs --ref main -f run_migrations=true
 ```
 
 ## Monitor Progress
 
 ```powershell
-gh run list -R jjackson/connect-labs --workflow="Deploy to AWS Labs" --limit 1
-gh run watch -R jjackson/connect-labs <run_id>
+gh run list -R dimagi-internal/connect-labs --workflow="Deploy to AWS Labs" --limit 1
+gh run watch -R dimagi-internal/connect-labs <run_id>
 ```
 
 ## Pre-Deploy Checklist

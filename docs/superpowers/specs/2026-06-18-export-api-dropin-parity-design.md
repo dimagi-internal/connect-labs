@@ -1,7 +1,7 @@
 # `/api/export/` full drop-in parity (issue #650)
 
 **Status:** approved design
-**Issue:** [#650](https://github.com/jjackson/connect-labs/issues/650) — follow-up to #637 / #645
+**Issue:** [#650](https://github.com/dimagi-internal/connect-labs/issues/650) — follow-up to #637 / #645
 **Date:** 2026-06-18
 
 ## Goal
