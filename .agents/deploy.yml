@@ -10,7 +10,7 @@ instructions: |
   ## Deployment Architecture
   - **Environment**: AWS ECS Fargate (labs-jj-cluster)
   - **Deployment Method**: GitHub Actions workflow (manual trigger)
-  - **Repository**: jjackson/connect-labs (this repo — it used to be a fork of
+  - **Repository**: dimagi-internal/connect-labs (this repo — it used to be a fork of
     dimagi/commcare-connect with a `labs-main` branch, but it has been split
     into its own repo and `main` is the default branch now)
   - **Deploy branch**: `main` — the workflow has a hard guard that refuses any
@@ -36,13 +36,13 @@ instructions: |
   ```bash
   # Deploy WITHOUT migrations (most common)
   gh workflow run deploy-labs.yml \
-    --repo jjackson/connect-labs \
+    --repo dimagi-internal/connect-labs \
     --ref main \
     --field run_migrations=false
 
   # Deploy WITH migrations (if models changed)
   gh workflow run deploy-labs.yml \
-    --repo jjackson/connect-labs \
+    --repo dimagi-internal/connect-labs \
     --ref main \
     --field run_migrations=true
   ```
@@ -54,19 +54,19 @@ instructions: |
   ### Step 3: Monitor Deployment
   ```bash
   # Watch deployment progress
-  gh run watch --repo jjackson/connect-labs
+  gh run watch --repo dimagi-internal/connect-labs
 
   # List recent runs
-  gh run list --repo jjackson/connect-labs --workflow=deploy-labs.yml --limit 5
+  gh run list --repo dimagi-internal/connect-labs --workflow=deploy-labs.yml --limit 5
 
   # View specific run
-  gh run view <run-id> --repo jjackson/connect-labs --log
+  gh run view <run-id> --repo dimagi-internal/connect-labs --log
   ```
 
   ## Important Notes
 
-  1. **Code Location**: The workflow runs from `jjackson/connect-labs:main`
-  2. **Single remote**: `origin` is `jjackson/connect-labs`. The historical
+  1. **Code Location**: The workflow runs from `dimagi-internal/connect-labs:main`
+  2. **Single remote**: `origin` is `dimagi-internal/connect-labs`. The historical
      `fork` remote pointing at the old commcare-connect fork is dead — if you
      see it in any docs or scripts, replace it with `origin`.
   3. **Migrations**: Only set `run_migrations=true` if you've modified database models
@@ -102,7 +102,7 @@ instructions: |
   - May need to create PR instead of direct trigger
 
   ### Deployment fails
-  1. Check logs: `gh run view <run-id> --repo jjackson/connect-labs --log`
+  1. Check logs: `gh run view <run-id> --repo dimagi-internal/connect-labs --log`
   2. Common issues:
      - Docker build failures (check Dockerfile)
      - Migration failures (check model changes)
@@ -123,16 +123,16 @@ instructions: |
   gh auth status
 
   # View current workflow runs
-  gh run list --repo jjackson/connect-labs --workflow=deploy-labs.yml
+  gh run list --repo dimagi-internal/connect-labs --workflow=deploy-labs.yml
 
   # Cancel a running deployment
-  gh run cancel <run-id> --repo jjackson/connect-labs
+  gh run cancel <run-id> --repo dimagi-internal/connect-labs
 
   # Rerun failed deployment
-  gh run rerun <run-id> --repo jjackson/connect-labs
+  gh run rerun <run-id> --repo dimagi-internal/connect-labs
 
   # Open workflow in browser
-  gh workflow view deploy-labs.yml --repo jjackson/connect-labs --web
+  gh workflow view deploy-labs.yml --repo dimagi-internal/connect-labs --web
   ```
 
   ## Pre-Deployment Checklist
@@ -147,7 +147,7 @@ instructions: |
   ## Post-Deployment Verification
 
   After deployment:
-  - [ ] Check deployment completed: `gh run list --repo jjackson/connect-labs --workflow=deploy-labs.yml --limit 1`
+  - [ ] Check deployment completed: `gh run list --repo dimagi-internal/connect-labs --workflow=deploy-labs.yml --limit 1`
   - [ ] Test changes at https://labs.connect.dimagi.com
   - [ ] Check CloudWatch logs if issues occur
   - [ ] Verify services are running in AWS ECS Console
@@ -158,13 +158,13 @@ instructions: |
   ```bash
   # Find last successful deployment
   gh run list \
-    --repo jjackson/connect-labs \
+    --repo dimagi-internal/connect-labs \
     --workflow=deploy-labs.yml \
     --status=success \
     --limit 1
 
   # Rerun that deployment
-  gh run rerun <previous-successful-run-id> --repo jjackson/connect-labs
+  gh run rerun <previous-successful-run-id> --repo dimagi-internal/connect-labs
   ```
 
 files:
