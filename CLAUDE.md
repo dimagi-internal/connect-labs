@@ -148,7 +148,7 @@ Labs deploys to **AWS ECS Fargate** via `.github/workflows/deploy-labs.yml`.
 
 ```bash
 # canonical deploy command — only main is accepted
-gh workflow run deploy-labs.yml --repo jjackson/connect-labs --ref main --field run_migrations=false
+gh workflow run deploy-labs.yml --repo dimagi-internal/connect-labs --ref main --field run_migrations=false
 ```
 
 (Historical note: this repo used to be a fork of `dimagi/commcare-connect` whose labs branch was `labs-main`. That label is dead — the repo is its own thing now and `main` is the default branch. Any older doc that says `labs-main` now means `main`.)
