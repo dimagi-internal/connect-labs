@@ -6,10 +6,7 @@
 // where a live WebGL canvas + active video screencast on a CPU (SwiftShader) renderer
 // cannot be screenshotted. It also drops the Mapbox token / CDN dependency. The data
 // (state polygons + worker points) comes from /api/map/, the same as before.
-const {
-  useState: useStateMap,
-  useEffect: useEffectMap,
-} = React;
+const { useState: useStateMap, useEffect: useEffectMap } = React;
 
 // Linear lon/lat -> SVG projection over a bounding box (Nigeria is small enough
 // that an equirectangular projection reads correctly; y is flipped so north is up).
@@ -59,7 +56,10 @@ function CoverageMapModal({ open, onClose }) {
     setError(null);
     const code = new URLSearchParams(window.location.search).get('campaign');
     let alive = true;
-    fetch('/campaign/api/map/' + (code ? '?campaign=' + encodeURIComponent(code) : ''))
+    fetch(
+      '/campaign/api/map/' +
+        (code ? '?campaign=' + encodeURIComponent(code) : ''),
+    )
       .then((r) => {
         if (!r.ok) throw new Error('map ' + r.status);
         return r.json();
@@ -250,7 +250,9 @@ function CoverageMapModal({ open, onClose }) {
               boxShadow: '0 2px 10px rgba(0,0,0,.15)',
             }}
           >
-            <div style={{ fontWeight: 600, color: CUTC.purple, marginBottom: 4 }}>
+            <div
+              style={{ fontWeight: 600, color: CUTC.purple, marginBottom: 4 }}
+            >
               State coverage
             </div>
             <div
@@ -271,7 +273,9 @@ function CoverageMapModal({ open, onClose }) {
               ></span>
               <span style={{ color: CUTC.muted }}>fewer → more workers</span>
             </div>
-            <div style={{ fontWeight: 600, color: CUTC.purple, marginBottom: 4 }}>
+            <div
+              style={{ fontWeight: 600, color: CUTC.purple, marginBottom: 4 }}
+            >
               Worker KYC
             </div>
             {[

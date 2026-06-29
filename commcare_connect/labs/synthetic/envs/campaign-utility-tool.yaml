@@ -24,5 +24,5 @@ timeline:
 resources:
   - kind: campaign
     code: MR-NAT-2026
-    name: "Measles–Rubella Vaccination Campaign (National)"
+    name: 'Measles–Rubella Vaccination Campaign (National)'
     worker_count: 5000

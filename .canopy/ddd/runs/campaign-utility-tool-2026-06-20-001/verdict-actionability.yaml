@@ -1,6 +1,6 @@
 schema_version: 1
 rubric_name: ddd-narrative-actionability-eval
-ran_at: "2026-06-20T20:30:00Z"
+ran_at: '2026-06-20T20:30:00Z'
 spec_path: docs/walkthroughs/campaign-utility-tool.yaml
 
 dimensions:

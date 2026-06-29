@@ -1,6 +1,6 @@
 schema_version: 1
 rubric_name: ddd-concept-eval
-ran_at: "2026-06-20T22:10:00Z"
+ran_at: '2026-06-20T22:10:00Z'
 run_dir: .canopy/ddd/runs/campaign-utility-tool-2026-06-20-001/
 
 dimensions:
