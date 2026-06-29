@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from confluence_client import ConfluenceClient  # isort: skip  # noqa: E402
 
 PARENT_PAGE_ID = "3916103691"  # Connect Labs Documentation
-GITHUB_PAGES_BASE = "https://jjackson.github.io/connect-labs/docs"
+GITHUB_PAGES_BASE = "https://dimagi-internal.github.io/connect-labs/docs"
 
 FEATURES = [
     {

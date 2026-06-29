@@ -65,7 +65,7 @@ FEATURE_TO_DOC_FILE = {
     "Connect MCP & Safe Mode": "user_docs/connect-mcp-safe-mode.md",
 }
 
-GITHUB_PAGES_BASE = "https://jjackson.github.io/connect-labs/docs"
+GITHUB_PAGES_BASE = "https://dimagi-internal.github.io/connect-labs/docs"
 
 CONFLUENCE_SUMMARY_SYSTEM_PROMPT = """\
 You write concise Confluence summary pages for Connect Labs features.

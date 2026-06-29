@@ -86,7 +86,7 @@ mkdocs.yml               MkDocs Material theme config (Mermaid.js via superfence
 
 ## GitHub Pages
 
-Site deploys to `https://jjackson.github.io/connect-labs/docs/`. Enable in repo settings if not already live: Settings → Pages → Source: Deploy from branch → `gh-pages`.
+Site deploys to `https://dimagi-internal.github.io/connect-labs/docs/`. Enable in repo settings if not already live: Settings → Pages → Source: Deploy from branch → `gh-pages`.
 
 ## Model usage and cost
 
