@@ -357,6 +357,50 @@ def workflow_update_definition(
 
 
 @register(
+    name="workflow_add_pipeline_source",
+    description=(
+        "Add (or re-point) a pipeline data source on a workflow definition. "
+        "Stores {pipeline_id, alias}; if the alias already exists it is "
+        "re-pointed to the given pipeline_id. The alias is the key the render "
+        "code reads as view.pipelines[alias].rows. Mirrors the web "
+        "add-pipeline-source endpoint (no version check needed — the source "
+        "list is keyed by alias). Returns the full updated pipeline_sources."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "workflow_id": {"type": "integer"},
+            "opportunity_id": {"type": "integer"},
+            "pipeline_id": {"type": "integer"},
+            "alias": {"type": "string"},
+        },
+        "required": ["workflow_id", "opportunity_id", "pipeline_id", "alias"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def workflow_add_pipeline_source(user, workflow_id: int, opportunity_id: int, pipeline_id: int, alias: str):
+    if not alias:
+        raise MCPToolError("INVALID_SCHEMA", "alias is required and must be non-empty")
+
+    token = require_connect_token(user)
+    wda = WorkflowDataAccess(access_token=token, opportunity_id=opportunity_id)
+    try:
+        updated = wda.add_pipeline_source(workflow_id, int(pipeline_id), alias)
+        if updated is None:
+            raise MCPToolError("NOT_FOUND", f"No workflow with id {workflow_id}")
+        return {
+            "workflow_id": workflow_id,
+            "alias": alias,
+            "pipeline_id": pipeline_id,
+            "pipeline_sources": updated.pipeline_sources,
+        }
+    finally:
+        if hasattr(wda, "close"):
+            wda.close()
+
+
+@register(
     name="workflow_update_opportunity_ids",
     description=(
         "Replace the opportunity_ids list on a multi-opportunity workflow "
