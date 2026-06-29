@@ -29,6 +29,20 @@ def test_cchq_forms_data_source():
     assert config.data_source.form_name == "Register Mother"
 
 
+def test_cchq_cases_data_source():
+    ds = DataSourceConfig(
+        type="cchq_cases",
+        case_type="work-area",
+    )
+    config = AnalysisPipelineConfig(
+        grouping_key="entity_id",
+        data_source=ds,
+        terminal_stage=CacheStage.VISIT_LEVEL,
+    )
+    assert config.data_source.type == "cchq_cases"
+    assert config.data_source.case_type == "work-area"
+
+
 def test_invalid_data_source_type():
     with pytest.raises(ValueError, match="Invalid data source type"):
         DataSourceConfig(type="invalid")

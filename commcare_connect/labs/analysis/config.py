@@ -111,6 +111,7 @@ class DataSourceConfig:
               "ocs_sessions" fetches from Open Chat Studio sessions API.
               "connect_export" fetches from a Connect production export endpoint
               (e.g. audit_reports, audit_report_entries, assigned_tasks).
+              "cchq_cases" fetches from CommCare HQ Case API v2 (e.g. work-area cases).
         form_name: (cchq_forms only) Form name for xmlns discovery,
                    e.g., "Register Mother", "Gold Standard Visit Checklist"
         app_id: (cchq_forms only) Explicit CommCare app ID.
@@ -124,6 +125,10 @@ class DataSourceConfig:
             access-controlled via the LabsRecord permission model.
         endpoint: (connect_export only) The export endpoint path segment,
             e.g. "audit_reports", "audit_report_entries", "assigned_tasks".
+        case_type: (cchq_cases only) CommCare HQ case type to fetch via the
+            Case API v2, e.g. "work-area". Each case becomes one visit dict
+            with the raw case nested under form_json["case"], so field paths
+            follow "case.properties.<prop>" / "case.owner_id".
     """
 
     type: str = "connect_csv"
@@ -134,9 +139,10 @@ class DataSourceConfig:
     experiment_id: str = ""
     api_key: str = ""
     endpoint: str = ""
+    case_type: str = ""
 
     def __post_init__(self):
-        if self.type not in ("connect_csv", "cchq_forms", "ocs_sessions", "connect_export"):
+        if self.type not in ("connect_csv", "cchq_forms", "ocs_sessions", "connect_export", "cchq_cases"):
             raise ValueError(f"Invalid data source type: {self.type}")
 
 

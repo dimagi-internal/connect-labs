@@ -462,7 +462,7 @@ class AnalysisPipeline:
             # (CCHQ forms have far fewer rows than Connect visits)
             # For filtered configs, skip strict tolerance — filter changes should reuse
             # existing cache, not re-download. The expires_at TTL handles staleness.
-            is_cchq = config.data_source.type == "cchq_forms"
+            is_cchq = config.data_source.type in ("cchq_forms", "cchq_cases")
             is_ocs = config.data_source.type == "ocs_sessions"
             expected_count = 0 if (is_cchq or is_ocs or has_filters) else self.visit_count
             if not force_refresh:
@@ -545,6 +545,23 @@ class AnalysisPipeline:
                                 {"message": f"Fetching Connect export '{ep}' for opp {opp_id}..."},
                             )
                             visit_dicts = fetch_connect_export_as_visit_dicts(
+                                request=self.request,
+                                data_source=unfiltered_config.data_source,
+                                access_token=self.access_token,
+                                opportunity_id=opp_id,
+                            )
+                            raw_data_already_stored = False
+                        elif unfiltered_config.data_source.type == "cchq_cases":
+                            from commcare_connect.labs.analysis.backends.sql.cchq_cases_fetcher import (
+                                fetch_cchq_cases_as_visit_dicts,
+                            )
+
+                            ct = unfiltered_config.data_source.case_type
+                            yield (
+                                EVENT_STATUS,
+                                {"message": f"Fetching '{ct}' cases from CommCare HQ..."},
+                            )
+                            visit_dicts = fetch_cchq_cases_as_visit_dicts(
                                 request=self.request,
                                 data_source=unfiltered_config.data_source,
                                 access_token=self.access_token,
@@ -659,6 +676,23 @@ class AnalysisPipeline:
                             {"message": f"Fetching Connect export '{ep}' for opp {opp_id}..."},
                         )
                         visit_dicts = fetch_connect_export_as_visit_dicts(
+                            request=self.request,
+                            data_source=unfiltered_config.data_source,
+                            access_token=self.access_token,
+                            opportunity_id=opp_id,
+                        )
+                        raw_data_already_stored = False
+                    elif unfiltered_config.data_source.type == "cchq_cases":
+                        from commcare_connect.labs.analysis.backends.sql.cchq_cases_fetcher import (
+                            fetch_cchq_cases_as_visit_dicts,
+                        )
+
+                        ct = unfiltered_config.data_source.case_type
+                        yield (
+                            EVENT_STATUS,
+                            {"message": f"Fetching '{ct}' cases from CommCare HQ..."},
+                        )
+                        visit_dicts = fetch_cchq_cases_as_visit_dicts(
                             request=self.request,
                             data_source=unfiltered_config.data_source,
                             access_token=self.access_token,
@@ -828,6 +862,39 @@ class AnalysisPipeline:
                     return
 
                 yield (EVENT_STATUS, {"message": f"Processing {len(visit_dicts)} {ep} records..."})
+                result = self.backend.process_and_cache(
+                    self.request,
+                    config,
+                    opp_id,
+                    visit_dicts,
+                    skip_raw_store=False,
+                )
+                yield (EVENT_STATUS, {"message": "Complete!"})
+                yield (EVENT_RESULT, result)
+                return
+
+            # CCHQ cases data source — fetch all cases (Case API v2) and process
+            # in one pass. Work-area cases are O(thousands), like connect_export
+            # records, so no streaming is needed.
+            if config.data_source.type == "cchq_cases":
+                from commcare_connect.labs.analysis.backends.sql.cchq_cases_fetcher import (
+                    fetch_cchq_cases_as_visit_dicts,
+                )
+
+                ct = config.data_source.case_type
+                yield (EVENT_STATUS, {"message": f"Fetching '{ct}' cases from CommCare HQ..."})
+                visit_dicts = fetch_cchq_cases_as_visit_dicts(
+                    request=self.request,
+                    data_source=config.data_source,
+                    access_token=self.access_token,
+                    opportunity_id=opp_id,
+                )
+                if not visit_dicts:
+                    yield (EVENT_STATUS, {"message": f"No '{ct}' cases found"})
+                    yield (EVENT_RESULT, VisitAnalysisResult(opportunity_id=opp_id, rows=[], metadata={}))
+                    return
+
+                yield (EVENT_STATUS, {"message": f"Processing {len(visit_dicts)} cases..."})
                 result = self.backend.process_and_cache(
                     self.request,
                     config,
