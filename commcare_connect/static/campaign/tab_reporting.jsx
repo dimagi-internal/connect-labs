@@ -80,9 +80,7 @@ function ReportingTab({ density }) {
           label="Payments disbursed"
           value={D.num(totals.paid)}
           icon="money-bill-trend-up"
-          delta={
-            pctR(totals.paid, totals.enrolled) + '% of enrolled'
-          }
+          delta={pctR(totals.paid, totals.enrolled) + '% of enrolled'}
           deltaTone="primary"
         />
       </div>

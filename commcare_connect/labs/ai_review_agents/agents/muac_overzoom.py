@@ -170,14 +170,10 @@ class MUACOverzoomAgent(BaseAIReviewAgent):
 
             if class_value == "hyperzoomed":
                 self.logger.debug(f"MUAC overzoom: hyperzoomed (confidence={confidence})")
-                return ReviewResult.failure(
-                    confidence=confidence, badge_label="Hyperzoomed", api_response=result
-                )
+                return ReviewResult.failure(confidence=confidence, badge_label="Hyperzoomed", api_response=result)
             elif class_value == "not_hyperzoomed":
                 self.logger.debug(f"MUAC overzoom: not hyperzoomed (confidence={confidence})")
-                return ReviewResult.success(
-                    confidence=confidence, pass_label="Not Hyperzoomed", api_response=result
-                )
+                return ReviewResult.success(confidence=confidence, pass_label="Not Hyperzoomed", api_response=result)
 
             # Secondary fallback: handle result:pass/fail format
             api_result = result.get("result", "")

@@ -12,10 +12,7 @@
         }
       ],
       "essential": true,
-      "command": [
-        "bash",
-        "/app/docker/start"
-      ],
+      "command": ["bash", "/app/docker/start"],
       "environment": [
         {
           "name": "LABS_EXPORTS_BUCKET",
@@ -152,9 +149,7 @@
   "networkMode": "awsvpc",
   "volumes": [],
   "placementConstraints": [],
-  "requiresCompatibilities": [
-    "FARGATE"
-  ],
+  "requiresCompatibilities": ["FARGATE"],
   "cpu": "1024",
   "memory": "4096"
 }
