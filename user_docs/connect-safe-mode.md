@@ -76,6 +76,6 @@ flowchart LR
 
 ## More Information
 
-- **[SAFE_MODE.md](https://github.com/jjackson/connect-labs/blob/main/docs/SAFE_MODE.md)** — full technical design and security model
+- **[SAFE_MODE.md](https://github.com/dimagi-internal/connect-labs/blob/main/docs/SAFE_MODE.md)** — full technical design and security model
 - For MCP setup and workflow editing, see [Connect MCP](connect-mcp.md)
 - For help, post in **#connect-labs** on Slack

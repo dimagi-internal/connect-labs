@@ -18,7 +18,7 @@ from weekly_changelog import (  # noqa: E402
 PR_TEMPLATE = {
     "number": 1,
     "title": "feat: something",
-    "html_url": "https://github.com/jjackson/connect-labs/pull/1",
+    "html_url": "https://github.com/dimagi-internal/connect-labs/pull/1",
     "merged_at": "2026-05-19T10:00:00Z",
     "body": "## Product Description\nThis changes the UI.",
 }
@@ -65,9 +65,9 @@ def test_fetch_pr_files_returns_filenames():
     mock_result.returncode = 0
     mock_result.stdout = "commcare_connect/prelogin/views.py\ncommcare_connect/workflow/views.py\n"
     with patch("weekly_changelog.subprocess.run", return_value=mock_result) as mock_run:
-        files = fetch_pr_files(42, "jjackson/connect-labs")
+        files = fetch_pr_files(42, "dimagi-internal/connect-labs")
     mock_run.assert_called_once_with(
-        ["gh", "api", "repos/jjackson/connect-labs/pulls/42/files", "--jq", ".[].filename"],
+        ["gh", "api", "repos/dimagi-internal/connect-labs/pulls/42/files", "--jq", ".[].filename"],
         capture_output=True,
         text=True,
         timeout=15,
@@ -80,13 +80,13 @@ def test_fetch_pr_files_returns_empty_on_error():
     mock_result.returncode = 1
     mock_result.stdout = ""
     with patch("weekly_changelog.subprocess.run", return_value=mock_result):
-        files = fetch_pr_files(99, "jjackson/connect-labs")
+        files = fetch_pr_files(99, "dimagi-internal/connect-labs")
     assert files == []
 
 
 def test_fetch_pr_files_returns_empty_on_timeout():
     with patch("weekly_changelog.subprocess.run", side_effect=subprocess.TimeoutExpired("gh", 15)):
-        files = fetch_pr_files(7, "jjackson/connect-labs")
+        files = fetch_pr_files(7, "dimagi-internal/connect-labs")
     assert files == []
 
 
@@ -95,7 +95,7 @@ def test_fetch_pr_files_strips_blank_lines():
     mock_result.returncode = 0
     mock_result.stdout = "\ncommcare_connect/prelogin/home.html\n\n"
     with patch("weekly_changelog.subprocess.run", return_value=mock_result):
-        files = fetch_pr_files(1, "jjackson/connect-labs")
+        files = fetch_pr_files(1, "dimagi-internal/connect-labs")
     assert files == ["commcare_connect/prelogin/home.html"]
 
 
@@ -105,7 +105,7 @@ def test_load_user_visible_prs_adds_marketing_category():
     marketing_files = ["commcare_connect/prelogin/views.py"]
     try:
         with patch("weekly_changelog.fetch_pr_files", return_value=marketing_files), patch.dict(
-            os.environ, {"GITHUB_REPOSITORY": "jjackson/connect-labs"}
+            os.environ, {"GITHUB_REPOSITORY": "dimagi-internal/connect-labs"}
         ):
             result = load_user_visible_prs(prs_file)
     finally:
@@ -120,7 +120,7 @@ def test_load_user_visible_prs_adds_app_category():
     app_files = ["commcare_connect/workflow/views.py"]
     try:
         with patch("weekly_changelog.fetch_pr_files", return_value=app_files), patch.dict(
-            os.environ, {"GITHUB_REPOSITORY": "jjackson/connect-labs"}
+            os.environ, {"GITHUB_REPOSITORY": "dimagi-internal/connect-labs"}
         ):
             result = load_user_visible_prs(prs_file)
     finally:
@@ -133,7 +133,7 @@ def test_load_user_visible_prs_skips_empty_product_description():
     prs_file = _write_prs_file([pr])
     try:
         with patch("weekly_changelog.fetch_pr_files", return_value=[]), patch.dict(
-            os.environ, {"GITHUB_REPOSITORY": "jjackson/connect-labs"}
+            os.environ, {"GITHUB_REPOSITORY": "dimagi-internal/connect-labs"}
         ):
             result = load_user_visible_prs(prs_file)
     finally:
@@ -176,7 +176,7 @@ def test_generate_weekly_summary_includes_category_annotation():
             "description": "Hamburger menu added.",
             "pr_numbers": [5],
             "lead_pr": 5,
-            "lead_url": "https://github.com/jjackson/connect-labs/pull/5",
+            "lead_url": "https://github.com/dimagi-internal/connect-labs/pull/5",
             "category": "marketing",
         },
         {
@@ -184,7 +184,7 @@ def test_generate_weekly_summary_includes_category_annotation():
             "description": "Fixed React crash.",
             "pr_numbers": [6],
             "lead_pr": 6,
-            "lead_url": "https://github.com/jjackson/connect-labs/pull/6",
+            "lead_url": "https://github.com/dimagi-internal/connect-labs/pull/6",
             "category": "app",
         },
     ]
@@ -198,15 +198,17 @@ def test_generate_weekly_summary_includes_category_annotation():
 
 def test_group_prs_by_feature_returns_groups():
     """Verify grouping parses JSON and attaches marketing category from source PRs."""
-    fake_json = json.dumps([
-        {
-            "title": "New dashboard",
-            "description": "Overview tab is live.",
-            "pr_numbers": [10, 11],
-            "lead_pr": 10,
-            "type": "New",
-        }
-    ])
+    fake_json = json.dumps(
+        [
+            {
+                "title": "New dashboard",
+                "description": "Overview tab is live.",
+                "pr_numbers": [10, 11],
+                "lead_pr": 10,
+                "type": "New",
+            }
+        ]
+    )
 
     class FakeResponse:
         content = [MagicMock(text=fake_json)]
@@ -223,14 +225,14 @@ def test_group_prs_by_feature_returns_groups():
             "number": 10,
             "title": "feat: dashboard",
             "description": "Overview.",
-            "url": "https://github.com/jjackson/connect-labs/pull/10",
+            "url": "https://github.com/dimagi-internal/connect-labs/pull/10",
             "category": "app",
         },
         {
             "number": 11,
             "title": "fix: dashboard crash",
             "description": "Fixed crash.",
-            "url": "https://github.com/jjackson/connect-labs/pull/11",
+            "url": "https://github.com/dimagi-internal/connect-labs/pull/11",
             "category": "app",
         },
     ]
@@ -240,22 +242,24 @@ def test_group_prs_by_feature_returns_groups():
     g = groups[0]
     assert g["title"] == "New dashboard"
     assert g["lead_pr"] == 10
-    assert g["lead_url"] == "https://github.com/jjackson/connect-labs/pull/10"
+    assert g["lead_url"] == "https://github.com/dimagi-internal/connect-labs/pull/10"
     assert g["category"] == "app"
     assert set(g["pr_numbers"]) == {10, 11}
 
 
 def test_group_prs_by_feature_derives_marketing_category():
     """Verify group category is derived from constituent PRs (marketing > mixed > app)."""
-    fake_json = json.dumps([
-        {
-            "title": "Homepage update",
-            "description": "Navigation changed.",
-            "pr_numbers": [20, 21],
-            "lead_pr": 20,
-            "type": "Improvement",
-        }
-    ])
+    fake_json = json.dumps(
+        [
+            {
+                "title": "Homepage update",
+                "description": "Navigation changed.",
+                "pr_numbers": [20, 21],
+                "lead_pr": 20,
+                "type": "Improvement",
+            }
+        ]
+    )
 
     class FakeResponse:
         content = [MagicMock(text=fake_json)]
@@ -272,14 +276,14 @@ def test_group_prs_by_feature_derives_marketing_category():
             "number": 20,
             "title": "feat: workflow",
             "description": "Workflow update.",
-            "url": "https://github.com/jjackson/connect-labs/pull/20",
+            "url": "https://github.com/dimagi-internal/connect-labs/pull/20",
             "category": "app",
         },
         {
             "number": 21,
             "title": "feat: prelogin nav",
             "description": "Navigation change.",
-            "url": "https://github.com/jjackson/connect-labs/pull/21",
+            "url": "https://github.com/dimagi-internal/connect-labs/pull/21",
             "category": "marketing",
         },
     ]
@@ -308,7 +312,7 @@ def test_group_prs_by_feature_fallback_on_bad_json():
             "number": i,
             "title": f"PR {i}",
             "description": f"Desc {i}.",
-            "url": f"https://github.com/jjackson/connect-labs/pull/{i}",
+            "url": f"https://github.com/dimagi-internal/connect-labs/pull/{i}",
             "category": "app",
         }
         for i in range(1, 15)  # 14 PRs — more than fallback cap of 10
