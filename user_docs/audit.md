@@ -39,14 +39,19 @@ Navigate to **Audit** in the top menu, then click **Create Audit Session**.
 This step appears once you have selected your opportunities. It has two sections:
 
 - **Select the image types to audit** — an auto-detected picker lists the image question types available for the selected opportunity. Each image type is shown by its full question path (for example, `household_visit/child_screening/muac_photo`) so you can confirm exactly which form field you are including. Select one or more types to include in this session.
-- **Related field rules** — manually associate any supporting fields (such as a recorded measurement value) with the image types you selected. These associations let the AI and human reviewer see the relevant data alongside each photo.
+- **AI reviewer per image type** — when you tick an image type, an AI reviewer dropdown appears directly beneath it. You can select a different reviewer for each image type, or leave the dropdown blank to skip AI review for that type. Each reviewer only appears for the image types it is designed for. This replaces the previous single-reviewer dropdown — each photo type now runs only the reviewer you choose for it.
+- **Reviewer settings** — some reviewers require one extra setting, which appears immediately under the reviewer dropdown when that reviewer is selected:
+    - **Scale Image Validation** asks you to choose a **Manual Scale Value** field — a dropdown of your opportunity's form fields that tells the reviewer which recorded weight to compare against the scale photo.
+    - **MUAC OverZoom** requires no extra settings.
+    If a reviewer needs a setting and you leave it blank, the wizard will stop you before creating the session.
+- **Context fields** (collapsed by default) — optionally associate any supporting form fields (such as a recorded measurement value) with an image type so that human reviewers can see the relevant data alongside each photo. These associations have no effect on AI review.
 
 !!! tip "Quick-create links"
     If you regularly audit the same image types, you can pre-select them by adding `?image_paths=<full/path1>,<full/path2>` to the audit-creation URL. The picker will open with those types already selected, saving setup time.
 
 **Choosing AI assistance (within Step 5):**
 
-If your selected image types support AI review, an **AI Review Agent** dropdown appears in this step. Select an agent if you want AI assistance, or leave it blank to skip AI review entirely.
+Once you select an image type, an **AI Review Agent** dropdown appears beneath it. Select an agent for that image type if you want AI assistance, or leave it blank to skip AI review for that type. Because each image type has its own dropdown, you can — for example — run **MUAC OverZoom** on MUAC photos and **Scale Image Validation** on weight photos in the same session, with no risk of the wrong reviewer running on the wrong photo type.
 
 When an agent is selected, you will also see per-verdict **"Auto-tag results before I review"** checkboxes — one for each possible verdict the agent can produce. These work the same way as in the review queue:
 
@@ -79,24 +84,20 @@ Once a session is created, open it to start the bulk assessment.
 
     Before you start, click **Run AI Review** to have AI pre-screen all images in the session. AI review processes multiple images at the same time, so a session of around 30 images typically completes in about 2 minutes.
 
-    When your session includes weight or MUAC image types, an **AI Review Agent** dropdown appears. Select the agent that matches your image type:
+    The AI reviewer assigned to each image type during session creation runs only on images of that type. If you assigned different reviewers to different photo types, each photo is assessed only by the reviewer you chose for it.
 
     | Agent | When it appears | What it does |
     | --- | --- | --- |
-    | **Scale Image Validation** | A weight-related image type is selected | Compares scale photos against the reading entered by the FLW and flags mismatches |
-    | **MUAC OverZoom** | A MUAC image type is selected | Classifies photos for excessive zoom and flags images the agent identifies as hyperzoomed |
+    | **Scale Image Validation** | A weight-related image type is selected and this agent is chosen for it | Compares scale photos against the reading entered by the FLW and flags mismatches |
+    | **MUAC OverZoom** | A MUAC image type is selected and this agent is chosen for it | Classifies photos for excessive zoom and flags images the agent identifies as hyperzoomed |
 
-    If no agent is selected, the workflow behaves exactly as before — the AI checks each image for:
-
-    - **Image quality** — blur, poor lighting, or incomplete framing
-    - **Measurement validity** — scale or MUAC readings outside expected ranges
-    - **Required elements** — whether the required items are clearly visible in the photo
+    If no agent is selected for an image type, that type's photos are not pre-screened by AI — the workflow behaves exactly as standard review for those images.
 
     AI results appear alongside each image as suggestions — you make the final Pass/Fail call. Images flagged by the AI are highlighted so you can prioritize reviewing them first.
 
     ### Choosing how the AI applies its verdicts
 
-    Next to the AI Review Agent dropdown, each possible AI verdict has a checkbox — for example, "Automatically pre-tag photos flagged as hyperzoomed as Fail" or "Automatically pre-tag readings that match the scale as Pass". You can tick any combination of these:
+    Next to each AI Review Agent dropdown (in Step 5 of the wizard), each possible AI verdict has a checkbox — for example, "Automatically pre-tag photos flagged as hyperzoomed as Fail" or "Automatically pre-tag readings that match the scale as Pass". You can tick any combination of these:
 
     - **Ticked** — the AI pre-tags matching images with that result before you open the review queue.
     - **Unticked** — the AI still badges every image with its classification, but leaves the Pass/Fail decision to you.
@@ -179,13 +180,19 @@ Yes — your progress saves automatically. Open the session anytime to continue 
 The AI looks at image quality (blur, brightness, framing), whether the measurement shown is within expected ranges, and whether required items are visible. It does not access patient health records — only the images themselves.
 
 **What is the MUAC OverZoom agent?**
-When a MUAC image type is selected, you can choose the **MUAC OverZoom** agent from the AI Review Agent dropdown. It automatically identifies photos taken with excessive zoom and badges them with its classification. If you have ticked the pre-tag checkbox for hyperzoomed images, those images are also pre-tagged **Fail** with a red **Hyperzoomed** badge before your review begins. If the checkbox is unticked, the badge still shows the AI's classification but no Pass/Fail is applied automatically. You can confirm or override each result during your normal review.
+When a MUAC image type is selected, you can choose the **MUAC OverZoom** agent from the AI reviewer dropdown that appears beneath that image type. It automatically identifies photos taken with excessive zoom and badges them with its classification. If you have ticked the pre-tag checkbox for hyperzoomed images, those images are also pre-tagged **Fail** with a red **Hyperzoomed** badge before your review begins. If the checkbox is unticked, the badge still shows the AI's classification but no Pass/Fail is applied automatically. You can confirm or override each result during your normal review.
 
 **Can I control which AI verdicts are applied automatically?**
-Yes. When selecting an agent — either in Step 5 of the audit-creation wizard or from the review queue — each possible verdict has a checkbox. Tick it to have the AI pre-tag matching images with that result; leave it unticked so the AI flags and badges the image but leaves the Pass/Fail decision to you. The default is flag-only — nothing is pre-tagged unless you opt in. You can also bulk-apply any verdict with one click from the review queue (for example, **Fail all Hyperzoomed (N)**).
+Yes. When selecting an agent for an image type in Step 5 of the audit-creation wizard, each possible verdict has a checkbox. Tick it to have the AI pre-tag matching images with that result; leave it unticked so the AI flags and badges the image but leaves the Pass/Fail decision to you. The default is flag-only — nothing is pre-tagged unless you opt in. You can also bulk-apply any verdict with one click from the review queue (for example, **Fail all Hyperzoomed (N)**).
 
-**Where does the AI Review Agent dropdown appear?**
-The dropdown appears in **Step 5 — Audit Field Configuration** of the audit-creation wizard, once you have selected your opportunities and image types. It also appears in the review queue after a session is created.
+**Where does the AI reviewer dropdown appear?**
+The dropdown appears directly beneath each image type in **Step 5 — Audit Field Configuration** of the audit-creation wizard, as soon as you tick that image type. This means you assign a reviewer per image type rather than choosing one reviewer for the whole session. The review queue reflects the assignments you made during setup.
+
+**Can I assign different AI reviewers to different photo types in the same session?**
+Yes. Because the AI reviewer dropdown is now attached to each individual image type, you can — for example — assign **MUAC OverZoom** to MUAC photos and **Scale Image Validation** to weight photos in the same session. Each photo type is assessed only by the reviewer you chose for it.
+
+**What is the Manual Scale Value field for Scale Image Validation?**
+When you select the **Scale Image Validation** reviewer for a weight-related image type, a **Manual Scale Value** dropdown appears asking you to pick the form field that holds the weight recorded by the FLW. The reviewer uses this to compare the recorded value against what is visible in the scale photo. If you leave this setting blank, the wizard will stop you before creating the session.
 
 **How are image types displayed when I select them?**
 Each image type is shown by its full question path (for example, `household_visit/child_screening/muac_photo`) so you can confirm exactly which form field you are selecting. If you regularly audit the same image types, you can pre-select them by adding `?image_paths=<full/path1>,<full/path2>` to the audit-creation URL.
