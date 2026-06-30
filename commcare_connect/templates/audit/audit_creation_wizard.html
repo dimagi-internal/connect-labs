@@ -566,6 +566,39 @@
       </div>
     </div>
 
+    <!-- Image Types: pick which photos to audit (auto-detected from submissions) -->
+    <div x-show="selectedOpportunities.length > 0" class="mt-6 pt-6 border-t border-gray-200">
+      <h3 class="text-md font-medium text-gray-800 mb-1">
+        <i class="fa-solid fa-image mr-2 text-brand-indigo"></i>
+        Image Types to Audit
+      </h3>
+      <p class="text-sm text-gray-600 mb-3">
+        Auto-detected from recent submissions in the selected opportunities. Pick which photo types to
+        review and the audit will include only visits that have them. Leave all unchecked to audit every image.
+      </p>
+
+      <div x-show="imageTypesLoading" class="text-sm text-gray-500">
+        <i class="fa-solid fa-spinner fa-spin mr-2"></i>Detecting image types...
+      </div>
+      <div x-show="imageTypesError" class="text-sm text-red-600" x-text="imageTypesError"></div>
+
+      <div x-show="!imageTypesLoading && !imageTypesError && availableImageTypes.length > 0"
+           class="flex flex-wrap gap-2">
+        <template x-for="t in availableImageTypes" :key="t.id">
+          <label class="inline-flex items-center gap-2 px-3 py-2 text-sm border rounded-md cursor-pointer hover:bg-gray-50"
+                 :class="selectedImageTypeIds.includes(t.id) ? 'bg-brand-indigo/5 border-brand-indigo' : 'bg-white border-gray-200'">
+            <input type="checkbox" :value="t.id" x-model="selectedImageTypeIds"
+                   class="h-4 w-4 text-brand-indigo focus:ring-brand-indigo border-gray-300 rounded">
+            <span x-text="t.label" :title="t.path"></span>
+          </label>
+        </template>
+      </div>
+      <div x-show="!imageTypesLoading && !imageTypesError && availableImageTypes.length === 0"
+           class="text-sm text-gray-500">
+        No image questions detected in the selected opportunities' recent submissions.
+      </div>
+    </div>
+
     <!-- Update Preview Button -->
     <div class="flex justify-center mt-6">
       <button
@@ -1038,6 +1071,15 @@ function auditCreationPage() {
       relatedFields: []  // Array of {imagePath, fieldPath, label, filterByImage, filterByField} rules
     },
 
+    // Image types auto-detected from the selected opportunities' submissions.
+    // Picking some scopes the audit to visits that have those photos (filter_by_image),
+    // mirroring the Bulk Image Audit workflow. Leaving all unchecked audits every image.
+    availableImageTypes: [],      // [{id, label, path}] unioned across selected opps
+    selectedImageTypeIds: [],     // ids the auditor chose to audit
+    imageTypesLoading: false,
+    imageTypesError: null,
+    imageTypesLoadedKey: '',      // cache key (sorted opp ids) to skip redundant refetches
+
     // AI Review Agent state
     availableAIAgents: [],
     selectedAIAgent: '',  // agent_id or empty string for none
@@ -1102,6 +1144,7 @@ function auditCreationPage() {
       } else {
         this.selectedOpportunities.push(opportunity);
       }
+      this.loadImageTypes();
     },
 
     removeOpportunitySelection(opportunity) {
@@ -1109,6 +1152,7 @@ function auditCreationPage() {
       if (index >= 0) {
         this.selectedOpportunities.splice(index, 1);
       }
+      this.loadImageTypes();
     },
 
 
@@ -1167,6 +1211,59 @@ function auditCreationPage() {
       this.selectedFlwUserIds = [];
       this.auditTitle = '';
       this.auditTag = '';
+      this.loadImageTypes();
+    },
+
+    // Discover image types from the selected opportunities' recent submissions and
+    // union them. Each opp is sampled server-side (OpportunityImageTypesAPIView), so
+    // this is a few small calls. Cached by the exact opp set to avoid refetching.
+    async loadImageTypes() {
+      const oppIds = this.selectedOpportunities.map(o => o.id);
+      const key = [...oppIds].sort((a, b) => a - b).join(',');
+      if (key === this.imageTypesLoadedKey) return;
+      if (oppIds.length === 0) {
+        this.availableImageTypes = [];
+        this.selectedImageTypeIds = [];
+        this.imageTypesLoadedKey = '';
+        this.imageTypesError = null;
+        return;
+      }
+      this.imageTypesLoading = true;
+      this.imageTypesError = null;
+      try {
+        // Sample each opportunity in parallel — each call streams a few hundred visits
+        // server-side, so sequential would be slow for multi-opp audits.
+        const lists = await Promise.all(oppIds.map(async oppId => {
+          const resp = await fetch(`/audit/api/opportunity/${oppId}/image-questions/`);
+          if (!resp.ok) throw new Error(`opportunity ${oppId}: HTTP ${resp.status}`);
+          return resp.json();
+        }));
+        const byId = new Map();
+        lists.flat().forEach(t => { if (t && t.id && !byId.has(t.id)) byId.set(t.id, t); });
+        this.availableImageTypes = Array.from(byId.values())
+          .sort((a, b) => (a.label || '').localeCompare(b.label || ''));
+        // Drop any previously-selected types that no longer exist in the new set
+        const availIds = new Set(this.availableImageTypes.map(t => t.id));
+        this.selectedImageTypeIds = this.selectedImageTypeIds.filter(id => availIds.has(id));
+        this.imageTypesLoadedKey = key;
+      } catch (e) {
+        this.imageTypesError = 'Could not detect image types: ' + e.message;
+        this.availableImageTypes = [];
+      } finally {
+        this.imageTypesLoading = false;
+      }
+    },
+
+    // Selected image types -> image-only audit rules (scope to visits with that photo),
+    // merged with any manual field-association rules. Mirrors the workflow's related_fields.
+    buildRelatedFieldsPayload() {
+      const imageRules = this.availableImageTypes
+        .filter(t => this.selectedImageTypeIds.includes(t.id))
+        .map(t => ({ imagePath: t.path, filterByImage: true, label: t.label }));
+      const manualRules = this.auditCriteria.relatedFields.filter(
+        rule => rule.imagePath && rule.fieldPath
+      );
+      return [...imageRules, ...manualRules];
     },
 
     // FLW selection methods
@@ -1525,9 +1622,7 @@ function auditCreationPage() {
           tag: this.auditTag,
           selected_flw_user_ids: this.selectedFlwUserIds,  // Include FLW selections
           // Include related fields configuration (filter out incomplete rules)
-          relatedFields: this.auditCriteria.relatedFields.filter(
-            rule => rule.imagePath && rule.fieldPath
-          )
+          relatedFields: this.buildRelatedFieldsPayload()
         };
 
         // Only include date filters for date_range audit type
@@ -1600,9 +1695,7 @@ function auditCreationPage() {
           title: this.auditTitle,
           tag: this.auditTag,
           selected_flw_user_ids: this.selectedFlwUserIds,
-          relatedFields: this.auditCriteria.relatedFields.filter(
-            rule => rule.imagePath && rule.fieldPath
-          )
+          relatedFields: this.buildRelatedFieldsPayload()
         };
 
         if (this.auditCriteria.type === 'date_range') {
@@ -1850,6 +1943,9 @@ function auditCreationPage() {
 
       // Load available AI agents
       this.loadAIAgents();
+
+      // Detect image types now in case an opportunity was pre-selected from labs_context
+      this.loadImageTypes();
     },
 
     // Load available AI agents
