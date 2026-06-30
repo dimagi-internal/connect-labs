@@ -657,29 +657,93 @@
       Step 5: Audit Field Configuration
     </h2>
 
-    <!-- Section 1: Image types to audit (auto-detected from submissions) -->
+    <!-- Section: image types + their AI reviewer -->
     <h3 class="text-md font-medium text-gray-800 mb-1">
       <i class="fa-solid fa-image mr-2 text-brand-indigo"></i>
-      Select the image types to audit
+      Select image types to audit, and an AI reviewer for each
     </h3>
     <p class="text-sm text-gray-600 mb-3">
-      Auto-detected from recent submissions in the selected opportunities. Pick which photo types to
-      review (by their full question path) and the audit will include only visits that have them.
-      Leave all unchecked to audit every image.
+      Auto-detected from recent submissions. Check a photo type to audit it; optionally pick an
+      AI reviewer that runs on just that type. Leave all unchecked to audit every image.
     </p>
     <div x-show="imageTypesLoading" class="text-sm text-gray-500 mb-2">
       <i class="fa-solid fa-spinner fa-spin mr-2"></i>Detecting image types...
     </div>
     <div x-show="imageTypesError" class="text-sm text-red-600 mb-2" x-text="imageTypesError"></div>
+
     <div x-show="!imageTypesLoading && !imageTypesError && availableImageTypes.length > 0"
-         class="flex flex-col gap-2 mb-2">
+         class="flex flex-col gap-3 mb-2">
       <template x-for="t in availableImageTypes" :key="t.path">
-        <label class="inline-flex items-center gap-2 px-3 py-2 text-sm border rounded-md cursor-pointer hover:bg-gray-50"
-               :class="selectedImagePaths.includes(t.path) ? 'bg-brand-indigo/5 border-brand-indigo' : 'bg-white border-gray-200'">
-          <input type="checkbox" :value="t.path" x-model="selectedImagePaths"
-                 class="h-4 w-4 text-brand-indigo focus:ring-brand-indigo border-gray-300 rounded">
-          <span class="font-mono text-xs text-gray-700 break-all" x-text="t.path"></span>
-        </label>
+        <div class="border rounded-md"
+             :class="selectedImagePaths.includes(t.path) ? 'border-brand-indigo' : 'border-gray-200'">
+          <!-- Type checkbox -->
+          <label class="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer"
+                 :class="selectedImagePaths.includes(t.path) ? 'bg-brand-indigo/5' : 'bg-white'">
+            <input type="checkbox" :value="t.path" x-model="selectedImagePaths"
+                   @change="syncImageReviewers()"
+                   class="h-4 w-4 text-brand-indigo focus:ring-brand-indigo border-gray-300 rounded">
+            <span class="font-mono text-xs text-gray-700 break-all" x-text="t.path"></span>
+          </label>
+
+          <!-- Reviewer + its settings (only when this type is checked) -->
+          <div x-show="selectedImagePaths.includes(t.path) && imageReviewers[t.path]"
+               class="px-4 pb-3 pt-1 border-t border-gray-100 space-y-3">
+            <div>
+              <label class="block text-xs font-medium text-gray-600 mb-1">AI reviewer</label>
+              <select x-model="imageReviewers[t.path].agentId" @change="onReviewerChange(t.path)"
+                      class="w-full md:w-1/2 px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-brand-indigo focus:border-brand-indigo">
+                <option value="">None — skip AI review</option>
+                <template x-for="agent in availableAIAgents" :key="agent.agent_id">
+                  <option :value="agent.agent_id" x-text="agent.name"></option>
+                </template>
+              </select>
+            </div>
+
+            <!-- Generic config_fields renderer (v1: form_field type) -->
+            <template x-for="field in getAgentConfigFields(imageReviewers[t.path].agentId)" :key="field.key">
+              <div>
+                <label class="block text-xs font-medium text-gray-600 mb-1">
+                  <span x-text="field.label"></span>
+                  <span x-show="field.required" class="text-red-500">*</span>
+                </label>
+                <template x-if="field.type === 'form_field' && availableFieldPaths.length > 0">
+                  <select x-model="imageReviewers[t.path].config[field.key]"
+                          class="w-full md:w-1/2 px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-brand-indigo focus:border-brand-indigo">
+                    <option value="">Select a field…</option>
+                    <template x-for="fp in availableFieldPaths" :key="fp.path">
+                      <option :value="fp.path" x-text="fp.path"></option>
+                    </template>
+                  </select>
+                </template>
+                <template x-if="field.type === 'form_field' && availableFieldPaths.length === 0">
+                  <input type="text" x-model="imageReviewers[t.path].config[field.key]"
+                         placeholder="form/field_path"
+                         class="w-full md:w-1/2 px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-brand-indigo focus:border-brand-indigo">
+                </template>
+                <p x-show="field.help" class="text-xs text-gray-400 mt-1" x-text="field.help"></p>
+              </div>
+            </template>
+
+            <!-- Auto-apply verdicts for this reviewer -->
+            <div x-show="imageReviewers[t.path].agentId && getAgentActions(imageReviewers[t.path].agentId).length > 0">
+              <p class="text-xs font-medium text-gray-700 mb-1">Auto-tag results before I review</p>
+              <div class="space-y-1">
+                <template x-for="action in getAgentActions(imageReviewers[t.path].agentId)" :key="action.key">
+                  <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                    <input type="checkbox" :value="action.key" x-model="imageReviewers[t.path].autoApplyActions"
+                           class="h-4 w-4 text-brand-indigo focus:ring-brand-indigo border-gray-300 rounded">
+                    <span>
+                      Automatically apply <span class="font-medium" x-text="action.button_label"></span>
+                      <span class="ml-1 font-semibold"
+                            :class="action.human_result === 'fail' ? 'text-red-600' : 'text-green-600'"
+                            x-text="'(' + action.human_result + ')'"></span>
+                    </span>
+                  </label>
+                </template>
+              </div>
+            </div>
+          </div>
+        </div>
       </template>
     </div>
     <div x-show="!imageTypesLoading && !imageTypesError && availableImageTypes.length === 0"
@@ -687,92 +751,43 @@
       No image questions detected in the selected opportunities' recent submissions.
     </div>
 
-    <!-- Section 2: Related field associations (advanced) -->
-    <h3 class="text-md font-medium text-gray-800 mt-6 mb-1 pt-6 border-t border-gray-200">
-      <i class="fa-solid fa-link mr-2 text-brand-indigo"></i>
-      Related field rules (Optional)
-    </h3>
-    <p class="text-sm text-gray-600 mb-4">
-      Associate form field values with specific images. These values will be displayed alongside images during review.
-    </p>
-
-    <!-- Rules List -->
-    <div class="space-y-3 mb-4">
-      <template x-for="(rule, index) in auditCriteria.relatedFields" :key="index">
-        <div class="border border-gray-200 rounded-md p-4 bg-gray-50">
-          <div class="flex justify-between items-start mb-3">
-            <span class="text-xs font-medium text-gray-500">
-              Rule <span x-text="index + 1"></span>
-            </span>
-            <button @click="auditCriteria.relatedFields.splice(index, 1)" type="button"
-                    class="text-red-500 hover:text-red-700 text-xs transition-colors">
-              <i class="fa-solid fa-times mr-1"></i>Remove
-            </button>
-          </div>
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+    <!-- Collapsed: agent-less context fields shown to human reviewers -->
+    <details class="mt-6 pt-6 border-t border-gray-200">
+      <summary class="text-md font-medium text-gray-800 cursor-pointer">
+        <i class="fa-solid fa-link mr-2 text-brand-indigo"></i>
+        Context fields (optional)
+      </summary>
+      <p class="text-sm text-gray-600 my-3">
+        Show extra form values next to an image during review — no AI agent involved.
+      </p>
+      <div class="space-y-3 mb-3">
+        <template x-for="(c, index) in contextFields" :key="index">
+          <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end border border-gray-200 rounded-md p-3 bg-gray-50">
             <div>
-              <label class="block text-xs font-medium text-gray-600 mb-1">Image Path</label>
-              <input type="text" x-model="rule.imagePath"
-                     placeholder="form/photo_field"
-                     class="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-brand-indigo focus:border-brand-indigo">
-              <p class="text-xs text-gray-400 mt-1">Path to the image question</p>
+              <label class="block text-xs font-medium text-gray-600 mb-1">Image path</label>
+              <input type="text" x-model="c.imagePath" placeholder="form/photo_field"
+                     class="w-full px-3 py-2 text-sm border border-gray-300 rounded-md">
             </div>
             <div>
-              <label class="block text-xs font-medium text-gray-600 mb-1">Related Field Path</label>
-              <input type="text" x-model="rule.fieldPath"
-                     placeholder="form/related_field"
-                     class="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-brand-indigo focus:border-brand-indigo">
-              <p class="text-xs text-gray-400 mt-1">Path to extract value from</p>
+              <label class="block text-xs font-medium text-gray-600 mb-1">Field path</label>
+              <input type="text" x-model="c.fieldPath" placeholder="form/related_field"
+                     class="w-full px-3 py-2 text-sm border border-gray-300 rounded-md">
             </div>
             <div>
-              <label class="block text-xs font-medium text-gray-600 mb-1">Display Label</label>
-              <input type="text" x-model="rule.label"
-                     placeholder="Field Label"
-                     class="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-brand-indigo focus:border-brand-indigo">
-              <p class="text-xs text-gray-400 mt-1">Label shown during review</p>
+              <label class="block text-xs font-medium text-gray-600 mb-1">Label</label>
+              <input type="text" x-model="c.label" placeholder="Field Label"
+                     class="w-full px-3 py-2 text-sm border border-gray-300 rounded-md">
             </div>
+            <button @click="contextFields.splice(index, 1)" type="button"
+                    class="text-red-500 hover:text-red-700 text-xs"><i class="fa-solid fa-times mr-1"></i>Remove</button>
           </div>
-
-          <!-- Filter Options -->
-          <div class="mt-3 pt-3 border-t border-gray-200">
-            <div class="flex flex-wrap gap-4">
-              <label class="flex items-center cursor-pointer">
-                <input type="checkbox" x-model="rule.filterByImage"
-                       class="h-4 w-4 text-brand-indigo focus:ring-brand-indigo border-gray-300 rounded">
-                <span class="ml-2 text-xs text-gray-700">Only include visits with this image</span>
-              </label>
-              <label class="flex items-center cursor-pointer">
-                <input type="checkbox" x-model="rule.filterByField"
-                       class="h-4 w-4 text-brand-indigo focus:ring-brand-indigo border-gray-300 rounded">
-                <span class="ml-2 text-xs text-gray-700">Only include visits with this field value</span>
-              </label>
-            </div>
-          </div>
-        </div>
-      </template>
-    </div>
-
-    <!-- Add Rule Button -->
-    <button @click="auditCriteria.relatedFields.push({imagePath: '', fieldPath: '', label: '', filterByImage: false, filterByField: false})"
-            type="button"
-            class="text-sm text-brand-indigo hover:text-brand-deep-purple transition-colors">
-      <i class="fa-solid fa-plus mr-1"></i>Add Related Field Rule
-    </button>
-
-    <!-- Help Text -->
-    <div class="mt-4 bg-blue-50 border border-blue-200 rounded-md p-3">
-      <div class="flex items-start gap-2">
-        <i class="fa-solid fa-info-circle text-blue-600 mt-0.5"></i>
-        <div class="text-xs text-blue-800">
-          <p class="font-medium mb-1">How related fields work:</p>
-          <ul class="list-disc list-inside space-y-1 text-blue-700">
-            <li>When an image's question path matches the "Image Path", the related field value is extracted</li>
-            <li>The extracted value and label are displayed alongside the image during review</li>
-            <li>Use the filter checkboxes to only include visits that have the specified image or field value</li>
-          </ul>
-        </div>
+        </template>
       </div>
-    </div>
+      <button @click="contextFields.push({ imagePath: '', fieldPath: '', label: '' })" type="button"
+              class="text-sm text-brand-indigo hover:text-brand-deep-purple">
+        <i class="fa-solid fa-plus mr-1"></i>Add context field
+      </button>
+    </details>
 
   </div>
 
@@ -806,66 +821,6 @@
           placeholder="e.g., first_10, quarterly_q1"
           class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-brand-indigo focus:border-brand-indigo">
         <p class="text-xs text-gray-500 mt-1">Tag for categorizing audits (e.g., "first_10" for first 10 visits milestone)</p>
-      </div>
-    </div>
-
-    <!-- AI Review Agent Section -->
-    <div class="mb-6 pt-6 border-t border-gray-200">
-      <h3 class="text-md font-medium text-gray-800 mb-3">
-        <i class="fa-solid fa-robot mr-2 text-purple-600"></i>
-        AI Review Agent (Optional)
-      </h3>
-      <p class="text-sm text-gray-600 mb-4">
-        Optionally run an AI review agent automatically after creating the audit. The agent will analyze images and pre-populate review results.
-      </p>
-
-      <div class="space-y-3">
-        <!-- Agent Selection -->
-        <div>
-          <label class="block text-xs font-medium text-gray-600 mb-1">Select AI Agent</label>
-          <select x-model="selectedAIAgent" @change="aiAutoApplyActions = []"
-                  class="w-full md:w-1/2 px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-brand-indigo focus:border-brand-indigo">
-            <option value="">None - Skip AI review</option>
-            <template x-for="agent in availableAIAgents" :key="agent.agent_id">
-              <option :value="agent.agent_id" x-text="agent.name"></option>
-            </template>
-          </select>
-          <p class="text-xs text-gray-400 mt-1">AI agents can automatically validate images against form data</p>
-        </div>
-
-        <!-- Agent Description -->
-        <div x-show="selectedAIAgent" class="bg-purple-50 border border-purple-200 rounded-md p-3">
-          <div class="flex items-start gap-2">
-            <i class="fa-solid fa-info-circle text-purple-600 mt-0.5"></i>
-            <div class="text-xs text-purple-800">
-              <p class="font-medium mb-1" x-text="getSelectedAgentName()"></p>
-              <p x-text="getSelectedAgentDescription()"></p>
-            </div>
-          </div>
-        </div>
-
-        <!-- Auto-apply: which AI verdicts pre-tag a result before human review -->
-        <div x-show="selectedAIAgent && getSelectedAgentActions().length > 0" class="pt-1">
-          <p class="text-sm font-medium text-gray-700 mb-1">Auto-tag results before I review</p>
-          <p class="text-xs text-gray-500 mb-2">
-            By default the AI only flags images — it never sets a Pass/Fail until you do. Tick a verdict
-            below to let the AI pre-tag it automatically. You can still bulk-apply any verdict while reviewing.
-          </p>
-          <div class="space-y-1">
-            <template x-for="action in getSelectedAgentActions()" :key="action.key">
-              <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                <input type="checkbox" :value="action.key" x-model="aiAutoApplyActions"
-                       class="h-4 w-4 text-brand-indigo focus:ring-brand-indigo border-gray-300 rounded">
-                <span>
-                  Automatically apply <span class="font-medium" x-text="action.button_label"></span>
-                  <span class="ml-1 font-semibold"
-                        :class="action.human_result === 'fail' ? 'text-red-600' : 'text-green-600'"
-                        x-text="'(' + action.human_result + ')'"></span>
-                </span>
-              </label>
-            </template>
-          </div>
-        </div>
       </div>
     </div>
 
@@ -906,17 +861,17 @@
       <div class="mb-4">
         <div class="flex justify-between text-sm text-gray-600 mb-1">
           <span x-text="asyncStageName || 'Starting...'"></span>
-          <span x-text="asyncCurrentStage + ' / ' + asyncTotalStages"></span>
+          <span x-text="asyncTotal > 0 && asyncStatus !== 'completed' ? (asyncProcessed + ' / ' + asyncTotal) : (asyncCurrentStage + ' / ' + asyncTotalStages)"></span>
         </div>
         <div class="w-full bg-gray-200 rounded-full h-2.5">
           <div class="bg-brand-indigo h-2.5 rounded-full transition-all duration-300"
-               :style="'width: ' + (asyncTotalStages > 0 ? (asyncCurrentStage / asyncTotalStages * 100) : 0) + '%'"></div>
+               :style="'width: ' + asyncProgressPercent() + '%'"></div>
         </div>
       </div>
 
-      <!-- Sub-progress (for per-FLW session creation) -->
-      <div x-show="asyncProcessed > 0 || asyncTotal > 0" class="mb-4 text-sm text-gray-600">
-        <span>Sessions: <span x-text="asyncProcessed"></span> / <span x-text="asyncTotal"></span></span>
+      <!-- Sub-progress: live item count within the current stage -->
+      <div x-show="asyncTotal > 0 && asyncStatus !== 'completed'" class="mb-4 text-sm text-gray-600">
+        <span x-text="(asyncStageName || 'Processing') + ': ' + asyncProcessed + ' / ' + asyncTotal"></span>
       </div>
 
       <!-- Status -->
@@ -1109,8 +1064,19 @@ function auditCreationPage() {
 
     // AI Review Agent state
     availableAIAgents: [],
-    selectedAIAgent: '',  // agent_id or empty string for none
-    aiAutoApplyActions: [],  // result_action keys to auto-pre-tag (empty = flag only)
+
+    // Per-image-type reviewer config, keyed by image question path.
+    //   imageReviewers[path] = { agentId: '', config: {}, autoApplyActions: [] }
+    imageReviewers: {},
+
+    // Form-field paths (non-image) for agent comparison-field pickers.
+    availableFieldPaths: [],   // [{id, label, path}] unioned across selected opps
+    fieldPathsLoading: false,
+    fieldPathsLoadedKey: '',
+
+    // Slim agent-less "context fields" shown to human reviewers.
+    //   { imagePath: '', fieldPath: '', label: '' }
+    contextFields: [],
 
     // Preview state
     previewResults: [],
@@ -1173,6 +1139,7 @@ function auditCreationPage() {
         this.selectedOpportunities.push(opportunity);
       }
       this.loadImageTypes();
+      this.loadFieldPaths();
     },
 
     removeOpportunitySelection(opportunity) {
@@ -1181,6 +1148,7 @@ function auditCreationPage() {
         this.selectedOpportunities.splice(index, 1);
       }
       this.loadImageTypes();
+      this.loadFieldPaths();
     },
 
 
@@ -1240,6 +1208,7 @@ function auditCreationPage() {
       this.auditTitle = '';
       this.auditTag = '';
       this.loadImageTypes();
+      this.loadFieldPaths();
     },
 
     // Discover image types from the selected opportunities' recent submissions and
@@ -1278,6 +1247,7 @@ function auditCreationPage() {
         }
         // Drop any previously-selected paths that no longer exist in the new set
         this.selectedImagePaths = this.selectedImagePaths.filter(p => availPaths.has(p));
+        this.syncImageReviewers();  // ensure a reviewer slot exists for every selected path
         this.imageTypesLoadedKey = key;
       } catch (e) {
         this.imageTypesError = 'Could not detect image types: ' + e.message;
@@ -1287,16 +1257,122 @@ function auditCreationPage() {
       }
     },
 
-    // Selected image types -> image-only audit rules (scope to visits with that photo),
-    // merged with any manual field-association rules. Mirrors the workflow's related_fields.
+    // Discover non-image form-field paths across selected opps for the comparison-field
+    // picker. Mirrors loadImageTypes; degrades to free-text input on failure.
+    async loadFieldPaths() {
+      const oppIds = this.selectedOpportunities.map(o => o.id);
+      const key = [...oppIds].sort((a, b) => a - b).join(',');
+      if (key === this.fieldPathsLoadedKey) return;
+      if (oppIds.length === 0) {
+        this.availableFieldPaths = [];
+        this.fieldPathsLoadedKey = '';
+        return;
+      }
+      this.fieldPathsLoading = true;
+      try {
+        const lists = await Promise.all(oppIds.map(async oppId => {
+          const resp = await fetch(`/audit/api/opportunity/${oppId}/field-questions/`);
+          if (!resp.ok) throw new Error(`opportunity ${oppId}: HTTP ${resp.status}`);
+          return resp.json();
+        }));
+        const byId = new Map();
+        lists.flat().forEach(t => { if (t && t.id && !byId.has(t.id)) byId.set(t.id, t); });
+        this.availableFieldPaths = Array.from(byId.values())
+          .sort((a, b) => (a.path || '').localeCompare(b.path || ''));
+        this.fieldPathsLoadedKey = key;
+      } catch (e) {
+        this.availableFieldPaths = [];
+      } finally {
+        this.fieldPathsLoading = false;
+      }
+    },
+
+    // Sync create path (no AI): scope to selected image types + show context fields.
     buildRelatedFieldsPayload() {
-      const imageRules = this.availableImageTypes
-        .filter(t => this.selectedImagePaths.includes(t.path))
-        .map(t => ({ imagePath: t.path, filterByImage: true, label: t.label }));
-      const manualRules = this.auditCriteria.relatedFields.filter(
-        rule => rule.imagePath && rule.fieldPath
-      );
-      return [...imageRules, ...manualRules];
+      const imageRules = this.selectedImagePaths.map(p => ({ imagePath: p, filterByImage: true }));
+      const contextRules = this.contextFields
+        .filter(c => c.imagePath && c.fieldPath)
+        .map(c => ({ imagePath: c.imagePath, fieldPath: c.fieldPath, label: c.label || '' }));
+      return [...imageRules, ...contextRules];
+    },
+
+    // Ensure every checked image type has a reviewer slot; drop unchecked ones.
+    syncImageReviewers() {
+      const next = {};
+      for (const path of this.selectedImagePaths) {
+        next[path] = this.imageReviewers[path] || { agentId: '', config: {}, autoApplyActions: [] };
+      }
+      this.imageReviewers = next;
+    },
+
+    getAgentById(agentId) {
+      return this.availableAIAgents.find(a => a.agent_id === agentId) || null;
+    },
+
+    getAgentConfigFields(agentId) {
+      const agent = this.getAgentById(agentId);
+      return agent && agent.config_fields ? agent.config_fields : [];
+    },
+
+    getAgentActions(agentId) {
+      const agent = this.getAgentById(agentId);
+      if (!agent || !agent.result_actions) return [];
+      return Object.entries(agent.result_actions).map(([key, a]) => ({ key, ...a }));
+    },
+
+    // When a reviewer is (re)chosen for a type, reset its per-agent config + auto-apply.
+    onReviewerChange(path) {
+      const rev = this.imageReviewers[path];
+      if (!rev) return;
+      rev.config = {};
+      rev.autoApplyActions = [];
+    },
+
+    // Block creation if any chosen agent has a required config field left blank.
+    reviewerValidationError() {
+      for (const path of this.selectedImagePaths) {
+        const rev = this.imageReviewers[path];
+        if (!rev || !rev.agentId) continue;
+        for (const field of this.getAgentConfigFields(rev.agentId)) {
+          if (field.required && !(rev.config && rev.config[field.key])) {
+            return `Select a "${field.label}" for ${path}`;
+          }
+        }
+      }
+      return null;
+    },
+
+    // Build the image_audits payload (one reviewer per type; list-shaped for the future).
+    buildImageAudits() {
+      return this.selectedImagePaths.map(path => {
+        const rev = this.imageReviewers[path];
+        const reviewers = [];
+        if (rev && rev.agentId) {
+          reviewers.push({
+            agent_id: rev.agentId,
+            config: rev.config || {},
+            auto_apply_actions: rev.autoApplyActions || [],
+          });
+        }
+        return { image_path: path, reviewers };
+      });
+    },
+
+    buildContextFields() {
+      return this.contextFields
+        .filter(c => c.imagePath && c.fieldPath)
+        .map(c => ({ image_path: c.imagePath, field_path: c.fieldPath, label: c.label || '' }));
+    },
+
+    // Progress-bar width that ramps within the current stage (so AI review doesn't
+    // sit at 100% while still running). Only reaches 100% when the job completes.
+    asyncProgressPercent() {
+      if (this.asyncStatus === 'completed') return 100;
+      const stages = this.asyncTotalStages || 0;
+      if (stages <= 0) return 0;
+      const intra = this.asyncTotal > 0 ? Math.min(1, this.asyncProcessed / this.asyncTotal) : 0;
+      const done = this.asyncTotal > 0 ? Math.max(0, this.asyncCurrentStage - 1) + intra : this.asyncCurrentStage;
+      return Math.min(99, done / stages * 100);
     },
 
     // FLW selection methods
@@ -1706,6 +1782,12 @@ function auditCreationPage() {
         return;
       }
 
+      const reviewerError = this.reviewerValidationError();
+      if (reviewerError) {
+        alert(reviewerError);
+        return;
+      }
+
       this.creatingAsync = true;
 
       try {
@@ -1728,7 +1810,8 @@ function auditCreationPage() {
           title: this.auditTitle,
           tag: this.auditTag,
           selected_flw_user_ids: this.selectedFlwUserIds,
-          relatedFields: this.buildRelatedFieldsPayload()
+          // The backend builds related_fields from image_audits/context_fields below.
+          relatedFields: []
         };
 
         if (this.auditCriteria.type === 'date_range') {
@@ -1747,17 +1830,14 @@ function auditCreationPage() {
           criteria: criteria,
           visit_ids: this.precomputedVisitIds,
           flw_visit_ids: selectedFlwVisitIds,
-          ai_agent_id: this.selectedAIAgent || null,  // Optional AI agent to run after creation
-          // Which AI verdicts to auto-pre-tag ([] = flag only); omitted when no agent.
-          ai_auto_apply_actions: this.selectedAIAgent ? this.aiAutoApplyActions : undefined
+          image_audits: this.buildImageAudits(),
+          context_fields: this.buildContextFields()
         };
 
         // DEBUG: Log what we're sending
         console.log('[AuditWizard] Creating async audit with payload:', JSON.stringify(payload, null, 2));
         console.log('[AuditWizard] audit_type:', criteria.audit_type, 'countAcrossAll:', criteria.countAcrossAll);
-        if (this.selectedAIAgent) {
-          console.log('[AuditWizard] AI Agent:', this.selectedAIAgent);
-        }
+        console.log('[AuditWizard] image_audits:', JSON.stringify(payload.image_audits));
 
         // Start async creation
         const response = await fetch('{% url "audit:create_session_async" %}', {
@@ -1987,6 +2067,7 @@ function auditCreationPage() {
 
       // Detect image types now in case an opportunity was pre-selected from labs_context
       this.loadImageTypes();
+      this.loadFieldPaths();
     },
 
     // Load available AI agents
@@ -2002,24 +2083,6 @@ function auditCreationPage() {
       }
     },
 
-    // Get selected agent name
-    getSelectedAgentName() {
-      const agent = this.availableAIAgents.find(a => a.agent_id === this.selectedAIAgent);
-      return agent ? agent.name : '';
-    },
-
-    // Get selected agent description
-    getSelectedAgentDescription() {
-      const agent = this.availableAIAgents.find(a => a.agent_id === this.selectedAIAgent);
-      return agent ? agent.description : '';
-    },
-
-    // The selected agent's verdicts as a list: {key, ai_result, human_result, button_label}.
-    getSelectedAgentActions() {
-      const agent = this.availableAIAgents.find(a => a.agent_id === this.selectedAIAgent);
-      if (!agent || !agent.result_actions) return [];
-      return Object.entries(agent.result_actions).map(([key, a]) => ({ key, ...a }));
-    }
   }
 }
 </script>

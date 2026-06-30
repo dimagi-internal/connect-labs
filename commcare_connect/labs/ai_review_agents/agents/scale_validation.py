@@ -66,6 +66,15 @@ class ScaleValidationAgent(BaseAIReviewAgent):
             "button_label": "Fail all Unmatched",
         },
     }
+    config_fields = [
+        {
+            "key": "comparison_field",
+            "label": "Manual Scale Value",
+            "type": "form_field",
+            "required": True,
+            "help": "Form field whose value is compared against the scale photo",
+        }
+    ]
 
     DEFAULT_API_URL = "https://image-pipeline-scale-gw-4pc8jsfa.uc.gateway.dev"
     DEFAULT_TIMEOUT = 60.0
