@@ -14,6 +14,7 @@
 #
 # program_id is omitted -> auto-allocated on first generate. bundle_root "gdrive:" ->
 # Phase 1 creates a Drive run folder and resolves it. (See docs/synthetic-kmc-clone-runbook.md)
+program_id: 10011 # live KMC (Synthetic) program — pin so re-runs refresh it in place
 program_name: 'KMC (Synthetic)'
 org_name: 'Dimagi-KMC (Synthetic)'
 bundle_root: 'gdrive:'
