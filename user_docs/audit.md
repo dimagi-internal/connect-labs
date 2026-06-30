@@ -27,17 +27,39 @@ Navigate to **Audit** in the top menu, then click **Create Audit Session**.
 
 - Select the **opportunity** from the search table — the table shows the opportunity name, its **Program**, and other details so you can confirm you are selecting the right one
 - Set a **date range** for visits to review
-- Choose which **image questions** from the CommCare form to include (for example, a weight scale photo or a MUAC measurement photo)
 - Set how many visits to sample — either a fixed number or a percentage of total visits
-- If your image types support AI review, an **AI Review Agent** dropdown appears as soon as you select an opportunity — you do not need to run a preview first. Select an agent if you want AI assistance, or leave it blank to skip AI review entirely.
 
 **Step 2 — Preview and confirm:**
 
 - Labs shows how many visits match your criteria before you commit, including a list of matched field workers shown by their **real display names** (not internal ID codes)
 - Adjust filters if needed, then click **Create**
 
+**Step 5 — Audit Field Configuration:**
+
+This step appears once you have selected your opportunities. It has two sections:
+
+- **Select the image types to audit** — an auto-detected picker lists the image question types available for the selected opportunity. Each image type is shown by its full question path (for example, `household_visit/child_screening/muac_photo`) so you can confirm exactly which form field you are including. Select one or more types to include in this session.
+- **Related field rules** — manually associate any supporting fields (such as a recorded measurement value) with the image types you selected. These associations let the AI and human reviewer see the relevant data alongside each photo.
+
+!!! tip "Quick-create links"
+    If you regularly audit the same image types, you can pre-select them by adding `?image_paths=<full/path1>,<full/path2>` to the audit-creation URL. The picker will open with those types already selected, saving setup time.
+
+**Choosing AI assistance (within Step 5):**
+
+If your selected image types support AI review, an **AI Review Agent** dropdown appears in this step. Select an agent if you want AI assistance, or leave it blank to skip AI review entirely.
+
+When an agent is selected, you will also see per-verdict **"Auto-tag results before I review"** checkboxes — one for each possible verdict the agent can produce. These work the same way as in the review queue:
+
+- **Ticked** — the AI pre-tags matching images with that result before you open the review queue.
+- **Unticked** — the AI still badges every image with its classification, but leaves the Pass/Fail decision to you.
+
+The default is **flag-only** (all checkboxes unticked), so nothing is pre-tagged unless you opt in.
+
+!!! tip "Not sure whether to pre-tag?"
+    Start with the default flag-only setting. Review a session to see how well the AI's classifications match your program standards, then enable pre-tagging for the verdicts you consistently agree with.
+
 !!! tip "Large audits"
-Creating a session with many visits runs in the background. You'll see a progress indicator — come back in a few minutes for large samples.
+    Creating a session with many visits runs in the background. You'll see a progress indicator — come back in a few minutes for large samples.
 
 ---
 
@@ -160,10 +182,13 @@ The AI looks at image quality (blur, brightness, framing), whether the measureme
 When a MUAC image type is selected, you can choose the **MUAC OverZoom** agent from the AI Review Agent dropdown. It automatically identifies photos taken with excessive zoom and badges them with its classification. If you have ticked the pre-tag checkbox for hyperzoomed images, those images are also pre-tagged **Fail** with a red **Hyperzoomed** badge before your review begins. If the checkbox is unticked, the badge still shows the AI's classification but no Pass/Fail is applied automatically. You can confirm or override each result during your normal review.
 
 **Can I control which AI verdicts are applied automatically?**
-Yes. Next to the AI Review Agent dropdown, each possible verdict has a checkbox. Tick it to have the AI pre-tag matching images with that result; leave it unticked so the AI flags and badges the image but leaves the Pass/Fail decision to you. The default is flag-only — nothing is pre-tagged unless you opt in. You can also bulk-apply any verdict with one click from the review queue (for example, **Fail all Hyperzoomed (N)**).
+Yes. When selecting an agent — either in Step 5 of the audit-creation wizard or from the review queue — each possible verdict has a checkbox. Tick it to have the AI pre-tag matching images with that result; leave it unticked so the AI flags and badges the image but leaves the Pass/Fail decision to you. The default is flag-only — nothing is pre-tagged unless you opt in. You can also bulk-apply any verdict with one click from the review queue (for example, **Fail all Hyperzoomed (N)**).
 
 **Where does the AI Review Agent dropdown appear?**
-The dropdown appears as soon as you select an opportunity in the audit-creation wizard — you do not need to run "Update Preview" first.
+The dropdown appears in **Step 5 — Audit Field Configuration** of the audit-creation wizard, once you have selected your opportunities and image types. It also appears in the review queue after a session is created.
+
+**How are image types displayed when I select them?**
+Each image type is shown by its full question path (for example, `household_visit/child_screening/muac_photo`) so you can confirm exactly which form field you are selecting. If you regularly audit the same image types, you can pre-select them by adding `?image_paths=<full/path1>,<full/path2>` to the audit-creation URL.
 
 **What are the AI classification labels on each image tile?**
 Once the AI agent has reviewed an image, a small label appears at the bottom of the tile (below the **Add Note** field) showing the agent name and its classification — for example, "MUAC OverZoom: Not Hyperzoomed" or "Scale Validation: Passed". If the AI encountered a problem with a specific image, the label turns red and shows the error message. This gives you a clear record of what the AI decided for every image, not just the ones that were flagged.
