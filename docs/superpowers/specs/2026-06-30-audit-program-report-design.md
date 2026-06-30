@@ -43,15 +43,31 @@ registers a `weekly_dual_track_audit_create` handler via `@register_job_handler`
 `program_admin_rollup`).
 
 Inputs: `(run_id, opportunity_ids, window_start, window_end, per_opp_config,
-track_a, track_b)`. For each opp it fires **two** audit-creation flows, reusing
-the existing `audit/tasks.py` creation path + `AuditDataAccess.create_audit_session`:
+track_a, track_b)`. For each opp it fires **two** audit-creation flows via the
+existing `run_audit_creation` task. Each flow uses the **per-image-type AI
+reviewer model** added in PR #771 (`audit/ai_review_config.build_review_config`):
+the reviewer rides *inside* an `image_audits` payload, and `related_fields` is
+derived from it (no hand-built `related_fields`, no top-level `ai_agent_id`):
 
-- **Track A:** `criteria.related_fields` = pinned MUAC image ids
-  (`{image_path, filter_by_image: true}`), `sample_percentage: 100`,
-  `criteria.tag: 'muac'`, `ai_agent_id: 'muac_overzoom'`,
-  `ai_auto_apply_actions: ['fail_overzoomed']`.
-- **Track B:** `criteria.related_fields` = all other discovered image types,
-  `sample_percentage: 10`, `criteria.tag: 'rest'`, no AI agent.
+- **Track A (MUAC census):** `image_audits = [{"image_path": <pinned MUAC path>,
+  "reviewers": [{"agent_id": "muac_overzoom", "auto_apply_actions":
+  ["fail_overzoomed"]}]}]`, `criteria.sample_percentage: 100`,
+  `criteria.tag: 'muac'`.
+- **Track B (rest, sampled):** `image_audits = [{"image_path": p, "reviewers":
+  []} for p in <pinned rest paths>]` (empty reviewers = no AI),
+  `criteria.sample_percentage: 10`, `criteria.tag: 'rest'`.
+
+> **PR #771 (per-image-type AI reviewer).** `run_audit_creation` now accepts
+> `image_audits` / `context_fields`; `build_review_config` translates them into
+> `(related_fields, ai_reviewers)` where `ai_reviewers` is a
+> `{image_path: {agent_id, auto_apply_actions}}` map resolved per image type in
+> the review loop. The legacy `ai_agent_id` + `criteria.related_fields` path is
+> still supported, but we adopt the new model for cleaner, per-type metadata
+> (and so a future track could attach a different reviewer — e.g. `scale_validation`
+> with a `config.comparison_field` — without changing the orchestration). The
+> `tag` and `sample_percentage` remain whole-audit `criteria` fields, which is
+> why the two tracks stay two separate calls (different sample rates).
+> `context_fields` (agent-less value display) is available but unused here.
 
 Each flow produces **one session per FLW**, persisted with
 `labs_record_id = run_id`, the session's `opportunity_id`, and `tag` (`muac` /
@@ -98,8 +114,15 @@ New `audit_par_rollup` job handler. For each **creator run** whose
 read sessions via `AuditDataAccess.get_sessions_by_workflow_run(run_id)` scoped
 per opp, split by `tag`, and aggregate per opp-week:
 
-- MUAC: total / pass / fail / pending, AI-flagged-fail count.
+- MUAC: total / pass / fail / pending, AI-flagged count.
 - Rest: total / pass / fail / pending.
+
+The PR #771 per-type model does **not** change this read: the AI verdict still
+lands on each assessment and is exposed by `AuditSessionRecord.get_assessment_stats()`
+(`pass`/`fail`/`pending` + `ai_match`/`ai_no_match`/`ai_pending`). The PAR's
+"AI-flagged" count reads `ai_no_match` (the `muac_overzoom` over-zoom verdict) —
+confirm the agent's `ai_result` value at implementation time so the count is
+right.
 
 Reads use a **per-opp scoped `AuditDataAccess`** (the labs API enforces opp scope
 on every request — a single primary-opp DAO returns 0 for non-primary opps; see
@@ -194,8 +217,15 @@ PAR:    open PAR run (window) → audit_par_rollup reads creator runs × opps ×
   `job_handlers/__init__.py` — `@register_job_handler` pattern.
 - `commcare_connect/audit/data_access.py` — `create_audit_session` (tag,
   `labs_record_id=workflow_run_id`), `get_sessions_by_workflow_run`.
-- `commcare_connect/audit/tasks.py` — `session_tag = criteria.get("tag")`,
-  `ai_agent_id` post-creation review.
+- `commcare_connect/audit/tasks.py` — `session_tag = criteria.get("tag")`;
+  `run_audit_creation(image_audits=…, context_fields=…)` + per-type review loop
+  (`_run_ai_review_on_sessions(ai_reviewers=…)`) from PR #771.
+- `commcare_connect/audit/ai_review_config.py` — `build_review_config(image_audits,
+  context_fields) -> (related_fields, ai_reviewers)` (PR #771). Agents now declare
+  a `config_fields` schema (e.g. `scale_validation.comparison_field`), surfaced by
+  the agents-list API; not needed for `muac_overzoom`.
+- `docs/superpowers/specs/2026-06-30-per-image-type-ai-reviewer-design.md` — the
+  PR #771 design this spec now builds on.
 - `commcare_connect/labs/ai_review_agents/agents/muac_overzoom.py` — agent id /
   `result_actions`.
 - `WORKFLOW_REFERENCE.md` §8 (multi-opp), §9 (saved runs), §Audit Creation.
