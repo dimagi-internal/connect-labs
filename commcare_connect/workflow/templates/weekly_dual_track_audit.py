@@ -168,14 +168,22 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
     const [sessions, setSessions] = React.useState([]);
     const [loadingSessions, setLoadingSessions] = React.useState(true);
     const refreshSessions = () => {
-        if (!instance.id) { setLoadingSessions(false); return Promise.resolve([]); }
-        return fetch('/audit/api/workflow/' + instance.id + '/sessions/')
-            .then(res => res.json())
-            .then(data => {
-                const s = (data.success && data.sessions) ? data.sessions : [];
-                setSessions(s); setLoadingSessions(false); return s;
-            })
-            .catch(() => { setLoadingSessions(false); return []; });
+        if (!instance.id || !oppIds.length) { setLoadingSessions(false); return Promise.resolve([]); }
+        // The sessions endpoint is scoped to ONE opportunity per request (the
+        // labs API enforces opp scope), so fetch each opp in the run's set and
+        // merge — otherwise only the primary opp's sessions would show even
+        // though the batch created audits for every selected opportunity.
+        return Promise.all(oppIds.map(opp =>
+            fetch('/audit/api/workflow/' + instance.id + '/sessions/?opportunity_id=' + opp)
+                .then(res => res.json())
+                .then(data => (data.success && data.sessions) ? data.sessions : [])
+                .catch(() => [])
+        )).then(arrs => {
+            const seen = {};
+            const all = [];
+            arrs.forEach(list => list.forEach(s => { if (!seen[s.id]) { seen[s.id] = true; all.push(s); } }));
+            setSessions(all); setLoadingSessions(false); return all;
+        }).catch(() => { setLoadingSessions(false); return []; });
     };
     React.useEffect(() => { refreshSessions(); }, [instance.id]);
 
