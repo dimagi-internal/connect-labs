@@ -17,7 +17,16 @@ from .base import INSTALLED_APPS, MIDDLEWARE, STORAGES, env
 SECRET_KEY = env("DJANGO_SECRET_KEY", default="")
 ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=[])
 
-DATABASES["default"]["CONN_MAX_AGE"] = env.int("CONN_MAX_AGE", default=60)  # noqa: F405
+# CONN_MAX_AGE defaults to 0 (close after every use) for this ASGI deployment.
+# Labs runs under gunicorn UvicornWorker and mounts the FastMCP app OUTSIDE
+# Django's ASGIHandler (see config/asgi.py), so Django's request_finished signal
+# — which drives close_old_connections — never fires for MCP traffic. A positive
+# CONN_MAX_AGE would let those bypassed connections persist and accumulate as
+# idle slots on RDS until exhaustion (#667 / #669). The asgi.py boundary
+# middleware closes per request, and CONN_MAX_AGE=0 is belt-and-suspenders: no
+# persistent connections for any path to hoard. Override via env if a future
+# pooled setup (e.g. pgbouncer) makes persistence safe again.
+DATABASES["default"]["CONN_MAX_AGE"] = env.int("CONN_MAX_AGE", default=0)  # noqa: F405
 
 # SECURITY
 # ------------------------------------------------------------------------------

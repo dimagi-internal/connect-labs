@@ -13,6 +13,8 @@ to be visible there (and torn down by truncation, so nothing leaks).
 
 from __future__ import annotations
 
+from unittest import mock
+
 import httpx
 import pytest
 
@@ -164,6 +166,69 @@ def test_unauthenticated_challenge_is_plain_bearer_not_oauth(asgi_app):
     assert "invalid_token" not in challenge, f"OAuth-style challenge leaked: {challenge!r}"
     # ...replaced by the plain realm challenge the old transport served.
     assert 'realm="labs-mcp"' in challenge, f"expected plain Bearer realm, got: {challenge!r}"
+
+
+def test_mcp_mount_wrapped_with_closing_connections_middleware(asgi_app):
+    """The /mcp mount must be wrapped by the boundary-close ASGI middleware.
+
+    This is the single comprehensive close point for the connection leak
+    (#667/#669): it covers PAT auth, every tool handler, the audit write, and
+    any future MCP DB entrypoint — not just the two callables
+    ``server._closing_connections`` happens to wrap. Structural guard so the
+    wrapper can't be silently dropped from config.asgi.
+    """
+    from config import asgi
+
+    mcp_mount = next(r for r in asgi_app.routes if getattr(r, "path", None) == "/mcp")
+    assert isinstance(mcp_mount.app, asgi._ClosingConnectionsApp), (
+        "the /mcp mount is no longer wrapped by _ClosingConnectionsApp — " "MCP requests would leak DB connections"
+    )
+
+
+@pytest.mark.django_db(transaction=True)
+def test_real_mcp_request_closes_connections_at_boundary(asgi_app, monkeypatch):
+    """Drive a real MCP HTTP request and prove the boundary close runs.
+
+    To isolate the middleware as the close point, we NEUTRALIZE the per-function
+    ``server._closing_connections`` wrapper (turn it into a passthrough). The
+    middleware is then the ONLY thing that can close the request's connections.
+    Without the middleware this assertion is red (nothing closes); with it the
+    boundary close fires. ``connections.close_all`` is spied with ``wraps`` so it
+    still really closes (keeping the DB consistent) while recording the call.
+    """
+    import anyio
+    from django.db import connections as dj_connections
+    from fastmcp import Client
+    from fastmcp.client.transports import StreamableHttpTransport
+
+    from commcare_connect.mcp import server
+
+    # Make the per-function wrapper a no-op so the middleware is the sole closer.
+    monkeypatch.setattr(server, "_closing_connections", lambda fn: fn)
+
+    application = asgi_app
+
+    user = User.objects.create(username="boundary-close")
+    _, raw = MCPAccessToken.create_token(user, name="boundary")
+
+    close_spy = mock.Mock(wraps=dj_connections.close_all)
+    monkeypatch.setattr(dj_connections, "close_all", close_spy)
+
+    async def _run():
+        transport = StreamableHttpTransport(
+            url="http://testserver/mcp/",
+            headers={"Authorization": f"Bearer {raw}"},
+            httpx_client_factory=_client_factory_to_asgi(application),
+        )
+        async with application.router.lifespan_context(application):
+            async with Client(transport) as client:
+                await client.call_tool("list_templates", {})
+
+    anyio.run(_run)
+
+    # The middleware closed this request's connections at the boundary — even
+    # with the per-function wrapper neutralized.
+    assert close_spy.called, "boundary close never ran — MCP request leaked its DB connection"
 
 
 @pytest.mark.parametrize(
