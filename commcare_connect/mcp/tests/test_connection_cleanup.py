@@ -61,3 +61,100 @@ def test_closing_connections_is_transparent_wrapper():
         wrapped = server._closing_connections(server._verify_pat_sync)
     assert wrapped.__name__ == "_verify_pat_sync"
     assert wrapped.__wrapped__ is server._verify_pat_sync
+
+
+# ---------------------------------------------------------------------------
+# ASGI boundary close — the PRIMARY, comprehensive close point.
+#
+# ``server._closing_connections`` only wraps two named callables, so any new
+# MCP DB entrypoint that forgets the wrapper would leak again. The ASGI
+# middleware ``config.asgi._ClosingConnectionsApp`` wraps the WHOLE ``/mcp``
+# mount, so it closes this request's connections at the request boundary
+# regardless of which handler opened them. These tests pin that contract.
+# ---------------------------------------------------------------------------
+
+
+def _collect_send(sent):
+    async def send(message):
+        sent.append(message)
+
+    return send
+
+
+async def _noop_receive():
+    return {"type": "http.request", "body": b"", "more_body": False}
+
+
+def test_asgi_middleware_closes_connections_after_http_request():
+    """After the wrapped app finishes an http request, the middleware closes
+    this request's DB connections in a thread-sensitive executor."""
+    import anyio
+
+    from config import asgi
+
+    sent: list = []
+
+    async def inner(scope, receive, send):
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"ok"})
+
+    with mock.patch.object(asgi, "connections") as conns:
+        app = asgi._ClosingConnectionsApp(inner)
+
+        async def _run():
+            await app({"type": "http"}, _noop_receive, _collect_send(sent))
+
+        anyio.run(_run)
+
+    # The whole response was delegated to the inner app...
+    assert {m["type"] for m in sent} == {"http.response.start", "http.response.body"}
+    # ...and the boundary close ran exactly once.
+    conns.close_all.assert_called_once_with()
+
+
+def test_asgi_middleware_closes_connections_even_on_exception():
+    """If the wrapped MCP app raises, the boundary close still runs — a failing
+    tool/auth path must not leak its connection."""
+    import anyio
+
+    from config import asgi
+
+    async def inner(scope, receive, send):
+        raise RuntimeError("mcp handler blew up")
+
+    with mock.patch.object(asgi, "connections") as conns:
+        app = asgi._ClosingConnectionsApp(inner)
+
+        async def _run():
+            await app({"type": "http"}, _noop_receive, _collect_send([]))
+
+        with pytest.raises(RuntimeError, match="mcp handler blew up"):
+            anyio.run(_run)
+
+    conns.close_all.assert_called_once_with()
+
+
+def test_asgi_middleware_skips_non_http_scopes():
+    """Only http scopes get a boundary close. websocket/lifespan scopes pass
+    through untouched (lifespan especially must not have its connections
+    yanked mid-startup)."""
+    import anyio
+
+    from config import asgi
+
+    for scope_type in ("websocket", "lifespan"):
+        with mock.patch.object(asgi, "connections") as conns:
+            seen = {}
+
+            async def inner(scope, receive, send):
+                seen["type"] = scope["type"]
+
+            app = asgi._ClosingConnectionsApp(inner)
+
+            async def _run():
+                await app({"type": scope_type}, _noop_receive, _collect_send([]))
+
+            anyio.run(_run)
+
+        assert seen["type"] == scope_type
+        conns.close_all.assert_not_called()

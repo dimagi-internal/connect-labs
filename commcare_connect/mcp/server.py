@@ -96,6 +96,13 @@ def _closing_connections(fn):
     in-process test bridge (``testing.call_tool``) calls the sync core directly
     on pytest-django's transactional connection — closing that would break test
     DB visibility — so the wrapper must NOT live inside the sync core itself.
+
+    NOTE: ``config.asgi._ClosingConnectionsApp`` is now the PRIMARY,
+    comprehensive close point — it wraps the whole ``/mcp`` mount and closes at
+    the request boundary, covering auth + tools + audit + any future MCP DB
+    entrypoint. This per-function wrapper is retained as defense-in-depth (and
+    because the in-process test bridge relies on the sync core staying
+    unwrapped); do not remove it without a strong reason.
     """
 
     @functools.wraps(fn)
