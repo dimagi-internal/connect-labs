@@ -54,6 +54,10 @@ class ExperimentAuditCreateView(LoginRequiredMixin, TemplateView):
         org_data = get_org_data(self.request)
         opportunities = org_data.get("opportunities", [])
 
+        # Map program id -> name so the opportunity table can show the program
+        # (each opp carries only its program id; names live on org_data["programs"]).
+        programs_by_id = {p.get("id"): p.get("name", "") for p in org_data.get("programs", [])}
+
         # Filter by program if one is selected in labs_context
         program_id = labs_context.get("program_id")
         if program_id:
@@ -66,7 +70,7 @@ class ExperimentAuditCreateView(LoginRequiredMixin, TemplateView):
                     "id": opp.get("id"),
                     "name": opp.get("name"),
                     "organization_name": opp.get("organization", ""),
-                    "program_name": "",
+                    "program_name": programs_by_id.get(opp.get("program"), ""),
                     "visit_count": opp.get("visit_count", 0),
                     "end_date": opp.get("end_date"),
                     "active": opp.get("is_active", True),
@@ -1291,14 +1295,21 @@ class ExperimentAuditPreviewAPIView(LoginRequiredMixin, View):
                 return_visits=True,
             )
 
-            # Fetch FLW names mapping (username -> display name)
+            # Fetch FLW names mapping (username -> display name) for ALL selected
+            # opportunities. The preview can span multiple opps, so resolve names
+            # per-opp and merge. (get_flw_names_for_opportunity() only covers the
+            # single opp in request context and raises when none is selected, which
+            # left every FLW showing its raw connect_id.)
             flw_names = {}
-            try:
-                flw_names = get_flw_names_for_opportunity(request)
-            except Exception as e:
-                import logging
+            access_token = request.session.get("labs_oauth", {}).get("access_token")
+            if access_token:
+                from commcare_connect.labs.analysis import fetch_flw_names
 
-                logging.warning(f"Could not fetch FLW names: {e}")
+                for opp_id in opportunity_ids:
+                    try:
+                        flw_names.update(fetch_flw_names(access_token, opp_id))
+                    except Exception as e:
+                        logger.warning(f"Could not fetch FLW names for opp {opp_id}: {e}")
 
             # Group filtered visits by FLW
             flw_data = {}
