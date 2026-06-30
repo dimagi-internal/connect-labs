@@ -1882,3 +1882,73 @@ class OpportunityImageTypesAPIView(LoginRequiredMixin, View):
 
         result = [{"id": qid, "label": qid.rsplit("/", 1)[-1], "path": qid} for qid in sorted(seen_question_ids)]
         return JsonResponse(result, safe=False)
+
+
+class OpportunityFieldQuestionsAPIView(LoginRequiredMixin, View):
+    """Discover non-image form-field paths by sampling visits.
+
+    Sibling of OpportunityImageTypesAPIView — same streaming sampler, but flattens
+    form_json leaf scalar paths so the creation wizard can offer a real dropdown for
+    agent comparison-field settings (e.g. the scale agent's "Manual Scale Value").
+
+    GET /audit/api/opportunity/<opp_id>/field-questions/
+    Response: [{id, label, path}, ...]
+    """
+
+    MAX_ROWS = 200
+    STABLE_THRESHOLD = 50
+
+    def get(self, request, opp_id: int):
+        labs_oauth = request.session.get("labs_oauth", {})
+        access_token = labs_oauth.get("access_token", "")
+        if not access_token:
+            return JsonResponse({"error": "No OAuth token"}, status=401)
+
+        from commcare_connect.audit.analysis_config import extract_field_paths
+        from commcare_connect.labs.integrations.connect.export_client import ExportAPIError
+        from commcare_connect.labs.integrations.connect.factory import get_export_client
+
+        endpoint = f"/export/opportunity/{opp_id}/user_visits/"
+        params = {"images": "true"}
+
+        seen_paths: set[str] = set()
+        rows_processed = 0
+        rows_seen = 0
+        stop_early = False
+
+        try:
+            with get_export_client(opportunity_id=opp_id, access_token=access_token, timeout=60.0) as client:
+                for page in client.paginate(endpoint, params=params):
+                    for record in page:
+                        rows_processed += 1
+                        if rows_processed > self.MAX_ROWS:
+                            stop_early = True
+                            break
+
+                        form_json = record.get("form_json") or {}
+                        if not isinstance(form_json, dict):
+                            continue
+
+                        new_found = False
+                        for p in extract_field_paths(form_json):
+                            if p not in seen_paths:
+                                seen_paths.add(p)
+                                new_found = True
+
+                        rows_seen += 1
+                        if not new_found and rows_seen >= self.STABLE_THRESHOLD:
+                            stop_early = True
+                            break
+
+                    if stop_early:
+                        break
+
+        except ExportAPIError as e:
+            logger.error(f"[FieldTypes] Connect export API failure for opp {opp_id}: {e}")
+            return JsonResponse({"error": "Connect API error"}, status=502)
+        except Exception:
+            logger.exception("[FieldTypes] Failed to discover field types for opp %s", opp_id)
+            return JsonResponse({"error": "An internal error occurred"}, status=500)
+
+        result = [{"id": p, "label": p.rsplit("/", 1)[-1], "path": p} for p in sorted(seen_paths)]
+        return JsonResponse(result, safe=False)
