@@ -45,6 +45,42 @@ def _build_filename_map(data: dict, path: str = "") -> dict[str, str]:
     return result
 
 
+def _collect_leaf_paths(data: dict, path: str = "") -> list[str]:
+    """Collect paths to all leaf scalar values in a form_json tree.
+
+    Skips SKIP_KEYS and repeat groups (lists) — v1 only targets non-repeating
+    scalar questions for the comparison-field picker.
+    """
+    result: list[str] = []
+    if not isinstance(data, dict):
+        return result
+
+    for key, value in data.items():
+        if key in SKIP_KEYS:
+            continue
+        current_path = f"{path}/{key}" if path else key
+        if isinstance(value, dict):
+            result.extend(_collect_leaf_paths(value, current_path))
+        elif isinstance(value, list):
+            continue  # repeat group — skipped in v1
+        else:
+            result.append(current_path)  # scalar leaf (str / number / None)
+
+    return result
+
+
+def extract_field_paths(form_json: dict | None) -> list[str]:
+    """Return sorted, de-duped leaf scalar question paths from a visit's form_json.
+
+    Mirrors how extract_images_with_question_ids reads form_json: it unwraps the
+    top-level "form" key when present.
+    """
+    if not isinstance(form_json, dict):
+        return []
+    form_data = form_json.get("form", form_json)
+    return sorted(set(_collect_leaf_paths(form_data)))
+
+
 def extract_images_with_question_ids(visit_data: dict) -> list[dict]:
     """
     Extract images with question IDs from a visit.
