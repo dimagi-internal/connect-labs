@@ -429,6 +429,8 @@ def run_audit_creation(
     workflow_run_id: int | None = None,
     ai_agent_id: str | None = None,
     ai_auto_apply_actions: list[str] | None = None,
+    image_audits: list[dict] | None = None,
+    context_fields: list[dict] | None = None,
 ) -> dict:
     """
     Create audit session(s) asynchronously.
@@ -478,7 +480,17 @@ def run_audit_creation(
     audit_criteria = AuditCriteria.from_dict(criteria)
     granularity = criteria.get("granularity", "combined")
     audit_type = audit_criteria.audit_type
-    related_fields = audit_criteria.related_fields or []
+
+    # Per-image-type reviewers (new wizard) translate into the internal related_fields
+    # rules + a question_id -> reviewer map. Legacy payloads (no image_audits) keep using
+    # criteria.related_fields and the single ai_agent_id.
+    if image_audits is not None:
+        from commcare_connect.audit.ai_review_config import build_review_config
+
+        related_fields, ai_reviewers = build_review_config(image_audits, context_fields)
+    else:
+        ai_reviewers = None
+        related_fields = audit_criteria.related_fields or []
 
     # DEBUG: Log the parsed criteria
     logger.info(
@@ -494,7 +506,7 @@ def run_audit_creation(
     # Determine stages
     needs_visit_fetch = not visit_ids
     is_per_flw = granularity == "per_flw"
-    has_ai_agent = bool(ai_agent_id)
+    has_ai_agent = bool(ai_agent_id) or bool(ai_reviewers)
     # Base stages: (fetch visits) + extract images + create sessions + (AI review)
     total_stages = 3 if needs_visit_fetch else 2
     if has_ai_agent:
@@ -781,11 +793,12 @@ def run_audit_creation(
                 ai_review_results = _run_ai_review_on_sessions(
                     data_access=data_access,
                     session_ids=[s["id"] for s in sessions_created],
-                    ai_agent_id=ai_agent_id,
                     access_token=access_token,
                     opp_id=opp_id,
-                    progress_callback=on_ai_review_progress,
+                    ai_agent_id=ai_agent_id,
                     auto_apply_actions=ai_auto_apply_actions,
+                    ai_reviewers=ai_reviewers,
+                    progress_callback=on_ai_review_progress,
                 )
                 logger.info(f"[AuditCreation] AI review complete: {ai_review_results}")
             except Exception as e:

@@ -931,6 +931,9 @@ class ExperimentAuditCreateAsyncAPIView(LoginRequiredMixin, View):
             # None = legacy per-agent default; a list (possibly empty) is an explicit
             # choice ([] means "flag only — nothing pre-tagged").
             ai_auto_apply_actions = data.get("ai_auto_apply_actions")
+            # New wizard: per-image-type reviewers + agent-less context fields.
+            image_audits = data.get("image_audits")
+            context_fields = data.get("context_fields")
 
             if not opportunities:
                 return JsonResponse({"error": "No opportunities provided"}, status=400)
@@ -988,6 +991,8 @@ class ExperimentAuditCreateAsyncAPIView(LoginRequiredMixin, View):
                     "workflow_run_id": workflow_run_id,
                     "ai_agent_id": ai_agent_id,  # Optional AI agent to run
                     "ai_auto_apply_actions": ai_auto_apply_actions,
+                    "image_audits": image_audits,
+                    "context_fields": context_fields,
                 },
                 task_id=task_id,
             )
