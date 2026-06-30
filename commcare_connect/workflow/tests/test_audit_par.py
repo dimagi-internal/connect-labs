@@ -1,3 +1,5 @@
+from unittest import mock
+
 from commcare_connect.workflow.templates.audit_par import summarize_run_sessions
 
 
@@ -40,3 +42,51 @@ def test_groups_by_tag_and_builds_flw_rows():
     assert rows["flw1"]["muac"]["session_id"] == 11
     assert rows["flw1"]["rest"]["session_id"] == 12
     assert rows["flw2"]["muac"]["session_id"] == 13
+
+
+def _run(run_id, ws, we):
+    r = mock.Mock()
+    r.id = run_id
+    r.data = {"state": {"window_start": ws, "window_end": we}}
+    r.completed_at = we
+    return r
+
+
+def test_rollup_buckets_runs_per_opp_and_week():
+    from commcare_connect.workflow.templates import audit_par as m
+
+    state = {
+        "window_start": "2026-06-01",
+        "window_end": "2026-06-30",
+        "watched_source": {"creator_definition_id": 42, "opportunity_ids": [101, 102]},
+    }
+    runs = [_run(501, "2026-06-01", "2026-06-07"), _run(502, "2026-06-08", "2026-06-14")]
+
+    sessions_by_run = {
+        501: [
+            FakeSession(101, "muac", "flw1", {"pass": 3, "fail": 1, "pending": 0, "ai_no_match": 1}),
+            FakeSession(102, "rest", "flw9", {"pass": 2, "fail": 0, "pending": 2, "ai_no_match": 0}),
+        ],
+        502: [FakeSession(101, "muac", "flw1", {"pass": 4, "fail": 0, "pending": 0, "ai_no_match": 0})],
+    }
+
+    with mock.patch.object(m, "WorkflowDataAccess") as WDA, mock.patch.object(m, "AuditDataAccess") as ADA:
+        WDA.return_value.list_runs.return_value = runs
+        ADA.return_value.get_sessions_by_workflow_run.side_effect = lambda rid: sessions_by_run.get(rid, [])
+
+        out = m.compute_audit_par_rollup(state=state, access_token="tok")
+
+    opp101 = next(s for s in out["watched_summary"] if s["opportunity_id"] == 101)
+    assert len(opp101["weeks"]) == 2
+    wk1 = opp101["weeks"][0]
+    assert wk1["run_id"] == 501
+    assert wk1["by_tag"]["muac"]["fail"] == 1
+    opp102 = next(s for s in out["watched_summary"] if s["opportunity_id"] == 102)
+    assert opp102["weeks"][0]["by_tag"]["rest"]["pending"] == 2
+
+
+def test_rollup_missing_window_returns_error():
+    from commcare_connect.workflow.templates import audit_par as m
+
+    out = m.compute_audit_par_rollup(state={"watched_source": {}}, access_token="tok")
+    assert out["error"] == "missing_window"
