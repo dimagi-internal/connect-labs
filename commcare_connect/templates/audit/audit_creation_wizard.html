@@ -566,39 +566,6 @@
       </div>
     </div>
 
-    <!-- Image Types: pick which photos to audit (auto-detected from submissions) -->
-    <div x-show="selectedOpportunities.length > 0" class="mt-6 pt-6 border-t border-gray-200">
-      <h3 class="text-md font-medium text-gray-800 mb-1">
-        <i class="fa-solid fa-image mr-2 text-brand-indigo"></i>
-        Image Types to Audit
-      </h3>
-      <p class="text-sm text-gray-600 mb-3">
-        Auto-detected from recent submissions in the selected opportunities. Pick which photo types to
-        review and the audit will include only visits that have them. Leave all unchecked to audit every image.
-      </p>
-
-      <div x-show="imageTypesLoading" class="text-sm text-gray-500">
-        <i class="fa-solid fa-spinner fa-spin mr-2"></i>Detecting image types...
-      </div>
-      <div x-show="imageTypesError" class="text-sm text-red-600" x-text="imageTypesError"></div>
-
-      <div x-show="!imageTypesLoading && !imageTypesError && availableImageTypes.length > 0"
-           class="flex flex-wrap gap-2">
-        <template x-for="t in availableImageTypes" :key="t.id">
-          <label class="inline-flex items-center gap-2 px-3 py-2 text-sm border rounded-md cursor-pointer hover:bg-gray-50"
-                 :class="selectedImageTypeIds.includes(t.id) ? 'bg-brand-indigo/5 border-brand-indigo' : 'bg-white border-gray-200'">
-            <input type="checkbox" :value="t.id" x-model="selectedImageTypeIds"
-                   class="h-4 w-4 text-brand-indigo focus:ring-brand-indigo border-gray-300 rounded">
-            <span x-text="t.label" :title="t.path"></span>
-          </label>
-        </template>
-      </div>
-      <div x-show="!imageTypesLoading && !imageTypesError && availableImageTypes.length === 0"
-           class="text-sm text-gray-500">
-        No image questions detected in the selected opportunities' recent submissions.
-      </div>
-    </div>
-
     <!-- Update Preview Button -->
     <div class="flex justify-center mt-6">
       <button
@@ -683,13 +650,48 @@
     </div>
   </div>
 
-  <!-- Step 5: Related Fields Configuration (Optional) -->
-  <div x-show="previewResults.length > 0" class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+  <!-- Step 5: Audit Field Configuration -->
+  <div x-show="selectedOpportunities.length > 0" class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
     <h2 class="text-lg font-semibold text-brand-deep-purple mb-4">
-      <i class="fa-solid fa-link mr-2"></i>
-      Step 5: Related Fields Configuration (Optional)
+      <i class="fa-solid fa-sliders mr-2"></i>
+      Step 5: Audit Field Configuration
     </h2>
 
+    <!-- Section 1: Image types to audit (auto-detected from submissions) -->
+    <h3 class="text-md font-medium text-gray-800 mb-1">
+      <i class="fa-solid fa-image mr-2 text-brand-indigo"></i>
+      Select the image types to audit
+    </h3>
+    <p class="text-sm text-gray-600 mb-3">
+      Auto-detected from recent submissions in the selected opportunities. Pick which photo types to
+      review (by their full question path) and the audit will include only visits that have them.
+      Leave all unchecked to audit every image.
+    </p>
+    <div x-show="imageTypesLoading" class="text-sm text-gray-500 mb-2">
+      <i class="fa-solid fa-spinner fa-spin mr-2"></i>Detecting image types...
+    </div>
+    <div x-show="imageTypesError" class="text-sm text-red-600 mb-2" x-text="imageTypesError"></div>
+    <div x-show="!imageTypesLoading && !imageTypesError && availableImageTypes.length > 0"
+         class="flex flex-col gap-2 mb-2">
+      <template x-for="t in availableImageTypes" :key="t.path">
+        <label class="inline-flex items-center gap-2 px-3 py-2 text-sm border rounded-md cursor-pointer hover:bg-gray-50"
+               :class="selectedImagePaths.includes(t.path) ? 'bg-brand-indigo/5 border-brand-indigo' : 'bg-white border-gray-200'">
+          <input type="checkbox" :value="t.path" x-model="selectedImagePaths"
+                 class="h-4 w-4 text-brand-indigo focus:ring-brand-indigo border-gray-300 rounded">
+          <span class="font-mono text-xs text-gray-700 break-all" x-text="t.path"></span>
+        </label>
+      </template>
+    </div>
+    <div x-show="!imageTypesLoading && !imageTypesError && availableImageTypes.length === 0"
+         class="text-sm text-gray-500 mb-2">
+      No image questions detected in the selected opportunities' recent submissions.
+    </div>
+
+    <!-- Section 2: Related field associations (advanced) -->
+    <h3 class="text-md font-medium text-gray-800 mt-6 mb-1 pt-6 border-t border-gray-200">
+      <i class="fa-solid fa-link mr-2 text-brand-indigo"></i>
+      Related field rules (Optional)
+    </h3>
     <p class="text-sm text-gray-600 mb-4">
       Associate form field values with specific images. These values will be displayed alongside images during review.
     </p>
@@ -821,7 +823,7 @@
         <!-- Agent Selection -->
         <div>
           <label class="block text-xs font-medium text-gray-600 mb-1">Select AI Agent</label>
-          <select x-model="selectedAIAgent"
+          <select x-model="selectedAIAgent" @change="aiAutoApplyActions = []"
                   class="w-full md:w-1/2 px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-brand-indigo focus:border-brand-indigo">
             <option value="">None - Skip AI review</option>
             <template x-for="agent in availableAIAgents" :key="agent.agent_id">
@@ -839,6 +841,29 @@
               <p class="font-medium mb-1" x-text="getSelectedAgentName()"></p>
               <p x-text="getSelectedAgentDescription()"></p>
             </div>
+          </div>
+        </div>
+
+        <!-- Auto-apply: which AI verdicts pre-tag a result before human review -->
+        <div x-show="selectedAIAgent && getSelectedAgentActions().length > 0" class="pt-1">
+          <p class="text-sm font-medium text-gray-700 mb-1">Auto-tag results before I review</p>
+          <p class="text-xs text-gray-500 mb-2">
+            By default the AI only flags images — it never sets a Pass/Fail until you do. Tick a verdict
+            below to let the AI pre-tag it automatically. You can still bulk-apply any verdict while reviewing.
+          </p>
+          <div class="space-y-1">
+            <template x-for="action in getSelectedAgentActions()" :key="action.key">
+              <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                <input type="checkbox" :value="action.key" x-model="aiAutoApplyActions"
+                       class="h-4 w-4 text-brand-indigo focus:ring-brand-indigo border-gray-300 rounded">
+                <span>
+                  Automatically apply <span class="font-medium" x-text="action.button_label"></span>
+                  <span class="ml-1 font-semibold"
+                        :class="action.human_result === 'fail' ? 'text-red-600' : 'text-green-600'"
+                        x-text="'(' + action.human_result + ')'"></span>
+                </span>
+              </label>
+            </template>
           </div>
         </div>
       </div>
@@ -1074,8 +1099,10 @@ function auditCreationPage() {
     // Image types auto-detected from the selected opportunities' submissions.
     // Picking some scopes the audit to visits that have those photos (filter_by_image),
     // mirroring the Bulk Image Audit workflow. Leaving all unchecked audits every image.
+    // Selections are keyed by the full question path so they read clearly as URL params.
     availableImageTypes: [],      // [{id, label, path}] unioned across selected opps
-    selectedImageTypeIds: [],     // ids the auditor chose to audit
+    selectedImagePaths: [],       // full image question paths the auditor chose to audit
+    pendingImagePaths: [],        // from ?image_paths= URL param; applied once discovery runs
     imageTypesLoading: false,
     imageTypesError: null,
     imageTypesLoadedKey: '',      // cache key (sorted opp ids) to skip redundant refetches
@@ -1083,6 +1110,7 @@ function auditCreationPage() {
     // AI Review Agent state
     availableAIAgents: [],
     selectedAIAgent: '',  // agent_id or empty string for none
+    aiAutoApplyActions: [],  // result_action keys to auto-pre-tag (empty = flag only)
 
     // Preview state
     previewResults: [],
@@ -1223,7 +1251,7 @@ function auditCreationPage() {
       if (key === this.imageTypesLoadedKey) return;
       if (oppIds.length === 0) {
         this.availableImageTypes = [];
-        this.selectedImageTypeIds = [];
+        this.selectedImagePaths = [];
         this.imageTypesLoadedKey = '';
         this.imageTypesError = null;
         return;
@@ -1241,10 +1269,15 @@ function auditCreationPage() {
         const byId = new Map();
         lists.flat().forEach(t => { if (t && t.id && !byId.has(t.id)) byId.set(t.id, t); });
         this.availableImageTypes = Array.from(byId.values())
-          .sort((a, b) => (a.label || '').localeCompare(b.label || ''));
-        // Drop any previously-selected types that no longer exist in the new set
-        const availIds = new Set(this.availableImageTypes.map(t => t.id));
-        this.selectedImageTypeIds = this.selectedImageTypeIds.filter(id => availIds.has(id));
+          .sort((a, b) => (a.path || '').localeCompare(b.path || ''));
+        const availPaths = new Set(this.availableImageTypes.map(t => t.path));
+        // Apply any paths passed via the ?image_paths= URL param (once, after discovery)
+        if (this.pendingImagePaths.length) {
+          this.selectedImagePaths = this.pendingImagePaths.filter(p => availPaths.has(p));
+          this.pendingImagePaths = [];
+        }
+        // Drop any previously-selected paths that no longer exist in the new set
+        this.selectedImagePaths = this.selectedImagePaths.filter(p => availPaths.has(p));
         this.imageTypesLoadedKey = key;
       } catch (e) {
         this.imageTypesError = 'Could not detect image types: ' + e.message;
@@ -1258,7 +1291,7 @@ function auditCreationPage() {
     // merged with any manual field-association rules. Mirrors the workflow's related_fields.
     buildRelatedFieldsPayload() {
       const imageRules = this.availableImageTypes
-        .filter(t => this.selectedImageTypeIds.includes(t.id))
+        .filter(t => this.selectedImagePaths.includes(t.path))
         .map(t => ({ imagePath: t.path, filterByImage: true, label: t.label }));
       const manualRules = this.auditCriteria.relatedFields.filter(
         rule => rule.imagePath && rule.fieldPath
@@ -1714,7 +1747,9 @@ function auditCreationPage() {
           criteria: criteria,
           visit_ids: this.precomputedVisitIds,
           flw_visit_ids: selectedFlwVisitIds,
-          ai_agent_id: this.selectedAIAgent || null  // Optional AI agent to run after creation
+          ai_agent_id: this.selectedAIAgent || null,  // Optional AI agent to run after creation
+          // Which AI verdicts to auto-pre-tag ([] = flag only); omitted when no agent.
+          ai_auto_apply_actions: this.selectedAIAgent ? this.aiAutoApplyActions : undefined
         };
 
         // DEBUG: Log what we're sending
@@ -1898,6 +1933,12 @@ function auditCreationPage() {
         this.auditTag = params.tag;
       }
 
+      // Pre-select image types by full question path (comma-separated). Held until
+      // discovery runs (loadImageTypes), then intersected with what's available.
+      if (params.image_paths) {
+        this.pendingImagePaths = params.image_paths.split(',').map(s => s.trim()).filter(Boolean);
+      }
+
       // Pre-populate selected FLW IDs from URL params
       // This allows creating a session without generating a preview first
       // Handle usernames (comma-separated) from CHC Nutrition or other dashboards
@@ -1971,6 +2012,13 @@ function auditCreationPage() {
     getSelectedAgentDescription() {
       const agent = this.availableAIAgents.find(a => a.agent_id === this.selectedAIAgent);
       return agent ? agent.description : '';
+    },
+
+    // The selected agent's verdicts as a list: {key, ai_result, human_result, button_label}.
+    getSelectedAgentActions() {
+      const agent = this.availableAIAgents.find(a => a.agent_id === this.selectedAIAgent);
+      if (!agent || !agent.result_actions) return [];
+      return Object.entries(agent.result_actions).map(([key, a]) => ({ key, ...a }));
     }
   }
 }
