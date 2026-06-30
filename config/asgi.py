@@ -42,11 +42,58 @@ from django.core.asgi import get_asgi_application  # noqa: E402
 # package, which imports services/models.
 _django_asgi_app = get_asgi_application()
 
+from asgiref.sync import sync_to_async  # noqa: E402
+from django.db import connections  # noqa: E402
 from starlette.applications import Starlette  # noqa: E402
 from starlette.responses import JSONResponse  # noqa: E402
 from starlette.routing import Mount, Route  # noqa: E402
 
 from commcare_connect.mcp.server import build_http_app  # noqa: E402
+
+
+class _ClosingConnectionsApp:
+    """Close this request's Django DB connections at the MCP request boundary.
+
+    The FastMCP app is mounted here as a Starlette sub-app, OUTSIDE Django's
+    ``ASGIHandler``. Django recycles DB connections via ``close_old_connections``,
+    wired to the ``request_started`` / ``request_finished`` signals — signals
+    that ONLY Django's own request handling emits. An MCP request never reaches
+    ``ASGIHandler``, so those signals never fire and nothing recycles the
+    connections it opened (PAT auth ``users_user`` lookups, every tool handler's
+    ORM work, the per-call ``MCPAuditLog`` COMMIT). Under ``CONN_MAX_AGE > 0``
+    those connections are kept open for reuse but, absent the request-finished
+    signal, never closed — they sit ``idle`` on RDS and accumulate until the
+    instance exhausts its connection slots (issues #667 / #669).
+
+    This wraps the ENTIRE ``/mcp`` mount, so it is a single, comprehensive close
+    point covering auth + tools + audit-log + ANY future MCP DB entrypoint,
+    rather than the per-function whack-a-mole of ``server._closing_connections``
+    (which only wraps two named callables and is now defense-in-depth). The
+    close runs in the SAME ``thread_sensitive`` asgiref executor the MCP handlers
+    ran in, so it targets exactly the thread-local connections those handlers
+    opened. ``close_all()`` (not ``close_old_connections()``) is deliberate: the
+    asgiref thread pool churns, so unconditionally closing guarantees nothing is
+    left open on a thread that never serves another MCP call.
+
+    Modeled on the ``_PlainBearerChallenge`` / ``_ReprefixApp`` wrappers below
+    (same scope/receive/send shape). Only ``http`` scopes get a boundary close;
+    ``websocket`` / ``lifespan`` scopes pass through untouched (the lifespan in
+    particular must not have its connections yanked).
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            # Close in the thread-sensitive executor the MCP handlers used, so
+            # we close THEIR thread-local connections (not the event loop's).
+            await sync_to_async(connections.close_all, thread_sensitive=True)()
 
 
 class _PlainBearerChallenge:
@@ -177,8 +224,11 @@ def build_application() -> Starlette:
             # FastMCP Streamable-HTTP protocol endpoint at /mcp/. Wrapped so the
             # auth 401 carries a plain `Bearer realm` challenge (not FastMCP's
             # OAuth-style `error="invalid_token"`), keeping PAT clients off the
-            # OAuth-discovery path that breaks reconnect.
-            Mount("/mcp", app=_PlainBearerChallenge(mcp_app)),
+            # OAuth-discovery path that breaks reconnect. The outer
+            # _ClosingConnectionsApp closes this request's DB connections at the
+            # mount boundary (MCP bypasses Django's request_finished signal), the
+            # primary, comprehensive fix for the connection leak (#667 / #669).
+            Mount("/mcp", app=_ClosingConnectionsApp(_PlainBearerChallenge(mcp_app))),
             # Django handles everything else (catch-all, mounted last).
             Mount("/", app=_django_asgi_app),
         ],
