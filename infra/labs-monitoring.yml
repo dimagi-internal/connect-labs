@@ -1,0 +1,148 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+# Labs operational guardrails — first slice of infrastructure-as-code for the
+# connect-labs AWS environment. Standalone monitoring stack: an SNS alert topic
+# + a minimal, grounded CloudWatch alarm set that turns the RDS connection-leak /
+# slot-exhaustion failure mode (the 2026-06-29 incident; leak fixed in PR #765)
+# into an operator signal BEFORE it causes a site-wide outage.
+#
+# This stack deliberately does NOT own the core infra (RDS instance, ECS
+# cluster/services, ALB, redis, IAM) — those were created out-of-band and are
+# referenced here by name/id, so the stack is safe to create/update/delete on
+# its own. Bringing the core under CloudFormation is a later slice. Modeled on
+# dimagi-rad/scout's infra/scout-stack.yml monitoring block. See infra/README.md
+# for the deploy command.
+Description: >-
+  Labs operational guardrails (monitoring): SNS alert topic + RDS
+  connection/slot-exhaustion CloudWatch alarms. Standalone stack that references
+  (does not own) the existing RDS instance and ECS log groups. See PR #765.
+
+Parameters:
+  AlarmEmail:
+    Type: String
+    Default: ''
+    Description: >-
+      Email address that receives CloudWatch alarm notifications (the
+      subscription must be confirmed via the email AWS sends). Leave blank to
+      create the alarms + SNS topic without an email subscription (alarms still
+      fire to the topic; wire Slack/another endpoint to it later).
+
+  DbInstanceIdentifier:
+    Type: String
+    Default: labs-jj-postgres
+    Description: RDS instance whose DatabaseConnections metric is alarmed.
+
+  DbConnectionsThreshold:
+    Type: Number
+    Default: 120
+    Description: >-
+      Alarm when DatabaseConnections exceeds this for 10 minutes. db.t3.small
+      has ~155 usable slots (max_connections minus rds_reserved); 120 is an
+      early warning with headroom to act before exhaustion.
+
+  WebLogGroupName:
+    Type: String
+    Default: /ecs/labs-jj-web
+    Description: CloudWatch log group for the web (gunicorn/uvicorn) service.
+
+  WorkerLogGroupName:
+    Type: String
+    Default: /ecs/labs-jj-worker
+    Description: CloudWatch log group for the celery worker/beat service.
+
+Conditions:
+  HasAlarmEmail: !Not [!Equals [!Ref AlarmEmail, '']]
+
+Resources:
+  # ── Alert topic ────────────────────────────────────────────────────
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: labs-jj-alerts
+      DisplayName: Labs Alerts
+
+  AlertEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlarmEmail
+    Properties:
+      TopicArn: !Ref AlertTopic
+      Protocol: email
+      Endpoint: !Ref AlarmEmail
+
+  # ── RDS connection-count alarm (the primary early-warning) ──────────
+  # The 2026-06-29 incident climbed 43 -> 87 -> exhaustion with NO alert.
+  # This is the signal that was missing. Maximum (not Average) so a spike
+  # within the period is caught.
+  DatabaseConnectionsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: labs-jj-rds-connections-high
+      AlarmDescription: >-
+        RDS DatabaseConnections is elevated — likely a connection leak climbing
+        toward slot exhaustion (the failure mode fixed in PR #765). Investigate
+        before it reaches the ~155-slot ceiling and 500s everywhere.
+      Namespace: AWS/RDS
+      MetricName: DatabaseConnections
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Ref DbInstanceIdentifier
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: !Ref DbConnectionsThreshold
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+      OKActions: [!Ref AlertTopic]
+
+  # ── Slot-exhaustion log detector (precise terminal-symptom signal) ──
+  # When the pool IS exhausted, Postgres rejects new connections with
+  # "remaining connection slots are reserved for roles ...". Metric filters
+  # on the web + worker log groups feed one metric so the alarm fires no
+  # matter which process sees the rejection first.
+  WebConnSlotExhaustionMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref WebLogGroupName
+      FilterPattern: '"remaining connection slots are reserved"'
+      MetricTransformations:
+        - MetricNamespace: Labs/RDS
+          MetricName: ConnectionSlotExhaustion
+          MetricValue: '1'
+          DefaultValue: 0
+
+  WorkerConnSlotExhaustionMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref WorkerLogGroupName
+      FilterPattern: '"remaining connection slots are reserved"'
+      MetricTransformations:
+        - MetricNamespace: Labs/RDS
+          MetricName: ConnectionSlotExhaustion
+          MetricValue: '1'
+          DefaultValue: 0
+
+  ConnSlotExhaustionAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: labs-jj-rds-slot-exhaustion
+      AlarmDescription: >-
+        Postgres is rejecting connections ("remaining connection slots are
+        reserved") — the pool is exhausted RIGHT NOW and requests are failing.
+        This is the terminal symptom of the connection leak; page immediately.
+      Namespace: Labs/RDS
+      MetricName: ConnectionSlotExhaustion
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
+Outputs:
+  AlertTopicArn:
+    Description: SNS topic that all labs alarms publish to (wire Slack/PagerDuty here).
+    Value: !Ref AlertTopic
+    Export:
+      Name: labs-jj-alert-topic-arn
