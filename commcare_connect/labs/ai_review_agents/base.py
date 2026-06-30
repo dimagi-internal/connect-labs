@@ -53,6 +53,10 @@ class BaseAIReviewAgent(ABC):
     name: str = ""
     description: str = ""
     result_actions: dict = {}
+    # Declarative settings the creation wizard renders when this agent is chosen
+    # for an image type. Each item: {key, label, type, required, help}.
+    # type "form_field" renders a picker of the opportunity's form-field paths.
+    config_fields: list[dict] = []
 
     def __init__(self):
         """Initialize the agent with logging."""

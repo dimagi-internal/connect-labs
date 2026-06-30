@@ -108,11 +108,12 @@ def _build_ai_to_human_result(agent, auto_apply_actions: list[str] | None) -> di
 def _run_ai_review_on_sessions(
     data_access,
     session_ids: list[int],
-    ai_agent_id: str,
     access_token: str,
     opp_id: int,
-    progress_callback=None,
+    ai_agent_id: str | None = None,
     auto_apply_actions: list[str] | None = None,
+    ai_reviewers: dict | None = None,
+    progress_callback=None,
 ) -> dict:
     """
     Run AI review agent on the specified audit sessions.
@@ -136,20 +137,41 @@ def _run_ai_review_on_sessions(
     """
     from commcare_connect.labs.ai_review_agents.registry import get_agent
 
-    # Get the agent
-    agent = get_agent(ai_agent_id)
-    logger.info(f"[AIReview] Running agent '{ai_agent_id}' on {len(session_ids)} sessions")
-    logger.info(f"[AIReview] Session IDs to process: {session_ids}")
+    # Resolve a reviewer for a given image question_id. Unifies two modes:
+    #   * per-type (ai_reviewers given): look up the agent by question_id
+    #   * legacy (ai_agent_id given): the same agent applies to every question_id
+    # Returns (agent, requires_reading, ai_to_human_map) or None when no reviewer applies.
+    _reviewer_cache: dict = {}
 
-    # Whether this agent needs a related-field reading value to operate
-    requires_reading = getattr(agent, "requires_reading", True)
+    def resolve(question_id):
+        if ai_reviewers is not None:
+            spec = ai_reviewers.get(question_id)
+            if not spec or not spec.get("agent_id"):
+                return None
+            cache_key = ("qid", question_id)
+            agent_id_ = spec["agent_id"]
+            actions = spec.get("auto_apply_actions")
+        else:
+            if not ai_agent_id:
+                return None
+            cache_key = ("global",)
+            agent_id_ = ai_agent_id
+            actions = auto_apply_actions
+        if cache_key not in _reviewer_cache:
+            ag = get_agent(agent_id_)
+            _reviewer_cache[cache_key] = (
+                ag,
+                getattr(ag, "requires_reading", True),
+                _build_ai_to_human_result(ag, actions),
+            )
+        return _reviewer_cache[cache_key]
 
-    # Which AI verdicts should pre-tag a human result (e.g. overzoomed -> fail).
-    # Empty when the auditor chose "flag only", so nothing is pre-tagged.
-    ai_to_human_result = _build_ai_to_human_result(agent, auto_apply_actions)
-    logger.info(f"[AIReview] Auto-apply map for '{ai_agent_id}': {ai_to_human_result}")
+    if ai_reviewers is not None:
+        logger.info(f"[AIReview] Per-image-type review on {len(session_ids)} sessions: {ai_reviewers}")
+    else:
+        logger.info(f"[AIReview] Running agent '{ai_agent_id}' on {len(session_ids)} sessions")
 
-    # First pass: count only images that will actually be reviewed
+    # First pass: count only images that have a reviewer AND meet its reading requirement
     total_images_to_review = 0
     session_image_counts = {}
     for session_id in session_ids:
@@ -160,10 +182,15 @@ def _run_ai_review_on_sessions(
                 reviewable_count = 0
                 for images in visit_images.values():
                     for image_data in images:
+                        if not image_data.get("blob_id"):
+                            continue
+                        resolved = resolve(image_data.get("question_id", ""))
+                        if not resolved:
+                            continue
+                        _agent, requires_reading, _map = resolved
                         related_fields = image_data.get("related_fields", [])
                         has_reading = any(rf.get("value") for rf in related_fields)
-                        # Agents that don't require a reading count any image with a blob_id
-                        if (has_reading or not requires_reading) and image_data.get("blob_id"):
+                        if has_reading or not requires_reading:
                             reviewable_count += 1
                 session_image_counts[session_id] = reviewable_count
                 total_images_to_review += reviewable_count
@@ -202,43 +229,51 @@ def _run_ai_review_on_sessions(
             # Track if we made any updates to this session
             session_updated = False
 
-            # Phase 1: collect reviewable work items, skip-count the rest.
-            # (reading extraction is cheap and done single-threaded)
-            work_items = []  # (visit_id_str, blob_id, reading, question_id)
+            # Phase 1: collect reviewable work items, skip the rest.
+            # Each item: (visit_id_str, blob_id, reading, question_id, image_qid)
+            #   image_qid -> the image's own question path, used to resolve its reviewer
+            #   question_id -> stored on the assessment (may be the reading field's path)
+            work_items = []
             for visit_id_str, images in visit_images.items():
                 logger.debug(f"[AIReview] Visit {visit_id_str}: {len(images)} images")
                 for image_data in images:
                     blob_id = image_data.get("blob_id")
                     if not blob_id:
                         continue
+                    image_qid = image_data.get("question_id", "")
+                    resolved = resolve(image_qid)
+                    if not resolved:
+                        continue  # no reviewer configured for this image type
+                    _agent, requires_reading, _map = resolved
                     related_fields = image_data.get("related_fields", [])
                     reading = None
-                    question_id = image_data.get("question_id", "")
+                    question_id = image_qid
                     for rf in related_fields:
                         if rf.get("value"):
                             reading = str(rf.get("value"))
                             question_id = rf.get("path") or question_id
                             break
                     if not reading and requires_reading:
-                        logger.debug(f"[AIReview] Skipping blob={blob_id}: no reading value and agent requires one")
+                        logger.debug(f"[AIReview] Skipping blob={blob_id}: no reading and agent requires one")
                         total_skipped += 1
                         images_processed += 1
                         continue
-                    work_items.append((visit_id_str, blob_id, reading, question_id))
+                    work_items.append((visit_id_str, blob_id, reading, question_id, image_qid))
 
             # Phase 2: fetch + AI-review all images in parallel.
             # Both the Connect image download and the ML classification call are HTTP-bound,
             # so concurrent workers cut wall-clock time roughly proportional to worker count.
             # httpx.Client (used by both data_access and the agent) is thread-safe.
             def _fetch_and_review(item):
-                v_id, b_id, rdg, q_id = item
+                v_id, b_id, rdg, q_id, img_qid = item
+                agent, _rr, _map = resolve(img_qid)
                 try:
                     img_bytes = data_access.download_image_from_connect(b_id, opp_id)
                     if not img_bytes:
-                        return (v_id, b_id, q_id, rdg, None, None, True)  # skipped
+                        return (v_id, b_id, q_id, rdg, img_qid, None, None, True)  # skipped
                 except Exception as exc:
                     logger.warning(f"[AIReview] Failed to fetch image {b_id}: {exc}")
-                    return (v_id, b_id, q_id, rdg, None, None, True)  # skipped
+                    return (v_id, b_id, q_id, rdg, img_qid, None, None, True)  # skipped
 
                 from commcare_connect.labs.ai_review_agents.types import ReviewContext
 
@@ -273,13 +308,22 @@ def _run_ai_review_on_sessions(
                     ai_r = "error"
                     ai_n = str(exc)
 
-                return (v_id, b_id, q_id, rdg, ai_r, ai_n, False)  # not skipped
+                return (v_id, b_id, q_id, rdg, img_qid, ai_r, ai_n, False)  # not skipped
 
             with ThreadPoolExecutor(max_workers=5) as pool:
                 fut_map = {pool.submit(_fetch_and_review, item): item for item in work_items}
                 for fut in as_completed(fut_map):
                     try:
-                        visit_id_str, blob_id, question_id, reading, ai_result, ai_notes, skipped = fut.result()
+                        (
+                            visit_id_str,
+                            blob_id,
+                            question_id,
+                            reading,
+                            img_qid,
+                            ai_result,
+                            ai_notes,
+                            skipped,
+                        ) = fut.result()
                     except Exception as exc:
                         failed_item = fut_map.get(fut)
                         blob_hint = failed_item[1] if failed_item else "unknown"
@@ -305,7 +349,9 @@ def _run_ai_review_on_sessions(
 
                         # Persist AI result for all outcomes so the classification label
                         # is always available to display in the tile footer. human_result is
-                        # None unless this verdict was opted into auto-apply at creation time.
+                        # None unless this verdict was opted into auto-apply for this image
+                        # type's reviewer.
+                        _agent, _rr, ai_to_human_result = resolve(img_qid)
                         human_result = ai_to_human_result.get(ai_result)
                         session.set_assessment(
                             visit_id=int(visit_id_str),
@@ -351,9 +397,16 @@ def _run_ai_review_on_sessions(
         f"passed={total_passed}, failed={total_failed}, errors={total_errors}, skipped={total_skipped}"
     )
 
+    if ai_reviewers is not None:
+        summary_agent_id = ",".join(sorted({s["agent_id"] for s in ai_reviewers.values() if s.get("agent_id")}))
+        summary_agent_name = "per-image-type"
+    else:
+        summary_agent_id = ai_agent_id
+        summary_agent_name = get_agent(ai_agent_id).name if ai_agent_id else ""
+
     return {
-        "agent_id": ai_agent_id,
-        "agent_name": agent.name,
+        "agent_id": summary_agent_id,
+        "agent_name": summary_agent_name,
         "sessions_processed": len(session_ids),
         "total_reviewed": total_reviewed,
         "total_passed": total_passed,
@@ -376,6 +429,8 @@ def run_audit_creation(
     workflow_run_id: int | None = None,
     ai_agent_id: str | None = None,
     ai_auto_apply_actions: list[str] | None = None,
+    image_audits: list[dict] | None = None,
+    context_fields: list[dict] | None = None,
 ) -> dict:
     """
     Create audit session(s) asynchronously.
@@ -425,7 +480,17 @@ def run_audit_creation(
     audit_criteria = AuditCriteria.from_dict(criteria)
     granularity = criteria.get("granularity", "combined")
     audit_type = audit_criteria.audit_type
-    related_fields = audit_criteria.related_fields or []
+
+    # Per-image-type reviewers (new wizard) translate into the internal related_fields
+    # rules + a question_id -> reviewer map. Legacy payloads (no image_audits) keep using
+    # criteria.related_fields and the single ai_agent_id.
+    if image_audits is not None:
+        from commcare_connect.audit.ai_review_config import build_review_config
+
+        related_fields, ai_reviewers = build_review_config(image_audits, context_fields)
+    else:
+        ai_reviewers = None
+        related_fields = audit_criteria.related_fields or []
 
     # DEBUG: Log the parsed criteria
     logger.info(
@@ -441,7 +506,7 @@ def run_audit_creation(
     # Determine stages
     needs_visit_fetch = not visit_ids
     is_per_flw = granularity == "per_flw"
-    has_ai_agent = bool(ai_agent_id)
+    has_ai_agent = bool(ai_agent_id) or bool(ai_reviewers)
     # Base stages: (fetch visits) + extract images + create sessions + (AI review)
     total_stages = 3 if needs_visit_fetch else 2
     if has_ai_agent:
@@ -728,11 +793,12 @@ def run_audit_creation(
                 ai_review_results = _run_ai_review_on_sessions(
                     data_access=data_access,
                     session_ids=[s["id"] for s in sessions_created],
-                    ai_agent_id=ai_agent_id,
                     access_token=access_token,
                     opp_id=opp_id,
-                    progress_callback=on_ai_review_progress,
+                    ai_agent_id=ai_agent_id,
                     auto_apply_actions=ai_auto_apply_actions,
+                    ai_reviewers=ai_reviewers,
+                    progress_callback=on_ai_review_progress,
                 )
                 logger.info(f"[AuditCreation] AI review complete: {ai_review_results}")
             except Exception as e:
