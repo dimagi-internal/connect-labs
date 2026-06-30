@@ -211,6 +211,8 @@ Labs includes pre-built workflow templates for common program types. Your progra
 | **LLO Weekly FLW Review**             | Weekly per-FLW KPI scorecard for LLO programs                                                                               |
 | **Connect Interviews Reporting V2**   | Live funnel dashboard showing Triggered / Started / Completed counts per interview for any cohort                           |
 | **CHC Audit History**                 | Historical view of CHC audit records across multiple opportunities                                                          |
+| **Weekly Dual-Track Image Audit**     | Weekly cross-opportunity image audit creator — generates MUAC (AI-checked) and sampled other-photo audits for every FLW    |
+| **Audit Program Report**              | Cross-opportunity, cross-week grid showing MUAC and other-photo audit pass/fail/pending counts with per-FLW drill-down     |
 
 ### Bulk Image Audit — AI Review Agent
 
@@ -226,9 +228,4 @@ The Bulk Image Audit template includes an optional **AI Review Agent** step. Whe
 Next to the AI Review Agent dropdown, each agent verdict has a checkbox that lets you choose what happens when the AI reaches a conclusion:
 
 - **Ticked — auto-apply:** The AI automatically pre-tags matching images with that verdict before the reviewer opens the session. For example, ticking the hyperzoomed checkbox means any image identified as overzoomed is already marked **fail** when the reviewer arrives, so they only need to confirm or override rather than assess every image from scratch.
-- **Unticked — flag only (default):** The AI badges the image to show its finding, but does not pre-tag it. The reviewer sees the AI's assessment and decides what to mark.
-
-Either way, a reviewer can always bulk-apply any verdict with one click — for example, **Fail all Hyperzoomed (N)** — regardless of whether auto-apply was turned on.
-
-!!! note "Default is flag-only"
-    Nothing is pre-tagged unless you explicitly tick the checkbox for that verdict. If
+- **Unticked — flag only (default):** The AI badges the image to show its finding, but does not
