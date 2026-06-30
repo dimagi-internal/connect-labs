@@ -90,3 +90,29 @@ def test_rollup_missing_window_returns_error():
 
     out = m.compute_audit_par_rollup(state={"watched_source": {}}, access_token="tok")
     assert out["error"] == "missing_window"
+
+
+def test_audit_par_rollup_persists_into_run_state():
+    from commcare_connect.workflow.job_handlers import audit_par as h
+
+    run = mock.Mock()
+    run.is_completed = False
+    run.data = {
+        "state": {
+            "window_start": "2026-06-01",
+            "window_end": "2026-06-30",
+            "watched_source": {"creator_definition_id": 42, "opportunity_ids": [101]},
+        }
+    }
+
+    with mock.patch.object(h, "WorkflowDataAccess") as WDA, mock.patch.object(h, "compute_audit_par_rollup") as comp:
+        WDA.return_value.get_run.return_value = run
+        comp.return_value = {
+            "watched_summary": [{"opportunity_id": 101, "weeks": []}],
+            "window_start": "2026-06-01",
+            "window_end": "2026-06-30",
+        }
+        result = h.audit_par_rollup({"run_id": 700, "opportunity_id": 101}, access_token="tok")
+
+    WDA.return_value.update_run_state.assert_called_once()
+    assert result["successful"] == 1
