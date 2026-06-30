@@ -28,6 +28,62 @@ def rf():
     return RequestFactory()
 
 
+def _bare_request(rf, query):
+    req = rf.get(f"/labs/workflow/47/run/{query}")
+    req.session = {"labs_oauth": {"access_token": "stub-token"}}
+    req.user = MagicMock(username="jane_okeke")
+    req.labs_context = {"opportunity_id": 10001, "opportunity": {"name": "x"}}
+    return req
+
+
+def test_bare_run_url_redirects_to_list_with_highlight(rf):
+    """A run URL with no run_id (and not edit-mode) no longer renders the
+    deprecated picker — it bounces to the workflow LIST with this workflow's
+    card highlighted. Run listing/creation live on the list page."""
+    from django.http import HttpResponseRedirect
+
+    from commcare_connect.workflow.views import WorkflowRunView
+
+    view = WorkflowRunView()
+    view.kwargs = {"definition_id": 47}
+    resp = view.get(_bare_request(rf, "?opportunity_id=10001"))
+
+    assert isinstance(resp, HttpResponseRedirect)
+    assert resp.url == "/labs/workflow/?opportunity_id=10001&highlight=47#workflow-47"
+
+
+def test_run_url_with_run_id_is_not_redirected_to_list(rf):
+    """A run URL WITH a run_id is unaffected by the deprecation — it falls
+    through to the normal render path (super().get), not the list redirect."""
+    from commcare_connect.workflow import views as views_mod
+    from commcare_connect.workflow.views import WorkflowRunView
+
+    view = WorkflowRunView()
+    view.kwargs = {"definition_id": 47}
+
+    sentinel = object()
+    with patch.object(views_mod.TemplateView, "get", return_value=sentinel) as mock_super:
+        resp = view.get(_bare_request(rf, "?run_id=503&opportunity_id=10001"))
+
+    assert resp is sentinel
+    mock_super.assert_called_once()
+
+
+def test_edit_mode_run_url_is_not_redirected_to_list(rf):
+    """?edit=true (preview mode) must still render, not bounce to the list."""
+    from commcare_connect.workflow import views as views_mod
+    from commcare_connect.workflow.views import WorkflowRunView
+
+    view = WorkflowRunView()
+    view.kwargs = {"definition_id": 47}
+
+    sentinel = object()
+    with patch.object(views_mod.TemplateView, "get", return_value=sentinel):
+        resp = view.get(_bare_request(rf, "?edit=true&opportunity_id=10001"))
+
+    assert resp is sentinel
+
+
 def _request_for(rf, run_id):
     req = rf.get(f"/labs/workflow/0/run/?run_id={run_id}")
     req.session = {"labs_oauth": {"access_token": "stub-token"}}

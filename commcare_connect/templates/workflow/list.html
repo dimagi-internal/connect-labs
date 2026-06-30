@@ -491,6 +491,7 @@
         {% if workflows %}
         {% for workflow in workflows %}
         <div class="bg-white rounded-lg shadow-sm"
+             id="workflow-{{ workflow.definition.id }}"
              data-workflow-id="{{ workflow.definition.id }}"
              data-workflow-name="{{ workflow.definition.name|escapejs }}"
              data-workflow-def-id="{{ workflow.definition.id }}"
@@ -719,11 +720,6 @@
                             <i class="fa-solid fa-plus mr-1.5"></i> Create Run
                         </button>
                     </form>
-                    <a href="{% url 'labs:workflow:run' workflow.definition.id %}"
-                       class="inline-flex items-center px-3 py-1.5 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 hover:border-gray-400 transition-colors"
-                       title="Browse past runs">
-                        <i class="fa-solid fa-list mr-1.5"></i> Runs
-                    </a>
                     <a href="{% url 'labs:workflow:run' workflow.definition.id %}?edit=true"
                        class="inline-flex items-center px-3 py-1.5 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 hover:border-gray-400 transition-colors">
                         <i class="fa-solid fa-pen-to-square mr-1.5"></i> Edit
@@ -1128,4 +1124,39 @@
 
 {% block javascript %}
 {{ block.super }}
+<script>
+    // Highlight + scroll to a specific workflow card when arriving with
+    // ?highlight=<definition_id> — e.g. redirected from a bare run URL, whose
+    // per-page picker is deprecated (run listing/creation live here on the list).
+    (function () {
+        function highlightWorkflow() {
+            var params = new URLSearchParams(window.location.search);
+            var id = params.get('highlight');
+            if (!id) return;
+            var card = document.getElementById('workflow-' + id)
+                || document.querySelector('[data-workflow-id="' + id + '"]');
+            if (!card) return;
+            card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            card.style.transition = 'box-shadow 0.3s ease, background-color 0.3s ease';
+            card.style.boxShadow = '0 0 0 3px rgba(59,130,246,0.6)';
+            card.style.backgroundColor = '#eff6ff';
+            setTimeout(function () {
+                card.style.boxShadow = '';
+                card.style.backgroundColor = '';
+            }, 2600);
+            // Drop the param so a manual reload doesn't re-flash.
+            params.delete('highlight');
+            var qs = params.toString();
+            window.history.replaceState(
+                {}, '',
+                window.location.pathname + (qs ? '?' + qs : '') + window.location.hash
+            );
+        }
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', highlightWorkflow);
+        } else {
+            highlightWorkflow();
+        }
+    })();
+</script>
 {% endblock %}

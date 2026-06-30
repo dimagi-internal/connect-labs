@@ -317,6 +317,25 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                 params = request.GET.copy()
                 params["opportunity_id"] = str(recovered)
                 return HttpResponseRedirect(f"{request.path}?{params.urlencode()}")
+        # The per-run-page picker landing is deprecated. Run organization —
+        # listing past runs and starting new ones — lives on the workflow LIST
+        # page. A bare run URL (no run_id and not edit-mode) therefore bounces
+        # to the list with this workflow's card highlighted, instead of
+        # rendering a redundant run picker here.
+        if not request.GET.get("run_id") and request.GET.get("edit") != "true":
+            from django.urls import reverse
+            from django.utils.http import urlencode
+
+            definition_id = self.kwargs.get("definition_id")
+            params = {}
+            opp_id = labs_context.get("opportunity_id")
+            if opp_id:
+                params["opportunity_id"] = opp_id
+            if definition_id:
+                params["highlight"] = definition_id
+            query = f"?{urlencode(params)}" if params else ""
+            anchor = f"#workflow-{definition_id}" if definition_id else ""
+            return HttpResponseRedirect(f"{reverse('labs:workflow:list')}{query}{anchor}")
         return super().get(request, *args, **kwargs)
 
     def _recover_opportunity_id(self, definition_id):
@@ -607,30 +626,12 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                     except Exception:
                         logger.warning("Failed to load tasks for run %s", run_id, exc_info=True)
             else:
-                # No run_id and not edit mode — render the run picker. Past runs
-                # are listed; user clicks "Open" to load one or "Start Run" to
-                # create a fresh active run via POST /api/<def_id>/run/start/.
-                # No auto-create, ever. (Pre-2026-04-30 this branch silently spawned
-                # a new run on every URL hit.)
-                context["select_run_mode"] = True
-                past_runs = []
-                for r in data_access.list_runs(definition_id):
-                    if r.opportunity_id != opportunity_id:
-                        continue
-                    past_runs.append(
-                        {
-                            "id": r.id,
-                            "status": r.status,
-                            "completed_at": r.completed_at,
-                            "period_start": r.period_start,
-                            "period_end": r.period_end,
-                            "created_at": r.created_at,
-                        }
-                    )
-                # Most recent first.
-                past_runs.sort(key=lambda r: r.get("created_at") or "", reverse=True)
-                context["past_runs"] = past_runs
-                context["start_run_url"] = f"/labs/workflow/api/{definition_id}/run/start/"
+                # Unreachable in normal flow: get() redirects bare run URLs
+                # (no run_id and not edit-mode) to the workflow list, where run
+                # listing and creation live — the per-run-page picker is
+                # deprecated. Kept as a defensive fallback that shows a gentle
+                # message instead of a broken mount if ever reached directly.
+                context["error"] = "No run selected. Open or start a run from the workflow list."
                 return context
 
             # Pipeline data will be loaded async via SSE - don't block page load
