@@ -157,24 +157,6 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
     // Default the window to "last week" on first mount.
     React.useEffect(() => { if (!startDate && !endDate) applyPreset('last_week'); }, []);
 
-    // ── Discover image types (per opp) ────────────────────────────────────────
-    // { "<oppId>": { loading, error, questions: [{id, path, form_name}] } }
-    const [discovered, setDiscovered] = React.useState({});
-    const discoverImageTypes = (oppId) => {
-        setDiscovered(prev => ({ ...prev, [oppId]: { loading: true, error: null, questions: null } }));
-        fetch('/audit/api/opportunity/' + oppId + '/image-questions/')
-            .then(async r => {
-                if (!r.ok) {
-                    let msg = 'HTTP ' + r.status;
-                    try { const e = await r.json(); if (e.error) msg = e.error; } catch (_) {}
-                    throw new Error(msg);
-                }
-                return r.json();
-            })
-            .then(data => setDiscovered(prev => ({ ...prev, [oppId]: { loading: false, error: null, questions: data } })))
-            .catch(err => setDiscovered(prev => ({ ...prev, [oppId]: { loading: false, error: err.message, questions: null } })));
-    };
-
     // ── Job execution state ───────────────────────────────────────────────────
     const [isRunning, setIsRunning] = React.useState(false);
     const [progress, setProgress] = React.useState(null);
@@ -197,6 +179,41 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
     };
     React.useEffect(() => { refreshSessions(); }, [instance.id]);
 
+    // Attach the SSE progress stream for a running job. Shared by the create
+    // handler and the on-reload reconnect below.
+    const attachStream = (taskId) => {
+        const cleanup = actions.streamJobProgress(
+            taskId,
+            (p) => setProgress(p),
+            null,
+            async (results) => {
+                setIsRunning(false);
+                setProgress({ status: 'completed', ...results });
+                onUpdateState({ active_job: { job_id: taskId, status: 'completed' } }).catch(() => {});
+                await refreshSessions();
+            },
+            (err) => {
+                setIsRunning(false); setJobError(err || 'Job failed'); setProgress(null);
+                onUpdateState({ active_job: { job_id: taskId, status: 'failed' } }).catch(() => {});
+            },
+            () => { setIsRunning(false); setProgress({ status: 'cancelled' }); }
+        );
+        cleanupRef.current = cleanup;
+    };
+
+    // ── Reconnect to a still-running job after a page reload ───────────────────
+    // The batch runs server-side (a Celery job) — leaving the page never stops
+    // it. If we come back while it's still working, re-attach the progress
+    // stream instead of showing a stale idle state.
+    React.useEffect(() => {
+        const active = instance.state?.active_job;
+        if (active && active.status === 'running' && active.job_id) {
+            setIsRunning(true);
+            setProgress({ status: 'running', message: 'Reconnecting to the running job…' });
+            attachStream(active.job_id);
+        }
+    }, []); // once on mount
+
     // ── Create handler ────────────────────────────────────────────────────────
     // 1) persist the window to run STATE (the server handler reads window from
     //    state and the opp set + config from the DEFINITION), 2) start the job,
@@ -215,7 +232,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
             setIsRunning(false); setJobError('Failed to save window: ' + (e.message || e)); return;
         }
 
-        setProgress({ status: 'starting', message: 'Submitting to task queue…' });
+        setProgress({ status: 'starting', message: 'Submitting to the server…' });
         let resp;
         try {
             resp = await actions.startJob(instance.id, {
@@ -230,19 +247,10 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
             setIsRunning(false); setJobError((resp && resp.error) || 'Failed to start job'); return;
         }
 
-        const cleanup = actions.streamJobProgress(
-            resp.task_id,
-            (p) => setProgress(p),
-            null,
-            async (results) => {
-                setIsRunning(false);
-                setProgress({ status: 'completed', ...results });
-                await refreshSessions();
-            },
-            (err) => { setIsRunning(false); setJobError(err || 'Job failed'); setProgress(null); },
-            () => { setIsRunning(false); setProgress({ status: 'cancelled' }); }
-        );
-        cleanupRef.current = cleanup;
+        // Record the job on the run so a page reload can reconnect to it.
+        onUpdateState({ active_job: { job_id: resp.task_id, status: 'running', started_at: new Date().toISOString() } }).catch(() => {});
+        setProgress({ status: 'running', message: 'Starting…' });
+        attachStream(resp.task_id);
     };
 
     // ── Group created sessions by opportunity_id then tag ─────────────────────
@@ -339,21 +347,11 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                     {oppIds.map(oid => {
                         const key = String(oid);
                         const cfg = perOpp[key] || {};
-                        const disc = discovered[oid];
                         return (
                             <div key={key} className="border border-gray-200 rounded-lg p-4">
-                                <div className="flex items-center justify-between mb-2">
-                                    <div className="text-sm font-semibold text-gray-900">
-                                        {oppNames[key] || ('Opportunity ' + key)}
-                                        <span className="ml-2 text-xs text-gray-400 font-mono">#{key}</span>
-                                    </div>
-                                    <button onClick={() => discoverImageTypes(oid)} disabled={disc && disc.loading}
-                                        className={'text-xs px-2.5 py-1 rounded border border-blue-200 text-blue-700 ' +
-                                            'bg-blue-50 hover:bg-blue-100 disabled:opacity-50'}>
-                                        {disc && disc.loading
-                                            ? <span><i className="fa-solid fa-spinner fa-spin mr-1"></i>Discovering…</span>
-                                            : <span><i className="fa-solid fa-magnifying-glass mr-1"></i>Discover image types</span>}
-                                    </button>
+                                <div className="text-sm font-semibold text-gray-900 mb-2">
+                                    {oppNames[key] || ('Opportunity ' + key)}
+                                    <span className="ml-2 text-xs text-gray-400 font-mono">#{key}</span>
                                 </div>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                     <div>
@@ -365,28 +363,6 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                                         {pathPills(cfg.rest_image_paths, 'bg-gray-100 text-gray-700')}
                                     </div>
                                 </div>
-                                {disc && disc.error && (
-                                    <div className="mt-2 text-xs text-red-600">
-                                        <i className="fa-solid fa-circle-exclamation mr-1"></i>{disc.error}
-                                    </div>
-                                )}
-                                {disc && disc.questions && (
-                                    <div className="mt-2 text-xs text-gray-500">
-                                        <span className="font-medium">Available image types: </span>
-                                        {disc.questions.length === 0
-                                            ? <span className="italic">none found</span>
-                                            : disc.questions.map(q => {
-                                                const pinned = (cfg.muac_image_paths || []).concat(cfg.rest_image_paths || []).includes(q.path);
-                                                return (
-                                                    <span key={q.id}
-                                                        className={'inline-block px-2 py-0.5 mr-1 mb-1 rounded font-mono ' +
-                                                            (pinned ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-600')}>
-                                                        {pinned ? '✓ ' : ''}{q.path || q.id}
-                                                    </span>
-                                                );
-                                            })}
-                                    </div>
-                                )}
                             </div>
                         );
                     })}
@@ -402,18 +378,29 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                         'hover:bg-blue-700 disabled:bg-gray-400 font-medium'}>
                     {isRunning
                         ? <span><i className="fa-solid fa-spinner fa-spin mr-2"></i>Creating…</span>
-                        : <span><i className="fa-solid fa-play mr-2"></i>Create this week's audits</span>}
+                        : <span><i className="fa-solid fa-play mr-2"></i>Create audits</span>}
                 </button>
                 {isRunning && progress && (
-                    <div className="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-700">
-                        <i className="fa-solid fa-spinner fa-spin mr-2"></i>
-                        {progress.message || progress.stage_name || 'Working…'}
+                    <div className="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
+                        <div className="flex items-center font-medium">
+                            <i className="fa-solid fa-spinner fa-spin mr-2"></i>
+                            {progress.message || progress.stage_name || 'Working…'}
+                            {progress.total > 0 && (
+                                <span className="ml-2 text-blue-600">({progress.processed || 0}/{progress.total})</span>
+                            )}
+                        </div>
                         {progress.total > 0 && (
                             <div className="mt-2 w-full bg-blue-200 rounded-full h-2">
                                 <div className="bg-blue-600 h-2 rounded-full transition-all"
                                     style={{ width: (progress.processed / progress.total * 100) + '%' }}></div>
                             </div>
                         )}
+                        <div className="mt-3 text-xs text-blue-600">
+                            <i className="fa-solid fa-circle-info mr-1"></i>
+                            This runs on the server — creating per-FLW audits and running the MUAC AI across
+                            every selected opportunity takes a while. You can safely leave this page; the work
+                            keeps running and you can return to this run to see the results.
+                        </div>
                     </div>
                 )}
                 {jobError && (
@@ -438,7 +425,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                 {loadingSessions
                     ? <div className="text-sm text-gray-500"><i className="fa-solid fa-spinner fa-spin mr-2"></i>Loading…</div>
                     : sessions.length === 0
-                        ? <div className="text-sm text-gray-500">No sessions yet — set a window and create this week's audits.</div>
+                        ? <div className="text-sm text-gray-500">No sessions yet — set a window and create audits.</div>
                         : (
                             <div className="space-y-4">
                                 {Object.keys(grouped).map(oid => (

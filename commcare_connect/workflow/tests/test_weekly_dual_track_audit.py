@@ -138,6 +138,39 @@ def test_handler_invokes_run_audit_creation_per_call_and_writes_summary():
     assert written["last_batch"]["calls"] == 4
 
 
+def test_handler_emits_processed_total_for_progress_bar():
+    """Each per-call progress message carries processed/total so the render can
+    show a real progress bar (idx of N) instead of a frozen spinner."""
+    from commcare_connect.workflow.job_handlers import weekly_dual_track_audit as h
+
+    run = _fake_run({"window_start": "2026-06-22", "window_end": "2026-06-28"})
+    eager = mock.Mock()
+    eager.result = {"session_ids": [1]}
+
+    seen = []
+
+    def cb(msg, processed=0, total=0):
+        seen.append((processed, total))
+
+    with (
+        mock.patch.object(h, "WorkflowDataAccess") as WDA,
+        mock.patch.object(h, "run_audit_creation") as rac,
+    ):
+        wda = WDA.return_value
+        wda.get_run.return_value = run
+        wda.get_definition.return_value = _fake_definition()
+        rac.apply.return_value = eager
+
+        h.weekly_dual_track_audit_create(
+            {"run_id": 555, "opportunity_id": 101}, access_token="tok", progress_callback=cb
+        )
+
+    # 4 calls (2 opps x 2 tracks); each emits (idx, 4).
+    assert (0, 4) in seen
+    assert (3, 4) in seen
+    assert all(total == 4 for _, total in seen)
+
+
 def test_template_registered_and_multi_opp():
     from commcare_connect.workflow.templates import get_template
 
