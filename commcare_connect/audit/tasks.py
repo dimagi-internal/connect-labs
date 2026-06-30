@@ -73,6 +73,38 @@ def _update_job_progress(
         logger.warning(f"[AuditCreation] Failed to update job progress: {e}")
 
 
+def _build_ai_to_human_result(agent, auto_apply_actions: list[str] | None) -> dict[str, str]:
+    """Map each AI verdict to the human result it should pre-tag at creation time.
+
+    Each entry in the agent's ``result_actions`` describes one verdict: an
+    ``ai_result`` (e.g. ``"no_match"``) and the ``human_result`` to apply
+    (e.g. ``"fail"``). This returns the subset that should be applied automatically.
+
+    Args:
+        agent: An AI review agent (uses ``result_actions`` and ``auto_apply_result``).
+        auto_apply_actions: Which action keys auto-apply.
+            - ``None``: legacy behavior — honor the agent's ``auto_apply_result``
+              flag (all actions if True, none if False). Keeps audits created
+              before this option was added (and other callers) unchanged.
+            - list: ONLY the named action keys auto-apply. An empty list means
+              "flag only — nothing is pre-tagged."
+
+    Returns:
+        Dict of ``ai_result -> human_result`` for the auto-applied actions.
+    """
+    result_actions = getattr(agent, "result_actions", {}) or {}
+    if auto_apply_actions is None:
+        selected_keys = set(result_actions) if getattr(agent, "auto_apply_result", False) else set()
+    else:
+        selected_keys = set(auto_apply_actions)
+
+    mapping: dict[str, str] = {}
+    for key, action in result_actions.items():
+        if key in selected_keys and "ai_result" in action and "human_result" in action:
+            mapping[action["ai_result"]] = action["human_result"]
+    return mapping
+
+
 def _run_ai_review_on_sessions(
     data_access,
     session_ids: list[int],
@@ -80,6 +112,7 @@ def _run_ai_review_on_sessions(
     access_token: str,
     opp_id: int,
     progress_callback=None,
+    auto_apply_actions: list[str] | None = None,
 ) -> dict:
     """
     Run AI review agent on the specified audit sessions.
@@ -94,6 +127,9 @@ def _run_ai_review_on_sessions(
         access_token: OAuth token for API access
         opp_id: Opportunity ID
         progress_callback: Optional callback for progress updates (processed, total, message)
+        auto_apply_actions: Which AI verdicts auto-apply as human results. None =
+            legacy per-agent default; a list (possibly empty) selects exactly which
+            action keys pre-tag. See ``_build_ai_to_human_result``.
 
     Returns:
         Dict with review results summary
@@ -108,13 +144,10 @@ def _run_ai_review_on_sessions(
     # Whether this agent needs a related-field reading value to operate
     requires_reading = getattr(agent, "requires_reading", True)
 
-    # Whether this agent should automatically apply its AI result as the human result
-    auto_apply_result = getattr(agent, "auto_apply_result", False)
-    ai_to_human_result: dict[str, str] = {}
-    if auto_apply_result:
-        for action in agent.result_actions.values():
-            if "ai_result" in action and "human_result" in action:
-                ai_to_human_result[action["ai_result"]] = action["human_result"]
+    # Which AI verdicts should pre-tag a human result (e.g. overzoomed -> fail).
+    # Empty when the auditor chose "flag only", so nothing is pre-tagged.
+    ai_to_human_result = _build_ai_to_human_result(agent, auto_apply_actions)
+    logger.info(f"[AIReview] Auto-apply map for '{ai_agent_id}': {ai_to_human_result}")
 
     # First pass: count only images that will actually be reviewed
     total_images_to_review = 0
@@ -271,8 +304,9 @@ def _run_ai_review_on_sessions(
                             logger.error(f"[AIReview] ERROR: blob={blob_id}, reason={ai_notes!r}")
 
                         # Persist AI result for all outcomes so the classification label
-                        # is always available to display in the tile footer.
-                        human_result = ai_to_human_result.get(ai_result) if auto_apply_result else None
+                        # is always available to display in the tile footer. human_result is
+                        # None unless this verdict was opted into auto-apply at creation time.
+                        human_result = ai_to_human_result.get(ai_result)
                         session.set_assessment(
                             visit_id=int(visit_id_str),
                             blob_id=blob_id,
@@ -341,6 +375,7 @@ def run_audit_creation(
     template_overrides: dict | None = None,
     workflow_run_id: int | None = None,
     ai_agent_id: str | None = None,
+    ai_auto_apply_actions: list[str] | None = None,
 ) -> dict:
     """
     Create audit session(s) asynchronously.
@@ -364,6 +399,9 @@ def run_audit_creation(
         template_overrides: Values to override in criteria (from workflow)
         workflow_run_id: Workflow run ID if triggered from workflow (sessions will link to it)
         ai_agent_id: Optional AI review agent to run after creation
+        ai_auto_apply_actions: Which AI verdicts the auditor chose to pre-tag as human
+            results. None = legacy per-agent default; a list (possibly empty) selects
+            exactly which action keys auto-apply. See ``_build_ai_to_human_result``.
 
     Returns:
         Result dict with session_ids, etc.
@@ -694,6 +732,7 @@ def run_audit_creation(
                     access_token=access_token,
                     opp_id=opp_id,
                     progress_callback=on_ai_review_progress,
+                    auto_apply_actions=ai_auto_apply_actions,
                 )
                 logger.info(f"[AuditCreation] AI review complete: {ai_review_results}")
             except Exception as e:

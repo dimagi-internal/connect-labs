@@ -799,6 +799,9 @@ function bulkAssessmentInterface() {
               const agentId = data.run.state.config?.ai_agent_id;
               if (agentId) {
                 this.aiAgentId = agentId;
+                // Surface this agent's bulk-apply buttons even when AI ran in
+                // "flag only" mode at creation (no results were pre-tagged).
+                this.syncAgentActions();
               }
             }
           })
@@ -818,8 +821,21 @@ function bulkAssessmentInterface() {
         const response = await fetch(this.aiAgentsUrl);
         const data = await response.json();
         this.availableAgents = data.agents || [];
+        // aiAgentId may already be resolved from the run config; if so, populate
+        // the action buttons now that the agent catalog has loaded.
+        this.syncAgentActions();
       } catch (e) {
         console.error('Failed to fetch AI agents:', e);
+      }
+    },
+    // Derive the bulk-apply action buttons ("Fail all Hyperzoomed", etc.) from the
+    // session's AI agent. Runs once both the agent id (from run config) and the
+    // agent catalog (from the API) are available — order-independent.
+    syncAgentActions() {
+      if (!this.aiAgentId || !this.availableAgents.length) return;
+      const agent = this.availableAgents.find(a => a.agent_id === this.aiAgentId);
+      if (agent) {
+        this.currentAgentActions = agent.result_actions || {};
       }
     },
     updateUrlParams() {

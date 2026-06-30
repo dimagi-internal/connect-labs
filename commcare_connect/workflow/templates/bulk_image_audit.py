@@ -75,6 +75,35 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
     const [selectedAiAgent, setSelectedAiAgent] = React.useState(
         instance.state?.config?.ai_agent_id || ''
     );
+    // Which AI verdicts the auditor wants pre-tagged automatically (by action key).
+    // Empty = "flag only": the AI badges every image but pre-tags nothing, leaving
+    // every result for the human to decide (still one-click bulk-appliable in review).
+    const [aiAutoApplyActions, setAiAutoApplyActions] = React.useState(
+        instance.state?.config?.ai_auto_apply_actions || []
+    );
+
+    // Catalog of each agent's verdicts. Mirrors the agents' `result_actions`
+    // (the backend remains authoritative); the UI only needs a label + the human
+    // result each verdict pre-tags so the auditor can opt verdicts in or out.
+    const AI_AGENTS = {
+        scale_validation: {
+            label: 'Scale Image Validation',
+            desc: 'Validates weight readings against scale images using ML vision.',
+            requiresImageType: 'weight',
+            actions: [
+                { key: 'pass_matched', label: 'readings that match the scale', human_result: 'pass' },
+                { key: 'fail_unmatched', label: 'readings that do NOT match the scale', human_result: 'fail' },
+            ],
+        },
+        muac_overzoom: {
+            label: 'MUAC OverZoom',
+            desc: 'Flags MUAC photos that are excessively zoomed in, removing context needed for verification.',
+            requiresImageType: 'muac',
+            actions: [
+                { key: 'fail_overzoomed', label: 'photos flagged as hyperzoomed', human_result: 'fail' },
+            ],
+        },
+    };
 
     // Reset agent selection when image types change and the agent is no longer applicable
     React.useEffect(() => {
@@ -85,6 +114,18 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
         if (selectedAiAgent === 'scale_validation' && !hasWeight) setSelectedAiAgent('');
         if (selectedAiAgent === 'muac_overzoom' && !hasMuac) setSelectedAiAgent('');
     }, [selectedImageTypeIds, selectedAiAgent]);
+
+    // When the agent changes, drop any selected verdicts that don't belong to it.
+    React.useEffect(() => {
+        const validKeys = (AI_AGENTS[selectedAiAgent]?.actions || []).map(a => a.key);
+        setAiAutoApplyActions(prev => prev.filter(k => validKeys.includes(k)));
+    }, [selectedAiAgent]);
+
+    const toggleAutoApplyAction = (key) => {
+        setAiAutoApplyActions(prev =>
+            prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
+        );
+    };
 
     // ── Date helpers ─────────────────────────────────────────────────────────
     const calculateDateRange = (preset) => {
@@ -296,6 +337,7 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
             threshold: threshold,
             date_preset: datePreset,
             ai_agent_id: selectedAiAgent || null,
+            ai_auto_apply_actions: selectedAiAgent ? aiAutoApplyActions : [],
         };
 
         setIsRunning(true);
@@ -331,6 +373,7 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
                 criteria,
                 workflow_run_id: instance.id,
                 ai_agent_id: selectedAiAgent || undefined,
+                ai_auto_apply_actions: selectedAiAgent ? aiAutoApplyActions : undefined,
             });
 
             if (result.success && result.task_id) {
@@ -854,21 +897,24 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
             {/* AI Review Agent */}
             {(() => {
                 const selTypes = imageQuestions.filter(q => selectedImageTypeIds.includes(q.id));
-                const hasWeight = selTypes.some(q => /weight/i.test(q.id));
-                const hasMuac = selTypes.some(q => /muac/i.test(q.id));
-                const agentOpts = [
-                    ...(hasWeight ? [{ v: 'scale_validation', l: 'Scale Image Validation', desc: 'Validates weight readings against scale images using ML vision.' }] : []),
-                    ...(hasMuac ? [{ v: 'muac_overzoom', l: 'MUAC OverZoom', desc: 'Flags MUAC photos that are excessively zoomed in, auto-tagging them as fail.' }] : []),
-                ];
+                const available = {
+                    weight: selTypes.some(q => /weight/i.test(q.id)),
+                    muac: selTypes.some(q => /muac/i.test(q.id)),
+                };
+                const agentOpts = Object.entries(AI_AGENTS)
+                    .filter(([id, a]) => available[a.requiresImageType])
+                    .map(([id, a]) => ({ v: id, l: a.label, desc: a.desc }));
                 if (agentOpts.length === 0) return null;
                 const agentInfo = agentOpts.find(a => a.v === selectedAiAgent);
+                const agentActions = AI_AGENTS[selectedAiAgent]?.actions || [];
+                const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
                 return (
                     <div>
                         <h3 className="text-sm font-medium text-gray-700 mb-3">
                             <i className="fa-solid fa-robot mr-2 text-purple-500"></i>
                             AI Review Agent
                         </h3>
-                        <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 space-y-2">
+                        <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 space-y-3">
                             <select
                                 value={selectedAiAgent}
                                 onChange={e => setSelectedAiAgent(e.target.value)}
@@ -883,6 +929,37 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
                                 <p className="text-sm text-purple-700 bg-purple-50 px-3 py-2 rounded">
                                     {agentInfo.desc}
                                 </p>
+                            )}
+                            {agentActions.length > 0 && (
+                                <div className="pt-1">
+                                    <p className="text-sm font-medium text-gray-700 mb-1">
+                                        Auto-tag results before I review
+                                    </p>
+                                    <p className="text-xs text-gray-500 mb-2">
+                                        By default the AI only <span className="font-medium">flags</span> images
+                                        — it never sets a Pass/Fail until you do. Tick a verdict below to let the
+                                        AI pre-tag it automatically. You can still bulk-apply any verdict with one
+                                        click while reviewing.
+                                    </p>
+                                    <div className="space-y-1">
+                                        {agentActions.map(act => (
+                                            <label key={act.key}
+                                                className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                                                <input type="checkbox"
+                                                    checked={aiAutoApplyActions.includes(act.key)}
+                                                    onChange={() => toggleAutoApplyAction(act.key)}
+                                                    className="rounded border-gray-300" />
+                                                <span>
+                                                    Automatically mark <span className="font-medium">{act.label}</span> as
+                                                    <span className={'ml-1 font-semibold ' +
+                                                        (act.human_result === 'fail' ? 'text-red-600' : 'text-green-600')}>
+                                                        {cap(act.human_result)}
+                                                    </span>
+                                                </span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                </div>
                             )}
                         </div>
                     </div>
