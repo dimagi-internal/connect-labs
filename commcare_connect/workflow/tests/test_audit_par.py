@@ -116,3 +116,13 @@ def test_audit_par_rollup_persists_into_run_state():
 
     WDA.return_value.update_run_state.assert_called_once()
     assert result["successful"] == 1
+
+
+def test_par_template_registered_saved_runs():
+    from commcare_connect.workflow.templates import get_template
+
+    tpl = get_template("audit_par")
+    assert tpl["multi_opp"] is True
+    assert tpl["supports_saved_runs"] is True
+    assert "watched_summary" in tpl["snapshot_inputs"]["state_keys"]
+    assert "audit_par_rollup" in tpl["render_code"]
