@@ -92,6 +92,8 @@ class ExperimentAuditCreateView(LoginRequiredMixin, TemplateView):
             "title": self.request.GET.get("title", ""),
             "tag": self.request.GET.get("tag", ""),
             "auto_create": self.request.GET.get("auto_create", ""),  # if 'true', auto-submit
+            # Image question paths to pre-select (comma-separated full paths)
+            "image_paths": self.request.GET.get("image_paths", ""),
         }
         # Filter out empty values
         quick_params = {k: v for k, v in quick_params.items() if v}
