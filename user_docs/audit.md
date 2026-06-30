@@ -28,6 +28,7 @@ Navigate to **Audit** in the top menu, then click **Create Audit Session**.
 - Select the **opportunity** and a **date range** for visits to review
 - Choose which **image questions** from the CommCare form to include (for example, a weight scale photo or a MUAC measurement photo)
 - Set how many visits to sample — either a fixed number or a percentage of total visits
+- If your image types support AI review, an **AI Review Agent** dropdown appears as soon as you select an opportunity — you do not need to run a preview first. Select an agent if you want AI assistance, or leave it blank to skip AI review entirely.
 
 **Step 2 — Preview and confirm:**
 
@@ -60,7 +61,7 @@ Once a session is created, open it to start the bulk assessment.
     | Agent | When it appears | What it does |
     | --- | --- | --- |
     | **Scale Image Validation** | A weight-related image type is selected | Compares scale photos against the reading entered by the FLW and flags mismatches |
-    | **MUAC OverZoom** | A MUAC image type is selected | Classifies photos for excessive zoom; images confirmed as hyperzoomed are automatically pre-tagged **Fail** before you open the session |
+    | **MUAC OverZoom** | A MUAC image type is selected | Classifies photos for excessive zoom and flags images the agent identifies as hyperzoomed |
 
     If no agent is selected, the workflow behaves exactly as before — the AI checks each image for:
 
@@ -69,6 +70,20 @@ Once a session is created, open it to start the bulk assessment.
     - **Required elements** — whether the required items are clearly visible in the photo
 
     AI results appear alongside each image as suggestions — you make the final Pass/Fail call. Images flagged by the AI are highlighted so you can prioritize reviewing them first.
+
+    ### Choosing how the AI applies its verdicts
+
+    Next to the AI Review Agent dropdown, each possible AI verdict has a checkbox — for example, "Automatically pre-tag photos flagged as hyperzoomed as Fail" or "Automatically pre-tag readings that match the scale as Pass". You can tick any combination of these:
+
+    - **Ticked** — the AI pre-tags matching images with that result before you open the review queue.
+    - **Unticked** — the AI still badges every image with its classification, but leaves the Pass/Fail decision to you.
+
+    The default is **flag-only** (all checkboxes unticked), so nothing is pre-tagged unless you opt in. This means the AI's assessments are always visible, but automated pre-tagging only happens when you have explicitly chosen it.
+
+    Regardless of your checkbox settings, you can always bulk-apply any verdict with one click — for example, **Fail all Hyperzoomed (N)** — directly from the review queue.
+
+    !!! tip "Not sure whether to pre-tag?"
+    Start with the default flag-only setting. Review a session to see how well the AI's classifications match your program standards, then enable pre-tagging for the verdicts you consistently agree with.
 
     **AI classification labels** appear at the bottom of each image tile (below the **Add Note** field) once the AI has reviewed the photo. The label shows the agent name and its classification for that image:
 
@@ -79,10 +94,10 @@ Once a session is created, open it to start the bulk assessment.
 
     If the AI encountered a problem reviewing a specific image, the label turns red and shows the error message. Images that have not yet been reviewed by the AI show no label.
 
-    These labels let you see at a glance what the AI classified every image as — not just the ones that were flagged — without relying solely on the red **Hyperzoomed** badge.
+    These labels let you see at a glance what the AI classified every image as — not just the ones that were flagged — without relying solely on any pre-tag badge.
 
     !!! tip "MUAC OverZoom pre-tagging"
-    When the MUAC OverZoom agent is used, images it identifies as hyperzoomed arrive in your review queue already marked **Fail** with a red **Hyperzoomed** badge. Images the agent determines are not hyperzoomed show no AI badge and appear as normal pending photos for your human review. In both cases, the AI classification label at the bottom of the tile confirms the agent's decision. You can confirm each Fail tag or override it if you disagree.
+    When the MUAC OverZoom agent is used and the pre-tag checkbox for hyperzoomed images is ticked, images it identifies as hyperzoomed arrive in your review queue already marked **Fail** with a red **Hyperzoomed** badge. If the checkbox is unticked, those images are still badged with the AI classification label but appear as normal pending photos for your human review. In both cases, you can confirm each result or override it if you disagree.
 
 **Keyboard shortcuts** (work in both review modes):
 
@@ -141,7 +156,13 @@ Yes — your progress saves automatically. Open the session anytime to continue 
 The AI looks at image quality (blur, brightness, framing), whether the measurement shown is within expected ranges, and whether required items are visible. It does not access patient health records — only the images themselves.
 
 **What is the MUAC OverZoom agent?**
-When a MUAC image type is selected, you can choose the **MUAC OverZoom** agent from the AI Review Agent dropdown. It automatically identifies photos taken with excessive zoom and pre-tags them as **Fail** with a red **Hyperzoomed** badge before your review begins. Images the agent determines are not hyperzoomed show no AI badge and appear as normal pending photos. In both cases, the AI classification label at the bottom of the image tile confirms what the agent classified that image as. You can confirm or override each Fail tag during your normal review.
+When a MUAC image type is selected, you can choose the **MUAC OverZoom** agent from the AI Review Agent dropdown. It automatically identifies photos taken with excessive zoom and badges them with its classification. If you have ticked the pre-tag checkbox for hyperzoomed images, those images are also pre-tagged **Fail** with a red **Hyperzoomed** badge before your review begins. If the checkbox is unticked, the badge still shows the AI's classification but no Pass/Fail is applied automatically. You can confirm or override each result during your normal review.
+
+**Can I control which AI verdicts are applied automatically?**
+Yes. Next to the AI Review Agent dropdown, each possible verdict has a checkbox. Tick it to have the AI pre-tag matching images with that result; leave it unticked so the AI flags and badges the image but leaves the Pass/Fail decision to you. The default is flag-only — nothing is pre-tagged unless you opt in. You can also bulk-apply any verdict with one click from the review queue (for example, **Fail all Hyperzoomed (N)**).
+
+**Where does the AI Review Agent dropdown appear?**
+The dropdown appears as soon as you select an opportunity in the audit-creation wizard — you do not need to run "Update Preview" first.
 
 **What are the AI classification labels on each image tile?**
 Once the AI agent has reviewed an image, a small label appears at the bottom of the tile (below the **Add Note** field) showing the agent name and its classification — for example, "MUAC OverZoom: Not Hyperzoomed" or "Scale Validation: Passed". If the AI encountered a problem with a specific image, the label turns red and shows the error message. This gives you a clear record of what the AI decided for every image, not just the ones that were flagged.
