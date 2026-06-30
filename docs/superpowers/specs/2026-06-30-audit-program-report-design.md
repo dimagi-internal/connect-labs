@@ -156,6 +156,25 @@ PAR:    open PAR run (window) → audit_par_rollup reads creator runs × opps ×
 - **Reuse vs new PAR:** dedicated `audit_par` template (not
   `program_admin_report`).
 
+## Confirmed behaviors / reused infrastructure
+
+- **One audit session per FLW per track.** `audit/tasks.py` (`is_per_flw`
+  branch, ~L597) creates exactly one session per FLW group, each linked via
+  `workflow_run_id`. So each FLW gets a `muac` session and a `rest` session
+  per weekly run.
+- **Deletion / cleanup uses existing infrastructure — no new work.** The shipped
+  cascade is sufficient for this feature (the creator only produces audit
+  sessions):
+  - Per-run: `WorkflowDataAccess.delete_run(run_id, delete_linked=True)` deletes
+    the run + its linked audit sessions (queried by `labs_record_id=run_id`).
+    Exposed via `api/run/<id>/delete/` (`delete_run_api`) and the `deleteRun()`
+    control on the workflow list page.
+  - Per-workflow: `delete_definition(definition_id, delete_linked)` cascades all
+    runs + their audit sessions; the list page already offers
+    "Workflow Only" vs "Workflow + Linked Data".
+  - Generalizing the cascade to tasks/flags/jobs and adding a preview-count
+    confirm UI were considered and **deferred** — not needed here.
+
 ## Out of scope (YAGNI)
 
 - A cron/scheduler itself (only the schedulable handler).
