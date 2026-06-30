@@ -1576,6 +1576,9 @@ class AIAgentsListAPIView(LoginRequiredMixin, View):
                     # The agent's default disposition — used by the creation UI to
                     # pre-select which verdicts auto-apply (vs flag-only).
                     "auto_apply_result": getattr(agent_class, "auto_apply_result", False),
+                    # Declarative settings the wizard renders for this agent (e.g. the
+                    # scale agent's "Manual Scale Value" form-field picker).
+                    "config_fields": getattr(agent_class, "config_fields", []),
                 }
             )
 
