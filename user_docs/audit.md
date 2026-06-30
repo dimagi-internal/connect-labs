@@ -25,14 +25,15 @@ Navigate to **Audit** in the top menu, then click **Create Audit Session**.
 
 **Step 1 — Choose your scope:**
 
-- Select the **opportunity** and a **date range** for visits to review
+- Select the **opportunity** from the search table — the table shows the opportunity name, its **Program**, and other details so you can confirm you are selecting the right one
+- Set a **date range** for visits to review
 - Choose which **image questions** from the CommCare form to include (for example, a weight scale photo or a MUAC measurement photo)
 - Set how many visits to sample — either a fixed number or a percentage of total visits
 - If your image types support AI review, an **AI Review Agent** dropdown appears as soon as you select an opportunity — you do not need to run a preview first. Select an agent if you want AI assistance, or leave it blank to skip AI review entirely.
 
 **Step 2 — Preview and confirm:**
 
-- Labs shows how many visits match your criteria before you commit
+- Labs shows how many visits match your criteria before you commit, including a list of matched field workers shown by their **real display names** (not internal ID codes)
 - Adjust filters if needed, then click **Create**
 
 !!! tip "Large audits"
@@ -175,3 +176,9 @@ Yes — create a new session with the same filters. Each session is independent.
 
 **Can I use audit sessions to demonstrate the system to funders?**
 Yes — synthetic opportunities include realistic MUAC photos, completed audit sessions, follow-up tasks, and OCS coaching transcripts. This lets you show the full program management workflow without any real patient data. See the [Demoing Audit Without Real Patient Data](#demoing-audit-without-real-patient-data) section above.
+
+**Why did the opportunity table previously show a dash where the Program name should be?**
+This was a display bug — the Program column now correctly shows the program name for every opportunity in the search table, making it easier to confirm you are creating a session against the right opportunity.
+
+**Why did the FLW preview show unfamiliar codes instead of names?**
+The preview was previously showing internal Connect ID codes instead of field worker names. It now shows each worker's real display name, so you can confirm the right people are included in your sample before creating the session.
