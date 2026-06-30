@@ -214,21 +214,21 @@ Labs includes pre-built workflow templates for common program types. Your progra
 
 ### Bulk Image Audit — AI Review Agent
 
-The Bulk Image Audit template includes an optional **AI Review Agent** step. When a MUAC or weight image type is selected during configuration, an **AI Review Agent** dropdown appears. The dropdown shows only the agents relevant to the image types you have chosen:
+The Bulk Image Audit template includes an optional **AI Review Agent** step. When a MUAC or weight image type is selected during configuration, an **AI Review Agent** dropdown appears as soon as opportunities are selected — you do not need to run any preview step first. The dropdown shows only the agents relevant to the image types you have chosen:
 
 | Agent | When it appears | What it does |
 | ----- | --------------- | ------------ |
 | **Scale Image Validation** | A weight-related image type is selected | Compares scale photos against the reading that was entered |
-| **MUAC OverZoom** | A MUAC image type is selected | Classifies photos for excessive zoom; any image identified as overzoomed is automatically pre-tagged **fail** before the reviewer opens the session |
+| **MUAC OverZoom** | A MUAC image type is selected | Classifies photos for excessive zoom |
 
-When **MUAC OverZoom** pre-tags an image as fail, the reviewer opens the session with those images already marked — they only need to confirm or override the pre-tagged result rather than assess every image from scratch.
+#### Controlling whether the AI pre-tags images
 
-If no AI agent is selected, the workflow behaves exactly as it did before this feature was introduced.
+Next to the AI Review Agent dropdown, each agent verdict has a checkbox that lets you choose what happens when the AI reaches a conclusion:
 
-### CHC Audit History dashboard
+- **Ticked — auto-apply:** The AI automatically pre-tags matching images with that verdict before the reviewer opens the session. For example, ticking the hyperzoomed checkbox means any image identified as overzoomed is already marked **fail** when the reviewer arrives, so they only need to confirm or override rather than assess every image from scratch.
+- **Unticked — flag only (default):** The AI badges the image to show its finding, but does not pre-tag it. The reviewer sees the AI's assessment and decides what to mark.
 
-The **CHC Audit History** dashboard provides a historical view of CHC audit records spanning multiple opportunities. Because programs often run across many opportunities, this dashboard is set up to cover more than one at a time.
+Either way, a reviewer can always bulk-apply any verdict with one click — for example, **Fail all Hyperzoomed (N)** — regardless of whether auto-apply was turned on.
 
-Across all four tabs — **Audit History**, **Metric Detail**, **FLW Longitudinal**, and **Metric Longitudinal** — opportunities are labelled by their full name (for example, "CHC-RCT Nigeria Opp 1") rather than a numeric identifier, and worker rows show each FLW's display name (for example, "Jumoke Balogun") rather than their system username.
-
-**
+!!! note "Default is flag-only"
+    Nothing is pre-tagged unless you explicitly tick the checkbox for that verdict. If
