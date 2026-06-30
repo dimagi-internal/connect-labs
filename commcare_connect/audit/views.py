@@ -921,6 +921,10 @@ class ExperimentAuditCreateAsyncAPIView(LoginRequiredMixin, View):
             template_overrides = data.get("template_overrides", {})
             workflow_run_id = data.get("workflow_run_id")
             ai_agent_id = data.get("ai_agent_id")  # Optional AI agent to run after creation
+            # Which AI verdicts the auditor chose to pre-tag as human results.
+            # None = legacy per-agent default; a list (possibly empty) is an explicit
+            # choice ([] means "flag only — nothing pre-tagged").
+            ai_auto_apply_actions = data.get("ai_auto_apply_actions")
 
             if not opportunities:
                 return JsonResponse({"error": "No opportunities provided"}, status=400)
@@ -977,6 +981,7 @@ class ExperimentAuditCreateAsyncAPIView(LoginRequiredMixin, View):
                     "template_overrides": template_overrides or None,
                     "workflow_run_id": workflow_run_id,
                     "ai_agent_id": ai_agent_id,  # Optional AI agent to run
+                    "ai_auto_apply_actions": ai_auto_apply_actions,
                 },
                 task_id=task_id,
             )
@@ -1538,7 +1543,8 @@ class AIAgentsListAPIView(LoginRequiredMixin, View):
                         "agent_id": str,
                         "name": str,
                         "description": str,
-                        "result_actions": {...}
+                        "result_actions": {...},
+                        "auto_apply_result": bool
                     },
                     ...
                 ]
@@ -1554,6 +1560,9 @@ class AIAgentsListAPIView(LoginRequiredMixin, View):
                     "name": agent_class.name,
                     "description": agent_class.description,
                     "result_actions": agent_class.result_actions,
+                    # The agent's default disposition — used by the creation UI to
+                    # pre-select which verdicts auto-apply (vs flag-only).
+                    "auto_apply_result": getattr(agent_class, "auto_apply_result", False),
                 }
             )
 

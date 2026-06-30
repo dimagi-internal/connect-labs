@@ -341,6 +341,7 @@ function createActionHandlers(csrfToken: string): ActionHandlers {
       template_overrides?: Record<string, unknown>;
       workflow_run_id?: number;
       ai_agent_id?: string; // Optional AI agent to run after creation
+      ai_auto_apply_actions?: string[]; // Which AI verdicts pre-tag a human result ([] = flag only)
     }): Promise<{
       success: boolean;
       task_id?: string;

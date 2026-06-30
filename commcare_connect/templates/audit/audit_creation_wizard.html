@@ -739,42 +739,6 @@
       </div>
     </div>
 
-    <!-- AI Review Agent Section -->
-    <div class="mt-6 pt-6 border-t border-gray-200">
-      <h3 class="text-md font-medium text-gray-800 mb-3">
-        <i class="fa-solid fa-robot mr-2 text-purple-600"></i>
-        AI Review Agent (Optional)
-      </h3>
-      <p class="text-sm text-gray-600 mb-4">
-        Optionally run an AI review agent automatically after creating the audit. The agent will analyze images and pre-populate review results.
-      </p>
-
-      <div class="space-y-3">
-        <!-- Agent Selection -->
-        <div>
-          <label class="block text-xs font-medium text-gray-600 mb-1">Select AI Agent</label>
-          <select x-model="selectedAIAgent"
-                  class="w-full md:w-1/2 px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-brand-indigo focus:border-brand-indigo">
-            <option value="">None - Skip AI review</option>
-            <template x-for="agent in availableAIAgents" :key="agent.agent_id">
-              <option :value="agent.agent_id" x-text="agent.name"></option>
-            </template>
-          </select>
-          <p class="text-xs text-gray-400 mt-1">AI agents can automatically validate images against form data</p>
-        </div>
-
-        <!-- Agent Description -->
-        <div x-show="selectedAIAgent" class="bg-purple-50 border border-purple-200 rounded-md p-3">
-          <div class="flex items-start gap-2">
-            <i class="fa-solid fa-info-circle text-purple-600 mt-0.5"></i>
-            <div class="text-xs text-purple-800">
-              <p class="font-medium mb-1" x-text="getSelectedAgentName()"></p>
-              <p x-text="getSelectedAgentDescription()"></p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
   </div>
 
   <!-- Step 6: Audit Metadata and Action Buttons -->
@@ -807,6 +771,43 @@
           placeholder="e.g., first_10, quarterly_q1"
           class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-brand-indigo focus:border-brand-indigo">
         <p class="text-xs text-gray-500 mt-1">Tag for categorizing audits (e.g., "first_10" for first 10 visits milestone)</p>
+      </div>
+    </div>
+
+    <!-- AI Review Agent Section -->
+    <div class="mb-6 pt-6 border-t border-gray-200">
+      <h3 class="text-md font-medium text-gray-800 mb-3">
+        <i class="fa-solid fa-robot mr-2 text-purple-600"></i>
+        AI Review Agent (Optional)
+      </h3>
+      <p class="text-sm text-gray-600 mb-4">
+        Optionally run an AI review agent automatically after creating the audit. The agent will analyze images and pre-populate review results.
+      </p>
+
+      <div class="space-y-3">
+        <!-- Agent Selection -->
+        <div>
+          <label class="block text-xs font-medium text-gray-600 mb-1">Select AI Agent</label>
+          <select x-model="selectedAIAgent"
+                  class="w-full md:w-1/2 px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-brand-indigo focus:border-brand-indigo">
+            <option value="">None - Skip AI review</option>
+            <template x-for="agent in availableAIAgents" :key="agent.agent_id">
+              <option :value="agent.agent_id" x-text="agent.name"></option>
+            </template>
+          </select>
+          <p class="text-xs text-gray-400 mt-1">AI agents can automatically validate images against form data</p>
+        </div>
+
+        <!-- Agent Description -->
+        <div x-show="selectedAIAgent" class="bg-purple-50 border border-purple-200 rounded-md p-3">
+          <div class="flex items-start gap-2">
+            <i class="fa-solid fa-info-circle text-purple-600 mt-0.5"></i>
+            <div class="text-xs text-purple-800">
+              <p class="font-medium mb-1" x-text="getSelectedAgentName()"></p>
+              <p x-text="getSelectedAgentDescription()"></p>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
