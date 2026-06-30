@@ -146,3 +146,18 @@ def test_template_registered_and_multi_opp():
     assert tpl["multi_opp"] is True
     assert tpl["definition"]["templateType"] == "weekly_dual_track_audit"
     assert isinstance(tpl["render_code"], str) and "startJob" in tpl["render_code"]
+
+
+def test_run_audit_creation_accepts_image_audits_contract():
+    """Guard the cross-PR boundary: build_track_audit_calls emits image_audits /
+    context_fields and the handler forwards them to run_audit_creation. The
+    handler test mocks run_audit_creation, so without this non-mocked check a
+    signature drift in the audit task (PR #771's per-image-type model) would go
+    undetected. See plan Global Constraints + final review."""
+    import inspect
+
+    from commcare_connect.audit.tasks import run_audit_creation
+
+    params = inspect.signature(run_audit_creation).parameters
+    assert "image_audits" in params
+    assert "context_fields" in params

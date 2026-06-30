@@ -76,6 +76,13 @@ def test_rollup_buckets_runs_per_opp_and_week():
 
         out = m.compute_audit_par_rollup(state=state, access_token="tok")
 
+    # Load-bearing: a SEPARATE opp-scoped AuditDataAccess must be built per opp
+    # (the labs API enforces opp scope per request; a shared DAO returns 0 for
+    # non-primary opps). Assert the scoping, not just the bucketed output.
+    assert ADA.call_count == 2
+    scoped_opp_ids = {c.kwargs["opportunity_id"] for c in ADA.call_args_list}
+    assert scoped_opp_ids == {101, 102}
+
     opp101 = next(s for s in out["watched_summary"] if s["opportunity_id"] == 101)
     assert len(opp101["weeks"]) == 2
     wk1 = opp101["weeks"][0]
