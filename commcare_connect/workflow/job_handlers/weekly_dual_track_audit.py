@@ -25,9 +25,9 @@ def weekly_dual_track_audit_create(job_config: dict, access_token: str, progress
 
     from commcare_connect.workflow.templates.weekly_dual_track_audit import build_track_audit_calls
 
-    def _progress(msg):
+    def _progress(msg, processed=0, total=0):
         if progress_callback:
-            progress_callback(msg)
+            progress_callback(msg, processed=processed, total=total)
 
     wda = WorkflowDataAccess(access_token=access_token, opportunity_id=opportunity_id)
     try:
@@ -61,7 +61,11 @@ def weekly_dual_track_audit_create(job_config: dict, access_token: str, progress
         successful, failed, sessions_created = 0, 0, 0
         for idx, call in enumerate(calls):
             opp = call["opportunities"][0]
-            _progress(f"Creating audit {idx + 1}/{len(calls)} · opp {opp['id']} · {call['criteria']['tag']}")
+            _progress(
+                f"Creating audit {idx + 1}/{len(calls)} · opp {opp['id']} · {call['criteria']['tag']}",
+                processed=idx,
+                total=len(calls),
+            )
             try:
                 eager = run_audit_creation.apply(kwargs={"access_token": access_token, **call})
                 res = eager.result if isinstance(eager.result, dict) else {}
