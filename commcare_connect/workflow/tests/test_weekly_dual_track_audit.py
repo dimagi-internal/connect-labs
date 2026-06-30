@@ -1,3 +1,5 @@
+from unittest import mock
+
 from commcare_connect.workflow.templates.weekly_dual_track_audit import build_track_audit_calls
 
 TRACK_A = {
@@ -65,3 +67,54 @@ def test_skips_track_with_no_image_paths():
     )
     assert len(calls) == 1
     assert calls[0]["criteria"]["tag"] == "muac"
+
+
+def _fake_run(state, definition_id=42):
+    run = mock.Mock()
+    run.is_completed = False
+    run.definition_id = definition_id
+    run.data = {"state": state}
+    return run
+
+
+def _fake_definition():
+    d = mock.Mock()
+    d.data = {
+        "opportunity_ids": [101, 102],
+        "config": {
+            "audit_batch": {
+                "track_a": TRACK_A,
+                "track_b": TRACK_B,
+                "per_opp": {
+                    "101": {"muac_image_paths": ["form.muac"], "rest_image_paths": ["form.house"]},
+                    "102": {"muac_image_paths": ["form.muac"], "rest_image_paths": ["form.house"]},
+                },
+                "opp_names": {"101": "Opp A", "102": "Opp B"},
+            }
+        },
+    }
+    return d
+
+
+def test_handler_invokes_run_audit_creation_per_call_and_writes_summary():
+    from commcare_connect.workflow.job_handlers import weekly_dual_track_audit as h
+
+    run = _fake_run({"window_start": "2026-06-22", "window_end": "2026-06-28"})
+    eager = mock.Mock()
+    eager.result = {"session_ids": [1, 2, 3]}  # 3 FLWs
+
+    with mock.patch.object(h, "WorkflowDataAccess") as WDA, mock.patch.object(h, "run_audit_creation") as rac:
+        wda = WDA.return_value
+        wda.get_run.return_value = run
+        wda.get_definition.return_value = _fake_definition()
+        rac.apply.return_value = eager
+
+        result = h.weekly_dual_track_audit_create({"run_id": 555, "opportunity_id": 101}, access_token="tok")
+
+    assert rac.apply.call_count == 4  # 2 opps x 2 tracks
+    assert result["successful"] == 4
+    assert result["sessions_created"] == 12  # 4 calls x 3 sessions
+    wda.update_run_state.assert_called_once()
+    written = wda.update_run_state.call_args[0][1]
+    assert written["last_batch"]["window_start"] == "2026-06-22"
+    assert written["last_batch"]["calls"] == 4
