@@ -5,7 +5,10 @@ from commcare_connect.workflow.templates.weekly_dual_track_audit import build_tr
 TRACK_A = {
     "tag": "muac",
     "sample_percentage": 100,
-    "reviewer": {"agent_id": "muac_overzoom", "auto_apply_actions": ["fail_overzoomed"]},
+    "reviewer": {
+        "agent_id": "muac_overzoom",
+        "auto_apply_actions": ["fail_overzoomed"],
+    },
 }
 TRACK_B = {"tag": "rest", "sample_percentage": 10, "reviewer": None}
 
@@ -15,8 +18,14 @@ def test_builds_two_calls_per_opp_with_tags_and_image_audits():
         opportunity_ids=[101, 102],
         opp_names={"101": "Opp A", "102": "Opp B"},
         per_opp={
-            "101": {"muac_image_paths": ["form.muac"], "rest_image_paths": ["form.house", "form.id"]},
-            "102": {"muac_image_paths": ["form.muac"], "rest_image_paths": ["form.house"]},
+            "101": {
+                "muac_image_paths": ["form.muac"],
+                "rest_image_paths": ["form.house", "form.id"],
+            },
+            "102": {
+                "muac_image_paths": ["form.muac"],
+                "rest_image_paths": ["form.house"],
+            },
         },
         track_a=TRACK_A,
         track_b=TRACK_B,
@@ -86,8 +95,14 @@ def _fake_definition():
                 "track_a": TRACK_A,
                 "track_b": TRACK_B,
                 "per_opp": {
-                    "101": {"muac_image_paths": ["form.muac"], "rest_image_paths": ["form.house"]},
-                    "102": {"muac_image_paths": ["form.muac"], "rest_image_paths": ["form.house"]},
+                    "101": {
+                        "muac_image_paths": ["form.muac"],
+                        "rest_image_paths": ["form.house"],
+                    },
+                    "102": {
+                        "muac_image_paths": ["form.muac"],
+                        "rest_image_paths": ["form.house"],
+                    },
                 },
                 "opp_names": {"101": "Opp A", "102": "Opp B"},
             }
@@ -103,7 +118,10 @@ def test_handler_invokes_run_audit_creation_per_call_and_writes_summary():
     eager = mock.Mock()
     eager.result = {"session_ids": [1, 2, 3]}  # 3 FLWs
 
-    with mock.patch.object(h, "WorkflowDataAccess") as WDA, mock.patch.object(h, "run_audit_creation") as rac:
+    with (
+        mock.patch.object(h, "WorkflowDataAccess") as WDA,
+        mock.patch.object(h, "run_audit_creation") as rac,
+    ):
         wda = WDA.return_value
         wda.get_run.return_value = run
         wda.get_definition.return_value = _fake_definition()
@@ -118,3 +136,13 @@ def test_handler_invokes_run_audit_creation_per_call_and_writes_summary():
     written = wda.update_run_state.call_args[0][1]
     assert written["last_batch"]["window_start"] == "2026-06-22"
     assert written["last_batch"]["calls"] == 4
+
+
+def test_template_registered_and_multi_opp():
+    from commcare_connect.workflow.templates import get_template
+
+    tpl = get_template("weekly_dual_track_audit")
+    assert tpl is not None
+    assert tpl["multi_opp"] is True
+    assert tpl["definition"]["templateType"] == "weekly_dual_track_audit"
+    assert isinstance(tpl["render_code"], str) and "startJob" in tpl["render_code"]
