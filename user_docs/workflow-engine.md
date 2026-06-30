@@ -44,6 +44,8 @@ If the workflow belongs to an opportunity you are not a member of, you will see 
 
 If the workflow cannot be loaded at all — for example, because your account has no opportunities listed or you are not a member of the organisation that owns the workflow — you will see a clear message such as: *"This workflow couldn't be loaded for opportunity 1251. You may not have access to that opportunity, or the workflow may have been removed. Ask whoever shared the link to confirm you have access to its opportunity."* If you see this, contact whoever shared the link and ask them to confirm your access. You will not see a raw technical error or an internal web address.
 
+If you open a workflow run page without a specific run selected — for example, by following a partial link — you will be taken straight to the **workflow list** with that workflow's card highlighted. From there you can select an existing run or create a new one. There is no separate "pick a run" landing screen.
+
 ---
 
 ## Reading a Workflow Dashboard
@@ -227,5 +229,4 @@ The Bulk Image Audit template includes an optional **AI Review Agent** step. Whe
 
 Next to the AI Review Agent dropdown, each agent verdict has a checkbox that lets you choose what happens when the AI reaches a conclusion:
 
-- **Ticked — auto-apply:** The AI automatically pre-tags matching images with that verdict before the reviewer opens the session. For example, ticking the hyperzoomed checkbox means any image identified as overzoomed is already marked **fail** when the reviewer arrives, so they only need to confirm or override rather than assess every image from scratch.
-- **Unticked — flag only (default):** The AI badges the image to show its finding, but does not
+- **Ticked — auto-apply:** The AI automatically pre-tags matching images with that verdict before the reviewer opens the session. For example, t
