@@ -134,6 +134,21 @@ Once a session is created, open it to start the bulk assessment.
 
 ---
 
+## Tracking Audit Creation Progress
+
+When you create an audit session that includes an AI reviewer, the work happens in the background. The progress indicator now reflects what is actually happening in real time:
+
+- **The progress bar fills gradually** as the AI works through images. It only turns green and shows as complete when every image has been reviewed — it no longer jumps to full as soon as the AI step begins.
+- **The audit list shows a live image count** — for example, "Reviewed 45/136 images (12 passed, 3 failed)" — that updates every couple of seconds while reviewing is in progress.
+- **The counter next to the bar** shows the image count during the AI-review step (for example, "45/136") rather than a stage number.
+
+This means you can check the audit list at any point and see exactly how far along the AI review is before you open the session.
+
+!!! tip "Large audits"
+    For sessions with many images, the live count gives you a reliable sense of how much longer to wait. You do not need to keep the page open — the job continues in the background and the count will be up to date when you return.
+
+---
+
 ## Session Results
 
 After reviewing all images, click **Complete Session** to record the overall result.
@@ -201,16 +216,7 @@ Each image type is shown by its full question path (for example, `household_visi
 Once the AI agent has reviewed an image, a small label appears at the bottom of the tile (below the **Add Note** field) showing the agent name and its classification — for example, "MUAC OverZoom: Not Hyperzoomed" or "Scale Validation: Passed". If the AI encountered a problem with a specific image, the label turns red and shows the error message. This gives you a clear record of what the AI decided for every image, not just the ones that were flagged.
 
 **How long does AI review take?**
-For a typical session of around 30 images, AI review completes in about 2 minutes. Larger sessions will take a little longer, but the progress indicator on the session page updates as images are processed.
+For a typical session of around 30 images, AI review completes in about 2 minutes. Larger sessions will take a little longer, but the progress indicator on the session page updates as images are processed, and the audit list shows a live image count (for example, "Reviewed 45/136 images (12 passed, 3 failed)") that updates every couple of seconds.
 
-**Can I review the same set of visits twice?**
-Yes — create a new session with the same filters. Each session is independent.
-
-**Can I use audit sessions to demonstrate the system to funders?**
-Yes — synthetic opportunities include realistic MUAC photos, completed audit sessions, follow-up tasks, and OCS coaching transcripts. This lets you show the full program management workflow without any real patient data. See the [Demoing Audit Without Real Patient Data](#demoing-audit-without-real-patient-data) section above.
-
-**Why did the opportunity table previously show a dash where the Program name should be?**
-This was a display bug — the Program column now correctly shows the program name for every opportunity in the search table, making it easier to confirm you are creating a session against the right opportunity.
-
-**Why did the FLW preview show unfamiliar codes instead of names?**
-The preview was previously showing internal Connect ID codes instead of field worker names. It now shows each worker's real display name, so you can confirm the right people are included in your sample before creating the session.
+**Can I tell how far along the AI review is without opening the session?**
+Yes. The audit list shows a live count of how many images have been reviewed so far — for example, "Reviewed 45/136 images (12 passed, 3 failed)" — and updates every couple of seconds while the job is running. The progress bar on the session page also fills gradually and only turns green when the AI
