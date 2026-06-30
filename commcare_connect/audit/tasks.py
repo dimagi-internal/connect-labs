@@ -777,6 +777,11 @@ def run_audit_creation(
 
             # Progress callback for AI review
             _ai_review_stage = current_stage
+            # Throttle persisted job-record writes — each is an API call, and AI review
+            # can fire the callback once per image. The list page polls every 2s, so a
+            # ~1.5s cadence keeps it live without flooding the API. Celery task state
+            # (set_task_progress) is cheap, so update that on every callback.
+            _ai_review_last_write = {"at": 0.0}
 
             def on_ai_review_progress(processed: int, total: int, message: str):
                 set_task_progress(
@@ -788,6 +793,21 @@ def run_audit_creation(
                     processed=processed,
                     total=total,
                 )
+                now = time.time()
+                if processed >= total or now - _ai_review_last_write["at"] >= 1.5:
+                    _ai_review_last_write["at"] = now
+                    _update_job_progress(
+                        data_access,
+                        task_id,
+                        username,
+                        status="running",
+                        current_stage=_ai_review_stage,
+                        total_stages=total_stages,
+                        stage_name="AI Review",
+                        message=message,
+                        processed=processed,
+                        total=total,
+                    )
 
             try:
                 ai_review_results = _run_ai_review_on_sessions(

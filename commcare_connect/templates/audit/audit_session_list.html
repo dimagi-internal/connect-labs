@@ -47,11 +47,11 @@
                   <div class="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
                     <div class="h-full rounded-full transition-all duration-500 ease-out"
                          :class="job.status === 'failed' ? 'bg-red-500' : (job.status === 'completed' ? 'bg-green-500' : 'bg-blue-500')"
-                         :style="'width: ' + (job.total_stages > 0 ? (job.current_stage / job.total_stages * 100) : 0) + '%'"></div>
+                         :style="'width: ' + progressPercent(job) + '%'"></div>
                   </div>
-                  <span class="flex-shrink-0 text-xs text-gray-500 tabular-nums" x-text="job.current_stage + '/' + job.total_stages"></span>
+                  <span class="flex-shrink-0 text-xs text-gray-500 tabular-nums" x-text="progressCounter(job)"></span>
                 </div>
-                <p class="text-xs text-gray-500 mt-1" x-text="job.stage_name || job.message || 'Waiting to start...'"></p>
+                <p class="text-xs text-gray-500 mt-1" x-text="progressLabel(job)"></p>
               </div>
               <div class="flex-shrink-0 ml-4">
                 <button x-show="job.status === 'pending' || job.status === 'running'"
@@ -151,6 +151,33 @@ function auditListPage() {
       this.cancelUrlTemplate = this.$el.dataset.cancelUrl || '';
       // Load jobs from API
       this.loadJobs();
+    },
+
+    // Bar width that reflects progress WITHIN the current stage, so the final
+    // stage (AI review) ramps instead of pegging at 100%. Never reaches 100%
+    // until the job is actually completed.
+    progressPercent(job) {
+      if (job.status === 'completed') return 100;
+      const stages = job.total_stages || 0;
+      if (stages <= 0) return 0;
+      const intra = job.total > 0 ? Math.min(1, job.processed / job.total) : 0;
+      const done = job.total > 0 ? Math.max(0, job.current_stage - 1) + intra : job.current_stage;
+      return Math.min(99, done / stages * 100);
+    },
+
+    // Counter shown to the right of the bar: live item count during a granular
+    // stage (e.g. "45/136" images during AI review), else the stage counter.
+    progressCounter(job) {
+      if (job.total > 0 && job.status !== 'completed') {
+        return job.processed + '/' + job.total;
+      }
+      return job.current_stage + '/' + job.total_stages;
+    },
+
+    // Label under the bar. The backend message carries rich detail during
+    // granular stages (e.g. "Reviewed 45/136 images (12 passed, 3 failed)").
+    progressLabel(job) {
+      return job.message || job.stage_name || 'Waiting to start...';
     },
 
     async loadJobs() {

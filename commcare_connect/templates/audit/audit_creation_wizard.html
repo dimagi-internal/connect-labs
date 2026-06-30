@@ -861,17 +861,17 @@
       <div class="mb-4">
         <div class="flex justify-between text-sm text-gray-600 mb-1">
           <span x-text="asyncStageName || 'Starting...'"></span>
-          <span x-text="asyncCurrentStage + ' / ' + asyncTotalStages"></span>
+          <span x-text="asyncTotal > 0 && asyncStatus !== 'completed' ? (asyncProcessed + ' / ' + asyncTotal) : (asyncCurrentStage + ' / ' + asyncTotalStages)"></span>
         </div>
         <div class="w-full bg-gray-200 rounded-full h-2.5">
           <div class="bg-brand-indigo h-2.5 rounded-full transition-all duration-300"
-               :style="'width: ' + (asyncTotalStages > 0 ? (asyncCurrentStage / asyncTotalStages * 100) : 0) + '%'"></div>
+               :style="'width: ' + asyncProgressPercent() + '%'"></div>
         </div>
       </div>
 
-      <!-- Sub-progress (for per-FLW session creation) -->
-      <div x-show="asyncProcessed > 0 || asyncTotal > 0" class="mb-4 text-sm text-gray-600">
-        <span>Sessions: <span x-text="asyncProcessed"></span> / <span x-text="asyncTotal"></span></span>
+      <!-- Sub-progress: live item count within the current stage -->
+      <div x-show="asyncTotal > 0 && asyncStatus !== 'completed'" class="mb-4 text-sm text-gray-600">
+        <span x-text="(asyncStageName || 'Processing') + ': ' + asyncProcessed + ' / ' + asyncTotal"></span>
       </div>
 
       <!-- Status -->
@@ -1362,6 +1362,17 @@ function auditCreationPage() {
       return this.contextFields
         .filter(c => c.imagePath && c.fieldPath)
         .map(c => ({ image_path: c.imagePath, field_path: c.fieldPath, label: c.label || '' }));
+    },
+
+    // Progress-bar width that ramps within the current stage (so AI review doesn't
+    // sit at 100% while still running). Only reaches 100% when the job completes.
+    asyncProgressPercent() {
+      if (this.asyncStatus === 'completed') return 100;
+      const stages = this.asyncTotalStages || 0;
+      if (stages <= 0) return 0;
+      const intra = this.asyncTotal > 0 ? Math.min(1, this.asyncProcessed / this.asyncTotal) : 0;
+      const done = this.asyncTotal > 0 ? Math.max(0, this.asyncCurrentStage - 1) + intra : this.asyncCurrentStage;
+      return Math.min(99, done / stages * 100);
     },
 
     // FLW selection methods
