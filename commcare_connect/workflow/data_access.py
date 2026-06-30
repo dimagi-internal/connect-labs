@@ -516,6 +516,55 @@ class WorkflowDataAccess(BaseDataAccess):
         updated_data = {**existing.data, "opportunity_ids": list(opportunity_ids)}
         return self.update_definition(definition_id, updated_data)
 
+    def _definition_opportunity_ids(self, definition) -> list[int]:
+        """Opportunities a definition's audits may span: the WDA's own opp plus
+        the definition's multi-opp ``opportunity_ids``."""
+        opp_ids: list[int] = []
+        if self.opportunity_id:
+            opp_ids.append(self.opportunity_id)
+        if definition is not None:
+            for oid in definition.data.get("opportunity_ids") or []:
+                if oid and oid not in opp_ids:
+                    opp_ids.append(oid)
+        return opp_ids
+
+    def _scoped_audit_session_ids(self, run_id: int, opportunity_ids: list[int]) -> list[int]:
+        """AuditSession record ids linked to ``run_id`` across every given
+        opportunity.
+
+        Audit sessions carry ``labs_record_id=run_id`` but are scoped per
+        opportunity — the labs API injects the client's ``opportunity_id`` into
+        every GET, so a single-opp query misses a multi-opp run's sessions in
+        the other opps. Querying each opportunity with its own scoped client
+        gathers them all; deletion is membership-based, so one
+        ``delete_records`` call removes sessions across several opps at once.
+        """
+        from commcare_connect.audit.data_access import AuditDataAccess
+
+        token = self.access_token
+        if not token and self.request is not None:
+            token = (self.request.session.get("labs_oauth", {}) or {}).get("access_token")
+
+        ids: list[int] = []
+        seen: set[int] = set()
+        for opp_id in opportunity_ids:
+            if not opp_id:
+                continue
+            ada = AuditDataAccess(access_token=token, opportunity_id=opp_id)
+            try:
+                for session in ada.get_sessions_by_workflow_run(run_id):
+                    if session.id not in seen:
+                        seen.add(session.id)
+                        ids.append(session.id)
+            except Exception as e:
+                logger.warning("Failed to query audit sessions for run %s opp %s: %s", run_id, opp_id, e)
+            finally:
+                try:
+                    ada.close()
+                except Exception:
+                    pass
+        return ids
+
     def delete_definition(self, definition_id: int, delete_linked: bool = False) -> dict:
         """Delete a workflow definition and optionally related records.
 
@@ -546,20 +595,20 @@ class WorkflowDataAccess(BaseDataAccess):
             deleted_counts["chat_history"] = 1
 
         if delete_linked:
-            # Collect all run and audit session IDs for batch deletion
+            # Collect all run and audit session IDs for batch deletion. Audits
+            # are gathered across every opportunity the definition spans (a
+            # multi-opp workflow's audits live in several opps), not just the
+            # primary — otherwise non-primary opps' audits orphan on delete.
+            definition = self.get_definition(definition_id)
+            opp_ids = self._definition_opportunity_ids(definition)
             runs = self.list_runs(definition_id)
             for run in runs:
-                try:
-                    audit_sessions = self.labs_api.get_records(
-                        experiment="audit",
-                        type="AuditSession",
-                        labs_record_id=run.id,
-                    )
-                    for session in audit_sessions:
-                        ids_to_delete.append(session.id)
-                        deleted_counts["audit_sessions"] += 1
-                except Exception as e:
-                    logger.warning(f"Failed to query audit sessions for run {run.id}: {e}")
+                run_opp_ids = list(opp_ids)
+                if getattr(run, "opportunity_id", None) and run.opportunity_id not in run_opp_ids:
+                    run_opp_ids.append(run.opportunity_id)
+                audit_ids = self._scoped_audit_session_ids(run.id, run_opp_ids)
+                ids_to_delete.extend(audit_ids)
+                deleted_counts["audit_sessions"] += len(audit_ids)
 
                 ids_to_delete.append(run.id)
                 deleted_counts["runs"] += 1
@@ -730,19 +779,21 @@ class WorkflowDataAccess(BaseDataAccess):
         ids_to_delete: list[int] = []
 
         if delete_linked:
-            try:
-                audit_sessions = self.labs_api.get_records(
-                    experiment="audit",
-                    type="AuditSession",
-                    labs_record_id=run_id,
+            # Audits are gathered across every opportunity the run spans (a
+            # multi-opp run creates audits in several opps), not just the
+            # primary — otherwise non-primary opps' audits orphan on delete.
+            run = self.get_run(run_id)
+            definition = self.get_definition(run.definition_id) if (run and run.definition_id) else None
+            opp_ids = self._definition_opportunity_ids(definition)
+            if run is not None and getattr(run, "opportunity_id", None) and run.opportunity_id not in opp_ids:
+                opp_ids.append(run.opportunity_id)
+            audit_ids = self._scoped_audit_session_ids(run_id, opp_ids)
+            ids_to_delete.extend(audit_ids)
+            deleted_counts["audit_sessions"] = len(audit_ids)
+            if audit_ids:
+                logger.info(
+                    "Deleting %d audit session(s) linked to run %s across opps %s", len(audit_ids), run_id, opp_ids
                 )
-                for session in audit_sessions:
-                    ids_to_delete.append(session.id)
-                    deleted_counts["audit_sessions"] += 1
-                if deleted_counts["audit_sessions"] > 0:
-                    logger.info(f"Deleting {deleted_counts['audit_sessions']} audit sessions linked to run {run_id}")
-            except Exception as e:
-                logger.warning(f"Failed to query audit sessions for run {run_id}: {e}")
 
         # Add the run itself
         ids_to_delete.append(run_id)
