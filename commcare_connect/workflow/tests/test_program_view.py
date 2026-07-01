@@ -3,22 +3,35 @@
 No DB, no LabsRecord API — the @django_db workflow view tests error on main due
 to a test-DB migration collision (``hq_case_id … already exists``), so all
 program-view logic lives in pure functions tested here with lightweight fakes.
+
+Program membership is by EXPLICIT OWNERSHIP: a definition is program-owned iff
+``definition.data["config"]["program_id"]`` is set. A multi-opp workflow that is
+merely opp-owned is NOT program-owned.
 """
 
 from commcare_connect.workflow.program_view import (
     collect_program_workflows,
-    is_program_spanning,
-    partition_by_span,
+    is_program_owned,
+    opp_owned_definitions,
+    owned_by_program,
+    program_id_of,
     program_opportunity_ids,
 )
 
 
 class FakeDefinition:
-    """Stand-in for WorkflowDefinitionRecord exposing .id and .opportunity_ids."""
+    """Stand-in for WorkflowDefinitionRecord exposing .id, .data and .opportunity_ids.
 
-    def __init__(self, id, opportunity_ids):
+    ``program_id`` (int/str/None) is placed at ``data.config.program_id``.
+    """
+
+    def __init__(self, id, program_id=None, opportunity_ids=None):
         self.id = id
-        self.opportunity_ids = opportunity_ids
+        self.opportunity_ids = opportunity_ids or []
+        config = {}
+        if program_id is not None:
+            config["program_id"] = program_id
+        self.data = {"config": config}
 
 
 class FakeDao:
@@ -36,47 +49,64 @@ class FakeDao:
 
 
 # ---------------------------------------------------------------------------
-# is_program_spanning
+# program_id_of / is_program_owned
 # ---------------------------------------------------------------------------
 
 
-def test_is_program_spanning_true_for_multiple_opps():
-    assert is_program_spanning(FakeDefinition(1, [1, 2])) is True
+def test_program_id_of_reads_config_program_id():
+    assert program_id_of(FakeDefinition(1, program_id=176)) == 176
 
 
-def test_is_program_spanning_false_for_single_opp():
-    assert is_program_spanning(FakeDefinition(1, [1])) is False
+def test_program_id_of_none_when_absent():
+    assert program_id_of(FakeDefinition(1)) is None
 
 
-def test_is_program_spanning_false_for_empty():
-    assert is_program_spanning(FakeDefinition(1, [])) is False
+def test_program_id_of_coerces_to_int():
+    assert program_id_of(FakeDefinition(1, program_id="176")) == 176
 
 
-def test_is_program_spanning_handles_missing_attribute():
+def test_program_id_of_handles_missing_data_attribute():
     class NoAttr:
         pass
 
-    assert is_program_spanning(NoAttr()) is False
+    assert program_id_of(NoAttr()) is None
+
+
+def test_program_id_of_handles_missing_config_key():
+    class NoConfig:
+        data = {}
+
+    assert program_id_of(NoConfig()) is None
+
+
+def test_is_program_owned_true_when_marked():
+    assert is_program_owned(FakeDefinition(1, program_id=176)) is True
+
+
+def test_is_program_owned_false_when_unmarked():
+    assert is_program_owned(FakeDefinition(1)) is False
 
 
 # ---------------------------------------------------------------------------
-# partition_by_span
+# owned_by_program
 # ---------------------------------------------------------------------------
 
 
-def test_partition_by_span_splits_mixed_list():
-    single_a = FakeDefinition(1, [1973])
-    single_b = FakeDefinition(2, [])
-    spanning = FakeDefinition(3, [1973, 1976, 1978, 1982])
-
-    singles, spanners = partition_by_span([single_a, single_b, spanning])
-
-    assert singles == [single_a, single_b]
-    assert spanners == [spanning]
+def test_owned_by_program_true_on_match():
+    assert owned_by_program(FakeDefinition(1, program_id=176), 176) is True
 
 
-def test_partition_by_span_empty():
-    assert partition_by_span([]) == ([], [])
+def test_owned_by_program_true_on_match_int_coercion():
+    assert owned_by_program(FakeDefinition(1, program_id="176"), 176) is True
+    assert owned_by_program(FakeDefinition(1, program_id=176), "176") is True
+
+
+def test_owned_by_program_false_on_mismatch():
+    assert owned_by_program(FakeDefinition(1, program_id=200), 176) is False
+
+
+def test_owned_by_program_false_when_unowned():
+    assert owned_by_program(FakeDefinition(1), 176) is False
 
 
 # ---------------------------------------------------------------------------
@@ -109,27 +139,53 @@ def test_program_opportunity_ids_empty_when_no_org_data():
 
 
 # ---------------------------------------------------------------------------
+# opp_owned_definitions
+# ---------------------------------------------------------------------------
+
+
+def test_opp_owned_definitions_drops_program_owned():
+    opp_single = FakeDefinition(1, opportunity_ids=[1973])
+    opp_multi = FakeDefinition(2, opportunity_ids=[1973, 1976])  # opp-owned multi-opp
+    program_owned = FakeDefinition(3, program_id=176, opportunity_ids=[1973, 1976])
+
+    result = opp_owned_definitions([opp_single, opp_multi, program_owned])
+
+    assert result == [opp_single, opp_multi]
+
+
+def test_opp_owned_definitions_keeps_opp_owned_multi_opp():
+    # An opp-owned multi-opp workflow (no config.program_id) stays in the opp view.
+    opp_multi = FakeDefinition(2, opportunity_ids=[1973, 1976])
+    assert opp_owned_definitions([opp_multi]) == [opp_multi]
+
+
+def test_opp_owned_definitions_empty():
+    assert opp_owned_definitions([]) == []
+
+
+# ---------------------------------------------------------------------------
 # collect_program_workflows
 # ---------------------------------------------------------------------------
 
 
-def test_collect_program_workflows_keeps_only_spanning_dedupes_and_closes():
-    # The spanning def (owned by opp 1973) also surfaces when we list opp 1976,
-    # so it must be deduped by id. Single-opp defs are excluded.
-    spanning = FakeDefinition(10, [1973, 1976])
-    single = FakeDefinition(20, [1973])
+def test_collect_program_workflows_keeps_only_owned_dedupes_and_closes():
+    # The program-owned def (surfacing via both opps) must be deduped by id.
+    # An opp-owned multi-opp def and a def owned by a DIFFERENT program are excluded.
+    owned = FakeDefinition(10, program_id=176, opportunity_ids=[1973, 1976])
+    opp_owned = FakeDefinition(20, opportunity_ids=[1973])
+    other_program = FakeDefinition(30, program_id=200, opportunity_ids=[1976])
 
     daos = {
-        1973: FakeDao([spanning, single]),
-        1976: FakeDao([spanning]),  # duplicate spanning appearance
+        1973: FakeDao([owned, opp_owned]),
+        1976: FakeDao([owned, other_program]),  # duplicate owned appearance
     }
 
     def factory(opp_id):
         return daos[opp_id]
 
-    result = collect_program_workflows([1973, 1976], dao_factory=factory)
+    result = collect_program_workflows(176, [1973, 1976], dao_factory=factory)
 
-    assert [d.id for d in result] == [10]  # only spanning, once
+    assert [d.id for d in result] == [10]  # only the program-owned def, once
     assert all(dao.closed for dao in daos.values())  # every dao closed
 
 
@@ -147,7 +203,7 @@ def test_collect_program_workflows_closes_dao_even_on_error():
     dao = BoomDao()
 
     try:
-        collect_program_workflows([1], dao_factory=lambda oid: dao)
+        collect_program_workflows(176, [1], dao_factory=lambda oid: dao)
     except RuntimeError:
         pass
 
@@ -161,5 +217,5 @@ def test_collect_program_workflows_empty_opp_list():
         calls.append(opp_id)
         return FakeDao([])
 
-    assert collect_program_workflows([], dao_factory=factory) == []
+    assert collect_program_workflows(176, [], dao_factory=factory) == []
     assert calls == []
