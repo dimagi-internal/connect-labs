@@ -1,0 +1,1593 @@
+{% extends 'base.html' %}
+{% load static i18n %}
+
+{% block content %}
+<style>[x-cloak] { display: none !important; }</style>
+<div class="min-h-screen bg-gray-50" x-data="taskCreateEditPage()">
+  <!-- Simple Top Bar -->
+  <div class="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <a href="{% url 'tasks:list' %}" class="text-gray-600 hover:text-gray-900">
+        <i class="fa-solid fa-arrow-left"></i> Back to Tasks
+      </a>
+    </div>
+    <div class="flex items-center gap-2">
+      <template x-if="isEditMode">
+        <span class="text-xs text-gray-500">Task #<span x-text="taskId"></span></span>
+      </template>
+      <template x-if="!isEditMode">
+        <span class="text-xs text-gray-500">New Task</span>
+      </template>
+    </div>
+  </div>
+
+  <!-- No Opportunity Warning -->
+  <template x-if="!hasContext">
+    <div class="max-w-5xl mx-auto p-6">
+      <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center">
+        <i class="fa-solid fa-exclamation-triangle text-yellow-600 text-3xl mb-4"></i>
+        <h2 class="text-lg font-semibold text-yellow-800 mb-2">No Opportunity Selected</h2>
+        <p class="text-yellow-700">Please select an opportunity from the Labs context to create or edit tasks.</p>
+      </div>
+    </div>
+  </template>
+
+  <template x-if="hasContext">
+    <div class="max-w-5xl mx-auto p-6">
+
+      <!-- Main Task Card -->
+      <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden mb-6">
+
+        <!-- FLW Header -->
+        <div class="text-white px-6 py-5" style="background: linear-gradient(to right, #7c3aed, #9333ea);">
+          <div class="flex items-start justify-between">
+            <div class="flex items-center gap-4">
+              <!-- FLW Avatar -->
+              <div class="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center text-2xl font-bold">
+                <template x-if="selectedFlw">
+                  <span x-text="(selectedFlw.name || selectedFlw.username || '?').charAt(0).toUpperCase()"></span>
+                </template>
+                <template x-if="!selectedFlw">
+                  <i class="fa-solid fa-user text-white/60"></i>
+                </template>
+              </div>
+              <div>
+                <template x-if="selectedFlw">
+                  <div>
+                    <h1 class="text-2xl font-bold mb-1" x-text="selectedFlw.name || selectedFlw.username"></h1>
+                    <div class="text-sm opacity-90" x-text="selectedFlw.username"></div>
+                    <div class="text-sm opacity-75 mt-1" x-text="opportunityName"></div>
+                  </div>
+                </template>
+                <template x-if="!selectedFlw">
+                  <div>
+                    <h1 class="text-2xl font-bold mb-1 opacity-75">Select a Field Worker</h1>
+                    <div class="text-sm opacity-60">Choose an FLW to create a task for</div>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- FLW Selector (Create mode only) -->
+        <template x-if="!isEditMode && !taskCreated">
+          <div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
+            <label class="block text-sm font-medium text-gray-700 mb-2">
+              Select Field Worker <span class="text-red-500">*</span>
+            </label>
+            <select
+              x-model="selectedFlwUsername"
+              @change="onFlwSelect()"
+              class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-brand-indigo focus:border-brand-indigo">
+              <option value="">-- Select an FLW --</option>
+              <template x-for="flw in flwList" :key="flw.username">
+                <option :value="flw.username" x-text="(flw.name || flw.username) + ' (' + flw.username + ')'"></option>
+              </template>
+            </select>
+            <p class="text-xs text-gray-500 mt-1">
+              <span x-text="flwList.length"></span> FLWs available in this opportunity
+            </p>
+          </div>
+        </template>
+
+        <!-- Task Details Form -->
+        <div class="px-6 py-5 border-b border-gray-200">
+          <h2 class="text-lg font-semibold text-gray-900 mb-4">Task Details</h2>
+
+          <div class="space-y-4">
+            <!-- Title -->
+            <div>
+              <div class="flex justify-between items-center mb-1">
+                <label class="text-sm font-medium text-gray-700">
+                  Title <span class="text-red-500">*</span>
+                </label>
+                <div class="flex items-center gap-3">
+                  <a x-show="workflowRunId"
+                     :href="`{% url 'labs:workflow:run_detail' run_id=0 %}`.replace('/0/', `/${workflowRunId}/`)"
+                     class="text-sm text-purple-600 hover:text-purple-800 hover:underline flex items-center gap-1"
+                     target="_blank">
+                    <i class="fa-solid fa-diagram-project"></i>
+                    From Workflow Run #<span x-text="workflowRunId"></span>
+                  </a>
+                  <a x-show="auditSessionId"
+                     :href="`{% url 'audit:bulk_assessment' pk=0 %}`.replace('/0/', `/${auditSessionId}/`)"
+                     class="text-sm text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1"
+                     target="_blank">
+                    <i class="fa-solid fa-arrow-up-right-from-square"></i>
+                    View Audit
+                  </a>
+                </div>
+              </div>
+              <input
+                type="text"
+                x-model="taskForm.title"
+                placeholder="Brief description of the issue..."
+                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-brand-indigo focus:border-brand-indigo">
+            </div>
+
+            <!-- Description -->
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">
+                Description <span class="text-red-500">*</span>
+              </label>
+              <textarea
+                x-model="taskForm.description"
+                rows="5"
+                placeholder="Detailed explanation of what happened..."
+                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-brand-indigo focus:border-brand-indigo resize-y min-h-[120px]"></textarea>
+            </div>
+
+            <!-- Priority, Status & Assigned To Row (both create and edit mode) -->
+            <div class="grid grid-cols-3 gap-4">
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Priority</label>
+                <select
+                  x-model="taskForm.priority"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-brand-indigo focus:border-brand-indigo">
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                <!-- Closed tasks: show a read-only badge instead of the open-status
+                     dropdown. The dropdown's options only cover the open states
+                     (investigating / flw_action_in_progress / …), so when
+                     taskForm.status === "closed" Alpine renders the first option
+                     ("Investigating") and the form lies about reality. -->
+                <template x-if="taskForm.status === 'closed'">
+                  <div class="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 flex items-center gap-2">
+                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-800 text-xs font-medium">
+                      <i class="fa-solid fa-check"></i>
+                      <span>Closed</span>
+                    </span>
+                    <span
+                      x-show="taskForm.resolution_details && taskForm.resolution_details.official_action"
+                      class="text-sm text-gray-700"
+                      x-text="'· ' + (taskForm.resolution_details ? taskForm.resolution_details.official_action : '')"></span>
+                  </div>
+                </template>
+                <template x-if="taskForm.status !== 'closed'">
+                  <select
+                    x-model="taskForm.status"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-brand-indigo focus:border-brand-indigo">
+                    <option value="investigating">Investigating</option>
+                    <option value="flw_action_in_progress">FLW Action In Progress</option>
+                    <option value="flw_action_completed">FLW Action Completed</option>
+                    <option value="review_needed">Review Needed</option>
+                  </select>
+                </template>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Assigned To</label>
+                <select
+                  x-model="taskForm.assigned_to_type"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-brand-indigo focus:border-brand-indigo">
+                  <option value="self" x-text="currentUserName + ' (Me)'"></option>
+                  <option value="network_manager" x-text="networkManagerName"></option>
+                  <option value="program_manager" x-text="programManagerName"></option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="flex justify-between items-center gap-3 mt-6">
+            <!-- Error Message -->
+            <template x-if="error">
+              <div class="text-sm text-red-600">
+                <i class="fa-solid fa-exclamation-circle mr-1"></i>
+                <span x-text="error"></span>
+              </div>
+            </template>
+            <template x-if="!error">
+              <div></div>
+            </template>
+
+            <template x-if="!taskCreated && !isEditMode">
+              <!-- Create mode buttons -->
+              <button
+                @click="createTask()"
+                :disabled="!canCreate || creating"
+                class="px-6 py-2 bg-brand-indigo text-white rounded-md hover:bg-brand-deep-purple disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors">
+                <i class="fa-solid mr-2" :class="creating ? 'fa-spinner fa-spin' : 'fa-plus'"></i>
+                <span x-text="creating ? 'Creating...' : 'Create Task'"></span>
+              </button>
+            </template>
+
+            <template x-if="taskCreated || isEditMode">
+              <!-- Edit mode buttons row -->
+              <div class="flex gap-3">
+                <!-- Close Task -->
+                <button
+                  @click="showCloseModal()"
+                  class="px-4 py-2 text-red-600 bg-white border border-red-200 rounded-md hover:bg-red-50 transition-colors">
+                  Close Task
+                </button>
+                <!-- Discard -->
+                <button
+                  @click="discardChanges()"
+                  :disabled="!hasChanges"
+                  class="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                  Discard
+                </button>
+                <!-- Save -->
+                <button
+                  @click="saveTask()"
+                  :disabled="!hasChanges || saving"
+                  class="px-6 py-2 bg-brand-indigo text-white rounded-md hover:bg-brand-deep-purple disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors">
+                  <i class="fa-solid mr-2" :class="saving ? 'fa-spinner fa-spin' : 'fa-save'"></i>
+                  <span x-text="saving ? 'Saving...' : 'Save Changes'"></span>
+                </button>
+              </div>
+            </template>
+          </div>
+        </div>
+      </div>
+
+      <!-- FLW Actions Card (shown after task is created or in edit mode) -->
+      <template x-if="taskCreated || isEditMode">
+        <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden mb-6">
+          <div class="px-6 py-3 border-b border-gray-200 bg-gray-50">
+            <h3 class="font-semibold text-gray-900">FLW Actions</h3>
+          </div>
+          <div class="px-6 py-4">
+            <div class="flex items-center gap-3">
+              <!-- Initiate AI Assistant -->
+              <button @click="showAIModal()"
+                      class="flex items-center gap-2 px-4 py-2 bg-green-50 border border-green-200 rounded-lg hover:border-green-500 hover:bg-green-100 transition-all text-sm">
+                <i class="fa-solid fa-robot text-green-600"></i>
+                <span class="font-medium text-green-700">Initiate AI Assistant</span>
+              </button>
+
+              <!-- Assign Learning -->
+              <button @click="showLearningModal()"
+                      class="flex items-center gap-2 px-4 py-2 bg-indigo-50 border border-indigo-200 rounded-lg hover:border-indigo-500 hover:bg-indigo-100 transition-all text-sm">
+                <i class="fa-solid fa-graduation-cap text-indigo-600"></i>
+                <span class="font-medium text-indigo-700">Assign Learning</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- Add Comment Card (shown after task is created or in edit mode) -->
+      <template x-if="taskCreated || isEditMode">
+        <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden mb-6">
+          <div class="px-6 py-3 border-b border-gray-200 bg-gray-50">
+            <h3 class="font-semibold text-gray-900">Add Comment</h3>
+          </div>
+          <div class="p-4">
+            <textarea
+              x-model="newComment"
+              class="w-full border border-gray-300 rounded-lg px-4 py-3 text-sm focus:ring-2 focus:ring-brand-indigo focus:border-transparent resize-none"
+              rows="2"
+              placeholder="Add a note or comment..."></textarea>
+            <div class="flex justify-end mt-2">
+              <button @click="postComment()"
+                      :disabled="!newComment.trim()"
+                      :class="newComment.trim() ? 'bg-brand-indigo hover:bg-brand-deep-purple text-white' : 'bg-gray-100 text-gray-400 cursor-not-allowed'"
+                      class="px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                <i class="fa-solid fa-paper-plane mr-2"></i> Add
+              </button>
+            </div>
+          </div>
+        </div>
+      </template>
+
+
+      {% if task and task.ocs_conversation %}
+      <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden mb-4">
+        <div class="px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center gap-2">
+          <i class="fa-solid fa-comments text-indigo-600"></i>
+          <h3 class="font-semibold text-gray-900">Coaching Conversation</h3>
+          <span class="text-xs text-gray-500 ml-2">{{ task.ocs_conversation|length }} messages</span>
+        </div>
+        <div class="p-6 space-y-3">
+          {% for msg in task.ocs_conversation %}
+            {% if msg.role == "system" %}
+            <div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+              <div class="flex items-center gap-2 mb-1">
+                <i class="fa-solid fa-wand-magic-sparkles text-amber-600 text-xs"></i>
+                <span class="text-xs font-semibold uppercase tracking-wide text-amber-700">Instructions to assistant</span>
+              </div>
+              <div class="text-sm text-gray-700">{{ msg.text }}</div>
+            </div>
+            {% elif msg.role == "bot" %}
+            <div class="flex gap-3">
+              <div class="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0">
+                <i class="fa-solid fa-robot text-indigo-600 text-sm"></i>
+              </div>
+              <div class="flex-1 max-w-2xl">
+                <div class="bg-indigo-50 border border-indigo-100 rounded-lg rounded-tl-sm px-4 py-2 text-sm text-gray-800">{{ msg.text }}</div>
+                <div class="text-xs text-gray-400 mt-1">Coach &middot; {{ msg.ts }}</div>
+              </div>
+            </div>
+            {% else %}
+            <div class="flex gap-3 justify-end">
+              <div class="flex-1 max-w-2xl flex flex-col items-end">
+                <div class="bg-gray-100 border border-gray-200 rounded-lg rounded-tr-sm px-4 py-2 text-sm text-gray-800">{{ msg.text }}</div>
+                <div class="text-xs text-gray-400 mt-1">{{ task.flw_name|default:task.username }} &middot; {{ msg.ts }}</div>
+              </div>
+              <div class="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0">
+                <i class="fa-solid fa-user text-gray-600 text-sm"></i>
+              </div>
+            </div>
+            {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- History (shown after task is created or in edit mode) -->
+      <template x-if="(taskCreated || isEditMode) && timeline.length > 0">
+        <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+          <div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
+            <h3 class="font-semibold text-gray-900">History</h3>
+            <p class="text-sm text-gray-600 mt-1">Actions, communications, and learning assignments for this task</p>
+          </div>
+
+          <div class="p-4">
+            <div class="space-y-2">
+              <template x-for="(item, index) in timeline" :key="item.timestamp + '-' + index">
+                <div>
+                <!-- AI Session Event (Expandable) -->
+                <template x-if="isAIEvent(item)">
+                  <div class="border-l-4 border-green-400 bg-green-50 rounded-lg overflow-hidden"
+                       x-data="{ expanded: false, messages: [], loading: false, error: null, fromSaved: false, savedAt: null, hasUnsavedChanges: false, saving: false, endedAt: null }">
+                    <button @click="expanded = !expanded; if (expanded && messages.length === 0 && item.session_id) { loadAITranscriptWithSaved(item.session_id, $data) }"
+                            class="w-full flex items-center gap-3 py-2 px-3 text-left hover:bg-green-100 transition-colors">
+                      <i class="fa-solid fa-robot text-green-600 text-sm"></i>
+                      <div class="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
+                        <span class="font-medium text-gray-900 text-sm" x-text="formatEventLabel(item)"></span>
+                        <template x-if="item.actor">
+                          <span class="text-gray-600 text-sm">by <span x-text="item.actor"></span></span>
+                        </template>
+                        <template x-if="item.session_id">
+                          <span class="text-xs text-green-600 bg-green-100 px-2 py-0.5 rounded font-mono" x-text="'OCS: ' + item.session_id.substring(0, 8) + '...'"></span>
+                        </template>
+                      </div>
+                      <i class="fa-solid text-gray-400 text-xs" :class="expanded ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+                      <span class="text-xs text-gray-400 whitespace-nowrap" x-text="formatTimestamp(item.timestamp)"></span>
+                    </button>
+
+                    <!-- Expanded Content -->
+                    <div x-show="expanded" x-collapse class="px-4 pb-4 border-t border-green-200 bg-green-50/50">
+                      <!-- No Session ID - Show Status -->
+                      <template x-if="!item.session_id">
+                        <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mt-3">
+                          <h4 class="text-sm font-semibold text-yellow-800 mb-2">
+                            <i class="fa-solid fa-clock mr-2"></i>Session Pending
+                          </h4>
+                          <p class="text-xs text-gray-600">
+                            OCS session could not be linked. Refresh to retry or check OCS dashboard.
+                          </p>
+                        </div>
+                      </template>
+
+                      <!-- Has Session ID - Show Transcript -->
+                      <template x-if="item.session_id">
+                        <div class="mt-3">
+                          <!-- Refresh and Session Link -->
+                          <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-3">
+                              <button @click="messages = []; refreshAITranscript(item.session_id, $data)"
+                                      class="text-xs text-blue-600 hover:text-blue-800"
+                                      :disabled="loading">
+                                <i class="fa-solid" :class="loading ? 'fa-spinner fa-spin' : 'fa-refresh'"></i>
+                                <span x-text="loading ? 'Loading...' : 'Refresh from OCS'"></span>
+                              </button>
+                              <template x-if="endedAt">
+                                <span class="text-xs text-gray-500">Ended: <span x-text="formatTimestamp(endedAt)"></span></span>
+                              </template>
+                              <template x-if="!fromSaved && !endedAt && messages.length > 0">
+                                <span class="text-xs text-green-600"><i class="fa-solid fa-circle text-[6px] mr-1"></i>Session active</span>
+                              </template>
+                            </div>
+                            <a :href="'https://www.openchatstudio.com/a/ccc-support/chatbots/e/' + item.session_params?.experiment + '/s/' + item.session_id + '/view/'"
+                               target="_blank"
+                               class="text-xs text-gray-500 font-mono hover:text-blue-600">
+                              <span x-text="item.session_id"></span>
+                              <i class="fa-solid fa-external-link ml-1"></i>
+                            </a>
+                          </div>
+
+                          <!-- Loading -->
+                          <div x-show="loading" class="text-sm text-gray-500 py-4 text-center">
+                            <i class="fa-solid fa-spinner fa-spin mr-2"></i> Loading conversation...
+                          </div>
+
+                          <!-- Error -->
+                          <div x-show="error" class="text-sm text-red-600 py-2">
+                            <i class="fa-solid fa-exclamation-circle mr-1"></i>
+                            <span x-text="error"></span>
+                          </div>
+
+                          <!-- Messages -->
+                          <div x-show="!loading && messages.length > 0" class="space-y-3 max-h-96 overflow-y-auto">
+                            <template x-for="msg in messages" :key="msg.id || msg.created_at">
+                              <div class="flex gap-3" :class="msg.role === 'assistant' ? 'flex-row' : 'flex-row-reverse'">
+                                <div class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm"
+                                     :class="msg.role === 'assistant' ? 'bg-gray-200 text-gray-600' : 'bg-blue-100 text-blue-600'">
+                                  <i class="fa-solid" :class="msg.role === 'assistant' ? 'fa-robot' : 'fa-user'"></i>
+                                </div>
+                                <div class="flex-1 rounded-lg p-3 text-sm"
+                                     :class="msg.role === 'assistant' ? 'bg-gray-100 border border-gray-200' : 'bg-white border border-gray-200'">
+                                  <div class="flex items-center justify-between mb-1">
+                                    <span class="text-xs font-medium" :class="msg.role === 'assistant' ? 'text-gray-700' : 'text-blue-700'" x-text="msg.role === 'assistant' ? 'AI Assistant' : (selectedFlw?.name || selectedFlw?.username || 'User')"></span>
+                                    <span class="text-xs text-gray-400" x-text="msg.created_at ? formatTimestamp(msg.created_at) : ''"></span>
+                                  </div>
+                                  <div class="text-gray-800 whitespace-pre-wrap" x-text="msg.content"></div>
+                                </div>
+                              </div>
+                            </template>
+                          </div>
+
+                          <!-- No Messages -->
+                          <div x-show="!loading && !error && messages.length === 0" class="text-sm text-gray-500 py-4 text-center">
+                            No messages found in this session.
+                          </div>
+
+                          <!-- Save History Button -->
+                          <div x-show="!loading && messages.length > 0" class="mt-3 pt-3 border-t border-gray-200 flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                              <button @click="saveAITranscript(item.session_id, messages, $data)"
+                                      :disabled="saving || (savedAt && !hasUnsavedChanges)"
+                                      class="text-xs px-3 py-1.5 rounded transition-colors"
+                                      :class="(savedAt && !hasUnsavedChanges) ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'">
+                                <i class="fa-solid mr-1" :class="saving ? 'fa-spinner fa-spin' : 'fa-save'"></i>
+                                <span x-text="saving ? 'Saving...' : 'Save History'"></span>
+                              </button>
+                              <!-- Never saved yet -->
+                              <span x-show="!savedAt && !hasUnsavedChanges" class="text-xs text-gray-500">
+                                <i class="fa-solid fa-info-circle mr-1"></i>History not saved yet
+                              </span>
+                              <!-- Loaded from saved, not yet refreshed -->
+                              <span x-show="fromSaved && !hasUnsavedChanges && savedAt" class="text-xs text-gray-500">
+                                <i class="fa-solid fa-history mr-1"></i>History loaded from last save, refresh to check for new messages
+                              </span>
+                              <!-- Refreshed and up to date (only if there's a saved history) -->
+                              <span x-show="!fromSaved && !hasUnsavedChanges && savedAt" class="text-xs text-green-600">
+                                <i class="fa-solid fa-check mr-1"></i>Saved history is up to date with OCS
+                              </span>
+                              <!-- Refreshed and has new messages -->
+                              <span x-show="hasUnsavedChanges" class="text-xs text-orange-600">
+                                <i class="fa-solid fa-download mr-1"></i>New history downloaded from OCS
+                              </span>
+                            </div>
+                            <!-- Saved datetime on the right -->
+                            <template x-if="savedAt">
+                              <span class="text-xs text-gray-400">Saved <span x-text="formatTimestamp(savedAt)"></span></span>
+                            </template>
+                          </div>
+                        </div>
+                      </template>
+                    </div>
+                  </div>
+                </template>
+
+                <!-- Comment Event -->
+                <template x-if="item.event_type === 'comment'">
+                  <div class="border-l-4 border-blue-400 bg-blue-50 rounded-lg p-3">
+                    <div class="flex items-start gap-3">
+                      <i class="fa-solid fa-comment text-blue-600 text-sm mt-0.5"></i>
+                      <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2 mb-1">
+                          <span class="font-medium text-gray-900 text-sm" x-text="item.actor"></span>
+                          <span class="text-xs text-gray-400" x-text="formatTimestamp(item.timestamp)"></span>
+                        </div>
+                        <p class="text-sm text-gray-700 whitespace-pre-wrap" x-text="item.content"></p>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+
+                <!-- Regular Event (Non-expandable) -->
+                <template x-if="!isAIEvent(item) && item.event_type !== 'comment'">
+                  <div class="flex items-center gap-3 py-2 px-3 bg-gray-50 rounded border border-gray-100">
+                    <i class="fa-solid text-gray-400 text-sm" :class="getTimelineIcon(item)"></i>
+                    <div class="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
+                      <span class="font-medium text-gray-900 text-sm" x-text="formatEventLabel(item)"></span>
+                      <template x-if="item.description && (item.event_type === 'updated' || item.event_type === 'closed')">
+                        <span class="text-gray-500 text-sm" x-text="'- ' + item.description"></span>
+                      </template>
+                      <template x-if="item.actor">
+                        <span class="text-gray-600 text-sm">by <span x-text="item.actor"></span></span>
+                      </template>
+                    </div>
+                    <span class="text-xs text-gray-400 whitespace-nowrap" x-text="formatTimestamp(item.timestamp)"></span>
+                  </div>
+                </template>
+                </div>
+              </template>
+            </div>
+          </div>
+        </div>
+      </template>
+
+    </div>
+  </template>
+
+  <!-- Learning Modal -->
+  <div x-cloak x-show="showLearning"
+       x-transition:enter="transition ease-out duration-200"
+       x-transition:enter-start="opacity-0"
+       x-transition:enter-end="opacity-100"
+       @click.away="showLearning = false"
+       class="fixed inset-0 bg-gray-900/30 flex items-center justify-center z-50 p-4">
+    <div @click.stop class="bg-white rounded-lg shadow-xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-lg font-semibold text-gray-900">Learning Modules</h3>
+        <button @click="showLearning = false" class="text-gray-400 hover:text-gray-600">
+          <i class="fa-solid fa-times"></i>
+        </button>
+      </div>
+
+      <!-- Tab Navigation -->
+      <div class="flex gap-2 mb-4 border-b border-gray-200">
+        <button @click="showHistory = false"
+                :class="!showHistory ? 'border-b-2 border-indigo-600 text-indigo-600' : 'text-gray-600 hover:text-gray-900'"
+                class="px-4 py-2 font-medium text-sm transition-colors">
+          <i class="fa-solid fa-graduation-cap mr-2"></i>Assign Modules
+        </button>
+        <button @click="showHistory = true"
+                :class="showHistory ? 'border-b-2 border-indigo-600 text-indigo-600' : 'text-gray-600 hover:text-gray-900'"
+                class="px-4 py-2 font-medium text-sm transition-colors">
+          <i class="fa-solid fa-history mr-2"></i>Learning History
+        </button>
+      </div>
+
+      <!-- Assign Modules Tab -->
+      <div x-show="!showHistory">
+        <p class="text-sm text-gray-600 mb-4">Select one or more learning modules to assign:</p>
+
+        <!-- Loading state -->
+        <template x-if="learningModulesLoading">
+          <div class="flex items-center justify-center py-8">
+            <i class="fa-solid fa-spinner fa-spin text-gray-400 text-xl mr-2"></i>
+            <span class="text-gray-500">Loading modules...</span>
+          </div>
+        </template>
+
+        <!-- No modules state -->
+        <template x-if="!learningModulesLoading && learningModules.length === 0">
+          <div class="text-center py-8">
+            <i class="fa-solid fa-graduation-cap text-gray-300 text-3xl mb-2"></i>
+            <p class="text-gray-500 text-sm">No learning modules found for this opportunity</p>
+          </div>
+        </template>
+
+        <!-- Modules list -->
+        <div class="space-y-2 mb-4" x-show="!learningModulesLoading && learningModules.length > 0">
+          <template x-for="module in learningModules" :key="module.id">
+            <label class="flex items-start gap-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer">
+              <input type="checkbox"
+                     :value="module.id"
+                     x-model="selectedModules"
+                     class="mt-1 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+              <div class="flex-1">
+                <div class="font-medium text-sm text-gray-900" x-text="module.name"></div>
+                <template x-if="module.description">
+                  <div class="text-xs text-gray-500 mt-1">
+                    <span class="font-medium">Description:</span>
+                    <span x-text="module.description"></span>
+                  </div>
+                </template>
+                <template x-if="module.time_estimate">
+                  <div class="text-xs text-gray-400 mt-1">
+                    <i class="fa-solid fa-clock"></i>
+                    <span x-text="module.time_estimate + ' hour' + (module.time_estimate !== 1 ? 's' : '')"></span>
+                  </div>
+                </template>
+              </div>
+            </label>
+          </template>
+        </div>
+
+        <div class="flex gap-3">
+          <button @click="showLearning = false" class="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
+            Cancel
+          </button>
+          <button @click="assignLearning()"
+                  :disabled="selectedModules.length === 0"
+                  :class="selectedModules.length > 0 ? 'bg-indigo-600 hover:bg-indigo-700 text-white' : 'bg-gray-200 text-gray-400 cursor-not-allowed'"
+                  class="flex-1 px-4 py-2 rounded-lg transition-colors">
+            <i class="fa-solid fa-graduation-cap mr-2"></i>
+            Assign (<span x-text="selectedModules.length"></span>)
+          </button>
+        </div>
+      </div>
+
+      <!-- Learning History Tab -->
+      <div x-show="showHistory">
+        <p class="text-sm text-gray-600 mb-4" x-show="selectedFlw">
+          Learning history for <span class="font-medium" x-text="selectedFlw?.name || selectedFlw?.username"></span>:
+        </p>
+
+        <!-- Loading state -->
+        <template x-if="completedModulesLoading">
+          <div class="flex items-center justify-center py-8">
+            <i class="fa-solid fa-spinner fa-spin text-gray-400 text-xl mr-2"></i>
+            <span class="text-gray-500">Loading history...</span>
+          </div>
+        </template>
+
+        <!-- No history state -->
+        <template x-if="!completedModulesLoading && completedModules.length === 0">
+          <div class="text-center py-8">
+            <i class="fa-solid fa-clock-rotate-left text-gray-300 text-3xl mb-2"></i>
+            <p class="text-gray-500 text-sm">No completed modules found</p>
+          </div>
+        </template>
+
+        <!-- History list -->
+        <div class="space-y-3" x-show="!completedModulesLoading && completedModules.length > 0">
+          <template x-for="cm in completedModules" :key="cm.date + '-' + cm.module">
+            <div class="flex items-start gap-3 p-3 border border-gray-200 rounded-lg bg-gray-50">
+              <div class="flex-shrink-0 mt-1">
+                <i class="fa-solid fa-check-circle text-green-600"></i>
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="font-medium text-sm text-gray-900" x-text="cm.module_name"></div>
+                <div class="text-xs text-gray-500 mt-1">
+                  <i class="fa-solid fa-calendar"></i>
+                  <span x-text="new Date(cm.date).toLocaleString()"></span>
+                </div>
+                <template x-if="cm.duration">
+                  <div class="text-xs text-gray-500 mt-1">
+                    <i class="fa-solid fa-stopwatch"></i>
+                    Duration: <span x-text="formatDuration(cm.duration)"></span>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </template>
+        </div>
+
+        <div class="flex gap-3 mt-4">
+          <button @click="showLearning = false" class="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Close Task Modal -->
+  <div x-cloak x-show="showClose"
+       x-transition:enter="transition ease-out duration-200"
+       x-transition:enter-start="opacity-0"
+       x-transition:enter-end="opacity-100"
+       @click.away="showClose = false"
+       class="fixed inset-0 bg-gray-900/30 flex items-center justify-center z-50 p-4">
+    <div @click.stop class="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-lg font-semibold text-gray-900">Close Task</h3>
+        <button @click="showClose = false" class="text-gray-400 hover:text-gray-600">
+          <i class="fa-solid fa-times"></i>
+        </button>
+      </div>
+
+      <!-- Official Outcome -->
+      <div class="mb-4">
+        <label class="block text-sm font-medium text-gray-700 mb-2">Official Outcome</label>
+        <div class="space-y-2">
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="radio" x-model="closeForm.official_action" value="none" class="text-gray-500 focus:ring-gray-500">
+            <span class="text-sm text-gray-700">None</span>
+          </label>
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="radio" x-model="closeForm.official_action" value="satisfactory" class="text-green-500 focus:ring-green-500">
+            <span class="text-sm text-gray-700">Satisfactory Performance</span>
+          </label>
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="radio" x-model="closeForm.official_action" value="warned" class="text-yellow-500 focus:ring-yellow-500">
+            <span class="text-sm text-gray-700">FLW was warned</span>
+          </label>
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="radio" x-model="closeForm.official_action" value="suspended" class="text-red-500 focus:ring-red-500">
+            <span class="text-sm text-gray-700">FLW was suspended</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Resolution Note -->
+      <div class="mb-4">
+        <label class="block text-sm font-medium text-gray-700 mb-2">Resolution Note</label>
+        <textarea
+          x-model="closeForm.resolution_note"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-brand-indigo resize-none"
+          rows="3"
+          placeholder="Summary of how this task was resolved..."></textarea>
+      </div>
+
+      <div class="flex gap-3">
+        <button @click="showClose = false"
+                class="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors">
+          Cancel
+        </button>
+        <button @click="confirmClose()"
+                class="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium">
+          <i class="fa-solid fa-times-circle mr-2"></i> Close Task
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- AI Modal -->
+  <div x-cloak x-show="showAI"
+       x-transition:enter="transition ease-out duration-200"
+       x-transition:enter-start="opacity-0"
+       x-transition:enter-end="opacity-100"
+       @click.away="showAI = false"
+       class="fixed inset-0 bg-gray-900/30 flex items-center justify-center z-50 p-4">
+    <div @click.stop class="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto p-6">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-lg font-semibold text-gray-900">Initiate AI Assistant</h3>
+        <button @click="showAI = false" class="text-gray-400 hover:text-gray-600">
+          <i class="fa-solid fa-times"></i>
+        </button>
+      </div>
+
+      <!-- OCS Authentication Required -->
+      <div x-show="botsNeedsOAuth && !botsLoading">
+        <div class="p-4 bg-blue-50 border-2 border-blue-200 rounded-lg mb-4">
+          <div class="flex items-start gap-3 mb-4">
+            <i class="fa-solid fa-lock text-blue-600 text-xl mt-0.5"></i>
+            <div>
+              <h4 class="font-semibold text-blue-900 mb-1">Authentication Required</h4>
+              <p class="text-sm text-blue-800">You need to connect to Open Chat Studio to use AI assistants.</p>
+            </div>
+          </div>
+          <a href="{% url 'labs:ocs_initiate' %}?next={{ request.path }}"
+             class="flex items-center justify-center gap-2 w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors">
+            <i class="fa-solid fa-sign-in-alt"></i>
+            Login to Open Chat Studio
+          </a>
+        </div>
+      </div>
+
+      <!-- Loading State -->
+      <div x-show="botsLoading" class="text-center py-8">
+        <i class="fa-solid fa-spinner fa-spin text-gray-400 text-2xl mb-2"></i>
+        <p class="text-sm text-gray-600">Loading bots...</p>
+      </div>
+
+      <!-- Main Form (only show when authenticated) -->
+      <div x-show="!botsNeedsOAuth && !botsLoading">
+        <p class="text-sm text-gray-600 mb-4">Configure and initiate an AI assistant conversation.</p>
+
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 mb-2">
+            Participant ID (UUID)
+          </label>
+          <div class="w-full border border-gray-200 bg-gray-50 rounded-lg px-3 py-2 text-sm text-gray-700 font-mono">
+            <span x-text="aiParams.identifier || 'Not set'"></span>
+          </div>
+          <p class="text-xs text-gray-500 mt-1">Automatically set from task FLW</p>
+        </div>
+
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 mb-2">
+            Bot <span class="text-red-500">*</span>
+          </label>
+
+          <!-- Bot selector dropdown -->
+          <div x-show="availableBots.length > 0">
+            <select x-model="aiParams.experiment"
+                    class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500">
+              <option value="">-- Select a bot --</option>
+              <template x-for="bot in availableBots" :key="bot.id">
+                <option :value="bot.id" x-text="bot.name"></option>
+              </template>
+            </select>
+          </div>
+
+          <!-- No bots available -->
+          <div x-show="availableBots.length === 0" class="p-3 bg-gray-50 border border-gray-200 rounded-lg">
+            <p class="text-sm text-gray-600">No bots available in your OCS account.</p>
+          </div>
+        </div>
+
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 mb-2">
+            Prompt Instructions <span class="text-red-500">*</span>
+          </label>
+          <textarea
+            x-model="aiParams.prompt_text"
+            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 resize-y min-h-[180px]"
+            rows="8"
+            placeholder="Instructions for the bot..."></textarea>
+        </div>
+
+        <!-- Progress Feedback -->
+        <div x-show="aiProgress.show" class="mb-4 p-3 rounded-lg" :class="{
+          'bg-blue-50 border border-blue-200': aiProgress.status === 'triggering' || aiProgress.status === 'polling',
+          'bg-green-50 border border-green-200': aiProgress.status === 'success',
+          'bg-yellow-50 border border-yellow-200': aiProgress.status === 'partial',
+          'bg-red-50 border border-red-200': aiProgress.status === 'error'
+        }">
+          <div class="flex items-start gap-3">
+            <div class="flex-shrink-0 mt-0.5">
+              <i class="fa-solid fa-spinner fa-spin text-blue-600" x-show="aiProgress.status === 'triggering' || aiProgress.status === 'polling'"></i>
+              <i class="fa-solid fa-check-circle text-green-600" x-show="aiProgress.status === 'success'"></i>
+              <i class="fa-solid fa-exclamation-triangle text-yellow-600" x-show="aiProgress.status === 'partial'"></i>
+              <i class="fa-solid fa-times-circle text-red-600" x-show="aiProgress.status === 'error'"></i>
+            </div>
+            <div class="flex-1 text-sm">
+              <div class="font-medium text-gray-900" x-text="aiProgress.message"></div>
+              <div x-show="aiProgress.detail" class="text-xs text-gray-600 mt-1" x-text="aiProgress.detail"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex gap-3">
+          <button @click="showAI = false; aiProgress.show = false"
+                  class="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
+                  x-text="aiProgress.status === 'success' || aiProgress.status === 'partial' ? 'Close' : 'Cancel'">
+          </button>
+          <button @click="initiateAI()"
+                  :disabled="aiLoading"
+                  x-show="!aiProgress.status || aiProgress.status === 'error'"
+                  class="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">
+            <i class="fa-solid mr-2" :class="aiLoading ? 'fa-spinner fa-spin' : 'fa-robot'"></i>
+            <span x-text="aiLoading ? 'Initiating...' : 'Initiate AI'"></span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div x-cloak x-show="showToast"
+       x-transition:enter="transition ease-out duration-300 transform"
+       x-transition:enter-start="translate-y-2 opacity-0"
+       x-transition:enter-end="translate-y-0 opacity-100"
+       class="fixed bottom-4 right-4 bg-gray-900 text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-3 z-50">
+    <i class="fa-solid fa-check-circle text-green-400"></i>
+    <span x-text="toastMessage"></span>
+  </div>
+</div>
+{% endblock %}
+
+{% block inline_javascript %}
+<script>
+function getCookie(name) {
+  let cookieValue = null;
+  if (document.cookie && document.cookie !== '') {
+    const cookies = document.cookie.split(';');
+    for (let i = 0; i < cookies.length; i++) {
+      const cookie = cookies[i].trim();
+      if (cookie.substring(0, name.length + 1) === (name + '=')) {
+        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+        break;
+      }
+    }
+  }
+  return cookieValue;
+}
+
+function taskCreateEditPage() {
+  return {
+    // Mode state
+    isEditMode: {{ is_edit_mode|yesno:"true,false" }},
+    taskId: {{ task_id|default:"null" }},
+    taskCreated: {{ is_edit_mode|yesno:"true,false" }},
+    hasContext: {{ has_context|yesno:"true,false" }},
+
+    // Data from server
+    flwList: {{ flw_list_json|safe }},
+    opportunityName: "{{ opportunity_name|escapejs }}",
+    timeline: {{ timeline_json|safe }},
+
+    // Form state
+    selectedFlwUsername: '',
+    selectedFlw: null,
+    taskForm: {
+      priority: 'medium',
+      title: '',
+      description: '',
+      // Long-form coaching prompt fed to the OCS bot. Separate from
+      // `description` (which is the short human-readable task summary)
+      // so the AI modal pre-fills with the bot-targeted instructions and
+      // the task UI stays scannable.
+      coaching_prompt: '',
+      status: 'investigating',
+      assigned_to_type: 'self',
+      assigned_to_name: ''
+    },
+    originalForm: null,
+    auditSessionId: null,
+    workflowRunId: null,
+
+    // UI state
+    creating: false,
+    saving: false,
+    error: null,
+
+    // Comment state
+    newComment: '',
+
+    // Modal state
+    showLearning: false,
+    showClose: false,
+    showAI: false,
+    selectedModules: [],
+    learningModules: [],
+    learningModulesLoading: false,
+    completedModules: [],
+    completedModulesLoading: false,
+    showHistory: false,
+
+    // Close task form
+    closeForm: {
+      official_action: 'none',
+      resolution_note: ''
+    },
+
+    // Current user info
+    currentUserName: "{{ current_user_name|escapejs }}",
+    networkManagerName: "{{ network_manager_name|escapejs }}",
+    programManagerName: "{{ program_manager_name|escapejs }}",
+
+    // AI state
+    aiParams: {
+      identifier: '',
+      experiment: '',
+      platform: 'connect_labs',
+      prompt_text: '',
+      start_new_session: true
+    },
+    aiLoading: false,
+    aiProgress: {
+      show: false,
+      status: '',  // 'triggering', 'polling', 'success', 'partial', 'error'
+      message: '',
+      detail: ''
+    },
+    availableBots: [],
+    botsLoading: false,
+    botsNeedsOAuth: false,
+
+    // Toast
+    showToast: false,
+    toastMessage: '',
+
+    // Quick params from URL (for pre-filling form from audit page, etc.)
+    quickParams: {{ quick_params|safe }},
+
+    // Computed
+    get canCreate() {
+      return this.selectedFlw && this.taskForm.title && this.taskForm.description;
+    },
+
+    get hasChanges() {
+      if (!this.originalForm) return false;
+      return this.taskForm.title !== this.originalForm.title ||
+             this.taskForm.description !== this.originalForm.description ||
+             this.taskForm.priority !== this.originalForm.priority ||
+             this.taskForm.status !== this.originalForm.status ||
+             this.taskForm.assigned_to_type !== this.originalForm.assigned_to_type;
+    },
+
+    // Methods
+    init() {
+      // If editing, load task data
+      const taskData = {{ task_data|safe }};
+      if (taskData) {
+        this.taskForm = {
+          priority: taskData.priority || 'medium',
+          title: taskData.title || '',
+          description: taskData.description || '',
+          coaching_prompt: taskData.coaching_prompt || this.quickParams.coaching_prompt || '',
+          status: taskData.status || 'investigating',
+          assigned_to_type: taskData.assigned_to_type || 'self',
+          assigned_to_name: taskData.assigned_to_name || '',
+          // Closed-task badge needs to read the official action — exposing
+          // resolution_details on taskForm so the read-only status surface
+          // can display "Closed · warned" etc.
+          resolution_details: taskData.resolution_details || null
+        };
+        this.selectedFlwUsername = taskData.username || '';
+        this.selectedFlw = {
+          username: taskData.username,
+          name: taskData.flw_name || taskData.username
+        };
+        this.auditSessionId = taskData.audit_session_id || null;
+        this.workflowRunId = taskData.workflow_run_id || null;
+        this.originalForm = { ...this.taskForm };
+      } else if (this.quickParams && Object.keys(this.quickParams).length > 0) {
+        // Apply URL params for create mode (e.g., from audit session list)
+        this.applyQuickParams();
+      }
+
+      // Load learning modules if we have an opportunity
+      const opportunityId = {{ opportunity_id|default:"null" }};
+      if (opportunityId) {
+        this.loadLearningModules(opportunityId);
+      }
+    },
+
+    applyQuickParams() {
+      if (this.quickParams.username) {
+        // Set the username - need setTimeout to allow template x-if to render the select first
+        setTimeout(() => {
+          this.selectedFlwUsername = this.quickParams.username;
+          this.onFlwSelect();
+        }, 100);
+      }
+      if (this.quickParams.title) {
+        this.taskForm.title = this.quickParams.title;
+      }
+      if (this.quickParams.description) {
+        this.taskForm.description = this.quickParams.description;
+      }
+      if (this.quickParams.coaching_prompt) {
+        this.taskForm.coaching_prompt = this.quickParams.coaching_prompt;
+      }
+      if (this.quickParams.audit_session_id) {
+        this.auditSessionId = parseInt(this.quickParams.audit_session_id, 10);
+      }
+    },
+
+    discardChanges() {
+      if (this.originalForm) {
+        this.taskForm = { ...this.originalForm };
+      }
+    },
+
+    onFlwSelect() {
+      const flw = this.flwList.find(f => f.username === this.selectedFlwUsername);
+      this.selectedFlw = flw || null;
+    },
+
+    async createTask() {
+      if (!this.canCreate) return;
+
+      this.creating = true;
+      this.error = null;
+
+      try {
+        const response = await fetch('{% url "tasks:single_create" %}', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+          },
+          body: JSON.stringify({
+            username: this.selectedFlw.username,
+            flw_name: this.selectedFlw.name || this.selectedFlw.username,
+            ...this.taskForm
+          })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          this.taskId = data.task_id;
+          this.taskCreated = true;
+          this.showToastMessage('Task created successfully!');
+
+          // Redirect to edit mode. Pass coaching_prompt in URL so the edit
+          // page can pre-fill the OCS modal even if the task was just
+          // created and the server save hasn't propagated yet.
+          const editUrl = new URL(`/tasks/${data.task_id}/edit/`, window.location.origin);
+          if (this.taskForm.coaching_prompt)
+            editUrl.searchParams.set('coaching_prompt', this.taskForm.coaching_prompt);
+          window.location.href = editUrl.toString();
+        } else {
+          this.error = data.error || 'Failed to create task';
+        }
+      } catch (err) {
+        console.error('Create task error:', err);
+        this.error = 'Failed to create task. Please try again.';
+      } finally {
+        this.creating = false;
+      }
+    },
+
+    async saveTask() {
+      this.saving = true;
+      this.error = null;
+
+      try {
+        const response = await fetch(`/tasks/api/${this.taskId}/update/`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+          },
+          body: JSON.stringify(this.taskForm)
+        });
+
+        const data = await response.json();
+        if (data.success) {
+          this.showToastMessage('Changes saved');
+          // Reload to show updated history
+          setTimeout(() => window.location.reload(), 1000);
+        } else {
+          this.error = data.error || 'Failed to save changes';
+        }
+      } catch (e) {
+        this.error = 'Failed to save: ' + e.message;
+      } finally {
+        this.saving = false;
+      }
+    },
+
+    async postComment() {
+      if (!this.newComment.trim() || !this.taskId) return;
+
+      try {
+        const response = await fetch(`/tasks/api/${this.taskId}/comment/`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            content: this.newComment.trim()
+          })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          // Add the new comment to the timeline
+          if (data.comment) {
+            this.timeline.unshift(data.comment);
+          }
+          this.newComment = '';
+          this.showToastMessage('Comment added');
+        } else {
+          this.showToastMessage(data.error || 'Failed to add comment', true);
+        }
+      } catch (error) {
+        console.error('Error posting comment:', error);
+        this.showToastMessage('Failed to add comment', true);
+      }
+    },
+
+    // Modal methods
+    showLearningModal() {
+      this.selectedModules = [];
+      this.showHistory = false;
+      this.showLearning = true;
+
+      // Load completed modules for this FLW
+      const opportunityId = {{ opportunity_id|default:"null" }};
+      if (opportunityId && this.selectedFlw?.username) {
+        this.loadCompletedModules(opportunityId, this.selectedFlw.username);
+      }
+    },
+
+    showCloseModal() {
+      this.closeForm = {
+        official_action: 'none',
+        resolution_note: ''
+      };
+      this.showClose = true;
+    },
+
+    showAIModal() {
+      this.aiParams.identifier = this.selectedFlw?.username || '';
+      // Pre-fill the modal's prompt textarea. Prefer a stored
+      // coaching_prompt (set by chc_nutrition's Create Task with
+      // Coaching button — long-form instructions targeted at the bot),
+      // and only fall back to the task description when no coaching
+      // prompt exists. Either way, preserve any edit the user already
+      // typed in the modal.
+      if (!this.aiParams.prompt_text && this.taskForm) {
+        this.aiParams.prompt_text =
+          this.taskForm.coaching_prompt ||
+          this.taskForm.description ||
+          '';
+      }
+      this.aiProgress = { show: false, status: '', message: '', detail: '' };
+      this.showAI = true;
+      this.loadBots();
+    },
+
+    async loadLearningModules(opportunityId) {
+      this.learningModulesLoading = true;
+      try {
+        const response = await fetch(`/tasks/opportunities/${opportunityId}/learning-modules/`);
+        const data = await response.json();
+        if (data.success) {
+          this.learningModules = data.modules || [];
+        } else {
+          console.error('Failed to load learning modules:', data.error);
+        }
+      } catch (error) {
+        console.error('Error loading learning modules:', error);
+      } finally {
+        this.learningModulesLoading = false;
+      }
+    },
+
+    async loadCompletedModules(opportunityId, username) {
+      this.completedModulesLoading = true;
+      try {
+        const response = await fetch(`/tasks/opportunities/${opportunityId}/completed-modules/?username=${encodeURIComponent(username)}`);
+        const data = await response.json();
+        if (data.success) {
+          this.completedModules = data.completed_modules || [];
+          // Enrich with module names from learningModules
+          this.completedModules = this.completedModules.map(cm => {
+            const module = this.learningModules.find(m => m.id === cm.module);
+            return {
+              ...cm,
+              module_name: module ? module.name : `Module ${cm.module}`,
+              module_obj: module
+            };
+          });
+        } else {
+          console.error('Failed to load completed modules:', data.error);
+        }
+      } catch (error) {
+        console.error('Error loading completed modules:', error);
+      } finally {
+        this.completedModulesLoading = false;
+      }
+    },
+
+    assignLearning() {
+      // TODO: Implement code to take action - assign selected learning modules to the FLW
+      // This will need to:
+      // 1. Create task event for learning module assignment
+      // 2. Potentially trigger notification to FLW
+      // 3. Update task timeline with assignment details
+
+      this.showToastMessage(`Assigned ${this.selectedModules.length} learning module(s)`);
+      this.showLearning = false;
+    },
+
+    async confirmClose() {
+      this.saving = true;
+      try {
+        const response = await fetch(`/tasks/api/${this.taskId}/update/`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+          },
+          body: JSON.stringify({
+            status: 'closed',
+            resolution_details: {
+              official_action: this.closeForm.official_action,
+              resolution_note: this.closeForm.resolution_note
+            }
+          })
+        });
+
+        const data = await response.json();
+        if (data.success) {
+          this.showToastMessage('Task closed successfully');
+          this.showClose = false;
+          // Redirect to tasks list
+          window.location.href = '{% url "tasks:list" %}';
+        } else {
+          this.error = data.error || 'Failed to close task';
+        }
+      } catch (e) {
+        this.error = 'Failed to close task: ' + e.message;
+      } finally {
+        this.saving = false;
+      }
+    },
+
+    async loadBots() {
+      if (this.availableBots.length > 0) return;
+
+      this.botsLoading = true;
+      this.botsNeedsOAuth = false;
+
+      try {
+        // Pass opportunity_id explicitly (like loadLearningModules/loadCompletedModules)
+        // so the bots API resolves the opp directly — for synthetic opps this is what
+        // surfaces the canned "synthetic-muac-coaching" bot. Without it the API falls
+        // back to a session-default opp via a 302, which is unreliable (e.g. it leaves
+        // the bot select empty in headless/walkthrough sessions).
+        const opportunityId = {{ opportunity_id|default:"null" }};
+        const botsUrl = opportunityId
+          ? '{% url "tasks:ocs_bots" %}?opportunity_id=' + opportunityId
+          : '{% url "tasks:ocs_bots" %}';
+        const response = await fetch(botsUrl);
+
+        // Handle 401 (not connected to OCS)
+        if (response.status === 401) {
+          try {
+            const data = await response.json();
+            if (data.needs_oauth) {
+              this.botsNeedsOAuth = true;
+              return;
+            }
+          } catch (e) {
+            // JSON parse failed, still show OAuth prompt for 401
+            this.botsNeedsOAuth = true;
+            return;
+          }
+        }
+
+        const data = await response.json();
+        if (data.success) {
+          this.availableBots = data.bots || [];
+        } else if (data.needs_oauth) {
+          this.botsNeedsOAuth = true;
+        }
+      } catch (err) {
+        console.error('Error loading bots:', err);
+      } finally {
+        this.botsLoading = false;
+      }
+    },
+
+    async initiateAI() {
+      if (!this.aiParams.identifier || !this.aiParams.experiment || !this.aiParams.prompt_text) {
+        this.aiProgress = { show: true, status: 'error', message: 'Please fill in all required fields', detail: '' };
+        return;
+      }
+
+      this.aiLoading = true;
+      this.aiProgress = { show: true, status: 'triggering', message: 'Triggering AI conversation...', detail: '' };
+
+      try {
+        const response = await fetch(`/tasks/${this.taskId}/ai/initiate/`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+          },
+          body: JSON.stringify(this.aiParams)
+        });
+
+        const data = await response.json();
+        if (data.success) {
+          this.aiProgress = { show: true, status: 'polling', message: 'Linking session from Open Chat Studio...', detail: 'Attempt 1 of 5' };
+
+          // Poll to link the session (5 attempts, 2 seconds apart)
+          const sessionLinked = await this.pollForSessionLink(5, 2000);
+
+          if (sessionLinked) {
+            this.aiProgress = { show: true, status: 'success', message: 'AI conversation initiated and session linked!', detail: '' };
+          } else {
+            this.aiProgress = { show: true, status: 'partial', message: 'AI triggered but session not yet available', detail: 'Session will be linked when available. Reload to check.' };
+          }
+
+          // Reload after a short delay
+          setTimeout(() => window.location.reload(), 2000);
+        } else {
+          this.aiProgress = { show: true, status: 'error', message: 'Failed to initiate AI', detail: data.error || '' };
+        }
+      } catch (err) {
+        console.error('AI initiation error:', err);
+        this.aiProgress = { show: true, status: 'error', message: 'Failed to initiate AI', detail: err.message || '' };
+      } finally {
+        this.aiLoading = false;
+      }
+    },
+
+    async pollForSessionLink(maxAttempts, intervalMs) {
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        this.aiProgress.detail = `Attempt ${attempt} of ${maxAttempts}`;
+
+        try {
+          if (attempt > 1) {
+            await new Promise(resolve => setTimeout(resolve, intervalMs));
+          }
+
+          const response = await fetch(`/tasks/${this.taskId}/ai/sessions/`);
+          const data = await response.json();
+
+          if (data.success && data.sessions?.length > 0) {
+            const latestSession = data.sessions[data.sessions.length - 1];
+            if (latestSession.session_id) {
+              return true;
+            }
+          }
+        } catch (err) {
+          console.error(`Poll ${attempt} failed:`, err);
+        }
+      }
+      return false;
+    },
+
+    // Helpers
+    formatEventLabel(item) {
+      const type = item.event_type || item.type;
+      if (type === 'comment') return 'Comment';
+      if (type === 'created') return 'Task Created';
+      if (type === 'updated') return 'Task Updated';
+      if (type === 'status_changed') return 'Status Changed';
+      if (type === 'assigned') return 'Task Assigned';
+      if (type === 'ai_initiated') return 'AI Session Started';
+      if (type === 'ai_linked') return 'AI Session Linked';
+      if (type === 'learning_assigned') return 'Learning Assigned';
+      if (type === 'resolved') return 'Task Resolved';
+      if (type === 'closed') return 'Task Closed';
+      return type ? type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) : 'Event';
+    },
+
+    getTimelineIcon(item) {
+      const type = item.event_type || item.type;
+      if (type === 'comment') return 'fa-comment';
+      if (type === 'created') return 'fa-plus-circle';
+      if (type === 'updated') return 'fa-edit';
+      if (type === 'status_changed') return 'fa-exchange-alt';
+      if (type === 'assigned') return 'fa-user-check';
+      if (type === 'ai_initiated') return 'fa-robot';
+      if (type === 'ai_linked') return 'fa-link';
+      if (type === 'closed') return 'fa-times-circle';
+      return 'fa-circle';
+    },
+
+    isAIEvent(item) {
+      const type = item.event_type || item.type;
+      return type === 'ai_initiated' || type === 'ai_session';
+    },
+
+    async loadAITranscriptWithSaved(sessionId, componentData) {
+      // Load transcript - will return saved history if available
+      if (!sessionId) return;
+
+      componentData.loading = true;
+      componentData.error = null;
+
+      try {
+        const response = await fetch(`/tasks/${this.taskId}/ai/transcript/?session_id=${encodeURIComponent(sessionId)}`);
+        const data = await response.json();
+
+        if (data.success) {
+          componentData.messages = data.messages || [];
+          componentData.fromSaved = data.from_saved || false;
+          componentData.savedAt = data.saved_at || null;
+          componentData.endedAt = data.ended_at || null;
+          componentData.hasUnsavedChanges = false;
+        } else {
+          componentData.error = data.error || 'Failed to load transcript';
+        }
+      } catch (err) {
+        console.error('Error loading AI transcript:', err);
+        componentData.error = 'Failed to load conversation';
+      } finally {
+        componentData.loading = false;
+      }
+    },
+
+    async refreshAITranscript(sessionId, componentData) {
+      // Force refresh from OCS (bypass saved history)
+      if (!sessionId) return;
+
+      const savedCount = componentData.fromSaved ? componentData.messages.length : 0;
+
+      componentData.loading = true;
+      componentData.error = null;
+
+      try {
+        const response = await fetch(`/tasks/${this.taskId}/ai/transcript/?session_id=${encodeURIComponent(sessionId)}&refresh=true`);
+        const data = await response.json();
+
+        if (data.success) {
+          const newMessages = data.messages || [];
+          componentData.messages = newMessages;
+          componentData.fromSaved = false;
+          componentData.endedAt = data.ended_at || null;
+          componentData.hasUnsavedChanges = savedCount > 0 && newMessages.length !== savedCount;
+        } else {
+          componentData.error = data.error || 'Failed to load transcript';
+        }
+      } catch (err) {
+        console.error('Error refreshing AI transcript:', err);
+        componentData.error = 'Failed to refresh conversation';
+      } finally {
+        componentData.loading = false;
+      }
+    },
+
+    async saveAITranscript(sessionId, messages, componentData) {
+      if (!sessionId || !messages.length) return;
+
+      componentData.saving = true;
+
+      try {
+        const response = await fetch(`/tasks/${this.taskId}/ai/save-transcript/`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+          },
+          body: JSON.stringify({ session_id: sessionId, messages: messages })
+        });
+
+        const data = await response.json();
+        if (data.success) {
+          componentData.fromSaved = true;
+          componentData.savedAt = new Date().toISOString();
+          componentData.hasUnsavedChanges = false;
+          this.showToastMessage('History saved');
+        } else {
+          this.showToastMessage('Failed to save: ' + (data.error || 'Unknown error'));
+        }
+      } catch (err) {
+        console.error('Error saving transcript:', err);
+        this.showToastMessage('Failed to save history');
+      } finally {
+        componentData.saving = false;
+      }
+    },
+
+    async loadAITranscript(sessionId, componentData) {
+      // Legacy function - redirects to new one
+      return this.loadAITranscriptWithSaved(sessionId, componentData);
+    },
+
+
+    formatTimestamp(timestamp) {
+      if (!timestamp) return '';
+      const date = new Date(timestamp);
+      return date.toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+      });
+    },
+
+    formatDuration(duration) {
+      if (!duration) return '';
+
+      // Parse duration string like "00:00:08.913000" (HH:MM:SS.microseconds)
+      const parts = duration.split(':');
+      if (parts.length !== 3) return duration;
+
+      const hours = parseInt(parts[0]);
+      const minutes = parseInt(parts[1]);
+      const seconds = Math.floor(parseFloat(parts[2]));
+
+      const timeParts = [];
+      if (hours > 0) {
+        timeParts.push(`${hours} hour${hours !== 1 ? 's' : ''}`);
+      }
+      if (minutes > 0) {
+        timeParts.push(`${minutes} min${minutes !== 1 ? 's' : ''}`);
+      }
+      if (seconds > 0 || timeParts.length === 0) {
+        timeParts.push(`${seconds} sec${seconds !== 1 ? 's' : ''}`);
+      }
+
+      return timeParts.join(' ');
+    },
+
+    showToastMessage(message) {
+      this.toastMessage = message;
+      this.showToast = true;
+      setTimeout(() => {
+        this.showToast = false;
+      }, 3000);
+    }
+  }
+}
+</script>
+{% endblock %}

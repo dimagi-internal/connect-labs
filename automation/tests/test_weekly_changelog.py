@@ -33,25 +33,25 @@ def _write_prs_file(prs):
 
 def test_classify_pr_all_marketing():
     files = [
-        "commcare_connect/prelogin/views.py",
-        "commcare_connect/templates/prelogin/home.html",
-        "commcare_connect/static/prelogin/app.js",
+        "connect_labs/prelogin/views.py",
+        "connect_labs/templates/prelogin/home.html",
+        "connect_labs/static/prelogin/app.js",
     ]
     assert classify_pr(files) == "marketing"
 
 
 def test_classify_pr_all_app():
     files = [
-        "commcare_connect/workflow/views.py",
-        "commcare_connect/audit/models.py",
+        "connect_labs/workflow/views.py",
+        "connect_labs/audit/models.py",
     ]
     assert classify_pr(files) == "app"
 
 
 def test_classify_pr_mixed():
     files = [
-        "commcare_connect/prelogin/views.py",
-        "commcare_connect/workflow/views.py",
+        "connect_labs/prelogin/views.py",
+        "connect_labs/workflow/views.py",
     ]
     assert classify_pr(files) == "mixed"
 
@@ -63,7 +63,7 @@ def test_classify_pr_empty_files():
 def test_fetch_pr_files_returns_filenames():
     mock_result = MagicMock()
     mock_result.returncode = 0
-    mock_result.stdout = "commcare_connect/prelogin/views.py\ncommcare_connect/workflow/views.py\n"
+    mock_result.stdout = "connect_labs/prelogin/views.py\nconnect_labs/workflow/views.py\n"
     with patch("weekly_changelog.subprocess.run", return_value=mock_result) as mock_run:
         files = fetch_pr_files(42, "dimagi-internal/connect-labs")
     mock_run.assert_called_once_with(
@@ -72,7 +72,7 @@ def test_fetch_pr_files_returns_filenames():
         text=True,
         timeout=15,
     )
-    assert files == ["commcare_connect/prelogin/views.py", "commcare_connect/workflow/views.py"]
+    assert files == ["connect_labs/prelogin/views.py", "connect_labs/workflow/views.py"]
 
 
 def test_fetch_pr_files_returns_empty_on_error():
@@ -93,16 +93,16 @@ def test_fetch_pr_files_returns_empty_on_timeout():
 def test_fetch_pr_files_strips_blank_lines():
     mock_result = MagicMock()
     mock_result.returncode = 0
-    mock_result.stdout = "\ncommcare_connect/prelogin/home.html\n\n"
+    mock_result.stdout = "\nconnect_labs/prelogin/home.html\n\n"
     with patch("weekly_changelog.subprocess.run", return_value=mock_result):
         files = fetch_pr_files(1, "dimagi-internal/connect-labs")
-    assert files == ["commcare_connect/prelogin/home.html"]
+    assert files == ["connect_labs/prelogin/home.html"]
 
 
 def test_load_user_visible_prs_adds_marketing_category():
     pr = dict(PR_TEMPLATE, number=10)
     prs_file = _write_prs_file([pr])
-    marketing_files = ["commcare_connect/prelogin/views.py"]
+    marketing_files = ["connect_labs/prelogin/views.py"]
     try:
         with patch("weekly_changelog.fetch_pr_files", return_value=marketing_files), patch.dict(
             os.environ, {"GITHUB_REPOSITORY": "dimagi-internal/connect-labs"}
@@ -117,7 +117,7 @@ def test_load_user_visible_prs_adds_marketing_category():
 def test_load_user_visible_prs_adds_app_category():
     pr = dict(PR_TEMPLATE, number=11)
     prs_file = _write_prs_file([pr])
-    app_files = ["commcare_connect/workflow/views.py"]
+    app_files = ["connect_labs/workflow/views.py"]
     try:
         with patch("weekly_changelog.fetch_pr_files", return_value=app_files), patch.dict(
             os.environ, {"GITHUB_REPOSITORY": "dimagi-internal/connect-labs"}

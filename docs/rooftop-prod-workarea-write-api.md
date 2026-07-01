@@ -80,7 +80,7 @@ the existing `bulk_create_or_update_cases_by_work_areas(work_areas, opportunity)
 so the HQ `work-area` cases are created + owned by the FLW in the same request —
 collapsing labs "create" + Connect "assign" + HQ "push" into one atom.
 
-## Labs side (already built, in `commcare_connect/rooftop_surveys/`)
+## Labs side (already built, in `connect_labs/rooftop_surveys/`)
 
 - `workarea.py::to_api_payload(...)` already emits exactly this POST body
   (`slug, ward, centroid {Point}, boundary_wkt, building_count, expected_visit_count,

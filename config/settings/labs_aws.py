@@ -54,7 +54,7 @@ AWS_S3_REGION_NAME = env("AWS_DEFAULT_REGION", default=None)
 AWS_S3_CUSTOM_DOMAIN = env("DJANGO_AWS_S3_CUSTOM_DOMAIN", default=None)
 aws_s3_domain = AWS_S3_CUSTOM_DOMAIN or f"{AWS_STORAGE_BUCKET_NAME}.s3.amazonaws.com"
 MEDIA_URL = f"https://{aws_s3_domain}/media/"
-STORAGES["default"]["BACKEND"] = "commcare_connect.utils.storages.MediaRootS3Boto3Storage"
+STORAGES["default"]["BACKEND"] = "connect_labs.utils.storages.MediaRootS3Boto3Storage"
 
 # EMAIL (SES)
 # ------------------------------------------------------------------------------
@@ -98,19 +98,19 @@ LOGIN_URL = "/labs/login/"
 PRELOGIN_APP_LOGIN_URL = "/labs/overview/"
 
 # Add labs app and custom_analysis
-INSTALLED_APPS.append("commcare_connect.labs")
-INSTALLED_APPS.append("commcare_connect.custom_analysis.chc_nutrition")
-INSTALLED_APPS.append("commcare_connect.campaign")
+INSTALLED_APPS.append("connect_labs.labs")
+INSTALLED_APPS.append("connect_labs.custom_analysis.chc_nutrition")
+INSTALLED_APPS.append("connect_labs.campaign")
 
 # Add labs middlewares after auth.
 MIDDLEWARE = list(MIDDLEWARE)
 _auth_idx = MIDDLEWARE.index("django.contrib.auth.middleware.AuthenticationMiddleware")
 # OAuth session sync runs first so the rest of the stack sees a fresh
 # session.labs_oauth (or a logged-out user, if refresh failed). See
-# commcare_connect/labs/oauth_session.py.
-MIDDLEWARE.insert(_auth_idx + 1, "commcare_connect.labs.oauth_session.LabsOAuthSessionMiddleware")
-MIDDLEWARE.insert(_auth_idx + 2, "commcare_connect.labs.context.LabsContextMiddleware")
-MIDDLEWARE.insert(_auth_idx + 3, "commcare_connect.campaign.middleware.CampaignOAuthSessionMiddleware")
+# connect_labs/labs/oauth_session.py.
+MIDDLEWARE.insert(_auth_idx + 1, "connect_labs.labs.oauth_session.LabsOAuthSessionMiddleware")
+MIDDLEWARE.insert(_auth_idx + 2, "connect_labs.labs.context.LabsContextMiddleware")
+MIDDLEWARE.insert(_auth_idx + 3, "connect_labs.campaign.middleware.CampaignOAuthSessionMiddleware")
 
 # Gzip-compress responses on the way out — the microplans footprints endpoint
 # ships ~1 MB of GeoJSON polygon coords per ward that compresses 80–90%, but

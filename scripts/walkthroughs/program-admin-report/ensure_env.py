@@ -3,7 +3,7 @@
 The single ``setup:`` command the canopy walkthrough invokes before
 rendering. Modeled on the older ``regenerate.py``, but driven by the
 declarative composite ENV manifest
-(``commcare_connect/labs/synthetic/envs/program-admin-report.yaml``)
+(``connect_labs/labs/synthetic/envs/program-admin-report.yaml``)
 instead of ``demo_config.json``. One run does all of:
 
 1. **Ensure** — call the ``synthetic_env_ensure`` MCP tool on labs with

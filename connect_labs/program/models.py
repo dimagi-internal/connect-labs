@@ -1,0 +1,65 @@
+from uuid import uuid4
+
+from django.db import models
+from django.utils.translation import gettext_lazy as _
+
+from connect_labs.opportunity.models import Country, Currency, DeliveryType, Opportunity
+from connect_labs.organization.models import Organization
+from connect_labs.utils.db import BaseModel, slugify_uniquely
+
+
+class Program(BaseModel):
+    program_id = models.UUIDField(editable=False, default=uuid4, unique=True)
+    name = models.CharField(max_length=255)
+    slug = models.SlugField(max_length=255, unique=True)
+    description = models.CharField(max_length=255)
+    delivery_type = models.ForeignKey(DeliveryType, on_delete=models.PROTECT)
+    budget = models.PositiveBigIntegerField()
+    currency = models.ForeignKey(Currency, on_delete=models.PROTECT, null=True)
+    country = models.ForeignKey(Country, on_delete=models.PROTECT, null=True)
+    start_date = models.DateField()
+    end_date = models.DateField()
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT)
+
+    def save(self, *args, **kwargs):
+        if not self.id:
+            self.slug = slugify_uniquely(self.name, self.__class__)
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.slug
+
+    @property
+    def currency_code(self):
+        if self.currency:
+            return self.currency.code
+        else:
+            return None
+
+
+class ManagedOpportunity(Opportunity):
+    program = models.ForeignKey(Program, on_delete=models.DO_NOTHING)
+    claimed = models.BooleanField(default=False)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.managed = True
+
+
+class ProgramApplicationStatus(models.TextChoices):
+    INVITED = "invited", _("Invited")
+    APPLIED = "applied", _("Applied")
+    ACCEPTED = "accepted", _("Accepted")
+    REJECTED = "rejected", _("Rejected")
+    DECLINED = "declined", _("Declined")
+
+
+class ProgramApplication(BaseModel):
+    program_application_id = models.UUIDField(editable=False, default=uuid4, unique=True)
+    program = models.ForeignKey(Program, on_delete=models.CASCADE)
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE)
+    status = models.CharField(
+        max_length=20,
+        choices=ProgramApplicationStatus.choices,
+        default=ProgramApplicationStatus.INVITED,
+    )

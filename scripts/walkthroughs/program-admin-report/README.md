@@ -138,12 +138,12 @@ scripts/walkthroughs/
 ```
 
 The synthetic-data generator itself lives in
-`commcare_connect/labs/synthetic/program_admin_demo.py` next to the
+`connect_labs/labs/synthetic/program_admin_demo.py` next to the
 other synthetic infrastructure (archetypes, manager_flow_views,
 gdrive corpus). The generic primitives it uses
 (`monday_dt`, `cleanup_opportunity_workflows`, `create_backdated_workflow_run`,
 `apply_action_spec`, …) live in
-`commcare_connect/labs/synthetic/walkthrough_kit.py` — those are the
+`connect_labs/labs/synthetic/walkthrough_kit.py` — those are the
 pieces a second walkthrough should import to avoid reinventing the
 LabsRecord write plumbing.
 
@@ -205,12 +205,12 @@ This is the main reason `_lib/` exists. To add another demo:
 4. Write `record_*.py` scripts that open a `_lib.recorder.RecorderSession`
    and walk through your scenes.
 5. If your generator can share the chc_nutrition story shape, you can
-   reuse most of `commcare_connect/labs/synthetic/walkthrough_kit.py`
+   reuse most of `connect_labs/labs/synthetic/walkthrough_kit.py`
    directly. Otherwise add new primitives to `walkthrough_kit` for
    anything generic, and keep the trajectory/orchestrator in
-   `commcare_connect/labs/synthetic/<your_demo>.py`.
-6. Register the MCP-callable shim in `commcare_connect/mcp/tools/<your_demo>.py`
-   (~30 lines — pattern of `commcare_connect/mcp/tools/program_admin_demo.py`).
+   `connect_labs/labs/synthetic/<your_demo>.py`.
+6. Register the MCP-callable shim in `connect_labs/mcp/tools/<your_demo>.py`
+   (~30 lines — pattern of `connect_labs/mcp/tools/program_admin_demo.py`).
 
 The expensive primitives (cursor overlay, PAR snapshot walker, ffmpeg
 concat, FLW row scroll/click, MCP client, freshness guard) are already in

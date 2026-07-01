@@ -15,39 +15,39 @@
 ## Task 1: App Scaffolding & Registration
 
 **Files:**
-- Create: `commcare_connect/solicitations/__init__.py`
-- Create: `commcare_connect/solicitations/apps.py`
-- Create: `commcare_connect/solicitations/models.py` (empty placeholder)
-- Create: `commcare_connect/solicitations/urls.py` (minimal)
-- Create: `commcare_connect/solicitations/views.py` (minimal)
+- Create: `connect_labs/solicitations/__init__.py`
+- Create: `connect_labs/solicitations/apps.py`
+- Create: `connect_labs/solicitations/models.py` (empty placeholder)
+- Create: `connect_labs/solicitations/urls.py` (minimal)
+- Create: `connect_labs/solicitations/views.py` (minimal)
 - Modify: `config/settings/base.py` (~line 155, LOCAL_APPS list)
 - Modify: `config/urls.py` (~line 45, urlpatterns)
-- Modify: `commcare_connect/labs/middleware.py` (~line 87, WHITELISTED_PREFIXES)
+- Modify: `connect_labs/labs/middleware.py` (~line 87, WHITELISTED_PREFIXES)
 
 **Step 1: Create the app directory and files**
 
 ```python
-# commcare_connect/solicitations/__init__.py
+# connect_labs/solicitations/__init__.py
 # (empty)
 ```
 
 ```python
-# commcare_connect/solicitations/apps.py
+# connect_labs/solicitations/apps.py
 from django.apps import AppConfig
 
 
 class SolicitationsNewConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
-    name = "commcare_connect.solicitations"
+    name = "connect_labs.solicitations"
 ```
 
 ```python
-# commcare_connect/solicitations/models.py
+# connect_labs/solicitations/models.py
 # Proxy models defined in Task 2
 ```
 
 ```python
-# commcare_connect/solicitations/views.py
+# connect_labs/solicitations/views.py
 from django.http import JsonResponse
 
 
@@ -56,7 +56,7 @@ def health_check(request):
 ```
 
 ```python
-# commcare_connect/solicitations/urls.py
+# connect_labs/solicitations/urls.py
 from django.urls import path
 
 from . import views
@@ -70,17 +70,17 @@ urlpatterns = [
 
 **Step 2: Register the app in settings, URLs, and middleware**
 
-In `config/settings/base.py`, add to `LOCAL_APPS` list (after `commcare_connect.solicitations`):
+In `config/settings/base.py`, add to `LOCAL_APPS` list (after `connect_labs.solicitations`):
 ```python
-"commcare_connect.solicitations",
+"connect_labs.solicitations",
 ```
 
 In `config/urls.py`, add to `urlpatterns` (after the solicitations line):
 ```python
-path("solicitations/", include("commcare_connect.solicitations.urls", namespace="solicitations")),
+path("solicitations/", include("connect_labs.solicitations.urls", namespace="solicitations")),
 ```
 
-In `commcare_connect/labs/middleware.py`, add to `WHITELISTED_PREFIXES`:
+In `connect_labs/labs/middleware.py`, add to `WHITELISTED_PREFIXES`:
 ```python
 "/solicitations/",
 ```
@@ -90,13 +90,13 @@ In `commcare_connect/labs/middleware.py`, add to `WHITELISTED_PREFIXES`:
 Run: `python manage.py check --deploy 2>&1 | head -5`
 Expected: No errors related to solicitations
 
-Run: `python manage.py shell -c "from commcare_connect.solicitations import views; print('OK')"`
+Run: `python manage.py shell -c "from connect_labs.solicitations import views; print('OK')"`
 Expected: `OK`
 
 **Step 4: Commit**
 
 ```bash
-git add commcare_connect/solicitations/ config/settings/base.py config/urls.py commcare_connect/labs/middleware.py
+git add connect_labs/solicitations/ config/settings/base.py config/urls.py connect_labs/labs/middleware.py
 git commit -m "feat(solicitations): scaffold app, register in settings/urls/middleware"
 ```
 
@@ -105,21 +105,21 @@ git commit -m "feat(solicitations): scaffold app, register in settings/urls/midd
 ## Task 2: Proxy Models
 
 **Files:**
-- Create: `commcare_connect/solicitations/models.py`
-- Create: `commcare_connect/solicitations/tests/__init__.py`
-- Create: `commcare_connect/solicitations/tests/test_models.py`
+- Create: `connect_labs/solicitations/models.py`
+- Create: `connect_labs/solicitations/tests/__init__.py`
+- Create: `connect_labs/solicitations/tests/test_models.py`
 
 **Step 1: Write the failing tests**
 
 ```python
-# commcare_connect/solicitations/tests/__init__.py
+# connect_labs/solicitations/tests/__init__.py
 # (empty)
 ```
 
 ```python
-# commcare_connect/solicitations/tests/test_models.py
+# connect_labs/solicitations/tests/test_models.py
 import pytest
-from commcare_connect.solicitations.models import (
+from connect_labs.solicitations.models import (
     SolicitationRecord,
     ResponseRecord,
     ReviewRecord,
@@ -259,16 +259,16 @@ class TestReviewRecord:
 
 **Step 2: Run tests to verify they fail**
 
-Run: `pytest commcare_connect/solicitations/tests/test_models.py -v`
+Run: `pytest connect_labs/solicitations/tests/test_models.py -v`
 Expected: FAIL — `ImportError: cannot import name 'SolicitationRecord'`
 
 **Step 3: Implement the proxy models**
 
 ```python
-# commcare_connect/solicitations/models.py
+# connect_labs/solicitations/models.py
 from datetime import date, datetime
 
-from commcare_connect.labs.models import LocalLabsRecord
+from connect_labs.labs.models import LocalLabsRecord
 
 
 class SolicitationRecord(LocalLabsRecord):
@@ -434,13 +434,13 @@ class ReviewRecord(LocalLabsRecord):
 
 **Step 4: Run tests to verify they pass**
 
-Run: `pytest commcare_connect/solicitations/tests/test_models.py -v`
+Run: `pytest connect_labs/solicitations/tests/test_models.py -v`
 Expected: All PASS
 
 **Step 5: Commit**
 
 ```bash
-git add commcare_connect/solicitations/models.py commcare_connect/solicitations/tests/
+git add connect_labs/solicitations/models.py connect_labs/solicitations/tests/
 git commit -m "feat(solicitations): add proxy models for solicitation, response, review"
 ```
 
@@ -449,21 +449,21 @@ git commit -m "feat(solicitations): add proxy models for solicitation, response,
 ## Task 3: Data Access Layer
 
 **Files:**
-- Create: `commcare_connect/solicitations/data_access.py`
-- Create: `commcare_connect/solicitations/tests/test_data_access.py`
+- Create: `connect_labs/solicitations/data_access.py`
+- Create: `connect_labs/solicitations/tests/test_data_access.py`
 
-**Reference:** Follow `commcare_connect/tasks/data_access.py` pattern for constructor, and `commcare_connect/solicitations/data_access.py` for CRUD methods.
+**Reference:** Follow `connect_labs/tasks/data_access.py` pattern for constructor, and `connect_labs/solicitations/data_access.py` for CRUD methods.
 
 **Step 1: Write the failing tests**
 
 ```python
-# commcare_connect/solicitations/tests/test_data_access.py
+# connect_labs/solicitations/tests/test_data_access.py
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from commcare_connect.solicitations.data_access import SolicitationsDataAccess
-from commcare_connect.solicitations.models import (
+from connect_labs.solicitations.data_access import SolicitationsDataAccess
+from connect_labs.solicitations.models import (
     ResponseRecord,
     ReviewRecord,
     SolicitationRecord,
@@ -481,7 +481,7 @@ def mock_request():
 @pytest.fixture
 def mock_api_client():
     with patch(
-        "commcare_connect.solicitations.data_access.LabsRecordAPIClient"
+        "connect_labs.solicitations.data_access.LabsRecordAPIClient"
     ) as MockClient:
         client = MockClient.return_value
         yield client
@@ -588,17 +588,17 @@ class TestReviewCRUD:
 
 **Step 2: Run tests to verify they fail**
 
-Run: `pytest commcare_connect/solicitations/tests/test_data_access.py -v`
+Run: `pytest connect_labs/solicitations/tests/test_data_access.py -v`
 Expected: FAIL — `ImportError: cannot import name 'SolicitationsDataAccess'`
 
 **Step 3: Implement the data access layer**
 
 ```python
-# commcare_connect/solicitations/data_access.py
+# connect_labs/solicitations/data_access.py
 import logging
 
-from commcare_connect.labs.integrations.connect.api_client import LabsRecordAPIClient
-from commcare_connect.solicitations.models import (
+from connect_labs.labs.integrations.connect.api_client import LabsRecordAPIClient
+from connect_labs.solicitations.models import (
     ResponseRecord,
     ReviewRecord,
     SolicitationRecord,
@@ -759,13 +759,13 @@ class SolicitationsDataAccess:
 
 **Step 4: Run tests to verify they pass**
 
-Run: `pytest commcare_connect/solicitations/tests/test_data_access.py -v`
+Run: `pytest connect_labs/solicitations/tests/test_data_access.py -v`
 Expected: All PASS
 
 **Step 5: Commit**
 
 ```bash
-git add commcare_connect/solicitations/data_access.py commcare_connect/solicitations/tests/test_data_access.py
+git add connect_labs/solicitations/data_access.py connect_labs/solicitations/tests/test_data_access.py
 git commit -m "feat(solicitations): add data access layer with solicitation/response/review CRUD"
 ```
 
@@ -774,16 +774,16 @@ git commit -m "feat(solicitations): add data access layer with solicitation/resp
 ## Task 4: Forms
 
 **Files:**
-- Create: `commcare_connect/solicitations/forms.py`
-- Create: `commcare_connect/solicitations/tests/test_forms.py`
+- Create: `connect_labs/solicitations/forms.py`
+- Create: `connect_labs/solicitations/tests/test_forms.py`
 
 **Step 1: Write the failing tests**
 
 ```python
-# commcare_connect/solicitations/tests/test_forms.py
+# connect_labs/solicitations/tests/test_forms.py
 import pytest
 
-from commcare_connect.solicitations.forms import (
+from connect_labs.solicitations.forms import (
     SolicitationForm,
     SolicitationResponseForm,
     ReviewForm,
@@ -854,13 +854,13 @@ class TestReviewForm:
 
 **Step 2: Run tests to verify they fail**
 
-Run: `pytest commcare_connect/solicitations/tests/test_forms.py -v`
+Run: `pytest connect_labs/solicitations/tests/test_forms.py -v`
 Expected: FAIL — `ImportError`
 
 **Step 3: Implement the forms**
 
 ```python
-# commcare_connect/solicitations/forms.py
+# connect_labs/solicitations/forms.py
 from django import forms
 
 
@@ -950,13 +950,13 @@ class ReviewForm(forms.Form):
 
 **Step 4: Run tests to verify they pass**
 
-Run: `pytest commcare_connect/solicitations/tests/test_forms.py -v`
+Run: `pytest connect_labs/solicitations/tests/test_forms.py -v`
 Expected: All PASS
 
 **Step 5: Commit**
 
 ```bash
-git add commcare_connect/solicitations/forms.py commcare_connect/solicitations/tests/test_forms.py
+git add connect_labs/solicitations/forms.py connect_labs/solicitations/tests/test_forms.py
 git commit -m "feat(solicitations): add solicitation, response, and review forms"
 ```
 
@@ -965,17 +965,17 @@ git commit -m "feat(solicitations): add solicitation, response, and review forms
 ## Task 5: Public Views (No Login Required)
 
 **Files:**
-- Modify: `commcare_connect/solicitations/views.py`
-- Modify: `commcare_connect/solicitations/urls.py`
-- Create: `commcare_connect/templates/solicitations/public_list.html`
-- Create: `commcare_connect/templates/solicitations/public_detail.html`
+- Modify: `connect_labs/solicitations/views.py`
+- Modify: `connect_labs/solicitations/urls.py`
+- Create: `connect_labs/templates/solicitations/public_list.html`
+- Create: `connect_labs/templates/solicitations/public_detail.html`
 
 **Step 1: Write the public views**
 
-Replace `commcare_connect/solicitations/views.py`:
+Replace `connect_labs/solicitations/views.py`:
 
 ```python
-# commcare_connect/solicitations/views.py
+# connect_labs/solicitations/views.py
 import json
 import logging
 
@@ -987,8 +987,8 @@ from django.utils import timezone
 from django.views import View
 from django.views.generic import TemplateView
 
-from commcare_connect.solicitations.data_access import SolicitationsDataAccess
-from commcare_connect.solicitations.forms import (
+from connect_labs.solicitations.data_access import SolicitationsDataAccess
+from connect_labs.solicitations.forms import (
     ReviewForm,
     SolicitationForm,
     SolicitationResponseForm,
@@ -1077,7 +1077,7 @@ class PublicSolicitationDetailView(TemplateView):
 **Step 2: Update URLs**
 
 ```python
-# commcare_connect/solicitations/urls.py
+# connect_labs/solicitations/urls.py
 from django.urls import path
 
 from . import views
@@ -1094,7 +1094,7 @@ urlpatterns = [
 **Step 3: Create the public list template**
 
 ```html
-{# commcare_connect/templates/solicitations/public_list.html #}
+{# connect_labs/templates/solicitations/public_list.html #}
 {% extends "base.html" %}
 
 {% block content %}
@@ -1161,7 +1161,7 @@ urlpatterns = [
 **Step 4: Create the public detail template**
 
 ```html
-{# commcare_connect/templates/solicitations/public_detail.html #}
+{# connect_labs/templates/solicitations/public_detail.html #}
 {% extends "base.html" %}
 
 {% block content %}
@@ -1281,7 +1281,7 @@ Expected: `OK`
 **Step 6: Commit**
 
 ```bash
-git add commcare_connect/solicitations/views.py commcare_connect/solicitations/urls.py commcare_connect/templates/solicitations/
+git add connect_labs/solicitations/views.py connect_labs/solicitations/urls.py connect_labs/templates/solicitations/
 git commit -m "feat(solicitations): add public list and detail views with templates"
 ```
 
@@ -1290,11 +1290,11 @@ git commit -m "feat(solicitations): add public list and detail views with templa
 ## Task 6: Manager Views & Templates
 
 **Files:**
-- Modify: `commcare_connect/solicitations/views.py` (add manager views)
-- Modify: `commcare_connect/solicitations/urls.py` (add manager URLs)
-- Create: `commcare_connect/templates/solicitations/manage_list.html`
-- Create: `commcare_connect/templates/solicitations/solicitation_form.html`
-- Create: `commcare_connect/templates/solicitations/responses_list.html`
+- Modify: `connect_labs/solicitations/views.py` (add manager views)
+- Modify: `connect_labs/solicitations/urls.py` (add manager URLs)
+- Create: `connect_labs/templates/solicitations/manage_list.html`
+- Create: `connect_labs/templates/solicitations/solicitation_form.html`
+- Create: `connect_labs/templates/solicitations/responses_list.html`
 
 **Step 1: Add manager views to views.py**
 
@@ -1434,7 +1434,7 @@ class ResponsesListView(ManagerRequiredMixin, TemplateView):
 
 **Step 3: Create manager templates**
 
-Create `commcare_connect/templates/solicitations/manage_list.html`:
+Create `connect_labs/templates/solicitations/manage_list.html`:
 ```html
 {% extends "base.html" %}
 
@@ -1503,7 +1503,7 @@ Create `commcare_connect/templates/solicitations/manage_list.html`:
 {% endblock %}
 ```
 
-Create `commcare_connect/templates/solicitations/solicitation_form.html`:
+Create `connect_labs/templates/solicitations/solicitation_form.html`:
 ```html
 {% extends "base.html" %}
 {% load crispy_forms_tags %}
@@ -1658,7 +1658,7 @@ document.getElementById("solicitation-form").addEventListener("submit", function
 {% endblock %}
 ```
 
-Create `commcare_connect/templates/solicitations/responses_list.html`:
+Create `connect_labs/templates/solicitations/responses_list.html`:
 ```html
 {% extends "base.html" %}
 
@@ -1725,7 +1725,7 @@ Create `commcare_connect/templates/solicitations/responses_list.html`:
 **Step 4: Commit**
 
 ```bash
-git add commcare_connect/solicitations/views.py commcare_connect/solicitations/urls.py commcare_connect/templates/solicitations/
+git add connect_labs/solicitations/views.py connect_labs/solicitations/urls.py connect_labs/templates/solicitations/
 git commit -m "feat(solicitations): add manager views — manage list, create, edit, responses list"
 ```
 
@@ -1734,10 +1734,10 @@ git commit -m "feat(solicitations): add manager views — manage list, create, e
 ## Task 7: Response Views & Templates
 
 **Files:**
-- Modify: `commcare_connect/solicitations/views.py`
-- Modify: `commcare_connect/solicitations/urls.py`
-- Create: `commcare_connect/templates/solicitations/respond.html`
-- Create: `commcare_connect/templates/solicitations/response_detail.html`
+- Modify: `connect_labs/solicitations/views.py`
+- Modify: `connect_labs/solicitations/urls.py`
+- Create: `connect_labs/templates/solicitations/respond.html`
+- Create: `connect_labs/templates/solicitations/response_detail.html`
 
 **Step 1: Add response views to views.py**
 
@@ -1849,7 +1849,7 @@ class ResponseDetailView(LabsLoginRequiredMixin, TemplateView):
 
 **Step 3: Create the respond template**
 
-Create `commcare_connect/templates/solicitations/respond.html`:
+Create `connect_labs/templates/solicitations/respond.html`:
 ```html
 {% extends "base.html" %}
 {% load crispy_forms_tags %}
@@ -1945,7 +1945,7 @@ document.querySelector('[name="llo_entity_id"]')?.addEventListener("change", fun
 {% endblock %}
 ```
 
-Create `commcare_connect/templates/solicitations/response_detail.html`:
+Create `connect_labs/templates/solicitations/response_detail.html`:
 ```html
 {% extends "base.html" %}
 
@@ -2021,7 +2021,7 @@ Create `commcare_connect/templates/solicitations/response_detail.html`:
 **Step 4: Commit**
 
 ```bash
-git add commcare_connect/solicitations/views.py commcare_connect/solicitations/urls.py commcare_connect/templates/solicitations/
+git add connect_labs/solicitations/views.py connect_labs/solicitations/urls.py connect_labs/templates/solicitations/
 git commit -m "feat(solicitations): add respond and response detail views with templates"
 ```
 
@@ -2030,9 +2030,9 @@ git commit -m "feat(solicitations): add respond and response detail views with t
 ## Task 8: Review View & Template
 
 **Files:**
-- Modify: `commcare_connect/solicitations/views.py`
-- Modify: `commcare_connect/solicitations/urls.py`
-- Create: `commcare_connect/templates/solicitations/review_form.html`
+- Modify: `connect_labs/solicitations/views.py`
+- Modify: `connect_labs/solicitations/urls.py`
+- Create: `connect_labs/templates/solicitations/review_form.html`
 
 **Step 1: Add review view to views.py**
 
@@ -2118,7 +2118,7 @@ class ReviewView(ManagerRequiredMixin, TemplateView):
 
 **Step 3: Create the review template**
 
-Create `commcare_connect/templates/solicitations/review_form.html`:
+Create `connect_labs/templates/solicitations/review_form.html`:
 ```html
 {% extends "base.html" %}
 {% load crispy_forms_tags %}
@@ -2179,7 +2179,7 @@ Create `commcare_connect/templates/solicitations/review_form.html`:
 **Step 4: Commit**
 
 ```bash
-git add commcare_connect/solicitations/views.py commcare_connect/solicitations/urls.py commcare_connect/templates/solicitations/review_form.html
+git add connect_labs/solicitations/views.py connect_labs/solicitations/urls.py connect_labs/templates/solicitations/review_form.html
 git commit -m "feat(solicitations): add review view and template"
 ```
 
@@ -2188,21 +2188,21 @@ git commit -m "feat(solicitations): add review view and template"
 ## Task 9: JSON API Views
 
 **Files:**
-- Create: `commcare_connect/solicitations/api_views.py`
-- Create: `commcare_connect/solicitations/tests/test_api_views.py`
-- Modify: `commcare_connect/solicitations/urls.py`
+- Create: `connect_labs/solicitations/api_views.py`
+- Create: `connect_labs/solicitations/tests/test_api_views.py`
+- Modify: `connect_labs/solicitations/urls.py`
 
 **Step 1: Write the failing tests**
 
 ```python
-# commcare_connect/solicitations/tests/test_api_views.py
+# connect_labs/solicitations/tests/test_api_views.py
 import json
 from unittest.mock import MagicMock, patch
 
 import pytest
 from django.test import RequestFactory
 
-from commcare_connect.solicitations.api_views import (
+from connect_labs.solicitations.api_views import (
     api_solicitations_list,
     api_solicitation_detail,
 )
@@ -2215,7 +2215,7 @@ def rf():
 
 @pytest.fixture
 def mock_da():
-    with patch("commcare_connect.solicitations.api_views._get_data_access") as mock:
+    with patch("connect_labs.solicitations.api_views._get_data_access") as mock:
         da = MagicMock()
         mock.return_value = da
         yield da
@@ -2233,13 +2233,13 @@ class TestAPISolicitationsList:
 
 **Step 2: Run tests to verify they fail**
 
-Run: `pytest commcare_connect/solicitations/tests/test_api_views.py -v`
+Run: `pytest connect_labs/solicitations/tests/test_api_views.py -v`
 Expected: FAIL — `ImportError`
 
 **Step 3: Implement the API views**
 
 ```python
-# commcare_connect/solicitations/api_views.py
+# connect_labs/solicitations/api_views.py
 import json
 import logging
 
@@ -2247,7 +2247,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
-from commcare_connect.solicitations.data_access import SolicitationsDataAccess
+from connect_labs.solicitations.data_access import SolicitationsDataAccess
 
 logger = logging.getLogger(__name__)
 
@@ -2449,13 +2449,13 @@ from . import api_views
 
 **Step 5: Run tests**
 
-Run: `pytest commcare_connect/solicitations/tests/test_api_views.py -v`
+Run: `pytest connect_labs/solicitations/tests/test_api_views.py -v`
 Expected: All PASS
 
 **Step 6: Commit**
 
 ```bash
-git add commcare_connect/solicitations/api_views.py commcare_connect/solicitations/urls.py commcare_connect/solicitations/tests/test_api_views.py
+git add connect_labs/solicitations/api_views.py connect_labs/solicitations/urls.py connect_labs/solicitations/tests/test_api_views.py
 git commit -m "feat(solicitations): add JSON API views for solicitations, responses, reviews"
 ```
 
@@ -2464,19 +2464,19 @@ git commit -m "feat(solicitations): add JSON API views for solicitations, respon
 ## Task 10: MCP Tools
 
 **Files:**
-- Create: `commcare_connect/solicitations/mcp_tools.py`
+- Create: `connect_labs/solicitations/mcp_tools.py`
 
 **Step 1: Implement MCP tools**
 
 ```python
-# commcare_connect/solicitations/mcp_tools.py
+# connect_labs/solicitations/mcp_tools.py
 """MCP tool definitions for solicitations.
 
 These functions call data_access directly and are registered
 with the MCP server for AI agent access.
 """
 
-from commcare_connect.solicitations.data_access import SolicitationsDataAccess
+from connect_labs.solicitations.data_access import SolicitationsDataAccess
 
 
 def _serialize_solicitation(s):
@@ -2586,7 +2586,7 @@ def update_review(access_token, review_id, data):
 **Step 2: Commit**
 
 ```bash
-git add commcare_connect/solicitations/mcp_tools.py
+git add connect_labs/solicitations/mcp_tools.py
 git commit -m "feat(solicitations): add MCP tool definitions for AI agent access"
 ```
 
@@ -2595,13 +2595,13 @@ git commit -m "feat(solicitations): add MCP tool definitions for AI agent access
 ## Task 11: Final URL Assembly & Integration Test
 
 **Files:**
-- Modify: `commcare_connect/solicitations/urls.py` (ensure all routes assembled)
-- Create: `commcare_connect/solicitations/tests/test_urls.py`
+- Modify: `connect_labs/solicitations/urls.py` (ensure all routes assembled)
+- Create: `connect_labs/solicitations/tests/test_urls.py`
 
 **Step 1: Write the complete urls.py**
 
 ```python
-# commcare_connect/solicitations/urls.py
+# connect_labs/solicitations/urls.py
 from django.urls import path
 
 from . import api_views, views
@@ -2635,7 +2635,7 @@ urlpatterns = [
 **Step 2: Write URL resolution tests**
 
 ```python
-# commcare_connect/solicitations/tests/test_urls.py
+# connect_labs/solicitations/tests/test_urls.py
 import pytest
 from django.urls import resolve, reverse
 
@@ -2696,13 +2696,13 @@ class TestURLResolution:
 
 **Step 3: Run all tests**
 
-Run: `pytest commcare_connect/solicitations/ -v`
+Run: `pytest connect_labs/solicitations/ -v`
 Expected: All PASS
 
 **Step 4: Commit**
 
 ```bash
-git add commcare_connect/solicitations/
+git add connect_labs/solicitations/
 git commit -m "feat(solicitations): finalize URL routing and add URL resolution tests"
 ```
 

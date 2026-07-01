@@ -24,8 +24,8 @@ if __name__ == "__main__":
         raise
 
     # This allows easy placement of apps within the interior
-    # commcare_connect directory.
+    # connect_labs directory.
     current_path = Path(__file__).parent.resolve()
-    sys.path.append(str(current_path / "commcare_connect"))
+    sys.path.append(str(current_path / "connect_labs"))
 
     execute_from_command_line(sys.argv)

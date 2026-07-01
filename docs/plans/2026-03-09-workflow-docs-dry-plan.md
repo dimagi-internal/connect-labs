@@ -13,7 +13,7 @@
 ### Task 1: Create `WORKFLOW_REFERENCE.md`
 
 **Files:**
-- Create: `commcare_connect/workflow/WORKFLOW_REFERENCE.md`
+- Create: `connect_labs/workflow/WORKFLOW_REFERENCE.md`
 
 **Step 1: Write the reference document**
 
@@ -27,7 +27,7 @@ of truth — the Claude Code skill, in-product AI agent, and CLAUDE.md all refer
 
 ## Template Anatomy
 
-Each template is a single Python file in `commcare_connect/workflow/templates/`.
+Each template is a single Python file in `connect_labs/workflow/templates/`.
 Auto-discovered by the registry in `__init__.py`.
 
 ### Required Exports
@@ -176,13 +176,13 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
 
 **Step 2: Verify the document renders correctly**
 
-Run: `python -c "open('commcare_connect/workflow/WORKFLOW_REFERENCE.md').read()"`
+Run: `python -c "open('connect_labs/workflow/WORKFLOW_REFERENCE.md').read()"`
 Expected: No errors, file exists and is readable.
 
 **Step 3: Commit**
 
 ```bash
-git add commcare_connect/workflow/WORKFLOW_REFERENCE.md
+git add connect_labs/workflow/WORKFLOW_REFERENCE.md
 git commit -m "docs: create WORKFLOW_REFERENCE.md as single source of truth for workflow authoring"
 ```
 
@@ -204,7 +204,7 @@ Templates are single Python files in `workflow/templates/` exporting DEFINITION 
 
 Use the MCP server's `get_form_json_paths` tool to discover correct field paths when building pipeline schemas.
 
-**Full reference:** [WORKFLOW_REFERENCE.md](commcare_connect/workflow/WORKFLOW_REFERENCE.md)
+**Full reference:** [WORKFLOW_REFERENCE.md](connect_labs/workflow/WORKFLOW_REFERENCE.md)
 ```
 
 **Step 2: Verify CLAUDE.md is valid**
@@ -252,7 +252,7 @@ git commit -m "refactor: rewrite workflow-templates skill as process guide refer
 ### Task 4: Refactor `workflow_agent.py` to load from reference
 
 **Files:**
-- Modify: `commcare_connect/ai/agents/workflow_agent.py`
+- Modify: `connect_labs/ai/agents/workflow_agent.py`
 
 **Step 1: Add reference file loading**
 
@@ -302,13 +302,13 @@ pipeline schemas, render code constraints, and available actions.
 
 **Step 3: Run existing tests to ensure nothing breaks**
 
-Run: `pytest commcare_connect/ai/ -v --tb=short`
+Run: `pytest connect_labs/ai/ -v --tb=short`
 Expected: All tests pass (or no tests exist for this module — verify).
 
 **Step 4: Commit**
 
 ```bash
-git add commcare_connect/ai/agents/workflow_agent.py
+git add connect_labs/ai/agents/workflow_agent.py
 git commit -m "refactor: load WORKFLOW_REFERENCE.md in workflow agent instead of hardcoding docs"
 ```
 
@@ -317,7 +317,7 @@ git commit -m "refactor: load WORKFLOW_REFERENCE.md in workflow agent instead of
 ### Task 5: Update workflow README to link to reference
 
 **Files:**
-- Modify: `commcare_connect/workflow/README.md`
+- Modify: `connect_labs/workflow/README.md`
 
 **Step 1: Add reference link**
 
@@ -330,7 +330,7 @@ Add a prominent link near the top of the README:
 **Step 2: Commit**
 
 ```bash
-git add commcare_connect/workflow/README.md
+git add connect_labs/workflow/README.md
 git commit -m "docs: link workflow README to WORKFLOW_REFERENCE.md"
 ```
 

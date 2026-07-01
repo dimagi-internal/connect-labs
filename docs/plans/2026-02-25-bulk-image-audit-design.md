@@ -17,8 +17,8 @@ Also rename the existing "Weekly Audit with AI Review" template to **"Weekly KMC
 
 | File | Change |
 |---|---|
-| `commcare_connect/workflow/templates/audit_with_ai_review.py` | Rename template `name` and `description` fields |
-| `commcare_connect/workflow/templates/bulk_image_audit.py` | New file — full template definition and React render code |
+| `connect_labs/workflow/templates/audit_with_ai_review.py` | Rename template `name` and `description` fields |
+| `connect_labs/workflow/templates/bulk_image_audit.py` | New file — full template definition and React render code |
 
 No changes to `audit/`, no new Django views, no new URL patterns. All API endpoints used already exist.
 

@@ -20,7 +20,7 @@ Most production apps have been removed from this codebase. The remaining non-lab
 ## Architecture at a Glance
 
 - **OAuth + Django User** — OAuth login via production Connect creates/updates a Django User via `User.objects.update_or_create()`. OAuth tokens stored in `request.session["labs_oauth"]` for API calls. Org data (organizations, programs, opportunities) available via `get_org_data(request)` from `labs/context.py`, and in templates via `user_organizations`, `user_programs`, `user_opportunities` context variables.
-- **All data via API** — `LabsRecordAPIClient` (`commcare_connect/labs/integrations/connect/api_client.py`) makes HTTP calls to `/export/labs_record/` on production for all CRUD. See [Production API Reference](#production-api-reference) below for endpoint details. The production code lives in **`dimagi/commcare-connect`** at `commcare_connect/data_export/` (views, serializers, URLs). Use `gh api repos/dimagi/commcare-connect/contents/commcare_connect/data_export/views.py` to read it.
+- **All data via API** — `LabsRecordAPIClient` (`connect_labs/labs/integrations/connect/api_client.py`) makes HTTP calls to `/export/labs_record/` on production for all CRUD. See [Production API Reference](#production-api-reference) below for endpoint details. The production code lives in **`dimagi/commcare-connect`** at `commcare_connect/data_export/` (views, serializers, URLs). Use `gh api repos/dimagi/commcare-connect/contents/commcare_connect/data_export/views.py` to read it.
 - **data_access.py pattern** — each app wraps `LabsRecordAPIClient` in a `data_access.py` class with domain-specific methods.
 - **Proxy models** — `LocalLabsRecord` subclasses provide typed `@property` access to JSON data. They cannot be `.save()`d locally.
 - **Context middleware** — `request.labs_context` provides `opportunity_id`, `program_id`, `organization_id` on every request.
@@ -115,7 +115,7 @@ Each item in the list can include `program_id`, `opportunity_id`, or `organizati
 
 ## Prelogin marketing site
 
-The public marketing site at `/` is the `prelogin` app. **This repo (labs) is its source of truth and staging environment** — edit `commcare_connect/templates/prelogin/home.html`, `static/prelogin/`, and `prelogin/urls.py` directly (Django-native; no code-generation or import step), preview on `labs.connect.dimagi.com`, then promote to production (`dimagi/commcare-connect`). The old `dimagi-internal/connect-prelogin` upstream + `export-to-django.py` pipeline is **deprecated**.
+The public marketing site at `/` is the `prelogin` app. **This repo (labs) is its source of truth and staging environment** — edit `connect_labs/templates/prelogin/home.html`, `static/prelogin/`, and `prelogin/urls.py` directly (Django-native; no code-generation or import step), preview on `labs.connect.dimagi.com`, then promote to production (`dimagi/commcare-connect`). The old `dimagi-internal/connect-prelogin` upstream + `export-to-django.py` pipeline is **deprecated**.
 
 To promote, the trigger is **"create a PR to push the prelogin changes to connect prod"** — copy the three `prelogin` dirs (`prelogin/`, `templates/prelogin/`, `static/prelogin/`) labs→prod and open a PR; leave each repo's `config/urls.py`/robots policy alone (labs stays `Disallow: /`, prod stays indexable). Full details: **[docs/prelogin-marketing-site.md](docs/prelogin-marketing-site.md)**.
 
@@ -123,9 +123,9 @@ To promote, the trigger is **"create a PR to push the prelogin changes to connec
 
 Templates are single Python files in `workflow/templates/` exporting DEFINITION (statuses, config), RENDER_CODE (React JSX string transpiled by Babel), and optionally PIPELINE_SCHEMAS (CommCare form field extraction). The registry auto-discovers them. Pipeline schemas map CommCare form JSON paths to extracted fields with aggregations and transforms. Render code receives `{definition, instance, workers, pipelines, links, actions, onUpdateState, view}` as props.
 
-Templates can set `multi_opp: True` on their `TEMPLATE` dict to opt into multi-opportunity support. Multi-opp workflows store an `opportunity_ids` list on the definition, merge workers and pipeline rows across those opps at runtime, and tag every row/worker with its source `opportunity_id`. Single-opp workflows (default) are unchanged — they fall back to `[primary_opp_id]` with the same tagging shape. See [WORKFLOW_REFERENCE.md §8](commcare_connect/workflow/WORKFLOW_REFERENCE.md#8-multi-opportunity-workflows) for the full contract.
+Templates can set `multi_opp: True` on their `TEMPLATE` dict to opt into multi-opportunity support. Multi-opp workflows store an `opportunity_ids` list on the definition, merge workers and pipeline rows across those opps at runtime, and tag every row/worker with its source `opportunity_id`. Single-opp workflows (default) are unchanged — they fall back to `[primary_opp_id]` with the same tagging shape. See [WORKFLOW_REFERENCE.md §8](connect_labs/workflow/WORKFLOW_REFERENCE.md#8-multi-opportunity-workflows) for the full contract.
 
-Templates that produce a periodic review with a definite "moment of completion" can set `supports_saved_runs: True` to opt into the **in_progress | completed** run lifecycle. They declare what the snapshot captures via `snapshot_inputs` (a manifest of pipelines/workers/state_keys), render code reads run data via the `view` helper (`view.workers`, `view.pipelines.<alias>`, `view.state.<key>`, `view.isCompleted`, `view.asOf`), and triggers completion via `view.complete({confirm})`. The framework atomically builds the snapshot, flips status, stamps `completed_at`, and write-protects the run. Reference: `commcare_connect/workflow/templates/performance_review.py`. Full contract: [WORKFLOW_REFERENCE.md §9](commcare_connect/workflow/WORKFLOW_REFERENCE.md#9-saved-runs-templates).
+Templates that produce a periodic review with a definite "moment of completion" can set `supports_saved_runs: True` to opt into the **in_progress | completed** run lifecycle. They declare what the snapshot captures via `snapshot_inputs` (a manifest of pipelines/workers/state_keys), render code reads run data via the `view` helper (`view.workers`, `view.pipelines.<alias>`, `view.state.<key>`, `view.isCompleted`, `view.asOf`), and triggers completion via `view.complete({confirm})`. The framework atomically builds the snapshot, flips status, stamps `completed_at`, and write-protects the run. Reference: `connect_labs/workflow/templates/performance_review.py`. Full contract: [WORKFLOW_REFERENCE.md §9](connect_labs/workflow/WORKFLOW_REFERENCE.md#9-saved-runs-templates).
 
 **Existing templates:** `audit_with_ai_review`, `bulk_image_audit`, `chc_nutrition_analysis`, `interviews_reporting_v2`, `kmc_flw_flags`, `kmc_longitudinal`, `kmc_project_metrics`, `llo_weekly_review`, `mbw_auditing_v5`, `ocs_outreach`, `performance_review` (multi-opp), `program_admin_report` (multi-opp), `sam_followup`, `verified_monitoring`
 
@@ -133,7 +133,7 @@ Templates that produce a periodic review with a definite "moment of completion" 
 
 Use the MCP server's `get_form_json_paths` tool to discover correct field paths when building pipeline schemas.
 
-**Full reference:** [WORKFLOW_REFERENCE.md](commcare_connect/workflow/WORKFLOW_REFERENCE.md)
+**Full reference:** [WORKFLOW_REFERENCE.md](connect_labs/workflow/WORKFLOW_REFERENCE.md)
 
 ## Deployment
 
@@ -190,7 +190,7 @@ npm ci && inv build-js              # Install JS deps and build frontend
 inv build-js -w                     # Build with watch mode (rebuilds on change)
 python manage.py runserver          # Django dev server (uses config.settings.local)
 pytest                              # Run tests
-pytest commcare_connect/audit/      # Run tests for one app
+pytest connect_labs/audit/      # Run tests for one app
 celery -A config.celery_app worker -l info   # Celery worker (async audit creation, AI tasks)
 pre-commit run --all-files          # Run linters/formatters
 make commit                         # Git commit with correct venv PATH (works in worktrees)
@@ -239,7 +239,7 @@ Connect OAuth token (`~/.commcare-connect/token.json`).
 
 ### `connect_labs` (remote HTTP)
 
-A remote MCP server hosted inside the labs Django app (`commcare_connect/mcp/`)
+A remote MCP server hosted inside the labs Django app (`connect_labs/mcp/`)
 at `https://labs.connect.dimagi.com/mcp/`. Plan 1 (this PR) ships the server
 with authentication and an empty tools catalog. Plans 2 and 3 add workflow,
 pipeline, and migrated solicitation/review/fund tools.
@@ -262,7 +262,7 @@ The `connect_labs` remote MCP ships a full iteration surface: workflows (list, g
 
 ## Deeper Documentation
 
-- **[LABS_GUIDE.md](commcare_connect/labs/LABS_GUIDE.md)** — Detailed development patterns: OAuth setup, API client usage, proxy models, CLI scripts
+- **[LABS_GUIDE.md](connect_labs/labs/LABS_GUIDE.md)** — Detailed development patterns: OAuth setup, API client usage, proxy models, CLI scripts
 - **[CONTRIBUTING.md](CONTRIBUTING.md)** — Code style, testing conventions, PR process, step-by-step guide for adding new features
 - **[.claude/AGENTS.md](.claude/AGENTS.md)** — Full architecture reference: per-app details, API endpoints, data access patterns, common mistakes
 - **[docs/LABS_ARCHITECTURE.md](docs/LABS_ARCHITECTURE.md)** — Architecture diagrams, data flow, cross-app dependency matrix, decision tree

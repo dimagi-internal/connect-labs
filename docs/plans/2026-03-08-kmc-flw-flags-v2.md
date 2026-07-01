@@ -13,7 +13,7 @@
 ## Task 1: Fix weight gain calculation (×1000 bug)
 
 **Files:**
-- Modify: `commcare_connect/workflow/templates/kmc_flw_flags.py` — RENDER_CODE `computeWeightMetrics` function
+- Modify: `connect_labs/workflow/templates/kmc_flw_flags.py` — RENDER_CODE `computeWeightMetrics` function
 
 **Context:** Weight is already in grams from CommCare (`child_weight_visit` type=Int, label "Weight of SVN (grams)"). The code multiplies by 1000 treating grams as kg, producing absurd values like 16239 g/day instead of ~16 g/day.
 
@@ -36,7 +36,7 @@ Example: weight goes from 1500g to 1650g over 10 days = 150/10 = 15 g/day. Corre
 **Step 3: Commit**
 
 ```bash
-git add commcare_connect/workflow/templates/kmc_flw_flags.py
+git add connect_labs/workflow/templates/kmc_flw_flags.py
 git commit -m "fix: remove erroneous ×1000 in weight gain calculation (weight already in grams)"
 ```
 
@@ -45,8 +45,8 @@ git commit -m "fix: remove erroneous ×1000 in weight gain calculation (weight a
 ## Task 2: Fix audit creation — selected FLWs not filtered
 
 **Files:**
-- Modify: `commcare_connect/workflow/templates/kmc_flw_flags.py` — RENDER_CODE `handleCreateAudits`
-- Modify: `commcare_connect/audit/data_access.py:91-119` — `AuditCriteria.from_dict` (defensive fallback)
+- Modify: `connect_labs/workflow/templates/kmc_flw_flags.py` — RENDER_CODE `handleCreateAudits`
+- Modify: `connect_labs/audit/data_access.py:91-119` — `AuditCriteria.from_dict` (defensive fallback)
 
 **Context:** Template sends `selected_usernames` but `AuditCriteria.from_dict()` reads `selected_flw_user_ids`. Fix both sides.
 
@@ -77,7 +77,7 @@ selected_flw_user_ids=data.get("selected_flw_user_ids") or data.get("selected_us
 **Step 3: Commit**
 
 ```bash
-git add commcare_connect/workflow/templates/kmc_flw_flags.py commcare_connect/audit/data_access.py
+git add connect_labs/workflow/templates/kmc_flw_flags.py connect_labs/audit/data_access.py
 git commit -m "fix: pass selected_flw_user_ids so audits only cover selected FLWs"
 ```
 
@@ -86,7 +86,7 @@ git commit -m "fix: pass selected_flw_user_ids so audits only cover selected FLW
 ## Task 3: Fix flag logic to match Neal's methodology
 
 **Files:**
-- Modify: `commcare_connect/workflow/templates/kmc_flw_flags.py` — RENDER_CODE data processing section
+- Modify: `connect_labs/workflow/templates/kmc_flw_flags.py` — RENDER_CODE data processing section
 
 **Context:** Multiple formula corrections needed per Neal's doc.
 
@@ -173,7 +173,7 @@ flags.low_mort = totalCases >= MIN_CASES.mort && mortRate !== null && mortRate <
 **Step 6: Commit**
 
 ```bash
-git add commcare_connect/workflow/templates/kmc_flw_flags.py
+git add connect_labs/workflow/templates/kmc_flw_flags.py
 git commit -m "fix: align flag computations with Neal's methodology
 
 - flag_visits: divide by closed non-mortality cases
@@ -188,7 +188,7 @@ git commit -m "fix: align flag computations with Neal's methodology
 ## Task 4: Add enrollment timing to weight_series pipeline + client-side computation
 
 **Files:**
-- Modify: `commcare_connect/workflow/templates/kmc_flw_flags.py` — PIPELINE_SCHEMAS and RENDER_CODE
+- Modify: `connect_labs/workflow/templates/kmc_flw_flags.py` — PIPELINE_SCHEMAS and RENDER_CODE
 
 **Context:** Neal's flag_enroll needs ">35% of cases enrolled 8+ days post-discharge". This requires per-case data. We add reg_date and discharge_date to the weight_series pipeline, then compute per-case enrollment lateness client-side.
 
@@ -283,7 +283,7 @@ Remove `discharge_date` and `reg_date` from the `flw_flags` pipeline since enrol
 **Step 6: Commit**
 
 ```bash
-git add commcare_connect/workflow/templates/kmc_flw_flags.py
+git add connect_labs/workflow/templates/kmc_flw_flags.py
 git commit -m "fix: compute enrollment flag as per-case percentage from weight_series data
 
 Per Neal's methodology: >35% of cases enrolled 8+ days post-discharge.
@@ -295,7 +295,7 @@ Previously used a single boolean from first reg/discharge dates."
 ## Task 5: Improve column headers, values, and table UX
 
 **Files:**
-- Modify: `commcare_connect/workflow/templates/kmc_flw_flags.py` — RENDER_CODE table section
+- Modify: `connect_labs/workflow/templates/kmc_flw_flags.py` — RENDER_CODE table section
 
 **Context:** Headers are cryptic ("AVG VIS", "MORT%", "8+ DAYS", "GAIN"). Values lack context. "NE" not explained.
 
@@ -372,7 +372,7 @@ var flagTitle = activeFlags.map(function(k) { return flagLabels[k] || k; }).join
 **Step 4: Commit**
 
 ```bash
-git add commcare_connect/workflow/templates/kmc_flw_flags.py
+git add connect_labs/workflow/templates/kmc_flw_flags.py
 git commit -m "improve: descriptive column headers, value formatting, NE tooltips, flag breakdown"
 ```
 
@@ -381,7 +381,7 @@ git commit -m "improve: descriptive column headers, value formatting, NE tooltip
 ## Task 6: Add audit configuration modal
 
 **Files:**
-- Modify: `commcare_connect/workflow/templates/kmc_flw_flags.py` — RENDER_CODE
+- Modify: `connect_labs/workflow/templates/kmc_flw_flags.py` — RENDER_CODE
 
 **Context:** Currently clicking "Create Audits" immediately fires with hardcoded last-week dates. Need a modal that lets the user configure: date range, visits per FLW, AI agent, and title before creating.
 
@@ -436,7 +436,7 @@ Replace hardcoded date computation with values from `auditConfig` state. Close m
 **Step 6: Commit**
 
 ```bash
-git add commcare_connect/workflow/templates/kmc_flw_flags.py
+git add connect_labs/workflow/templates/kmc_flw_flags.py
 git commit -m "feat: add audit configuration modal with date range, visits per FLW, and AI agent options"
 ```
 
@@ -464,7 +464,7 @@ Navigate to the KMC FLW Flag Report workflow for opportunity 874. Verify:
 **Step 2: Run E2E test**
 
 ```bash
-pytest commcare_connect/workflow/tests/e2e/test_flw_flags_workflow.py -v --ds=config.settings.local -o "addopts=" --opportunity-id=874
+pytest connect_labs/workflow/tests/e2e/test_flw_flags_workflow.py -v --ds=config.settings.local -o "addopts=" --opportunity-id=874
 ```
 
 **Step 3: Final commit if any adjustments needed**

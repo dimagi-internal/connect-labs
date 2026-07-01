@@ -20,13 +20,13 @@ Every PR in this repo uses `.github/PULL_REQUEST_TEMPLATE.md`. The `## Product D
 The per-merge updater maps changed file paths to feature areas:
 
 ```
-commcare_connect/audit/          → Audit & QA Review
-commcare_connect/workflow/       → Workflow Engine
-commcare_connect/tasks/          → Task Management
-commcare_connect/solicitations/  → Solicitations
-commcare_connect/custom_analysis/→ Custom Analysis
-commcare_connect/coverage/       → Coverage Maps
-commcare_connect/ai/             → AI Features
+connect_labs/audit/          → Audit & QA Review
+connect_labs/workflow/       → Workflow Engine
+connect_labs/tasks/          → Task Management
+connect_labs/solicitations/  → Solicitations
+connect_labs/custom_analysis/→ Custom Analysis
+connect_labs/coverage/       → Coverage Maps
+connect_labs/ai/             → AI Features
 docs/WORKFLOW_EDITOR_QUICKSTART.md
 docs/SAFE_MODE.md                → Connect MCP & Safe Mode
 ```

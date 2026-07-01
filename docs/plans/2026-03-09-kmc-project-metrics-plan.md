@@ -15,11 +15,11 @@
 ### Task 1: Create template file with DEFINITION and PIPELINE_SCHEMAS
 
 **Files:**
-- Create: `commcare_connect/workflow/templates/kmc_project_metrics.py`
+- Create: `connect_labs/workflow/templates/kmc_project_metrics.py`
 
 **Step 1: Create the template file with DEFINITION and PIPELINE_SCHEMAS**
 
-Create `commcare_connect/workflow/templates/kmc_project_metrics.py` with the module docstring, DEFINITION, and PIPELINE_SCHEMAS. The pipeline reuses the same `connect_csv` visit-level approach as `kmc_longitudinal` but adds fields needed for M&E indicators (discharge status, referral completion, danger sign assessment flag, KMC hours secondary, days since registration).
+Create `connect_labs/workflow/templates/kmc_project_metrics.py` with the module docstring, DEFINITION, and PIPELINE_SCHEMAS. The pipeline reuses the same `connect_csv` visit-level approach as `kmc_longitudinal` but adds fields needed for M&E indicators (discharge status, referral completion, danger sign assessment flag, KMC hours secondary, days since registration).
 
 ```python
 """
@@ -289,13 +289,13 @@ PIPELINE_SCHEMAS = [
 
 **Step 2: Verify the file is syntactically correct**
 
-Run: `python -c "import ast; ast.parse(open('commcare_connect/workflow/templates/kmc_project_metrics.py').read()); print('OK')"`
+Run: `python -c "import ast; ast.parse(open('connect_labs/workflow/templates/kmc_project_metrics.py').read()); print('OK')"`
 Expected: `OK`
 
 **Step 3: Commit**
 
 ```bash
-git add commcare_connect/workflow/templates/kmc_project_metrics.py
+git add connect_labs/workflow/templates/kmc_project_metrics.py
 git commit -m "feat: add KMC project metrics template with definition and pipeline schema"
 ```
 
@@ -304,7 +304,7 @@ git commit -m "feat: add KMC project metrics template with definition and pipeli
 ### Task 2: Write RENDER_CODE — Data Processing & Overview View
 
 **Files:**
-- Modify: `commcare_connect/workflow/templates/kmc_project_metrics.py`
+- Modify: `connect_labs/workflow/templates/kmc_project_metrics.py`
 
 **Step 1: Add RENDER_CODE with data processing functions and View 1 (Overview)**
 
@@ -334,13 +334,13 @@ The code should follow the exact same patterns as `kmc_longitudinal.py` for Char
 
 **Step 2: Verify syntax**
 
-Run: `python -c "import ast; ast.parse(open('commcare_connect/workflow/templates/kmc_project_metrics.py').read()); print('OK')"`
+Run: `python -c "import ast; ast.parse(open('connect_labs/workflow/templates/kmc_project_metrics.py').read()); print('OK')"`
 Expected: `OK`
 
 **Step 3: Commit**
 
 ```bash
-git add commcare_connect/workflow/templates/kmc_project_metrics.py
+git add connect_labs/workflow/templates/kmc_project_metrics.py
 git commit -m "feat: add render code with data processing and overview view"
 ```
 
@@ -349,7 +349,7 @@ git commit -m "feat: add render code with data processing and overview view"
 ### Task 3: Write RENDER_CODE — Outcomes & Outputs View (View 2)
 
 **Files:**
-- Modify: `commcare_connect/workflow/templates/kmc_project_metrics.py`
+- Modify: `connect_labs/workflow/templates/kmc_project_metrics.py`
 
 **Step 1: Add View 2 to the RENDER_CODE**
 
@@ -377,13 +377,13 @@ Each section uses a card layout with Chart.js for charts and bold number display
 
 **Step 2: Verify syntax**
 
-Run: `python -c "import ast; ast.parse(open('commcare_connect/workflow/templates/kmc_project_metrics.py').read()); print('OK')"`
+Run: `python -c "import ast; ast.parse(open('connect_labs/workflow/templates/kmc_project_metrics.py').read()); print('OK')"`
 Expected: `OK`
 
 **Step 3: Commit**
 
 ```bash
-git add commcare_connect/workflow/templates/kmc_project_metrics.py
+git add connect_labs/workflow/templates/kmc_project_metrics.py
 git commit -m "feat: add outcomes and outputs view with charts"
 ```
 
@@ -392,7 +392,7 @@ git commit -m "feat: add outcomes and outputs view with charts"
 ### Task 4: Write RENDER_CODE — Indicators Table View (View 3) and Navigation
 
 **Files:**
-- Modify: `commcare_connect/workflow/templates/kmc_project_metrics.py`
+- Modify: `connect_labs/workflow/templates/kmc_project_metrics.py`
 
 **Step 1: Add View 3 and tab navigation**
 
@@ -412,13 +412,13 @@ Wire up the three views with conditional rendering based on `currentView`.
 
 **Step 2: Verify syntax**
 
-Run: `python -c "import ast; ast.parse(open('commcare_connect/workflow/templates/kmc_project_metrics.py').read()); print('OK')"`
+Run: `python -c "import ast; ast.parse(open('connect_labs/workflow/templates/kmc_project_metrics.py').read()); print('OK')"`
 Expected: `OK`
 
 **Step 3: Commit**
 
 ```bash
-git add commcare_connect/workflow/templates/kmc_project_metrics.py
+git add connect_labs/workflow/templates/kmc_project_metrics.py
 git commit -m "feat: add indicators table view and tab navigation"
 ```
 
@@ -427,8 +427,8 @@ git commit -m "feat: add indicators table view and tab navigation"
 ### Task 5: Add TEMPLATE export and register in __init__.py
 
 **Files:**
-- Modify: `commcare_connect/workflow/templates/kmc_project_metrics.py`
-- Modify: `commcare_connect/workflow/templates/__init__.py`
+- Modify: `connect_labs/workflow/templates/kmc_project_metrics.py`
+- Modify: `connect_labs/workflow/templates/__init__.py`
 
 **Step 1: Add TEMPLATE export to kmc_project_metrics.py**
 
@@ -449,7 +449,7 @@ TEMPLATE = {
 
 **Step 2: Register in __init__.py**
 
-In `commcare_connect/workflow/templates/__init__.py`, add `kmc_project_metrics` to the import line (~line 218) and `__all__` list (~line 230):
+In `connect_labs/workflow/templates/__init__.py`, add `kmc_project_metrics` to the import line (~line 218) and `__all__` list (~line 230):
 
 ```python
 # Line 218 — add kmc_project_metrics to the import
@@ -473,13 +473,13 @@ __all__ = [
 
 **Step 3: Verify template loads**
 
-Run: `python -c "from commcare_connect.workflow.templates import get_template; t = get_template('kmc_project_metrics'); print(t['name'] if t else 'NOT FOUND')"`
+Run: `python -c "from connect_labs.workflow.templates import get_template; t = get_template('kmc_project_metrics'); print(t['name'] if t else 'NOT FOUND')"`
 Expected: `KMC Project Metrics`
 
 **Step 4: Commit**
 
 ```bash
-git add commcare_connect/workflow/templates/kmc_project_metrics.py commcare_connect/workflow/templates/__init__.py
+git add connect_labs/workflow/templates/kmc_project_metrics.py connect_labs/workflow/templates/__init__.py
 git commit -m "feat: register kmc_project_metrics template"
 ```
 
@@ -488,7 +488,7 @@ git commit -m "feat: register kmc_project_metrics template"
 ### Task 6: Write E2E test
 
 **Files:**
-- Create: `commcare_connect/workflow/tests/e2e/test_kmc_metrics_workflow.py`
+- Create: `connect_labs/workflow/tests/e2e/test_kmc_metrics_workflow.py`
 
 **Step 1: Write E2E test following the kmc_longitudinal pattern**
 
@@ -516,7 +516,7 @@ Tests the full happy path:
 7. Verify table renders with indicator rows
 
 Run:
-    pytest commcare_connect/workflow/tests/e2e/test_kmc_metrics_workflow.py \
+    pytest connect_labs/workflow/tests/e2e/test_kmc_metrics_workflow.py \
         --ds=config.settings.local -o "addopts=" -v --opportunity-id=874
 """
 
@@ -607,13 +607,13 @@ class TestKMCProjectMetricsWorkflow:
 
 **Step 2: Verify test file syntax**
 
-Run: `python -c "import ast; ast.parse(open('commcare_connect/workflow/tests/e2e/test_kmc_metrics_workflow.py').read()); print('OK')"`
+Run: `python -c "import ast; ast.parse(open('connect_labs/workflow/tests/e2e/test_kmc_metrics_workflow.py').read()); print('OK')"`
 Expected: `OK`
 
 **Step 3: Commit**
 
 ```bash
-git add commcare_connect/workflow/tests/e2e/test_kmc_metrics_workflow.py
+git add connect_labs/workflow/tests/e2e/test_kmc_metrics_workflow.py
 git commit -m "test: add E2E test for KMC project metrics workflow"
 ```
 
@@ -622,12 +622,12 @@ git commit -m "test: add E2E test for KMC project metrics workflow"
 ### Task 7: Run E2E test and fix issues
 
 **Files:**
-- May modify: `commcare_connect/workflow/templates/kmc_project_metrics.py`
-- May modify: `commcare_connect/workflow/tests/e2e/test_kmc_metrics_workflow.py`
+- May modify: `connect_labs/workflow/templates/kmc_project_metrics.py`
+- May modify: `connect_labs/workflow/tests/e2e/test_kmc_metrics_workflow.py`
 
 **Step 1: Run the E2E test**
 
-Run: `pytest commcare_connect/workflow/tests/e2e/test_kmc_metrics_workflow.py --ds=config.settings.local -o "addopts=" -v --opportunity-id=874`
+Run: `pytest connect_labs/workflow/tests/e2e/test_kmc_metrics_workflow.py --ds=config.settings.local -o "addopts=" -v --opportunity-id=874`
 Expected: PASS (but may fail on first attempt due to rendering issues)
 
 **Step 2: If test fails, debug using console errors and fix**
@@ -656,7 +656,7 @@ Expected: All checks pass
 
 **Step 2: Run pytest for the workflow app**
 
-Run: `pytest commcare_connect/workflow/ --ds=config.settings.local -o "addopts=" -v --ignore=commcare_connect/workflow/tests/e2e`
+Run: `pytest connect_labs/workflow/ --ds=config.settings.local -o "addopts=" -v --ignore=connect_labs/workflow/tests/e2e`
 Expected: All existing tests still pass
 
 **Step 3: Fix any lint/test issues and commit**

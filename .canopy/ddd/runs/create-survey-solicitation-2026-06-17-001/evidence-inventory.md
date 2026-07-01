@@ -14,14 +14,14 @@ Generated: 2026-06-17T23:10:00Z
 ### [EV-001] Create-solicitation entry point from a micro-plan
 
 - **kind:** implemented
-- **ref:** commcare_connect/microplans/views.py:1227-1228,1275-1276
+- **ref:** connect_labs/microplans/views.py:1227-1228,1275-1276
 - **summary:** The plan review + group pages set `create_solicitation_url = /solicitations/create/?source_program_id=<pid>&source_plan_id=<plan>|source_group_id=<grp>`.
 - **claim_hint:** A program owner can launch a solicitation directly from an approved micro-plan.
 
 ### [EV-002] "Create solicitation" button renders live
 
 - **kind:** implemented
-- **ref:** commcare_connect/templates/microplans/group.html:39, review.html (verified live: plan 4494 review page)
+- **ref:** connect_labs/templates/microplans/group.html:39, review.html (verified live: plan 4494 review page)
 - **summary:** Button present on labs prod with href `source_plan_id=4494`.
 - **claim_hint:** The recruit-a-firm action is reachable from the plan the owner just designed.
 

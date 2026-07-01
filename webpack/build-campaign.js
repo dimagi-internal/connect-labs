@@ -1,7 +1,7 @@
 /**
  * Campaign Utility Tool — build step.
  *
- * The campaign app (commcare_connect/static/campaign/) is a set of NON-module
+ * The campaign app (connect_labs/static/campaign/) is a set of NON-module
  * scripts that share a single global scope across a specific load order: each
  * file's top-level `function`/`const` (e.g. `Empty`, `Page`, `CUTC` in
  * primitives.jsx, `BOOTSTRAP`/`CURRENT_USER` in app.jsx) is a global the later
@@ -16,7 +16,7 @@
  * bundle that executes in a single shared scope — semantically identical to the
  * old ordered `<script>` tags, just pre-transpiled and with no CDN Babel.
  *
- * Output: commcare_connect/static/bundles/js/campaign-bundle.js
+ * Output: connect_labs/static/bundles/js/campaign-bundle.js
  *
  * NOTE: we intentionally do NOT use webpack here. Webpack wraps every module in
  * its own function scope, which would break the global-sharing contract these
@@ -26,11 +26,8 @@ const fs = require('fs');
 const path = require('path');
 const babel = require('@babel/core');
 
-const SRC_DIR = path.resolve(__dirname, '../commcare_connect/static/campaign');
-const OUT_DIR = path.resolve(
-  __dirname,
-  '../commcare_connect/static/bundles/js',
-);
+const SRC_DIR = path.resolve(__dirname, '../connect_labs/static/campaign');
+const OUT_DIR = path.resolve(__dirname, '../connect_labs/static/bundles/js');
 const OUT_FILE = path.join(OUT_DIR, 'campaign-bundle.js');
 
 // EXACT load order — must match the old <script> tags in

@@ -23,9 +23,9 @@ All tools live in the existing `tools/commcare_mcp/` MCP server. No separate ser
 The codebase has two layers of tools that serve different runtimes:
 
 1. **`tools/commcare_mcp/*.py`** — Async httpx functions for the standalone MCP server (stdio subprocess, no Django). Used by Claude Code locally and MCP clients.
-2. **`commcare_connect/*/mcp_tools.py`** — Django-side wrappers that call `data_access.py` classes. Used by in-app AI agents that have access to the Django request/session.
+2. **`connect_labs/*/mcp_tools.py`** — Django-side wrappers that call `data_access.py` classes. Used by in-app AI agents that have access to the Django request/session.
 
-For funds, `FunderDashboardDataAccess` already exists in `commcare_connect/funder_dashboard/data_access.py`. The MCP server cannot import Django code, so `fund_tools.py` reimplements the same operations with raw httpx. This duplication is the same pattern used for solicitations (`solicitation_tools.py` vs `solicitations/mcp_tools.py`).
+For funds, `FunderDashboardDataAccess` already exists in `connect_labs/funder_dashboard/data_access.py`. The MCP server cannot import Django code, so `fund_tools.py` reimplements the same operations with raw httpx. This duplication is the same pattern used for solicitations (`solicitation_tools.py` vs `solicitations/mcp_tools.py`).
 
 Populating `funder_dashboard/mcp_tools.py` (Django-side wrappers) is out of scope — it can be done when in-app AI agents need fund tools.
 

@@ -15,7 +15,7 @@
 ## Task 1: Add Chart.js and Leaflet CDN to run.html
 
 **Files:**
-- Modify: `commcare_connect/templates/workflow/run.html`
+- Modify: `connect_labs/templates/workflow/run.html`
 
 **Context:** The KMC timeline needs Chart.js for weight charts and Leaflet for visit maps. These are already used elsewhere in the codebase (timeline.html, coverage/map.html) but not loaded in the workflow runner template. The render_code will access them via `window.Chart` and `window.L`.
 
@@ -45,7 +45,7 @@ Navigate to an existing workflow (e.g., performance_review) and confirm it loads
 **Step 3: Commit**
 
 ```bash
-git add commcare_connect/templates/workflow/run.html
+git add connect_labs/templates/workflow/run.html
 git commit -m "feat: add Chart.js and Leaflet CDN to workflow run template"
 ```
 
@@ -54,15 +54,15 @@ git commit -m "feat: add Chart.js and Leaflet CDN to workflow run template"
 ## Task 2: Create KMC pipeline schema and definition
 
 **Files:**
-- Create: `commcare_connect/workflow/templates/kmc_longitudinal.py`
+- Create: `connect_labs/workflow/templates/kmc_longitudinal.py`
 
 **Context:** This task creates the template file with `DEFINITION` and `PIPELINE_SCHEMAS`. The render_code will be added in later tasks. Follow the `mbw_monitoring_v2.py` single-file pattern.
 
-**Reference:** All form paths come from the existing `commcare_connect/custom_analysis/kmc/timeline_config.py` (field extractors) and `pipeline_config.py` (linking config). The `_schema_to_config()` method in `commcare_connect/workflow/data_access.py:1683-1764` converts these JSON schemas into `AnalysisPipelineConfig` objects at runtime.
+**Reference:** All form paths come from the existing `connect_labs/custom_analysis/kmc/timeline_config.py` (field extractors) and `pipeline_config.py` (linking config). The `_schema_to_config()` method in `connect_labs/workflow/data_access.py:1683-1764` converts these JSON schemas into `AnalysisPipelineConfig` objects at runtime.
 
 **Step 1: Create the template file with DEFINITION and PIPELINE_SCHEMAS**
 
-Create `commcare_connect/workflow/templates/kmc_longitudinal.py`:
+Create `connect_labs/workflow/templates/kmc_longitudinal.py`:
 
 ```python
 """
@@ -313,14 +313,14 @@ TEMPLATE = {
 
 Run a quick Python check:
 ```bash
-python -c "from commcare_connect.workflow.templates import list_templates; print([t['key'] for t in list_templates()])"
+python -c "from connect_labs.workflow.templates import list_templates; print([t['key'] for t in list_templates()])"
 ```
 Expected: list includes `"kmc_longitudinal"`
 
 **Step 3: Commit**
 
 ```bash
-git add commcare_connect/workflow/templates/kmc_longitudinal.py
+git add connect_labs/workflow/templates/kmc_longitudinal.py
 git commit -m "feat: add KMC longitudinal workflow template with pipeline schema"
 ```
 
@@ -329,7 +329,7 @@ git commit -m "feat: add KMC longitudinal workflow template with pipeline schema
 ## Task 3: Write the data grouping and KPI computation logic (render_code foundation)
 
 **Files:**
-- Modify: `commcare_connect/workflow/templates/kmc_longitudinal.py` (replace RENDER_CODE)
+- Modify: `connect_labs/workflow/templates/kmc_longitudinal.py` (replace RENDER_CODE)
 
 **Context:** This task builds the core data processing functions that live inside the render_code. These pure functions group flat visit rows by child and compute dashboard KPIs. They're the foundation everything else renders from.
 
@@ -418,7 +418,7 @@ python manage.py runserver
 **Step 3: Commit**
 
 ```bash
-git add commcare_connect/workflow/templates/kmc_longitudinal.py
+git add connect_labs/workflow/templates/kmc_longitudinal.py
 git commit -m "feat: add KMC dashboard view with data grouping and KPI computation"
 ```
 
@@ -427,7 +427,7 @@ git commit -m "feat: add KMC dashboard view with data grouping and KPI computati
 ## Task 4: Build the child list view
 
 **Files:**
-- Modify: `commcare_connect/workflow/templates/kmc_longitudinal.py` (extend RENDER_CODE)
+- Modify: `connect_labs/workflow/templates/kmc_longitudinal.py` (extend RENDER_CODE)
 
 **Context:** Replace the child list stub with a full filterable, sortable table. This view is reached by clicking a KPI card on the dashboard or the "All Children" nav link.
 
@@ -470,7 +470,7 @@ Key features to implement:
 **Step 3: Commit**
 
 ```bash
-git add commcare_connect/workflow/templates/kmc_longitudinal.py
+git add connect_labs/workflow/templates/kmc_longitudinal.py
 git commit -m "feat: add filterable child list view to KMC workflow"
 ```
 
@@ -479,7 +479,7 @@ git commit -m "feat: add filterable child list view to KMC workflow"
 ## Task 5: Build the child timeline header and visit history sidebar
 
 **Files:**
-- Modify: `commcare_connect/workflow/templates/kmc_longitudinal.py` (extend RENDER_CODE)
+- Modify: `connect_labs/workflow/templates/kmc_longitudinal.py` (extend RENDER_CODE)
 
 **Context:** Replace the timeline stub with the 3-column layout. This task builds the header and left column (visit history list). Chart and map come in the next task.
 
@@ -536,7 +536,7 @@ The header shows at-a-glance information about the selected child:
 **Step 5: Commit**
 
 ```bash
-git add commcare_connect/workflow/templates/kmc_longitudinal.py
+git add connect_labs/workflow/templates/kmc_longitudinal.py
 git commit -m "feat: add child timeline header and visit history sidebar"
 ```
 
@@ -545,7 +545,7 @@ git commit -m "feat: add child timeline header and visit history sidebar"
 ## Task 6: Add weight progression chart (Chart.js)
 
 **Files:**
-- Modify: `commcare_connect/workflow/templates/kmc_longitudinal.py` (extend RENDER_CODE)
+- Modify: `connect_labs/workflow/templates/kmc_longitudinal.py` (extend RENDER_CODE)
 
 **Context:** Add the weight progression line chart to the center column of the timeline. Uses Chart.js loaded via CDN (Task 1). Access via `window.Chart`.
 
@@ -608,7 +608,7 @@ React.useEffect(function() {
 **Step 3: Commit**
 
 ```bash
-git add commcare_connect/workflow/templates/kmc_longitudinal.py
+git add connect_labs/workflow/templates/kmc_longitudinal.py
 git commit -m "feat: add weight progression chart with threshold line to KMC timeline"
 ```
 
@@ -617,7 +617,7 @@ git commit -m "feat: add weight progression chart with threshold line to KMC tim
 ## Task 7: Add visit location map (Leaflet)
 
 **Files:**
-- Modify: `commcare_connect/workflow/templates/kmc_longitudinal.py` (extend RENDER_CODE)
+- Modify: `connect_labs/workflow/templates/kmc_longitudinal.py` (extend RENDER_CODE)
 
 **Context:** Add the Leaflet map below the weight chart in the center column. Shows visit GPS locations as markers. Access Leaflet via `window.L`.
 
@@ -683,7 +683,7 @@ React.useEffect(function() {
 **Step 3: Commit**
 
 ```bash
-git add commcare_connect/workflow/templates/kmc_longitudinal.py
+git add connect_labs/workflow/templates/kmc_longitudinal.py
 git commit -m "feat: add visit location map to KMC timeline"
 ```
 
@@ -692,7 +692,7 @@ git commit -m "feat: add visit location map to KMC timeline"
 ## Task 8: Add clinical detail panel (right column)
 
 **Files:**
-- Modify: `commcare_connect/workflow/templates/kmc_longitudinal.py` (extend RENDER_CODE)
+- Modify: `connect_labs/workflow/templates/kmc_longitudinal.py` (extend RENDER_CODE)
 
 **Context:** The right column shows clinical details for the selected visit, organized in collapsible sections matching the existing KMC detail_panel widget configuration.
 
@@ -731,7 +731,7 @@ Below the 3-column grid, add a horizontal photo strip:
 **Step 4: Commit**
 
 ```bash
-git add commcare_connect/workflow/templates/kmc_longitudinal.py
+git add connect_labs/workflow/templates/kmc_longitudinal.py
 git commit -m "feat: add clinical detail panel and photo strip to KMC timeline"
 ```
 
@@ -740,7 +740,7 @@ git commit -m "feat: add clinical detail panel and photo strip to KMC timeline"
 ## Task 9: Add dashboard trend charts
 
 **Files:**
-- Modify: `commcare_connect/workflow/templates/kmc_longitudinal.py` (extend RENDER_CODE)
+- Modify: `connect_labs/workflow/templates/kmc_longitudinal.py` (extend RENDER_CODE)
 
 **Context:** Below the KPI cards on the dashboard, add two small trend charts: enrollment over time and visits per week. These give the "program health at a glance" story.
 
@@ -782,7 +782,7 @@ var visitsByWeek = React.useMemo(function() {
 **Step 4: Commit**
 
 ```bash
-git add commcare_connect/workflow/templates/kmc_longitudinal.py
+git add connect_labs/workflow/templates/kmc_longitudinal.py
 git commit -m "feat: add enrollment and visit trend charts to KMC dashboard"
 ```
 
@@ -791,7 +791,7 @@ git commit -m "feat: add enrollment and visit trend charts to KMC dashboard"
 ## Task 10: Polish and cross-view navigation
 
 **Files:**
-- Modify: `commcare_connect/workflow/templates/kmc_longitudinal.py` (extend RENDER_CODE)
+- Modify: `connect_labs/workflow/templates/kmc_longitudinal.py` (extend RENDER_CODE)
 
 **Context:** Final polish pass — ensure smooth navigation between views, consistent styling, and edge case handling.
 
@@ -837,7 +837,7 @@ Walk through the complete flow:
 **Step 5: Commit**
 
 ```bash
-git add commcare_connect/workflow/templates/kmc_longitudinal.py
+git add connect_labs/workflow/templates/kmc_longitudinal.py
 git commit -m "feat: polish KMC workflow navigation, edge cases, and responsive layout"
 ```
 
@@ -891,12 +891,12 @@ Task 10 depends on all view tasks being complete.
 
 | File | Why you need it |
 |------|----------------|
-| `commcare_connect/workflow/templates/mbw_monitoring_v2.py` | **Primary pattern reference** — single-file template with PIPELINE_SCHEMAS and RENDER_CODE |
-| `commcare_connect/workflow/templates/performance_review.py` | Simpler template reference for RENDER_CODE React patterns |
-| `commcare_connect/custom_analysis/kmc/timeline_config.py` | All KMC form paths, field extractors, widget configs |
-| `commcare_connect/custom_analysis/kmc/pipeline_config.py` | Existing pipeline config with form paths and transforms |
-| `commcare_connect/workflow/data_access.py:1683-1764` | `_schema_to_config()` — how JSON schemas become pipeline configs |
-| `commcare_connect/templates/workflow/run.html` | Where CDN scripts are added |
-| `commcare_connect/static/js/workflow-runner.tsx` | How React components are mounted, props passed |
+| `connect_labs/workflow/templates/mbw_monitoring_v2.py` | **Primary pattern reference** — single-file template with PIPELINE_SCHEMAS and RENDER_CODE |
+| `connect_labs/workflow/templates/performance_review.py` | Simpler template reference for RENDER_CODE React patterns |
+| `connect_labs/custom_analysis/kmc/timeline_config.py` | All KMC form paths, field extractors, widget configs |
+| `connect_labs/custom_analysis/kmc/pipeline_config.py` | Existing pipeline config with form paths and transforms |
+| `connect_labs/workflow/data_access.py:1683-1764` | `_schema_to_config()` — how JSON schemas become pipeline configs |
+| `connect_labs/templates/workflow/run.html` | Where CDN scripts are added |
+| `connect_labs/static/js/workflow-runner.tsx` | How React components are mounted, props passed |
 | `components/workflow/DynamicWorkflow.tsx` | How render_code JSX is transpiled and executed |
-| `commcare_connect/templates/labs/configurable_ui/timeline.html` | Existing Chart.js/Leaflet patterns (Alpine.js, but useful for Chart/Map config) |
+| `connect_labs/templates/labs/configurable_ui/timeline.html` | Existing Chart.js/Leaflet patterns (Alpine.js, but useful for Chart/Map config) |

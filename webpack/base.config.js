@@ -7,48 +7,45 @@ module.exports = {
   target: 'web',
   context: path.join(__dirname, '../'),
   entry: {
-    dashboard: path.resolve(
-      __dirname,
-      '../commcare_connect/static/js/dashboard',
-    ),
-    vendors: path.resolve(__dirname, '../commcare_connect/static/js/vendors'),
+    dashboard: path.resolve(__dirname, '../connect_labs/static/js/dashboard'),
+    vendors: path.resolve(__dirname, '../connect_labs/static/js/vendors'),
     tailwind: path.resolve(__dirname, '../tailwind/tailwind.css'),
-    mapbox: path.resolve(__dirname, '../commcare_connect/static/js/mapbox'),
+    mapbox: path.resolve(__dirname, '../connect_labs/static/js/mapbox'),
     tomselect: path.resolve(
       __dirname,
-      '../commcare_connect/static/js/tomselect.js',
+      '../connect_labs/static/js/tomselect.js',
     ),
     'chat-widget': path.resolve(
       __dirname,
-      '../commcare_connect/static/js/chat-widget.tsx',
+      '../connect_labs/static/js/chat-widget.tsx',
     ),
     'code-editor': path.resolve(
       __dirname,
-      '../commcare_connect/static/js/code-editor.tsx',
+      '../connect_labs/static/js/code-editor.tsx',
     ),
     'workflow-runner': path.resolve(
       __dirname,
-      '../commcare_connect/static/js/workflow-runner.tsx',
+      '../connect_labs/static/js/workflow-runner.tsx',
     ),
     'pipeline-editor': path.resolve(
       __dirname,
-      '../commcare_connect/static/js/pipeline-editor.tsx',
+      '../connect_labs/static/js/pipeline-editor.tsx',
     ),
     'task-progress': path.resolve(
       __dirname,
-      '../commcare_connect/static/js/task-progress.ts',
+      '../connect_labs/static/js/task-progress.ts',
     ),
     'solicitation-chat': path.resolve(
       __dirname,
-      '../commcare_connect/static/js/solicitation-chat.tsx',
+      '../connect_labs/static/js/solicitation-chat.tsx',
     ),
     'pages-cards': path.resolve(
       __dirname,
-      '../commcare_connect/static/js/pages-cards.tsx',
+      '../connect_labs/static/js/pages-cards.tsx',
     ),
   },
   output: {
-    path: path.resolve(__dirname, '../commcare_connect/static/bundles/'),
+    path: path.resolve(__dirname, '../connect_labs/static/bundles/'),
     publicPath: '/static/bundles/',
     filename: 'js/[name]-bundle.js',
     chunkFilename: 'js/[name]-bundle.js',

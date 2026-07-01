@@ -54,7 +54,7 @@ KYC provider replacement; payment disbursement execution; worker registration (s
 
 ## 3. Architecture Overview
 
-A new Django app `commcare_connect/campaign/`, mounted at `/campaign/`, with its own login, its own ORM data, and the prototype shipped as a static React SPA.
+A new Django app `connect_labs/campaign/`, mounted at `/campaign/`, with its own login, its own ORM data, and the prototype shipped as a static React SPA.
 
 ```
 Browser (React SPA, prototype verbatim, Babel-in-browser)
@@ -243,14 +243,14 @@ Uses a fixed PRNG seed (matching the prototype's `mulberry32(20260603)` intent) 
 
 ## 9. Wiring
 
-- `config/settings/base.py`: add `commcare_connect.campaign` to `LOCAL_APPS`; add `CAMPAIGN_BOOTSTRAP_ADMIN_DOMAINS = env.list(..., default=["dimagi.com"])`. CommCare OAuth client vars already exist (`COMMCARE_OAUTH_CLIENT_ID/SECRET`, `COMMCARE_HQ_URL`).
-- `config/settings/local.py` + `labs_aws.py`: insert `commcare_connect.campaign.middleware.CampaignOAuthSessionMiddleware` after `AuthenticationMiddleware` (scoped to `/campaign/`; independent of labs middleware).
-- `config/urls.py`: `path("campaign/", include("commcare_connect.campaign.urls", namespace="campaign"))`.
-- Static under `commcare_connect/static/campaign/`; templates under `commcare_connect/templates/campaign/`.
+- `config/settings/base.py`: add `connect_labs.campaign` to `LOCAL_APPS`; add `CAMPAIGN_BOOTSTRAP_ADMIN_DOMAINS = env.list(..., default=["dimagi.com"])`. CommCare OAuth client vars already exist (`COMMCARE_OAUTH_CLIENT_ID/SECRET`, `COMMCARE_HQ_URL`).
+- `config/settings/local.py` + `labs_aws.py`: insert `connect_labs.campaign.middleware.CampaignOAuthSessionMiddleware` after `AuthenticationMiddleware` (scoped to `/campaign/`; independent of labs middleware).
+- `config/urls.py`: `path("campaign/", include("connect_labs.campaign.urls", namespace="campaign"))`.
+- Static under `connect_labs/static/campaign/`; templates under `connect_labs/templates/campaign/`.
 
 ### Directory layout
 ```
-commcare_connect/campaign/
+connect_labs/campaign/
   __init__.py  apps.py  urls.py  middleware.py
   auth/  (oauth_views.py, identity.py, whitelist.py, decorators.py)
   models.py
@@ -259,13 +259,13 @@ commcare_connect/campaign/
   migrations/
   management/commands/seed_campaign_demo.py
   tests/
-commcare_connect/static/campaign/
+connect_labs/static/campaign/
   data-api.js perms.js primitives.jsx shell.jsx app.jsx
   tab_overview.jsx tab_workers.jsx tab_workers_kyc.jsx tab_workers_profile.jsx
   tab_activity.jsx tab_planning.jsx tab_planning_detail.jsx tab_reporting.jsx
   tab_users.jsx tab_connections.jsx tab_training.jsx
   campaign.css (fonts + keyframes)
-commcare_connect/templates/campaign/
+connect_labs/templates/campaign/
   app.html  login.html  training_public.html  not_authorized.html
 ```
 
@@ -277,7 +277,7 @@ commcare_connect/templates/campaign/
 - **API:** each endpoint's permission gate (403 for wrong role), CRUD round-trips persist, public training endpoint requires no auth, admin training mutation does.
 - **Auth (mocked):** OAuth callback with mocked CommCare token + `/identity/` → provisioning paths (admin, whitelisted, denied); token refresh/expiry in the campaign middleware.
 - **Frontend smoke (gstack browse):** after deploy, load `/campaign/`, confirm the bundle mounts, tabs switch, a payment approval persists across reload, the coverage map renders real boundaries.
-- Run via `pytest commcare_connect/campaign/` (GDAL/GEOS env vars required locally for the boundary code path).
+- Run via `pytest connect_labs/campaign/` (GDAL/GEOS env vars required locally for the boundary code path).
 
 ---
 

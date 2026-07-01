@@ -3,9 +3,9 @@ ASGI config for CommCare Connect.
 
 Exposes the ASGI callable as a module-level variable named ``application``.
 
-The connect-labs MCP server (``commcare_connect.mcp``) is a FastMCP 3.x
+The connect-labs MCP server (``connect_labs.mcp``) is a FastMCP 3.x
 Streamable-HTTP app served at ``/mcp/`` — the same public URL the old
-hand-rolled JSON-RPC view used (see ``commcare_connect.mcp.snippets``). Auth
+hand-rolled JSON-RPC view used (see ``connect_labs.mcp.snippets``). Auth
 is enforced INSIDE the MCP app via the per-user PAT verifier
 (``CommCarePATVerifier``); there is no hand-rolled gate here.
 
@@ -29,16 +29,16 @@ import os
 import sys
 from pathlib import Path
 
-# Mirror config/wsgi.py: make the interior commcare_connect dir importable.
+# Mirror config/wsgi.py: make the interior connect_labs dir importable.
 BASE_DIR = Path(__file__).resolve(strict=True).parent.parent
-sys.path.append(str(BASE_DIR / "commcare_connect"))
+sys.path.append(str(BASE_DIR / "connect_labs"))
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.production")
 
 from django.core.asgi import get_asgi_application  # noqa: E402
 
 # Initialize Django (populates the app registry) before importing any module
-# that touches ORM models — commcare_connect.mcp.server imports the tools
+# that touches ORM models — connect_labs.mcp.server imports the tools
 # package, which imports services/models.
 _django_asgi_app = get_asgi_application()
 
@@ -48,7 +48,7 @@ from starlette.applications import Starlette  # noqa: E402
 from starlette.responses import JSONResponse  # noqa: E402
 from starlette.routing import Mount, Route  # noqa: E402
 
-from commcare_connect.mcp.server import build_http_app  # noqa: E402
+from connect_labs.mcp.server import build_http_app  # noqa: E402
 
 
 class _ClosingConnectionsApp:

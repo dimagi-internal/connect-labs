@@ -9,7 +9,7 @@ Workflow authoring knowledge is fragmented across 5+ locations (skill, agent ins
 
 ## Architecture
 
-Single source of truth: `commcare_connect/workflow/WORKFLOW_REFERENCE.md`
+Single source of truth: `connect_labs/workflow/WORKFLOW_REFERENCE.md`
 
 ```
 WORKFLOW_REFERENCE.md                      <- canonical reference (all detail lives here)
@@ -23,7 +23,7 @@ CLAUDE.md                                  <- brief summary + link
 
 ## Deliverables
 
-### 1. `commcare_connect/workflow/WORKFLOW_REFERENCE.md`
+### 1. `connect_labs/workflow/WORKFLOW_REFERENCE.md`
 
 Comprehensive authoring guide with these sections:
 

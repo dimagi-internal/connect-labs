@@ -89,7 +89,7 @@ def push_render(
 
     Usage:
         inv push-render --workflow-id=2787 \\
-            --file=commcare_connect/workflow/templates/mbw_auditing_v5_render.js
+            --file=connect_labs/workflow/templates/mbw_auditing_v5_render.js
     """
     import os
 
@@ -98,8 +98,8 @@ def push_render(
 
     django.setup()
 
-    from commcare_connect.labs.integrations.connect.cli import create_cli_request
-    from commcare_connect.workflow.data_access import WorkflowDataAccess
+    from connect_labs.labs.integrations.connect.cli import create_cli_request
+    from connect_labs.workflow.data_access import WorkflowDataAccess
 
     request = create_cli_request(opportunity_id=opportunity_id)
     if not request:

@@ -188,6 +188,6 @@ What data do you need?
 
 ## Related Documentation
 
-- [LABS_GUIDE.md](../commcare_connect/labs/LABS_GUIDE.md) — OAuth setup, API client patterns, proxy model patterns
+- [LABS_GUIDE.md](../connect_labs/labs/LABS_GUIDE.md) — OAuth setup, API client patterns, proxy model patterns
 - [AGENTS.md](../.claude/AGENTS.md) — Per-app details and common mistakes
 - [Workflow Templates SKILL](../.claude/skills/workflow-templates/SKILL.md) — Workflow template creation patterns
