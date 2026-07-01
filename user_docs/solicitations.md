@@ -95,6 +95,8 @@ Multiple reviewers can score independently — average scores are calculated aut
 
 The responses list shows a **Status** column and a **Recommendation** column for each submission. For an awarded response, **Awarded** appears only in the Status column — the Recommendation column shows your reviewer recommendation as normal, without repeating "Awarded".
 
+The **Actions** column (containing the Award control) is pinned to the right edge of the responses table. This means it stays visible and reachable even when the table is wide, without needing to scroll horizontally.
+
 ### Awarding a Response
 
 When the team agrees on a winner:
@@ -119,7 +121,7 @@ Published solicitations are visible on the Labs solicitations page without loggi
 
 1. Open a solicitation and read the full description and scope of work
 2. Click **Submit Response**
-3. Answer each question in the response template — where present, read the italicised framing above each question to understand what the program team is looking for
+3. Answer each question in the response template — where present, read the italicised framing above each question to understand what the program team is looking for. Each answer box is sized to show a typical response in full as you type, so you can review your wording without scrolling inside the box
 4. If the solicitation includes coverage areas, select the areas you can cover by clicking the ward boundaries directly on the map, or by checking the boxes in the checklist alongside it — both controls are kept in sync, so selecting an area in one automatically updates the other. Selected areas are highlighted on the map so you can clearly see which plans you have chosen. You must select at least one plan to submit
 5. Review your answers, then click **Submit**
 
@@ -195,11 +197,20 @@ After you save a new solicitation, Labs takes you directly to that solicitation'
 **The "Generate Criteria" button or the AI Application Coach isn't working — what should I do?**
 Both AI features were temporarily returning errors for all users on Labs. This has been fixed and both tools should now work as expected. If you click **Generate Criteria** on the solicitation creation form or use the AI Application Coach on the response form and still see an error, try refreshing the page and attempting again. If the problem persists, contact your Labs administrator.
 
+**The Award action was cut off on the right side of the responses table — is that a known issue?**
+This has been fixed. The **Actions** column is now pinned to the right edge of the responses table so the Award control is always visible, regardless of how wide the table is or what screen size you are using.
+
+**The answer boxes on the response form were too small and cut off my text — is that a known issue?**
+This has been fixed. The answer boxes are now taller, so a typical response is fully visible as you type without text being clipped at the bottom edge.
+
+---
+
 ---
 
 ---
 
 ---
+
 
 ---
 
