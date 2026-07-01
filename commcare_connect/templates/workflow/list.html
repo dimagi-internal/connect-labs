@@ -10,8 +10,15 @@
     <!-- Header -->
     <div class="flex justify-between items-center mb-6">
         <div>
+            {% if view_mode == "program" %}
+            <h1 class="text-3xl font-bold text-gray-900">
+                {{ program_name|default:"Program" }} &mdash; program workflows
+            </h1>
+            <p class="text-gray-600 mt-1">Cross-opportunity workflows for this program</p>
+            {% else %}
             <h1 class="text-3xl font-bold text-gray-900">Workflows</h1>
             <p class="text-gray-600 mt-1">Dynamic workflows for managing workers and tasks</p>
+            {% endif %}
         </div>
         <div class="flex items-center gap-4" x-data="{
             showTemplateModal: false,
@@ -133,10 +140,22 @@
         }"
         @click="if ($event.target.closest('[data-open-modal]')) { showTemplateModal = true; loadTemplates(); }">
             {% if has_context %}
+            {% if view_mode == "program" %}
+            <div class="text-sm text-gray-500">
+                <span class="font-medium">Program:</span> {{ program_name|default:"Selected" }}
+            </div>
+            {% else %}
             <div class="text-sm text-gray-500">
                 <span class="font-medium">Opportunity:</span> {{ opportunity_name|default:"Selected" }}
+                {% if current_program_id %}
+                <a href="?program_id={{ current_program_id }}"
+                   class="ml-2 text-blue-600 hover:text-blue-800 hover:underline whitespace-nowrap">
+                    View this program's workflows &rarr;
+                </a>
+                {% endif %}
             </div>
-            {% if can_create_workflow %}
+            {% endif %}
+            {% if can_create_workflow and view_mode != "program" %}
             <button data-open-modal
                     type="button"
                     class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
@@ -279,6 +298,19 @@
             {% endif %}
         </div>
     </div>
+
+    {% if view_mode == "program" and program_member_opps %}
+    <!-- Program mode: jump into a member opportunity's own workflows -->
+    <div class="mb-6 flex items-center flex-wrap gap-2 text-sm">
+        <span class="text-gray-500 font-medium">Opportunities:</span>
+        {% for opp in program_member_opps %}
+        <a href="?opportunity_id={{ opp.id }}"
+           class="inline-flex items-center px-2.5 py-1 rounded-full border border-gray-300 text-gray-700 bg-white hover:border-blue-400 hover:text-blue-700 transition-colors">
+            {{ opp.name|default:opp.id }}
+        </a>
+        {% endfor %}
+    </div>
+    {% endif %}
 
     {% if messages %}
     {% for message in messages %}
@@ -715,12 +747,15 @@
                     <div class="flex items-center gap-2 flex-shrink-0">
                     <form method="POST" action="{% url 'labs:workflow:api_start_run' workflow.definition.id %}" class="m-0">
                         {% csrf_token %}
+                        {# Program view has no opportunity_id in session context; pass the
+                           workflow's owning opp so the run is created against it. #}
+                        <input type="hidden" name="opportunity_id" value="{{ workflow.definition.opportunity_id }}">
                         <button type="submit"
                                 class="inline-flex items-center px-3 py-1.5 border border-green-300 rounded-md text-sm font-medium text-green-700 bg-green-50 hover:bg-green-100 hover:border-green-400 transition-colors">
                             <i class="fa-solid fa-plus mr-1.5"></i> Create Run
                         </button>
                     </form>
-                    <a href="{% url 'labs:workflow:run' workflow.definition.id %}?edit=true"
+                    <a href="{% url 'labs:workflow:run' workflow.definition.id %}?edit=true&opportunity_id={{ workflow.definition.opportunity_id }}"
                        class="inline-flex items-center px-3 py-1.5 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 hover:border-gray-400 transition-colors">
                         <i class="fa-solid fa-pen-to-square mr-1.5"></i> Edit
                     </a>
@@ -1064,7 +1099,7 @@
                                 {% endif %}
                                 <td class="py-3 text-right">
                                     <div class="flex items-center justify-end gap-2">
-                                        <a href="{% url 'labs:workflow:run' workflow.definition.id %}?run_id={{ run.id }}"
+                                        <a href="{% url 'labs:workflow:run' workflow.definition.id %}?run_id={{ run.id }}&opportunity_id={{ workflow.definition.opportunity_id }}"
                                            class="inline-flex items-center px-2 py-1 text-xs font-medium text-blue-600 hover:text-blue-800 hover:underline">
                                             <i class="fa-solid fa-arrow-right mr-1"></i> Open
                                         </a>
