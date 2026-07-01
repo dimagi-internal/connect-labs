@@ -47,8 +47,9 @@ class WorkflowCardProvider(base.CardProvider):
         record = _load_definition(request, int(definition_id))
         if record is None:
             return False
+        opp_ids = record.opportunity_ids or ([record.opportunity_id] if record.opportunity_id else [])
         allowed = {str(o.get("id")) for o in get_org_data(request).get("opportunities", [])}
-        return any(str(opp_id) in allowed for opp_id in record.opportunity_ids)
+        return any(str(opp_id) in allowed for opp_id in opp_ids)
 
     def get_card_data(self, request, target: dict, options: dict) -> base.CardPayload:
         definition_id = int(target["definition_id"])

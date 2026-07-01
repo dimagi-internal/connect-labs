@@ -6,6 +6,7 @@ from commcare_connect.pages.providers.workflow import WorkflowCardProvider
 def _definition_record():
     rec = MagicMock()
     rec.opportunity_ids = [42]
+    rec.opportunity_id = 42
     rec.name = "Weekly Performance Review"
     rec.data = {
         "card": {
@@ -51,3 +52,22 @@ def test_get_card_data_reads_declared_card_block_and_builds_cta(mock_wda):
     assert d["card_type"] == "summary"
     assert d["metrics"] == [{"label": "Cadence", "value": "Weekly"}]
     assert d["cta"]["url"] == "/labs/workflow/7/run/"
+
+
+@patch("commcare_connect.pages.providers.workflow.get_org_data")
+@patch("commcare_connect.pages.providers.workflow.WorkflowDataAccess")
+def test_entitled_falls_back_to_singular_opportunity_id_for_single_opp(mock_wda, mock_org):
+    rec = _definition_record()
+    rec.opportunity_ids = []
+    rec.opportunity_id = 42
+    mock_wda.return_value.get_definition.return_value = rec
+    mock_org.return_value = {"opportunities": [{"id": 42}]}
+    prov = WorkflowCardProvider()
+    assert prov.entitled(_request(), {"definition_id": 7}) is True
+
+
+@patch("commcare_connect.pages.providers.workflow.get_org_data")
+@patch("commcare_connect.pages.providers.workflow.WorkflowDataAccess")
+def test_entitled_false_when_no_definition_id(mock_wda, mock_org):
+    prov = WorkflowCardProvider()
+    assert prov.entitled(_request(), {}) is False
