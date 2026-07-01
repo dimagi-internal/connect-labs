@@ -50,7 +50,7 @@ one template-render fix. No flow-logic changes.
 
 ## Acceptance
 
-- `pytest commcare_connect/labs/synthetic/ensure/` green (update/extend tests for
+- `pytest connect_labs/labs/synthetic/ensure/` green (update/extend tests for
   missed-week skip, reconciliation, in-review-mix archetype).
 - After deploy + re-ensure: grid shows ≥1 NO-RUN cell, Northern aggregate = "SOP MET"
   (green), Southern = "BELOW", aggregate reads "N/4 RUNS" (N≈4 not 10-12), the

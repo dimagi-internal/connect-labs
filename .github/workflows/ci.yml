@@ -77,4 +77,4 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest commcare_connect/labs/ commcare_connect/audit/ commcare_connect/tasks/ commcare_connect/workflow/ commcare_connect/ai/ commcare_connect/solicitations/ commcare_connect/coverage/ commcare_connect/microplans/ -x
+          pytest connect_labs/labs/ connect_labs/audit/ connect_labs/tasks/ connect_labs/workflow/ connect_labs/ai/ connect_labs/solicitations/ connect_labs/coverage/ connect_labs/microplans/ -x

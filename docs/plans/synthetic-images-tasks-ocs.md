@@ -39,7 +39,7 @@ Modify `ExperimentAuditImageConnectView.get()` in `audit/views.py`:
 
 ```python
 def get(self, request, opp_id, blob_id):
-    from commcare_connect.labs.synthetic.registry import get_synthetic_opp
+    from connect_labs.labs.synthetic.registry import get_synthetic_opp
     
     synthetic = get_synthetic_opp(opp_id)
     if synthetic and blob_id.startswith("synth-"):

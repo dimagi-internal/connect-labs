@@ -1,9 +1,9 @@
 # Prelogin marketing site
 
 The public marketing site served at the site root (`/`) by the `prelogin`
-Django app: `commcare_connect/prelogin/` (views + URLs), with its templates in
-`commcare_connect/templates/prelogin/` and assets in
-`commcare_connect/static/prelogin/`.
+Django app: `connect_labs/prelogin/` (views + URLs), with its templates in
+`connect_labs/templates/prelogin/` and assets in
+`connect_labs/static/prelogin/`.
 
 ## Source of truth: this repo (labs)
 
@@ -28,7 +28,7 @@ right `<section data-page="…">` for the current path. Keep it that way — a s
 authored file matches how the site is produced and needs no build step.
 
 The marketing routes are enumerated server-side in
-`commcare_connect/prelogin/urls.py` (`MARKETING_ROUTES` + the `/portfolio/<slug>`
+`connect_labs/prelogin/urls.py` (`MARKETING_ROUTES` + the `/portfolio/<slug>`
 pattern) so direct loads and refreshes resolve instead of 404ing. **No blanket
 catch-all** — the same host serves the real app (`/accounts/…`, dashboards), so
 each route is listed explicitly. When you add a marketing route, add it both to
@@ -53,7 +53,7 @@ split is preserved automatically.
 
 `static/prelogin/{styles.css,app.js}` are linted like any other source (prettier,
 `--tab-width 2 --single-quote`). `home.html` is excluded from prettier via the
-repo-wide `commcare_connect/templates/` exclusion (it's a single large authored
+repo-wide `connect_labs/templates/` exclusion (it's a single large authored
 document). Labs and prod use identical prettier config, so formatting is stable
 across the copy.
 
@@ -63,9 +63,9 @@ Trigger: **"create a PR to push the prelogin changes to connect prod."**
 
 The site payload is exactly three directories:
 
-- `commcare_connect/prelogin/` (app: `urls.py`, `views.py`, `tests/`)
-- `commcare_connect/templates/prelogin/` (`home.html`, `robots.txt`, `sitemap.xml`)
-- `commcare_connect/static/prelogin/` (css, js, images)
+- `connect_labs/prelogin/` (app: `urls.py`, `views.py`, `tests/`)
+- `connect_labs/templates/prelogin/` (`home.html`, `robots.txt`, `sitemap.xml`)
+- `connect_labs/static/prelogin/` (css, js, images)
 
 Procedure:
 

@@ -11,10 +11,10 @@ on:
       - 'lib/**'
       - 'tailwind/**'
       - 'tsconfig.json'
-      - 'commcare_connect/static/js/**'
-      - 'commcare_connect/static/css/**'
-      - 'commcare_connect/static/campaign/**'
-      - 'commcare_connect/templates/**'
+      - 'connect_labs/static/js/**'
+      - 'connect_labs/static/css/**'
+      - 'connect_labs/static/campaign/**'
+      - 'connect_labs/templates/**'
       - 'Dockerfile.node'
 
   workflow_dispatch:
@@ -50,7 +50,7 @@ jobs:
         id: fe-hash
         run: |
           HASH=$(find package.json package-lock.json webpack/ components/ lib/ tailwind/ tsconfig.json \
-            commcare_connect/static/js/ commcare_connect/static/css/ commcare_connect/templates/ \
+            connect_labs/static/js/ connect_labs/static/css/ connect_labs/templates/ \
             -type f 2>/dev/null | sort | xargs cat | sha256sum | cut -c1-12)
           echo "hash=$HASH" >> "$GITHUB_OUTPUT"
 

@@ -25,7 +25,7 @@ run this is the `connect-opp-setup` ACE skill.
 ## Step 2 — Enable the MICROPLANNING feature flag on the opp  [gated: admin]
 
 Microplanning (WorkArea model, web map, assignment, mobile case push) is behind
-the `microplanning` feature flag (`commcare_connect/flags`). It must be enabled
+the `microplanning` feature flag (`connect_labs/flags`). It must be enabled
 for the opportunity. There is **no MCP atom** for this — enable via Django admin /
 flags admin on production Connect, or a DB/flags-API action by someone with access.
 **Until enabled, none of the microplanning surfaces appear.**
@@ -59,7 +59,7 @@ In the labs app at `/rooftop-surveys/<opp_id>/setup/`:
 
 A ready-made sample for Gwange/Maiduguri (396 pins) is at
 `/tmp/rooftop_artifacts/gwange_work_areas.csv` (regenerate any time from the lib;
-see `commcare_connect/rooftop_surveys/sampling/frame.py` +
+see `connect_labs/rooftop_surveys/sampling/frame.py` +
 `workarea.py`).
 
 ## Step 5 — Load work areas into Connect microplanning  [gated: org-admin web, OR proposed API]

@@ -37,7 +37,7 @@ state, like `bulk_image_audit`.
 
 ### Server-side orchestration (the schedulable core)
 
-New module `commcare_connect/workflow/job_handlers/weekly_dual_track_audit.py`
+New module `connect_labs/workflow/job_handlers/weekly_dual_track_audit.py`
 registers a `weekly_dual_track_audit_create` handler via `@register_job_handler`
 (imported in `job_handlers/__init__.py` so it registers on startup, alongside
 `program_admin_rollup`).
@@ -207,25 +207,25 @@ PAR:    open PAR run (window) → audit_par_rollup reads creator runs × opps ×
 
 ## Key references
 
-- `commcare_connect/workflow/templates/bulk_image_audit.py` — single-opp
+- `connect_labs/workflow/templates/bulk_image_audit.py` — single-opp
   audit-creation render + `createAudit` criteria shape, image-type discovery,
   AI-agent selection (`muac_overzoom`).
-- `commcare_connect/workflow/templates/program_admin_report.py` — multi-opp +
+- `connect_labs/workflow/templates/program_admin_report.py` — multi-opp +
   saved-runs PAR pattern, per-opp scoped rollup, drill-in grid, cross-opp link
   scoping.
-- `commcare_connect/workflow/job_handlers/program_admin_report.py` +
+- `connect_labs/workflow/job_handlers/program_admin_report.py` +
   `job_handlers/__init__.py` — `@register_job_handler` pattern.
-- `commcare_connect/audit/data_access.py` — `create_audit_session` (tag,
+- `connect_labs/audit/data_access.py` — `create_audit_session` (tag,
   `labs_record_id=workflow_run_id`), `get_sessions_by_workflow_run`.
-- `commcare_connect/audit/tasks.py` — `session_tag = criteria.get("tag")`;
+- `connect_labs/audit/tasks.py` — `session_tag = criteria.get("tag")`;
   `run_audit_creation(image_audits=…, context_fields=…)` + per-type review loop
   (`_run_ai_review_on_sessions(ai_reviewers=…)`) from PR #771.
-- `commcare_connect/audit/ai_review_config.py` — `build_review_config(image_audits,
+- `connect_labs/audit/ai_review_config.py` — `build_review_config(image_audits,
   context_fields) -> (related_fields, ai_reviewers)` (PR #771). Agents now declare
   a `config_fields` schema (e.g. `scale_validation.comparison_field`), surfaced by
   the agents-list API; not needed for `muac_overzoom`.
 - `docs/superpowers/specs/2026-06-30-per-image-type-ai-reviewer-design.md` — the
   PR #771 design this spec now builds on.
-- `commcare_connect/labs/ai_review_agents/agents/muac_overzoom.py` — agent id /
+- `connect_labs/labs/ai_review_agents/agents/muac_overzoom.py` — agent id /
   `result_actions`.
 - `WORKFLOW_REFERENCE.md` §8 (multi-opp), §9 (saved runs), §Audit Creation.

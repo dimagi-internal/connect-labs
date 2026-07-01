@@ -1,0 +1,246 @@
+# Program Admin Report — Northern Cluster (opp 10000)
+#
+# Ported from scripts/walkthroughs/program-admin-report/demo_config.json
+# (the "Northern Cluster" opp) + connect_labs/labs/synthetic/program_admin_demo.py
+# (DISPLAY_NAMES, the archetype -> flag mapping, and the reason-specific coaching
+# transcripts). This manifest is consumed by the `ensure_synthetic_data` engine:
+#
+#   - flw_personas -> chc_nutrition pipeline rows (weekly_runs ensurer). accuracy
+#     drives approval %; the network manager is the FIRST persona so it stands in
+#     as the flag attributer (weekly_runs) AND the coaching-task creator (tasks).
+#   - anomalies (reviewer_visible_in: [audit]) -> SAM/MAM/gender flags + run-linked
+#     completable audits (run_audits ensurer).
+#   - coaching_arcs -> coaching Tasks with the verbatim transcript (tasks ensurer);
+#     a follow_up_outcome_week closes the loop ("good"); none left open keeps it
+#     mid-flight ("incomplete").
+#
+# Northern reads SOP MET on the PAR aggregate: it ran every completed week
+# (no missed weeks) and its two flagged FLWs were coached to a satisfactory close.
+# jumoke_n is the live manager-flow FLW: her flag lands on the CURRENT week
+# (week index 4, outside the completed window), so the ensurers do NOT seed her
+# audit/coaching — the walkthrough recorder creates those on camera.
+
+opportunity_id: 10000
+opportunity_name: Northern Cluster
+random_seed: 100000
+
+timeline:
+  start_date: 2026-05-04
+  end_date: 2026-06-01
+  weeks: 4
+  visit_cadence_per_week_per_flw: { mean: 18, stddev: 3 }
+
+flw_personas:
+  # --- Network manager FIRST: stands in as the flag attributer (weekly_runs)
+  #     and the coaching-task creator (tasks). No coaching_arc targets it. ---
+  - id: amani_nm
+    display_name: Amani Nwosu
+    archetype: steady
+    accuracy_distribution: { mean: 0.97, stddev: 0.0 }
+    completeness_distribution: { mean: 0.99, stddev: 0.0 }
+    flag_rate: 0.0
+    notes: Northern Cluster network manager (not a field worker; first-persona stand-in for flag/task attribution).
+
+  # --- Solid FLWs: high accuracy, no flags ---
+  - id: amina_n
+    display_name: Amina Bello
+    archetype: steady
+    accuracy_distribution: { mean: 0.94, stddev: 0.02 }
+    completeness_distribution: { mean: 0.96, stddev: 0.02 }
+    flag_rate: 0.0
+  - id: binta_n
+    display_name: Binta Sani
+    archetype: steady
+    accuracy_distribution: { mean: 0.93, stddev: 0.02 }
+    completeness_distribution: { mean: 0.95, stddev: 0.02 }
+    flag_rate: 0.0
+  - id: chinedu_n
+    display_name: Chinedu Okeke
+    archetype: rockstar
+    accuracy_distribution: { mean: 0.96, stddev: 0.02 }
+    completeness_distribution: { mean: 0.97, stddev: 0.02 }
+    flag_rate: 0.0
+  - id: dorcas_n
+    display_name: Dorcas Mensah
+    archetype: steady
+    accuracy_distribution: { mean: 0.92, stddev: 0.02 }
+    completeness_distribution: { mean: 0.94, stddev: 0.02 }
+    flag_rate: 0.0
+  - id: esi_n
+    display_name: Esi Owusu
+    archetype: steady
+    accuracy_distribution: { mean: 0.93, stddev: 0.02 }
+    completeness_distribution: { mean: 0.95, stddev: 0.02 }
+    flag_rate: 0.0
+  - id: fatima_n
+    display_name: Fatima Yusuf
+    archetype: steady
+    accuracy_distribution: { mean: 0.94, stddev: 0.02 }
+    completeness_distribution: { mean: 0.96, stddev: 0.02 }
+    flag_rate: 0.0
+  - id: grace_n
+    display_name: Grace Adeyemi
+    archetype: rockstar
+    accuracy_distribution: { mean: 0.95, stddev: 0.02 }
+    completeness_distribution: { mean: 0.97, stddev: 0.02 }
+    flag_rate: 0.0
+
+  # --- hawa_n: improver, flagged for bad MUAC distribution week index 1,
+  #     coached to a satisfactory close (improver_closed_satisfactory). ---
+  - id: hawa_n
+    display_name: Hawa Diallo
+    archetype: struggling
+    accuracy_distribution: { mean: 0.81, stddev: 0.03 }
+    completeness_distribution: { mean: 0.90, stddev: 0.02 }
+    flag_rate: 0.4
+    improvement_arc: { intervention_week: 3, post_intervention_lift: 0.12 }
+    notes: Flagged wk1 for cherry-picked (near-health-post) screening; coached + resolved.
+
+  # --- isha_n: improver, flagged for gender skew week index 1,
+  #     coached to a satisfactory close (improver_closed_satisfactory). ---
+  - id: isha_n
+    display_name: Isha Kamara
+    archetype: struggling
+    accuracy_distribution: { mean: 0.83, stddev: 0.03 }
+    completeness_distribution: { mean: 0.91, stddev: 0.02 }
+    flag_rate: 0.4
+    improvement_arc: { intervention_week: 3, post_intervention_lift: 0.10 }
+    notes: Flagged wk1 for gender skew (mostly boys); coached + resolved.
+
+  # --- jumoke_n: the LIVE manager-flow FLW. Her flag lands on the CURRENT week
+  #     (index 4, outside the completed window). Expressed as an anomaly for
+  #     fidelity but the ensurers skip it (no completed run) — the recorder
+  #     creates her audit + coaching live (improver_warned). ---
+  - id: jumoke_n
+    display_name: Jumoke Balogun
+    archetype: struggling
+    accuracy_distribution: { mean: 0.79, stddev: 0.03 }
+    completeness_distribution: { mean: 0.88, stddev: 0.02 }
+    flag_rate: 0.5
+    notes: Live manager-flow FLW — flagged on the current (in-progress) week; audit + coaching created on camera.
+
+beneficiary_cohorts:
+  - id: under5_screened
+    size: 220
+    field_distributions:
+      # MUAC (cm). A healthy area distribution carries the expected SAM/MAM tail;
+      # the row builder empties the SAM/MAM bins for an anomalied (cherry-picked)
+      # persona-week so the row trips sam_low / mam_low.
+      'form.service_delivery.muac_group.soliciter_muac':
+        { distribution: normal, mean: 13.4, stddev: 0.9 }
+      # Child gender — balanced cohort baseline; a gender anomaly skews one
+      # persona-week toward boys so the row trips the gender_skew threshold.
+      'form.additional_case_info.childs_gender':
+        { distribution: binary, rate: 0.5 }
+    progression: improvement_curve
+
+anomalies:
+  # hawa_n: bad MUAC distribution, completed week index 1, audited.
+  - id: hawa_muac_wk1
+    type: field_outlier
+    flw_ids: [hawa_n]
+    field_path: form.service_delivery.muac_group.soliciter_muac
+    week: 1
+    detection_path: form.service_delivery.muac_group.soliciter_muac
+    reviewer_visible_in: [audit]
+  # isha_n: gender skew, completed week index 1, audited.
+  - id: isha_gender_wk1
+    type: field_outlier
+    flw_ids: [isha_n]
+    field_path: form.additional_case_info.childs_gender
+    week: 1
+    detection_path: form.additional_case_info.childs_gender
+    reviewer_visible_in: [audit]
+  # jumoke_n: bad MUAC distribution on the CURRENT week (index 4). Outside the
+  # completed window — the ensurers skip it; the live manager flow films it.
+  - id: jumoke_muac_current
+    type: field_outlier
+    flw_ids: [jumoke_n]
+    field_path: form.service_delivery.muac_group.soliciter_muac
+    week: 4
+    detection_path: form.service_delivery.muac_group.soliciter_muac
+    reviewer_visible_in: [audit]
+
+kpi_config:
+  - kpi: sam_rate
+    field_path: form.service_delivery.muac_group.soliciter_muac
+    aggregation: validated_rate
+    threshold_underperform: 0.01
+    threshold_target: 0.02
+  - kpi: gender_balance
+    field_path: form.additional_case_info.childs_gender
+    aggregation: non_null_rate
+    threshold_underperform: 0.40
+    threshold_target: 0.50
+
+coaching_arcs:
+  # hawa_n — flagged wk index 1 (week_triggered 2), bad MUAC distribution.
+  # Resolved (follow_up_outcome_week set) -> closed_satisfactory "good" task.
+  - flw_id: hawa_n
+    week_triggered: 2
+    persona: coaching_resolved_clean__bad_muac_distribution
+    target_behavior: Bad MUAC distribution
+    follow_up_outcome_week: 3
+    transcript:
+      - role: bot
+        text: "Hi {flw_name}, your supervisor flagged this week's screening numbers — almost none of the children you measured screened as malnourished, which is unusual for your area. Can we talk through which households you visited?"
+        ts: 2026-05-12T09:02:00
+      - role: flw
+        text: 'Mostly the compounds near the health post — they are the quickest to reach and I can do more visits in a day.'
+        ts: 2026-05-12T09:18:00
+      - role: bot
+        text: "That explains the pattern. The families closest to the health post tend to be better off — the children most at risk are usually in the farther households. If we only screen the easy ones, we miss the kids who most need referral. Could you plan next week's route to include the outer settlements?"
+        ts: 2026-05-12T09:21:00
+      - role: flw
+        text: 'Yes, I can do the far side on Tuesday and Wednesday when I have more time for the walk.'
+        ts: 2026-05-12T09:29:00
+      - role: bot
+        text: "Checking back in — this week's screening profile looks much more like the area's expected picture, including two referrals that got children into treatment. That's exactly the change we hoped for."
+        ts: 2026-05-19T08:40:00
+      - role: flw
+        text: 'The route plan helped. The far households take longer but those visits matter more.'
+        ts: 2026-05-19T08:52:00
+      - role: bot
+        text: 'Agreed. Closing this task as resolved — keep that route rotation going, {flw_name}.'
+        ts: 2026-05-19T09:01:00
+
+  # isha_n — flagged wk index 1 (week_triggered 2), gender skew.
+  # Resolved (follow_up_outcome_week set) -> closed_satisfactory "good" task.
+  - flw_id: isha_n
+    week_triggered: 2
+    persona: coaching_resolved_clean__gender_skew
+    target_behavior: Gender split off threshold
+    follow_up_outcome_week: 3
+    transcript:
+      - role: bot
+        text: "Hi {flw_name}, quick check-in from this week's review — your screening list was almost entirely boys this week, which is outside the balance we'd expect. Is something making it harder to reach the girls?"
+        ts: 2026-05-12T10:05:00
+      - role: flw
+        text: 'Some mothers were away at the market with their daughters when I visited in the mornings.'
+        ts: 2026-05-12T10:22:00
+      - role: bot
+        text: 'That makes sense. Try splitting your rounds — mornings for some compounds, late afternoon for the ones where you keep missing the girls. Every child under five in the household should be screened, even if it means a second stop.'
+        ts: 2026-05-12T10:25:00
+      - role: flw
+        text: 'I will try afternoon visits for those compounds this week.'
+        ts: 2026-05-12T10:33:00
+      - role: bot
+        text: "Checking back — this week's split looks much healthier, roughly half girls. Whatever you changed, it worked."
+        ts: 2026-05-19T09:10:00
+      - role: flw
+        text: 'The afternoon visits helped. I also ask the caregiver to bring every child under five before I start.'
+        ts: 2026-05-19T09:21:00
+      - role: bot
+        text: "That's exactly right. Closing this task as resolved — nice work, {flw_name}."
+        ts: 2026-05-19T09:30:00
+
+image_config:
+  question_path: form.service_delivery.muac_group.muac_display_group_1.muac_photo
+  good_image_count: 15
+  bad_image_count: 10
+  default_bad_rate: 0.0
+  probability: 0.9
+  flw_bad_rates:
+    hawa_n: 0.5
+    isha_n: 0.3
+    jumoke_n: 0.6

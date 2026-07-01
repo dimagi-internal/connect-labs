@@ -72,8 +72,8 @@ The visits-over-time bar chart, cumulative payments line chart, and GPS map rema
 All changes are client-side JS + template. No backend changes.
 
 **Files:**
-- Modify: `commcare_connect/static/js/funder-charts.js` — add `renderImpactHeadline()`, update `renderKPIs()`, add `renderPerformanceTable()` with sparklines
-- Modify: `commcare_connect/templates/funder_dashboard/fund_detail.html` — remove Programs/Delivery Types sections, add headline container, update KPI container, replace allocations table with performance table container
+- Modify: `connect_labs/static/js/funder-charts.js` — add `renderImpactHeadline()`, update `renderKPIs()`, add `renderPerformanceTable()` with sparklines
+- Modify: `connect_labs/templates/funder_dashboard/fund_detail.html` — remove Programs/Delivery Types sections, add headline container, update KPI container, replace allocations table with performance table container
 
 **Data available from SSE response (flat arrays):**
 - `visits[i]`: `{visit_date, username, entity_name, status, location, opp_id, opp_name, country, delivery_type}`

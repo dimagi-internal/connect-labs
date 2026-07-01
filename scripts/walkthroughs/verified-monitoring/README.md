@@ -22,7 +22,7 @@ A single **workflow run** on synthetic opp `10008` (workflow def `3699`) whose
   of service-delivery points inside Kaura only, and independent survey pins in
   **both** wards (purple = vitamin-A confirmed, pink = absent).
 
-The render — `commcare_connect/workflow/templates/verified_monitoring_render.js`
+The render — `connect_labs/workflow/templates/verified_monitoring_render.js`
 — reads this state and never fetches. It is "show-don't-tell": results are
 presented neutrally, with no causal claims, so the viewer draws the conclusion.
 

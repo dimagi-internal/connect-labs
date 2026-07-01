@@ -113,10 +113,10 @@ There is no migration command for this change. Prod data is still in canonical `
 
 ## Reference implementation
 
-`commcare_connect/workflow/templates/performance_review.py`:
+`connect_labs/workflow/templates/performance_review.py`:
 - `supports_saved_runs: True`.
 - Module-level `build_snapshot` returning `{workers, state, summary, opportunity_ids}`.
 - `SNAPSHOT_SCHEMA` documenting the shape.
 - Render code that reads `view.workers` / `view.state.worker_states` and calls `view.complete(...)` from a "Mark Run Complete" button.
 
-`commcare_connect/static/js/workflow-runner.tsx` builds the `view` helper and passes it as a `WorkflowProps` field. `components/workflow/types.ts` defines `RunView` and the related types.
+`connect_labs/static/js/workflow-runner.tsx` builds the `view` helper and passes it as a `WorkflowProps` field. `components/workflow/types.ts` defines `RunView` and the related types.

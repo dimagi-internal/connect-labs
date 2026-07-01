@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-01
 **Status:** Design approved (brainstorming) — pending spec review → implementation plan
-**App:** new Django app `commcare_connect/pages/`
+**App:** new Django app `connect_labs/pages/`
 
 ## Problem
 
@@ -28,7 +28,7 @@ program-scoped; B is lean and task-scoped.
 
 ## Naming note
 
-There is already a `commcare_connect/labs/configurable_ui/` module, but it is an
+There is already a `connect_labs/labs/configurable_ui/` module, but it is an
 unrelated per-child *timeline/detail widget* framework (KMC/nutrition). This feature
 is a **navigation/landing hub**, so it lives in a new, distinctly-named app: `pages`.
 

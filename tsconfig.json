@@ -22,5 +22,5 @@
     }
   },
   "include": ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx"],
-  "exclude": ["node_modules", "dist", "commcare_connect/static/bundles"]
+  "exclude": ["node_modules", "dist", "connect_labs/static/bundles"]
 }

@@ -60,7 +60,7 @@ contributing its own `urls.py` included from `config/urls.py`
 (solicitations, tasks, audit, microplans all follow this). Global DRF defaults:
 OAuth2/Session auth + `IsAuthenticated` (`config/settings/base.py:362`).
 
-New package `commcare_connect/labs/export_api/` — a sub-package of the existing
+New package `connect_labs/labs/export_api/` — a sub-package of the existing
 `labs` app (no models, so **not** a separate `INSTALLED_APP`), structured like
 `labs/explorer/`:
 
@@ -77,7 +77,7 @@ labs/export_api/
 Mounted in `config/urls.py`:
 
 ```python
-path("api/export/", include("commcare_connect.labs.export_api.urls")),
+path("api/export/", include("connect_labs.labs.export_api.urls")),
 ```
 
 placed **before** the existing `path("api/", include("config.api_router"))` line.

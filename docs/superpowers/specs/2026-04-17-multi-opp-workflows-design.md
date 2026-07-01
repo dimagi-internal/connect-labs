@@ -39,7 +39,7 @@ We want a single workflow run to pull data from multiple opportunities and prese
 
 ### Pattern precedent
 
-`commcare_connect/workflow/templates/mbw_monitoring/views.py` and `flw_api.py` contain bespoke multi-opp merging logic. It was written outside the generic workflow engine and is not used as a reference — this design starts fresh.
+`connect_labs/workflow/templates/mbw_monitoring/views.py` and `flw_api.py` contain bespoke multi-opp merging logic. It was written outside the generic workflow engine and is not used as a reference — this design starts fresh.
 
 ## Design
 
@@ -194,20 +194,20 @@ Single-opp workflows see `opportunity_ids = [primary]` and every row tagged with
 
 ## Files to change
 
-- `commcare_connect/workflow/templates/__init__.py` — expose `multi_opp` through the registry; plumb `opportunity_ids` through `create_workflow_from_template`.
-- `commcare_connect/workflow/data_access.py`
+- `connect_labs/workflow/templates/__init__.py` — expose `multi_opp` through the registry; plumb `opportunity_ids` through `create_workflow_from_template`.
+- `connect_labs/workflow/data_access.py`
   - `WorkflowDefinitionRecord`: add `opportunity_ids` property.
   - `WorkflowDataAccess.get_pipeline_data`: nested per-opp loop with row tagging and per-opp metadata.
   - `WorkflowDataAccess.create_definition` (and `create_workflow_from_template`): accept `opportunity_ids`.
   - `WorkflowDataAccess.update_opportunity_ids`: new method.
-- `commcare_connect/workflow/views.py`
+- `connect_labs/workflow/views.py`
   - `create_workflow_from_template_view`: accept and validate `opportunity_ids` in POST body.
   - `WorkflowRunView.get_context_data`: merge workers per-opp, tag each worker with `opportunity_id`.
   - `PipelineDataStreamView`: SSE generator loops over opp_ids per pipeline source, tags rows, yields per-opp progress events.
   - `UpdateOpportunityIdsView`: new endpoint for editing.
-- `commcare_connect/workflow/urls.py` — route for `UpdateOpportunityIdsView`.
-- `commcare_connect/templates/workflow/list.html` (and any React list component) — opp picker modal for multi-opp templates.
-- `commcare_connect/templates/workflow/run.html` — "Opportunities: … ✎" control + edit modal for multi-opp workflows.
+- `connect_labs/workflow/urls.py` — route for `UpdateOpportunityIdsView`.
+- `connect_labs/templates/workflow/list.html` (and any React list component) — opp picker modal for multi-opp templates.
+- `connect_labs/templates/workflow/run.html` — "Opportunities: … ✎" control + edit modal for multi-opp workflows.
 - At least one multi-opp reference template — validates the contract end-to-end. (New or adapted; decision during implementation.)
 
 ## Testing

@@ -1,6 +1,6 @@
 ---
 name: workflow-templates
-description: Use this skill ONLY when authoring a new SEED template — a Python file in commcare_connect/workflow/templates/ that ships with labs and scaffolds new workflows via workflow_create_from_template. For editing a live workflow instance in labs (the common case), use workflow-author instead. For editing a live pipeline schema, use pipeline-author.
+description: Use this skill ONLY when authoring a new SEED template — a Python file in connect_labs/workflow/templates/ that ships with labs and scaffolds new workflows via workflow_create_from_template. For editing a live workflow instance in labs (the common case), use workflow-author instead. For editing a live pipeline schema, use pipeline-author.
 ---
 
 # Authoring Seed Workflow Templates
@@ -15,7 +15,7 @@ that file writes are available in this session:
 
 > **workflow-templates cannot run in this session.**
 > This skill requires `Write`/`Edit` access to modify Python files in
-> `commcare_connect/workflow/templates/`, but those tools are denied
+> `connect_labs/workflow/templates/`, but those tools are denied
 > (you are likely in a safe-mode session started with `inv safe-claude`).
 >
 > To author seed templates, open a **regular Claude Code session** from
@@ -32,7 +32,7 @@ that file writes are available in this session:
 Do **not** proceed with any file reads, MCP calls, or partial work after this
 check fails — report the incompatibility and stop.
 
-A seed workflow template is a Python file in `commcare_connect/workflow/templates/` that ships with labs. Users instantiate one as a new workflow via the MCP tool `workflow_create_from_template(template_key=...)`. Editing a seed template is a deploy-gated change to the codebase — not a change to any live workflow.
+A seed workflow template is a Python file in `connect_labs/workflow/templates/` that ships with labs. Users instantiate one as a new workflow via the MCP tool `workflow_create_from_template(template_key=...)`. Editing a seed template is a deploy-gated change to the codebase — not a change to any live workflow.
 
 **For editing a LIVE workflow or pipeline in labs, use `workflow-author` or `pipeline-author`, NOT this skill.** The MCP tools are strictly better for that case (no redeploy, no git round-trip, server-side validation).
 
@@ -79,7 +79,7 @@ The render code reads `view.workers`, `view.pipelines.<alias>`, `view.state.<key
 
 If none of those apply, use `snapshot_inputs` — it's strictly simpler.
 
-Reference: `commcare_connect/workflow/templates/performance_review.py` (manifest path).
+Reference: `connect_labs/workflow/templates/performance_review.py` (manifest path).
 
 ### Action-shaped (no flag)
 
@@ -87,7 +87,7 @@ Omit `supports_saved_runs` (or set it `False`). Don't include `snapshot_*` keys.
 
 References: `audit_with_ai_review`, `bulk_image_audit`, `ocs_outreach`, `kmc_*` (continuous tracking).
 
-See `commcare_connect/workflow/WORKFLOW_REFERENCE.md` § 9 "Saved-runs templates" for the full contract.
+See `connect_labs/workflow/WORKFLOW_REFERENCE.md` § 9 "Saved-runs templates" for the full contract.
 
 ## Discovering form JSON paths
 
@@ -101,7 +101,7 @@ Pick an opportunity that uses the real app you're targeting and work from there.
 
 ## Deploy
 
-Seed templates are picked up automatically on deploy — no registration step. Place the file in `commcare_connect/workflow/templates/` with a good module name (it becomes the `template_key` users pass to `workflow_create_from_template`).
+Seed templates are picked up automatically on deploy — no registration step. Place the file in `connect_labs/workflow/templates/` with a good module name (it becomes the `template_key` users pass to `workflow_create_from_template`).
 
 ## After the change lands
 
@@ -115,7 +115,7 @@ Claude will call `workflow_create_from_template` and you can verify the result l
 
 While iterating on a new template, do not redeploy labs between edits. Instead:
 
-1. Create the `.py` (and any `_render.js` sidecar) under `commcare_connect/workflow/templates/`.
+1. Create the `.py` (and any `_render.js` sidecar) under `connect_labs/workflow/templates/`.
 2. Spin up a preview workflow via `workflow_create_from_template` (manually-registered templates may need a one-time deploy first; once registered, additional iteration is deploy-free).
 3. Iterate: edit the template file, call `workflow_sync_from_template_file(workflow_id, opportunity_id, template_source=<py contents>, sidecar_files={"foo_render.js": <js contents>}, expected_render_code_version=N, expected_definition_version=M)`, reload the labs tab.
 4. Use `dry_run=true` to validate + diff without writing when you want a sanity check before pushing.
@@ -129,4 +129,4 @@ If the tool returns `PARTIAL_SYNC`, call `workflow_get` to see what landed and w
 
 If you want a template to be sync'd, keep its module-level definitions in that literal-with-names form. If you need helper functions or comprehensions, run them inside a module-level loop that builds plain lists/dicts and assign those plain values to `DEFINITION`/`PIPELINE_SCHEMAS` instead.
 
-Templates known to be sync-incompatible today (use a redeploy instead, or refactor the offending module-level expression to literal form): `kmc_longitudinal`, `kmc_project_metrics`, `llo_weekly_review`, `mbw_monitoring_v3`, `program_admin_audit`, `sam_followup`. The parametrized test in `commcare_connect/mcp/tests/test_template_parser.py::test_parser_handles_every_shipped_template` is the source of truth for this list.
+Templates known to be sync-incompatible today (use a redeploy instead, or refactor the offending module-level expression to literal form): `kmc_longitudinal`, `kmc_project_metrics`, `llo_weekly_review`, `mbw_monitoring_v3`, `program_admin_audit`, `sam_followup`. The parametrized test in `connect_labs/mcp/tests/test_template_parser.py::test_parser_handles_every_shipped_template` is the source of truth for this list.

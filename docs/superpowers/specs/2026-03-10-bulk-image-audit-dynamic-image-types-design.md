@@ -112,7 +112,7 @@ path("api/opportunity/<int:opp_id>/image-questions/",
 
 ## Change 3: Image Type Dropdown on Review Page
 
-**File:** `commcare_connect/templates/audit/bulk_assessment.html`
+**File:** `connect_labs/templates/audit/bulk_assessment.html`
 
 **What changes:**
 - Add a new `<select>` dropdown in the filters section (alongside the existing Status dropdown)
@@ -143,7 +143,7 @@ formatQuestionId(qid) {
 
 | File | Change |
 |---|---|
-| `commcare_connect/audit/views.py` | Add `OpportunityImageQuestionsAPIView` |
-| `commcare_connect/audit/urls.py` | Register new URL |
-| `commcare_connect/workflow/templates/bulk_image_audit.py` | Remove opp selector, add dynamic image types, multi-select |
-| `commcare_connect/templates/audit/bulk_assessment.html` | Add image type dropdown to filter bar |
+| `connect_labs/audit/views.py` | Add `OpportunityImageQuestionsAPIView` |
+| `connect_labs/audit/urls.py` | Register new URL |
+| `connect_labs/workflow/templates/bulk_image_audit.py` | Remove opp selector, add dynamic image types, multi-select |
+| `connect_labs/templates/audit/bulk_assessment.html` | Add image type dropdown to filter bar |

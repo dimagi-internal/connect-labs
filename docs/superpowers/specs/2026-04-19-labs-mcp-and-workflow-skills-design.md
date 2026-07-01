@@ -37,7 +37,7 @@ Three MCP servers, each with a clear product scope:
 | Server | Transport | Host | Purpose |
 |---|---|---|---|
 | `commcare_hq_mcp` | stdio (local) | `tools/commcare_hq_mcp/` | CommCare HQ app structure (form paths, xmlns, modules). Used when authoring pipeline schemas. |
-| `connect_labs` | HTTP (remote) | `commcare_connect/mcp/` Django app, mounted at `https://labs.connect.dimagi.com/mcp/` | All labs-product operations: workflows, pipelines, solicitations, reviews, funds, sample IDs. |
+| `connect_labs` | HTTP (remote) | `connect_labs/mcp/` Django app, mounted at `https://labs.connect.dimagi.com/mcp/` | All labs-product operations: workflows, pipelines, solicitations, reviews, funds, sample IDs. |
 | *(Google tools)* | — | *Deleted* | `tools/commcare_mcp/google_tools.py` and `google_auth.py` removed. The `ace-gdrive` plugin is strictly richer. |
 
 ### Why remote for labs
@@ -81,7 +81,7 @@ Three MCP servers, each with a clear product scope:
 
 ### Migrated tools (file move only, no signature changes)
 
-`solicitation_*`, `review_*`, `fund_*`, `sample_ids_*` — move from `tools/commcare_mcp/` to `commcare_connect/mcp/tools/`. Existing tests move with them and must pass unchanged.
+`solicitation_*`, `review_*`, `fund_*`, `sample_ids_*` — move from `tools/commcare_mcp/` to `connect_labs/mcp/tools/`. Existing tests move with them and must pass unchanged.
 
 ### Error shape (uniform across all tools)
 
@@ -125,7 +125,7 @@ Three skills, each a short procedure on top of the MCP tools.
 
 ### `workflow-templates` (existing, re-scoped)
 
-Narrowed to **seed template authoring only** — the repo `.py` files in `commcare_connect/workflow/templates/` that ship with labs. `SKILL.md` updated to:
+Narrowed to **seed template authoring only** — the repo `.py` files in `connect_labs/workflow/templates/` that ship with labs. `SKILL.md` updated to:
 
 - Direct the reader to `workflow-author` if they're editing a live instance.
 - Remove any overlap with live-instance editing procedures.
@@ -218,10 +218,10 @@ These are implementation-level decisions that don't shape the design but need a 
 Ordered for independently landable PRs.
 
 1. **Rename `tools/commcare_mcp/` → `tools/commcare_hq_mcp/` and prune.** Delete `google_tools.py`, `google_auth.py`. Move labs-product tool files (solicitation, review, fund, sample_ids) into a `_pending_migration/` subdir so they're still served by the old server name while the new home is being built. Update `.claude/mcp.json`.
-2. **Create `commcare_connect/mcp/` Django app scaffolding.** INSTALLED_APPS entry, URL routes at `/mcp/`, Streamable HTTP transport handler, stub tools catalog returning an empty list. Ship to staging. Verify Claude Code can connect and `tools/list` round-trips.
+2. **Create `connect_labs/mcp/` Django app scaffolding.** INSTALLED_APPS entry, URL routes at `/mcp/`, Streamable HTTP transport handler, stub tools catalog returning an empty list. Ship to staging. Verify Claude Code can connect and `tools/list` round-trips.
 3. **Land OAuth 2.1 auth** (or the PAT fallback — commit to one at the start of this step).
 4. **Port workflow + pipeline tools into the new server** with server-side validation and audit logging.
-5. **Move `_pending_migration/` tools into `commcare_connect/mcp/tools/`.** Delete the old stdio versions. Publish migration doc for `.claude/mcp.json` updates.
+5. **Move `_pending_migration/` tools into `connect_labs/mcp/tools/`.** Delete the old stdio versions. Publish migration doc for `.claude/mcp.json` updates.
 6. **Ship templates-as-flag.** Add `is_template` and `template_scope` to workflow LabsRecord data. Add `workflow_clone` and `workflow_set_template_flag` tools. Update `workflow-author` skill.
 7. **Update docs.** Replace CLAUDE.md's "CommCare MCP Server" section with "MCP Servers" covering both. Add `docs/MCP_SETUP.md` for first-time setup. Update skills' `SKILL.md`.
 
@@ -272,5 +272,5 @@ Existing tests for solicitation, review, fund, sample_ids ported to new server h
 - The same skill works identically in CLI, desktop, and web surfaces.
 - An invalid JSX push is rejected by the server with a specific error; the model self-corrects on retry.
 - Two concurrent edits produce a `VERSION_CONFLICT` rather than a silent overwrite.
-- After migration: `tools/commcare_mcp/` no longer exists; `tools/commcare_hq_mcp/` serves HQ tools only; `commcare_connect/mcp/` serves labs tools only.
+- After migration: `tools/commcare_mcp/` no longer exists; `tools/commcare_hq_mcp/` serves HQ tools only; `connect_labs/mcp/` serves labs tools only.
 - `workflow-templates` skill is narrowed to seed-file authoring; `workflow-author` is the primary skill mentioned in onboarding.

@@ -17,16 +17,16 @@
 The pipeline needs `COUNT(DISTINCT value)` for counting unique beneficiary cases per FLW. Currently `count_unique` falls through to `MIN()`.
 
 **Files:**
-- Modify: `commcare_connect/labs/analysis/backends/sql/query_builder.py:167-193`
-- Test: `commcare_connect/labs/tests/test_query_builder.py` (create)
+- Modify: `connect_labs/labs/analysis/backends/sql/query_builder.py:167-193`
+- Test: `connect_labs/labs/tests/test_query_builder.py` (create)
 
 **Step 1: Write failing test**
 
 ```python
-# commcare_connect/labs/tests/test_query_builder.py
+# connect_labs/labs/tests/test_query_builder.py
 import pytest
 
-from commcare_connect.labs.analysis.backends.sql.query_builder import _aggregation_to_sql
+from connect_labs.labs.analysis.backends.sql.query_builder import _aggregation_to_sql
 
 
 class TestAggregationToSQL:
@@ -51,7 +51,7 @@ class TestAggregationToSQL:
 
 **Step 2: Run test to verify it fails**
 
-Run: `pytest commcare_connect/labs/tests/test_query_builder.py -v --ds=config.settings.local -o "addopts="`
+Run: `pytest connect_labs/labs/tests/test_query_builder.py -v --ds=config.settings.local -o "addopts="`
 Expected: `test_count_distinct` FAILS (count_unique falls through to MIN)
 
 **Step 3: Implement count_distinct**
@@ -82,13 +82,13 @@ Also add `"last"` while we're here (mirror of "first" with DESC):
 
 **Step 4: Run tests to verify they pass**
 
-Run: `pytest commcare_connect/labs/tests/test_query_builder.py -v --ds=config.settings.local -o "addopts="`
+Run: `pytest connect_labs/labs/tests/test_query_builder.py -v --ds=config.settings.local -o "addopts="`
 Expected: ALL PASS
 
 **Step 5: Commit**
 
 ```bash
-git add commcare_connect/labs/tests/test_query_builder.py commcare_connect/labs/analysis/backends/sql/query_builder.py
+git add connect_labs/labs/tests/test_query_builder.py connect_labs/labs/analysis/backends/sql/query_builder.py
 git commit -m "feat: add count_distinct and last aggregation types to pipeline query builder"
 ```
 
@@ -99,17 +99,17 @@ git commit -m "feat: add count_distinct and last aggregation types to pipeline q
 Several flag metrics require conditional counting (e.g., count distinct cases WHERE child_alive='no'). Add an optional `filter` on FieldComputation that generates PostgreSQL `FILTER (WHERE ...)` clauses.
 
 **Files:**
-- Modify: `commcare_connect/labs/analysis/config.py:62-145` (FieldComputation)
-- Modify: `commcare_connect/labs/analysis/backends/sql/query_builder.py:167-193`
-- Modify: `commcare_connect/workflow/data_access.py:1709-1721` (_schema_to_config field parsing)
-- Test: `commcare_connect/labs/tests/test_query_builder.py` (extend)
+- Modify: `connect_labs/labs/analysis/config.py:62-145` (FieldComputation)
+- Modify: `connect_labs/labs/analysis/backends/sql/query_builder.py:167-193`
+- Modify: `connect_labs/workflow/data_access.py:1709-1721` (_schema_to_config field parsing)
+- Test: `connect_labs/labs/tests/test_query_builder.py` (extend)
 
 **Step 1: Write failing test**
 
 Add to `test_query_builder.py`:
 
 ```python
-from commcare_connect.labs.analysis.config import FieldComputation
+from connect_labs.labs.analysis.config import FieldComputation
 
 
 class TestFilteredAggregation:
@@ -139,7 +139,7 @@ class TestFilteredAggregation:
 
 **Step 2: Run test to verify it fails**
 
-Run: `pytest commcare_connect/labs/tests/test_query_builder.py::TestFilteredAggregation -v --ds=config.settings.local -o "addopts="`
+Run: `pytest connect_labs/labs/tests/test_query_builder.py::TestFilteredAggregation -v --ds=config.settings.local -o "addopts="`
 Expected: FAIL — FieldComputation doesn't accept `filter_path`
 
 **Step 3: Add filter fields to FieldComputation**
@@ -256,13 +256,13 @@ fields.append(
 
 **Step 7: Run tests**
 
-Run: `pytest commcare_connect/labs/tests/test_query_builder.py -v --ds=config.settings.local -o "addopts="`
+Run: `pytest connect_labs/labs/tests/test_query_builder.py -v --ds=config.settings.local -o "addopts="`
 Expected: ALL PASS
 
 **Step 8: Commit**
 
 ```bash
-git add commcare_connect/labs/analysis/config.py commcare_connect/labs/analysis/backends/sql/query_builder.py commcare_connect/workflow/data_access.py commcare_connect/labs/tests/test_query_builder.py
+git add connect_labs/labs/analysis/config.py connect_labs/labs/analysis/backends/sql/query_builder.py connect_labs/workflow/data_access.py connect_labs/labs/tests/test_query_builder.py
 git commit -m "feat: add per-field filter support for conditional SQL aggregation"
 ```
 
@@ -273,12 +273,12 @@ git commit -m "feat: add per-field filter support for conditional SQL aggregatio
 Create the template file with pipeline definitions and basic structure.
 
 **Files:**
-- Create: `commcare_connect/workflow/templates/kmc_flw_flags.py`
+- Create: `connect_labs/workflow/templates/kmc_flw_flags.py`
 
 **Step 1: Create the template file**
 
 ```python
-# commcare_connect/workflow/templates/kmc_flw_flags.py
+# connect_labs/workflow/templates/kmc_flw_flags.py
 """
 KMC FLW Flag Report — identifies FLWs with concerning performance patterns
 across 8 flags in three domains: case management, danger signs, weight tracking.
@@ -462,7 +462,7 @@ TEMPLATE = {
 Run Python to check the template is discovered:
 
 ```bash
-python -c "from commcare_connect.workflow.templates import list_templates; print([t['key'] for t in list_templates()])"
+python -c "from connect_labs.workflow.templates import list_templates; print([t['key'] for t in list_templates()])"
 ```
 
 Expected: List includes `'kmc_flw_flags'`
@@ -470,7 +470,7 @@ Expected: List includes `'kmc_flw_flags'`
 **Step 3: Commit**
 
 ```bash
-git add commcare_connect/workflow/templates/kmc_flw_flags.py
+git add connect_labs/workflow/templates/kmc_flw_flags.py
 git commit -m "feat: add kmc_flw_flags template skeleton with pipeline schemas"
 ```
 
@@ -481,7 +481,7 @@ git commit -m "feat: add kmc_flw_flags template skeleton with pipeline schemas"
 Write the core data processing functions that merge both pipeline results and compute all 8 flags.
 
 **Files:**
-- Modify: `commcare_connect/workflow/templates/kmc_flw_flags.py` (RENDER_CODE)
+- Modify: `connect_labs/workflow/templates/kmc_flw_flags.py` (RENDER_CODE)
 
 **Step 1: Replace RENDER_CODE placeholder**
 
@@ -998,7 +998,7 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
 **Step 2: Verify template still loads**
 
 ```bash
-python -c "from commcare_connect.workflow.templates import get_template; t = get_template('kmc_flw_flags'); print('OK:', len(t['render_code']), 'chars')"
+python -c "from connect_labs.workflow.templates import get_template; t = get_template('kmc_flw_flags'); print('OK:', len(t['render_code']), 'chars')"
 ```
 
 Expected: `OK: XXXX chars`
@@ -1006,7 +1006,7 @@ Expected: `OK: XXXX chars`
 **Step 3: Commit**
 
 ```bash
-git add commcare_connect/workflow/templates/kmc_flw_flags.py
+git add connect_labs/workflow/templates/kmc_flw_flags.py
 git commit -m "feat: implement KMC FLW flag report RENDER_CODE with full UI"
 ```
 
@@ -1015,7 +1015,7 @@ git commit -m "feat: implement KMC FLW flag report RENDER_CODE with full UI"
 ## Task 5: Add template to __init__.py exports
 
 **Files:**
-- Modify: `commcare_connect/workflow/templates/__init__.py:218-231`
+- Modify: `connect_labs/workflow/templates/__init__.py:218-231`
 
 **Step 1: Add import and __all__ entry**
 
@@ -1034,7 +1034,7 @@ Add to `__all__` (~line 227):
 **Step 2: Verify**
 
 ```bash
-python -c "from commcare_connect.workflow.templates import list_templates; keys = [t['key'] for t in list_templates()]; print(keys); assert 'kmc_flw_flags' in keys"
+python -c "from connect_labs.workflow.templates import list_templates; keys = [t['key'] for t in list_templates()]; print(keys); assert 'kmc_flw_flags' in keys"
 ```
 
 Expected: List printed, assertion passes
@@ -1042,7 +1042,7 @@ Expected: List printed, assertion passes
 **Step 3: Commit**
 
 ```bash
-git add commcare_connect/workflow/templates/__init__.py
+git add connect_labs/workflow/templates/__init__.py
 git commit -m "feat: register kmc_flw_flags template in __init__.py exports"
 ```
 
@@ -1051,13 +1051,13 @@ git commit -m "feat: register kmc_flw_flags template in __init__.py exports"
 ## Task 6: Write E2E test
 
 **Files:**
-- Create: `commcare_connect/workflow/tests/e2e/test_flw_flags_workflow.py`
-- Reference: `commcare_connect/workflow/tests/e2e/conftest.py` for fixtures
+- Create: `connect_labs/workflow/tests/e2e/test_flw_flags_workflow.py`
+- Reference: `connect_labs/workflow/tests/e2e/conftest.py` for fixtures
 
 **Step 1: Write the E2E test**
 
 ```python
-# commcare_connect/workflow/tests/e2e/test_flw_flags_workflow.py
+# connect_labs/workflow/tests/e2e/test_flw_flags_workflow.py
 """E2E test for KMC FLW Flag Report workflow template."""
 import pytest
 from playwright.sync_api import expect
@@ -1130,7 +1130,7 @@ class TestKMCFLWFlagsWorkflow:
 **Step 2: Run E2E test**
 
 ```bash
-pytest commcare_connect/workflow/tests/e2e/test_flw_flags_workflow.py -v --ds=config.settings.local -o "addopts=" --opportunity-id=874
+pytest connect_labs/workflow/tests/e2e/test_flw_flags_workflow.py -v --ds=config.settings.local -o "addopts=" --opportunity-id=874
 ```
 
 Expected: PASS (flag report renders with KPI cards, table, action bar)
@@ -1138,7 +1138,7 @@ Expected: PASS (flag report renders with KPI cards, table, action bar)
 **Step 3: Commit**
 
 ```bash
-git add commcare_connect/workflow/tests/e2e/test_flw_flags_workflow.py
+git add connect_labs/workflow/tests/e2e/test_flw_flags_workflow.py
 git commit -m "test: add E2E test for KMC FLW Flag Report template"
 ```
 
@@ -1149,7 +1149,7 @@ git commit -m "test: add E2E test for KMC FLW Flag Report template"
 After the template is running, use the CommCare MCP server to verify that the pipeline field paths actually match the form JSON structure. Adjust any paths that return empty data.
 
 **Files:**
-- Modify: `commcare_connect/workflow/templates/kmc_flw_flags.py` (PIPELINE_SCHEMAS fields)
+- Modify: `connect_labs/workflow/templates/kmc_flw_flags.py` (PIPELINE_SCHEMAS fields)
 
 **Step 1: Run the template and check which fields return data**
 
@@ -1177,7 +1177,7 @@ Adjust any incorrect paths in PIPELINE_SCHEMAS.
 **Step 4: Commit**
 
 ```bash
-git add commcare_connect/workflow/templates/kmc_flw_flags.py
+git add connect_labs/workflow/templates/kmc_flw_flags.py
 git commit -m "fix: correct pipeline field paths based on MCP verification"
 ```
 

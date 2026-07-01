@@ -37,9 +37,9 @@ site:
 
 ```python
 MARKETING_PATHS = (
-    "commcare_connect/prelogin/",
-    "commcare_connect/templates/prelogin/",
-    "commcare_connect/static/prelogin/",
+    "connect_labs/prelogin/",
+    "connect_labs/templates/prelogin/",
+    "connect_labs/static/prelogin/",
 )
 ```
 

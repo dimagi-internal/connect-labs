@@ -23,7 +23,7 @@ RUN [ -d /app/node_modules ] || npm install
 
 # Copy source and build only if bundles don't exist (pre-built image has them)
 COPY . /app
-RUN [ -d /app/commcare_connect/static/bundles/js ] || npm run build
+RUN [ -d /app/connect_labs/static/bundles/js ] || npm run build
 
 # ---------------------------------------------------------------------------
 # Stage 2: Final application image
@@ -35,7 +35,7 @@ ENV DEBUG=0
 ENV DJANGO_SETTINGS_MODULE=config.settings.labs_aws
 
 # Copy frontend bundles from node build
-COPY --from=build-node /app/commcare_connect/static/bundles /app/commcare_connect/static/bundles
+COPY --from=build-node /app/connect_labs/static/bundles /app/connect_labs/static/bundles
 
 WORKDIR /app
 

@@ -267,17 +267,17 @@ Fallback: if the endpoint errors, the picker degrades to a free-text input
 
 ## Affected Files (anticipated)
 
-- `commcare_connect/labs/ai_review_agents/base.py` — `config_fields` attribute.
-- `commcare_connect/labs/ai_review_agents/agents/scale_validation.py` — declare
+- `connect_labs/labs/ai_review_agents/base.py` — `config_fields` attribute.
+- `connect_labs/labs/ai_review_agents/agents/scale_validation.py` — declare
   `comparison_field`.
-- `commcare_connect/audit/views.py` — `AIAgentsListAPIView` (surface
+- `connect_labs/audit/views.py` — `AIAgentsListAPIView` (surface
   `config_fields`); create view (`image_audits`/`context_fields` translation +
   legacy compat); new `OpportunityFieldQuestionsAPIView`.
-- `commcare_connect/audit/urls.py` — `field-questions/` route.
-- `commcare_connect/audit/analysis_config.py` — `extract_field_paths` helper.
-- `commcare_connect/audit/data_access.py` — persist `ai_reviewers` on the
+- `connect_labs/audit/urls.py` — `field-questions/` route.
+- `connect_labs/audit/analysis_config.py` — `extract_field_paths` helper.
+- `connect_labs/audit/data_access.py` — persist `ai_reviewers` on the
   session.
-- `commcare_connect/audit/tasks.py` — per-`question_id` agent lookup in
+- `connect_labs/audit/tasks.py` — per-`question_id` agent lookup in
   `_run_ai_review_on_sessions`.
-- `commcare_connect/templates/audit/audit_creation_wizard.html` — merged step,
+- `connect_labs/templates/audit/audit_creation_wizard.html` — merged step,
   generic `config_fields` renderer, context-fields control, validation.

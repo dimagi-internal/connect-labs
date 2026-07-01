@@ -13,34 +13,34 @@
 ### Task 1: Create funder_dashboard app skeleton
 
 **Files:**
-- Create: `commcare_connect/funder_dashboard/__init__.py`
-- Create: `commcare_connect/funder_dashboard/apps.py`
-- Create: `commcare_connect/funder_dashboard/models.py`
-- Create: `commcare_connect/funder_dashboard/data_access.py`
-- Create: `commcare_connect/funder_dashboard/views.py`
-- Create: `commcare_connect/funder_dashboard/urls.py`
-- Create: `commcare_connect/funder_dashboard/forms.py`
-- Create: `commcare_connect/funder_dashboard/api_views.py`
-- Create: `commcare_connect/funder_dashboard/mcp_tools.py`
-- Create: `commcare_connect/funder_dashboard/tests/__init__.py`
-- Create: `commcare_connect/funder_dashboard/tests/conftest.py`
+- Create: `connect_labs/funder_dashboard/__init__.py`
+- Create: `connect_labs/funder_dashboard/apps.py`
+- Create: `connect_labs/funder_dashboard/models.py`
+- Create: `connect_labs/funder_dashboard/data_access.py`
+- Create: `connect_labs/funder_dashboard/views.py`
+- Create: `connect_labs/funder_dashboard/urls.py`
+- Create: `connect_labs/funder_dashboard/forms.py`
+- Create: `connect_labs/funder_dashboard/api_views.py`
+- Create: `connect_labs/funder_dashboard/mcp_tools.py`
+- Create: `connect_labs/funder_dashboard/tests/__init__.py`
+- Create: `connect_labs/funder_dashboard/tests/conftest.py`
 - Modify: `config/urls.py`
 
 **Step 1: Create the app directory and files**
 
-`commcare_connect/funder_dashboard/__init__.py` — empty
+`connect_labs/funder_dashboard/__init__.py` — empty
 
-`commcare_connect/funder_dashboard/apps.py`:
+`connect_labs/funder_dashboard/apps.py`:
 ```python
 from django.apps import AppConfig
 
 
 class FunderDashboardConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
-    name = "commcare_connect.funder_dashboard"
+    name = "connect_labs.funder_dashboard"
 ```
 
-`commcare_connect/funder_dashboard/models.py`:
+`connect_labs/funder_dashboard/models.py`:
 ```python
 """
 Proxy models for funder_dashboard.
@@ -48,7 +48,7 @@ Proxy models for funder_dashboard.
 FundRecord extends LocalLabsRecord with typed @property access
 to JSON data stored via the LabsRecord API. Cannot be .save()d locally.
 """
-from commcare_connect.labs.models import LocalLabsRecord
+from connect_labs.labs.models import LocalLabsRecord
 
 
 class FundRecord(LocalLabsRecord):
@@ -87,7 +87,7 @@ class FundRecord(LocalLabsRecord):
         return self.data.get("status", "active")
 ```
 
-`commcare_connect/funder_dashboard/data_access.py`:
+`connect_labs/funder_dashboard/data_access.py`:
 ```python
 """
 Data Access Layer for funder_dashboard.
@@ -99,8 +99,8 @@ Type constant: type="fund"
 """
 from django.http import HttpRequest
 
-from commcare_connect.funder_dashboard.models import FundRecord
-from commcare_connect.labs.integrations.connect.api_client import LabsRecordAPIClient
+from connect_labs.funder_dashboard.models import FundRecord
+from connect_labs.labs.integrations.connect.api_client import LabsRecordAPIClient
 
 FUND_TYPE = "fund"
 
@@ -180,7 +180,7 @@ class FunderDashboardDataAccess:
         return FundRecord(record.to_api_dict())
 ```
 
-`commcare_connect/funder_dashboard/urls.py`:
+`connect_labs/funder_dashboard/urls.py`:
 ```python
 from django.urls import path
 
@@ -201,7 +201,7 @@ urlpatterns = [
 ]
 ```
 
-`commcare_connect/funder_dashboard/views.py` — stub:
+`connect_labs/funder_dashboard/views.py` — stub:
 ```python
 from django.views.generic import TemplateView
 
@@ -222,7 +222,7 @@ class FundEditView(TemplateView):
     template_name = "funder_dashboard/fund_form.html"
 ```
 
-`commcare_connect/funder_dashboard/forms.py` — stub:
+`connect_labs/funder_dashboard/forms.py` — stub:
 ```python
 from django import forms
 
@@ -231,7 +231,7 @@ class FundForm(forms.Form):
     pass
 ```
 
-`commcare_connect/funder_dashboard/api_views.py` — stub:
+`connect_labs/funder_dashboard/api_views.py` — stub:
 ```python
 from django.http import JsonResponse
 
@@ -244,14 +244,14 @@ def api_fund_detail(request, pk):
     return JsonResponse({"fund": None})
 ```
 
-`commcare_connect/funder_dashboard/mcp_tools.py` — stub:
+`connect_labs/funder_dashboard/mcp_tools.py` — stub:
 ```python
 """MCP tools for funder_dashboard. To be implemented."""
 ```
 
-`commcare_connect/funder_dashboard/tests/__init__.py` — empty
+`connect_labs/funder_dashboard/tests/__init__.py` — empty
 
-`commcare_connect/funder_dashboard/tests/conftest.py`:
+`connect_labs/funder_dashboard/tests/conftest.py`:
 ```python
 """Override autouse fixtures from root conftest.
 
@@ -274,18 +274,18 @@ def ensure_currency_country_data():
 
 Add after the `solicitations` line:
 ```python
-path("funder/", include("commcare_connect.funder_dashboard.urls", namespace="funder_dashboard")),
+path("funder/", include("connect_labs.funder_dashboard.urls", namespace="funder_dashboard")),
 ```
 
 **Step 3: Verify app loads**
 
-Run: `cd "C:/Users/Jonathan Jackson/Projects/connect-labs" && python -c "from commcare_connect.funder_dashboard.models import FundRecord; print('OK')"`
+Run: `cd "C:/Users/Jonathan Jackson/Projects/connect-labs" && python -c "from connect_labs.funder_dashboard.models import FundRecord; print('OK')"`
 Expected: `OK`
 
 **Step 4: Commit**
 
 ```bash
-git add commcare_connect/funder_dashboard/ config/urls.py
+git add connect_labs/funder_dashboard/ config/urls.py
 git commit -m "feat: create funder_dashboard app skeleton"
 ```
 
@@ -294,15 +294,15 @@ git commit -m "feat: create funder_dashboard app skeleton"
 ### Task 2: FundRecord model tests and data access tests
 
 **Files:**
-- Create: `commcare_connect/funder_dashboard/tests/test_models.py`
-- Create: `commcare_connect/funder_dashboard/tests/test_data_access.py`
+- Create: `connect_labs/funder_dashboard/tests/test_models.py`
+- Create: `connect_labs/funder_dashboard/tests/test_data_access.py`
 
 **Step 1: Write model tests**
 
-`commcare_connect/funder_dashboard/tests/test_models.py`:
+`connect_labs/funder_dashboard/tests/test_models.py`:
 ```python
 """Tests for FundRecord proxy model."""
-from commcare_connect.funder_dashboard.models import FundRecord
+from connect_labs.funder_dashboard.models import FundRecord
 
 
 class TestFundRecord:
@@ -360,12 +360,12 @@ class TestFundRecord:
 
 **Step 2: Run model tests to verify they pass**
 
-Run: `cd "C:/Users/Jonathan Jackson/Projects/connect-labs" && pytest commcare_connect/funder_dashboard/tests/test_models.py -v`
+Run: `cd "C:/Users/Jonathan Jackson/Projects/connect-labs" && pytest connect_labs/funder_dashboard/tests/test_models.py -v`
 Expected: All PASS
 
 **Step 3: Write data access tests**
 
-`commcare_connect/funder_dashboard/tests/test_data_access.py`:
+`connect_labs/funder_dashboard/tests/test_data_access.py`:
 ```python
 """Tests for funder_dashboard data access layer.
 
@@ -375,9 +375,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from commcare_connect.funder_dashboard.data_access import FUND_TYPE, FunderDashboardDataAccess
-from commcare_connect.funder_dashboard.models import FundRecord
-from commcare_connect.labs.models import LocalLabsRecord
+from connect_labs.funder_dashboard.data_access import FUND_TYPE, FunderDashboardDataAccess
+from connect_labs.funder_dashboard.models import FundRecord
+from connect_labs.labs.models import LocalLabsRecord
 
 
 def _make_fund_record(**overrides):
@@ -405,7 +405,7 @@ def _make_fund_record(**overrides):
 
 @pytest.fixture
 def mock_api_client():
-    with patch("commcare_connect.funder_dashboard.data_access.LabsRecordAPIClient") as MockClient:
+    with patch("connect_labs.funder_dashboard.data_access.LabsRecordAPIClient") as MockClient:
         mock_instance = MagicMock()
         MockClient.return_value = mock_instance
         yield mock_instance
@@ -423,12 +423,12 @@ class TestConstructor:
         with pytest.raises(ValueError, match="OAuth access token required"):
             FunderDashboardDataAccess(org_id="42")
 
-    @patch("commcare_connect.funder_dashboard.data_access.LabsRecordAPIClient")
+    @patch("connect_labs.funder_dashboard.data_access.LabsRecordAPIClient")
     def test_stores_org_id(self, MockClient):
         da = FunderDashboardDataAccess(org_id="42", access_token="tok")
         assert da.org_id == "42"
 
-    @patch("commcare_connect.funder_dashboard.data_access.LabsRecordAPIClient")
+    @patch("connect_labs.funder_dashboard.data_access.LabsRecordAPIClient")
     def test_creates_api_client_with_token(self, MockClient):
         FunderDashboardDataAccess(org_id="42", access_token="tok")
         MockClient.assert_called_once_with("tok", organization_id=42)
@@ -499,13 +499,13 @@ class TestUpdateFund:
 
 **Step 4: Run data access tests**
 
-Run: `cd "C:/Users/Jonathan Jackson/Projects/connect-labs" && pytest commcare_connect/funder_dashboard/tests/test_data_access.py -v`
+Run: `cd "C:/Users/Jonathan Jackson/Projects/connect-labs" && pytest connect_labs/funder_dashboard/tests/test_data_access.py -v`
 Expected: All PASS
 
 **Step 5: Commit**
 
 ```bash
-git add commcare_connect/funder_dashboard/tests/
+git add connect_labs/funder_dashboard/tests/
 git commit -m "test: add FundRecord model and data access tests"
 ```
 
@@ -514,15 +514,15 @@ git commit -m "test: add FundRecord model and data access tests"
 ### Task 3: FundForm and Fund CRUD views
 
 **Files:**
-- Modify: `commcare_connect/funder_dashboard/forms.py`
-- Modify: `commcare_connect/funder_dashboard/views.py`
-- Create: `commcare_connect/templates/funder_dashboard/fund_form.html`
-- Create: `commcare_connect/templates/funder_dashboard/portfolio.html`
-- Create: `commcare_connect/templates/funder_dashboard/fund_detail.html`
+- Modify: `connect_labs/funder_dashboard/forms.py`
+- Modify: `connect_labs/funder_dashboard/views.py`
+- Create: `connect_labs/templates/funder_dashboard/fund_form.html`
+- Create: `connect_labs/templates/funder_dashboard/portfolio.html`
+- Create: `connect_labs/templates/funder_dashboard/fund_detail.html`
 
 **Step 1: Implement FundForm**
 
-Replace `commcare_connect/funder_dashboard/forms.py`:
+Replace `connect_labs/funder_dashboard/forms.py`:
 ```python
 """Forms for funder_dashboard. Produces dicts via to_data_dict() for the data access layer."""
 from django import forms
@@ -606,7 +606,7 @@ class FundForm(forms.Form):
 
 **Step 2: Implement views**
 
-Replace `commcare_connect/funder_dashboard/views.py`:
+Replace `connect_labs/funder_dashboard/views.py`:
 ```python
 import json
 import logging
@@ -616,8 +616,8 @@ from django.http import Http404
 from django.shortcuts import redirect
 from django.views.generic import TemplateView
 
-from commcare_connect.funder_dashboard.data_access import FunderDashboardDataAccess
-from commcare_connect.funder_dashboard.forms import FundForm
+from connect_labs.funder_dashboard.data_access import FunderDashboardDataAccess
+from connect_labs.funder_dashboard.forms import FundForm
 
 logger = logging.getLogger(__name__)
 
@@ -768,7 +768,7 @@ class FundEditView(ManagerRequiredMixin, TemplateView):
 
 **Step 3: Create templates**
 
-`commcare_connect/templates/funder_dashboard/portfolio.html`:
+`connect_labs/templates/funder_dashboard/portfolio.html`:
 ```html
 {% extends "base.html" %}
 
@@ -836,7 +836,7 @@ class FundEditView(ManagerRequiredMixin, TemplateView):
 {% endblock %}
 ```
 
-`commcare_connect/templates/funder_dashboard/fund_detail.html`:
+`connect_labs/templates/funder_dashboard/fund_detail.html`:
 ```html
 {% extends "base.html" %}
 
@@ -908,7 +908,7 @@ class FundEditView(ManagerRequiredMixin, TemplateView):
 {% endblock %}
 ```
 
-`commcare_connect/templates/funder_dashboard/fund_form.html`:
+`connect_labs/templates/funder_dashboard/fund_form.html`:
 ```html
 {% extends "base.html" %}
 
@@ -974,13 +974,13 @@ class FundEditView(ManagerRequiredMixin, TemplateView):
 
 **Step 4: Run all funder_dashboard tests**
 
-Run: `cd "C:/Users/Jonathan Jackson/Projects/connect-labs" && pytest commcare_connect/funder_dashboard/ -v`
+Run: `cd "C:/Users/Jonathan Jackson/Projects/connect-labs" && pytest connect_labs/funder_dashboard/ -v`
 Expected: All PASS
 
 **Step 5: Commit**
 
 ```bash
-git add commcare_connect/funder_dashboard/forms.py commcare_connect/funder_dashboard/views.py commcare_connect/templates/funder_dashboard/
+git add connect_labs/funder_dashboard/forms.py connect_labs/funder_dashboard/views.py connect_labs/templates/funder_dashboard/
 git commit -m "feat: implement Fund CRUD views, forms, and templates"
 ```
 
@@ -989,12 +989,12 @@ git commit -m "feat: implement Fund CRUD views, forms, and templates"
 ### Task 4: Fund API endpoints
 
 **Files:**
-- Modify: `commcare_connect/funder_dashboard/api_views.py`
-- Create: `commcare_connect/funder_dashboard/tests/test_api_views.py`
+- Modify: `connect_labs/funder_dashboard/api_views.py`
+- Create: `connect_labs/funder_dashboard/tests/test_api_views.py`
 
 **Step 1: Write API view tests**
 
-`commcare_connect/funder_dashboard/tests/test_api_views.py`:
+`connect_labs/funder_dashboard/tests/test_api_views.py`:
 ```python
 """Tests for funder_dashboard API views."""
 import json
@@ -1003,7 +1003,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from django.test import RequestFactory
 
-from commcare_connect.funder_dashboard.api_views import api_fund_detail, api_funds_list
+from connect_labs.funder_dashboard.api_views import api_fund_detail, api_funds_list
 
 
 def _mock_request(method="GET", body=None, user_authenticated=True):
@@ -1022,7 +1022,7 @@ def _mock_request(method="GET", body=None, user_authenticated=True):
     return request
 
 
-@patch("commcare_connect.funder_dashboard.api_views.FunderDashboardDataAccess")
+@patch("connect_labs.funder_dashboard.api_views.FunderDashboardDataAccess")
 class TestApiFundsList:
     def test_get_returns_funds(self, MockDA):
         mock_fund = MagicMock()
@@ -1051,7 +1051,7 @@ class TestApiFundsList:
 
 **Step 2: Implement API views**
 
-Replace `commcare_connect/funder_dashboard/api_views.py`:
+Replace `connect_labs/funder_dashboard/api_views.py`:
 ```python
 """JSON API endpoints for funder_dashboard."""
 import json
@@ -1061,7 +1061,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
-from commcare_connect.funder_dashboard.data_access import FunderDashboardDataAccess
+from connect_labs.funder_dashboard.data_access import FunderDashboardDataAccess
 
 logger = logging.getLogger(__name__)
 
@@ -1111,13 +1111,13 @@ def api_fund_detail(request, pk):
 
 **Step 3: Run API tests**
 
-Run: `cd "C:/Users/Jonathan Jackson/Projects/connect-labs" && pytest commcare_connect/funder_dashboard/tests/test_api_views.py -v`
+Run: `cd "C:/Users/Jonathan Jackson/Projects/connect-labs" && pytest connect_labs/funder_dashboard/tests/test_api_views.py -v`
 Expected: All PASS
 
 **Step 4: Commit**
 
 ```bash
-git add commcare_connect/funder_dashboard/api_views.py commcare_connect/funder_dashboard/tests/test_api_views.py
+git add connect_labs/funder_dashboard/api_views.py connect_labs/funder_dashboard/tests/test_api_views.py
 git commit -m "feat: implement fund API endpoints with tests"
 ```
 
@@ -1126,13 +1126,13 @@ git commit -m "feat: implement fund API endpoints with tests"
 ### Task 5: Enhance solicitations — add fund_id, org_id, reward_budget fields
 
 **Files:**
-- Modify: `commcare_connect/solicitations/models.py`
-- Modify: `commcare_connect/solicitations/forms.py`
-- Modify: `commcare_connect/solicitations/tests/test_models.py`
+- Modify: `connect_labs/solicitations/models.py`
+- Modify: `connect_labs/solicitations/forms.py`
+- Modify: `connect_labs/solicitations/tests/test_models.py`
 
 **Step 1: Add fund_id to SolicitationRecord**
 
-In `commcare_connect/solicitations/models.py`, add to `SolicitationRecord`:
+In `connect_labs/solicitations/models.py`, add to `SolicitationRecord`:
 ```python
 @property
 def fund_id(self):
@@ -1141,7 +1141,7 @@ def fund_id(self):
 
 **Step 2: Add org_id, org_name to ResponseRecord**
 
-In `commcare_connect/solicitations/models.py`, add to `ResponseRecord`:
+In `connect_labs/solicitations/models.py`, add to `ResponseRecord`:
 ```python
 @property
 def org_id(self):
@@ -1154,7 +1154,7 @@ def org_name(self):
 
 **Step 3: Add reward_budget to ReviewRecord**
 
-In `commcare_connect/solicitations/models.py`, add to `ReviewRecord`:
+In `connect_labs/solicitations/models.py`, add to `ReviewRecord`:
 ```python
 @property
 def reward_budget(self):
@@ -1163,7 +1163,7 @@ def reward_budget(self):
 
 **Step 4: Add "awarded" status to forms.py**
 
-In `commcare_connect/solicitations/forms.py`, update `STATUS_CHOICES`:
+In `connect_labs/solicitations/forms.py`, update `STATUS_CHOICES`:
 ```python
 STATUS_CHOICES = [
     ("draft", "Draft"),
@@ -1185,7 +1185,7 @@ reward_budget = forms.IntegerField(
 
 **Step 5: Add model tests for new fields**
 
-In `commcare_connect/solicitations/tests/test_models.py`, add:
+In `connect_labs/solicitations/tests/test_models.py`, add:
 ```python
 class TestSolicitationRecordFundId:
     def test_fund_id(self):
@@ -1237,13 +1237,13 @@ class TestReviewRecordRewardBudget:
 
 **Step 6: Run tests**
 
-Run: `cd "C:/Users/Jonathan Jackson/Projects/connect-labs" && pytest commcare_connect/solicitations/tests/ -v`
+Run: `cd "C:/Users/Jonathan Jackson/Projects/connect-labs" && pytest connect_labs/solicitations/tests/ -v`
 Expected: All PASS
 
 **Step 7: Commit**
 
 ```bash
-git add commcare_connect/solicitations/
+git add connect_labs/solicitations/
 git commit -m "feat: add fund_id, org_id, org_name, reward_budget fields to solicitation models"
 ```
 
@@ -1252,14 +1252,14 @@ git commit -m "feat: add fund_id, org_id, org_name, reward_budget fields to soli
 ### Task 6: Award flow — view and data access
 
 **Files:**
-- Modify: `commcare_connect/solicitations/data_access.py`
-- Modify: `commcare_connect/solicitations/views.py`
-- Modify: `commcare_connect/solicitations/urls.py`
-- Create: `commcare_connect/templates/solicitations/award.html`
+- Modify: `connect_labs/solicitations/data_access.py`
+- Modify: `connect_labs/solicitations/views.py`
+- Modify: `connect_labs/solicitations/urls.py`
+- Create: `connect_labs/templates/solicitations/award.html`
 
 **Step 1: Add award method to data access**
 
-In `commcare_connect/solicitations/data_access.py`, add after `update_response`:
+In `connect_labs/solicitations/data_access.py`, add after `update_response`:
 ```python
 def award_response(self, response_id: int, reward_budget: int, org_id: str) -> ResponseRecord:
     """
@@ -1286,7 +1286,7 @@ def award_response(self, response_id: int, reward_budget: int, org_id: str) -> R
 
 **Step 2: Add AwardView to views.py**
 
-In `commcare_connect/solicitations/views.py`, add:
+In `connect_labs/solicitations/views.py`, add:
 ```python
 class AwardView(ManagerRequiredMixin, TemplateView):
     """Award a response — mark as awarded with budget and org_id."""
@@ -1333,7 +1333,7 @@ class AwardView(ManagerRequiredMixin, TemplateView):
 
 **Step 3: Add URL**
 
-In `commcare_connect/solicitations/urls.py`, add before JSON API paths:
+In `connect_labs/solicitations/urls.py`, add before JSON API paths:
 ```python
 # Award
 path("response/<int:pk>/award/", views.AwardView.as_view(), name="award"),
@@ -1341,7 +1341,7 @@ path("response/<int:pk>/award/", views.AwardView.as_view(), name="award"),
 
 **Step 4: Create award template**
 
-`commcare_connect/templates/solicitations/award.html`:
+`connect_labs/templates/solicitations/award.html`:
 ```html
 {% extends "base.html" %}
 
@@ -1401,7 +1401,7 @@ path("response/<int:pk>/award/", views.AwardView.as_view(), name="award"),
 
 **Step 5: Add award_response test to test_data_access.py**
 
-In `commcare_connect/solicitations/tests/test_data_access.py`, add:
+In `connect_labs/solicitations/tests/test_data_access.py`, add:
 ```python
 class TestAwardResponse:
     def test_awards_response(self, data_access, mock_api_client):
@@ -1435,13 +1435,13 @@ class TestAwardResponse:
 
 **Step 6: Run all solicitation tests**
 
-Run: `cd "C:/Users/Jonathan Jackson/Projects/connect-labs" && pytest commcare_connect/solicitations/tests/ -v`
+Run: `cd "C:/Users/Jonathan Jackson/Projects/connect-labs" && pytest connect_labs/solicitations/tests/ -v`
 Expected: All PASS
 
 **Step 7: Commit**
 
 ```bash
-git add commcare_connect/solicitations/ commcare_connect/templates/solicitations/award.html
+git add connect_labs/solicitations/ connect_labs/templates/solicitations/award.html
 git commit -m "feat: add award flow — view, data access, template, and tests"
 ```
 
@@ -1450,8 +1450,8 @@ git commit -m "feat: add award flow — view, data access, template, and tests"
 ### Task 7: Add "Award" button to response detail and responses list
 
 **Files:**
-- Modify: `commcare_connect/templates/solicitations/response_detail.html`
-- Modify: `commcare_connect/templates/solicitations/responses_list.html`
+- Modify: `connect_labs/templates/solicitations/response_detail.html`
+- Modify: `connect_labs/templates/solicitations/responses_list.html`
 
 **Step 1: Read current templates and add award buttons**
 
@@ -1478,7 +1478,7 @@ Add "Award" link to each row in `responses_list.html` actions column.
 **Step 3: Commit**
 
 ```bash
-git add commcare_connect/templates/solicitations/
+git add connect_labs/templates/solicitations/
 git commit -m "feat: add Award button to response detail and responses list"
 ```
 
@@ -1488,7 +1488,7 @@ git commit -m "feat: add Award button to response detail and responses list"
 
 **Step 1: Run all tests**
 
-Run: `cd "C:/Users/Jonathan Jackson/Projects/connect-labs" && pytest commcare_connect/funder_dashboard/ commcare_connect/solicitations/tests/ -v`
+Run: `cd "C:/Users/Jonathan Jackson/Projects/connect-labs" && pytest connect_labs/funder_dashboard/ connect_labs/solicitations/tests/ -v`
 Expected: All PASS
 
 **Step 2: Run linter**
