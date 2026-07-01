@@ -229,24 +229,27 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
     const handleCreate = async () => {
         if (!startDate || !endDate || isRunning || instance.status === 'completed') return;
         setIsRunning(true); setJobError(null);
-        setProgress({ status: 'starting', message: 'Persisting window…' });
+        setProgress({ status: 'starting', message: 'Submitting to the server…' });
+
+        // Best-effort: persist the window to run state for display/period. The
+        // job ALSO receives the window in its payload below, so a flaky state
+        // write never blocks audit creation.
         try {
             await onUpdateState({
                 window_start: startDate, window_end: endDate,
                 period_start: startDate, period_end: endDate,
                 date_preset: datePreset,
             });
-        } catch (e) {
-            setIsRunning(false); setJobError('Failed to save window: ' + (e.message || e)); return;
-        }
+        } catch (e) { /* non-fatal — the window is passed in the job payload too */ }
 
-        setProgress({ status: 'starting', message: 'Submitting to the server…' });
         let resp;
         try {
             resp = await actions.startJob(instance.id, {
                 job_type: 'weekly_dual_track_audit_create',
                 run_id: instance.id,
                 opportunity_id: instance.opportunity_id,
+                window_start: startDate,
+                window_end: endDate,
             });
         } catch (e) {
             setIsRunning(false); setJobError('Failed to start job: ' + (e.message || e)); return;
@@ -255,8 +258,9 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
             setIsRunning(false); setJobError((resp && resp.error) || 'Failed to start job'); return;
         }
 
-        // Record the job on the run so a page reload can reconnect to it.
-        onUpdateState({ active_job: { job_id: resp.task_id, status: 'running', started_at: new Date().toISOString() } }).catch(() => {});
+        // The server job records active_job (with progress) on the run itself,
+        // so a page reload reconnects — no separate state write needed here
+        // (a redundant one races the server's write and can flake a 404).
         setProgress({ status: 'running', message: 'Starting…' });
         attachStream(resp.task_id);
     };

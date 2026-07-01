@@ -138,6 +138,36 @@ def test_handler_invokes_run_audit_creation_per_call_and_writes_summary():
     assert written["last_batch"]["calls"] == 4
 
 
+def test_handler_reads_window_from_job_payload_when_state_lacks_it():
+    """The render passes the window in the job payload, so audit creation works
+    even when the best-effort run-state write flaked (state has no window)."""
+    from commcare_connect.workflow.job_handlers import weekly_dual_track_audit as h
+
+    run = _fake_run({})  # no window in run state
+    eager = mock.Mock()
+    eager.result = {"session_ids": [1, 2, 3]}
+
+    with (
+        mock.patch.object(h, "WorkflowDataAccess") as WDA,
+        mock.patch.object(h, "run_audit_creation") as rac,
+    ):
+        wda = WDA.return_value
+        wda.get_run.return_value = run
+        wda.get_definition.return_value = _fake_definition()
+        rac.apply.return_value = eager
+
+        result = h.weekly_dual_track_audit_create(
+            {"run_id": 555, "opportunity_id": 101, "window_start": "2026-06-22", "window_end": "2026-06-28"},
+            access_token="tok",
+        )
+
+    assert rac.apply.call_count == 4  # window came from the payload; batch ran
+    first_criteria = rac.apply.call_args_list[0].kwargs["kwargs"]["criteria"]
+    assert first_criteria["start_date"] == "2026-06-22"
+    assert first_criteria["end_date"] == "2026-06-28"
+    assert result["successful"] == 4
+
+
 def test_handler_emits_processed_total_for_progress_bar():
     """Each per-call progress message carries processed/total so the render can
     show a real progress bar (idx of N) instead of a frozen spinner."""
