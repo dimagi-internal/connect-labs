@@ -582,8 +582,17 @@ class WorkflowDataAccess(BaseDataAccess):
         # Collect all IDs to delete in a single batch at the end
         ids_to_delete: list[int] = []
 
-        # Always delete render code (belongs to the definition)
+        # Fetch the definition + render code up front: both feed the safety
+        # backup below, and the definition is reused to scope linked deletes.
+        definition = self.get_definition(definition_id)
         render_code = self.get_render_code(definition_id)
+
+        # Safety backup: persist the workflow (definition + render-code JSX) to
+        # the labs DB BEFORE anything is deleted. Fail-closed — if the backup
+        # cannot be written, the exception propagates and nothing is deleted.
+        self._backup_definition(definition, render_code)
+
+        # Always delete render code (belongs to the definition)
         if render_code:
             ids_to_delete.append(render_code.id)
             deleted_counts["render_code"] = 1
@@ -599,7 +608,6 @@ class WorkflowDataAccess(BaseDataAccess):
             # are gathered across every opportunity the definition spans (a
             # multi-opp workflow's audits live in several opps), not just the
             # primary — otherwise non-primary opps' audits orphan on delete.
-            definition = self.get_definition(definition_id)
             opp_ids = self._definition_opportunity_ids(definition)
             runs = self.list_runs(definition_id)
             for run in runs:
@@ -621,6 +629,38 @@ class WorkflowDataAccess(BaseDataAccess):
         self.labs_api.delete_records(ids_to_delete)
 
         return deleted_counts
+
+    def _backup_definition(self, definition, render_code) -> None:
+        """Persist a restorable copy of a workflow to the labs DB before delete.
+
+        Captures the definition JSON plus its render-code JSX so a deleted
+        workflow can be reconstructed by hand. Runs are intentionally excluded.
+        Fail-closed: any exception propagates to the caller, which aborts the
+        delete. A missing definition (already gone) is a no-op — nothing to save.
+        """
+        if definition is None:
+            return
+
+        # Imported here to avoid a module-level dependency of the API-backed
+        # data-access layer on a labs-DB Django model.
+        from commcare_connect.labs.models import DeletedWorkflowBackup
+
+        DeletedWorkflowBackup.objects.create(
+            definition_id=definition.id,
+            opportunity_id=getattr(definition, "opportunity_id", None) or self.opportunity_id or 0,
+            name=definition.name,
+            template_type=definition.template_type,
+            definition_data=definition.data,
+            render_code=(render_code.component_code if render_code else ""),
+            deleted_by=(self.user.username if getattr(self, "user", None) else ""),
+        )
+        logger.info(
+            "[WorkflowBackup] backed up definition=%s opp=%s name=%r by=%s",
+            definition.id,
+            getattr(definition, "opportunity_id", None),
+            definition.name,
+            (self.user.username if getattr(self, "user", None) else ""),
+        )
 
     # -------------------------------------------------------------------------
     # Workflow Render Code Methods
