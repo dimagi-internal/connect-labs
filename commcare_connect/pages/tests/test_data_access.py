@@ -57,3 +57,20 @@ def test_create_surface_posts_public_scoped_record(mock_client_cls):
     assert kwargs["program_id"] == 25
     assert kwargs["public"] is True
     assert kwargs["data"]["slug"] == "s"
+
+
+@patch("commcare_connect.pages.data_access.LabsRecordAPIClient")
+def test_update_surface_patches_public_scoped_record(mock_client_cls):
+    client = mock_client_cls.return_value
+    client.update_record.return_value = _fake_record(slug="s", title="T", cards=[{"id": 1}], options={})
+
+    da = SurfaceDataAccess(access_token="tok", program_id=25)
+    da.update_surface(record_id=99, slug="s", title="T", cards=[{"id": 1}])
+
+    kwargs = client.update_record.call_args.kwargs
+    assert kwargs["record_id"] == 99
+    assert kwargs["type"] == "surface"
+    assert kwargs["program_id"] == 25
+    assert kwargs["public"] is True
+    assert kwargs["data"]["slug"] == "s"
+    assert kwargs["data"]["cards"] == [{"id": 1}]

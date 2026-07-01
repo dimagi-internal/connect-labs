@@ -61,7 +61,9 @@ class SurfaceDataAccess:
         )
         return self._normalize(record)
 
-    def update_surface(self, record_id, slug: str, title: str, cards: list[dict], options: dict | None = None) -> dict:
+    def update_surface(
+        self, record_id: int, slug: str, title: str, cards: list[dict], options: dict | None = None
+    ) -> dict:
         data = {"slug": slug, "title": title, "cards": cards, "options": options or {}}
         record = self.client.update_record(
             record_id=record_id,
