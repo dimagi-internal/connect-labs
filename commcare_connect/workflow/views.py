@@ -196,11 +196,11 @@ class WorkflowListView(LoginRequiredMixin, TemplateView):
         return context
 
     def _populate_opportunity_mode(self, context, opportunity_id, allowed_templates):
-        """Opportunity view: single-opp workflows only. Program-spanning
-        workflows (opportunity_ids > 1) are excluded — they live in the program
-        view — and a nav link to this opp's program is exposed."""
+        """Opportunity view: this opp's workflows, EXCLUDING any that are
+        explicitly program-owned (``config.program_id`` set) — those live in the
+        program view — and a nav link to this opp's program is exposed."""
         from commcare_connect.workflow.data_access import PipelineDataAccess
-        from commcare_connect.workflow.program_view import partition_by_span
+        from commcare_connect.workflow.program_view import opp_owned_definitions
 
         # Nav: link out to this opportunity's program view.
         org_data = get_org_data(self.request) or {}
@@ -223,8 +223,8 @@ class WorkflowListView(LoginRequiredMixin, TemplateView):
             pipeline_access = PipelineDataAccess(request=self.request)
             definitions = data_access.list_definitions()
 
-            # Program-spanning workflows must not appear in an opp view.
-            single_opp_defs, _spanning = partition_by_span(definitions)
+            # Program-owned workflows must not appear in an opp view.
+            opp_defs = opp_owned_definitions(definitions)
 
             runs_by_def = {}
             for run in data_access.list_runs():
@@ -235,11 +235,11 @@ class WorkflowListView(LoginRequiredMixin, TemplateView):
                 self._build_workflow_row(
                     definition, runs_by_def.get(definition.id, []), pipeline_access, pipeline_cache
                 )
-                for definition in single_opp_defs
+                for definition in opp_defs
             ]
 
             context["workflows"] = workflows_with_runs
-            context["definitions"] = single_opp_defs
+            context["definitions"] = opp_defs
         finally:
             if pipeline_access is not None:
                 pipeline_access.close()
@@ -247,8 +247,9 @@ class WorkflowListView(LoginRequiredMixin, TemplateView):
                 data_access.close()
 
     def _populate_program_mode(self, context, program_id, allowed_templates):
-        """Program view: cross-opportunity (program-spanning) workflows only,
-        gathered by looping the program's opps (labs API scopes reads per-opp)."""
+        """Program view: workflows EXPLICITLY owned by this program
+        (``config.program_id == program_id``) only, gathered by looping the
+        program's opps (labs API scopes reads per-opp)."""
         from commcare_connect.workflow.data_access import PipelineDataAccess
         from commcare_connect.workflow.program_view import collect_program_workflows, program_opportunity_ids
 
@@ -267,12 +268,13 @@ class WorkflowListView(LoginRequiredMixin, TemplateView):
         opp_ids = program_opportunity_ids(org_data, program_id)
         token = (self.request.session.get("labs_oauth") or {}).get("access_token")
 
-        spanning_defs = collect_program_workflows(
+        owned_defs = collect_program_workflows(
+            program_id,
             opp_ids,
             dao_factory=lambda oid: WorkflowDataAccess(access_token=token, opportunity_id=oid),
         )
 
-        # Enrich each spanning def using a DAO scoped to its OWNING opp so runs
+        # Enrich each owned def using a DAO scoped to its OWNING opp so runs
         # and pipelines resolve (the labs API scopes both per-opportunity).
         pipeline_cache = {}
         runs_by_owner: dict[int, dict] = {}
@@ -280,7 +282,7 @@ class WorkflowListView(LoginRequiredMixin, TemplateView):
         pdaos: dict[int, PipelineDataAccess] = {}
         try:
             workflows_with_runs = []
-            for definition in spanning_defs:
+            for definition in owned_defs:
                 owner = definition.opportunity_id
                 if owner not in runs_by_owner:
                     wdaos[owner] = WorkflowDataAccess(access_token=token, opportunity_id=owner)
@@ -293,7 +295,7 @@ class WorkflowListView(LoginRequiredMixin, TemplateView):
                 workflows_with_runs.append(self._build_workflow_row(definition, runs, pdaos[owner], pipeline_cache))
 
             context["workflows"] = workflows_with_runs
-            context["definitions"] = spanning_defs
+            context["definitions"] = owned_defs
         finally:
             for dao in list(wdaos.values()) + list(pdaos.values()):
                 try:
