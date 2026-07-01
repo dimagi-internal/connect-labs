@@ -30,6 +30,18 @@ Each row shows:
 
 Click any workflow to open its dashboard.
 
+### Program-level vs. opportunity-level workflows
+
+Workflows in Labs are owned by either a **program** or a specific **opportunity**:
+
+- **Program-owned workflows** appear in the program view only. They cover the program as a whole — for example, the Program Audit Creator — and do not appear under any individual opportunity.
+- **Opportunity-owned workflows** appear under their specific opportunity only. They will not appear in the program-level workflow list.
+
+This means each workflow appears in exactly one place. If you cannot find a workflow you expect to see, check whether you are viewing the program level or the relevant opportunity level.
+
+!!! note "The opp: badge is not shown in the program view"
+    When you are browsing the program-level workflow list, opportunity identifiers are not displayed next to workflow names. Only workflows that are explicitly owned by the program appear there, so the badge carries no useful information at that level and is hidden to keep the list uncluttered.
+
 ---
 
 ## Opening a Workflow Run from a Link
@@ -229,18 +241,4 @@ While organisations are still working, the creator's run shows how many per-oppo
 
 ### Audit Program Report
 
-The **Audit Program Report** is a read-only cross-opportunity view. It rolls up every opportunity's audit workflow for the week into one place so program administrators can see the full picture without opening each workflow separately. For each opportunity it shows:
-
-- Overall completion status (how many audits are done vs. still open)
-- Pass, fail, and pending counts for each audit track
-
-Clicking into any opportunity's row drills down to the individual audit sessions for that opportunity, with direct links to open each session.
-
-!!! note "The Audit Program Report is a viewer only"
-    Generation of the week's audit runs happens in the Program Audit Creator, not here. Use the Audit Program Report to monitor progress and navigate to individual sessions; use the Program Audit Creator to kick off and track the generation step.
-
----
-
-## Deleting a Run or Workflow
-
-When you delete a run — or delete an entire workflow — with the **delete linked data** option selected, the system removes all audit sessions that were created as part of that run. For workflows that span **multiple opportunities**, this cleanup covers every opportunity the run includes, not just the primary one. No audit sessions are left behind regardless of how many opportunities the
+The **Audit Program Report** is a read-only cross-opportunity view. It rolls up every opportunity's audit workflow for the week into one place so program administrators can see the full picture without opening each workflow separately. For
