@@ -274,12 +274,11 @@
                         <div class="mt-1 flex flex-wrap items-center gap-2 text-sm">
                             <span class="inline-flex items-center px-2 py-0.5 rounded bg-white border border-gray-200 text-gray-700 font-medium">{{ p.wards|length }} ward{{ p.wards|length|pluralize }}</span>
                             {% if p.work_area_count %}<span class="inline-flex items-center px-2 py-0.5 rounded bg-white border border-gray-200 text-gray-700 font-medium">{{ p.work_area_count }} work area{{ p.work_area_count|pluralize }}</span>{% endif %}
-                            {% if p.wards %}<span class="text-gray-400">{{ p.wards|join:" · " }}</span>{% endif %}
                         </div>
                         {% if p.arms %}
                         <div class="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs">
                             <span class="text-gray-500 font-medium">Study arms:</span>
-                            {% for arm in p.arms %}<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-medium capitalize">{{ arm }}</span>{% endfor %}
+                            {% for arm in p.arms %}<span class="inline-flex items-center px-2 py-0.5 rounded-full font-medium capitalize {% if 'ntervention' in arm %}bg-green-100 text-green-800{% elif 'omparison' in arm %}bg-blue-100 text-blue-800{% else %}bg-indigo-100 text-indigo-700{% endif %}">{{ arm }}</span>{% endfor %}
                         </div>
                         {% endif %}
                     </div>
