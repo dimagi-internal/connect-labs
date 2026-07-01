@@ -429,10 +429,10 @@
                                 {% elif response.status == 'awarded' %}
                                     <span class="text-gray-400">—</span>
                                 {% else %}
-                                    <span class="text-gray-400 text-sm">Pending review</span>
+                                    <span class="text-gray-400">—</span>
                                 {% endif %}
                             </td>
-                            <td class="sticky right-0 bg-white px-3 py-4 whitespace-nowrap text-right text-sm shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.08)]">
+                            <td class="sticky right-0 bg-white border-l border-gray-200 px-3 py-4 whitespace-nowrap text-right text-sm shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.08)]">
                                 <div class="flex items-center justify-end gap-3">
                                     <a href="{% url 'solicitations:response_detail' pk=response.pk %}"
                                        class="text-indigo-600 hover:text-indigo-900 font-medium">

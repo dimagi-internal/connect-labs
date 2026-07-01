@@ -300,7 +300,7 @@
         : "";
       const titleCls = readyToSolicit ? "text-base" : "";
       const heroLede = readyToSolicit
-        ? '<p class="text-xs text-green-700 mb-2"><i class="fa-solid fa-circle-check mr-1"></i>Finished study — ready to recruit a survey firm against this coverage.</p>'
+        ? '<p class="text-xs text-green-700 mb-2"><i class="fa-solid fa-circle-check mr-1"></i>Finished study — turn it into a call for an <strong>independent</strong> survey firm to measure this program\'s outcomes against the coverage you designed.</p>'
         : '';
       // Title: a two-arm study leads with its arm PAIR (intervention × control ward);
       // a bundle (or an unassigned study) keeps its plain name.
@@ -325,7 +325,7 @@
         </div>
         ${blindMarker}
         ${heroLede}
-        <div class="text-xs text-gray-500 mt-1">${countLabel}${g.offered_to ? " · for " + esc(g.offered_to) : ""}</div>
+        <div class="text-sm text-gray-500 mt-1"><span class="font-semibold text-gray-700">${countLabel}</span>${g.offered_to ? " · for " + esc(g.offered_to) : ""}</div>
         ${memberRows ? `<div class="mt-2 divide-y divide-gray-100 border-y border-gray-100">${memberRows}</div>` : ""}
         <div class="mt-2 flex flex-wrap gap-2">
           ${readyToSolicit
