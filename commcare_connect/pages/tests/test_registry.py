@@ -1,4 +1,14 @@
-from commcare_connect.pages.providers import base, get_provider, list_providers, register
+import pytest
+
+from commcare_connect.pages.providers import _REGISTRY, base, get_provider, list_providers, register
+
+
+@pytest.fixture(autouse=True)
+def _restore_registry():
+    snapshot = dict(_REGISTRY)
+    yield
+    _REGISTRY.clear()
+    _REGISTRY.update(snapshot)
 
 
 def test_register_and_get_provider():

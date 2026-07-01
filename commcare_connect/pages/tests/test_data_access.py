@@ -74,3 +74,19 @@ def test_update_surface_patches_public_scoped_record(mock_client_cls):
     assert kwargs["public"] is True
     assert kwargs["data"]["slug"] == "s"
     assert kwargs["data"]["cards"] == [{"id": 1}]
+    assert client.update_record.call_args.kwargs["experiment"] == "25"
+
+
+@patch("commcare_connect.pages.data_access.LabsRecordAPIClient")
+def test_get_surface_by_slug_is_deterministic_on_collision(mock_client_cls):
+    client = mock_client_cls.return_value
+    high = _fake_record(slug="dup", title="High", cards=[], options={})
+    high.id = 90
+    low = _fake_record(slug="dup", title="Low", cards=[], options={})
+    low.id = 12
+    client.get_records.return_value = [high, low]
+
+    da = SurfaceDataAccess(access_token="tok")
+    surface = da.get_surface_by_slug("dup")
+
+    assert surface["id"] == 12

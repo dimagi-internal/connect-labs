@@ -79,3 +79,21 @@ def test_card_data_403_when_not_entitled(mock_get_provider, mock_da_cls, logged_
 
     resp = logged_in_client.get(reverse("labs:pages:card_data", args=["prog-25-hub", 0]))
     assert resp.status_code == 403
+
+
+@patch("commcare_connect.pages.views.SurfaceDataAccess")
+def test_card_data_404_when_index_out_of_range(mock_da_cls, logged_in_client):
+    mock_da_cls.return_value.get_surface_by_slug.return_value = SURFACE
+
+    resp = logged_in_client.get(reverse("labs:pages:card_data", args=["prog-25-hub", 99]))
+    assert resp.status_code == 404
+
+
+@patch("commcare_connect.pages.views.SurfaceDataAccess")
+@patch("commcare_connect.pages.views.get_provider")
+def test_card_data_404_when_unknown_provider(mock_get_provider, mock_da_cls, logged_in_client):
+    mock_da_cls.return_value.get_surface_by_slug.return_value = SURFACE
+    mock_get_provider.return_value = None
+
+    resp = logged_in_client.get(reverse("labs:pages:card_data", args=["prog-25-hub", 0]))
+    assert resp.status_code == 404

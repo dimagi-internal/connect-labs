@@ -44,6 +44,7 @@ class SurfaceDataAccess:
         records = list(records or [])
         if not records:
             return None
+        records.sort(key=lambda r: r.id)
         return self._normalize(records[0])
 
     def list_surfaces(self) -> list[dict]:
@@ -67,6 +68,7 @@ class SurfaceDataAccess:
         data = {"slug": slug, "title": title, "cards": cards, "options": options or {}}
         record = self.client.update_record(
             record_id=record_id,
+            experiment=self._experiment(),
             type=SURFACE_TYPE,
             data=data,
             program_id=self.program_id,

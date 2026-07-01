@@ -19,12 +19,12 @@ def register(provider_cls):
     return provider_cls
 
 
-def get_provider(key: str):
+def get_provider(key: str) -> base.CardProvider | None:
     _ensure_discovered()
     return _REGISTRY.get(key)
 
 
-def list_providers() -> list:
+def list_providers() -> list[base.CardProvider]:
     _ensure_discovered()
     return list(_REGISTRY.values())
 
