@@ -121,7 +121,10 @@ def pages_create(
 
 @register(
     name="pages_update",
-    description="Update an existing surface by record id.",
+    description=(
+        "Update an existing surface by record id. Scope with exactly one of "
+        "opportunity_id / program_id / organization_id, or set public=true for a public page."
+    ),
     input_schema={
         "type": "object",
         "properties": {
@@ -132,15 +135,33 @@ def pages_create(
             "options": {"type": "object"},
             "program_id": {"type": "string"},
             "opportunity_id": {"type": "string"},
+            "organization_id": {"type": "string"},
+            "public": {"type": "boolean"},
         },
         "required": ["record_id", "slug", "title", "cards"],
         "additionalProperties": False,
     },
     is_write=True,
 )
-def pages_update(user, record_id, slug, title, cards, options=None, program_id=None, opportunity_id=None):
+def pages_update(
+    user,
+    record_id,
+    slug,
+    title,
+    cards,
+    options=None,
+    program_id=None,
+    opportunity_id=None,
+    organization_id=None,
+    public=False,
+):
     token = require_connect_token(user)
     da = SurfaceDataAccess(
-        access_token=token, program_id=_coerce_id(program_id), opportunity_id=_coerce_id(opportunity_id)
+        access_token=token,
+        program_id=_coerce_id(program_id),
+        opportunity_id=_coerce_id(opportunity_id),
+        organization_id=_coerce_id(organization_id),
     )
-    return da.update_surface(record_id=record_id, slug=slug, title=title, cards=cards, options=options or {})
+    return da.update_surface(
+        record_id=record_id, slug=slug, title=title, cards=cards, options=options or {}, public=bool(public)
+    )

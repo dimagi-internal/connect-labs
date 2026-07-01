@@ -65,7 +65,7 @@ def test_update_surface_patches_public_scoped_record(mock_client_cls):
     client.update_record.return_value = _fake_record(slug="s", title="T", cards=[{"id": 1}], options={})
 
     da = SurfaceDataAccess(access_token="tok", program_id=25)
-    da.update_surface(record_id=99, slug="s", title="T", cards=[{"id": 1}])
+    da.update_surface(record_id=99, slug="s", title="T", cards=[{"id": 1}], public=True)
 
     kwargs = client.update_record.call_args.kwargs
     assert kwargs["record_id"] == 99
@@ -75,6 +75,19 @@ def test_update_surface_patches_public_scoped_record(mock_client_cls):
     assert kwargs["data"]["slug"] == "s"
     assert kwargs["data"]["cards"] == [{"id": 1}]
     assert client.update_record.call_args.kwargs["experiment"] == "25"
+
+
+@patch("connect_labs.pages.data_access.LabsRecordAPIClient")
+def test_update_surface_defaults_to_not_public(mock_client_cls):
+    client = mock_client_cls.return_value
+    client.update_record.return_value = _fake_record(slug="s", title="T", cards=[{"id": 1}], options={})
+
+    da = SurfaceDataAccess(access_token="tok", opportunity_id=1973)
+    da.update_surface(record_id=99, slug="s", title="T", cards=[{"id": 1}])
+
+    kwargs = client.update_record.call_args.kwargs
+    assert kwargs["public"] is False
+    assert kwargs["data"]["scope"] == {"type": "opp", "id": 1973}
 
 
 @patch("connect_labs.pages.data_access.LabsRecordAPIClient")
@@ -151,3 +164,11 @@ def test_resolve_surface_falls_back_to_public(mock_client_cls):
 def test_resolve_surface_none_when_nothing_matches(mock_client_cls):
     mock_client_cls.return_value.get_records.return_value = []
     assert resolve_surface("tok", {}, "nope") is None
+
+
+def test_resolve_surface_fails_soft_on_api_error():
+    from connect_labs.labs.integrations.connect.api_client import LabsAPIError
+
+    with patch("connect_labs.pages.data_access.LabsRecordAPIClient") as mock_client_cls:
+        mock_client_cls.return_value.get_records.side_effect = LabsAPIError("404 not a member")
+        assert resolve_surface("tok", {"opportunity_id": 1973}, "eha-muac") is None

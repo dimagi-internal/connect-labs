@@ -10,7 +10,7 @@ providers) additionally protects each card's data.
 
 from __future__ import annotations
 
-from connect_labs.labs.integrations.connect.api_client import LabsRecordAPIClient
+from connect_labs.labs.integrations.connect.api_client import LabsAPIError, LabsRecordAPIClient
 
 SURFACE_TYPE = "surface"
 
@@ -89,16 +89,23 @@ class SurfaceDataAccess:
         return self._normalize(record)
 
     def update_surface(
-        self, record_id: int, slug: str, title: str, cards: list[dict], options: dict | None = None
+        self,
+        record_id: int,
+        slug: str,
+        title: str,
+        cards: list[dict],
+        options: dict | None = None,
+        public: bool = False,
     ) -> dict:
-        data = {"slug": slug, "title": title, "cards": cards, "options": options or {}}
+        scope = _scope_descriptor(self.opportunity_id, self.program_id, self.organization_id, public)
+        data = {"slug": slug, "title": title, "cards": cards, "options": options or {}, "scope": scope}
         record = self.client.update_record(
             record_id=record_id,
             experiment=self._experiment(),
             type=SURFACE_TYPE,
             data=data,
             program_id=self.program_id,
-            public=True,
+            public=public,
         )
         return self._normalize(record)
 
@@ -128,14 +135,21 @@ def resolve_surface(access_token: str, context: dict, slug: str) -> dict | None:
         attempts.append({"opportunity_id": opp})
     if prog:
         attempts.append({"program_id": prog})
+    # org context is an int id post-validation; a raw slug is skipped (not an authorizing scope here)
     if isinstance(org, int):
         attempts.append({"organization_id": org})
 
     for scope in attempts:
         client = LabsRecordAPIClient(access_token, **scope)
-        match = _first_match(client.get_records(type=SURFACE_TYPE, **{"data__slug": slug}))
+        try:
+            match = _first_match(client.get_records(type=SURFACE_TYPE, **{"data__slug": slug}))
+        except LabsAPIError:
+            continue
         if match:
             return match
 
     public_client = LabsRecordAPIClient(access_token)
-    return _first_match(public_client.get_records(type=SURFACE_TYPE, public=True, **{"data__slug": slug}))
+    try:
+        return _first_match(public_client.get_records(type=SURFACE_TYPE, public=True, **{"data__slug": slug}))
+    except LabsAPIError:
+        return None
