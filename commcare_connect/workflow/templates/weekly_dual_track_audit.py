@@ -231,16 +231,11 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
         setIsRunning(true); setJobError(null);
         setProgress({ status: 'starting', message: 'Submitting to the server…' });
 
-        // Best-effort: persist the window to run state for display/period. The
-        // job ALSO receives the window in its payload below, so a flaky state
-        // write never blocks audit creation.
-        try {
-            await onUpdateState({
-                window_start: startDate, window_end: endDate,
-                period_start: startDate, period_end: endDate,
-                date_preset: datePreset,
-            });
-        } catch (e) { /* non-fatal — the window is passed in the job payload too */ }
+        // No run-state write from the render: the window travels in the job
+        // payload below and the server job persists it onto the run. A
+        // session-scoped state write here can 404 when the opp picker has
+        // drifted off the run's owning opp, surfacing a misleading
+        // "Failed to update state" even though creation succeeds.
 
         let resp;
         try {
@@ -266,19 +261,62 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
     };
 
     // ── Group created sessions by opportunity_id then tag ─────────────────────
-    const groupSessions = () => {
+    // Group by opp → FLW → { muac, rest } so each field worker's two audits sit
+    // together and their status/results are visible at a glance.
+    const groupByOppFlw = () => {
         const byOpp = {};
         sessions.forEach(s => {
             const oid = s.opportunity_id != null ? String(s.opportunity_id) : 'unknown';
-            const tag = s.tag || 'other';
-            byOpp[oid] = byOpp[oid] || {};
-            byOpp[oid][tag] = byOpp[oid][tag] || [];
-            byOpp[oid][tag].push(s);
+            const flw = s.flw_username || 'unknown';
+            if (!byOpp[oid]) byOpp[oid] = { flws: {}, order: [] };
+            if (!byOpp[oid].flws[flw]) {
+                byOpp[oid].flws[flw] = { name: s.flw_display_name || s.flw_username || flw, muac: null, rest: null };
+                byOpp[oid].order.push(flw);
+            }
+            if (s.tag === 'muac') byOpp[oid].flws[flw].muac = s;
+            else if (s.tag === 'rest') byOpp[oid].flws[flw].rest = s;
         });
         return byOpp;
     };
-    const grouped = groupSessions();
-    const TAG_LABELS = { muac: 'MUAC census (Track A)', rest: 'Sampled remainder (Track B)' };
+    const grouped = groupByOppFlw();
+    const statsOf = (s) => (s && s.assessment_stats) || {};
+    const oppSummary = (oppData) => {
+        var out = { flws: 0, muacTotal: 0, muacReviewed: 0, muacFlagged: 0, restTotal: 0, restReviewed: 0 };
+        oppData.order.forEach(function (flw) {
+            var r = oppData.flws[flw]; out.flws++;
+            var m = statsOf(r.muac); out.muacTotal += (m.total || 0); out.muacReviewed += ((m.pass || 0) + (m.fail || 0)); out.muacFlagged += (m.ai_no_match || 0);
+            var e = statsOf(r.rest); out.restTotal += (e.total || 0); out.restReviewed += ((e.pass || 0) + (e.fail || 0));
+        });
+        return out;
+    };
+    // One compact audit line: status + image count + pass/fail/pending + (MUAC) AI-flags.
+    const auditLine = (label, s) => {
+        if (!s) return React.createElement('div', { className: 'text-xs text-gray-400 pl-2' }, label + ': not created');
+        var a = statsOf(s);
+        var done = s.status === 'completed';
+        return React.createElement('a', {
+            href: bulkUrl(s),
+            className: 'flex items-center gap-3 px-3 py-1.5 rounded bg-gray-50 hover:bg-blue-50 border border-gray-200 text-xs'
+        },
+            React.createElement('span', { className: 'font-semibold text-gray-700 w-12' }, label),
+            React.createElement('span', {
+                className: 'px-1.5 py-0.5 rounded ' + (done ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700')
+            }, done ? 'Completed' : 'In progress'),
+            React.createElement('span', { className: 'text-gray-500 w-16' }, (a.total || 0) + ' images'),
+            React.createElement('span', { className: 'flex-1' },
+                React.createElement('span', { className: 'text-green-600 font-medium' }, (a.pass || 0) + ' pass'),
+                ' · ',
+                React.createElement('span', { className: 'text-red-600 font-medium' }, (a.fail || 0) + ' fail'),
+                ' · ',
+                React.createElement('span', { className: 'text-gray-500' }, (a.pending || 0) + ' pending')
+            ),
+            label === 'MUAC'
+                ? React.createElement('span', { className: (a.ai_no_match || 0) > 0 ? 'text-amber-600 font-medium' : 'text-gray-400' },
+                    (a.ai_no_match || 0) + ' AI-flagged')
+                : React.createElement('span', { className: 'text-gray-300' }, 'no AI'),
+            React.createElement('i', { className: 'fa-solid fa-arrow-up-right-from-square text-blue-500' })
+        );
+    };
 
     const bulkUrl = (s) => {
         const params = new URLSearchParams();
@@ -429,10 +467,10 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                 )}
             </div>
 
-            {/* ── Created sessions, grouped by opp then tag ───────────────── */}
+            {/* ── Audit results by field worker ───────────────────────────── */}
             <div className="bg-white rounded-lg shadow-sm p-6">
                 <h3 className="text-sm font-medium text-gray-700 mb-3">
-                    <i className="fa-solid fa-list-check mr-2 text-gray-400"></i>Created audit sessions
+                    <i className="fa-solid fa-user-check mr-2 text-gray-400"></i>Audit results by field worker
                 </h3>
                 {loadingSessions
                     ? <div className="text-sm text-gray-500"><i className="fa-solid fa-spinner fa-spin mr-2"></i>Loading…</div>
@@ -440,36 +478,40 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                         ? <div className="text-sm text-gray-500">No sessions yet — set a window and create audits.</div>
                         : (
                             <div className="space-y-4">
-                                {Object.keys(grouped).map(oid => (
-                                    <div key={oid} className="border border-gray-200 rounded-lg p-4">
-                                        <div className="text-sm font-semibold text-gray-900 mb-2">
-                                            {oppNames[oid] || ('Opportunity ' + oid)}
-                                            <span className="ml-2 text-xs text-gray-400 font-mono">#{oid}</span>
-                                        </div>
-                                        {Object.keys(grouped[oid]).map(tag => (
-                                            <div key={tag} className="mb-3">
-                                                <div className="text-xs font-medium text-gray-600 mb-1">
-                                                    {TAG_LABELS[tag] || tag} · {grouped[oid][tag].length}
+                                {Object.keys(grouped).map(oid => {
+                                    var oppData = grouped[oid];
+                                    var sum = oppSummary(oppData);
+                                    return (
+                                        <div key={oid} className="border border-gray-200 rounded-lg overflow-hidden">
+                                            <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
+                                                <div className="text-sm font-semibold text-gray-900">
+                                                    {oppNames[oid] || ('Opportunity ' + oid)}
+                                                    <span className="ml-2 text-xs text-gray-400 font-mono">#{oid}</span>
                                                 </div>
-                                                <div className="space-y-1">
-                                                    {grouped[oid][tag].map(s => (
-                                                        <a key={s.id} href={bulkUrl(s)}
-                                                            className={'flex items-center justify-between px-3 py-2 rounded ' +
-                                                                'bg-gray-50 hover:bg-blue-50 border border-gray-200 text-sm'}>
-                                                            <span className="text-gray-800">
-                                                                {s.flw_display_name || s.flw_username || ('Session ' + s.id)}
-                                                            </span>
-                                                            <span className="text-gray-400">
-                                                                {s.visit_count || 0} visits
-                                                                <i className="fa-solid fa-arrow-up-right-from-square ml-2 text-blue-500"></i>
-                                                            </span>
-                                                        </a>
-                                                    ))}
+                                                <div className="text-xs text-gray-500 mt-1">
+                                                    {sum.flws} field worker{sum.flws === 1 ? '' : 's'}
+                                                    {' · MUAC '}{sum.muacReviewed}/{sum.muacTotal}{' reviewed, '}
+                                                    <span className={sum.muacFlagged > 0 ? 'text-amber-600 font-medium' : ''}>{sum.muacFlagged} AI-flagged</span>
+                                                    {' · Rest '}{sum.restReviewed}/{sum.restTotal}{' reviewed'}
                                                 </div>
                                             </div>
-                                        ))}
-                                    </div>
-                                ))}
+                                            <div className="divide-y divide-gray-100">
+                                                {oppData.order.map(flw => {
+                                                    var r = oppData.flws[flw];
+                                                    return (
+                                                        <div key={flw} className="px-4 py-3">
+                                                            <div className="text-sm font-medium text-gray-800 mb-1.5">{r.name}</div>
+                                                            <div className="space-y-1">
+                                                                {auditLine('MUAC', r.muac)}
+                                                                {auditLine('Rest', r.rest)}
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
                             </div>
                         )}
             </div>
