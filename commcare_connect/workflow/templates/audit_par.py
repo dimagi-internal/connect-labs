@@ -590,37 +590,6 @@ TEMPLATE = {
     "pipeline_schema": PIPELINE_SCHEMA,
 }
 
-
-def run_default(*, definition, access_token, request=None, **_):
-    """Default-run hook: generate the whole program's week by running each
-    watched per-opp creator instance in default mode.
-
-    Reads ``config.watched_sources`` (``[{opportunity_id, workflow_definition_id}]``),
-    loads each creator definition with an opp-scoped ``WorkflowDataAccess`` (Global
-    Constraint — never an unscoped read), and dispatches it through
-    ``run_default_for_definition``. Returns ``{"per_opp": {opp_id: result}}``.
-    """
-    from commcare_connect.workflow.templates import run_default_for_definition
-
-    config = definition.data.get("config") or {}
-    per_opp = {}
-    for source in config.get("watched_sources") or []:
-        opp_id = source.get("opportunity_id")
-        def_id = source.get("workflow_definition_id")
-        if opp_id is None or def_id is None:
-            continue
-
-        wda = WorkflowDataAccess(access_token=access_token, opportunity_id=opp_id)
-        try:
-            creator_def = wda.get_definition(def_id)
-        finally:
-            wda.close()
-        if creator_def is None:
-            continue
-
-        per_opp[opp_id] = run_default_for_definition(creator_def, access_token=access_token, request=request)
-
-    return {"per_opp": per_opp}
-
-
-TEMPLATE["supports_default_run"] = True
+# NOTE: the program-wide fan-out that used to live here (a `run_default` hook +
+# `supports_default_run`) moved to the dedicated `program_audit_creator`
+# template. The report is a pure viewer again — it never generates audits.

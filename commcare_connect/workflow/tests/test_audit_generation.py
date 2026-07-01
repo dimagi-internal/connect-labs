@@ -6,9 +6,10 @@ Covers:
 - The `weekly_dual_track_audit` creator's `run_default` hook: creates a run +
   fires the batch job when none exists for the window; idempotent (reuses an
   existing run for the same window, doesn't re-fire).
-- The `audit_par` report's `run_default` hook: fans out — one
-  `run_default_for_definition` per watched source, keyed `{"per_opp": {...}}`.
 - `resolve_window("last_week", today)` (mirrors the render's calculateDateRange).
+
+The program-wide fan-out (formerly on the `audit_par` report) now lives on the
+`program_audit_creator` template — see test_program_audit_creator.py.
 - The generic management command + API endpoint wrappers call the dispatcher.
 """
 
@@ -143,62 +144,6 @@ def test_creator_run_default_defaults_window_to_last_week(monkeypatch):
 
     ws, we = captured["window"]
     assert ws < we  # a concrete resolved window, not empty
-
-
-# ── Report run_default: per-opp fan-out ──────────────────────────────────────
-
-
-def test_report_run_default_fans_out_per_source(monkeypatch):
-    from commcare_connect.workflow import templates as templates_pkg
-    from commcare_connect.workflow.templates import audit_par
-
-    def make_wda(access_token=None, opportunity_id=None, **_):
-        wda = mock.Mock()
-        creator = mock.Mock()
-        creator.id = 40 + opportunity_id
-        wda.get_definition.return_value = creator
-        return wda
-
-    monkeypatch.setattr(audit_par, "WorkflowDataAccess", make_wda)
-
-    calls = []
-
-    def fake_dispatch(defn, *, access_token, request=None, **kw):
-        calls.append(defn)
-        return {"run_id": defn.id, "created": True, "sessions_created": 1}
-
-    monkeypatch.setattr(templates_pkg, "run_default_for_definition", fake_dispatch)
-
-    d = mock.Mock()
-    d.data = {
-        "config": {
-            "watched_sources": [
-                {"opportunity_id": 1973, "workflow_definition_id": 42},
-                {"opportunity_id": 1976, "workflow_definition_id": 43},
-            ]
-        }
-    }
-
-    result = audit_par.run_default(definition=d, access_token="t")
-
-    assert set(result["per_opp"].keys()) == {1973, 1976}
-    assert len(calls) == 2
-    assert result["per_opp"][1973]["run_id"] == 40 + 1973
-    assert result["per_opp"][1976]["created"] is True
-
-
-def test_report_run_default_skips_incomplete_sources(monkeypatch):
-    from commcare_connect.workflow import templates as templates_pkg
-    from commcare_connect.workflow.templates import audit_par
-
-    monkeypatch.setattr(audit_par, "WorkflowDataAccess", mock.Mock())
-    monkeypatch.setattr(templates_pkg, "run_default_for_definition", mock.Mock())
-
-    d = mock.Mock()
-    d.data = {"config": {"watched_sources": [{"opportunity_id": 1973}]}}  # missing def id
-
-    result = audit_par.run_default(definition=d, access_token="t")
-    assert result == {"per_opp": {}}
 
 
 # ── resolve_window ───────────────────────────────────────────────────────────
