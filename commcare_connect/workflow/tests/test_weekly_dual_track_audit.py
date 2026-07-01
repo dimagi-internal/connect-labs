@@ -1,5 +1,7 @@
 from unittest import mock
 
+import pytest
+
 from commcare_connect.workflow.templates.weekly_dual_track_audit import build_track_audit_calls
 
 TRACK_A = {
@@ -263,3 +265,56 @@ def test_handler_applies_per_run_sampling_override():
         by_tag[cr["tag"]] = cr["sample_percentage"]
     assert by_tag["muac"] == 50
     assert by_tag["rest"] == 25
+
+
+# ── Task 2: saved-runs completion-gate snapshot hook ─────────────────────────
+
+
+def _sess(status, tag="muac", stats=None, img=10, fid="flw1"):
+    s = mock.Mock()
+    s.status = status
+    s.tag = tag
+    s.image_count = img
+    s.id = 1
+    s.opportunity_id = 1973
+    s.flw_username = fid
+    s.flw_display_name = fid
+    s.get_assessment_stats.return_value = stats or {
+        "pass": 0,
+        "fail": 0,
+        "pending": 0,
+        "ai_no_match": 0,
+    }
+    return s
+
+
+def test_build_snapshot_raises_until_all_audits_complete():
+    from commcare_connect.workflow.templates import weekly_dual_track_audit as m
+
+    ada = mock.Mock()
+    ada.get_sessions_by_workflow_run.return_value = [_sess("completed"), _sess("in_progress")]
+    with mock.patch.object(m, "AuditDataAccess", return_value=ada):
+        with pytest.raises(ValueError, match="1 of 2 audits still open"):
+            m.build_snapshot(pipelines={}, state={}, opportunity_id=1973, run_id=55, access_token="t")
+
+
+def test_build_snapshot_returns_rollup_when_all_complete():
+    from commcare_connect.workflow.templates import weekly_dual_track_audit as m
+
+    ada = mock.Mock()
+    ada.get_sessions_by_workflow_run.return_value = [
+        _sess("completed", "muac", {"pass": 8, "fail": 2, "pending": 0, "ai_no_match": 2}, img=10),
+        _sess("completed", "rest", {"pass": 5, "fail": 0, "pending": 0, "ai_no_match": 0}, img=5, fid="flw1"),
+    ]
+    with mock.patch.object(m, "AuditDataAccess", return_value=ada):
+        snap = m.build_snapshot(
+            pipelines={},
+            state={"window_start": "2026-06-21"},
+            opportunity_id=1973,
+            run_id=55,
+            access_token="t",
+        )
+    assert snap["completed_counts"]["total"] == 2
+    assert snap["completed_counts"]["incomplete"] == 0
+    assert snap["window_start"] == "2026-06-21"
+    assert "flw1" in {r["flw_id"] for r in snap["audit_summary"]["flw_rows"]}

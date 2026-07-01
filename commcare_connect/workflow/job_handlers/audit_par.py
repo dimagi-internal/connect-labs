@@ -14,8 +14,9 @@ def audit_par_rollup(job_config: dict, access_token: str, progress_callback=None
     """Compute and persist the watched-source rollup for a live audit_par run.
 
     job_config keys:
-      - run_id (required): the audit_par run to roll up. Its state must already
-        contain window_start / window_end / watched_source.
+      - run_id (required): the audit_par run to roll up. Its state (or the
+        definition config fallback) must contain window_start / window_end and
+        either watched_sources (new) or watched_source (legacy).
       - opportunity_id (injected by the framework): the run's primary opp.
     """
     run_id = job_config.get("run_id")
@@ -39,7 +40,7 @@ def audit_par_rollup(job_config: dict, access_token: str, progress_callback=None
         try:
             definition = wda.get_definition(run.definition_id) if run.definition_id else None
             cfg = (definition.data.get("config") or {}) if definition else {}
-            for key in ("watched_source", "window_start", "window_end"):
+            for key in ("watched_sources", "watched_source", "window_start", "window_end"):
                 if cfg.get(key):
                     effective_state[key] = cfg[key]
         except Exception:
