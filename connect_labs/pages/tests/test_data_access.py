@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock, patch
 
-from connect_labs.pages.data_access import SurfaceDataAccess
+from connect_labs.pages.data_access import SurfaceDataAccess, resolve_surface
 
 
 def _fake_record(**data):
@@ -118,3 +118,36 @@ def test_create_surface_public_when_requested(mock_client_cls):
     kwargs = client.create_record.call_args.kwargs
     assert kwargs["public"] is True
     assert kwargs["data"]["scope"] == {"type": "public", "id": None}
+
+
+@patch("connect_labs.pages.data_access.LabsRecordAPIClient")
+def test_resolve_surface_uses_opportunity_context(mock_client_cls):
+    client = mock_client_cls.return_value
+    client.get_records.return_value = [_fake_record(slug="eha-muac", title="EHA", cards=[], options={})]
+
+    surface = resolve_surface("tok", {"opportunity_id": 1973}, "eha-muac")
+
+    assert surface["slug"] == "eha-muac"
+    assert mock_client_cls.call_args.kwargs["opportunity_id"] == 1973  # client scoped to opp
+    gkw = client.get_records.call_args.kwargs
+    assert gkw["type"] == "surface"
+    assert gkw["data__slug"] == "eha-muac"
+
+
+@patch("connect_labs.pages.data_access.LabsRecordAPIClient")
+def test_resolve_surface_falls_back_to_public(mock_client_cls):
+    client = mock_client_cls.return_value
+    # opp query returns nothing, public query returns the record
+    client.get_records.side_effect = [[], [_fake_record(slug="p", title="P", cards=[], options={})]]
+
+    surface = resolve_surface("tok", {"opportunity_id": 1973}, "p")
+
+    assert surface["slug"] == "p"
+    # last call was the public path
+    assert client.get_records.call_args.kwargs.get("public") is True
+
+
+@patch("connect_labs.pages.data_access.LabsRecordAPIClient")
+def test_resolve_surface_none_when_nothing_matches(mock_client_cls):
+    mock_client_cls.return_value.get_records.return_value = []
+    assert resolve_surface("tok", {}, "nope") is None
