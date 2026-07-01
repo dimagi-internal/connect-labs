@@ -50,12 +50,21 @@ def weekly_dual_track_audit_create(job_config: dict, access_token: str, progress
             raise ValueError(f"definition {run.definition_id} not found")
         batch = (definition.data.get("config") or {}).get("audit_batch") or {}
 
+        # Per-run sampling override: the render can pass MUAC / Other sampling
+        # percentages chosen for this run; fall back to the pinned config defaults.
+        track_a = dict(batch["track_a"])
+        track_b = dict(batch["track_b"])
+        if job_config.get("muac_sample_percentage") is not None:
+            track_a["sample_percentage"] = job_config["muac_sample_percentage"]
+        if job_config.get("other_sample_percentage") is not None:
+            track_b["sample_percentage"] = job_config["other_sample_percentage"]
+
         calls = build_track_audit_calls(
             opportunity_ids=definition.data.get("opportunity_ids") or [opportunity_id],
             opp_names=batch.get("opp_names", {}),
             per_opp=batch.get("per_opp", {}),
-            track_a=batch["track_a"],
-            track_b=batch["track_b"],
+            track_a=track_a,
+            track_b=track_b,
             window_start=window_start,
             window_end=window_end,
             username=run.username or job_config.get("username", ""),
