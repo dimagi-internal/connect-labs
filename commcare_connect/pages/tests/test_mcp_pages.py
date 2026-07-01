@@ -26,3 +26,19 @@ def test_pages_create_writes_surface(mock_da_cls, _tok):
     assert result["slug"] == "s"
     mock_da_cls.assert_called_once_with(access_token="tok", program_id=25, opportunity_id=None)
     mock_da_cls.return_value.create_surface.assert_called_once()
+
+
+@patch("commcare_connect.mcp.tools.pages.require_connect_token", return_value="tok")
+@patch("commcare_connect.mcp.tools.pages.SurfaceDataAccess")
+def test_pages_update_writes_surface(mock_da_cls, _tok):
+    mock_da_cls.return_value.update_surface.return_value = {
+        "id": 1,
+        "slug": "s",
+        "title": "T2",
+        "cards": [],
+        "options": {},
+    }
+    result = pages_tools.pages_update(user=MagicMock(), record_id=1, slug="s", title="T2", cards=[], program_id="25")
+    assert result["title"] == "T2"
+    mock_da_cls.assert_called_once_with(access_token="tok", program_id=25, opportunity_id=None)
+    mock_da_cls.return_value.update_surface.assert_called_once()
