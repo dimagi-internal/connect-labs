@@ -11,6 +11,8 @@ The per-opp image paths and track config live on the workflow DEFINITION
 docs/superpowers/specs/2026-06-30-audit-program-report-design.md.
 """
 
+from commcare_connect.audit.data_access import AuditDataAccess
+
 
 def _image_audits(paths, reviewer):
     """One image_audits entry per pinned image path. The track's reviewer (or no
@@ -69,6 +71,73 @@ def build_track_audit_calls(
                 }
             )
     return calls
+
+
+# =============================================================================
+# Saved-runs completion gate (Task 2)
+# =============================================================================
+
+
+def _incomplete_audit_count(sessions):
+    total = len(sessions)
+    done = sum(1 for s in sessions if s.status == "completed")
+    return total, total - done
+
+
+def _audit_rollup_snapshot(sessions, opportunity_id):
+    """Per-FLW rollup for the frozen snapshot. image_count for images; ai_no_match = AI-flagged."""
+    rows = {}
+    by_tag = {
+        "muac": {"images": 0, "pass": 0, "fail": 0, "ai_flagged": 0},
+        "rest": {"images": 0, "pass": 0, "fail": 0, "ai_flagged": 0},
+    }
+    for s in sessions:
+        if s.opportunity_id != opportunity_id:  # defensive: sessions are opp-scoped already
+            continue
+        tag = s.tag if s.tag in by_tag else None
+        if tag is None:
+            continue
+        st = s.get_assessment_stats() or {}
+        cell = {
+            "images": s.image_count or 0,
+            "pass": st.get("pass", 0),
+            "fail": st.get("fail", 0),
+            "ai_flagged": st.get("ai_no_match", 0),
+            "status": s.status,
+            "session_id": s.id,
+        }
+        agg = by_tag[tag]
+        agg["images"] += cell["images"]
+        agg["pass"] += cell["pass"]
+        agg["fail"] += cell["fail"]
+        agg["ai_flagged"] += cell["ai_flagged"]
+        fid = s.flw_username or "unknown"
+        row = rows.setdefault(
+            fid,
+            {"flw_id": fid, "flw_name": getattr(s, "flw_display_name", fid) or fid, "muac": None, "rest": None},
+        )
+        row[tag] = cell
+    return {"by_tag": by_tag, "flw_rows": list(rows.values())}
+
+
+def build_snapshot(*, pipelines, state, opportunity_id, run_id=None, request=None, access_token=None, **_):
+    """Saved-runs completion hook. GATE: raises until every audit session is completed."""
+    ada = AuditDataAccess(request=request, access_token=access_token, opportunity_id=opportunity_id)
+    try:
+        sessions = ada.get_sessions_by_workflow_run(run_id) if run_id else []
+    finally:
+        ada.close()
+    total, incomplete = _incomplete_audit_count(sessions)
+    if incomplete > 0:
+        raise ValueError(
+            f"{incomplete} of {total} audits still open — complete every audit before marking this run complete."
+        )
+    return {
+        "audit_summary": _audit_rollup_snapshot(sessions, opportunity_id),
+        "completed_counts": {"total": total, "incomplete": incomplete},
+        "window_start": state.get("window_start"),
+        "window_end": state.get("window_end"),
+    }
 
 
 DEFINITION = {
@@ -578,4 +647,11 @@ TEMPLATE = {
     "definition": DEFINITION,
     "render_code": RENDER_CODE,
     "pipeline_schema": None,
+}
+
+TEMPLATE["supports_saved_runs"] = True
+TEMPLATE["snapshot_inputs"] = {
+    "workers": False,
+    "pipelines": [],
+    "state_keys": ["window_start", "window_end", "last_batch"],
 }
