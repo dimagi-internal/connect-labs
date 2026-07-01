@@ -1,9 +1,11 @@
 """Surface persistence over the Labs Record API.
 
-A "surface" is a LabsRecord with type="surface" and public=True. Its `data`
-holds the page config: slug, title, an ordered list of card instances, and
-display options. Surfaces are public so any authenticated user can resolve them
-by slug; per-card entitlement (in providers) protects the underlying data.
+A "surface" is a LabsRecord with type="surface". Its `data` holds the page
+config: slug, title, an ordered list of card instances, display options, and a
+`scope` hint. A surface is scoped to exactly one of opportunity / program /
+organization (via the LabsRecord's own FK) or is `public`. That scoping IS the
+ACL — the prod API's membership check enforces it. Per-card entitlement (in
+providers) additionally protects each card's data.
 """
 
 from __future__ import annotations
@@ -13,19 +15,39 @@ from connect_labs.labs.integrations.connect.api_client import LabsRecordAPIClien
 SURFACE_TYPE = "surface"
 
 
+def _scope_descriptor(opportunity_id, program_id, organization_id, public) -> dict:
+    if public:
+        return {"type": "public", "id": None}
+    if opportunity_id:
+        return {"type": "opp", "id": opportunity_id}
+    if program_id:
+        return {"type": "program", "id": program_id}
+    if organization_id:
+        return {"type": "org", "id": organization_id}
+    return {"type": "public", "id": None}
+
+
 class SurfaceDataAccess:
-    def __init__(self, access_token: str, program_id: int | None = None, opportunity_id: int | None = None):
+    def __init__(
+        self,
+        access_token: str,
+        program_id: int | None = None,
+        opportunity_id: int | None = None,
+        organization_id: int | None = None,
+    ):
         self.access_token = access_token
         self.program_id = program_id
         self.opportunity_id = opportunity_id
+        self.organization_id = organization_id
         self.client = LabsRecordAPIClient(
             access_token,
             program_id=program_id,
             opportunity_id=opportunity_id,
+            organization_id=organization_id,
         )
 
     def _experiment(self) -> str:
-        scope = self.program_id or self.opportunity_id or ""
+        scope = self.program_id or self.opportunity_id or self.organization_id or ""
         return str(scope)
 
     @staticmethod
@@ -37,6 +59,7 @@ class SurfaceDataAccess:
             "title": data.get("title"),
             "cards": data.get("cards", []),
             "options": data.get("options", {}),
+            "scope": data.get("scope", {"type": "public", "id": None}),
         }
 
     def get_surface_by_slug(self, slug: str) -> dict | None:
@@ -51,14 +74,17 @@ class SurfaceDataAccess:
         records = self.client.get_records(type=SURFACE_TYPE, experiment=self._experiment())
         return [self._normalize(r) for r in (records or [])]
 
-    def create_surface(self, slug: str, title: str, cards: list[dict], options: dict | None = None) -> dict:
-        data = {"slug": slug, "title": title, "cards": cards, "options": options or {}}
+    def create_surface(
+        self, slug: str, title: str, cards: list[dict], options: dict | None = None, public: bool = False
+    ) -> dict:
+        scope = _scope_descriptor(self.opportunity_id, self.program_id, self.organization_id, public)
+        data = {"slug": slug, "title": title, "cards": cards, "options": options or {}, "scope": scope}
         record = self.client.create_record(
             experiment=self._experiment(),
             type=SURFACE_TYPE,
             data=data,
             program_id=self.program_id,
-            public=True,
+            public=public,
         )
         return self._normalize(record)
 
