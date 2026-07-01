@@ -170,7 +170,7 @@ DEFINITION = {
     "pipeline_sources": [],
 }
 
-RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateState }) {
+RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateState, view }) {
 
     // ── Config from the DEFINITION (pinned at create time, read-only here) ────
     const batch = (definition.config && definition.config.audit_batch) || {};
@@ -183,9 +183,12 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
         : (instance.opportunity_id ? [instance.opportunity_id] : []);
 
     // ── Date-window picker (mirrors bulk_image_audit) ─────────────────────────
-    const [datePreset, setDatePreset] = React.useState(instance.state?.date_preset || 'last_week');
-    const [startDate, setStartDate] = React.useState(instance.state?.window_start || '');
-    const [endDate, setEndDate] = React.useState(instance.state?.window_end || '');
+    // A completed run reads its frozen window from view.state; an in-progress
+    // run reads live run state.
+    const runState = (view && view.state) || instance.state || {};
+    const [datePreset, setDatePreset] = React.useState(runState.date_preset || 'last_week');
+    const [startDate, setStartDate] = React.useState(runState.window_start || '');
+    const [endDate, setEndDate] = React.useState(runState.window_end || '');
 
     const calculateDateRange = (preset) => {
         const today = new Date(); today.setHours(0,0,0,0);
@@ -415,6 +418,11 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
         { id: 'custom', label: 'Custom' },
     ];
 
+    // ── Completion gate (all audit sessions must be completed) ────────────────
+    var openCount = sessions.filter(function(s){ return s.status !== 'completed'; }).length;
+    var allComplete = sessions.length > 0 && openCount === 0;
+    var isCompleted = view && view.isCompleted;
+
     const pathPills = (paths, color) => (
         (paths && paths.length)
             ? paths.map(p => (
@@ -632,6 +640,25 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                                 })}
                             </div>
                         )}
+            </div>
+
+            {/* ── Completion ─────────────────────────────────────────────── */}
+            <div className="bg-white rounded-lg shadow-sm p-6">
+                {isCompleted
+                    ? <div className="text-sm text-green-800 bg-green-50 border border-green-200 rounded-lg p-4">
+                        <i className="fa-solid fa-lock mr-2"></i>Run completed{view.asOf ? ' · ' + new Date(view.asOf).toLocaleString() : ''}. The results are frozen.
+                      </div>
+                    : <div>
+                        <button
+                            onClick={function(){ if (view && view.complete) view.complete({confirm: 'Mark this run complete? All ' + sessions.length + ' audits are done; the results will be frozen.'}); }}
+                            disabled={!allComplete}
+                            className={'inline-flex items-center px-6 py-3 rounded-lg font-medium ' + (allComplete ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-gray-300 text-gray-500 cursor-not-allowed')}>
+                            <i className="fa-solid fa-flag-checkered mr-2"></i>Mark Run Complete
+                        </button>
+                        {!allComplete
+                            ? <div className="mt-2 text-xs text-gray-500">{openCount} of {sessions.length} audits still open — complete them all to finish the run.</div>
+                            : <div className="mt-2 text-xs text-green-600">All audits complete — ready to mark the run complete.</div>}
+                      </div>}
             </div>
         </div>
     );
