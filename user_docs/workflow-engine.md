@@ -225,10 +225,9 @@ Labs includes pre-built workflow templates for common program types. Your progra
 | **Weekly Dual-Track Image Audit**     | Weekly cross-opportunity image audit creator — generates MUAC (AI-checked) and sampled other-photo audits for every FLW    |
 | **Audit Program Report**              | Cross-opportunity, cross-week grid showing MUAC and other-photo audit pass/fail/pending counts with per-FLW drill-down     |
 
-### Audit Program Report — loading and refreshing data
+### Weekly Dual-Track Image Audit — results view
 
-When you open an **Audit Program Report** run, the report loads itself automatically. It pulls the watched creator's audit runs into the week × opportunity grid straight away — you do not need to click anything to see initial data.
+When you open a field worker's audit results within a Weekly Dual-Track Image Audit run, the figures shown are:
 
-The action button above the grid has two states:
-
-- **Load report** — shown when the grid is empty (for example, on a brand-new run that has never been loaded before). Click it to populate the grid for the
+- **Real image counts** for every audit type — including Rest/human-reviewed audits, which previously displayed "0 images" even when images were present. All audit rows now reflect the actual number of images in that audit.
+- **Correct pending count** — the number of images not yet reviewed is calculated accurately across
