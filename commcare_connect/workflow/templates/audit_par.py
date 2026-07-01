@@ -231,7 +231,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions }) {
     }, []);
 
     function fmtDate(iso) {
-        if (!iso) return '';
+        if (!iso || iso === 'undated') return 'Undated';
         // UTC components so date-only ISO strings render as the same calendar
         // day in every viewer's TZ.
         try {
@@ -283,7 +283,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions }) {
     }
 
     function weekObjFor(opp, col) {
-        return (opp.weeks || []).filter(function(w) { return w.window_start === col; })[0] || null;
+        return (opp.weeks || []).filter(function(w) { return (w.window_start || 'undated') === col; })[0] || null;
     }
 
     function weekCellCard(opp, week) {
@@ -361,7 +361,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions }) {
     // Column union: sorted distinct window_start across all opp weeks.
     var seen = {};
     summary.forEach(function(opp) {
-        (opp.weeks || []).forEach(function(w) { if (w.window_start) seen[w.window_start] = true; });
+        (opp.weeks || []).forEach(function(w) { seen[w.window_start || 'undated'] = true; });
     });
     var weekColumns = Object.keys(seen).sort();
 
