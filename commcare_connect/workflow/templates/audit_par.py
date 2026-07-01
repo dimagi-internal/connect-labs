@@ -16,7 +16,7 @@ _TAGS = ("muac", "rest")
 
 
 def _empty_tag_summary():
-    return {"sessions": 0, "pass": 0, "fail": 0, "pending": 0, "ai_flagged": 0}
+    return {"sessions": 0, "images": 0, "pass": 0, "fail": 0, "pending": 0, "ai_flagged": 0}
 
 
 def summarize_run_sessions(sessions, opportunity_id):
@@ -24,7 +24,8 @@ def summarize_run_sessions(sessions, opportunity_id):
     per-FLW rows. See plan Task 4 Interfaces for the return shape.
 
     Each cell in flw_rows carries a ``session_id`` for deep-linking to
-    /audit/<session_id>/bulk/.
+    /audit/<session_id>/. Image counts come from the session's ``image_count``
+    (Global Constraint — never assessment totals, which are 0 until reviewed).
     """
     by_tag = {t: _empty_tag_summary() for t in _TAGS}
     rows = {}
@@ -37,6 +38,7 @@ def summarize_run_sessions(sessions, opportunity_id):
             continue
         stats = s.get_assessment_stats() or {}
         cell = {
+            "images": getattr(s, "image_count", 0) or 0,
             "pass": stats.get("pass", 0),
             "fail": stats.get("fail", 0),
             "pending": stats.get("pending", 0),
@@ -46,6 +48,7 @@ def summarize_run_sessions(sessions, opportunity_id):
         }
         agg = by_tag[tag]
         agg["sessions"] += 1
+        agg["images"] += cell["images"]
         agg["pass"] += cell["pass"]
         agg["fail"] += cell["fail"]
         agg["pending"] += cell["pending"]
@@ -65,56 +68,92 @@ def _in_window(run_ws, win_start, win_end):
     return bool(run_ws) and win_start <= run_ws <= win_end
 
 
-def compute_audit_par_rollup(*, state, request=None, access_token=None, progress_callback=None):
-    """Window-scoped rollup of the creator's weekly runs into per-opp week cells.
+def _completion_for(run, sessions):
+    """Per-week completion block from the run's lifecycle + its session statuses.
 
-    Reads sessions per-opp with an opp-scoped AuditDataAccess (the labs API
-    enforces opp scope on every request — a single DAO returns 0 for non-primary
-    opps; same lesson as program_admin_report).
+    ``status`` follows the run's saved-runs lifecycle (``is_completed``); a run is
+    only "completed" once its org marked it done (which is gated on every audit
+    being complete). ``open_audits`` is the count of sessions not yet completed.
+    """
+    total = len(sessions)
+    open_ = sum(1 for s in sessions if getattr(s, "status", None) != "completed")
+    return {
+        "status": "completed" if getattr(run, "is_completed", False) else "in_progress",
+        "completed_at": getattr(run, "completed_at", None),
+        "total_audits": total,
+        "open_audits": open_,
+    }
+
+
+def _resolve_sources(state):
+    """Resolve the list of per-opp watched sources ``{opportunity_id, workflow_definition_id}``.
+
+    Prefers the new ``watched_sources`` list (one entry per per-opp instance).
+    Backward-compat: when only the legacy singular ``watched_source``
+    (``{creator_definition_id, opportunity_ids}``) is present, adapt it to a
+    one-element-per-opp list pointing every opp at that same creator definition.
+    """
+    sources = state.get("watched_sources")
+    if sources:
+        return [
+            {"opportunity_id": s.get("opportunity_id"), "workflow_definition_id": s.get("workflow_definition_id")}
+            for s in sources
+            if s.get("opportunity_id") is not None and s.get("workflow_definition_id") is not None
+        ]
+    legacy = state.get("watched_source") or {}
+    def_id = legacy.get("creator_definition_id")
+    if not def_id:
+        return []
+    return [{"opportunity_id": opp, "workflow_definition_id": def_id} for opp in legacy.get("opportunity_ids", [])]
+
+
+def compute_audit_par_rollup(*, state, request=None, access_token=None, progress_callback=None):
+    """Window-scoped rollup of per-opp audit runs into per-opp week cells.
+
+    Each watched source is one per-opp ``weekly_dual_track_audit`` instance
+    (``{opportunity_id, workflow_definition_id}``). For each source we list THAT
+    opp's runs (opp-scoped — the labs API injects opportunity_id into every read,
+    and an unscoped read returns only public records) filtered to the source's
+    ``workflow_definition_id``, then roll each run's sessions up per-FLW and stamp
+    a per-week ``completion`` block from the run's lifecycle + session statuses.
     """
     win_start = state.get("window_start")
     win_end = state.get("window_end")
-    source = state.get("watched_source") or {}
-
-    creator_def_id = source.get("creator_definition_id")
-    opportunity_ids = source.get("opportunity_ids", [])
-    if not creator_def_id:
-        # No creator to watch — the report can't populate. (The window is
-        # optional: when absent, every one of the creator's runs is included.)
+    sources = _resolve_sources(state)
+    if not sources:
+        # No source to watch — the report can't populate. (The window is
+        # optional: when absent, every one of a source's runs is included.)
         return {"watched_summary": [], "error": "missing_source"}
 
     def _progress(msg):
         if progress_callback:
             progress_callback(msg)
 
-    # list_runs is opp-scoped: the labs API injects opportunity_id into the query,
-    # and an UNSCOPED read returns only public records — workflow runs are not
-    # public, so a no-opp WorkflowDataAccess finds nothing. Each creator run is
-    # owned by one of the watched opps, so list under each and merge by id.
-    runs_by_id = {}
-    for opp_id in opportunity_ids:
+    has_window = bool(win_start and win_end)
+    watched_summary = []
+    for src in sources:
+        opp_id = src["opportunity_id"]
+        def_id = src["workflow_definition_id"]
+        _progress(f"Rolling up opportunity #{opp_id}…")
+
+        # Opp-scoped run listing (GLOBAL CONSTRAINT): construct one DAO per source
+        # with that opp id, and filter to the source's workflow_definition_id.
         wda = WorkflowDataAccess(request=request, access_token=access_token, opportunity_id=opp_id)
         try:
-            for run in wda.list_runs(creator_def_id):
-                runs_by_id[run.id] = run
+            runs = list(wda.list_runs(def_id))
         finally:
             wda.close()
-    runs = list(runs_by_id.values())
 
-    # Keep the creator's runs, sorted by week. When a report window is set,
-    # keep only runs whose batch window falls inside it; otherwise include all.
-    has_window = bool(win_start and win_end)
-    weeks = []
-    for run in runs:
-        run_state = (run.data or {}).get("state", {})
-        rws = run_state.get("window_start")
-        if not has_window or _in_window(rws, win_start, win_end):
-            weeks.append((rws or "", run_state.get("window_end"), run))
-    weeks.sort(key=lambda t: t[0])
+        # Keep this source's runs, sorted by week. When a report window is set,
+        # keep only runs whose batch window falls inside it; otherwise include all.
+        weeks = []
+        for run in runs:
+            run_state = (run.data or {}).get("state", {})
+            rws = run_state.get("window_start")
+            if not has_window or _in_window(rws, win_start, win_end):
+                weeks.append((rws or "", run_state.get("window_end"), run))
+        weeks.sort(key=lambda t: t[0])
 
-    watched_summary = []
-    for opp_id in opportunity_ids:
-        _progress(f"Rolling up opportunity #{opp_id}…")
         ada = AuditDataAccess(request=request, access_token=access_token, opportunity_id=opp_id)
         try:
             opp_weeks = []
@@ -126,19 +165,21 @@ def compute_audit_par_rollup(*, state, request=None, access_token=None, progress
                         "window_start": rws,
                         "window_end": rwe,
                         "run_id": run.id,
+                        "definition_id": def_id,
                         "by_tag": summary["by_tag"],
                         "flw_rows": summary["flw_rows"],
+                        "completion": _completion_for(run, sessions),
                     }
                 )
         finally:
             ada.close()
-        watched_summary.append({"opportunity_id": opp_id, "weeks": opp_weeks})
+        watched_summary.append({"opportunity_id": opp_id, "workflow_definition_id": def_id, "weeks": opp_weeks})
 
     return {
         "watched_summary": watched_summary,
         "window_start": win_start,
         "window_end": win_end,
-        "watched_source": source,
+        "watched_sources": sources,
     }
 
 
@@ -149,7 +190,8 @@ DEFINITION = {
     "templateType": "audit_par",
     "statuses": [],
     "config": {
-        "watched_source": {"creator_definition_id": None, "opportunity_ids": []},
+        # One entry per per-opp weekly_dual_track_audit instance.
+        "watched_sources": [],
         "window_start": None,
         "window_end": None,
     },
@@ -286,6 +328,31 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions }) {
         return (opp.weeks || []).filter(function(w) { return (w.window_start || 'undated') === col; })[0] || null;
     }
 
+    // Completion status pill from a week's completion block:
+    //   ⏳ N open   (run still in progress; N audits not yet completed)
+    //   ✓ complete  (run marked complete — all audits done)
+    function completionPill(completion) {
+        if (!completion) return null;
+        if (completion.status === 'completed') return pill('✓ complete', 'green');
+        return pill('⏳ ' + (completion.open_audits || 0) + ' open', 'yellow');
+    }
+
+    // Cell KPI line: images (from image_count), AI-flagged, pass/fail — summed
+    // across MUAC + Rest by_tag.
+    function cellKpis(bt) {
+        bt = bt || {};
+        var m = bt.muac || {}, r = bt.rest || {};
+        var images = (m.images || 0) + (r.images || 0);
+        var ai = (m.ai_flagged || 0) + (r.ai_flagged || 0);
+        var pass = (m.pass || 0) + (r.pass || 0);
+        var fail = (m.fail || 0) + (r.fail || 0);
+        return React.createElement('div', {style: {fontSize: 10, color: '#6b7280', display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 2}},
+            React.createElement('span', null, images + ' img'),
+            ai > 0 ? React.createElement('span', {style: {color: '#b45309', fontWeight: 600}}, '⚑ ' + ai) : null,
+            React.createElement('span', null, pass + '✓ / ' + fail + '✗')
+        );
+    }
+
     function weekCellCard(opp, week) {
         var isSelected = selectedCell &&
             selectedCell.opportunity_id === opp.opportunity_id &&
@@ -293,7 +360,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions }) {
         var bt = week.by_tag || {};
         var muac = bt.muac || {};
         var rest = bt.rest || {};
-        var aiFlags = muac.ai_flagged || 0;
+        var aiFlags = (muac.ai_flagged || 0) + (rest.ai_flagged || 0);
         var border = isSelected ? '2px solid #4f46e5' : (aiFlags > 0 ? '1px solid #fcd34d' : '1px solid #e5e7eb');
         return React.createElement('div', {
             onClick: function() {
@@ -310,10 +377,11 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions }) {
                 : null,
             React.createElement('div', {style: {display: 'flex', justifyContent: 'space-between', alignItems: 'center'}},
                 React.createElement('span', {style: {fontSize: 10, color: '#6b7280'}}, fmtDate(week.window_start)),
-                aiFlags > 0 ? pill('⚑ ' + aiFlags + ' AI', 'amber') : null
+                completionPill(week.completion)
             ),
             tagBar('MUAC', muac),
-            tagBar('Rest', rest)
+            tagBar('Rest', rest),
+            cellKpis(bt)
         );
     }
 
@@ -341,7 +409,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions }) {
         var link = cell.session_id != null
             ? React.createElement('a', {
                 key: 'lnk',
-                href: '/audit/' + cell.session_id + '/bulk/?opportunity_id=' + oppId,
+                href: '/audit/' + cell.session_id + '/?opportunity_id=' + oppId,
                 className: 'text-indigo-600 underline text-xs',
                 style: {marginLeft: 8},
             }, 'open')
@@ -427,16 +495,31 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions }) {
             if (selectedCell && selectedCell.opportunity_id === opp.opportunity_id) {
                 var week = weekObjFor(opp, selectedCell.window_start);
                 if (week) {
+                    // AI-flagged FLWs sorted first (MUAC or Rest).
+                    var aiFlagged = function(r) {
+                        return ((r.muac && (r.muac.ai_flagged || 0) > 0) || (r.rest && (r.rest.ai_flagged || 0) > 0)) ? 0 : 1;
+                    };
                     var flwRows = (week.flw_rows || []).slice().sort(function(a, b) {
-                        var aHas = (a.muac && (a.muac.ai_flagged || 0) > 0) ? 0 : 1;
-                        var bHas = (b.muac && (b.muac.ai_flagged || 0) > 0) ? 0 : 1;
-                        return aHas - bHas;
+                        return aiFlagged(a) - aiFlagged(b);
                     });
+                    var runDefId = opp.workflow_definition_id != null ? opp.workflow_definition_id : week.definition_id;
+                    var runLink = runDefId != null
+                        ? React.createElement('a', {
+                            href: '/labs/workflow/' + runDefId + '/run/?run_id=' + week.run_id + '&opportunity_id=' + opp.opportunity_id,
+                            className: 'text-indigo-600 underline text-xs',
+                            style: {marginLeft: 10},
+                            target: '_blank',
+                        }, 'open run ↗')
+                        : null;
                     detail = React.createElement('div', {style: {background: 'white', borderRadius: '0 0 12px 12px', border: '2px solid #4f46e5', borderTop: 'none', overflow: 'hidden'}},
                         React.createElement('div', {style: {padding: '14px 20px', background: '#eef2ff', borderBottom: '1px solid #c7d2fe', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}},
                             React.createElement('div', null,
                                 React.createElement('div', {style: {fontSize: 11, textTransform: 'uppercase', color: '#4338ca'}}, 'Week detail · Opp #' + opp.opportunity_id + ' · ' + fmtDate(week.window_start) + ' – ' + fmtDate(week.window_end)),
-                                React.createElement('div', {style: {fontSize: 14, fontWeight: 600, color: '#111827', marginTop: 2}}, (week.flw_rows || []).length + ' FLW(s) · Run #' + week.run_id)
+                                React.createElement('div', {style: {fontSize: 14, fontWeight: 600, color: '#111827', marginTop: 2, display: 'flex', alignItems: 'center', gap: 8}},
+                                    React.createElement('span', null, (week.flw_rows || []).length + ' FLW(s) · Run #' + week.run_id),
+                                    completionPill(week.completion),
+                                    runLink
+                                )
                             ),
                             React.createElement('button', {
                                 onClick: function() { setSelectedCell(null); },
@@ -491,15 +574,15 @@ TEMPLATE = {
     "snapshot_inputs": {
         "pipelines": [],
         "workers": False,
-        "state_keys": ["watched_summary", "window_start", "window_end", "watched_source"],
+        "state_keys": ["watched_summary", "window_start", "window_end", "watched_sources"],
     },
     "snapshot_schema": {
         "version": 1,
         "keys": {
-            "state.watched_summary": "Per-opp week cells of audit results, computed live, frozen at completion",
+            "state.watched_summary": "Per-opp week cells of audit results + completion, computed live, frozen at completion",
             "state.window_start": "Report window start (ISO)",
             "state.window_end": "Report window end (ISO)",
-            "state.watched_source": "{creator_definition_id, opportunity_ids}",
+            "state.watched_sources": "[{opportunity_id, workflow_definition_id}] — one per per-opp instance",
         },
     },
     "definition": DEFINITION,

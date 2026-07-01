@@ -11,6 +11,8 @@ The per-opp image paths and track config live on the workflow DEFINITION
 docs/superpowers/specs/2026-06-30-audit-program-report-design.md.
 """
 
+from commcare_connect.audit.data_access import AuditDataAccess
+
 
 def _image_audits(paths, reviewer):
     """One image_audits entry per pinned image path. The track's reviewer (or no
@@ -71,6 +73,73 @@ def build_track_audit_calls(
     return calls
 
 
+# =============================================================================
+# Saved-runs completion gate (Task 2)
+# =============================================================================
+
+
+def _incomplete_audit_count(sessions):
+    total = len(sessions)
+    done = sum(1 for s in sessions if s.status == "completed")
+    return total, total - done
+
+
+def _audit_rollup_snapshot(sessions, opportunity_id):
+    """Per-FLW rollup for the frozen snapshot. image_count for images; ai_no_match = AI-flagged."""
+    rows = {}
+    by_tag = {
+        "muac": {"images": 0, "pass": 0, "fail": 0, "ai_flagged": 0},
+        "rest": {"images": 0, "pass": 0, "fail": 0, "ai_flagged": 0},
+    }
+    for s in sessions:
+        if s.opportunity_id != opportunity_id:  # defensive: sessions are opp-scoped already
+            continue
+        tag = s.tag if s.tag in by_tag else None
+        if tag is None:
+            continue
+        st = s.get_assessment_stats() or {}
+        cell = {
+            "images": s.image_count or 0,
+            "pass": st.get("pass", 0),
+            "fail": st.get("fail", 0),
+            "ai_flagged": st.get("ai_no_match", 0),
+            "status": s.status,
+            "session_id": s.id,
+        }
+        agg = by_tag[tag]
+        agg["images"] += cell["images"]
+        agg["pass"] += cell["pass"]
+        agg["fail"] += cell["fail"]
+        agg["ai_flagged"] += cell["ai_flagged"]
+        fid = s.flw_username or "unknown"
+        row = rows.setdefault(
+            fid,
+            {"flw_id": fid, "flw_name": getattr(s, "flw_display_name", fid) or fid, "muac": None, "rest": None},
+        )
+        row[tag] = cell
+    return {"by_tag": by_tag, "flw_rows": list(rows.values())}
+
+
+def build_snapshot(*, pipelines, state, opportunity_id, run_id=None, request=None, access_token=None, **_):
+    """Saved-runs completion hook. GATE: raises until every audit session is completed."""
+    ada = AuditDataAccess(request=request, access_token=access_token, opportunity_id=opportunity_id)
+    try:
+        sessions = ada.get_sessions_by_workflow_run(run_id) if run_id else []
+    finally:
+        ada.close()
+    total, incomplete = _incomplete_audit_count(sessions)
+    if incomplete > 0:
+        raise ValueError(
+            f"{incomplete} of {total} audits still open — complete every audit before marking this run complete."
+        )
+    return {
+        "audit_summary": _audit_rollup_snapshot(sessions, opportunity_id),
+        "completed_counts": {"total": total, "incomplete": incomplete},
+        "window_start": state.get("window_start"),
+        "window_end": state.get("window_end"),
+    }
+
+
 DEFINITION = {
     "name": "Weekly Dual-Track Image Audit",
     "description": "Per FLW, per week: a MUAC-census+AI audit and a sampled-remainder audit, across all selected opportunities.",
@@ -101,7 +170,7 @@ DEFINITION = {
     "pipeline_sources": [],
 }
 
-RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateState }) {
+RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateState, view }) {
 
     // ── Config from the DEFINITION (pinned at create time, read-only here) ────
     const batch = (definition.config && definition.config.audit_batch) || {};
@@ -114,9 +183,12 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
         : (instance.opportunity_id ? [instance.opportunity_id] : []);
 
     // ── Date-window picker (mirrors bulk_image_audit) ─────────────────────────
-    const [datePreset, setDatePreset] = React.useState(instance.state?.date_preset || 'last_week');
-    const [startDate, setStartDate] = React.useState(instance.state?.window_start || '');
-    const [endDate, setEndDate] = React.useState(instance.state?.window_end || '');
+    // A completed run reads its frozen window from view.state; an in-progress
+    // run reads live run state.
+    const runState = (view && view.state) || instance.state || {};
+    const [datePreset, setDatePreset] = React.useState(runState.date_preset || 'last_week');
+    const [startDate, setStartDate] = React.useState(runState.window_start || '');
+    const [endDate, setEndDate] = React.useState(runState.window_end || '');
 
     const calculateDateRange = (preset) => {
         const today = new Date(); today.setHours(0,0,0,0);
@@ -346,6 +418,11 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
         { id: 'custom', label: 'Custom' },
     ];
 
+    // ── Completion gate (all audit sessions must be completed) ────────────────
+    var openCount = sessions.filter(function(s){ return s.status !== 'completed'; }).length;
+    var allComplete = sessions.length > 0 && openCount === 0;
+    var isCompleted = view && view.isCompleted;
+
     const pathPills = (paths, color) => (
         (paths && paths.length)
             ? paths.map(p => (
@@ -564,6 +641,25 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                             </div>
                         )}
             </div>
+
+            {/* ── Completion ─────────────────────────────────────────────── */}
+            <div className="bg-white rounded-lg shadow-sm p-6">
+                {isCompleted
+                    ? <div className="text-sm text-green-800 bg-green-50 border border-green-200 rounded-lg p-4">
+                        <i className="fa-solid fa-lock mr-2"></i>Run completed{view.asOf ? ' · ' + new Date(view.asOf).toLocaleString() : ''}. The results are frozen.
+                      </div>
+                    : <div>
+                        <button
+                            onClick={function(){ if (view && view.complete) view.complete({confirm: 'Mark this run complete? All ' + sessions.length + ' audits are done; the results will be frozen.'}); }}
+                            disabled={!allComplete}
+                            className={'inline-flex items-center px-6 py-3 rounded-lg font-medium ' + (allComplete ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-gray-300 text-gray-500 cursor-not-allowed')}>
+                            <i className="fa-solid fa-flag-checkered mr-2"></i>Mark Run Complete
+                        </button>
+                        {!allComplete
+                            ? <div className="mt-2 text-xs text-gray-500">{openCount} of {sessions.length} audits still open — complete them all to finish the run.</div>
+                            : <div className="mt-2 text-xs text-green-600">All audits complete — ready to mark the run complete.</div>}
+                      </div>}
+            </div>
         </div>
     );
 }"""
@@ -578,4 +674,11 @@ TEMPLATE = {
     "definition": DEFINITION,
     "render_code": RENDER_CODE,
     "pipeline_schema": None,
+}
+
+TEMPLATE["supports_saved_runs"] = True
+TEMPLATE["snapshot_inputs"] = {
+    "workers": False,
+    "pipelines": [],
+    "state_keys": ["window_start", "window_end", "last_batch"],
 }
