@@ -333,7 +333,7 @@
                         <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
                         <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Recommendation</th>
                         <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Score</th>
-                        <th class="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                        <th class="sticky right-0 z-10 bg-gray-50 px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.08)]">Actions</th>
                     </tr>
                 </thead>
                 <tbody class="bg-white divide-y divide-gray-200">
@@ -432,7 +432,7 @@
                                     <span class="text-gray-400 text-sm">Pending review</span>
                                 {% endif %}
                             </td>
-                            <td class="px-3 py-4 whitespace-nowrap text-right text-sm">
+                            <td class="sticky right-0 bg-white px-3 py-4 whitespace-nowrap text-right text-sm shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.08)]">
                                 <div class="flex items-center justify-end gap-3">
                                     <a href="{% url 'solicitations:response_detail' pk=response.pk %}"
                                        class="text-indigo-600 hover:text-indigo-900 font-medium">
