@@ -222,12 +222,12 @@ Labs includes pre-built workflow templates for common program types. Your progra
 | **LLO Weekly FLW Review**             | Weekly per-FLW KPI scorecard for LLO programs                                                                               |
 | **Connect Interviews Reporting V2**   | Live funnel dashboard showing Triggered / Started / Completed counts per interview for any cohort                           |
 | **CHC Audit History**                 | Historical view of CHC audit records across multiple opportunities                                                          |
-| **Weekly Dual-Track Image Audit**     | Weekly cross-opportunity image audit creator — generates MUAC (AI-checked) and sampled other-photo audits for every FLW    |
-| **Audit Program Report**              | Cross-opportunity, cross-week grid showing MUAC and other-photo audit pass/fail/pending counts with per-FLW drill-down     |
+| **Weekly Dual-Track Image Audit**     | Weekly cross-opportunity image audit creator — generates MUAC (AI-checked) and sampled Other-photo audits for every FLW    |
+| **Audit Program Report**              | Cross-opportunity, cross-week grid showing MUAC and Other-photo audit pass/fail/pending counts with per-FLW drill-down     |
 
-### Weekly Dual-Track Image Audit — results view
+### Weekly Dual-Track Image Audit — creating a run
 
-When you open a field worker's audit results within a Weekly Dual-Track Image Audit run, the figures shown are:
+When you create a new Weekly Dual-Track Image Audit run, the run screen shows two editable sampling-percentage fields:
 
-- **Real image counts** for every audit type — including Rest/human-reviewed audits, which previously displayed "0 images" even when images were present. All audit rows now reflect the actual number of images in that audit.
-- **Correct pending count** — the number of images not yet reviewed is calculated accurately across
+- **Track A (MUAC) sampling %** — pre-filled with the configured default (typically 100%). Adjust this if you want to sample a different proportion of MUAC images for this run only.
+- **Track B (Other) sampling %** — pre-filled with the configured default (
