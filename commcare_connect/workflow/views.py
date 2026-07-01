@@ -2842,11 +2842,31 @@ def start_job_api(request, run_id):
         if not access_token:
             return JsonResponse({"error": "Not authenticated"}, status=401)
 
-        # Get opportunity_id from labs_context
-        labs_context = getattr(request, "labs_context", {})
-        opportunity_id = labs_context.get("opportunity_id")
-        if not opportunity_id:
+        # The job must query the run scoped to the opportunity that OWNS it.
+        # The caller's session opp can drift to a non-owning member opp of a
+        # multi-opp workflow, and the job then does get_run(run_id) scoped to
+        # the wrong opp, 404s, and dies immediately. Resolve the run's own
+        # opportunity_id from the run record itself: try the session opp and the
+        # render-reported opp (job_config.opportunity_id) as lookup candidates,
+        # then use the located run's authoritative owning opp.
+        labs_context = getattr(request, "labs_context", {}) or {}
+        candidates = []
+        for c in (labs_context.get("opportunity_id"), (job_config or {}).get("opportunity_id")):
+            if c and c not in candidates:
+                candidates.append(c)
+        if not candidates:
             return JsonResponse({"error": "opportunity_id required in context"}, status=400)
+
+        opportunity_id = candidates[0]
+        for candidate in candidates:
+            try:
+                run = WorkflowDataAccess(access_token=access_token, opportunity_id=candidate).get_run(run_id)
+            except Exception as e:
+                logger.warning("[StartJob] get_run(%s) under opp %s failed: %s", run_id, candidate, e)
+                run = None
+            if run is not None and getattr(run, "opportunity_id", None):
+                opportunity_id = run.opportunity_id
+                break
 
         # Start async task
         task = run_workflow_job.delay(
