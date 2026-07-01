@@ -225,10 +225,8 @@ Labs includes pre-built workflow templates for common program types. Your progra
 | **Weekly Dual-Track Image Audit**     | Weekly cross-opportunity image audit creator — generates MUAC (AI-checked) and sampled other-photo audits for every FLW    |
 | **Audit Program Report**              | Cross-opportunity, cross-week grid showing MUAC and other-photo audit pass/fail/pending counts with per-FLW drill-down     |
 
-### Bulk Image Audit — AI Review Agent
+### Multi-opportunity workflows — starting jobs reliably
 
-The Bulk Image Audit template includes an optional **AI Review Agent** step. When a MUAC or weight image type is selected during configuration, an **AI Review Agent** dropdown appears as soon as opportunities are selected — you do not need to run any preview step first. The dropdown shows only the agents relevant to the image types you have chosen:
+Some templates (such as **Weekly Dual-Track Image Audit**) cover more than one opportunity at a time. When you trigger an action that starts a background job — for example, clicking **Create audits** — the job now always runs under the opportunity that owns the run, regardless of which opportunity is currently selected in the context picker at the top of the screen.
 
-| Agent | When it appears | What it does |
-| ----- | --------------- | ------------ |
-|
+Previously, if the picker was set to a different opportunity at the moment you clicked, the job
