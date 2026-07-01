@@ -101,3 +101,41 @@ class SurfaceDataAccess:
             public=True,
         )
         return self._normalize(record)
+
+
+def _first_match(records):
+    records = list(records or [])
+    if not records:
+        return None
+    records.sort(key=lambda r: r.id)
+    return SurfaceDataAccess._normalize(records[0])
+
+
+def resolve_surface(access_token: str, context: dict, slug: str) -> dict | None:
+    """Resolve a surface slug against the viewer's labs_context, then public.
+
+    `context` is a request.labs_context-shaped dict. Tries the present scopes in
+    priority order (opp → program → org), issuing a correctly-scoped get_records
+    so the prod API's membership check authorizes the read; then falls back to
+    the public path. Returns the normalized surface dict or None.
+    """
+    context = context or {}
+    attempts = []
+    opp = context.get("opportunity_id")
+    prog = context.get("program_id")
+    org = context.get("organization_id")
+    if opp:
+        attempts.append({"opportunity_id": opp})
+    if prog:
+        attempts.append({"program_id": prog})
+    if isinstance(org, int):
+        attempts.append({"organization_id": org})
+
+    for scope in attempts:
+        client = LabsRecordAPIClient(access_token, **scope)
+        match = _first_match(client.get_records(type=SURFACE_TYPE, **{"data__slug": slug}))
+        if match:
+            return match
+
+    public_client = LabsRecordAPIClient(access_token)
+    return _first_match(public_client.get_records(type=SURFACE_TYPE, public=True, **{"data__slug": slug}))
