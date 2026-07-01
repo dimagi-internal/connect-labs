@@ -225,8 +225,10 @@ Labs includes pre-built workflow templates for common program types. Your progra
 | **Weekly Dual-Track Image Audit**     | Weekly cross-opportunity image audit creator — generates MUAC (AI-checked) and sampled other-photo audits for every FLW    |
 | **Audit Program Report**              | Cross-opportunity, cross-week grid showing MUAC and other-photo audit pass/fail/pending counts with per-FLW drill-down     |
 
-### Multi-opportunity workflows — starting jobs reliably
+### Audit Program Report — loading and refreshing data
 
-Some templates (such as **Weekly Dual-Track Image Audit**) cover more than one opportunity at a time. When you trigger an action that starts a background job — for example, clicking **Create audits** — the job now always runs under the opportunity that owns the run, regardless of which opportunity is currently selected in the context picker at the top of the screen.
+When you open an **Audit Program Report** run, the report loads itself automatically. It pulls the watched creator's audit runs into the week × opportunity grid straight away — you do not need to click anything to see initial data.
 
-Previously, if the picker was set to a different opportunity at the moment you clicked, the job
+The action button above the grid has two states:
+
+- **Load report** — shown when the grid is empty (for example, on a brand-new run that has never been loaded before). Click it to populate the grid for the
