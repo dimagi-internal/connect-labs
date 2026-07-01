@@ -283,7 +283,7 @@ class SolicitationResponseForm(forms.Form):
                 field = forms.CharField(
                     label=q_text,
                     required=q_required,
-                    widget=forms.Textarea(attrs={"rows": 4, "class": _TEXTAREA_CLASSES}),
+                    widget=forms.Textarea(attrs={"rows": 8, "class": _TEXTAREA_CLASSES}),
                 )
             elif q_type == "number":
                 field = forms.IntegerField(
@@ -301,11 +301,13 @@ class SolicitationResponseForm(forms.Form):
                 )
             else:
                 # Default: text / short_text / unknown types — use textarea
-                # for substantive answers (single-line inputs truncate responses)
+                # for substantive answers (single-line inputs truncate responses).
+                # rows=8 so a normal-length drafted answer is fully visible without
+                # clipping mid-word at the bottom edge.
                 field = forms.CharField(
                     label=q_text,
                     required=q_required,
-                    widget=forms.Textarea(attrs={"rows": 4, "class": _TEXTAREA_CLASSES}),
+                    widget=forms.Textarea(attrs={"rows": 8, "class": _TEXTAREA_CLASSES}),
                 )
 
             self.fields[field_name] = field
