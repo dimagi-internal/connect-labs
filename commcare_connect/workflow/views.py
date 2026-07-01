@@ -2897,50 +2897,38 @@ def start_job_api(request, run_id):
 
 @login_required
 @require_POST
-def generate_program_audit_batches_api(request, program_id):
-    """Generate per-opp weekly dual-track audit batches for a program.
+def run_default_api(request, definition_id):
+    """Run a workflow in its default (no-UI) mode.
 
-    Thin authenticated wrapper over ``audit_generation.generate_program_audit_batches``.
-    Body: ``{window|start/end, sample_overrides?, mapping?}``. Returns the per-opp
-    result JSON. The labs OAuth token is pulled from the session (same pattern as
-    ``start_job_api``).
+    Generic dispatcher: loads the definition (opp-scoped) and hands it to the
+    template's ``run_default`` hook via ``run_default_for_definition``. The labs
+    OAuth token + opportunity are resolved from the session the same way
+    ``start_job_api`` does. Returns the hook's result dict. Responds 400 with the
+    ValueError message when the definition's template doesn't support default-run.
     """
-    from datetime import date
-
-    from commcare_connect.workflow import audit_generation
-
-    try:
-        data = json.loads(request.body) if request.body else {}
-    except json.JSONDecodeError:
-        return JsonResponse({"error": "Invalid JSON"}, status=400)
+    from commcare_connect.workflow.templates import run_default_for_definition
 
     access_token = request.session.get("labs_oauth", {}).get("access_token")
     if not access_token:
         return JsonResponse({"error": "Not authenticated"}, status=401)
 
-    # Window: preset OR explicit start/end.
-    if data.get("window"):
-        try:
-            window_start, window_end = audit_generation.resolve_window(data["window"], date.today())
-        except ValueError as e:
-            return JsonResponse({"error": str(e)}, status=400)
-    elif data.get("start") and data.get("end"):
-        window_start, window_end = data["start"], data["end"]
-    else:
-        return JsonResponse({"error": "provide 'window' preset OR both 'start' and 'end'"}, status=400)
+    labs_context = getattr(request, "labs_context", {}) or {}
+    opportunity_id = labs_context.get("opportunity_id")
+    if not opportunity_id:
+        return JsonResponse({"error": "opportunity_id required in context"}, status=400)
+
+    definition = WorkflowDataAccess(access_token=access_token, opportunity_id=opportunity_id).get_definition(
+        definition_id
+    )
+    if definition is None:
+        return JsonResponse({"error": "Workflow definition not found"}, status=404)
 
     try:
-        result = audit_generation.generate_program_audit_batches(
-            program_id,
-            window_start,
-            window_end,
-            sample_overrides=data.get("sample_overrides") or None,
-            access_token=access_token,
-            request=request,
-            mapping=data.get("mapping"),
-        )
+        result = run_default_for_definition(definition, access_token=access_token, request=request)
+    except ValueError as e:
+        return JsonResponse({"error": str(e)}, status=400)
     except Exception:
-        logger.exception("Failed to generate audit batches for program %s", program_id)
+        logger.exception("Failed to run default for workflow %s", definition_id)
         return JsonResponse({"error": "An internal error occurred"}, status=500)
 
     return JsonResponse(result)

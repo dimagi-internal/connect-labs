@@ -682,3 +682,41 @@ TEMPLATE["snapshot_inputs"] = {
     "pipelines": [],
     "state_keys": ["window_start", "window_end", "last_batch"],
 }
+
+
+def run_default(*, definition, access_token, request=None, window=None, **_):
+    """Default-run hook: create (or reuse) this week's audit batch for the
+    definition's opportunity, with no UI.
+
+    ``window`` defaults to ``resolve_window("last_week", today)``; the per-track
+    sampling rates come from the definition's ``config.audit_batch`` defaults
+    (the same values the UI pre-fills). Idempotent per (opp, window). Returns
+    ``{"run_id", "created", "sessions_created"}``.
+    """
+    from datetime import date
+
+    from commcare_connect.workflow.audit_generation import resolve_window, run_this_week_batch
+
+    if window is None:
+        window_start, window_end = resolve_window("last_week", date.today())
+    else:
+        window_start, window_end = window
+
+    batch = (definition.data.get("config") or {}).get("audit_batch") or {}
+    track_a = batch.get("track_a") or {}
+    track_b = batch.get("track_b") or {}
+    sample_overrides = {
+        "muac_sample_percentage": track_a.get("sample_percentage", 100),
+        "other_sample_percentage": track_b.get("sample_percentage", 10),
+    }
+
+    return run_this_week_batch(
+        definition,
+        window_start,
+        window_end,
+        access_token=access_token,
+        sample_overrides=sample_overrides,
+    )
+
+
+TEMPLATE["supports_default_run"] = True

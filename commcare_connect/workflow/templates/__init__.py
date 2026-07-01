@@ -82,6 +82,8 @@ def _discover_templates() -> None:
                 if key:
                     if hasattr(module, "build_snapshot") and callable(module.build_snapshot):
                         template["build_snapshot"] = module.build_snapshot
+                    if hasattr(module, "run_default") and callable(module.run_default):
+                        template["run_default"] = module.run_default
                     TEMPLATES[key] = template
                     logger.debug(f"Registered workflow template: {key}")
                 else:
@@ -111,6 +113,16 @@ def get_template(template_key: str) -> dict | None:
         or None if not found
     """
     return TEMPLATES.get(template_key)
+
+
+def run_default_for_definition(definition, *, access_token, request=None, **kwargs) -> dict:
+    """Run a workflow with its default settings (no UI). Raises ValueError if the
+    definition's template doesn't support default-run."""
+    key = definition.template_type or (definition.data.get("config") or {}).get("templateType")
+    template = TEMPLATES.get(key) if key else None
+    if not template or not template.get("supports_default_run") or not callable(template.get("run_default")):
+        raise ValueError(f"Workflow {getattr(definition,'id','?')} (template {key!r}) does not support default-run.")
+    return template["run_default"](definition=definition, access_token=access_token, request=request, **kwargs)
 
 
 def list_templates() -> list[dict]:
@@ -575,6 +587,7 @@ __all__ = [
     "get_template",
     "list_templates",
     "create_workflow_from_template",
+    "run_default_for_definition",
     # Individual template modules
     "performance_review",
     "ocs_outreach",

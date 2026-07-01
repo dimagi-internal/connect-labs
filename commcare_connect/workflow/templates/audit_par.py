@@ -589,3 +589,7 @@ TEMPLATE = {
     "render_code": RENDER_CODE,
     "pipeline_schema": PIPELINE_SCHEMA,
 }
+
+# NOTE: the program-wide fan-out that used to live here (a `run_default` hook +
+# `supports_default_run`) moved to the dedicated `program_audit_creator`
+# template. The report is a pure viewer again — it never generates audits.

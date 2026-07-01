@@ -111,12 +111,9 @@ urlpatterns = [
     path("api/pipeline/<int:definition_id>/delete/", views.delete_pipeline_api, name="api_pipeline_delete"),
     # API endpoints - Workflow Jobs
     path("api/run/<int:run_id>/job/start/", views.start_job_api, name="api_start_job"),
-    # Program-scoped, cron/API-callable audit generation (idempotent per opp+window).
-    path(
-        "api/program/<int:program_id>/generate-audits/",
-        views.generate_program_audit_batches_api,
-        name="api_generate_program_audits",
-    ),
+    # Generic "run a workflow in default (no-UI) mode" — dispatches to the
+    # template's run_default hook (idempotent where the hook makes it so).
+    path("api/<int:definition_id>/run-default/", views.run_default_api, name="api_run_default"),
     path("api/job/<str:task_id>/status/", views.JobStatusStreamView.as_view(), name="api_job_status"),
     path("api/job/<str:task_id>/cancel/", views.cancel_job_api, name="api_cancel_job"),
     path("api/run/<int:run_id>/delete/", views.delete_run_api, name="api_delete_run"),
