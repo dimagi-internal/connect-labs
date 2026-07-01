@@ -45,6 +45,8 @@ Click **Generate Criteria** and paste in text describing your program requiremen
 **Adding context to response questions:**
 When building your response template, each question has an optional **Framing** field where you can write one or two sentences explaining why you're asking that question. This framing appears above the question prompt on the public solicitation page, displayed in muted italic text, so respondents understand the intent behind the question — not just what you're asking. Framing is optional; questions without it display exactly as before.
 
+The published solicitation shows the number of questions in the response template. This count is phrased correctly for any number — for example, "1 question" or "3 questions".
+
 !!! info "Validation errors on the creation form"
 Labs now checks that all fields are in the correct format when a solicitation is saved. If something is wrong — for example, a deadline that isn't a valid date, an evaluation criterion missing a name, or a response question that references something that no longer exists — you will see an inline error message on the relevant field. Correct the flagged fields and save again. These checks prevent incomplete or misformatted solicitations from being stored silently.
 
@@ -53,14 +55,14 @@ Labs now checks that all fields are in the correct format when a solicitation is
 If your solicitation is tied to specific geographic areas already defined in Labs, you can start directly from a micro-plan or plan group rather than writing the solicitation from scratch.
 
 **From a plan group:**
-Go to the plan group's management page and click **Create solicitation**. The solicitation form opens pre-filled with a title and scope of work drawn from the group name and region, and with all plans in the group already attached as coverage areas.
+Go to the plan group's management page and click **Create solicitation**. The solicitation form opens pre-filled with a title and scope of work drawn from the region, and with all plans in the group already attached as coverage areas. The pre-filled title does not repeat the place name — if the group and region share a name, it appears only once.
 
 **From a single plan:**
 Go to the plan's review page and click **Create solicitation**. The form opens pre-filled in the same way, with that one plan attached as a coverage area.
 
 In both cases, the coverage areas are shown on a map on the creation form, with the actual ward boundaries drawn for each attached plan. You can edit any pre-filled field before publishing. Once you save the solicitation, Labs takes you directly to that solicitation's responses page. The attached plans become a fixed snapshot — later edits to the underlying micro-plans will not change what is shown on the published solicitation.
 
-The coverage areas are displayed on the public solicitation page — both as a map showing the ward boundaries and as a list — so applicants can see exactly which areas are on the table.
+The coverage areas are displayed on the public solicitation page — both as a map showing the ward boundaries and as a list — so applicants can see exactly which areas are on the table. The ward count is shown at a readable size alongside the map.
 
 !!! info "Plans are captured as a snapshot"
 Because coverage areas are fixed at the time the solicitation is created, any changes you make to a micro-plan after that point will not be reflected in the solicitation. If your plans change significantly before the deadline, you will need to update the solicitation's coverage areas manually or create a new solicitation.
@@ -93,9 +95,9 @@ For each response:
 
 Multiple reviewers can score independently — average scores are calculated automatically.
 
-The responses list shows a **Status** column and a **Recommendation** column for each submission. For an awarded response, **Awarded** appears only in the Status column — the Recommendation column shows your reviewer recommendation as normal, without repeating "Awarded".
+The responses list shows a **Status** column and a **Recommendation** column for each submission. For an awarded response, **Awarded** appears only in the Status column — the Recommendation column shows your reviewer recommendation as normal, without repeating "Awarded". Where a response has not yet been scored, the Score cell shows a neutral dash (—); the Recommendation column shows the **Pending review** indicator for that submission.
 
-The **Actions** column (containing the Award control) is pinned to the right edge of the responses table. This means it stays visible and reachable even when the table is wide, without needing to scroll horizontally.
+The **Actions** column (containing the Award control) is pinned to the right edge of the responses table. This means it stays visible and reachable even when the table is wide, without needing to scroll horizontally. The Score cell is no longer clipped by the pinned Actions column.
 
 ### Awarding a Response
 
@@ -117,13 +119,16 @@ In the current version, the coverage areas selected by an applicant are captured
 
 Published solicitations are visible on the Labs solicitations page without logging in. Filter by type (Expression of Interest or Request for Proposals) to find relevant opportunities. Where a solicitation was created from micro-plans, the specific geographic areas on offer are shown on a map with ward boundaries drawn, as well as in a list, on the solicitation page. The map includes a legend showing intervention areas in green and comparison areas in blue.
 
+Solicitations created for finished study programs clearly state their purpose — recruiting an independent survey firm to measure the program's outcomes — and display the number of coverage wards at a readable size.
+
 ### Submitting a Response
 
 1. Open a solicitation and read the full description and scope of work
 2. Click **Submit Response**
 3. Answer each question in the response template — where present, read the italicised framing above each question to understand what the program team is looking for. Each answer box is sized to show a typical response in full as you type, so you can review your wording without scrolling inside the box
 4. If the solicitation includes coverage areas, select the areas you can cover by clicking the ward boundaries directly on the map, or by checking the boxes in the checklist alongside it — both controls are kept in sync, so selecting an area in one automatically updates the other. Selected areas are highlighted on the map so you can clearly see which plans you have chosen. You must select at least one plan to submit
-5. Review your answers, then click **Submit**
+5. If you use the **AI Application Coach** for feedback on your draft answers, the coach's suggestions are presented with clear headings so you can scan the structured advice at a glance
+6. Review your answers, then click **Submit**
 
 !!! info "Selecting coverage areas"
 Each plan is offered as a whole unit. Clicking any part of a plan's boundary on the map selects that entire plan — you cannot select only part of a plan. Selected plans are highlighted in a distinct colour on the map so it is easy to see at a glance what you have chosen. If a plan includes multiple wards or intervention and control areas, you take all of it. If you are unsure what a plan covers, read the solicitation description or contact the program team before submitting.
@@ -198,21 +203,19 @@ After you save a new solicitation, Labs takes you directly to that solicitation'
 Both AI features were temporarily returning errors for all users on Labs. This has been fixed and both tools should now work as expected. If you click **Generate Criteria** on the solicitation creation form or use the AI Application Coach on the response form and still see an error, try refreshing the page and attempting again. If the problem persists, contact your Labs administrator.
 
 **The Award action was cut off on the right side of the responses table — is that a known issue?**
-This has been fixed. The **Actions** column is now pinned to the right edge of the responses table so the Award control is always visible, regardless of how wide the table is or what screen size you are using.
+This has been fixed. The **Actions** column is now pinned to the right edge of the responses table so the Award control is always visible, regardless of how wide the table is or what screen size you are using. The Score cell is also no longer clipped by the pinned column.
 
 **The answer boxes on the response form were too small and cut off my text — is that a known issue?**
 This has been fixed. The answer boxes are now taller, so a typical response is fully visible as you type without text being clipped at the bottom edge.
 
----
+**The solicitation title created from a plan group was repeating the place name twice — is that a known issue?**
+This has been fixed. The pre-filled title no longer duplicates the place name when the group name and region name are the same.
 
----
+**The solicitation was showing "1 questions" instead of "1 question" — is that a known issue?**
+This has been fixed. The question count now pluralizes correctly — "1 question" for a single question and the appropriate plural for any other number.
 
----
+**The AI Application Coach feedback was hard to read — is that a known issue?**
+This has been fixed. The coach's feedback now uses proper heading hierarchy, so structured advice is clearly organised and easy to scan.
 
----
-
-
----
-
-
----
+**What does the Score cell show for a response that hasn't been reviewed yet?**
+An unscored response shows a neutral dash (—) in the Score cell. The Recommendation column shows the **Pending review** indicator for that submission. Once reviewers have scored the response, the Score cell updates to show the calculated average.
