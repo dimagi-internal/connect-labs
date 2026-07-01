@@ -49,7 +49,7 @@ def test_create_surface_posts_public_scoped_record(mock_client_cls):
     client.create_record.return_value = _fake_record(slug="s", title="T", cards=[], options={})
 
     da = SurfaceDataAccess(access_token="tok", program_id=25)
-    da.create_surface(slug="s", title="T", cards=[])
+    da.create_surface(slug="s", title="T", cards=[], public=True)
 
     kwargs = client.create_record.call_args.kwargs
     assert kwargs["type"] == "surface"
@@ -90,3 +90,31 @@ def test_get_surface_by_slug_is_deterministic_on_collision(mock_client_cls):
     surface = da.get_surface_by_slug("dup")
 
     assert surface["id"] == 12
+
+
+@patch("connect_labs.pages.data_access.LabsRecordAPIClient")
+def test_create_surface_opp_scoped_is_not_public(mock_client_cls):
+    client = mock_client_cls.return_value
+    client.create_record.return_value = _fake_record(slug="s", title="T", cards=[], options={})
+
+    da = SurfaceDataAccess(access_token="tok", opportunity_id=1973)
+    da.create_surface(slug="s", title="T", cards=[])
+
+    # client built with the opp scope
+    assert mock_client_cls.call_args.kwargs["opportunity_id"] == 1973
+    kwargs = client.create_record.call_args.kwargs
+    assert kwargs["public"] is False
+    assert kwargs["data"]["scope"] == {"type": "opp", "id": 1973}
+
+
+@patch("connect_labs.pages.data_access.LabsRecordAPIClient")
+def test_create_surface_public_when_requested(mock_client_cls):
+    client = mock_client_cls.return_value
+    client.create_record.return_value = _fake_record(slug="s", title="T", cards=[], options={})
+
+    da = SurfaceDataAccess(access_token="tok")
+    da.create_surface(slug="s", title="T", cards=[], public=True)
+
+    kwargs = client.create_record.call_args.kwargs
+    assert kwargs["public"] is True
+    assert kwargs["data"]["scope"] == {"type": "public", "id": None}
