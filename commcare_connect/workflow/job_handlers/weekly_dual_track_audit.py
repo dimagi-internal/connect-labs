@@ -35,11 +35,15 @@ def weekly_dual_track_audit_create(job_config: dict, access_token: str, progress
         if run is None:
             raise ValueError(f"run {run_id} not found")
 
+        # Prefer the window passed in the job payload (the render sends it), and
+        # fall back to run state. This keeps audit creation working even when the
+        # render's best-effort state write flaked — the window still reaches the
+        # job via job_config.
         state = run.data.get("state", {})
-        window_start = state.get("window_start")
-        window_end = state.get("window_end")
+        window_start = job_config.get("window_start") or state.get("window_start")
+        window_end = job_config.get("window_end") or state.get("window_end")
         if not window_start or not window_end:
-            raise ValueError("set window_start/window_end in run state before creating the batch")
+            raise ValueError("set window_start/window_end (in the job payload or run state) before creating the batch")
 
         definition = wda.get_definition(run.definition_id)
         if definition is None:
