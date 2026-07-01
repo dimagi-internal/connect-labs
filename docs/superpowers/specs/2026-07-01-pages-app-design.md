@@ -43,7 +43,7 @@ Three concepts, one uniform engine:
   - scoped via `program_id` / `opportunity_id` / `organization_id` (and `username`
     for user-scoped surfaces later)
   - `data = { title, slug, scope, cards: [CardInstance...], options }`
-  - Served at `/labs/s/<slug>`. Slug is unique and human-friendly; the record id is
+  - Served at `/labs/p/<slug>`. Slug is unique and human-friendly; the record id is
     never in the URL (it is the "clear URL we shared with them").
 
 - **CardInstance** — one placed card on a surface:
@@ -115,16 +115,16 @@ One uniform client harness, two rendering paths:
   `render_code`, transpiled by the **same Babel/React runtime the workflow engine
   already uses**. Unbounded richness on proven infra; no separate runtime.
 
-**Assembly flow:** `/labs/s/<slug>` → resolve the surface record → for each
+**Assembly flow:** `/labs/p/<slug>` → resolve the surface record → for each
 CardInstance, look up its provider → `entitled()` check → render a grid of card
 **shells**. **Each card lazy-loads its own data** via a per-card endpoint
-(`/labs/s/<slug>/card/<i>/data`), mirroring the existing pipeline-preview / SSE
+(`/labs/p/<slug>/card/<i>/data`), mirroring the existing pipeline-preview / SSE
 pattern. The surface paints instantly with skeletons; one slow audit card never
 blocks the page.
 
 ## Exposure, URLs & permissions
 
-- **URL:** `/labs/s/<slug>` — human-friendly, stable, shareable.
+- **URL:** `/labs/p/<slug>` — human-friendly, stable, shareable.
 - **Auth:** existing Connect OAuth. No new auth, no public/tokenized links in v1.
 - **Chrome:** renders inside the existing labs chrome as-is (already minimal, matches
   `connect.dimagi.com`). No kiosk/stripped mode.
@@ -156,7 +156,7 @@ schema rework.
 
 **In:**
 - the `pages` Django app
-- surface `LabsRecord` (`type="surface"`) + slug routing at `/labs/s/<slug>`
+- surface `LabsRecord` (`type="surface"`) + slug routing at `/labs/p/<slug>`
 - provider registry with auto-discovery
 - **one** core-object provider: `audit`
 - workflow-declared `CARD` support, with one real workflow wired up end-to-end
