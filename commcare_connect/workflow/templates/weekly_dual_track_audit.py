@@ -280,19 +280,25 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
     };
     const grouped = groupByOppFlw();
     const statsOf = (s) => (s && s.assessment_stats) || {};
+    const imagesOf = (s) => (s && s.image_count) || 0;               // real image count (assessment_stats.total = # assessments, 0 until reviewed)
+    const aiReviewedOf = (s) => { var a = statsOf(s); return (a.ai_match || 0) + (a.ai_no_match || 0); };
+    const humanReviewedOf = (s) => { var a = statsOf(s); return (a.pass || 0) + (a.fail || 0); };
     const oppSummary = (oppData) => {
-        var out = { flws: 0, muacTotal: 0, muacReviewed: 0, muacFlagged: 0, restTotal: 0, restReviewed: 0 };
+        var out = { flws: 0, muacImages: 0, muacAiReviewed: 0, muacFlagged: 0, restImages: 0, restReviewed: 0 };
         oppData.order.forEach(function (flw) {
             var r = oppData.flws[flw]; out.flws++;
-            var m = statsOf(r.muac); out.muacTotal += (m.total || 0); out.muacReviewed += ((m.pass || 0) + (m.fail || 0)); out.muacFlagged += (m.ai_no_match || 0);
-            var e = statsOf(r.rest); out.restTotal += (e.total || 0); out.restReviewed += ((e.pass || 0) + (e.fail || 0));
+            if (r.muac) { out.muacImages += imagesOf(r.muac); out.muacAiReviewed += aiReviewedOf(r.muac); out.muacFlagged += (statsOf(r.muac).ai_no_match || 0); }
+            if (r.rest) { out.restImages += imagesOf(r.rest); out.restReviewed += humanReviewedOf(r.rest); }
         });
         return out;
     };
-    // One compact audit line: status + image count + pass/fail/pending + (MUAC) AI-flags.
+    // One compact audit line: status + image count + pass/fail/pending + AI-review summary.
     const auditLine = (label, s) => {
         if (!s) return React.createElement('div', { className: 'text-xs text-gray-400 pl-2' }, label + ': not created');
         var a = statsOf(s);
+        var images = imagesOf(s);
+        var reviewed = humanReviewedOf(s);
+        var pending = Math.max(0, images - reviewed);
         var done = s.status === 'completed';
         return React.createElement('a', {
             href: bulkUrl(s),
@@ -302,17 +308,17 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
             React.createElement('span', {
                 className: 'px-1.5 py-0.5 rounded ' + (done ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700')
             }, done ? 'Completed' : 'In progress'),
-            React.createElement('span', { className: 'text-gray-500 w-16' }, (a.total || 0) + ' images'),
+            React.createElement('span', { className: 'text-gray-500 w-16' }, images + ' images'),
             React.createElement('span', { className: 'flex-1' },
                 React.createElement('span', { className: 'text-green-600 font-medium' }, (a.pass || 0) + ' pass'),
                 ' · ',
                 React.createElement('span', { className: 'text-red-600 font-medium' }, (a.fail || 0) + ' fail'),
                 ' · ',
-                React.createElement('span', { className: 'text-gray-500' }, (a.pending || 0) + ' pending')
+                React.createElement('span', { className: 'text-gray-500' }, pending + ' pending')
             ),
             label === 'MUAC'
-                ? React.createElement('span', { className: (a.ai_no_match || 0) > 0 ? 'text-amber-600 font-medium' : 'text-gray-400' },
-                    (a.ai_no_match || 0) + ' AI-flagged')
+                ? React.createElement('span', { className: (a.ai_no_match || 0) > 0 ? 'text-amber-600 font-medium' : 'text-gray-500' },
+                    'AI: ' + (a.ai_no_match || 0) + ' flagged / ' + aiReviewedOf(s) + ' reviewed')
                 : React.createElement('span', { className: 'text-gray-300' }, 'no AI'),
             React.createElement('i', { className: 'fa-solid fa-arrow-up-right-from-square text-blue-500' })
         );
@@ -461,8 +467,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                 {progress && progress.status === 'completed' && !isRunning && (
                     <div className="mt-4 bg-green-50 border border-green-200 rounded-lg p-4 text-sm text-green-800">
                         <i className="fa-solid fa-circle-check mr-2"></i>
-                        Done — {progress.sessions_created != null ? progress.sessions_created : '?'} session(s)
-                        created across {progress.successful != null ? progress.successful : '?'} audit(s).
+                        Done — {sessions.length} audit session(s) created across {oppIds.length} opportunit{oppIds.length === 1 ? 'y' : 'ies'} (one MUAC + one sampled audit per field worker per opp).
                     </div>
                 )}
             </div>
@@ -490,9 +495,9 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                                                 </div>
                                                 <div className="text-xs text-gray-500 mt-1">
                                                     {sum.flws} field worker{sum.flws === 1 ? '' : 's'}
-                                                    {' · MUAC '}{sum.muacReviewed}/{sum.muacTotal}{' reviewed, '}
-                                                    <span className={sum.muacFlagged > 0 ? 'text-amber-600 font-medium' : ''}>{sum.muacFlagged} AI-flagged</span>
-                                                    {' · Rest '}{sum.restReviewed}/{sum.restTotal}{' reviewed'}
+                                                    {' · MUAC '}{sum.muacImages}{' imgs, '}{sum.muacAiReviewed}{' AI-reviewed, '}
+                                                    <span className={sum.muacFlagged > 0 ? 'text-amber-600 font-medium' : ''}>{sum.muacFlagged} flagged</span>
+                                                    {' · Rest '}{sum.restImages}{' imgs, '}{sum.restReviewed}{' human-reviewed'}
                                                 </div>
                                             </div>
                                             <div className="divide-y divide-gray-100">
