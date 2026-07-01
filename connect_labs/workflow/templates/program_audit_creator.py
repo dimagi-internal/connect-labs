@@ -472,7 +472,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions, onU
                     onClick: handleGenerate,
                     disabled: !startDate || !endDate || isRunning || sources.length === 0,
                     className: 'inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 font-medium'
-                }, isRunning ? 'Generating…' : "Generate this week's audits")
+                }, isRunning ? 'Generating…' : ('Generate audit runs for all ' + sources.length + ' opportunit' + (sources.length === 1 ? 'y' : 'ies')))
             ),
             progress && isRunning
                 ? React.createElement('div', { style: { marginTop: 14, background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: 12, fontSize: 13, color: '#1e40af' } },
