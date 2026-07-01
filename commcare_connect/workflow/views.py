@@ -1554,6 +1554,7 @@ def complete_run_api(request, run_id):
                 # into **_.
                 definition_id=definition_id,
                 request=request,
+                run_id=run_id,  # NEW: lets a gate hook read the run's audit sessions
             )
         except SnapshotTooLargeError as e:
             return JsonResponse({"error": str(e)}, status=400)
