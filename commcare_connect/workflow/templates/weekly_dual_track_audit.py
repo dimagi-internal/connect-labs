@@ -161,6 +161,10 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
     const [isRunning, setIsRunning] = React.useState(false);
     const [progress, setProgress] = React.useState(null);
     const [jobError, setJobError] = React.useState(null);
+    // Per-run sampling rates — default to the pinned config, adjustable before create.
+    const [muacSample, setMuacSample] = React.useState(trackA.sample_percentage != null ? trackA.sample_percentage : 100);
+    const [otherSample, setOtherSample] = React.useState(trackB.sample_percentage != null ? trackB.sample_percentage : 10);
+    const [collapsedOpps, setCollapsedOpps] = React.useState({});
     const cleanupRef = React.useRef(null);
     React.useEffect(() => () => { if (cleanupRef.current) cleanupRef.current(); }, []);
 
@@ -245,6 +249,8 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                 opportunity_id: instance.opportunity_id,
                 window_start: startDate,
                 window_end: endDate,
+                muac_sample_percentage: Number(muacSample),
+                other_sample_percentage: Number(otherSample),
             });
         } catch (e) {
             setIsRunning(false); setJobError('Failed to start job: ' + (e.message || e)); return;
@@ -387,6 +393,39 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                 </div>
             </div>
 
+            {/* ── Sampling rates (per-run, default from config) ───────────── */}
+            <div className="bg-white rounded-lg shadow-sm p-6">
+                <h3 className="text-sm font-medium text-gray-700 mb-3">
+                    <i className="fa-solid fa-percent mr-2 text-gray-400"></i>Sampling rates
+                </h3>
+                <p className="text-xs text-gray-500 mb-3">
+                    Share of each field worker's matching images to audit. Defaults to the pinned
+                    configuration; adjust for this run.
+                </p>
+                <div className="flex gap-6 items-end flex-wrap">
+                    <div>
+                        <label className="block text-xs text-gray-500 mb-1">MUAC (Track A)</label>
+                        <div className="flex items-center gap-2">
+                            <input type="number" min="1" max="100" value={muacSample}
+                                onChange={e => setMuacSample(e.target.value)}
+                                disabled={isRunning || instance.status === 'completed'}
+                                className="border border-gray-300 rounded px-3 py-2 text-sm w-20" />
+                            <span className="text-xs text-gray-400">% of MUAC images</span>
+                        </div>
+                    </div>
+                    <div>
+                        <label className="block text-xs text-gray-500 mb-1">Other (Track B)</label>
+                        <div className="flex items-center gap-2">
+                            <input type="number" min="1" max="100" value={otherSample}
+                                onChange={e => setOtherSample(e.target.value)}
+                                disabled={isRunning || instance.status === 'completed'}
+                                className="border border-gray-300 rounded px-3 py-2 text-sm w-20" />
+                            <span className="text-xs text-gray-400">% of remaining images</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             {/* ── Per-opp config preview (read-only) ──────────────────────── */}
             <div className="bg-white rounded-lg shadow-sm p-6">
                 <h3 className="text-sm font-medium text-gray-700 mb-3">
@@ -394,9 +433,9 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                     Opportunities &amp; pinned image types ({oppIds.length})
                 </h3>
                 <p className="text-xs text-gray-500 mb-4">
-                    Track A audits the MUAC image type(s) at {trackA.sample_percentage}% with the
+                    Track A audits the MUAC image type(s) at {muacSample}% with the
                     {' '}{(trackA.reviewer && trackA.reviewer.agent_id) || 'no'} AI reviewer.
-                    Track B audits the remaining image type(s) at {trackB.sample_percentage}%
+                    Track B audits the remaining image type(s) at {otherSample}%
                     {trackB.reviewer ? '' : ', human-reviewed'}.
                 </p>
                 <div className="space-y-3">
@@ -415,7 +454,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                                         {pathPills(cfg.muac_image_paths, 'bg-purple-50 text-purple-700')}
                                     </div>
                                     <div>
-                                        <div className="text-xs font-medium text-gray-600 mb-1">Rest paths (Track B)</div>
+                                        <div className="text-xs font-medium text-gray-600 mb-1">Other paths (Track B)</div>
                                         {pathPills(cfg.rest_image_paths, 'bg-gray-100 text-gray-700')}
                                     </div>
                                 </div>
@@ -486,20 +525,24 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                                 {Object.keys(grouped).map(oid => {
                                     var oppData = grouped[oid];
                                     var sum = oppSummary(oppData);
+                                    var collapsed = !!collapsedOpps[oid];
                                     return (
                                         <div key={oid} className="border border-gray-200 rounded-lg overflow-hidden">
-                                            <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
-                                                <div className="text-sm font-semibold text-gray-900">
+                                            <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 cursor-pointer hover:bg-gray-100"
+                                                onClick={() => setCollapsedOpps(c => Object.assign({}, c, { [oid]: !c[oid] }))}>
+                                                <div className="text-sm font-semibold text-gray-900 flex items-center">
+                                                    <i className={'fa-solid mr-2 text-gray-400 ' + (collapsed ? 'fa-chevron-right' : 'fa-chevron-down')}></i>
                                                     {oppNames[oid] || ('Opportunity ' + oid)}
                                                     <span className="ml-2 text-xs text-gray-400 font-mono">#{oid}</span>
                                                 </div>
-                                                <div className="text-xs text-gray-500 mt-1">
+                                                <div className="text-xs text-gray-500 mt-1 pl-6">
                                                     {sum.flws} field worker{sum.flws === 1 ? '' : 's'}
                                                     {' · MUAC '}{sum.muacImages}{' imgs, '}{sum.muacAiReviewed}{' AI-reviewed, '}
                                                     <span className={sum.muacFlagged > 0 ? 'text-amber-600 font-medium' : ''}>{sum.muacFlagged} flagged</span>
-                                                    {' · Rest '}{sum.restImages}{' imgs, '}{sum.restReviewed}{' human-reviewed'}
+                                                    {' · Other '}{sum.restImages}{' imgs, '}{sum.restReviewed}{' human-reviewed'}
                                                 </div>
                                             </div>
+                                            {!collapsed && (
                                             <div className="divide-y divide-gray-100">
                                                 {oppData.order.map(flw => {
                                                     var r = oppData.flws[flw];
@@ -508,12 +551,13 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                                                             <div className="text-sm font-medium text-gray-800 mb-1.5">{r.name}</div>
                                                             <div className="space-y-1">
                                                                 {auditLine('MUAC', r.muac)}
-                                                                {auditLine('Rest', r.rest)}
+                                                                {auditLine('Other', r.rest)}
                                                             </div>
                                                         </div>
                                                     );
                                                 })}
                                             </div>
+                                            )}
                                         </div>
                                     );
                                 })}
