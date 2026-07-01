@@ -87,3 +87,20 @@ def test_card_data_403_when_not_entitled(mock_get_provider, mock_resolve, logged
     mock_get_provider.return_value = provider
     resp = logged_in_client.get(reverse("labs:pages:card_data", args=["eha-muac", 0]))
     assert resp.status_code == 403
+
+
+@patch("connect_labs.pages.views.resolve_surface")
+@patch("connect_labs.pages.views.get_provider")
+def test_card_data_404_when_index_out_of_range(mock_get_provider, mock_resolve, logged_in_client):
+    mock_resolve.return_value = SURFACE
+    resp = logged_in_client.get(reverse("labs:pages:card_data", args=["eha-muac", 99]))
+    assert resp.status_code == 404
+
+
+@patch("connect_labs.pages.views.resolve_surface")
+@patch("connect_labs.pages.views.get_provider")
+def test_card_data_404_when_unknown_provider(mock_get_provider, mock_resolve, logged_in_client):
+    mock_resolve.return_value = SURFACE
+    mock_get_provider.return_value = None
+    resp = logged_in_client.get(reverse("labs:pages:card_data", args=["eha-muac", 0]))
+    assert resp.status_code == 404
