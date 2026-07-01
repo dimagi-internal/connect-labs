@@ -75,11 +75,13 @@ def compute_audit_par_rollup(*, state, request=None, access_token=None, progress
     win_start = state.get("window_start")
     win_end = state.get("window_end")
     source = state.get("watched_source") or {}
-    if not win_start or not win_end:
-        return {"watched_summary": [], "error": "missing_window"}
 
     creator_def_id = source.get("creator_definition_id")
     opportunity_ids = source.get("opportunity_ids", [])
+    if not creator_def_id:
+        # No creator to watch — the report can't populate. (The window is
+        # optional: when absent, every one of the creator's runs is included.)
+        return {"watched_summary": [], "error": "missing_source"}
 
     def _progress(msg):
         if progress_callback:
@@ -91,13 +93,15 @@ def compute_audit_par_rollup(*, state, request=None, access_token=None, progress
     finally:
         wda.close()
 
-    # Keep only runs whose batch window falls inside the report window, sorted by week.
+    # Keep the creator's runs, sorted by week. When a report window is set,
+    # keep only runs whose batch window falls inside it; otherwise include all.
+    has_window = bool(win_start and win_end)
     weeks = []
     for run in runs:
         run_state = (run.data or {}).get("state", {})
         rws = run_state.get("window_start")
-        if _in_window(rws, win_start, win_end):
-            weeks.append((rws, run_state.get("window_end"), run))
+        if not has_window or _in_window(rws, win_start, win_end):
+            weeks.append((rws or "", run_state.get("window_end"), run))
     weeks.sort(key=lambda t: t[0])
 
     watched_summary = []
@@ -204,6 +208,19 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions }) {
         if (!view || !view.complete || view.isCompleted) return;
         view.complete({ confirm: 'Mark this report complete? The week × opportunity grid will be frozen as a snapshot and can no longer be refreshed.' });
     }
+
+    // Auto-run the rollup on open: a report should load itself, not sit behind a
+    // manual "click refresh". Runs once when the report is live and has no data
+    // yet; the server handler pulls the watched creator + window from the
+    // workflow config. The Update button remains for pulling in newer runs.
+    var didAutoRun = React.useRef(false);
+    React.useEffect(function () {
+        if (view && view.isCompleted) return;      // completed = frozen snapshot
+        if (summary.length) return;                 // already have a rollup
+        if (didAutoRun.current) return;
+        didAutoRun.current = true;
+        refreshRollup();
+    }, []);
 
     function fmtDate(iso) {
         if (!iso) return '';
@@ -357,7 +374,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions }) {
                     onClick: refreshRollup,
                     disabled: jobStatus === 'running',
                     style: {background: jobStatus === 'running' ? '#a5b4fc' : '#4f46e5', color: 'white', border: 0, padding: '6px 14px', borderRadius: 6, fontSize: 12, fontWeight: 500, cursor: jobStatus === 'running' ? 'default' : 'pointer'}
-                }, jobStatus === 'running' ? 'Refreshing…' : '↻ Refresh data'),
+                }, jobStatus === 'running' ? 'Loading…' : (summary.length ? '↻ Update' : '↻ Load report')),
                 view.isCompleted ? null : React.createElement('button', {
                     onClick: markComplete,
                     style: {background: '#16a34a', color: 'white', border: 0, padding: '6px 14px', borderRadius: 6, fontSize: 12, fontWeight: 500, cursor: 'pointer'}
@@ -375,7 +392,11 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions }) {
         // Empty state
         summary.length === 0
             ? React.createElement('div', {style: {background: 'white', borderRadius: 10, border: '1px solid #e5e7eb', padding: 32, textAlign: 'center', color: '#9ca3af'}},
-                'No rollup yet. Click "↻ Refresh data" to pull the watched creator\'s weekly audit runs into the grid.')
+                jobStatus === 'running'
+                    ? 'Loading the watched creator\'s audit runs…'
+                    : (jobStatus === 'error'
+                        ? (jobMessage || 'Could not load the report.')
+                        : 'No audit runs to show yet — create a batch on the watched creator and it will appear here (use ↻ Update to pull the latest).'))
             : null,
         // Column header row
         summary.length > 0

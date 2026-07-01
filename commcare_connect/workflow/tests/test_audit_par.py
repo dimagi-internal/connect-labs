@@ -92,11 +92,34 @@ def test_rollup_buckets_runs_per_opp_and_week():
     assert opp102["weeks"][0]["by_tag"]["rest"]["pending"] == 2
 
 
-def test_rollup_missing_window_returns_error():
+def test_rollup_missing_source_returns_error():
     from commcare_connect.workflow.templates import audit_par as m
 
     out = m.compute_audit_par_rollup(state={"watched_source": {}}, access_token="tok")
-    assert out["error"] == "missing_window"
+    assert out["error"] == "missing_source"
+
+
+def test_rollup_without_window_includes_all_creator_runs():
+    """No report window set → every one of the creator's runs is included."""
+    from commcare_connect.workflow.templates import audit_par as m
+
+    state = {"watched_source": {"creator_definition_id": 42, "opportunity_ids": [101]}}  # no window
+    runs = [_run(501, "2026-06-01", "2026-06-07"), _run(502, "2026-08-20", "2026-08-26")]
+    sessions_by_run = {
+        501: [FakeSession(101, "muac", "flw1", {"pass": 1, "fail": 0, "pending": 0, "ai_no_match": 0})],
+        502: [FakeSession(101, "rest", "flw2", {"pass": 0, "fail": 0, "pending": 2, "ai_no_match": 0})],
+    }
+    with (
+        mock.patch.object(m, "WorkflowDataAccess") as WDA,
+        mock.patch.object(m, "AuditDataAccess") as ADA,
+    ):
+        WDA.return_value.list_runs.return_value = runs
+        ADA.return_value.get_sessions_by_workflow_run.side_effect = lambda rid: sessions_by_run.get(rid, [])
+        out = m.compute_audit_par_rollup(state=state, access_token="tok")
+
+    assert "error" not in out
+    weeks = out["watched_summary"][0]["weeks"]
+    assert {w["run_id"] for w in weeks} == {501, 502}  # both runs kept despite no window
 
 
 def test_audit_par_rollup_persists_into_run_state():
