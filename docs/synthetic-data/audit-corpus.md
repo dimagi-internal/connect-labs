@@ -4,7 +4,7 @@ This is the source-of-truth catalog for the MUAC photo corpus that the
 **synthetic generator** uses to populate `AuditSession` records with real
 visit images. When you call the synthetic generator with the
 `completed_pass_clean`, `completed_fail_tape_usage`, etc. audit archetypes
-(see `commcare_connect/labs/synthetic/archetypes.py`), the resulting
+(see `connect_labs/labs/synthetic/archetypes.py`), the resulting
 audit page on labs renders these actual JPG files via the bulk-assessment
 view — not blank placeholders.
 
@@ -12,7 +12,7 @@ view — not blank placeholders.
 
 Stock images sit in a shared Google Drive folder identified by the
 `LABS_SYNTHETIC_STOCK_IMAGES_FOLDER_ID` setting. The image server
-(`commcare_connect/labs/synthetic/image_server.py`) maps blob ids of the
+(`connect_labs/labs/synthetic/image_server.py`) maps blob ids of the
 shape `synth-muac-<pool>-<NNN>` onto filenames in that folder:
 
 | Blob id pattern         | Filename pattern        | Purpose                            |
@@ -28,7 +28,7 @@ ids per pool.
 ## Bad-photo categories
 
 The bad pool is categorized in
-`commcare_connect/labs/synthetic/generator/muac_reasons.json` (a mirror
+`connect_labs/labs/synthetic/generator/muac_reasons.json` (a mirror
 of `reasons.json` in the same Drive folder). The source-of-truth document
 the categories were derived from is
 [Bad MUAC photo rationale](https://docs.google.com/document/d/1MTp7Ogx6ywg8e2Lu6I9BUddAMOWIRGZMCAe5Jv7hb84/edit?tab=t.4ekg38rl0ie2).
@@ -43,7 +43,7 @@ the categories were derived from is
 
 Totals as of writing: **8 good photos, 13 bad photos** in the corpus. The good
 pool size is mirrored in
-`commcare_connect/labs/synthetic/archetypes.py::_GOOD_POOL_SIZE` — bump it
+`connect_labs/labs/synthetic/archetypes.py::_GOOD_POOL_SIZE` — bump it
 when you add more good photos.
 
 > **Verify the live corpus** with the `synthetic_image_server_status` MCP
@@ -62,7 +62,7 @@ when you add more good photos.
 
 ## How the synthetic generator uses the corpus
 
-The **audit archetypes** in `commcare_connect/labs/synthetic/archetypes.py`
+The **audit archetypes** in `connect_labs/labs/synthetic/archetypes.py`
 declare an image spec — counts of good/bad/pending photos and an optional
 `bad_category` — and the generator's `_pick_blob_ids` deterministically
 picks photos from the corpus to attach to each generated `AuditSession`.
@@ -84,9 +84,9 @@ which specific failure modes you see.
 
 ## Related code
 
-- `commcare_connect/labs/synthetic/archetypes.py` — audit + task archetypes
-- `commcare_connect/labs/synthetic/image_server.py` — blob_id ↔ filename resolver
-- `commcare_connect/labs/synthetic/generator/images.py` — assigns blob_ids to live synthetic visits
-- `commcare_connect/labs/synthetic/generator/muac_reasons.json` — bad-photo catalog
-- `commcare_connect/audit/views.py:BulkAssessmentDataView` — reads `visit_images` and renders thumbnails
-- `commcare_connect/labs/synthetic/program_admin_demo.py` — driver that calls `build_audit_data` per FLW
+- `connect_labs/labs/synthetic/archetypes.py` — audit + task archetypes
+- `connect_labs/labs/synthetic/image_server.py` — blob_id ↔ filename resolver
+- `connect_labs/labs/synthetic/generator/images.py` — assigns blob_ids to live synthetic visits
+- `connect_labs/labs/synthetic/generator/muac_reasons.json` — bad-photo catalog
+- `connect_labs/audit/views.py:BulkAssessmentDataView` — reads `visit_images` and renders thumbnails
+- `connect_labs/labs/synthetic/program_admin_demo.py` — driver that calls `build_audit_data` per FLW

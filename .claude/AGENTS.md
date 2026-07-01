@@ -25,7 +25,7 @@ Most production apps have been removed from this codebase. The remaining non-lab
 
 ### Pattern A: LabsRecordAPIClient (The Correct Pattern for Labs)
 
-All labs apps use `LabsRecordAPIClient` (`commcare_connect/labs/integrations/connect/api_client.py`) for data operations:
+All labs apps use `LabsRecordAPIClient` (`connect_labs/labs/integrations/connect/api_client.py`) for data operations:
 
 ```
 View receives request
@@ -38,13 +38,13 @@ View receives request
   → View renders template with proxy model lists (NOT Django QuerySets)
 ```
 
-Each app wraps the client in a `data_access.py` with domain-specific methods. See `commcare_connect/tasks/data_access.py` for the simplest example.
+Each app wraps the client in a `data_access.py` with domain-specific methods. See `connect_labs/tasks/data_access.py` for the simplest example.
 
 ### Pattern B: Django ORM (Retained for Migrations Only — Do Not Use for Labs)
 
 The `opportunity/`, `organization/`, `program/`, `users/`, and `commcarehq/` apps contain Django ORM models retained only for their migrations and foreign key references. In the labs environment, these tables are empty. **Never query these models expecting production data.** The `opportunity/` app in particular has been gutted to models + migrations + factory stubs only (no views, no business logic).
 
-The only local Django models used by labs are cache tables in `commcare_connect/labs/analysis/backends/sql/models.py` (`RawVisitCache`, `ComputedVisitCache`, `ComputedFLWCache`).
+The only local Django models used by labs are cache tables in `connect_labs/labs/analysis/backends/sql/models.py` (`RawVisitCache`, `ComputedVisitCache`, `ComputedFLWCache`).
 
 ### When to Use Which
 
@@ -86,7 +86,7 @@ Base URL: `settings.CONNECT_PRODUCTION_URL` (production: `https://connect.dimagi
 
 ### `audit/` — Quality Assurance Review
 
-> See also: [`commcare_connect/audit/README.md`](../commcare_connect/audit/README.md) for data model details and testing guidance.
+> See also: [`connect_labs/audit/README.md`](../connect_labs/audit/README.md) for data model details and testing guidance.
 
 Structured audits of FLW visits with AI-powered reviews.
 
@@ -141,7 +141,7 @@ Response: `{"sessions": [{"id", ...}]}` — fallback for session_id discovery af
 
 ### `tasks/` — Task Management
 
-> See also: [`commcare_connect/tasks/README.md`](../commcare_connect/tasks/README.md) for data model details and testing guidance.
+> See also: [`connect_labs/tasks/README.md`](../connect_labs/tasks/README.md) for data model details and testing guidance.
 
 Task tracking for FLW follow-ups with timeline, comments, and AI assistant.
 
@@ -153,7 +153,7 @@ Task tracking for FLW follow-ups with timeline, comments, and AI assistant.
 
 ### `workflow/` — Configurable Workflow Engine
 
-> See also: [`commcare_connect/workflow/README.md`](../commcare_connect/workflow/README.md) for data model details and testing guidance.
+> See also: [`connect_labs/workflow/README.md`](../connect_labs/workflow/README.md) for data model details and testing guidance.
 
 Data-driven workflows with custom React UIs and pipeline integration.
 
@@ -163,7 +163,7 @@ Data-driven workflows with custom React UIs and pipeline integration.
 - **Templates:** Predefined workflow templates in `workflow/templates/` (audit_with_ai_review, bulk_image_audit, mbw_monitoring_v2, performance_review [multi-opp], ocs_outreach)
 - **Render code:** React components stored as LabsRecords, rendered dynamically in workflow runner
 - **Cross-app:** Can create audit sessions and tasks from workflow actions
-- **Multi-opportunity:** Templates can set `multi_opp: True` to opt into cross-opp support. Multi-opp workflows store `opportunity_ids` on the definition, tag each worker/pipeline row with its source `opportunity_id`, and expose per-opp metadata (`per_opp` dict, **string keys** after JSON). Edit endpoint: `POST /labs/workflow/api/<def_id>/opportunity-ids/`. Full contract in [`workflow/WORKFLOW_REFERENCE.md` §8](../commcare_connect/workflow/WORKFLOW_REFERENCE.md#8-multi-opportunity-workflows).
+- **Multi-opportunity:** Templates can set `multi_opp: True` to opt into cross-opp support. Multi-opp workflows store `opportunity_ids` on the definition, tag each worker/pipeline row with its source `opportunity_id`, and expose per-opp metadata (`per_opp` dict, **string keys** after JSON). Edit endpoint: `POST /labs/workflow/api/<def_id>/opportunity-ids/`. Full contract in [`workflow/WORKFLOW_REFERENCE.md` §8](../connect_labs/workflow/WORKFLOW_REFERENCE.md#8-multi-opportunity-workflows).
 
 #### Workflow Template Anatomy
 
@@ -214,7 +214,7 @@ TEMPLATE = {
 
 ### `ai/` — AI Agent Integration
 
-> See also: [`commcare_connect/ai/README.md`](../commcare_connect/ai/README.md) for data model details and testing guidance.
+> See also: [`connect_labs/ai/README.md`](../connect_labs/ai/README.md) for data model details and testing guidance.
 
 SSE streaming endpoints for AI-assisted editing using pydantic-ai agents.
 
@@ -226,7 +226,7 @@ SSE streaming endpoints for AI-assisted editing using pydantic-ai agents.
 
 ### `solicitations/` — RFP Management
 
-> See also: [`commcare_connect/solicitations/README.md`](../commcare_connect/solicitations/README.md) for data model details and testing guidance.
+> See also: [`connect_labs/solicitations/README.md`](../connect_labs/solicitations/README.md) for data model details and testing guidance.
 
 Solicitations (requests for proposals), responses, and reviews.
 
@@ -276,24 +276,24 @@ Coverage ──────────→ CommCare HQ (separate OAuth, no Conne
 
 ## Key Files Quick Reference
 
-| File                                                       | Purpose                                            |
-| ---------------------------------------------------------- | -------------------------------------------------- |
-| `commcare_connect/labs/integrations/connect/api_client.py` | Core `LabsRecordAPIClient`                         |
-| `commcare_connect/labs/models.py`                          | `LabsUser`, `LocalLabsRecord` base classes         |
-| `commcare_connect/labs/middleware.py`                      | Auth, URL whitelist, context middleware            |
-| `commcare_connect/labs/context.py`                         | Context extraction and session management          |
-| `commcare_connect/labs/view_mixins.py`                     | Base view mixins for labs views                    |
-| `commcare_connect/labs/LABS_GUIDE.md`                      | Detailed patterns: OAuth, API client, proxy models |
-| `commcare_connect/{app}/data_access.py`                    | Per-app data access layer                          |
-| `commcare_connect/{app}/models.py`                         | Per-app proxy model definitions                    |
-| `config/settings/local.py`                                 | Labs-enabled local development settings            |
+| File                                                   | Purpose                                            |
+| ------------------------------------------------------ | -------------------------------------------------- |
+| `connect_labs/labs/integrations/connect/api_client.py` | Core `LabsRecordAPIClient`                         |
+| `connect_labs/labs/models.py`                          | `LabsUser`, `LocalLabsRecord` base classes         |
+| `connect_labs/labs/middleware.py`                      | Auth, URL whitelist, context middleware            |
+| `connect_labs/labs/context.py`                         | Context extraction and session management          |
+| `connect_labs/labs/view_mixins.py`                     | Base view mixins for labs views                    |
+| `connect_labs/labs/LABS_GUIDE.md`                      | Detailed patterns: OAuth, API client, proxy models |
+| `connect_labs/{app}/data_access.py`                    | Per-app data access layer                          |
+| `connect_labs/{app}/models.py`                         | Per-app proxy model definitions                    |
+| `config/settings/local.py`                             | Labs-enabled local development settings            |
 
 ## Common Mistakes to Avoid
 
 1. **Using Django ORM models** (`Opportunity`, `User`, `Organization`) expecting production data — these tables are empty in labs
 2. **Using `config.settings.labs_aws` locally** — use `config.settings.local` instead. The `labs_aws` settings are only for the AWS deployment.
 3. **Calling `.save()` on `LabsUser` or `LocalLabsRecord`** — raises `NotImplementedError`. Use `LabsRecordAPIClient` for persistence.
-4. **Forgetting the URL whitelist** — new app URL prefixes must be added to `WHITELISTED_PREFIXES` in `commcare_connect/labs/middleware.py`
+4. **Forgetting the URL whitelist** — new app URL prefixes must be added to `WHITELISTED_PREFIXES` in `connect_labs/labs/middleware.py`
 5. **Using `user_id` with the production API** — production uses `username` as the primary identifier, not integer IDs
 6. **Not handling API errors** — `LabsRecordAPIClient` raises `LabsAPIError` on HTTP failures; handle timeouts gracefully
 7. **Modifying retained non-labs apps** — don't modify `opportunity/`, `organization/`, `program/`, `users/`, or `commcarehq/`. They exist only for migrations and FK references.

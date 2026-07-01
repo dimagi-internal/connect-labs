@@ -100,5 +100,5 @@ Completeness vs the original R: `docs/rooftop-r-parity.md`.
 ```
 inv up && python manage.py runserver            # needs MAPBOX_TOKEN in .env
 open /rooftop-surveys/<opp_id>/setup/            # draw → Preview → Save → CSV
-pytest commcare_connect/rooftop_surveys/         # 44 tests
+pytest connect_labs/rooftop_surveys/         # 44 tests
 ```

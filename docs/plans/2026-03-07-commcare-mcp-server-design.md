@@ -119,8 +119,8 @@ tools/commcare_mcp/
 
 - **Scout** (`../scout/mcp_server/loaders/commcare_metadata.py`): App structure extraction from HQ API — battle-tested logic for walking modules/forms/case_types
 - **CommCare Forge** (`kcowger/commcare-forge` PR #3): Reference docs for CommCare concepts, question types, case property patterns
-- **Existing HQ API code** (`commcare_connect/utils/commcarehq_api.py`): Already has `_get_commcare_app_json()` calling `/api/v0.5/application/`
-- **Existing HQ OAuth** (`commcare_connect/labs/integrations/commcare/`): Full OAuth flow if we want to upgrade from API key auth later
+- **Existing HQ API code** (`connect_labs/utils/commcarehq_api.py`): Already has `_get_commcare_app_json()` calling `/api/v0.5/application/`
+- **Existing HQ OAuth** (`connect_labs/labs/integrations/commcare/`): Full OAuth flow if we want to upgrade from API key auth later
 
 ## Design Decisions
 

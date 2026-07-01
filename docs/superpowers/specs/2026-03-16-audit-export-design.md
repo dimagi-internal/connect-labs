@@ -128,16 +128,16 @@ File metadata (last updated, size, rows) is stored as S3 object metadata (`x-amz
 
 | File | Purpose |
 |---|---|
-| `commcare_connect/labs/s3_export.py` | S3 upsert logic for both record types (shared infrastructure, imported by workflow and audit apps) |
-| `commcare_connect/custom_analysis/exports/views.py` | Download page view, pre-signed URL generation |
-| `commcare_connect/custom_analysis/exports/urls.py` | URL config for `/custom_analysis/exports/` |
-| `commcare_connect/templates/custom_analysis/exports/index.html` | Download page template |
+| `connect_labs/labs/s3_export.py` | S3 upsert logic for both record types (shared infrastructure, imported by workflow and audit apps) |
+| `connect_labs/custom_analysis/exports/views.py` | Download page view, pre-signed URL generation |
+| `connect_labs/custom_analysis/exports/urls.py` | URL config for `/custom_analysis/exports/` |
+| `connect_labs/templates/custom_analysis/exports/index.html` | Download page template |
 
 Export hooks added to existing files:
-- `commcare_connect/workflow/views.py` — call `labs.s3_export` after run create/complete
-- `commcare_connect/audit/views.py` — call `labs.s3_export` in synchronous session create/complete paths only
+- `connect_labs/workflow/views.py` — call `labs.s3_export` after run create/complete
+- `connect_labs/audit/views.py` — call `labs.s3_export` in synchronous session create/complete paths only
 
-`s3_export.py` lives in `commcare_connect/labs/` (shared infrastructure layer) so that `workflow` and `audit` apps can import it without creating a reverse dependency on `custom_analysis`.
+`s3_export.py` lives in `connect_labs/labs/` (shared infrastructure layer) so that `workflow` and `audit` apps can import it without creating a reverse dependency on `custom_analysis`.
 
 ---
 

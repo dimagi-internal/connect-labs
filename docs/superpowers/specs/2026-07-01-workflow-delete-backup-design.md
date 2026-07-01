@@ -43,12 +43,12 @@ are explicitly out of scope.
 ### Trigger — single choke point
 
 Add the backup step inside `WorkflowDataAccess.delete_definition`
-(`commcare_connect/workflow/data_access.py:568`), executed **before** the
+(`connect_labs/workflow/data_access.py:568`), executed **before** the
 `self.labs_api.delete_records(ids_to_delete)` batch. Both existing callers flow
 through this method:
 
-- `commcare_connect/workflow/views.py:2276` and `:2332` (UI delete view)
-- `commcare_connect/mcp/tools/workflows.py:1160` (`workflow_delete` MCP tool)
+- `connect_labs/workflow/views.py:2276` and `:2332` (UI delete view)
+- `connect_labs/mcp/tools/workflows.py:1160` (`workflow_delete` MCP tool)
 
 Hooking the data-access method (not each caller) makes the behavior automatic
 and future-proof for any new caller.
@@ -77,9 +77,9 @@ Derived/denormalized columns for easy lookup:
 
 ### Storage — new dedicated model
 
-New model `DeletedWorkflowBackup` in `commcare_connect/labs/models.py`,
+New model `DeletedWorkflowBackup` in `connect_labs/labs/models.py`,
 alongside the existing labs-DB model `UserConnectToken`, with a new migration
-in `commcare_connect/labs/migrations/`. The `workflow/` app is pure
+in `connect_labs/labs/migrations/`. The `workflow/` app is pure
 API-backed (no `models.py`, no migrations), so it cannot host a Django model;
 the core labs app already owns labs-DB tables and is the correct home. A
 dedicated table is chosen over reusing `LabsLocalRecord` so backups never mix
@@ -131,8 +131,8 @@ workflow definitions are equally worth a safety copy.
 ## Components
 
 1. **`DeletedWorkflowBackup` model + migration** — the labs-DB table, added to
-   `commcare_connect/labs/models.py` with a migration in
-   `commcare_connect/labs/migrations/`.
+   `connect_labs/labs/models.py` with a migration in
+   `connect_labs/labs/migrations/`.
 2. **Admin registration** — read-oriented list + detail for manual recovery.
 3. **Backup step in `WorkflowDataAccess.delete_definition`** — fetch definition
    + render code, write the backup row, fail-closed, log. Runs before the

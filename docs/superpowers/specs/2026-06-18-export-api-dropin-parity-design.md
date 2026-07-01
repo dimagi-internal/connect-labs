@@ -19,8 +19,8 @@ scope here.
 ## Existing surface (unchanged unless noted)
 
 - Routes mounted at `/api/export/` (`config/urls.py`), defined in
-  `commcare_connect/labs/export_api/urls.py`.
-- Views in `commcare_connect/labs/export_api/views.py`:
+  `connect_labs/labs/export_api/urls.py`.
+- Views in `connect_labs/labs/export_api/views.py`:
   `OpportunityListView`, `OpportunityDetailView`, `OpportunityDataView(endpoint=...)`,
   `AppStructureView`. All extend `_ExportView` (`MCPTokenAuthentication` + `IsAuthenticated`).
 - Auth: `MCPTokenAuthentication` resolves an MCP PAT bearer token to a Django user.
@@ -84,7 +84,7 @@ endpoint re-implements them, Scout's `opportunities[].organization` slug could s
 stop matching the rest of labs.
 
 Extract the **derivation primitives only** into a new
-`commcare_connect/labs/synthetic/org_tree.py`:
+`connect_labs/labs/synthetic/org_tree.py`:
 
 ```python
 def slugify(value: str) -> str: ...
@@ -162,12 +162,12 @@ Additive field; does not affect drop-in consumers.
 
 ## Files touched
 
-- `commcare_connect/labs/synthetic/org_tree.py` — **new** (shared derivation primitives)
-- `commcare_connect/labs/context.py` — use shared primitives (output-preserving)
-- `commcare_connect/labs/synthetic/fixture_store.py` — 3 new `ENDPOINT_FILES` keys
-- `commcare_connect/labs/export_api/pagination.py` — `IdKeysetPagination` replaces page-number
-- `commcare_connect/labs/export_api/serializers.py` — envelope serializer drops `count`
-- `commcare_connect/labs/export_api/views.py` — `OppOrgProgramListView`, keyset wiring,
+- `connect_labs/labs/synthetic/org_tree.py` — **new** (shared derivation primitives)
+- `connect_labs/labs/context.py` — use shared primitives (output-preserving)
+- `connect_labs/labs/synthetic/fixture_store.py` — 3 new `ENDPOINT_FILES` keys
+- `connect_labs/labs/export_api/pagination.py` — `IdKeysetPagination` replaces page-number
+- `connect_labs/labs/export_api/serializers.py` — envelope serializer drops `count`
+- `connect_labs/labs/export_api/views.py` — `OppOrgProgramListView`, keyset wiring,
   `visit_count` in detail
-- `commcare_connect/labs/export_api/urls.py` — `opp_org_program_list/` + 3 endpoint routes
-- `commcare_connect/labs/export_api/tests/` — new + updated tests
+- `connect_labs/labs/export_api/urls.py` — `opp_org_program_list/` + 3 endpoint routes
+- `connect_labs/labs/export_api/tests/` — new + updated tests

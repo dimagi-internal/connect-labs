@@ -180,7 +180,7 @@ typings/
 # Provided default Pycharm Run/Debug Configurations should be tracked by git
 # In case of local modifications made by Pycharm, use update-index command
 # for each changed file, like this:
-# git update-index --assume-unchanged .idea/commcare_connect.iml
+# git update-index --assume-unchanged .idea/connect_labs.iml
 ### JetBrains template
 # Covers JetBrains IDEs: IntelliJ, RubyMine, PhpStorm, AppCode, PyCharm, CLion, Android Studio and Webstorm
 # Reference: https://intellij-support.jetbrains.com/hc/en-us/articles/206544839
@@ -323,14 +323,14 @@ tags
 dump.rdb
 
 ### Project template
-commcare_connect/media/
+connect_labs/media/
 
 .pytest_cache/
-commcare_connect/static/bundles/
+connect_labs/static/bundles/
 webpack-stats.json
 
 # Test scripts with credentials
-commcare_connect/audit/tests/test_connect_staging_api.py
+connect_labs/audit/tests/test_connect_staging_api.py
 
 # Browser testing screenshots
 .playwright-mcp/
@@ -340,19 +340,19 @@ screenshots/
 .analysis_cache/
 
 # Coverage examples (local development data)
-commcare_connect/coverage/examples/
+connect_labs/coverage/examples/
 
 # Labs explorer downloaded visits (temporary inspection files)
-commcare_connect/labs/explorer/downloaded_visits/
+connect_labs/labs/explorer/downloaded_visits/
 
 # Admin boundaries example files (GeoPoDe exports, etc.)
-commcare_connect/labs/admin_boundaries/examples/
+connect_labs/labs/admin_boundaries/examples/
 
 # MBW custom analysis example files (visit JSON samples)
-commcare_connect/custom_analysis/mbw/examples/
+connect_labs/custom_analysis/mbw/examples/
 
 # RUTF custom analysis example files (visit JSON samples)
-commcare_connect/custom_analysis/rutf/examples/
+connect_labs/custom_analysis/rutf/examples/
 
 # Elastic Beanstalk Files
 .elasticbeanstalk/*

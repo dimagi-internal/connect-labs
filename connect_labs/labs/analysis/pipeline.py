@@ -1,0 +1,960 @@
+"""
+Analysis pipeline - the single entry point for all analysis data access.
+
+Usage Patterns:
+--------------
+
+Raw data access (replaces api_cache.py):
+    pipeline = AnalysisPipeline(request)
+    visits = pipeline.fetch_raw_visits(opportunity_id=814)
+    visits_slim = pipeline.fetch_raw_visits(opportunity_id=814, skip_form_json=True)
+
+Web Views (SSE Streaming):
+    # Use stream_analysis() - it's fast when cached, shows progress when not
+    pipeline = AnalysisPipeline(request)
+    for event_type, data in pipeline.stream_analysis(config):
+        if event_type == EVENT_STATUS:
+            yield sse_event(data["message"])
+        elif event_type == EVENT_RESULT:
+            return data
+
+Non-Web Contexts (Synchronous):
+    # Use stream_analysis_ignore_events() for tests, scripts, enrichment
+    pipeline = AnalysisPipeline(request)
+    result = pipeline.stream_analysis_ignore_events(config)
+
+Note: stream_analysis() is ALWAYS fast when data is cached (typically <1s),
+      so web views don't need to check cache existence beforehand.
+
+Uses PostgreSQL table caching with SQL computation (SQLBackend).
+"""
+
+import logging
+from collections.abc import Generator
+from typing import Any
+
+import sentry_sdk
+from django.conf import settings
+from django.http import HttpRequest
+
+from connect_labs.labs.analysis.config import AnalysisPipelineConfig, CacheStage
+from connect_labs.labs.analysis.models import EntityAnalysisResult, FLWAnalysisResult, VisitAnalysisResult
+
+logger = logging.getLogger(__name__)
+
+# Event type constants
+EVENT_STATUS = "status"
+EVENT_DOWNLOAD = "download"
+EVENT_RESULT = "result"
+EVENT_ERROR = "error"
+
+
+def get_backend():
+    """Get the SQL backend instance (lazy import to avoid AppRegistryNotReady)."""
+    from connect_labs.labs.analysis.backends.sql.backend import SQLBackend
+
+    return SQLBackend()
+
+
+class AnalysisPipeline:
+    """
+    Single entry point for all analysis data access.
+
+    Facade that hides backend implementation details from callers.
+    Use this instead of importing from api_cache.py or backends directly.
+    """
+
+    def __init__(self, request: HttpRequest | None = None, *, access_token: str | None = None):
+        """
+        Initialize pipeline with request context or explicit access_token.
+
+        Args:
+            request: HttpRequest with labs_oauth and labs_context (web path)
+            access_token: OAuth token for Connect APIs (MCP/non-request path).
+                          Mutually exclusive with deriving the token from request.
+
+        Either ``request`` (with a valid labs_oauth session) or ``access_token``
+        must be provided.  When both are given, ``access_token`` takes precedence.
+        """
+        self.request = request
+        self.backend = get_backend()
+        self.backend_name = "sql"
+
+        # Resolve access token: explicit kwarg wins, otherwise extract from session
+        if access_token is None and request is not None:
+            access_token = request.session.get("labs_oauth", {}).get("access_token")
+
+        if not access_token:
+            raise ValueError(
+                "AnalysisPipeline requires either a request with labs_oauth session or access_token kwarg"
+            )
+
+        self.access_token = access_token
+
+        # CCHQ OAuth token (for cchq_forms data sources — only available via request)
+        self.cchq_access_token = (
+            request.session.get("commcare_oauth", {}).get("access_token") if request is not None else None
+        )
+        self.labs_context = getattr(request, "labs_context", {}) if request is not None else {}
+
+    @property
+    def opportunity_id(self) -> int | None:
+        """Get opportunity ID from labs context."""
+        return self.labs_context.get("opportunity_id")
+
+    @property
+    def visit_count(self) -> int:
+        """Get expected visit count from labs context."""
+        opportunity = self.labs_context.get("opportunity", {})
+        return opportunity.get("visit_count", 0)
+
+    @property
+    def cache_tolerance_pct(self) -> int:
+        """Cache tolerance percentage. Accept cache if it has >= N% of expected visits.
+
+        Reads from ?tolerance= query param first, then PIPELINE_CACHE_TOLERANCE_PCT
+        setting (default 100 for production).
+        """
+        if self.request is not None and hasattr(self.request, "GET"):
+            param = self.request.GET.get("tolerance")
+            if param is not None:
+                try:
+                    val = int(param)
+                    if 1 <= val <= 100:
+                        return val
+                except (ValueError, TypeError):
+                    pass
+        return getattr(settings, "PIPELINE_CACHE_TOLERANCE_PCT", 100)
+
+    # -------------------------------------------------------------------------
+    # Raw Data Access (replaces api_cache.py)
+    # -------------------------------------------------------------------------
+
+    def fetch_raw_visits(
+        self,
+        opportunity_id: int | None = None,
+        skip_form_json: bool = False,
+        filter_visit_ids: set[int] | None = None,
+        force_refresh: bool = False,
+        include_images: bool = False,
+    ) -> list[dict]:
+        """
+        Fetch raw visit data. Backend handles caching internally.
+
+        Args:
+            opportunity_id: Opportunity ID (defaults to labs_context)
+            skip_form_json: If True, exclude form_json (slim mode for audit selection)
+            filter_visit_ids: If provided, only return visits with these IDs
+            force_refresh: If True, bypass cache and fetch fresh data
+
+        Returns:
+            List of visit dicts
+
+        Examples:
+            # Full visits with form_json
+            visits = pipeline.fetch_raw_visits()
+
+            # Slim mode (no form_json) for audit selection
+            visits = pipeline.fetch_raw_visits(skip_form_json=True)
+
+            # Specific visits with form_json for audit extraction
+            visits = pipeline.fetch_raw_visits(filter_visit_ids={1, 2, 3})
+        """
+        opp_id = opportunity_id or self.opportunity_id
+        if not opp_id:
+            raise ValueError("No opportunity_id provided and none in labs_context")
+
+        # Check URL param for force refresh
+        if self.request is not None and self.request.GET.get("refresh") == "1":
+            force_refresh = True
+
+        return self.backend.fetch_raw_visits(
+            opportunity_id=opp_id,
+            access_token=self.access_token,
+            expected_visit_count=self.visit_count,
+            force_refresh=force_refresh,
+            skip_form_json=skip_form_json,
+            filter_visit_ids=filter_visit_ids,
+            include_images=include_images,
+            user=getattr(self.request, "user", None),
+        )
+
+    def has_valid_raw_cache(self, opportunity_id: int | None = None) -> bool:
+        """Check if valid raw cache exists for the opportunity."""
+        opp_id = opportunity_id or self.opportunity_id
+        if not opp_id:
+            return False
+        return self.backend.has_valid_raw_cache(opp_id, self.visit_count, tolerance_pct=self.cache_tolerance_pct)
+
+    def has_valid_processed_cache(self, config: AnalysisPipelineConfig, opportunity_id: int | None = None) -> bool:
+        """
+        Check if valid processed/computed cache exists for the config.
+
+        This is the correct check for views that want to decide whether to
+        trigger SSE loading vs render from cache. Unlike has_valid_raw_cache(),
+        this checks the appropriate processed cache level based on config.terminal_stage.
+
+        Args:
+            config: Analysis configuration (determines which cache level to check)
+            opportunity_id: Opportunity ID (defaults to labs_context)
+
+        Returns:
+            True if processed cache exists and is valid, False otherwise
+        """
+        opp_id = opportunity_id or self.opportunity_id
+        if not opp_id:
+            return False
+
+        tolerance = self.cache_tolerance_pct
+        terminal_stage = config.terminal_stage
+        if terminal_stage == CacheStage.AGGREGATED:
+            return (
+                self.backend.get_cached_flw_result(opp_id, config, self.visit_count, tolerance_pct=tolerance)
+                is not None
+            )
+        elif terminal_stage == CacheStage.ENTITY:
+            return (
+                self.backend.get_cached_entity_result(opp_id, config, self.visit_count, tolerance_pct=tolerance)
+                is not None
+            )
+        else:
+            return (
+                self.backend.get_cached_visit_result(opp_id, config, self.visit_count, tolerance_pct=tolerance)
+                is not None
+            )
+
+    def filter_visits_for_audit(
+        self,
+        opportunity_id: int | None = None,
+        usernames: list[str] | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        last_n_per_user: int | None = None,
+        last_n_total: int | None = None,
+        sample_percentage: int = 100,
+        return_visit_data: bool = False,
+    ) -> list[int] | tuple[list[int], list[dict]]:
+        """
+        Filter visits based on audit criteria.
+
+        Delegates to SQL backend which uses database queries with indexes
+        and window functions for optimal performance.
+
+        Args:
+            opportunity_id: Opportunity ID (defaults to labs_context)
+            usernames: Filter to specific FLW usernames (None = all)
+            start_date: Filter visits on or after this date (ISO format)
+            end_date: Filter visits on or before this date (ISO format)
+            last_n_per_user: Take only last N visits per user
+            last_n_total: Take only last N visits total
+            sample_percentage: Random sample percentage (1-100)
+            return_visit_data: If True, also return filtered visit dicts (slim, no form_json)
+
+        Returns:
+            List of visit IDs, or (visit_ids, visit_dicts) if return_visit_data=True
+        """
+        opp_id = opportunity_id or self.opportunity_id
+        if not opp_id:
+            return ([], []) if return_visit_data else []
+
+        return self.backend.filter_visits_for_audit(
+            opportunity_id=opp_id,
+            access_token=self.access_token,
+            expected_visit_count=self.visit_count,
+            usernames=usernames,
+            start_date=start_date,
+            end_date=end_date,
+            last_n_per_user=last_n_per_user,
+            last_n_total=last_n_total,
+            sample_percentage=sample_percentage,
+            return_visit_data=return_visit_data,
+        )
+
+    # -------------------------------------------------------------------------
+    # Analysis
+    # -------------------------------------------------------------------------
+
+    def stream_analysis_ignore_events(
+        self,
+        config: AnalysisPipelineConfig,
+        opportunity_id: int | None = None,
+    ) -> FLWAnalysisResult | VisitAnalysisResult | EntityAnalysisResult:
+        """
+        Run analysis synchronously, ignoring progress events.
+
+        Convenience wrapper around stream_analysis() for non-web contexts
+        (tests, scripts, enrichment) that don't need progress updates.
+
+        For web views, use stream_analysis() directly to provide real-time
+        progress feedback via SSE.
+
+        Args:
+            config: Analysis configuration
+            opportunity_id: Opportunity ID (defaults to labs_context)
+
+        Returns:
+            FLWAnalysisResult or VisitAnalysisResult based on config.terminal_stage
+        """
+        for event_type, data in self.stream_analysis(config, opportunity_id):
+            if event_type == EVENT_RESULT:
+                return data
+            elif event_type == EVENT_ERROR:
+                raise RuntimeError(f"Analysis pipeline failed: {data.get('message', 'Unknown error')}")
+
+        raise RuntimeError("Analysis pipeline completed without returning a result")
+
+    def get_cached_result_only(
+        self,
+        config: AnalysisPipelineConfig,
+        opportunity_id: int | None = None,
+    ) -> FLWAnalysisResult | VisitAnalysisResult | EntityAnalysisResult | None:
+        """Read the processed cache for (opportunity, config) without executing.
+
+        Never downloads or recomputes anything — this is the read path for
+        run-completion snapshots, which must capture the data the user was
+        already looking at, not trigger a fresh multi-minute rebuild inside
+        a web request. Visit-count drift is deliberately ignored (expected
+        count 0 passes the count check unconditionally, same trick the
+        cchq/ocs/filtered paths use); the cache TTL still applies.
+
+        Returns the cached result for the config's terminal stage, or None
+        when nothing usable is cached.
+        """
+        opp_id = opportunity_id or self.opportunity_id
+        if not opp_id:
+            return None
+        terminal_stage = config.terminal_stage
+        if terminal_stage == CacheStage.AGGREGATED:
+            return self.backend.get_cached_flw_result(opp_id, config, 0)
+        if terminal_stage == CacheStage.ENTITY:
+            return self.backend.get_cached_entity_result(opp_id, config, 0)
+        return self.backend.get_cached_visit_result(opp_id, config, 0)
+
+    def get_period_scoped_result_only(
+        self,
+        config: AnalysisPipelineConfig,
+        opportunity_id: int | None = None,
+    ) -> FLWAnalysisResult | None:
+        """Read a period-scoped FLW result from the existing raw-visit cache.
+
+        Like `get_cached_result_only`, this never downloads or recomputes from
+        source — it re-aggregates the already-cached visits with the window in
+        `config.date_from`/`date_to` applied (ace#764). Only the AGGREGATED
+        (FLW) terminal stage is supported; other stages return None (the caller
+        falls back to the all-time cache read). Returns None on a cache miss.
+        """
+        opp_id = opportunity_id or self.opportunity_id
+        if not opp_id:
+            return None
+        if config.terminal_stage != CacheStage.AGGREGATED:
+            return None
+        return self.backend.get_period_scoped_flw_result(opp_id, config)
+
+    def _consume_raw_visits_stream(
+        self,
+        opp_id: int,
+        force_refresh: bool = False,
+        tolerance_pct: int = 100,
+        pipeline_id: int | None = None,
+    ) -> Generator[tuple[str, Any], None, None]:
+        """
+        Consume stream_raw_visits events and yield SSE pipeline events.
+
+        Translates backend events (cached/progress/complete) into
+        pipeline events (EVENT_STATUS/EVENT_DOWNLOAD). After iteration,
+        self._visit_dicts and self._raw_data_already_stored are set.
+
+        Usage:
+            yield from self._consume_raw_visits_stream(opp_id, ...)
+            visit_dicts = self._visit_dicts
+            raw_data_already_stored = self._raw_data_already_stored
+        """
+        self._visit_dicts = None
+        self._raw_data_already_stored = False
+
+        for event in self.backend.stream_raw_visits(
+            opportunity_id=opp_id,
+            access_token=self.access_token,
+            expected_visit_count=self.visit_count,
+            force_refresh=force_refresh,
+            tolerance_pct=tolerance_pct,
+            pipeline_id=pipeline_id,
+            user=getattr(self.request, "user", None),
+        ):
+            event_type = event[0]
+            if event_type == "cached":
+                self._visit_dicts = event[1]
+                self._raw_data_already_stored = True
+                logger.info(f"[Pipeline/{self.backend_name}] Raw data CACHE HIT: {len(self._visit_dicts)} visits")
+                yield (EVENT_STATUS, {"message": f"Using cached raw data ({len(self._visit_dicts)} visits)..."})
+            elif event_type == "progress":
+                _, rows_so_far, expected_count = event
+                yield (EVENT_DOWNLOAD, {"rows": rows_so_far, "total": expected_count})
+            elif event_type == "complete":
+                self._visit_dicts = event[1]
+                self._raw_data_already_stored = True
+                logger.info(f"[Pipeline/{self.backend_name}] Downloaded and parsed {len(self._visit_dicts)} visits")
+                yield (EVENT_STATUS, {"message": f"Downloaded {len(self._visit_dicts)} visits"})
+
+        if self._visit_dicts is None:
+            raise RuntimeError("No data received from API")
+
+    def stream_analysis(
+        self,
+        config: AnalysisPipelineConfig,
+        opportunity_id: int | None = None,
+    ) -> Generator[tuple[str, Any], None, None]:
+        """
+        Stream analysis pipeline with progress events.
+
+        Yields:
+            Tuples of (event_type, event_data):
+            - ("status", {"message": "..."}) - progress updates
+            - ("download", {"rows": N, "total": M}) - download progress
+            - ("result", FLWAnalysisResult|VisitAnalysisResult) - final result
+            - ("error", {"message": "..."}) - error (terminates stream)
+
+        Args:
+            config: Analysis configuration
+            opportunity_id: Opportunity ID (defaults to labs_context)
+        """
+        opp_id = opportunity_id or self.opportunity_id
+        if not opp_id:
+            yield (EVENT_ERROR, {"message": "No opportunity_id provided"})
+            return
+
+        force_refresh = self.request is not None and self.request.GET.get("refresh") == "1"
+        terminal_stage = config.terminal_stage
+
+        def _stage_name(stage: CacheStage) -> str:
+            return {
+                CacheStage.AGGREGATED: "FLW",
+                CacheStage.ENTITY: "entity",
+                CacheStage.VISIT_LEVEL: "visit",
+            }.get(stage, "visit")
+
+        def _get_cached_for_stage(expected_count: int):
+            """Cache lookup dispatched by terminal_stage."""
+            if terminal_stage == CacheStage.AGGREGATED:
+                return self.backend.get_cached_flw_result(opp_id, config, expected_count, tolerance_pct=tolerance)
+            elif terminal_stage == CacheStage.ENTITY:
+                return self.backend.get_cached_entity_result(opp_id, config, expected_count, tolerance_pct=tolerance)
+            else:
+                return self.backend.get_cached_visit_result(opp_id, config, expected_count, tolerance_pct=tolerance)
+
+        try:
+            # Check cache first
+            stage_name = _stage_name(terminal_stage)
+            logger.info(
+                f"[Pipeline/{self.backend_name}] Checking {stage_name}-level cache for opp {opp_id} "
+                f"(expected visits: {self.visit_count})"
+            )
+
+            # CRITICAL FIX: Detect if we have filters - we'll need to handle specially
+            has_filters = bool(config.filters)
+            if has_filters:
+                logger.info(f"[Pipeline/{self.backend_name}] Config has filters: {list(config.filters.keys())}")
+
+            yield (EVENT_STATUS, {"message": f"Checking {stage_name}-level cache..."})
+
+            tolerance = self.cache_tolerance_pct
+            # For CCHQ form sources, don't validate against opportunity visit count
+            # (CCHQ forms have far fewer rows than Connect visits)
+            # For filtered configs, skip strict tolerance — filter changes should reuse
+            # existing cache, not re-download. The expires_at TTL handles staleness.
+            is_cchq = config.data_source.type in ("cchq_forms", "cchq_cases")
+            is_ocs = config.data_source.type == "ocs_sessions"
+            expected_count = 0 if (is_cchq or is_ocs or has_filters) else self.visit_count
+            if not force_refresh:
+                cached_result = _get_cached_for_stage(expected_count)
+
+                if cached_result:
+                    yield (EVENT_STATUS, {"message": f"{stage_name.capitalize()}-level cache HIT!"})
+                    logger.info(
+                        f"[Pipeline/{self.backend_name}] CACHE HIT ({stage_name}-level) for opp {opp_id}: "
+                        f"{len(cached_result.rows)} rows"
+                    )
+                    yield (EVENT_RESULT, cached_result)
+                    return
+                else:
+                    logger.info(f"[Pipeline/{self.backend_name}] CACHE MISS ({stage_name}-level) for opp {opp_id}")
+
+                    # CRITICAL FIX: If config has filters on cache miss, we must cache UNFILTERED data first
+                    # Filters should only be applied when reading from cache, never when writing to cache
+                    # This ensures the cache contains the full dataset and can serve all filtered queries
+                    if config.filters:
+                        from copy import deepcopy
+
+                        logger.info(
+                            f"[Pipeline/{self.backend_name}] Filtered config detected on cache miss - "
+                            f"will cache full unfiltered dataset first"
+                        )
+                        yield (EVENT_STATUS, {"message": "Building cache with full dataset..."})
+
+                        # Create unfiltered version for caching
+                        unfiltered_config = deepcopy(config)
+                        unfiltered_config.filters = {}
+
+                        # Download, process, and cache with unfiltered config
+                        yield (EVENT_STATUS, {"message": "Connecting to Connect API..."})
+                        logger.info(f"[Pipeline/{self.backend_name}] Downloading visit data for opp {opp_id}...")
+
+                        if unfiltered_config.data_source.type == "cchq_forms":
+                            from connect_labs.labs.analysis.backends.sql.cchq_fetcher import (
+                                fetch_cchq_forms_as_visit_dicts,
+                            )
+
+                            yield (
+                                EVENT_STATUS,
+                                {
+                                    "message": (
+                                        f"Fetching '{unfiltered_config.data_source.form_name}'" " from CommCare HQ..."
+                                    )
+                                },
+                            )
+                            visit_dicts = fetch_cchq_forms_as_visit_dicts(
+                                request=self.request,
+                                data_source=unfiltered_config.data_source,
+                                access_token=self.access_token,
+                                opportunity_id=opp_id,
+                            )
+                            raw_data_already_stored = False
+                        elif unfiltered_config.data_source.type == "ocs_sessions":
+                            from connect_labs.labs.analysis.backends.sql.ocs_fetcher import (
+                                fetch_ocs_sessions_as_visit_dicts,
+                            )
+
+                            ocs_exp = unfiltered_config.data_source.experiment_id
+                            yield (
+                                EVENT_STATUS,
+                                {"message": f"Fetching OCS sessions for experiment {ocs_exp}..."},
+                            )
+                            visit_dicts = fetch_ocs_sessions_as_visit_dicts(
+                                request=self.request,
+                                data_source=unfiltered_config.data_source,
+                            )
+                            raw_data_already_stored = False
+                        elif unfiltered_config.data_source.type == "connect_export":
+                            from connect_labs.labs.analysis.backends.sql.connect_export_fetcher import (
+                                fetch_connect_export_as_visit_dicts,
+                            )
+
+                            ep = unfiltered_config.data_source.endpoint
+                            yield (
+                                EVENT_STATUS,
+                                {"message": f"Fetching Connect export '{ep}' for opp {opp_id}..."},
+                            )
+                            visit_dicts = fetch_connect_export_as_visit_dicts(
+                                request=self.request,
+                                data_source=unfiltered_config.data_source,
+                                access_token=self.access_token,
+                                opportunity_id=opp_id,
+                            )
+                            raw_data_already_stored = False
+                        elif unfiltered_config.data_source.type == "cchq_cases":
+                            from connect_labs.labs.analysis.backends.sql.cchq_cases_fetcher import (
+                                fetch_cchq_cases_as_visit_dicts,
+                            )
+
+                            ct = unfiltered_config.data_source.case_type
+                            yield (
+                                EVENT_STATUS,
+                                {"message": f"Fetching '{ct}' cases from CommCare HQ..."},
+                            )
+                            visit_dicts = fetch_cchq_cases_as_visit_dicts(
+                                request=self.request,
+                                data_source=unfiltered_config.data_source,
+                                access_token=self.access_token,
+                                opportunity_id=opp_id,
+                            )
+                            raw_data_already_stored = False
+                        else:
+                            yield from self._consume_raw_visits_stream(
+                                opp_id,
+                                force_refresh=force_refresh,
+                                tolerance_pct=tolerance,
+                                pipeline_id=unfiltered_config.pipeline_id,
+                            )
+                            visit_dicts = self._visit_dicts
+                            raw_data_already_stored = self._raw_data_already_stored
+
+                        if visit_dicts is None:
+                            raise RuntimeError("No data received from API")
+
+                        # Process and cache with UNFILTERED config (critical!)
+                        yield (EVENT_STATUS, {"message": f"Processing {len(visit_dicts)} visits..."})
+                        logger.info(
+                            f"[Pipeline/{self.backend_name}] Processing {len(visit_dicts)} visits "
+                            "with unfiltered config"
+                        )
+
+                        self.backend.process_and_cache(
+                            self.request,
+                            unfiltered_config,
+                            opp_id,
+                            visit_dicts,
+                            skip_raw_store=raw_data_already_stored,
+                        )
+                        del visit_dicts
+
+                        # Now read from cache with ORIGINAL FILTERED config
+                        logger.info(f"[Pipeline/{self.backend_name}] Reading cached data with filters applied")
+                        yield (EVENT_STATUS, {"message": "Applying filters..."})
+
+                        # expected_count=0: we just wrote this cache, skip count validation
+                        filtered_result = _get_cached_for_stage(0)
+
+                        if filtered_result:
+                            yield (EVENT_STATUS, {"message": "Complete!"})
+                            logger.info(
+                                f"[Pipeline/{self.backend_name}] Complete: {len(filtered_result.rows)} rows (filtered)"
+                            )
+                            yield (EVENT_RESULT, filtered_result)
+                            return
+                        else:
+                            raise RuntimeError("Failed to read filtered data from cache after caching full dataset")
+            else:
+                logger.info(f"[Pipeline/{self.backend_name}] Force refresh requested, skipping cache")
+
+                # CRITICAL FIX: If force refresh with filters, must cache unfiltered first
+                if config.filters:
+                    from copy import deepcopy
+
+                    logger.info(
+                        f"[Pipeline/{self.backend_name}] Force refresh with filters - "
+                        f"will cache full unfiltered dataset first"
+                    )
+                    yield (EVENT_STATUS, {"message": "Force refresh: caching full dataset..."})
+
+                    # Create unfiltered version
+                    unfiltered_config = deepcopy(config)
+                    unfiltered_config.filters = {}
+
+                    # Download and process with unfiltered config
+                    yield (EVENT_STATUS, {"message": "Connecting to Connect API..."})
+                    logger.info(f"[Pipeline/{self.backend_name}] Downloading visit data for opp {opp_id}...")
+
+                    if unfiltered_config.data_source.type == "cchq_forms":
+                        from connect_labs.labs.analysis.backends.sql.cchq_fetcher import (
+                            fetch_cchq_forms_as_visit_dicts,
+                        )
+
+                        yield (
+                            EVENT_STATUS,
+                            {"message": f"Fetching '{unfiltered_config.data_source.form_name}' from CommCare HQ..."},
+                        )
+                        visit_dicts = fetch_cchq_forms_as_visit_dicts(
+                            request=self.request,
+                            data_source=unfiltered_config.data_source,
+                            access_token=self.access_token,
+                            opportunity_id=opp_id,
+                        )
+                        raw_data_already_stored = False
+                    elif unfiltered_config.data_source.type == "ocs_sessions":
+                        from connect_labs.labs.analysis.backends.sql.ocs_fetcher import (
+                            fetch_ocs_sessions_as_visit_dicts,
+                        )
+
+                        ocs_exp = unfiltered_config.data_source.experiment_id
+                        yield (
+                            EVENT_STATUS,
+                            {"message": f"Fetching OCS sessions for experiment {ocs_exp}..."},
+                        )
+                        visit_dicts = fetch_ocs_sessions_as_visit_dicts(
+                            request=self.request,
+                            data_source=unfiltered_config.data_source,
+                        )
+                        raw_data_already_stored = False
+                    elif unfiltered_config.data_source.type == "connect_export":
+                        from connect_labs.labs.analysis.backends.sql.connect_export_fetcher import (
+                            fetch_connect_export_as_visit_dicts,
+                        )
+
+                        ep = unfiltered_config.data_source.endpoint
+                        yield (
+                            EVENT_STATUS,
+                            {"message": f"Fetching Connect export '{ep}' for opp {opp_id}..."},
+                        )
+                        visit_dicts = fetch_connect_export_as_visit_dicts(
+                            request=self.request,
+                            data_source=unfiltered_config.data_source,
+                            access_token=self.access_token,
+                            opportunity_id=opp_id,
+                        )
+                        raw_data_already_stored = False
+                    elif unfiltered_config.data_source.type == "cchq_cases":
+                        from connect_labs.labs.analysis.backends.sql.cchq_cases_fetcher import (
+                            fetch_cchq_cases_as_visit_dicts,
+                        )
+
+                        ct = unfiltered_config.data_source.case_type
+                        yield (
+                            EVENT_STATUS,
+                            {"message": f"Fetching '{ct}' cases from CommCare HQ..."},
+                        )
+                        visit_dicts = fetch_cchq_cases_as_visit_dicts(
+                            request=self.request,
+                            data_source=unfiltered_config.data_source,
+                            access_token=self.access_token,
+                            opportunity_id=opp_id,
+                        )
+                        raw_data_already_stored = False
+                    else:
+                        yield from self._consume_raw_visits_stream(
+                            opp_id,
+                            force_refresh=True,
+                            pipeline_id=unfiltered_config.pipeline_id,
+                        )
+                        visit_dicts = self._visit_dicts
+                        raw_data_already_stored = self._raw_data_already_stored
+
+                    if visit_dicts is None:
+                        raise RuntimeError("No data received from API")
+
+                    # Process and cache with UNFILTERED config
+                    yield (EVENT_STATUS, {"message": f"Processing {len(visit_dicts)} visits..."})
+                    logger.info(
+                        f"[Pipeline/{self.backend_name}] Processing {len(visit_dicts)} visits with unfiltered config"
+                    )
+
+                    self.backend.process_and_cache(
+                        self.request,
+                        unfiltered_config,
+                        opp_id,
+                        visit_dicts,
+                        skip_raw_store=raw_data_already_stored,
+                    )
+                    del visit_dicts
+
+                    # Read back with filters
+                    logger.info(f"[Pipeline/{self.backend_name}] Reading cached data with filters applied")
+                    yield (EVENT_STATUS, {"message": "Applying filters..."})
+
+                    # expected_count=0: we just wrote this cache, skip count validation
+                    filtered_result = _get_cached_for_stage(0)
+
+                    if filtered_result:
+                        yield (EVENT_STATUS, {"message": "Complete!"})
+                        logger.info(
+                            f"[Pipeline/{self.backend_name}] Complete: {len(filtered_result.rows)} rows (filtered)"
+                        )
+                        yield (EVENT_RESULT, filtered_result)
+                        return
+                    else:
+                        raise RuntimeError("Failed to read filtered data from cache after force refresh")
+
+            # CCHQ data source: stream forms in chunks so memory stays bounded
+            # regardless of total form count. Earlier path materialized the full
+            # form list before processing — OOM'd Fargate workers at ~26k MBW
+            # registrations (~7KB each → ~180MB JSON, then ORM materialization
+            # on top, peaked ~1GB).
+            if config.data_source.type == "cchq_forms":
+                from connect_labs.labs.analysis.backends.sql.cache import SQLCacheManager
+                from connect_labs.labs.analysis.backends.sql.cchq_fetcher import iter_cchq_forms_as_visit_dicts
+
+                yield (EVENT_STATUS, {"message": f"Fetching '{config.data_source.form_name}' from CommCare HQ..."})
+
+                # Two-phase write: store_raw_visits_start tags rows with a
+                # sentinel visit_count so they're invisible to readers, batch
+                # inserts each chunk, finalize promotes them with the real
+                # count. Same pattern the connect-side stream uses; reusing it
+                # keeps cache state consistent.
+                cache_manager = SQLCacheManager(opp_id, config)
+                cache_manager.store_raw_visits_start(visit_count=0)
+                # 2500 matches `iter_forms` page size — each CCHQ page becomes
+                # exactly one bulk_create, no buffering across page boundaries.
+                # Peak chunk memory: ~75MB (2500 forms × ~7KB × 4x ORM overhead),
+                # well under Fargate's 1-2GB. Mirrors Connect's DEFAULT_PAGE_SIZE
+                # so both pipelines round-trip the same number of times.
+                CCHQ_CHUNK_SIZE = 2500
+                total_stored = 0
+                buffer: list[dict] = []
+                try:
+                    for visit_dict in iter_cchq_forms_as_visit_dicts(
+                        request=self.request,
+                        data_source=config.data_source,
+                        access_token=self.access_token,
+                        opportunity_id=opp_id,
+                    ):
+                        buffer.append(visit_dict)
+                        if len(buffer) >= CCHQ_CHUNK_SIZE:
+                            cache_manager.store_raw_visits_batch(buffer)
+                            total_stored += len(buffer)
+                            yield (EVENT_DOWNLOAD, {"rows": total_stored, "total": None})
+                            buffer.clear()
+                    if buffer:
+                        cache_manager.store_raw_visits_batch(buffer)
+                        total_stored += len(buffer)
+                        buffer.clear()
+                    cache_manager.store_raw_visits_finalize(actual_count=total_stored)
+                except Exception:
+                    cache_manager.store_raw_visits_abort()
+                    raise
+
+                if total_stored == 0:
+                    yield (EVENT_STATUS, {"message": "No forms found"})
+                    yield (EVENT_RESULT, VisitAnalysisResult(opportunity_id=opp_id, rows=[], metadata={}))
+                    return
+
+                yield (EVENT_STATUS, {"message": f"Processing {total_stored} forms..."})
+                # Raw cache is populated; process_and_cache only needs the
+                # count for length checks (skip_raw_store=True), no need to
+                # hand it the full list anymore.
+                result = self.backend.process_and_cache(
+                    self.request,
+                    config,
+                    opp_id,
+                    visit_dicts=[None] * total_stored,
+                    skip_raw_store=True,
+                )
+                yield (EVENT_STATUS, {"message": "Complete!"})
+                yield (EVENT_RESULT, result)
+                return
+
+            # OCS sessions data source — fetch all sessions and process in one pass.
+            # Sessions are O(hundreds), not O(tens of thousands), so no streaming needed.
+            if config.data_source.type == "ocs_sessions":
+                from connect_labs.labs.analysis.backends.sql.ocs_fetcher import fetch_ocs_sessions_as_visit_dicts
+
+                yield (
+                    EVENT_STATUS,
+                    {"message": f"Fetching OCS sessions for experiment {config.data_source.experiment_id}..."},
+                )
+                visit_dicts = fetch_ocs_sessions_as_visit_dicts(
+                    request=self.request,
+                    data_source=config.data_source,
+                )
+                if not visit_dicts:
+                    yield (EVENT_STATUS, {"message": "No sessions found"})
+                    yield (EVENT_RESULT, VisitAnalysisResult(opportunity_id=opp_id, rows=[], metadata={}))
+                    return
+
+                yield (EVENT_STATUS, {"message": f"Processing {len(visit_dicts)} sessions..."})
+                result = self.backend.process_and_cache(
+                    self.request,
+                    config,
+                    opp_id,
+                    visit_dicts,
+                    skip_raw_store=False,
+                )
+                yield (EVENT_STATUS, {"message": "Complete!"})
+                yield (EVENT_RESULT, result)
+                return
+
+            # Connect export data source — fetch all records and process in one pass.
+            # Audit/task records are O(hundreds), similar to OCS sessions.
+            if config.data_source.type == "connect_export":
+                from connect_labs.labs.analysis.backends.sql.connect_export_fetcher import (
+                    fetch_connect_export_as_visit_dicts,
+                )
+
+                ep = config.data_source.endpoint
+                yield (EVENT_STATUS, {"message": f"Fetching Connect export '{ep}' for opp {opp_id}..."})
+                visit_dicts = fetch_connect_export_as_visit_dicts(
+                    request=self.request,
+                    data_source=config.data_source,
+                    access_token=self.access_token,
+                    opportunity_id=opp_id,
+                )
+                if not visit_dicts:
+                    yield (EVENT_STATUS, {"message": f"No {ep} found"})
+                    yield (EVENT_RESULT, VisitAnalysisResult(opportunity_id=opp_id, rows=[], metadata={}))
+                    return
+
+                yield (EVENT_STATUS, {"message": f"Processing {len(visit_dicts)} {ep} records..."})
+                result = self.backend.process_and_cache(
+                    self.request,
+                    config,
+                    opp_id,
+                    visit_dicts,
+                    skip_raw_store=False,
+                )
+                yield (EVENT_STATUS, {"message": "Complete!"})
+                yield (EVENT_RESULT, result)
+                return
+
+            # CCHQ cases data source — fetch all cases (Case API v2) and process
+            # in one pass. Work-area cases are O(thousands), like connect_export
+            # records, so no streaming is needed.
+            if config.data_source.type == "cchq_cases":
+                from connect_labs.labs.analysis.backends.sql.cchq_cases_fetcher import fetch_cchq_cases_as_visit_dicts
+
+                ct = config.data_source.case_type
+                yield (EVENT_STATUS, {"message": f"Fetching '{ct}' cases from CommCare HQ..."})
+                visit_dicts = fetch_cchq_cases_as_visit_dicts(
+                    request=self.request,
+                    data_source=config.data_source,
+                    access_token=self.access_token,
+                    opportunity_id=opp_id,
+                )
+                if not visit_dicts:
+                    yield (EVENT_STATUS, {"message": f"No '{ct}' cases found"})
+                    yield (EVENT_RESULT, VisitAnalysisResult(opportunity_id=opp_id, rows=[], metadata={}))
+                    return
+
+                yield (EVENT_STATUS, {"message": f"Processing {len(visit_dicts)} cases..."})
+                result = self.backend.process_and_cache(
+                    self.request,
+                    config,
+                    opp_id,
+                    visit_dicts,
+                    skip_raw_store=False,
+                )
+                yield (EVENT_STATUS, {"message": "Complete!"})
+                yield (EVENT_RESULT, result)
+                return
+
+            # Stream raw data fetch with progress (unfiltered path)
+            yield (EVENT_STATUS, {"message": "Connecting to Connect API..."})
+            logger.info(f"[Pipeline/{self.backend_name}] Downloading visit data for opp {opp_id}...")
+
+            yield from self._consume_raw_visits_stream(
+                opp_id,
+                force_refresh=force_refresh,
+                tolerance_pct=tolerance,
+                pipeline_id=config.pipeline_id,
+            )
+            visit_dicts = self._visit_dicts
+            raw_data_already_stored = self._raw_data_already_stored
+
+            # Process with backend.
+            # The status message tells the user what's coming because
+            # process_and_cache is a single blocking call — once we enter it,
+            # the SSE stream stays silent until aggregation finishes. The
+            # AGGREGATED stage in particular runs two SQL phases (visit-field
+            # extraction ~30s, then per-FLW aggregation that can take 5-10 min
+            # on large opps with JOIN+attribution-heavy fields). Without this
+            # framing, users on minute 5 of "Processing visits..." rightly
+            # wonder if it's hung.
+            stage_name = _stage_name(terminal_stage)
+            n = len(visit_dicts)
+            if terminal_stage == CacheStage.AGGREGATED:
+                msg = (
+                    f"Aggregating {n:,} visits to per-{stage_name} summaries — "
+                    f"step 1/2 extracts fields (~30s), step 2/2 runs the "
+                    f"per-FLW aggregation (5-10 min on large opps with "
+                    f"JOIN-heavy schemas)..."
+                )
+            else:
+                msg = f"Processing {n:,} visits to {stage_name}-level results..."
+            yield (EVENT_STATUS, {"message": msg})
+            logger.info(f"[Pipeline/{self.backend_name}] Processing {n} visits ({stage_name})")
+
+            result = self.backend.process_and_cache(
+                self.request,
+                config,
+                opp_id,
+                visit_dicts,
+                skip_raw_store=raw_data_already_stored,
+            )
+            del visit_dicts
+
+            yield (EVENT_STATUS, {"message": "Complete!"})
+            logger.info(f"[Pipeline/{self.backend_name}] Complete: {len(result.rows)} rows")
+
+            yield (EVENT_RESULT, result)
+
+        except Exception as e:
+            logger.error(f"[Pipeline/{self.backend_name}] Error: {e}", exc_info=True)
+            sentry_sdk.capture_exception(e)
+            yield (EVENT_ERROR, {"message": str(e)})

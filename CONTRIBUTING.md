@@ -36,21 +36,21 @@ Every labs app follows the same three-layer pattern:
 
 **Canonical examples:**
 
-- Simplest: `commcare_connect/tasks/data_access.py` — `TaskDataAccess`
-- Most complex: `commcare_connect/workflow/data_access.py` — `WorkflowDataAccess` with `BaseDataAccess`
+- Simplest: `connect_labs/tasks/data_access.py` — `TaskDataAccess`
+- Most complex: `connect_labs/workflow/data_access.py` — `WorkflowDataAccess` with `BaseDataAccess`
 
-**Full pattern documentation:** See [LABS_GUIDE.md](commcare_connect/labs/LABS_GUIDE.md) for OAuth setup, API client usage, and code examples.
+**Full pattern documentation:** See [LABS_GUIDE.md](connect_labs/labs/LABS_GUIDE.md) for OAuth setup, API client usage, and code examples.
 
 ## Testing Conventions
 
 - **Framework:** pytest with `@pytest.mark.django_db` for tests needing database access
 - **Config:** `pyproject.toml` — settings: `--ds=config.settings.test --reuse-db`
-- **Factories:** factory-boy for Django model fixtures (see `commcare_connect/conftest.py` for shared fixtures)
+- **Factories:** factory-boy for Django model fixtures (see `connect_labs/conftest.py` for shared fixtures)
 - **Labs-specific tests:** Mock `LabsRecordAPIClient` and HTTP responses since labs tests cannot hit production
 - **Running tests:**
   ```bash
   pytest                                    # Full suite
-  pytest commcare_connect/audit/tests/      # Single app
+  pytest connect_labs/audit/tests/      # Single app
   pytest -k "test_audit_create"             # By name
   ```
 
@@ -69,7 +69,7 @@ See [pr_guidelines.md](pr_guidelines.md) for full details. Key points:
 ### Step 1: Create the app directory
 
 ```
-commcare_connect/your_app/
+connect_labs/your_app/
   __init__.py
   apps.py
   models.py
@@ -82,7 +82,7 @@ commcare_connect/your_app/
 
 ```python
 # your_app/models.py
-from commcare_connect.labs.models import LocalLabsRecord
+from connect_labs.labs.models import LocalLabsRecord
 
 class MyRecord(LocalLabsRecord):
     """Proxy for MyType records."""
@@ -100,7 +100,7 @@ class MyRecord(LocalLabsRecord):
 
 ```python
 # your_app/data_access.py
-from commcare_connect.labs.integrations.connect.api_client import LabsRecordAPIClient
+from connect_labs.labs.integrations.connect.api_client import LabsRecordAPIClient
 from .models import MyRecord
 
 class MyAppDataAccess:
@@ -164,10 +164,10 @@ urlpatterns = [
 Add your app's URLs to `config/urls.py`:
 
 ```python
-path("your_app/", include("commcare_connect.your_app.urls")),
+path("your_app/", include("connect_labs.your_app.urls")),
 ```
 
-Add the URL prefix to the whitelist in `commcare_connect/labs/middleware.py`:
+Add the URL prefix to the whitelist in `connect_labs/labs/middleware.py`:
 
 ```python
 WHITELISTED_PREFIXES = [
@@ -178,7 +178,7 @@ WHITELISTED_PREFIXES = [
 
 ### Step 6: Add templates
 
-Create templates under `commcare_connect/templates/your_app/`.
+Create templates under `connect_labs/templates/your_app/`.
 
 ### Step 7: Write tests
 

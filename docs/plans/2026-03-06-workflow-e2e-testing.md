@@ -51,12 +51,12 @@ git commit -m "chore: add pytest-playwright for E2E workflow testing"
 ### Task 2: Create the test-auth session injection view
 
 **Files:**
-- Create: `commcare_connect/labs/views_test_auth.py`
-- Modify: `commcare_connect/labs/urls.py`
+- Create: `connect_labs/labs/views_test_auth.py`
+- Modify: `connect_labs/labs/urls.py`
 
 **Step 1: Write the test-auth view**
 
-Create `commcare_connect/labs/views_test_auth.py`. This view is gated behind `DEBUG=True` and reuses the exact session setup pattern from `commcare_connect/labs/management/commands/base_labs_url_test.py:50-103`.
+Create `connect_labs/labs/views_test_auth.py`. This view is gated behind `DEBUG=True` and reuses the exact session setup pattern from `connect_labs/labs/management/commands/base_labs_url_test.py:50-103`.
 
 ```python
 """
@@ -75,8 +75,8 @@ from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.http import require_GET
 
-from commcare_connect.labs.integrations.connect.cli import TokenManager
-from commcare_connect.labs.integrations.connect.oauth import (
+from connect_labs.labs.integrations.connect.cli import TokenManager
+from connect_labs.labs.integrations.connect.oauth import (
     fetch_user_organization_data,
     introspect_token,
 )
@@ -146,10 +146,10 @@ def test_auth_view(request):
 
 **Step 2: Register the URL**
 
-In `commcare_connect/labs/urls.py`, add after the existing login/callback paths:
+In `connect_labs/labs/urls.py`, add after the existing login/callback paths:
 
 ```python
-from commcare_connect.labs import views_test_auth
+from connect_labs.labs import views_test_auth
 
 # ... in urlpatterns:
 path("test-auth/", views_test_auth.test_auth_view, name="test_auth"),
@@ -166,7 +166,7 @@ Then visit `http://localhost:8000/labs/test-auth/` — should return JSON with `
 **Step 4: Commit**
 
 ```bash
-git add commcare_connect/labs/views_test_auth.py commcare_connect/labs/urls.py
+git add connect_labs/labs/views_test_auth.py connect_labs/labs/urls.py
 git commit -m "feat: add DEBUG-only test-auth view for Playwright session injection"
 ```
 
@@ -175,14 +175,14 @@ git commit -m "feat: add DEBUG-only test-auth view for Playwright session inject
 ### Task 3: Create the E2E test infrastructure (conftest.py)
 
 **Files:**
-- Create: `commcare_connect/workflow/tests/e2e/__init__.py`
-- Create: `commcare_connect/workflow/tests/e2e/conftest.py`
+- Create: `connect_labs/workflow/tests/e2e/__init__.py`
+- Create: `connect_labs/workflow/tests/e2e/conftest.py`
 
 **Step 1: Create the conftest with all fixtures**
 
-Create `commcare_connect/workflow/tests/e2e/__init__.py` (empty).
+Create `connect_labs/workflow/tests/e2e/__init__.py` (empty).
 
-Create `commcare_connect/workflow/tests/e2e/conftest.py`:
+Create `connect_labs/workflow/tests/e2e/conftest.py`:
 
 ```python
 """
@@ -195,7 +195,7 @@ Fixtures:
 - opportunity_id: configurable via --opportunity-id flag
 
 Usage:
-    pytest commcare_connect/workflow/tests/e2e/ -m e2e --opportunity-id=874
+    pytest connect_labs/workflow/tests/e2e/ -m e2e --opportunity-id=874
 """
 
 import socket
@@ -294,7 +294,7 @@ def auth_page(authenticated_context):
 **Step 2: Commit**
 
 ```bash
-git add commcare_connect/workflow/tests/e2e/
+git add connect_labs/workflow/tests/e2e/
 git commit -m "feat: add E2E test infrastructure with Playwright fixtures"
 ```
 
@@ -303,11 +303,11 @@ git commit -m "feat: add E2E test infrastructure with Playwright fixtures"
 ### Task 4: Write the audit_with_ai_review E2E test
 
 **Files:**
-- Create: `commcare_connect/workflow/tests/e2e/test_audit_workflow.py`
+- Create: `connect_labs/workflow/tests/e2e/test_audit_workflow.py`
 
 **Step 1: Write the E2E test**
 
-Create `commcare_connect/workflow/tests/e2e/test_audit_workflow.py`:
+Create `connect_labs/workflow/tests/e2e/test_audit_workflow.py`:
 
 ```python
 """
@@ -324,7 +324,7 @@ Tests the full happy path:
 8. Clean up (delete the run)
 
 Run:
-    pytest commcare_connect/workflow/tests/e2e/test_audit_workflow.py -m e2e -v --opportunity-id=874
+    pytest connect_labs/workflow/tests/e2e/test_audit_workflow.py -m e2e -v --opportunity-id=874
 """
 
 import pytest
@@ -433,7 +433,7 @@ class TestAuditWithAIReviewWorkflow:
 
 Run:
 ```bash
-pytest commcare_connect/workflow/tests/e2e/test_audit_workflow.py -m e2e -v --opportunity-id=874
+pytest connect_labs/workflow/tests/e2e/test_audit_workflow.py -m e2e -v --opportunity-id=874
 ```
 
 Expected: Test should pass end-to-end (may take 60-120s due to real API calls).
@@ -445,7 +445,7 @@ The CSS selectors above are best-guesses based on the render code. After the fir
 **Step 4: Commit**
 
 ```bash
-git add commcare_connect/workflow/tests/e2e/test_audit_workflow.py
+git add connect_labs/workflow/tests/e2e/test_audit_workflow.py
 git commit -m "feat: add E2E test for audit_with_ai_review workflow template"
 ```
 
@@ -464,7 +464,7 @@ python manage.py get_cli_token
 
 Run:
 ```bash
-pytest commcare_connect/workflow/tests/e2e/ -m e2e -v --opportunity-id=874
+pytest connect_labs/workflow/tests/e2e/ -m e2e -v --opportunity-id=874
 ```
 
 Expected: Server starts on 8001, auth injects, audit workflow runs end-to-end, cleanup succeeds.
@@ -473,7 +473,7 @@ Expected: Server starts on 8001, auth injects, audit workflow runs end-to-end, c
 
 Run:
 ```bash
-pytest commcare_connect/workflow/tests/ -v
+pytest connect_labs/workflow/tests/ -v
 ```
 
 Expected: Only `test_mbw_v1_v2_parity.py` tests run. E2E tests are skipped (no `e2e` marker selected).

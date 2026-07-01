@@ -72,7 +72,7 @@
     "dev": "webpack --mode development --config webpack/base.config.js && npm run build:campaign",
     "dev-watch": "concurrently -k -n webpack,campaign \"webpack --mode development --config webpack/base.config.js --watch\" \"npm run watch:campaign\"",
     "test": "vitest run && npm run test:units",
-    "test:units": "node commcare_connect/static/labs/context_picker.test.mjs && node commcare_connect/static/microplans/shared.test.mjs",
+    "test:units": "node connect_labs/static/labs/context_picker.test.mjs && node connect_labs/static/microplans/shared.test.mjs",
     "test:watch": "vitest"
   },
   "dependencies": {

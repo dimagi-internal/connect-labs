@@ -4,7 +4,7 @@
 
 **Goal:** Add a "Bulk Image Audit" workflow template with inline photo review and per-FLW pass/fail summary; rename the existing Weekly Audit template to "Weekly KMC Audit with AI Review".
 
-**Architecture:** Single new file `commcare_connect/workflow/templates/bulk_image_audit.py` mirrors `audit_with_ai_review.py` exactly in structure — a Python module exporting a `TEMPLATE` dict whose `render_code` string is a self-contained React component. The component calls only pre-existing audit API endpoints. State is managed in `run.data.state` and drives which of four phases (config / creating / reviewing / completed) is shown.
+**Architecture:** Single new file `connect_labs/workflow/templates/bulk_image_audit.py` mirrors `audit_with_ai_review.py` exactly in structure — a Python module exporting a `TEMPLATE` dict whose `render_code` string is a self-contained React component. The component calls only pre-existing audit API endpoints. State is managed in `run.data.state` and drives which of four phases (config / creating / reviewing / completed) is shown.
 
 **Tech Stack:** Python (Django), React (JSX string in Python), Tailwind CSS, Font Awesome icons. All existing audit API endpoints at `/audit/api/...`. No new backend code.
 
@@ -16,8 +16,8 @@
 
 Before touching any code, read these files once:
 
-- `commcare_connect/workflow/templates/__init__.py` — auto-discovers any `.py` file in this directory that exports `TEMPLATE`. Also has explicit re-exports at the bottom (`from . import audit_with_ai_review, ...`) that must be updated when adding a new template.
-- `commcare_connect/workflow/templates/audit_with_ai_review.py` — the template you will borrow heavily from. Its `RENDER_CODE` string is a React JSX component (no transpilation — the workflow `run.html` loads Babel standalone in-browser).
+- `connect_labs/workflow/templates/__init__.py` — auto-discovers any `.py` file in this directory that exports `TEMPLATE`. Also has explicit re-exports at the bottom (`from . import audit_with_ai_review, ...`) that must be updated when adding a new template.
+- `connect_labs/workflow/templates/audit_with_ai_review.py` — the template you will borrow heavily from. Its `RENDER_CODE` string is a React JSX component (no transpilation — the workflow `run.html` loads Babel standalone in-browser).
 
 **Template anatomy (required keys in `TEMPLATE` dict):**
 ```python
@@ -58,7 +58,7 @@ function getCsrfToken() {
 ## Task 1: Rename Existing Template
 
 **Files:**
-- Modify: `commcare_connect/workflow/templates/audit_with_ai_review.py` (lines 13–14 and 989–991)
+- Modify: `connect_labs/workflow/templates/audit_with_ai_review.py` (lines 13–14 and 989–991)
 
 **Step 1: Open the file and make four string changes**
 
@@ -89,7 +89,7 @@ In `TEMPLATE` (near bottom):
 ```bash
 cd /mnt/c/Users/Mathew\ Theis/Documents/Connect/commcare-connect-labs
 python manage.py shell -c "
-from commcare_connect.workflow.templates import get_template
+from connect_labs.workflow.templates import get_template
 t = get_template('audit_with_ai_review')
 print(t['name'])
 print(t['definition']['name'])
@@ -103,7 +103,7 @@ Weekly KMC Audit with AI Review
 
 **Step 3: Commit**
 ```bash
-git add commcare_connect/workflow/templates/audit_with_ai_review.py
+git add connect_labs/workflow/templates/audit_with_ai_review.py
 git commit -m "feat: rename Weekly Audit template to Weekly KMC Audit with AI Review"
 ```
 
@@ -112,8 +112,8 @@ git commit -m "feat: rename Weekly Audit template to Weekly KMC Audit with AI Re
 ## Task 2: Create Template Skeleton + Register It
 
 **Files:**
-- Create: `commcare_connect/workflow/templates/bulk_image_audit.py`
-- Modify: `commcare_connect/workflow/templates/__init__.py` (last ~12 lines)
+- Create: `connect_labs/workflow/templates/bulk_image_audit.py`
+- Modify: `connect_labs/workflow/templates/__init__.py` (last ~12 lines)
 
 **Step 1: Create the skeleton file**
 
@@ -198,7 +198,7 @@ __all__ = [
 
 ```bash
 python manage.py shell -c "
-from commcare_connect.workflow.templates import get_template, list_templates
+from connect_labs.workflow.templates import get_template, list_templates
 t = get_template('bulk_image_audit')
 print('key:', t['key'])
 print('name:', t['name'])
@@ -210,8 +210,8 @@ Expected: `key: bulk_image_audit`, `name: Bulk Image Audit` and `bulk_image_audi
 
 **Step 4: Commit**
 ```bash
-git add commcare_connect/workflow/templates/bulk_image_audit.py \
-        commcare_connect/workflow/templates/__init__.py
+git add connect_labs/workflow/templates/bulk_image_audit.py \
+        connect_labs/workflow/templates/__init__.py
 git commit -m "feat: add Bulk Image Audit workflow template skeleton"
 ```
 
@@ -278,7 +278,7 @@ Note: We will define `ConfigPhase`, `CreatingPhase`, `ReviewPhase`, `CompletedPh
 
 **Step 2: Verify Python parses without errors**
 ```bash
-python -c "import commcare_connect.workflow.templates.bulk_image_audit"
+python -c "import connect_labs.workflow.templates.bulk_image_audit"
 ```
 Expected: no output (clean import).
 
@@ -634,13 +634,13 @@ React.useEffect(() => {
 **Step 7: Verify**
 
 ```bash
-python -c "import commcare_connect.workflow.templates.bulk_image_audit"
+python -c "import connect_labs.workflow.templates.bulk_image_audit"
 ```
 Expected: clean import (no syntax errors).
 
 **Step 8: Commit**
 ```bash
-git add commcare_connect/workflow/templates/bulk_image_audit.py
+git add connect_labs/workflow/templates/bulk_image_audit.py
 git commit -m "feat: bulk image audit config form — opp selector, image type, visit selection"
 ```
 
@@ -874,12 +874,12 @@ const CreatingPhase = () => (
 **Step 4: Verify**
 
 ```bash
-python -c "import commcare_connect.workflow.templates.bulk_image_audit"
+python -c "import connect_labs.workflow.templates.bulk_image_audit"
 ```
 
 **Step 5: Commit**
 ```bash
-git add commcare_connect/workflow/templates/bulk_image_audit.py
+git add connect_labs/workflow/templates/bulk_image_audit.py
 git commit -m "feat: bulk image audit config submit + creating phase with progress"
 ```
 
@@ -1176,12 +1176,12 @@ const PhotoCard = ({ assessment: a, isScalePhoto }) => {
 
 **Step 4: Verify**
 ```bash
-python -c "import commcare_connect.workflow.templates.bulk_image_audit"
+python -c "import connect_labs.workflow.templates.bulk_image_audit"
 ```
 
 **Step 5: Commit**
 ```bash
-git add commcare_connect/workflow/templates/bulk_image_audit.py
+git add connect_labs/workflow/templates/bulk_image_audit.py
 git commit -m "feat: bulk image audit review phase — stats, photo list, AI review button"
 ```
 
@@ -1363,12 +1363,12 @@ const FlwSummaryTable = ({ assessments, threshold, config, readOnly }) => {
 
 **Step 4: Verify**
 ```bash
-python -c "import commcare_connect.workflow.templates.bulk_image_audit"
+python -c "import connect_labs.workflow.templates.bulk_image_audit"
 ```
 
 **Step 5: Commit**
 ```bash
-git add commcare_connect/workflow/templates/bulk_image_audit.py
+git add connect_labs/workflow/templates/bulk_image_audit.py
 git commit -m "feat: bulk image audit FLW summary table with sort and filter"
 ```
 
@@ -1503,12 +1503,12 @@ const CompleteSection = ({ assessments }) => {
 
 **Step 3: Verify**
 ```bash
-python -c "import commcare_connect.workflow.templates.bulk_image_audit"
+python -c "import connect_labs.workflow.templates.bulk_image_audit"
 ```
 
 **Step 4: Commit**
 ```bash
-git add commcare_connect/workflow/templates/bulk_image_audit.py
+git add connect_labs/workflow/templates/bulk_image_audit.py
 git commit -m "feat: bulk image audit complete image review with pending guard"
 ```
 
@@ -1615,12 +1615,12 @@ And add `overrideRows` to the destructured props: `{ assessments, threshold, con
 
 **Step 3: Verify**
 ```bash
-python -c "import commcare_connect.workflow.templates.bulk_image_audit"
+python -c "import connect_labs.workflow.templates.bulk_image_audit"
 ```
 
 **Step 4: Commit**
 ```bash
-git add commcare_connect/workflow/templates/bulk_image_audit.py
+git add connect_labs/workflow/templates/bulk_image_audit.py
 git commit -m "feat: bulk image audit completed phase with read-only summary"
 ```
 
@@ -1635,7 +1635,7 @@ The audit creation API creates one session per group (usually one combined sessi
 ```bash
 # Search the tasks.py and views.py to understand the SSE completion structure
 grep -n "sessions\|session_id\|task_complete\|is_complete" \
-  "/mnt/c/Users/Mathew Theis/Documents/Connect/commcare-connect-labs/commcare_connect/audit/tasks.py" \
+  "/mnt/c/Users/Mathew Theis/Documents/Connect/commcare-connect-labs/connect_labs/audit/tasks.py" \
   | head -30
 ```
 
@@ -1654,7 +1654,7 @@ Update both the `handleCreate` completion handler and the reconnect handler to u
 
 **Step 3: Commit any fixes**
 ```bash
-git add commcare_connect/workflow/templates/bulk_image_audit.py
+git add connect_labs/workflow/templates/bulk_image_audit.py
 git commit -m "fix: reliable session ID discovery after audit creation"
 ```
 
@@ -1718,9 +1718,9 @@ All previous tasks added code. This task verifies the full flow in the browser.
 **Step 1: Run Python linter**
 ```bash
 cd /mnt/c/Users/Mathew\ Theis/Documents/Connect/commcare-connect-labs
-pre-commit run --files commcare_connect/workflow/templates/bulk_image_audit.py \
-    commcare_connect/workflow/templates/audit_with_ai_review.py \
-    commcare_connect/workflow/templates/__init__.py
+pre-commit run --files connect_labs/workflow/templates/bulk_image_audit.py \
+    connect_labs/workflow/templates/audit_with_ai_review.py \
+    connect_labs/workflow/templates/__init__.py
 ```
 Fix any flake8/ruff issues reported.
 

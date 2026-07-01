@@ -1,8 +1,8 @@
 # Program Admin Report — Design
 
-**Status:** Historical — the Decision concept described here was superseded by the Flag concept in PR #281 (2026-05-27). Audits + tasks are no longer joined through a Decision record; they each carry `workflow_run_id` directly and are grouped per-FLW at render time. Flags are auto-applied from pipeline data via `view.ensureAutoFlags` instead of being manager-recorded. Current authoritative reference: `commcare_connect/workflow/WORKFLOW_REFERENCE.md` §10 (flags + actions catalog contract). Kept here for trace of the original design.
+**Status:** Historical — the Decision concept described here was superseded by the Flag concept in PR #281 (2026-05-27). Audits + tasks are no longer joined through a Decision record; they each carry `workflow_run_id` directly and are grouped per-FLW at render time. Flags are auto-applied from pipeline data via `view.ensureAutoFlags` instead of being manager-recorded. Current authoritative reference: `connect_labs/workflow/WORKFLOW_REFERENCE.md` §10 (flags + actions catalog contract). Kept here for trace of the original design.
 **Authors:** jjackson + Claude
-**Related:** `commcare_connect/workflow/templates/program_admin_audit.py` (the existing SEED scaffold, which this design supersedes)
+**Related:** `connect_labs/workflow/templates/program_admin_audit.py` (the existing SEED scaffold, which this design supersedes)
 
 ---
 
@@ -116,7 +116,7 @@ When `view.isCompleted` is true and a Decision exists for the row, the render us
 
 ## 5. The new `program_admin_report` template
 
-New file: `commcare_connect/workflow/templates/program_admin_report.py`. Replaces the existing `program_admin_audit.py` scaffold (which was created 2026-05-05 as an ACE Phase 6 SEED but its cross-workflow snapshot reader was never wired). **Action:** delete `program_admin_audit.py` and its test file as part of this work — it has no live workflow instances depending on it (confirmed: the SEED template was never instantiated against a real opportunity).
+New file: `connect_labs/workflow/templates/program_admin_report.py`. Replaces the existing `program_admin_audit.py` scaffold (which was created 2026-05-05 as an ACE Phase 6 SEED but its cross-workflow snapshot reader was never wired). **Action:** delete `program_admin_audit.py` and its test file as part of this work — it has no live workflow instances depending on it (confirmed: the SEED template was never instantiated against a real opportunity).
 
 ### 5.1 Template config
 
@@ -211,7 +211,7 @@ The default `snapshot_inputs`-manifest path only captures verbatim state/pipelin
 
 ### 5.5 Cross-workflow snapshot reader
 
-New helper in `commcare_connect/workflow/data_access.py`:
+New helper in `connect_labs/workflow/data_access.py`:
 
 ```python
 def get_saved_runs_for_program_report(
@@ -319,7 +319,7 @@ program_admin_report_runs:
 
 ### 7.2 New generator module
 
-`commcare_connect/labs/synthetic/generator/workflows.py`:
+`connect_labs/labs/synthetic/generator/workflows.py`:
 
 - `build_workflow_definitions(...)` — emit `LabsLocalRecord(type="workflow_definition")` for each `template_key` referenced
 - `build_workflow_runs(...)` — emit `LabsLocalRecord(type="workflow_run")` with `status="completed"`, `completed_at` for each cadence Monday

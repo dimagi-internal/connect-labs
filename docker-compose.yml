@@ -8,7 +8,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data/
     environment:
-      - POSTGRES_DB=commcare_connect
+      - POSTGRES_DB=connect_labs
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
     ports:

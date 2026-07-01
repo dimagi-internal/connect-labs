@@ -46,8 +46,8 @@ from pathlib import Path
 # templates get walkthrough coverage.
 REPO_ROOT = Path(__file__).resolve().parents[3]
 TEMPLATE_SOURCES = {
-    "chc_nutrition_analysis": REPO_ROOT / "commcare_connect/workflow/templates/chc_nutrition_analysis.py",
-    "program_admin_report": REPO_ROOT / "commcare_connect/workflow/templates/program_admin_report.py",
+    "chc_nutrition_analysis": REPO_ROOT / "connect_labs/workflow/templates/chc_nutrition_analysis.py",
+    "program_admin_report": REPO_ROOT / "connect_labs/workflow/templates/program_admin_report.py",
 }
 
 

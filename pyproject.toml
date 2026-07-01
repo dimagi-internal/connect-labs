@@ -1,7 +1,7 @@
 # ==== pytest ====
 [tool.pytest.ini_options]
 minversion = "6.0"
-addopts = "--ds=config.settings.test --reuse-db --ignore=commcare_connect/workflow/tests/e2e --ignore=commcare_connect/labs/tests/e2e --ignore=commcare_connect/solicitations/tests/e2e --ignore=commcare_connect/funder_dashboard/tests/e2e --ignore=commcare_connect/campaign/tests/e2e --ignore=commcare_connect/audit/management/commands/test_search_readers.py"
+addopts = "--ds=config.settings.test --reuse-db --ignore=connect_labs/workflow/tests/e2e --ignore=connect_labs/labs/tests/e2e --ignore=connect_labs/solicitations/tests/e2e --ignore=connect_labs/funder_dashboard/tests/e2e --ignore=connect_labs/campaign/tests/e2e --ignore=connect_labs/audit/management/commands/test_search_readers.py"
 norecursedirs = ["management"]
 python_files = [
     "tests.py",
@@ -15,7 +15,7 @@ markers = [
 
 # ==== Coverage ====
 [tool.coverage.run]
-include = ["commcare_connect/**"]
+include = ["connect_labs/**"]
 omit = ["*/migrations/*", "*/tests/*"]
 plugins = ["django_coverage_plugin"]
 
@@ -31,7 +31,7 @@ target-version = ['py311']
 profile = "black"
 line_length = 119
 known_first_party = [
-    "commcare_connect",
+    "connect_labs",
     "config",
 ]
 skip = ["venv/"]

@@ -29,7 +29,7 @@ Port its *algorithms* onto our substrate.
 ## Target architecture
 
 ```
-commcare_connect/microplans/
+connect_labs/microplans/
 ├── core/
 │   ├── footprints.py      # Overture buildings via DuckDB (built; from sampling/)
 │   ├── boundaries.py      # admin-area RESOLVER (Overture default + per-country override)

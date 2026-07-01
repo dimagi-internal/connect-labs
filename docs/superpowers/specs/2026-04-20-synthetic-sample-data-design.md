@@ -83,7 +83,7 @@ return a drop-in `SyntheticExportClient` that reads from a `FixtureStore`.
 
 ### 1. Registry model
 
-New Django model in `commcare_connect/labs/synthetic/models.py`:
+New Django model in `connect_labs/labs/synthetic/models.py`:
 
 ```python
 class SyntheticOpportunity(models.Model):
@@ -102,7 +102,7 @@ admin boundaries). This is labs-internal state, not prod Connect data.
 
 ### 2. Registry lookup
 
-`commcare_connect/labs/synthetic/registry.py`:
+`connect_labs/labs/synthetic/registry.py`:
 
 ```python
 _CACHE = {"loaded_at": 0.0, "opps_by_id": {}}
@@ -130,7 +130,7 @@ change within 60s. Acceptable for a demo-tier feature.
 
 ### 3. CRUD UI
 
-Templates and views in `commcare_connect/labs/synthetic/`. Routed under
+Templates and views in `connect_labs/labs/synthetic/`. Routed under
 `/labs/synthetic/` and styled with the existing labs Bootstrap layout (matches the
 configurable_ui and explorer admin pages; consistent with user expectations that the
 bare Django admin isn't used).
@@ -149,7 +149,7 @@ Permission: any labs-authenticated user. No org scoping — labs-internal admin 
 
 ### 4. Fixture store
 
-`commcare_connect/labs/synthetic/fixture_store.py`.
+`connect_labs/labs/synthetic/fixture_store.py`.
 
 **Folder layout per opp:**
 
@@ -213,7 +213,7 @@ and in the design doc.
 
 ### 6. Synthetic export client
 
-`commcare_connect/labs/synthetic/client.py`. Drop-in replacement for
+`connect_labs/labs/synthetic/client.py`. Drop-in replacement for
 `ExportAPIClient`. Same two public methods, same signatures.
 
 ```python
@@ -247,7 +247,7 @@ with every row works identically.
 
 ### 7. Factory
 
-`commcare_connect/labs/integrations/connect/factory.py`:
+`connect_labs/labs/integrations/connect/factory.py`:
 
 ```python
 def get_export_client(
@@ -266,21 +266,21 @@ Replace direct `ExportAPIClient(base_url, access_token)` with
 `get_export_client(opp_id, access_token)` at these callsites. Each already has
 `opp_id` and `access_token` in scope — mechanical find-and-replace.
 
-- `commcare_connect/audit/views.py` (image-question user_visits fetch)
-- `commcare_connect/tasks/data_access.py`
-- `commcare_connect/funder_dashboard/data_access.py`
-- `commcare_connect/workflow/data_access.py`
-- `commcare_connect/labs/analysis/data_access.py`
+- `connect_labs/audit/views.py` (image-question user_visits fetch)
+- `connect_labs/tasks/data_access.py`
+- `connect_labs/funder_dashboard/data_access.py`
+- `connect_labs/workflow/data_access.py`
+- `connect_labs/labs/analysis/data_access.py`
 - Any additional direct constructor calls surfaced during implementation
 
 **Not migrated in v1** (raw `httpx` to `/export/opportunity/<id>/image/` or other
 paths that bypass `ExportAPIClient`):
 
-- `commcare_connect/audit/data_access.py` (image fetch)
-- `commcare_connect/custom_analysis/kmc/views.py` (image fetch)
-- `commcare_connect/custom_analysis/rutf/views.py` (image fetch)
-- `commcare_connect/workflow/views.py` (image fetch)
-- `commcare_connect/labs/explorer/app_data_access.py` (different endpoint shape)
+- `connect_labs/audit/data_access.py` (image fetch)
+- `connect_labs/custom_analysis/kmc/views.py` (image fetch)
+- `connect_labs/custom_analysis/rutf/views.py` (image fetch)
+- `connect_labs/workflow/views.py` (image fetch)
+- `connect_labs/labs/explorer/app_data_access.py` (different endpoint shape)
 
 These keep hitting prod for synthetic opps and will 404 on phantom image IDs. Known
 limitation; revisit if demos need image coverage.
@@ -298,7 +298,7 @@ limitation; revisit if demos need image coverage.
 
 ## Testing
 
-New tests under `commcare_connect/labs/synthetic/tests/`:
+New tests under `connect_labs/labs/synthetic/tests/`:
 
 - `test_registry.py` — lookup returns row for enabled opp; returns `None` for disabled
   or unknown. TTL refresh re-queries DB. Manual invalidation clears cache.

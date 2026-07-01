@@ -10,7 +10,7 @@ description: Use this skill when iterating on a live workflow in labs — readin
 Two iteration loops are supported. Pick the right one for the change at hand:
 
 - **One-off workflow (default):** edit `render_code` / `definition` directly on the workflow via `workflow_update_render_code`, `workflow_patch_render_code`, `workflow_update_definition`. No template file needed. This is the right choice for most edits.
-- **Template authoring:** edit the `.py` file in `commcare_connect/workflow/templates/`, then call `workflow_sync_from_template_file` against a live preview workflow. The `.py` file is the source of truth — do not fork iteration onto the workflow itself. Commit the `.py` when the design has settled.
+- **Template authoring:** edit the `.py` file in `connect_labs/workflow/templates/`, then call `workflow_sync_from_template_file` against a live preview workflow. The `.py` file is the source of truth — do not fork iteration onto the workflow itself. Commit the `.py` when the design has settled.
 
 A common failure mode is iterating directly on a workflow because "deploys are slow," then forgetting to back-port to the template. The sync tool removes that incentive — the template file iteration loop is just as fast as the workflow one.
 
@@ -72,16 +72,16 @@ User: "Make this reusable" or "Save this as a template".
 User: "Create a new workflow from the performance_review template".
 
 - `workflow_create_from_template(template_key="performance_review", opportunity_id=..., name=optional)`.
-- Seed templates live in the repo at `commcare_connect/workflow/templates/*.py`. `template_key` is the module name (e.g. `performance_review`, `kmc_longitudinal`).
+- Seed templates live in the repo at `connect_labs/workflow/templates/*.py`. `template_key` is the module name (e.g. `performance_review`, `kmc_longitudinal`).
 
 ### Editing a run-shaped template's render code
 
 When `workflow_get` returns `saved_runs.supports_saved_runs: true`:
 
-- Inspect `saved_runs.snapshot_schema` to see what keys render code can rely on after completion. If you're adding new fields the template reads, the snapshot must produce them too — either via `snapshot_inputs` (declarative manifest) or a `build_snapshot` hook (computed). Both are authored at the SEED-template level (`commcare_connect/workflow/templates/<key>.py`), not on the live workflow record. If the schema needs to change, that's a `workflow-templates` task, not a `workflow-author` task.
+- Inspect `saved_runs.snapshot_schema` to see what keys render code can rely on after completion. If you're adding new fields the template reads, the snapshot must produce them too — either via `snapshot_inputs` (declarative manifest) or a `build_snapshot` hook (computed). Both are authored at the SEED-template level (`connect_labs/workflow/templates/<key>.py`), not on the live workflow record. If the schema needs to change, that's a `workflow-templates` task, not a `workflow-author` task.
 - The render code's contract is `view.workers` / `view.pipelines.<alias>` / `view.state.<key>` — anywhere the existing JSX reads bare `workers` / `pipelines` / `instance.state` for run data, switch it to `view.X`. `definition`, `links`, `actions`, `onUpdateState` are unchanged.
 - A "Mark Run Complete" button always calls `view.complete({ confirm: "<copy>" })`. Don't POST to `/complete/` directly — the helper handles confirmation and the page reload.
-- Reference: `commcare_connect/workflow/templates/performance_review.py`. See also `commcare_connect/workflow/WORKFLOW_REFERENCE.md` § 9 "Saved-runs templates".
+- Reference: `connect_labs/workflow/templates/performance_review.py`. See also `connect_labs/workflow/WORKFLOW_REFERENCE.md` § 9 "Saved-runs templates".
 
 ### Update definition metadata
 

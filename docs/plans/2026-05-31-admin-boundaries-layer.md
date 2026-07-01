@@ -60,7 +60,7 @@ Lives in the **microplans** app next to its sibling resolver-backed endpoints
 (`CountriesView`, `AdminAreasView`, `AdminAreaGeometryView`), since it renders **both**
 sources through `core/admin_boundaries.py`'s `BoundaryResolver` — not just the labs DB.
 
-- **URL:** `boundaries/viewport/` in `commcare_connect/microplans/urls.py`
+- **URL:** `boundaries/viewport/` in `connect_labs/microplans/urls.py`
   (name `boundary_viewport`), alongside `boundaries/countries/`.
 - **Input** (query params):
   - `bbox=minLng,minLat,maxLng,maxLat` — **required**. Parsed into a `Polygon` (SRID 4326).

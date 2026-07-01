@@ -34,22 +34,22 @@ python manage.py runserver
 
 ## Labs Apps
 
-| App              | Purpose                                            | Docs                                                                       |
-| ---------------- | -------------------------------------------------- | -------------------------------------------------------------------------- |
-| `labs/`          | Core infrastructure: OAuth, API client, middleware | [LABS_GUIDE.md](commcare_connect/labs/LABS_GUIDE.md)                       |
-| `audit/`         | Quality assurance review of FLW visits             | [README](commcare_connect/audit/README.md)                                 |
-| `tasks/`         | Task management for FLW follow-ups                 | [README](commcare_connect/tasks/README.md)                                 |
-| `workflow/`      | Configurable workflow engine with React UIs        | [README](commcare_connect/workflow/README.md)                              |
-| `ai/`            | AI agent integration via pydantic-ai               | [README](commcare_connect/ai/README.md)                                    |
-| `solicitations/` | RFP management scoped by program                   | [README](commcare_connect/solicitations/README.md)                         |
-| `coverage/`      | Delivery unit mapping from CommCare HQ             | [Commands README](commcare_connect/coverage/management/commands/README.md) |
+| App              | Purpose                                            | Docs                                                                   |
+| ---------------- | -------------------------------------------------- | ---------------------------------------------------------------------- |
+| `labs/`          | Core infrastructure: OAuth, API client, middleware | [LABS_GUIDE.md](connect_labs/labs/LABS_GUIDE.md)                       |
+| `audit/`         | Quality assurance review of FLW visits             | [README](connect_labs/audit/README.md)                                 |
+| `tasks/`         | Task management for FLW follow-ups                 | [README](connect_labs/tasks/README.md)                                 |
+| `workflow/`      | Configurable workflow engine with React UIs        | [README](connect_labs/workflow/README.md)                              |
+| `ai/`            | AI agent integration via pydantic-ai               | [README](connect_labs/ai/README.md)                                    |
+| `solicitations/` | RFP management scoped by program                   | [README](connect_labs/solicitations/README.md)                         |
+| `coverage/`      | Delivery unit mapping from CommCare HQ             | [Commands README](connect_labs/coverage/management/commands/README.md) |
 
 ## Documentation Map
 
 - **[CLAUDE.md](CLAUDE.md)** — Architecture overview, app map, critical warnings (auto-loaded by Claude Code)
 - **[.claude/AGENTS.md](.claude/AGENTS.md)** — Full per-app architecture reference, API endpoints, common mistakes
 - **[CONTRIBUTING.md](CONTRIBUTING.md)** — Code style, data_access.py pattern, how to add a new feature
-- **[LABS_GUIDE.md](commcare_connect/labs/LABS_GUIDE.md)** — OAuth setup, API client usage, proxy model patterns
+- **[LABS_GUIDE.md](connect_labs/labs/LABS_GUIDE.md)** — OAuth setup, API client usage, proxy model patterns
 - **[LABS_ARCHITECTURE.md](docs/LABS_ARCHITECTURE.md)** — Architecture diagrams, data flow, decision tree
 - **[PR Guidelines](pr_guidelines.md)** — Pull request best practices
 
@@ -79,7 +79,7 @@ python manage.py get_cli_token
 
 ### CommCare HQ OAuth (for coverage app)
 
-See [coverage commands README](commcare_connect/coverage/management/commands/README.md).
+See [coverage commands README](connect_labs/coverage/management/commands/README.md).
 
 ### AI Integrations
 

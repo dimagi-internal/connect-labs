@@ -22,18 +22,18 @@ normalizes records to visit-dict shape so the existing SQL extraction path works
 
 ### Changes to existing files
 
-**`commcare_connect/labs/analysis/config.py`**
+**`connect_labs/labs/analysis/config.py`**
 - Add `endpoint: str = ""` to `DataSourceConfig`
 - Add `"connect_export"` to the whitelist in `__post_init__`
 
-**`commcare_connect/labs/analysis/pipeline.py`** — 3 dispatch sites
+**`connect_labs/labs/analysis/pipeline.py`** — 3 dispatch sites
 - Site 1 (~line 522): inside the cached-path `elif`s, add a `connect_export` branch
 - Site 2 (~line 619): same pattern for the force-refresh path
 - Site 3 (~line 748): after the `ocs_sessions` block, add a `connect_export` block
 
 ### New file
 
-**`commcare_connect/labs/analysis/backends/sql/connect_export_fetcher.py`**
+**`connect_labs/labs/analysis/backends/sql/connect_export_fetcher.py`**
 - `fetch_connect_export_as_visit_dicts(request, data_source, access_token, opportunity_id)`
 - Paginates `GET {CONNECT_PRODUCTION_URL}/export/opportunity/<id>/<endpoint>/`
 - Uses `Accept: application/json; version=2.0` and Bearer token auth

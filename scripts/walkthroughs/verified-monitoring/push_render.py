@@ -1,7 +1,7 @@
 """Push the Verified Monitoring render template to the live workflow.
 
 The render source of truth is the repo file
-``commcare_connect/workflow/templates/verified_monitoring_render.js``. This
+``connect_labs/workflow/templates/verified_monitoring_render.js``. This
 helper ships it to the live workflow (def 3699 on synthetic opp 10008) via the
 ``connect_labs`` MCP — the no-deploy render loop. It fetches the current
 ``render_code_version`` with ``workflow_get`` and pushes with
@@ -28,7 +28,7 @@ sys.path.insert(0, str(HERE))
 from regenerate import MCP_URL, _call, _token  # noqa: E402
 
 REPO_ROOT = HERE.parents[2]
-RENDER_FILE = REPO_ROOT / "commcare_connect/workflow/templates/verified_monitoring_render.js"
+RENDER_FILE = REPO_ROOT / "connect_labs/workflow/templates/verified_monitoring_render.js"
 OPP, WF = 10008, 3699
 
 

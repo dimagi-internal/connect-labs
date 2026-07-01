@@ -98,7 +98,7 @@ scenes:
       MAM rate < 3%, gender split outside 40-60%) and emits one flag record per tripped
       rule
     id: flag-catalog-rules
-    verify: 'pytest commcare_connect/custom_analysis: flagged MUAC archetype distributions
+    verify: 'pytest connect_labs/custom_analysis: flagged MUAC archetype distributions
       trip at least one catalog rule (test_flagged_muac_archetypes_actually_trip_a_flag)'
   narrative: Amani opens this week's in-progress nutrition review and, while he reads
     the per-worker table, the review computes its own quality checks and raises a

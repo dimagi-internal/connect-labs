@@ -49,12 +49,12 @@ git commit -m "feat: add LABS_EXPORTS_BUCKET setting"
 ### Task 2: S3 export utility
 
 **Files:**
-- Create: `commcare_connect/labs/s3_export.py`
-- Create: `commcare_connect/labs/tests/test_s3_export.py`
+- Create: `connect_labs/labs/s3_export.py`
+- Create: `connect_labs/labs/tests/test_s3_export.py`
 
 #### Step 1: Write failing tests
 
-- [ ] Create `commcare_connect/labs/tests/test_s3_export.py`:
+- [ ] Create `connect_labs/labs/tests/test_s3_export.py`:
 
 ```python
 """Tests for labs/s3_export.py — S3 CSV upsert utility."""
@@ -65,9 +65,9 @@ from unittest.mock import MagicMock, call, patch
 import pytest
 from botocore.exceptions import ClientError
 
-from commcare_connect.audit.models import AuditSessionRecord
-from commcare_connect.labs import s3_export
-from commcare_connect.workflow.data_access import WorkflowRunRecord
+from connect_labs.audit.models import AuditSessionRecord
+from connect_labs.labs import s3_export
+from connect_labs.workflow.data_access import WorkflowRunRecord
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -143,7 +143,7 @@ def _no_such_key_error():
 
 # ── upsert_workflow_run ───────────────────────────────────────────────────────
 
-@patch("commcare_connect.labs.s3_export.boto3")
+@patch("connect_labs.labs.s3_export.boto3")
 def test_upsert_workflow_run_creates_new_file(mock_boto3, settings):
     """When CSV doesn't exist yet, creates it with header + one row."""
     settings.LABS_EXPORTS_BUCKET = "test-bucket"
@@ -167,7 +167,7 @@ def test_upsert_workflow_run_creates_new_file(mock_boto3, settings):
     assert reader[0]["status"] == "in_progress"
 
 
-@patch("commcare_connect.labs.s3_export.boto3")
+@patch("connect_labs.labs.s3_export.boto3")
 def test_upsert_workflow_run_replaces_existing_row(mock_boto3, settings):
     """When run_id row exists, it is replaced with updated data."""
     settings.LABS_EXPORTS_BUCKET = "test-bucket"
@@ -192,7 +192,7 @@ def test_upsert_workflow_run_replaces_existing_row(mock_boto3, settings):
     assert reader[0]["opportunity_name"] == "My Opp"
 
 
-@patch("commcare_connect.labs.s3_export.boto3")
+@patch("connect_labs.labs.s3_export.boto3")
 def test_upsert_workflow_run_no_bucket_is_noop(mock_boto3, settings):
     """When LABS_EXPORTS_BUCKET is None, does nothing."""
     settings.LABS_EXPORTS_BUCKET = None
@@ -201,7 +201,7 @@ def test_upsert_workflow_run_no_bucket_is_noop(mock_boto3, settings):
     mock_boto3.client.assert_not_called()
 
 
-@patch("commcare_connect.labs.s3_export.boto3")
+@patch("connect_labs.labs.s3_export.boto3")
 def test_upsert_workflow_run_s3_error_is_silenced(mock_boto3, settings):
     """When S3 raises an unexpected error, it is logged and swallowed."""
     settings.LABS_EXPORTS_BUCKET = "test-bucket"
@@ -217,7 +217,7 @@ def test_upsert_workflow_run_s3_error_is_silenced(mock_boto3, settings):
 
 # ── upsert_audit_session ──────────────────────────────────────────────────────
 
-@patch("commcare_connect.labs.s3_export.boto3")
+@patch("connect_labs.labs.s3_export.boto3")
 def test_upsert_audit_session_creates_new_file(mock_boto3, settings):
     """When CSV doesn't exist yet, creates it with header + one row."""
     settings.LABS_EXPORTS_BUCKET = "test-bucket"
@@ -239,7 +239,7 @@ def test_upsert_audit_session_creates_new_file(mock_boto3, settings):
     assert reader[0]["visit_count"] == "2"
 
 
-@patch("commcare_connect.labs.s3_export.boto3")
+@patch("connect_labs.labs.s3_export.boto3")
 def test_upsert_audit_session_replaces_existing_row(mock_boto3, settings):
     """When session_id row exists, status is updated."""
     settings.LABS_EXPORTS_BUCKET = "test-bucket"
@@ -263,7 +263,7 @@ def test_upsert_audit_session_replaces_existing_row(mock_boto3, settings):
     assert reader[0]["overall_result"] == "pass"
 
 
-@patch("commcare_connect.labs.s3_export.boto3")
+@patch("connect_labs.labs.s3_export.boto3")
 def test_upsert_audit_session_organization_id_coerced_to_int(mock_boto3, settings):
     """organization_id (str in API) is written as int string, not raw string."""
     settings.LABS_EXPORTS_BUCKET = "test-bucket"
@@ -280,7 +280,7 @@ def test_upsert_audit_session_organization_id_coerced_to_int(mock_boto3, setting
     assert reader[0]["organization_id"] == "10"
 
 
-@patch("commcare_connect.labs.s3_export.boto3")
+@patch("connect_labs.labs.s3_export.boto3")
 def test_row_count_in_metadata(mock_boto3, settings):
     """put_object metadata row-count reflects cumulative rows after each write."""
     settings.LABS_EXPORTS_BUCKET = "test-bucket"
@@ -309,11 +309,11 @@ def test_row_count_in_metadata(mock_boto3, settings):
 - [ ] **Step 2: Run tests to confirm they fail**
 
 ```bash
-pytest commcare_connect/labs/tests/test_s3_export.py -v
+pytest connect_labs/labs/tests/test_s3_export.py -v
 ```
 Expected: all FAIL with `ModuleNotFoundError: cannot import 's3_export'`
 
-- [ ] **Step 3: Create `commcare_connect/labs/s3_export.py`**
+- [ ] **Step 3: Create `connect_labs/labs/s3_export.py`**
 
 ```python
 """
@@ -507,14 +507,14 @@ def upsert_audit_session(session) -> None:
 - [ ] **Step 4: Run tests — verify they pass**
 
 ```bash
-pytest commcare_connect/labs/tests/test_s3_export.py -v
+pytest connect_labs/labs/tests/test_s3_export.py -v
 ```
 Expected: all PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add commcare_connect/labs/s3_export.py commcare_connect/labs/tests/test_s3_export.py
+git add connect_labs/labs/s3_export.py connect_labs/labs/tests/test_s3_export.py
 git commit -m "feat: add labs/s3_export.py with CSV upsert for workflow runs and audit sessions"
 ```
 
@@ -525,15 +525,15 @@ git commit -m "feat: add labs/s3_export.py with CSV upsert for workflow runs and
 ### Task 3: Hook workflow run create and complete
 
 **Files:**
-- Modify: `commcare_connect/workflow/views.py`
+- Modify: `connect_labs/workflow/views.py`
 
 - [ ] **Step 1: Add imports at top of `workflow/views.py`**
 
 Find the existing imports block at the top of the file. Add both — neither is currently imported in this file:
 
 ```python
-from commcare_connect.labs import s3_export
-from commcare_connect.labs.context import get_org_data
+from connect_labs.labs import s3_export
+from connect_labs.labs.context import get_org_data
 ```
 
 - [ ] **Step 2: Hook create_run in `WorkflowRunView.get()`**
@@ -599,14 +599,14 @@ After the `if not result:` guard (after line 805), insert the export call before
 - [ ] **Step 4: Run existing workflow tests — verify nothing is broken**
 
 ```bash
-pytest commcare_connect/workflow/ -v
+pytest connect_labs/workflow/ -v
 ```
 Expected: all existing tests PASS (export is a no-op because `LABS_EXPORTS_BUCKET` is not set in test settings)
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add commcare_connect/workflow/views.py
+git add connect_labs/workflow/views.py
 git commit -m "feat: export workflow run to S3 on create and complete"
 ```
 
@@ -615,12 +615,12 @@ git commit -m "feat: export workflow run to S3 on create and complete"
 ### Task 4: Hook audit session create and complete
 
 **Files:**
-- Modify: `commcare_connect/audit/views.py`
+- Modify: `connect_labs/audit/views.py`
 
 - [ ] **Step 1: Add import at top of `audit/views.py`**
 
 ```python
-from commcare_connect.labs import s3_export
+from connect_labs.labs import s3_export
 ```
 
 - [ ] **Step 2: Hook first create_audit_session call (per-FLW loop, line ~828)**
@@ -694,14 +694,14 @@ After `session = data_access.save_audit_session(session)` and before `return Jso
 - [ ] **Step 5: Run existing audit tests — verify nothing is broken**
 
 ```bash
-pytest commcare_connect/audit/ -v
+pytest connect_labs/audit/ -v
 ```
 Expected: all existing tests PASS
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add commcare_connect/audit/views.py
+git add connect_labs/audit/views.py
 git commit -m "feat: export audit session to S3 on create and complete"
 ```
 
@@ -712,16 +712,16 @@ git commit -m "feat: export audit session to S3 on create and complete"
 ### Task 5: Views and URL config
 
 **Files:**
-- Create: `commcare_connect/custom_analysis/exports/__init__.py`
-- Create: `commcare_connect/custom_analysis/exports/views.py`
-- Create: `commcare_connect/custom_analysis/exports/urls.py`
+- Create: `connect_labs/custom_analysis/exports/__init__.py`
+- Create: `connect_labs/custom_analysis/exports/views.py`
+- Create: `connect_labs/custom_analysis/exports/urls.py`
 - Modify: `config/urls.py`
-- Create: `commcare_connect/custom_analysis/exports/tests/__init__.py`
-- Create: `commcare_connect/custom_analysis/exports/tests/test_views.py`
+- Create: `connect_labs/custom_analysis/exports/tests/__init__.py`
+- Create: `connect_labs/custom_analysis/exports/tests/test_views.py`
 
 #### Step 1: Write failing tests
 
-- [ ] Create `commcare_connect/custom_analysis/exports/tests/test_views.py`:
+- [ ] Create `connect_labs/custom_analysis/exports/tests/test_views.py`:
 
 ```python
 """Tests for the exports download page."""
@@ -731,7 +731,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from django.test import Client, override_settings
 
-from commcare_connect.users.models import User
+from connect_labs.users.models import User
 
 LABS_SETTINGS = dict(
     IS_LABS_ENVIRONMENT=True,
@@ -770,7 +770,7 @@ def non_dimagi_client(db):
 
 
 @override_settings(**LABS_SETTINGS, LABS_EXPORTS_BUCKET="test-bucket")
-@patch("commcare_connect.custom_analysis.exports.views.boto3")
+@patch("connect_labs.custom_analysis.exports.views.boto3")
 def test_exports_page_lists_files(mock_boto3, dimagi_client):
     """Page renders with file metadata from S3 head_object."""
     mock_s3 = MagicMock()
@@ -813,10 +813,10 @@ def test_exports_page_requires_login(client):
 
 
 @override_settings(**LABS_SETTINGS, LABS_EXPORTS_BUCKET="test-bucket")
-@patch("commcare_connect.custom_analysis.exports.views.boto3")
+@patch("connect_labs.custom_analysis.exports.views.boto3")
 def test_download_redirects_to_presigned_url(mock_boto3, dimagi_client):
     """Download endpoint generates pre-signed URL and redirects."""
-    from commcare_connect.labs.s3_export import WORKFLOW_RUNS_KEY
+    from connect_labs.labs.s3_export import WORKFLOW_RUNS_KEY
 
     mock_s3 = MagicMock()
     mock_boto3.client.return_value = mock_s3
@@ -843,13 +843,13 @@ def test_download_rejects_unknown_key(dimagi_client):
 - [ ] **Step 2: Run tests to confirm they fail**
 
 ```bash
-pytest commcare_connect/custom_analysis/exports/tests/test_views.py -v
+pytest connect_labs/custom_analysis/exports/tests/test_views.py -v
 ```
 Expected: FAIL (URL not found / module not found)
 
-- [ ] **Step 3: Create `commcare_connect/custom_analysis/exports/__init__.py`** (empty file)
+- [ ] **Step 3: Create `connect_labs/custom_analysis/exports/__init__.py`** (empty file)
 
-- [ ] **Step 4: Create `commcare_connect/custom_analysis/exports/views.py`**
+- [ ] **Step 4: Create `connect_labs/custom_analysis/exports/views.py`**
 
 ```python
 """Downloads page for S3-backed CSV exports."""
@@ -861,8 +861,8 @@ from django.http import HttpResponse, HttpResponseRedirect
 from django.views import View
 from django.views.generic import TemplateView
 
-from commcare_connect.custom_analysis.audit_of_audits.views import DimagiUserRequiredMixin
-from commcare_connect.labs.s3_export import AUDIT_SESSIONS_KEY, WORKFLOW_RUNS_KEY
+from connect_labs.custom_analysis.audit_of_audits.views import DimagiUserRequiredMixin
+from connect_labs.labs.s3_export import AUDIT_SESSIONS_KEY, WORKFLOW_RUNS_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -934,7 +934,7 @@ class DownloadExportView(LoginRequiredMixin, DimagiUserRequiredMixin, View):
         return HttpResponseRedirect(url)
 ```
 
-- [ ] **Step 5: Create `commcare_connect/custom_analysis/exports/urls.py`**
+- [ ] **Step 5: Create `connect_labs/custom_analysis/exports/urls.py`**
 
 ```python
 from django.urls import path
@@ -956,23 +956,23 @@ After the `audit_of_audits` entry (around line 44), add:
 ```python
     path(
         "custom_analysis/exports/",
-        include("commcare_connect.custom_analysis.exports.urls", namespace="exports"),
+        include("connect_labs.custom_analysis.exports.urls", namespace="exports"),
     ),
 ```
 
-- [ ] **Step 7: Create `commcare_connect/custom_analysis/exports/tests/__init__.py`** (empty file)
+- [ ] **Step 7: Create `connect_labs/custom_analysis/exports/tests/__init__.py`** (empty file)
 
 - [ ] **Step 8: Run tests — verify they pass**
 
 ```bash
-pytest commcare_connect/custom_analysis/exports/tests/test_views.py -v
+pytest connect_labs/custom_analysis/exports/tests/test_views.py -v
 ```
 Expected: all PASS
 
 - [ ] **Step 9: Commit**
 
 ```bash
-git add commcare_connect/custom_analysis/exports/ config/urls.py
+git add connect_labs/custom_analysis/exports/ config/urls.py
 git commit -m "feat: add exports download page with pre-signed S3 links"
 ```
 
@@ -981,7 +981,7 @@ git commit -m "feat: add exports download page with pre-signed S3 links"
 ### Task 6: Template
 
 **Files:**
-- Create: `commcare_connect/templates/custom_analysis/exports/index.html`
+- Create: `connect_labs/templates/custom_analysis/exports/index.html`
 
 - [ ] **Step 1: Create the template**
 
@@ -1053,14 +1053,14 @@ git commit -m "feat: add exports download page with pre-signed S3 links"
 - [ ] **Step 2: Verify template renders (smoke test)**
 
 ```bash
-pytest commcare_connect/custom_analysis/exports/tests/test_views.py::test_exports_page_lists_files -v
+pytest connect_labs/custom_analysis/exports/tests/test_views.py::test_exports_page_lists_files -v
 ```
 Expected: PASS (template renders without error)
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add commcare_connect/templates/custom_analysis/exports/index.html
+git add connect_labs/templates/custom_analysis/exports/index.html
 git commit -m "feat: add exports download page template"
 ```
 
@@ -1071,10 +1071,10 @@ git commit -m "feat: add exports download page template"
 - [ ] **Run the full test suite**
 
 ```bash
-pytest commcare_connect/labs/tests/test_s3_export.py \
-       commcare_connect/custom_analysis/exports/tests/test_views.py \
-       commcare_connect/workflow/ \
-       commcare_connect/audit/ \
+pytest connect_labs/labs/tests/test_s3_export.py \
+       connect_labs/custom_analysis/exports/tests/test_views.py \
+       connect_labs/workflow/ \
+       connect_labs/audit/ \
        -v
 ```
 Expected: all PASS

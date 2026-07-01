@@ -5,7 +5,7 @@
 
 ## Problem
 
-Workflow templates are checked into git at `commcare_connect/workflow/templates/*.py`. Workflow *instances* (created from those templates via `workflow_create_from_template`) live in production Connect as labs records and are edited via MCP tools that take effect immediately, no deploy required.
+Workflow templates are checked into git at `connect_labs/workflow/templates/*.py`. Workflow *instances* (created from those templates via `workflow_create_from_template`) live in production Connect as labs records and are edited via MCP tools that take effect immediately, no deploy required.
 
 That asymmetry creates a temptation: when iterating, edit the live workflow's `render_code`/`definition` directly because it's fast — even when the change really belongs in the template. The template file then drifts out of sync with the workflow, and the version-controlled source of truth quietly loses authority. This is the failure mode that bit a teammate recently (Ali / mbw_auditing_v4): ~15 commits of authoring iteration on the template file, but the actual current state lived in uncommitted edits and in the live workflow.
 
@@ -144,7 +144,7 @@ Partial-failure handling: any failure mid-sequence surfaces an `MCPToolError` wi
 > **Are you iterating on a template that should land in git, or just tweaking a one-off workflow?**
 >
 > - **One-off workflow (default):** edit `render_code` / `definition` directly on the workflow via `workflow_update_render_code`, `workflow_patch_render_code`, `workflow_update_definition`. No template file needed. This is the right choice for most edits.
-> - **Template authoring:** edit the `.py` file in `commcare_connect/workflow/templates/`, then call `workflow_sync_from_template_file` to push it to your live preview workflow. The template file is the source of truth — do not fork iteration onto the workflow itself. Commit the `.py` when the design has settled.
+> - **Template authoring:** edit the `.py` file in `connect_labs/workflow/templates/`, then call `workflow_sync_from_template_file` to push it to your live preview workflow. The template file is the source of truth — do not fork iteration onto the workflow itself. Commit the `.py` when the design has settled.
 
 `workflow-templates` (the seed-template authoring skill) gets a pointer to the new tool: "While iterating on a new template, use `workflow_sync_from_template_file` against a preview workflow created via `workflow_create_from_template`. This gives you the deploy-free iteration loop the in-place `workflow_update_*` tools provide for one-off workflows."
 

@@ -32,7 +32,7 @@ MCP tools; the VM-specific assembly stays in the demo script.
 
 ## Components
 
-### 1. Generic generator library — `commcare_connect/labs/survey_sim/`
+### 1. Generic generator library — `connect_labs/labs/survey_sim/`
 
 Pure, no I/O, parallel to `survey_quality/`. The reusable "generate a
 representative synthetic survey run for a correctly-parameterized plan" engine.
@@ -77,7 +77,7 @@ Share of primary records with `sample_type == "primary"`; `detail.by_surveyor`
 so it rolls up per surveyor onto the scorecard like the other Layer-1 metrics.
 Honest "computed from the records."
 
-### 3. Generic microplans MCP read tools — `commcare_connect/mcp/tools/microplans.py`
+### 3. Generic microplans MCP read tools — `connect_labs/mcp/tools/microplans.py`
 
 - `microplans_list_plans(program_id)` → `{plans:[{id,name,phase,...}],
   groups:[{group_id,name,kind,plan_ids,arm_for:{plan_id:arm}}]}`.

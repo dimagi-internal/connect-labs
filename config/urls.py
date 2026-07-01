@@ -7,7 +7,7 @@ from django.views.generic import RedirectView, TemplateView
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from rest_framework.authtoken.views import obtain_auth_token
 
-from commcare_connect.mcp.admin_views import create_token_browser
+from connect_labs.mcp.admin_views import create_token_browser
 
 from . import views
 
@@ -15,7 +15,7 @@ urlpatterns = [
     # MCP token creation — registered here at the path Django sees after Starlette's
     # Mount("/mcp/admin", ...) strips the prefix, i.e. /create-token/ → this view.
     path("create-token/", create_token_browser, name="mcp_admin_create_token"),
-    path("", include("commcare_connect.prelogin.urls")),
+    path("", include("connect_labs.prelogin.urls")),
     # The ACE Web SPA is served by a separate nginx container; the ALB only
     # routes `/ace/*` to it. A bare `/ace` would fall through here and 404 —
     # catch it and redirect to the slash variant so typed URLs work.
@@ -26,12 +26,12 @@ urlpatterns = [
     path(".well-known/assetlinks.json", views.assetlinks_json, name="assetlinks_json"),
     path("o/", include("oauth2_provider.urls", namespace="oauth2_provider")),
     # Labs apps
-    path("solicitations/", include("commcare_connect.solicitations.urls", namespace="solicitations")),
-    path("funder/", include("commcare_connect.funder_dashboard.urls", namespace="funder_dashboard")),
-    path("tasks/", include("commcare_connect.tasks.urls", namespace="tasks")),
-    path("audit/", include("commcare_connect.audit.urls", namespace="audit")),
-    path("coverage/", include("commcare_connect.coverage.urls", namespace="coverage")),
-    path("microplans/", include("commcare_connect.microplans.urls", namespace="microplans")),
+    path("solicitations/", include("connect_labs.solicitations.urls", namespace="solicitations")),
+    path("funder/", include("connect_labs.funder_dashboard.urls", namespace="funder_dashboard")),
+    path("tasks/", include("connect_labs.tasks.urls", namespace="tasks")),
+    path("audit/", include("connect_labs.audit.urls", namespace="audit")),
+    path("coverage/", include("connect_labs.coverage.urls", namespace="coverage")),
+    path("microplans/", include("connect_labs.microplans.urls", namespace="microplans")),
     # Back-compat: the app was first shipped at /rooftop-surveys/ (a deployed opp may
     # reference it). Redirect the old prefix to the renamed /microplans/.
     path(
@@ -39,35 +39,35 @@ urlpatterns = [
         RedirectView.as_view(url="/microplans/%(subpath)s", query_string=True, permanent=False),
         name="rooftop_surveys_legacy_redirect",
     ),
-    path("mcp/", include("commcare_connect.mcp.urls", namespace="mcp")),
-    path("labs/explorer/", include("commcare_connect.labs.explorer.urls", namespace="explorer")),
-    path("labs/", include("commcare_connect.labs.urls", namespace="labs")),
+    path("mcp/", include("connect_labs.mcp.urls", namespace="mcp")),
+    path("labs/explorer/", include("connect_labs.labs.explorer.urls", namespace="explorer")),
+    path("labs/", include("connect_labs.labs.urls", namespace="labs")),
     path(
         "custom_analysis/chc_nutrition/",
-        include("commcare_connect.custom_analysis.chc_nutrition.urls", namespace="chc_nutrition"),
+        include("connect_labs.custom_analysis.chc_nutrition.urls", namespace="chc_nutrition"),
     ),
     path(
         "custom_analysis/kmc/",
-        include("commcare_connect.custom_analysis.kmc.urls", namespace="kmc"),
+        include("connect_labs.custom_analysis.kmc.urls", namespace="kmc"),
     ),
     path(
         "custom_analysis/mbw_monitoring/",
-        include("commcare_connect.workflow.templates.mbw_monitoring.urls", namespace="mbw"),
+        include("connect_labs.workflow.templates.mbw_monitoring.urls", namespace="mbw"),
     ),
     path(
         "custom_analysis/rutf/",
-        include("commcare_connect.custom_analysis.rutf.urls", namespace="rutf"),
+        include("connect_labs.custom_analysis.rutf.urls", namespace="rutf"),
     ),
     path(
         "custom_analysis/audit_of_audits/",
-        include("commcare_connect.custom_analysis.audit_of_audits.urls", namespace="audit_of_audits"),
+        include("connect_labs.custom_analysis.audit_of_audits.urls", namespace="audit_of_audits"),
     ),
     path(
         "custom_analysis/exports/",
-        include("commcare_connect.custom_analysis.exports.urls", namespace="exports"),
+        include("connect_labs.custom_analysis.exports.urls", namespace="exports"),
     ),
-    path("ai/", include("commcare_connect.ai.urls", namespace="ai")),
-    path("campaign/", include("commcare_connect.campaign.urls", namespace="campaign")),
+    path("ai/", include("connect_labs.ai.urls", namespace="ai")),
+    path("campaign/", include("connect_labs.campaign.urls", namespace="campaign")),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
 # Django Admin (conditionally include if admin app is installed)
@@ -78,7 +78,7 @@ if "django.contrib.admin" in settings.INSTALLED_APPS:
 urlpatterns += [
     # Synthetic-opportunity export API — must precede the "api/" router include
     # below, since include() does not backtrack to later patterns on a miss.
-    path("api/export/", include("commcare_connect.labs.export_api.urls")),
+    path("api/export/", include("connect_labs.labs.export_api.urls")),
     # API base url
     path("api/", include("config.api_router")),
     # DRF auth token

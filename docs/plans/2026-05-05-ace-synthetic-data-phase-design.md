@@ -220,7 +220,7 @@ coaching_arcs:
 
 ### 5.2 Synthetic generator engine
 
-New package at `commcare_connect/labs/synthetic/generator/`:
+New package at `connect_labs/labs/synthetic/generator/`:
 
 ```
 generator/
@@ -242,7 +242,7 @@ Public entry: `engine.generate(manifest: Manifest, opportunity_detail: dict, for
 
 ### 5.3 Two new SEED workflow templates
 
-Both ship as repo code at `commcare_connect/workflow/templates/`. They are **scaffolds** — stable data plumbing the polish skill extends per-opp.
+Both ship as repo code at `connect_labs/workflow/templates/`. They are **scaffolds** — stable data plumbing the polish skill extends per-opp.
 
 **`llo_weekly_review.py`** — single-opp, supports saved-runs.
 - DEFINITION accepts `kpi_config` (list of KPI dicts: `{name, field_path, aggregation, threshold_underperform, threshold_target}`) and `coaching_task_template` (`{subject_template, ocs_persona}`).
@@ -259,7 +259,7 @@ Both templates are unit-tested following existing template conventions and regis
 
 ### 5.4 New MCP tools
 
-Five new tools in `commcare_connect/mcp/tools/`, registered in `tool_registry.py`. All auth via existing PAT.
+Five new tools in `connect_labs/mcp/tools/`, registered in `tool_registry.py`. All auth via existing PAT.
 
 | Tool | Wraps |
 |------|-------|

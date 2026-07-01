@@ -74,7 +74,7 @@ A new app `rooftop_surveys/` is the right call. It can borrow `coverage`'s OAuth
 ## 6. New app layout
 
 ```
-commcare_connect/rooftop_surveys/
+connect_labs/rooftop_surveys/
 ├── __init__.py
 ├── apps.py
 ├── urls.py
@@ -124,7 +124,7 @@ commcare_connect/rooftop_surveys/
 Plus three new files under `workflow/templates/`:
 
 ```
-commcare_connect/workflow/templates/
+connect_labs/workflow/templates/
 ├── rooftop_monitoring.py            # the workflow that wraps Stage B + dashboard for funder/LLO viewers
 ├── rooftop_monitoring_render.js
 └── rooftop_back_check.py            # the workflow that drives the back-check loop (Stage C)
@@ -176,7 +176,7 @@ So: records are the source of truth; the workflow template is a configured view 
 ### 8.2 Library shape
 
 ```python
-# commcare_connect/rooftop_surveys/sampling/cluster.py
+# connect_labs/rooftop_surveys/sampling/cluster.py
 
 from dataclasses import dataclass
 
@@ -256,7 +256,7 @@ TEMPLATE = {
         "workers": True,
         "state_keys": ["selected_arm", "selected_cluster"],
     },
-    "data_loader": "commcare_connect.rooftop_surveys.workflow_adapter.load_for_run",
+    "data_loader": "connect_labs.rooftop_surveys.workflow_adapter.load_for_run",
 }
 ```
 

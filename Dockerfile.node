@@ -19,8 +19,8 @@ COPY tsconfig.json /app/tsconfig.json
 COPY components/ /app/components/
 COPY lib/ /app/lib/
 COPY tailwind/ /app/tailwind/
-# Full commcare_connect/ dir so Tailwind can scan templates AND Python files
+# Full connect_labs/ dir so Tailwind can scan templates AND Python files
 # for class names (views, forms, templatetags all contain Tailwind classes)
-COPY commcare_connect/ /app/commcare_connect/
+COPY connect_labs/ /app/connect_labs/
 
 RUN npm run build

@@ -218,7 +218,7 @@ def main() -> None:
         # Scene 6: open the "Initiate AI Assistant" modal. The bot dropdown
         # gets populated via /tasks/api/ocs/bots/ which returns the synthetic
         # "MUAC Coaching" entry for synthetic opps (see OCSBotsListAPIView
-        # short-circuit in commcare_connect/tasks/views.py). The prompt
+        # short-circuit in connect_labs/tasks/views.py). The prompt
         # textarea pre-fills from this.taskForm.coaching_prompt (PR #282)
         # — the long-form bot opener — via showAIModal() in
         # task_create_edit.html, falling back to description for tasks

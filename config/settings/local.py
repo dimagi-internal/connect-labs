@@ -57,9 +57,9 @@ OCS_OAUTH_CLIENT_SECRET = env("OCS_OAUTH_CLIENT_SECRET", default="")
 
 # Add labs app to installed apps
 INSTALLED_APPS = INSTALLED_APPS + [  # noqa: F405
-    "commcare_connect.labs",
-    "commcare_connect.custom_analysis.chc_nutrition",
-    "commcare_connect.campaign",
+    "connect_labs.labs",
+    "connect_labs.custom_analysis.chc_nutrition",
+    "connect_labs.campaign",
 ]
 
 # Add labs context middleware after auth
@@ -67,10 +67,10 @@ MIDDLEWARE = list(MIDDLEWARE)  # noqa: F405
 _auth_idx = MIDDLEWARE.index("django.contrib.auth.middleware.AuthenticationMiddleware")
 # OAuth session sync runs first so the rest of the stack sees a fresh
 # session.labs_oauth (or a logged-out user, if refresh failed). See
-# commcare_connect/labs/oauth_session.py.
-MIDDLEWARE.insert(_auth_idx + 1, "commcare_connect.labs.oauth_session.LabsOAuthSessionMiddleware")
-MIDDLEWARE.insert(_auth_idx + 2, "commcare_connect.labs.context.LabsContextMiddleware")
-MIDDLEWARE.insert(_auth_idx + 3, "commcare_connect.campaign.middleware.CampaignOAuthSessionMiddleware")
+# connect_labs/labs/oauth_session.py.
+MIDDLEWARE.insert(_auth_idx + 1, "connect_labs.labs.oauth_session.LabsOAuthSessionMiddleware")
+MIDDLEWARE.insert(_auth_idx + 2, "connect_labs.labs.context.LabsContextMiddleware")
+MIDDLEWARE.insert(_auth_idx + 3, "connect_labs.campaign.middleware.CampaignOAuthSessionMiddleware")
 
 # Pipeline cache settings for local development
 # 24-hour cache TTL for dev (production default: 1 hour)

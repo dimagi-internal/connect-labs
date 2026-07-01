@@ -2,7 +2,7 @@ from django.conf import settings
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter, SimpleRouter
 
-from commcare_connect.users.api.views import UserViewSet
+from connect_labs.users.api.views import UserViewSet
 
 if settings.DEBUG:
     router = DefaultRouter()

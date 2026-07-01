@@ -13,12 +13,12 @@
 ### Task 1: Add allocation properties to FundRecord model
 
 **Files:**
-- Modify: `commcare_connect/funder_dashboard/models.py`
-- Test: `commcare_connect/funder_dashboard/tests/test_models.py`
+- Modify: `connect_labs/funder_dashboard/models.py`
+- Test: `connect_labs/funder_dashboard/tests/test_models.py`
 
 **Step 1: Write failing tests**
 
-Add to `commcare_connect/funder_dashboard/tests/test_models.py`:
+Add to `connect_labs/funder_dashboard/tests/test_models.py`:
 
 ```python
 class TestFundRecordAllocations:
@@ -59,12 +59,12 @@ class TestFundRecordAllocations:
 
 **Step 2: Run tests to verify they fail**
 
-Run: `pytest commcare_connect/funder_dashboard/tests/test_models.py::TestFundRecordAllocations -v`
+Run: `pytest connect_labs/funder_dashboard/tests/test_models.py::TestFundRecordAllocations -v`
 Expected: FAIL — `allocations`, `committed_amount`, `remaining_amount` not defined
 
 **Step 3: Implement properties**
 
-Add to `commcare_connect/funder_dashboard/models.py` inside `FundRecord`:
+Add to `connect_labs/funder_dashboard/models.py` inside `FundRecord`:
 
 ```python
     @property
@@ -83,13 +83,13 @@ Add to `commcare_connect/funder_dashboard/models.py` inside `FundRecord`:
 
 **Step 4: Run tests to verify they pass**
 
-Run: `pytest commcare_connect/funder_dashboard/tests/test_models.py -v`
+Run: `pytest connect_labs/funder_dashboard/tests/test_models.py -v`
 Expected: All PASS
 
 **Step 5: Commit**
 
 ```bash
-git add commcare_connect/funder_dashboard/models.py commcare_connect/funder_dashboard/tests/test_models.py
+git add connect_labs/funder_dashboard/models.py connect_labs/funder_dashboard/tests/test_models.py
 git commit -m "feat: add allocation properties to FundRecord model"
 ```
 
@@ -98,12 +98,12 @@ git commit -m "feat: add allocation properties to FundRecord model"
 ### Task 2: Add allocation methods to data access layer
 
 **Files:**
-- Modify: `commcare_connect/funder_dashboard/data_access.py`
-- Test: `commcare_connect/funder_dashboard/tests/test_data_access.py`
+- Modify: `connect_labs/funder_dashboard/data_access.py`
+- Test: `connect_labs/funder_dashboard/tests/test_data_access.py`
 
 **Step 1: Write failing tests**
 
-Add to `commcare_connect/funder_dashboard/tests/test_data_access.py`:
+Add to `connect_labs/funder_dashboard/tests/test_data_access.py`:
 
 ```python
 class TestAddAllocation:
@@ -151,12 +151,12 @@ class TestRemoveAllocation:
 
 **Step 2: Run tests to verify they fail**
 
-Run: `pytest commcare_connect/funder_dashboard/tests/test_data_access.py::TestAddAllocation -v`
+Run: `pytest connect_labs/funder_dashboard/tests/test_data_access.py::TestAddAllocation -v`
 Expected: FAIL — `add_allocation` not defined
 
 **Step 3: Implement methods**
 
-Add to `commcare_connect/funder_dashboard/data_access.py` inside `FunderDashboardDataAccess`:
+Add to `connect_labs/funder_dashboard/data_access.py` inside `FunderDashboardDataAccess`:
 
 ```python
     def add_allocation(self, fund_id: int, allocation: dict) -> FundRecord:
@@ -185,13 +185,13 @@ Add to `commcare_connect/funder_dashboard/data_access.py` inside `FunderDashboar
 
 **Step 4: Run tests to verify they pass**
 
-Run: `pytest commcare_connect/funder_dashboard/tests/test_data_access.py -v`
+Run: `pytest connect_labs/funder_dashboard/tests/test_data_access.py -v`
 Expected: All PASS
 
 **Step 5: Commit**
 
 ```bash
-git add commcare_connect/funder_dashboard/data_access.py commcare_connect/funder_dashboard/tests/test_data_access.py
+git add connect_labs/funder_dashboard/data_access.py connect_labs/funder_dashboard/tests/test_data_access.py
 git commit -m "feat: add allocation methods to FunderDashboardDataAccess"
 ```
 
@@ -200,13 +200,13 @@ git commit -m "feat: add allocation methods to FunderDashboardDataAccess"
 ### Task 3: Auto-create allocation in award flow
 
 **Files:**
-- Modify: `commcare_connect/solicitations/data_access.py`
-- Modify: `commcare_connect/solicitations/views.py`
-- Test: `commcare_connect/solicitations/tests/test_data_access.py`
+- Modify: `connect_labs/solicitations/data_access.py`
+- Modify: `connect_labs/solicitations/views.py`
+- Test: `connect_labs/solicitations/tests/test_data_access.py`
 
 **Step 1: Write failing test**
 
-Add to `commcare_connect/solicitations/tests/test_data_access.py`:
+Add to `connect_labs/solicitations/tests/test_data_access.py`:
 
 ```python
 class TestAwardResponseAutoAllocation:
@@ -232,7 +232,7 @@ class TestAwardResponseAutoAllocation:
             patch.object(da, "update_response", return_value=mock_awarded),
             patch.object(da, "get_solicitation_by_id", return_value=mock_solicitation),
             patch(
-                "commcare_connect.solicitations.data_access.FunderDashboardDataAccess"
+                "connect_labs.solicitations.data_access.FunderDashboardDataAccess"
             ) as MockFDA,
         ):
             mock_fda_instance = MockFDA.return_value
@@ -247,12 +247,12 @@ class TestAwardResponseAutoAllocation:
 
 **Step 2: Run test to verify it fails**
 
-Run: `pytest commcare_connect/solicitations/tests/test_data_access.py::TestAwardResponseAutoAllocation -v`
+Run: `pytest connect_labs/solicitations/tests/test_data_access.py::TestAwardResponseAutoAllocation -v`
 Expected: FAIL — no auto-allocation logic yet
 
 **Step 3: Implement auto-allocation in `award_response()`**
 
-Modify `commcare_connect/solicitations/data_access.py`:
+Modify `connect_labs/solicitations/data_access.py`:
 
 Add import at top:
 ```python
@@ -283,7 +283,7 @@ Replace the existing `award_response` method:
         try:
             solicitation = self.get_solicitation_by_id(current.solicitation_id)
             if solicitation and solicitation.fund_id:
-                from commcare_connect.funder_dashboard.data_access import FunderDashboardDataAccess
+                from connect_labs.funder_dashboard.data_access import FunderDashboardDataAccess
 
                 fda = FunderDashboardDataAccess(access_token=self.access_token)
                 fda.add_allocation(
@@ -308,13 +308,13 @@ Replace the existing `award_response` method:
 
 **Step 4: Run tests to verify they pass**
 
-Run: `pytest commcare_connect/solicitations/tests/test_data_access.py -v`
+Run: `pytest connect_labs/solicitations/tests/test_data_access.py -v`
 Expected: All PASS
 
 **Step 5: Commit**
 
 ```bash
-git add commcare_connect/solicitations/data_access.py commcare_connect/solicitations/tests/test_data_access.py
+git add connect_labs/solicitations/data_access.py connect_labs/solicitations/tests/test_data_access.py
 git commit -m "feat: auto-create fund allocation on award"
 ```
 
@@ -323,7 +323,7 @@ git commit -m "feat: auto-create fund allocation on award"
 ### Task 4: Update fund_detail.html with allocations table and KPIs
 
 **Files:**
-- Modify: `commcare_connect/templates/funder_dashboard/fund_detail.html`
+- Modify: `connect_labs/templates/funder_dashboard/fund_detail.html`
 
 **Step 1: Update the KPI grid**
 
@@ -444,7 +444,7 @@ Run: `python manage.py runserver` and navigate to a fund detail page.
 **Step 4: Commit**
 
 ```bash
-git add commcare_connect/templates/funder_dashboard/fund_detail.html
+git add connect_labs/templates/funder_dashboard/fund_detail.html
 git commit -m "feat: add allocations table and committed/remaining KPIs to fund detail"
 ```
 
@@ -453,13 +453,13 @@ git commit -m "feat: add allocations table and committed/remaining KPIs to fund 
 ### Task 5: Add allocations management to fund edit form
 
 **Files:**
-- Modify: `commcare_connect/funder_dashboard/forms.py`
-- Modify: `commcare_connect/funder_dashboard/views.py`
-- Modify: `commcare_connect/templates/funder_dashboard/fund_form.html`
+- Modify: `connect_labs/funder_dashboard/forms.py`
+- Modify: `connect_labs/funder_dashboard/views.py`
+- Modify: `connect_labs/templates/funder_dashboard/fund_form.html`
 
 **Step 1: Add `allocations_json` field to FundForm**
 
-In `commcare_connect/funder_dashboard/forms.py`, add to the `FundForm` class:
+In `connect_labs/funder_dashboard/forms.py`, add to the `FundForm` class:
 
 ```python
     allocations_json = forms.CharField(
@@ -484,7 +484,7 @@ And update `to_data_dict()` to handle it — add after the `delivery_types` bloc
 
 **Step 2: Update FundEditView to pass allocations initial data**
 
-In `commcare_connect/funder_dashboard/views.py`, in `FundEditView.get_context_data()`, add to the `initial` dict:
+In `connect_labs/funder_dashboard/views.py`, in `FundEditView.get_context_data()`, add to the `initial` dict:
 
 ```python
                 "allocations_json": json.dumps(fund.allocations),
@@ -574,7 +574,7 @@ Run: `python manage.py runserver`, go to fund edit, add/remove allocations, save
 **Step 5: Commit**
 
 ```bash
-git add commcare_connect/funder_dashboard/forms.py commcare_connect/funder_dashboard/views.py commcare_connect/templates/funder_dashboard/fund_form.html
+git add connect_labs/funder_dashboard/forms.py connect_labs/funder_dashboard/views.py connect_labs/templates/funder_dashboard/fund_form.html
 git commit -m "feat: add allocations management to fund edit form"
 ```
 
@@ -583,8 +583,8 @@ git commit -m "feat: add allocations management to fund edit form"
 ### Task 6: Update existing unit tests for allocation changes
 
 **Files:**
-- Modify: `commcare_connect/funder_dashboard/tests/test_e2e_fund_flow.py`
-- Modify: `commcare_connect/solicitations/tests/test_e2e_award_flow.py`
+- Modify: `connect_labs/funder_dashboard/tests/test_e2e_fund_flow.py`
+- Modify: `connect_labs/solicitations/tests/test_e2e_award_flow.py`
 
 **Step 1: Update test_e2e_fund_flow.py**
 
@@ -605,13 +605,13 @@ The `award_response()` mock may need updating since it now tries to call `get_so
 
 **Step 3: Run all funder_dashboard and solicitations tests**
 
-Run: `pytest commcare_connect/funder_dashboard/ commcare_connect/solicitations/ -v`
+Run: `pytest connect_labs/funder_dashboard/ connect_labs/solicitations/ -v`
 Expected: All PASS
 
 **Step 4: Commit**
 
 ```bash
-git add commcare_connect/funder_dashboard/tests/ commcare_connect/solicitations/tests/
+git add connect_labs/funder_dashboard/tests/ connect_labs/solicitations/tests/
 git commit -m "test: update unit tests for allocation changes"
 ```
 
@@ -620,7 +620,7 @@ git commit -m "test: update unit tests for allocation changes"
 ### Task 7: Update e2e conftest with --profile option
 
 **Files:**
-- Modify: `commcare_connect/funder_dashboard/tests/e2e/conftest.py`
+- Modify: `connect_labs/funder_dashboard/tests/e2e/conftest.py`
 
 **Step 1: Add --profile option and update authenticated_context**
 
@@ -665,7 +665,7 @@ Note: add `request` to the fixture signature.
 **Step 2: Commit**
 
 ```bash
-git add commcare_connect/funder_dashboard/tests/e2e/conftest.py
+git add connect_labs/funder_dashboard/tests/e2e/conftest.py
 git commit -m "feat: add --profile option to e2e conftest"
 ```
 
@@ -674,7 +674,7 @@ git commit -m "feat: add --profile option to e2e conftest"
 ### Task 8: Write e2e test — fund flow
 
 **Files:**
-- Create: `commcare_connect/funder_dashboard/tests/e2e/test_fund_flow.py`
+- Create: `connect_labs/funder_dashboard/tests/e2e/test_fund_flow.py`
 
 **Step 1: Write the test file**
 
@@ -686,7 +686,7 @@ Creates a fund, views it, edits it (adds an allocation),
 verifies KPIs update correctly.
 
 Run:
-    pytest commcare_connect/funder_dashboard/tests/e2e/test_fund_flow.py \
+    pytest connect_labs/funder_dashboard/tests/e2e/test_fund_flow.py \
         --ds=config.settings.local -o "addopts=" -v
 """
 import time
@@ -818,14 +818,14 @@ class TestFundCRUDLifecycle:
 
 **Step 2: Run the test**
 
-Run: `pytest commcare_connect/funder_dashboard/tests/e2e/test_fund_flow.py --ds=config.settings.local -o "addopts=" -v`
+Run: `pytest connect_labs/funder_dashboard/tests/e2e/test_fund_flow.py --ds=config.settings.local -o "addopts=" -v`
 
 Note: Requires `inv up` (docker services), Django dev server on 8001 (auto-started by conftest), and valid `test-user` CLI token.
 
 **Step 3: Commit**
 
 ```bash
-git add commcare_connect/funder_dashboard/tests/e2e/test_fund_flow.py
+git add connect_labs/funder_dashboard/tests/e2e/test_fund_flow.py
 git commit -m "test: add e2e fund CRUD lifecycle test"
 ```
 
@@ -834,7 +834,7 @@ git commit -m "test: add e2e fund CRUD lifecycle test"
 ### Task 9: Write e2e test — award flow with auto-allocation
 
 **Files:**
-- Create: `commcare_connect/funder_dashboard/tests/e2e/test_award_flow.py`
+- Create: `connect_labs/funder_dashboard/tests/e2e/test_award_flow.py`
 
 **Step 1: Write the test file**
 
@@ -846,7 +846,7 @@ Creates a solicitation linked to a fund, submits a response,
 awards it, and verifies the allocation appears on the fund.
 
 Run:
-    pytest commcare_connect/funder_dashboard/tests/e2e/test_award_flow.py \
+    pytest connect_labs/funder_dashboard/tests/e2e/test_award_flow.py \
         --ds=config.settings.local -o "addopts=" -v
 """
 import time
@@ -993,12 +993,12 @@ class TestAwardWithFundAllocation:
 
 **Step 2: Run the test**
 
-Run: `pytest commcare_connect/funder_dashboard/tests/e2e/test_award_flow.py --ds=config.settings.local -o "addopts=" -v`
+Run: `pytest connect_labs/funder_dashboard/tests/e2e/test_award_flow.py --ds=config.settings.local -o "addopts=" -v`
 
 **Step 3: Commit**
 
 ```bash
-git add commcare_connect/funder_dashboard/tests/e2e/test_award_flow.py
+git add connect_labs/funder_dashboard/tests/e2e/test_award_flow.py
 git commit -m "test: add e2e award flow with fund auto-allocation test"
 ```
 
@@ -1008,7 +1008,7 @@ git commit -m "test: add e2e award flow with fund auto-allocation test"
 
 **Step 1: Run all unit tests**
 
-Run: `pytest commcare_connect/funder_dashboard/ commcare_connect/solicitations/ commcare_connect/labs/tests/test_token_manager_profiles.py -v`
+Run: `pytest connect_labs/funder_dashboard/ connect_labs/solicitations/ connect_labs/labs/tests/test_token_manager_profiles.py -v`
 Expected: All PASS
 
 **Step 2: Run linting**
@@ -1018,7 +1018,7 @@ Expected: All PASS (fix any issues)
 
 **Step 3: Run e2e tests**
 
-Run: `pytest commcare_connect/funder_dashboard/tests/e2e/ --ds=config.settings.local -o "addopts=" -v`
+Run: `pytest connect_labs/funder_dashboard/tests/e2e/ --ds=config.settings.local -o "addopts=" -v`
 Expected: All PASS
 
 **Step 4: Final commit if any fixes needed**

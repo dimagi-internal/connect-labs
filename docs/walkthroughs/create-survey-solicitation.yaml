@@ -546,7 +546,7 @@ scenes:
     id: award-records-and-notifies-provision-deferred
     verify: 'Playwright: on /solicitations/response/${response_id}/award/, after award assert a confirmation
       reading "Awarded to Sahel Field Research" and "has been notified", plus a "Next step — not yet built"
-      panel; grep: no create_opportunity/WorkArea-provision call in commcare_connect/solicitations/'
+      panel; grep: no create_opportunity/WorkArea-provision call in connect_labs/solicitations/'
   narrative: She awards Sahel Field Research — the screen records the decision and notifies the organization.
     Standing up the live opportunity is the next step, not yet built.
   persona: maya

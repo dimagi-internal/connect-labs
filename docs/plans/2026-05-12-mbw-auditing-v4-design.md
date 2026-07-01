@@ -9,8 +9,8 @@
 MBW Auditing V4 is a workflow template for the bi-weekly FLW audit cycle. Every two weeks, a PM triggers a new audit run, reviews ~98 active FLWs against a set of audit metrics, triggers OCS Audit Bot tasks for flagged FLWs, monitors improvement over ~7 days, then assigns a final performance category and concludes the run.
 
 **Files:**
-- `commcare_connect/workflow/templates/mbw_auditing_v4.py` — Python template (DEFINITION, PIPELINE_SCHEMAS, TEMPLATE export)
-- `commcare_connect/workflow/templates/mbw_auditing_v4_render.js` — JSX render code (~1,000 lines)
+- `connect_labs/workflow/templates/mbw_auditing_v4.py` — Python template (DEFINITION, PIPELINE_SCHEMAS, TEMPLATE export)
+- `connect_labs/workflow/templates/mbw_auditing_v4_render.js` — JSX render code (~1,000 lines)
 
 ---
 
@@ -18,7 +18,7 @@ MBW Auditing V4 is a workflow template for the bi-weekly FLW audit cycle. Every 
 
 ### 2.1 Backend: New `mbw_auditing_v4` Job Handler (server-side pipeline)
 
-V4 uses a new `mbw_auditing_v4` job handler in `commcare_connect/workflow/job_handlers/mbw_auditing_v4.py`. Unlike the old `mbw_monitoring` handler, it fetches all pipeline data **server-side** using `PipelineDataAccess.execute_pipeline_from_schema()` — the browser sends only a minimal job config (no 73MB pipeline data round-trip).
+V4 uses a new `mbw_auditing_v4` job handler in `connect_labs/workflow/job_handlers/mbw_auditing_v4.py`. Unlike the old `mbw_monitoring` handler, it fetches all pipeline data **server-side** using `PipelineDataAccess.execute_pipeline_from_schema()` — the browser sends only a minimal job config (no 73MB pipeline data round-trip).
 
 The browser sends:
 ```

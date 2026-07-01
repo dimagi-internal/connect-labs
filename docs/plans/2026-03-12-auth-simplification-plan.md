@@ -6,7 +6,7 @@
 
 **Architecture:** OAuth callback creates/updates a real Django User, calls `django.contrib.auth.login()`, stores OAuth token in session for API calls. All `_org_data` access moves from `request.user._org_data` to `request.session["labs_oauth"]["organization_data"]`. LabsURLWhitelistMiddleware removed; root redirect moves to urls.py.
 
-**Tech Stack:** Django auth, Django User model (`commcare_connect.users.models.User`), session-based OAuth token storage.
+**Tech Stack:** Django auth, Django User model (`connect_labs.users.models.User`), session-based OAuth token storage.
 
 **Design doc:** `docs/plans/2026-03-12-auth-simplification-design.md`
 
@@ -17,7 +17,7 @@
 Create a centralized helper so all `_org_data` consumers have one function to call.
 
 **Files:**
-- Modify: `commcare_connect/labs/context.py`
+- Modify: `connect_labs/labs/context.py`
 
 **Step 1: Add the helper function**
 
@@ -67,7 +67,7 @@ if not org_data:
 
 **Step 4: Run tests**
 
-Run: `pytest commcare_connect/labs/tests/test_context.py -v`
+Run: `pytest connect_labs/labs/tests/test_context.py -v`
 
 Tests will likely fail because they set up `LabsUser` with `_org_data`. Update tests to also put org data in `request.session["labs_oauth"]["organization_data"]`. The helper reads from session, so tests need session data.
 
@@ -95,15 +95,15 @@ feat: add get_org_data helper to read org data from session
 ### Task 2: Update all _org_data consumers to use get_org_data
 
 **Files:**
-- Modify: `commcare_connect/audit/views.py` (lines 51, 189, 1400, 1412)
-- Modify: `commcare_connect/tasks/views.py` (lines 146, 202, 261, 581)
-- Modify: `commcare_connect/labs/views.py` (refresh_org_data view — already reads from session, just verify)
+- Modify: `connect_labs/audit/views.py` (lines 51, 189, 1400, 1412)
+- Modify: `connect_labs/tasks/views.py` (lines 146, 202, 261, 581)
+- Modify: `connect_labs/labs/views.py` (refresh_org_data view — already reads from session, just verify)
 
 **Step 1: Update audit/views.py**
 
 Add import at top:
 ```python
-from commcare_connect.labs.context import get_org_data
+from connect_labs.labs.context import get_org_data
 ```
 
 Replace all 4 occurrences of:
@@ -119,7 +119,7 @@ org_data = get_org_data(self.request)
 
 Add import at top:
 ```python
-from commcare_connect.labs.context import get_org_data
+from connect_labs.labs.context import get_org_data
 ```
 
 Replace all occurrences of:
@@ -142,7 +142,7 @@ org_data = get_org_data(request)
 
 **Step 3: Run tests**
 
-Run: `pytest commcare_connect/audit/ commcare_connect/tasks/ -v`
+Run: `pytest connect_labs/audit/ connect_labs/tasks/ -v`
 
 **Step 4: Commit**
 
@@ -157,10 +157,10 @@ refactor: use get_org_data() instead of request.user._org_data
 Since all users are now standard Django Users authenticated via OAuth, `is_labs_user` checks should just check `is_authenticated`.
 
 **Files:**
-- Modify: `commcare_connect/solicitations/views.py` (lines 34, 52, 71, 98)
-- Modify: `commcare_connect/solicitations/views.py` (line 34)
-- Modify: `commcare_connect/tasks/views.py` (lines 100, 136, 223)
-- Modify: `commcare_connect/templates/layouts/header.html` (lines 8, 19, 24)
+- Modify: `connect_labs/solicitations/views.py` (lines 34, 52, 71, 98)
+- Modify: `connect_labs/solicitations/views.py` (line 34)
+- Modify: `connect_labs/tasks/views.py` (lines 100, 136, 223)
+- Modify: `connect_labs/templates/layouts/header.html` (lines 8, 19, 24)
 
 **Step 1: Simplify solicitations/views.py**
 
@@ -235,14 +235,14 @@ refactor: replace is_labs_user checks with is_authenticated
 ### Task 4: Modify OAuth callback to use Django User + login()
 
 **Files:**
-- Modify: `commcare_connect/labs/integrations/connect/oauth_views.py`
+- Modify: `connect_labs/labs/integrations/connect/oauth_views.py`
 
 **Step 1: Update the callback**
 
 Add imports:
 ```python
 from django.contrib.auth import login
-from commcare_connect.users.models import User
+from connect_labs.users.models import User
 ```
 
 After the `request.session["labs_oauth"] = { ... }` block (line ~218), add User creation and login:
@@ -309,11 +309,11 @@ feat: use Django User with login() in OAuth callback
 ### Task 5: Remove LabsAuthenticationMiddleware and LabsURLWhitelistMiddleware
 
 **Files:**
-- Modify: `commcare_connect/labs/middleware.py` — delete both classes
+- Modify: `connect_labs/labs/middleware.py` — delete both classes
 - Modify: `config/settings/base.py` — fix LOGIN_URL, remove allauth settings
 - Modify: `config/settings/local.py` — simplify middleware setup
 - Modify: `config/settings/labs_aws.py` — simplify middleware setup
-- Delete: `commcare_connect/labs/auth_backend.py`
+- Delete: `connect_labs/labs/auth_backend.py`
 
 **Step 1: Clean up base.py settings**
 
@@ -326,9 +326,9 @@ Remove the allauth settings block (lines ~344-363):
 # Remove all ACCOUNT_* and SOCIALACCOUNT_* settings
 ```
 
-Remove `"commcare_connect.users.context_processors.allauth_settings"` from the context processors list.
+Remove `"connect_labs.users.context_processors.allauth_settings"` from the context processors list.
 
-Remove `"commcare_connect.users.middleware.OrganizationMiddleware"` from base MIDDLEWARE list (it's already being removed by local/labs_aws, just remove it from base).
+Remove `"connect_labs.users.middleware.OrganizationMiddleware"` from base MIDDLEWARE list (it's already being removed by local/labs_aws, just remove it from base).
 
 **Step 2: Simplify local.py**
 
@@ -337,7 +337,7 @@ Remove:
 ACCOUNT_ALLOW_REGISTRATION = False
 LOGIN_URL = "/labs/login/"
 AUTHENTICATION_BACKENDS = [
-    "commcare_connect.labs.auth_backend.LabsOAuthBackend",
+    "connect_labs.labs.auth_backend.LabsOAuthBackend",
 ]
 ```
 
@@ -346,7 +346,7 @@ Replace the middleware manipulation block with just adding LabsContextMiddleware
 # Add labs context middleware after auth
 MIDDLEWARE = list(MIDDLEWARE)
 _auth_idx = MIDDLEWARE.index("django.contrib.auth.middleware.AuthenticationMiddleware")
-MIDDLEWARE.insert(_auth_idx + 1, "commcare_connect.labs.context.LabsContextMiddleware")
+MIDDLEWARE.insert(_auth_idx + 1, "connect_labs.labs.context.LabsContextMiddleware")
 ```
 
 **Step 3: Simplify labs_aws.py**
@@ -360,7 +360,7 @@ AUTHENTICATION_BACKENDS = [
 
 MIDDLEWARE = list(MIDDLEWARE)
 _auth_idx = MIDDLEWARE.index("django.contrib.auth.middleware.AuthenticationMiddleware")
-MIDDLEWARE.insert(_auth_idx + 1, "commcare_connect.labs.context.LabsContextMiddleware")
+MIDDLEWARE.insert(_auth_idx + 1, "connect_labs.labs.context.LabsContextMiddleware")
 ```
 
 Also remove `ACCOUNT_ALLOW_REGISTRATION`, `ACCOUNT_DEFAULT_HTTP_PROTOCOL`.
@@ -380,9 +380,9 @@ Replace the existing `home` path that uses `TemplateView`.
 
 **Step 5: Delete middleware classes and auth backend**
 
-In `commcare_connect/labs/middleware.py`, delete `LabsAuthenticationMiddleware` and `LabsURLWhitelistMiddleware`. Keep the file if there's nothing left, or delete it entirely.
+In `connect_labs/labs/middleware.py`, delete `LabsAuthenticationMiddleware` and `LabsURLWhitelistMiddleware`. Keep the file if there's nothing left, or delete it entirely.
 
-Delete `commcare_connect/labs/auth_backend.py`.
+Delete `connect_labs/labs/auth_backend.py`.
 
 **Step 6: Run tests**
 
@@ -399,12 +399,12 @@ refactor: remove LabsAuthenticationMiddleware, LabsURLWhitelistMiddleware, and a
 ### Task 6: Remove LabsUser class and update CLI/AI consumers
 
 **Files:**
-- Modify: `commcare_connect/labs/models.py` — remove LabsUser class
-- Modify: `commcare_connect/ai/tasks.py` (~lines 125-174)
-- Modify: `commcare_connect/labs/integrations/connect/cli/client.py` (~lines 263, 345)
-- Modify: `commcare_connect/tasks/run_experiment_task_integration.py` (~line 71)
-- Modify: `commcare_connect/audit/management/commands/test_async_audit.py`
-- Modify: `commcare_connect/utils/middleware.py` (~line 49-50)
+- Modify: `connect_labs/labs/models.py` — remove LabsUser class
+- Modify: `connect_labs/ai/tasks.py` (~lines 125-174)
+- Modify: `connect_labs/labs/integrations/connect/cli/client.py` (~lines 263, 345)
+- Modify: `connect_labs/tasks/run_experiment_task_integration.py` (~line 71)
+- Modify: `connect_labs/audit/management/commands/test_async_audit.py`
+- Modify: `connect_labs/utils/middleware.py` (~line 49-50)
 
 **Step 1: Update ai/tasks.py**
 
@@ -417,7 +417,7 @@ Replace the LabsUser creation block (~lines 144-149) and the comment about `_org
 `get_labs_user_from_token()` creates a LabsUser from a CLI token. Change it to return a Django User instead:
 
 ```python
-from commcare_connect.users.models import User
+from connect_labs.users.models import User
 
 user, _ = User.objects.update_or_create(
     username=user_profile.get("username"),
@@ -468,16 +468,16 @@ refactor: remove LabsUser class, use Django User everywhere
 ### Task 7: Clean up dead allauth templates and code
 
 **Files:**
-- Delete: `commcare_connect/templates/account/email.html`
-- Delete: `commcare_connect/templates/account/email_confirm.html`
-- Delete: `commcare_connect/templates/account/verified_email_required.html`
-- Delete: `commcare_connect/templates/account/logout.html`
-- Delete: `commcare_connect/users/adapters.py`
-- Modify: `commcare_connect/users/models.py` — fix `get_absolute_url` (already partially done)
-- Modify: `commcare_connect/users/views.py` — remove dead views
-- Modify: `commcare_connect/templates/users/user_detail.html` — remove `account_email` reference
-- Modify: `commcare_connect/organization/decorators.py` — fix `reverse("account_login")`
-- Modify: `commcare_connect/users/context_processors.py` — remove `allauth_settings`
+- Delete: `connect_labs/templates/account/email.html`
+- Delete: `connect_labs/templates/account/email_confirm.html`
+- Delete: `connect_labs/templates/account/verified_email_required.html`
+- Delete: `connect_labs/templates/account/logout.html`
+- Delete: `connect_labs/users/adapters.py`
+- Modify: `connect_labs/users/models.py` — fix `get_absolute_url` (already partially done)
+- Modify: `connect_labs/users/views.py` — remove dead views
+- Modify: `connect_labs/templates/users/user_detail.html` — remove `account_email` reference
+- Modify: `connect_labs/organization/decorators.py` — fix `reverse("account_login")`
+- Modify: `connect_labs/users/context_processors.py` — remove `allauth_settings`
 - Modify: `requirements/base.txt` — remove `django-allauth` package
 
 **Step 1: Delete dead templates**
@@ -498,7 +498,7 @@ The `UserUpdateView` and `UserRedirectView` are dead code (users app URLs aren't
 
 **Step 5: Remove allauth_settings context processor**
 
-Delete `commcare_connect/users/context_processors.py` or remove the `allauth_settings` function and its reference in `base.py`.
+Delete `connect_labs/users/context_processors.py` or remove the `allauth_settings` function and its reference in `base.py`.
 
 **Step 6: Remove django-allauth from requirements**
 
@@ -530,8 +530,8 @@ chore: remove allauth templates, adapters, package dependency, and dead code
 
 **Files:**
 - Modify: `CLAUDE.md`
-- Modify: `commcare_connect/templates/labs/overview.html`
-- Modify: `commcare_connect/templates/labs/context_selector.html`
+- Modify: `connect_labs/templates/labs/overview.html`
+- Modify: `connect_labs/templates/labs/context_selector.html`
 
 **Step 1: Update CLAUDE.md**
 
@@ -569,7 +569,7 @@ Same issue: `{{ user.organizations }}`, `{{ user.programs }}`, `{{ user.opportun
 
 Add a context processor or update the LabsContextMiddleware to inject org data lists into the template context. A simple context processor works best:
 
-In `commcare_connect/labs/context.py`, add:
+In `connect_labs/labs/context.py`, add:
 ```python
 def labs_org_data_context(request):
     """Template context processor: expose org data from session."""

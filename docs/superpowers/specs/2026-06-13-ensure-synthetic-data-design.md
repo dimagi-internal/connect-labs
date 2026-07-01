@@ -9,14 +9,14 @@ Walkthrough/DDD demos need a specific synthetic environment to exist on labs pro
 before the recorder drives the scenes. Today that environment is created two
 incompatible ways:
 
-- **Declarative (recent):** `commcare_connect/labs/synthetic/generator/` — a
+- **Declarative (recent):** `connect_labs/labs/synthetic/generator/` — a
   single-opportunity `Manifest` (`from_yaml`) that produces visit fixtures + the
   survey signal: `flw_personas` (with `display_name`), `beneficiary_cohorts` +
   `field_distributions`, `anomalies` (flags), `coaching_arcs`, `tasks`,
   `image_config`, `kpi_config`. Validated, reproducible. Used by study-design,
   verified-monitoring, self-service.
 - **Imperative (older):** per-demo seeders like
-  `commcare_connect/labs/synthetic/program_admin_demo.py` — hand-written code that
+  `connect_labs/labs/synthetic/program_admin_demo.py` — hand-written code that
   builds the *workflow* layer the manifest doesn't: weekly `chc_nutrition` saved
   runs, run-linked `AuditSession`s, tasks, flags, and a cross-opp
   `program_admin_report` rollup, across multiple opps.
@@ -68,7 +68,7 @@ worktree when several checkouts exist on the machine.
 ### Composite env manifest
 
 A new YAML per demo, e.g.
-`commcare_connect/labs/synthetic/envs/program-admin-report.yaml`:
+`connect_labs/labs/synthetic/envs/program-admin-report.yaml`:
 
 ```yaml
 env: program-admin-report
@@ -103,7 +103,7 @@ concrete ISO Mondays **at ensure-time** (the dynamic-window logic moves out of
 
 ### Ensure engine
 
-`commcare_connect/labs/synthetic/ensure.py`:
+`connect_labs/labs/synthetic/ensure.py`:
 
 - `ensure_synthetic_data(env_path) -> Realized` — loads + validates the env
   manifest, resolves the timeline, then walks `resources` **in order**, dispatching
@@ -121,12 +121,12 @@ concrete ISO Mondays **at ensure-time** (the dynamic-window logic moves out of
   the id map (par_run_id, good_audit_id, …) the walkthrough's `${...}`
   substitution consumes. **Replaces `.run_ids.json`.**
 
-CLI / module entry: `python -m commcare_connect.labs.synthetic.ensure <env.yaml>
+CLI / module entry: `python -m connect_labs.labs.synthetic.ensure <env.yaml>
 [--out realized.json]`. Runs in-app (server-side local backend per
 `docs/SYNTHETIC_OPPS.md`), so it reaches labs-only opps without HTTP and without a
 worktree-relative `cwd`.
 
-### The five PAR ensurers (`commcare_connect/labs/synthetic/ensurers/`)
+### The five PAR ensurers (`connect_labs/labs/synthetic/ensurers/`)
 
 Each is a clean port of logic currently in `program_admin_demo.py` — no callbacks
 into the old module.
@@ -160,7 +160,7 @@ the existing `Manifest` validator.
 The PAR spec's `setup:` block changes from
 `command: python scripts/walkthroughs/program-admin-report/regenerate.py`
 (`outputs: .run_ids.json`) to
-`command: python -m commcare_connect.labs.synthetic.ensure commcare_connect/labs/synthetic/envs/program-admin-report.yaml`
+`command: python -m connect_labs.labs.synthetic.ensure connect_labs/labs/synthetic/envs/program-admin-report.yaml`
 (`outputs: realized.json`). Scene `${...}` vars are unchanged in spirit (same
 names: `par_url`, `good_audit_id`, …) — they now resolve from `realized.json`.
 

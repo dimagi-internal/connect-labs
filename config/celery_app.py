@@ -7,7 +7,7 @@ from celery.signals import task_retry
 # set the default Django settings module for the 'celery' program.
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.local")
 
-app = Celery("commcare_connect")
+app = Celery("connect_labs")
 
 # Using a string here means the worker doesn't have to serialize
 # the configuration object to child processes.

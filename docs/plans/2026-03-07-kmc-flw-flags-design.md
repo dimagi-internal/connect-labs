@@ -181,7 +181,7 @@ When user clicks "Create Audits with AI Review":
 
 ## Template Structure
 
-Single file: `commcare_connect/workflow/templates/kmc_flw_flags.py`
+Single file: `connect_labs/workflow/templates/kmc_flw_flags.py`
 
 ```python
 TEMPLATE = {

@@ -52,8 +52,8 @@ elif sys.platform == "win32":
 
             if GDAL_LIBRARY_PATH:
                 break
-# commcare_connect/
-APPS_DIR = BASE_DIR / "commcare_connect"
+# connect_labs/
+APPS_DIR = BASE_DIR / "connect_labs"
 
 env = environ.Env()
 
@@ -74,7 +74,7 @@ LOCALE_PATHS = [str(BASE_DIR / "locale")]
 DATABASES = {
     "default": env.db(
         "DATABASE_URL",
-        default="postgres:///commcare_connect",
+        default="postgres:///connect_labs",
     ),
 }
 DATABASES["default"]["ENGINE"] = "django.contrib.gis.db.backends.postgis"
@@ -98,7 +98,7 @@ if env("SECONDARY_DATABASE_URL", default=None):
     SECONDARY_DB_ALIAS = "secondary"
     DATABASES[SECONDARY_DB_ALIAS] = env.db("SECONDARY_DATABASE_URL")
     DATABASES[SECONDARY_DB_ALIAS]["ENGINE"] = "django.contrib.gis.db.backends.postgis"
-    DATABASE_ROUTERS = ["commcare_connect.multidb.db_router.ConnectDatabaseRouter"]
+    DATABASE_ROUTERS = ["connect_labs.multidb.db_router.ConnectDatabaseRouter"]
 
 DATABASES["default"]["ATOMIC_REQUESTS"] = True
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
@@ -142,32 +142,32 @@ THIRD_PARTY_APPS = [
 ]
 
 LOCAL_APPS = [
-    "commcare_connect.ai",
-    "commcare_connect.tasks",
-    "commcare_connect.audit",
-    "commcare_connect.workflow",
-    "commcare_connect.coverage",
-    "commcare_connect.flags",
-    "commcare_connect.commcarehq",  # stub: HQServer model for FK references
-    "commcare_connect.labs.admin_boundaries",
-    "commcare_connect.labs.synthetic",
-    "commcare_connect.mcp",
-    "commcare_connect.multidb",
-    "commcare_connect.opportunity",
-    "commcare_connect.organization",
-    "commcare_connect.prelogin",
-    "commcare_connect.program",
-    "commcare_connect.microplans",
-    "commcare_connect.pages",
-    "commcare_connect.solicitations",
-    "commcare_connect.users",
-    "commcare_connect.web",
+    "connect_labs.ai",
+    "connect_labs.tasks",
+    "connect_labs.audit",
+    "connect_labs.workflow",
+    "connect_labs.coverage",
+    "connect_labs.flags",
+    "connect_labs.commcarehq",  # stub: HQServer model for FK references
+    "connect_labs.labs.admin_boundaries",
+    "connect_labs.labs.synthetic",
+    "connect_labs.mcp",
+    "connect_labs.multidb",
+    "connect_labs.opportunity",
+    "connect_labs.organization",
+    "connect_labs.prelogin",
+    "connect_labs.program",
+    "connect_labs.microplans",
+    "connect_labs.pages",
+    "connect_labs.solicitations",
+    "connect_labs.users",
+    "connect_labs.web",
 ]
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
 # MIGRATIONS
 # ------------------------------------------------------------------------------
-MIGRATION_MODULES = {"sites": "commcare_connect.contrib.sites.migrations"}
+MIGRATION_MODULES = {"sites": "connect_labs.contrib.sites.migrations"}
 
 # AUTHENTICATION
 # ------------------------------------------------------------------------------
@@ -207,10 +207,10 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
-    "commcare_connect.utils.middleware.NoIndexMiddleware",
-    "commcare_connect.utils.middleware.CustomErrorHandlingMiddleware",
-    "commcare_connect.utils.middleware.CurrentVersionMiddleware",
-    "commcare_connect.utils.middleware.CustomPGHistoryMiddleware",
+    "connect_labs.utils.middleware.NoIndexMiddleware",
+    "connect_labs.utils.middleware.CustomErrorHandlingMiddleware",
+    "connect_labs.utils.middleware.CurrentVersionMiddleware",
+    "connect_labs.utils.middleware.CustomPGHistoryMiddleware",
 ]
 
 # STATIC
@@ -247,10 +247,10 @@ TEMPLATES = [
                 "django.template.context_processors.static",
                 "django.template.context_processors.tz",
                 "django.contrib.messages.context_processors.messages",
-                "commcare_connect.labs.context.labs_org_data_context",
-                "commcare_connect.web.context_processors.page_settings",
-                "commcare_connect.web.context_processors.gtm_context",
-                "commcare_connect.web.context_processors.chat_widget_context",
+                "connect_labs.labs.context.labs_org_data_context",
+                "connect_labs.web.context_processors.page_settings",
+                "connect_labs.web.context_processors.gtm_context",
+                "connect_labs.web.context_processors.chat_widget_context",
             ],
         },
     }
@@ -325,7 +325,7 @@ LOGGING = {
             "handlers": ["null"],
             "propagate": False,
         },
-        "commcare_connect.ai": {
+        "connect_labs.ai": {
             "handlers": ["console"],
             "level": "INFO",
             "propagate": False,
@@ -370,7 +370,7 @@ REST_FRAMEWORK = {
     "DEFAULT_VERSIONING_CLASS": "rest_framework.versioning.AcceptHeaderVersioning",
     "DEFAULT_VERSION": "1.0",
     "ALLOWED_VERSIONS": ["1.0", "2.0"],
-    "EXCEPTION_HANDLER": "commcare_connect.utils.exceptions.drf_permission_denied_handler",
+    "EXCEPTION_HANDLER": "connect_labs.utils.exceptions.drf_permission_denied_handler",
 }
 
 CORS_URLS_REGEX = r"^/api/.*$"

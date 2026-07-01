@@ -262,7 +262,7 @@ manual smoke test you run once after touching the config.
 
 ### Automated (every change, including CI)
 
-    pytest commcare_connect/labs/tests/test_safe_mode_config.py
+    pytest connect_labs/labs/tests/test_safe_mode_config.py
 
 Assertions covering denied tool set, allow-list shape, permission mode,
 escape-hatch disablement, MCP surface, labs URL, and the no-committed-token

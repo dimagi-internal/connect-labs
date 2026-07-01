@@ -30,13 +30,13 @@ from confluence_client import ConfluenceClient  # isort: skip  # noqa: E402
 
 # Maps source path prefixes to feature documentation names
 PREFIX_TO_FEATURE = {
-    "commcare_connect/audit/": "Audit & QA Review",
-    "commcare_connect/workflow/": "Workflow Engine",
-    "commcare_connect/tasks/": "Task Management",
-    "commcare_connect/solicitations/": "Solicitations",
-    "commcare_connect/custom_analysis/": "Custom Analysis",
-    "commcare_connect/coverage/": "Coverage Maps",
-    "commcare_connect/ai/": "AI Features",
+    "connect_labs/audit/": "Audit & QA Review",
+    "connect_labs/workflow/": "Workflow Engine",
+    "connect_labs/tasks/": "Task Management",
+    "connect_labs/solicitations/": "Solicitations",
+    "connect_labs/custom_analysis/": "Custom Analysis",
+    "connect_labs/coverage/": "Coverage Maps",
+    "connect_labs/ai/": "AI Features",
     "docs/WORKFLOW_EDITOR_QUICKSTART.md": "Connect MCP & Safe Mode",
     "docs/SAFE_MODE.md": "Connect MCP & Safe Mode",
 }

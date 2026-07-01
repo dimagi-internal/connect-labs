@@ -28,10 +28,10 @@
 ### Task 1: Agents declare a `config_fields` schema; surface it to the frontend
 
 **Files:**
-- Modify: `commcare_connect/labs/ai_review_agents/base.py:52-55`
-- Modify: `commcare_connect/labs/ai_review_agents/agents/scale_validation.py:54-68`
-- Modify: `commcare_connect/audit/views.py:1568-1580` (`AIAgentsListAPIView`)
-- Test: `commcare_connect/audit/tests/test_ai_agents_list_view.py` (create)
+- Modify: `connect_labs/labs/ai_review_agents/base.py:52-55`
+- Modify: `connect_labs/labs/ai_review_agents/agents/scale_validation.py:54-68`
+- Modify: `connect_labs/audit/views.py:1568-1580` (`AIAgentsListAPIView`)
+- Test: `connect_labs/audit/tests/test_ai_agents_list_view.py` (create)
 
 **Interfaces:**
 - Produces: `BaseAIReviewAgent.config_fields: list[dict]` — each item
@@ -43,7 +43,7 @@
 
 - [ ] **Step 1: Write the failing test**
 
-Create `commcare_connect/audit/tests/test_ai_agents_list_view.py`:
+Create `connect_labs/audit/tests/test_ai_agents_list_view.py`:
 
 ```python
 """Tests for AIAgentsListAPIView config_fields surfacing."""
@@ -55,7 +55,7 @@ from django.test import Client
 
 @pytest.fixture
 def labs_client(db):
-    from commcare_connect.users.models import User
+    from connect_labs.users.models import User
 
     user, _ = User.objects.update_or_create(
         username="testuser", defaults={"email": "testuser@example.com"}
@@ -92,12 +92,12 @@ def test_agents_list_includes_config_fields(labs_client):
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pytest commcare_connect/audit/tests/test_ai_agents_list_view.py -v`
+Run: `pytest connect_labs/audit/tests/test_ai_agents_list_view.py -v`
 Expected: FAIL — `KeyError: 'config_fields'` (endpoint does not return that key yet).
 
 - [ ] **Step 3: Add `config_fields` to the base class**
 
-In `commcare_connect/labs/ai_review_agents/base.py`, after line 55 (`result_actions: dict = {}`), add:
+In `connect_labs/labs/ai_review_agents/base.py`, after line 55 (`result_actions: dict = {}`), add:
 
 ```python
     result_actions: dict = {}
@@ -109,7 +109,7 @@ In `commcare_connect/labs/ai_review_agents/base.py`, after line 55 (`result_acti
 
 - [ ] **Step 4: Declare `config_fields` on the scale agent**
 
-In `commcare_connect/labs/ai_review_agents/agents/scale_validation.py`, inside the
+In `connect_labs/labs/ai_review_agents/agents/scale_validation.py`, inside the
 `ScaleValidationAgent` class body, immediately after the `result_actions = {...}` block
 (after line 68), add:
 
@@ -129,7 +129,7 @@ In `commcare_connect/labs/ai_review_agents/agents/scale_validation.py`, inside t
 
 - [ ] **Step 5: Surface `config_fields` in the agents-list endpoint**
 
-In `commcare_connect/audit/views.py`, in `AIAgentsListAPIView.get`, extend the appended
+In `connect_labs/audit/views.py`, in `AIAgentsListAPIView.get`, extend the appended
 dict (after line 1578 `"auto_apply_result": ...`) with:
 
 ```python
@@ -141,16 +141,16 @@ dict (after line 1578 `"auto_apply_result": ...`) with:
 
 - [ ] **Step 6: Run test to verify it passes**
 
-Run: `pytest commcare_connect/audit/tests/test_ai_agents_list_view.py -v`
+Run: `pytest connect_labs/audit/tests/test_ai_agents_list_view.py -v`
 Expected: PASS.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add commcare_connect/labs/ai_review_agents/base.py \
-        commcare_connect/labs/ai_review_agents/agents/scale_validation.py \
-        commcare_connect/audit/views.py \
-        commcare_connect/audit/tests/test_ai_agents_list_view.py
+git add connect_labs/labs/ai_review_agents/base.py \
+        connect_labs/labs/ai_review_agents/agents/scale_validation.py \
+        connect_labs/audit/views.py \
+        connect_labs/audit/tests/test_ai_agents_list_view.py
 git commit -m "feat(audit): agents declare config_fields schema, surfaced in agents-list API"
 ```
 
@@ -159,10 +159,10 @@ git commit -m "feat(audit): agents declare config_fields schema, surfaced in age
 ### Task 2: Form-field discovery endpoint (`field-questions`)
 
 **Files:**
-- Modify: `commcare_connect/audit/analysis_config.py` (add `extract_field_paths`)
-- Modify: `commcare_connect/audit/views.py` (add `OpportunityFieldQuestionsAPIView`, near `OpportunityImageTypesAPIView` ~line 1804)
-- Modify: `commcare_connect/audit/urls.py:16-20` (add route)
-- Test: `commcare_connect/audit/tests/test_analysis_config.py` (create)
+- Modify: `connect_labs/audit/analysis_config.py` (add `extract_field_paths`)
+- Modify: `connect_labs/audit/views.py` (add `OpportunityFieldQuestionsAPIView`, near `OpportunityImageTypesAPIView` ~line 1804)
+- Modify: `connect_labs/audit/urls.py:16-20` (add route)
+- Test: `connect_labs/audit/tests/test_analysis_config.py` (create)
 
 **Interfaces:**
 - Produces: `extract_field_paths(form_json: dict) -> list[str]` — sorted, de-duped leaf
@@ -173,11 +173,11 @@ git commit -m "feat(audit): agents declare config_fields schema, surfaced in age
 
 - [ ] **Step 1: Write the failing test for `extract_field_paths`**
 
-Create `commcare_connect/audit/tests/test_analysis_config.py`:
+Create `connect_labs/audit/tests/test_analysis_config.py`:
 
 ```python
 """Tests for analysis_config form-field extraction helpers."""
-from commcare_connect.audit.analysis_config import extract_field_paths
+from connect_labs.audit.analysis_config import extract_field_paths
 
 
 def test_extract_field_paths_flattens_leaf_scalars():
@@ -205,12 +205,12 @@ def test_extract_field_paths_empty():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pytest commcare_connect/audit/tests/test_analysis_config.py -v`
+Run: `pytest connect_labs/audit/tests/test_analysis_config.py -v`
 Expected: FAIL — `ImportError: cannot import name 'extract_field_paths'`.
 
 - [ ] **Step 3: Implement `extract_field_paths`**
 
-In `commcare_connect/audit/analysis_config.py`, after `_build_filename_map` (after line 45),
+In `connect_labs/audit/analysis_config.py`, after `_build_filename_map` (after line 45),
 add:
 
 ```python
@@ -252,12 +252,12 @@ def extract_field_paths(form_json: dict | None) -> list[str]:
 
 - [ ] **Step 4: Run the helper test to verify it passes**
 
-Run: `pytest commcare_connect/audit/tests/test_analysis_config.py -v`
+Run: `pytest connect_labs/audit/tests/test_analysis_config.py -v`
 Expected: PASS.
 
 - [ ] **Step 5: Add the `OpportunityFieldQuestionsAPIView`**
 
-In `commcare_connect/audit/views.py`, immediately after the `OpportunityImageTypesAPIView`
+In `connect_labs/audit/views.py`, immediately after the `OpportunityImageTypesAPIView`
 class (it ends at line 1882 with `return JsonResponse(result, safe=False)`), add a sibling
 view. It reuses the same streaming sampler but accumulates field paths instead of image
 question ids:
@@ -283,9 +283,9 @@ class OpportunityFieldQuestionsAPIView(LoginRequiredMixin, View):
         if not access_token:
             return JsonResponse({"error": "No OAuth token"}, status=401)
 
-        from commcare_connect.audit.analysis_config import extract_field_paths
-        from commcare_connect.labs.integrations.connect.export_client import ExportAPIError
-        from commcare_connect.labs.integrations.connect.factory import get_export_client
+        from connect_labs.audit.analysis_config import extract_field_paths
+        from connect_labs.labs.integrations.connect.export_client import ExportAPIError
+        from connect_labs.labs.integrations.connect.factory import get_export_client
 
         endpoint = f"/export/opportunity/{opp_id}/user_visits/"
         params = {"images": "true"}
@@ -335,7 +335,7 @@ class OpportunityFieldQuestionsAPIView(LoginRequiredMixin, View):
 
 - [ ] **Step 6: Add the URL route**
 
-In `commcare_connect/audit/urls.py`, after the `opportunity_image_questions` path
+In `connect_labs/audit/urls.py`, after the `opportunity_image_questions` path
 (line 20), add:
 
 ```python
@@ -348,7 +348,7 @@ In `commcare_connect/audit/urls.py`, after the `opportunity_image_questions` pat
 
 - [ ] **Step 7: Write a view smoke test**
 
-Append to `commcare_connect/audit/tests/test_analysis_config.py`:
+Append to `connect_labs/audit/tests/test_analysis_config.py`:
 
 ```python
 import time
@@ -359,7 +359,7 @@ from django.test import Client
 
 @pytest.fixture
 def labs_client(db):
-    from commcare_connect.users.models import User
+    from connect_labs.users.models import User
 
     user, _ = User.objects.update_or_create(
         username="fielduser", defaults={"email": "fielduser@example.com"}
@@ -373,7 +373,7 @@ def labs_client(db):
 
 
 def test_field_questions_requires_oauth(db):
-    from commcare_connect.users.models import User
+    from connect_labs.users.models import User
 
     user, _ = User.objects.update_or_create(
         username="noauth", defaults={"email": "noauth@example.com"}
@@ -386,16 +386,16 @@ def test_field_questions_requires_oauth(db):
 
 - [ ] **Step 8: Run the tests to verify they pass**
 
-Run: `pytest commcare_connect/audit/tests/test_analysis_config.py -v`
+Run: `pytest connect_labs/audit/tests/test_analysis_config.py -v`
 Expected: PASS (helper tests + the 401 smoke test).
 
 - [ ] **Step 9: Commit**
 
 ```bash
-git add commcare_connect/audit/analysis_config.py \
-        commcare_connect/audit/views.py \
-        commcare_connect/audit/urls.py \
-        commcare_connect/audit/tests/test_analysis_config.py
+git add connect_labs/audit/analysis_config.py \
+        connect_labs/audit/views.py \
+        connect_labs/audit/urls.py \
+        connect_labs/audit/tests/test_analysis_config.py
 git commit -m "feat(audit): add field-questions endpoint for comparison-field picker"
 ```
 
@@ -404,8 +404,8 @@ git commit -m "feat(audit): add field-questions endpoint for comparison-field pi
 ### Task 3: `build_review_config` translation helper
 
 **Files:**
-- Create: `commcare_connect/audit/ai_review_config.py`
-- Test: `commcare_connect/audit/tests/test_ai_review_config.py` (create)
+- Create: `connect_labs/audit/ai_review_config.py`
+- Test: `connect_labs/audit/tests/test_ai_review_config.py` (create)
 
 **Interfaces:**
 - Produces: `build_review_config(image_audits: list[dict], context_fields: list[dict] | None = None) -> tuple[list[dict], dict[str, dict]]`.
@@ -417,11 +417,11 @@ git commit -m "feat(audit): add field-questions endpoint for comparison-field pi
 
 - [ ] **Step 1: Write the failing test**
 
-Create `commcare_connect/audit/tests/test_ai_review_config.py`:
+Create `connect_labs/audit/tests/test_ai_review_config.py`:
 
 ```python
 """Tests for build_review_config (image_audits -> related_fields + ai_reviewers)."""
-from commcare_connect.audit.ai_review_config import build_review_config
+from connect_labs.audit.ai_review_config import build_review_config
 
 
 def test_scale_reviewer_produces_filter_rule_reading_rule_and_map():
@@ -523,12 +523,12 @@ def test_blank_image_path_is_ignored():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pytest commcare_connect/audit/tests/test_ai_review_config.py -v`
-Expected: FAIL — `ModuleNotFoundError: No module named 'commcare_connect.audit.ai_review_config'`.
+Run: `pytest connect_labs/audit/tests/test_ai_review_config.py -v`
+Expected: FAIL — `ModuleNotFoundError: No module named 'connect_labs.audit.ai_review_config'`.
 
 - [ ] **Step 3: Implement the helper**
 
-Create `commcare_connect/audit/ai_review_config.py`:
+Create `connect_labs/audit/ai_review_config.py`:
 
 ```python
 """Translate the wizard's image_audits payload into the audit pipeline's
@@ -615,14 +615,14 @@ def build_review_config(
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pytest commcare_connect/audit/tests/test_ai_review_config.py -v`
+Run: `pytest connect_labs/audit/tests/test_ai_review_config.py -v`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add commcare_connect/audit/ai_review_config.py \
-        commcare_connect/audit/tests/test_ai_review_config.py
+git add connect_labs/audit/ai_review_config.py \
+        connect_labs/audit/tests/test_ai_review_config.py
 git commit -m "feat(audit): add build_review_config translation helper"
 ```
 
@@ -631,12 +631,12 @@ git commit -m "feat(audit): add build_review_config translation helper"
 ### Task 4: Per-`question_id` agent resolver in the AI-review run loop
 
 **Files:**
-- Modify: `commcare_connect/audit/tasks.py:108-363` (`_run_ai_review_on_sessions`)
-- Test: `commcare_connect/audit/tests/test_ai_review_per_type.py` (create)
+- Modify: `connect_labs/audit/tasks.py:108-363` (`_run_ai_review_on_sessions`)
+- Test: `connect_labs/audit/tests/test_ai_review_per_type.py` (create)
 
 **Interfaces:**
 - Consumes: `build_review_config` output shape (`ai_reviewers`) from Task 3;
-  `commcare_connect.labs.ai_review_agents.registry.get_agent`.
+  `connect_labs.labs.ai_review_agents.registry.get_agent`.
 - Produces: new signature
   `_run_ai_review_on_sessions(data_access, session_ids, access_token, opp_id, ai_agent_id=None, auto_apply_actions=None, ai_reviewers=None, progress_callback=None)`.
   When `ai_reviewers` is given, the agent is resolved per image's `question_id`; images
@@ -645,15 +645,15 @@ git commit -m "feat(audit): add build_review_config translation helper"
 
 - [ ] **Step 1: Write the failing test**
 
-Create `commcare_connect/audit/tests/test_ai_review_per_type.py`. It uses fakes — no real
+Create `connect_labs/audit/tests/test_ai_review_per_type.py`. It uses fakes — no real
 HTTP — to assert the right agent runs per image type:
 
 ```python
 """Tests for per-image-type agent resolution in _run_ai_review_on_sessions."""
 import pytest
 
-from commcare_connect.audit import tasks
-from commcare_connect.labs.ai_review_agents.types import ReviewResult
+from connect_labs.audit import tasks
+from connect_labs.labs.ai_review_agents.types import ReviewResult
 
 
 class _FakeSession:
@@ -704,7 +704,7 @@ def patched_registry(monkeypatch):
     _OtherAgent.seen = []
     monkeypatch.setattr(tasks, "get_agent", lambda aid: agents[aid], raising=False)
     # tasks imports get_agent locally inside the function; patch the source too
-    from commcare_connect.labs.ai_review_agents import registry
+    from connect_labs.labs.ai_review_agents import registry
 
     monkeypatch.setattr(registry, "get_agent", lambda aid: agents[aid])
     return agents
@@ -780,13 +780,13 @@ def test_legacy_single_agent_still_runs_on_all(patched_registry):
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pytest commcare_connect/audit/tests/test_ai_review_per_type.py -v`
+Run: `pytest connect_labs/audit/tests/test_ai_review_per_type.py -v`
 Expected: FAIL — `_run_ai_review_on_sessions()` does not accept `ai_reviewers` (TypeError),
 and `get_agent` is referenced as a local import, not a module attribute.
 
 - [ ] **Step 3: Change the function signature and add the resolver**
 
-In `commcare_connect/audit/tasks.py`, replace the signature (lines 108-116) with:
+In `connect_labs/audit/tasks.py`, replace the signature (lines 108-116) with:
 
 ```python
 def _run_ai_review_on_sessions(
@@ -805,7 +805,7 @@ Then replace the body from line 137 (`from ... import get_agent`) through line 1
 `logger.info(f"[AIReview] Auto-apply map ...")`) with a unified resolver:
 
 ```python
-    from commcare_connect.labs.ai_review_agents.registry import get_agent
+    from connect_labs.labs.ai_review_agents.registry import get_agent
 
     # Resolve a reviewer for a given image question_id. Unifies two modes:
     #   * per-type (ai_reviewers given): look up the agent by question_id
@@ -931,7 +931,7 @@ final `return`) with one that unpacks `image_qid`, resolves its agent, and retur
                     logger.warning(f"[AIReview] Failed to fetch image {b_id}: {exc}")
                     return (v_id, b_id, q_id, rdg, img_qid, None, None, True)  # skipped
 
-                from commcare_connect.labs.ai_review_agents.types import ReviewContext
+                from connect_labs.labs.ai_review_agents.types import ReviewContext
 
                 ctx = ReviewContext(
                     images={"scale": img_bytes},
@@ -1021,12 +1021,12 @@ Replace the return block (lines 354-363) with:
 
 - [ ] **Step 9: Run the test to verify it passes**
 
-Run: `pytest commcare_connect/audit/tests/test_ai_review_per_type.py -v`
+Run: `pytest connect_labs/audit/tests/test_ai_review_per_type.py -v`
 Expected: PASS (all three tests).
 
 - [ ] **Step 10: Run the existing AI-review test to confirm no regression**
 
-Run: `pytest commcare_connect/audit/tests/test_ai_review_auto_apply.py -v`
+Run: `pytest connect_labs/audit/tests/test_ai_review_auto_apply.py -v`
 Expected: PASS (legacy path unchanged). If that test calls `_run_ai_review_on_sessions`
 positionally with `ai_agent_id` as the 3rd arg, update the call there to keyword
 `ai_agent_id=...` (the 3rd positional is now `access_token`).
@@ -1034,7 +1034,7 @@ positionally with `ai_agent_id` as the 3rd arg, update the call there to keyword
 - [ ] **Step 11: Commit**
 
 ```bash
-git add commcare_connect/audit/tasks.py commcare_connect/audit/tests/test_ai_review_per_type.py
+git add connect_labs/audit/tasks.py connect_labs/audit/tests/test_ai_review_per_type.py
 git commit -m "feat(audit): resolve AI reviewer per image type in run loop"
 ```
 
@@ -1043,10 +1043,10 @@ git commit -m "feat(audit): resolve AI reviewer per image type in run loop"
 ### Task 5: Wire `image_audits` through the create task and async view
 
 **Files:**
-- Modify: `commcare_connect/audit/tasks.py` (`run_audit_creation`: lines 366-378 signature,
+- Modify: `connect_labs/audit/tasks.py` (`run_audit_creation`: lines 366-378 signature,
   ~424-448 criteria/stage setup, ~728-736 review call)
-- Modify: `commcare_connect/audit/views.py:919-993` (`ExperimentAuditCreateAsyncAPIView.post`)
-- Test: `commcare_connect/audit/tests/test_run_audit_creation_wiring.py` (create)
+- Modify: `connect_labs/audit/views.py:919-993` (`ExperimentAuditCreateAsyncAPIView.post`)
+- Test: `connect_labs/audit/tests/test_run_audit_creation_wiring.py` (create)
 
 **Interfaces:**
 - Consumes: `build_review_config` (Task 3); `_run_ai_review_on_sessions(..., ai_reviewers=...)` (Task 4).
@@ -1055,13 +1055,13 @@ git commit -m "feat(audit): resolve AI reviewer per image type in run loop"
 
 - [ ] **Step 1: Write the failing test (translation wiring)**
 
-Create `commcare_connect/audit/tests/test_run_audit_creation_wiring.py`. This isolates the
+Create `connect_labs/audit/tests/test_run_audit_creation_wiring.py`. This isolates the
 translation decision inside `run_audit_creation` without running the full Celery pipeline,
 by asserting `build_review_config` drives `related_fields` and `ai_reviewers`:
 
 ```python
 """Wiring test: run_audit_creation translates image_audits via build_review_config."""
-from commcare_connect.audit.ai_review_config import build_review_config
+from connect_labs.audit.ai_review_config import build_review_config
 
 
 def test_build_review_config_drives_related_fields_and_reviewers():
@@ -1094,12 +1094,12 @@ changes below.)
 
 - [ ] **Step 2: Run the wiring test**
 
-Run: `pytest commcare_connect/audit/tests/test_run_audit_creation_wiring.py -v`
+Run: `pytest connect_labs/audit/tests/test_run_audit_creation_wiring.py -v`
 Expected: PASS (depends only on Task 3).
 
 - [ ] **Step 3: Add task kwargs and translate at the top of `run_audit_creation`**
 
-In `commcare_connect/audit/tasks.py`, extend the `run_audit_creation` signature
+In `connect_labs/audit/tasks.py`, extend the `run_audit_creation` signature
 (after line 378 `ai_auto_apply_actions: list[str] | None = None,`) with:
 
 ```python
@@ -1117,7 +1117,7 @@ Then replace the `related_fields = audit_criteria.related_fields or []` line (li
     # rules + a question_id -> reviewer map. Legacy payloads (no image_audits) keep using
     # criteria.related_fields and the single ai_agent_id.
     if image_audits is not None:
-        from commcare_connect.audit.ai_review_config import build_review_config
+        from connect_labs.audit.ai_review_config import build_review_config
 
         related_fields, ai_reviewers = build_review_config(image_audits, context_fields)
     else:
@@ -1153,7 +1153,7 @@ with:
 
 - [ ] **Step 6: Forward the new keys from the async view**
 
-In `commcare_connect/audit/views.py`, in `ExperimentAuditCreateAsyncAPIView.post`, after
+In `connect_labs/audit/views.py`, in `ExperimentAuditCreateAsyncAPIView.post`, after
 line 933 (`ai_auto_apply_actions = data.get("ai_auto_apply_actions")`), add:
 
 ```python
@@ -1173,14 +1173,14 @@ Then in the `run_audit_creation.apply_async(kwargs={...})` block, after line 990
 
 - [ ] **Step 7: Run the full audit test module to confirm no regression**
 
-Run: `pytest commcare_connect/audit/ -v`
+Run: `pytest connect_labs/audit/ -v`
 Expected: PASS (new + existing tests).
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add commcare_connect/audit/tasks.py commcare_connect/audit/views.py \
-        commcare_connect/audit/tests/test_run_audit_creation_wiring.py
+git add connect_labs/audit/tasks.py connect_labs/audit/views.py \
+        connect_labs/audit/tests/test_run_audit_creation_wiring.py
 git commit -m "feat(audit): wire image_audits/context_fields through create task + async view"
 ```
 
@@ -1189,7 +1189,7 @@ git commit -m "feat(audit): wire image_audits/context_fields through create task
 ### Task 6: Merged wizard step — per-type reviewer, generic settings, context fields
 
 **Files:**
-- Modify: `commcare_connect/templates/audit/audit_creation_wizard.html`
+- Modify: `connect_labs/templates/audit/audit_creation_wizard.html`
   - Step 5 body: lines 660-775 (replace the two sections)
   - Step 6 AI agent block: lines 812-870 (remove — moved into Step 5)
   - Alpine state: lines 1096, 1110-1113 (add per-type state)
@@ -1210,7 +1210,7 @@ git commit -m "feat(audit): wire image_audits/context_fields through create task
 
 - [ ] **Step 1: Add per-type Alpine state**
 
-In `commcare_connect/templates/audit/audit_creation_wizard.html`, replace the
+In `connect_labs/templates/audit/audit_creation_wizard.html`, replace the
 `relatedFields: []` line inside `auditCriteria` (line 1096) — keep it for legacy/no-op but
 add the new state. Replace the `// AI Review Agent state` block (lines 1110-1113) with:
 
@@ -1536,7 +1536,7 @@ collapsed at the bottom. No console errors.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add commcare_connect/templates/audit/audit_creation_wizard.html
+git add connect_labs/templates/audit/audit_creation_wizard.html
 git commit -m "feat(audit): merge image-type + AI-reviewer into one wizard step"
 ```
 
@@ -1548,7 +1548,7 @@ git commit -m "feat(audit): merge image-type + AI-reviewer into one wizard step"
 
 - [ ] **Step 1: Run the full audit suite**
 
-Run: `pytest commcare_connect/audit/ -v`
+Run: `pytest connect_labs/audit/ -v`
 Expected: PASS.
 
 - [ ] **Step 2: Lint**

@@ -24,18 +24,18 @@
 
 ## Phase 1 — Generator Engine (PR 1)
 
-Pure Python package at `commcare_connect/labs/synthetic/generator/`. No Django ORM dependency in the engine itself; only the `uploader` composes with `gdrive.py` and the `SyntheticOpportunity` model. Every module is independently testable. The package's public entry is `engine.generate(manifest, opportunity_detail, form_schema) -> dict[str, list | dict]`, fully deterministic given `manifest.random_seed`.
+Pure Python package at `connect_labs/labs/synthetic/generator/`. No Django ORM dependency in the engine itself; only the `uploader` composes with `gdrive.py` and the `SyntheticOpportunity` model. Every module is independently testable. The package's public entry is `engine.generate(manifest, opportunity_detail, form_schema) -> dict[str, list | dict]`, fully deterministic given `manifest.random_seed`.
 
 ### Task 1.1: Package skeleton
 
 **Files:**
-- Create: `commcare_connect/labs/synthetic/generator/__init__.py`
-- Create: `commcare_connect/labs/synthetic/generator/tests/__init__.py`
+- Create: `connect_labs/labs/synthetic/generator/__init__.py`
+- Create: `connect_labs/labs/synthetic/generator/tests/__init__.py`
 
 - [ ] **Step 1: Create the package init**
 
 ```python
-# commcare_connect/labs/synthetic/generator/__init__.py
+# connect_labs/labs/synthetic/generator/__init__.py
 """Deterministic synthetic data generator for labs synthetic opportunities.
 
 Public entry: ``engine.generate(manifest, opportunity_detail, form_schema)``
@@ -46,13 +46,13 @@ which returns the five fixture dicts the labs synthetic system serves.
 - [ ] **Step 2: Create the tests package init**
 
 ```python
-# commcare_connect/labs/synthetic/generator/tests/__init__.py
+# connect_labs/labs/synthetic/generator/tests/__init__.py
 ```
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add commcare_connect/labs/synthetic/generator/
+git add connect_labs/labs/synthetic/generator/
 git commit -m "feat(synthetic): scaffold generator package"
 ```
 
@@ -61,18 +61,18 @@ git commit -m "feat(synthetic): scaffold generator package"
 ### Task 1.2: Manifest schema (Pydantic v2)
 
 **Files:**
-- Create: `commcare_connect/labs/synthetic/generator/manifest.py`
-- Create: `commcare_connect/labs/synthetic/generator/tests/test_manifest.py`
+- Create: `connect_labs/labs/synthetic/generator/manifest.py`
+- Create: `connect_labs/labs/synthetic/generator/tests/test_manifest.py`
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
-# commcare_connect/labs/synthetic/generator/tests/test_manifest.py
+# connect_labs/labs/synthetic/generator/tests/test_manifest.py
 import datetime as dt
 
 import pytest
 
-from commcare_connect.labs.synthetic.generator.manifest import (
+from connect_labs.labs.synthetic.generator.manifest import (
     Manifest,
     ManifestValidationError,
 )
@@ -150,13 +150,13 @@ def test_manifest_rejects_end_before_start():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pytest commcare_connect/labs/synthetic/generator/tests/test_manifest.py -v`
+Run: `pytest connect_labs/labs/synthetic/generator/tests/test_manifest.py -v`
 Expected: 4 errors — `ImportError: cannot import name 'Manifest'`.
 
 - [ ] **Step 3: Implement the manifest module**
 
 ```python
-# commcare_connect/labs/synthetic/generator/manifest.py
+# connect_labs/labs/synthetic/generator/manifest.py
 """Pydantic-validated YAML manifest schema for the synthetic generator.
 
 The manifest is the structured contract between ACE's planning skill and
@@ -359,13 +359,13 @@ class Manifest(BaseModel):
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pytest commcare_connect/labs/synthetic/generator/tests/test_manifest.py -v`
+Run: `pytest connect_labs/labs/synthetic/generator/tests/test_manifest.py -v`
 Expected: 4 passed.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add commcare_connect/labs/synthetic/generator/manifest.py commcare_connect/labs/synthetic/generator/tests/test_manifest.py
+git add connect_labs/labs/synthetic/generator/manifest.py connect_labs/labs/synthetic/generator/tests/test_manifest.py
 git commit -m "feat(synthetic): manifest schema for generator"
 ```
 
@@ -376,16 +376,16 @@ git commit -m "feat(synthetic): manifest schema for generator"
 The engine needs the form's JSON paths to fill `form_json` correctly. Reuse the existing CommCare HQ API client; this module just resolves a flat list of `(json_path, question_type, choices)` tuples per form.
 
 **Files:**
-- Create: `commcare_connect/labs/synthetic/generator/schema_loader.py`
-- Create: `commcare_connect/labs/synthetic/generator/tests/test_schema_loader.py`
+- Create: `connect_labs/labs/synthetic/generator/schema_loader.py`
+- Create: `connect_labs/labs/synthetic/generator/tests/test_schema_loader.py`
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
-# commcare_connect/labs/synthetic/generator/tests/test_schema_loader.py
+# connect_labs/labs/synthetic/generator/tests/test_schema_loader.py
 from unittest.mock import MagicMock
 
-from commcare_connect.labs.synthetic.generator.schema_loader import (
+from connect_labs.labs.synthetic.generator.schema_loader import (
     FormSchema,
     QuestionSpec,
     load_form_schema,
@@ -437,13 +437,13 @@ def test_load_form_schema_handles_empty_response():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pytest commcare_connect/labs/synthetic/generator/tests/test_schema_loader.py -v`
+Run: `pytest connect_labs/labs/synthetic/generator/tests/test_schema_loader.py -v`
 Expected: ImportError on schema_loader.
 
 - [ ] **Step 3: Implement**
 
 ```python
-# commcare_connect/labs/synthetic/generator/schema_loader.py
+# connect_labs/labs/synthetic/generator/schema_loader.py
 """Form schema discovery for the generator.
 
 Wraps the existing CommCare HQ API client (via ``tools/commcare_hq_mcp``)
@@ -518,13 +518,13 @@ def load_form_schema(api: _HqApi, *, app_id: str, form_xmlns: str) -> FormSchema
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pytest commcare_connect/labs/synthetic/generator/tests/test_schema_loader.py -v`
+Run: `pytest connect_labs/labs/synthetic/generator/tests/test_schema_loader.py -v`
 Expected: 2 passed.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add commcare_connect/labs/synthetic/generator/schema_loader.py commcare_connect/labs/synthetic/generator/tests/test_schema_loader.py
+git add connect_labs/labs/synthetic/generator/schema_loader.py connect_labs/labs/synthetic/generator/tests/test_schema_loader.py
 git commit -m "feat(synthetic): form schema loader for generator"
 ```
 
@@ -535,21 +535,21 @@ git commit -m "feat(synthetic): form schema loader for generator"
 Expands the timeline + cadence rules into a deterministic list of `(flw_id, visit_date)` pairs per week, modulated by FLW persona archetype. This module owns all date math.
 
 **Files:**
-- Create: `commcare_connect/labs/synthetic/generator/timeline.py`
-- Create: `commcare_connect/labs/synthetic/generator/tests/test_timeline.py`
+- Create: `connect_labs/labs/synthetic/generator/timeline.py`
+- Create: `connect_labs/labs/synthetic/generator/tests/test_timeline.py`
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
-# commcare_connect/labs/synthetic/generator/tests/test_timeline.py
+# connect_labs/labs/synthetic/generator/tests/test_timeline.py
 import datetime as dt
 
-from commcare_connect.labs.synthetic.generator.manifest import (
+from connect_labs.labs.synthetic.generator.manifest import (
     FlwPersona,
     MeanStddev,
     Timeline,
 )
-from commcare_connect.labs.synthetic.generator.timeline import (
+from connect_labs.labs.synthetic.generator.timeline import (
     VisitSlot,
     expand_visit_schedule,
 )
@@ -601,13 +601,13 @@ def test_visit_slots_are_within_timeline():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pytest commcare_connect/labs/synthetic/generator/tests/test_timeline.py -v`
+Run: `pytest connect_labs/labs/synthetic/generator/tests/test_timeline.py -v`
 Expected: ImportError on timeline.
 
 - [ ] **Step 3: Implement**
 
 ```python
-# commcare_connect/labs/synthetic/generator/timeline.py
+# connect_labs/labs/synthetic/generator/timeline.py
 """Timeline → per-FLW visit schedule expansion.
 
 Deterministic given the manifest's ``random_seed``. Archetype controls
@@ -669,13 +669,13 @@ def expand_visit_schedule(
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pytest commcare_connect/labs/synthetic/generator/tests/test_timeline.py -v`
+Run: `pytest connect_labs/labs/synthetic/generator/tests/test_timeline.py -v`
 Expected: 3 passed.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add commcare_connect/labs/synthetic/generator/timeline.py commcare_connect/labs/synthetic/generator/tests/test_timeline.py
+git add connect_labs/labs/synthetic/generator/timeline.py connect_labs/labs/synthetic/generator/tests/test_timeline.py
 git commit -m "feat(synthetic): timeline expander for visit schedules"
 ```
 
@@ -686,23 +686,23 @@ git commit -m "feat(synthetic): timeline expander for visit schedules"
 Walks the form schema and fills `form_json` per visit using cohort distributions. Owns anomaly injection (a visit that lands on a scheduled anomaly week pulls its outlier values from the anomaly catalog instead of the cohort's normal distribution).
 
 **Files:**
-- Create: `commcare_connect/labs/synthetic/generator/fields.py`
-- Create: `commcare_connect/labs/synthetic/generator/tests/test_fields.py`
+- Create: `connect_labs/labs/synthetic/generator/fields.py`
+- Create: `connect_labs/labs/synthetic/generator/tests/test_fields.py`
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
-# commcare_connect/labs/synthetic/generator/tests/test_fields.py
+# connect_labs/labs/synthetic/generator/tests/test_fields.py
 import datetime as dt
 import random
 
-from commcare_connect.labs.synthetic.generator.fields import fill_form_json
-from commcare_connect.labs.synthetic.generator.manifest import (
+from connect_labs.labs.synthetic.generator.fields import fill_form_json
+from connect_labs.labs.synthetic.generator.manifest import (
     Anomaly,
     BeneficiaryCohort,
     NormalDistribution,
 )
-from commcare_connect.labs.synthetic.generator.schema_loader import (
+from connect_labs.labs.synthetic.generator.schema_loader import (
     FormSchema,
     QuestionSpec,
 )
@@ -774,13 +774,13 @@ def test_fill_form_json_is_deterministic():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pytest commcare_connect/labs/synthetic/generator/tests/test_fields.py -v`
+Run: `pytest connect_labs/labs/synthetic/generator/tests/test_fields.py -v`
 Expected: ImportError on fields.
 
 - [ ] **Step 3: Implement**
 
 ```python
-# commcare_connect/labs/synthetic/generator/fields.py
+# connect_labs/labs/synthetic/generator/fields.py
 """Per-visit form_json filling.
 
 For each question in the schema, draws a value from the cohort's field
@@ -860,13 +860,13 @@ def fill_form_json(
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pytest commcare_connect/labs/synthetic/generator/tests/test_fields.py -v`
+Run: `pytest connect_labs/labs/synthetic/generator/tests/test_fields.py -v`
 Expected: 3 passed.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add commcare_connect/labs/synthetic/generator/fields.py commcare_connect/labs/synthetic/generator/tests/test_fields.py
+git add connect_labs/labs/synthetic/generator/fields.py connect_labs/labs/synthetic/generator/tests/test_fields.py
 git commit -m "feat(synthetic): field filler with anomaly injection"
 ```
 
@@ -877,20 +877,20 @@ git commit -m "feat(synthetic): field filler with anomaly injection"
 For each visit, decides `status`, `flagged`, `flag_reason`, `review_status` based on the FLW persona's flag rate, the Connect verification rules from the opp config, and any anomaly that touches that visit.
 
 **Files:**
-- Create: `commcare_connect/labs/synthetic/generator/status.py`
-- Create: `commcare_connect/labs/synthetic/generator/tests/test_status.py`
+- Create: `connect_labs/labs/synthetic/generator/status.py`
+- Create: `connect_labs/labs/synthetic/generator/tests/test_status.py`
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
-# commcare_connect/labs/synthetic/generator/tests/test_status.py
+# connect_labs/labs/synthetic/generator/tests/test_status.py
 import random
 
-from commcare_connect.labs.synthetic.generator.manifest import (
+from connect_labs.labs.synthetic.generator.manifest import (
     FlwPersona,
     MeanStddev,
 )
-from commcare_connect.labs.synthetic.generator.status import (
+from connect_labs.labs.synthetic.generator.status import (
     VisitStatus,
     decide_visit_status,
 )
@@ -934,13 +934,13 @@ def test_anomaly_forces_flag_and_review():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pytest commcare_connect/labs/synthetic/generator/tests/test_status.py -v`
+Run: `pytest connect_labs/labs/synthetic/generator/tests/test_status.py -v`
 Expected: ImportError.
 
 - [ ] **Step 3: Implement**
 
 ```python
-# commcare_connect/labs/synthetic/generator/status.py
+# connect_labs/labs/synthetic/generator/status.py
 """Visit status / flag / review_status distribution.
 
 Inputs:
@@ -1011,13 +1011,13 @@ def decide_visit_status(
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pytest commcare_connect/labs/synthetic/generator/tests/test_status.py -v`
+Run: `pytest connect_labs/labs/synthetic/generator/tests/test_status.py -v`
 Expected: 3 passed.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add commcare_connect/labs/synthetic/generator/status.py commcare_connect/labs/synthetic/generator/tests/test_status.py
+git add connect_labs/labs/synthetic/generator/status.py connect_labs/labs/synthetic/generator/tests/test_status.py
 git commit -m "feat(synthetic): visit status / flag distributor"
 ```
 
@@ -1028,16 +1028,16 @@ git commit -m "feat(synthetic): visit status / flag distributor"
 Builds `completed_works.json` and `completed_module.json` from the visit list + payment unit definitions on the opportunity.
 
 **Files:**
-- Create: `commcare_connect/labs/synthetic/generator/works.py`
-- Create: `commcare_connect/labs/synthetic/generator/tests/test_works.py`
+- Create: `connect_labs/labs/synthetic/generator/works.py`
+- Create: `connect_labs/labs/synthetic/generator/tests/test_works.py`
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
-# commcare_connect/labs/synthetic/generator/tests/test_works.py
+# connect_labs/labs/synthetic/generator/tests/test_works.py
 import datetime as dt
 
-from commcare_connect.labs.synthetic.generator.works import build_works_and_modules
+from connect_labs.labs.synthetic.generator.works import build_works_and_modules
 
 
 def test_build_works_one_per_approved_visit():
@@ -1069,13 +1069,13 @@ def test_build_works_returns_lists():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pytest commcare_connect/labs/synthetic/generator/tests/test_works.py -v`
+Run: `pytest connect_labs/labs/synthetic/generator/tests/test_works.py -v`
 Expected: ImportError.
 
 - [ ] **Step 3: Implement**
 
 ```python
-# commcare_connect/labs/synthetic/generator/works.py
+# connect_labs/labs/synthetic/generator/works.py
 """Build completed_works.json and completed_module.json from synthetic visits."""
 
 from __future__ import annotations
@@ -1139,13 +1139,13 @@ def build_works_and_modules(
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pytest commcare_connect/labs/synthetic/generator/tests/test_works.py -v`
+Run: `pytest connect_labs/labs/synthetic/generator/tests/test_works.py -v`
 Expected: 2 passed.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add commcare_connect/labs/synthetic/generator/works.py commcare_connect/labs/synthetic/generator/tests/test_works.py
+git add connect_labs/labs/synthetic/generator/works.py connect_labs/labs/synthetic/generator/tests/test_works.py
 git commit -m "feat(synthetic): completed works + module minter"
 ```
 
@@ -1156,17 +1156,17 @@ git commit -m "feat(synthetic): completed works + module minter"
 Mints `user_data.json` from the manifest's FLW personas — one row per persona.
 
 **Files:**
-- Create: `commcare_connect/labs/synthetic/generator/user_data.py`
-- Create: `commcare_connect/labs/synthetic/generator/tests/test_user_data.py`
+- Create: `connect_labs/labs/synthetic/generator/user_data.py`
+- Create: `connect_labs/labs/synthetic/generator/tests/test_user_data.py`
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
-# commcare_connect/labs/synthetic/generator/tests/test_user_data.py
+# connect_labs/labs/synthetic/generator/tests/test_user_data.py
 import datetime as dt
 
-from commcare_connect.labs.synthetic.generator.manifest import FlwPersona, MeanStddev
-from commcare_connect.labs.synthetic.generator.user_data import build_user_data
+from connect_labs.labs.synthetic.generator.manifest import FlwPersona, MeanStddev
+from connect_labs.labs.synthetic.generator.user_data import build_user_data
 
 
 def _p(pid, name, archetype="steady"):
@@ -1201,13 +1201,13 @@ def test_build_user_data_handles_no_visits():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pytest commcare_connect/labs/synthetic/generator/tests/test_user_data.py -v`
+Run: `pytest connect_labs/labs/synthetic/generator/tests/test_user_data.py -v`
 Expected: ImportError.
 
 - [ ] **Step 3: Implement**
 
 ```python
-# commcare_connect/labs/synthetic/generator/user_data.py
+# connect_labs/labs/synthetic/generator/user_data.py
 """Build user_data.json (the FLW roster) from manifest personas."""
 
 from __future__ import annotations
@@ -1243,13 +1243,13 @@ def build_user_data(
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pytest commcare_connect/labs/synthetic/generator/tests/test_user_data.py -v`
+Run: `pytest connect_labs/labs/synthetic/generator/tests/test_user_data.py -v`
 Expected: 2 passed.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add commcare_connect/labs/synthetic/generator/user_data.py commcare_connect/labs/synthetic/generator/tests/test_user_data.py
+git add connect_labs/labs/synthetic/generator/user_data.py connect_labs/labs/synthetic/generator/tests/test_user_data.py
 git commit -m "feat(synthetic): FLW user_data builder"
 ```
 
@@ -1260,14 +1260,14 @@ git commit -m "feat(synthetic): FLW user_data builder"
 Builds `opportunity.json` from the live Connect opportunity detail. Mostly a passthrough that fills in any missing keys with sensible defaults.
 
 **Files:**
-- Create: `commcare_connect/labs/synthetic/generator/opportunity.py`
-- Create: `commcare_connect/labs/synthetic/generator/tests/test_opportunity.py`
+- Create: `connect_labs/labs/synthetic/generator/opportunity.py`
+- Create: `connect_labs/labs/synthetic/generator/tests/test_opportunity.py`
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
-# commcare_connect/labs/synthetic/generator/tests/test_opportunity.py
-from commcare_connect.labs.synthetic.generator.opportunity import build_opportunity
+# connect_labs/labs/synthetic/generator/tests/test_opportunity.py
+from connect_labs.labs.synthetic.generator.opportunity import build_opportunity
 
 
 def test_build_opportunity_passes_through_known_keys():
@@ -1292,13 +1292,13 @@ def test_build_opportunity_defaults_missing_fields():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pytest commcare_connect/labs/synthetic/generator/tests/test_opportunity.py -v`
+Run: `pytest connect_labs/labs/synthetic/generator/tests/test_opportunity.py -v`
 Expected: ImportError.
 
 - [ ] **Step 3: Implement**
 
 ```python
-# commcare_connect/labs/synthetic/generator/opportunity.py
+# connect_labs/labs/synthetic/generator/opportunity.py
 """Build opportunity.json from live Connect opp detail."""
 
 from __future__ import annotations
@@ -1326,13 +1326,13 @@ def build_opportunity(
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pytest commcare_connect/labs/synthetic/generator/tests/test_opportunity.py -v`
+Run: `pytest connect_labs/labs/synthetic/generator/tests/test_opportunity.py -v`
 Expected: 2 passed.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add commcare_connect/labs/synthetic/generator/opportunity.py commcare_connect/labs/synthetic/generator/tests/test_opportunity.py
+git add connect_labs/labs/synthetic/generator/opportunity.py connect_labs/labs/synthetic/generator/tests/test_opportunity.py
 git commit -m "feat(synthetic): opportunity.json builder"
 ```
 
@@ -1343,16 +1343,16 @@ git commit -m "feat(synthetic): opportunity.json builder"
 Composes the modules above into one entry point. Writes a golden-manifest test that asserts byte-stable outputs across runs given the same seed.
 
 **Files:**
-- Create: `commcare_connect/labs/synthetic/generator/engine.py`
-- Create: `commcare_connect/labs/synthetic/generator/tests/golden/manifest.yaml`
-- Create: `commcare_connect/labs/synthetic/generator/tests/golden/opportunity_detail.json`
-- Create: `commcare_connect/labs/synthetic/generator/tests/golden/form_schema.json`
-- Create: `commcare_connect/labs/synthetic/generator/tests/test_engine.py`
+- Create: `connect_labs/labs/synthetic/generator/engine.py`
+- Create: `connect_labs/labs/synthetic/generator/tests/golden/manifest.yaml`
+- Create: `connect_labs/labs/synthetic/generator/tests/golden/opportunity_detail.json`
+- Create: `connect_labs/labs/synthetic/generator/tests/golden/form_schema.json`
+- Create: `connect_labs/labs/synthetic/generator/tests/test_engine.py`
 
 - [ ] **Step 1: Write the golden manifest fixture**
 
 ```yaml
-# commcare_connect/labs/synthetic/generator/tests/golden/manifest.yaml
+# connect_labs/labs/synthetic/generator/tests/golden/manifest.yaml
 opportunity_id: 9999
 opportunity_name: Golden Demo
 random_seed: 1234
@@ -1392,7 +1392,7 @@ coaching_arcs: []
 - [ ] **Step 2: Write the opportunity_detail and form_schema fixtures**
 
 ```json
-// commcare_connect/labs/synthetic/generator/tests/golden/opportunity_detail.json
+// connect_labs/labs/synthetic/generator/tests/golden/opportunity_detail.json
 {
     "id": 9999,
     "name": "Golden Demo",
@@ -1405,7 +1405,7 @@ coaching_arcs: []
 ```
 
 ```json
-// commcare_connect/labs/synthetic/generator/tests/golden/form_schema.json
+// connect_labs/labs/synthetic/generator/tests/golden/form_schema.json
 {"questions": [
     {"json_path": "form.weight_kg", "kind": "decimal", "choices": []}
 ]}
@@ -1414,15 +1414,15 @@ coaching_arcs: []
 - [ ] **Step 3: Write the failing test**
 
 ```python
-# commcare_connect/labs/synthetic/generator/tests/test_engine.py
+# connect_labs/labs/synthetic/generator/tests/test_engine.py
 import json
 from pathlib import Path
 
 import pytest
 
-from commcare_connect.labs.synthetic.generator.engine import generate
-from commcare_connect.labs.synthetic.generator.manifest import Manifest
-from commcare_connect.labs.synthetic.generator.schema_loader import (
+from connect_labs.labs.synthetic.generator.engine import generate
+from connect_labs.labs.synthetic.generator.manifest import Manifest
+from connect_labs.labs.synthetic.generator.schema_loader import (
     FormSchema,
     QuestionSpec,
 )
@@ -1487,13 +1487,13 @@ def test_generate_user_data_matches_personas():
 
 - [ ] **Step 4: Run test to verify it fails**
 
-Run: `pytest commcare_connect/labs/synthetic/generator/tests/test_engine.py -v`
+Run: `pytest connect_labs/labs/synthetic/generator/tests/test_engine.py -v`
 Expected: ImportError on engine.
 
 - [ ] **Step 5: Implement the engine**
 
 ```python
-# commcare_connect/labs/synthetic/generator/engine.py
+# connect_labs/labs/synthetic/generator/engine.py
 """Top-level generator orchestrator.
 
 Composes manifest → timeline → fields → status → user_data → works
@@ -1617,18 +1617,18 @@ def generate(
 
 - [ ] **Step 6: Run tests to verify they pass**
 
-Run: `pytest commcare_connect/labs/synthetic/generator/tests/test_engine.py -v`
+Run: `pytest connect_labs/labs/synthetic/generator/tests/test_engine.py -v`
 Expected: 4 passed.
 
 - [ ] **Step 7: Run the entire generator package test suite to confirm nothing regressed**
 
-Run: `pytest commcare_connect/labs/synthetic/generator/ -v`
+Run: `pytest connect_labs/labs/synthetic/generator/ -v`
 Expected: all tests pass.
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add commcare_connect/labs/synthetic/generator/engine.py commcare_connect/labs/synthetic/generator/tests/golden/ commcare_connect/labs/synthetic/generator/tests/test_engine.py
+git add connect_labs/labs/synthetic/generator/engine.py connect_labs/labs/synthetic/generator/tests/golden/ connect_labs/labs/synthetic/generator/tests/test_engine.py
 git commit -m "feat(synthetic): engine orchestrator + golden integration test"
 ```
 
@@ -1639,23 +1639,23 @@ git commit -m "feat(synthetic): engine orchestrator + golden integration test"
 Composes the engine output with the existing `DriveClient` and `SyntheticOpportunity` model. This is the only generator module that touches Django state.
 
 **Files:**
-- Create: `commcare_connect/labs/synthetic/generator/uploader.py`
-- Create: `commcare_connect/labs/synthetic/generator/tests/test_uploader.py`
+- Create: `connect_labs/labs/synthetic/generator/uploader.py`
+- Create: `connect_labs/labs/synthetic/generator/tests/test_uploader.py`
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
-# commcare_connect/labs/synthetic/generator/tests/test_uploader.py
+# connect_labs/labs/synthetic/generator/tests/test_uploader.py
 import json
 
 import pytest
 from django.test import override_settings
 
-from commcare_connect.labs.synthetic.generator.uploader import (
+from connect_labs.labs.synthetic.generator.uploader import (
     UploadResult,
     upload_and_register,
 )
-from commcare_connect.labs.synthetic.models import SyntheticOpportunity
+from connect_labs.labs.synthetic.models import SyntheticOpportunity
 
 
 class _FakeDrive:
@@ -1739,13 +1739,13 @@ def test_upload_and_register_requires_parent_folder_setting():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pytest commcare_connect/labs/synthetic/generator/tests/test_uploader.py -v`
+Run: `pytest connect_labs/labs/synthetic/generator/tests/test_uploader.py -v`
 Expected: ImportError on uploader.
 
 - [ ] **Step 3: Implement**
 
 ```python
-# commcare_connect/labs/synthetic/generator/uploader.py
+# connect_labs/labs/synthetic/generator/uploader.py
 """Compose engine output with the GDrive uploader and SyntheticOpportunity registry."""
 
 from __future__ import annotations
@@ -1757,8 +1757,8 @@ from typing import Any, Protocol
 from django.conf import settings
 from django.utils import timezone
 
-from commcare_connect.labs.synthetic.models import SyntheticOpportunity
-from commcare_connect.labs.synthetic.registry import invalidate_cache
+from connect_labs.labs.synthetic.models import SyntheticOpportunity
+from connect_labs.labs.synthetic.registry import invalidate_cache
 
 
 _FILES = (
@@ -1816,18 +1816,18 @@ def upload_and_register(
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pytest commcare_connect/labs/synthetic/generator/tests/test_uploader.py -v`
+Run: `pytest connect_labs/labs/synthetic/generator/tests/test_uploader.py -v`
 Expected: 3 passed.
 
 - [ ] **Step 5: Run the full generator suite**
 
-Run: `pytest commcare_connect/labs/synthetic/generator/ -v`
+Run: `pytest connect_labs/labs/synthetic/generator/ -v`
 Expected: all tests pass.
 
 - [ ] **Step 6: Commit + open PR 1**
 
 ```bash
-git add commcare_connect/labs/synthetic/generator/uploader.py commcare_connect/labs/synthetic/generator/tests/test_uploader.py
+git add connect_labs/labs/synthetic/generator/uploader.py connect_labs/labs/synthetic/generator/tests/test_uploader.py
 git commit -m "feat(synthetic): uploader composing GDrive + SyntheticOpportunity registry"
 ```
 
@@ -1837,27 +1837,27 @@ PR 1 is now ready. Title: `feat(synthetic): generator engine for fixture data`. 
 
 ## Phase 2 — SEED Workflow Templates (PR 2)
 
-Two new templates ship as repo code at `commcare_connect/workflow/templates/`. Both are scaffolds — config-driven, opp-agnostic. Per-opp visual polish lands in Plan B (ACE polish skill, layered via `workflow_update_render_code`). Tests follow the existing template-test convention.
+Two new templates ship as repo code at `connect_labs/workflow/templates/`. Both are scaffolds — config-driven, opp-agnostic. Per-opp visual polish lands in Plan B (ACE polish skill, layered via `workflow_update_render_code`). Tests follow the existing template-test convention.
 
 ### Task 2.1: `llo_weekly_review` skeleton — DEFINITION + PIPELINE_SCHEMAS
 
 **Files:**
-- Create: `commcare_connect/workflow/templates/llo_weekly_review.py`
-- Create: `commcare_connect/workflow/tests/templates/test_llo_weekly_review.py`
+- Create: `connect_labs/workflow/templates/llo_weekly_review.py`
+- Create: `connect_labs/workflow/tests/templates/test_llo_weekly_review.py`
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
-# commcare_connect/workflow/tests/templates/test_llo_weekly_review.py
+# connect_labs/workflow/tests/templates/test_llo_weekly_review.py
 def test_llo_weekly_review_template_registered():
-    from commcare_connect.workflow.templates import list_templates
+    from connect_labs.workflow.templates import list_templates
 
     keys = {t["key"] for t in list_templates()}
     assert "llo_weekly_review" in keys
 
 
 def test_llo_weekly_review_supports_saved_runs():
-    from commcare_connect.workflow.templates.llo_weekly_review import TEMPLATE
+    from connect_labs.workflow.templates.llo_weekly_review import TEMPLATE
 
     assert TEMPLATE["supports_saved_runs"] is True
     assert TEMPLATE["snapshot_inputs"] == {
@@ -1867,14 +1867,14 @@ def test_llo_weekly_review_supports_saved_runs():
 
 
 def test_llo_weekly_review_definition_has_kpi_config_slot():
-    from commcare_connect.workflow.templates.llo_weekly_review import DEFINITION
+    from connect_labs.workflow.templates.llo_weekly_review import DEFINITION
 
     assert "kpi_config" in DEFINITION["config"]
     assert "coaching_task_template" in DEFINITION["config"]
 
 
 def test_llo_weekly_review_pipeline_schema_aggregates_per_flw():
-    from commcare_connect.workflow.templates.llo_weekly_review import PIPELINE_SCHEMA
+    from connect_labs.workflow.templates.llo_weekly_review import PIPELINE_SCHEMA
 
     assert PIPELINE_SCHEMA["grouping_key"] == "username"
     assert PIPELINE_SCHEMA["terminal_stage"] == "aggregated"
@@ -1882,13 +1882,13 @@ def test_llo_weekly_review_pipeline_schema_aggregates_per_flw():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pytest commcare_connect/workflow/tests/templates/test_llo_weekly_review.py -v`
+Run: `pytest connect_labs/workflow/tests/templates/test_llo_weekly_review.py -v`
 Expected: ImportError.
 
 - [ ] **Step 3: Implement skeleton**
 
 ```python
-# commcare_connect/workflow/templates/llo_weekly_review.py
+# connect_labs/workflow/templates/llo_weekly_review.py
 """LLO weekly FLW performance review (synthetic-data demo scaffold).
 
 A config-driven template the ACE Phase 6 synthetic generator instantiates.
@@ -2037,13 +2037,13 @@ TEMPLATE = {
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `pytest commcare_connect/workflow/tests/templates/test_llo_weekly_review.py -v`
+Run: `pytest connect_labs/workflow/tests/templates/test_llo_weekly_review.py -v`
 Expected: 4 passed.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add commcare_connect/workflow/templates/llo_weekly_review.py commcare_connect/workflow/tests/templates/test_llo_weekly_review.py
+git add connect_labs/workflow/templates/llo_weekly_review.py connect_labs/workflow/tests/templates/test_llo_weekly_review.py
 git commit -m "feat(workflow): llo_weekly_review SEED template scaffold"
 ```
 
@@ -2052,47 +2052,47 @@ git commit -m "feat(workflow): llo_weekly_review SEED template scaffold"
 ### Task 2.2: `program_admin_audit` skeleton
 
 **Files:**
-- Create: `commcare_connect/workflow/templates/program_admin_audit.py`
-- Create: `commcare_connect/workflow/tests/templates/test_program_admin_audit.py`
+- Create: `connect_labs/workflow/templates/program_admin_audit.py`
+- Create: `connect_labs/workflow/tests/templates/test_program_admin_audit.py`
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
-# commcare_connect/workflow/tests/templates/test_program_admin_audit.py
+# connect_labs/workflow/tests/templates/test_program_admin_audit.py
 def test_program_admin_audit_registered():
-    from commcare_connect.workflow.templates import list_templates
+    from connect_labs.workflow.templates import list_templates
 
     keys = {t["key"] for t in list_templates()}
     assert "program_admin_audit" in keys
 
 
 def test_program_admin_audit_definition_has_watched_workflow_slot():
-    from commcare_connect.workflow.templates.program_admin_audit import DEFINITION
+    from connect_labs.workflow.templates.program_admin_audit import DEFINITION
 
     assert "watched_workflow_id" in DEFINITION["config"]
 
 
 def test_program_admin_audit_supports_saved_runs():
-    from commcare_connect.workflow.templates.program_admin_audit import TEMPLATE
+    from connect_labs.workflow.templates.program_admin_audit import TEMPLATE
 
     assert TEMPLATE["supports_saved_runs"] is True
 
 
 def test_program_admin_audit_is_multi_opp_capable():
-    from commcare_connect.workflow.templates.program_admin_audit import TEMPLATE
+    from connect_labs.workflow.templates.program_admin_audit import TEMPLATE
 
     assert TEMPLATE["multi_opp"] is True
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pytest commcare_connect/workflow/tests/templates/test_program_admin_audit.py -v`
+Run: `pytest connect_labs/workflow/tests/templates/test_program_admin_audit.py -v`
 Expected: ImportError.
 
 - [ ] **Step 3: Implement**
 
 ```python
-# commcare_connect/workflow/templates/program_admin_audit.py
+# connect_labs/workflow/templates/program_admin_audit.py
 """Program admin audit of the LLO's weekly review process.
 
 Reads the saved runs of an ``llo_weekly_review`` instance and renders a
@@ -2188,18 +2188,18 @@ TEMPLATE = {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pytest commcare_connect/workflow/tests/templates/test_program_admin_audit.py -v`
+Run: `pytest connect_labs/workflow/tests/templates/test_program_admin_audit.py -v`
 Expected: 4 passed.
 
 - [ ] **Step 5: Run all template tests as a regression check**
 
-Run: `pytest commcare_connect/workflow/tests/templates/ -v`
+Run: `pytest connect_labs/workflow/tests/templates/ -v`
 Expected: all template tests pass (existing + 8 new).
 
 - [ ] **Step 6: Commit + open PR 2**
 
 ```bash
-git add commcare_connect/workflow/templates/program_admin_audit.py commcare_connect/workflow/tests/templates/test_program_admin_audit.py
+git add connect_labs/workflow/templates/program_admin_audit.py connect_labs/workflow/tests/templates/test_program_admin_audit.py
 git commit -m "feat(workflow): program_admin_audit SEED template scaffold"
 ```
 
@@ -2214,18 +2214,18 @@ Five new MCP tools wrap the engine + templates + task creation + snapshot save i
 ### Task 3.1: `synthetic_register` MCP tool
 
 **Files:**
-- Create: `commcare_connect/mcp/tools/synthetic.py`
-- Create: `commcare_connect/mcp/tests/test_synthetic_tools.py`
+- Create: `connect_labs/mcp/tools/synthetic.py`
+- Create: `connect_labs/mcp/tests/test_synthetic_tools.py`
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
-# commcare_connect/mcp/tests/test_synthetic_tools.py
+# connect_labs/mcp/tests/test_synthetic_tools.py
 import pytest
 from django.contrib.auth import get_user_model
 
-from commcare_connect.labs.synthetic.models import SyntheticOpportunity
-from commcare_connect.mcp.tool_registry import get_tool
+from connect_labs.labs.synthetic.models import SyntheticOpportunity
+from connect_labs.mcp.tool_registry import get_tool
 
 
 @pytest.fixture
@@ -2270,21 +2270,21 @@ def test_synthetic_register_updates_existing_row(user):
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pytest commcare_connect/mcp/tests/test_synthetic_tools.py -v`
+Run: `pytest connect_labs/mcp/tests/test_synthetic_tools.py -v`
 Expected: KeyError on `synthetic_register`.
 
 - [ ] **Step 3: Implement**
 
 ```python
-# commcare_connect/mcp/tools/synthetic.py
+# connect_labs/mcp/tools/synthetic.py
 """MCP tools for the labs synthetic-data system."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from commcare_connect.labs.synthetic.models import SyntheticOpportunity
-from commcare_connect.labs.synthetic.registry import invalidate_cache
+from connect_labs.labs.synthetic.models import SyntheticOpportunity
+from connect_labs.labs.synthetic.registry import invalidate_cache
 
 from ..tool_registry import register
 
@@ -2339,13 +2339,13 @@ def synthetic_register(
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pytest commcare_connect/mcp/tests/test_synthetic_tools.py::test_synthetic_register_creates_row commcare_connect/mcp/tests/test_synthetic_tools.py::test_synthetic_register_updates_existing_row -v`
+Run: `pytest connect_labs/mcp/tests/test_synthetic_tools.py::test_synthetic_register_creates_row connect_labs/mcp/tests/test_synthetic_tools.py::test_synthetic_register_updates_existing_row -v`
 Expected: 2 passed.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add commcare_connect/mcp/tools/synthetic.py commcare_connect/mcp/tests/test_synthetic_tools.py
+git add connect_labs/mcp/tools/synthetic.py connect_labs/mcp/tests/test_synthetic_tools.py
 git commit -m "feat(mcp): synthetic_register tool"
 ```
 
@@ -2354,13 +2354,13 @@ git commit -m "feat(mcp): synthetic_register tool"
 ### Task 3.2: `synthetic_disable` MCP tool
 
 **Files:**
-- Modify: `commcare_connect/mcp/tools/synthetic.py`
-- Modify: `commcare_connect/mcp/tests/test_synthetic_tools.py`
+- Modify: `connect_labs/mcp/tools/synthetic.py`
+- Modify: `connect_labs/mcp/tests/test_synthetic_tools.py`
 
 - [ ] **Step 1: Append the failing test**
 
 ```python
-# add to commcare_connect/mcp/tests/test_synthetic_tools.py
+# add to connect_labs/mcp/tests/test_synthetic_tools.py
 @pytest.mark.django_db
 def test_synthetic_disable_clears_enabled_flag(user):
     SyntheticOpportunity.objects.create(
@@ -2377,7 +2377,7 @@ def test_synthetic_disable_clears_enabled_flag(user):
 
 @pytest.mark.django_db
 def test_synthetic_disable_404s_on_missing_row(user):
-    from commcare_connect.mcp.errors import MCPToolError
+    from connect_labs.mcp.errors import MCPToolError
     tool = get_tool("synthetic_disable")
     with pytest.raises(MCPToolError) as exc:
         tool.handler(user=user, opportunity_id=99999)
@@ -2386,15 +2386,15 @@ def test_synthetic_disable_404s_on_missing_row(user):
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `pytest commcare_connect/mcp/tests/test_synthetic_tools.py::test_synthetic_disable_clears_enabled_flag commcare_connect/mcp/tests/test_synthetic_tools.py::test_synthetic_disable_404s_on_missing_row -v`
+Run: `pytest connect_labs/mcp/tests/test_synthetic_tools.py::test_synthetic_disable_clears_enabled_flag connect_labs/mcp/tests/test_synthetic_tools.py::test_synthetic_disable_404s_on_missing_row -v`
 Expected: KeyError on `synthetic_disable`.
 
 - [ ] **Step 3: Append the tool to `synthetic.py`**
 
 ```python
-# add to commcare_connect/mcp/tools/synthetic.py
+# add to connect_labs/mcp/tools/synthetic.py
 
-from commcare_connect.mcp.errors import MCPToolError
+from connect_labs.mcp.errors import MCPToolError
 
 
 @register(
@@ -2429,13 +2429,13 @@ def synthetic_disable(user, *, opportunity_id: int) -> dict[str, Any]:
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `pytest commcare_connect/mcp/tests/test_synthetic_tools.py -v`
+Run: `pytest connect_labs/mcp/tests/test_synthetic_tools.py -v`
 Expected: 4 passed.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add commcare_connect/mcp/tools/synthetic.py commcare_connect/mcp/tests/test_synthetic_tools.py
+git add connect_labs/mcp/tools/synthetic.py connect_labs/mcp/tests/test_synthetic_tools.py
 git commit -m "feat(mcp): synthetic_disable tool"
 ```
 
@@ -2444,17 +2444,17 @@ git commit -m "feat(mcp): synthetic_disable tool"
 ### Task 3.3: `synthetic_generate_from_manifest` MCP tool
 
 **Files:**
-- Modify: `commcare_connect/mcp/tools/synthetic.py`
-- Modify: `commcare_connect/mcp/tests/test_synthetic_tools.py`
+- Modify: `connect_labs/mcp/tools/synthetic.py`
+- Modify: `connect_labs/mcp/tests/test_synthetic_tools.py`
 
 - [ ] **Step 1: Append the failing test**
 
 ```python
-# add to commcare_connect/mcp/tests/test_synthetic_tools.py
+# add to connect_labs/mcp/tests/test_synthetic_tools.py
 @pytest.mark.django_db
 def test_synthetic_generate_from_manifest_creates_folder_and_row(user, monkeypatch):
     """Tool wires manifest -> engine -> uploader and returns folder_id + counts."""
-    from commcare_connect.mcp.tools import synthetic as syn_tools
+    from connect_labs.mcp.tools import synthetic as syn_tools
 
     manifest_yaml = (
         "opportunity_id: 4242\n"
@@ -2497,7 +2497,7 @@ def test_synthetic_generate_from_manifest_creates_folder_and_row(user, monkeypat
     monkeypatch.setattr(
         syn_tools, "_load_form_schema_for_opp",
         lambda opp_id, user: __import__(
-            "commcare_connect.labs.synthetic.generator.schema_loader",
+            "connect_labs.labs.synthetic.generator.schema_loader",
             fromlist=["FormSchema"],
         ).FormSchema(questions=[]),
     )
@@ -2515,7 +2515,7 @@ def test_synthetic_generate_from_manifest_creates_folder_and_row(user, monkeypat
 @pytest.mark.django_db
 def test_synthetic_generate_rejects_invalid_manifest(user):
     tool = get_tool("synthetic_generate_from_manifest")
-    from commcare_connect.mcp.errors import MCPToolError
+    from connect_labs.mcp.errors import MCPToolError
     with pytest.raises(MCPToolError) as exc:
         tool.handler(user=user, opportunity_id=1, manifest_yaml="not: valid: yaml: at all: :")
     assert exc.value.code == "INVALID_SCHEMA"
@@ -2523,28 +2523,28 @@ def test_synthetic_generate_rejects_invalid_manifest(user):
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `pytest commcare_connect/mcp/tests/test_synthetic_tools.py -k synthetic_generate -v`
+Run: `pytest connect_labs/mcp/tests/test_synthetic_tools.py -k synthetic_generate -v`
 Expected: KeyError on `synthetic_generate_from_manifest`.
 
 - [ ] **Step 3: Append the tool to `synthetic.py`**
 
 ```python
-# add to commcare_connect/mcp/tools/synthetic.py
+# add to connect_labs/mcp/tools/synthetic.py
 
-from commcare_connect.labs.integrations.connect.api_client import LabsRecordAPIClient
-from commcare_connect.labs.integrations.commcare_hq import HqApi
-from commcare_connect.labs.synthetic.gdrive import DriveClient
-from commcare_connect.labs.synthetic.generator.engine import generate as _generate
-from commcare_connect.labs.synthetic.generator.manifest import (
+from connect_labs.labs.integrations.connect.api_client import LabsRecordAPIClient
+from connect_labs.labs.integrations.commcare_hq import HqApi
+from connect_labs.labs.synthetic.gdrive import DriveClient
+from connect_labs.labs.synthetic.generator.engine import generate as _generate
+from connect_labs.labs.synthetic.generator.manifest import (
     Manifest,
     ManifestValidationError,
 )
-from commcare_connect.labs.synthetic.generator.schema_loader import (
+from connect_labs.labs.synthetic.generator.schema_loader import (
     FormSchema,
     QuestionSpec,
     load_form_schema,
 )
-from commcare_connect.labs.synthetic.generator.uploader import upload_and_register
+from connect_labs.labs.synthetic.generator.uploader import upload_and_register
 
 
 def _load_opportunity_detail(opportunity_id: int, user) -> dict:
@@ -2618,17 +2618,17 @@ def synthetic_generate_from_manifest(
     }
 ```
 
-> **Note for the engineer:** The two helpers `_load_opportunity_detail` and `_load_form_schema_for_opp` assume `LabsRecordAPIClient.for_user` and `HqApi.for_user` exist. If those constructors don't match exactly, follow the patterns in the actual files (`commcare_connect/labs/integrations/connect/api_client.py` and the equivalent HQ client) — the goal is to reach `get_opportunity_detail` and `get_form_json_paths` for the authenticated user. Adjust signatures to match what's there. Do NOT invent new auth surfaces.
+> **Note for the engineer:** The two helpers `_load_opportunity_detail` and `_load_form_schema_for_opp` assume `LabsRecordAPIClient.for_user` and `HqApi.for_user` exist. If those constructors don't match exactly, follow the patterns in the actual files (`connect_labs/labs/integrations/connect/api_client.py` and the equivalent HQ client) — the goal is to reach `get_opportunity_detail` and `get_form_json_paths` for the authenticated user. Adjust signatures to match what's there. Do NOT invent new auth surfaces.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `pytest commcare_connect/mcp/tests/test_synthetic_tools.py -k synthetic_generate -v`
+Run: `pytest connect_labs/mcp/tests/test_synthetic_tools.py -k synthetic_generate -v`
 Expected: 2 passed.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add commcare_connect/mcp/tools/synthetic.py commcare_connect/mcp/tests/test_synthetic_tools.py
+git add connect_labs/mcp/tools/synthetic.py connect_labs/mcp/tests/test_synthetic_tools.py
 git commit -m "feat(mcp): synthetic_generate_from_manifest tool"
 ```
 
@@ -2639,18 +2639,18 @@ git commit -m "feat(mcp): synthetic_generate_from_manifest tool"
 Creates a labs Task LabsRecord with an embedded OCS conversation transcript.
 
 **Files:**
-- Create: `commcare_connect/mcp/tools/synthetic_tasks.py`
-- Create: `commcare_connect/mcp/tests/test_synthetic_tasks_tool.py`
+- Create: `connect_labs/mcp/tools/synthetic_tasks.py`
+- Create: `connect_labs/mcp/tests/test_synthetic_tasks_tool.py`
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
-# commcare_connect/mcp/tests/test_synthetic_tasks_tool.py
+# connect_labs/mcp/tests/test_synthetic_tasks_tool.py
 import pytest
 from django.contrib.auth import get_user_model
 from unittest.mock import MagicMock
 
-from commcare_connect.mcp.tool_registry import get_tool
+from connect_labs.mcp.tool_registry import get_tool
 
 
 @pytest.fixture
@@ -2674,7 +2674,7 @@ def test_task_create_synthetic_persists_via_labs_api(user, monkeypatch):
     fake_client = MagicMock()
     fake_client.create_record.return_value = fake_record
 
-    from commcare_connect.mcp.tools import synthetic_tasks
+    from connect_labs.mcp.tools import synthetic_tasks
     monkeypatch.setattr(synthetic_tasks, "_labs_api_for_user", lambda u: fake_client)
 
     tool = get_tool("task_create_synthetic")
@@ -2696,20 +2696,20 @@ def test_task_create_synthetic_persists_via_labs_api(user, monkeypatch):
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pytest commcare_connect/mcp/tests/test_synthetic_tasks_tool.py -v`
+Run: `pytest connect_labs/mcp/tests/test_synthetic_tasks_tool.py -v`
 Expected: KeyError on `task_create_synthetic`.
 
 - [ ] **Step 3: Implement**
 
 ```python
-# commcare_connect/mcp/tools/synthetic_tasks.py
+# connect_labs/mcp/tools/synthetic_tasks.py
 """MCP tool to create a synthetic labs Task with embedded OCS conversation."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from commcare_connect.labs.integrations.connect.api_client import LabsRecordAPIClient
+from connect_labs.labs.integrations.connect.api_client import LabsRecordAPIClient
 
 from ..tool_registry import register
 
@@ -2781,13 +2781,13 @@ def task_create_synthetic(
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pytest commcare_connect/mcp/tests/test_synthetic_tasks_tool.py -v`
+Run: `pytest connect_labs/mcp/tests/test_synthetic_tasks_tool.py -v`
 Expected: 1 passed.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add commcare_connect/mcp/tools/synthetic_tasks.py commcare_connect/mcp/tests/test_synthetic_tasks_tool.py
+git add connect_labs/mcp/tools/synthetic_tasks.py connect_labs/mcp/tests/test_synthetic_tasks_tool.py
 git commit -m "feat(mcp): task_create_synthetic tool"
 ```
 
@@ -2798,19 +2798,19 @@ git commit -m "feat(mcp): task_create_synthetic tool"
 Calls the existing `build_snapshot` hook on the template and persists the snapshot to the workflow definition's `saved_runs[]` list.
 
 **Files:**
-- Create: `commcare_connect/mcp/tools/workflow_snapshots.py`
-- Create: `commcare_connect/mcp/tests/test_workflow_snapshot_tool.py`
+- Create: `connect_labs/mcp/tools/workflow_snapshots.py`
+- Create: `connect_labs/mcp/tests/test_workflow_snapshot_tool.py`
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
-# commcare_connect/mcp/tests/test_workflow_snapshot_tool.py
+# connect_labs/mcp/tests/test_workflow_snapshot_tool.py
 from unittest.mock import MagicMock
 
 import pytest
 from django.contrib.auth import get_user_model
 
-from commcare_connect.mcp.tool_registry import get_tool
+from connect_labs.mcp.tool_registry import get_tool
 
 
 @pytest.fixture
@@ -2820,7 +2820,7 @@ def user(db):
 
 @pytest.mark.django_db
 def test_workflow_save_snapshot_appends_to_saved_runs(user, monkeypatch):
-    from commcare_connect.mcp.tools import workflow_snapshots as ws
+    from connect_labs.mcp.tools import workflow_snapshots as ws
 
     fake_workflow = MagicMock()
     fake_workflow.id = 100
@@ -2857,21 +2857,21 @@ def test_workflow_save_snapshot_appends_to_saved_runs(user, monkeypatch):
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pytest commcare_connect/mcp/tests/test_workflow_snapshot_tool.py -v`
+Run: `pytest connect_labs/mcp/tests/test_workflow_snapshot_tool.py -v`
 Expected: KeyError on `workflow_save_snapshot`.
 
 - [ ] **Step 3: Implement**
 
 ```python
-# commcare_connect/mcp/tools/workflow_snapshots.py
+# connect_labs/mcp/tools/workflow_snapshots.py
 """MCP tool to save a snapshot of a saved-runs-capable workflow."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from commcare_connect.workflow.data_access import WorkflowDataAccess
-from commcare_connect.workflow.templates import get_template
+from connect_labs.workflow.data_access import WorkflowDataAccess
+from connect_labs.workflow.templates import get_template
 
 from ..errors import MCPToolError
 from ..tool_registry import register
@@ -2942,17 +2942,17 @@ def workflow_save_snapshot(
     }
 ```
 
-> **Note for the engineer:** `WorkflowDataAccess.for_user`, `get_workflow`, and `update_workflow` are presumed-existing patterns. Verify against the actual `commcare_connect/workflow/data_access.py` and adjust the helper to match its real shape (it may go through `LabsRecordAPIClient` rather than a dedicated workflow access class). Same for `get_template` — adjust to whatever the real registry call is.
+> **Note for the engineer:** `WorkflowDataAccess.for_user`, `get_workflow`, and `update_workflow` are presumed-existing patterns. Verify against the actual `connect_labs/workflow/data_access.py` and adjust the helper to match its real shape (it may go through `LabsRecordAPIClient` rather than a dedicated workflow access class). Same for `get_template` — adjust to whatever the real registry call is.
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pytest commcare_connect/mcp/tests/test_workflow_snapshot_tool.py -v`
+Run: `pytest connect_labs/mcp/tests/test_workflow_snapshot_tool.py -v`
 Expected: 1 passed.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add commcare_connect/mcp/tools/workflow_snapshots.py commcare_connect/mcp/tests/test_workflow_snapshot_tool.py
+git add connect_labs/mcp/tools/workflow_snapshots.py connect_labs/mcp/tests/test_workflow_snapshot_tool.py
 git commit -m "feat(mcp): workflow_save_snapshot tool"
 ```
 
@@ -2961,11 +2961,11 @@ git commit -m "feat(mcp): workflow_save_snapshot tool"
 ### Task 3.6: Register all five tools in the registry
 
 **Files:**
-- Modify: `commcare_connect/mcp/tool_registry.py` (or `commcare_connect/mcp/tools/__init__.py` — whichever owns the import-side-effect registration)
+- Modify: `connect_labs/mcp/tool_registry.py` (or `connect_labs/mcp/tools/__init__.py` — whichever owns the import-side-effect registration)
 
 - [ ] **Step 1: Inspect how existing tools are registered**
 
-Run: `grep -rn "from .tools" commcare_connect/mcp/ | head -20`
+Run: `grep -rn "from .tools" connect_labs/mcp/ | head -20`
 Read the registration entry point and confirm where to add imports.
 
 - [ ] **Step 2: Add imports for the new tool modules**
@@ -2973,7 +2973,7 @@ Read the registration entry point and confirm where to add imports.
 The existing pattern imports each tool module from `tools/__init__.py` to trigger `@register` side effects. Add:
 
 ```python
-# in commcare_connect/mcp/tools/__init__.py — add to existing imports
+# in connect_labs/mcp/tools/__init__.py — add to existing imports
 from . import synthetic        # noqa: F401  -- registers synthetic_register, synthetic_disable, synthetic_generate_from_manifest
 from . import synthetic_tasks   # noqa: F401  -- registers task_create_synthetic
 from . import workflow_snapshots  # noqa: F401  -- registers workflow_save_snapshot
@@ -2982,9 +2982,9 @@ from . import workflow_snapshots  # noqa: F401  -- registers workflow_save_snaps
 - [ ] **Step 3: Write the registration test**
 
 ```python
-# add to commcare_connect/mcp/tests/test_synthetic_tools.py
+# add to connect_labs/mcp/tests/test_synthetic_tools.py
 def test_all_phase6_tools_are_registered():
-    from commcare_connect.mcp.tool_registry import list_tool_names
+    from connect_labs.mcp.tool_registry import list_tool_names
     names = set(list_tool_names())
     assert {
         "synthetic_register",
@@ -2997,13 +2997,13 @@ def test_all_phase6_tools_are_registered():
 
 - [ ] **Step 4: Run all MCP tests to verify**
 
-Run: `pytest commcare_connect/mcp/ -v`
+Run: `pytest connect_labs/mcp/ -v`
 Expected: every existing test passes + the new registration test passes.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add commcare_connect/mcp/tools/__init__.py commcare_connect/mcp/tests/test_synthetic_tools.py
+git add connect_labs/mcp/tools/__init__.py connect_labs/mcp/tests/test_synthetic_tools.py
 git commit -m "feat(mcp): register Phase 6 synthetic tools in registry"
 ```
 
@@ -3034,7 +3034,7 @@ Open the folder in GDrive (or via `drive_list_folder`). Expected: 5 JSON files m
 
 Run a small script via Django shell:
 ```python
-from commcare_connect.labs.synthetic.models import SyntheticOpportunity
+from connect_labs.labs.synthetic.models import SyntheticOpportunity
 SyntheticOpportunity.objects.get(opportunity_id=<id>).gdrive_folder_id
 ```
 Expected: matches the folder_id from step 2.

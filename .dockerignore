@@ -1,6 +1,6 @@
 media
 resources
-commcare_connect/static/bundles
+connect_labs/static/bundles
 node_modules
 npm-debug.log
 .env

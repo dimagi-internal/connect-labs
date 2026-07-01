@@ -5,7 +5,7 @@ Idempotently builds the Vitamin-A Kaura two-arm study (one study group of per-wa
 microplans per round) on the labs-only program ``-opportunity_id``, reading the SAME
 ``../verified-monitoring/demo_config.json`` the monitoring narrative reads — so the
 two narratives can't drift. All logic lives in
-``commcare_connect.microplans.study_seed``; this is a thin Django-bootstrapping CLI.
+``connect_labs.microplans.study_seed``; this is a thin Django-bootstrapping CLI.
 
 Usage (from the repo root; venv on PATH):
 
@@ -72,7 +72,7 @@ def main() -> int:
     args = parser.parse_args()
     _bootstrap_django()
 
-    from commcare_connect.microplans import study_seed
+    from connect_labs.microplans import study_seed
 
     manifest = study_seed.load_manifest()
     study_seed.ensure_synthetic_program(manifest)
