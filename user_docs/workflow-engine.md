@@ -192,6 +192,34 @@ If either condition is unmet when you click Conclude, the dialog will highlight 
 
 ---
 
+## Per-Opportunity Audit Workflows
+
+For programs that run audits across multiple opportunities, each opportunity gets its **own** audit workflow. The organisation responsible for that opportunity reviews their field workers' audits within that workflow and marks the run complete when the review is finished.
+
+### How audit runs are generated
+
+A single generation step creates the week's audit workflows across **all** of a program's opportunities at once. Your program administrator triggers this — either manually or on a scheduled basis — and the system handles every opportunity in one go. Running the generation step more than once in the same week is safe: it will not create duplicate runs or overwrite work already in progress.
+
+### Marking a run complete
+
+Each per-opportunity audit workflow has a **Mark Run Complete** button. This button is **disabled** until every audit in that run is finished. While audits remain open, the button shows a count such as **"3 of 7 audits still open"** so it is always clear how much work remains.
+
+Once all audits are done the button becomes active. Clicking it locks the run as a completed historical record in the same way as concluding any other workflow run.
+
+!!! note "You cannot mark a run complete while audits are still open"
+    The gate is enforced automatically — there is no way to bypass it. If the button is still disabled, check which rows still have open audits and resolve them before trying again.
+
+### Audit Program Report
+
+The **Audit Program Report** rolls up every opportunity's audit workflow for the week into a single cross-opportunity view. For each opportunity it shows:
+
+- Overall completion status (how many audits are done vs. still open)
+- Pass, fail, and pending counts for each audit track
+
+Clicking into any opportunity's row drills down to the individual audit sessions for that opportunity, with direct links to open each session. This lets program administrators see the full picture across all opportunities without opening each workflow separately.
+
+---
+
 ## Deleting a Run or Workflow
 
 When you delete a run — or delete an entire workflow — with the **delete linked data** option selected, the system removes all audit sessions that were created as part of that run. For workflows that span **multiple opportunities**, this cleanup covers every opportunity the run includes, not just the primary one. No audit sessions are left behind regardless of how many opportunities the workflow covers.
@@ -214,20 +242,4 @@ Labs includes pre-built workflow templates for common program types. Your progra
 | **Performance Review**                | FLW performance compared across programs                                                                                    |
 | **SAM Follow-up**                     | Severe acute malnutrition case management                                                                                   |
 | **OCS Outreach**                      | Community health outreach tracking                                                                                          |
-| **Bulk Image Audit**                  | Image-based QA combined with workflow status                                                                                |
-| **CHC Nutrition Analysis**            | Community health centre nutrition program monitoring                                                                        |
-| **MBW Auditing V5**                   | MBW audit reviews — faster loads and preserved runs                                                                         |
-| **Program Admin Report**              | Cross-opportunity compliance view for program admins                                                                        |
-| **Verified Monitoring**               | Funder-facing view of independently-surveyed program coverage, contrasting implementer-reported and verified results        |
-| **LLO Weekly FLW Review**             | Weekly per-FLW KPI scorecard for LLO programs                                                                               |
-| **Connect Interviews Reporting V2**   | Live funnel dashboard showing Triggered / Started / Completed counts per interview for any cohort                           |
-| **CHC Audit History**                 | Historical view of CHC audit records across multiple opportunities                                                          |
-| **Weekly Dual-Track Image Audit**     | Weekly cross-opportunity image audit creator — generates MUAC (AI-checked) and sampled Other-photo audits for every FLW    |
-| **Audit Program Report**              | Cross-opportunity, cross-week grid showing MUAC and Other-photo audit pass/fail/pending counts with per-FLW drill-down     |
-
-### Weekly Dual-Track Image Audit — creating a run
-
-When you create a new Weekly Dual-Track Image Audit run, the run screen shows two editable sampling-percentage fields:
-
-- **Track A (MUAC) sampling %** — pre-filled with the configured default (typically 100%). Adjust this if you want to sample a different proportion of MUAC images for this run only.
-- **Track B (Other) sampling %** — pre-filled with the configured default (
+| **Bulk Image Audit**                  | Image-based
