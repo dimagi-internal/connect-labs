@@ -192,6 +192,15 @@ If either condition is unmet when you click Conclude, the dialog will highlight 
 
 ---
 
+## Deleting a Run or Workflow
+
+When you delete a run — or delete an entire workflow — with the **delete linked data** option selected, the system removes all audit sessions that were created as part of that run. For workflows that span **multiple opportunities**, this cleanup covers every opportunity the run includes, not just the primary one. No audit sessions are left behind regardless of how many opportunities the workflow covers.
+
+!!! note "Deletion is permanent"
+    Deleting a run or workflow with linked data cannot be undone. If you are unsure, contact your program administrator before proceeding.
+
+---
+
 ## Starter Templates
 
 Labs includes pre-built workflow templates for common program types. Your program administrator can create a workflow from any of these templates and configure it for your opportunity.
@@ -222,11 +231,4 @@ The Bulk Image Audit template includes an optional **AI Review Agent** step. Whe
 
 | Agent | When it appears | What it does |
 | ----- | --------------- | ------------ |
-| **Scale Image Validation** | A weight-related image type is selected | Compares scale photos against the reading that was entered |
-| **MUAC OverZoom** | A MUAC image type is selected | Classifies photos for excessive zoom |
-
-#### Controlling whether the AI pre-tags images
-
-Next to the AI Review Agent dropdown, each agent verdict has a checkbox that lets you choose what happens when the AI reaches a conclusion:
-
-- **Ticked — auto-apply:** The AI automatically pre-tags matching images with that verdict before the reviewer opens the session. For example, t
+|
