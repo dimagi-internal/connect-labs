@@ -270,7 +270,7 @@
                         <i class="fa-solid fa-location-dot"></i>
                     </div>
                     <div class="min-w-0">
-                        <div class="text-base font-semibold text-gray-900">{{ p.name }}{% if p.region %} <span class="font-normal text-gray-500">· {{ p.region }}</span>{% endif %}</div>
+                        <div class="text-base font-semibold text-gray-900">{{ p.name }}</div>
                         <div class="mt-1 flex flex-wrap items-center gap-2 text-sm">
                             <span class="inline-flex items-center px-2 py-0.5 rounded bg-white border border-gray-200 text-gray-700 font-medium">{{ p.wards|length }} ward{{ p.wards|length|pluralize }}</span>
                             {% if p.work_area_count %}<span class="inline-flex items-center px-2 py-0.5 rounded bg-white border border-gray-200 text-gray-700 font-medium">{{ p.work_area_count }} work area{{ p.work_area_count|pluralize }}</span>{% endif %}
