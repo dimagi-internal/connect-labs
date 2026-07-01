@@ -31,13 +31,28 @@ def audit_par_rollup(job_config: dict, access_token: str, progress_callback=None
         if run.is_completed:
             raise ValueError(f"run {run_id} is completed; its rollup is frozen in the snapshot")
 
+        # Effective state = the definition config (watched_source + optional
+        # window) as a fallback, overlaid by the run's own state. This lets the
+        # report roll up straight from the workflow config without the run state
+        # being pre-seeded — so opening the PAR and running it just works.
+        effective_state = {}
+        try:
+            definition = wda.get_definition(run.definition_id) if run.definition_id else None
+            cfg = (definition.data.get("config") or {}) if definition else {}
+            for key in ("watched_source", "window_start", "window_end"):
+                if cfg.get(key):
+                    effective_state[key] = cfg[key]
+        except Exception:
+            logger.warning("audit_par_rollup: could not read definition config for run %s", run_id, exc_info=True)
+        effective_state.update(run.data.get("state", {}))
+
         rollup = compute_audit_par_rollup(
-            state=run.data.get("state", {}),
+            state=effective_state,
             access_token=access_token,
             progress_callback=progress_callback,
         )
         if rollup.get("error"):
-            raise ValueError(f"rollup failed: {rollup['error']} — set window_start/window_end first")
+            raise ValueError(f"rollup failed: {rollup['error']} — set a watched creator in the workflow config")
 
         wda.update_run_state(run_id, rollup)
     finally:
