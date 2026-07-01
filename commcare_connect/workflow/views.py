@@ -119,97 +119,187 @@ class WorkflowListView(LoginRequiredMixin, TemplateView):
 
     template_name = "workflow/list.html"
 
+    def _build_workflow_row(self, definition, runs, pipeline_access, pipeline_cache):
+        """Enrich one definition into a template row: sorted runs + pipeline names.
+
+        Shared by opp-mode and program-mode so both render identical cards.
+        """
+        runs = sorted(runs, key=lambda r: r.id, reverse=True)
+
+        pipelines = []
+        for source in definition.pipeline_sources:
+            pipeline_id = source.get("pipeline_id")
+            alias = source.get("alias")
+            if not pipeline_id:
+                continue
+            if pipeline_id not in pipeline_cache:
+                try:
+                    pipeline_cache[pipeline_id] = pipeline_access.get_definition(pipeline_id)
+                except Exception:
+                    # Cross-opp pipeline scoping can 404; degrade to a name fallback
+                    # rather than failing the whole list.
+                    logger.warning("Failed to load pipeline %s for list view", pipeline_id, exc_info=True)
+                    pipeline_cache[pipeline_id] = None
+            pipeline_def = pipeline_cache.get(pipeline_id)
+            pipelines.append(
+                {
+                    "id": pipeline_id,
+                    "alias": alias,
+                    "name": pipeline_def.name if pipeline_def else f"Pipeline {pipeline_id}",
+                }
+            )
+
+        return {
+            "definition": definition,
+            "runs": runs,
+            "run_count": len(runs),
+            "pipelines": pipelines,
+            "template_type": definition.template_type,
+            "latest_run_id": runs[0].id if runs else 0,
+        }
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
 
-        # Check for labs context
+        # Check for labs context. Mode discriminator: opportunity_id present =>
+        # opportunity view; else program_id present (no opportunity_id) =>
+        # program view (cross-opportunity workflows).
         labs_context = getattr(self.request, "labs_context", {})
-        context["has_context"] = bool(labs_context.get("opportunity_id") or labs_context.get("program_id"))
-        context["opportunity_id"] = labs_context.get("opportunity_id")
+        opportunity_id = labs_context.get("opportunity_id")
+        program_id = labs_context.get("program_id")
+        context["has_context"] = bool(opportunity_id or program_id)
+        context["opportunity_id"] = opportunity_id
         context["opportunity_name"] = labs_context.get("opportunity_name")
+        view_mode = "opportunity" if opportunity_id else ("program" if program_id else None)
+        context["view_mode"] = view_mode
+        context["program_id"] = program_id
 
         # Restrict Create Workflow button based on allowed templates
         allowed_templates = get_allowed_templates(self.request.user)
+        context["available_templates"] = allowed_templates
         context["can_create_workflow"] = bool(allowed_templates)
+        context["workflows"] = []
+        context["definitions"] = []
 
-        # Get workflow definitions and their runs
-        if context["has_context"]:
-            data_access = None
-            pipeline_access = None
-            try:
-                from commcare_connect.workflow.data_access import PipelineDataAccess
+        if not context["has_context"]:
+            return context
 
-                data_access = WorkflowDataAccess(request=self.request)
-                pipeline_access = PipelineDataAccess(request=self.request)
-                definitions = data_access.list_definitions()
-
-                # Build a cache of pipeline names
-                pipeline_cache = {}
-
-                # Fetch all runs once, then group by definition_id
-                all_runs = data_access.list_runs()
-                runs_by_def = {}
-                for run in all_runs:
-                    def_id = run.data.get("definition_id")
-                    runs_by_def.setdefault(def_id, []).append(run)
-
-                # For each definition, get its runs and pipeline info
-                workflows_with_runs = []
-                for definition in definitions:
-                    runs = runs_by_def.get(definition.id, [])
-                    # Sort runs by ID descending (latest first)
-                    runs.sort(key=lambda r: r.id, reverse=True)
-
-                    # Get pipeline details for this workflow
-                    pipelines = []
-                    for source in definition.pipeline_sources:
-                        pipeline_id = source.get("pipeline_id")
-                        alias = source.get("alias")
-                        if pipeline_id:
-                            # Use cache to avoid repeated lookups
-                            if pipeline_id not in pipeline_cache:
-                                pipeline_def = pipeline_access.get_definition(pipeline_id)
-                                pipeline_cache[pipeline_id] = pipeline_def
-                            pipeline_def = pipeline_cache.get(pipeline_id)
-                            pipelines.append(
-                                {
-                                    "id": pipeline_id,
-                                    "alias": alias,
-                                    "name": pipeline_def.name if pipeline_def else f"Pipeline {pipeline_id}",
-                                }
-                            )
-
-                    workflows_with_runs.append(
-                        {
-                            "definition": definition,
-                            "runs": runs,
-                            "run_count": len(runs),
-                            "pipelines": pipelines,
-                            "template_type": definition.template_type,
-                            "latest_run_id": runs[0].id if runs else 0,
-                        }
-                    )
-
-                context["workflows"] = workflows_with_runs
-                context["definitions"] = definitions  # Keep for backwards compatibility
-                context["available_templates"] = allowed_templates
-            except Exception as e:
-                logger.error(f"Failed to load workflow definitions: {e}", exc_info=True)
-                context["workflows"] = []
-                context["definitions"] = []
-                context["available_templates"] = allowed_templates
-                context["error"] = str(e)
-            finally:
-                if pipeline_access is not None:
-                    pipeline_access.close()
-                if data_access is not None:
-                    data_access.close()
-        else:
-            context["workflows"] = []
-            context["definitions"] = []
-            context["available_templates"] = allowed_templates
+        try:
+            if view_mode == "program":
+                self._populate_program_mode(context, program_id, allowed_templates)
+            else:
+                self._populate_opportunity_mode(context, opportunity_id, allowed_templates)
+        except Exception as e:
+            logger.error(f"Failed to load workflow definitions: {e}", exc_info=True)
+            context["error"] = str(e)
 
         return context
+
+    def _populate_opportunity_mode(self, context, opportunity_id, allowed_templates):
+        """Opportunity view: single-opp workflows only. Program-spanning
+        workflows (opportunity_ids > 1) are excluded — they live in the program
+        view — and a nav link to this opp's program is exposed."""
+        from commcare_connect.workflow.data_access import PipelineDataAccess
+        from commcare_connect.workflow.program_view import partition_by_span
+
+        # Nav: link out to this opportunity's program view.
+        org_data = get_org_data(self.request) or {}
+        current_opp = next(
+            (o for o in org_data.get("opportunities", []) if o.get("id") == opportunity_id),
+            None,
+        )
+        current_program_id = (current_opp or {}).get("program")
+        context["current_program_id"] = current_program_id
+        if current_program_id is not None:
+            context["current_program_name"] = next(
+                (p.get("name") for p in org_data.get("programs", []) if p.get("id") == current_program_id),
+                None,
+            )
+
+        data_access = None
+        pipeline_access = None
+        try:
+            data_access = WorkflowDataAccess(request=self.request)
+            pipeline_access = PipelineDataAccess(request=self.request)
+            definitions = data_access.list_definitions()
+
+            # Program-spanning workflows must not appear in an opp view.
+            single_opp_defs, _spanning = partition_by_span(definitions)
+
+            runs_by_def = {}
+            for run in data_access.list_runs():
+                runs_by_def.setdefault(run.data.get("definition_id"), []).append(run)
+
+            pipeline_cache = {}
+            workflows_with_runs = [
+                self._build_workflow_row(
+                    definition, runs_by_def.get(definition.id, []), pipeline_access, pipeline_cache
+                )
+                for definition in single_opp_defs
+            ]
+
+            context["workflows"] = workflows_with_runs
+            context["definitions"] = single_opp_defs
+        finally:
+            if pipeline_access is not None:
+                pipeline_access.close()
+            if data_access is not None:
+                data_access.close()
+
+    def _populate_program_mode(self, context, program_id, allowed_templates):
+        """Program view: cross-opportunity (program-spanning) workflows only,
+        gathered by looping the program's opps (labs API scopes reads per-opp)."""
+        from commcare_connect.workflow.data_access import PipelineDataAccess
+        from commcare_connect.workflow.program_view import collect_program_workflows, program_opportunity_ids
+
+        org_data = get_org_data(self.request) or {}
+        context["program_name"] = next(
+            (p.get("name") for p in org_data.get("programs", []) if p.get("id") == program_id),
+            None,
+        )
+        # Nav: member opportunities the user can jump into.
+        context["program_member_opps"] = [
+            {"id": o["id"], "name": o.get("name")}
+            for o in org_data.get("opportunities", [])
+            if o.get("program") == program_id and o.get("id") is not None
+        ]
+
+        opp_ids = program_opportunity_ids(org_data, program_id)
+        token = (self.request.session.get("labs_oauth") or {}).get("access_token")
+
+        spanning_defs = collect_program_workflows(
+            opp_ids,
+            dao_factory=lambda oid: WorkflowDataAccess(access_token=token, opportunity_id=oid),
+        )
+
+        # Enrich each spanning def using a DAO scoped to its OWNING opp so runs
+        # and pipelines resolve (the labs API scopes both per-opportunity).
+        pipeline_cache = {}
+        runs_by_owner: dict[int, dict] = {}
+        wdaos: dict[int, WorkflowDataAccess] = {}
+        pdaos: dict[int, PipelineDataAccess] = {}
+        try:
+            workflows_with_runs = []
+            for definition in spanning_defs:
+                owner = definition.opportunity_id
+                if owner not in runs_by_owner:
+                    wdaos[owner] = WorkflowDataAccess(access_token=token, opportunity_id=owner)
+                    pdaos[owner] = PipelineDataAccess(access_token=token, opportunity_id=owner)
+                    grouped: dict = {}
+                    for run in wdaos[owner].list_runs():
+                        grouped.setdefault(run.data.get("definition_id"), []).append(run)
+                    runs_by_owner[owner] = grouped
+                runs = runs_by_owner[owner].get(definition.id, [])
+                workflows_with_runs.append(self._build_workflow_row(definition, runs, pdaos[owner], pipeline_cache))
+
+            context["workflows"] = workflows_with_runs
+            context["definitions"] = spanning_defs
+        finally:
+            for dao in list(wdaos.values()) + list(pdaos.values()):
+                try:
+                    dao.close()
+                except Exception:
+                    pass
 
 
 class PipelineListView(LoginRequiredMixin, TemplateView):
@@ -1662,6 +1752,16 @@ def start_run_api(request, definition_id):
 
     labs_context = getattr(request, "labs_context", {})
     opportunity_id = labs_context.get("opportunity_id")
+    if not opportunity_id:
+        # Program-view cards start runs for a cross-opp workflow whose session
+        # context is a program (no opportunity_id). They pass the definition's
+        # OWNING opportunity explicitly; accept it here as a fallback. Access is
+        # still enforced downstream by the scoped LabsRecord write.
+        raw_opp = request.POST.get("opportunity_id") or request.GET.get("opportunity_id")
+        try:
+            opportunity_id = int(raw_opp) if raw_opp else None
+        except (TypeError, ValueError):
+            opportunity_id = None
     if not opportunity_id:
         return JsonResponse({"error": "Select an opportunity before starting a run"}, status=400)
 
