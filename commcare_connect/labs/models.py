@@ -118,3 +118,36 @@ class UserConnectToken(models.Model):
     def is_expired(self) -> bool:
         # Treat tokens within 60 seconds of expiry as expired to avoid races.
         return timezone.now() >= (self.expires_at - timedelta(seconds=60))
+
+
+class DeletedWorkflowBackup(models.Model):
+    """Safety copy of a workflow definition, written just before it is deleted.
+
+    Deleting a workflow hard-deletes its definition and render code from the
+    Connect LabsRecord store with no way to recover them (a surviving run only
+    keeps the ``definition_id``). This table captures the restorable pair — the
+    definition JSON plus its render-code JSX — so a deleted workflow can be
+    reconstructed by hand from the admin. Runs, audit sessions, and chat
+    history are intentionally not backed up.
+
+    Written by ``WorkflowDataAccess.delete_definition`` before the delete
+    executes; that write is fail-closed (a failure aborts the delete).
+    """
+
+    definition_id = models.IntegerField(db_index=True)
+    opportunity_id = models.IntegerField(db_index=True)
+    name = models.CharField(max_length=255, blank=True, default="")
+    template_type = models.CharField(max_length=100, blank=True, default="")
+    definition_data = models.JSONField(default=dict)
+    render_code = models.TextField(blank=True, default="")
+    deleted_by = models.CharField(max_length=150, blank=True, default="")
+    deleted_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "labs_deleted_workflow_backup"
+        ordering = ["-id"]
+        verbose_name = "Deleted workflow backup"
+        verbose_name_plural = "Deleted workflow backups"
+
+    def __str__(self) -> str:
+        return f"backup:def={self.definition_id}:opp={self.opportunity_id}:{self.name}"
