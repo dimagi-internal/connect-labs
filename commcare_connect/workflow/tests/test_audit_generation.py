@@ -1,11 +1,16 @@
-"""Tests for the program audit-batch generation seam (Tasks 4 & 5).
+"""Tests for the generic "run a workflow in default mode" seam.
 
 Covers:
-- `resolve_program_audit_instances` (Phase-1 explicit mapping)
-- `generate_program_audit_batches` idempotency (reuse a run whose
-  state.window_start matches) and per-opp fan-out (one run + job per opp).
+- `run_default_for_definition` raises for a template that doesn't opt into
+  default-run.
+- The `weekly_dual_track_audit` creator's `run_default` hook: creates a run +
+  fires the batch job when none exists for the window; idempotent (reuses an
+  existing run for the same window, doesn't re-fire).
 - `resolve_window("last_week", today)` (mirrors the render's calculateDateRange).
-- The thin management command + API endpoint wrappers call the callable.
+
+The program-wide fan-out (formerly on the `audit_par` report) now lives on the
+`program_audit_creator` template — see test_program_audit_creator.py.
+- The generic management command + API endpoint wrappers call the dispatcher.
 """
 
 import json
@@ -25,24 +30,79 @@ def _run(run_id, window_start):
     return r
 
 
-# ── Task 4: resolve_program_audit_instances ──────────────────────────────────
+def _creator_def(opp_id=1973, def_id=42):
+    """A `weekly_dual_track_audit` creator definition (mock proxy)."""
+    d = mock.Mock()
+    d.template_type = "weekly_dual_track_audit"
+    d.id = def_id
+    d.opportunity_id = opp_id
+    d.opportunity_ids = [opp_id]
+    d.data = {
+        "config": {
+            "templateType": "weekly_dual_track_audit",
+            "audit_batch": {
+                "track_a": {"tag": "muac", "sample_percentage": 100},
+                "track_b": {"tag": "rest", "sample_percentage": 10},
+            },
+        }
+    }
+    return d
 
 
-def test_resolve_program_audit_instances_returns_mapping():
+# ── Dispatcher: unsupported template ─────────────────────────────────────────
+
+
+def test_run_default_for_definition_raises_when_unsupported():
+    from commcare_connect.workflow.templates import run_default_for_definition
+
+    d = mock.Mock()
+    d.template_type = "not_a_real_template"
+    d.id = 7
+    d.data = {"config": {}}
+
+    with pytest.raises(ValueError):
+        run_default_for_definition(d, access_token="t")
+
+
+# ── Creator run_default: create + fire, and idempotency ──────────────────────
+
+
+def test_creator_run_default_creates_and_fires_job(monkeypatch):
     from commcare_connect.workflow import audit_generation as g
+    from commcare_connect.workflow.templates import run_default_for_definition
 
-    mapping = [{"opportunity_id": 1973, "definition_id": 42}]
-    out = g.resolve_program_audit_instances(176, access_token="t", mapping=mapping)
-    assert out == mapping
-    # Defensive: no mapping → empty list (nothing to fan out to).
-    assert g.resolve_program_audit_instances(176, access_token="t") == []
+    def make_wda(access_token=None, opportunity_id=None, **_):
+        wda = mock.Mock()
+        wda.list_runs.return_value = []  # no existing run for the window
+        wda.create_run.return_value = _run(1234, None)
+        return wda
+
+    monkeypatch.setattr(g, "WorkflowDataAccess", make_wda)
+    fake_job = mock.Mock()
+    fake_job.apply.return_value.result = {"sessions_created": 5}
+    monkeypatch.setattr(g, "run_workflow_job", fake_job)
+
+    result = run_default_for_definition(_creator_def(), access_token="t", window=("2026-06-21", "2026-06-27"))
+
+    assert result == {"run_id": 1234, "created": True, "sessions_created": 5}
+    assert fake_job.apply.call_count == 1
+
+    # Full 4-arg job contract (job_config, access_token, run_id, opportunity_id),
+    # confirmed against run_workflow_job's signature.
+    kw = fake_job.apply.call_args.kwargs["kwargs"]
+    assert kw["run_id"] == 1234
+    assert kw["opportunity_id"] == 1973
+    assert kw["access_token"] == "t"
+    assert kw["job_config"]["job_type"] == "weekly_dual_track_audit_create"
+    assert kw["job_config"]["window_start"] == "2026-06-21"
+    # Sampling comes from the definition's config defaults.
+    assert kw["job_config"]["muac_sample_percentage"] == 100
+    assert kw["job_config"]["other_sample_percentage"] == 10
 
 
-# ── Task 4: generate_program_audit_batches ───────────────────────────────────
-
-
-def test_generate_reuses_existing_run_for_window(monkeypatch):
+def test_creator_run_default_is_idempotent_per_window(monkeypatch):
     from commcare_connect.workflow import audit_generation as g
+    from commcare_connect.workflow.templates import run_default_for_definition
 
     wda = mock.Mock()
     wda.list_runs.return_value = [_run(500, "2026-06-21")]
@@ -50,68 +110,29 @@ def test_generate_reuses_existing_run_for_window(monkeypatch):
     fake_job = mock.Mock()
     monkeypatch.setattr(g, "run_workflow_job", fake_job)
 
-    result = g.generate_program_audit_batches(
-        176,
-        "2026-06-21",
-        "2026-06-27",
-        access_token="t",
-        mapping=[{"opportunity_id": 1973, "definition_id": 42}],
-    )
+    result = run_default_for_definition(_creator_def(), access_token="t", window=("2026-06-21", "2026-06-27"))
 
-    assert result["per_opp"][1973]["created"] is False
-    assert result["per_opp"][1973]["run_id"] == 500
+    assert result == {"run_id": 500, "created": False, "sessions_created": 0}
     wda.create_run.assert_not_called()
     fake_job.apply.assert_not_called()
 
 
-def test_generate_creates_run_and_fires_job_per_opp(monkeypatch):
+def test_creator_run_default_defaults_window_to_last_week(monkeypatch):
+    """With no explicit window, the hook resolves last_week and creates a run."""
     from commcare_connect.workflow import audit_generation as g
+    from commcare_connect.workflow.templates import run_default_for_definition
 
-    def make_wda(access_token=None, opportunity_id=None, **_):
-        wda = mock.Mock()
-        wda.list_runs.return_value = []  # no existing run for the window
-        wda.create_run.return_value = _run(1000 + opportunity_id, None)
-        return wda
-
-    monkeypatch.setattr(g, "WorkflowDataAccess", make_wda)
-    fake_job = mock.Mock()
-    fake_job.apply.return_value.result = {"sessions_created": 3}
-    monkeypatch.setattr(g, "run_workflow_job", fake_job)
-
-    result = g.generate_program_audit_batches(
-        176,
-        "2026-06-21",
-        "2026-06-27",
-        access_token="t",
-        mapping=[
-            {"opportunity_id": 1973, "definition_id": 42},
-            {"opportunity_id": 1976, "definition_id": 43},
-        ],
-    )
-
-    assert set(result["per_opp"].keys()) == {1973, 1976}
-    assert all(v["run_id"] for v in result["per_opp"].values())
-    assert all(v["created"] for v in result["per_opp"].values())
-    assert result["per_opp"][1973]["sessions_created"] == 3
-    assert fake_job.apply.call_count == 2
-
-    # The job runner gets the full 4-arg contract (job_config, access_token,
-    # run_id, opportunity_id) — confirmed against run_workflow_job's signature.
-    first_kwargs = fake_job.apply.call_args_list[0].kwargs["kwargs"]
-    assert first_kwargs["run_id"] == 1000 + 1973
-    assert first_kwargs["opportunity_id"] == 1973
-    assert first_kwargs["access_token"] == "t"
-    assert first_kwargs["job_config"]["job_type"] == "weekly_dual_track_audit_create"
-    assert first_kwargs["job_config"]["window_start"] == "2026-06-21"
-
-
-def test_generate_passes_sample_overrides(monkeypatch):
-    from commcare_connect.workflow import audit_generation as g
+    captured = {}
 
     def make_wda(access_token=None, opportunity_id=None, **_):
         wda = mock.Mock()
         wda.list_runs.return_value = []
-        wda.create_run.return_value = _run(2000, None)
+
+        def _create(def_id, opp_id, ws, we, initial_state=None):
+            captured["window"] = (ws, we)
+            return _run(9, None)
+
+        wda.create_run.side_effect = _create
         return wda
 
     monkeypatch.setattr(g, "WorkflowDataAccess", make_wda)
@@ -119,21 +140,13 @@ def test_generate_passes_sample_overrides(monkeypatch):
     fake_job.apply.return_value.result = {"sessions_created": 0}
     monkeypatch.setattr(g, "run_workflow_job", fake_job)
 
-    g.generate_program_audit_batches(
-        176,
-        "2026-06-21",
-        "2026-06-27",
-        sample_overrides={"muac_sample_percentage": 100, "other_sample_percentage": 10},
-        access_token="t",
-        mapping=[{"opportunity_id": 1973, "definition_id": 42}],
-    )
+    run_default_for_definition(_creator_def(), access_token="t")
 
-    job_config = fake_job.apply.call_args_list[0].kwargs["kwargs"]["job_config"]
-    assert job_config["muac_sample_percentage"] == 100
-    assert job_config["other_sample_percentage"] == 10
+    ws, we = captured["window"]
+    assert ws < we  # a concrete resolved window, not empty
 
 
-# ── Task 5: resolve_window ────────────────────────────────────────────────────
+# ── resolve_window ───────────────────────────────────────────────────────────
 
 
 def test_resolve_window_last_week():
@@ -152,132 +165,138 @@ def test_resolve_window_unknown_preset_raises():
         resolve_window("not_a_preset", date(2026, 7, 1))
 
 
-# ── Task 5: management command ────────────────────────────────────────────────
+# ── Management command: run_workflow_default ──────────────────────────────────
 
 
-def test_management_command_invokes_callable(monkeypatch):
-    from commcare_connect.workflow import audit_generation as g
+def test_management_command_runs_default(monkeypatch):
+    from commcare_connect.workflow.management.commands import run_workflow_default as cmd
+
+    creator = mock.Mock()
+    wda = mock.Mock()
+    wda.get_definition.return_value = creator
+    monkeypatch.setattr(cmd, "WorkflowDataAccess", mock.Mock(return_value=wda))
 
     captured = {}
 
-    def fake_generate(program_id, window_start, window_end, **kwargs):
-        captured.update(program_id=program_id, window_start=window_start, window_end=window_end, **kwargs)
-        return {"per_opp": {1973: {"run_id": 5, "created": True, "sessions_created": 2}}}
+    def fake_dispatch(defn, *, access_token, **kw):
+        captured["defn"] = defn
+        captured["access_token"] = access_token
+        captured.update(kw)
+        return {"run_id": 5, "created": True, "sessions_created": 2}
 
-    monkeypatch.setattr(g, "generate_program_audit_batches", fake_generate)
+    monkeypatch.setattr(cmd, "run_default_for_definition", fake_dispatch)
 
     out = StringIO()
     call_command(
-        "generate_program_audit_batches",
-        "--program",
-        "176",
-        "--start",
-        "2026-06-21",
-        "--end",
-        "2026-06-27",
+        "run_workflow_default",
+        "--definition",
+        "42",
+        "--opportunity",
+        "1973",
         "--token",
         "svc-tok",
-        "--mapping",
-        json.dumps([{"opportunity_id": 1973, "definition_id": 42}]),
         stdout=out,
     )
 
-    assert captured["program_id"] == 176
-    assert captured["window_start"] == "2026-06-21"
-    assert captured["window_end"] == "2026-06-27"
+    assert captured["defn"] is creator
     assert captured["access_token"] == "svc-tok"
-    assert captured["mapping"] == [{"opportunity_id": 1973, "definition_id": 42}]
-    assert "1973" in out.getvalue()
+    assert '"run_id": 5' in out.getvalue()
 
 
-def test_management_command_resolves_window_preset(monkeypatch):
-    from commcare_connect.workflow import audit_generation as g
+def test_management_command_forwards_window_preset(monkeypatch):
+    from commcare_connect.workflow.management.commands import run_workflow_default as cmd
+
+    wda = mock.Mock()
+    wda.get_definition.return_value = mock.Mock()
+    monkeypatch.setattr(cmd, "WorkflowDataAccess", mock.Mock(return_value=wda))
 
     captured = {}
 
-    def fake_generate(program_id, window_start, window_end, **kwargs):
-        captured.update(window_start=window_start, window_end=window_end)
-        return {"per_opp": {}}
+    def fake_dispatch(defn, *, access_token, **kw):
+        captured.update(kw)
+        return {}
 
-    monkeypatch.setattr(g, "generate_program_audit_batches", fake_generate)
+    monkeypatch.setattr(cmd, "run_default_for_definition", fake_dispatch)
 
-    out = StringIO()
     call_command(
-        "generate_program_audit_batches",
-        "--program",
-        "176",
+        "run_workflow_default",
+        "--definition",
+        "42",
+        "--opportunity",
+        "1973",
         "--window",
         "last_week",
         "--token",
-        "svc-tok",
-        stdout=out,
+        "t",
+        stdout=StringIO(),
     )
-    # A concrete window got resolved (ISO dates), not left empty.
-    assert captured["window_start"] and captured["window_end"]
-    assert captured["window_start"] < captured["window_end"]
+
+    ws, we = captured["window"]
+    assert ws < we
 
 
-# ── Task 5: API endpoint ──────────────────────────────────────────────────────
+# ── API endpoint: run_default_api ─────────────────────────────────────────────
 
 
-def _api_req(body):
+def _api_req(body=None):
     rf = RequestFactory()
     req = rf.post(
-        "/labs/workflow/api/program/176/generate-audits/",
-        data=json.dumps(body),
+        "/labs/workflow/api/42/run-default/",
+        data=json.dumps(body or {}),
         content_type="application/json",
     )
     req.session = {"labs_oauth": {"access_token": "tok"}}
-    req.labs_context = {"program_id": 176}
+    req.labs_context = {"opportunity_id": 1973}
     req.user = mock.Mock(is_authenticated=True, is_staff=True, username="jj")
     return req
 
 
-def test_api_endpoint_returns_per_opp_json():
-    from commcare_connect.workflow import audit_generation as g
+def test_api_run_default_returns_result(monkeypatch):
+    from commcare_connect.workflow import templates as templates_pkg
     from commcare_connect.workflow import views as m
 
-    body = {
-        "program_id": 176,
-        "start": "2026-06-21",
-        "end": "2026-06-27",
-        "mapping": [{"opportunity_id": 1973, "definition_id": 42}],
-    }
-    req = _api_req(body)
+    definition = mock.Mock()
+    wda = mock.Mock()
+    wda.get_definition.return_value = definition
+    monkeypatch.setattr(m, "WorkflowDataAccess", mock.Mock(return_value=wda))
+    monkeypatch.setattr(
+        templates_pkg,
+        "run_default_for_definition",
+        mock.Mock(return_value={"per_opp": {1973: {"run_id": 9, "created": True, "sessions_created": 4}}}),
+    )
 
-    with mock.patch.object(
-        g,
-        "generate_program_audit_batches",
-        return_value={"per_opp": {1973: {"run_id": 9, "created": True, "sessions_created": 4}}},
-    ) as gen:
-        resp = m.generate_program_audit_batches_api(req, 176)
+    resp = m.run_default_api(_api_req(), 42)
 
     assert resp.status_code == 200
     payload = json.loads(resp.content)
     assert payload["per_opp"]["1973"]["run_id"] == 9
-    # Token pulled from the labs session; program id from the URL.
-    assert gen.call_args.kwargs["access_token"] == "tok"
-    assert gen.call_args.args[0] == 176
 
 
-def test_api_endpoint_400_on_missing_window():
+def test_api_run_default_400_when_unsupported(monkeypatch):
+    from commcare_connect.workflow import templates as templates_pkg
     from commcare_connect.workflow import views as m
 
-    req = _api_req({"program_id": 176})
-    resp = m.generate_program_audit_batches_api(req, 176)
+    definition = mock.Mock()
+    wda = mock.Mock()
+    wda.get_definition.return_value = definition
+    monkeypatch.setattr(m, "WorkflowDataAccess", mock.Mock(return_value=wda))
+
+    def raise_unsupported(*a, **k):
+        raise ValueError("Workflow 42 (template 'audit_with_ai_review') does not support default-run.")
+
+    monkeypatch.setattr(templates_pkg, "run_default_for_definition", raise_unsupported)
+
+    resp = m.run_default_api(_api_req(), 42)
     assert resp.status_code == 400
+    assert "default-run" in json.loads(resp.content)["error"]
 
 
-def test_api_endpoint_resolves_window_preset():
-    from commcare_connect.workflow import audit_generation as g
+def test_api_run_default_404_when_definition_missing(monkeypatch):
     from commcare_connect.workflow import views as m
 
-    req = _api_req({"program_id": 176, "window": "last_week"})
-    with mock.patch.object(g, "generate_program_audit_batches", return_value={"per_opp": {}}) as gen:
-        resp = m.generate_program_audit_batches_api(req, 176)
+    wda = mock.Mock()
+    wda.get_definition.return_value = None
+    monkeypatch.setattr(m, "WorkflowDataAccess", mock.Mock(return_value=wda))
 
-    assert resp.status_code == 200
-    # A concrete window was resolved and forwarded positionally (program, start, end).
-    assert gen.call_args.args[0] == 176
-    assert gen.call_args.args[1] and gen.call_args.args[2]
-    assert gen.call_args.args[1] < gen.call_args.args[2]
+    resp = m.run_default_api(_api_req(), 42)
+    assert resp.status_code == 404
