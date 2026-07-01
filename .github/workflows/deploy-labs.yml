@@ -9,6 +9,22 @@ on:
         required: true
         default: false
 
+# Serialize deploys. This workflow does a HARD CUTOVER (stop tasks +
+# force-new-deployment) and, combined with the wait-for-steady-state step at
+# the end of the deploy job, must never run concurrently with itself: two
+# overlapping cutovers can leave 0 healthy tasks behind the ALB → site-wide
+# 503 (observed 2026-07-01: 3 deploys in ~13 min → repeated ALB health-check
+# "Request timed out" → outage). A single fixed group forces every run into
+# one lane. cancel-in-progress is FALSE on purpose: cancelling a run that has
+# already issued its update-service call would abort the GitHub job WITHOUT
+# rolling back ECS, leaving a half-done cutover — the exact failure we're
+# preventing. Queue instead, so each cutover finishes cleanly before the next
+# begins. (GitHub keeps only the latest queued run per group, which is the
+# right behavior for deploys — no need to replay intermediate triggers.)
+concurrency:
+  group: deploy-labs
+  cancel-in-progress: false
+
 env:
   AWS_REGION: us-east-1
   ECS_CLUSTER: labs-jj-cluster
@@ -268,4 +284,30 @@ jobs:
             --force-new-deployment \
             --output text > /dev/null
 
-          echo "Deploy triggered. New tasks starting (~30s to healthy)."
+          echo "Cutover issued. Waiting for steady state in the next step..."
+
+      - name: Wait for services to reach steady state
+        run: |
+          # This is the half of deploy-serialization that the `concurrency`
+          # block can't do on its own. The cutover step above only ISSUES the
+          # update-service calls; without blocking here the job would exit
+          # "success" while ECS is still rolling, releasing the concurrency
+          # lock so the next queued deploy could start its own cutover on top
+          # of an in-flight one — the overlap that causes the 503.
+          #
+          # `aws ecs wait services-stable` polls (~15s x 40 = up to 10 min)
+          # until runningCount == desiredCount and only the PRIMARY deployment
+          # remains (rolloutState COMPLETED) for BOTH services. If a new task
+          # crash-loops or never passes health checks, the waiter times out and
+          # this job fails RED — surfacing a broken deploy instead of the old
+          # always-green "Deploy triggered" that hid failures.
+          #
+          # The short sleep first avoids the known waiter race: called too soon
+          # after update-service, it can sample the service before the new
+          # deployment registers and return "stable" immediately.
+          sleep 15
+          echo "Waiting for ${{ env.ECS_WEB_SERVICE }} + ${{ env.ECS_WORKER_SERVICE }} to reach steady state..."
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_WEB_SERVICE }} ${{ env.ECS_WORKER_SERVICE }}
+          echo "Both services stable — deploy complete and healthy."
