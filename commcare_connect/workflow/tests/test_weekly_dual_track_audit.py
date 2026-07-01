@@ -225,3 +225,41 @@ def test_run_audit_creation_accepts_image_audits_contract():
     params = inspect.signature(run_audit_creation).parameters
     assert "image_audits" in params
     assert "context_fields" in params
+
+
+def test_handler_applies_per_run_sampling_override():
+    """The render can pass MUAC/Other sampling % for a run; the handler overrides
+    the pinned config defaults with them before building the audit calls."""
+    from commcare_connect.workflow.job_handlers import weekly_dual_track_audit as h
+
+    run = _fake_run({"window_start": "2026-06-22", "window_end": "2026-06-28"})
+    eager = mock.Mock()
+    eager.result = {"sessions": [1]}
+
+    with (
+        mock.patch.object(h, "WorkflowDataAccess") as WDA,
+        mock.patch.object(h, "run_audit_creation") as rac,
+    ):
+        wda = WDA.return_value
+        wda.get_run.return_value = run
+        wda.get_definition.return_value = _fake_definition()
+        rac.apply.return_value = eager
+
+        h.weekly_dual_track_audit_create(
+            {
+                "run_id": 555,
+                "opportunity_id": 101,
+                "window_start": "2026-06-22",
+                "window_end": "2026-06-28",
+                "muac_sample_percentage": 50,  # config default is 100
+                "other_sample_percentage": 25,  # config default is 10
+            },
+            access_token="tok",
+        )
+
+    by_tag = {}
+    for c in rac.apply.call_args_list:
+        cr = c.kwargs["kwargs"]["criteria"]
+        by_tag[cr["tag"]] = cr["sample_percentage"]
+    assert by_tag["muac"] == 50
+    assert by_tag["rest"] == 25

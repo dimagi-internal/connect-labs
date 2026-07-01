@@ -122,6 +122,27 @@ def test_rollup_without_window_includes_all_creator_runs():
     assert {w["run_id"] for w in weeks} == {501, 502}  # both runs kept despite no window
 
 
+def test_rollup_lists_runs_scoped_per_opp():
+    """Regression: list_runs must be opp-scoped. An unscoped WorkflowDataAccess
+    query returns only public records (workflow runs aren't public) → 0 runs →
+    empty report. The rollup must instantiate the DAO with each watched opp."""
+    from commcare_connect.workflow.templates import audit_par as m
+
+    state = {"watched_source": {"creator_definition_id": 42, "opportunity_ids": [101, 202]}}
+    with (
+        mock.patch.object(m, "WorkflowDataAccess") as WDA,
+        mock.patch.object(m, "AuditDataAccess") as ADA,
+    ):
+        WDA.return_value.list_runs.return_value = [_run(501, "2026-06-01", "2026-06-07")]
+        ADA.return_value.get_sessions_by_workflow_run.side_effect = lambda rid: []
+        m.compute_audit_par_rollup(state=state, access_token="tok")
+
+    # WorkflowDataAccess was constructed once per watched opp, each with its opp id.
+    opp_kwargs = {c.kwargs.get("opportunity_id") for c in WDA.call_args_list}
+    assert opp_kwargs == {101, 202}
+    assert all(c.kwargs.get("opportunity_id") is not None for c in WDA.call_args_list)
+
+
 def test_audit_par_rollup_persists_into_run_state():
     from commcare_connect.workflow.job_handlers import audit_par as h
 

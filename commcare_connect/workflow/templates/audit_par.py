@@ -87,11 +87,19 @@ def compute_audit_par_rollup(*, state, request=None, access_token=None, progress
         if progress_callback:
             progress_callback(msg)
 
-    wda = WorkflowDataAccess(request=request, access_token=access_token)
-    try:
-        runs = wda.list_runs(creator_def_id) if creator_def_id else []
-    finally:
-        wda.close()
+    # list_runs is opp-scoped: the labs API injects opportunity_id into the query,
+    # and an UNSCOPED read returns only public records — workflow runs are not
+    # public, so a no-opp WorkflowDataAccess finds nothing. Each creator run is
+    # owned by one of the watched opps, so list under each and merge by id.
+    runs_by_id = {}
+    for opp_id in opportunity_ids:
+        wda = WorkflowDataAccess(request=request, access_token=access_token, opportunity_id=opp_id)
+        try:
+            for run in wda.list_runs(creator_def_id):
+                runs_by_id[run.id] = run
+        finally:
+            wda.close()
+    runs = list(runs_by_id.values())
 
     # Keep the creator's runs, sorted by week. When a report window is set,
     # keep only runs whose batch window falls inside it; otherwise include all.
