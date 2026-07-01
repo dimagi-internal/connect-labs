@@ -11,6 +11,7 @@ from . import funds  # noqa: F401
 from . import labs_context  # noqa: F401
 from . import microplans  # noqa: F401  -- list/work_areas/delete_plan/delete_group/transition_plan
 from . import microplans_study  # noqa: F401  -- registers microplans_study_ensure, microplans_study_reset_round
+from . import pages  # noqa: F401
 from . import pipelines  # noqa: F401
 from . import program_admin_demo  # noqa: F401  -- registers program_admin_demo_seed
 from . import reviews  # noqa: F401

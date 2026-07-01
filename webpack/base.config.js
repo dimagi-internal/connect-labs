@@ -42,6 +42,10 @@ module.exports = {
       __dirname,
       '../commcare_connect/static/js/solicitation-chat.tsx',
     ),
+    'pages-cards': path.resolve(
+      __dirname,
+      '../commcare_connect/static/js/pages-cards.tsx',
+    ),
   },
   output: {
     path: path.resolve(__dirname, '../commcare_connect/static/bundles/'),

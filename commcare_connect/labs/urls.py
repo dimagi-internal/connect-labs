@@ -46,6 +46,8 @@ urlpatterns = [
     path("api/analysis/flw/", analysis_views.FLWAnalysisAPIView.as_view(), name="api_flw_analysis"),
     # Workflow (includes pipeline functionality)
     path("workflow/", include("commcare_connect.workflow.urls", namespace="workflow")),
+    # Pages (configurable card landing pages)
+    path("p/", include("commcare_connect.pages.urls", namespace="pages")),
     # Synthetic sample data
     path("synthetic/", include("commcare_connect.labs.synthetic.urls", namespace="synthetic")),
     # Dashboard Prototypes

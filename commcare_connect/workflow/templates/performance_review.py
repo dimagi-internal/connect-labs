@@ -56,6 +56,11 @@ DEFINITION = {
         "showFilters": True,
     },
     "pipeline_sources": [],  # Will be populated when pipeline is created
+    "card": {
+        "card_type": "summary",
+        "title": "Weekly Performance Review",
+        "metrics": [{"label": "Cadence", "value": "Weekly"}],
+    },
 }
 
 RENDER_CODE = """function WorkflowUI({ definition, instance, links, actions, onUpdateState, view }) {

@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+<div class="pages-surface">
+  <h1 class="pages-surface__title">{{ surface.title }}</h1>
+  <div id="pages-root"
+       data-slug="{{ slug }}"
+       data-card-indexes="[{% for c in cards %}{{ c.index }}{% if not forloop.last %},{% endif %}{% endfor %}]">
+  </div>
+</div>
+
+<!-- Babel standalone: same runtime the workflow runner uses for JSX escape-hatch cards. -->
+<script src="https://unpkg.com/@babel/standalone@7.23.5/babel.min.js"></script>
+<script src="{% static 'bundles/js/pages-cards-bundle.js' %}" defer></script>
+{% endblock %}
