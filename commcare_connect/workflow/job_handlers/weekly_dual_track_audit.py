@@ -73,7 +73,9 @@ def weekly_dual_track_audit_create(job_config: dict, access_token: str, progress
             try:
                 eager = run_audit_creation.apply(kwargs={"access_token": access_token, **call})
                 res = eager.result if isinstance(eager.result, dict) else {}
-                sessions_created += len(res.get("session_ids", []) or [])
+                # run_audit_creation returns created sessions under "sessions"
+                # (a list of {id, title, ...}); count those.
+                sessions_created += len(res.get("sessions", []) or [])
                 successful += 1
             except Exception:
                 logger.warning(
@@ -92,7 +94,14 @@ def weekly_dual_track_audit_create(job_config: dict, access_token: str, progress
             "failed": failed,
             "sessions_created": sessions_created,
         }
-        wda.update_run_state(run_id, {"last_batch": last_batch})
+        # Persist the batch window onto the run so the render (on reload) and
+        # the Audit PAR (week bucketing) can read it — the handler runs under the
+        # run's owning opp, so this write is reliable, and it lets the render
+        # skip its own fragile session-scoped state write.
+        wda.update_run_state(
+            run_id,
+            {"window_start": window_start, "window_end": window_end, "last_batch": last_batch},
+        )
     finally:
         wda.close()
 

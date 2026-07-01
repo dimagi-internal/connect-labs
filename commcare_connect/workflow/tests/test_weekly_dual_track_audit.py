@@ -116,7 +116,7 @@ def test_handler_invokes_run_audit_creation_per_call_and_writes_summary():
 
     run = _fake_run({"window_start": "2026-06-22", "window_end": "2026-06-28"})
     eager = mock.Mock()
-    eager.result = {"session_ids": [1, 2, 3]}  # 3 FLWs
+    eager.result = {"sessions": [1, 2, 3]}  # 3 FLWs
 
     with (
         mock.patch.object(h, "WorkflowDataAccess") as WDA,
@@ -134,6 +134,7 @@ def test_handler_invokes_run_audit_creation_per_call_and_writes_summary():
     assert result["sessions_created"] == 12  # 4 calls x 3 sessions
     wda.update_run_state.assert_called_once()
     written = wda.update_run_state.call_args[0][1]
+    assert written["window_start"] == "2026-06-22"  # window persisted onto the run for the PAR + reload
     assert written["last_batch"]["window_start"] == "2026-06-22"
     assert written["last_batch"]["calls"] == 4
 
@@ -145,7 +146,7 @@ def test_handler_reads_window_from_job_payload_when_state_lacks_it():
 
     run = _fake_run({})  # no window in run state
     eager = mock.Mock()
-    eager.result = {"session_ids": [1, 2, 3]}
+    eager.result = {"sessions": [1, 2, 3]}
 
     with (
         mock.patch.object(h, "WorkflowDataAccess") as WDA,
@@ -175,7 +176,7 @@ def test_handler_emits_processed_total_for_progress_bar():
 
     run = _fake_run({"window_start": "2026-06-22", "window_end": "2026-06-28"})
     eager = mock.Mock()
-    eager.result = {"session_ids": [1]}
+    eager.result = {"sessions": [1]}
 
     seen = []
 
