@@ -277,5 +277,7 @@ def test_api_endpoint_resolves_window_preset():
         resp = m.generate_program_audit_batches_api(req, 176)
 
     assert resp.status_code == 200
-    # A concrete window was resolved and forwarded.
-    assert gen.call_args.kwargs["window_start"] or gen.call_args.args[1]
+    # A concrete window was resolved and forwarded positionally (program, start, end).
+    assert gen.call_args.args[0] == 176
+    assert gen.call_args.args[1] and gen.call_args.args[2]
+    assert gen.call_args.args[1] < gen.call_args.args[2]

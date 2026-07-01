@@ -2895,6 +2895,57 @@ def start_job_api(request, run_id):
         return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
+@login_required
+@require_POST
+def generate_program_audit_batches_api(request, program_id):
+    """Generate per-opp weekly dual-track audit batches for a program.
+
+    Thin authenticated wrapper over ``audit_generation.generate_program_audit_batches``.
+    Body: ``{window|start/end, sample_overrides?, mapping?}``. Returns the per-opp
+    result JSON. The labs OAuth token is pulled from the session (same pattern as
+    ``start_job_api``).
+    """
+    from datetime import date
+
+    from commcare_connect.workflow import audit_generation
+
+    try:
+        data = json.loads(request.body) if request.body else {}
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    access_token = request.session.get("labs_oauth", {}).get("access_token")
+    if not access_token:
+        return JsonResponse({"error": "Not authenticated"}, status=401)
+
+    # Window: preset OR explicit start/end.
+    if data.get("window"):
+        try:
+            window_start, window_end = audit_generation.resolve_window(data["window"], date.today())
+        except ValueError as e:
+            return JsonResponse({"error": str(e)}, status=400)
+    elif data.get("start") and data.get("end"):
+        window_start, window_end = data["start"], data["end"]
+    else:
+        return JsonResponse({"error": "provide 'window' preset OR both 'start' and 'end'"}, status=400)
+
+    try:
+        result = audit_generation.generate_program_audit_batches(
+            program_id,
+            window_start,
+            window_end,
+            sample_overrides=data.get("sample_overrides") or None,
+            access_token=access_token,
+            request=request,
+            mapping=data.get("mapping"),
+        )
+    except Exception:
+        logger.exception("Failed to generate audit batches for program %s", program_id)
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
+
+    return JsonResponse(result)
+
+
 class JobStatusStreamView(LoginRequiredMixin, View):
     """
     SSE endpoint for real-time multi-stage job progress streaming.
