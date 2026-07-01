@@ -1,0 +1,4 @@
+# Pins this repo's DDD artifacts to the "connect" canopy-web workspace tenant.
+# Read by scripts/ddd/auth.py:resolve_ddd_workspace — every /canopy:ddd run here
+# publishes under /w/connect/ddd/… instead of the default (dimagi) flat routes.
+workspace: connect
