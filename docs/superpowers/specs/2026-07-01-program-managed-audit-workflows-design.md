@@ -75,11 +75,34 @@ Delivers both requirements using infra that exists; no new routing surface requi
   (`snapshot_inputs` capturing the per-FLW audit rollup + completion counts) and write-protects it.
 - Render: the per-FLW results view already built (v16) — read via `view.*`, disable create/edit
   when `view.isCompleted`, add the completion CTA + "as of" framing.
+- **Completion gate (hard requirement):** the run **cannot** be marked complete until *every*
+  linked audit session has `status == completed`. Enforced in two places: the render disables the
+  "Mark Run Complete" CTA and shows "N of M audits still open" until all are done; the backend
+  completion path re-checks (reads the run's audit sessions across the opp and rejects with a clear
+  error if any are not completed) so an API/cron call can't complete a partial run either. The run's
+  live view shows a per-FLW/per-audit completion checklist so the org knows what's left.
 
 ### 1b. Instantiate the 4 per-opp instances for program 176
 - Create one single-opp instance per opp from the (Phase-1 lightweight) shared config, each stamped
-  with its opp's `per_opp` entry. Done via a management command / MCP orchestration for now
-  (program-surface trigger is Phase 2).
+  with its opp's `per_opp` entry. Done via the orchestration command below.
+
+### 1b′. Program-level orchestration — one clean, API/cron-callable entry point (hard requirement)
+The program-level generation must be scriptable, not UI-only. Design a **single clean callable**
+that both a management command and an API/cron trigger wrap thinly:
+
+```
+generate_program_audit_batches(program_id, window_start, window_end, *,
+    sample_overrides=None, access_token) -> {per_opp: {opp_id: {run_id, sessions_created}}}
+```
+
+- Resolves the program's per-opp instances (from the program template's watched set), and for each,
+  ensures a run for the window and fires the existing `weekly_dual_track_audit_create` job under that
+  opp — reusing the per-run window + sampling contract already shipped (#781/#783).
+- **Idempotent** per (opp, window): re-calling doesn't duplicate a week's batch.
+- Thin wrappers: a Django management command (`manage.py generate_program_audit_batches
+  --program 176 --window last_week`) **and** an authenticated API endpoint (cron-friendly, returns
+  the per-opp result JSON). The command/endpoint are ~10 lines each; all logic lives in the callable.
+- This is the seam the Phase 2 "create this week across all opps" button also calls.
 
 ### 1c. Program report rebuilt on `watched_sources`
 - Change `audit_par` config `watched_source` (single creator def) → `watched_sources`
