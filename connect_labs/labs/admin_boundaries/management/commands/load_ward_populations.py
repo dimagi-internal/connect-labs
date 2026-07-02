@@ -25,6 +25,7 @@ Usage:
 from __future__ import annotations
 
 import csv
+import re
 from pathlib import Path
 
 from django.core.management.base import BaseCommand
@@ -33,6 +34,12 @@ from connect_labs.labs.admin_boundaries.models import AdminBoundary
 
 FIXTURE = Path(__file__).resolve().parent.parent.parent / "fixtures" / "ward_populations_4states.csv"
 SOURCE_COLS = ["worldpop_total", "worldpop_u5", "meta_total", "meta_u5", "grid3_v3_total"]
+
+
+def _norm(s: str) -> str:
+    """Loose key for name matching: lowercase, strip everything but a–z0–9 (so
+    "Jama'a" == "Jama a" == "jamaa"). State scopes it, keeping same-name wards apart."""
+    return re.sub(r"[^a-z0-9]", "", (s or "").lower())
 
 
 class Command(BaseCommand):
@@ -44,26 +51,39 @@ class Command(BaseCommand):
 
     def handle(self, *args, **opts):
         by_code: dict[str, dict] = {}
+        # (norm(state), norm(ward)) -> pops, so sources whose own_code scheme differs
+        # from the fixture's (e.g. GRID3 wardcode vs the GeoPoDe ward_code the fixture
+        # is keyed on) still match by name within a state.
+        by_name: dict[tuple[str, str], dict] = {}
         with open(opts["path"], newline="") as fh:
             for row in csv.DictReader(fh):
                 code = (row.get("ward_code") or "").strip()
-                if not code:
-                    continue
                 pops = {}
                 for col in SOURCE_COLS:
                     try:
                         pops[col] = round(float(row[col]), 1)
                     except (TypeError, ValueError, KeyError):
                         pass
-                by_code[code] = pops
+                if code:
+                    by_code[code] = pops
+                nk = (_norm(row.get("state")), _norm(row.get("ward")))
+                if nk[1]:
+                    by_name[nk] = pops
         self.stdout.write(f"Loaded {len(by_code)} ward populations from {opts['path']}.")
 
         boundaries = list(AdminBoundary.objects.filter(iso_code="NGA", admin_level=3, source__in=["geopode", "grid3"]))
-        matched, updates = 0, []
+        matched, by_name_matched, updates = 0, 0, []
         for b in boundaries:
             extra = b.extra or {}
             code = str(extra.get("own_code") or "").strip()
             pops = by_code.get(code)
+            if not pops:
+                # Fall back to ward-name-within-state (GRID3 codes don't match the
+                # GeoPoDe-coded fixture, so match by name using the denormalised state).
+                state = (extra.get("parent_names") or {}).get("state")
+                pops = by_name.get((_norm(state), _norm(b.name)))
+                if pops:
+                    by_name_matched += 1
             if not pops:
                 continue
             matched += 1
@@ -77,7 +97,10 @@ class Command(BaseCommand):
             b.extra = extra
             updates.append(b)
 
-        self.stdout.write(f"Matched {matched} of {len(boundaries)} geopode/grid3 NGA ward rows.")
+        self.stdout.write(
+            f"Matched {matched} of {len(boundaries)} geopode/grid3 NGA ward rows "
+            f"({by_name_matched} via name-within-state fallback)."
+        )
         if opts["dry_run"]:
             self.stdout.write("DRY RUN — no writes.")
             return
