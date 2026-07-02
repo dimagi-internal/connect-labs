@@ -20,12 +20,16 @@ from unittest import mock
 import pytest
 
 
-def _program_def(opp_id=9000, def_id=77, instances=None):
+def _program_def(opp_id=9000, def_id=77, instances=None, program_id=None):
     d = mock.Mock()
     d.template_type = "program_audit_creator"
     d.id = def_id
     d.opportunity_id = opp_id
     d.opportunity_ids = [opp_id]
+    # Ownership marker: None => legacy opp-owned creator; an int => program-owned
+    # (its LabsRecord carries a program FK). mock.Mock would otherwise auto-create
+    # a truthy program_id, so set it explicitly.
+    d.program_id = program_id
     d.data = {
         "config": {
             "templateType": "program_audit_creator",
@@ -169,6 +173,136 @@ def test_run_default_defaults_window_to_last_week(monkeypatch):
 
     ws, we = captured["window"]
     assert ws < we  # a concrete resolved window
+
+
+# ── program-owned vs opp-owned run scope ─────────────────────────────────────
+
+
+def test_program_owner_prefers_program_fk_when_program_owned():
+    from connect_labs.workflow.templates import program_audit_creator as m
+
+    assert m._program_owner(_program_def(program_id=176)) == ("program", 176)
+
+
+def test_program_owner_falls_back_to_opp_when_not_program_owned():
+    from connect_labs.workflow.templates import program_audit_creator as m
+
+    assert m._program_owner(_program_def(opp_id=9000, program_id=None)) == ("opportunity", 9000)
+
+
+def test_program_run_owner_kwargs_program_owned():
+    from connect_labs.workflow.templates import program_audit_creator as m
+
+    assert m._program_run_owner_kwargs(_program_def(program_id=176)) == {"program_id": 176}
+
+
+def test_program_run_owner_kwargs_opp_owned():
+    from connect_labs.workflow.templates import program_audit_creator as m
+
+    assert m._program_run_owner_kwargs(_program_def(opp_id=9000, program_id=None)) == {"opportunity_id": 9000}
+
+
+def test_run_default_program_owned_creates_program_scoped_run(monkeypatch):
+    """A program-owned creator builds a PROGRAM-scoped DAO and a program run
+    (create_run(program_id=...), no owning opportunity)."""
+    from connect_labs.workflow.templates import program_audit_creator as m
+    from connect_labs.workflow.templates import run_default_for_definition
+
+    dao_kwargs = {}
+    create_kwargs = {}
+
+    def make_wda(access_token=None, opportunity_id=None, program_id=None, **_):
+        dao_kwargs["opportunity_id"] = opportunity_id
+        dao_kwargs["program_id"] = program_id
+        wda = mock.Mock()
+        wda.list_runs.return_value = []
+
+        def _create(def_id, *, opportunity_id=None, program_id=None, period_start, period_end, initial_state=None):
+            create_kwargs["opportunity_id"] = opportunity_id
+            create_kwargs["program_id"] = program_id
+            return _run(600)
+
+        wda.create_run.side_effect = _create
+        return wda
+
+    monkeypatch.setattr(m, "WorkflowDataAccess", make_wda)
+    fan = mock.Mock(return_value={"per_opp": {}, "window_start": "x", "window_end": "y"})
+    monkeypatch.setattr(m, "fan_out_generate", fan)
+
+    run_default_for_definition(_program_def(program_id=176), access_token="t", window=("2026-06-21", "2026-06-27"))
+
+    # PROGRAM run DAO + create_run are program-scoped, no owning opp.
+    assert dao_kwargs == {"opportunity_id": None, "program_id": 176}
+    assert create_kwargs == {"opportunity_id": None, "program_id": 176}
+    assert fan.call_args.kwargs["run_id"] == 600
+
+
+def test_run_default_opp_owned_still_creates_opp_scoped_run(monkeypatch):
+    """A still-opp-owned creator keeps the legacy opp path."""
+    from connect_labs.workflow.templates import program_audit_creator as m
+    from connect_labs.workflow.templates import run_default_for_definition
+
+    dao_kwargs = {}
+    create_kwargs = {}
+
+    def make_wda(access_token=None, opportunity_id=None, program_id=None, **_):
+        dao_kwargs["opportunity_id"] = opportunity_id
+        dao_kwargs["program_id"] = program_id
+        wda = mock.Mock()
+        wda.list_runs.return_value = []
+
+        def _create(def_id, *, opportunity_id=None, program_id=None, period_start, period_end, initial_state=None):
+            create_kwargs["opportunity_id"] = opportunity_id
+            create_kwargs["program_id"] = program_id
+            return _run(601)
+
+        wda.create_run.side_effect = _create
+        return wda
+
+    monkeypatch.setattr(m, "WorkflowDataAccess", make_wda)
+    monkeypatch.setattr(m, "fan_out_generate", mock.Mock(return_value={"per_opp": {}}))
+
+    run_default_for_definition(
+        _program_def(opp_id=9000, program_id=None), access_token="t", window=("2026-06-21", "2026-06-27")
+    )
+
+    assert dao_kwargs == {"opportunity_id": 9000, "program_id": None}
+    assert create_kwargs == {"opportunity_id": 9000, "program_id": None}
+
+
+def test_fan_out_writes_program_run_state_program_scoped(monkeypatch):
+    """The PROGRAM-run state write is program-scoped for a program-owned creator."""
+    from connect_labs.workflow import templates as templates_pkg
+    from connect_labs.workflow.templates import program_audit_creator as m
+
+    seen_scopes = []
+
+    def make_wda(access_token=None, opportunity_id=None, program_id=None, **_):
+        seen_scopes.append({"opportunity_id": opportunity_id, "program_id": program_id})
+        wda = mock.Mock()
+        creator = mock.Mock()
+        creator.id = 40 + (opportunity_id or 0)
+        wda.get_definition.return_value = creator
+        wda.update_run_state.side_effect = lambda rid, s: None
+        return wda
+
+    monkeypatch.setattr(m, "WorkflowDataAccess", make_wda)
+    monkeypatch.setattr(
+        templates_pkg,
+        "run_default_for_definition",
+        lambda defn, *, access_token, request=None, window=None, **kw: {"run_id": 1, "created": True},
+    )
+
+    m.fan_out_generate(
+        definition=_program_def(program_id=176),
+        run_id=700,
+        access_token="t",
+        window=("2026-06-21", "2026-06-27"),
+    )
+
+    # The per-opp creator reads stay opp-scoped; the PROGRAM-run state write is
+    # program-scoped (program_id=176, no owning opp).
+    assert {"opportunity_id": None, "program_id": 176} in seen_scopes
 
 
 # ── build_snapshot: program-level completion gate ────────────────────────────
