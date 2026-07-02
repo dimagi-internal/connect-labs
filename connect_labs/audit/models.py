@@ -365,3 +365,77 @@ class AuditSessionRecord(LocalLabsRecord):
             "workflow_run_id": self.workflow_run_id,
             "flw_username": self.flw_username,
         }
+
+    def get_assessment_stats_by_question(self) -> dict:
+        """
+        Calculate pass/fail/pending counts grouped by photo question_id.
+
+        Unlike get_assessment_stats() (one overall total), this disaggregates
+        by photo type so callers can show e.g. "MUAC Photo 4/10, Vaccine Card 7/12"
+        per FLW instead of a single blended pass rate.
+
+        Returns:
+            Dict keyed by question_id -> {"label": str, "pass": int, "fail": int,
+            "pending": int, "total": int}
+        """
+        by_question: dict[str, dict] = {}
+        for visit_result in self.data.get("visit_results", {}).values():
+            for assessment in visit_result.get("assessments", {}).values():
+                qid = assessment.get("question_id") or "unknown"
+                bucket = by_question.setdefault(
+                    qid,
+                    {"label": qid.rsplit("/", 1)[-1], "pass": 0, "fail": 0, "pending": 0, "total": 0},
+                )
+                bucket["total"] += 1
+                result = assessment.get("result")
+                if result == "pass":
+                    bucket["pass"] += 1
+                elif result == "fail":
+                    bucket["fail"] += 1
+                else:
+                    bucket["pending"] += 1
+        return by_question
+
+    def get_visit_date_range(self) -> tuple[str | None, str | None]:
+        """
+        Derive (earliest, latest) visit date strings from stored per-image
+        metadata (visit_images). Used as a fallback for sessions whose
+        creation criteria didn't record explicit start/end dates (e.g. the
+        "last_n_per_opp" audit mode, where photos are picked by recency
+        rather than an explicit date range).
+        """
+        dates = []
+        for images in self.data.get("visit_images", {}).values():
+            for img in images:
+                vd = img.get("visit_date")
+                if vd:
+                    dates.append(str(vd))
+        if not dates:
+            return None, None
+        return min(dates), max(dates)
+
+    def to_question_summary_dict(self) -> dict:
+        """
+        Convert session to a summary dict disaggregated by photo question type.
+
+        Used by the opportunity-scoped sessions-summary API so callers (e.g.
+        a Labs workflow's render code) can display per-photo-type pass/fail
+        without fetching or parsing full per-image assessment data themselves.
+        """
+        criteria = self.criteria or {}
+        start_date = criteria.get("start_date")
+        end_date = criteria.get("end_date")
+        if not start_date or not end_date:
+            derived_start, derived_end = self.get_visit_date_range()
+            start_date = start_date or (derived_start[:10] if derived_start else None)
+            end_date = end_date or (derived_end[:10] if derived_end else None)
+        return {
+            "id": self.id,
+            "flw_username": self.flw_username,
+            "opportunity_id": self.opportunity_id,
+            "status": self.status,
+            "start_date": start_date,
+            "end_date": end_date,
+            "completed_at": self.data.get("completed_at"),
+            "by_question": self.get_assessment_stats_by_question(),
+        }

@@ -24,6 +24,11 @@ urlpatterns = [
         name="opportunity_field_questions",
     ),
     path(
+        "api/opportunity/<int:opp_id>/sessions-summary/",
+        views.OpportunityAuditSessionsSummaryAPIView.as_view(),
+        name="opportunity_sessions_summary",
+    ),
+    path(
         "api/opportunities/search/",
         views.ExperimentOpportunitySearchAPIView.as_view(),
         name="program_search",
