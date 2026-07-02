@@ -63,7 +63,7 @@ class SurfaceDataAccess:
         }
 
     def get_surface_by_slug(self, slug: str) -> dict | None:
-        records = self.client.get_records(type=SURFACE_TYPE, public=True, **{"data__slug": slug})
+        records = self.client.get_records(type=SURFACE_TYPE, public=True, slug=slug)
         records = list(records or [])
         if not records:
             return None
@@ -142,7 +142,7 @@ def resolve_surface(access_token: str, context: dict, slug: str) -> dict | None:
     for scope in attempts:
         client = LabsRecordAPIClient(access_token, **scope)
         try:
-            match = _first_match(client.get_records(type=SURFACE_TYPE, **{"data__slug": slug}))
+            match = _first_match(client.get_records(type=SURFACE_TYPE, slug=slug))
         except LabsAPIError:
             continue
         if match:
@@ -150,6 +150,6 @@ def resolve_surface(access_token: str, context: dict, slug: str) -> dict | None:
 
     public_client = LabsRecordAPIClient(access_token)
     try:
-        return _first_match(public_client.get_records(type=SURFACE_TYPE, public=True, **{"data__slug": slug}))
+        return _first_match(public_client.get_records(type=SURFACE_TYPE, public=True, slug=slug))
     except LabsAPIError:
         return None
