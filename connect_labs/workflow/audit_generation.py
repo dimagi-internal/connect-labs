@@ -104,9 +104,9 @@ def run_this_week_batch(
 
         run = wda.create_run(
             def_id,
-            opp_id,
-            window_start,
-            window_end,
+            opportunity_id=opp_id,
+            period_start=window_start,
+            period_end=window_end,
             initial_state={"window_start": window_start, "window_end": window_end},
         )
     finally:

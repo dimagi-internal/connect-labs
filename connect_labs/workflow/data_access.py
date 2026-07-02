@@ -479,6 +479,7 @@ class WorkflowDataAccess(BaseDataAccess):
                 "type": record.type,
                 "data": record.data,
                 "opportunity_id": record.opportunity_id,
+                "program_id": record.program_id,
             }
         )
 
@@ -760,7 +761,9 @@ class WorkflowDataAccess(BaseDataAccess):
     def create_run(
         self,
         definition_id: int,
-        opportunity_id: int,
+        *,
+        opportunity_id: int | None = None,
+        program_id: int | None = None,
         period_start: str,
         period_end: str,
         initial_state: dict | None = None,
@@ -768,16 +771,35 @@ class WorkflowDataAccess(BaseDataAccess):
         """
         Create a new workflow run.
 
+        A run is owned by exactly one of an opportunity or a program:
+
+        - **Opportunity-owned** (``opportunity_id``): the per-opp case, e.g. an
+          audit run whose sessions live under that opportunity. The record's
+          opportunity FK is set by the (opp-scoped) client.
+        - **Program-owned** (``program_id``): an orchestration/rollup run for a
+          program-level workflow (a program's Creator or Report). It carries no
+          owning opportunity — the record's program FK is set instead, and the
+          audits it coordinates live under the per-opp runs.
+
+        Exactly one of ``opportunity_id`` / ``program_id`` must be given.
+
         Args:
             definition_id: ID of the workflow definition
-            opportunity_id: ID of the opportunity
+            opportunity_id: ID of the owning opportunity (opp-owned run)
+            program_id: ID of the owning program (program-owned run)
             period_start: Start date of the period (ISO format)
             period_end: End date of the period (ISO format)
             initial_state: Optional initial state dict
 
         Returns:
             Created WorkflowRunRecord
+
+        Raises:
+            ValueError: if neither or both of opportunity_id / program_id are given
         """
+        if (opportunity_id is None) == (program_id is None):
+            raise ValueError("create_run requires exactly one of opportunity_id / program_id")
+
         data = {
             "definition_id": definition_id,
             "period_start": period_start,
@@ -787,11 +809,24 @@ class WorkflowDataAccess(BaseDataAccess):
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
 
-        record = self.labs_api.create_record(
-            experiment=self.EXPERIMENT,
-            type="workflow_run",
-            data=data,
-        )
+        if program_id is not None:
+            # Program-owned run: set the program FK on the record (no owning
+            # opp) and stamp the owner in the data too for reference.
+            data["program_id"] = program_id
+            record = self.labs_api.create_record(
+                experiment=self.EXPERIMENT,
+                type="workflow_run",
+                data=data,
+                program_id=program_id,
+            )
+        else:
+            # Opp-owned run — byte-for-behavior identical to the legacy path
+            # (the opp FK is injected by the opp-scoped client).
+            record = self.labs_api.create_record(
+                experiment=self.EXPERIMENT,
+                type="workflow_run",
+                data=data,
+            )
 
         return WorkflowRunRecord(
             {
@@ -800,6 +835,7 @@ class WorkflowDataAccess(BaseDataAccess):
                 "type": record.type,
                 "data": record.data,
                 "opportunity_id": record.opportunity_id,
+                "program_id": record.program_id,
             }
         )
 

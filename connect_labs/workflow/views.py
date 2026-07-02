@@ -247,11 +247,15 @@ class WorkflowListView(LoginRequiredMixin, TemplateView):
                 data_access.close()
 
     def _populate_program_mode(self, context, program_id, allowed_templates):
-        """Program view: workflows EXPLICITLY owned by this program
-        (``config.program_id == program_id``) only, gathered by looping the
-        program's opps (labs API scopes reads per-opp)."""
+        """Program view: workflows OWNED by this program, resolved DIRECTLY by
+        program scope.
+
+        A program-owned workflow's LabsRecord carries a program FK, so a
+        program-scoped ``WorkflowDataAccess(program_id=P)`` lists exactly those
+        definitions (and their program-scoped runs) in one call — no owning
+        opportunity, no per-opp loop. Enrichment (runs + pipeline names) uses
+        the same program-scoped DAO."""
         from connect_labs.workflow.data_access import PipelineDataAccess
-        from connect_labs.workflow.program_view import collect_program_workflows, program_opportunity_ids
 
         org_data = get_org_data(self.request) or {}
         context["program_name"] = next(
@@ -265,43 +269,36 @@ class WorkflowListView(LoginRequiredMixin, TemplateView):
             if o.get("program") == program_id and o.get("id") is not None
         ]
 
-        opp_ids = program_opportunity_ids(org_data, program_id)
         token = (self.request.session.get("labs_oauth") or {}).get("access_token")
 
-        owned_defs = collect_program_workflows(
-            program_id,
-            opp_ids,
-            dao_factory=lambda oid: WorkflowDataAccess(access_token=token, opportunity_id=oid),
-        )
-
-        # Enrich each owned def using a DAO scoped to its OWNING opp so runs
-        # and pipelines resolve (the labs API scopes both per-opportunity).
-        pipeline_cache = {}
-        runs_by_owner: dict[int, dict] = {}
-        wdaos: dict[int, WorkflowDataAccess] = {}
-        pdaos: dict[int, PipelineDataAccess] = {}
+        data_access = None
+        pipeline_access = None
         try:
-            workflows_with_runs = []
-            for definition in owned_defs:
-                owner = definition.opportunity_id
-                if owner not in runs_by_owner:
-                    wdaos[owner] = WorkflowDataAccess(access_token=token, opportunity_id=owner)
-                    pdaos[owner] = PipelineDataAccess(access_token=token, opportunity_id=owner)
-                    grouped: dict = {}
-                    for run in wdaos[owner].list_runs():
-                        grouped.setdefault(run.data.get("definition_id"), []).append(run)
-                    runs_by_owner[owner] = grouped
-                runs = runs_by_owner[owner].get(definition.id, [])
-                workflows_with_runs.append(self._build_workflow_row(definition, runs, pdaos[owner], pipeline_cache))
+            data_access = WorkflowDataAccess(access_token=token, program_id=program_id)
+            pipeline_access = PipelineDataAccess(access_token=token, program_id=program_id)
+
+            # Program-scoped list: records whose program FK == this program.
+            owned_defs = data_access.list_definitions()
+
+            runs_by_def: dict = {}
+            for run in data_access.list_runs():
+                runs_by_def.setdefault(run.data.get("definition_id"), []).append(run)
+
+            pipeline_cache = {}
+            workflows_with_runs = [
+                self._build_workflow_row(
+                    definition, runs_by_def.get(definition.id, []), pipeline_access, pipeline_cache
+                )
+                for definition in owned_defs
+            ]
 
             context["workflows"] = workflows_with_runs
             context["definitions"] = owned_defs
         finally:
-            for dao in list(wdaos.values()) + list(pdaos.values()):
-                try:
-                    dao.close()
-                except Exception:
-                    pass
+            if pipeline_access is not None:
+                pipeline_access.close()
+            if data_access is not None:
+                data_access.close()
 
 
 class PipelineListView(LoginRequiredMixin, TemplateView):
@@ -400,7 +397,10 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
         so every downstream link and the runner JS see a clean integer.
         """
         labs_context = getattr(request, "labs_context", {}) or {}
-        if not labs_context.get("opportunity_id"):
+        # Program-owned runs resolve by program_id (no owning opportunity), so
+        # skip opp recovery entirely when the context is program-scoped.
+        program_scoped = bool(labs_context.get("program_id")) and not labs_context.get("opportunity_id")
+        if not labs_context.get("opportunity_id") and not program_scoped:
             recovered = self._recover_opportunity_id(self.kwargs.get("definition_id"))
             # Only redirect when the recovered id differs from whatever raw
             # value is already in the URL — guards against a redirect loop if a
@@ -423,6 +423,10 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
             opp_id = labs_context.get("opportunity_id")
             if opp_id:
                 params["opportunity_id"] = opp_id
+            elif labs_context.get("program_id"):
+                # Program-owned workflow: keep the program scope so the list page
+                # lands in program mode with this workflow highlighted.
+                params["program_id"] = labs_context.get("program_id")
             if definition_id:
                 params["highlight"] = definition_id
             query = f"?{urlencode(params)}" if params else ""
@@ -486,15 +490,21 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
         # Get labs context
         labs_context = getattr(self.request, "labs_context", {})
         opportunity_id = labs_context.get("opportunity_id")
+        program_id = labs_context.get("program_id")
+        # Program-scoped: a program-owned workflow's run resolves by program_id
+        # with NO owning opportunity. Its reads go through the (already
+        # program-scoped) request DAO.
+        program_scoped = bool(program_id) and not opportunity_id
         context["opportunity_id"] = opportunity_id
+        context["program_id"] = program_id
         context["opportunity_name"] = labs_context.get("opportunity_name")
-        context["has_context"] = bool(opportunity_id)
+        context["has_context"] = bool(opportunity_id or program_scoped)
         context["user_opportunities"] = (get_org_data(self.request) or {}).get("opportunities", [])
         # Mapbox token for workflow templates that render maps via the shared
         # ConnectMap module (real admin boundaries + basemap).
         context["mapbox_token"] = settings.MAPBOX_TOKEN or ""
 
-        if not opportunity_id:
+        if not opportunity_id and not program_scoped:
             # We get here only when recovery in get() couldn't adopt an opp.
             # get() redirects on any id the user can access (or any id at all
             # when the OAuth opp cache is empty), so if the link still carries a
@@ -559,8 +569,10 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
             render_code = data_access.get_render_code(definition_id)
             context["render_code"] = render_code.data.get("component_code") if render_code else None
 
-            # Determine effective opportunity list (fallback to primary)
-            effective_opp_ids = definition.opportunity_ids or [opportunity_id]
+            # Determine effective opportunity list. Program-owned runs have no
+            # owning opportunity — the opps come from the definition's
+            # multi-opp list, so drop the None primary in that case.
+            effective_opp_ids = definition.opportunity_ids or ([opportunity_id] if opportunity_id else [])
 
             # Fetch workers for each opp and tag with opportunity_id
             workers: list[dict] = []
@@ -1737,6 +1749,43 @@ def get_snapshot_api(request, run_id):
         return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
+def _resolve_run_scope(labs_context, post_opp=None, get_opp=None):
+    """Decide whether a start-run request creates a PROGRAM-scoped or an
+    OPP-scoped run, from the request's labs context (+ POST/GET opp fallback).
+
+    Program-owned workflows live in the program view: their session context
+    carries ``program_id`` and NO ``opportunity_id``. Their runs are
+    program-scoped (no owning opp). Everything else is opp-scoped — a session
+    opportunity, or (for a program-view card started before this change, or an
+    opp-owned workflow reached without a session opp) an explicit POST/GET
+    ``opportunity_id`` fallback.
+
+    Returns ``("program", program_id)``, ``("opportunity", opp_id)``, or
+    ``(None, None)`` when neither can be resolved.
+    """
+    ctx_opp = labs_context.get("opportunity_id")
+    program_id = labs_context.get("program_id")
+
+    # Program-scoped context (program view) → program run, no owning opp.
+    if program_id and not ctx_opp:
+        try:
+            return ("program", int(program_id))
+        except (TypeError, ValueError):
+            return (None, None)
+
+    # Opp path: session opp, else the POST/GET opp fallback.
+    opp = ctx_opp
+    if not opp:
+        raw_opp = post_opp or get_opp
+        try:
+            opp = int(raw_opp) if raw_opp else None
+        except (TypeError, ValueError):
+            opp = None
+    if opp:
+        return ("opportunity", int(opp))
+    return (None, None)
+
+
 @login_required
 @require_POST
 def start_run_api(request, definition_id):
@@ -1746,33 +1795,36 @@ def start_run_api(request, definition_id):
     Now an explicit user action: client POSTs here, gets back the new run_id,
     redirects to ?run_id=<id>.
 
-    Failure mode: returns 4xx if the workflow doesn't exist or the user has no
-    opportunity_id in their session context.
+    Program-aware: a program-owned workflow (session context has ``program_id``
+    and no ``opportunity_id``) creates a PROGRAM-scoped run with no owning
+    opportunity; everything else creates an opp-scoped run (session opp, or a
+    POST/GET ``opportunity_id`` fallback).
+
+    Failure mode: returns 4xx if the workflow doesn't exist or neither a
+    program nor an opportunity can be resolved from the request.
     """
     from datetime import datetime, timedelta
     from datetime import timezone as _tz
 
     labs_context = getattr(request, "labs_context", {})
-    opportunity_id = labs_context.get("opportunity_id")
-    if not opportunity_id:
-        # Program-view cards start runs for a cross-opp workflow whose session
-        # context is a program (no opportunity_id). They pass the definition's
-        # OWNING opportunity explicitly; accept it here as a fallback. Access is
-        # still enforced downstream by the scoped LabsRecord write.
-        raw_opp = request.POST.get("opportunity_id") or request.GET.get("opportunity_id")
-        try:
-            opportunity_id = int(raw_opp) if raw_opp else None
-        except (TypeError, ValueError):
-            opportunity_id = None
-    if not opportunity_id:
+    scope, scope_id = _resolve_run_scope(
+        labs_context,
+        post_opp=request.POST.get("opportunity_id"),
+        get_opp=request.GET.get("opportunity_id"),
+    )
+    if scope is None:
         return JsonResponse({"error": "Select an opportunity before starting a run"}, status=400)
 
     try:
-        # Scope the DAO to the RESOLVED opportunity (the definition's owning opp
-        # in program mode, where the session has no opportunity_id) so
-        # get_definition + the run write both resolve — otherwise a program-view
-        # "Create Run" 404s with "Workflow not found".
-        data_access = WorkflowDataAccess(request=request, opportunity_id=opportunity_id)
+        # Scope the DAO to the RESOLVED owner so get_definition + the run write
+        # both resolve. Program mode → program-scoped (the program-owned
+        # definition + its program run); opp mode → opp-scoped (the definition's
+        # owning opp, in program-view cards where the session has no opp) —
+        # otherwise "Create Run" 404s with "Workflow not found".
+        if scope == "program":
+            data_access = WorkflowDataAccess(request=request, program_id=scope_id)
+        else:
+            data_access = WorkflowDataAccess(request=request, opportunity_id=scope_id)
         definition = data_access.get_definition(definition_id)
         if not definition:
             return JsonResponse({"error": "Workflow not found"}, status=404)
@@ -1784,12 +1836,13 @@ def start_run_api(request, definition_id):
         week_start = today - timedelta(days=today.weekday())
         week_end = week_start + timedelta(days=6)
 
+        owner_kwargs = {"program_id": scope_id} if scope == "program" else {"opportunity_id": scope_id}
         run = data_access.create_run(
             definition_id=definition_id,
-            opportunity_id=opportunity_id,
             period_start=week_start.isoformat(),
             period_end=week_end.isoformat(),
             initial_state={"worker_states": {}},
+            **owner_kwargs,
         )
 
         # Mirror to S3 for the runs-list export (same convention as legacy auto-create).

@@ -128,8 +128,8 @@ def test_creator_run_default_defaults_window_to_last_week(monkeypatch):
         wda = mock.Mock()
         wda.list_runs.return_value = []
 
-        def _create(def_id, opp_id, ws, we, initial_state=None):
-            captured["window"] = (ws, we)
+        def _create(def_id, *, opportunity_id=None, program_id=None, period_start, period_end, initial_state=None):
+            captured["window"] = (period_start, period_end)
             return _run(9, None)
 
         wda.create_run.side_effect = _create

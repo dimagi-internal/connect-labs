@@ -525,7 +525,12 @@ def workflow_update_opportunity_ids(
         "If the template declares a pipeline_schema (or pipeline_schemas), "
         "the pipeline(s) are created and linked automatically. For multi-opp "
         "templates, pass opportunity_ids to attach multiple opportunities in "
-        "one call — each must be accessible to the caller."
+        "one call — each must be accessible to the caller. "
+        "Record ownership: pass exactly one of opportunity_id (per-opp workflow) "
+        "or program_id (program-owned workflow — a program's Creator/Report, "
+        "owned by the program with no owning opportunity). opportunity_ids is "
+        "orthogonal — it is the list of opportunities the workflow spans, stored "
+        "as data regardless of who owns the record."
     ),
     input_schema={
         "type": "object",
@@ -533,7 +538,17 @@ def workflow_update_opportunity_ids(
             "template_key": {"type": "string"},
             "opportunity_id": {
                 "type": "integer",
-                "description": "The primary/owning opportunity for the new workflow record.",
+                "description": (
+                    "The primary/owning opportunity for the new workflow record. "
+                    "Provide this OR program_id, not both."
+                ),
+            },
+            "program_id": {
+                "type": "integer",
+                "description": (
+                    "Own the new workflow at the program level (no owning opportunity). "
+                    "Provide this OR opportunity_id, not both."
+                ),
             },
             "name": {
                 "type": "string",
@@ -549,7 +564,7 @@ def workflow_update_opportunity_ids(
                 ),
             },
         },
-        "required": ["template_key", "opportunity_id"],
+        "required": ["template_key"],
         "additionalProperties": False,
     },
     is_write=True,
@@ -557,10 +572,18 @@ def workflow_update_opportunity_ids(
 def workflow_create_from_template(
     user,
     template_key: str,
-    opportunity_id: int,
+    opportunity_id: int = None,
+    program_id: int = None,
     name: str = None,
     opportunity_ids: list[int] = None,
 ):
+    # Record ownership is exactly one of opportunity / program.
+    if (opportunity_id is None) == (program_id is None):
+        raise MCPToolError(
+            "INVALID_SCHEMA",
+            "workflow_create_from_template requires exactly one of opportunity_id / program_id.",
+        )
+
     token = require_connect_token(user)
 
     # Validate opportunity_ids up-front so we don't leave a half-created workflow
@@ -592,7 +615,11 @@ def workflow_create_from_template(
                 details={"invalid_opportunity_ids": sorted(invalid)},
             )
 
-    wda = WorkflowDataAccess(access_token=token, opportunity_id=opportunity_id)
+    wda = WorkflowDataAccess(
+        access_token=token,
+        opportunity_id=opportunity_id,
+        program_id=program_id,
+    )
     try:
         try:
             # request=None means we go through the access_token path.
@@ -602,6 +629,7 @@ def workflow_create_from_template(
                 template_key=template_key,
                 request=None,
                 opportunity_ids=cleaned_opp_ids or None,
+                program_id=program_id,
             )
         except ValueError as e:
             # create_workflow_from_template raises ValueError on unknown template.
@@ -621,6 +649,7 @@ def workflow_create_from_template(
             "render_code_version": render_code.version if render_code else None,
             "pipeline_id": pipeline.id if pipeline else None,
             "opportunity_ids": list(cleaned_opp_ids),
+            "program_id": program_id,
             "_version_before": None,
             "_version_after": 1,
         }
