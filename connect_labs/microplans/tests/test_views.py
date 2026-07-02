@@ -490,6 +490,9 @@ def _make_fake_program_da(monkeypatch, plans=None, groups=None):
             state="",
             stats=None,
             area_targets=None,
+            coverage_config=None,
+            coverage_stats=None,
+            run_meta=None,
         ):
             was = plan_lib.materialize_work_areas(mode, pins, hulls)
             pid = seq["plan"]
@@ -509,7 +512,18 @@ def _make_fake_program_da(monkeypatch, plans=None, groups=None):
             return plans[pid]
 
         def regenerate_plan(
-            self, pid, mode, pins, hulls, input_areas, grouping=None, base_revision=None, stats=None, area_targets=None
+            self,
+            pid,
+            mode,
+            pins,
+            hulls,
+            input_areas,
+            grouping=None,
+            base_revision=None,
+            stats=None,
+            area_targets=None,
+            coverage_config=None,
+            coverage_stats=None,
         ):
             was = plan_lib.materialize_work_areas(mode, pins, hulls, grouping=grouping)
             p = plans[int(pid)]
@@ -1732,6 +1746,72 @@ def test_initial_plan_hulls_coverage_grids_via_frame(monkeypatch):
     geometry = {"type": "Polygon", "coordinates": [[[0, 0], [0, 0.01], [0.01, 0.01], [0, 0]]]}
     out = tasks._initial_plan_hulls(geometry, "coverage", 100)
     assert len(out["features"]) == 3  # gridded — NOT a single whole-ward cell
+
+
+def test_create_boundary_plan_coverage_captures_config_and_stats(monkeypatch):
+    """A coverage plan grids ONCE and persists both the frame stats the review UI shows
+    and the exact config used (+ run_meta) — so a parameter-tuning run is reproducible."""
+    from connect_labs.microplans import tasks
+
+    cells = {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "geometry": {"type": "Polygon", "coordinates": []},
+                "properties": {"building_count": 5},
+            }
+        ],
+    }
+    stats = [{"work_areas": 1, "retained_buildings": 5, "per_area": [{"ward": "W", "work_areas": 1}]}]
+    monkeypatch.setattr(
+        "connect_labs.microplans.coverage.frame.generate_coverage_frame",
+        lambda areas, config: SimpleNamespace(areas_geojson=cells, stats=stats),
+    )
+    captured = {}
+
+    class FakeDA:
+        def create_plan(self, **kw):
+            captured.update(kw)
+            return SimpleNamespace(id=1, work_areas=cells["features"])
+
+    tasks.create_boundary_plan(
+        FakeDA(),
+        mode="coverage",
+        name="W",
+        geometry={"type": "Polygon", "coordinates": []},
+        population=200,
+        cell_size_m=120,
+        coverage_config={"min_confidence": 0.6, "exclude_isolated_singletons": True},
+        run_meta={"run_id": "bulk-xyz", "index": 0},
+    )
+    assert captured["hulls"] == cells
+    assert captured["coverage_stats"] == stats
+    # cell_size_m + population are folded into the persisted config; other knobs pass through.
+    assert captured["coverage_config"]["cell_size_m"] == 120
+    assert captured["coverage_config"]["min_confidence"] == 0.6
+    assert captured["coverage_config"]["exclude_isolated_singletons"] is True
+    assert captured["coverage_config"]["population"] == 200
+    assert captured["run_meta"] == {"run_id": "bulk-xyz", "index": 0}
+
+
+def test_create_boundary_plan_sampling_has_no_coverage_capture(monkeypatch):
+    """Sampling starts boundary-only — no gridding, no coverage_config/coverage_stats."""
+    from connect_labs.microplans import tasks
+
+    captured = {}
+
+    class FakeDA:
+        def create_plan(self, **kw):
+            captured.update(kw)
+            return SimpleNamespace(id=1, work_areas=[])
+
+    tasks.create_boundary_plan(
+        FakeDA(), mode="sampling", name="W", geometry={"type": "Polygon", "coordinates": []}, population=100
+    )
+    assert captured["coverage_config"] is None
+    assert captured["coverage_stats"] is None
+    assert captured["hulls"] == {"type": "FeatureCollection", "features": []}
 
 
 def test_initial_plan_hulls_sampling_is_empty_boundary_only():
