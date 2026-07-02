@@ -1664,6 +1664,78 @@ class WorkflowSessionsAPIView(LoginRequiredMixin, View):
             return JsonResponse({"success": False, "error": "An internal error occurred"}, status=500)
 
 
+class OpportunityAuditSessionsSummaryAPIView(LoginRequiredMixin, View):
+    """API endpoint to get every photo-audit session for an opportunity, with
+    pass/fail stats disaggregated by photo question type.
+
+    Unlike WorkflowSessionsAPIView (scoped to the sessions created by one
+    specific Bulk Image Audit workflow run), this returns every AuditSession
+    ever created for the opportunity regardless of which ad-hoc batch created
+    it — callers reconcile sessions against their own date ranges themselves
+    using each session's start_date/end_date.
+    """
+
+    def get(self, request, opp_id: int):
+        """
+        Get all audit sessions for an opportunity, disaggregated by photo type.
+
+        Response:
+            {
+                "success": bool,
+                "sessions": [
+                    {
+                        "id": int,
+                        "flw_username": str,
+                        "flw_display_name": str,
+                        "opportunity_id": int,
+                        "status": str,
+                        "start_date": str | null,
+                        "end_date": str | null,
+                        "completed_at": str | null,
+                        "by_question": {
+                            "<question_id>": {
+                                "label": str,
+                                "pass": int,
+                                "fail": int,
+                                "pending": int,
+                                "total": int
+                            },
+                            ...
+                        }
+                    },
+                    ...
+                ]
+            }
+        """
+        try:
+            data_access = AuditDataAccess(opportunity_id=opp_id, request=request)
+            try:
+                sessions = data_access.get_audit_sessions()
+                session_dicts = [s.to_question_summary_dict() for s in sessions]
+
+                try:
+                    flw_names = data_access.get_flw_names(opp_id)
+                    for session_dict in session_dicts:
+                        username = session_dict.get("flw_username", "")
+                        session_dict["flw_display_name"] = flw_names.get(username, username)
+                except Exception as e:
+                    logger.warning(f"Failed to fetch FLW names: {e}")
+                    for session_dict in session_dicts:
+                        session_dict["flw_display_name"] = session_dict.get("flw_username", "")
+
+                return JsonResponse(
+                    {
+                        "success": True,
+                        "sessions": session_dicts,
+                    }
+                )
+            finally:
+                data_access.close()
+        except Exception:
+            logger.exception("Error fetching opportunity audit sessions summary")
+            return JsonResponse({"success": False, "error": "An internal error occurred"}, status=500)
+
+
 class AIReviewAPIView(LoginRequiredMixin, View):
     """API endpoint for running AI review agents on assessments.
 
