@@ -279,6 +279,31 @@ def fetch_footprints_task(self, areas):
 
 
 @celery_app.task(bind=True)
+def preview_area_stats_task(self, areas, min_confidence=None):
+    """Per-area building counts by provider, for the setup planning table.
+
+    For each area (in the same order it was posted) fetch its footprints on its
+    OWN bbox (cached after the first pull) and return the per-provider counts.
+    The client sums the providers it currently has ticked, so toggling a
+    building provider on/off updates the table with no re-fetch. Confidence is
+    applied here (it's a Google-only threshold), so changing it re-fetches."""
+    from commcare_connect.microplans.core.area_input import resolve_area
+    from commcare_connect.microplans.core.footprints import fetch_buildings, source_counts
+
+    set_task_progress(self, _FETCHING)
+    stats = []
+    try:
+        for i, a in enumerate(areas):
+            # sources=None → every provider; the client filters by its checkboxes.
+            df = fetch_buildings(resolve_area(a), min_confidence=min_confidence, with_geom=False)
+            counts = source_counts(df)
+            stats.append({"index": i, "source_counts": counts, "total": int(sum(counts.values()))})
+    except ValueError as e:
+        return {"status": "error", "detail": str(e)}
+    return {"status": "ok", "stats": stats}
+
+
+@celery_app.task(bind=True)
 def apply_plan_mutation_task(self, op, program_id, plan_id, params, actor, access_token):
     """Run a heavy plan mutation (regroup / reassign / regenerate) off the web tier.
 
@@ -308,6 +333,7 @@ def apply_plan_mutation_task(self, op, program_id, plan_id, params, actor, acces
                 grouping=params.get("grouping") or {},
                 base_revision=base_revision,
                 stats=params.get("stats"),
+                area_targets=params.get("area_targets"),
             )
         else:
             return {"status": "error", "detail": f"unknown op {op!r}"}
