@@ -591,6 +591,63 @@ def test_create_from_template_unknown_template(client, auth_user):
     assert err["code"] in ("NOT_FOUND", "UPSTREAM_ERROR")
 
 
+@pytest.mark.django_db
+@patch("connect_labs.mcp.tools.workflows._create_workflow_from_template")
+@patch("connect_labs.mcp.tools.workflows.WorkflowDataAccess")
+def test_create_from_template_program_owned(mock_wda_cls, mock_create, client, auth_user):
+    """program_id ownership: the DAO is scoped to the program (no owning opp) and
+    program_id is threaded into the template factory."""
+    _, raw = auth_user
+    mock_def = MagicMock(id=201, description="", data={"name": "Program Report", "version": 1})
+    mock_def.name = "Program Report"
+    mock_render = MagicMock(version=1)
+    mock_create.return_value = (mock_def, mock_render, None)
+
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_create_from_template",
+        {"template_key": "program_admin_report", "program_id": 176},
+    )
+    assert data["result"]["isError"] is False, data
+    content = data["result"]["structuredContent"]
+    assert content["workflow_id"] == 201
+    assert content["program_id"] == 176
+
+    # DAO scoped to the program, no owning opportunity.
+    ctor_kwargs = mock_wda_cls.call_args.kwargs
+    assert ctor_kwargs["program_id"] == 176
+    assert ctor_kwargs["opportunity_id"] is None
+    # program_id threaded through to the factory.
+    assert mock_create.call_args.kwargs["program_id"] == 176
+
+
+@pytest.mark.django_db
+def test_create_from_template_rejects_no_owner(client, auth_user):
+    _, raw = auth_user
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_create_from_template",
+        {"template_key": "performance_review"},
+    )
+    err = data["result"]["structuredContent"]["error"]
+    assert err["code"] == "INVALID_SCHEMA"
+
+
+@pytest.mark.django_db
+def test_create_from_template_rejects_both_owners(client, auth_user):
+    _, raw = auth_user
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_create_from_template",
+        {"template_key": "performance_review", "opportunity_id": 100, "program_id": 176},
+    )
+    err = data["result"]["structuredContent"]["error"]
+    assert err["code"] == "INVALID_SCHEMA"
+
+
 # =============================================================================
 # workflow_create (from scratch) tests
 # =============================================================================

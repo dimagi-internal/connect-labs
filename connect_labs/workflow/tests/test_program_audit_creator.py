@@ -104,8 +104,8 @@ def test_run_default_creates_program_run_then_fans_out(monkeypatch):
         wda = mock.Mock()
         wda.list_runs.return_value = []  # no existing program run
 
-        def _create(def_id, opp_id, ws, we, initial_state=None):
-            created["window"] = (ws, we)
+        def _create(def_id, *, opportunity_id=None, program_id=None, period_start, period_end, initial_state=None):
+            created["window"] = (period_start, period_end)
             return _run(555)
 
         wda.create_run.side_effect = _create
@@ -155,8 +155,8 @@ def test_run_default_defaults_window_to_last_week(monkeypatch):
         wda = mock.Mock()
         wda.list_runs.return_value = []
 
-        def _create(def_id, opp_id, ws, we, initial_state=None):
-            captured["window"] = (ws, we)
+        def _create(def_id, *, opportunity_id=None, program_id=None, period_start, period_end, initial_state=None):
+            captured["window"] = (period_start, period_end)
             return _run(9)
 
         wda.create_run.side_effect = _create

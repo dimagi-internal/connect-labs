@@ -119,6 +119,103 @@ class TestCreateDefinitionOpportunityIds:
         assert sent_data.get("opportunity_ids", []) == []
 
 
+class TestCreateRunOwnership:
+    def test_program_scoped_run_sets_program_fk_and_no_opp(self, workflow_data_access):
+        wda, mock_api = workflow_data_access
+        mock_api.create_record.return_value = LocalLabsRecord(
+            {
+                "id": 5,
+                "experiment": "workflow",
+                "type": "workflow_run",
+                "data": {"definition_id": 9, "program_id": 176},
+                "opportunity_id": None,
+                "program_id": 176,
+            }
+        )
+
+        run = wda.create_run(9, program_id=176, period_start="2026-01-01", period_end="2026-01-07")
+
+        kwargs = mock_api.create_record.call_args.kwargs
+        # Program FK passed to the client AND stamped into the run data.
+        assert kwargs["program_id"] == 176
+        assert kwargs["data"]["program_id"] == 176
+        # No owning opportunity anywhere.
+        assert "opportunity_id" not in kwargs["data"]
+        assert run.program_id == 176
+        assert run.opportunity_id is None
+
+    def test_opp_scoped_run_byte_for_behavior_identical(self, workflow_data_access):
+        wda, mock_api = workflow_data_access
+        mock_api.create_record.return_value = LocalLabsRecord(
+            {
+                "id": 6,
+                "experiment": "workflow",
+                "type": "workflow_run",
+                "data": {"definition_id": 9},
+                "opportunity_id": 700,
+            }
+        )
+
+        run = wda.create_run(9, opportunity_id=700, period_start="2026-01-01", period_end="2026-01-07")
+
+        kwargs = mock_api.create_record.call_args.kwargs
+        # Legacy opp path: no program_id kwarg, no owner keys stamped in data.
+        assert "program_id" not in kwargs
+        assert "program_id" not in kwargs["data"]
+        assert "opportunity_id" not in kwargs["data"]
+        assert kwargs["data"]["status"] == "in_progress"
+        assert run.opportunity_id == 700
+
+    def test_both_owners_raises(self, workflow_data_access):
+        wda, _ = workflow_data_access
+        with pytest.raises(ValueError):
+            wda.create_run(9, opportunity_id=700, program_id=176, period_start="a", period_end="b")
+
+    def test_no_owner_raises(self, workflow_data_access):
+        wda, _ = workflow_data_access
+        with pytest.raises(ValueError):
+            wda.create_run(9, period_start="a", period_end="b")
+
+
+class TestCreateDefinitionProgramScope:
+    def _program_wda(self, MockAPI):
+        with patch("connect_labs.workflow.data_access.settings") as mock_settings:
+            mock_settings.CONNECT_PRODUCTION_URL = "https://example.com"
+            from connect_labs.workflow.data_access import WorkflowDataAccess
+
+            return WorkflowDataAccess(program_id=176, access_token="fake")
+
+    def test_client_constructed_with_program_scope(self):
+        with patch("connect_labs.workflow.data_access.LabsRecordAPIClient") as MockAPI:
+            self._program_wda(MockAPI)
+            ctor_kwargs = MockAPI.call_args.kwargs
+            assert ctor_kwargs["program_id"] == 176
+            assert ctor_kwargs["opportunity_id"] is None
+
+    def test_create_definition_returns_program_owned_record(self):
+        with patch("connect_labs.workflow.data_access.LabsRecordAPIClient") as MockAPI:
+            wda = self._program_wda(MockAPI)
+            mock_api = MockAPI.return_value
+            wda.labs_api = mock_api
+            mock_api.create_record.return_value = LocalLabsRecord(
+                {
+                    "id": 3,
+                    "experiment": "workflow",
+                    "type": "workflow_definition",
+                    "data": {"name": "P"},
+                    "opportunity_id": None,
+                    "program_id": 176,
+                }
+            )
+
+            rec = wda.create_definition(name="P", description="d")
+
+            # The write went through the program-scoped client, so the returned
+            # record carries the program FK and no owning opportunity.
+            assert rec.program_id == 176
+            assert rec.opportunity_id is None
+
+
 class TestUpdateOpportunityIds:
     def test_updates_opportunity_ids_preserving_other_fields(self, workflow_data_access):
         wda, mock_api = workflow_data_access

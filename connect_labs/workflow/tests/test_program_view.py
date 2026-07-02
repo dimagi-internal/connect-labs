@@ -4,9 +4,9 @@ No DB, no LabsRecord API — the @django_db workflow view tests error on main du
 to a test-DB migration collision (``hq_case_id … already exists``), so all
 program-view logic lives in pure functions tested here with lightweight fakes.
 
-Program membership is by EXPLICIT OWNERSHIP: a definition is program-owned iff
-``definition.data["config"]["program_id"]`` is set. A multi-opp workflow that is
-merely opp-owned is NOT program-owned.
+Program membership is by RECORD OWNERSHIP: a definition is program-owned iff its
+LabsRecord carries a program FK, exposed as ``definition.program_id``. A
+multi-opp workflow that is merely opp-owned is NOT program-owned.
 """
 
 from connect_labs.workflow.program_view import (
@@ -20,18 +20,14 @@ from connect_labs.workflow.program_view import (
 
 
 class FakeDefinition:
-    """Stand-in for WorkflowDefinitionRecord exposing .id, .data and .opportunity_ids.
-
-    ``program_id`` (int/str/None) is placed at ``data.config.program_id``.
-    """
+    """Stand-in for WorkflowDefinitionRecord exposing .id, .program_id (the
+    record's program FK), .data and .opportunity_ids."""
 
     def __init__(self, id, program_id=None, opportunity_ids=None):
         self.id = id
+        self.program_id = program_id
         self.opportunity_ids = opportunity_ids or []
-        config = {}
-        if program_id is not None:
-            config["program_id"] = program_id
-        self.data = {"config": config}
+        self.data = {"config": {}}
 
 
 class FakeDao:
@@ -53,7 +49,7 @@ class FakeDao:
 # ---------------------------------------------------------------------------
 
 
-def test_program_id_of_reads_config_program_id():
+def test_program_id_of_reads_record_program_fk():
     assert program_id_of(FakeDefinition(1, program_id=176)) == 176
 
 
@@ -65,18 +61,18 @@ def test_program_id_of_coerces_to_int():
     assert program_id_of(FakeDefinition(1, program_id="176")) == 176
 
 
-def test_program_id_of_handles_missing_data_attribute():
+def test_program_id_of_handles_missing_program_attribute():
     class NoAttr:
         pass
 
     assert program_id_of(NoAttr()) is None
 
 
-def test_program_id_of_handles_missing_config_key():
-    class NoConfig:
-        data = {}
+def test_program_id_of_none_when_program_fk_is_none():
+    class NoProgram:
+        program_id = None
 
-    assert program_id_of(NoConfig()) is None
+    assert program_id_of(NoProgram()) is None
 
 
 def test_is_program_owned_true_when_marked():
