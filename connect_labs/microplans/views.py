@@ -2020,6 +2020,10 @@ class ProgramBulkCreatePlansView(LoginRequiredMixin, View):
         plans_input = payload.get("plans") or []
         mode = "coverage" if payload.get("mode") == "coverage" else "sampling"
         grouping = payload.get("grouping") if isinstance(payload.get("grouping"), dict) else {}
+        # Full coverage parameter surface (confidence gate, sources, area/cell filters,
+        # population weighting) — everything on CoverageConfig beyond cell_size_m. Passed
+        # straight through to CoverageConfig.from_payload so the plan captures it.
+        coverage_config = payload.get("coverage_config") if isinstance(payload.get("coverage_config"), dict) else {}
         # Optional: file every created plan into this group (group-page "Add wards").
         group_id = payload.get("group_id")
         try:
@@ -2045,6 +2049,8 @@ class ProgramBulkCreatePlansView(LoginRequiredMixin, View):
             cell_size_m,
             access_token,
             group_id=int(group_id) if group_id is not None else None,
+            coverage_config=coverage_config,
+            actor=request.user.get_username() if hasattr(request.user, "get_username") else str(request.user),
         )
         return JsonResponse(
             {

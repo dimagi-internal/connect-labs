@@ -10,6 +10,7 @@ from . import custom_analysis_run  # noqa: F401  -- registers custom_analysis_ru
 from . import funds  # noqa: F401
 from . import labs_context  # noqa: F401
 from . import microplans  # noqa: F401  -- list/work_areas/delete_plan/delete_group/transition_plan
+from . import microplans_create  # noqa: F401  -- registers microplans_bulk_create_plans/_status/coverage_param_schema
 from . import microplans_study  # noqa: F401  -- registers microplans_study_ensure, microplans_study_reset_round
 from . import pages  # noqa: F401
 from . import pipelines  # noqa: F401

@@ -345,7 +345,19 @@ def apply_plan_mutation_task(self, op, program_id, plan_id, params, actor, acces
 
 
 @celery_app.task(bind=True)
-def bulk_create_plans_task(self, program_id, plans_input, mode, grouping, cell_size_m, access_token, group_id=None):
+def bulk_create_plans_task(
+    self,
+    program_id,
+    plans_input,
+    mode,
+    grouping,
+    cell_size_m,
+    access_token,
+    group_id=None,
+    coverage_config=None,
+    run_id=None,
+    actor=None,
+):
     """Create one draft plan per confirmed admin boundary (one ward each), on the worker.
 
     Plans get their work areas one of two ways (see ``PlanRecord.phase`` and the
@@ -369,6 +381,24 @@ def bulk_create_plans_task(self, program_id, plans_input, mode, grouping, cell_s
     total = len(plans_input)
     results: list[dict] = []
     ok = 0
+
+    # Batch provenance: one run_id ties every plan in this bulk create together, so a
+    # 40-ward batch is groupable + a parameter-tuning run is reproducible. Caller may
+    # pass one in (to echo it back before the task finishes); else mint it here.
+    import uuid
+    from datetime import datetime, timezone
+
+    run_id = run_id or f"bulk-{uuid.uuid4().hex[:12]}"
+    run_meta = {
+        "run_id": run_id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "actor": actor or "",
+        "mode": mode,
+        "cell_size_m": cell_size_m,
+        "coverage_config": dict(coverage_config or {}),
+        "grouping": dict(grouping or {}),
+        "n_wards": total,
+    }
 
     # One DB round-trip for all wards' geometries.
     wanted = [str((p or {}).get("boundary_id") or "").strip() for p in plans_input]
@@ -403,6 +433,8 @@ def bulk_create_plans_task(self, program_id, plans_input, mode, grouping, cell_s
                 population=int(boundary.population) if boundary.population is not None else None,
                 cell_size_m=cell_size_m,
                 grouping=grouping,
+                coverage_config=coverage_config,
+                run_meta={**run_meta, "index": index},
             )
             ok += 1
             if group_id is not None:
@@ -421,10 +453,37 @@ def bulk_create_plans_task(self, program_id, plans_input, mode, grouping, cell_s
             results.append({**row, "status": "error", "detail": "create failed"})
         _emit(f"{index + 1}/{total}")
 
-    return {"status": "ok", "results": results, "created": ok, "total": total}
+    return {"status": "ok", "run_id": run_id, "results": results, "created": ok, "total": total}
 
 
-def _initial_plan_hulls(geometry, mode, cell_size_m):
+def _coverage_config_payload(cell_size_m, coverage_config, population):
+    """Merge the caller's coverage-parameter dict with the per-plan ``cell_size_m``
+    and boundary ``population`` into ONE payload for ``CoverageConfig.from_payload``.
+
+    The explicit ``cell_size_m``/``population`` args win over any same-named keys in
+    ``coverage_config`` (they're the per-plan values the bulk-create path threads),
+    but every *other* coverage knob (min_confidence, sources, area/cell exclusion
+    filters, …) flows straight through — so adding a field to ``CoverageConfig`` needs
+    no change here. ``coverage_config`` is the single source of truth for the surface."""
+    payload = dict(coverage_config or {})
+    payload["cell_size_m"] = cell_size_m
+    if population is not None:
+        payload.setdefault("population", population)
+    return payload
+
+
+def _coverage_frame(geometry, cell_size_m, coverage_config=None, population=None):
+    """Grid one ward's geometry into coverage work-area cells, returning the FULL
+    ``CoverageFrameResult`` (``areas_geojson`` + ``stats``). The shared coverage-
+    generation core so both the ``hulls`` (work areas) and the frame ``stats`` the
+    review UI shows come from ONE fetch/grid pass with the same config."""
+    from connect_labs.microplans.coverage.frame import CoverageConfig, generate_coverage_frame
+
+    cfg = CoverageConfig.from_payload(_coverage_config_payload(cell_size_m, coverage_config, population))
+    return generate_coverage_frame([{"geometry": geometry}], cfg)
+
+
+def _initial_plan_hulls(geometry, mode, cell_size_m, coverage_config=None):
     """The ``hulls`` FeatureCollection ``create_plan`` materialises into work areas
     at creation, by mode. ``geometry`` is the ward's GeoJSON geometry.
 
@@ -436,10 +495,7 @@ def _initial_plan_hulls(geometry, mode, cell_size_m):
       So there are no hulls yet — and ``materialize_work_areas`` reads ``pins``, not
       ``hulls``, for sampling anyway — hence an empty collection."""
     if mode == "coverage":
-        from connect_labs.microplans.coverage.frame import CoverageConfig, generate_coverage_frame
-
-        cfg = CoverageConfig.from_payload({"cell_size_m": cell_size_m})
-        return generate_coverage_frame([{"geometry": geometry}], cfg).areas_geojson
+        return _coverage_frame(geometry, cell_size_m, coverage_config).areas_geojson
     return {"type": "FeatureCollection", "features": []}
 
 
@@ -456,6 +512,8 @@ def create_boundary_plan(
     lga="",
     state="",
     grouping=None,
+    coverage_config=None,
+    run_meta=None,
 ):
     """Create one boundary plan from an admin boundary — the shared core of BOTH
     bulk-create-from-boundaries paths (the sync study "add wards from map" view and
@@ -466,7 +524,14 @@ def create_boundary_plan(
     ``input_areas`` entry: inline ``geometry`` (resilience + the footprints overlay),
     the ``boundary_id`` (so the study "Generate" pass can re-resolve the ward), and
     the boundary ``population`` (for plan KPIs — looked up from ``boundary_id`` when
-    not supplied)."""
+    not supplied).
+
+    ``coverage_config`` is the full coverage parameter surface (everything on
+    ``CoverageConfig`` beyond ``cell_size_m``: confidence gate, source filter, area +
+    cell exclusion filters, population weighting). For coverage plans it's gridded
+    into work areas AND persisted alongside the resulting frame stats, so the plan
+    records exactly what params produced it. ``run_meta`` is stamped through for
+    batch provenance (run_id/actor/…)."""
     if population is None and boundary_id:
         from connect_labs.labs.admin_boundaries.models import AdminBoundary
 
@@ -479,16 +544,33 @@ def create_boundary_plan(
         input_area["name"] = name
     if population is not None:
         input_area["population"] = int(population)
+
+    # Coverage grids at creation — generate ONCE so the work-area hulls and the frame
+    # stats (the numbers the coverage preview shows) come from the same fetch/config,
+    # and persist both the stats and the config used. Sampling starts boundary-only.
+    if mode == "coverage":
+        result = _coverage_frame(geometry, cell_size_m, coverage_config, population)
+        hulls = result.areas_geojson
+        cov_stats = result.stats
+        cov_config = _coverage_config_payload(cell_size_m, coverage_config, population)
+    else:
+        hulls = {"type": "FeatureCollection", "features": []}
+        cov_stats = None
+        cov_config = None
+
     return da.create_plan(
         region=region if region is not None else name,
         name=name,
         mode=mode,
         pins={"type": "FeatureCollection", "features": []},
-        hulls=_initial_plan_hulls(geometry, mode, cell_size_m),
+        hulls=hulls,
         input_areas=[input_area],
         lga=lga,
         state=state,
         grouping=grouping,
+        coverage_config=cov_config,
+        coverage_stats=cov_stats,
+        run_meta=run_meta,
     )
 
 

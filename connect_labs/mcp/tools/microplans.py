@@ -87,6 +87,9 @@ def microplans_list_plans(user, *, program_id):
                 "phase": p.phase,
                 "status": p.status,
                 "n_work_areas": len(p.work_areas),
+                # Batch provenance — groups plans created together by one bulk run so a
+                # parameter-tuning batch is identifiable in the list.
+                "run_id": (p.data.get("run_meta") or {}).get("run_id"),
             }
             for p in da.list_plans()
         ]
@@ -155,6 +158,13 @@ def microplans_plan_work_areas(user, *, program_id, plan_id):
             # verified-monitoring generator) can draw the DESIGNED plan via PlanLayers.
             "input_areas": p.data.get("input_areas") or [],
             "psu_hulls": p.data.get("psu_hulls") or {"type": "FeatureCollection", "features": []},
+            # Coverage capture: the exact params that produced this plan + the frame
+            # metrics the review UI shows (fetched/after_filters/retained_buildings/
+            # per-ward breakdown, …) + batch provenance — so a tuning run is inspectable
+            # and reproducible without re-fetching footprints. Empty for sampling plans.
+            "coverage_config": p.data.get("coverage_config"),
+            "coverage_stats": p.data.get("coverage_stats"),
+            "run_meta": p.data.get("run_meta"),
         }
     finally:
         da.close()

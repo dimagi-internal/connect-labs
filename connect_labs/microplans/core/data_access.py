@@ -80,12 +80,23 @@ class ProgramPlanDataAccess(BaseDataAccess):
         state: str = "",
         stats: list | None = None,
         area_targets: dict | None = None,
+        coverage_config: dict | None = None,
+        coverage_stats: list | None = None,
+        run_meta: dict | None = None,
     ) -> PlanRecord:
         """Create a Draft plan in the program from a generated frame (one work area
         per cluster/pin). ``input_areas`` is the original draw/admin/pin payload
         (stored so footprints overlay can reuse the cached fetch geometry).
         ``grouping`` is the Phase-1 strategy/params for cell→group bucketing
         (defaults to BFS adjacency — Connect-GIS parity).
+
+        ``coverage_config``/``coverage_stats`` (coverage mode) persist the exact
+        ``CoverageConfig`` used and the frame-level metrics the preview UI shows
+        (fetched/after_filters/retained_buildings/per-ward breakdown, …) — so a
+        created coverage plan records what params produced it and its stats without
+        a footprint re-fetch (the coverage analogue of ``sampling_stats``).
+        ``run_meta`` is a small provenance block (run_id/actor/created_at/…) so a
+        batch of plans created together is groupable + reproducible.
 
         ``lga``/``state`` are the administrative labels Connect's work-area importer
         requires non-empty (see ``microplans/CONNECT_IMPORT_CONTRACT.md``); stored at
@@ -127,6 +138,16 @@ class ProgramPlanDataAccess(BaseDataAccess):
                 data["psu_hulls"] = hulls
             if stats is not None:
                 data["sampling_stats"] = stats
+        # Coverage analogue: persist the config used + the frame stats the preview UI
+        # shows, so a created plan records exactly what params produced it (needed to
+        # compare parameter-tuning runs — regenerating stats means re-fetching roofs).
+        if mode == "coverage":
+            if coverage_config is not None:
+                data["coverage_config"] = dict(coverage_config)
+            if coverage_stats is not None:
+                data["coverage_stats"] = coverage_stats
+        if run_meta:
+            data["run_meta"] = dict(run_meta)
         # Per-ward expected-visit targets set in the setup planning table (the U5-for-
         # calc column). Stored + spread across each ward's retained buildings at
         # creation so visits are populated up front — the same math as the later
@@ -220,6 +241,8 @@ class ProgramPlanDataAccess(BaseDataAccess):
         base_revision: int | None = None,
         stats: list | None = None,
         area_targets: dict | None = None,
+        coverage_config: dict | None = None,
+        coverage_stats: list | None = None,
     ) -> PlanRecord:
         """Destructive re-creation of the work areas for an existing plan.
 
@@ -262,6 +285,14 @@ class ProgramPlanDataAccess(BaseDataAccess):
             # Per-arm sampling summary (incl. PSU/building balance stats) for
             # cross-arm comparability; never shared/pushed to Connect.
             data["sampling_stats"] = stats
+        # Coverage: re-capture the config + frame stats on a destructive regen so a
+        # re-gridded plan records the params that produced its new layout (parity
+        # with create_plan). Leave a prior capture untouched when not re-supplied.
+        if mode == "coverage":
+            if coverage_config is not None:
+                data["coverage_config"] = dict(coverage_config)
+            if coverage_stats is not None:
+                data["coverage_stats"] = coverage_stats
         return self._save_plan(plan, data, base_revision)
 
     def list_plans(self) -> list[PlanRecord]:
