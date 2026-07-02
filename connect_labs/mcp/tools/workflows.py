@@ -114,7 +114,14 @@ def workflow_list(user, opportunity_id=None, program_id=None, organization_id=No
         "type": "object",
         "properties": {
             "workflow_id": {"type": "integer"},
-            "opportunity_id": {"type": "integer"},
+            "opportunity_id": {
+                "type": "integer",
+                "description": "Scope by the owning opportunity (per-opp workflow). Provide this OR program_id.",
+            },
+            "program_id": {
+                "type": "integer",
+                "description": "Scope by the owning program (program-owned workflow). Provide this OR opportunity_id.",
+            },
             "include_render_code": {
                 "type": "boolean",
                 "description": (
@@ -123,15 +130,19 @@ def workflow_list(user, opportunity_id=None, program_id=None, organization_id=No
                 ),
             },
         },
-        "required": ["workflow_id", "opportunity_id"],
+        "required": ["workflow_id"],
         "additionalProperties": False,
     },
 )
-def workflow_get(user, workflow_id: int, opportunity_id: int, include_render_code: bool = True):
+def workflow_get(
+    user, workflow_id: int, opportunity_id: int = None, program_id: int = None, include_render_code: bool = True
+):
     """Fetch one workflow with all the context needed to edit it."""
+    if (opportunity_id is None) == (program_id is None):
+        raise MCPToolError("INVALID_SCHEMA", "Provide exactly one of opportunity_id / program_id.")
     token = require_connect_token(user)
 
-    wda = WorkflowDataAccess(access_token=token, opportunity_id=opportunity_id)
+    wda = WorkflowDataAccess(access_token=token, opportunity_id=opportunity_id, program_id=program_id)
     try:
         definition = wda.get_definition(workflow_id)
         if definition is None:
@@ -142,7 +153,7 @@ def workflow_get(user, workflow_id: int, opportunity_id: int, include_render_cod
         pipeline_sources = definition.data.get("pipeline_sources", [])
 
         # Fetch each linked pipeline's summary.
-        pda = PipelineDataAccess(access_token=token, opportunity_id=opportunity_id)
+        pda = PipelineDataAccess(access_token=token, opportunity_id=opportunity_id, program_id=program_id)
         try:
             enriched_sources = []
             for src in pipeline_sources:
@@ -278,11 +289,18 @@ def _validate_snapshot_inputs(value) -> None:
         "type": "object",
         "properties": {
             "workflow_id": {"type": "integer"},
-            "opportunity_id": {"type": "integer"},
+            "opportunity_id": {
+                "type": "integer",
+                "description": "Scope by owning opportunity. Provide this OR program_id.",
+            },
+            "program_id": {
+                "type": "integer",
+                "description": "Scope by owning program (program-owned workflow). Provide this OR opportunity_id.",
+            },
             "patch": {"type": "object"},
             "expected_version": {"type": "integer"},
         },
-        "required": ["workflow_id", "opportunity_id", "patch", "expected_version"],
+        "required": ["workflow_id", "patch", "expected_version"],
         "additionalProperties": False,
     },
     is_write=True,
@@ -290,10 +308,13 @@ def _validate_snapshot_inputs(value) -> None:
 def workflow_update_definition(
     user,
     workflow_id: int,
-    opportunity_id: int,
     patch: dict,
     expected_version: int,
+    opportunity_id: int = None,
+    program_id: int = None,
 ):
+    if (opportunity_id is None) == (program_id is None):
+        raise MCPToolError("INVALID_SCHEMA", "Provide exactly one of opportunity_id / program_id.")
     unknown_keys = set(patch) - _DEFINITION_PATCH_ALLOWED
     if unknown_keys:
         raise MCPToolError(
@@ -302,7 +323,7 @@ def workflow_update_definition(
         )
 
     token = require_connect_token(user)
-    wda = WorkflowDataAccess(access_token=token, opportunity_id=opportunity_id)
+    wda = WorkflowDataAccess(access_token=token, opportunity_id=opportunity_id, program_id=program_id)
     try:
         current = wda.get_definition(workflow_id)
         if current is None:
