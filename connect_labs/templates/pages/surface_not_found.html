@@ -1,0 +1,10 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="pages-surface pages-surface--not-found">
+  <h1 class="pages-surface__title">No page found for your current context</h1>
+  <p>There's no page for <code>{{ slug }}</code> in the organization / program /
+     opportunity you're currently viewing. Switch context below and it may appear.</p>
+  {% include "labs/context_selector.html" %}
+</div>
+{% endblock %}
