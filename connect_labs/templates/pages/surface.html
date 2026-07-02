@@ -2,6 +2,56 @@
 {% load static %}
 
 {% block content %}
+<style>
+  .pages-surface { max-width: 1120px; margin: 0 auto; padding: 2rem 1.5rem 3rem; }
+  .pages-surface__title {
+    font-size: 1.5rem; font-weight: 700; color: #111827;
+    letter-spacing: -0.01em; margin: 0 0 1.5rem;
+  }
+  .pages-grid {
+    display: grid; gap: 1rem;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  }
+  .pages-card {
+    display: flex; flex-direction: column; min-height: 148px;
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 14px;
+    padding: 1.25rem 1.25rem 1.1rem;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+    transition: box-shadow 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+  }
+  .pages-card:hover {
+    border-color: #c7d2fe;
+    box-shadow: 0 6px 20px rgba(49, 46, 129, 0.10);
+    transform: translateY(-1px);
+  }
+  .pages-card__inner { display: flex; flex-direction: column; flex: 1 1 auto; }
+  .pages-card__title {
+    font-size: 1.0625rem; font-weight: 600; color: #111827;
+    line-height: 1.35; margin-bottom: 0.35rem;
+  }
+  .pages-card__body { color: #4b5563; font-size: 0.9rem; line-height: 1.5; }
+  .pages-card__metrics { display: flex; flex-wrap: wrap; gap: 1.25rem; margin: 0.5rem 0 0.25rem; }
+  .pages-card__metric-value { font-size: 1.5rem; font-weight: 700; color: #312e81; line-height: 1.1; }
+  .pages-card__metric-label {
+    font-size: 0.7rem; font-weight: 600; color: #6b7280;
+    text-transform: uppercase; letter-spacing: 0.04em; margin-top: 0.15rem;
+  }
+  .pages-card__cta {
+    display: inline-flex; align-items: center; gap: 0.4rem; align-self: flex-start;
+    margin-top: auto; padding: 0.5rem 0.9rem;
+    background: #4f46e5; color: #fff; font-size: 0.875rem; font-weight: 600;
+    border-radius: 9px; text-decoration: none;
+    transition: background 0.15s ease;
+  }
+  .pages-card__cta:hover { background: #4338ca; color: #fff; text-decoration: none; }
+  .pages-card__cta::after { content: "\2192"; font-size: 1rem; line-height: 1; }
+  .pages-card--loading, .pages-card--error {
+    align-items: center; justify-content: center; color: #9ca3af;
+    font-size: 0.9rem; border-style: dashed;
+  }
+  .pages-card--error { color: #b91c1c; border-color: #fecaca; background: #fef2f2; }
+</style>
+
 <div class="pages-surface">
   <h1 class="pages-surface__title">{{ surface.title }}</h1>
   <div id="pages-root"
