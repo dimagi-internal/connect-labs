@@ -129,6 +129,12 @@ class DataSourceConfig:
             Case API v2, e.g. "work-area". Each case becomes one visit dict
             with the raw case nested under form_json["case"], so field paths
             follow "case.properties.<prop>" / "case.owner_id".
+        form_lookback_days: (cchq_forms only) When > 0, only fetch forms whose
+            received_on is within the last N days (via the Form API's
+            received_on_start filter). 0 (default) fetches all history. Use a
+            rolling window to keep the fetch light for reports that only need
+            recent forms — the full-history fetch does not scale to multi-opp
+            reports.
     """
 
     type: str = "connect_csv"
@@ -140,6 +146,7 @@ class DataSourceConfig:
     api_key: str = ""
     endpoint: str = ""
     case_type: str = ""
+    form_lookback_days: int = 0
 
     def __post_init__(self):
         if self.type not in ("connect_csv", "cchq_forms", "ocs_sessions", "connect_export", "cchq_cases"):

@@ -24,7 +24,33 @@ if not settings.configured:
     )
     django.setup()
 
-from connect_labs.labs.analysis.backends.sql.cchq_fetcher import normalize_cchq_form_to_visit_dict  # noqa: E402
+from connect_labs.labs.analysis.backends.sql.cchq_fetcher import (  # noqa: E402
+    _received_on_start,
+    normalize_cchq_form_to_visit_dict,
+)
+from connect_labs.labs.analysis.config import DataSourceConfig  # noqa: E402
+
+
+class TestFormLookbackWindow:
+    """form_lookback_days controls the Form API received_on_start filter."""
+
+    def test_default_is_no_filter(self):
+        ds = DataSourceConfig(type="cchq_forms", form_name="visit")
+        assert ds.form_lookback_days == 0
+        assert _received_on_start(ds) is None
+
+    def test_zero_or_negative_means_no_filter(self):
+        assert _received_on_start(DataSourceConfig(type="cchq_forms", form_lookback_days=0)) is None
+        assert _received_on_start(DataSourceConfig(type="cchq_forms", form_lookback_days=-5)) is None
+
+    def test_positive_window_returns_iso_date(self):
+        import datetime as _dt
+
+        ds = DataSourceConfig(type="cchq_forms", form_lookback_days=70)
+        start = _received_on_start(ds)
+        parsed = _dt.date.fromisoformat(start)
+        delta = (_dt.datetime.utcnow().date() - parsed).days
+        assert 69 <= delta <= 71
 
 
 class TestNormalizeCCHQForm:
