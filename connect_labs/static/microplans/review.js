@@ -1954,6 +1954,8 @@
     // Post-creation exclusion filters are a coverage concept (grid cells).
     $('filter-card')?.classList.toggle('hidden', samp);
     $('visits-card')?.classList.toggle('hidden', samp);
+    // The below-map planning table is a coverage concept (per-ward visit targets).
+    $('setup-plan-card')?.classList.toggle('hidden', samp);
     // Show/hide the per-boundary arm pills as we enter/leave two-arm sampling.
     try {
       adminBoundaries?.renderSelected?.();
