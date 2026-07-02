@@ -231,6 +231,9 @@ class AdminArea:
     # Per-source populations (e.g. {"worldpop_u5": 1234, "meta_u5": 1180, ...}) for
     # the microplan population-source picker. None when the boundary has no such bag.
     populations: dict | None = None
+    # Parent chain "State › LGA" (from extra.parent_names), so the picker + the
+    # planning table can attribute a selected ward to its LGA/State.
+    parent_name: str = ""
     ref: dict = field(default_factory=dict)
 
     def to_json(self) -> dict:
@@ -244,6 +247,7 @@ class AdminArea:
             "area_km2": self.area_km2,
             "population": self.population,
             "populations": self.populations,
+            "parent_name": self.parent_name,
             "ref": self.ref,
         }
 
@@ -261,6 +265,7 @@ class AdminArea:
             area_km2=d.get("area_km2"),
             population=d.get("population"),
             populations=pops if isinstance(pops, dict) else None,
+            parent_name=str(d.get("parent_name", "")),
             ref=ref if isinstance(ref, dict) else {},
         )
 
@@ -497,6 +502,8 @@ class LabsAdminBoundarySource(BoundarySource):
                     # Display population: scalar population_1, else a total from the bag.
                     population=resolve_population(r.get("population"), pops),
                     populations=pops,
+                    # Parent chain so a searched-and-selected ward attributes to its LGA/State.
+                    parent_name=_parent_name_from_extra(r.get("extra")),
                     ref={"boundary_id": r["boundary_id"]},
                 )
             )
@@ -544,15 +551,21 @@ class LabsAdminBoundarySource(BoundarySource):
         return out
 
 
-def _labs_parent_name(obj) -> str:
-    """Best-effort parent chain for the Inspect panel, from the denormalised
-    ``extra.parent_names`` the loaders store (shape varies by source)."""
-    names = (getattr(obj, "extra", None) or {}).get("parent_names")
+def _parent_name_from_extra(extra) -> str:
+    """Parent chain "State › LGA" from a boundary's denormalised ``extra.parent_names``
+    (shape varies by source: dict or list)."""
+    names = (extra or {}).get("parent_names")
     if isinstance(names, dict):
         return " › ".join(str(v) for v in names.values() if v)
     if isinstance(names, (list, tuple)):
         return " › ".join(str(v) for v in names if v)
     return ""
+
+
+def _labs_parent_name(obj) -> str:
+    """Best-effort parent chain for the Inspect panel, from the denormalised
+    ``extra.parent_names`` the loaders store (shape varies by source)."""
+    return _parent_name_from_extra(getattr(obj, "extra", None))
 
 
 def _geos_from_geojson(geom: dict | None):
