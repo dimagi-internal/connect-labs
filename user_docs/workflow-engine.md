@@ -42,6 +42,9 @@ This means each workflow appears in exactly one place. If you cannot find a work
 !!! note "The opp: badge is not shown in the program view"
     When you are browsing the program-level workflow list, opportunity identifiers are not displayed next to workflow names. Only workflows that are explicitly owned by the program appear there, so the badge carries no useful information at that level and is hidden to keep the list uncluttered.
 
+!!! note "Creating a run from the program view"
+    Clicking **Create Run** on a workflow from the program view works the same as creating a run from any other context. If you previously saw a "Workflow not found" error when clicking Create Run from the program-level workflow list, this has been fixed — runs are created correctly from the program view.
+
 ---
 
 ## Opening a Workflow Run from a Link
@@ -235,10 +238,4 @@ Running generation more than once in the same week is safe — the system will n
 
 ### Marking the program week complete
 
-The Program Audit Creator's run can only be **marked complete once every organisation has finished their audits**. The completion button remains disabled until all per-opportunity runs across the program have been marked complete. This ensures the program-level record accurately reflects that all work is done before the week is closed out.
-
-While organisations are still working, the creator's run shows how many per-opportunity runs are still open, so it is always clear what remains.
-
-### Audit Program Report
-
-The **Audit Program Report** is a read-only cross-opportunity view.
+The Program Audit Creator's run can only be **marked complete once every organisation has finished their audits**. The completion button remains disabled until all per-opportunity runs across the program have been
