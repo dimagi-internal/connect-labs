@@ -1959,6 +1959,9 @@
     $('visits-card')?.classList.toggle('hidden', samp);
     // The below-map planning table is a coverage concept (per-ward visit targets).
     $('setup-plan-card')?.classList.toggle('hidden', samp);
+    // The Create-work-areas card (cell size + create) is coverage-only; sampling
+    // commits via the Generate button inside the data-sources card.
+    $('create-workareas-card')?.classList.toggle('hidden', samp);
     // Show/hide the per-boundary arm pills as we enter/leave two-arm sampling.
     try {
       adminBoundaries?.renderSelected?.();
@@ -2431,7 +2434,12 @@
       .map((f) => `<option value="${f.key}">${f.label}</option>`)
       .join('');
     if (fams.some((f) => f.key === prev)) sel.value = prev;
-    sel.parentElement.style.display = fams.length ? '' : 'none';
+    // The picker lives in the left rail now. Keep the block visible so the user
+    // always knows where population source is chosen; show the select when any
+    // source has data, else a hint explaining why it's empty.
+    const has = fams.length > 0;
+    sel.classList.toggle('hidden', !has);
+    $('setup-pop-source-empty')?.classList.toggle('hidden', has);
   }
   function currentFamily() {
     const key = $('setup-pop-source')?.value;
