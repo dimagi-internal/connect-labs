@@ -79,6 +79,7 @@ class ProgramPlanDataAccess(BaseDataAccess):
         lga: str = "",
         state: str = "",
         stats: list | None = None,
+        area_targets: dict | None = None,
     ) -> PlanRecord:
         """Create a Draft plan in the program from a generated frame (one work area
         per cluster/pin). ``input_areas`` is the original draw/admin/pin payload
@@ -126,6 +127,22 @@ class ProgramPlanDataAccess(BaseDataAccess):
                 data["psu_hulls"] = hulls
             if stats is not None:
                 data["sampling_stats"] = stats
+        # Per-ward expected-visit targets set in the setup planning table (the U5-for-
+        # calc column). Stored + spread across each ward's retained buildings at
+        # creation so visits are populated up front — the same math as the later
+        # edit path (set_area_targets / apply_plan_edits). Keyed by the ward label the
+        # frame attributed to each work area (ward name, or "Area N" for drawn shapes).
+        clean_targets = {}
+        for k, v in (area_targets or {}).items():
+            try:
+                fv = float(v)
+            except (TypeError, ValueError):
+                continue
+            if fv > 0:
+                clean_targets[str(k)] = fv
+        if clean_targets and mode == "coverage":
+            data["area_targets"] = clean_targets
+            plan_lib.recompute_area_visits(work_areas, clean_targets)
         record = self.labs_api.create_record(
             experiment=self._experiment,
             type=TYPE_PLAN,
@@ -202,6 +219,7 @@ class ProgramPlanDataAccess(BaseDataAccess):
         grouping: dict | None = None,
         base_revision: int | None = None,
         stats: list | None = None,
+        area_targets: dict | None = None,
     ) -> PlanRecord:
         """Destructive re-creation of the work areas for an existing plan.
 
@@ -223,6 +241,19 @@ class ProgramPlanDataAccess(BaseDataAccess):
         data["mode"] = mode
         data["grouping"] = dict(grouping or {})
         data["assignment"] = {}  # destructive reset — no CHWs carried over
+        # Per-ward expected-visit targets from the setup planning table; re-spread over
+        # the fresh work areas (destructive reset otherwise — same shape as create_plan).
+        clean_targets = {}
+        for k, v in (area_targets or {}).items():
+            try:
+                fv = float(v)
+            except (TypeError, ValueError):
+                continue
+            if fv > 0:
+                clean_targets[str(k)] = fv
+        data["area_targets"] = clean_targets
+        if clean_targets and mode == "coverage":
+            plan_lib.recompute_area_visits(work_areas, clean_targets)
         # Persist the selected-PSU hulls (sampling only) so the saved plan can show the
         # surveyed settlements on a map after creation, without re-fetching footprints.
         if mode == "sampling" and hulls is not None:

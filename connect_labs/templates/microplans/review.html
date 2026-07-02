@@ -270,7 +270,32 @@
                 <input id="cfg-cov-min-confidence" type="number" min="0" max="1" step="0.05" class="base-input mt-0.5 text-xs" placeholder="—"></label>
             </div>
 
-            <p class="text-[10px] text-gray-400 leading-snug mt-2 pt-2 border-t border-gray-100">Expected visit counts are set per ward after the work areas are created (see <b>Expected visits per ward</b> below).</p>
+            <div class="border-t border-gray-100 pt-2 mt-2" id="setup-plan-block">
+              <div class="flex items-center justify-between gap-2 mb-1">
+                <div class="text-gray-600 font-medium">Planning table</div>
+                <label class="text-[10px] text-gray-500 flex items-center gap-1">Population source
+                  <select id="setup-pop-source" class="base-input text-[11px] py-0" style="width:8rem"></select>
+                </label>
+              </div>
+              <p class="text-[10px] text-gray-500 mb-1 leading-snug">One row per selected area. <b>Total</b> &amp; <b>U5</b> come from the population source; <b>Buildings</b> from the ticked providers above. Edit <b>U5 for calc</b> to set each area's expected-visit target (auto-filled from the source's U5).</p>
+              <div class="overflow-x-auto">
+                <table class="w-full text-[11px] tabular-nums" id="setup-table">
+                  <thead><tr class="text-left text-gray-400">
+                    <th class="pr-1">Area</th>
+                    <th class="pr-1 text-right">Total</th>
+                    <th class="pr-1 text-right">U5</th>
+                    <th class="pr-1 text-right">Buildings</th>
+                    <th class="pr-1 text-right">U5 for calc</th>
+                  </tr></thead>
+                  <tbody id="setup-tbody"></tbody>
+                </table>
+              </div>
+              <p class="text-[10px] text-gray-400 mt-1" id="setup-empty">Select or draw areas to populate this table.</p>
+              <div class="flex items-center gap-2 mt-1">
+                <button type="button" id="btn-setup-counts" class="button button-sm">Update building counts</button>
+                <span class="text-[10px] text-gray-500" id="setup-counts-status"></span>
+              </div>
+            </div>
           </div>
 
           <div id="sampling-config" class="hidden space-y-2">
@@ -375,20 +400,11 @@
          auto-fill from a population source) the total expected visits for the ward;
          Apply spreads it across the ward's RETAINED buildings → per-work-area visits.
          Coverage-only; hidden in sampling. -->
-    <details class="mp-acc mp-card" open id="visits-card">
-      <summary><span class="ic">◴</span><span class="lbl">Expected visits per ward</span><span class="chev">›</span></summary>
-      <p class="text-[11px] text-gray-500 leading-snug mb-1">Per ward, the total expected visits are spread over its retained buildings, so each work area gets visits ∝ its building count (rounded up). Auto-fill from a population source, then edit any value.</p>
-      <label class="block text-[11px]"><span class="text-gray-600">Auto-fill from population source</span>
-        <select id="visits-pop-source" class="base-input mt-0.5 text-xs w-full"></select></label>
-      <div class="overflow-x-auto mt-1">
-        <table class="w-full text-[11px]" id="visits-table">
-          <thead><tr class="text-gray-400 text-left"><th class="pr-1">State</th><th class="pr-1">LGA</th><th class="pr-1">Ward</th><th>Exp. visits</th></tr></thead>
-          <tbody id="visits-tbody"></tbody>
-        </table>
-      </div>
-      <button type="button" id="btn-apply-visits" class="button button-sm primary-dark w-full mt-1">Apply expected visits</button>
-      <p class="text-[10px] text-gray-500 mt-0.5" id="visits-status"></p>
-    </details>
+    <!-- Expected visits are now set per ward BEFORE creation, in the setup planning
+         table (coverage config → "Planning table", the "U5 for calc" column). They
+         spread across each ward's retained buildings at create time. The old
+         post-creation "Expected visits per ward" card was removed to avoid a
+         duplicate entry point. -->
 
     <!-- Sampling note: groups are the PSUs from generation; geometric auto-grouping
          is a coverage concept and is hidden in sampling mode (toggled by setMode).
@@ -719,6 +735,7 @@
     compare_url: "{{ compare_url|escapejs }}",
     footprints_url: "{{ footprints_url|default:''|escapejs }}",
     preview_footprints_url: "{{ preview_footprints_url|default:''|escapejs }}",
+    preview_area_stats_url: "{{ preview_area_stats_url|default:''|escapejs }}",
     regroup_url: "{{ regroup_url|default:''|escapejs }}",
     reassign_url: "{{ reassign_url|default:''|escapejs }}",
     regenerate_url: "{{ regenerate_url|default:''|escapejs }}",

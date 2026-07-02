@@ -144,6 +144,29 @@ class PreviewFootprintsView(LoginRequiredMixin, View):
         return _queued(fetch_footprints_task.delay(areas))
 
 
+class PreviewAreaStatsView(LoginRequiredMixin, View):
+    """Enqueue per-area building counts (by provider) for the setup planning table.
+
+    Same offload/poll contract as the other previews. The table's name/population/
+    U5 columns are computed client-side (free); only the building count needs this
+    cold-fetch, so it's driven by an explicit "Update building counts" button."""
+
+    def post(self, request, opp_id):
+        from commcare_connect.microplans.tasks import preview_area_stats_task
+
+        try:
+            payload = json.loads(request.body)
+            areas = payload["areas"]
+            if not areas:
+                raise ValueError("no areas drawn")
+            conf = payload.get("min_confidence")
+            min_confidence = None if conf in (None, "") else float(conf)
+        except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
+            return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
+
+        return _queued(preview_area_stats_task.delay(areas, min_confidence))
+
+
 class PreviewStatusView(LoginRequiredMixin, View):
     """Poll a queued preview/generation task.
 
@@ -574,6 +597,11 @@ class ProgramCreatePlanView(LoginRequiredMixin, View):
             # Optional: drop the new plan straight into a group (the group-page
             # "add a plan in the editor" path).
             group_id = payload.get("group_id")
+            # Optional: per-ward expected-visit targets from the setup planning table
+            # (the U5-for-calc column), spread across each ward's buildings at creation.
+            area_targets = payload.get("area_targets")
+            if not isinstance(area_targets, dict):
+                area_targets = None
         except (json.JSONDecodeError, KeyError, TypeError) as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
 
@@ -596,6 +624,7 @@ class ProgramCreatePlanView(LoginRequiredMixin, View):
                 lga=lga,
                 state=state,
                 stats=stats,
+                area_targets=area_targets,
             )
         except Exception as e:  # noqa: BLE001
             logger.exception("microplans create_plan failed (program=%s)", program_id)
@@ -1266,6 +1295,7 @@ class ProgramReviewView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView)
         # a real opp; the path arg is just historical.
         context["preview_coverage_url"] = reverse("microplans:preview_coverage", args=[123])
         context["preview_footprints_url"] = reverse("microplans:preview_footprints", args=[123])
+        context["preview_area_stats_url"] = reverse("microplans:preview_area_stats", args=[123])
         context["preview_frame_url"] = reverse("microplans:preview_frame", args=[123])
         context["arm_comparability_url"] = reverse("microplans:arm_comparability", args=[123])
         context["compare_surrounding_url"] = reverse("microplans:compare_surrounding", args=[123])
@@ -1495,6 +1525,7 @@ class ProgramPlanRegenerateView(LoginRequiredMixin, View):
             input_areas = payload.get("input_areas") if isinstance(payload.get("input_areas"), list) else []
             grouping = payload.get("grouping") if isinstance(payload.get("grouping"), dict) else {}
             stats = payload.get("stats") if isinstance(payload.get("stats"), list) else None
+            area_targets = payload.get("area_targets") if isinstance(payload.get("area_targets"), dict) else None
         except (json.JSONDecodeError, KeyError, TypeError) as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
 
@@ -1510,6 +1541,7 @@ class ProgramPlanRegenerateView(LoginRequiredMixin, View):
                 "input_areas": input_areas,
                 "grouping": grouping,
                 "stats": stats,
+                "area_targets": area_targets,
                 "revision": payload.get("revision"),
             },
         )
@@ -1635,6 +1667,7 @@ class ProgramSetupView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView):
         context.update(_sd_urls())
         context["preview_coverage_url"] = reverse("microplans:preview_coverage", args=[123])
         context["preview_footprints_url"] = reverse("microplans:preview_footprints", args=[123])
+        context["preview_area_stats_url"] = reverse("microplans:preview_area_stats", args=[123])
         context["preview_frame_url"] = reverse("microplans:preview_frame", args=[123])
         context["arm_comparability_url"] = reverse("microplans:arm_comparability", args=[123])
         context["compare_surrounding_url"] = reverse("microplans:compare_surrounding", args=[123])
