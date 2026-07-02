@@ -29,8 +29,12 @@ def _access_token(request) -> str:
     return (request.session or {}).get("labs_oauth", {}).get("access_token", "")
 
 
-def _load_definition(request, definition_id: int):
-    wda = WorkflowDataAccess(access_token=_access_token(request))
+def _load_definition(request, definition_id: int, opportunity_id=None):
+    # Scope the read by the card's opportunity so the prod API authorizes reading
+    # an opp-scoped workflow_definition record (get_record_by_id only sends scope
+    # params carried by the client instance). Without the opp, an opp-scoped
+    # definition is unreadable and the card would be wrongly dropped.
+    wda = WorkflowDataAccess(access_token=_access_token(request), opportunity_id=opportunity_id)
     return wda.get_definition(definition_id)
 
 
@@ -44,16 +48,25 @@ class WorkflowCardProvider(base.CardProvider):
         definition_id = target.get("definition_id")
         if definition_id is None:
             return False
+        allowed = {str(o.get("id")) for o in get_org_data(request).get("opportunities", [])}
+
+        # Preferred: the card carries its opportunity, so entitlement is a plain
+        # opp-membership check (mirrors the audit provider) — no definition read.
+        opportunity_id = target.get("opportunity_id")
+        if opportunity_id is not None:
+            return str(opportunity_id) in allowed
+
+        # Legacy fallback (target has no opportunity): derive scope from the
+        # definition itself. Requires the definition to be readable unscoped.
         record = _load_definition(request, int(definition_id))
         if record is None:
             return False
         opp_ids = record.opportunity_ids or ([record.opportunity_id] if record.opportunity_id else [])
-        allowed = {str(o.get("id")) for o in get_org_data(request).get("opportunities", [])}
         return any(str(opp_id) in allowed for opp_id in opp_ids)
 
     def get_card_data(self, request, target: dict, options: dict) -> base.CardPayload:
         definition_id = int(target["definition_id"])
-        record = _load_definition(request, definition_id)
+        record = _load_definition(request, definition_id, target.get("opportunity_id"))
         card = (record.data.get("card", {}) if record else {}) or {}
 
         cta = card.get("cta") or {
