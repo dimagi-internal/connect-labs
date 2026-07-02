@@ -44,7 +44,10 @@ def is_labs_only_program_id(program_id: int | None) -> bool:
     reads fall through to production Connect and 404 (the user isn't a member of
     the synthetic program).
     """
-    if program_id is None or program_id < LABS_ONLY_OPP_ID_FLOOR:
+    if program_id is None:
+        return False
+    program_id = int(program_id)  # callers may pass a str id; compare as int
+    if program_id < LABS_ONLY_OPP_ID_FLOOR:
         return False
     return (
         SyntheticOpportunity.objects.filter(labs_only=True)

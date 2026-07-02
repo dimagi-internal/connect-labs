@@ -69,9 +69,12 @@ class LabsRecordAPIClient:
         Note: At least one of opportunity_id, organization_id, or program_id should be provided.
         """
         self.access_token = access_token
-        self.opportunity_id = opportunity_id
-        self.organization_id = organization_id
-        self.program_id = program_id
+        # Coerce scope ids to int: callers (MCP args, URL params) may pass them as
+        # strings, and downstream int comparisons (e.g. is_labs_only_program_id's
+        # `program_id < LABS_ONLY_OPP_ID_FLOOR`) raise TypeError on a str.
+        self.opportunity_id = int(opportunity_id) if opportunity_id is not None else None
+        self.organization_id = int(organization_id) if organization_id is not None else None
+        self.program_id = int(program_id) if program_id is not None else None
         self.base_url = settings.CONNECT_PRODUCTION_URL.rstrip("/")
         self.http_client = httpx.Client(
             headers={"Authorization": f"Bearer {self.access_token}"},
