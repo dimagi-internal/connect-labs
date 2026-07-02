@@ -478,7 +478,18 @@ def _make_fake_program_da(monkeypatch, plans=None, groups=None):
             return plans[int(pid)]
 
         def create_plan(
-            self, region, name, mode, pins, hulls, input_areas=None, grouping=None, lga="", state="", stats=None
+            self,
+            region,
+            name,
+            mode,
+            pins,
+            hulls,
+            input_areas=None,
+            grouping=None,
+            lga="",
+            state="",
+            stats=None,
+            area_targets=None,
         ):
             was = plan_lib.materialize_work_areas(mode, pins, hulls)
             pid = seq["plan"]
@@ -497,7 +508,9 @@ def _make_fake_program_da(monkeypatch, plans=None, groups=None):
             )
             return plans[pid]
 
-        def regenerate_plan(self, pid, mode, pins, hulls, input_areas, grouping=None, base_revision=None, stats=None):
+        def regenerate_plan(
+            self, pid, mode, pins, hulls, input_areas, grouping=None, base_revision=None, stats=None, area_targets=None
+        ):
             was = plan_lib.materialize_work_areas(mode, pins, hulls, grouping=grouping)
             p = plans[int(pid)]
             p.work_areas = was
