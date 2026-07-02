@@ -553,6 +553,9 @@
           props.ward = desc.name || '';
           props.lga = chain.length ? chain[chain.length - 1] : '';
           props.state = chain.length >= 2 ? chain[chain.length - 2] : '';
+          // Country (alpha-3) so the planning table's column headers can use that
+          // country's admin vocabulary (State/LGA/Ward vs County/Sub-county/…).
+          if (desc.country) props.country = desc.country;
           // Per-source populations, so the post-creation per-area visit table can
           // auto-fill expected-visit targets from a chosen population source.
           if (desc.populations) props.populations = desc.populations;
@@ -2369,6 +2372,7 @@
           ward: String(p.ward || '').trim(),
           lga: String(p.lga || '').trim(),
           state: String(p.state || '').trim(),
+          country: String(p.country || '').trim(),
           populations: p.populations || null,
           // Delete handle for the table's ✕: a boundary pick (removed via the
           // admin layer so its map highlight + state clear too), else a plain
@@ -2452,11 +2456,36 @@
     return PROVIDER_FAMILIES.find((f) => f.key === key) || null;
   }
 
+  // Per-country admin vocabulary for the table's column headers [level1, level2,
+  // level3]. Mirrors the server's COUNTRY_LEVEL_LABELS (display only). Keyed by
+  // alpha-3 and alpha-2 since a clicked boundary may carry either.
+  const LEVEL_VOCAB = {
+    NGA: ['State', 'LGA', 'Ward'],
+    NG: ['State', 'LGA', 'Ward'],
+    KEN: ['County', 'Sub-county', 'Ward'],
+    KE: ['County', 'Sub-county', 'Ward'],
+    IND: ['State', 'District', 'Locality'],
+    IN: ['State', 'District', 'Locality'],
+  };
+  const DEFAULT_VOCAB = ['State', 'LGA', 'Ward'];
+  function updateSetupHeaders(areas) {
+    const c = (areas.find((a) => a.country) || {}).country;
+    const v = (c && LEVEL_VOCAB[c.toUpperCase()]) || DEFAULT_VOCAB;
+    const th = (id, t) => {
+      const el = $(id);
+      if (el) el.textContent = t;
+    };
+    th('setup-th-area', `${v[2]} / area`);
+    th('setup-th-lga', v[1]);
+    th('setup-th-state', v[0]);
+  }
+
   function renderSetupTable() {
     const tb = $('setup-tbody');
     if (!tb) return;
     renderSetupPopSource();
     const areas = setupAreas();
+    updateSetupHeaders(areas);
     const empty = $('setup-empty');
     if (empty) empty.classList.toggle('hidden', areas.length > 0);
     const fam = currentFamily();
