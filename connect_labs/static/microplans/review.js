@@ -2486,12 +2486,20 @@
           ? null
           : counts.reduce((s, c) => s + c, 0);
         const key = g.key;
+        const lga = g.area.lga || '';
+        const state = g.area.state || '';
         const auto = u5 != null ? Math.round(u5) : '';
         const val = key in manualTargets ? manualTargets[key] : auto;
         return `<tr>
           <td class="pr-2 py-1 text-gray-700 truncate" title="${esc(
             key,
           )}">${esc(key)}</td>
+          <td class="pr-2 py-1 text-gray-500 truncate" title="${esc(lga)}">${
+            lga ? esc(lga) : '—'
+          }</td>
+          <td class="pr-2 py-1 text-gray-500 truncate" title="${esc(state)}">${
+            state ? esc(state) : '—'
+          }</td>
           <td class="pr-2 py-1 text-right text-gray-600">${num(total)}</td>
           <td class="pr-2 py-1 text-right text-gray-600">${num(u5)}</td>
           <td class="pr-2 py-1 text-right text-gray-600">${

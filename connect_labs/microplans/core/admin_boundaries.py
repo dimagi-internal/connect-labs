@@ -41,11 +41,34 @@ logger = logging.getLogger(__name__)
 _iso = iso
 
 LEVEL_REGION, LEVEL_COUNTY, LEVEL_LOCALITY = 1, 2, 3
+# Country-agnostic fallback labels (shown when we don't have a country-specific
+# vocabulary). The canonical LEVEL numbers never change — this is display only.
 LEVEL_LABELS = {
     LEVEL_REGION: "Region / State",
     LEVEL_COUNTY: "County / District / LGA",
     LEVEL_LOCALITY: "Locality / Ward",
 }
+# Per-country level vocabularies (alpha-3). When a country is known we show its own
+# word for each tier instead of the slash-list; matching/resolving/export are all
+# keyed on the numeric level, so this is purely cosmetic. Add a country by adding a
+# row here. Unknown country → LEVEL_LABELS fallback.
+COUNTRY_LEVEL_LABELS: dict[str, dict[int, str]] = {
+    "NGA": {LEVEL_REGION: "State", LEVEL_COUNTY: "LGA", LEVEL_LOCALITY: "Ward"},
+    "KEN": {LEVEL_REGION: "County", LEVEL_COUNTY: "Sub-county", LEVEL_LOCALITY: "Ward"},
+    "IND": {LEVEL_REGION: "State", LEVEL_COUNTY: "District", LEVEL_LOCALITY: "Locality"},
+}
+
+
+def level_label(level: int, country: str | None = None) -> str:
+    """Human label for a canonical level, country-specific when we know the country
+    (e.g. NGA level 3 -> "Ward"), else the generic slash-list. Display only."""
+    a3 = (iso.to_alpha3(country) or (country or "").upper()) if country else ""
+    by_country = COUNTRY_LEVEL_LABELS.get(a3)
+    if by_country and level in by_country:
+        return by_country[level]
+    return LEVEL_LABELS.get(level, f"ADM{level}")
+
+
 _LEVEL_TO_OVERTURE = {LEVEL_REGION: "region", LEVEL_COUNTY: "county", LEVEL_LOCALITY: "locality"}
 _OVERTURE_TO_LEVEL = {v: k for k, v in _LEVEL_TO_OVERTURE.items()}
 
@@ -214,7 +237,7 @@ class AdminArea:
         return {
             "name": self.name,
             "level": self.level,
-            "level_label": LEVEL_LABELS.get(self.level, f"ADM{self.level}"),
+            "level_label": level_label(self.level, self.country),
             "source": self.source,
             "country": self.country,
             "region": self.region,
@@ -589,7 +612,7 @@ class BoundaryResolver:
             "source_labels": {n: SOURCE_LABELS.get(n, n) for n in self._sources},
             "levels": {
                 level: {
-                    "label": LEVEL_LABELS[level],
+                    "label": level_label(level, a3),
                     "default_source": self.source_for(a3, level).name,
                     "available_sources": self.sources_for(a3, level),
                 }
