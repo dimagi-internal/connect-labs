@@ -270,32 +270,7 @@
                 <input id="cfg-cov-min-confidence" type="number" min="0" max="1" step="0.05" class="base-input mt-0.5 text-xs" placeholder="—"></label>
             </div>
 
-            <div class="border-t border-gray-100 pt-2 mt-2" id="setup-plan-block">
-              <div class="flex items-center justify-between gap-2 mb-1">
-                <div class="text-gray-600 font-medium">Planning table</div>
-                <label class="text-[10px] text-gray-500 flex items-center gap-1">Population source
-                  <select id="setup-pop-source" class="base-input text-[11px] py-0" style="width:8rem"></select>
-                </label>
-              </div>
-              <p class="text-[10px] text-gray-500 mb-1 leading-snug">One row per selected area. <b>Total</b> &amp; <b>U5</b> come from the population source; <b>Buildings</b> from the ticked providers above. Edit <b>U5 for calc</b> to set each area's expected-visit target (auto-filled from the source's U5).</p>
-              <div class="overflow-x-auto">
-                <table class="w-full text-[11px] tabular-nums" id="setup-table">
-                  <thead><tr class="text-left text-gray-400">
-                    <th class="pr-1">Area</th>
-                    <th class="pr-1 text-right">Total</th>
-                    <th class="pr-1 text-right">U5</th>
-                    <th class="pr-1 text-right">Buildings</th>
-                    <th class="pr-1 text-right">U5 for calc</th>
-                  </tr></thead>
-                  <tbody id="setup-tbody"></tbody>
-                </table>
-              </div>
-              <p class="text-[10px] text-gray-400 mt-1" id="setup-empty">Select or draw areas to populate this table.</p>
-              <div class="flex items-center gap-2 mt-1">
-                <button type="button" id="btn-setup-counts" class="button button-sm">Update building counts</button>
-                <span class="text-[10px] text-gray-500" id="setup-counts-status"></span>
-              </div>
-            </div>
+            <p class="text-[10px] text-gray-400 leading-snug mt-2 pt-2 border-t border-gray-100">The per-area <b>Planning table</b> (population, buildings, expected-visit targets) is shown below the map.</p>
           </div>
 
           <div id="sampling-config" class="hidden space-y-2">
@@ -609,6 +584,40 @@
       <!-- Drag handle on the bottom edge -->
       <div class="map-resizer" id="map-resizer" title="Drag to resize map"></div>
     </div>
+
+    {% comment %}
+      Setup planning table — the per-area data preview/overview (population, U5,
+      building counts, editable expected-visit target). Lives under the map, NOT in
+      the left rail: the rail is for configuration actions; overviews/data previews
+      belong beside the map. Coverage-only (hidden in sampling via setMode). Outside
+      the plan_id block so it works in the create-in-place editor (/new/).
+    {% endcomment %}
+    <section id="setup-plan-card" class="border-t border-gray-200 bg-white px-3 py-2.5 text-sm">
+      <div class="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
+        <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Planning table</h2>
+        <label class="text-[11px] text-gray-500 flex items-center gap-1">Population source
+          <select id="setup-pop-source" class="base-input text-[11px] py-0.5" style="width:9rem"></select>
+        </label>
+      </div>
+      <p class="text-[11px] text-gray-500 mb-1.5 leading-snug">One row per selected area. <b>Total</b> &amp; <b>U5</b> come from the population source; <b>Buildings</b> from the providers ticked in the left rail. Edit <b>U5 for calc</b> to set each area's expected-visit target (auto-filled from the source's U5).</p>
+      <div class="overflow-x-auto">
+        <table class="w-full text-[12px] tabular-nums" id="setup-table">
+          <thead><tr class="text-left text-gray-400 border-b border-gray-100">
+            <th class="pr-2 py-1">Area</th>
+            <th class="pr-2 py-1 text-right">Total pop</th>
+            <th class="pr-2 py-1 text-right">U5 pop</th>
+            <th class="pr-2 py-1 text-right">Buildings</th>
+            <th class="pr-2 py-1 text-right">U5 for calc</th>
+          </tr></thead>
+          <tbody id="setup-tbody"></tbody>
+        </table>
+      </div>
+      <p class="text-[11px] text-gray-400 mt-1.5" id="setup-empty">Select or draw areas to populate this table.</p>
+      <div class="flex items-center gap-2 mt-1.5">
+        <button type="button" id="btn-setup-counts" class="button button-sm">Update building counts</button>
+        <span class="text-[11px] text-gray-500" id="setup-counts-status"></span>
+      </div>
+    </section>
 
     {% comment %}
       Surrounding-ward control finder — the ranked neighbour comparison rendered by
