@@ -34,7 +34,7 @@ Click any workflow to open its dashboard.
 
 Workflows in Labs are owned by either a **program** or a specific **opportunity**:
 
-- **Program-owned workflows** appear in the program view only. They cover the program as a whole — for example, the Program Audit Creator — and do not appear under any individual opportunity.
+- **Program-owned workflows** are scoped directly to the program — they have no owning opportunity at all. They appear in the program view only, cover the program as a whole — for example, the Program Audit Creator and Program Audit Report — and do not appear under any individual opportunity. All operations on these workflows (opening them, creating a run, viewing a run page) work entirely within the program context; no opportunity is needed.
 - **Opportunity-owned workflows** appear under their specific opportunity only. They will not appear in the program-level workflow list.
 
 This means each workflow appears in exactly one place. If you cannot find a workflow you expect to see, check whether you are viewing the program level or the relevant opportunity level.
@@ -43,7 +43,7 @@ This means each workflow appears in exactly one place. If you cannot find a work
     When you are browsing the program-level workflow list, opportunity identifiers are not displayed next to workflow names. Only workflows that are explicitly owned by the program appear there, so the badge carries no useful information at that level and is hidden to keep the list uncluttered.
 
 !!! note "Creating a run from the program view"
-    Clicking **Create Run** on a workflow from the program view works the same as creating a run from any other context. If you previously saw a "Workflow not found" error when clicking Create Run from the program-level workflow list, this has been fixed — runs are created correctly from the program view.
+    Clicking **Create Run** on a program-owned workflow works the same as creating a run from any other context. Because these workflows are genuinely scoped to the program rather than to any opportunity, Create Run resolves correctly from the program view with no extra steps required.
 
 ---
 
@@ -228,14 +228,10 @@ Once all audits are done the button becomes active. Clicking it locks the run as
 
 ## Program Audit Creator
 
-The **Program Audit Creator** is the program administrator's central tool for managing a week's audit cycle across all opportunities at once. It is its own workflow in Labs, separate from the per-opportunity audit workflows it generates.
+The **Program Audit Creator** is the program administrator's central tool for managing a week's audit cycle across all opportunities at once. It is a program-owned workflow in Labs — scoped directly to the program with no owning opportunity — and is separate from the per-opportunity audit workflows it generates.
 
 ### What it does
 
 When a program administrator runs the Program Audit Creator for a given week, it fans out to every opportunity in the program and creates that opportunity's audit workflow run in a single action. To trigger this, click **"Generate audit runs for all N opportunities"** (where N is the number of opportunities configured for your program). The creator's own run then **records what was generated**: which per-opportunity runs were created and how many audit sessions each one contains. This gives administrators a traceable record of each week's generation step.
 
-Running generation more than once in the same week is safe — the system will not create duplicate runs or overwrite work already in progress.
-
-### Marking the program week complete
-
-The Program Audit Creator's run can only be **marked complete once every organisation has finished their audits**. The completion button remains disabled until all per-opportunity runs across the program have been
+Running generation more than once in the same week is safe — the system
