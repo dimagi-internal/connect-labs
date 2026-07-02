@@ -30,6 +30,43 @@ def _program_opp_id(definition):
     return definition.opportunity_id or (definition.opportunity_ids or [None])[0]
 
 
+def _program_owner(definition):
+    """Resolve the owner SCOPE for this creator's PROGRAM run.
+
+    The Program Creator is program-owned when its LabsRecord carries a program
+    FK (``definition.program_id``). In that case the PROGRAM run it
+    creates/tracks must be PROGRAM-scoped — no owning opportunity. A creator
+    that is still opp-owned (``program_id`` is None) falls back to the legacy
+    opp path so pre-existing instances keep working.
+
+    Returns ``("program", program_id)`` or ``("opportunity", opp_id)``. Note
+    this governs only the PROGRAM run's own scope; the per-opp creators the
+    fan-out dispatches stay opp-scoped (they generate the audits).
+    """
+    from connect_labs.workflow.program_view import program_id_of
+
+    pid = program_id_of(definition)
+    if pid is not None:
+        return ("program", pid)
+    return ("opportunity", _program_opp_id(definition))
+
+
+def _program_run_dao(definition, access_token):
+    """WorkflowDataAccess for the PROGRAM run — program-scoped when
+    program-owned, else opp-scoped (legacy)."""
+    kind, owner_id = _program_owner(definition)
+    if kind == "program":
+        return WorkflowDataAccess(access_token=access_token, program_id=owner_id)
+    return WorkflowDataAccess(access_token=access_token, opportunity_id=owner_id)
+
+
+def _program_run_owner_kwargs(definition):
+    """``create_run`` owner kwarg for the PROGRAM run (exactly one of
+    program_id / opportunity_id)."""
+    kind, owner_id = _program_owner(definition)
+    return {"program_id": owner_id} if kind == "program" else {"opportunity_id": owner_id}
+
+
 def _resolve_instances(definition):
     """Config's per-opp creator instances: ``[{opportunity_id, workflow_definition_id}]``."""
     config = definition.data.get("config") or {}
@@ -64,7 +101,6 @@ def fan_out_generate(*, definition, run_id, access_token, request=None, window=N
     from connect_labs.workflow.templates import run_default_for_definition
 
     window_start, window_end = window if window else (None, None)
-    program_opp = _program_opp_id(definition)
     sources = _resolve_instances(definition)
     total = len(sources)
 
@@ -96,9 +132,10 @@ def fan_out_generate(*, definition, run_id, access_token, request=None, window=N
             "order": idx,
         }
 
-        # Persist the accumulating fan-out record onto the PROGRAM run (opp-scoped
-        # to the program creator's owning opp) so the run tracks it live.
-        pwda = WorkflowDataAccess(access_token=access_token, opportunity_id=program_opp)
+        # Persist the accumulating fan-out record onto the PROGRAM run, scoped
+        # to the PROGRAM run's owner (program-scoped when program-owned, else
+        # the creator's owning opp) so the run tracks it live.
+        pwda = _program_run_dao(definition, access_token)
         try:
             pwda.update_run_state(
                 run_id,
@@ -135,11 +172,10 @@ def run_default(*, definition, run=None, access_token, request=None, window=None
     else:
         window_start, window_end = window
 
-    opp_id = _program_opp_id(definition)
     def_id = definition.id
 
     if run is None:
-        wda = WorkflowDataAccess(access_token=access_token, opportunity_id=opp_id)
+        wda = _program_run_dao(definition, access_token)
         try:
             run = next(
                 (r for r in wda.list_runs(def_id) if _run_has_window(r, window_start)),
@@ -148,10 +184,10 @@ def run_default(*, definition, run=None, access_token, request=None, window=None
             if run is None:  # idempotent per window
                 run = wda.create_run(
                     def_id,
-                    opp_id,
-                    window_start,
-                    window_end,
+                    period_start=window_start,
+                    period_end=window_end,
                     initial_state={"window_start": window_start, "window_end": window_end},
+                    **_program_run_owner_kwargs(definition),
                 )
         finally:
             wda.close()

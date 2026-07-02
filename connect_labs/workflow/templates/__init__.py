@@ -425,6 +425,7 @@ def create_workflow_from_template(
     template_key: str,
     request=None,
     opportunity_ids: list[int] | None = None,
+    program_id: int | None = None,
 ) -> tuple:
     """
     Create a workflow from a template using the data access layer.
@@ -432,24 +433,86 @@ def create_workflow_from_template(
     If the template includes a pipeline_schema, a pipeline will also be created
     and linked to the workflow.
 
+    Record ownership is exactly one of opportunity or program:
+
+    - **Opportunity-owned** (default): the passed ``data_access`` is opp-scoped
+      and the created definition carries that opportunity's FK. This is the
+      per-opp case and is unchanged.
+    - **Program-owned** (``program_id`` given): the created definition carries
+      the program FK and no owning opportunity — used for a program's Creator /
+      Report workflows. If the passed ``data_access`` is not already scoped to
+      that program, a program-scoped one is constructed (reusing its token) and
+      used for the writes.
+
+    ``opportunity_ids`` is orthogonal to ownership: it is the DATA field listing
+    the opportunities the workflow spans (e.g. a program's member opps), stored
+    on the definition regardless of who owns the record.
+
     Args:
         data_access: WorkflowDataAccess instance with valid OAuth
         template_key: Template key (e.g., 'performance_review')
         request: Optional HttpRequest for creating pipelines (needed for PipelineDataAccess)
         opportunity_ids: Optional list of opp IDs this workflow should pull data from
             (multi-opp templates only; ignored for single-opp templates).
+        program_id: When given, the workflow is program-owned (no owning opp).
 
     Returns:
         Tuple of (definition_record, render_code_record, pipeline_record or None)
 
     Raises:
-        ValueError: If template not found
+        ValueError: If template not found, or ownership scope is ambiguous
+            (neither or both of opportunity / program).
     """
     template = get_template(template_key)
     if not template:
         raise ValueError(f"Unknown template: {template_key}")
     if template.get("deprecated"):
         raise ValueError(f"Template '{template_key}' is deprecated and can no longer be instantiated.")
+
+    # Resolve record ownership scope: exactly one of opportunity / program.
+    dao_opp_id = getattr(data_access, "opportunity_id", None)
+    dao_program_id = getattr(data_access, "program_id", None)
+    effective_program_id = program_id if program_id is not None else dao_program_id
+    effective_opp_id = None if effective_program_id is not None else dao_opp_id
+    if (effective_program_id is None) == (effective_opp_id is None):
+        raise ValueError(
+            "create_workflow_from_template requires exactly one of opportunity_id / program_id ownership."
+        )
+
+    # If program ownership was requested but the DAO isn't already program-scoped,
+    # re-scope so the created definition carries the program FK (no owning opp).
+    owns_data_access = False
+    if effective_program_id is not None and dao_program_id != effective_program_id:
+        from connect_labs.workflow.data_access import WorkflowDataAccess as _WDA
+
+        data_access = _WDA(
+            access_token=getattr(data_access, "access_token", None),
+            program_id=effective_program_id,
+        )
+        owns_data_access = True
+    try:
+        return _create_workflow_from_template_scoped(
+            data_access=data_access,
+            template=template,
+            template_key=template_key,
+            request=request,
+            opportunity_ids=opportunity_ids,
+        )
+    finally:
+        if owns_data_access:
+            data_access.close()
+
+
+def _create_workflow_from_template_scoped(
+    data_access: WorkflowDataAccess,
+    template: dict,
+    template_key: str,
+    request=None,
+    opportunity_ids: list[int] | None = None,
+) -> tuple:
+    """Inner body of ``create_workflow_from_template`` — runs against an
+    already-ownership-scoped ``data_access``. Kept separate so the public
+    function can own/close a re-scoped DAO in a ``finally``."""
 
     template_def = template["definition"]
     pipeline_schema = template.get("pipeline_schema")

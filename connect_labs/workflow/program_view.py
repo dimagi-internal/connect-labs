@@ -1,16 +1,19 @@
 """Pure helpers for the program-level workflow view.
 
 The mental model: a workflow belongs in the PROGRAM view ONLY if it is
-*explicitly program-owned* — marked with ``config.program_id == <that
-program>`` on its definition. This is deliberate ownership, set via the normal
-config path.
+*program-owned* — its LabsRecord carries a program FK (and no owning
+opportunity). This is true record ownership: a program-owned definition is
+created via a program-scoped ``WorkflowDataAccess(program_id=P)``, which sets
+the record's program FK. See ``data_access.create_definition``.
 
 A multi-opportunity workflow that merely happens to be owned by an opportunity
 is NOT program-owned and does NOT appear in the program view. The opp view
 shows a given opp's workflows EXCLUDING any that are program-owned.
 
-The ownership marker is ``definition.data["config"]["program_id"]`` (an int).
-We do NOT rely on the LabsRecord's program FK.
+The ownership marker is the record's program FK, exposed as
+``definition.program_id`` (mirroring ``definition.opportunity_id``). We do NOT
+rely on ``config.program_id`` — ownership is a property of the record, not its
+JSON config.
 
 These functions are deliberately dependency-free so they can be unit tested
 without a database or the LabsRecord API (the workflow view tests error on main
@@ -19,9 +22,8 @@ due to a test-DB migration collision — see the module tests).
 
 
 def program_id_of(definition):
-    """The program a definition is explicitly owned by, or None."""
-    cfg = (getattr(definition, "data", None) or {}).get("config") or {}
-    pid = cfg.get("program_id")
+    """The program a definition is owned by (its record program FK), or None."""
+    pid = getattr(definition, "program_id", None)
     return int(pid) if pid is not None else None
 
 
@@ -59,7 +61,9 @@ def collect_program_workflows(program_id, opp_ids, *, dao_factory):
 
     The labs LabsRecord API scopes reads per-opportunity, so a program's
     workflows must be gathered by looping every member opp and listing each
-    one's definitions, keeping only those whose ``config.program_id`` matches.
+    one's definitions, keeping only those whose record program FK matches.
+    (A follow-up will switch the view to a direct program-scoped
+    ``WorkflowDataAccess(program_id=P).list_definitions()``.)
 
     Args:
         program_id: the program whose owned workflows we want.
