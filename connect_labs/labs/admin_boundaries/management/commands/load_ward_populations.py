@@ -65,11 +65,16 @@ class Command(BaseCommand):
                         pops[col] = round(float(row[col]), 1)
                     except (TypeError, ValueError, KeyError):
                         pass
+                # Keep the fixture's admin names alongside the pops so we can also
+                # stamp each ward's parent chain (state › lga) — many GeoPoDe rows
+                # have no parent_names, which left the planning table's LGA/State
+                # columns blank even though Total/U5 populated.
+                rec = {"pops": pops, "state": (row.get("state") or "").strip(), "lga": (row.get("lga") or "").strip()}
                 if code:
-                    by_code[code] = pops
+                    by_code[code] = rec
                 nk = (_norm(row.get("state")), _norm(row.get("ward")))
                 if nk[1]:
-                    by_name[nk] = pops
+                    by_name[nk] = rec
         self.stdout.write(f"Loaded {len(by_code)} ward populations from {opts['path']}.")
 
         boundaries = list(AdminBoundary.objects.filter(iso_code="NGA", admin_level=3, source__in=["geopode", "grid3"]))
@@ -77,24 +82,29 @@ class Command(BaseCommand):
         for b in boundaries:
             extra = b.extra or {}
             code = str(extra.get("own_code") or "").strip()
-            pops = by_code.get(code)
-            if not pops:
+            rec = by_code.get(code)
+            if not rec:
                 # Fall back to ward-name-within-state (GRID3 codes don't match the
                 # GeoPoDe-coded fixture, so match by name using the denormalised state).
                 state = (extra.get("parent_names") or {}).get("state")
-                pops = by_name.get((_norm(state), _norm(b.name)))
-                if pops:
+                rec = by_name.get((_norm(state), _norm(b.name)))
+                if rec:
                     by_name_matched += 1
-            if not pops:
+            if not rec:
                 continue
             matched += 1
-            merged = dict(pops)
+            merged = dict(rec["pops"])
             # GeoPoDe's scalar population_1 (a whole-area TOTAL — see module docstring)
             # lives on the boundary's population field. Stored under geopode_total so
             # resolve_population can use it as a legitimate total fallback.
             if b.source == "geopode" and b.population is not None:
                 merged["geopode_total"] = round(float(b.population), 1)
             extra = {**extra, "populations": merged}
+            # Stamp the parent chain (state first, then lga) from the fixture when it
+            # has both — powers the planning table's LGA/State columns + the CSV. Only
+            # overwrite when we actually have names, so we never blank an existing chain.
+            if rec.get("state") and rec.get("lga"):
+                extra["parent_names"] = {"state": rec["state"], "lga": rec["lga"]}
             b.extra = extra
             updates.append(b)
 
