@@ -539,6 +539,9 @@
         // the sample paint read it; coverage mode carries no arm.
         const props =
           mpMode === 'sampling' ? { arm: arm || 'intervention' } : {};
+        // Tag the draw feature with its source boundary id so the below-map
+        // planning table's per-row ✕ can remove it via adminBoundaries.removeArea.
+        props.boundaryId = boundaryId;
         // Tag with the source ward/LGA/state so coverage can attribute each work
         // area to its ward (CSV + per-area metrics). LGA = immediate parent, state =
         // the one above it in the "… › State › LGA" chain (country dropped).
@@ -2364,9 +2367,15 @@
           lga: String(p.lga || '').trim(),
           state: String(p.state || '').trim(),
           populations: p.populations || null,
+          // Delete handle for the table's ✕: a boundary pick (removed via the
+          // admin layer so its map highlight + state clear too), else a plain
+          // drawn polygon (removed straight from the draw control).
+          _del: p.boundaryId
+            ? { kind: 'boundary', id: p.boundaryId }
+            : { kind: 'draw', id: f.id },
         });
       });
-    (circleAreas || []).forEach((c) =>
+    (circleAreas || []).forEach((c, idx) =>
       out.push({
         arm: 'intervention',
         circle: c.circle,
@@ -2374,9 +2383,12 @@
         lga: '',
         state: '',
         populations: null,
+        _del: { kind: 'circle', idx },
       }),
     );
-    (uploadedAreas || []).forEach((u) => out.push(Object.assign({}, u)));
+    (uploadedAreas || []).forEach((u, idx) =>
+      out.push(Object.assign({}, u, { _del: { kind: 'upload', idx } })),
+    );
     out.forEach((a, i) => {
       a.name = a.ward || `Area ${i + 1}`; // frame resolves ward = ward || name
     });
@@ -2435,30 +2447,98 @@
     if (empty) empty.classList.toggle('hidden', areas.length > 0);
     const fam = currentFamily();
     const num = (v) => (v == null ? '—' : Math.round(v).toLocaleString());
-    tb.innerHTML = areas
-      .map((a, i) => {
-        const pops = a.populations || {};
+    // Group by display name so a MultiPolygon ward (several draw features) is ONE
+    // row. Buildings sum across the group's members; population/target are shared.
+    const groups = [];
+    const byKey = new Map();
+    areas.forEach((a, i) => {
+      const key = a.name;
+      let g = byKey.get(key);
+      if (!g) {
+        g = { key, area: a, memberIdx: [] };
+        byKey.set(key, g);
+        groups.push(g);
+      }
+      g.memberIdx.push(i);
+    });
+    tb.innerHTML = groups
+      .map((g) => {
+        const pops = g.area.populations || {};
         const total = fam ? famTotal(pops, fam) : null;
         const u5 = fam ? famU5(pops, fam) : null;
-        const bld = buildingCountFor(i);
-        const key = a.name;
+        // Building count is known only once every member has a fetched count.
+        const counts = g.memberIdx.map((i) => buildingCountFor(i));
+        const bld = counts.some((c) => c == null)
+          ? null
+          : counts.reduce((s, c) => s + c, 0);
+        const key = g.key;
         const auto = u5 != null ? Math.round(u5) : '';
         const val = key in manualTargets ? manualTargets[key] : auto;
         return `<tr>
-          <td class="pr-1 text-gray-700 truncate" title="${esc(a.name)}">${esc(
-            a.name,
-          )}</td>
-          <td class="pr-1 text-right text-gray-600">${num(total)}</td>
-          <td class="pr-1 text-right text-gray-600">${num(u5)}</td>
-          <td class="pr-1 text-right text-gray-600">${
+          <td class="pr-2 py-1 text-gray-700 truncate" title="${esc(
+            key,
+          )}">${esc(key)}</td>
+          <td class="pr-2 py-1 text-right text-gray-600">${num(total)}</td>
+          <td class="pr-2 py-1 text-right text-gray-600">${num(u5)}</td>
+          <td class="pr-2 py-1 text-right text-gray-600">${
             bld == null ? '—' : bld.toLocaleString()
           }</td>
-          <td class="pr-1 text-right"><input type="number" min="0" step="1"
+          <td class="pr-2 py-1 text-right"><input type="number" min="0" step="1"
                 class="setup-target base-input text-xs text-right" style="width:5.5rem"
                 data-key="${esc(key)}" value="${val}"></td>
+          <td class="py-1 text-right"><button type="button" class="setup-del text-gray-400 hover:text-red-600 px-1"
+                data-key="${esc(
+                  key,
+                )}" title="Remove this area" aria-label="Remove ${esc(
+                  key,
+                )}">✕</button></td>
         </tr>`;
       })
       .join('');
+  }
+
+  // Remove every area under a display-name key (a MultiPolygon ward may span
+  // several draw features). Boundary picks go through the admin layer so the map
+  // highlight + selection state clear; plain shapes/circles/uploads are removed
+  // from their own store. refreshAreaStats() then rebuilds the table.
+  function deleteSetupRow(key) {
+    const members = setupAreas().filter((a) => a.name === key);
+    if (!members.length) return;
+    const boundaryIds = new Set();
+    const drawIds = [];
+    const circleIdx = [];
+    const uploadIdx = [];
+    members.forEach((m) => {
+      const d = m._del || {};
+      if (d.kind === 'boundary') boundaryIds.add(d.id);
+      else if (d.kind === 'draw') drawIds.push(d.id);
+      else if (d.kind === 'circle') circleIdx.push(d.idx);
+      else if (d.kind === 'upload') uploadIdx.push(d.idx);
+    });
+    boundaryIds.forEach((id) => {
+      try {
+        if (adminBoundaries && adminBoundaries.removeArea)
+          adminBoundaries.removeArea(id);
+      } catch (_) {}
+    });
+    if (drawIds.length && draw) {
+      try {
+        draw.delete(drawIds);
+      } catch (_) {}
+    }
+    // Splice highest-index-first so earlier indices stay valid.
+    circleIdx.sort((a, b) => b - a).forEach((i) => circleAreas.splice(i, 1));
+    if (uploadIdx.length) {
+      uploadIdx
+        .sort((a, b) => b - a)
+        .forEach((i) => uploadedAreas.splice(i, 1));
+      if (typeof drawUploadedOverlay === 'function') drawUploadedOverlay();
+      $('area-upload-clear')?.classList.toggle('hidden', !uploadedAreas.length);
+    }
+    delete manualTargets[key];
+    // adminBoundaries.removeArea already triggers refreshAreaStats via onAreaRemove,
+    // but call it once more so draw/circle/upload deletions also refresh the table.
+    if (typeof refreshAreaStats === 'function') refreshAreaStats();
   }
 
   // Building counts change the map area set → reset the (now-stale) counts and
@@ -2553,6 +2633,12 @@
     const key = inp.dataset.key;
     if (String(inp.value).trim() === '') delete manualTargets[key];
     else manualTargets[key] = parseFloat(inp.value);
+  });
+  // Per-row ✕ removes that area from the plan (delegated so it works after re-render).
+  document.getElementById('setup-tbody')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('.setup-del');
+    if (!btn) return;
+    deleteSetupRow(btn.dataset.key);
   });
 
   // Coverage config: cell size + the two cell-level exclusion filters + an optional
