@@ -538,6 +538,16 @@
           ref = {};
         }
       }
+      // Same JSON-string round-trip for the per-source population bag, so a CLICKED
+      // boundary carries the numbers the setup planning table needs (Total/U5).
+      let populations = p.populations || null;
+      if (typeof populations === 'string') {
+        try {
+          populations = JSON.parse(populations);
+        } catch (e) {
+          populations = null;
+        }
+      }
       return {
         key: p.boundary_id,
         name: p.name,
@@ -548,6 +558,7 @@
         ref: ref,
         area_km2: p.area_km2,
         population: p.population != null ? p.population : null,
+        populations: populations,
       };
     }
     function rowToDesc(a) {
