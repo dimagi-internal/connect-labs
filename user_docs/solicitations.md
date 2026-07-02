@@ -45,6 +45,8 @@ Click **Generate Criteria** and paste in text describing your program requiremen
 **Adding context to response questions:**
 When building your response template, each question has an optional **Framing** field where you can write one or two sentences explaining why you're asking that question. This framing appears above the question prompt on the public solicitation page, displayed in muted italic text, so respondents understand the intent behind the question — not just what you're asking. Framing is optional; questions without it display exactly as before.
 
+The question input box in the template editor automatically expands to fit longer question text, so lengthy questions are always fully visible as you type.
+
 The published solicitation shows the number of questions in the response template. This count is phrased correctly for any number — for example, "1 question" or "3 questions".
 
 !!! info "Validation errors on the creation form"
@@ -97,6 +99,8 @@ Multiple reviewers can score independently — average scores are calculated aut
 
 The responses list shows a **Status** column and a **Recommendation** column for each submission. For an awarded response, **Awarded** appears only in the Status column — the Recommendation column shows your reviewer recommendation as normal, without repeating "Awarded". Where a response has not yet been scored, the Score cell shows a neutral dash (—); the Recommendation column shows the **Pending review** indicator for that submission.
 
+The responses list displays the submitting firm's contact email address in place of a repeated organization name, making it easier to identify individual contacts at a glance when multiple people from the same organization have submitted.
+
 The **Actions** column (containing the Award control) is pinned to the right edge of the responses table. This means it stays visible and reachable even when the table is wide, without needing to scroll horizontally. The Score cell is no longer clipped by the pinned Actions column.
 
 ### Awarding a Response
@@ -124,11 +128,14 @@ Solicitations created for finished study programs clearly state their purpose �
 ### Submitting a Response
 
 1. Open a solicitation and read the full description and scope of work
-2. Click **Submit Response**
-3. Answer each question in the response template — where present, read the italicised framing above each question to understand what the program team is looking for. Each answer box is sized to show a typical response in full as you type, so you can review your wording without scrolling inside the box
-4. If the solicitation includes coverage areas, select the areas you can cover by clicking the ward boundaries directly on the map, or by checking the boxes in the checklist alongside it — both controls are kept in sync, so selecting an area in one automatically updates the other. Selected areas are highlighted on the map so you can clearly see which plans you have chosen. You must select at least one plan to submit
-5. If you use the **AI Application Coach** for feedback on your draft answers, the coach's suggestions are presented with clear headings so you can scan the structured advice at a glance
-6. Review your answers, then click **Submit**
+2. Before filling in your answers, review the **Evaluation Criteria** panel shown above the application questions. This panel lists each criterion the program team will use to score responses, including the criterion name, its weight in the overall score, and any scoring guidance provided. Use this to understand what reviewers are looking for before you write your answers
+3. Click **Submit Response**
+4. Answer each question in the response template — where present, read the italicised framing above each question to understand what the program team is looking for. Each answer box is sized to show a typical response in full as you type, so you can review your wording without scrolling inside the box
+5. If the solicitation includes coverage areas, select the areas you can cover by clicking the ward boundaries directly on the map, or by checking the boxes in the checklist alongside it — both controls are kept in sync, so selecting an area in one automatically updates the other. Selected areas are highlighted on the map so you can clearly see which plans you have chosen. You must select at least one plan to submit
+6. If you use the **AI Application Coach** for feedback on your draft answers, the coach's suggestions are presented with clear headings so you can scan the structured advice at a glance
+7. Review your answers, then click **Submit**
+
+After you submit, the solicitation page updates to show a **Response submitted** confirmation state. The option to submit another response is no longer shown — this prevents accidental duplicate submissions.
 
 !!! info "Selecting coverage areas"
 Each plan is offered as a whole unit. Clicking any part of a plan's boundary on the map selects that entire plan — you cannot select only part of a plan. Selected plans are highlighted in a distinct colour on the map so it is easy to see at a glance what you have chosen. If a plan includes multiple wards or intervention and control areas, you take all of it. If you are unsure what a plan covers, read the solicitation description or contact the program team before submitting.
@@ -219,3 +226,6 @@ This has been fixed. The coach's feedback now uses proper heading hierarchy, so 
 
 **What does the Score cell show for a response that hasn't been reviewed yet?**
 An unscored response shows a neutral dash (—) in the Score cell. The Recommendation column shows the **Pending review** indicator for that submission. Once reviewers have scored the response, the Score cell updates to show the calculated average.
+
+**Can applicants see how their response will be scored?**
+Yes — the evaluation criteria are displayed in a panel above the application questions on the response submission page. Each criterion shows its name, its weight in the overall
