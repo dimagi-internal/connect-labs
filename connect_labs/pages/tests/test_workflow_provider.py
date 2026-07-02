@@ -71,3 +71,30 @@ def test_entitled_falls_back_to_singular_opportunity_id_for_single_opp(mock_wda,
 def test_entitled_false_when_no_definition_id(mock_wda, mock_org):
     prov = WorkflowCardProvider()
     assert prov.entitled(_request(), {}) is False
+
+
+@patch("connect_labs.pages.providers.workflow.get_org_data")
+@patch("connect_labs.pages.providers.workflow.WorkflowDataAccess")
+def test_entitled_via_target_opportunity_without_loading_definition(mock_wda, mock_org):
+    mock_org.return_value = {"opportunities": [{"id": 1973}]}
+    prov = WorkflowCardProvider()
+    assert prov.entitled(_request(), {"definition_id": 5049, "opportunity_id": 1973}) is True
+    # opp-in-target path must NOT need to read the (opp-scoped) definition
+    mock_wda.return_value.get_definition.assert_not_called()
+
+
+@patch("connect_labs.pages.providers.workflow.get_org_data")
+@patch("connect_labs.pages.providers.workflow.WorkflowDataAccess")
+def test_entitled_false_when_target_opportunity_absent(mock_wda, mock_org):
+    mock_org.return_value = {"opportunities": [{"id": 1973}]}
+    prov = WorkflowCardProvider()
+    assert prov.entitled(_request(), {"definition_id": 5049, "opportunity_id": 9999}) is False
+
+
+@patch("connect_labs.pages.providers.workflow.WorkflowDataAccess")
+def test_get_card_data_scopes_definition_read_by_target_opportunity(mock_wda):
+    mock_wda.return_value.get_definition.return_value = _definition_record()
+    prov = WorkflowCardProvider()
+    prov.get_card_data(_request(), {"definition_id": 5049, "opportunity_id": 1973}, {})
+    # the definition read is scoped by the card's opportunity
+    assert mock_wda.call_args.kwargs["opportunity_id"] == 1973
