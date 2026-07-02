@@ -1748,6 +1748,8 @@
       : '—';
     // Boundaries changed → refresh the building footprints for the new area.
     if (footprintsOn && !FOOTPRINTS_URL) reloadFootprintsDebounced();
+    // Rebuild the setup planning table (name/pop columns free; counts go stale).
+    if (typeof onSetupAreasChanged === 'function') onSetupAreasChanged();
   }
 
   // ---- collect + apply geographic frame ----
@@ -1758,12 +1760,16 @@
     return polys.concat(circleAreas);
   }
   on('btn-apply-area', 'click', async () => {
-    const areas = collectAreas();
+    // Named areas (ward when picked, "Area N" when drawn) so each work area is
+    // attributed to the row the planning table shows — and so the U5-for-calc
+    // targets key to the same ward the frame stamps on the cells.
+    const areas = setupAreas();
     if (!areas.length) {
       $('apply-area-status').textContent =
         'Define an area first (draw / admin / pin).';
       return;
     }
+    const areaTargets = collectSetupTargets();
     // Existing plan: confirm before destroying. New plan: just go.
     if (PLAN_ID) {
       if (!REGENERATE_URL) {
@@ -1825,6 +1831,7 @@
             coverage_areas: prev.areas,
             input_areas: areas,
             grouping,
+            area_targets: areaTargets,
             revision: planRevision,
           },
           {
@@ -1876,6 +1883,7 @@
           coverage_areas: prev.areas,
           input_areas: areas,
           grouping,
+          area_targets: areaTargets,
           group_id: GROUP_ID || undefined,
         });
         const data = await resp.json();
@@ -2298,6 +2306,253 @@
     }
   }
 
+  // ---- Setup planning table (pre-creation) ---------------------------------
+  // One row per selected area: name, source Total/U5, building count, and an
+  // editable "U5 for calc" that becomes each ward's expected-visit target at
+  // create time. Population columns are free (client-side, from the boundary's
+  // population bag); building counts come from an explicit fetch (see below).
+  const PROVIDER_FAMILIES = [
+    {
+      key: 'worldpop',
+      label: 'WorldPop',
+      total: 'worldpop_total',
+      u5: 'worldpop_u5',
+    },
+    { key: 'meta', label: 'Meta', total: 'meta_total', u5: 'meta_u5' },
+    { key: 'grid3', label: 'GRID3 v3', total: 'grid3_v3_total', u5: null },
+    {
+      key: 'geopode',
+      label: 'GeoPoDe',
+      total: 'geopode_total',
+      altTotal: 'geopode_u5',
+      u5: null,
+    },
+  ];
+  // Per-area building counts by provider, keyed to the LAST fetch's area set;
+  // reset to null whenever the areas change so a stale layout never shows.
+  let SETUP_COUNTS = null;
+  // User-typed "U5 for calc" overrides, by area key (name). Survive source
+  // switches; only cleared when the user blanks the cell.
+  const manualTargets = {};
+
+  function famTotal(pops, fam) {
+    if (!pops) return null;
+    if (pops[fam.total] != null) return pops[fam.total];
+    if (fam.altTotal && pops[fam.altTotal] != null) return pops[fam.altTotal];
+    return null;
+  }
+  function famU5(pops, fam) {
+    if (!pops || !fam.u5) return null;
+    return pops[fam.u5] != null ? pops[fam.u5] : null;
+  }
+
+  // Canonical named area list used by BOTH this table and the coverage create,
+  // so a row's identity matches the ward the frame attributes to its cells.
+  // ward name when picked from a boundary; "Area N" for drawn/uploaded shapes.
+  function setupAreas() {
+    const out = [];
+    (draw ? draw.getAll().features : [])
+      .filter((f) => f.geometry && /Polygon/.test(f.geometry.type))
+      .forEach((f) => {
+        const p = f.properties || {};
+        out.push({
+          arm: p.arm || 'intervention',
+          geometry: f.geometry,
+          ward: String(p.ward || '').trim(),
+          lga: String(p.lga || '').trim(),
+          state: String(p.state || '').trim(),
+          populations: p.populations || null,
+        });
+      });
+    (circleAreas || []).forEach((c) =>
+      out.push({
+        arm: 'intervention',
+        circle: c.circle,
+        ward: '',
+        lga: '',
+        state: '',
+        populations: null,
+      }),
+    );
+    (uploadedAreas || []).forEach((u) => out.push(Object.assign({}, u)));
+    out.forEach((a, i) => {
+      a.name = a.ward || `Area ${i + 1}`; // frame resolves ward = ward || name
+    });
+    return out;
+  }
+
+  // Population families present across the selected areas, in canonical order.
+  function availableFamilies() {
+    const seen = new Set();
+    setupAreas().forEach((a) => {
+      const pops = a.populations || {};
+      Object.keys(pops).forEach((k) => seen.add(k));
+    });
+    return PROVIDER_FAMILIES.filter(
+      (f) =>
+        seen.has(f.total) ||
+        (f.altTotal && seen.has(f.altTotal)) ||
+        (f.u5 && seen.has(f.u5)),
+    );
+  }
+
+  function checkedBuildingSources() {
+    return [...document.querySelectorAll('.cov-src-cb:checked')].map(
+      (c) => c.value,
+    );
+  }
+  function buildingCountFor(i) {
+    if (!SETUP_COUNTS || !SETUP_COUNTS[i]) return null;
+    const sc = SETUP_COUNTS[i].source_counts || {};
+    const checked = checkedBuildingSources();
+    return checked.reduce((s, prov) => s + (sc[prov] || 0), 0);
+  }
+
+  function renderSetupPopSource() {
+    const sel = $('setup-pop-source');
+    if (!sel) return;
+    const fams = availableFamilies();
+    const prev = sel.value;
+    sel.innerHTML = fams
+      .map((f) => `<option value="${f.key}">${f.label}</option>`)
+      .join('');
+    if (fams.some((f) => f.key === prev)) sel.value = prev;
+    sel.parentElement.style.display = fams.length ? '' : 'none';
+  }
+  function currentFamily() {
+    const key = $('setup-pop-source')?.value;
+    return PROVIDER_FAMILIES.find((f) => f.key === key) || null;
+  }
+
+  function renderSetupTable() {
+    const tb = $('setup-tbody');
+    if (!tb) return;
+    renderSetupPopSource();
+    const areas = setupAreas();
+    const empty = $('setup-empty');
+    if (empty) empty.classList.toggle('hidden', areas.length > 0);
+    const fam = currentFamily();
+    const num = (v) => (v == null ? '—' : Math.round(v).toLocaleString());
+    tb.innerHTML = areas
+      .map((a, i) => {
+        const pops = a.populations || {};
+        const total = fam ? famTotal(pops, fam) : null;
+        const u5 = fam ? famU5(pops, fam) : null;
+        const bld = buildingCountFor(i);
+        const key = a.name;
+        const auto = u5 != null ? Math.round(u5) : '';
+        const val = key in manualTargets ? manualTargets[key] : auto;
+        return `<tr>
+          <td class="pr-1 text-gray-700 truncate" title="${esc(a.name)}">${esc(
+            a.name,
+          )}</td>
+          <td class="pr-1 text-right text-gray-600">${num(total)}</td>
+          <td class="pr-1 text-right text-gray-600">${num(u5)}</td>
+          <td class="pr-1 text-right text-gray-600">${
+            bld == null ? '—' : bld.toLocaleString()
+          }</td>
+          <td class="pr-1 text-right"><input type="number" min="0" step="1"
+                class="setup-target base-input text-xs text-right" style="width:5.5rem"
+                data-key="${esc(key)}" value="${val}"></td>
+        </tr>`;
+      })
+      .join('');
+  }
+
+  // Building counts change the map area set → reset the (now-stale) counts and
+  // re-render name/pop columns for free. Called from refreshAreaStats.
+  function onSetupAreasChanged() {
+    SETUP_COUNTS = null;
+    const st = $('setup-counts-status');
+    if (st) st.textContent = '';
+    renderSetupTable();
+  }
+
+  async function updateSetupBuildingCounts() {
+    const url = CFG.preview_area_stats_url;
+    const st = $('setup-counts-status');
+    const btn = $('btn-setup-counts');
+    const areas = setupAreas();
+    if (!url) {
+      if (st) st.textContent = 'Building-count endpoint unavailable.';
+      return;
+    }
+    if (!areas.length) {
+      if (st) st.textContent = 'Select or draw an area first.';
+      return;
+    }
+    const conf = parseFloat($('cfg-cov-min-confidence')?.value);
+    if (btn) btn.disabled = true;
+    if (st) st.textContent = 'Fetching building footprints (can take ~30s)…';
+    try {
+      const result = await Microplans.enqueueAndPoll(
+        url,
+        { areas, min_confidence: isNaN(conf) ? null : conf },
+        {
+          csrf: CSRF,
+          onProgress: (m) => {
+            if (st) st.textContent = m;
+          },
+        },
+      );
+      if (result.status !== 'ok') {
+        if (st) st.textContent = result.detail || 'Building fetch failed.';
+        return;
+      }
+      // Index-aligned with setupAreas() at fetch time. Guard against a race where
+      // the area set changed while fetching by checking the length still matches.
+      if ((result.stats || []).length !== setupAreas().length) {
+        if (st)
+          st.textContent = 'Areas changed during fetch — press update again.';
+        return;
+      }
+      SETUP_COUNTS = result.stats;
+      if (st) st.textContent = 'Building counts updated.';
+      renderSetupTable();
+    } catch (e) {
+      if (st) st.textContent = 'Failed: ' + e;
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  // {areaKey: u5-for-calc} for every row with a positive value — the manual
+  // override if typed, else the auto value from the current source's U5.
+  function collectSetupTargets() {
+    const targets = {};
+    document.querySelectorAll('#setup-tbody .setup-target').forEach((inp) => {
+      const v = parseFloat(inp.value);
+      if (!isNaN(v) && v > 0) targets[inp.dataset.key] = v;
+    });
+    return targets;
+  }
+
+  on('setup-pop-source', 'change', renderSetupTable);
+  on('btn-setup-counts', 'click', updateSetupBuildingCounts);
+  // Toggling a building provider recomputes the count column locally — no re-fetch.
+  document.querySelectorAll('.cov-src-cb').forEach((cb) =>
+    cb.addEventListener('change', () => {
+      if (SETUP_COUNTS) renderSetupTable();
+    }),
+  );
+  // Confidence changes require a re-fetch; flag the counts as stale.
+  on('cfg-cov-min-confidence', 'input', () => {
+    if (!SETUP_COUNTS) return;
+    SETUP_COUNTS = null;
+    const st = $('setup-counts-status');
+    if (st)
+      st.textContent = 'Confidence changed — press update to refresh counts.';
+    renderSetupTable();
+  });
+  // Track manual "U5 for calc" edits so they survive source switches / re-renders.
+  document.getElementById('setup-tbody')?.addEventListener('input', (e) => {
+    const inp = e.target.closest('.setup-target');
+    if (!inp) return;
+    const key = inp.dataset.key;
+    if (String(inp.value).trim() === '') delete manualTargets[key];
+    else manualTargets[key] = parseFloat(inp.value);
+  });
+
   // Coverage config: cell size + the two cell-level exclusion filters + an optional
   // population for visit-weighting. Sent to the coverage preview; the backend
   // (CoverageConfig.from_payload) clamps/validates and is the single source of truth
@@ -2631,6 +2886,10 @@
       if (btn) btn.disabled = false;
     }
   });
+
+  // Paint the setup planning table's empty state on load (all its state is now
+  // initialised); it fills in as areas are drawn/selected via refreshAreaStats.
+  if (typeof renderSetupTable === 'function') renderSetupTable();
 
   window.__review = {
     get was() {
