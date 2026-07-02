@@ -6,7 +6,7 @@ as Connect CSV visits, so FieldComputation path extraction works identically.
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from django.http import HttpRequest
 
@@ -15,6 +15,19 @@ from connect_labs.labs.analysis.data_access import fetch_opportunity_metadata
 from connect_labs.labs.integrations.commcare.api_client import CommCareDataAccess
 
 logger = logging.getLogger(__name__)
+
+
+def _received_on_start(data_source: DataSourceConfig) -> str | None:
+    """ISO date N days ago for the Form API received_on filter, or None.
+
+    When data_source.form_lookback_days > 0 we only pull recent forms, so the
+    fetch stays light on multi-opp reports that only need recent weeks. 0
+    (default) means no filter — fetch all history.
+    """
+    days = getattr(data_source, "form_lookback_days", 0) or 0
+    if days <= 0:
+        return None
+    return (datetime.utcnow() - timedelta(days=days)).date().isoformat()
 
 
 def normalize_cchq_form_to_visit_dict(form: dict, index: int) -> dict:
@@ -163,7 +176,7 @@ def fetch_cchq_forms_as_visit_dicts(
         logger.warning(f"[CCHQ Fetcher] Could not discover xmlns for '{form_name}', returning empty")
         return []
 
-    forms = client.fetch_forms(xmlns=xmlns, app_id=fetch_app_id)
+    forms = client.fetch_forms(xmlns=xmlns, app_id=fetch_app_id, received_on_start=_received_on_start(data_source))
     logger.info(f"[CCHQ Fetcher] Fetched {len(forms)} '{form_name}' forms from {cc_domain}")
 
     visit_dicts = [normalize_cchq_form_to_visit_dict(form, i) for i, form in enumerate(forms)]
@@ -241,5 +254,7 @@ def iter_cchq_forms_as_visit_dicts(
         return
 
     logger.info(f"[CCHQ Fetcher] Streaming '{form_name}' forms from {cc_domain}")
-    for i, form in enumerate(client.iter_forms(xmlns=xmlns, app_id=fetch_app_id)):
+    for i, form in enumerate(
+        client.iter_forms(xmlns=xmlns, app_id=fetch_app_id, received_on_start=_received_on_start(data_source))
+    ):
         yield normalize_cchq_form_to_visit_dict(form, i)

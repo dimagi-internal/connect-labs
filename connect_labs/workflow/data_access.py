@@ -2357,6 +2357,7 @@ class PipelineDataAccess(BaseDataAccess):
             api_key=data_source_dict.get("api_key", ""),
             endpoint=data_source_dict.get("endpoint", ""),
             case_type=data_source_dict.get("case_type", ""),
+            form_lookback_days=data_source_dict.get("form_lookback_days", 0) or 0,
         )
 
         # Window fields (e.g., distance_from_prev_case_visit_m via lag_haversine).
