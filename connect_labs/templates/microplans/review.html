@@ -216,10 +216,10 @@
 
           <div id="area-admin" class="space-y-2">
             <p class="text-[10px] text-gray-500 leading-snug">
-              <b>Click a boundary on the map</b> to add it to the plan area — your selection appears below.
+              <b>Click a boundary on the map</b> to add it to the plan area — your selections appear in the <b>Planning table</b> below the map, where you can remove any row.
               (Search a place + switch the source in the map’s <b>Boundaries</b> layer.)
             </p>
-            <!-- admin_boundaries_layer.js mounts the selected list here; search/source live on the map layer -->
+            <!-- admin_boundaries_layer.js mounts its (now-hidden) state node here; the selected list is rendered in the below-map planning table -->
           </div>
 
           <div id="area-pin" class="hidden space-y-2">
@@ -594,12 +594,16 @@
     {% endcomment %}
     <section id="setup-plan-card" class="border-t border-gray-200 bg-white px-3 py-2.5 text-sm">
       <div class="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
-        <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Planning table</h2>
+        <div class="flex items-center gap-3 flex-wrap">
+          <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Planning table</h2>
+          <button type="button" id="btn-setup-counts" class="button button-sm primary-dark">Update table</button>
+          <span class="text-[11px] text-gray-500" id="setup-counts-status"></span>
+        </div>
         <label class="text-[11px] text-gray-500 flex items-center gap-1">Population source
           <select id="setup-pop-source" class="base-input text-[11px] py-0.5" style="width:9rem"></select>
         </label>
       </div>
-      <p class="text-[11px] text-gray-500 mb-1.5 leading-snug">One row per selected area. <b>Total</b> &amp; <b>U5</b> come from the population source; <b>Buildings</b> from the providers ticked in the left rail. Edit <b>U5 for calc</b> to set each area's expected-visit target (auto-filled from the source's U5).</p>
+      <p class="text-[11px] text-gray-500 mb-1.5 leading-snug">One row per selected area. <b>Total</b> &amp; <b>U5</b> come from the population source; <b>Update table</b> fetches <b>Buildings</b> for the providers ticked in the left rail. Edit <b>U5 for calc</b> to set each area's expected-visit target (auto-filled from the source's U5). Use ✕ to remove an area.</p>
       <div class="overflow-x-auto">
         <table class="w-full text-[12px] tabular-nums" id="setup-table">
           <thead><tr class="text-left text-gray-400 border-b border-gray-100">
@@ -608,15 +612,12 @@
             <th class="pr-2 py-1 text-right">U5 pop</th>
             <th class="pr-2 py-1 text-right">Buildings</th>
             <th class="pr-2 py-1 text-right">U5 for calc</th>
+            <th class="py-1"></th>
           </tr></thead>
           <tbody id="setup-tbody"></tbody>
         </table>
       </div>
       <p class="text-[11px] text-gray-400 mt-1.5" id="setup-empty">Select or draw areas to populate this table.</p>
-      <div class="flex items-center gap-2 mt-1.5">
-        <button type="button" id="btn-setup-counts" class="button button-sm">Update building counts</button>
-        <span class="text-[11px] text-gray-500" id="setup-counts-status"></span>
-      </div>
     </section>
 
     {% comment %}

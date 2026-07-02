@@ -287,8 +287,8 @@ def preview_area_stats_task(self, areas, min_confidence=None):
     The client sums the providers it currently has ticked, so toggling a
     building provider on/off updates the table with no re-fetch. Confidence is
     applied here (it's a Google-only threshold), so changing it re-fetches."""
-    from commcare_connect.microplans.core.area_input import resolve_area
-    from commcare_connect.microplans.core.footprints import fetch_buildings, source_counts
+    from connect_labs.microplans.core.area_input import resolve_area
+    from connect_labs.microplans.core.footprints import fetch_buildings, source_counts
 
     set_task_progress(self, _FETCHING)
     stats = []
