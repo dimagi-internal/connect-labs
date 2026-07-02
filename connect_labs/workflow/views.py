@@ -1768,7 +1768,11 @@ def start_run_api(request, definition_id):
         return JsonResponse({"error": "Select an opportunity before starting a run"}, status=400)
 
     try:
-        data_access = WorkflowDataAccess(request=request)
+        # Scope the DAO to the RESOLVED opportunity (the definition's owning opp
+        # in program mode, where the session has no opportunity_id) so
+        # get_definition + the run write both resolve — otherwise a program-view
+        # "Create Run" 404s with "Workflow not found".
+        data_access = WorkflowDataAccess(request=request, opportunity_id=opportunity_id)
         definition = data_access.get_definition(definition_id)
         if not definition:
             return JsonResponse({"error": "Workflow not found"}, status=404)
