@@ -344,7 +344,9 @@
     const phasesCount = $("phases-count");
     if (phasesCount) phasesCount.textContent = looseCount ? `(${looseCount})` : "";
     const disclosure = $("phases-disclosure");
-    if (disclosure && !visibleGroups.length && looseCount) disclosure.open = true;
+    // Open whenever loose plans exist — a portfolio with one study card and a
+    // collapsed inventory left two-thirds of the viewport empty.
+    if (disclosure && looseCount) disclosure.open = true;
     document.querySelectorAll(".plan-sel").forEach((cb) => cb.addEventListener("change", () => {
       const id = +cb.value; if (cb.checked) selected.add(id); else selected.delete(id);
       $("new-group").disabled = selected.size === 0;

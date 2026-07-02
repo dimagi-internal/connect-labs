@@ -348,7 +348,7 @@
                                 {% if response.selected_plan_names %}
                                 <div class="flex flex-wrap items-center gap-1">
                                   {% for name in response.selected_plan_names %}
-                                  <span class="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                  <span class="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap">
                                     <i class="fa-solid fa-location-dot mr-1 text-emerald-500"></i>{{ name }}
                                   </span>
                                   {% endfor %}
@@ -358,9 +358,12 @@
                                 {% endif %}
                             </td>
                             <td class="px-3 py-4 whitespace-nowrap">
-                                <div class="text-sm text-gray-900">{{ response.submitted_by_name|default:response.submitted_by_email|default:"-" }}</div>
-                                {% if response.submitted_by_email %}
-                                    <div class="text-xs text-gray-500">{{ response.submitted_by_email }}</div>
+                                {% if response.submitted_by_name and response.submitted_by_name != response.org_name and response.submitted_by_name != response.llo_entity_name %}
+                                    <div class="text-sm text-gray-900">{{ response.submitted_by_name }}</div>
+                                    {% if response.submitted_by_email %}<div class="text-xs text-gray-500">{{ response.submitted_by_email }}</div>{% endif %}
+                                {% else %}
+                                    {# The submitter name just repeats the organization — show the contact email instead of duplicating the org column. #}
+                                    <div class="text-sm text-gray-900">{{ response.submitted_by_email|default:"—" }}</div>
                                 {% endif %}
                             </td>
                             <td class="px-3 py-4 whitespace-nowrap">

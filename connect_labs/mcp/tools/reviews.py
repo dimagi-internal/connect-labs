@@ -173,6 +173,17 @@ _REVIEW_PUBLIC_WARNING = (
                 "type": "string",
                 "description": "Comma-separated tags.",
             },
+            "program_id": {
+                "type": ["integer", "string"],
+                "description": (
+                    "Program ID owning the reviewed response. Required to reach a "
+                    "labs-only synthetic program's local backend (id >= the labs-only floor)."
+                ),
+            },
+            "organization_id": {
+                "type": ["integer", "string"],
+                "description": "Organization ID alternative to program_id for scoping.",
+            },
         },
         "required": ["public_record_acknowledged", "response_id", "llo_entity_id"],
         "additionalProperties": False,
@@ -190,6 +201,8 @@ def create_review(
     criteria_scores: dict | None = None,
     reviewer_username: str = "",
     tags: str = "",
+    program_id: str | int | None = None,
+    organization_id: str | int | None = None,
 ) -> dict:
     """Create a review for a response."""
     if not public_record_acknowledged:
@@ -217,8 +230,18 @@ def create_review(
     if tags:
         data["tags"] = tags
 
+    def _coerce(v):
+        try:
+            return int(v) if v not in (None, "") else None
+        except (TypeError, ValueError):
+            return None
+
     token = require_connect_token(user)
-    client = LabsRecordAPIClient(access_token=token)
+    client = LabsRecordAPIClient(
+        access_token=token,
+        program_id=_coerce(program_id),
+        organization_id=_coerce(organization_id),
+    )
     try:
         record = client.create_record(
             experiment=llo_entity_id,

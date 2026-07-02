@@ -365,6 +365,37 @@ _CANONICAL_FIELD_PROPERTIES = {
             "additionalProperties": False,
         },
     },
+    "plans": {
+        "type": "array",
+        "description": (
+            "Coverage snapshot carried from a micro-plan (the create form's Coverage-areas "
+            "panel). Same shape the UI snapshots: plan_id/name plus optional region, wards[], "
+            "arms[], work_area_count, population. Validated by validation._validate_plans."
+        ),
+        "items": {
+            "type": "object",
+            "properties": {
+                "plan_id": {"type": "integer"},
+                "name": {"type": "string"},
+                "region": {"type": "string"},
+                "wards": {"type": "array", "items": {"type": "string"}},
+                "arms": {"type": "array", "items": {"type": "string"}},
+                "work_area_count": {"type": "integer"},
+                "population": {"type": "integer"},
+            },
+            "required": ["plan_id", "name"],
+            "additionalProperties": False,
+        },
+    },
+    "source_group_id": {
+        "type": "integer",
+        "description": "Micro-plan study-group id this solicitation was created from.",
+    },
+    "source_plan_ids": {
+        "type": "array",
+        "items": {"type": "integer"},
+        "description": "Micro-plan plan ids snapshotted into `plans`.",
+    },
     "evaluation_criteria": {
         "type": "array",
         "description": (
@@ -480,6 +511,115 @@ def create_solicitation(
         return _serialize_record(record)
     except ValidationError as e:
         raise _validation_error_to_mcp(e) from e
+    finally:
+        da.labs_api.close()
+
+
+@register(
+    name="create_response",
+    description=(
+        "Create a solicitation response (type=solicitation_response) linked to a "
+        "solicitation. Built for server-side seeding of demo/synthetic responses "
+        "(named firms with per-question answers) — the same write path the public "
+        "respond form uses (SolicitationsDataAccess.create_response). Pass "
+        "program_id (or organization_id) so labs-only synthetic programs route to "
+        "the local backend. `responses` maps question id -> answer text."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "solicitation_id": {
+                "type": "integer",
+                "description": "Labs Record ID of the solicitation being responded to.",
+            },
+            "program_id": {
+                "type": ["integer", "string"],
+                "description": "Program ID owning the solicitation (labs-only routing).",
+            },
+            "organization_id": {
+                "type": ["integer", "string"],
+                "description": "Organization ID alternative to program_id for scoping.",
+            },
+            "llo_entity_id": {
+                "type": "string",
+                "default": "individual",
+                "description": "LLO entity id used as the record's experiment scope.",
+            },
+            "responses": {
+                "type": "object",
+                "description": "Answers keyed by question id (question_id -> answer text).",
+            },
+            "status": {
+                "type": "string",
+                "enum": ["draft", "submitted"],
+                "default": "submitted",
+            },
+            "submitted_by_name": {"type": "string"},
+            "submitted_by_email": {"type": "string"},
+            "org_name": {"type": "string"},
+            "org_id": {"type": "string"},
+            "submission_date": {
+                "type": "string",
+                "description": "ISO timestamp; defaults to now when omitted.",
+            },
+            "selected_plan_ids": {"type": "array", "items": {"type": ["integer", "string"]}},
+            "selected_plan_names": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": ["solicitation_id"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def create_response(
+    user,
+    solicitation_id: int,
+    program_id: str | None = None,
+    organization_id: str | None = None,
+    llo_entity_id: str = "individual",
+    responses: dict | None = None,
+    status: str = "submitted",
+    submitted_by_name: str = "",
+    submitted_by_email: str = "",
+    org_name: str = "",
+    org_id: str = "",
+    submission_date: str = "",
+    selected_plan_ids: list | None = None,
+    selected_plan_names: list | None = None,
+) -> dict:
+    """Create a solicitation response via SolicitationsDataAccess.create_response."""
+    from django.utils import timezone
+
+    if not program_id and not organization_id:
+        raise MCPToolError("INVALID_SCHEMA", "Either program_id or organization_id is required")
+
+    data = {
+        "solicitation_id": solicitation_id,
+        "responses": responses or {},
+        "status": status,
+        "submitted_by_name": submitted_by_name,
+        "submitted_by_email": submitted_by_email,
+        "org_name": org_name or submitted_by_name,
+        "org_id": org_id,
+        "submission_date": submission_date or timezone.now().isoformat(),
+    }
+    if selected_plan_ids:
+        data["selected_plan_ids"] = selected_plan_ids
+    if selected_plan_names:
+        data["selected_plan_names"] = selected_plan_names
+
+    token = require_connect_token(user)
+    da = SolicitationsDataAccess(
+        access_token=token,
+        program_id=str(program_id) if program_id else None,
+        organization_id=str(organization_id) if organization_id else None,
+    )
+    try:
+        record = da.create_response(
+            solicitation_id=solicitation_id,
+            llo_entity_id=llo_entity_id,
+            data=data,
+        )
+        return _serialize_record(record)
     finally:
         da.labs_api.close()
 
