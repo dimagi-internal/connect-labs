@@ -259,6 +259,10 @@ class BoundaryFeature:
     geometry: dict  # GeoJSON geometry (WGS84)
     area_km2: float | None = None
     population: float | None = None
+    # Per-source population bag (worldpop_u5/meta_total/…), so a boundary CLICKED on
+    # the map carries the same numbers the search dropdown does — the setup planning
+    # table reads this to fill the Total/U5 columns.
+    populations: dict | None = None
     name_local: str = ""
     parent_name: str = ""
     ref: dict = field(default_factory=dict)
@@ -277,6 +281,7 @@ class BoundaryFeature:
                 "boundary_id": self.boundary_id,
                 "area_km2": self.area_km2,
                 "population": self.population,
+                "populations": self.populations,
                 "parent_name": self.parent_name,
                 "ref": self.ref,
             },
@@ -507,6 +512,7 @@ class LabsAdminBoundarySource(BoundarySource):
                     geometry=json.loads(geom.geojson),
                     area_km2=round(obj._area.sq_km, 1) if obj._area is not None else None,
                     population=resolve_population(obj.population, (obj.extra or {}).get("populations")),
+                    populations=(obj.extra or {}).get("populations"),
                     name_local=obj.name_local or "",
                     parent_name=_labs_parent_name(obj),
                     ref={"boundary_id": obj.boundary_id, "source": self.name},
