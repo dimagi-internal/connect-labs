@@ -33,7 +33,7 @@ def test_get_surface_by_slug_returns_normalized_dict(mock_client_cls):
     kwargs = client.get_records.call_args.kwargs
     assert kwargs["type"] == "surface"
     assert kwargs["public"] is True
-    assert kwargs["data__slug"] == "prog-25-hub"
+    assert kwargs["slug"] == "prog-25-hub"
 
 
 @patch("connect_labs.pages.data_access.LabsRecordAPIClient")
@@ -144,7 +144,7 @@ def test_resolve_surface_uses_opportunity_context(mock_client_cls):
     assert mock_client_cls.call_args.kwargs["opportunity_id"] == 1973  # client scoped to opp
     gkw = client.get_records.call_args.kwargs
     assert gkw["type"] == "surface"
-    assert gkw["data__slug"] == "eha-muac"
+    assert gkw["slug"] == "eha-muac"
 
 
 @patch("connect_labs.pages.data_access.LabsRecordAPIClient")
