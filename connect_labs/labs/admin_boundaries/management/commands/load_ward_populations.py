@@ -1,7 +1,8 @@
 """Attach multi-source per-ward populations to AdminBoundary rows (#6).
 
 Reads a precomputed CSV (zonal stats over WorldPop/Meta/GRID3 rasters for every ward
-in the 4 CHC states, keyed by ward_code) and stores the per-source numbers in each
+in Nigeria — ~9,300 wards across all 37 states, keyed by ward_code) and stores the
+per-source numbers in each
 matching boundary's ``extra.populations`` bag, so the microplan population picker can
 offer a source dropdown and fill the number for the selected wards.
 
@@ -32,7 +33,7 @@ from django.core.management.base import BaseCommand
 
 from connect_labs.labs.admin_boundaries.models import AdminBoundary
 
-FIXTURE = Path(__file__).resolve().parent.parent.parent / "fixtures" / "ward_populations_4states.csv"
+FIXTURE = Path(__file__).resolve().parent.parent.parent / "fixtures" / "ward_populations_national.csv"
 SOURCE_COLS = ["worldpop_total", "worldpop_u5", "meta_total", "meta_u5", "grid3_v3_total"]
 
 
