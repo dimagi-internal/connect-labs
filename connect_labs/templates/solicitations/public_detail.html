@@ -120,7 +120,7 @@
             </div>
             {% endif %}
             <div class="p-5 flex items-center">
-                {% if already_responded %}
+                {% if already_responded or just_submitted %}
                     <p class="text-sm text-green-700 text-center w-full font-medium">
                         <i class="fa-solid fa-circle-check mr-1"></i>Response submitted
                     </p>
@@ -171,7 +171,7 @@
               {% for p in solicitation.plans %}
               <li class="px-3 py-2 text-sm">
                 <span class="font-medium text-gray-800">{{ p.name }}</span>
-                {% if p.region %}<span class="text-gray-400">· {{ p.region }}</span>{% endif %}
+                {% if p.region and p.region not in p.name %}<span class="text-gray-400">· {{ p.region }}</span>{% endif %}
                 {% if p.wards %}<div class="text-xs text-gray-500 mt-0.5">{{ p.wards|join:", " }}</div>{% endif %}
               </li>
               {% endfor %}
@@ -297,7 +297,7 @@
             </h3>
             <p class="text-sm text-green-800">The program team will review responses and reach out if you're selected.</p>
         </div>
-        {% elif solicitation.status == 'active' %}
+        {% elif solicitation.status == 'active' and not just_submitted %}
         <div class="bg-brand-indigo/5 border border-brand-indigo/10 rounded-xl p-8 text-center">
             <h3 class="text-lg font-semibold text-brand-deep-purple mb-2">Ready to respond?</h3>
             <p class="text-sm text-gray-600 mb-5">Submit your proposal for this solicitation.</p>

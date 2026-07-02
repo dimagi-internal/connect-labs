@@ -116,6 +116,23 @@
                         Application Questions
                     </h2>
 
+                    {% if solicitation.evaluation_criteria %}
+                    <div class="mb-6 p-4 bg-indigo-50 rounded-lg border border-indigo-100">
+                        <div class="flex items-center gap-2 text-sm font-semibold text-indigo-800 mb-2">
+                            <i class="fa-solid fa-scale-balanced"></i>
+                            How your response will be scored
+                        </div>
+                        <div class="space-y-1">
+                            {% for criterion in solicitation.evaluation_criteria %}
+                            <div class="text-xs text-indigo-700">
+                                <span class="font-semibold">{{ criterion.name }} ({{ criterion.weight }}%)</span>
+                                {% if criterion.scoring_guide %}<span class="text-indigo-500">— {{ criterion.scoring_guide }}</span>{% endif %}
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+
                     <div class="space-y-6">
                         {% for qf in question_fields %}
                             <div class="mb-6">

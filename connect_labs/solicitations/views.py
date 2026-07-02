@@ -68,7 +68,12 @@ def _find_user_response(da, solicitation_id, request):
     for r in responses:
         r_email = (r.submitted_by_email or "").strip().lower()
         r_name = (r.submitted_by_name or "").strip().lower()
-        if (user_email and r_email == user_email) or (user_name and r_name and r_name == user_name):
+        r_user = ((getattr(r, "data", None) or {}).get("submitted_by_username") or "").strip().lower()
+        if (
+            (user_email and r_email == user_email)
+            or (user_name and r_name and r_name == user_name)
+            or (user_name and r_user and r_user == user_name)
+        ):
             match = r  # keep last match (most-recent response wins)
     return match
 
@@ -724,6 +729,11 @@ class RespondView(LabsLoginRequiredMixin, TemplateView):
                 "status": status,
                 "submitted_by_name": firm_name or account_name,
                 "submitted_by_email": firm_email or request.user.email,
+                # The authenticated account that submitted the form — distinct from
+                # the firm identity above. _find_user_response matches on this so
+                # the detail page can suppress the respond re-invite even when the
+                # firm's name/email differ from the account's.
+                "submitted_by_username": request.user.username,
                 "org_id": org.get("id", ""),
                 "org_name": firm_name or org.get("name", ""),
                 "submission_date": timezone.now().isoformat(),
