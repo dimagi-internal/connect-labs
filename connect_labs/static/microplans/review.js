@@ -2428,18 +2428,24 @@
   function renderSetupPopSource() {
     const sel = $('setup-pop-source');
     if (!sel) return;
-    const fams = availableFamilies();
+    // Always list every source so the picker is discoverable in the rail; flag
+    // the ones no selected area has data for, so "—" columns are self-explaining.
+    const avail = new Set(availableFamilies().map((f) => f.key));
     const prev = sel.value;
-    sel.innerHTML = fams
-      .map((f) => `<option value="${f.key}">${f.label}</option>`)
-      .join('');
-    if (fams.some((f) => f.key === prev)) sel.value = prev;
-    // The picker lives in the left rail now. Keep the block visible so the user
-    // always knows where population source is chosen; show the select when any
-    // source has data, else a hint explaining why it's empty.
-    const has = fams.length > 0;
-    sel.classList.toggle('hidden', !has);
-    $('setup-pop-source-empty')?.classList.toggle('hidden', has);
+    sel.innerHTML = PROVIDER_FAMILIES.map((f) => {
+      const has = avail.has(f.key);
+      return `<option value="${f.key}">${f.label}${
+        has ? '' : ' (no data)'
+      }</option>`;
+    }).join('');
+    // Keep the previous pick, else default to the first source that has data.
+    if (PROVIDER_FAMILIES.some((f) => f.key === prev)) sel.value = prev;
+    else {
+      const firstWithData = PROVIDER_FAMILIES.find((f) => avail.has(f.key));
+      if (firstWithData) sel.value = firstWithData.key;
+    }
+    // Hint only when NONE of the selected areas carry any population figures.
+    $('setup-pop-source-empty')?.classList.toggle('hidden', avail.size > 0);
   }
   function currentFamily() {
     const key = $('setup-pop-source')?.value;
