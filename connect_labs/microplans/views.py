@@ -152,7 +152,7 @@ class PreviewAreaStatsView(LoginRequiredMixin, View):
     cold-fetch, so it's driven by an explicit "Update building counts" button."""
 
     def post(self, request, opp_id):
-        from commcare_connect.microplans.tasks import preview_area_stats_task
+        from connect_labs.microplans.tasks import preview_area_stats_task
 
         try:
             payload = json.loads(request.body)

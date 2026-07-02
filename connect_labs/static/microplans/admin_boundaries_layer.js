@@ -121,7 +121,11 @@
     const selectedListEl = body.querySelector('.mp-ab-selected');
 
     if (controlsHost) {
-      controlsHost.appendChild(body); // search + selected list mount in the rail
+      // The selected-boundary list now lives in the below-map planning table (with
+      // per-row ✕). Keep this node for its state/handlers but hide it in the rail —
+      // the rail is for configuration actions, not a data overview.
+      body.style.display = 'none';
+      controlsHost.appendChild(body);
     } else {
       body.insertBefore(sourceBody, body.firstChild); // no host: source + controls together
     }
@@ -610,6 +614,16 @@
       }
       // New picks default to the intervention arm; the per-row pill changes it.
       await addBoundary(desc, 'intervention');
+    }
+    // Public removal by boundary id — used by the host's below-map planning table
+    // (its per-row ✕). Mirrors the deselect branch of toggleSelect so the map
+    // highlight, draw geometry, and population bag all clear together.
+    function removeArea(id) {
+      if (!selected.has(id)) return;
+      selected.delete(id);
+      onAreaRemove(id);
+      syncSelectedSource();
+      renderSummary();
     }
     function syncSelectedSource() {
       ensureLayers();
@@ -1588,6 +1602,8 @@
     return {
       layer,
       refresh,
+      // Remove a selected boundary by id (host's below-map table ✕).
+      removeArea,
       // Re-render the selected-boundary list (e.g. when the host toggles sampling
       // mode on/off, so the per-boundary arm pills appear/disappear).
       renderSelected: renderSummary,
