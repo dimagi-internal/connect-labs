@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from connect_labs.pages.data_access import SurfaceDataAccess
+from connect_labs.pages.data_access import SurfaceDataAccess, resolve_surface
 from connect_labs.pages.providers import list_providers
 
 from ..connect_token import require_connect_token
@@ -56,27 +56,38 @@ def pages_list(user, program_id=None, opportunity_id=None):
 
 @register(
     name="pages_get",
-    description="Get a single surface by its slug.",
+    description="Get a surface by slug, resolved against scope context (opportunity/program/org), then public.",
     input_schema={
         "type": "object",
-        "properties": {"slug": {"type": "string"}},
+        "properties": {
+            "slug": {"type": "string"},
+            "opportunity_id": {"type": "string"},
+            "program_id": {"type": "string"},
+            "organization_id": {"type": "string"},
+        },
         "required": ["slug"],
         "additionalProperties": False,
     },
     is_write=False,
 )
-def pages_get(user, slug):
+def pages_get(user, slug, opportunity_id=None, program_id=None, organization_id=None):
     token = require_connect_token(user)
-    da = SurfaceDataAccess(access_token=token)
-    surface = da.get_surface_by_slug(slug)
-    return {"surface": surface}
+    context = {}
+    if _coerce_id(opportunity_id):
+        context["opportunity_id"] = _coerce_id(opportunity_id)
+    if _coerce_id(program_id):
+        context["program_id"] = _coerce_id(program_id)
+    if _coerce_id(organization_id):
+        context["organization_id"] = _coerce_id(organization_id)
+    return {"surface": resolve_surface(token, context, slug)}
 
 
 @register(
     name="pages_create",
     description=(
         "Create a surface (card landing page). `cards` is a list of "
-        '{"provider", "target", "options"} objects. Scope with program_id or opportunity_id.'
+        '{"provider","target","options"}. Scope with exactly one of opportunity_id / '
+        "program_id / organization_id, or set public=true for a public page."
     ),
     input_schema={
         "type": "object",
@@ -87,23 +98,33 @@ def pages_get(user, slug):
             "options": {"type": "object"},
             "program_id": {"type": "string"},
             "opportunity_id": {"type": "string"},
+            "organization_id": {"type": "string"},
+            "public": {"type": "boolean"},
         },
         "required": ["slug", "title", "cards"],
         "additionalProperties": False,
     },
     is_write=True,
 )
-def pages_create(user, slug, title, cards, options=None, program_id=None, opportunity_id=None):
+def pages_create(
+    user, slug, title, cards, options=None, program_id=None, opportunity_id=None, organization_id=None, public=False
+):
     token = require_connect_token(user)
     da = SurfaceDataAccess(
-        access_token=token, program_id=_coerce_id(program_id), opportunity_id=_coerce_id(opportunity_id)
+        access_token=token,
+        program_id=_coerce_id(program_id),
+        opportunity_id=_coerce_id(opportunity_id),
+        organization_id=_coerce_id(organization_id),
     )
-    return da.create_surface(slug=slug, title=title, cards=cards, options=options or {})
+    return da.create_surface(slug=slug, title=title, cards=cards, options=options or {}, public=bool(public))
 
 
 @register(
     name="pages_update",
-    description="Update an existing surface by record id.",
+    description=(
+        "Update an existing surface by record id. Scope with exactly one of "
+        "opportunity_id / program_id / organization_id, or set public=true for a public page."
+    ),
     input_schema={
         "type": "object",
         "properties": {
@@ -114,15 +135,33 @@ def pages_create(user, slug, title, cards, options=None, program_id=None, opport
             "options": {"type": "object"},
             "program_id": {"type": "string"},
             "opportunity_id": {"type": "string"},
+            "organization_id": {"type": "string"},
+            "public": {"type": "boolean"},
         },
         "required": ["record_id", "slug", "title", "cards"],
         "additionalProperties": False,
     },
     is_write=True,
 )
-def pages_update(user, record_id, slug, title, cards, options=None, program_id=None, opportunity_id=None):
+def pages_update(
+    user,
+    record_id,
+    slug,
+    title,
+    cards,
+    options=None,
+    program_id=None,
+    opportunity_id=None,
+    organization_id=None,
+    public=False,
+):
     token = require_connect_token(user)
     da = SurfaceDataAccess(
-        access_token=token, program_id=_coerce_id(program_id), opportunity_id=_coerce_id(opportunity_id)
+        access_token=token,
+        program_id=_coerce_id(program_id),
+        opportunity_id=_coerce_id(opportunity_id),
+        organization_id=_coerce_id(organization_id),
     )
-    return da.update_surface(record_id=record_id, slug=slug, title=title, cards=cards, options=options or {})
+    return da.update_surface(
+        record_id=record_id, slug=slug, title=title, cards=cards, options=options or {}, public=bool(public)
+    )
