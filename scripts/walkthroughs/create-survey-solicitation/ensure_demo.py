@@ -403,6 +403,7 @@ def main() -> int:
                     "public_record_acknowledged": True,
                     "response_id": outputs[key],
                     "llo_entity_id": "individual",
+                    "program_id": PROGRAM_ID,
                     "score": review["score"],
                     "recommendation": review["recommendation"],
                     "criteria_scores": review["criteria_scores"],

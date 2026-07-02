@@ -37,6 +37,52 @@ def _serialize_record(record) -> dict:
     }
 
 
+_SCOPE_PROPS = {
+    "program_id": {
+        "type": ["integer", "string"],
+        "description": (
+            "Program ID owning the reviewed response. Required to reach a labs-only "
+            "synthetic program's local backend (id >= the labs-only floor)."
+        ),
+    },
+    "organization_id": {
+        "type": ["integer", "string"],
+        "description": "Organization ID alternative to program_id for scoping.",
+    },
+}
+
+
+def _scoped_client(token: str, program_id=None, organization_id=None) -> LabsRecordAPIClient:
+    """LabsRecordAPIClient with labs-only routing resolved from program_id.
+
+    The local-records backend keys writes on opportunity_id, and a labs-only
+    synthetic program's program_id == its opportunity_id — mirror the
+    SolicitationsDataAccess resolution so review reads/writes on labs-only
+    programs route locally instead of 404ing (or violating the local table's
+    NOT NULL opportunity_id) via prod.
+    """
+
+    def _coerce(v):
+        try:
+            return int(v) if v not in (None, "") else None
+        except (TypeError, ValueError):
+            return None
+
+    pid = _coerce(program_id)
+    opp_id = None
+    if pid is not None:
+        from connect_labs.labs.synthetic.local_records_backend import is_labs_only_opportunity_id
+
+        if is_labs_only_opportunity_id(pid):
+            opp_id = pid
+    return LabsRecordAPIClient(
+        access_token=token,
+        opportunity_id=opp_id,
+        program_id=pid,
+        organization_id=_coerce(organization_id),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Read tools (is_write=False)
 # ---------------------------------------------------------------------------
@@ -54,15 +100,16 @@ def _serialize_record(record) -> dict:
                 "type": "integer",
                 "description": "The Labs Record ID of the response to list reviews for.",
             },
+            **_SCOPE_PROPS,
         },
         "required": ["response_id"],
         "additionalProperties": False,
     },
 )
-def list_reviews(user, response_id: int) -> dict:
+def list_reviews(user, response_id: int, program_id=None, organization_id=None) -> dict:
     """List all reviews for a response (child records linked by labs_record_id)."""
     token = require_connect_token(user)
-    client = LabsRecordAPIClient(access_token=token)
+    client = _scoped_client(token, program_id, organization_id)
     try:
         records = client.get_records(
             type=REVIEW_TYPE,
@@ -83,15 +130,16 @@ def list_reviews(user, response_id: int) -> dict:
                 "type": "integer",
                 "description": "The Labs Record ID of the review.",
             },
+            **_SCOPE_PROPS,
         },
         "required": ["review_id"],
         "additionalProperties": False,
     },
 )
-def get_review(user, review_id: int) -> dict:
+def get_review(user, review_id: int, program_id=None, organization_id=None) -> dict:
     """Get a single review by ID. Returns the record or raises NOT_FOUND."""
     token = require_connect_token(user)
-    client = LabsRecordAPIClient(access_token=token)
+    client = _scoped_client(token, program_id, organization_id)
     try:
         record = client.get_record_by_id(review_id, type=REVIEW_TYPE)
         if record is None:
@@ -230,18 +278,8 @@ def create_review(
     if tags:
         data["tags"] = tags
 
-    def _coerce(v):
-        try:
-            return int(v) if v not in (None, "") else None
-        except (TypeError, ValueError):
-            return None
-
     token = require_connect_token(user)
-    client = LabsRecordAPIClient(
-        access_token=token,
-        program_id=_coerce(program_id),
-        organization_id=_coerce(organization_id),
-    )
+    client = _scoped_client(token, program_id, organization_id)
     try:
         record = client.create_record(
             experiment=llo_entity_id,
@@ -275,16 +313,17 @@ def create_review(
                 "description": "Fields to update. Merged (shallow) into the existing data dict.",
                 "additionalProperties": True,
             },
+            **_SCOPE_PROPS,
         },
         "required": ["review_id", "update_data"],
         "additionalProperties": False,
     },
     is_write=True,
 )
-def update_review(user, review_id: int, update_data: dict) -> dict:
+def update_review(user, review_id: int, update_data: dict, program_id=None, organization_id=None) -> dict:
     """Update an existing review by merging update_data into its data dict."""
     token = require_connect_token(user)
-    client = LabsRecordAPIClient(access_token=token)
+    client = _scoped_client(token, program_id, organization_id)
     try:
         current = client.get_record_by_id(review_id, type=REVIEW_TYPE)
         if current is None:
