@@ -305,9 +305,7 @@ class TestAuthStatusProgramScope:
 
         with patch(
             "connect_labs.labs.analysis.data_access.fetch_opportunity_metadata",
-        ) as mock_meta, patch(
-            "connect_labs.labs.integrations.commcare.api_client.CommCareDataAccess"
-        ) as MockCDA:
+        ) as mock_meta, patch("connect_labs.labs.integrations.commcare.api_client.CommCareDataAccess") as MockCDA:
             mock_client = MagicMock()
             mock_client.verify_token_alive.return_value = True
             MockCDA.return_value = mock_client
