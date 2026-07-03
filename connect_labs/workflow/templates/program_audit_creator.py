@@ -373,6 +373,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions, onU
             job_type: 'program_audit_generate',
             run_id: instance.id,
             opportunity_id: instance.opportunity_id,
+            program_id: instance.program_id,
             window_start: startDate,
             window_end: endDate,
         }).then(function (resp) {

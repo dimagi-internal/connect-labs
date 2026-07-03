@@ -19,13 +19,17 @@ logger = logging.getLogger(__name__)
 def program_audit_generate(job_config: dict, access_token: str, progress_callback=None) -> dict:
     run_id = job_config.get("run_id")
     opportunity_id = job_config.get("opportunity_id")
+    program_id = job_config.get("program_id")
     if not run_id:
         raise ValueError("program_audit_generate requires run_id in job_config")
 
     from connect_labs.workflow.templates.program_audit_creator import fan_out_generate
 
-    # Opp-scoped read of the program run + its definition (Global Constraint).
-    wda = WorkflowDataAccess(access_token=access_token, opportunity_id=opportunity_id)
+    # Scoped read of the program run + its definition (Global Constraint): a
+    # program-owned creator loads program-scoped (no owning opp), an opp-owned
+    # creator loads opp-scoped. The inner fan_out_generate is already
+    # program-aware (it uses _program_run_dao / program_id_of).
+    wda = WorkflowDataAccess(access_token=access_token, opportunity_id=opportunity_id, program_id=program_id)
     try:
         run = wda.get_run(run_id)
         if run is None:

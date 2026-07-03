@@ -46,30 +46,40 @@ def register_job_handler(job_type: str):
 # =============================================================================
 
 
-def _create_mock_request(access_token: str, opportunity_id: int):
-    """Create mock request object for data access in Celery task."""
+def _create_mock_request(access_token: str, opportunity_id: int = None, program_id: int = None):
+    """Create mock request object for data access in Celery task.
+
+    Exactly one of opportunity_id / program_id is set: a program-owned run is
+    program-scoped (no owning opp), an opp-owned run is opp-scoped. Only the
+    present scope is written into labs_context so a program-scoped DAO isn't
+    accidentally seeded with a null opportunity_id.
+    """
     import time
 
     class MockRequest:
-        def __init__(self, access_token, opportunity_id):
+        def __init__(self, access_token, opportunity_id, program_id):
             self.session = {
                 "labs_oauth": {
                     "access_token": access_token,
                     "expires_at": time.time() + 3600,
                 }
             }
-            self.labs_context = {
-                "opportunity_id": opportunity_id,
-            }
+            self.labs_context = {}
+            if opportunity_id is not None:
+                self.labs_context["opportunity_id"] = opportunity_id
+            if program_id is not None:
+                self.labs_context["program_id"] = program_id
             self.user = None
             # Mock GET/POST query dicts for pipeline execution
             self.GET = {}
             self.POST = {}
 
-    return MockRequest(access_token, opportunity_id)
+    return MockRequest(access_token, opportunity_id, program_id)
 
 
-def _update_job_state(run_id: int, access_token: str, opportunity_id: int, job_state_updates: dict):
+def _update_job_state(
+    run_id: int, access_token: str, opportunity_id: int, job_state_updates: dict, program_id: int = None
+):
     """
     Update job metadata in workflow run state.
 
@@ -78,11 +88,12 @@ def _update_job_state(run_id: int, access_token: str, opportunity_id: int, job_s
     from connect_labs.workflow.data_access import WorkflowDataAccess
 
     try:
-        mock_request = _create_mock_request(access_token, opportunity_id)
+        mock_request = _create_mock_request(access_token, opportunity_id, program_id)
         data_access = WorkflowDataAccess(
             request=mock_request,
             access_token=access_token,
             opportunity_id=opportunity_id,
+            program_id=program_id,
         )
 
         # Get current run
@@ -107,7 +118,7 @@ def _update_job_state(run_id: int, access_token: str, opportunity_id: int, job_s
         logger.error(f"Failed to update job state for run {run_id}: {e}", exc_info=True)
 
 
-def _save_item_result(run_id: int, access_token: str, opportunity_id: int, item_result: dict):
+def _save_item_result(run_id: int, access_token: str, opportunity_id: int, item_result: dict, program_id: int = None):
     """
     Save individual item result to workflow run state.
 
@@ -116,11 +127,12 @@ def _save_item_result(run_id: int, access_token: str, opportunity_id: int, item_
     from connect_labs.workflow.data_access import WorkflowDataAccess
 
     try:
-        mock_request = _create_mock_request(access_token, opportunity_id)
+        mock_request = _create_mock_request(access_token, opportunity_id, program_id)
         data_access = WorkflowDataAccess(
             request=mock_request,
             access_token=access_token,
             opportunity_id=opportunity_id,
+            program_id=program_id,
         )
 
         # Get current run
@@ -157,7 +169,8 @@ def run_workflow_job(
     job_config: dict,
     access_token: str,
     run_id: int,
-    opportunity_id: int,
+    opportunity_id: int = None,
+    program_id: int = None,
 ) -> dict:
     """
     Execute a multi-stage workflow job asynchronously.
@@ -168,11 +181,18 @@ def run_workflow_job(
     Results are saved incrementally to workflow run state.
     Progress can be streamed via SSE endpoint.
 
+    Scope: exactly one of ``opportunity_id`` / ``program_id`` is set. An
+    opp-owned run is opp-scoped; a PROGRAM-owned run (program FK, no owning
+    opportunity) is program-scoped, so its run/state reads go through a
+    program-scoped ``WorkflowDataAccess``. The resolved scope is threaded into
+    ``job_config`` so the registered handler receives it.
+
     Args:
         job_config: Job configuration dict
         access_token: OAuth token for API calls
         run_id: Workflow run ID to save results to
-        opportunity_id: Opportunity ID for context
+        opportunity_id: Owning opportunity ID (opp-owned runs)
+        program_id: Owning program ID (program-owned runs)
 
     Returns:
         Job results dict
@@ -198,7 +218,10 @@ def run_workflow_job(
     # raised, the cost of round-tripping pipeline rows through the
     # browser is wasteful when the BE just generated them moments ago
     # for the same SSE pipeline stream.
-    if job_config.get("server_fetch_pipelines") and not job_config.get("pipeline_data"):
+    # Program-scoped jobs (e.g. program_audit_generate) carry no owning opp and
+    # don't server-fetch pipelines; the fetch below needs an opportunity, so
+    # guard it on opportunity_id being present.
+    if job_config.get("server_fetch_pipelines") and not job_config.get("pipeline_data") and opportunity_id:
         from connect_labs.workflow.data_access import WorkflowDataAccess
 
         mock_request = _create_mock_request(access_token, opportunity_id)
@@ -252,6 +275,7 @@ def run_workflow_job(
             "processed": 0,
             "total": 0,
         },
+        program_id=program_id,
     )
 
     # =========================================================================
@@ -277,7 +301,7 @@ def run_workflow_job(
         try:
             from connect_labs.workflow.data_access import PipelineDataAccess
 
-            mock_request = _create_mock_request(access_token, opportunity_id)
+            mock_request = _create_mock_request(access_token, opportunity_id, program_id)
             pipeline_access = PipelineDataAccess(
                 request=mock_request,
                 access_token=access_token,
@@ -300,6 +324,7 @@ def run_workflow_job(
                     "pipeline_loaded": True,
                     "pipeline_record_count": len(records),
                 },
+                program_id=program_id,
             )
 
         except Exception as e:
@@ -313,6 +338,7 @@ def run_workflow_job(
                     "error": f"Pipeline error: {e}",
                     "failed_at": datetime.now().isoformat(),
                 },
+                program_id=program_id,
             )
             raise
     elif records_from_ui:
@@ -337,6 +363,7 @@ def run_workflow_job(
             "processed": 0,
             "total": total,
         },
+        program_id=program_id,
     )
 
     def progress_callback(
@@ -369,16 +396,19 @@ def run_workflow_job(
                 "processed": processed,
                 "total": total,
             },
+            program_id=program_id,
         )
 
         # Save individual item result
         if item_result:
-            _save_item_result(run_id, access_token, opportunity_id, item_result)
+            _save_item_result(run_id, access_token, opportunity_id, item_result, program_id=program_id)
 
     try:
-        # Pass records and opportunity_id to handler
+        # Thread the resolved owning scope into job_config so the handler reads
+        # it (handlers read job_config.get("opportunity_id") / "program_id").
         job_config["records"] = records
         job_config["opportunity_id"] = opportunity_id
+        job_config["program_id"] = program_id
         results = handler(job_config, access_token, progress_callback)
 
         # Mark complete
@@ -394,6 +424,7 @@ def run_workflow_job(
                     "failed": results.get("failed", 0),
                 },
             },
+            program_id=program_id,
         )
 
         logger.info(
@@ -414,6 +445,7 @@ def run_workflow_job(
                 "error": str(e),
                 "failed_at": datetime.now().isoformat(),
             },
+            program_id=program_id,
         )
         raise
 

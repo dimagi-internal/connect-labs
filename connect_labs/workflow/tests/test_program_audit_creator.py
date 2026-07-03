@@ -305,6 +305,65 @@ def test_fan_out_writes_program_run_state_program_scoped(monkeypatch):
     assert {"opportunity_id": None, "program_id": 176} in seen_scopes
 
 
+# ── program_audit_generate job handler: outer DAO scope ──────────────────────
+
+
+def test_program_audit_generate_builds_program_scoped_dao(monkeypatch):
+    """When job_config carries program_id, the outer run/definition load is
+    PROGRAM-scoped (no owning opp)."""
+    from connect_labs.workflow.job_handlers import program_audit_creator as h
+    from connect_labs.workflow.templates import program_audit_creator as tmpl
+
+    seen = {}
+
+    def wda_factory(access_token=None, opportunity_id=None, program_id=None, **_):
+        seen["opportunity_id"] = opportunity_id
+        seen["program_id"] = program_id
+        wda = mock.Mock()
+        wda.get_run.return_value = mock.Mock(
+            definition_id=5110,
+            data={"state": {"window_start": "2026-06-21", "window_end": "2026-06-27"}},
+        )
+        wda.get_definition.return_value = mock.Mock()
+        return wda
+
+    monkeypatch.setattr(h, "WorkflowDataAccess", wda_factory)
+    monkeypatch.setattr(
+        tmpl, "fan_out_generate", mock.Mock(return_value={"per_opp": {1: {}}, "window_start": "x", "window_end": "y"})
+    )
+
+    h.program_audit_generate(
+        {"run_id": 5112, "program_id": 176, "job_type": "program_audit_generate"}, access_token="t"
+    )
+
+    assert seen == {"opportunity_id": None, "program_id": 176}
+
+
+def test_program_audit_generate_opp_scoped_when_no_program(monkeypatch):
+    """Opp-owned creator keeps the legacy opp-scoped outer DAO."""
+    from connect_labs.workflow.job_handlers import program_audit_creator as h
+    from connect_labs.workflow.templates import program_audit_creator as tmpl
+
+    seen = {}
+
+    def wda_factory(access_token=None, opportunity_id=None, program_id=None, **_):
+        seen["opportunity_id"] = opportunity_id
+        seen["program_id"] = program_id
+        wda = mock.Mock()
+        wda.get_run.return_value = mock.Mock(definition_id=5110, data={"state": {}})
+        wda.get_definition.return_value = mock.Mock()
+        return wda
+
+    monkeypatch.setattr(h, "WorkflowDataAccess", wda_factory)
+    monkeypatch.setattr(tmpl, "fan_out_generate", mock.Mock(return_value={"per_opp": {}}))
+
+    h.program_audit_generate(
+        {"run_id": 5112, "opportunity_id": 9000, "job_type": "program_audit_generate"}, access_token="t"
+    )
+
+    assert seen == {"opportunity_id": 9000, "program_id": None}
+
+
 # ── build_snapshot: program-level completion gate ────────────────────────────
 
 
