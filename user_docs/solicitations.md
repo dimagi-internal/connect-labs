@@ -92,7 +92,7 @@ For each response:
 2. Read the organization's answers to each question
 3. Review the applicant's selected coverage areas — these are shown on the responses list and on the response detail page
 4. Click **Review** to score the submission
-5. Score each criterion from 1–10 and add notes
+5. Score each criterion from 1–10 and add notes — every criterion in the rubric has a score field, including criteria that are not tied to a specific application question (such as Independence or Timeline)
 6. Set your recommendation: Approve / Reject / Needs Revision
 
 Multiple reviewers can score independently — average scores are calculated automatically.
@@ -228,4 +228,4 @@ This has been fixed. The coach's feedback now uses proper heading hierarchy, so 
 An unscored response shows a neutral dash (—) in the Score cell. The Recommendation column shows the **Pending review** indicator for that submission. Once reviewers have scored the response, the Score cell updates to show the calculated average.
 
 **Can applicants see how their response will be scored?**
-Yes — the evaluation criteria are displayed in a panel above the application questions on the response submission page. Each criterion shows its name, its weight in the overall
+Yes
