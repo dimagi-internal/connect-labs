@@ -1749,6 +1749,7 @@
         c.classList.toggle('is-on', +c.dataset.cellsize === cellSizeM),
       );
     if (fromChip) $('cfg-cellsize').value = cellSizeM;
+    if (typeof LS !== 'undefined') LS.set(LS_CELL, String(cellSizeM));
   }
   document
     .querySelectorAll('#cellsize-chips .chip')
@@ -2414,6 +2415,58 @@
   // switches; only cleared when the user blanks the cell.
   const manualTargets = {};
 
+  // --- persist setup controls across collapse/expand + reloads (localStorage) ---
+  // Every config choice (building providers, min-confidence, population source,
+  // cell size) is remembered so the page always reflects what you last chose,
+  // whether the card is collapsed, expanded, or freshly loaded.
+  const LS = {
+    get(k) {
+      try {
+        return window.localStorage.getItem(k);
+      } catch (_) {
+        return null;
+      }
+    },
+    set(k, v) {
+      try {
+        if (v == null || v === '') window.localStorage.removeItem(k);
+        else window.localStorage.setItem(k, v);
+      } catch (_) {
+        /* storage unavailable — session-only */
+      }
+    },
+  };
+  const LS_SRC = 'mp_cov_sources';
+  const LS_CONF = 'mp_cov_minconf';
+  const LS_CELL = 'mp_cellsize';
+  const LS_POP = 'mp_pop_source';
+  let savedPopSource = LS.get(LS_POP) || '';
+  function restoreSetupPrefs() {
+    // Building providers.
+    const savedSrc = LS.get(LS_SRC);
+    if (savedSrc) {
+      let arr = [];
+      try {
+        arr = JSON.parse(savedSrc);
+      } catch (_) {
+        arr = [];
+      }
+      if (Array.isArray(arr)) {
+        document
+          .querySelectorAll('.cov-src-cb')
+          .forEach((cb) => (cb.checked = arr.includes(cb.value)));
+      }
+    }
+    // Min Google confidence.
+    const savedConf = LS.get(LS_CONF);
+    if (savedConf != null && $('cfg-cov-min-confidence'))
+      $('cfg-cov-min-confidence').value = savedConf;
+    // Cell size (also updates the chips + input via setCellSize).
+    const savedCell = LS.get(LS_CELL);
+    if (savedCell) setCellSize(+savedCell, true);
+    // Population source is applied in renderSetupPopSource (needs its options built).
+  }
+
   function famTotal(pops, fam) {
     if (!pops) return null;
     if (pops[fam.total] != null) return pops[fam.total];
@@ -2599,8 +2652,14 @@
         has ? '' : ' (no data)'
       }</option>`;
     }).join('');
-    // Keep the previous pick, else default to the first source that has data.
+    // Keep the current pick; else the remembered one (across reloads); else the
+    // first source that actually has data.
     if (PROVIDER_FAMILIES.some((f) => f.key === prev)) sel.value = prev;
+    else if (
+      savedPopSource &&
+      PROVIDER_FAMILIES.some((f) => f.key === savedPopSource)
+    )
+      sel.value = savedPopSource;
     else {
       const firstWithData = PROVIDER_FAMILIES.find((f) => avail.has(f.key));
       if (firstWithData) sel.value = firstWithData.key;
@@ -2852,17 +2911,23 @@
     }
   }
 
-  on('setup-pop-source', 'change', renderSetupTable);
+  on('setup-pop-source', 'change', (e) => {
+    savedPopSource = e.target.value || '';
+    LS.set(LS_POP, savedPopSource); // remember across reloads
+    renderSetupTable();
+  });
   on('btn-setup-counts', 'click', updateSetupBuildingCounts);
   on('btn-setup-save-targets', 'click', saveSetupTargets);
   // Toggling a building provider recomputes the count column locally — no re-fetch.
   document.querySelectorAll('.cov-src-cb').forEach((cb) =>
     cb.addEventListener('change', () => {
+      LS.set(LS_SRC, JSON.stringify(checkedBuildingSources())); // remember picks
       if (SETUP_COUNTS) renderSetupTable();
     }),
   );
   // Confidence changes require a re-fetch; flag the counts as stale.
   on('cfg-cov-min-confidence', 'input', () => {
+    LS.set(LS_CONF, $('cfg-cov-min-confidence').value || ''); // remember
     if (!SETUP_COUNTS) return;
     SETUP_COUNTS = null;
     const st = $('setup-counts-status');
@@ -3219,6 +3284,9 @@
     }
   });
 
+  // Restore remembered config choices (providers, min-confidence, cell size,
+  // population source) so the page reflects your last settings after any reload.
+  if (typeof restoreSetupPrefs === 'function') restoreSetupPrefs();
   // Paint the setup planning table's empty state on load (all its state is now
   // initialised); it fills in as areas are drawn/selected via refreshAreaStats.
   if (typeof renderSetupTable === 'function') renderSetupTable();
