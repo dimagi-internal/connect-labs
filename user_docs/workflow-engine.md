@@ -234,4 +234,4 @@ The **Program Audit Creator** is the program administrator's central tool for ma
 
 When a program administrator runs the Program Audit Creator for a given week, it fans out to every opportunity in the program and creates that opportunity's audit workflow run in a single action. To trigger this, click **"Generate audit runs for all N opportunities"** (where N is the number of opportunities configured for your program). The creator's own run then **records what was generated**: which per-opportunity runs were created and how many audit sessions each one contains. This gives administrators a traceable record of each week's generation step.
 
-Running generation more than once in the same week is safe — the system
+Because the Program Audit Creator is a program-owned workflow, **
