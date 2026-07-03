@@ -634,6 +634,7 @@
             <th class="pr-2 py-1 text-right">Buildings</th>
             <th class="pr-2 py-1 text-right">U5 for calc</th>
             <th class="pr-2 py-1 text-right"># WAs</th>
+            <th class="pr-2 py-1 text-right"># excl. WAs</th>
             <th class="pr-2 py-1 text-right">Avg U5/WA</th>
             <th class="py-1"></th>
           </tr></thead>
@@ -688,23 +689,24 @@
       <div id="kpi-strip" class="gap-2" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr))"></div>
     </section>
 
-    <!-- What the map is showing: summary + the dim-keyed list (Workers / Groups). -->
-    <section class="border-t border-gray-200 bg-white px-3 py-2 text-sm grid grid-cols-3 gap-3">
-      <div>
-        <h3 class="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">Summary</h3>
-        <dl id="summary" class="space-y-1 text-sm"></dl>
+    {% comment %}
+      The per-ward "Summary" panel was removed — its headline numbers live in Plan
+      metrics above, and its by-ward breakdown is the planning table (below the map).
+      The Workers/Groups filter stays (it filters the map + work-area table).
+      #summary is kept as a hidden stub so renderSummary()'s guarded write is a no-op.
+    {% endcomment %}
+    <dl id="summary" class="hidden"></dl>
+    <!-- What the map is showing: the dim-keyed list (Workers / Groups). -->
+    <section class="border-t border-gray-200 bg-white px-3 py-2 text-sm">
+      <div class="flex items-center justify-between mb-1">
+        <h3 class="text-xs font-semibold text-gray-700 uppercase tracking-wide">
+          <span id="dim-label">Workers</span>
+        </h3>
+        <button type="button" id="dim-clear" class="text-[10px] text-gray-400 hover:text-gray-700 hidden">clear filter</button>
       </div>
-      <div class="col-span-2">
-        <div class="flex items-center justify-between mb-1">
-          <h3 class="text-xs font-semibold text-gray-700 uppercase tracking-wide">
-            <span id="dim-label">Workers</span>
-          </h3>
-          <button type="button" id="dim-clear" class="text-[10px] text-gray-400 hover:text-gray-700 hidden">clear filter</button>
-        </div>
-        <p class="text-[10px] text-gray-400 mb-0.5 tracking-wide">each row: <span class="font-medium">areas · buildings</span></p>
-        <div id="by-dim" class="grid grid-cols-2 gap-x-3 gap-y-0.5 max-h-32 overflow-auto"></div>
-        <p class="text-[10px] text-gray-400 mt-1">Click a <span id="dim-label2">worker</span> to filter the map &amp; table.</p>
-      </div>
+      <p class="text-[10px] text-gray-400 mb-0.5 tracking-wide">each row: <span class="font-medium">areas · buildings</span></p>
+      <div id="by-dim" class="grid grid-cols-2 gap-x-3 gap-y-0.5 max-h-32 overflow-auto"></div>
+      <p class="text-[10px] text-gray-400 mt-1">Click a <span id="dim-label2">worker</span> to filter the map &amp; table.</p>
     </section>
 
     <!-- Per-worker / per-group breakdown (the detailed metrics table). -->

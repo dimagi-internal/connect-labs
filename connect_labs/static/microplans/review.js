@@ -2485,11 +2485,11 @@
   //   {area_id, ward, lga, state, pops, buildings|null, nWAs|null, memberIdx?}
   function planningRows() {
     if (planExists()) {
-      // Post-creation: group the plan's (non-excluded) work areas by their area_id.
+      // Post-creation: group ALL the plan's work areas by area_id, counting active
+      // vs excluded so the table can show # WAs (active) and # excl. WAs.
       const byId = new Map();
       const rows = [];
       (WAS || []).forEach((x) => {
-        if (x.status === 'EXCLUDED') return;
         const p = x.properties || {};
         const aid = String(p.area_id || p.ward || '(area)');
         let r = byId.get(aid);
@@ -2502,12 +2502,17 @@
             pops: AREA_POPS[aid] || {},
             buildings: 0,
             nWAs: 0,
+            nExcl: 0,
           };
           byId.set(aid, r);
           rows.push(r);
         }
-        r.buildings += x.building_count || 0;
-        r.nWAs += 1;
+        if (x.status === 'EXCLUDED') {
+          r.nExcl += 1;
+        } else {
+          r.buildings += x.building_count || 0;
+          r.nWAs += 1;
+        }
       });
       return rows;
     }
@@ -2539,6 +2544,7 @@
         ? null
         : c.reduce((s, x) => s + x, 0);
       g.nWAs = null; // no work areas until the plan is created
+      g.nExcl = null;
     });
     return groups;
   }
@@ -2683,6 +2689,9 @@
                 data-key="${esc(aid)}" value="${val}"></td>
           <td class="pr-2 py-1 text-right text-gray-600">${
             nWAs == null ? '—' : nWAs.toLocaleString()
+          }</td>
+          <td class="pr-2 py-1 text-right text-gray-600">${
+            r.nExcl ? r.nExcl.toLocaleString() : '—'
           }</td>
           <td class="pr-2 py-1 text-right text-gray-600">${
             avg == null ? '—' : avg.toFixed(1)
