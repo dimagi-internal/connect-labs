@@ -82,7 +82,25 @@
     const comparePanel = opts.comparePanel || null;
     const getSamplingConfig = opts.getSamplingConfig || (() => ({}));
 
-    let source = null; // active source; null = let the server pick the country default
+    // Persist the chosen boundary source across reloads (e.g. "grid3"), so a plan
+    // that was built from GRID3 keeps using + showing GRID3 after create/reload.
+    const _SRC_KEY = 'mp_boundary_source';
+    function _loadSource() {
+      try {
+        return window.localStorage.getItem(_SRC_KEY) || null;
+      } catch (_) {
+        return null;
+      }
+    }
+    function _saveSource(s) {
+      try {
+        if (s) window.localStorage.setItem(_SRC_KEY, s);
+        else window.localStorage.removeItem(_SRC_KEY);
+      } catch (_) {
+        /* storage unavailable — session-only */
+      }
+    }
+    let source = _loadSource(); // active source; null = let the server pick the country default
     let detectedIso = null; // country inferred from returned features (labs carry iso_code)
     let availableSources = [];
     let sourceLabels = {};
@@ -553,6 +571,9 @@
         name: p.name,
         level: p.admin_level,
         parent_name: p.parent_name || '',
+        // Structured parent names (reliable LGA/State) — plain strings in the tile.
+        lga: p.lga || '',
+        state: p.state || '',
         source: p.source,
         country: p.iso_code,
         ref: ref,
@@ -569,6 +590,8 @@
         name: a.name,
         level: a.level,
         parent_name: a.parent_name || ref.parent_name || '',
+        lga: a.lga || '',
+        state: a.state || '',
         source: a.source,
         country: a.country,
         ref,
@@ -1530,6 +1553,7 @@
 
     sourceSel.addEventListener('change', () => {
       source = sourceSel.value || null;
+      _saveSource(source); // remember across reloads
       refresh();
     });
 

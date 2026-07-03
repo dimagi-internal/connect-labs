@@ -151,6 +151,9 @@
         mapReady = true;
         refreshMap();
         drawSamplingOverlay();
+        // Overlay the plan's boundary outlines once the map is ready (render() may
+        // have run before the map loaded).
+        if (lastPlanData) drawPlanBoundaries(lastPlanData);
       });
     } catch (e) {
       /* headless / no webgl */
@@ -551,8 +554,11 @@
             .map((s) => s.trim())
             .filter(Boolean);
           props.ward = desc.name || '';
-          props.lga = chain.length ? chain[chain.length - 1] : '';
-          props.state = chain.length >= 2 ? chain[chain.length - 2] : '';
+          // Prefer the structured names (correct by construction); fall back to the
+          // positional parent-name chain only when they're absent (older sources).
+          props.lga = desc.lga || (chain.length ? chain[chain.length - 1] : '');
+          props.state =
+            desc.state || (chain.length >= 2 ? chain[chain.length - 2] : '');
           // Country (alpha-3) so the planning table's column headers can use that
           // country's admin vocabulary (State/LGA/Ward vs County/Sub-county/…).
           if (desc.country) props.country = desc.country;
@@ -668,19 +674,37 @@
     setTimeout(() => location.reload(), 2000);
     return true;
   }
+  let lastPlanData = null;
+  // #7: the create button is enabled only once ≥1 area shows in the planning table
+  // AND building counts have been fetched ("Update table"). On an existing plan the
+  // button is "Regenerate", left enabled.
+  function syncCreateEnabled() {
+    const btn = $('btn-apply-area');
+    if (!btn) return;
+    if (planExists()) {
+      btn.disabled = false;
+      return;
+    }
+    btn.disabled = !(planningRows().length > 0 && !!SETUP_COUNTS);
+  }
   function render(data) {
     if (data && data.revision !== undefined) planRevision = data.revision;
     WAS = data.work_areas || [];
     if (data && data.area_populations) AREA_POPS = data.area_populations;
     if (data && data.area_targets) AREA_TARGETS = data.area_targets;
+    lastPlanData = data; // for the map-load retry of the boundary overlay
     renderSummary(data.summary || {});
     renderKpis(data.kpis || {});
     renderTable();
     renderVisitsTable();
     renderSetupTable(); // keep the planning table filled after create/regenerate
     refreshMap();
+    // Keep the plan's boundary outlines on the map on every render (create,
+    // regenerate, save, filter) — not just the sampling-overlay path.
+    drawPlanBoundaries(data);
     setSelState();
     syncPlanTools();
+    syncCreateEnabled();
   }
 
   // Grey-out: grouping / assignment / bulk / export all act on a plan's work areas,
@@ -2454,6 +2478,7 @@
         );
         return {
           key: w.ward,
+          ward: w.ward,
           lga: w.lga || '',
           state: w.state || '',
           pops: AREA_POPS[w.ward] || {},
@@ -2462,22 +2487,26 @@
         };
       });
     }
-    // Pre-creation: group the picked boundaries by name (MultiPolygon → one row).
+    // Pre-creation: group picked boundaries by ward + LGA + state, so a MultiPolygon
+    // ward folds into ONE row while two same-name wards in different LGAs stay
+    // distinct (grouping by name alone was hiding the second).
     const areas = setupAreas();
     const byKey = new Map();
     const groups = [];
     areas.forEach((a, i) => {
-      let g = byKey.get(a.name);
+      const key = `${a.name}|${a.lga || ''}|${a.state || ''}`;
+      let g = byKey.get(key);
       if (!g) {
         g = {
-          key: a.name,
+          key,
+          ward: a.name,
           lga: a.lga || '',
           state: a.state || '',
           country: a.country || '',
           pops: a.populations || {},
           memberIdx: [],
         };
-        byKey.set(a.name, g);
+        byKey.set(key, g);
         groups.push(g);
       }
       g.memberIdx.push(i);
@@ -2593,28 +2622,29 @@
         const nWAs = r.nWAs;
         // Avg U5 per work area — only meaningful once the plan has work areas.
         const avg = u5 != null && nWAs ? u5 / nWAs : null;
-        const key = r.key;
+        const ward = r.ward; // backend attributes + keys targets by ward name
+        const rowKey = r.key; // composite (ward|lga|state) — unique row / delete id
         // U5-for-calc: manual edit wins; else the saved per-ward target (post-create)
         // or the source's U5 (pre-create). Feeds create, or Save U5 targets.
         const base =
-          created && AREA_TARGETS[key] != null
-            ? Math.round(AREA_TARGETS[key])
+          created && AREA_TARGETS[ward] != null
+            ? Math.round(AREA_TARGETS[ward])
             : u5 != null
             ? Math.round(u5)
             : '';
-        const val = key in manualTargets ? manualTargets[key] : base;
+        const val = ward in manualTargets ? manualTargets[ward] : base;
         const delCell = created
           ? '<td class="py-1"></td>'
           : `<td class="py-1 text-right"><button type="button" class="setup-del text-gray-400 hover:text-red-600 px-1"
                 data-key="${esc(
-                  key,
+                  rowKey,
                 )}" title="Remove this area" aria-label="Remove ${esc(
-                  key,
+                  ward,
                 )}">✕</button></td>`;
         return `<tr>
           <td class="pr-2 py-1 text-gray-700 truncate" title="${esc(
-            key,
-          )}">${esc(key)}</td>
+            ward,
+          )}">${esc(ward)}</td>
           <td class="pr-2 py-1 text-gray-500 truncate" title="${esc(r.lga)}">${
             r.lga ? esc(r.lga) : '—'
           }</td>
@@ -2624,17 +2654,17 @@
           <td class="pr-2 py-1 text-right text-gray-600">${num(total)}</td>
           <td class="pr-2 py-1 text-right text-gray-600">${num(u5)}</td>
           <td class="pr-2 py-1 text-right text-gray-600">${
+            bld == null ? '—' : bld.toLocaleString()
+          }</td>
+          <td class="pr-2 py-1 text-right"><input type="number" min="0" step="1"
+                class="setup-target base-input text-xs text-right" style="width:5.5rem"
+                data-key="${esc(ward)}" value="${val}"></td>
+          <td class="pr-2 py-1 text-right text-gray-600">${
             nWAs == null ? '—' : nWAs.toLocaleString()
           }</td>
           <td class="pr-2 py-1 text-right text-gray-600">${
             avg == null ? '—' : avg.toFixed(1)
           }</td>
-          <td class="pr-2 py-1 text-right text-gray-600">${
-            bld == null ? '—' : bld.toLocaleString()
-          }</td>
-          <td class="pr-2 py-1 text-right"><input type="number" min="0" step="1"
-                class="setup-target base-input text-xs text-right" style="width:5.5rem"
-                data-key="${esc(key)}" value="${val}"></td>
           ${delCell}
         </tr>`;
       })
@@ -2646,7 +2676,10 @@
   // highlight + selection state clear; plain shapes/circles/uploads are removed
   // from their own store. refreshAreaStats() then rebuilds the table.
   function deleteSetupRow(key) {
-    const members = setupAreas().filter((a) => a.name === key);
+    // key is the composite ward|lga|state row id from planningRows().
+    const members = setupAreas().filter(
+      (a) => `${a.name}|${a.lga || ''}|${a.state || ''}` === key,
+    );
     if (!members.length) return;
     const boundaryIds = new Set();
     const drawIds = [];
@@ -2692,6 +2725,7 @@
     const st = $('setup-counts-status');
     if (st) st.textContent = '';
     renderSetupTable();
+    syncCreateEnabled(); // areas changed → counts stale → re-gate create
   }
 
   async function updateSetupBuildingCounts() {
@@ -2735,6 +2769,7 @@
       SETUP_COUNTS = result.stats;
       if (st) st.textContent = 'Building counts updated.';
       renderSetupTable();
+      syncCreateEnabled(); // counts fetched → create can be enabled
     } catch (e) {
       if (st) st.textContent = 'Failed: ' + e;
     } finally {
@@ -3147,6 +3182,7 @@
   // Paint the setup planning table's empty state on load (all its state is now
   // initialised); it fills in as areas are drawn/selected via refreshAreaStats.
   if (typeof renderSetupTable === 'function') renderSetupTable();
+  syncCreateEnabled(); // start disabled until areas + counts are ready
 
   window.__review = {
     get was() {

@@ -234,6 +234,10 @@ class AdminArea:
     # Parent chain "State › LGA" (from extra.parent_names), so the picker + the
     # planning table can attribute a selected ward to its LGA/State.
     parent_name: str = ""
+    # Structured parent names (by semantic key) — reliable attribution for the
+    # planning table's LGA/State columns, unlike positionally parsing parent_name.
+    lga: str = ""
+    state: str = ""
     ref: dict = field(default_factory=dict)
 
     def to_json(self) -> dict:
@@ -248,6 +252,8 @@ class AdminArea:
             "population": self.population,
             "populations": self.populations,
             "parent_name": self.parent_name,
+            "lga": self.lga,
+            "state": self.state,
             "ref": self.ref,
         }
 
@@ -266,6 +272,8 @@ class AdminArea:
             population=d.get("population"),
             populations=pops if isinstance(pops, dict) else None,
             parent_name=str(d.get("parent_name", "")),
+            lga=str(d.get("lga", "")),
+            state=str(d.get("state", "")),
             ref=ref if isinstance(ref, dict) else {},
         )
 
@@ -293,6 +301,9 @@ class BoundaryFeature:
     populations: dict | None = None
     name_local: str = ""
     parent_name: str = ""
+    # Structured parent names (by semantic key) — reliable LGA/State attribution.
+    lga: str = ""
+    state: str = ""
     ref: dict = field(default_factory=dict)
 
     def to_feature(self) -> dict:
@@ -311,6 +322,8 @@ class BoundaryFeature:
                 "population": self.population,
                 "populations": self.populations,
                 "parent_name": self.parent_name,
+                "lga": self.lga,
+                "state": self.state,
                 "ref": self.ref,
             },
         }
@@ -502,8 +515,11 @@ class LabsAdminBoundarySource(BoundarySource):
                     # Display population: scalar population_1, else a total from the bag.
                     population=resolve_population(r.get("population"), pops),
                     populations=pops,
-                    # Parent chain so a searched-and-selected ward attributes to its LGA/State.
+                    # Parent chain + structured state/lga so a searched-and-selected
+                    # ward attributes correctly to its LGA/State.
                     parent_name=_parent_name_from_extra(r.get("extra")),
+                    state=admin_names_from_extra(r.get("extra"))[0],
+                    lga=admin_names_from_extra(r.get("extra"))[1],
                     ref={"boundary_id": r["boundary_id"]},
                 )
             )
@@ -545,6 +561,8 @@ class LabsAdminBoundarySource(BoundarySource):
                     populations=(obj.extra or {}).get("populations"),
                     name_local=obj.name_local or "",
                     parent_name=_labs_parent_name(obj),
+                    state=admin_names_from_extra(obj.extra)[0],
+                    lga=admin_names_from_extra(obj.extra)[1],
                     ref={"boundary_id": obj.boundary_id, "source": self.name},
                 )
             )
@@ -560,6 +578,27 @@ def _parent_name_from_extra(extra) -> str:
     if isinstance(names, (list, tuple)):
         return " › ".join(str(v) for v in names if v)
     return ""
+
+
+def admin_names_from_extra(extra) -> tuple[str, str]:
+    """(state, lga) for a level-3 ward from ``extra.parent_names``.
+
+    Prefer the SEMANTIC keys the loaders store (``state``/``lga``, or the ADM
+    aliases) so we never mislabel — a positional split of the joined chain breaks
+    when a source's chain is e.g. ``[state, country]`` (LGA came out as "Nigeria").
+    Falls back to positional only for keyless list-shaped chains."""
+    names = (extra or {}).get("parent_names")
+    if isinstance(names, dict):
+        state = str(names.get("state") or names.get("admin1") or names.get("adm1") or "").strip()
+        lga = str(names.get("lga") or names.get("admin2") or names.get("adm2") or names.get("county") or "").strip()
+        if state or lga:
+            return state, lga
+        vals = [str(v) for v in names.values() if v]
+        return (vals[-2].strip() if len(vals) >= 2 else ""), (vals[-1].strip() if vals else "")
+    if isinstance(names, (list, tuple)):
+        vals = [str(v) for v in names if v]
+        return (vals[-2].strip() if len(vals) >= 2 else ""), (vals[-1].strip() if vals else "")
+    return "", ""
 
 
 def _labs_parent_name(obj) -> str:
