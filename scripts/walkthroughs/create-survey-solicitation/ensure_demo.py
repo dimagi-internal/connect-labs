@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import json
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import httpx
@@ -335,6 +336,10 @@ def main() -> int:
             "create_solicitation",
             {
                 "program_id": str(PROGRAM_ID),
+                # The view-side read path (public detail / responses list) only
+                # resolves public-envelope records — the UI-minted call ends up
+                # public=true, so the seeded review-stage call must match.
+                "is_public": True,
                 "title": "Solicitation for R6 — Attakar × Gura",
                 "description": (
                     "Independent household coverage survey across the R6 matched wards — "
@@ -343,7 +348,10 @@ def main() -> int:
                 ),
                 "scope_of_work": "Coverage areas drawn from plan group 'R6 — Attakar × Gura'.",
                 "solicitation_type": "rfp",
-                "status": "active",
+                # Closed: scene 7 narrates "the response window closes" — the
+                # status badge must agree. Responses are seeded server-side, so
+                # the respond form never needs this call to accept submissions.
+                "status": "closed",
                 "application_deadline": "2026-08-15",
                 "expected_start_date": "2026-09-01",
                 "expected_end_date": "2026-11-30",
@@ -382,6 +390,10 @@ def main() -> int:
                     "submitted_by_name": spec_r["org"],
                     "submitted_by_email": spec_r["email"],
                     "org_name": spec_r["org"],
+                    # Staggered dates days apart — same-day everything reads staged.
+                    "submission_date": (
+                        datetime.now(timezone.utc) - timedelta(days=9 - 3 * RESPONSES.index(spec_r))
+                    ).isoformat(),
                     "selected_plan_ids": [SOURCE_PLAN_ID],
                     "selected_plan_names": ["R6 — Attakar × Gura"],
                 },

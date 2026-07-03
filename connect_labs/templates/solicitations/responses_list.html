@@ -326,7 +326,7 @@
             <table class="min-w-full divide-y divide-gray-200">
                 <thead class="bg-gray-50">
                     <tr>
-                        <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Organization</th>
+                        <th class="sticky left-0 z-10 bg-gray-50 px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider shadow-[8px_0_8px_-8px_rgba(0,0,0,0.08)]">Organization</th>
                         <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Selected coverage</th>
                         <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Submitted By</th>
                         <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
@@ -339,7 +339,7 @@
                 <tbody class="bg-white divide-y divide-gray-200">
                     {% for response in responses %}
                         <tr class="hover:bg-gray-50 transition">
-                            <td class="px-3 py-4 whitespace-nowrap">
+                            <td class="sticky left-0 bg-white border-r border-gray-200 px-3 py-4 whitespace-nowrap shadow-[8px_0_8px_-8px_rgba(0,0,0,0.08)]">
                                 <div class="text-sm font-medium text-gray-900">
                                     {{ response.llo_entity_name|default:response.org_name|default:response.submitted_by_name|default:response.submitted_by_email|default:"—" }}
                                 </div>

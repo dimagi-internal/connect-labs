@@ -17,7 +17,8 @@ from connect_labs.solicitations.validation import SOLICITATION_TYPE_CHOICES, STA
 # =========================================================================
 
 _INPUT_CLASSES = "base-input"
-_TEXTAREA_CLASSES = "base-input"
+# base-input hard-codes h-10 — force auto height so textareas honor their rows.
+_TEXTAREA_CLASSES = "base-input !h-auto min-h-28 py-2 resize-y"
 _SELECT_CLASSES = "base-dropdown"
 
 # =========================================================================

@@ -107,6 +107,16 @@
                             </span>
                             <span class="text-sm text-gray-900 font-medium">Score: {{ rev.score }}/100</span>
                         </div>
+                        {% if rev.criteria_score_rows %}
+                        <div class="mb-2 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
+                            {% for row in rev.criteria_score_rows %}
+                            <div class="flex items-center justify-between text-xs">
+                                <span class="text-gray-500">{{ row.name }}{% if row.weight %} ({{ row.weight }}%){% endif %}</span>
+                                <span class="font-medium text-gray-700">{{ row.score }}/10</span>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
                         <div class="flex items-center gap-2 mb-2">
                             {% if rev.recommendation == 'approved' %}
                                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Approved</span>
