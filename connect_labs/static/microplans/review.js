@@ -677,6 +677,7 @@
     renderKpis(data.kpis || {});
     renderTable();
     renderVisitsTable();
+    renderSetupTable(); // keep the planning table filled after create/regenerate
     refreshMap();
     setSelState();
     syncPlanTools();
@@ -2402,12 +2403,68 @@
     return out;
   }
 
-  // Population families present across the selected areas, in canonical order.
+  // Is the plan created yet? Post-creation the table summarises the plan's work
+  // areas (real # WAs, buildings from the cells); pre-creation it previews the
+  // picked boundaries. One table, two data sources.
+  function planExists() {
+    return !!PLAN_ID && Array.isArray(WAS) && WAS.length > 0;
+  }
+  // Unified per-ward rows for the planning table. Each row:
+  //   {key, lga, state, pops, buildings|null, nWAs|null, memberIdx?}
+  function planningRows() {
+    if (planExists()) {
+      // Post-creation: one row per distinct ward in the plan (non-excluded cells).
+      return planWards().map((w) => {
+        const list = (WAS || []).filter(
+          (x) =>
+            x.status !== 'EXCLUDED' &&
+            ((x.properties && x.properties.ward) || '(area)').trim() === w.ward,
+        );
+        return {
+          key: w.ward,
+          lga: w.lga || '',
+          state: w.state || '',
+          pops: AREA_POPS[w.ward] || {},
+          buildings: list.reduce((s, x) => s + (x.building_count || 0), 0),
+          nWAs: list.length,
+        };
+      });
+    }
+    // Pre-creation: group the picked boundaries by name (MultiPolygon → one row).
+    const areas = setupAreas();
+    const byKey = new Map();
+    const groups = [];
+    areas.forEach((a, i) => {
+      let g = byKey.get(a.name);
+      if (!g) {
+        g = {
+          key: a.name,
+          lga: a.lga || '',
+          state: a.state || '',
+          country: a.country || '',
+          pops: a.populations || {},
+          memberIdx: [],
+        };
+        byKey.set(a.name, g);
+        groups.push(g);
+      }
+      g.memberIdx.push(i);
+    });
+    groups.forEach((g) => {
+      const c = g.memberIdx.map((i) => buildingCountFor(i));
+      g.buildings = c.some((x) => x == null)
+        ? null
+        : c.reduce((s, x) => s + x, 0);
+      g.nWAs = null; // no work areas until the plan is created
+    });
+    return groups;
+  }
+
+  // Population families present across the current rows, in canonical order.
   function availableFamilies() {
     const seen = new Set();
-    setupAreas().forEach((a) => {
-      const pops = a.populations || {};
-      Object.keys(pops).forEach((k) => seen.add(k));
+    planningRows().forEach((r) => {
+      Object.keys(r.pops || {}).forEach((k) => seen.add(k));
     });
     return PROVIDER_FAMILIES.filter(
       (f) =>
@@ -2484,65 +2541,69 @@
     const tb = $('setup-tbody');
     if (!tb) return;
     renderSetupPopSource();
-    const areas = setupAreas();
-    updateSetupHeaders(areas);
+    const rows = planningRows();
+    const created = planExists();
+    updateSetupHeaders(rows);
     const empty = $('setup-empty');
-    if (empty) empty.classList.toggle('hidden', areas.length > 0);
+    if (empty) empty.classList.toggle('hidden', rows.length > 0);
+    // Post-creation the ✕ (remove area) + "Update table" building-fetch don't apply
+    // (the plan's cells are the source of truth); swap in a "Save U5 targets" action.
+    $('btn-setup-counts')?.classList.toggle('hidden', created);
+    $('btn-setup-save-targets')?.classList.toggle('hidden', !created);
     const fam = currentFamily();
     const num = (v) => (v == null ? '—' : Math.round(v).toLocaleString());
-    // Group by display name so a MultiPolygon ward (several draw features) is ONE
-    // row. Buildings sum across the group's members; population/target are shared.
-    const groups = [];
-    const byKey = new Map();
-    areas.forEach((a, i) => {
-      const key = a.name;
-      let g = byKey.get(key);
-      if (!g) {
-        g = { key, area: a, memberIdx: [] };
-        byKey.set(key, g);
-        groups.push(g);
-      }
-      g.memberIdx.push(i);
-    });
-    tb.innerHTML = groups
-      .map((g) => {
-        const pops = g.area.populations || {};
+    tb.innerHTML = rows
+      .map((r) => {
+        const pops = r.pops || {};
         const total = fam ? famTotal(pops, fam) : null;
         const u5 = fam ? famU5(pops, fam) : null;
-        // Building count is known only once every member has a fetched count.
-        const counts = g.memberIdx.map((i) => buildingCountFor(i));
-        const bld = counts.some((c) => c == null)
-          ? null
-          : counts.reduce((s, c) => s + c, 0);
-        const key = g.key;
-        const lga = g.area.lga || '';
-        const state = g.area.state || '';
-        const auto = u5 != null ? Math.round(u5) : '';
-        const val = key in manualTargets ? manualTargets[key] : auto;
+        const bld = r.buildings;
+        const nWAs = r.nWAs;
+        // Avg U5 per work area — only meaningful once the plan has work areas.
+        const avg = u5 != null && nWAs ? u5 / nWAs : null;
+        const key = r.key;
+        // U5-for-calc: manual edit wins; else the saved per-ward target (post-create)
+        // or the source's U5 (pre-create). Feeds create, or Save U5 targets.
+        const base =
+          created && AREA_TARGETS[key] != null
+            ? Math.round(AREA_TARGETS[key])
+            : u5 != null
+            ? Math.round(u5)
+            : '';
+        const val = key in manualTargets ? manualTargets[key] : base;
+        const delCell = created
+          ? '<td class="py-1"></td>'
+          : `<td class="py-1 text-right"><button type="button" class="setup-del text-gray-400 hover:text-red-600 px-1"
+                data-key="${esc(
+                  key,
+                )}" title="Remove this area" aria-label="Remove ${esc(
+                  key,
+                )}">✕</button></td>`;
         return `<tr>
           <td class="pr-2 py-1 text-gray-700 truncate" title="${esc(
             key,
           )}">${esc(key)}</td>
-          <td class="pr-2 py-1 text-gray-500 truncate" title="${esc(lga)}">${
-            lga ? esc(lga) : '—'
+          <td class="pr-2 py-1 text-gray-500 truncate" title="${esc(r.lga)}">${
+            r.lga ? esc(r.lga) : '—'
           }</td>
-          <td class="pr-2 py-1 text-gray-500 truncate" title="${esc(state)}">${
-            state ? esc(state) : '—'
-          }</td>
+          <td class="pr-2 py-1 text-gray-500 truncate" title="${esc(
+            r.state,
+          )}">${r.state ? esc(r.state) : '—'}</td>
           <td class="pr-2 py-1 text-right text-gray-600">${num(total)}</td>
           <td class="pr-2 py-1 text-right text-gray-600">${num(u5)}</td>
+          <td class="pr-2 py-1 text-right text-gray-600">${
+            nWAs == null ? '—' : nWAs.toLocaleString()
+          }</td>
+          <td class="pr-2 py-1 text-right text-gray-600">${
+            avg == null ? '—' : avg.toFixed(1)
+          }</td>
           <td class="pr-2 py-1 text-right text-gray-600">${
             bld == null ? '—' : bld.toLocaleString()
           }</td>
           <td class="pr-2 py-1 text-right"><input type="number" min="0" step="1"
                 class="setup-target base-input text-xs text-right" style="width:5.5rem"
                 data-key="${esc(key)}" value="${val}"></td>
-          <td class="py-1 text-right"><button type="button" class="setup-del text-gray-400 hover:text-red-600 px-1"
-                data-key="${esc(
-                  key,
-                )}" title="Remove this area" aria-label="Remove ${esc(
-                  key,
-                )}">✕</button></td>
+          ${delCell}
         </tr>`;
       })
       .join('');
@@ -2660,8 +2721,33 @@
     return targets;
   }
 
+  // Post-creation: persist edited U5-for-calc values as per-ward visit targets
+  // (spread across each ward's retained buildings — the set_area_targets endpoint).
+  async function saveSetupTargets() {
+    if (!AREA_TARGETS_URL) return;
+    const st = $('setup-counts-status');
+    if (st) st.textContent = 'Saving…';
+    try {
+      const resp = await post(AREA_TARGETS_URL, {
+        targets: collectSetupTargets(),
+        revision: planRevision,
+      });
+      const data = await resp.json();
+      if (handleConflict(resp, data, (m) => st && (st.textContent = m))) return;
+      if (!resp.ok || data.status !== 'ok') {
+        if (st) st.textContent = data.detail || 'HTTP ' + resp.status;
+        return;
+      }
+      if (st) st.textContent = 'Expected visits updated.';
+      render(data); // re-renders the table (incl. Avg U5/WA) from the saved plan
+    } catch (e) {
+      if (st) st.textContent = 'Failed: ' + e;
+    }
+  }
+
   on('setup-pop-source', 'change', renderSetupTable);
   on('btn-setup-counts', 'click', updateSetupBuildingCounts);
+  on('btn-setup-save-targets', 'click', saveSetupTargets);
   // Toggling a building provider recomputes the count column locally — no re-fetch.
   document.querySelectorAll('.cov-src-cb').forEach((cb) =>
     cb.addEventListener('change', () => {
