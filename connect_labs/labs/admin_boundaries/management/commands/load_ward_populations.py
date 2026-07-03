@@ -34,7 +34,7 @@ from django.core.management.base import BaseCommand
 from connect_labs.labs.admin_boundaries.models import AdminBoundary
 
 FIXTURE = Path(__file__).resolve().parent.parent.parent / "fixtures" / "ward_populations_national.csv"
-SOURCE_COLS = ["worldpop_total", "worldpop_u5", "meta_total", "meta_u5", "grid3_v3_total"]
+SOURCE_COLS = ["worldpop_total", "worldpop_u5", "meta_total", "meta_u5", "grid3_v3_total", "grid3_v3_u5"]
 
 
 def _norm(s: str) -> str:
