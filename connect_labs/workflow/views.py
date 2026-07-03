@@ -34,6 +34,22 @@ from connect_labs.workflow.templates import create_workflow_from_template as cre
 logger = logging.getLogger(__name__)
 
 
+def _coerce_int(value):
+    """Return int(value) or None. Tolerates the stringified ``undefined`` /
+    ``null`` a program-scoped runner sends for an absent opportunity_id — the
+    record is program-owned (opportunity_id=None), so the frontend has no
+    numeric opp to interpolate and older bundles wrote the literal
+    ``opportunity_id=undefined``. ``int("undefined")`` used to crash pipeline
+    endpoints into a generic 500 before any scope-resolution ran.
+    """
+    if value in (None, "", "undefined", "null"):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _resolve_pipeline_sources_for_run(pipeline_access, pipeline_sources: list[dict]):
     """Pre-build configs for every pipeline source and topologically sort
     them so JOIN dependencies execute before their dependents.
@@ -753,6 +769,12 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                 "definition": definition.data,
                 "definition_id": definition.id,
                 "opportunity_id": opportunity_id,
+                # Program-owned workflows (record has program_id, no owning opp)
+                # expose their program scope + spanned opps so the runner can
+                # drive auth-status and pipeline fetches by program_id instead
+                # of a single (absent) opportunity_id. See §"program scope".
+                "program_id": program_id,
+                "program_scoped": program_scoped,
                 "opportunity_ids": effective_opp_ids,
                 "multi_opp": definition.multi_opp,
                 "render_code": context.get("render_code"),
@@ -1075,6 +1097,44 @@ def workflow_auth_status_api(request):
         next_url = "/labs/overview/"
 
     opportunity_id_param = request.GET.get("opportunity_id")
+    # Guard against the runner sending a stringified `undefined` for a
+    # program-owned workflow (its initialData carries no opportunity_id).
+    if opportunity_id_param in (None, "", "undefined", "null"):
+        opportunity_id_param = None
+
+    # Program scope: a program-owned workflow's runner sends ?program_id=
+    # (and NO opportunity_id) because the record has program_id set and
+    # opportunity_id=None. There's no single CCHQ domain to probe at program
+    # scope — the workflow spans several opps, each with its own domain, and
+    # the per-opp pipeline stream does the real CCHQ enforcement. So instead
+    # of a per-opp CCHQ ping we verify PROGRAM membership: if the user has
+    # access to the program, the required providers are reported active
+    # (token-alive still gates commcare_hq so a genuinely dead token surfaces
+    # the Authorize gate). Opportunity behavior below is unchanged.
+    program_id_param = request.GET.get("program_id")
+    if program_id_param in (None, "", "undefined", "null"):
+        program_id_param = None
+    program_scoped = bool(program_id_param) and not opportunity_id_param
+    program_member = True
+    if program_scoped:
+        try:
+            program_id_int = int(program_id_param)
+        except (TypeError, ValueError):
+            program_id_int = None
+        org_data = get_org_data(request) or {}
+        program_ids = {p.get("id") for p in org_data.get("programs", []) if p.get("id") is not None}
+        # If we have cached program data, require membership; if the OAuth
+        # program cache is empty (org_data not yet hydrated), pass through —
+        # the pipeline endpoints re-enforce access per-opp. Mirrors
+        # validate_context_access's cache-empty passthrough.
+        if program_ids and program_id_int is not None:
+            program_member = program_id_int in program_ids
+        if not program_member:
+            logger.info(
+                "auth-status: user %s requested program %s they are not a member of",
+                getattr(request.user, "username", "?"),
+                program_id_param,
+            )
 
     def _is_active(session_key: str) -> bool:
         """Timestamp check against the *current* session state."""
@@ -2234,7 +2294,7 @@ def get_pipeline_data_api(request, definition_id):
     Returns data from all pipeline sources defined in the workflow.
     """
     labs_context = getattr(request, "labs_context", {})
-    opportunity_id = labs_context.get("opportunity_id") or request.GET.get("opportunity_id")
+    opportunity_id = _coerce_int(labs_context.get("opportunity_id") or request.GET.get("opportunity_id"))
 
     try:
         data_access = WorkflowDataAccess(request=request)
@@ -2868,7 +2928,12 @@ def execute_pipeline_preview_api(request, definition_id):
     from connect_labs.workflow.data_access import PipelineDataAccess
 
     labs_context = getattr(request, "labs_context", {})
-    opportunity_id = labs_context.get("opportunity_id") or request.GET.get("opportunity_id")
+    # Pipeline preview is inherently single-opp (CCHQ data is per-opportunity).
+    # For a program-scoped workflow the runner supplies one of the workflow's
+    # spanned opps as opportunity_id (it can't derive a pipeline's opp from the
+    # bare pipeline id). _coerce_int tolerates a stray `undefined` from older
+    # bundles; a real numeric opp is still required to run the preview.
+    opportunity_id = _coerce_int(labs_context.get("opportunity_id") or request.GET.get("opportunity_id"))
 
     if not opportunity_id:
         return JsonResponse({"error": "opportunity_id required"}, status=400)
@@ -2905,7 +2970,9 @@ def get_pipeline_sql_preview_api(request, definition_id):
     from connect_labs.workflow.data_access import PipelineDataAccess
 
     labs_context = getattr(request, "labs_context", {})
-    opportunity_id = labs_context.get("opportunity_id") or request.GET.get("opportunity_id")
+    # Single-opp like the preview endpoint above — a program-scoped runner
+    # passes one of the workflow's spanned opps as opportunity_id.
+    opportunity_id = _coerce_int(labs_context.get("opportunity_id") or request.GET.get("opportunity_id"))
 
     if not opportunity_id:
         return JsonResponse({"error": "opportunity_id required"}, status=400)
@@ -3448,7 +3515,13 @@ class PipelineDataStreamView(BaseSSEStreamView):
         # Django's View.dispatch() sets self.kwargs from URL path kwargs.
         definition_id = self.kwargs.get("definition_id")
         labs_context = getattr(request, "labs_context", {})
-        opportunity_id = labs_context.get("opportunity_id") or request.GET.get("opportunity_id")
+        # Program-owned workflows drive this stream by program_id (their runner
+        # carries no owning opportunity_id). Coerce a numeric opportunity_id and
+        # ignore the stringified `undefined`/`null` a program-scoped runner used
+        # to send — int("undefined") crashed the stream into a generic
+        # "internal error" before any pipeline ran. The spanned-opp fallback
+        # below (definition.opportunity_ids) then resolves scope correctly.
+        opportunity_id = _coerce_int(labs_context.get("opportunity_id") or request.GET.get("opportunity_id"))
 
         try:
             # Check for OAuth token

@@ -249,6 +249,83 @@ class TestAuthStatusCCHQProbe:
         assert body["commcare_hq"]["active"] is True
 
 
+class TestAuthStatusProgramScope:
+    """Program-owned workflows drive auth-status by ?program_id= (no owning
+    opportunity_id). There is no single CCHQ domain to probe at program scope,
+    so the endpoint reports CCHQ on token-alive alone and must NOT try to look
+    up an opportunity's domain. It must also tolerate the stringified
+    ``undefined`` older bundles sent for the absent opportunity_id — int()-ing
+    that string previously crashed the endpoint.
+    """
+
+    def test_program_scoped_reports_token_alive_without_domain_probe(self, dimagi_user, rf):
+        """?program_id= (member) -> CCHQ active on token-alive; no opp-domain lookup, no crash."""
+        session = {
+            "labs_oauth": {"access_token": "lt", "expires_at": 1e12},
+            "commcare_oauth": {"access_token": "ct", "expires_at": 1e12},
+            "ocs_oauth": {"access_token": "ot", "expires_at": 1e12},
+        }
+        request = _make_request(rf, dimagi_user, "?program_id=176", session)
+
+        with patch(
+            "connect_labs.workflow.views.get_org_data",
+            return_value={"programs": [{"id": 176, "name": "Prog"}]},
+        ), patch(
+            "connect_labs.labs.analysis.data_access.fetch_opportunity_metadata",
+        ) as mock_meta, patch(
+            "connect_labs.labs.integrations.commcare.api_client.CommCareDataAccess"
+        ) as MockCDA:
+            mock_client = MagicMock()
+            mock_client.verify_token_alive.return_value = True
+            MockCDA.return_value = mock_client
+
+            from connect_labs.workflow.views import workflow_auth_status_api
+
+            response = workflow_auth_status_api(request)
+
+            # No opportunity in scope -> never look up an opp's cc_domain,
+            # never ping the per-domain form endpoint.
+            mock_meta.assert_not_called()
+            mock_client.verify_hq_access.assert_not_called()
+
+        import json
+
+        body = json.loads(response.content)
+        assert body["commcare_hq"]["active"] is True
+        assert "reason" not in body["commcare_hq"]
+
+    def test_stringified_undefined_opportunity_id_does_not_crash(self, dimagi_user, rf):
+        """?opportunity_id=undefined is treated as absent (no int() crash, no domain probe)."""
+        session = {
+            "labs_oauth": {"access_token": "lt", "expires_at": 1e12},
+            "commcare_oauth": {"access_token": "ct", "expires_at": 1e12},
+            "ocs_oauth": {"access_token": "ot", "expires_at": 1e12},
+        }
+        request = _make_request(rf, dimagi_user, "?opportunity_id=undefined", session)
+
+        with patch(
+            "connect_labs.labs.analysis.data_access.fetch_opportunity_metadata",
+        ) as mock_meta, patch(
+            "connect_labs.labs.integrations.commcare.api_client.CommCareDataAccess"
+        ) as MockCDA:
+            mock_client = MagicMock()
+            mock_client.verify_token_alive.return_value = True
+            MockCDA.return_value = mock_client
+
+            from connect_labs.workflow.views import workflow_auth_status_api
+
+            response = workflow_auth_status_api(request)
+
+            # "undefined" must not reach fetch_opportunity_metadata(int(...)).
+            mock_meta.assert_not_called()
+            mock_client.verify_hq_access.assert_not_called()
+
+        import json
+
+        body = json.loads(response.content)
+        assert body["commcare_hq"]["active"] is True
+
+
 class TestRefreshHelpers:
     """Direct unit tests for the refresh helpers."""
 
