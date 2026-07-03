@@ -77,6 +77,30 @@
         </div>
         {% endfor %}
 
+        {% if unlinked_criteria %}
+        <!-- Criteria not tied to a specific question — still part of the rubric -->
+        <div class="bg-white rounded-xl shadow-sm p-6">
+            <h2 class="text-lg font-semibold text-brand-deep-purple mb-4 pb-3 border-b border-gray-100">
+                Overall Criteria
+            </h2>
+            <div class="space-y-2">
+                {% for criterion in unlinked_criteria %}
+                <div class="flex items-center gap-4 p-3 bg-indigo-50/50 rounded-lg">
+                    <div class="flex-1">
+                        <p class="text-xs font-semibold text-brand-indigo">{{ criterion.name }} ({{ criterion.weight }}%)</p>
+                        {% if criterion.scoring_guide %}
+                        <p class="text-xs text-gray-500 mt-0.5">{{ criterion.scoring_guide }}</p>
+                        {% endif %}
+                    </div>
+                    <div class="w-20">
+                        {{ form|get_criteria_field:criterion.id }}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
         <!-- Overall Score & Recommendation -->
         <div class="bg-white rounded-xl shadow-sm p-6">
             <h2 class="text-lg font-semibold text-brand-deep-purple mb-4 pb-3 border-b border-gray-100">
