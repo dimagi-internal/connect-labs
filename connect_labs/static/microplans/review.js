@@ -2977,11 +2977,14 @@
   // area is below the threshold, or it's a lone building too far from any cluster.
   const FILTER_REASON = 'auto-filter';
   function filterParams() {
+    const iso = parseFloat($('flt-isolation-dist')?.value);
     return {
       minRoof: parseFloat($('flt-min-roof')?.value || '0') || 0,
       maxRoof: parseFloat($('flt-max-roof')?.value || '0') || 0,
       isoOn: !!$('flt-exclude-isolated')?.checked,
-      isoDist: parseFloat($('flt-isolation-dist')?.value || '150') || 150,
+      // No default distance: a blank field means "don't exclude yet", so ticking
+      // the box alone keeps the count at its maximum until you set a distance.
+      isoDist: isNaN(iso) ? null : iso,
     };
   }
   function matchesExclusion(w, p) {
@@ -2990,7 +2993,15 @@
     const dist = parseFloat(props.dist_to_multi_m);
     if (p.minRoof > 0 && !isNaN(roof) && roof < p.minRoof) return true;
     if (p.maxRoof > 0 && !isNaN(roof) && roof > p.maxRoof) return true;
-    if (p.isoOn && w.building_count === 1 && !isNaN(dist) && dist > p.isoDist)
+    // Isolation only excludes once a distance is actually entered (isoDist != null).
+    if (
+      p.isoOn &&
+      p.isoDist != null &&
+      p.isoDist > 0 &&
+      w.building_count === 1 &&
+      !isNaN(dist) &&
+      dist > p.isoDist
+    )
       return true;
     return false;
   }
