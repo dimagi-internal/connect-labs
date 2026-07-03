@@ -723,10 +723,42 @@
   // hulls + per-arm stats. Replaying them makes a reopened plan look exactly like
   // the just-created one. Deferred to map-ready (the plan fetch may resolve first).
   let pendingSampling = null;
+  // Persistent outline overlay of the plan's input areas (the picked/drawn ward
+  // boundaries), so a CREATED plan keeps showing its boundaries on top of the work
+  // areas. Outline-only (fillOpacity 0) so the work-area fills stay visible. Applies
+  // to coverage AND sampling; sampling additionally re-adds them to the draw surface.
+  function drawPlanBoundaries(d) {
+    if (!map || !mapReady || !(window.ConnectMap && window.ConnectMap.boundary))
+      return;
+    const inputs = Array.isArray(d && d.input_areas) ? d.input_areas : [];
+    const feats = inputs
+      .filter((a) => a && a.geometry)
+      .map((a, i) => ({
+        type: 'Feature',
+        geometry: a.geometry,
+        properties: { ward: a.ward || a.name || `Area ${i + 1}` },
+      }));
+    if (window.ConnectMap.remove)
+      window.ConnectMap.remove(map, ['plan-boundaries']);
+    if (!feats.length) return;
+    window.ConnectMap.boundary(
+      map,
+      'plan-boundaries',
+      { type: 'FeatureCollection', features: feats },
+      {
+        mutedColor: '#7c3aed',
+        fillOpacity: 0,
+        lineWidth: 2.5,
+        label: false, // ward names already show in the planning table; keep the map clean
+      },
+    );
+  }
   function drawSamplingOverlay() {
     const d = pendingSampling;
     if (!d || !map || !mapReady || !draw) return;
     pendingSampling = null;
+    // Show the plan's boundary outlines for every mode (coverage included).
+    drawPlanBoundaries(d);
     if (d.mode !== 'sampling') return;
     // Re-add the picked ward boundaries to the draw surface so they're visible AND
     // collectArmAreas (Regenerate) can read them back.
