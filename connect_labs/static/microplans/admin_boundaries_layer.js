@@ -1647,6 +1647,16 @@
       enable() {
         layer.setEnabled(true);
       },
+      // Turn the full viewport boundary layer OFF (e.g. once a plan is created, so the
+      // map shows only the selected wards' outlines, not every ward in view).
+      disable() {
+        try {
+          layer.setEnabled(false);
+        } catch (_) {
+          /* style not ready — layer starts hidden anyway */
+        }
+      },
+      isOn: () => !!layer.on,
       teardown,
       selectedCount: () => selected.size,
     };

@@ -629,20 +629,24 @@
         onArmChange: (boundaryId, arm) => adminSetArm(boundaryId, arm),
         armEnabled: () => mpMode === 'sampling',
       });
-      // Boundaries is the default area mode on a fresh plan — turn the layer on
-      // so its lines render and clicks select straight away. Defer to style-load:
-      // enabling adds map layers, which THROWS (and would halt the rest of init,
-      // killing every rail button) if the style isn't ready yet.
-      if (adminBoundaries && !PLAN_ID) {
-        const enableBoundaries = () => {
+      // Boundaries layer: ON for a fresh plan (pick wards + click-select straight
+      // away); OFF once the plan has work areas, so the map shows ONLY the selected
+      // wards' outlines (the plan-boundaries overlay), not every ward in view — you
+      // can't edit boundaries post-creation anyway. Defer to style-load: toggling
+      // adds/removes map layers, which THROWS if the style isn't ready yet (and would
+      // halt the rest of init, killing every rail button).
+      if (adminBoundaries) {
+        const created = Array.isArray(WAS) && WAS.length > 0;
+        const applyBoundaryState = () => {
           try {
-            adminBoundaries.enable();
+            if (!PLAN_ID) adminBoundaries.enable();
+            else if (created) adminBoundaries.disable();
           } catch (e) {
             /* style not ready / layer race — non-fatal */
           }
         };
-        if (map.isStyleLoaded && map.isStyleLoaded()) enableBoundaries();
-        else map.once('load', enableBoundaries);
+        if (map.isStyleLoaded && map.isStyleLoaded()) applyBoundaryState();
+        else map.once('load', applyBoundaryState);
       }
       // The plan may have loaded its wards before this layer registered — now that
       // adminBoundaries exists, repopulate the rail (no-op if nothing pending).
