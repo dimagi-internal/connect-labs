@@ -34,7 +34,7 @@ Click any workflow to open its dashboard.
 
 Workflows in Labs are owned by either a **program** or a specific **opportunity**:
 
-- **Program-owned workflows** are scoped directly to the program — they have no owning opportunity at all. They appear in the program view only, cover the program as a whole — for example, the Program Audit Creator and Program Audit Report — and do not appear under any individual opportunity. All operations on these workflows (opening them, creating a run, viewing a run page) work entirely within the program context; no opportunity is needed.
+- **Program-owned workflows** are scoped directly to the program — they have no owning opportunity at all. They appear in the program view only, cover the program as a whole — for example, the Program Audit Creator and Program Audit Report — and do not appear under any individual opportunity. All operations on these workflows (opening them, creating a run, viewing a run page) work entirely within the program context; no opportunity is needed. When you open a program-owned workflow, it verifies your access at the program level and loads its pipeline data across all the opportunities the workflow spans — you do not need to select an individual opportunity first.
 - **Opportunity-owned workflows** appear under their specific opportunity only. They will not appear in the program-level workflow list.
 
 This means each workflow appears in exactly one place. If you cannot find a workflow you expect to see, check whether you are viewing the program level or the relevant opportunity level.
@@ -232,6 +232,4 @@ The **Program Audit Creator** is the program administrator's central tool for ma
 
 ### What it does
 
-When a program administrator runs the Program Audit Creator for a given week, it fans out to every opportunity in the program and creates that opportunity's audit workflow run in a single action. To trigger this, click **"Generate audit runs for all N opportunities"** (where N is the number of opportunities configured for your program). The creator's own run then **records what was generated**: which per-opportunity runs were created and how many audit sessions each one contains. This gives administrators a traceable record of each week's generation step.
-
-Because the Program Audit Creator is a program-owned workflow, **
+When a program administrator runs the Program Audit Creator for a given week, it fans out to every opportunity in the program and creates that opportunity's audit workflow run in a single action. To trigger this, click **"Generate audit runs for all N opportunities"** (where N is the number of opportunities configured for your program). The creator's own run then **records what was generated**: which per-
