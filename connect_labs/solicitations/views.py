@@ -787,8 +787,22 @@ class ResponseDetailView(LabsLoginRequiredMixin, TemplateView):
             solicitation = da.get_solicitation_by_id(response.solicitation_id)
             ctx["solicitation"] = solicitation
 
-            # Load reviews
+            # Load reviews. Attach readable per-criterion rows so the record
+            # shows the rubric's work, not just the collapsed overall score.
             reviews = da.get_reviews_for_response(pk)
+            criteria_by_id = {c.get("id"): c for c in (solicitation.evaluation_criteria if solicitation else [])}
+            for rev in reviews:
+                rows = []
+                for c_id, c_score in (rev.criteria_scores or {}).items():
+                    criterion = criteria_by_id.get(c_id) or {}
+                    rows.append(
+                        {
+                            "name": criterion.get("name", c_id),
+                            "weight": criterion.get("weight"),
+                            "score": c_score,
+                        }
+                    )
+                rev.criteria_score_rows = rows
             ctx["reviews"] = reviews
 
             # Build Q&A pairs

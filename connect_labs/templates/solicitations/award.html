@@ -53,6 +53,12 @@
                     <dd class="font-medium text-gray-900">{{ solicitation.title }}</dd>
                 </div>
                 {% endif %}
+                {% if summary.score %}
+                <div>
+                    <dt class="text-gray-500">Review score</dt>
+                    <dd class="font-medium text-gray-900">{{ summary.score }}/100</dd>
+                </div>
+                {% endif %}
                 {% if response.reward_budget %}
                 <div>
                     <dt class="text-gray-500">Award budget</dt>
