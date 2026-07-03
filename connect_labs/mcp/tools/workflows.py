@@ -391,21 +391,32 @@ def workflow_update_definition(
         "type": "object",
         "properties": {
             "workflow_id": {"type": "integer"},
-            "opportunity_id": {"type": "integer"},
+            "opportunity_id": {
+                "type": "integer",
+                "description": "Scope by owning opportunity. Provide this OR program_id.",
+            },
+            "program_id": {
+                "type": "integer",
+                "description": "Scope by owning program (program-owned workflow). Provide this OR opportunity_id.",
+            },
             "pipeline_id": {"type": "integer"},
             "alias": {"type": "string"},
         },
-        "required": ["workflow_id", "opportunity_id", "pipeline_id", "alias"],
+        "required": ["workflow_id", "pipeline_id", "alias"],
         "additionalProperties": False,
     },
     is_write=True,
 )
-def workflow_add_pipeline_source(user, workflow_id: int, opportunity_id: int, pipeline_id: int, alias: str):
+def workflow_add_pipeline_source(
+    user, workflow_id: int, pipeline_id: int, alias: str, opportunity_id: int = None, program_id: int = None
+):
     if not alias:
         raise MCPToolError("INVALID_SCHEMA", "alias is required and must be non-empty")
+    if (opportunity_id is None) == (program_id is None):
+        raise MCPToolError("INVALID_SCHEMA", "Provide exactly one of opportunity_id / program_id.")
 
     token = require_connect_token(user)
-    wda = WorkflowDataAccess(access_token=token, opportunity_id=opportunity_id)
+    wda = WorkflowDataAccess(access_token=token, opportunity_id=opportunity_id, program_id=program_id)
     try:
         updated = wda.add_pipeline_source(workflow_id, int(pipeline_id), alias)
         if updated is None:
@@ -442,8 +453,12 @@ def workflow_add_pipeline_source(user, workflow_id: int, opportunity_id: int, pi
                 "description": (
                     "The owning opportunity (scoping the Labs record), not one "
                     "of the opportunity_ids being set. Usually the primary opp "
-                    "the workflow was created under."
+                    "the workflow was created under. Provide this OR program_id."
                 ),
+            },
+            "program_id": {
+                "type": "integer",
+                "description": "Scope by owning program (program-owned workflow). Provide this OR opportunity_id.",
             },
             "opportunity_ids": {
                 "type": "array",
@@ -453,7 +468,6 @@ def workflow_add_pipeline_source(user, workflow_id: int, opportunity_id: int, pi
         },
         "required": [
             "workflow_id",
-            "opportunity_id",
             "opportunity_ids",
             "expected_version",
         ],
@@ -464,10 +478,14 @@ def workflow_add_pipeline_source(user, workflow_id: int, opportunity_id: int, pi
 def workflow_update_opportunity_ids(
     user,
     workflow_id: int,
-    opportunity_id: int,
     opportunity_ids: list[int],
     expected_version: int,
+    opportunity_id: int = None,
+    program_id: int = None,
 ):
+    if (opportunity_id is None) == (program_id is None):
+        raise MCPToolError("INVALID_SCHEMA", "Provide exactly one of opportunity_id / program_id.")
+
     # De-dupe while preserving order; reject non-int entries early.
     seen: set[int] = set()
     cleaned: list[int] = []
@@ -501,7 +519,7 @@ def workflow_update_opportunity_ids(
                 details={"invalid_opportunity_ids": sorted(invalid)},
             )
 
-    wda = WorkflowDataAccess(access_token=token, opportunity_id=opportunity_id)
+    wda = WorkflowDataAccess(access_token=token, opportunity_id=opportunity_id, program_id=program_id)
     try:
         current = wda.get_definition(workflow_id)
         if current is None:
@@ -879,11 +897,18 @@ def _validate_template_scope(scope: str, user) -> None:
         "type": "object",
         "properties": {
             "workflow_id": {"type": "integer"},
-            "opportunity_id": {"type": "integer"},
+            "opportunity_id": {
+                "type": "integer",
+                "description": "Scope by owning opportunity. Provide this OR program_id.",
+            },
+            "program_id": {
+                "type": "integer",
+                "description": "Scope by owning program (program-owned workflow). Provide this OR opportunity_id.",
+            },
             "is_template": {"type": "boolean"},
             "template_scope": {"type": "string"},
         },
-        "required": ["workflow_id", "opportunity_id", "is_template"],
+        "required": ["workflow_id", "is_template"],
         "additionalProperties": False,
     },
     is_write=True,
@@ -891,8 +916,9 @@ def _validate_template_scope(scope: str, user) -> None:
 def workflow_set_template_flag(
     user,
     workflow_id: int,
-    opportunity_id: int,
     is_template: bool,
+    opportunity_id: int = None,
+    program_id: int = None,
     template_scope: str = None,
 ):
     if is_template:
@@ -902,9 +928,11 @@ def workflow_set_template_flag(
                 "template_scope is required when is_template=true.",
             )
         _validate_template_scope(template_scope, user)
+    if (opportunity_id is None) == (program_id is None):
+        raise MCPToolError("INVALID_SCHEMA", "Provide exactly one of opportunity_id / program_id.")
 
     token = require_connect_token(user)
-    wda = WorkflowDataAccess(access_token=token, opportunity_id=opportunity_id)
+    wda = WorkflowDataAccess(access_token=token, opportunity_id=opportunity_id, program_id=program_id)
     try:
         current = wda.get_definition(workflow_id)
         if current is None:
@@ -944,14 +972,26 @@ def workflow_set_template_flag(
         "type": "object",
         "properties": {
             "source_workflow_id": {"type": "integer"},
-            "source_opportunity_id": {"type": "integer"},
-            "target_opportunity_id": {"type": "integer"},
+            "source_opportunity_id": {
+                "type": "integer",
+                "description": "Source's owning opportunity. Provide this OR source_program_id.",
+            },
+            "source_program_id": {
+                "type": "integer",
+                "description": "Source's owning program. Provide this OR source_opportunity_id.",
+            },
+            "target_opportunity_id": {
+                "type": "integer",
+                "description": "New workflow's owning opportunity. Provide this OR target_program_id.",
+            },
+            "target_program_id": {
+                "type": "integer",
+                "description": "New workflow's owning program. Provide this OR target_opportunity_id.",
+            },
             "new_name": {"type": "string"},
         },
         "required": [
             "source_workflow_id",
-            "source_opportunity_id",
-            "target_opportunity_id",
         ],
         "additionalProperties": False,
     },
@@ -960,13 +1000,22 @@ def workflow_set_template_flag(
 def workflow_clone(
     user,
     source_workflow_id: int,
-    source_opportunity_id: int,
-    target_opportunity_id: int,
+    source_opportunity_id: int = None,
+    source_program_id: int = None,
+    target_opportunity_id: int = None,
+    target_program_id: int = None,
     new_name: str = None,
 ):
+    if (source_opportunity_id is None) == (source_program_id is None):
+        raise MCPToolError("INVALID_SCHEMA", "Provide exactly one of source_opportunity_id / source_program_id.")
+    if (target_opportunity_id is None) == (target_program_id is None):
+        raise MCPToolError("INVALID_SCHEMA", "Provide exactly one of target_opportunity_id / target_program_id.")
+
     token = require_connect_token(user)
 
-    src_wda = WorkflowDataAccess(access_token=token, opportunity_id=source_opportunity_id)
+    src_wda = WorkflowDataAccess(
+        access_token=token, opportunity_id=source_opportunity_id, program_id=source_program_id
+    )
     try:
         source_def = src_wda.get_definition(source_workflow_id)
         if source_def is None:
@@ -983,7 +1032,9 @@ def workflow_clone(
     new_data["version"] = 1
     cloned_name = new_name or f"{source_def.name} (copy)"
 
-    dst_wda = WorkflowDataAccess(access_token=token, opportunity_id=target_opportunity_id)
+    dst_wda = WorkflowDataAccess(
+        access_token=token, opportunity_id=target_opportunity_id, program_id=target_program_id
+    )
     try:
         # create_definition(name, description, **kwargs) — pass statuses, config,
         # pipeline_sources, and opportunity_ids as explicit kwargs so they override
@@ -1032,11 +1083,18 @@ def workflow_clone(
         "type": "object",
         "properties": {
             "workflow_id": {"type": "integer"},
-            "opportunity_id": {"type": "integer"},
+            "opportunity_id": {
+                "type": "integer",
+                "description": "Scope by owning opportunity. Provide this OR program_id.",
+            },
+            "program_id": {
+                "type": "integer",
+                "description": "Scope by owning program (program-owned workflow). Provide this OR opportunity_id.",
+            },
             "component_code": {"type": "string"},
             "expected_version": {"type": "integer"},
         },
-        "required": ["workflow_id", "opportunity_id", "component_code", "expected_version"],
+        "required": ["workflow_id", "component_code", "expected_version"],
         "additionalProperties": False,
     },
     is_write=True,
@@ -1044,14 +1102,17 @@ def workflow_clone(
 def workflow_update_render_code(
     user,
     workflow_id: int,
-    opportunity_id: int,
     component_code: str,
     expected_version: int,
+    opportunity_id: int = None,
+    program_id: int = None,
 ):
     _validate_render_code(component_code)
+    if (opportunity_id is None) == (program_id is None):
+        raise MCPToolError("INVALID_SCHEMA", "Provide exactly one of opportunity_id / program_id.")
 
     token = require_connect_token(user)
-    wda = WorkflowDataAccess(access_token=token, opportunity_id=opportunity_id)
+    wda = WorkflowDataAccess(access_token=token, opportunity_id=opportunity_id, program_id=program_id)
     try:
         current = wda.get_render_code(workflow_id)
         if current is None:
@@ -1098,7 +1159,14 @@ def workflow_update_render_code(
         "type": "object",
         "properties": {
             "workflow_id": {"type": "integer"},
-            "opportunity_id": {"type": "integer"},
+            "opportunity_id": {
+                "type": "integer",
+                "description": "Scope by owning opportunity. Provide this OR program_id.",
+            },
+            "program_id": {
+                "type": "integer",
+                "description": "Scope by owning program (program-owned workflow). Provide this OR opportunity_id.",
+            },
             "search": {
                 "type": "string",
                 "description": "Exact substring to find. Must match once.",
@@ -1109,7 +1177,7 @@ def workflow_update_render_code(
             },
             "expected_version": {"type": "integer"},
         },
-        "required": ["workflow_id", "opportunity_id", "search", "replace", "expected_version"],
+        "required": ["workflow_id", "search", "replace", "expected_version"],
         "additionalProperties": False,
     },
     is_write=True,
@@ -1117,16 +1185,19 @@ def workflow_update_render_code(
 def workflow_patch_render_code(
     user,
     workflow_id: int,
-    opportunity_id: int,
     search: str,
     replace: str,
     expected_version: int,
+    opportunity_id: int = None,
+    program_id: int = None,
 ):
     if not search:
         raise MCPToolError("INVALID_JSX", "search must not be empty")
+    if (opportunity_id is None) == (program_id is None):
+        raise MCPToolError("INVALID_SCHEMA", "Provide exactly one of opportunity_id / program_id.")
 
     token = require_connect_token(user)
-    wda = WorkflowDataAccess(access_token=token, opportunity_id=opportunity_id)
+    wda = WorkflowDataAccess(access_token=token, opportunity_id=opportunity_id, program_id=program_id)
     try:
         current = wda.get_render_code(workflow_id)
         if current is None:
@@ -1189,20 +1260,31 @@ def workflow_patch_render_code(
         "type": "object",
         "properties": {
             "workflow_id": {"type": "integer"},
-            "opportunity_id": {"type": "integer"},
+            "opportunity_id": {
+                "type": "integer",
+                "description": "Scope by owning opportunity. Provide this OR program_id.",
+            },
+            "program_id": {
+                "type": "integer",
+                "description": "Scope by owning program (program-owned workflow). Provide this OR opportunity_id.",
+            },
             "delete_linked": {
                 "type": "boolean",
                 "description": "If true, also delete runs and linked audit sessions. Defaults to false.",
             },
         },
-        "required": ["workflow_id", "opportunity_id"],
+        "required": ["workflow_id"],
         "additionalProperties": False,
     },
     is_write=True,
 )
-def workflow_delete(user, workflow_id: int, opportunity_id: int, delete_linked: bool = False):
+def workflow_delete(
+    user, workflow_id: int, opportunity_id: int = None, program_id: int = None, delete_linked: bool = False
+):
+    if (opportunity_id is None) == (program_id is None):
+        raise MCPToolError("INVALID_SCHEMA", "Provide exactly one of opportunity_id / program_id.")
     token = require_connect_token(user)
-    wda = WorkflowDataAccess(access_token=token, opportunity_id=opportunity_id)
+    wda = WorkflowDataAccess(access_token=token, opportunity_id=opportunity_id, program_id=program_id)
     try:
         existing = wda.get_definition(workflow_id)
         if existing is None:
