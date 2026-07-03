@@ -387,8 +387,8 @@
       <label class="flex items-center gap-1.5 mt-1 text-[11px] text-gray-700">
         <input id="flt-exclude-isolated" type="checkbox"> Drop lone buildings far from any cluster
       </label>
-      <label class="block mt-0.5 text-[11px]"><span class="text-gray-500">Farther than (m) from a work area with 2+ buildings</span>
-        <input id="flt-isolation-dist" type="number" value="150" min="0" step="25" class="base-input mt-0.5 text-xs"></label>
+      <label class="block mt-0.5 text-[11px]"><span class="text-gray-500">Farther than (m) from a work area with 2+ buildings — blank excludes nothing</span>
+        <input id="flt-isolation-dist" type="number" min="0" step="25" placeholder="e.g. 150" class="base-input mt-0.5 text-xs"></label>
       <p class="text-[10px] text-gray-500 mt-1" id="filter-preview"></p>
       <button type="button" id="btn-apply-filters" class="button button-sm primary-dark w-full mt-1">Apply exclusions</button>
       <p class="text-[10px] text-gray-500 mt-0.5" id="filter-status"></p>
