@@ -2454,7 +2454,21 @@
       out.push(Object.assign({}, u, { _del: { kind: 'upload', idx } })),
     );
     out.forEach((a, i) => {
-      a.name = a.ward || `Area ${i + 1}`; // frame resolves ward = ward || name
+      a.name = a.ward || `Area ${i + 1}`; // display name (frame resolves ward||name)
+      // Stable, unique per-source-area id — the KEY for attribution/targets/pops so
+      // same-named areas are never conflated. A MultiPolygon ward's features all
+      // share its boundary id → one area. Drawn/uploaded/pin get their own ids.
+      const d = a._del || {};
+      a.area_id =
+        d.kind === 'boundary'
+          ? 'bnd:' + d.id
+          : d.kind === 'draw'
+          ? 'draw:' + d.id
+          : d.kind === 'circle'
+          ? 'circle:' + d.idx
+          : d.kind === 'upload'
+          ? 'upload:' + d.idx
+          : 'area_' + (i + 1);
     });
     return out;
   }
@@ -2465,40 +2479,48 @@
   function planExists() {
     return !!PLAN_ID && Array.isArray(WAS) && WAS.length > 0;
   }
-  // Unified per-ward rows for the planning table. Each row:
-  //   {key, lga, state, pops, buildings|null, nWAs|null, memberIdx?}
+  // Unified per-source-area rows for the planning table, keyed on the unique
+  // area_id (never the ward name), so same-named areas — two "Sabon Gari" wards, or
+  // a ward and an LGA that share a name — are always distinct rows. Each row:
+  //   {area_id, ward, lga, state, pops, buildings|null, nWAs|null, memberIdx?}
   function planningRows() {
     if (planExists()) {
-      // Post-creation: one row per distinct ward in the plan (non-excluded cells).
-      return planWards().map((w) => {
-        const list = (WAS || []).filter(
-          (x) =>
-            x.status !== 'EXCLUDED' &&
-            ((x.properties && x.properties.ward) || '(area)').trim() === w.ward,
-        );
-        return {
-          key: w.ward,
-          ward: w.ward,
-          lga: w.lga || '',
-          state: w.state || '',
-          pops: AREA_POPS[w.ward] || {},
-          buildings: list.reduce((s, x) => s + (x.building_count || 0), 0),
-          nWAs: list.length,
-        };
+      // Post-creation: group the plan's (non-excluded) work areas by their area_id.
+      const byId = new Map();
+      const rows = [];
+      (WAS || []).forEach((x) => {
+        if (x.status === 'EXCLUDED') return;
+        const p = x.properties || {};
+        const aid = String(p.area_id || p.ward || '(area)');
+        let r = byId.get(aid);
+        if (!r) {
+          r = {
+            area_id: aid,
+            ward: (p.ward || '(area)').trim() || '(area)',
+            lga: p.lga || '',
+            state: p.state || '',
+            pops: AREA_POPS[aid] || {},
+            buildings: 0,
+            nWAs: 0,
+          };
+          byId.set(aid, r);
+          rows.push(r);
+        }
+        r.buildings += x.building_count || 0;
+        r.nWAs += 1;
       });
+      return rows;
     }
-    // Pre-creation: group picked boundaries by ward + LGA + state, so a MultiPolygon
-    // ward folds into ONE row while two same-name wards in different LGAs stay
-    // distinct (grouping by name alone was hiding the second).
+    // Pre-creation: group picked boundaries by area_id (a MultiPolygon ward's
+    // features share it → one row; distinct areas stay distinct even if same-named).
     const areas = setupAreas();
     const byKey = new Map();
     const groups = [];
     areas.forEach((a, i) => {
-      const key = `${a.name}|${a.lga || ''}|${a.state || ''}`;
-      let g = byKey.get(key);
+      let g = byKey.get(a.area_id);
       if (!g) {
         g = {
-          key,
+          area_id: a.area_id,
           ward: a.name,
           lga: a.lga || '',
           state: a.state || '',
@@ -2506,7 +2528,7 @@
           pops: a.populations || {},
           memberIdx: [],
         };
-        byKey.set(key, g);
+        byKey.set(a.area_id, g);
         groups.push(g);
       }
       g.memberIdx.push(i);
@@ -2622,22 +2644,22 @@
         const nWAs = r.nWAs;
         // Avg U5 per work area — only meaningful once the plan has work areas.
         const avg = u5 != null && nWAs ? u5 / nWAs : null;
-        const ward = r.ward; // backend attributes + keys targets by ward name
-        const rowKey = r.key; // composite (ward|lga|state) — unique row / delete id
-        // U5-for-calc: manual edit wins; else the saved per-ward target (post-create)
+        const ward = r.ward; // display only
+        const aid = r.area_id; // unique key for target/pops/delete — never the name
+        // U5-for-calc: manual edit wins; else the saved per-area target (post-create)
         // or the source's U5 (pre-create). Feeds create, or Save U5 targets.
         const base =
-          created && AREA_TARGETS[ward] != null
-            ? Math.round(AREA_TARGETS[ward])
+          created && AREA_TARGETS[aid] != null
+            ? Math.round(AREA_TARGETS[aid])
             : u5 != null
             ? Math.round(u5)
             : '';
-        const val = ward in manualTargets ? manualTargets[ward] : base;
+        const val = aid in manualTargets ? manualTargets[aid] : base;
         const delCell = created
           ? '<td class="py-1"></td>'
           : `<td class="py-1 text-right"><button type="button" class="setup-del text-gray-400 hover:text-red-600 px-1"
                 data-key="${esc(
-                  rowKey,
+                  aid,
                 )}" title="Remove this area" aria-label="Remove ${esc(
                   ward,
                 )}">✕</button></td>`;
@@ -2658,7 +2680,7 @@
           }</td>
           <td class="pr-2 py-1 text-right"><input type="number" min="0" step="1"
                 class="setup-target base-input text-xs text-right" style="width:5.5rem"
-                data-key="${esc(ward)}" value="${val}"></td>
+                data-key="${esc(aid)}" value="${val}"></td>
           <td class="pr-2 py-1 text-right text-gray-600">${
             nWAs == null ? '—' : nWAs.toLocaleString()
           }</td>
@@ -2676,10 +2698,8 @@
   // highlight + selection state clear; plain shapes/circles/uploads are removed
   // from their own store. refreshAreaStats() then rebuilds the table.
   function deleteSetupRow(key) {
-    // key is the composite ward|lga|state row id from planningRows().
-    const members = setupAreas().filter(
-      (a) => `${a.name}|${a.lga || ''}|${a.state || ''}` === key,
-    );
+    // key is the row's unique area_id from planningRows().
+    const members = setupAreas().filter((a) => a.area_id === key);
     if (!members.length) return;
     const boundaryIds = new Set();
     const drawIds = [];

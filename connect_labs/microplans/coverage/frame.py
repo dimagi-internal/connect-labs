@@ -85,11 +85,18 @@ class CoverageFrameResult:
 
 
 def _area_meta(a: dict, idx: int) -> dict:
-    """Per-area identity for tagging work areas. Boundary picks carry ward/lga/state;
-    drawn/custom shapes fall back to a numeric ward name (area_1, area_2, …)."""
+    """Per-area identity for tagging work areas.
+
+    ``area_id`` is a STABLE, unique-per-source-area key (the caller supplies it:
+    the boundary id for a picked ward, a synthesised id for a drawn/uploaded/pin
+    shape). It — not the ward NAME — keys per-area attribution, targets, and
+    populations, so two areas that share a name (two "Sabon Gari" wards in
+    different LGAs, or a ward and an LGA with the same name) are never conflated.
+    ``ward``/``lga``/``state`` are display metadata only. Falls back to a numeric
+    id/name for legacy callers that don't send ``area_id``."""
     ward = str(a.get("ward") or a.get("name") or "").strip() or f"area_{idx + 1}"
     return {
-        "area_id": idx,
+        "area_id": str(a.get("area_id") or f"area_{idx + 1}"),
         "ward": ward,
         "lga": str(a.get("lga") or "").strip(),
         "state": str(a.get("state") or "").strip(),

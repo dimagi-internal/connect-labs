@@ -337,6 +337,14 @@ def _wa_ward(w: dict) -> str:
     return ((w.get("properties") or {}).get("ward") or "(area)").strip() or "(area)"
 
 
+def _wa_area_id(w: dict) -> str:
+    """Stable per-source-area key for attribution. The unique ``area_id`` (boundary
+    id / synthesised shape id), NOT the ward name — so same-named areas never merge.
+    Falls back to the ward name for legacy work areas without an ``area_id``."""
+    p = w.get("properties") or {}
+    return str(p.get("area_id") or p.get("ward") or "(area)")
+
+
 def recompute_area_visits(work_areas: list[dict], area_targets: dict) -> list[dict]:
     """Set each NON-EXCLUDED work area's expected_visit_count + target_population from
     its area's target, spread over that area's RETAINED buildings (#9):
@@ -345,19 +353,20 @@ def recompute_area_visits(work_areas: list[dict], area_targets: dict) -> list[di
         EVC(wa)      = ceil(wa_buildings * rate),  min 1
         target_pop   = round(wa_buildings * rate)
 
-    Per-area (not pooled) and retained-aware, so it re-spreads correctly after
-    exclusions. Areas without a target are left untouched. Mutates in place."""
+    Keyed on the unique ``area_id`` (not the ward name) so two same-named areas are
+    spread independently. Per-area (not pooled) and retained-aware, so it re-spreads
+    correctly after exclusions. Areas without a target are left untouched. Mutates in place."""
     retained: dict[str, int] = {}
     for w in work_areas:
         if w.get("status") == STATUS_EXCLUDED:
             continue
-        retained[_wa_ward(w)] = retained.get(_wa_ward(w), 0) + int(w.get("building_count", 0))
+        retained[_wa_area_id(w)] = retained.get(_wa_area_id(w), 0) + int(w.get("building_count", 0))
     for w in work_areas:
         if w.get("status") == STATUS_EXCLUDED:
             continue
-        ward = _wa_ward(w)
-        target = area_targets.get(ward)
-        denom = retained.get(ward, 0)
+        aid = _wa_area_id(w)
+        target = area_targets.get(aid)
+        denom = retained.get(aid, 0)
         if not target or not denom:
             continue
         rate = float(target) / denom
@@ -383,16 +392,18 @@ def summarize(work_areas: list[dict]) -> dict:
             a["expected_visits"] += int(w.get("expected_visit_count", 0))
         return agg
 
-    # Per source ward/area (#10): grand totals plus a row per distinct ward, keyed on
-    # the work area's source ward (from per-area attribution; falls back to "(area)").
+    # Per source area (#10): grand totals plus a row per distinct source area, keyed on
+    # the unique ``area_id`` (NOT the ward name) so two same-named areas stay separate.
+    # ward/lga/state are carried for display.
     by_area: dict[str, dict] = {}
     for w in active:
         p = w.get("properties") or {}
-        ward = (p.get("ward") or "(area)").strip() or "(area)"
+        aid = _wa_area_id(w)
         a = by_area.setdefault(
-            ward,
+            aid,
             {
-                "ward": ward,
+                "area_id": aid,
+                "ward": (p.get("ward") or "(area)").strip() or "(area)",
                 "lga": p.get("lga", ""),
                 "state": p.get("state", ""),
                 "work_areas": 0,

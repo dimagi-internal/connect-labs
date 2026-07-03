@@ -115,13 +115,15 @@ class ProgramPlanDataAccess(BaseDataAccess):
             "mode": mode,
             "work_areas": work_areas,
             "input_areas": list(input_areas or []),
-            # Per-area populations by source ({ward: {worldpop_u5: …, …}}), captured
+            # Per-area populations by source ({area_id: {worldpop_u5: …, …}}), captured
             # from the picked boundaries so the review-page per-area visit table can
             # auto-fill expected-visit targets from a chosen population source (#15).
+            # Keyed on the unique area_id (not ward name) so same-named areas keep
+            # their own populations.
             "area_populations": {
-                str(a.get("ward")): a["populations"]
+                str(a.get("area_id")): a["populations"]
                 for a in (input_areas or [])
-                if a.get("ward") and isinstance(a.get("populations"), dict)
+                if a.get("area_id") and isinstance(a.get("populations"), dict)
             },
             "grouping": dict(grouping or {}),
             "status_log": [],
