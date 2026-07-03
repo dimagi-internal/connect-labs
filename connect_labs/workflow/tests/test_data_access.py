@@ -3,6 +3,7 @@
 All tests mock LabsRecordAPIClient to avoid real API calls.
 """
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -614,6 +615,109 @@ class TestGetPipelineDataMultiOpp:
             assert rows[0]["opportunity_id"] == 700
             per_opp = result["visits"]["metadata"]["per_opp"]
             assert per_opp["825"].get("error") == "schema invalid"
+
+
+class TestGetPipelineDataDoesNotLeakProgramScope:
+    """Pipeline records are opportunity-owned regardless of who owns the
+    workflow. A program-owned WorkflowDataAccess (self.program_id set) must
+    NOT forward that program_id into the per-pipeline PipelineDataAccess —
+    the production API AND-filters every scope param it's given, so an
+    opportunity-owned pipeline silently comes back "not found" once a
+    program_id is added alongside a perfectly correct opportunity_id. This
+    was the root cause of "no completed audit reports" on program-owned
+    workflow 5181 despite the underlying pipelines having real data."""
+
+    def _make_definition(self, opportunity_ids=None, pipeline_sources=None):
+        data = {
+            "name": "WF",
+            "description": "d",
+            "pipeline_sources": pipeline_sources or [{"pipeline_id": 101, "alias": "visits"}],
+            "opportunity_ids": opportunity_ids or [],
+        }
+        return _make_definition_record(definition_id=1, data=data)
+
+    def _program_owned_wda(self):
+        with patch("connect_labs.workflow.data_access.LabsRecordAPIClient") as MockAPI:
+            MockAPI.return_value = MagicMock()
+            with patch("connect_labs.workflow.data_access.settings") as mock_settings:
+                mock_settings.CONNECT_PRODUCTION_URL = "https://example.com"
+                from connect_labs.workflow.data_access import WorkflowDataAccess
+
+                return WorkflowDataAccess(program_id=176, access_token="fake")
+
+    def test_get_pipeline_data_scopes_by_opportunity_only(self):
+        wda = self._program_owned_wda()
+        definition = self._make_definition(opportunity_ids=[1973, 1976])
+        wda.get_definition = MagicMock(return_value=definition)
+
+        with patch("connect_labs.workflow.data_access.PipelineDataAccess") as MockPipelineAccess:
+            mock_instance = MagicMock()
+            MockPipelineAccess.return_value = mock_instance
+            mock_instance.execute_pipeline.return_value = {"rows": [], "metadata": {}}
+
+            wda.get_pipeline_data(definition_id=1, opportunity_id=1973)
+
+            _, kwargs = MockPipelineAccess.call_args
+            assert kwargs.get("opportunity_id") == 1973
+            assert kwargs.get("program_id") is None
+            assert kwargs.get("organization_id") is None
+
+    def test_get_cached_pipeline_data_scopes_by_opportunity_only(self):
+        wda = self._program_owned_wda()
+        definition = self._make_definition(
+            opportunity_ids=[1973, 1976],
+            pipeline_sources=[{"pipeline_id": 101, "alias": "visits"}],
+        )
+        wda.get_definition = MagicMock(return_value=definition)
+
+        with patch("connect_labs.workflow.data_access.PipelineDataAccess") as MockPipelineAccess:
+            mock_instance = MagicMock()
+            MockPipelineAccess.return_value = mock_instance
+            mock_instance.get_cached_pipeline_result.return_value = {"rows": [], "metadata": {}}
+
+            try:
+                wda.get_cached_pipeline_data(definition_id=1, opportunity_id=1973, aliases=["visits"])
+            except Exception:
+                # This test only cares about how PipelineDataAccess was scoped,
+                # not the full cache-read behavior (which needs a more elaborate
+                # mock of the cache-hit path).
+                pass
+
+            _, kwargs = MockPipelineAccess.call_args
+            assert kwargs.get("opportunity_id") == 1973
+            assert kwargs.get("program_id") is None
+            assert kwargs.get("organization_id") is None
+
+
+class TestBaseDataAccessScopePrecedence:
+    """BaseDataAccess.__init__ auto-populates scope from request.labs_context
+    ONLY when the caller supplied no explicit scope at all — an explicit
+    opportunity_id must never get a session's program_id/organization_id
+    blended in alongside it. See TestGetPipelineDataDoesNotLeakProgramScope
+    for why that combination breaks record lookups."""
+
+    def _wda(self, **kwargs):
+        with patch("connect_labs.workflow.data_access.LabsRecordAPIClient") as MockAPI:
+            MockAPI.return_value = MagicMock()
+            with patch("connect_labs.workflow.data_access.settings") as mock_settings:
+                mock_settings.CONNECT_PRODUCTION_URL = "https://example.com"
+                from connect_labs.workflow.data_access import WorkflowDataAccess
+
+                return WorkflowDataAccess(access_token="fake", **kwargs)
+
+    def test_explicit_opportunity_id_does_not_pick_up_session_program_id(self):
+        request = SimpleNamespace(labs_context={"program_id": 176})
+        wda = self._wda(request=request, opportunity_id=1973)
+
+        assert wda.opportunity_id == 1973
+        assert wda.program_id is None
+
+    def test_no_explicit_scope_falls_back_to_full_session_context(self):
+        request = SimpleNamespace(labs_context={"program_id": 176})
+        wda = self._wda(request=request)
+
+        assert wda.program_id == 176
+        assert wda.opportunity_id is None
 
 
 class TestGetCachedPipelineData:

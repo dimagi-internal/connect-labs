@@ -312,14 +312,21 @@ class BaseDataAccess:
         self.user = user
         self.request = request
 
-        # Use labs_context from middleware if available
-        if request and hasattr(request, "labs_context"):
+        # Use labs_context from middleware if available. All-or-nothing: only
+        # fall back to session context when the caller supplied NO explicit
+        # scope at all. If the caller explicitly picked one scope dimension
+        # (e.g. a specific pipeline's owning opportunity_id), don't blend in
+        # the session's OTHER-dimension scope (e.g. the page's program_id) —
+        # the production API AND-filters every scope param it's given, so an
+        # opportunity-owned record silently comes back "not found" once a
+        # program_id is added alongside a perfectly correct opportunity_id.
+        if request and hasattr(request, "labs_context") and not (opportunity_id or organization_id or program_id):
             labs_context = request.labs_context
-            if not opportunity_id and "opportunity_id" in labs_context:
+            if "opportunity_id" in labs_context:
                 self.opportunity_id = labs_context["opportunity_id"]
-            if not program_id and "program_id" in labs_context:
+            if "program_id" in labs_context:
                 self.program_id = labs_context["program_id"]
-            if not organization_id and "organization_id" in labs_context:
+            if "organization_id" in labs_context:
                 self.organization_id = labs_context["organization_id"]
 
         # Get OAuth token
@@ -1044,12 +1051,16 @@ class WorkflowDataAccess(BaseDataAccess):
         opp_ids = definition.opportunity_ids or [opportunity_id]
 
         results = {}
+        # Pipeline records are opportunity-owned regardless of who owns this
+        # workflow — don't forward self.organization_id/self.program_id here.
+        # The production API AND-filters every scope param it's given, so a
+        # perfectly correct opportunity_id alongside this workflow's program_id
+        # (e.g. a program-owned workflow) makes an opportunity-owned pipeline
+        # silently come back "not found".
         pipeline_access = PipelineDataAccess(
             request=self.request,
             access_token=self.access_token,
             opportunity_id=opportunity_id,
-            organization_id=self.organization_id,
-            program_id=self.program_id,
         )
 
         # Pre-resolve cross-pipeline JOIN config_hashes and topologically sort
@@ -1148,12 +1159,13 @@ class WorkflowDataAccess(BaseDataAccess):
 
         opp_ids = definition.opportunity_ids or [opportunity_id]
 
+        # See get_pipeline_data: pipeline records are opportunity-owned
+        # regardless of who owns this workflow — don't forward
+        # self.organization_id/self.program_id here.
         pipeline_access = PipelineDataAccess(
             request=self.request,
             access_token=self.access_token,
             opportunity_id=opportunity_id,
-            organization_id=self.organization_id,
-            program_id=self.program_id,
         )
 
         # Same JOIN-hash resolution as the execute path: cache keys are
