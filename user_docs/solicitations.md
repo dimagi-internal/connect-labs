@@ -86,6 +86,8 @@ Once the deadline passes, go to the solicitation and click **Responses**.
 
 The page header shows the solicitation's current state. Once a winner has been awarded, the header updates to show **Awarded** so you can see at a glance that the process is complete.
 
+The responses table pins the **Organization** column to the left edge, so firm names remain visible even when you scroll the table horizontally to see all columns.
+
 For each response:
 
 1. Click the response to open it
@@ -96,6 +98,8 @@ For each response:
 6. Set your recommendation: Approve / Reject / Needs Revision
 
 Multiple reviewers can score independently — average scores are calculated automatically.
+
+Once a review is saved, the full criterion-by-criterion breakdown is shown on the saved review: each criterion's name, its weight, and the score given out of 10. This replaces the previous single overall number, giving you and other reviewers a clear record of how each dimension was scored.
 
 The responses list shows a **Status** column and a **Recommendation** column for each submission. For an awarded response, **Awarded** appears only in the Status column — the Recommendation column shows your reviewer recommendation as normal, without repeating "Awarded". Where a response has not yet been scored, the Score cell shows a neutral dash (—); the Recommendation column shows the **Pending review** indicator for that submission.
 
@@ -109,7 +113,7 @@ When the team agrees on a winner:
 
 1. Open the winning response
 2. Click **Award Response**
-3. Confirm the award amount — this is displayed as a formatted currency value (for example, $25,000.00)
+3. Confirm the award amount — this is displayed as a formatted currency value (for example, $25,000.00). The confirmation screen also shows the winning review's score so you can verify you are awarding the intended submission
 4. Optionally link the award to a fund to track disbursements over time
 
 !!! info "Coverage area assignments after award"
@@ -130,7 +134,7 @@ Solicitations created for finished study programs clearly state their purpose �
 1. Open a solicitation and read the full description and scope of work
 2. Before filling in your answers, review the **Evaluation Criteria** panel shown above the application questions. This panel lists each criterion the program team will use to score responses, including the criterion name, its weight in the overall score, and any scoring guidance provided. Use this to understand what reviewers are looking for before you write your answers
 3. Click **Submit Response**
-4. Answer each question in the response template — where present, read the italicised framing above each question to understand what the program team is looking for. Each answer box is sized to show a typical response in full as you type, so you can review your wording without scrolling inside the box
+4. Answer each question in the response template — where present, read the italicised framing above each question to understand what the program team is looking for. Each answer box sizes to fit your content as you type, so your full response is always visible without scrolling inside the box
 5. If the solicitation includes coverage areas, select the areas you can cover by clicking the ward boundaries directly on the map, or by checking the boxes in the checklist alongside it — both controls are kept in sync, so selecting an area in one automatically updates the other. Selected areas are highlighted on the map so you can clearly see which plans you have chosen. You must select at least one plan to submit
 6. If you use the **AI Application Coach** for feedback on your draft answers, the coach's suggestions are presented with clear headings so you can scan the structured advice at a glance
 7. Review your answers, then click **Submit**
@@ -213,7 +217,7 @@ Both AI features were temporarily returning errors for all users on Labs. This h
 This has been fixed. The **Actions** column is now pinned to the right edge of the responses table so the Award control is always visible, regardless of how wide the table is or what screen size you are using. The Score cell is also no longer clipped by the pinned column.
 
 **The answer boxes on the response form were too small and cut off my text — is that a known issue?**
-This has been fixed. The answer boxes are now taller, so a typical response is fully visible as you type without text being clipped at the bottom edge.
+This has been fixed. Answer boxes and notes fields now size to fit their content automatically, so your text is always fully visible as you type without being clipped.
 
 **The solicitation title created from a plan group was repeating the place name twice — is that a known issue?**
 This has been fixed. The pre-filled title no longer duplicates the place name when the group name and region name are the same.
@@ -222,10 +226,3 @@ This has been fixed. The pre-filled title no longer duplicates the place name wh
 This has been fixed. The question count now pluralizes correctly — "1 question" for a single question and the appropriate plural for any other number.
 
 **The AI Application Coach feedback was hard to read — is that a known issue?**
-This has been fixed. The coach's feedback now uses proper heading hierarchy, so structured advice is clearly organised and easy to scan.
-
-**What does the Score cell show for a response that hasn't been reviewed yet?**
-An unscored response shows a neutral dash (—) in the Score cell. The Recommendation column shows the **Pending review** indicator for that submission. Once reviewers have scored the response, the Score cell updates to show the calculated average.
-
-**Can applicants see how their response will be scored?**
-Yes
