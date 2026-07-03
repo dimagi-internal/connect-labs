@@ -704,3 +704,74 @@ class TestWorkflowRunOpportunityRecovery:
         assert "1251" in err and "access" in err.lower()
         assert "export/labs_record" not in err  # internal URL not leaked
         assert "404" not in err
+
+
+class TestPipelineDataProgramOwnedFallback:
+    """Program-owned multi-opp workflows have no single owning opportunity in
+    the request context (no `opportunity_id` in labs_context or the URL).
+    Both pipeline-data endpoints must fall back to the definition's own
+    `opportunity_ids` list instead of bailing out — see the "no audit reports
+    found" bug where a program-owned workflow silently never loaded data."""
+
+    def test_stream_data_does_not_bail_when_only_program_id_present(self, dimagi_user, rf: RequestFactory):
+        import json
+
+        from connect_labs.workflow.views import PipelineDataStreamView
+
+        request = rf.get("/labs/workflow/api/5181/pipeline-data/stream/")
+        request.user = dimagi_user
+        request.labs_context = {"program_id": 176}
+        request.session = {"labs_oauth": {"access_token": "t"}}
+
+        mock_definition = MagicMock(pipeline_sources=[], opportunity_ids=[1973, 1976, 1978, 1982])
+        with patch("connect_labs.workflow.views.WorkflowDataAccess") as MockWDA:
+            MockWDA.return_value.get_definition.return_value = mock_definition
+
+            view = PipelineDataStreamView()
+            view.kwargs = {"definition_id": 5181}
+            events = [json.loads(chunk[len("data: ") :]) for chunk in view.stream_data(request)]
+
+        assert not any(e.get("error") == "No opportunity selected" for e in events)
+        assert any(e.get("message") == "No pipelines" for e in events)
+
+    def test_get_pipeline_data_api_falls_back_to_definition_opportunity_ids(self, dimagi_user, rf: RequestFactory):
+        import json
+
+        from connect_labs.workflow.views import get_pipeline_data_api
+
+        request = rf.get("/labs/workflow/api/5181/pipeline-data/")
+        request.user = dimagi_user
+        request.labs_context = {"program_id": 176}
+        request.session = {"labs_oauth": {"access_token": "t"}}
+
+        mock_definition = MagicMock(opportunity_ids=[1973, 1976, 1978, 1982])
+        with patch("connect_labs.workflow.views.WorkflowDataAccess") as MockWDA:
+            mock_wda = MagicMock()
+            MockWDA.return_value = mock_wda
+            mock_wda.get_definition.return_value = mock_definition
+            mock_wda.get_pipeline_data.return_value = {"audit_reports": {"rows": [], "metadata": {}}}
+
+            response = get_pipeline_data_api(request, definition_id=5181)
+
+        assert response.status_code == 200
+        assert json.loads(response.content) == {"audit_reports": {"rows": [], "metadata": {}}}
+        # Fell back to the first id in the definition's opportunity_ids, not a 400.
+        mock_wda.get_pipeline_data.assert_called_once_with(5181, 1973)
+
+    def test_get_pipeline_data_api_still_400s_with_no_context_at_all(self, dimagi_user, rf: RequestFactory):
+        """Single-opp workflow with genuinely no context anywhere still 400s
+        cleanly instead of crashing on int(None)."""
+        from connect_labs.workflow.views import get_pipeline_data_api
+
+        request = rf.get("/labs/workflow/api/42/pipeline-data/")
+        request.user = dimagi_user
+        request.labs_context = {}
+        request.session = {"labs_oauth": {"access_token": "t"}}
+
+        mock_definition = MagicMock(opportunity_ids=[])
+        with patch("connect_labs.workflow.views.WorkflowDataAccess") as MockWDA:
+            MockWDA.return_value.get_definition.return_value = mock_definition
+
+            response = get_pipeline_data_api(request, definition_id=42)
+
+        assert response.status_code == 400

@@ -2236,13 +2236,22 @@ def get_pipeline_data_api(request, definition_id):
     labs_context = getattr(request, "labs_context", {})
     opportunity_id = labs_context.get("opportunity_id") or request.GET.get("opportunity_id")
 
-    if not opportunity_id:
-        return JsonResponse({"error": "opportunity_id required"}, status=400)
-
     try:
         data_access = WorkflowDataAccess(request=request)
-        pipeline_data = data_access.get_pipeline_data(definition_id, int(opportunity_id))
-        data_access.close()
+        try:
+            if not opportunity_id:
+                # Program-owned workflows have no single owning opportunity in
+                # the request context — fall back to the first opp in the
+                # definition's own multi-opp list, same as PipelineDataStreamView.
+                definition = data_access.get_definition(definition_id)
+                fallback_ids = definition.opportunity_ids if definition else []
+                if not fallback_ids:
+                    return JsonResponse({"error": "opportunity_id required"}, status=400)
+                opportunity_id = fallback_ids[0]
+
+            pipeline_data = data_access.get_pipeline_data(definition_id, int(opportunity_id))
+        finally:
+            data_access.close()
 
         return JsonResponse(pipeline_data)
 
@@ -3442,10 +3451,6 @@ class PipelineDataStreamView(BaseSSEStreamView):
         opportunity_id = labs_context.get("opportunity_id") or request.GET.get("opportunity_id")
 
         try:
-            if not opportunity_id:
-                yield send_sse_event("Error", error="No opportunity selected")
-                return
-
             # Check for OAuth token
             labs_oauth = request.session.get("labs_oauth", {})
             if not labs_oauth.get("access_token"):
@@ -3466,6 +3471,19 @@ class PipelineDataStreamView(BaseSSEStreamView):
             if not definition.pipeline_sources:
                 yield send_sse_event("No pipelines", data={"pipelines": {}})
                 return
+
+            # Program-owned workflows have no single owning opportunity in the
+            # request context — fall back to the first opp in the definition's
+            # own multi-opp list. This is only used to scope PipelineDataAccess
+            # auth calls (the pipeline records themselves are opportunity-owned
+            # regardless of who owns the workflow); the actual data pull below
+            # already iterates every id in opp_ids, not just this one.
+            if not opportunity_id:
+                fallback_ids = definition.opportunity_ids or []
+                if not fallback_ids:
+                    yield send_sse_event("Error", error="No opportunity selected")
+                    return
+                opportunity_id = fallback_ids[0]
 
             # Early CCHQ access probe — fail fast (1-2s) instead of letting
             # the user wait through a 60s ALB timeout, before discovering
