@@ -216,7 +216,7 @@
 
           <div id="area-admin" class="space-y-2">
             <p class="text-[10px] text-gray-500 leading-snug">
-              <b>Click a boundary on the map</b> to add it to the plan area — your selections appear in the <b>Planning table</b> below the map, where you can remove any row.
+              <b>Click a boundary on the map</b> to add it to the plan area — your selections appear in the <b>Per-area planning</b> table below the map, where you can remove any row.
               (Search a place + switch the source in the map’s <b>Boundaries</b> layer.)
             </p>
             <!-- admin_boundaries_layer.js mounts its (now-hidden) state node here; the selected list is rendered in the below-map planning table -->
@@ -264,7 +264,7 @@
               <p class="text-[10px] text-gray-400 mt-1" id="setup-pop-source-empty">Population figures appear once you add areas from a source that carries them.</p>
             </div>
 
-            <p class="text-[10px] text-gray-400 leading-snug mt-2 pt-2 border-t border-gray-100">The per-area <b>Planning table</b> (population, buildings, expected-visit targets) is shown below the map.</p>
+            <p class="text-[10px] text-gray-400 leading-snug mt-2 pt-2 border-t border-gray-100">The <b>Per-area planning</b> table (population, buildings, expected-visit targets) is shown below the map.</p>
           </div>
 
           <div id="sampling-config" class="hidden space-y-2">
@@ -617,7 +617,7 @@
     {% endcomment %}
     <section id="setup-plan-card" class="border-t border-gray-200 bg-white px-3 py-2.5 text-sm">
       <div class="flex items-center gap-3 mb-1.5 flex-wrap">
-        <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Planning table</h2>
+        <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Per-area planning</h2>
         <button type="button" id="btn-setup-counts" class="button button-sm primary-dark">Update table</button>
         <button type="button" id="btn-setup-save-targets" class="button button-sm primary-dark hidden">Save U5 targets</button>
         <span class="text-[11px] text-gray-500" id="setup-counts-status"></span>
@@ -711,11 +711,11 @@
 
     <!-- Per-worker / per-group breakdown (the detailed metrics table). -->
     <section class="border-t border-gray-200 bg-white px-3 py-2 text-sm">
-      <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">Per-worker breakdown</h2>
+      <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1" id="flw-section-title">Per-group breakdown</h2>
       <div class="max-h-40 overflow-auto border border-gray-100 rounded">
         <table class="min-w-full text-xs">
           <thead class="bg-gray-50 sticky top-0"><tr class="text-left text-gray-500">
-            <th class="p-1.5" id="flw-dim">Worker</th><th class="p-1.5">Areas</th><th class="p-1.5">Buildings</th>
+            <th class="p-1.5" id="flw-dim">Group</th><th class="p-1.5">Work areas</th><th class="p-1.5">Buildings</th>
             <th class="p-1.5" id="flw-pop-col">Population</th><th class="p-1.5">Expected visits</th><th class="p-1.5">Spread (km)</th>
           </tr></thead>
           <tbody id="flw-body"></tbody>

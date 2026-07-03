@@ -904,6 +904,13 @@
     const flwDim = $('flw-dim');
     if (flwDim)
       flwDim.textContent = k.dimension === 'worker' ? 'Worker' : 'Group';
+    // Section heading follows the dimension too: groups until workers are assigned.
+    const flwTitle = $('flw-section-title');
+    if (flwTitle)
+      flwTitle.textContent =
+        k.dimension === 'worker'
+          ? 'Per-worker breakdown'
+          : 'Per-group breakdown';
     const showPop = !!p.has_population;
     const flwPopCol = $('flw-pop-col');
     if (flwPopCol) flwPopCol.style.display = showPop ? '' : 'none';
