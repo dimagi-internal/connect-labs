@@ -682,6 +682,13 @@ function createLinkHelpers(baseUrls: {
 interface ExtendedWorkflowData extends WorkflowDataFromDjango {
   render_code?: string;
   opportunity_id?: number;
+  // Program-owned workflows (record has program_id, no owning opportunity)
+  // carry their program scope + the opportunities they SPAN. The runner uses
+  // these to drive auth-status + pipeline fetches by program_id / spanned opps
+  // when there's no single opportunity_id.
+  program_id?: number;
+  program_scoped?: boolean;
+  opportunity_ids?: number[];
   is_edit_mode?: boolean;
 }
 
@@ -695,6 +702,34 @@ function WorkflowRunner({
   workflowData: ExtendedWorkflowData;
   csrfToken: string;
 }) {
+  // Effective scope. A program-owned workflow's record has program_id set and
+  // opportunity_id = None, so initialData.opportunity_id is absent. In that
+  // mode the runner is PROGRAM-scoped: auth-status verifies program access and
+  // pipeline fetches resolve+merge across the workflow's spanned opportunities
+  // (opportunity_ids) rather than interpolating a single undefined opp id.
+  //
+  // The opp to use for inherently single-opp calls (pipeline preview/SQL, which
+  // pull CCHQ data per opportunity). Prefer the owning opp; for a program-owned
+  // workflow fall back to the first spanned opportunity.
+  const primaryOppId =
+    initialData.opportunity_id ??
+    (initialData.opportunity_ids && initialData.opportunity_ids[0]) ??
+    undefined;
+
+  // Append the correct scope param(s) to an outgoing pipeline/auth URL. Opp
+  // behavior is unchanged (opportunity_id only); program-scoped requests send
+  // program_id so the BE verifies program access and resolves the spanned opps.
+  const applyScopeParams = useCallback(
+    (params: URLSearchParams): void => {
+      if (initialData.opportunity_id) {
+        params.set('opportunity_id', String(initialData.opportunity_id));
+      } else if (initialData.program_id) {
+        params.set('program_id', String(initialData.program_id));
+      }
+    },
+    [initialData.opportunity_id, initialData.program_id],
+  );
+
   // Original values (for detecting changes)
   const originalRenderCode = initialData.render_code || DEFAULT_RENDER_CODE;
   const originalDefinition = initialData.definition;
@@ -767,15 +802,15 @@ function WorkflowRunner({
       'next',
       window.location.pathname + window.location.search,
     );
-    // Pass opportunity_id so the BE can do a real CCHQ ping (not just
-    // a timestamp check). Catches scope-downgrade-on-refresh — the cause
-    // of the "click Authorize → still says CommCare HQ unauthorized" loop.
-    if (initialData.opportunity_id) {
-      url.searchParams.set(
-        'opportunity_id',
-        String(initialData.opportunity_id),
-      );
-    }
+    // Scope the auth check. Opportunity workflows pass opportunity_id so the BE
+    // can do a real CCHQ ping (not just a timestamp check) — catches
+    // scope-downgrade-on-refresh, the cause of the "click Authorize → still
+    // says CommCare HQ unauthorized" loop. Program-owned workflows have no
+    // owning opportunity_id, so applyScopeParams sends program_id instead and
+    // the BE verifies program membership. Without this a program-scoped runner
+    // sent no scope at all and the CCHQ provider could never clear, wedging the
+    // pipeline stream behind the missingAuth gate.
+    applyScopeParams(url.searchParams);
     fetch(url.toString())
       .then((r) => r.json())
       .then((data) => {
@@ -788,7 +823,7 @@ function WorkflowRunner({
         setAuthStatus(null);
         setAuthChecking(false);
       });
-  }, [initialData.apiEndpoints?.authStatus, initialData.opportunity_id]);
+  }, [initialData.apiEndpoints?.authStatus, applyScopeParams]);
 
   useEffect(() => {
     refreshAuthStatus();
@@ -836,12 +871,12 @@ function WorkflowRunner({
       initialData.apiEndpoints.streamPipelineData,
       window.location.origin,
     );
-    if (initialData.opportunity_id) {
-      url.searchParams.set(
-        'opportunity_id',
-        String(initialData.opportunity_id),
-      );
-    }
+    // Opportunity workflows scope by opportunity_id; program-owned workflows
+    // send program_id (the BE stream then resolves the spanned opps from
+    // definition.opportunity_ids). Previously a program-scoped runner
+    // interpolated `opportunity_id=undefined`, which crashed the stream with a
+    // generic internal error before any pipeline ran.
+    applyScopeParams(url.searchParams);
     // Forward tolerance param from page URL to pipeline stream
     const pageParams = new URLSearchParams(window.location.search);
     const tolerance = pageParams.get('tolerance');
@@ -975,7 +1010,7 @@ function WorkflowRunner({
     return () => eventSource.close();
   }, [
     initialData.apiEndpoints.streamPipelineData,
-    initialData.opportunity_id,
+    applyScopeParams,
     definition.pipeline_sources,
   ]);
 
@@ -1141,16 +1176,19 @@ function WorkflowRunner({
       setActiveTab('pipeline');
 
       try {
-        // Fetch pipeline definition
+        // Pipeline definition + preview are inherently single-opp (CCHQ data is
+        // per-opportunity). For a program-owned workflow there's no owning opp,
+        // so fall back to the first spanned opportunity via primaryOppId instead
+        // of interpolating `opportunity_id=undefined`.
         const defResponse = await fetch(
-          `/labs/workflow/api/pipeline/${pipelineId}/?opportunity_id=${initialData.opportunity_id}`,
+          `/labs/workflow/api/pipeline/${pipelineId}/?opportunity_id=${primaryOppId}`,
         );
         if (!defResponse.ok) throw new Error('Failed to load pipeline');
         const defData = await defResponse.json();
 
         // Fetch preview data
         const previewResponse = await fetch(
-          `/labs/workflow/api/pipeline/${pipelineId}/preview/?opportunity_id=${initialData.opportunity_id}`,
+          `/labs/workflow/api/pipeline/${pipelineId}/preview/?opportunity_id=${primaryOppId}`,
         );
         const previewData = previewResponse.ok
           ? await previewResponse.json()
@@ -1168,7 +1206,7 @@ function WorkflowRunner({
         setIsLoadingPipelineEditor(false);
       }
     },
-    [initialData.opportunity_id],
+    [primaryOppId],
   );
 
   // Handle returning to workflow tab
@@ -1857,7 +1895,7 @@ function WorkflowRunner({
             <div className="h-[calc(100vh-120px)]">
               <PipelineEditor
                 definitionId={selectedPipelineId}
-                opportunityId={initialData.opportunity_id || 0}
+                opportunityId={primaryOppId || 0}
                 initialDefinition={{
                   id: selectedPipelineId,
                   name:
@@ -1944,7 +1982,7 @@ function WorkflowRunner({
             <AIChat
               agentType="workflow"
               definitionId={initialData.definition_id}
-              opportunityId={initialData.opportunity_id}
+              opportunityId={primaryOppId}
               currentDefinition={definition}
               currentRenderCode={renderCode}
               onDefinitionUpdate={handleWorkflowUpdate}
