@@ -947,6 +947,12 @@ class ReviewView(ManagerRequiredMixin, TemplateView):
                     )
             ctx["qa_pairs"] = qa_pairs
 
+            # Criteria not linked to any question still belong on the rubric —
+            # render them in their own section so every generated criterion is
+            # scoreable (the ReviewForm already builds a field for each).
+            linked_ids = {c.get("id") for pairs in criteria_by_question.values() for c in pairs}
+            ctx["unlinked_criteria"] = [c for c in eval_criteria if c.get("id") not in linked_ids]
+
             # Check for existing review by current user
             reviews = da.get_reviews_for_response(pk)
             reviewer_username = self.request.user.username
