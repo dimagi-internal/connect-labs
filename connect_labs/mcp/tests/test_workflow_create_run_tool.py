@@ -28,7 +28,7 @@ def test_workflow_create_run_happy_path(user, monkeypatch):
     fake_wda.get_definition.return_value = fake_definition
     fake_wda.create_run.return_value = fake_run
 
-    monkeypatch.setattr(wcr, "_wda_for_user", lambda u, opportunity_id=None: fake_wda)
+    monkeypatch.setattr(wcr, "_wda_for_user", lambda u, opportunity_id=None, program_id=None: fake_wda)
 
     tool = get_tool("workflow_create_run")
     result = tool.handler(
@@ -43,17 +43,88 @@ def test_workflow_create_run_happy_path(user, monkeypatch):
         "run_id": 5001,
         "definition_id": 100,
         "opportunity_id": 4242,
+        "program_id": None,
         "period_start": "2026-02-01",
         "period_end": "2026-02-07",
     }
     fake_wda.create_run.assert_called_once_with(
         definition_id=100,
         opportunity_id=4242,
+        program_id=None,
         period_start="2026-02-01",
         period_end="2026-02-07",
         initial_state=None,
     )
     fake_wda.close.assert_called_once()
+
+
+@pytest.mark.django_db
+def test_workflow_create_run_happy_path_program_owned(user, monkeypatch):
+    """Program-owned workflows (no owning opportunity) scope by program_id instead."""
+    from connect_labs.mcp.tools import workflow_create_run as wcr
+
+    fake_definition = MagicMock()
+    fake_definition.id = 100
+
+    fake_run = MagicMock()
+    fake_run.id = 5002
+
+    fake_wda = MagicMock()
+    fake_wda.get_definition.return_value = fake_definition
+    fake_wda.create_run.return_value = fake_run
+
+    captured_scope = {}
+
+    def _fake_wda_for_user(u, opportunity_id=None, program_id=None):
+        captured_scope["opportunity_id"] = opportunity_id
+        captured_scope["program_id"] = program_id
+        return fake_wda
+
+    monkeypatch.setattr(wcr, "_wda_for_user", _fake_wda_for_user)
+
+    tool = get_tool("workflow_create_run")
+    result = tool.handler(
+        user=user,
+        definition_id=100,
+        program_id=176,
+        period_start="2026-02-01",
+        period_end="2026-02-07",
+    )
+
+    assert result == {
+        "run_id": 5002,
+        "definition_id": 100,
+        "opportunity_id": None,
+        "program_id": 176,
+        "period_start": "2026-02-01",
+        "period_end": "2026-02-07",
+    }
+    assert captured_scope == {"opportunity_id": None, "program_id": 176}
+    fake_wda.create_run.assert_called_once_with(
+        definition_id=100,
+        opportunity_id=None,
+        program_id=176,
+        period_start="2026-02-01",
+        period_end="2026-02-07",
+        initial_state=None,
+    )
+    fake_wda.close.assert_called_once()
+
+
+@pytest.mark.django_db
+def test_workflow_create_run_rejects_neither_scope(user):
+    tool = get_tool("workflow_create_run")
+    with pytest.raises(MCPToolError) as exc:
+        tool.handler(user=user, definition_id=100)
+    assert exc.value.code == "INVALID_SCHEMA"
+
+
+@pytest.mark.django_db
+def test_workflow_create_run_rejects_both_scopes(user):
+    tool = get_tool("workflow_create_run")
+    with pytest.raises(MCPToolError) as exc:
+        tool.handler(user=user, definition_id=100, opportunity_id=4242, program_id=176)
+    assert exc.value.code == "INVALID_SCHEMA"
 
 
 @pytest.mark.django_db
@@ -63,7 +134,7 @@ def test_workflow_create_run_404s_when_definition_missing(user, monkeypatch):
     fake_wda = MagicMock()
     fake_wda.get_definition.return_value = None
 
-    monkeypatch.setattr(wcr, "_wda_for_user", lambda u, opportunity_id=None: fake_wda)
+    monkeypatch.setattr(wcr, "_wda_for_user", lambda u, opportunity_id=None, program_id=None: fake_wda)
 
     tool = get_tool("workflow_create_run")
     with pytest.raises(MCPToolError) as exc:
@@ -86,7 +157,7 @@ def test_workflow_create_run_defaults_period_dates_to_today(user, monkeypatch):
     fake_wda.get_definition.return_value = fake_definition
     fake_wda.create_run.return_value = fake_run
 
-    monkeypatch.setattr(wcr, "_wda_for_user", lambda u, opportunity_id=None: fake_wda)
+    monkeypatch.setattr(wcr, "_wda_for_user", lambda u, opportunity_id=None, program_id=None: fake_wda)
 
     tool = get_tool("workflow_create_run")
     result = tool.handler(user=user, definition_id=10, opportunity_id=20)
@@ -107,7 +178,7 @@ def test_workflow_create_run_propagates_upstream_permission_failures(user, monke
     fake_wda.get_definition.return_value = fake_definition
     fake_wda.create_run.side_effect = MCPToolError("PERMISSION_DENIED", "user not a member of the opportunity's org")
 
-    monkeypatch.setattr(wcr, "_wda_for_user", lambda u, opportunity_id=None: fake_wda)
+    monkeypatch.setattr(wcr, "_wda_for_user", lambda u, opportunity_id=None, program_id=None: fake_wda)
 
     tool = get_tool("workflow_create_run")
     with pytest.raises(MCPToolError) as exc:

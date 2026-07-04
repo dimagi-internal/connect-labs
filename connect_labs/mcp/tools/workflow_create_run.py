@@ -7,10 +7,10 @@ canonical "saved runs" lifecycle programmatically (Phase 6 ACE seeds
 build week-over-week snapshots this way).
 
 Membership enforcement is implicit: the labs API client is constructed
-with ``opportunity_id=opportunity_id`` so the upstream POST carries the
-scope param, and Connect's permission check rejects callers who aren't
-members of the owning org. Same pattern the rest of the workflow tools
-already use.
+with ``opportunity_id`` or ``program_id`` (exactly one) so the upstream
+POST carries the scope param, and Connect's permission check rejects
+callers who aren't members of the owning org. Same pattern the rest of
+the workflow tools already use.
 """
 
 from __future__ import annotations
@@ -21,14 +21,14 @@ from typing import Any
 from ..tool_registry import MCPToolError, register
 
 
-def _wda_for_user(user, opportunity_id: int | None = None):
-    """Build a WorkflowDataAccess for the user, scoped to ``opportunity_id``."""
+def _wda_for_user(user, opportunity_id: int | None = None, program_id: int | None = None):
+    """Build a WorkflowDataAccess for the user, scoped to ``opportunity_id`` or ``program_id``."""
     from connect_labs.workflow.data_access import WorkflowDataAccess
 
     from ..connect_token import require_connect_token
 
     token = require_connect_token(user)
-    return WorkflowDataAccess(opportunity_id=opportunity_id, access_token=token)
+    return WorkflowDataAccess(opportunity_id=opportunity_id, program_id=program_id, access_token=token)
 
 
 @register(
@@ -43,7 +43,14 @@ def _wda_for_user(user, opportunity_id: int | None = None):
         "type": "object",
         "properties": {
             "definition_id": {"type": "integer"},
-            "opportunity_id": {"type": "integer"},
+            "opportunity_id": {
+                "type": "integer",
+                "description": "Scope by owning opportunity. Provide this OR program_id.",
+            },
+            "program_id": {
+                "type": "integer",
+                "description": "Scope by owning program (program-owned workflow). Provide this OR opportunity_id.",
+            },
             "period_start": {
                 "type": "string",
                 "description": "ISO date or datetime; defaults to today's date.",
@@ -57,7 +64,7 @@ def _wda_for_user(user, opportunity_id: int | None = None):
                 "description": "Optional starting run state dict.",
             },
         },
-        "required": ["definition_id", "opportunity_id"],
+        "required": ["definition_id"],
         "additionalProperties": False,
     },
     is_write=True,
@@ -66,16 +73,20 @@ def workflow_create_run(
     user,
     *,
     definition_id: int,
-    opportunity_id: int,
+    opportunity_id: int | None = None,
+    program_id: int | None = None,
     period_start: str | None = None,
     period_end: str | None = None,
     initial_state: dict | None = None,
 ) -> dict[str, Any]:
+    if (opportunity_id is None) == (program_id is None):
+        raise MCPToolError("INVALID_SCHEMA", "Provide exactly one of opportunity_id / program_id.")
+
     today = dt.date.today().isoformat()
     period_start = period_start or today
     period_end = period_end or today
 
-    wda = _wda_for_user(user, opportunity_id=opportunity_id)
+    wda = _wda_for_user(user, opportunity_id=opportunity_id, program_id=program_id)
     try:
         definition = wda.get_definition(definition_id)
         if definition is None:
@@ -87,6 +98,7 @@ def workflow_create_run(
         run = wda.create_run(
             definition_id=definition_id,
             opportunity_id=opportunity_id,
+            program_id=program_id,
             period_start=period_start,
             period_end=period_end,
             initial_state=initial_state,
@@ -103,6 +115,7 @@ def workflow_create_run(
         "run_id": run.id,
         "definition_id": definition_id,
         "opportunity_id": opportunity_id,
+        "program_id": program_id,
         "period_start": period_start,
         "period_end": period_end,
     }
