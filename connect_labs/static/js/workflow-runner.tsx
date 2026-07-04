@@ -276,9 +276,14 @@ function createActionHandlers(csrfToken: string): ActionHandlers {
       onComplete: (results: Record<string, unknown>) => void,
       onError: (error: string) => void,
       onCancelled: () => void,
+      // Optional: lets the server read this run's authoritative active_job so a
+      // reconnect to a dead/expired task terminates instead of spinning forever.
+      runId?: number,
     ): (() => void) => {
       const eventSource = new EventSource(
-        `/labs/workflow/api/job/${taskId}/status/`,
+        runId != null
+          ? `/labs/workflow/api/job/${taskId}/status/?run_id=${runId}`
+          : `/labs/workflow/api/job/${taskId}/status/`,
       );
 
       eventSource.onmessage = (event) => {
