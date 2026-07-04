@@ -233,6 +233,10 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
     const [isRunning, setIsRunning] = React.useState(false);
     const [progress, setProgress] = React.useState(null);
     const [jobError, setJobError] = React.useState(null);
+    // A create job whose worker died mid-batch (e.g. a deploy cutover) never
+    // writes a terminal status, so active_job stays 'running' forever. We detect
+    // that on reconnect (see below) and surface it here instead of spinning.
+    const [staleJob, setStaleJob] = React.useState(false);
     // Per-run sampling rates — default to the pinned config, adjustable before create.
     const [muacSample, setMuacSample] = React.useState(trackA.sample_percentage != null ? trackA.sample_percentage : 100);
     const [otherSample, setOtherSample] = React.useState(trackB.sample_percentage != null ? trackB.sample_percentage : 10);
@@ -280,7 +284,8 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                 setIsRunning(false); setJobError(err || 'Job failed'); setProgress(null);
                 onUpdateState({ active_job: { job_id: taskId, status: 'failed' } }).catch(() => {});
             },
-            () => { setIsRunning(false); setProgress({ status: 'cancelled' }); }
+            () => { setIsRunning(false); setProgress({ status: 'cancelled' }); },
+            instance.id // run_id — lets the server unstick a reconnect to a dead job
         );
         cleanupRef.current = cleanup;
     };
@@ -289,13 +294,28 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
     // The batch runs server-side (a Celery job) — leaving the page never stops
     // it. If we come back while it's still working, re-attach the progress
     // stream instead of showing a stale idle state.
+    //
+    // Guard against ZOMBIE jobs: if the worker is killed mid-batch (a deploy
+    // cutover, a crash) the job never writes a terminal status, so active_job
+    // stays 'running' forever. Celery can't disambiguate a dead/expired task
+    // from a queued one — both report PENDING — so attaching the progress stream
+    // would "reconnect" eternally (the exact stuck-spinner symptom). Trust
+    // active_job.started_at instead: a real batch finishes in minutes, so a
+    // 'running' flag older than the staleness window is dead. Surface it and let
+    // the user re-create rather than spin.
+    const STALE_JOB_MS = 15 * 60 * 1000;
     React.useEffect(() => {
         const active = instance.state?.active_job;
-        if (active && active.status === 'running' && active.job_id) {
-            setIsRunning(true);
-            setProgress({ status: 'running', message: 'Reconnecting to the running job…' });
-            attachStream(active.job_id);
+        if (!(active && active.status === 'running' && active.job_id)) return;
+        const startedMs = active.started_at ? Date.parse(active.started_at) : NaN;
+        const age = isNaN(startedMs) ? Infinity : (Date.now() - startedMs);
+        if (age > STALE_JOB_MS) {
+            setStaleJob(true); // zombie — do not reconnect
+            return;
         }
+        setIsRunning(true);
+        setProgress({ status: 'running', message: 'Reconnecting to the running job…' });
+        attachStream(active.job_id);
     }, []); // once on mount
 
     // ── Create handler ────────────────────────────────────────────────────────
@@ -304,7 +324,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
     //    3) stream progress, 4) reload the created sessions on completion.
     const handleCreate = async () => {
         if (!startDate || !endDate || isRunning || instance.status === 'completed') return;
-        setIsRunning(true); setJobError(null);
+        setIsRunning(true); setJobError(null); setStaleJob(false);
         setProgress({ status: 'starting', message: 'Submitting to the server…' });
 
         // No run-state write from the render: the window travels in the job
@@ -578,6 +598,13 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                 {jobError && (
                     <div className="mt-4 bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-700">
                         <i className="fa-solid fa-circle-exclamation mr-2"></i>{jobError}
+                    </div>
+                )}
+                {staleJob && !isRunning && (
+                    <div className="mt-4 bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-800">
+                        <i className="fa-solid fa-triangle-exclamation mr-2"></i>
+                        The previous audit run didn't finish — the server job stopped before completing, so no
+                        audits were created. Click <strong>Create audits</strong> to run it again.
                     </div>
                 )}
                 {progress && progress.status === 'completed' && !isRunning && (

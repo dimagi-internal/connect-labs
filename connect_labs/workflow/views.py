@@ -3209,13 +3209,82 @@ class JobStatusStreamView(LoginRequiredMixin, View):
     """
 
     def get(self, request, task_id):
+        import time
+        from datetime import datetime
+
         from celery.result import AsyncResult
 
         from connect_labs.labs.analysis.sse_streaming import send_sse_event
 
+        # A create job whose worker dies mid-batch never writes a terminal status,
+        # so Celery reports PENDING forever (our tasks don't push progress meta to
+        # the result backend, so a live job is ALSO PENDING — the two are
+        # indistinguishable from Celery alone). Without a bound, the poll loop below
+        # streams "running" eternally and the runner spins on "Reconnecting…". Two
+        # guards close that: (1) a run-state short-circuit — the run's own
+        # active_job carries the authoritative status + started_at, so on reconnect
+        # we can emit the real terminal event or detect a stale (dead) job up front;
+        # (2) a hard wall-clock backstop that terminates any non-terminal stream so
+        # it can never hang forever, even when no run_id is supplied.
+        run_id = request.GET.get("run_id")
+        STALE_SECONDS = 15 * 60
+        MAX_STREAM_SECONDS = 30 * 60
+
+        def _run_active_job():
+            """Best-effort read of this run's active_job from run state."""
+            if not run_id:
+                return None
+            try:
+                data_access = WorkflowDataAccess(request=request)
+                try:
+                    run = data_access.get_run(int(run_id))
+                finally:
+                    data_access.close()
+                if not run:
+                    return None
+                return (run.data.get("state", {}) or {}).get("active_job", {}) or {}
+            except Exception:
+                logger.warning("[JobStatusStream] active_job read failed for run %s", run_id, exc_info=True)
+                return None
+
+        def _age_seconds(active_job):
+            started = (active_job or {}).get("started_at")
+            if not started:
+                return None
+            try:
+                return (datetime.now() - datetime.fromisoformat(started)).total_seconds()
+            except Exception:
+                return None
+
         def stream_progress():
             task = AsyncResult(task_id)
 
+            # Reconnect short-circuit: trust the run's recorded outcome over Celery,
+            # whose result for a dead/expired task has decayed to PENDING.
+            active_job = _run_active_job()
+            aj_status = (active_job or {}).get("status")
+            if aj_status == "completed":
+                # The client's onComplete reloads sessions from the API, so an empty
+                # results payload here is fine — it just unsticks the stream.
+                yield send_sse_event(
+                    "Complete!", data={"status": "completed", "results": active_job.get("results", {})}
+                )
+                return
+            if aj_status == "cancelled":
+                yield send_sse_event("Cancelled", data={"status": "cancelled"})
+                return
+            if aj_status == "failed":
+                yield send_sse_event("Failed", error=active_job.get("error") or "Job did not complete")
+                return
+            age = _age_seconds(active_job)
+            if aj_status == "running" and age is not None and age > STALE_SECONDS:
+                yield send_sse_event(
+                    "Failed",
+                    error="The previous run didn't finish — the server job stopped before completing. Re-create to try again.",
+                )
+                return
+
+            stream_started = datetime.now()
             while True:
                 task_meta = task._get_task_meta()
                 status = task_meta.get("status")
@@ -3261,7 +3330,14 @@ class JobStatusStreamView(LoginRequiredMixin, View):
                         data=event_data,
                     )
 
-                import time
+                # Hard backstop: a non-terminal task that outlives the max stream
+                # window is treated as dead so the runner can never hang forever.
+                if (datetime.now() - stream_started).total_seconds() > MAX_STREAM_SECONDS:
+                    yield send_sse_event(
+                        "Failed",
+                        error="The run stopped responding — the server job may have ended. Re-create to try again.",
+                    )
+                    break
 
                 time.sleep(0.5)  # Poll every 500ms for responsive updates
 
