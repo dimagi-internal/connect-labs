@@ -33,12 +33,14 @@ def _program_def(opp_id=9000, def_id=77, instances=None, program_id=None):
     d.data = {
         "config": {
             "templateType": "program_audit_creator",
-            "per_opp_instances": instances
-            if instances is not None
-            else [
-                {"opportunity_id": 1973, "workflow_definition_id": 42},
-                {"opportunity_id": 1976, "workflow_definition_id": 43},
-            ],
+            "per_opp_instances": (
+                instances
+                if instances is not None
+                else [
+                    {"opportunity_id": 1973, "workflow_definition_id": 42},
+                    {"opportunity_id": 1976, "workflow_definition_id": 43},
+                ]
+            ),
         }
     }
     return d
@@ -63,8 +65,9 @@ def test_fan_out_generates_per_source_and_records_state(monkeypatch):
     def make_wda(access_token=None, opportunity_id=None, **_):
         wda = mock.Mock()
         creator = mock.Mock()
-        creator.id = 40 + opportunity_id
+        creator.id = 40 + (opportunity_id or 0)
         wda.get_definition.return_value = creator
+        wda.get_run.return_value = _run(700)  # unfired program run (empty generation)
         wda.update_run_state.side_effect = lambda rid, s: state_writes.append(s)
         return wda
 
@@ -74,7 +77,7 @@ def test_fan_out_generates_per_source_and_records_state(monkeypatch):
 
     def fake_dispatch(defn, *, access_token, request=None, window=None, **kw):
         calls.append((defn, window))
-        return {"run_id": defn.id, "created": True, "sessions_created": 3}
+        return {"run_id": defn.id, "sessions_created": 3, "status": "ready"}
 
     monkeypatch.setattr(templates_pkg, "run_default_for_definition", fake_dispatch)
 
@@ -95,7 +98,105 @@ def test_fan_out_generates_per_source_and_records_state(monkeypatch):
     last = state_writes[-1]
     assert set(last["generation"].keys()) == {"1973", "1976"}
     assert last["generation"]["1973"]["run_id"] == 40 + 1973
-    assert last["generation"]["1976"]["sessions_created"] == 3
+    assert last["generation"]["1976"]["session_count"] == 3
+    assert last["generation"]["1976"]["status"] == "ready"
+
+
+def test_fan_out_single_fire_guard_skips_when_already_fired(monkeypatch):
+    """A program run is fired once: a full fan-out on an already-populated run does
+    NOT re-fire — recovery is per-opp only."""
+    from connect_labs.workflow import templates as templates_pkg
+    from connect_labs.workflow.templates import program_audit_creator as m
+
+    fired = []
+
+    def make_wda(access_token=None, opportunity_id=None, **_):
+        wda = mock.Mock()
+        prun = mock.Mock()
+        prun.data = {"state": {"generation": {"1973": {"opportunity_id": 1973, "run_id": 9}}}}
+        wda.get_run.return_value = prun
+        wda.get_definition.return_value = mock.Mock(id=42)
+        return wda
+
+    monkeypatch.setattr(m, "WorkflowDataAccess", make_wda)
+    monkeypatch.setattr(
+        templates_pkg,
+        "run_default_for_definition",
+        lambda *a, **k: (fired.append(1), {"run_id": 1, "status": "ready"})[1],
+    )
+
+    result = m.fan_out_generate(
+        definition=_program_def(), run_id=700, access_token="t", window=("2026-06-21", "2026-06-27")
+    )
+
+    assert result.get("already_fired") is True
+    assert result["per_opp"] == {}
+    assert fired == []  # nothing was re-fired
+
+
+def test_fan_out_per_opp_recovery_merges_single_opp(monkeypatch):
+    """only_opportunity_id (re-)runs ONE opp and merges it into the existing record,
+    leaving the other opps' entries untouched."""
+    from connect_labs.workflow import templates as templates_pkg
+    from connect_labs.workflow.templates import program_audit_creator as m
+
+    state_writes = []
+
+    def make_wda(access_token=None, opportunity_id=None, **_):
+        wda = mock.Mock()
+        prun = mock.Mock()
+        prun.data = {
+            "state": {
+                "generation": {
+                    "1973": {
+                        "opportunity_id": 1973,
+                        "workflow_definition_id": 42,
+                        "run_id": 9,
+                        "session_count": 5,
+                        "status": "ready",
+                        "order": 0,
+                    },
+                    "1976": {
+                        "opportunity_id": 1976,
+                        "workflow_definition_id": 43,
+                        "run_id": 8,
+                        "session_count": 0,
+                        "status": "failed",
+                        "order": 1,
+                    },
+                }
+            }
+        }
+        wda.get_run.return_value = prun
+        wda.get_definition.return_value = mock.Mock(id=40 + (opportunity_id or 0))
+        wda.update_run_state.side_effect = lambda rid, s: state_writes.append(s)
+        return wda
+
+    monkeypatch.setattr(m, "WorkflowDataAccess", make_wda)
+    monkeypatch.setattr(
+        templates_pkg,
+        "run_default_for_definition",
+        lambda defn, *, access_token, request=None, window=None, **kw: {
+            "run_id": 999,
+            "sessions_created": 6,
+            "status": "ready",
+        },
+    )
+
+    result = m.fan_out_generate(
+        definition=_program_def(),
+        run_id=700,
+        access_token="t",
+        window=("2026-06-21", "2026-06-27"),
+        only_opportunity_id=1976,
+    )
+
+    assert set(result["per_opp"].keys()) == {1976}  # only the recovered opp ran
+    merged = state_writes[-1]["generation"]
+    assert merged["1973"]["run_id"] == 9  # untouched
+    assert merged["1976"]["run_id"] == 999  # replaced with the fresh run
+    assert merged["1976"]["status"] == "ready"
+    assert merged["1976"]["order"] == 1  # stable position preserved
 
 
 def test_run_default_creates_program_run_then_fans_out(monkeypatch):
@@ -283,6 +384,7 @@ def test_fan_out_writes_program_run_state_program_scoped(monkeypatch):
         creator = mock.Mock()
         creator.id = 40 + (opportunity_id or 0)
         wda.get_definition.return_value = creator
+        wda.get_run.return_value = _run(700)  # unfired program run (empty generation)
         wda.update_run_state.side_effect = lambda rid, s: None
         return wda
 
@@ -290,7 +392,7 @@ def test_fan_out_writes_program_run_state_program_scoped(monkeypatch):
     monkeypatch.setattr(
         templates_pkg,
         "run_default_for_definition",
-        lambda defn, *, access_token, request=None, window=None, **kw: {"run_id": 1, "created": True},
+        lambda defn, *, access_token, request=None, window=None, **kw: {"run_id": 1, "status": "ready"},
     )
 
     m.fan_out_generate(
@@ -421,6 +523,28 @@ def test_build_snapshot_returns_rollup_when_all_complete(monkeypatch):
     assert snap["window_start"] == "2026-06-21"
     assert snap["per_opp_completion"]["1973"]["status"] == "completed"
     assert snap["per_opp_completion"]["1976"]["open_audits"] == 0
+
+
+def test_build_snapshot_gate_raises_when_an_opp_produced_no_audits(monkeypatch):
+    """An opp whose run created zero audits (failed/didn't finish) blocks completion
+    — it must be re-run first."""
+    from connect_labs.workflow.templates import program_audit_creator as m
+
+    sessions_by_run = {
+        501: [_sess("completed", 1973)],
+        502: [],  # 1976 produced nothing
+    }
+
+    def make_ada(request=None, access_token=None, opportunity_id=None, **_):
+        ada = mock.Mock()
+        opp_run = {1973: 501, 1976: 502}[opportunity_id]
+        ada.get_sessions_by_workflow_run.return_value = sessions_by_run[opp_run]
+        return ada
+
+    monkeypatch.setattr(m, "AuditDataAccess", make_ada)
+
+    with pytest.raises(ValueError, match="produced no audits"):
+        m.build_snapshot(pipelines={}, state=_GEN_STATE, opportunity_id=9000, run_id=700, access_token="t")
 
 
 def test_snapshot_contract_resolves_to_template_hook():

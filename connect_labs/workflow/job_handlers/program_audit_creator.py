@@ -20,6 +20,9 @@ def program_audit_generate(job_config: dict, access_token: str, progress_callbac
     run_id = job_config.get("run_id")
     opportunity_id = job_config.get("opportunity_id")
     program_id = job_config.get("program_id")
+    # Optional per-opp recovery: (re-)run a single opportunity and merge it into
+    # the program run's generation record, rather than the full single-fire.
+    only_opportunity_id = job_config.get("only_opportunity_id")
     if not run_id:
         raise ValueError("program_audit_generate requires run_id in job_config")
 
@@ -53,6 +56,7 @@ def program_audit_generate(job_config: dict, access_token: str, progress_callbac
         access_token=access_token,
         window=(window_start, window_end),
         progress_callback=_progress,
+        only_opportunity_id=only_opportunity_id,
     )
 
     per_opp = result.get("per_opp", {})
