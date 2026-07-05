@@ -80,11 +80,12 @@ def test_creator_run_default_creates_and_fires_job(monkeypatch):
     monkeypatch.setattr(g, "WorkflowDataAccess", make_wda)
     fake_job = mock.Mock()
     fake_job.apply.return_value.result = {"sessions_created": 5}
+    fake_job.apply.return_value.successful.return_value = True
     monkeypatch.setattr(g, "run_workflow_job", fake_job)
 
     result = run_default_for_definition(_creator_def(), access_token="t", window=("2026-06-21", "2026-06-27"))
 
-    assert result == {"run_id": 1234, "created": True, "sessions_created": 5}
+    assert result == {"run_id": 1234, "sessions_created": 5, "status": "ready"}
     assert fake_job.apply.call_count == 1
 
     # Full 4-arg job contract (job_config, access_token, run_id, opportunity_id),
@@ -100,21 +101,46 @@ def test_creator_run_default_creates_and_fires_job(monkeypatch):
     assert kw["job_config"]["other_sample_percentage"] == 10
 
 
-def test_creator_run_default_is_idempotent_per_window(monkeypatch):
+def test_creator_run_default_always_creates_no_reuse(monkeypatch):
+    """Firing is an execution: it always creates a fresh run and fires the batch,
+    even when a run for that window already exists. There is no reuse/dedup."""
     from connect_labs.workflow import audit_generation as g
     from connect_labs.workflow.templates import run_default_for_definition
 
     wda = mock.Mock()
+    # An existing run for this window is present — and deliberately ignored.
     wda.list_runs.return_value = [_run(500, "2026-06-21")]
+    wda.create_run.return_value = _run(777, None)
     monkeypatch.setattr(g, "WorkflowDataAccess", mock.Mock(return_value=wda))
     fake_job = mock.Mock()
+    fake_job.apply.return_value.result = {"sessions_created": 4}
+    fake_job.apply.return_value.successful.return_value = True
     monkeypatch.setattr(g, "run_workflow_job", fake_job)
 
     result = run_default_for_definition(_creator_def(), access_token="t", window=("2026-06-21", "2026-06-27"))
 
-    assert result == {"run_id": 500, "created": False, "sessions_created": 0}
-    wda.create_run.assert_not_called()
-    fake_job.apply.assert_not_called()
+    # A brand-new run (777), not the pre-existing 500, and the batch was fired.
+    assert result == {"run_id": 777, "sessions_created": 4, "status": "ready"}
+    wda.create_run.assert_called_once()
+    assert fake_job.apply.call_count == 1
+
+
+def test_creator_run_default_reports_failed_status(monkeypatch):
+    """A batch job that errors is reported as status='failed' (drives per-opp recovery)."""
+    from connect_labs.workflow import audit_generation as g
+    from connect_labs.workflow.templates import run_default_for_definition
+
+    wda = mock.Mock()
+    wda.list_runs.return_value = []
+    wda.create_run.return_value = _run(801, None)
+    monkeypatch.setattr(g, "WorkflowDataAccess", mock.Mock(return_value=wda))
+    fake_job = mock.Mock()
+    fake_job.apply.return_value.successful.return_value = False
+    monkeypatch.setattr(g, "run_workflow_job", fake_job)
+
+    result = run_default_for_definition(_creator_def(), access_token="t", window=("2026-06-21", "2026-06-27"))
+
+    assert result == {"run_id": 801, "sessions_created": 0, "status": "failed"}
 
 
 def test_creator_run_default_defaults_window_to_last_week(monkeypatch):
@@ -182,7 +208,7 @@ def test_management_command_runs_default(monkeypatch):
         captured["defn"] = defn
         captured["access_token"] = access_token
         captured.update(kw)
-        return {"run_id": 5, "created": True, "sessions_created": 2}
+        return {"run_id": 5, "sessions_created": 2, "status": "ready"}
 
     monkeypatch.setattr(cmd, "run_default_for_definition", fake_dispatch)
 
@@ -262,7 +288,7 @@ def test_api_run_default_returns_result(monkeypatch):
     monkeypatch.setattr(
         templates_pkg,
         "run_default_for_definition",
-        mock.Mock(return_value={"per_opp": {1973: {"run_id": 9, "created": True, "sessions_created": 4}}}),
+        mock.Mock(return_value={"per_opp": {1973: {"run_id": 9, "sessions_created": 4, "status": "ready"}}}),
     )
 
     resp = m.run_default_api(_api_req(), 42)

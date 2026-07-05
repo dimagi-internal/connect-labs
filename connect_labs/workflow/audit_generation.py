@@ -4,22 +4,25 @@ Shared helpers for the ``weekly_dual_track_audit`` creator's default-run hook:
 - ``resolve_window`` maps a preset (``last_week`` …) to inclusive ISO dates,
   mirroring the render's ``calculateDateRange`` so the UI and the no-UI
   default-run path agree on what "last week" means.
-- ``run_this_week_batch`` creates (or reuses) one audit-batch run for a single
+- ``run_this_week_batch`` creates ONE fresh audit-batch run for a single
   ``weekly_dual_track_audit`` definition's opportunity and fires the batch job
-  synchronously — idempotent per (opportunity, window).
+  synchronously.
 
 Global constraints honoured here:
 - **Opp-scoping:** every read/write goes through a `WorkflowDataAccess` scoped
   to the definition's single owning opportunity — never one unscoped client.
   (Root cause of PRs #777/#779/#783.)
-- **Idempotency:** we never create a second batch for an (opp, window) that
-  already has a run whose ``state.window_start`` matches.
+- **Fire = execute, no reuse:** every call creates a new run and fires a new
+  batch. There is deliberately no "does a run already exist for this window?"
+  lookup — firing is an explicit execution. The program creator gates a program
+  run to a single fire and offers per-opp re-run for recovery, so single-fire is
+  enforced by the caller, not by dedup here.
 
 The heavy lifting (building the per-track audit calls, creating sessions) lives
 in the registered ``weekly_dual_track_audit_create`` job handler; here we only
-create/reuse the run and fire that job synchronously. Program-wide fan-out is
-now the ``audit_par`` report's default-run hook, which calls
-``run_default_for_definition`` once per watched per-opp creator instance.
+create the run and fire that job synchronously. Program-wide fan-out is the
+program creator's ``fan_out_generate``, which calls ``run_default_for_definition``
+once per per-opp creator instance.
 """
 
 from __future__ import annotations
@@ -64,10 +67,6 @@ def resolve_window(preset: str, today: date) -> tuple[str, str]:
     return start.isoformat(), end.isoformat()
 
 
-def _run_has_window(run, window_start):
-    return ((run.data or {}).get("state", {}) or {}).get("window_start") == window_start
-
-
 def run_this_week_batch(
     definition,
     window_start,
@@ -76,18 +75,19 @@ def run_this_week_batch(
     access_token,
     sample_overrides=None,
 ):
-    """Create (or reuse) one audit-batch run for ``definition``'s opportunity and
-    fire the batch job synchronously.
+    """Create ONE fresh audit-batch run for ``definition``'s opportunity and fire
+    the batch job synchronously.
 
     ``definition`` is a ``weekly_dual_track_audit`` creator instance; its owning
     opportunity is ``opportunity_id`` (falling back to the first of
     ``opportunity_ids``). Returns::
 
-        {"run_id": int, "created": bool, "sessions_created": int}
+        {"run_id": int, "sessions_created": int, "status": "ready" | "failed"}
 
-    Idempotent: if the opp's scoped runs already include one whose
-    ``state.window_start`` matches, that run is reused (``created=False``) and the
-    job is NOT re-fired.
+    NOT idempotent: every call creates a new run and fires a new batch. Firing is
+    an explicit execution; the program creator enforces single-fire per program
+    run and drives per-opp re-runs for recovery, so there is no reuse/dedup here.
+    ``status`` is ``"failed"`` if the batch job errored, else ``"ready"``.
     """
     opp_id = definition.opportunity_id or definition.opportunity_ids[0]
     def_id = definition.id
@@ -95,13 +95,6 @@ def run_this_week_batch(
     # Opp-scoped client — never an unscoped read (Global Constraint).
     wda = WorkflowDataAccess(access_token=access_token, opportunity_id=opp_id)
     try:
-        existing = next(
-            (r for r in wda.list_runs(def_id) if _run_has_window(r, window_start)),
-            None,
-        )
-        if existing is not None:  # idempotent per (opp, window)
-            return {"run_id": existing.id, "created": False, "sessions_created": 0}
-
         run = wda.create_run(
             def_id,
             opportunity_id=opp_id,
@@ -133,9 +126,10 @@ def run_this_week_batch(
             "opportunity_id": opp_id,
         }
     )
-    res = eager.result if isinstance(eager.result, dict) else {}
+    succeeded = eager.successful()
+    res = eager.result if (succeeded and isinstance(eager.result, dict)) else {}
     return {
         "run_id": run.id,
-        "created": True,
         "sessions_created": (res or {}).get("sessions_created", 0),
+        "status": "ready" if succeeded else "failed",
     }

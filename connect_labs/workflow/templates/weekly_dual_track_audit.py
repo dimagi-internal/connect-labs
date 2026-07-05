@@ -712,13 +712,13 @@ TEMPLATE["snapshot_inputs"] = {
 
 
 def run_default(*, definition, access_token, request=None, window=None, **_):
-    """Default-run hook: create (or reuse) this week's audit batch for the
+    """Default-run hook: create and fire this week's audit batch for the
     definition's opportunity, with no UI.
 
     ``window`` defaults to ``resolve_window("last_week", today)``; the per-track
     sampling rates come from the definition's ``config.audit_batch`` defaults
-    (the same values the UI pre-fills). Idempotent per (opp, window). Returns
-    ``{"run_id", "created", "sessions_created"}``.
+    (the same values the UI pre-fills). Always creates a fresh run and fires it
+    (no reuse). Returns ``{"run_id", "sessions_created", "status"}``.
     """
     from datetime import date
 
