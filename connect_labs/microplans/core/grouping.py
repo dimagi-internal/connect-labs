@@ -20,6 +20,11 @@ Strategies
                        admit until the cluster's building total would exceed
                        ``max_buildings``. Spatially contiguous + capped load.
                        Distances computed in EPSG:3857 (approximate metres).
+- ``barrier_aware``  — the SAME BFS as ``bfs_adjacency``, but a link between two
+                       cells is dropped when the segment between them crosses a
+                       major road / river / railway, so a cluster's border stops at
+                       the barrier while it keeps growing in every other direction.
+                       Barriers absent → identical to ``bfs_adjacency``.
 
 The grouping operation mutates the ``work_area_group`` field on each work area
 in place; nothing else changes (counts, CHW assignment, status all unaffected).
@@ -39,9 +44,6 @@ DEFAULT_MAX_BUILDINGS = 200
 DEFAULT_BUFFER_DISTANCE_M = 100
 
 VALID_STRATEGIES = ("bbox", "bfs_adjacency", "barrier_aware")
-# Barrier-aware treats max_buildings as a TARGET with this tolerance (±20%): groups
-# aim for the number and may run up to +20% above it, staying ≥ −20% where possible.
-BARRIER_TOLERANCE = 0.2
 
 
 @dataclass
@@ -77,7 +79,10 @@ def group_work_areas(work_areas: list[dict], config: GroupingConfig, barriers=No
     if config.strategy == "bbox":
         return _bbox_bucket(work_areas, config.target_size)
     if config.strategy == "barrier_aware":
-        return _barrier_aware(work_areas, config.max_buildings, config.buffer_distance_m, barriers)
+        # Same algorithm as walkable clusters, but a cluster's border stops at a
+        # barrier. None/empty barriers → identical to plain walkable clusters.
+        useful = barriers if (barriers is not None and not getattr(barriers, "is_empty", True)) else None
+        return _bfs_adjacency(work_areas, config.max_buildings, config.buffer_distance_m, useful)
     if config.strategy == "bfs_adjacency":
         return _bfs_adjacency(work_areas, config.max_buildings, config.buffer_distance_m)
     raise ValueError(f"unknown grouping strategy: {config.strategy!r}")
@@ -111,7 +116,7 @@ def _bbox_bucket(work_areas: list[dict], target_size: int) -> list[dict]:
 # ---- BFS adjacency (port of Connect GIS WorkAreaGrouper) ---------------------
 
 
-def _bfs_adjacency(work_areas: list[dict], max_buildings: int, buffer_distance_m: int) -> list[dict]:
+def _bfs_adjacency(work_areas: list[dict], max_buildings: int, buffer_distance_m: int, barriers=None) -> list[dict]:
     """Cluster cells via BFS over a buffer-thickened adjacency graph, capped by
     total building count per cluster.
 
@@ -120,16 +125,25 @@ def _bfs_adjacency(work_areas: list[dict], max_buildings: int, buffer_distance_m
     Adjacency check uses EPSG:3857 (Web Mercator) for an approximate metres-
     distance; this is what Connect uses and the same caveats apply (Mercator is
     not equidistant — buffer_distance_m is approximate near the equator).
-    """
+
+    ``barriers`` (a shapely geometry of road/rail/water lines in WGS84) is the ONLY
+    difference between "walkable clusters" (barriers=None) and "barrier-aware
+    clusters": when set, a link between two cells is dropped if the segment between
+    their centroids crosses a barrier, so a cluster stops growing across a major
+    road/river/railway but keeps growing in every other direction. Everything else —
+    seeding, BFS, the building cap — is identical, so walkable clusters behave exactly
+    as before."""
     from pyproj import Transformer
     from shapely import get_dimensions
     from shapely.errors import ShapelyError
-    from shapely.geometry import shape
+    from shapely.geometry import LineString, shape
     from shapely.ops import transform as shp_transform
+    from shapely.prepared import prep
     from shapely.strtree import STRtree
 
     fwd = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
     geoms_3857: dict[str, object] = {}
+    cents_3857: dict[str, tuple] = {}
     skipped: list[dict] = []
     for w in work_areas:
         g = w.get("geometry")
@@ -137,16 +151,26 @@ def _bfs_adjacency(work_areas: list[dict], max_buildings: int, buffer_distance_m
             skipped.append(w)
             continue
         try:
-            shp = shape(g)
+            shp = shp_transform(fwd.transform, shape(g))
             if shp.is_empty:
                 raise ValueError("empty geometry")
-            geoms_3857[w["id"]] = shp_transform(fwd.transform, shp)
+            geoms_3857[w["id"]] = shp
+            cents_3857[w["id"]] = (shp.centroid.x, shp.centroid.y)
         except (ShapelyError, ValueError, TypeError):
             skipped.append(w)
 
     if not geoms_3857:
         # No geometries to cluster — fall back to bbox so every cell still gets a label.
         return _bbox_bucket(work_areas, DEFAULT_TARGET_SIZE)
+
+    # Barrier lines in 3857 (prepared for fast repeated crossing tests). None → the
+    # plain walkable-clusters behaviour.
+    barriers_3857 = None
+    if barriers is not None and not getattr(barriers, "is_empty", True):
+        try:
+            barriers_3857 = prep(shp_transform(fwd.transform, barriers))
+        except (ShapelyError, ValueError, TypeError):
+            barriers_3857 = None
 
     # ---- adjacency graph ----
     wa_ids = list(geoms_3857.keys())
@@ -164,10 +188,17 @@ def _bfs_adjacency(work_areas: list[dict], max_buildings: int, buffer_distance_m
             shared = geom.intersection(other)
             dist = geom.distance(other)
             # Connect's rule: connected if they share an edge OR are within buffer.
-            if get_dimensions(shared) >= 1 or dist <= buffer_distance_m:
-                adjacency[wid].add(neighbour)
-                adjacency[neighbour].add(wid)
-                distances[_pair(wid, neighbour)] = dist
+            if not (get_dimensions(shared) >= 1 or dist <= buffer_distance_m):
+                continue
+            # Barrier-aware: don't link two cells if getting between them crosses a
+            # major road / river / railway — the cluster's border is defined there.
+            if barriers_3857 is not None and barriers_3857.intersects(
+                LineString([cents_3857[wid], cents_3857[neighbour]])
+            ):
+                continue
+            adjacency[wid].add(neighbour)
+            adjacency[neighbour].add(wid)
+            distances[_pair(wid, neighbour)] = dist
     # Order each cell's neighbours by distance, so BFS tends to walk the closest first.
     for wid in adjacency:
         adjacency[wid] = sorted(adjacency[wid], key=lambda n: distances.get(_pair(wid, n), float("inf")))
@@ -235,143 +266,3 @@ def _bfs_single_cluster(
 
 def _pair(a: str, b: str) -> tuple:
     return (a, b) if a < b else (b, a)
-
-
-# ---- barrier-aware clusters --------------------------------------------------
-
-
-def _barrier_aware(work_areas, max_buildings, buffer_distance_m, barriers):
-    """Group so no group spans a major road / river / railway.
-
-    Cut the adjacency graph wherever the link between two cells would cross a
-    ``barriers`` line → connected components are "same-side" regions (a cell can be
-    reached from another without crossing a barrier). Within each region, pack cells
-    into groups aimed at ``max_buildings`` as a TARGET (±20%), merging stray cells so
-    we avoid 1-cell/tiny groups except where a barrier genuinely isolates only a few.
-
-    No barriers (None/empty) → fall back to plain adjacency, so this never yields
-    worse groups than today when road/river data is missing."""
-    if barriers is None or getattr(barriers, "is_empty", False):
-        return _bfs_adjacency(work_areas, max_buildings, buffer_distance_m)
-
-    from pyproj import Transformer
-    from shapely.errors import ShapelyError
-    from shapely.geometry import LineString, shape
-    from shapely.ops import transform as shp_transform
-    from shapely.prepared import prep
-    from shapely.strtree import STRtree
-
-    fwd = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
-    geoms: dict[str, object] = {}
-    cents: dict[str, tuple] = {}
-    skipped = []
-    for w in work_areas:
-        g = w.get("geometry")
-        if not g:
-            skipped.append(w)
-            continue
-        try:
-            shp = shp_transform(fwd.transform, shape(g))
-            if shp.is_empty:
-                raise ValueError("empty")
-            geoms[w["id"]] = shp
-            cents[w["id"]] = (shp.centroid.x, shp.centroid.y)
-        except (ShapelyError, ValueError, TypeError):
-            skipped.append(w)
-    if not geoms:
-        return _bfs_adjacency(work_areas, max_buildings, buffer_distance_m)
-
-    try:
-        barriers_3857 = prep(shp_transform(fwd.transform, barriers))
-    except (ShapelyError, ValueError, TypeError):
-        return _bfs_adjacency(work_areas, max_buildings, buffer_distance_m)
-
-    # ---- adjacency graph, cutting links that cross a barrier ----
-    wa_ids = list(geoms.keys())
-    geoms_list = [geoms[wid] for wid in wa_ids]
-    tree = STRtree(geoms_list)
-    adjacency: dict[str, set] = {wid: set() for wid in wa_ids}
-    for wid, geom in geoms.items():
-        for idx in tree.query(geom.buffer(buffer_distance_m)):
-            nb = wa_ids[idx]
-            if nb == wid or nb in adjacency[wid]:
-                continue
-            other = geoms[nb]
-            if geom.distance(other) > buffer_distance_m:
-                continue
-            # Same group only if you can get between them without crossing a barrier.
-            if barriers_3857.intersects(LineString([cents[wid], cents[nb]])):
-                continue
-            adjacency[wid].add(nb)
-            adjacency[nb].add(wid)
-
-    # ---- connected components = same-side regions ----
-    by_id = {w["id"]: w for w in work_areas if w["id"] in geoms}
-    unvisited = set(by_id)
-    components: list[list[str]] = []
-    for seed in sorted(unvisited, key=lambda wid: (cents[wid][0], -cents[wid][1])):
-        if seed not in unvisited:
-            continue
-        comp = []
-        queue = deque([seed])
-        unvisited.discard(seed)
-        while queue:
-            cur = queue.popleft()
-            comp.append(cur)
-            for nb in adjacency[cur]:
-                if nb in unvisited:
-                    unvisited.discard(nb)
-                    queue.append(nb)
-        components.append(comp)
-
-    # ---- pack each region into ~target-sized groups ----
-    groups: list[list[str]] = []
-    for comp in components:
-        groups.extend(_pack_region(comp, by_id, max_buildings))
-
-    for i, group in enumerate(groups, start=1):
-        label = f"group-{i}"
-        for wid in group:
-            by_id[wid]["work_area_group"] = label
-    for w in skipped:
-        w["work_area_group"] = "group-no-geometry"
-    return work_areas
-
-
-def _pack_region(ids: list[str], by_id: dict, target: int) -> list[list[str]]:
-    """Split one barrier-bounded region into groups aimed at ``target`` buildings
-    (±20%). One group when the region is small; otherwise ~round(total/target) even,
-    spatially-ordered chunks, with a tiny trailing chunk merged back to avoid a
-    dribble group. A region smaller than the target is a single (possibly small)
-    group — that's the intended "barrier isolated only a few WAs" case."""
-    if not ids:
-        return []
-    b = lambda wid: int(by_id[wid].get("building_count", 0))  # noqa: E731
-    total = sum(b(wid) for wid in ids)
-    hard = target * (1 + BARRIER_TOLERANCE)
-    floor = target * (1 - BARRIER_TOLERANCE)
-    n = max(1, round(total / target)) if target > 0 else 1
-    if n <= 1:
-        return [list(ids)]
-    per = total / n
-    # Spatial order (columns W→E, then N→S) so chunks are geographically coherent.
-    ordered = sorted(ids, key=lambda wid: (by_id[wid]["centroid"][0], -by_id[wid]["centroid"][1]))
-    bins: list[list[str]] = []
-    cur: list[str] = []
-    cur_b = 0
-    for wid in ordered:
-        bb = b(wid)
-        if cur and len(bins) < n - 1 and (cur_b >= per or cur_b + bb > hard):
-            bins.append(cur)
-            cur, cur_b = [], 0
-        cur.append(wid)
-        cur_b += bb
-    if cur:
-        bins.append(cur)
-    # Fold a small trailing group into the previous one when it fits under the ceiling.
-    if len(bins) >= 2:
-        last = sum(b(wid) for wid in bins[-1])
-        prev = sum(b(wid) for wid in bins[-2])
-        if last < floor and last + prev <= hard:
-            bins[-2].extend(bins.pop())
-    return bins
