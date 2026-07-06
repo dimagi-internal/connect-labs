@@ -16,6 +16,14 @@ from connect_labs.utils.celery import set_task_progress
 
 logger = logging.getLogger(__name__)
 
+# In-process registry of fine-grained progress relays, keyed by workflow_run_id.
+# A caller that runs run_audit_creation EAGERLY in its own process (the program
+# creator's in-process fan-out) registers a relay here before .apply() and removes
+# it after. run_audit_creation looks it up by workflow_run_id and forwards per-FLW
+# progress. This deliberately avoids passing a closure through Celery .apply()
+# kwargs, which the eager path serializes (and would fail on a function).
+AUDIT_PROGRESS_RELAYS: dict = {}
+
 
 @celery_app.task(bind=True)
 def test_async_simple(self, sleep_seconds: int = 3) -> dict:
@@ -522,14 +530,18 @@ def run_audit_creation(
     )
 
     def _relay(processed, total, message):
-        """Forward fine-grained progress to an optional external callback (used by
-        the program creator to render a per-opp bar that glides per FLW/image),
-        in addition to this task's own Celery meta."""
-        if progress_callback:
+        """Forward fine-grained progress to an external relay so the program creator
+        can render a per-opp bar that glides per FLW/image, in addition to this
+        task's own Celery meta. The relay comes either from an explicit
+        ``progress_callback`` (direct calls) or the in-process registry keyed by
+        ``workflow_run_id`` — the latter avoids passing a non-serializable closure
+        through Celery ``.apply()`` (the eager path serializes its kwargs)."""
+        cb = progress_callback or (AUDIT_PROGRESS_RELAYS.get(workflow_run_id) if workflow_run_id else None)
+        if cb:
             try:
-                progress_callback(message, processed=processed, total=total)
+                cb(message, processed=processed, total=total)
             except Exception:
-                logger.debug("[AuditCreation] progress_callback raised", exc_info=True)
+                logger.debug("[AuditCreation] progress relay raised", exc_info=True)
 
     try:
         # Initialize data access
