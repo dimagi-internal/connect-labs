@@ -1590,10 +1590,10 @@ boundary `get_relay` returns `None`, a safe no-op.
 
 ### Reusable primitives
 
-| Primitive | Where | Use |
-| --- | --- | --- |
-| `throttled(fn, interval=1.5)` | `connect_labs/utils/throttle.py` | Rate-limit the run-state persist (or any chatty side effect); `force=True` for the terminal write. |
-| `register_relay` / `get_relay` / `pop_relay` | `connect_labs/utils/progress_relays.py` | Forward child-job progress up without a Celery-serialized closure. |
-| `build_task_progress(state, info)` | `connect_labs/labs/analysis/sse_streaming.py` | The single Celery-meta → UI-progress translation. Every SSE + poll endpoint goes through it — never re-derive the shape. |
-| `streamTaskProgress({transport, statusUrl, streamUrl}, cbs)` | `connect_labs/static/js/task-progress.ts` | Poll-first (default) or SSE progress client; `onItemResult` / `onCancelled` optional. |
-| `JobStatusAPIView` | `connect_labs/workflow/views.py` | JSON poll endpoint for a workflow job (`api/job/<task_id>/status.json`). |
+| Primitive                                                    | Where                                         | Use                                                                                                                      |
+| ------------------------------------------------------------ | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `throttled(fn, interval=1.5)`                                | `connect_labs/utils/throttle.py`              | Rate-limit the run-state persist (or any chatty side effect); `force=True` for the terminal write.                       |
+| `register_relay` / `get_relay` / `pop_relay`                 | `connect_labs/utils/progress_relays.py`       | Forward child-job progress up without a Celery-serialized closure.                                                       |
+| `build_task_progress(state, info)`                           | `connect_labs/labs/analysis/sse_streaming.py` | The single Celery-meta → UI-progress translation. Every SSE + poll endpoint goes through it — never re-derive the shape. |
+| `streamTaskProgress({transport, statusUrl, streamUrl}, cbs)` | `connect_labs/static/js/task-progress.ts`     | Poll-first (default) or SSE progress client; `onItemResult` / `onCancelled` optional.                                    |
+| `JobStatusAPIView`                                           | `connect_labs/workflow/views.py`              | JSON poll endpoint for a workflow job (`api/job/<task_id>/status.json`).                                                 |
