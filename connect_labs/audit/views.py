@@ -8,6 +8,7 @@ store audit state in ExperimentRecords.
 Templates are reused from the existing audit views for consistency.
 """
 
+import datetime
 import json
 import logging
 import re
@@ -32,6 +33,7 @@ from connect_labs.labs import s3_export
 from connect_labs.labs.analysis.data_access import get_flw_names_for_opportunity
 from connect_labs.labs.analysis.sse_streaming import CeleryTaskStreamView
 from connect_labs.labs.context import get_org_data
+from connect_labs.utils.tables import get_validated_page_size
 
 logger = logging.getLogger(__name__)
 
@@ -110,21 +112,85 @@ class ExperimentAuditListView(LoginRequiredMixin, SingleTableView):
     template_name = "audit/audit_session_list.html"
     paginate_by = 20
 
+    def get_paginate_by(self, table_data):
+        # Respect the "Rows per page" selector (base_table.html writes ?page_size=
+        # to the URL) instead of always paginating at the hardcoded default.
+        return get_validated_page_size(self.request)
+
     def get_queryset(self):
         # Check if required context is present (program or opportunity)
         labs_context = getattr(self.request, "labs_context", {})
         if not labs_context.get("opportunity_id") and not labs_context.get("program_id"):
             # No program or opportunity selected, return empty list
+            self._all_sessions = []
+            self._flw_display_names = {}
             return []
 
         # Get AuditSessionRecords from API (returns list, not QuerySet)
         data_access = AuditDataAccess(request=self.request)
         try:
             sessions = data_access.get_audit_sessions()
-            # Sort by id descending (higher IDs are more recent)
-            return sorted(sessions, key=lambda x: x.id, reverse=True)
+
+            # Resolve FLW usernames to display names (per opportunity present in
+            # the results) so the FLW filter dropdown doesn't show raw connect IDs.
+            flw_display_names = {}
+            for opp_id in {s.opportunity_id for s in sessions if s.opportunity_id}:
+                try:
+                    flw_display_names.update(data_access.get_flw_names(opp_id))
+                except Exception:
+                    logger.warning("Could not fetch FLW names for opp %s", opp_id, exc_info=True)
         finally:
             data_access.close()
+
+        self._all_sessions = sessions
+        self._flw_display_names = flw_display_names
+
+        filtered = self._apply_filters(sessions)
+        # Sort by id descending (higher IDs are more recent)
+        return sorted(filtered, key=lambda x: x.id, reverse=True)
+
+    def _apply_filters(self, sessions):
+        """Filter sessions by the opportunity / FLW / audit-completion-date query params."""
+        opportunity_id = self.request.GET.get("filter_opportunity_id", "").strip()
+        flw_username = self.request.GET.get("filter_flw", "").strip()
+        date_from_raw = self.request.GET.get("date_from", "").strip()
+        date_to_raw = self.request.GET.get("date_to", "").strip()
+
+        if opportunity_id:
+            sessions = [s for s in sessions if str(s.opportunity_id) == opportunity_id]
+
+        if flw_username:
+            sessions = [s for s in sessions if s.flw_username == flw_username]
+
+        if date_from_raw or date_to_raw:
+            date_from = self._parse_filter_date(date_from_raw)
+            date_to = self._parse_filter_date(date_to_raw)
+
+            def in_range(session):
+                completed = session.completed_at
+                if not completed:
+                    return False
+                completed_date = (
+                    timezone.localtime(completed).date() if timezone.is_aware(completed) else completed.date()
+                )
+                if date_from and completed_date < date_from:
+                    return False
+                if date_to and completed_date > date_to:
+                    return False
+                return True
+
+            sessions = [s for s in sessions if in_range(s)]
+
+        return sessions
+
+    @staticmethod
+    def _parse_filter_date(raw):
+        if not raw:
+            return None
+        try:
+            return datetime.date.fromisoformat(raw)
+        except ValueError:
+            return None
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -132,6 +198,28 @@ class ExperimentAuditListView(LoginRequiredMixin, SingleTableView):
         # Check if required context is present (program or opportunity)
         labs_context = getattr(self.request, "labs_context", {})
         context["has_context"] = bool(labs_context.get("opportunity_id") or labs_context.get("program_id"))
+
+        # Filter bar options, computed from the unfiltered session set so choosing
+        # one filter doesn't remove the others' options.
+        all_sessions = getattr(self, "_all_sessions", [])
+        flw_display_names = getattr(self, "_flw_display_names", {})
+
+        opportunities = {}
+        flws = {}
+        for session in all_sessions:
+            if session.opportunity_id:
+                opportunities[session.opportunity_id] = (
+                    session.opportunity_name or f"Opportunity #{session.opportunity_id}"
+                )
+            if session.flw_username:
+                flws[session.flw_username] = flw_display_names.get(session.flw_username, session.flw_username)
+
+        context["filter_opportunities"] = sorted(opportunities.items(), key=lambda pair: pair[1].lower())
+        context["filter_flws"] = sorted(flws.items(), key=lambda pair: pair[1].lower())
+        context["selected_opportunity_id"] = self.request.GET.get("filter_opportunity_id", "")
+        context["selected_flw"] = self.request.GET.get("filter_flw", "")
+        context["selected_date_from"] = self.request.GET.get("date_from", "")
+        context["selected_date_to"] = self.request.GET.get("date_to", "")
 
         # Check for Connect OAuth token (lives in session.labs_oauth, populated at login).
         labs_oauth = self.request.session.get("labs_oauth", {})

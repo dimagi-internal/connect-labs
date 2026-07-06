@@ -4,6 +4,8 @@ from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext as _
 
+from connect_labs.utils.tables import DMYTColumn
+
 
 class AuditTable(tables.Table):
     """Styled table for displaying experiment-based audit sessions."""
@@ -55,12 +57,10 @@ class AuditTable(tables.Table):
         attrs={"td": {"class": "text-sm text-gray-600 text-center"}},
     )
 
-    progress = tables.Column(
-        verbose_name=_("Progress"),
-        accessor="visit_results",
-        orderable=False,
-        attrs={"td": {"class": "text-center"}},
-        empty_values=(),
+    completed_at = DMYTColumn(
+        verbose_name=_("Date Audit Done"),
+        orderable=True,
+        attrs={"td": {"class": "text-sm text-gray-600 whitespace-nowrap"}},
     )
 
     actions = tables.Column(
@@ -81,7 +81,7 @@ class AuditTable(tables.Table):
             "status",
             "overall_result",
             "visit_count",
-            "progress",
+            "completed_at",
             "actions",
         )
         sequence = fields
@@ -162,34 +162,6 @@ class AuditTable(tables.Table):
         """Display visit count."""
         count = len(value or [])
         return format_html('<span class="text-sm font-medium text-brand-indigo">{}</span>', count)
-
-    def render_progress(self, value, record):
-        """Display progress percentage based on assessments."""
-        visit_ids = record.visit_ids or []
-        visit_results = record.visit_results or {}
-
-        total_visits = len(visit_ids)
-        audited_count = 0
-
-        for visit_id in visit_ids:
-            visit_key = str(visit_id)
-            visit_data = visit_results.get(visit_key)
-            if visit_data and visit_data.get("result") in {"pass", "fail"}:
-                audited_count += 1
-
-        percentage = round((audited_count / total_visits) * 100, 1) if total_visits else 0
-
-        percentage_str = f"{percentage:.1f}"
-
-        return format_html(
-            '<div class="text-center">'
-            '<div class="text-sm font-medium text-brand-deep-purple">{}%</div>'
-            '<div class="text-xs text-gray-500">({} of {})</div>'
-            "</div>",
-            percentage_str,
-            audited_count,
-            total_visits,
-        )
 
     def render_actions(self, record):
         """Render action buttons for the audit session."""

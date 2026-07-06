@@ -119,6 +119,45 @@
     </div>
   </div>
 
+  <!-- Filters -->
+  {% if has_context %}
+  <form method="get" class="flex flex-wrap items-end gap-3 px-4 py-3 bg-white border border-gray-200 rounded-lg shadow-sm">
+    <div class="flex flex-col">
+      <label for="filter_opportunity_id" class="text-xs text-gray-500 mb-1">{% translate "Opportunity" %}</label>
+      <select id="filter_opportunity_id" name="filter_opportunity_id" class="base-input">
+        <option value="">{% translate "All opportunities" %}</option>
+        {% for opp_id, opp_name in filter_opportunities %}
+        <option value="{{ opp_id }}" {% if selected_opportunity_id == opp_id|stringformat:"s" %}selected{% endif %}>{{ opp_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="flex flex-col">
+      <label for="filter_flw" class="text-xs text-gray-500 mb-1">{% translate "FLW" %}</label>
+      <select id="filter_flw" name="filter_flw" class="base-input">
+        <option value="">{% translate "All FLWs" %}</option>
+        {% for username, display_name in filter_flws %}
+        <option value="{{ username }}" {% if selected_flw == username %}selected{% endif %}>{{ display_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="flex flex-col">
+      <label for="date_from" class="text-xs text-gray-500 mb-1">{% translate "Audit done from" %}</label>
+      <input type="date" id="date_from" name="date_from" value="{{ selected_date_from }}" class="base-input">
+    </div>
+    <div class="flex flex-col">
+      <label for="date_to" class="text-xs text-gray-500 mb-1">{% translate "Audit done to" %}</label>
+      <input type="date" id="date_to" name="date_to" value="{{ selected_date_to }}" class="base-input">
+    </div>
+    {% if request.GET.page_size %}
+    <input type="hidden" name="page_size" value="{{ request.GET.page_size }}">
+    {% endif %}
+    <button type="submit" class="button button-sm primary-dark">{% translate "Filter" %}</button>
+    {% if selected_opportunity_id or selected_flw or selected_date_from or selected_date_to %}
+    <a href="{% url 'audit:session_list' %}" class="text-sm text-gray-500 hover:underline">{% translate "Clear filters" %}</a>
+    {% endif %}
+  </form>
+  {% endif %}
+
   <!-- Sessions Table -->
   <div class="w-full overflow-y-auto rounded-lg shadow-xs">
     {% if not has_context %}
