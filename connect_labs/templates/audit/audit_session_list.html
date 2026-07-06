@@ -10,7 +10,7 @@
 
 {% block content %}
 {% csrf_token %}
-<div class="flex flex-col gap-4 w-full max-w-full" x-data="auditListPage()" data-cancel-url="{% url 'audit:audit_job_cancel' job_id=0 %}">
+<div class="flex flex-col gap-4 w-full max-w-full" x-data="auditListPage()" data-cancel-url="{% url 'audit:audit_job_cancel' job_id=0 %}" data-delete-url="{% url 'audit:audit_delete' session_id=0 %}">
   <!-- Running Jobs Section -->
   <template x-if="runningJobs.length > 0">
     <div class="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
@@ -184,10 +184,12 @@ function auditListPage() {
     pollInterval: null,
     loading: true,
     cancelUrlTemplate: '',
+    deleteUrlTemplate: '',
 
     init() {
-      // Store the cancel URL template from the data attribute
+      // Store the cancel/delete URL templates from data attributes
       this.cancelUrlTemplate = this.$el.dataset.cancelUrl || '';
+      this.deleteUrlTemplate = this.$el.dataset.deleteUrl || '';
       // Load jobs from API
       this.loadJobs();
     },
@@ -383,6 +385,50 @@ function auditListPage() {
         alert('Failed to cancel job: ' + e.message);
       } finally {
         job.cancelling = false;
+      }
+    },
+
+    async deleteSession(sessionId, buttonEl) {
+      if (!window.confirm('Delete this audit session permanently? This cannot be undone.')) {
+        return;
+      }
+
+      try {
+        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value;
+        const deleteUrl = this.deleteUrlTemplate.replace('/0/', `/${sessionId}/`);
+
+        const response = await fetch(deleteUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken,
+          },
+        });
+
+        if (response.redirected) {
+          alert('Session expired. Please refresh the page.');
+          return;
+        }
+
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+          const text = await response.text();
+          console.error('Non-JSON response:', response.status, text.substring(0, 500));
+          alert(`Failed to delete session: Server returned ${response.status}`);
+          return;
+        }
+
+        const data = await response.json();
+
+        if (data.success) {
+          const row = buttonEl.closest('tr');
+          if (row) row.remove();
+        } else {
+          alert(data.error || 'Failed to delete session');
+        }
+      } catch (e) {
+        console.error('Error deleting session:', e);
+        alert('Failed to delete session: ' + e.message);
       }
     }
   };

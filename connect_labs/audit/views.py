@@ -343,6 +343,34 @@ class ExperimentSaveAuditView(LoginRequiredMixin, View):
             return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
+class ExperimentAuditDeleteView(LoginRequiredMixin, View):
+    """Delete an experiment-based audit session"""
+
+    def post(self, request, session_id):
+        try:
+            # Initialize data access
+            data_access = AuditDataAccess(request=request)
+
+            try:
+                # Get session (confirms it exists and the user's OAuth scope can see it
+                # before we attempt the delete)
+                session = data_access.get_audit_session(session_id, try_multiple_opportunities=True)
+                if not session:
+                    return JsonResponse({"error": "Session not found"}, status=404)
+
+                if not data_access.delete_audit_session(session_id):
+                    return JsonResponse({"error": "Failed to delete session"}, status=500)
+
+                return JsonResponse({"success": True})
+
+            finally:
+                data_access.close()
+
+        except Exception:
+            logger.exception("Failed to delete audit session")
+            return JsonResponse({"error": "An internal error occurred"}, status=500)
+
+
 class ExperimentAuditCompleteView(LoginRequiredMixin, View):
     """Complete an experiment-based audit session"""
 

@@ -70,6 +70,11 @@ urlpatterns = [
         name="audit_save",
     ),
     path(
+        "api/<int:session_id>/delete/",
+        views.ExperimentAuditDeleteView.as_view(),
+        name="audit_delete",
+    ),
+    path(
         "api/<int:session_id>/complete/",
         views.ExperimentAuditCompleteView.as_view(),
         name="audit_complete",
