@@ -55,3 +55,24 @@ class FootprintBuilding(models.Model):
     # Stored as JSON to keep the model GIS-free; the review-page footprints overlay
     # reads this when present, otherwise falls back to a centroid marker.
     geom_json = models.JSONField(null=True, blank=True)
+
+
+class BarrierArea(models.Model):
+    """Durable cache of an area's physical barriers (major roads, railways, water)
+    for the barrier-aware WAG grouping strategy.
+
+    Like FootprintArea, one row per fetched area keyed by sha256(release | wkt).
+    The barrier lines are stored as a single GeoJSON geometry (MultiLineString of
+    road/rail centrelines + water outlines) — the grouper only needs the lines to
+    test whether the segment between two work areas crosses one, so we keep this
+    GIS-free (plain JSON) and load it into shapely at group time. ``n_features`` = 0
+    is a valid "fetched, none here" result, distinct from "never fetched"."""
+
+    area_hash = models.CharField(max_length=64, unique=True)
+    overture_release = models.CharField(max_length=32)
+    n_features = models.IntegerField(default=0)
+    geom_json = models.JSONField(null=True, blank=True)  # merged barrier lines (GeoJSON geometry)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self) -> str:
+        return f"{self.area_hash[:12]} ({self.n_features} barriers)"
