@@ -356,6 +356,67 @@
     else mapPanel.clearInspect();
   }
 
+  // Dissolve a set of grid cells into their boundary edges via edge-cancellation:
+  // an interior edge is shared by two cells (appears twice) → dropped; a boundary
+  // edge appears once → kept. Result is the WAG's outer contour for adjacent cells
+  // and full cell boundaries for cells that stand alone. No geometry lib needed —
+  // the coverage cells are a uniform grid so shared edges have identical coords.
+  function boundaryEdgesFC(members) {
+    const count = new Map();
+    const seg = new Map();
+    const r = (n) => n.toFixed(7);
+    const key = (a, b) => {
+      const p = r(a[0]) + ',' + r(a[1]);
+      const q = r(b[0]) + ',' + r(b[1]);
+      return p < q ? p + '|' + q : q + '|' + p;
+    };
+    const edge = (a, b) => {
+      const k = key(a, b);
+      count.set(k, (count.get(k) || 0) + 1);
+      if (!seg.has(k)) seg.set(k, [a, b]);
+    };
+    const ring = (coords) => {
+      for (let i = 0; i + 1 < coords.length; i++)
+        edge(coords[i], coords[i + 1]);
+    };
+    members.forEach((w) => {
+      const g = w.geometry;
+      if (!g) return;
+      if (g.type === 'Polygon') g.coordinates.forEach(ring);
+      else if (g.type === 'MultiPolygon')
+        g.coordinates.forEach((poly) => poly.forEach(ring));
+    });
+    const features = [];
+    count.forEach((c, k) => {
+      if (c === 1)
+        features.push({
+          type: 'Feature',
+          geometry: { type: 'LineString', coordinates: seg.get(k) },
+          properties: {},
+        });
+    });
+    return { type: 'FeatureCollection', features };
+  }
+  // Bold the border of the WAG of the single selected work area (its cell stays
+  // highlighted via feature-state). Cleared when 0 or >1 cells are selected.
+  function updateWagOutline() {
+    if (!map || !mapReady) return;
+    const src = map.getSource('wag-outline');
+    if (!src) return;
+    let fcOut = { type: 'FeatureCollection', features: [] };
+    if (selected.size === 1) {
+      const w = WAS.find((x) => x.id === [...selected][0]);
+      const grp = w && (w.work_area_group || '');
+      if (grp) {
+        const members = WAS.filter(
+          (x) => x.geometry && (x.work_area_group || '') === grp,
+        );
+        fcOut = boundaryEdgesFC(members);
+      }
+    }
+    src.setData(fcOut);
+  }
+
   function refreshMap() {
     if (!map || !mapReady) return;
     const data = fc();
@@ -365,6 +426,32 @@
     const firstTime = !map.getLayer('wa-fill');
     window.PlanLayers.workAreas(map, { data: data });
     if (firstTime) {
+      // Bold WAG-border overlay (on top of the work-area layers): a dark casing under
+      // a white line so it reads on any fill colour or satellite imagery.
+      map.addSource('wag-outline', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+      map.addLayer({
+        id: 'wag-outline-casing',
+        type: 'line',
+        source: 'wag-outline',
+        paint: {
+          'line-color': '#0b1020',
+          'line-width': 5,
+          'line-opacity': 0.9,
+        },
+      });
+      map.addLayer({
+        id: 'wag-outline-line',
+        type: 'line',
+        source: 'wag-outline',
+        paint: {
+          'line-color': '#ffffff',
+          'line-width': 2.5,
+          'line-opacity': 0.95,
+        },
+      });
       // Plain click selects just this work area (pins its WA+group inspector).
       // Shift/⌘/Ctrl-click adds/removes it from the selection and, once more than
       // one is selected, pins the bulk panel. Hover previews a single work area
@@ -413,6 +500,7 @@
         },
       );
     });
+    updateWagOutline(); // bold the selected WA's WAG border
   }
 
   // ---- map Layers/Inspector panel + footprints layer ----
