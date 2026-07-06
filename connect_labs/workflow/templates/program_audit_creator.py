@@ -106,7 +106,7 @@ def fan_out_generate(
     Returns ``{"per_opp": {opp_id: result}, "generation", "window_start",
     "window_end"}``.
     """
-    from connect_labs.workflow.templates import run_default_for_definition
+    from connect_labs.workflow.audit_generation import dispatch_this_week_batch, sample_overrides_for
 
     window_start, window_end = window if window else (None, None)
     all_sources = _resolve_instances(definition)
@@ -139,8 +139,10 @@ def fan_out_generate(
     total = len(sources)
 
     def _emit(msg, processed, item_result):
-        # Stream a per-opp status through the standard job progress channel so the
-        # render's onItemResult flips that row live (pending → running → ready).
+        # Stream the per-opp entry (with its task_id) through the standard job
+        # progress channel so the render's onItemResult picks it up and opens a
+        # live stream on that opp's audit-creation job — the same job + SSE the
+        # per-opp workflow page shows.
         if progress_callback:
             progress_callback(msg, processed=processed, total=total, item_result=item_result)
 
@@ -151,15 +153,6 @@ def fan_out_generate(
         def_id = source["workflow_definition_id"]
         order = order_of.get(opp_id, idx)
 
-        # Mark this opp running BEFORE its (synchronous) batch executes, so the row
-        # shows "running" for the duration rather than sitting on "pending".
-        # ``id`` keys the framework's per-item run-state write by opportunity.
-        _emit(
-            f"Generating audits for opportunity #{opp_id}…",
-            idx,
-            {"id": opp_id, "opportunity_id": opp_id, "status": "running", "order": order},
-        )
-
         # Opp-scoped read of the per-opp creator definition (Global Constraint).
         wda = WorkflowDataAccess(access_token=access_token, opportunity_id=opp_id)
         try:
@@ -167,28 +160,43 @@ def fan_out_generate(
         finally:
             wda.close()
         if creator_def is None:
-            _emit(
-                f"Opportunity #{opp_id}: creator not found",
-                idx + 1,
-                {"id": opp_id, "opportunity_id": opp_id, "status": "failed", "order": order},
-            )
+            entry = {
+                "id": opp_id,
+                "opportunity_id": opp_id,
+                "workflow_definition_id": def_id,
+                "status": "failed",
+                "order": order,
+            }
+            generation[str(opp_id)] = entry
+            _emit(f"Opportunity #{opp_id}: creator not found", idx + 1, entry)
             continue
 
-        result = run_default_for_definition(creator_def, access_token=access_token, request=request, window=window)
-        per_opp[opp_id] = result
+        # DISPATCH the opp's audit-creation job ASYNC and record its task_id — we do
+        # NOT wait. The row streams that task's progress; opportunities run
+        # concurrently (governed by the worker pool) instead of blocking in turn.
+        dispatched = dispatch_this_week_batch(
+            creator_def,
+            window_start,
+            window_end,
+            access_token=access_token,
+            sample_overrides=sample_overrides_for(creator_def),
+        )
+        per_opp[opp_id] = dispatched
         entry = {
+            "id": opp_id,
             "opportunity_id": opp_id,
             "workflow_definition_id": def_id,
-            "run_id": result.get("run_id"),
-            "session_count": result.get("sessions_created", 0),
-            "status": result.get("status", "ready"),
+            "run_id": dispatched.get("run_id"),
+            "task_id": dispatched.get("task_id"),
+            "status": "running",
             "order": order,
         }
         generation[str(opp_id)] = entry
 
         # Persist the accumulating fan-out record onto the PROGRAM run, scoped
         # to the PROGRAM run's owner (program-scoped when program-owned, else
-        # the creator's owning opp) so the run tracks it live.
+        # the creator's owning opp) so the run tracks the dispatched task_ids and
+        # a reload can reconnect each row's stream.
         pwda = _program_run_dao(definition, access_token)
         try:
             pwda.update_run_state(
@@ -202,8 +210,7 @@ def fan_out_generate(
         finally:
             pwda.close()
 
-        # Stream the finished per-opp row (with its real run_id + audit count).
-        _emit(f"Opportunity #{opp_id}: {entry['status']}", idx + 1, dict(entry, id=opp_id))
+        _emit(f"Opportunity #{opp_id}: dispatched", idx + 1, entry)
 
     return {"per_opp": per_opp, "generation": generation, "window_start": window_start, "window_end": window_end}
 
@@ -364,7 +371,11 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions, onU
     // opportunity_id) — merged over the persisted generation record so each row
     // updates in place (pending → running → ready/failed) with no page reload.
     var [liveItems, setLiveItems] = React.useState({});
+    // Live progress of each opp's OWN audit-creation job (opportunity_id ->
+    // {processed,total,message}) — the same signal the per-opp workflow page shows.
+    var [oppProgress, setOppProgress] = React.useState({});
     var cleanupRef = React.useRef(null);
+    var oppStreamsRef = React.useRef({}); // opportunity_id -> cleanup fn (per-opp streams)
 
     var isCompleted = view && view.isCompleted;
 
@@ -372,6 +383,11 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions, onU
     // A program run is fired ONCE: once it has spawned (or is spawning) its
     // per-opp runs, the Generate button is retired and recovery happens per-opp.
     var hasFired = Object.keys(mergedGen).length > 0 || isRunning;
+    // Aggregate across opps for the program-level banner. The dispatcher returns
+    // fast (jobs run async), so track per-opp completion, not the dispatch task.
+    var genList = Object.keys(mergedGen).map(function (k) { return mergedGen[k]; });
+    var anyOppRunning = isRunning || genList.some(function (g) { return g && g.status === 'running'; });
+    var oppsDone = genList.filter(function (g) { return g && g.status !== 'running'; }).length;
 
     // Merge one streamed per-opp status update into the live map.
     function applyItem(item) {
@@ -383,6 +399,49 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions, onU
             return n;
         });
     }
+
+    // For each dispatched opp (status 'running' with a task_id), open a live
+    // stream on its OWN audit-creation job — reusing the exact job + SSE the
+    // per-opp workflow page uses — and reflect its progress on that row. On
+    // completion, read the real session count from the same endpoint the opp page
+    // uses. Guarded by oppStreamsRef so each opp is streamed once; a page reload
+    // reconnects because the task_ids are persisted in the generation record.
+    React.useEffect(function () {
+        Object.keys(mergedGen).forEach(function (k) {
+            var g = mergedGen[k];
+            if (!g || g.status !== 'running' || !g.task_id) return;
+            var existing = oppStreamsRef.current[k];
+            if (existing && existing.taskId === g.task_id) return; // already streaming this task
+            if (existing && existing.cleanup) existing.cleanup(); // task changed (re-run) → close old
+            var oppId = g.opportunity_id;
+            var oppRunId = g.run_id;
+            var cleanup = actions.streamJobProgress(
+                g.task_id,
+                function (p) { setOppProgress(function (m) { var n = Object.assign({}, m); n[k] = p; return n; }); },
+                null,
+                function (results) {
+                    // Done — fetch the authoritative audit count for this opp run
+                    // (same endpoint the per-opp page loads sessions from).
+                    fetch('/audit/api/workflow/' + oppRunId + '/sessions/?opportunity_id=' + oppId)
+                        .then(function (r) { return r.json(); })
+                        .then(function (d) {
+                            var count = (d && d.success && d.sessions) ? d.sessions.length : ((results && results.sessions_created) || 0);
+                            applyItem({ opportunity_id: oppId, run_id: oppRunId, status: 'ready', session_count: count });
+                        })
+                        .catch(function () {
+                            applyItem({ opportunity_id: oppId, run_id: oppRunId, status: 'ready', session_count: (results && results.sessions_created) || 0 });
+                        });
+                },
+                function (err) { applyItem({ opportunity_id: oppId, run_id: oppRunId, status: 'failed' }); },
+                function () { applyItem({ opportunity_id: oppId, run_id: oppRunId, status: 'failed' }); },
+                oppRunId // run_id — lets the server terminate a reconnect to a finished/dead task
+            );
+            oppStreamsRef.current[k] = { taskId: g.task_id, cleanup: cleanup };
+        });
+    });
+    React.useEffect(function () {
+        return function () { Object.keys(oppStreamsRef.current).forEach(function (k) { var e = oppStreamsRef.current[k]; if (e && e.cleanup) e.cleanup(); }); };
+    }, []);
 
     function calculateDateRange(preset) {
         var today = new Date(); today.setHours(0, 0, 0, 0);
@@ -427,12 +486,16 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions, onU
         var cleanup = actions.streamJobProgress(
             taskId,
             function (p) { setProgress(p); },
-            applyItem, // per-opp row updates stream in live
-            function () {
-                // Rows already reflect the final per-opp status via the streamed
-                // item_results — no page reload needed.
+            applyItem, // dispatched entries (with task_ids) stream in as they fan out
+            function (results) {
+                // The dispatcher is fast; whether or not every streamed item landed,
+                // its return carries the full generation record (all task_ids), so
+                // apply it here — the per-opp streaming effect then opens a live
+                // stream on each opp's own audit-creation job. No page reload.
                 setIsRunning(false);
-                setProgress({ status: 'completed' });
+                setProgress(null);
+                var gen = (results && results.generation) || {};
+                Object.keys(gen).forEach(function (k) { applyItem(gen[k]); });
                 onUpdateState({ active_job: { job_id: taskId, status: 'completed' } }).catch(function () {});
             },
             function (err) {
@@ -482,8 +545,12 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions, onU
             }
             actions.streamJobProgress(
                 resp.task_id,
-                function () {}, applyItem, // the row updates live from the streamed status
-                function () { setBusyOpp(null); },
+                function () {}, applyItem, // the dispatched entry (with task_id) streams in
+                function (results) {
+                    setBusyOpp(null);
+                    var gen = (results && results.generation) || {};
+                    Object.keys(gen).forEach(function (k) { applyItem(gen[k]); });
+                },
                 function (err) { setBusyOpp(null); setJobError('Opp #' + oppId + ' re-run failed: ' + (err || '')); },
                 function () { setBusyOpp(null); },
                 instance.id
@@ -565,6 +632,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions, onU
         var oppId = source.opportunity_id;
         var gen = mergedGen[String(oppId)];
         var comp = completion[String(oppId)];
+        var prog = oppProgress[String(oppId)]; // this opp's audit-creation job progress
         var runLink = (gen && gen.run_id != null)
             ? React.createElement('a', {
                 href: '/labs/workflow/' + source.workflow_definition_id + '/run/?run_id=' + gen.run_id + '&opportunity_id=' + oppId,
@@ -584,7 +652,12 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions, onU
         var isComplete = !!comp && comp.open_audits === 0 && comp.total_audits > 0;
 
         var stateLabel, statePill;
-        if (isBusy) { stateLabel = streamedRunning ? 'Generating audits…' : 'Re-running…'; statePill = pill('● running', 'indigo'); }
+        if (isBusy) {
+            // Show this opp's own audit-creation job message ("Creating audit 3/8…")
+            // when the stream has delivered it, else a neutral running label.
+            stateLabel = (prog && prog.message) ? prog.message : (streamedRunning ? 'Generating audits…' : 'Re-running…');
+            statePill = pill('● running', 'indigo');
+        }
         else if (!gen) { stateLabel = 'Not generated'; statePill = pill('pending', 'gray'); }
         else if (isFailed) { stateLabel = 'Didn’t finish — no audits created'; statePill = pill('● failed', 'red'); }
         else if (isComplete) { stateLabel = count + ' audit(s) · all complete'; statePill = pill('✓ complete', 'green'); }
@@ -604,11 +677,19 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions, onU
             key: oppId,
             style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', border: '1px solid #e5e7eb', borderRadius: 8, marginBottom: 8, background: 'white' }
         },
-            React.createElement('div', null,
+            React.createElement('div', { style: { flex: 1, minWidth: 0, paddingRight: 12 } },
                 React.createElement('div', { style: { fontWeight: 600, color: '#111827', fontSize: 13 } }, 'Opp #' + oppId),
-                React.createElement('div', { style: { fontSize: 11, color: '#6b7280', marginTop: 2 } }, stateLabel)
+                React.createElement('div', { style: { fontSize: 11, color: '#6b7280', marginTop: 2 } }, stateLabel),
+                // This opp's live audit-creation progress bar (same signal the
+                // per-opp workflow page shows).
+                (isBusy && prog && prog.total > 0)
+                    ? React.createElement('div', { style: { marginTop: 6, maxWidth: 380 } },
+                        React.createElement('div', { style: { height: 5, background: '#e5e7eb', borderRadius: 999 } },
+                            React.createElement('div', { style: { height: 5, borderRadius: 999, background: '#2563eb', width: Math.round((prog.processed || 0) / prog.total * 100) + '%', transition: 'width .3s' } })),
+                        React.createElement('div', { style: { fontSize: 10, color: '#9ca3af', marginTop: 3 } }, (prog.processed || 0) + ' / ' + prog.total))
+                    : null
             ),
-            React.createElement('div', { style: { display: 'flex', gap: 8, alignItems: 'center' } },
+            React.createElement('div', { style: { display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 } },
                 statePill, rerunBtn, runLink
             )
         );
@@ -677,16 +758,16 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions, onU
             React.createElement('div', { style: { fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 6 } }, 'Audit window'),
             React.createElement('div', { style: { fontSize: 14, color: '#111827' } },
                 (runState.window_start || startDate ? fmtDate(runState.window_start || startDate) + ' – ' + fmtDate(runState.window_end || endDate) : 'Window set') +
-                (isRunning
-                    ? ' · generating ' + (progress && progress.total ? '(' + (progress.processed || 0) + '/' + progress.total + ')' : '…')
+                (anyOppRunning
+                    ? ' · generating (' + oppsDone + '/' + sources.length + ' done)'
                     : ' · fired for ' + sources.length + ' opportunit' + (sources.length === 1 ? 'y' : 'ies'))),
             React.createElement('div', { style: { fontSize: 12, color: '#6b7280', marginTop: 6 } },
-                isRunning
-                    ? 'Generating audits per opportunity — watch each row update below.'
+                anyOppRunning
+                    ? 'Generating audits per opportunity — each row streams its own progress below.'
                     : 'This program run has been fired. To recover an opportunity that didn’t finish, use its Re-run button below.'),
-            (isRunning && progress && progress.total > 0)
+            (anyOppRunning && sources.length > 0)
                 ? React.createElement('div', { style: { marginTop: 10, height: 6, background: '#e5e7eb', borderRadius: 999 } },
-                    React.createElement('div', { style: { height: 6, borderRadius: 999, background: '#2563eb', width: Math.round((progress.processed || 0) / progress.total * 100) + '%', transition: 'width .3s' } }))
+                    React.createElement('div', { style: { height: 6, borderRadius: 999, background: '#2563eb', width: Math.round(oppsDone / sources.length * 100) + '%', transition: 'width .3s' } }))
                 : null,
             jobError
                 ? React.createElement('div', { style: { marginTop: 12, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: 12, fontSize: 13, color: '#b91c1c' } }, jobError)

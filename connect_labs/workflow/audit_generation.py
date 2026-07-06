@@ -67,27 +67,22 @@ def resolve_window(preset: str, today: date) -> tuple[str, str]:
     return start.isoformat(), end.isoformat()
 
 
-def run_this_week_batch(
-    definition,
-    window_start,
-    window_end,
-    *,
-    access_token,
-    sample_overrides=None,
-):
-    """Create ONE fresh audit-batch run for ``definition``'s opportunity and fire
-    the batch job synchronously.
+def sample_overrides_for(definition):
+    """Extract the MUAC / Other sampling percentages from a creator definition's
+    ``config.audit_batch`` (the same defaults the UI pre-fills)."""
+    batch = (definition.data.get("config") or {}).get("audit_batch") or {}
+    track_a = batch.get("track_a") or {}
+    track_b = batch.get("track_b") or {}
+    return {
+        "muac_sample_percentage": track_a.get("sample_percentage", 100),
+        "other_sample_percentage": track_b.get("sample_percentage", 10),
+    }
 
-    ``definition`` is a ``weekly_dual_track_audit`` creator instance; its owning
-    opportunity is ``opportunity_id`` (falling back to the first of
-    ``opportunity_ids``). Returns::
 
-        {"run_id": int, "sessions_created": int, "status": "ready" | "failed"}
-
-    NOT idempotent: every call creates a new run and fires a new batch. Firing is
-    an explicit execution; the program creator enforces single-fire per program
-    run and drives per-opp re-runs for recovery, so there is no reuse/dedup here.
-    ``status`` is ``"failed"`` if the batch job errored, else ``"ready"``.
+def _create_batch_run(definition, window_start, window_end, *, access_token, sample_overrides=None):
+    """Create ONE fresh audit-batch run for ``definition``'s opportunity and build
+    the ``weekly_dual_track_audit_create`` job_config. Returns ``(opp_id, run,
+    job_config)``. Shared by the eager (cron) and async (streamed fan-out) paths.
     """
     opp_id = definition.opportunity_id or definition.opportunity_ids[0]
     def_id = definition.id
@@ -115,16 +110,22 @@ def run_this_week_batch(
     if sample_overrides:
         # {muac_sample_percentage, other_sample_percentage}
         job_config.update(sample_overrides)
+    return opp_id, run, job_config
 
-    # run_workflow_job(self, job_config, access_token, run_id, opportunity_id)
-    # — bind=True Celery task; run synchronously in-process via .apply().
+
+def run_this_week_batch(definition, window_start, window_end, *, access_token, sample_overrides=None):
+    """Create a fresh audit-batch run and fire the batch job SYNCHRONOUSLY (eager).
+
+    Used by the no-UI cron/default-run path. Returns
+    ``{"run_id", "sessions_created", "status"}`` (``status`` is ``"failed"`` if the
+    batch errored). NOT idempotent — every call creates + fires a new run.
+    """
+    opp_id, run, job_config = _create_batch_run(
+        definition, window_start, window_end, access_token=access_token, sample_overrides=sample_overrides
+    )
+    # bind=True Celery task; run synchronously in-process via .apply().
     eager = run_workflow_job.apply(
-        kwargs={
-            "job_config": job_config,
-            "access_token": access_token,
-            "run_id": run.id,
-            "opportunity_id": opp_id,
-        }
+        kwargs={"job_config": job_config, "access_token": access_token, "run_id": run.id, "opportunity_id": opp_id}
     )
     succeeded = eager.successful()
     res = eager.result if (succeeded and isinstance(eager.result, dict)) else {}
@@ -133,3 +134,21 @@ def run_this_week_batch(
         "sessions_created": (res or {}).get("sessions_created", 0),
         "status": "ready" if succeeded else "failed",
     }
+
+
+def dispatch_this_week_batch(definition, window_start, window_end, *, access_token, sample_overrides=None):
+    """Create a fresh audit-batch run and DISPATCH the batch job ASYNC (``.delay``),
+    returning immediately without waiting for it to finish.
+
+    Returns ``{"run_id", "task_id", "status": "running"}``. This is what lets the
+    program creator show each opportunity row streaming its own audit-creation job
+    progress live (same job, same SSE stream as the per-opp workflow page) and run
+    the opportunities concurrently rather than blocking on each in turn.
+    """
+    opp_id, run, job_config = _create_batch_run(
+        definition, window_start, window_end, access_token=access_token, sample_overrides=sample_overrides
+    )
+    task = run_workflow_job.delay(
+        job_config=job_config, access_token=access_token, run_id=run.id, opportunity_id=opp_id
+    )
+    return {"run_id": run.id, "task_id": task.id, "status": "running"}
