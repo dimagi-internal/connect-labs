@@ -134,6 +134,55 @@ def test_fan_out_single_fire_guard_skips_when_already_fired(monkeypatch):
     assert fired == []  # nothing was re-fired
 
 
+def test_fan_out_streams_running_then_ready_item_results(monkeypatch):
+    """Each opp streams a 'running' item_result before its batch and a terminal
+    item_result (run_id + count + status) after — so the render's onItemResult can
+    flip that row live instead of waiting for a page reload."""
+    from connect_labs.workflow import templates as templates_pkg
+    from connect_labs.workflow.templates import program_audit_creator as m
+
+    def make_wda(access_token=None, opportunity_id=None, **_):
+        wda = mock.Mock()
+        wda.get_definition.return_value = mock.Mock(id=40 + (opportunity_id or 0))
+        wda.get_run.return_value = _run(700)  # unfired
+        wda.update_run_state.side_effect = lambda rid, s: None
+        return wda
+
+    monkeypatch.setattr(m, "WorkflowDataAccess", make_wda)
+    monkeypatch.setattr(
+        templates_pkg,
+        "run_default_for_definition",
+        lambda defn, *, access_token, request=None, window=None, **kw: {
+            "run_id": 900,
+            "sessions_created": 7,
+            "status": "ready",
+        },
+    )
+
+    emitted = []
+
+    def progress(msg, processed=0, total=0, item_result=None):
+        if item_result is not None:
+            emitted.append(item_result)
+
+    m.fan_out_generate(
+        definition=_program_def(),
+        run_id=700,
+        access_token="t",
+        window=("2026-06-21", "2026-06-27"),
+        progress_callback=progress,
+    )
+
+    # Per opp: a 'running' item first, then a terminal 'ready' item with the run.
+    by_opp = {}
+    for it in emitted:
+        by_opp.setdefault(it["opportunity_id"], []).append(it["status"])
+    assert by_opp[1973] == ["running", "ready"]
+    assert by_opp[1976] == ["running", "ready"]
+    ready = [it for it in emitted if it["status"] == "ready"][0]
+    assert ready["run_id"] == 900 and ready["session_count"] == 7 and "id" in ready
+
+
 def test_fan_out_per_opp_recovery_merges_single_opp(monkeypatch):
     """only_opportunity_id (re-)runs ONE opp and merges it into the existing record,
     leaving the other opps' entries untouched."""

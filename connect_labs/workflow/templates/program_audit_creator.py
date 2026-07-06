@@ -138,13 +138,27 @@ def fan_out_generate(
     )
     total = len(sources)
 
+    def _emit(msg, processed, item_result):
+        # Stream a per-opp status through the standard job progress channel so the
+        # render's onItemResult flips that row live (pending → running → ready).
+        if progress_callback:
+            progress_callback(msg, processed=processed, total=total, item_result=item_result)
+
     per_opp = {}
     generation = dict(existing)
     for idx, source in enumerate(sources):
         opp_id = source["opportunity_id"]
         def_id = source["workflow_definition_id"]
-        if progress_callback:
-            progress_callback(f"Generating audits for opportunity #{opp_id}…", idx, total)
+        order = order_of.get(opp_id, idx)
+
+        # Mark this opp running BEFORE its (synchronous) batch executes, so the row
+        # shows "running" for the duration rather than sitting on "pending".
+        # ``id`` keys the framework's per-item run-state write by opportunity.
+        _emit(
+            f"Generating audits for opportunity #{opp_id}…",
+            idx,
+            {"id": opp_id, "opportunity_id": opp_id, "status": "running", "order": order},
+        )
 
         # Opp-scoped read of the per-opp creator definition (Global Constraint).
         wda = WorkflowDataAccess(access_token=access_token, opportunity_id=opp_id)
@@ -153,18 +167,24 @@ def fan_out_generate(
         finally:
             wda.close()
         if creator_def is None:
+            _emit(
+                f"Opportunity #{opp_id}: creator not found",
+                idx + 1,
+                {"id": opp_id, "opportunity_id": opp_id, "status": "failed", "order": order},
+            )
             continue
 
         result = run_default_for_definition(creator_def, access_token=access_token, request=request, window=window)
         per_opp[opp_id] = result
-        generation[str(opp_id)] = {
+        entry = {
             "opportunity_id": opp_id,
             "workflow_definition_id": def_id,
             "run_id": result.get("run_id"),
             "session_count": result.get("sessions_created", 0),
             "status": result.get("status", "ready"),
-            "order": order_of.get(opp_id, idx),
+            "order": order,
         }
+        generation[str(opp_id)] = entry
 
         # Persist the accumulating fan-out record onto the PROGRAM run, scoped
         # to the PROGRAM run's owner (program-scoped when program-owned, else
@@ -181,6 +201,9 @@ def fan_out_generate(
             )
         finally:
             pwda.close()
+
+        # Stream the finished per-opp row (with its real run_id + audit count).
+        _emit(f"Opportunity #{opp_id}: {entry['status']}", idx + 1, dict(entry, id=opp_id))
 
     return {"per_opp": per_opp, "generation": generation, "window_start": window_start, "window_end": window_end}
 
@@ -329,9 +352,6 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions, onU
 
     var runState = (view && view.state) || instance.state || {};
     var generation = runState.generation || {};
-    // A program run is fired ONCE: once it has spawned its per-opp runs, the
-    // Generate button is retired and recovery happens per-opp.
-    var hasGenerated = Object.keys(generation).length > 0;
 
     var [datePreset, setDatePreset] = React.useState(runState.date_preset || 'last_week');
     var [startDate, setStartDate] = React.useState(runState.window_start || '');
@@ -340,9 +360,29 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions, onU
     var [busyOpp, setBusyOpp] = React.useState(null);
     var [progress, setProgress] = React.useState(null);
     var [jobError, setJobError] = React.useState(null);
+    // Live per-opp status streamed from the job via onItemResult (keyed by
+    // opportunity_id) — merged over the persisted generation record so each row
+    // updates in place (pending → running → ready/failed) with no page reload.
+    var [liveItems, setLiveItems] = React.useState({});
     var cleanupRef = React.useRef(null);
 
     var isCompleted = view && view.isCompleted;
+
+    var mergedGen = Object.assign({}, generation, liveItems);
+    // A program run is fired ONCE: once it has spawned (or is spawning) its
+    // per-opp runs, the Generate button is retired and recovery happens per-opp.
+    var hasFired = Object.keys(mergedGen).length > 0 || isRunning;
+
+    // Merge one streamed per-opp status update into the live map.
+    function applyItem(item) {
+        if (!item || item.opportunity_id == null) return;
+        setLiveItems(function (m) {
+            var n = Object.assign({}, m);
+            var k = String(item.opportunity_id);
+            n[k] = Object.assign({}, n[k], item);
+            return n;
+        });
+    }
 
     function calculateDateRange(preset) {
         var today = new Date(); today.setHours(0, 0, 0, 0);
@@ -387,13 +427,13 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions, onU
         var cleanup = actions.streamJobProgress(
             taskId,
             function (p) { setProgress(p); },
-            null,
-            function (results) {
-                // Reload so the per-opp rows + single-fire button gating reflect
-                // the run's freshly-written generation record.
-                onUpdateState({ active_job: { job_id: taskId, status: 'completed' } })
-                    .catch(function () {})
-                    .then(function () { window.location.reload(); });
+            applyItem, // per-opp row updates stream in live
+            function () {
+                // Rows already reflect the final per-opp status via the streamed
+                // item_results — no page reload needed.
+                setIsRunning(false);
+                setProgress({ status: 'completed' });
+                onUpdateState({ active_job: { job_id: taskId, status: 'completed' } }).catch(function () {});
             },
             function (err) {
                 setIsRunning(false); setJobError(err || 'Generation failed'); setProgress(null);
@@ -442,8 +482,8 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions, onU
             }
             actions.streamJobProgress(
                 resp.task_id,
-                function () {}, null,
-                function () { window.location.reload(); },
+                function () {}, applyItem, // the row updates live from the streamed status
+                function () { setBusyOpp(null); },
                 function (err) { setBusyOpp(null); setJobError('Opp #' + oppId + ' re-run failed: ' + (err || '')); },
                 function () { setBusyOpp(null); },
                 instance.id
@@ -523,7 +563,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions, onU
     // (re-)run individually for recovery.
     function statusRow(source) {
         var oppId = source.opportunity_id;
-        var gen = generation[String(oppId)];
+        var gen = mergedGen[String(oppId)];
         var comp = completion[String(oppId)];
         var runLink = (gen && gen.run_id != null)
             ? React.createElement('a', {
@@ -536,12 +576,15 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions, onU
         // Real audit count: prefer the server completion rollup, else the count
         // the fire recorded. A generated run with zero audits = it didn't finish.
         var count = gen ? ((comp && comp.total_audits != null) ? comp.total_audits : (gen.session_count || 0)) : 0;
-        var isBusy = busyOpp === oppId;
+        // "running" arrives via the live stream (this opp's batch is executing);
+        // busyOpp is a per-opp re-run in flight.
+        var streamedRunning = !!gen && gen.status === 'running';
+        var isBusy = busyOpp === oppId || streamedRunning;
         var isFailed = !!gen && !isBusy && (gen.status === 'failed' || (gen.run_id != null && count === 0));
         var isComplete = !!comp && comp.open_audits === 0 && comp.total_audits > 0;
 
         var stateLabel, statePill;
-        if (isBusy) { stateLabel = 'Re-running…'; statePill = pill('● running', 'indigo'); }
+        if (isBusy) { stateLabel = streamedRunning ? 'Generating audits…' : 'Re-running…'; statePill = pill('● running', 'indigo'); }
         else if (!gen) { stateLabel = 'Not generated'; statePill = pill('pending', 'gray'); }
         else if (isFailed) { stateLabel = 'Didn’t finish — no audits created'; statePill = pill('● failed', 'red'); }
         else if (isComplete) { stateLabel = count + ' audit(s) · all complete'; statePill = pill('✓ complete', 'green'); }
@@ -595,7 +638,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions, onU
             : null,
         // Window picker + generate — shown ONLY before this program run is fired.
         // A program run is fired once; after that, recovery is per-opp below.
-        (isCompleted || hasGenerated) ? null : React.createElement('div', { style: { background: 'white', borderRadius: 10, border: '1px solid #e5e7eb', padding: 16, marginBottom: 14 } },
+        (isCompleted || hasFired) ? null : React.createElement('div', { style: { background: 'white', borderRadius: 10, border: '1px solid #e5e7eb', padding: 16, marginBottom: 14 } },
             React.createElement('div', { style: { fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 10 } }, 'Audit window'),
             React.createElement('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 } },
                 datePresets.map(function (p) {
@@ -629,16 +672,21 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions, onU
                 ? React.createElement('div', { style: { marginTop: 14, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: 12, fontSize: 13, color: '#b91c1c' } }, jobError)
                 : null
         ),
-        // Fired summary — shown after the program run has spawned its per-opp runs.
-        (!isCompleted && hasGenerated) ? React.createElement('div', { style: { background: 'white', borderRadius: 10, border: '1px solid #e5e7eb', padding: 16, marginBottom: 14 } },
+        // Fired summary — shown while/after the program run spawns its per-opp runs.
+        (!isCompleted && hasFired) ? React.createElement('div', { style: { background: 'white', borderRadius: 10, border: '1px solid #e5e7eb', padding: 16, marginBottom: 14 } },
             React.createElement('div', { style: { fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 6 } }, 'Audit window'),
             React.createElement('div', { style: { fontSize: 14, color: '#111827' } },
-                (runState.window_start ? fmtDate(runState.window_start) + ' – ' + fmtDate(runState.window_end) : 'Window set') +
-                ' · fired for ' + Object.keys(generation).length + ' opportunit' + (Object.keys(generation).length === 1 ? 'y' : 'ies')),
+                (runState.window_start || startDate ? fmtDate(runState.window_start || startDate) + ' – ' + fmtDate(runState.window_end || endDate) : 'Window set') +
+                (isRunning
+                    ? ' · generating ' + (progress && progress.total ? '(' + (progress.processed || 0) + '/' + progress.total + ')' : '…')
+                    : ' · fired for ' + sources.length + ' opportunit' + (sources.length === 1 ? 'y' : 'ies'))),
             React.createElement('div', { style: { fontSize: 12, color: '#6b7280', marginTop: 6 } },
-                'This program run has been fired. To recover an opportunity that didn’t finish, use its Re-run button below.'),
-            (isRunning || busyOpp)
-                ? React.createElement('div', { style: { marginTop: 12, background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: 12, fontSize: 13, color: '#1e40af' } }, 'Working…')
+                isRunning
+                    ? 'Generating audits per opportunity — watch each row update below.'
+                    : 'This program run has been fired. To recover an opportunity that didn’t finish, use its Re-run button below.'),
+            (isRunning && progress && progress.total > 0)
+                ? React.createElement('div', { style: { marginTop: 10, height: 6, background: '#e5e7eb', borderRadius: 999 } },
+                    React.createElement('div', { style: { height: 6, borderRadius: 999, background: '#2563eb', width: Math.round((progress.processed || 0) / progress.total * 100) + '%', transition: 'width .3s' } }))
                 : null,
             jobError
                 ? React.createElement('div', { style: { marginTop: 12, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: 12, fontSize: 13, color: '#b91c1c' } }, jobError)

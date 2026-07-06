@@ -46,9 +46,12 @@ def program_audit_generate(job_config: dict, access_token: str, progress_callbac
     finally:
         wda.close()
 
-    def _progress(msg, processed=0, total=0):
+    def _progress(msg, processed=0, total=0, item_result=None):
+        # Forward the per-opp item_result through the standard job progress
+        # channel (set_task_progress → SSE → the render's onItemResult) so each
+        # opportunity row updates live as its batch runs.
         if progress_callback:
-            progress_callback(msg, processed=processed, total=total)
+            progress_callback(msg, processed=processed, total=total, item_result=item_result)
 
     result = fan_out_generate(
         definition=definition,
