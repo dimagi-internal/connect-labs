@@ -439,7 +439,7 @@
           <span class="text-gray-600">Target work areas per group</span>
           <input id="grp-target-size" type="number" value="30" min="1" class="base-input mt-0.5 text-xs">
         </label>
-        <p id="grp-barrier-note" class="hidden text-[10px] text-gray-500 leading-snug">Groups never span a major road, river, or railway (from Overture). The buildings field is a <b>target ±20%</b> here, not a hard max. Where road/river data is sparse this falls back to plain clusters.</p>
+        <p id="grp-barrier-note" class="hidden text-[10px] text-gray-500 leading-snug">Same as walkable clusters, but a cluster's border stops at a <b>major road, river, or railway</b> (from Overture) — it keeps growing in every other direction up to the max buildings. Where road/river data is sparse it falls back to plain walkable clusters.</p>
         <button type="button" id="btn-regroup" class="button button-sm primary-dark" disabled>Apply grouping</button>
         <p class="text-[10px] text-gray-400">Re-groups every active work area. Audited per work area.</p>
       </div>

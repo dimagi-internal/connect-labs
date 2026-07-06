@@ -1469,19 +1469,14 @@
   // ---- Phase-1: re-group cells ----
   on('grp-strategy', 'change', () => {
     const s = $('grp-strategy').value;
-    // barrier_aware reuses the buildings + buffer inputs (buildings = target here).
+    // barrier_aware is walkable clusters + barrier cuts, so it uses the same
+    // max-buildings + buffer inputs (a hard cap, exactly like walkable clusters).
     $('grp-bfs-params').classList.toggle(
       'hidden',
       s !== 'bfs_adjacency' && s !== 'barrier_aware',
     );
     $('grp-bbox-params').classList.toggle('hidden', s !== 'bbox');
     $('grp-barrier-note')?.classList.toggle('hidden', s !== 'barrier_aware');
-    const lbl = $('grp-max-label');
-    if (lbl)
-      lbl.textContent =
-        s === 'barrier_aware'
-          ? 'Target buildings per group (±20%)'
-          : 'Max buildings per group';
   });
   on('btn-regroup', 'click', async () => {
     if (!REGROUP_URL) {
