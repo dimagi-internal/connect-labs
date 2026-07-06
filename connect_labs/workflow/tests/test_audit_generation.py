@@ -128,8 +128,8 @@ def test_creator_run_default_always_creates_no_reuse(monkeypatch):
 def test_run_batch_in_process_runs_handler_and_relays_progress(monkeypatch):
     """The in-process path runs the audit-creation handler directly (so its
     per-audit progress can be relayed on the program stream) and reports status."""
-    from connect_labs.workflow import audit_generation as g
     import connect_labs.workflow.job_handlers.weekly_dual_track_audit as h
+    from connect_labs.workflow import audit_generation as g
 
     ticks = []
 
@@ -150,8 +150,8 @@ def test_run_batch_in_process_runs_handler_and_relays_progress(monkeypatch):
 
 
 def test_run_batch_in_process_reports_failed_on_error(monkeypatch):
-    from connect_labs.workflow import audit_generation as g
     import connect_labs.workflow.job_handlers.weekly_dual_track_audit as h
+    from connect_labs.workflow import audit_generation as g
 
     def boom(job_config, access_token, progress_callback=None):
         raise RuntimeError("kaboom")
