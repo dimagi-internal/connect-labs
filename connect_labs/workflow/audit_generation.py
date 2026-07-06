@@ -27,10 +27,13 @@ once per per-opp creator instance.
 
 from __future__ import annotations
 
+import logging
 from datetime import date, timedelta
 
 from connect_labs.workflow.data_access import WorkflowDataAccess
 from connect_labs.workflow.tasks import run_workflow_job
+
+logger = logging.getLogger(__name__)
 
 JOB_TYPE = "weekly_dual_track_audit_create"
 
@@ -79,10 +82,11 @@ def sample_overrides_for(definition):
     }
 
 
-def _create_batch_run(definition, window_start, window_end, *, access_token, sample_overrides=None):
+def create_batch_run(definition, window_start, window_end, *, access_token, sample_overrides=None):
     """Create ONE fresh audit-batch run for ``definition``'s opportunity and build
     the ``weekly_dual_track_audit_create`` job_config. Returns ``(opp_id, run,
-    job_config)``. Shared by the eager (cron) and async (streamed fan-out) paths.
+    job_config)``. Shared by the eager (cron) path and the in-process, progress-
+    relayed fan-out (program creator).
     """
     opp_id = definition.opportunity_id or definition.opportunity_ids[0]
     def_id = definition.id
@@ -120,7 +124,7 @@ def run_this_week_batch(definition, window_start, window_end, *, access_token, s
     ``{"run_id", "sessions_created", "status"}`` (``status`` is ``"failed"`` if the
     batch errored). NOT idempotent — every call creates + fires a new run.
     """
-    opp_id, run, job_config = _create_batch_run(
+    opp_id, run, job_config = create_batch_run(
         definition, window_start, window_end, access_token=access_token, sample_overrides=sample_overrides
     )
     # bind=True Celery task; run synchronously in-process via .apply().
@@ -136,19 +140,21 @@ def run_this_week_batch(definition, window_start, window_end, *, access_token, s
     }
 
 
-def dispatch_this_week_batch(definition, window_start, window_end, *, access_token, sample_overrides=None):
-    """Create a fresh audit-batch run and DISPATCH the batch job ASYNC (``.delay``),
-    returning immediately without waiting for it to finish.
+def run_batch_in_process(run, job_config, *, access_token, progress_callback=None):
+    """Run the audit-creation handler for an already-created batch ``run``
+    IN-PROCESS (not via Celery), forwarding its per-audit progress to
+    ``progress_callback``.
 
-    Returns ``{"run_id", "task_id", "status": "running"}``. This is what lets the
-    program creator show each opportunity row streaming its own audit-creation job
-    progress live (same job, same SSE stream as the per-opp workflow page) and run
-    the opportunities concurrently rather than blocking on each in turn.
+    This is what the program creator uses so ONE program job/SSE stream can relay
+    every opportunity's progress — the deployment's ASGI worker can only serve one
+    long-lived SSE stream at a time, so a stream-per-opp starves; a single relayed
+    stream does not. Returns ``{"run_id", "sessions_created", "status"}``.
     """
-    opp_id, run, job_config = _create_batch_run(
-        definition, window_start, window_end, access_token=access_token, sample_overrides=sample_overrides
-    )
-    task = run_workflow_job.delay(
-        job_config=job_config, access_token=access_token, run_id=run.id, opportunity_id=opp_id
-    )
-    return {"run_id": run.id, "task_id": task.id, "status": "running"}
+    from connect_labs.workflow.job_handlers.weekly_dual_track_audit import weekly_dual_track_audit_create
+
+    try:
+        res = weekly_dual_track_audit_create(job_config, access_token, progress_callback=progress_callback)
+        return {"run_id": run.id, "sessions_created": (res or {}).get("sessions_created", 0), "status": "ready"}
+    except Exception:
+        logger.exception("[audit_generation] in-process batch failed for run %s", run.id)
+        return {"run_id": run.id, "sessions_created": 0, "status": "failed"}

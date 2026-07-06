@@ -63,7 +63,26 @@ def _mock_creator(opportunity_id):
     return creator
 
 
-def test_fan_out_dispatches_async_and_records_task_ids(monkeypatch):
+def _patch_inprocess(monkeypatch, ag, *, sessions=3, status="ready", relay_progress=False):
+    """Patch create_batch_run + run_batch_in_process so fan_out runs each opp's
+    audit creation in-process (the single-relayed-stream model), without hitting
+    the real WorkflowDataAccess / handler."""
+
+    def fake_create(defn, ws, we, *, access_token, sample_overrides=None):
+        run = mock.Mock()
+        run.id = defn.id + 1000
+        return (defn.id, run, {"run_id": run.id})
+
+    def fake_run(run, job_config, *, access_token, progress_callback=None):
+        if relay_progress and progress_callback:
+            progress_callback("Creating audit 1/2", processed=1, total=2)
+        return {"run_id": run.id, "sessions_created": sessions, "status": status}
+
+    monkeypatch.setattr(ag, "create_batch_run", fake_create)
+    monkeypatch.setattr(ag, "run_batch_in_process", fake_run)
+
+
+def test_fan_out_runs_inprocess_and_records_runs(monkeypatch):
     from connect_labs.workflow import audit_generation as ag
     from connect_labs.workflow.templates import program_audit_creator as m
 
@@ -77,14 +96,7 @@ def test_fan_out_dispatches_async_and_records_task_ids(monkeypatch):
         return wda
 
     monkeypatch.setattr(m, "WorkflowDataAccess", make_wda)
-
-    calls = []
-
-    def fake_dispatch(defn, ws, we, *, access_token, sample_overrides=None):
-        calls.append((defn.id, ws, we))
-        return {"run_id": defn.id + 1000, "task_id": "task-" + str(defn.id), "status": "running"}
-
-    monkeypatch.setattr(ag, "dispatch_this_week_batch", fake_dispatch)
+    _patch_inprocess(monkeypatch, ag, sessions=3)
 
     result = m.fan_out_generate(
         definition=_program_def(),
@@ -94,16 +106,13 @@ def test_fan_out_dispatches_async_and_records_task_ids(monkeypatch):
     )
 
     assert set(result["per_opp"].keys()) == {1973, 1976}
-    assert len(calls) == 2
     assert result["window_start"] == "2026-06-21"
-    # per-opp creator got the window forwarded
-    assert all((ws, we) == ("2026-06-21", "2026-06-27") for _, ws, we in calls)
-    # The generation record tracks each dispatched opp's run_id + task_id + running
+    # The generation record tracks each opp's run_id + terminal status + count
     last = state_writes[-1]
     assert set(last["generation"].keys()) == {"1973", "1976"}
-    assert last["generation"]["1976"]["task_id"] == "task-" + str(40 + 1976)
     assert last["generation"]["1976"]["run_id"] == 40 + 1976 + 1000
-    assert last["generation"]["1976"]["status"] == "running"
+    assert last["generation"]["1976"]["session_count"] == 3
+    assert last["generation"]["1976"]["status"] == "ready"
 
 
 def test_fan_out_single_fire_guard_skips_when_already_fired(monkeypatch):
@@ -112,7 +121,7 @@ def test_fan_out_single_fire_guard_skips_when_already_fired(monkeypatch):
     from connect_labs.workflow import audit_generation as ag
     from connect_labs.workflow.templates import program_audit_creator as m
 
-    fired = []
+    ran = []
 
     def make_wda(access_token=None, opportunity_id=None, **_):
         wda = mock.Mock()
@@ -123,10 +132,11 @@ def test_fan_out_single_fire_guard_skips_when_already_fired(monkeypatch):
         return wda
 
     monkeypatch.setattr(m, "WorkflowDataAccess", make_wda)
+    monkeypatch.setattr(ag, "create_batch_run", lambda *a, **k: ran.append(1) or (1, mock.Mock(id=1), {}))
     monkeypatch.setattr(
         ag,
-        "dispatch_this_week_batch",
-        lambda *a, **k: (fired.append(1), {"run_id": 1, "task_id": "t", "status": "running"})[1],
+        "run_batch_in_process",
+        lambda *a, **k: ran.append(1) or {"run_id": 1, "status": "ready", "sessions_created": 0},
     )
 
     result = m.fan_out_generate(
@@ -135,13 +145,13 @@ def test_fan_out_single_fire_guard_skips_when_already_fired(monkeypatch):
 
     assert result.get("already_fired") is True
     assert result["per_opp"] == {}
-    assert fired == []  # nothing was dispatched
+    assert ran == []  # nothing was run
 
 
-def test_fan_out_streams_dispatched_item_result_with_task_id(monkeypatch):
-    """Each opp streams a 'running' item_result carrying its task_id, so the
-    render's onItemResult can open a live stream on that opp's own audit-creation
-    job (rather than the program waiting on each opp in turn)."""
+def test_fan_out_streams_running_progress_then_ready(monkeypatch):
+    """Each opp streams 'running' items (including a relayed audit-progress tick
+    with processed/total) and a terminal 'ready' item — all on the ONE program
+    stream, so each row fills in place."""
     from connect_labs.workflow import audit_generation as ag
     from connect_labs.workflow.templates import program_audit_creator as m
 
@@ -153,15 +163,7 @@ def test_fan_out_streams_dispatched_item_result_with_task_id(monkeypatch):
         return wda
 
     monkeypatch.setattr(m, "WorkflowDataAccess", make_wda)
-    monkeypatch.setattr(
-        ag,
-        "dispatch_this_week_batch",
-        lambda defn, ws, we, *, access_token, sample_overrides=None: {
-            "run_id": defn.id + 1000,
-            "task_id": "task-" + str(defn.id),
-            "status": "running",
-        },
-    )
+    _patch_inprocess(monkeypatch, ag, sessions=7, relay_progress=True)
 
     emitted = []
 
@@ -177,11 +179,14 @@ def test_fan_out_streams_dispatched_item_result_with_task_id(monkeypatch):
         progress_callback=progress,
     )
 
-    by_opp = {it["opportunity_id"]: it for it in emitted}
-    assert set(by_opp) == {1973, 1976}
-    assert by_opp[1976]["status"] == "running"
-    assert by_opp[1976]["task_id"] == "task-" + str(40 + 1976)
-    assert "id" in by_opp[1976]  # keys the framework's per-item state write
+    by_opp = {}
+    for it in emitted:
+        by_opp.setdefault(it["opportunity_id"], []).append(it)
+    # Terminal item is 'ready' with the real count; a relayed running tick carries progress.
+    assert by_opp[1976][-1]["status"] == "ready"
+    assert by_opp[1976][-1]["session_count"] == 7
+    assert any(it["status"] == "running" and it.get("total") == 2 and it.get("processed") == 1 for it in by_opp[1976])
+    assert "id" in by_opp[1976][-1]  # keys the framework's per-item state write
 
 
 def test_fan_out_per_opp_recovery_merges_single_opp(monkeypatch):
@@ -223,13 +228,20 @@ def test_fan_out_per_opp_recovery_merges_single_opp(monkeypatch):
         return wda
 
     monkeypatch.setattr(m, "WorkflowDataAccess", make_wda)
+
+    def fake_create(defn, ws, we, *, access_token, sample_overrides=None):
+        run = mock.Mock()
+        run.id = 999
+        return (defn.id, run, {"run_id": 999})
+
+    monkeypatch.setattr(ag, "create_batch_run", fake_create)
     monkeypatch.setattr(
         ag,
-        "dispatch_this_week_batch",
-        lambda defn, ws, we, *, access_token, sample_overrides=None: {
-            "run_id": 999,
-            "task_id": "task-999",
-            "status": "running",
+        "run_batch_in_process",
+        lambda run, job_config, *, access_token, progress_callback=None: {
+            "run_id": run.id,
+            "sessions_created": 6,
+            "status": "ready",
         },
     )
 
@@ -244,9 +256,9 @@ def test_fan_out_per_opp_recovery_merges_single_opp(monkeypatch):
     assert set(result["per_opp"].keys()) == {1976}  # only the recovered opp ran
     merged = state_writes[-1]["generation"]
     assert merged["1973"]["run_id"] == 9  # untouched
-    assert merged["1976"]["run_id"] == 999  # replaced with the freshly dispatched run
-    assert merged["1976"]["status"] == "running"  # re-dispatched → streaming again
-    assert merged["1976"]["task_id"] == "task-999"
+    assert merged["1976"]["run_id"] == 999  # replaced with the freshly created run
+    assert merged["1976"]["status"] == "ready"  # re-run completed
+    assert merged["1976"]["session_count"] == 6
     assert merged["1976"]["order"] == 1  # stable position preserved
 
 
@@ -438,15 +450,7 @@ def test_fan_out_writes_program_run_state_program_scoped(monkeypatch):
         return wda
 
     monkeypatch.setattr(m, "WorkflowDataAccess", make_wda)
-    monkeypatch.setattr(
-        ag,
-        "dispatch_this_week_batch",
-        lambda defn, ws, we, *, access_token, sample_overrides=None: {
-            "run_id": 1,
-            "task_id": "t1",
-            "status": "running",
-        },
-    )
+    _patch_inprocess(monkeypatch, ag)
 
     m.fan_out_generate(
         definition=_program_def(program_id=176),
