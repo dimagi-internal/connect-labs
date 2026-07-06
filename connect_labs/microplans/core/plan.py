@@ -136,7 +136,9 @@ def _wa_id(props: dict, index: int) -> str:
     return "-".join(parts).lower()
 
 
-def materialize_work_areas(mode: str, pins: dict, hulls: dict, grouping: dict | None = None) -> list[dict]:
+def materialize_work_areas(
+    mode: str, pins: dict, hulls: dict, grouping: dict | None = None, barriers=None
+) -> list[dict]:
     """Build the editable work-area list from a generated frame.
 
     The work-area *source* differs by mode (the pins/hulls split — see the tasks
@@ -151,11 +153,11 @@ def materialize_work_areas(mode: str, pins: dict, hulls: dict, grouping: dict | 
     them.
     """
     if mode == "coverage":
-        return _coverage_work_areas(hulls, grouping)
+        return _coverage_work_areas(hulls, grouping, barriers)
     return _sampling_work_areas(pins)
 
 
-def _coverage_work_areas(cells: dict, grouping: dict | None) -> list[dict]:
+def _coverage_work_areas(cells: dict, grouping: dict | None, barriers=None) -> list[dict]:
     """One work area per grid cell (already a polygon), auto-grouped into
     CHW-walkable super-cells via the grouping strategy (BFS adjacency by default)."""
     from connect_labs.microplans.core import grouping as grouping_lib
@@ -183,7 +185,7 @@ def _coverage_work_areas(cells: dict, grouping: dict | None) -> list[dict]:
         )
     if out:
         cfg = grouping_lib.GroupingConfig.from_payload(grouping or {})
-        grouping_lib.group_work_areas(out, cfg)
+        grouping_lib.group_work_areas(out, cfg, barriers=barriers)
     return out
 
 

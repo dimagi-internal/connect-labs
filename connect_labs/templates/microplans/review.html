@@ -421,12 +421,13 @@
           <span class="text-gray-600">How to group</span>
           <select id="grp-strategy" class="base-input mt-0.5 text-xs">
             <option value="bfs_adjacency" selected>Walkable clusters (recommended)</option>
+            <option value="barrier_aware">Barrier-aware clusters (roads &amp; rivers)</option>
             <option value="bbox">Uniform grid (fast)</option>
           </select>
         </label>
         <div id="grp-bfs-params" class="grid grid-cols-2 gap-1">
           <label class="block">
-            <span class="text-gray-600">Max buildings per group</span>
+            <span class="text-gray-600" id="grp-max-label">Max buildings per group</span>
             <input id="grp-max-buildings" type="number" value="200" min="1" class="base-input mt-0.5 text-xs">
           </label>
           <label class="block">
@@ -438,6 +439,7 @@
           <span class="text-gray-600">Target work areas per group</span>
           <input id="grp-target-size" type="number" value="30" min="1" class="base-input mt-0.5 text-xs">
         </label>
+        <p id="grp-barrier-note" class="hidden text-[10px] text-gray-500 leading-snug">Groups never span a major road, river, or railway (from Overture). The buildings field is a <b>target ±20%</b> here, not a hard max. Where road/river data is sparse this falls back to plain clusters.</p>
         <button type="button" id="btn-regroup" class="button button-sm primary-dark" disabled>Apply grouping</button>
         <p class="text-[10px] text-gray-400">Re-groups every active work area. Audited per work area.</p>
       </div>

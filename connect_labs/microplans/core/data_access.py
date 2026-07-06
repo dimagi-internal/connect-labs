@@ -20,6 +20,19 @@ from connect_labs.workflow.data_access import BaseDataAccess
 SCHEMA_VERSION = 4
 
 
+def _barriers_if_needed(grouping: dict | None, input_areas, allow_remote: bool):
+    """Barrier lines for grouping, but only when the barrier-aware strategy is chosen
+    (else None → no fetch). Best-effort: any failure degrades to plain grouping."""
+    if not isinstance(grouping, dict) or grouping.get("strategy") != "barrier_aware":
+        return None
+    try:
+        from connect_labs.microplans.core.barriers import barriers_for_areas
+
+        return barriers_for_areas(input_areas or [], allow_remote=allow_remote)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 class StalePlanError(Exception):
     """A save was attempted against a revision older than the stored one — i.e. the
     plan changed (another tab/session, or a `regenerate`) since the caller loaded
@@ -102,7 +115,12 @@ class ProgramPlanDataAccess(BaseDataAccess):
         requires non-empty (see ``microplans/CONNECT_IMPORT_CONTRACT.md``); stored at
         creation so the Connect-import CSV export populates them without the caller
         re-supplying them. ``lga`` falls back to ``region`` when blank."""
-        work_areas = plan_lib.materialize_work_areas(mode, pins, hulls, grouping=grouping)
+        # Barrier-aware grouping needs road/river lines. Read them CACHE-ONLY here —
+        # create runs in the web request and a cold Overture fetch would block it; the
+        # cache was warmed on the (Celery) coverage preview that precedes create. Cold
+        # cache → group_work_areas falls back to plain clustering.
+        barriers = _barriers_if_needed(grouping, input_areas, allow_remote=False)
+        work_areas = plan_lib.materialize_work_areas(mode, pins, hulls, grouping=grouping, barriers=barriers)
         data = {
             "schema_version": SCHEMA_VERSION,
             "program_id": self.program_id,
@@ -220,10 +238,13 @@ class ProgramPlanDataAccess(BaseDataAccess):
         cfg = grouping_lib.GroupingConfig.from_payload(grouping)
         # Apply to ACTIVE cells; excluded ones keep their old group.
         active = [w for w in work_areas if w.get("status") != plan_lib.STATUS_EXCLUDED]
+        # Regroup runs on the Celery worker, so a barrier fetch here CAN go remote
+        # (cold Overture read + cache) — this is the main path for barrier-aware.
+        barriers = _barriers_if_needed(grouping, data.get("input_areas"), allow_remote=True)
         # Snapshot old groups, then run the strategy + restore them so apply_action
         # can compute a real before→after diff and emit the audit.
         old_groups = {w["id"]: w.get("work_area_group", "") for w in active}
-        grouping_lib.group_work_areas(active, cfg)
+        grouping_lib.group_work_areas(active, cfg, barriers=barriers)
         new_groups = {w["id"]: w.get("work_area_group", "") for w in active}
         for w in active:
             w["work_area_group"] = old_groups[w["id"]]
@@ -260,7 +281,9 @@ class ProgramPlanDataAccess(BaseDataAccess):
         """
         plan = self.get_plan(plan_id)
         data = dict(plan.data)
-        work_areas = plan_lib.materialize_work_areas(mode, pins, hulls, grouping=grouping)
+        # Regenerate runs on the Celery worker → barrier fetch may go remote.
+        barriers = _barriers_if_needed(grouping, input_areas, allow_remote=True)
+        work_areas = plan_lib.materialize_work_areas(mode, pins, hulls, grouping=grouping, barriers=barriers)
         data["work_areas"] = work_areas
         data["input_areas"] = list(input_areas or [])
         data["mode"] = mode

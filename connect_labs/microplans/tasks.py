@@ -74,6 +74,17 @@ def generate_coverage_task(self, areas, config_payload):
         result = generate_coverage_frame(areas, config)
     except ValueError as e:
         return {"status": "error", "detail": str(e)}
+    # Warm the barrier cache here (on the worker) when the user picked barrier-aware
+    # grouping, so the follow-up create (web tier) reads it cache-only and never blocks
+    # on a cold Overture fetch. Best-effort — grouping falls back to plain if it's cold.
+    if (config_payload or {}).get("prefetch_barriers"):
+        try:
+            from connect_labs.microplans.core.barriers import barriers_for_areas
+
+            set_task_progress(self, "Fetching roads & rivers…")
+            barriers_for_areas(areas, allow_remote=True)
+        except Exception:  # noqa: BLE001
+            logger.warning("microplans: barrier prefetch failed", exc_info=True)
     return {"status": "ok", "areas": result.areas_geojson, "stats": result.stats}
 
 

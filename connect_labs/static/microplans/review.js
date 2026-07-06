@@ -1381,8 +1381,19 @@
   // ---- Phase-1: re-group cells ----
   on('grp-strategy', 'change', () => {
     const s = $('grp-strategy').value;
-    $('grp-bfs-params').classList.toggle('hidden', s !== 'bfs_adjacency');
+    // barrier_aware reuses the buildings + buffer inputs (buildings = target here).
+    $('grp-bfs-params').classList.toggle(
+      'hidden',
+      s !== 'bfs_adjacency' && s !== 'barrier_aware',
+    );
     $('grp-bbox-params').classList.toggle('hidden', s !== 'bbox');
+    $('grp-barrier-note')?.classList.toggle('hidden', s !== 'barrier_aware');
+    const lbl = $('grp-max-label');
+    if (lbl)
+      lbl.textContent =
+        s === 'barrier_aware'
+          ? 'Target buildings per group (±20%)'
+          : 'Max buildings per group';
   });
   on('btn-regroup', 'click', async () => {
     if (!REGROUP_URL) {
@@ -1391,7 +1402,7 @@
     }
     const strategy = $('grp-strategy').value;
     const body = { strategy };
-    if (strategy === 'bfs_adjacency') {
+    if (strategy === 'bfs_adjacency' || strategy === 'barrier_aware') {
       body.max_buildings = +$('grp-max-buildings').value;
       body.buffer_distance_m = +$('grp-buffer-m').value;
     } else {
@@ -2968,6 +2979,9 @@
       // Generation produces ALL occupied cells; the exclusion filters are applied
       // AFTER creation (the "Exclude work areas" card) so they can update live.
       population: isNaN(pop) || pop <= 0 ? null : pop,
+      // When barrier-aware grouping is picked, warm the road/river cache on the
+      // worker during this preview so the follow-up create is fast + non-blocking.
+      prefetch_barriers: $('grp-strategy')?.value === 'barrier_aware',
     };
   }
 
