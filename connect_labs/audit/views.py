@@ -1249,66 +1249,21 @@ class AuditCreationProgressStreamView(CeleryTaskStreamView):
 
 
 class AuditCreationStatusAPIView(LoginRequiredMixin, View):
-    """API endpoint to check audit creation task status (polling alternative to SSE)."""
+    """JSON status endpoint for audit creation (the poll-first transport).
+
+    Returns the same canonical progress shape the SSE stream emits, via the
+    shared ``build_task_progress`` translation. This is the default transport
+    the frontend polls — a held SSE connection is the opt-in fallback.
+    """
 
     def get(self, request, task_id):
         from celery.result import AsyncResult
 
-        result = AsyncResult(task_id)
-        state = result.state
-        # result.info may be an exception object if task failed, so check it's a dict
-        info = result.info if isinstance(result.info, dict) else {}
+        from connect_labs.labs.analysis.sse_streaming import build_task_progress
 
-        if state == "PENDING":
-            return JsonResponse(
-                {
-                    "status": "pending",
-                    "message": "Waiting to start...",
-                }
-            )
-        elif state == "PROGRESS":
-            return JsonResponse(
-                {
-                    "status": "running",
-                    "message": info.get("message", "Processing..."),
-                    "current_stage": info.get("current_stage", 1),
-                    "total_stages": info.get("total_stages", 4),
-                    "stage_name": info.get("stage_name", ""),
-                    "processed": info.get("processed", 0),
-                    "total": info.get("total", 0),
-                }
-            )
-        elif state == "SUCCESS":
-            # When set_task_progress is called with is_complete=True, the result is nested
-            # under info['result']. When the task returns naturally, info IS the result.
-            if isinstance(info, dict):
-                # Check for nested result from set_task_progress(is_complete=True)
-                task_result = info.get("result", info)
-            else:
-                task_result = {}
-            return JsonResponse(
-                {
-                    "status": "completed",
-                    "message": "Complete",
-                    "result": task_result,
-                }
-            )
-        elif state == "FAILURE":
-            error_msg = str(info) if info else "Unknown error"
-            return JsonResponse(
-                {
-                    "status": "failed",
-                    "message": f"Failed: {error_msg}",
-                    "error": error_msg,
-                }
-            )
-        else:
-            return JsonResponse(
-                {
-                    "status": state.lower(),
-                    "message": f"Status: {state}",
-                }
-            )
+        result = AsyncResult(task_id)
+        info = result.info if isinstance(result.info, dict) else {}
+        return JsonResponse(build_task_progress(result.state, info))
 
 
 class ExperimentOpportunitySearchAPIView(LoginRequiredMixin, View):

@@ -19,6 +19,62 @@ from django.views import View
 logger = logging.getLogger(__name__)
 
 
+def build_task_progress(state: str, info: dict | None) -> dict:
+    """Translate a Celery task ``(state, info)`` into the canonical flat progress
+    dict consumed by the frontend (see ``TaskProgress`` in ``static/js/task-progress.ts``).
+
+    This is the ONE place that maps Celery meta to the UI shape. Every consumer —
+    the SSE stream views and the JSON poll endpoints, for both workflow jobs and
+    audit creation — must go through here so the shape can never drift between
+    transports (it used to be copy-pasted in four places).
+
+    Shape::
+
+        {"status": "pending|running|completed|failed|cancelled|<state>",
+         "message": str,
+         # running only:
+         "stage_name": str, "current_stage": int, "total_stages": int,
+         "processed": int, "total": int, "item_result"?: dict,
+         # completed only:
+         "result": dict,
+         # failed only:
+         "error": str}
+
+    ``total_stages`` defaults to 1 (single-stage → the stage indicator hides), not
+    a guessed 4 — tasks that genuinely have stages set it explicitly via
+    ``set_task_progress``.
+    """
+    # On FAILURE, info is typically the exception (not a dict) and carries the real
+    # message — keep the raw value for that branch before normalizing to a dict.
+    meta = info if isinstance(info, dict) else {}
+    if state == "PENDING":
+        return {"status": "pending", "message": "Waiting to start..."}
+    if state == "PROGRESS":
+        out = {
+            "status": "running",
+            "message": meta.get("message", "Processing..."),
+            "stage_name": meta.get("stage_name", ""),
+            "current_stage": meta.get("current_stage", 1),
+            "total_stages": meta.get("total_stages", 1),
+            "processed": meta.get("processed", 0),
+            "total": meta.get("total", 0),
+        }
+        # Per-item payload for live row updates (e.g. per-opp / per-FLW rows).
+        if meta.get("item_result") is not None:
+            out["item_result"] = meta["item_result"]
+        return out
+    if state == "SUCCESS":
+        # set_task_progress(is_complete=True) nests the payload under info['result'];
+        # a naturally-returned task makes info itself the result.
+        return {"status": "completed", "message": "Complete", "result": meta.get("result", meta)}
+    if state == "FAILURE":
+        error_msg = str(info) if info else "Unknown error"
+        return {"status": "failed", "message": f"Failed: {error_msg}", "error": error_msg}
+    if state == "REVOKED":
+        return {"status": "cancelled", "message": "Cancelled"}
+    return {"status": state.lower(), "message": f"Status: {state}"}
+
+
 def send_sse_event(message: str, data: dict | None = None, error: str | None = None) -> str:
     """
     Format a message as a Server-Sent Event.
@@ -364,46 +420,9 @@ class CeleryTaskStreamView(BaseSSEStreamView):
         Returns:
             Standard progress data dict
         """
-        if state == "PENDING":
-            return {
-                "status": "pending",
-                "message": "Waiting to start...",
-            }
-        elif state == "PROGRESS":
-            return {
-                "status": "running",
-                "message": info.get("message", "Processing..."),
-                "stage_name": info.get("stage_name", ""),
-                "current_stage": info.get("current_stage", 1),
-                "total_stages": info.get("total_stages", 4),
-                "processed": info.get("processed", 0),
-                "total": info.get("total", 0),
-            }
-        elif state == "SUCCESS":
-            # When set_task_progress is called with is_complete=True, the result is nested
-            # under info['result']. When the task returns naturally, info IS the result.
-            if isinstance(info, dict):
-                # Check for nested result from set_task_progress(is_complete=True)
-                task_result = info.get("result", info)
-            else:
-                task_result = {}
-            return {
-                "status": "completed",
-                "message": "Complete",
-                "result": task_result,
-            }
-        elif state == "FAILURE":
-            error_msg = str(info) if info else "Unknown error"
-            return {
-                "status": "failed",
-                "message": f"Failed: {error_msg}",
-                "error": error_msg,
-            }
-        else:
-            return {
-                "status": state.lower(),
-                "message": f"Status: {state}",
-            }
+        # Delegates to the module-level canonical translation so the shape stays
+        # identical across every SSE and poll consumer.
+        return build_task_progress(state, info)
 
     def stream_data(self, request) -> Generator[str, None, None]:
         """

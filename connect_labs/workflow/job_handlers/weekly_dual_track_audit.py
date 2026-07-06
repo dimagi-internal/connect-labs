@@ -71,7 +71,7 @@ def weekly_dual_track_audit_create(job_config: dict, access_token: str, progress
             workflow_run_id=run_id,
         )
 
-        from connect_labs.audit.tasks import AUDIT_PROGRESS_RELAYS
+        from connect_labs.utils.progress_relays import pop_relay, register_relay
 
         successful, failed, sessions_created = 0, 0, 0
         for idx, call in enumerate(calls):
@@ -86,7 +86,7 @@ def weekly_dual_track_audit_create(job_config: dict, access_token: str, progress
             def _track_progress(msg, processed=0, total=0, _tag=tag):
                 _progress(f"{_tag} · {msg}", processed=processed, total=total)
 
-            AUDIT_PROGRESS_RELAYS[run_id] = _track_progress
+            register_relay(run_id, _track_progress)
             try:
                 eager = run_audit_creation.apply(kwargs={"access_token": access_token, **call})
                 res = eager.result if isinstance(eager.result, dict) else {}
@@ -103,7 +103,7 @@ def weekly_dual_track_audit_create(job_config: dict, access_token: str, progress
                 )
                 failed += 1
             finally:
-                AUDIT_PROGRESS_RELAYS.pop(run_id, None)
+                pop_relay(run_id)
 
         last_batch = {
             "window_start": window_start,
