@@ -51,7 +51,7 @@ class AuditTable(tables.Table):
     )
 
     visit_count = tables.Column(
-        verbose_name=_("Visits"),
+        verbose_name=_("Visits Reviewed"),
         accessor="visit_ids",
         orderable=False,
         attrs={"td": {"class": "text-sm text-gray-600 text-center"}},
