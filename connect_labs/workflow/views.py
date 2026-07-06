@@ -50,7 +50,39 @@ def _coerce_int(value):
         return None
 
 
-def _resolve_pipeline_sources_for_run(pipeline_access, pipeline_sources: list[dict]):
+def _resolve_pipeline_definition(pipeline_access, pipeline_id, opp_ids=None, request=None, access_token=None):
+    """Look up a pipeline definition, retrying across every opportunity a
+    multi-opp workflow spans.
+
+    Pipeline records are individually opportunity-owned regardless of which
+    opportunity/program owns the *workflow* that references them (see
+    WorkflowDataAccess.get_pipeline_data's "don't forward program_id" note
+    a few lines up from its own PipelineDataAccess construction). Callers
+    scope `pipeline_access` to a single opportunity — for a program-owned
+    workflow that's an arbitrary member of definition.opportunity_ids
+    (whichever the caller picked as its scope fallback), which 404s for a
+    pipeline owned by any OTHER spanned opportunity. Retry with a
+    freshly-scoped PipelineDataAccess for each remaining opp before giving
+    up, so "reuse an existing opportunity-owned pipeline under a new
+    program-owned workflow" (the normal, recommended way to build one)
+    doesn't silently 404 depending on which opp happens to own it.
+    """
+    definition = pipeline_access.get_definition(pipeline_id)
+    if definition or not opp_ids or len(opp_ids) <= 1 or not request or not access_token:
+        return definition
+    for opp_id in opp_ids:
+        if opp_id == pipeline_access.opportunity_id:
+            continue
+        retry_access = PipelineDataAccess(request=request, access_token=access_token, opportunity_id=int(opp_id))
+        definition = retry_access.get_definition(pipeline_id)
+        if definition:
+            return definition
+    return None
+
+
+def _resolve_pipeline_sources_for_run(
+    pipeline_access, pipeline_sources: list[dict], opp_ids=None, request=None, access_token=None
+):
     """Pre-build configs for every pipeline source and topologically sort
     them so JOIN dependencies execute before their dependents.
 
@@ -64,6 +96,13 @@ def _resolve_pipeline_sources_for_run(pipeline_access, pipeline_sources: list[di
     empty and visits' JOIN returns NULL for every joined field — silent
     correctness gap, not an error. Running registrations FIRST populates the
     slot before visits queries it.
+
+    `opp_ids`/`request`/`access_token` are optional — pass them (a multi-opp
+    workflow's spanned opportunities) so a pipeline owned by a different opp
+    than `pipeline_access`'s own scope still resolves; see
+    `_resolve_pipeline_definition`. Omit them to keep the old single-scope
+    lookup (harmless for pipelines that already match `pipeline_access`'s
+    scope, which covers every existing caller before this parameter existed).
 
     Edge cases:
     - A pipeline whose schema can't be loaded is excluded from the topo sort
@@ -81,7 +120,9 @@ def _resolve_pipeline_sources_for_run(pipeline_access, pipeline_sources: list[di
         alias = source.get("alias", f"pipeline_{pid}")
         if not pid:
             continue
-        pipeline_def = pipeline_access.get_definition(pid)
+        pipeline_def = _resolve_pipeline_definition(
+            pipeline_access, pid, opp_ids=opp_ids, request=request, access_token=access_token
+        )
         if not pipeline_def or not pipeline_def.schema:
             # Defer surfacing — the streaming loop emits a per-pipeline
             # "Pipeline not found" event for this case.
@@ -3675,8 +3716,13 @@ class PipelineDataStreamView(BaseSSEStreamView):
             # message, while registrations downloaded after.
             from connect_labs.labs.analysis.utils import resolve_join_hashes
 
+            access_token = labs_oauth.get("access_token")
             ordered_sources, configs_by_alias = _resolve_pipeline_sources_for_run(
-                pipeline_access, definition.pipeline_sources
+                pipeline_access,
+                definition.pipeline_sources,
+                opp_ids=opp_ids,
+                request=request,
+                access_token=access_token,
             )
             if configs_by_alias:
                 resolve_join_hashes(configs_by_alias)
@@ -3689,7 +3735,9 @@ class PipelineDataStreamView(BaseSSEStreamView):
                     if not pipeline_id:
                         continue
 
-                    pipeline_def = pipeline_access.get_definition(pipeline_id)
+                    pipeline_def = _resolve_pipeline_definition(
+                        pipeline_access, pipeline_id, opp_ids=opp_ids, request=request, access_token=access_token
+                    )
                     if not pipeline_def:
                         yield send_sse_event(f"Pipeline {pipeline_id} not found")
                         pipeline_data[alias] = {

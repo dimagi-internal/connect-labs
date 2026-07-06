@@ -1071,7 +1071,9 @@ class WorkflowDataAccess(BaseDataAccess):
         from connect_labs.labs.analysis.utils import resolve_join_hashes
         from connect_labs.workflow.views import _resolve_pipeline_sources_for_run
 
-        ordered_sources, configs_by_alias = _resolve_pipeline_sources_for_run(pipeline_access, sources)
+        ordered_sources, configs_by_alias = _resolve_pipeline_sources_for_run(
+            pipeline_access, sources, opp_ids=opp_ids, request=self.request, access_token=self.access_token
+        )
         if configs_by_alias:
             resolve_join_hashes(configs_by_alias)
 
@@ -1174,9 +1176,11 @@ class WorkflowDataAccess(BaseDataAccess):
         # over ALL sources (a captured pipeline may JOIN an uncaptured one);
         # the `wanted` filter applies only to what gets read and returned.
         from connect_labs.labs.analysis.utils import resolve_join_hashes
-        from connect_labs.workflow.views import _resolve_pipeline_sources_for_run
+        from connect_labs.workflow.views import _resolve_pipeline_definition, _resolve_pipeline_sources_for_run
 
-        ordered_sources, configs_by_alias = _resolve_pipeline_sources_for_run(pipeline_access, sources)
+        ordered_sources, configs_by_alias = _resolve_pipeline_sources_for_run(
+            pipeline_access, sources, opp_ids=opp_ids, request=self.request, access_token=self.access_token
+        )
         if configs_by_alias:
             resolve_join_hashes(configs_by_alias)
 
@@ -1196,7 +1200,13 @@ class WorkflowDataAccess(BaseDataAccess):
                 # AND the pipeline's own schema opts in via `period_scoped`.
                 period_scoped = False
                 if want_period:
-                    pdef = pipeline_access.get_definition(pipeline_id)
+                    pdef = _resolve_pipeline_definition(
+                        pipeline_access,
+                        pipeline_id,
+                        opp_ids=opp_ids,
+                        request=self.request,
+                        access_token=self.access_token,
+                    )
                     period_scoped = bool(pdef and (pdef.schema or {}).get("period_scoped"))
 
                 merged_rows: list[dict] = []

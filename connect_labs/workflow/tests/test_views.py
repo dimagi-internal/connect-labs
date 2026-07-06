@@ -775,3 +775,125 @@ class TestPipelineDataProgramOwnedFallback:
             response = get_pipeline_data_api(request, definition_id=42)
 
         assert response.status_code == 400
+
+
+class TestResolvePipelineDefinitionCrossOpp:
+    """A pipeline reused under a program-owned workflow (the recommended way
+    to build one — see the program-owned workflow migration guide) is often
+    owned by an opportunity OTHER than whichever one the caller picked as its
+    single scope fallback (definition.opportunity_ids[0]). Before this fix,
+    `pipeline_access.get_definition(pipeline_id)` only tried that one
+    fallback opp, so every pipeline reported "not found" uniformly across
+    every opportunity the workflow spans — reproduced end-to-end via a real
+    browser session on workflow 5266 (Ward Progress Tracker, program 176)."""
+
+    def test_retries_other_opps_when_first_scope_misses(self):
+        from connect_labs.workflow.views import _resolve_pipeline_definition
+
+        primary_access = MagicMock(opportunity_id=1973)
+        primary_access.get_definition.return_value = None
+
+        found_definition = MagicMock()
+        with patch("connect_labs.workflow.views.PipelineDataAccess") as MockPDA:
+            retry_access = MagicMock()
+            retry_access.get_definition.side_effect = [None, found_definition]
+            MockPDA.return_value = retry_access
+
+            result = _resolve_pipeline_definition(
+                primary_access,
+                5126,
+                opp_ids=[1973, 1976, 1982],
+                request=MagicMock(),
+                access_token="t",
+            )
+
+        assert result is found_definition
+        # 1973 is skipped (already tried via primary_access); 1976 misses, 1982 hits.
+        assert MockPDA.call_count == 2
+
+    def test_returns_primary_result_without_retry_when_found(self):
+        from connect_labs.workflow.views import _resolve_pipeline_definition
+
+        primary_access = MagicMock(opportunity_id=1973)
+        primary_access.get_definition.return_value = "found"
+
+        with patch("connect_labs.workflow.views.PipelineDataAccess") as MockPDA:
+            result = _resolve_pipeline_definition(
+                primary_access, 5126, opp_ids=[1973, 1976], request=MagicMock(), access_token="t"
+            )
+
+        assert result == "found"
+        MockPDA.assert_not_called()
+
+    def test_returns_none_when_no_opp_owns_it(self):
+        from connect_labs.workflow.views import _resolve_pipeline_definition
+
+        primary_access = MagicMock(opportunity_id=1973)
+        primary_access.get_definition.return_value = None
+
+        with patch("connect_labs.workflow.views.PipelineDataAccess") as MockPDA:
+            MockPDA.return_value.get_definition.return_value = None
+            result = _resolve_pipeline_definition(
+                primary_access, 5126, opp_ids=[1973, 1976, 1982], request=MagicMock(), access_token="t"
+            )
+
+        assert result is None
+
+    def test_skips_retry_for_single_opp_workflow(self):
+        """A regular single-opp workflow (opp_ids has 0 or 1 entries) never
+        retries — a miss there is a real 404, not a cross-opp-ownership
+        artifact, so no need to burn extra API calls."""
+        from connect_labs.workflow.views import _resolve_pipeline_definition
+
+        primary_access = MagicMock(opportunity_id=1973)
+        primary_access.get_definition.return_value = None
+
+        with patch("connect_labs.workflow.views.PipelineDataAccess") as MockPDA:
+            result = _resolve_pipeline_definition(
+                primary_access, 5126, opp_ids=[1973], request=MagicMock(), access_token="t"
+            )
+
+        assert result is None
+        MockPDA.assert_not_called()
+
+    def test_stream_data_resolves_pipeline_owned_by_non_first_opp(self, dimagi_user, rf: RequestFactory):
+        """End-to-end: a program-owned workflow spanning [1973, 1976, 1978,
+        1982] reuses a pipeline actually owned by 1982 (last in the list).
+        The stream must resolve it instead of emitting "Pipeline not found"."""
+        import json
+
+        from connect_labs.workflow.views import PipelineDataStreamView
+
+        request = rf.get("/labs/workflow/api/5266/pipeline-data/stream/")
+        request.user = dimagi_user
+        request.labs_context = {"program_id": 176}
+        request.session = {"labs_oauth": {"access_token": "t"}}
+
+        mock_definition = MagicMock(
+            pipeline_sources=[{"pipeline_id": 5126, "alias": "work_areas"}],
+            opportunity_ids=[1973, 1976, 1978, 1982],
+        )
+        found_pipeline_def = MagicMock(schema={"data_source": {"type": "cchq_cases"}})
+        found_pipeline_def.name = "CHC Work Areas"
+
+        with (
+            patch("connect_labs.workflow.views.WorkflowDataAccess") as MockWDA,
+            patch("connect_labs.workflow.views.PipelineDataAccess") as MockPDA,
+        ):
+            MockWDA.return_value.get_definition.return_value = mock_definition
+
+            # The primary (fallback-scoped) access misses; a later retry scoped
+            # to 1982 is the one that actually owns pipeline 5126.
+            primary_access = MagicMock(opportunity_id=1973)
+            primary_access.get_definition.return_value = None
+            miss_access = MagicMock()
+            miss_access.get_definition.return_value = None
+            hit_access = MagicMock()
+            hit_access.get_definition.return_value = found_pipeline_def
+            MockPDA.side_effect = [primary_access, miss_access, miss_access, hit_access]
+
+            view = PipelineDataStreamView()
+            view.kwargs = {"definition_id": 5266}
+            events = [json.loads(chunk[len("data: ") :]) for chunk in view.stream_data(request)]
+
+        assert not any("not found" in (e.get("message") or "") for e in events)
