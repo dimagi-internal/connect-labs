@@ -125,6 +125,26 @@ def test_creator_run_default_always_creates_no_reuse(monkeypatch):
     assert fake_job.apply.call_count == 1
 
 
+def test_dispatch_this_week_batch_delays_and_returns_task_id(monkeypatch):
+    """The async path creates a fresh run and dispatches the batch via .delay(),
+    returning the task_id without waiting (so the program creator can stream it)."""
+    from connect_labs.workflow import audit_generation as g
+
+    wda = mock.Mock()
+    wda.create_run.return_value = _run(321, None)
+    monkeypatch.setattr(g, "WorkflowDataAccess", mock.Mock(return_value=wda))
+    fake_job = mock.Mock()
+    fake_job.delay.return_value.id = "celery-task-abc"
+    monkeypatch.setattr(g, "run_workflow_job", fake_job)
+
+    result = g.dispatch_this_week_batch(_creator_def(), "2026-06-21", "2026-06-27", access_token="t")
+
+    assert result == {"run_id": 321, "task_id": "celery-task-abc", "status": "running"}
+    wda.create_run.assert_called_once()
+    fake_job.delay.assert_called_once()  # async dispatch, not eager .apply()
+    fake_job.apply.assert_not_called()
+
+
 def test_creator_run_default_reports_failed_status(monkeypatch):
     """A batch job that errors is reported as status='failed' (drives per-opp recovery)."""
     from connect_labs.workflow import audit_generation as g

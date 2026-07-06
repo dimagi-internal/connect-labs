@@ -56,17 +56,22 @@ def _run(run_id, window_start=None):
 # ── fan_out_generate / run_default: per-opp fan-out ──────────────────────────
 
 
-def test_fan_out_generates_per_source_and_records_state(monkeypatch):
-    from connect_labs.workflow import templates as templates_pkg
+def _mock_creator(opportunity_id):
+    creator = mock.Mock()
+    creator.id = 40 + (opportunity_id or 0)
+    creator.data = {"config": {}}  # sample_overrides_for reads config.audit_batch
+    return creator
+
+
+def test_fan_out_dispatches_async_and_records_task_ids(monkeypatch):
+    from connect_labs.workflow import audit_generation as ag
     from connect_labs.workflow.templates import program_audit_creator as m
 
     state_writes = []
 
     def make_wda(access_token=None, opportunity_id=None, **_):
         wda = mock.Mock()
-        creator = mock.Mock()
-        creator.id = 40 + (opportunity_id or 0)
-        wda.get_definition.return_value = creator
+        wda.get_definition.return_value = _mock_creator(opportunity_id)
         wda.get_run.return_value = _run(700)  # unfired program run (empty generation)
         wda.update_run_state.side_effect = lambda rid, s: state_writes.append(s)
         return wda
@@ -75,11 +80,11 @@ def test_fan_out_generates_per_source_and_records_state(monkeypatch):
 
     calls = []
 
-    def fake_dispatch(defn, *, access_token, request=None, window=None, **kw):
-        calls.append((defn, window))
-        return {"run_id": defn.id, "sessions_created": 3, "status": "ready"}
+    def fake_dispatch(defn, ws, we, *, access_token, sample_overrides=None):
+        calls.append((defn.id, ws, we))
+        return {"run_id": defn.id + 1000, "task_id": "task-" + str(defn.id), "status": "running"}
 
-    monkeypatch.setattr(templates_pkg, "run_default_for_definition", fake_dispatch)
+    monkeypatch.setattr(ag, "dispatch_this_week_batch", fake_dispatch)
 
     result = m.fan_out_generate(
         definition=_program_def(),
@@ -92,20 +97,19 @@ def test_fan_out_generates_per_source_and_records_state(monkeypatch):
     assert len(calls) == 2
     assert result["window_start"] == "2026-06-21"
     # per-opp creator got the window forwarded
-    assert all(w == ("2026-06-21", "2026-06-27") for _, w in calls)
-    # accumulating generation record was written into the PROGRAM run state
-    assert state_writes  # at least one write
+    assert all((ws, we) == ("2026-06-21", "2026-06-27") for _, ws, we in calls)
+    # The generation record tracks each dispatched opp's run_id + task_id + running
     last = state_writes[-1]
     assert set(last["generation"].keys()) == {"1973", "1976"}
-    assert last["generation"]["1973"]["run_id"] == 40 + 1973
-    assert last["generation"]["1976"]["session_count"] == 3
-    assert last["generation"]["1976"]["status"] == "ready"
+    assert last["generation"]["1976"]["task_id"] == "task-" + str(40 + 1976)
+    assert last["generation"]["1976"]["run_id"] == 40 + 1976 + 1000
+    assert last["generation"]["1976"]["status"] == "running"
 
 
 def test_fan_out_single_fire_guard_skips_when_already_fired(monkeypatch):
     """A program run is fired once: a full fan-out on an already-populated run does
     NOT re-fire — recovery is per-opp only."""
-    from connect_labs.workflow import templates as templates_pkg
+    from connect_labs.workflow import audit_generation as ag
     from connect_labs.workflow.templates import program_audit_creator as m
 
     fired = []
@@ -115,14 +119,14 @@ def test_fan_out_single_fire_guard_skips_when_already_fired(monkeypatch):
         prun = mock.Mock()
         prun.data = {"state": {"generation": {"1973": {"opportunity_id": 1973, "run_id": 9}}}}
         wda.get_run.return_value = prun
-        wda.get_definition.return_value = mock.Mock(id=42)
+        wda.get_definition.return_value = _mock_creator(opportunity_id)
         return wda
 
     monkeypatch.setattr(m, "WorkflowDataAccess", make_wda)
     monkeypatch.setattr(
-        templates_pkg,
-        "run_default_for_definition",
-        lambda *a, **k: (fired.append(1), {"run_id": 1, "status": "ready"})[1],
+        ag,
+        "dispatch_this_week_batch",
+        lambda *a, **k: (fired.append(1), {"run_id": 1, "task_id": "t", "status": "running"})[1],
     )
 
     result = m.fan_out_generate(
@@ -131,31 +135,31 @@ def test_fan_out_single_fire_guard_skips_when_already_fired(monkeypatch):
 
     assert result.get("already_fired") is True
     assert result["per_opp"] == {}
-    assert fired == []  # nothing was re-fired
+    assert fired == []  # nothing was dispatched
 
 
-def test_fan_out_streams_running_then_ready_item_results(monkeypatch):
-    """Each opp streams a 'running' item_result before its batch and a terminal
-    item_result (run_id + count + status) after — so the render's onItemResult can
-    flip that row live instead of waiting for a page reload."""
-    from connect_labs.workflow import templates as templates_pkg
+def test_fan_out_streams_dispatched_item_result_with_task_id(monkeypatch):
+    """Each opp streams a 'running' item_result carrying its task_id, so the
+    render's onItemResult can open a live stream on that opp's own audit-creation
+    job (rather than the program waiting on each opp in turn)."""
+    from connect_labs.workflow import audit_generation as ag
     from connect_labs.workflow.templates import program_audit_creator as m
 
     def make_wda(access_token=None, opportunity_id=None, **_):
         wda = mock.Mock()
-        wda.get_definition.return_value = mock.Mock(id=40 + (opportunity_id or 0))
+        wda.get_definition.return_value = _mock_creator(opportunity_id)
         wda.get_run.return_value = _run(700)  # unfired
         wda.update_run_state.side_effect = lambda rid, s: None
         return wda
 
     monkeypatch.setattr(m, "WorkflowDataAccess", make_wda)
     monkeypatch.setattr(
-        templates_pkg,
-        "run_default_for_definition",
-        lambda defn, *, access_token, request=None, window=None, **kw: {
-            "run_id": 900,
-            "sessions_created": 7,
-            "status": "ready",
+        ag,
+        "dispatch_this_week_batch",
+        lambda defn, ws, we, *, access_token, sample_overrides=None: {
+            "run_id": defn.id + 1000,
+            "task_id": "task-" + str(defn.id),
+            "status": "running",
         },
     )
 
@@ -173,20 +177,17 @@ def test_fan_out_streams_running_then_ready_item_results(monkeypatch):
         progress_callback=progress,
     )
 
-    # Per opp: a 'running' item first, then a terminal 'ready' item with the run.
-    by_opp = {}
-    for it in emitted:
-        by_opp.setdefault(it["opportunity_id"], []).append(it["status"])
-    assert by_opp[1973] == ["running", "ready"]
-    assert by_opp[1976] == ["running", "ready"]
-    ready = [it for it in emitted if it["status"] == "ready"][0]
-    assert ready["run_id"] == 900 and ready["session_count"] == 7 and "id" in ready
+    by_opp = {it["opportunity_id"]: it for it in emitted}
+    assert set(by_opp) == {1973, 1976}
+    assert by_opp[1976]["status"] == "running"
+    assert by_opp[1976]["task_id"] == "task-" + str(40 + 1976)
+    assert "id" in by_opp[1976]  # keys the framework's per-item state write
 
 
 def test_fan_out_per_opp_recovery_merges_single_opp(monkeypatch):
     """only_opportunity_id (re-)runs ONE opp and merges it into the existing record,
     leaving the other opps' entries untouched."""
-    from connect_labs.workflow import templates as templates_pkg
+    from connect_labs.workflow import audit_generation as ag
     from connect_labs.workflow.templates import program_audit_creator as m
 
     state_writes = []
@@ -217,18 +218,18 @@ def test_fan_out_per_opp_recovery_merges_single_opp(monkeypatch):
             }
         }
         wda.get_run.return_value = prun
-        wda.get_definition.return_value = mock.Mock(id=40 + (opportunity_id or 0))
+        wda.get_definition.return_value = _mock_creator(opportunity_id)
         wda.update_run_state.side_effect = lambda rid, s: state_writes.append(s)
         return wda
 
     monkeypatch.setattr(m, "WorkflowDataAccess", make_wda)
     monkeypatch.setattr(
-        templates_pkg,
-        "run_default_for_definition",
-        lambda defn, *, access_token, request=None, window=None, **kw: {
+        ag,
+        "dispatch_this_week_batch",
+        lambda defn, ws, we, *, access_token, sample_overrides=None: {
             "run_id": 999,
-            "sessions_created": 6,
-            "status": "ready",
+            "task_id": "task-999",
+            "status": "running",
         },
     )
 
@@ -243,8 +244,9 @@ def test_fan_out_per_opp_recovery_merges_single_opp(monkeypatch):
     assert set(result["per_opp"].keys()) == {1976}  # only the recovered opp ran
     merged = state_writes[-1]["generation"]
     assert merged["1973"]["run_id"] == 9  # untouched
-    assert merged["1976"]["run_id"] == 999  # replaced with the fresh run
-    assert merged["1976"]["status"] == "ready"
+    assert merged["1976"]["run_id"] == 999  # replaced with the freshly dispatched run
+    assert merged["1976"]["status"] == "running"  # re-dispatched → streaming again
+    assert merged["1976"]["task_id"] == "task-999"
     assert merged["1976"]["order"] == 1  # stable position preserved
 
 
@@ -422,7 +424,7 @@ def test_run_default_opp_owned_still_creates_opp_scoped_run(monkeypatch):
 
 def test_fan_out_writes_program_run_state_program_scoped(monkeypatch):
     """The PROGRAM-run state write is program-scoped for a program-owned creator."""
-    from connect_labs.workflow import templates as templates_pkg
+    from connect_labs.workflow import audit_generation as ag
     from connect_labs.workflow.templates import program_audit_creator as m
 
     seen_scopes = []
@@ -430,18 +432,20 @@ def test_fan_out_writes_program_run_state_program_scoped(monkeypatch):
     def make_wda(access_token=None, opportunity_id=None, program_id=None, **_):
         seen_scopes.append({"opportunity_id": opportunity_id, "program_id": program_id})
         wda = mock.Mock()
-        creator = mock.Mock()
-        creator.id = 40 + (opportunity_id or 0)
-        wda.get_definition.return_value = creator
+        wda.get_definition.return_value = _mock_creator(opportunity_id)
         wda.get_run.return_value = _run(700)  # unfired program run (empty generation)
         wda.update_run_state.side_effect = lambda rid, s: None
         return wda
 
     monkeypatch.setattr(m, "WorkflowDataAccess", make_wda)
     monkeypatch.setattr(
-        templates_pkg,
-        "run_default_for_definition",
-        lambda defn, *, access_token, request=None, window=None, **kw: {"run_id": 1, "status": "ready"},
+        ag,
+        "dispatch_this_week_batch",
+        lambda defn, ws, we, *, access_token, sample_overrides=None: {
+            "run_id": 1,
+            "task_id": "t1",
+            "status": "running",
+        },
     )
 
     m.fan_out_generate(
