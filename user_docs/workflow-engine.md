@@ -232,8 +232,6 @@ The **Program Audit Creator** is the program administrator's central tool for ma
 
 ### What it does
 
-When a program administrator opens the Program Audit Creator for a given week, clicking **"Generate audit runs for all N opportunities"** (where N is the number of opportunities configured for your program) fires the program run. The system immediately creates a fresh audit run for every opportunity and links each one to the program run it just executed.
+When a program administrator opens the Program Audit Creator for a given week, clicking **"Generate audit runs for all N opportunities"** (where N is the number of opportunities configured for your program) fires the program run. The system immediately dispatches an audit-creation job for every opportunity at the same time — all opportunities generate concurrently rather than one after another.
 
 ### Live progress during generation
-
-You do not need to wait
