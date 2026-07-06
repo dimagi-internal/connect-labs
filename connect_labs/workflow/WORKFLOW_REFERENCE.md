@@ -717,7 +717,8 @@ var status = await actions.getAuditStatus(taskId);
 // Returns: { status, message?, current_stage?, total_stages?, stage_name?,
 //            processed?, total?, result?, error? }
 
-// Stream audit progress via SSE (real-time updates)
+// Stream audit progress (poll-first — see §11). Holds no connection by default;
+// the SSE stream is the opt-in low-latency transport.
 var cleanup = actions.streamAuditProgress(
   taskId,
   function onProgress(data) {
@@ -730,7 +731,7 @@ var cleanup = actions.streamAuditProgress(
     // error: string
   },
 );
-// Returns: cleanup function. Call cleanup() to close the SSE connection.
+// Returns: cleanup function. Call cleanup() to stop polling / close the stream.
 
 // Cancel a running audit
 var result = await actions.cancelAudit(taskId);
@@ -740,6 +741,8 @@ var result = await actions.cancelAudit(taskId);
 ### Job Management
 
 Jobs are long-running backend computations (e.g., MBW monitoring analysis).
+**Before wiring live progress, read [§11 Long-running job progress](#11-long-running-job-progress).**
+`streamJobProgress` is now poll-first (holds no connection); the SSE stream is opt-in.
 
 ```javascript
 // Start a job
@@ -754,7 +757,7 @@ var result = await actions.startJob(instance.id, {
 });
 // Returns: { success: boolean, task_id?: string, error?: string }
 
-// Stream job progress via SSE
+// Stream job progress (poll-first — see §11). The SSE stream is opt-in.
 var cleanup = actions.streamJobProgress(
   taskId,
   function onProgress(data) {
@@ -1517,3 +1520,80 @@ independently per run (via `FlagsDataAccess.get_flags_for_run`,
 `AuditDataAccess.get_sessions_by_workflow_run`, and
 `TaskDataAccess.get_tasks_for_run`) and groups them into `flw_rows` for
 the render layer.
+
+## 11. Long-running job progress
+
+Any workflow that kicks off a long backend job (audit creation, a program-level
+fan-out, an analysis pass) needs to show a live progress bar. There is **one
+sanctioned way** to do this. It is not the obvious one, and getting it wrong
+costs real rework — a prior build spent a long session rediscovering the two
+traps below.
+
+### The one pattern
+
+1. **The job persists progress to run state as it works.** Each tick writes
+   `{status, processed, total, message}` into the run's `state.active_job` (job
+   level) and/or `state.generation[<row_key>]` (per-row). Throttle the write to
+   ~1.5s with `connect_labs.utils.throttle.throttled` — ticks fire hundreds of
+   times but each persist is a rate-limited LabsRecord write.
+2. **The render reads that persisted state.** The runner already refetches run
+   state periodically and repaints from it, so persisted `generation` rows show
+   their bars with no extra wiring. This — not a live event — is what actually
+   paints per-row bars.
+3. **For the job-level bar, poll the JSON status endpoint.** `streamJobProgress`
+   / `streamAuditProgress` are **poll-first**: they hit a JSON status endpoint on
+   an interval (`.../status.json` for jobs, `.../status/` for audits) via the
+   shared `streamTaskProgress` client. No connection is held.
+
+### Why not just stream it over SSE? (the two traps)
+
+The web tier runs `gunicorn -k uvicorn.workers.UvicornWorker -w WEB_CONCURRENCY`
+(default **3** workers). Django serves an SSE endpoint as a **sync generator that
+holds a worker thread for the stream's entire lifetime** — and `BaseSSEStreamView`
+spawns a **second** heartbeat producer thread per stream. So:
+
+- **Trap 1 — concurrent streams starve the tier.** A handful of held streams
+  (several users each running a job, or one page opening a stream per row)
+  exhaust the small thread budget and the whole worker set wedges. This is a
+  real multi-user ceiling, not a per-page cosmetic. **Polling holds nothing** —
+  each poll is a fast Redis read that returns immediately, so N users scale fine.
+- **Trap 2 — SSE `item_result` events don't reliably paint rows.** Per-row bars
+  are painted by the periodic run-state refetch (step 2), not by the event
+  stream. Emitting `item_result` alone leaves rows stuck at "running" with no
+  bar. Persist to `generation`.
+
+SSE is kept as an **opt-in** transport (`transport: 'sse'` on `streamTaskProgress`)
+for the rare case where sub-second push latency matters and concurrency is known
+to be low. Default to polling.
+
+### Fanning out per-row progress from an in-process child job
+
+When a parent job runs a child **eagerly in-process** (`child.apply(...)`) and
+wants the child's fine-grained progress forwarded up to a parent-owned row, you
+**cannot** pass a `progress_callback` closure through `.apply(kwargs=...)` —
+Celery serializes the kwargs and chokes on a function (this silently produces
+zero results). Use the in-process relay registry instead:
+
+```python
+from connect_labs.utils.progress_relays import register_relay, pop_relay
+
+register_relay(run_id, lambda msg, processed=0, total=0: ...)  # BEFORE .apply()
+try:
+    child.apply(kwargs={...})          # child looks up the relay by run_id
+finally:
+    pop_relay(run_id)                  # always clean up
+```
+
+The child resolves its relay with `get_relay(workflow_run_id)`. This only works
+because parent and child share a process (the eager case); across a real worker
+boundary `get_relay` returns `None`, a safe no-op.
+
+### Reusable primitives
+
+| Primitive | Where | Use |
+| --- | --- | --- |
+| `throttled(fn, interval=1.5)` | `connect_labs/utils/throttle.py` | Rate-limit the run-state persist (or any chatty side effect); `force=True` for the terminal write. |
+| `register_relay` / `get_relay` / `pop_relay` | `connect_labs/utils/progress_relays.py` | Forward child-job progress up without a Celery-serialized closure. |
+| `build_task_progress(state, info)` | `connect_labs/labs/analysis/sse_streaming.py` | The single Celery-meta → UI-progress translation. Every SSE + poll endpoint goes through it — never re-derive the shape. |
+| `streamTaskProgress({transport, statusUrl, streamUrl}, cbs)` | `connect_labs/static/js/task-progress.ts` | Poll-first (default) or SSE progress client; `onItemResult` / `onCancelled` optional. |
+| `JobStatusAPIView` | `connect_labs/workflow/views.py` | JSON poll endpoint for a workflow job (`api/job/<task_id>/status.json`). |

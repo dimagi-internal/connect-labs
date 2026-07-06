@@ -9,7 +9,14 @@
  * Standard progress data structure from Celery tasks.
  */
 export interface TaskProgress {
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'error' | string;
+  status:
+    | 'pending'
+    | 'running'
+    | 'completed'
+    | 'failed'
+    | 'cancelled'
+    | 'error'
+    | string;
   message?: string;
   stage_name?: string;
   current_stage?: number;
@@ -18,6 +25,8 @@ export interface TaskProgress {
   total?: number;
   result?: Record<string, unknown>;
   error?: string;
+  /** Per-item payload for live row updates (e.g. per-opp / per-FLW rows). */
+  item_result?: Record<string, unknown>;
 }
 
 /**
@@ -30,19 +39,31 @@ export interface TaskProgressCallbacks {
   onComplete: (result: Record<string, unknown>) => void;
   /** Called when task fails or connection is lost */
   onError: (error: string) => void;
+  /** Optional: called with each per-item payload (live row updates). */
+  onItemResult?: (item: Record<string, unknown>) => void;
+  /** Optional: called when the task is cancelled/revoked. */
+  onCancelled?: () => void;
 }
 
 /**
  * Options for task progress streaming.
  */
 export interface TaskProgressOptions {
-  /** URL for SSE stream endpoint */
-  streamUrl: string;
-  /** URL for polling fallback (optional) */
+  /**
+   * Transport to use. Default 'poll' — short-poll a JSON status endpoint,
+   * holding no connection. Prefer this: a held SSE stream pins a worker thread
+   * for its lifetime and the ASGI web tier runs only WEB_CONCURRENCY workers, so
+   * concurrent SSE streams starve each other. Use 'sse' only when sub-second push
+   * latency genuinely matters and concurrency is known to be low.
+   */
+  transport?: 'poll' | 'sse';
+  /** URL for the JSON status endpoint (required for 'poll'; SSE fallback otherwise). */
   statusUrl?: string;
-  /** Polling interval in ms when using fallback (default: 1000) */
+  /** URL for SSE stream endpoint (required for 'sse'). */
+  streamUrl?: string;
+  /** Polling interval in ms (default: 1000). */
   pollInterval?: number;
-  /** Whether to use polling fallback on SSE error (default: true) */
+  /** Whether to fall back to polling on SSE error (default: true). Only affects 'sse'. */
   useFallback?: boolean;
 }
 
@@ -76,12 +97,14 @@ export function streamTaskProgress(
   callbacks: TaskProgressCallbacks,
 ): () => void {
   const {
+    transport = 'poll',
     streamUrl,
     statusUrl,
     pollInterval = 1000,
     useFallback = true,
   } = options;
-  const { onProgress, onComplete, onError } = callbacks;
+  const { onProgress, onComplete, onError, onItemResult, onCancelled } =
+    callbacks;
 
   let closed = false;
   let eventSource: EventSource | null = null;
@@ -98,9 +121,19 @@ export function streamTaskProgress(
       return true; // Signal to close connection
     }
 
+    if (data.status === 'cancelled') {
+      if (onCancelled) onCancelled();
+      return true; // Signal to close connection
+    }
+
     if (data.status === 'failed' || data.status === 'error' || data.error) {
       onError(data.error || data.message || 'Task failed');
       return true; // Signal to close connection
+    }
+
+    // Per-item payload for live row updates (fires alongside the progress tick).
+    if (data.item_result && onItemResult) {
+      onItemResult(data.item_result);
     }
 
     onProgress(data);
@@ -137,7 +170,7 @@ export function streamTaskProgress(
    * Start SSE stream.
    */
   const startStream = (): void => {
-    if (closed) return;
+    if (closed || !streamUrl) return;
 
     eventSource = new EventSource(streamUrl);
 
@@ -174,8 +207,18 @@ export function streamTaskProgress(
     };
   };
 
-  // Start the stream
-  startStream();
+  // Choose transport. Default 'poll' holds no connection and scales across
+  // concurrent users; 'sse' pushes with lower latency but pins a worker thread.
+  if (transport === 'sse' && streamUrl) {
+    startStream();
+  } else if (statusUrl) {
+    pollStatus();
+  } else if (streamUrl) {
+    // 'poll' requested but no statusUrl — fall back to SSE rather than do nothing.
+    startStream();
+  } else {
+    onError('No status or stream URL provided');
+  }
 
   // Return cleanup function
   return () => {

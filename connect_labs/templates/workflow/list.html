@@ -899,9 +899,13 @@
                                     eventSource: null,
                                     pollInterval: null,
                                     init() {
-                                        // Auto-connect to SSE if job is running
+                                        // Poll-first if a job is running: a held SSE stream pins a
+                                        // worker thread for the whole job and the ASGI web tier has
+                                        // few workers, so many rows/users streaming at once starve.
+                                        // Polling holds nothing. (connectToJobStream stays available
+                                        // as the opt-in low-latency path.)
                                         if (this.jobStatus === 'running' && this.jobId) {
-                                            this.connectToJobStream();
+                                            this.startPolling();
                                         }
                                         // Cleanup on component destroy
                                         this.$cleanup(() => {

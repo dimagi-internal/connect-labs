@@ -3238,9 +3238,110 @@ def run_default_api(request, definition_id):
     return JsonResponse(result)
 
 
+def read_active_job(request, run_id):
+    """Best-effort read of a run's authoritative ``active_job`` from run state.
+
+    A create job whose worker died mid-batch never writes a terminal status, so
+    Celery reports PENDING forever — indistinguishable from a live PENDING task.
+    The run's own ``active_job`` carries the real status + ``started_at``, so it is
+    the source of truth on reconnect. Returns ``{}`` when the run has no active_job
+    and ``None`` when there's no ``run_id`` or the read failed.
+    """
+    if not run_id:
+        return None
+    try:
+        data_access = WorkflowDataAccess(request=request)
+        try:
+            run = data_access.get_run(int(run_id))
+        finally:
+            data_access.close()
+        if not run:
+            return None
+        return (run.data.get("state", {}) or {}).get("active_job", {}) or {}
+    except Exception:
+        logger.warning("[JobStatus] active_job read failed for run %s", run_id, exc_info=True)
+        return None
+
+
+def active_job_age_seconds(active_job):
+    """Seconds since ``active_job.started_at``, or ``None`` if unknown."""
+    from datetime import datetime
+
+    started = (active_job or {}).get("started_at")
+    if not started:
+        return None
+    try:
+        return (datetime.now() - datetime.fromisoformat(started)).total_seconds()
+    except Exception:
+        return None
+
+
+# A running job whose active_job hasn't advanced in this long is treated as dead
+# (its worker stopped without writing a terminal status).
+JOB_STALE_SECONDS = 15 * 60
+
+
+def job_status_snapshot(task_id, active_job):
+    """One-shot canonical progress dict for the JSON poll endpoint.
+
+    Trusts the run's recorded ``active_job`` over Celery (whose result for a
+    dead/expired task decays to PENDING), else translates live Celery meta via the
+    shared ``build_task_progress``. Never blocks — the client controls cadence, so
+    polling can't hang the worker the way a held SSE generator can.
+    """
+    from celery.result import AsyncResult
+
+    from connect_labs.labs.analysis.sse_streaming import build_task_progress
+
+    aj_status = (active_job or {}).get("status")
+    if aj_status == "completed":
+        return {"status": "completed", "message": "Complete!", "result": (active_job or {}).get("results", {}) or {}}
+    if aj_status == "cancelled":
+        return {"status": "cancelled", "message": "Cancelled"}
+    if aj_status == "failed":
+        return {
+            "status": "failed",
+            "message": "Failed",
+            "error": (active_job or {}).get("error") or "Job did not complete",
+        }
+    age = active_job_age_seconds(active_job)
+    if aj_status == "running" and age is not None and age > JOB_STALE_SECONDS:
+        return {
+            "status": "failed",
+            "message": "Failed",
+            "error": (
+                "The previous run didn't finish — the server job stopped before " "completing. Re-create to try again."
+            ),
+        }
+    task = AsyncResult(task_id)
+    info = task.info if isinstance(task.info, dict) else {}
+    return build_task_progress(task.state, info)
+
+
+class JobStatusAPIView(LoginRequiredMixin, View):
+    """JSON status endpoint for a workflow job — the poll-first transport.
+
+    Returns one progress snapshot per request and returns immediately. Unlike the
+    SSE stream (``JobStatusStreamView``), it holds no connection and pins no worker
+    thread for the job's lifetime, so N concurrent users polling their jobs scale
+    fine on the small ASGI worker pool. Progress is already persisted to run state
+    by the task, so a missed poll is never a correctness problem.
+    """
+
+    def get(self, request, task_id):
+        run_id = request.GET.get("run_id")
+        active_job = read_active_job(request, run_id)
+        return JsonResponse(job_status_snapshot(task_id, active_job))
+
+
 class JobStatusStreamView(LoginRequiredMixin, View):
     """
     SSE endpoint for real-time multi-stage job progress streaming.
+
+    Opt-in, low-latency alternative to ``JobStatusAPIView`` (the default poll
+    transport). Prefer polling: a held SSE generator pins a worker thread (plus a
+    heartbeat producer thread) for its whole lifetime, and the ASGI web tier runs
+    only ``WEB_CONCURRENCY`` workers, so concurrent streams starve each other.
 
     Follows same pattern as custom_analysis SSE views.
     Shows stage progress: "Stage 1/2: Loading data...", "Stage 2/2: Validating 5/10"
@@ -3268,41 +3369,15 @@ class JobStatusStreamView(LoginRequiredMixin, View):
         # (2) a hard wall-clock backstop that terminates any non-terminal stream so
         # it can never hang forever, even when no run_id is supplied.
         run_id = request.GET.get("run_id")
-        STALE_SECONDS = 15 * 60
+        STALE_SECONDS = JOB_STALE_SECONDS
         MAX_STREAM_SECONDS = 30 * 60
-
-        def _run_active_job():
-            """Best-effort read of this run's active_job from run state."""
-            if not run_id:
-                return None
-            try:
-                data_access = WorkflowDataAccess(request=request)
-                try:
-                    run = data_access.get_run(int(run_id))
-                finally:
-                    data_access.close()
-                if not run:
-                    return None
-                return (run.data.get("state", {}) or {}).get("active_job", {}) or {}
-            except Exception:
-                logger.warning("[JobStatusStream] active_job read failed for run %s", run_id, exc_info=True)
-                return None
-
-        def _age_seconds(active_job):
-            started = (active_job or {}).get("started_at")
-            if not started:
-                return None
-            try:
-                return (datetime.now() - datetime.fromisoformat(started)).total_seconds()
-            except Exception:
-                return None
 
         def stream_progress():
             task = AsyncResult(task_id)
 
             # Reconnect short-circuit: trust the run's recorded outcome over Celery,
             # whose result for a dead/expired task has decayed to PENDING.
-            active_job = _run_active_job()
+            active_job = read_active_job(request, run_id)
             aj_status = (active_job or {}).get("status")
             if aj_status == "completed":
                 # The client's onComplete reloads sessions from the API, so an empty
@@ -3317,7 +3392,7 @@ class JobStatusStreamView(LoginRequiredMixin, View):
             if aj_status == "failed":
                 yield send_sse_event("Failed", error=active_job.get("error") or "Job did not complete")
                 return
-            age = _age_seconds(active_job)
+            age = active_job_age_seconds(active_job)
             if aj_status == "running" and age is not None and age > STALE_SECONDS:
                 yield send_sse_event(
                     "Failed",

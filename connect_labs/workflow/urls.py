@@ -115,6 +115,8 @@ urlpatterns = [
     # template's run_default hook (idempotent where the hook makes it so).
     path("api/<int:definition_id>/run-default/", views.run_default_api, name="api_run_default"),
     path("api/job/<str:task_id>/status/", views.JobStatusStreamView.as_view(), name="api_job_status"),
+    # Poll-first JSON status (default transport; the SSE stream above is opt-in).
+    path("api/job/<str:task_id>/status.json", views.JobStatusAPIView.as_view(), name="api_job_status_json"),
     path("api/job/<str:task_id>/cancel/", views.cancel_job_api, name="api_cancel_job"),
     path("api/run/<int:run_id>/delete/", views.delete_run_api, name="api_delete_run"),
     path("api/open-tasks/", views.open_tasks_api, name="api_open_tasks"),

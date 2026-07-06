@@ -13,16 +13,15 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from config import celery_app
 from connect_labs.utils.celery import set_task_progress
+from connect_labs.utils.progress_relays import _RELAYS as AUDIT_PROGRESS_RELAYS  # noqa: F401  (back-compat alias)
+from connect_labs.utils.progress_relays import get_relay
 
 logger = logging.getLogger(__name__)
 
-# In-process registry of fine-grained progress relays, keyed by workflow_run_id.
-# A caller that runs run_audit_creation EAGERLY in its own process (the program
-# creator's in-process fan-out) registers a relay here before .apply() and removes
-# it after. run_audit_creation looks it up by workflow_run_id and forwards per-FLW
-# progress. This deliberately avoids passing a closure through Celery .apply()
-# kwargs, which the eager path serializes (and would fail on a function).
-AUDIT_PROGRESS_RELAYS: dict = {}
+# The in-process progress-relay registry now lives in connect_labs.utils.progress_relays
+# (domain-neutral, reusable by any eager in-process fan-out). AUDIT_PROGRESS_RELAYS
+# remains as a back-compat alias to the shared dict so existing imports keep working;
+# new code should use register_relay / get_relay / pop_relay.
 
 
 @celery_app.task(bind=True)
@@ -536,7 +535,7 @@ def run_audit_creation(
         ``progress_callback`` (direct calls) or the in-process registry keyed by
         ``workflow_run_id`` — the latter avoids passing a non-serializable closure
         through Celery ``.apply()`` (the eager path serializes its kwargs)."""
-        cb = progress_callback or (AUDIT_PROGRESS_RELAYS.get(workflow_run_id) if workflow_run_id else None)
+        cb = progress_callback or get_relay(workflow_run_id)
         if cb:
             try:
                 cb(message, processed=processed, total=total)

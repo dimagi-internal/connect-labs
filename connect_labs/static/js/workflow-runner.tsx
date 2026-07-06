@@ -280,61 +280,37 @@ function createActionHandlers(csrfToken: string): ActionHandlers {
       // reconnect to a dead/expired task terminates instead of spinning forever.
       runId?: number,
     ): (() => void) => {
-      const eventSource = new EventSource(
-        runId != null
-          ? `/labs/workflow/api/job/${taskId}/status/?run_id=${runId}`
-          : `/labs/workflow/api/job/${taskId}/status/`,
+      // Poll-first: hit the JSON status endpoint on an interval instead of holding
+      // an SSE connection. A held stream pins a worker thread for the whole job, and
+      // the ASGI web tier has only WEB_CONCURRENCY workers, so concurrent users (or
+      // per-row streams) starve each other. Polling holds nothing and scales; the
+      // progress it reads is already persisted to run state, so a missed poll is
+      // never a correctness problem. The SSE endpoint remains for opt-in low-latency.
+      const qs = runId != null ? `?run_id=${runId}` : '';
+      return streamTaskProgress(
+        {
+          transport: 'poll',
+          statusUrl: `/labs/workflow/api/job/${taskId}/status.json${qs}`,
+          // SSE fallback target if a caller ever forces transport: 'sse'.
+          streamUrl: `/labs/workflow/api/job/${taskId}/status/${qs}`,
+        },
+        {
+          onProgress: (data) =>
+            onProgress({
+              status: data.status || 'running',
+              current_stage: data.current_stage,
+              total_stages: data.total_stages,
+              stage_name: data.stage_name,
+              processed: data.processed,
+              total: data.total,
+              message: data.message,
+            }),
+          onItemResult,
+          onComplete: (result) => onComplete(result || {}),
+          onError,
+          onCancelled,
+        },
       );
-
-      eventSource.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-
-          if (data.error) {
-            onError(data.error);
-            eventSource.close();
-            return;
-          }
-
-          if (data.data?.status === 'completed') {
-            onComplete(data.data.results || {});
-            eventSource.close();
-            return;
-          }
-
-          if (data.data?.status === 'cancelled') {
-            onCancelled();
-            eventSource.close();
-            return;
-          }
-
-          // Stream item result for real-time row updates
-          if (data.data?.item_result) {
-            onItemResult(data.data.item_result);
-          }
-
-          // Progress update
-          onProgress({
-            status: data.data?.status || 'running',
-            current_stage: data.data?.current_stage,
-            total_stages: data.data?.total_stages,
-            stage_name: data.data?.stage_name,
-            processed: data.data?.processed,
-            total: data.data?.total,
-            message: data.message,
-          });
-        } catch {
-          console.error('Failed to parse SSE event:', event.data);
-        }
-      };
-
-      eventSource.onerror = () => {
-        eventSource.close();
-        onError('Connection lost');
-      };
-
-      // Return cleanup function
-      return () => eventSource.close();
     },
 
     // Audit Creation Actions
@@ -409,12 +385,13 @@ function createActionHandlers(csrfToken: string): ActionHandlers {
       onComplete: (result: Record<string, unknown>) => void,
       onError: (error: string) => void,
     ): (() => void) => {
-      // Use the shared task-progress utility with polling fallback
+      // Poll-first (no held SSE connection — see streamJobProgress). The SSE
+      // stream endpoint stays wired as the opt-in transport / fallback.
       return streamTaskProgress(
         {
-          streamUrl: `/audit/api/audit/task/${taskId}/stream/`,
+          transport: 'poll',
           statusUrl: `/audit/api/audit/task/${taskId}/status/`,
-          useFallback: true,
+          streamUrl: `/audit/api/audit/task/${taskId}/stream/`,
         },
         { onProgress, onComplete, onError },
       );

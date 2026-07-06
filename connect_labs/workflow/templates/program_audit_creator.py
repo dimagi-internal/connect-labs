@@ -21,6 +21,7 @@ Global constraints honoured here:
 import logging
 
 from connect_labs.audit.data_access import AuditDataAccess
+from connect_labs.utils.throttle import throttled
 from connect_labs.workflow.data_access import WorkflowDataAccess
 
 logger = logging.getLogger(__name__)
@@ -210,9 +211,10 @@ def fan_out_generate(
             dict(base, status="running", processed=0, total=0, message="Starting…"),
         )
 
-        import time as _time
-
-        _last_persist = [_time.monotonic() - 5]  # let the first tick persist immediately
+        # Throttle the generation persist to ~1.5s: run_audit_creation ticks per
+        # FLW/image (hundreds of times) but each persist is a rate-limited LabsRecord
+        # write, and the UI only needs a fresh snapshot roughly once a second.
+        _persist_generation = throttled(lambda: _persist(generation), interval=1.5)
 
         def _relay(msg, processed=0, total=0, _base=base, _idx=idx, _oid=opp_id):
             live = dict(_base, status="running", processed=processed, total=total, message=msg)
@@ -221,11 +223,8 @@ def fan_out_generate(
             # runner's periodic state refetch renders the bar — the same path that
             # already shows the row as "running". This is what actually drives the
             # live UI (the per-template SSE item stream isn't relied on).
-            now = _time.monotonic()
-            if now - _last_persist[0] >= 1.5:
-                _last_persist[0] = now
-                generation[str(_oid)] = live
-                _persist(generation)
+            generation[str(_oid)] = live
+            _persist_generation()
 
         result = run_batch_in_process(run, job_config, access_token=access_token, progress_callback=_relay)
         per_opp[opp_id] = result
