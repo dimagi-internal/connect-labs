@@ -125,41 +125,24 @@ def test_creator_run_default_always_creates_no_reuse(monkeypatch):
     assert fake_job.apply.call_count == 1
 
 
-def test_run_batch_in_process_runs_handler_and_relays_progress(monkeypatch):
-    """The in-process path runs the audit-creation handler directly (so its
-    per-audit progress can be relayed on the program stream) and reports status."""
-    import connect_labs.workflow.job_handlers.weekly_dual_track_audit as h
+def test_dispatch_batch_delays_and_returns_task_id(monkeypatch):
+    """The parallel path creates a fresh run and DISPATCHES the batch job async
+    (.delay), returning its task_id without waiting — the row polls that task."""
     from connect_labs.workflow import audit_generation as g
 
-    ticks = []
+    wda = mock.Mock()
+    wda.create_run.return_value = _run(321, None)
+    monkeypatch.setattr(g, "WorkflowDataAccess", mock.Mock(return_value=wda))
+    fake_job = mock.Mock()
+    fake_job.delay.return_value.id = "celery-task-abc"
+    monkeypatch.setattr(g, "run_workflow_job", fake_job)
 
-    def fake_handler(job_config, access_token, progress_callback=None):
-        if progress_callback:
-            progress_callback("Creating audit 1/3", processed=1, total=3)
-        return {"sessions_created": 9}
+    result = g.dispatch_batch(_creator_def(), "2026-06-21", "2026-06-27", access_token="t")
 
-    monkeypatch.setattr(h, "weekly_dual_track_audit_create", fake_handler)
-
-    run = _run(321, None)
-    result = g.run_batch_in_process(
-        run, {"run_id": 321}, access_token="t", progress_callback=lambda *a, **k: ticks.append((a, k))
-    )
-
-    assert result == {"run_id": 321, "sessions_created": 9, "status": "ready"}
-    assert ticks  # per-audit progress was relayed through the callback
-
-
-def test_run_batch_in_process_reports_failed_on_error(monkeypatch):
-    import connect_labs.workflow.job_handlers.weekly_dual_track_audit as h
-    from connect_labs.workflow import audit_generation as g
-
-    def boom(job_config, access_token, progress_callback=None):
-        raise RuntimeError("kaboom")
-
-    monkeypatch.setattr(h, "weekly_dual_track_audit_create", boom)
-
-    result = g.run_batch_in_process(_run(322, None), {"run_id": 322}, access_token="t")
-    assert result == {"run_id": 322, "sessions_created": 0, "status": "failed"}
+    assert result == {"run_id": 321, "task_id": "celery-task-abc", "status": "running"}
+    wda.create_run.assert_called_once()
+    fake_job.delay.assert_called_once()  # async dispatch, not eager .apply()
+    fake_job.apply.assert_not_called()
 
 
 def test_creator_run_default_reports_failed_status(monkeypatch):

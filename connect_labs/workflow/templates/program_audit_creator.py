@@ -21,7 +21,6 @@ Global constraints honoured here:
 import logging
 
 from connect_labs.audit.data_access import AuditDataAccess
-from connect_labs.utils.throttle import throttled
 from connect_labs.workflow.data_access import WorkflowDataAccess
 
 logger = logging.getLogger(__name__)
@@ -107,7 +106,7 @@ def fan_out_generate(
     Returns ``{"per_opp": {opp_id: result}, "generation", "window_start",
     "window_end"}``.
     """
-    from connect_labs.workflow.audit_generation import create_batch_run, run_batch_in_process, sample_overrides_for
+    from connect_labs.workflow.audit_generation import dispatch_batch, sample_overrides_for
 
     window_start, window_end = window if window else (None, None)
     all_sources = _resolve_instances(definition)
@@ -140,10 +139,10 @@ def fan_out_generate(
     total = len(sources)
 
     def _emit(msg, processed, item_result):
-        # Stream a per-opp status/progress row through the ONE program job's
-        # progress channel (set_task_progress → SSE → the render's onItemResult).
-        # A single relayed stream — not a stream per opp — is what the ASGI worker
-        # can actually serve.
+        # Stream the per-opp entry (with its task_id) on the program dispatch job's
+        # progress channel so the render learns each opp's task to poll. The rows
+        # themselves are painted from the runner's run-state refetch + each row's
+        # own poll of its opp job — not from these items.
         if progress_callback:
             progress_callback(msg, processed=processed, total=total, item_result=item_result)
 
@@ -185,53 +184,31 @@ def fan_out_generate(
             _emit(f"Opportunity #{opp_id}: creator not found", idx + 1, entry)
             continue
 
-        # Create the opp's audit run, then run its audit-creation IN-PROCESS,
-        # relaying every per-audit progress tick as an item_result on THIS program
-        # stream so the opp's row shows a live bar. Opportunities run in turn (one
-        # relayed stream); each row fills as its batch works.
-        opp_scoped, run, job_config = create_batch_run(
+        # DISPATCH the opp's audit-creation job ASYNC (the same job the per-opp
+        # workflow page runs) and record its task_id. We do NOT wait — every opp is
+        # dispatched, so they run in PARALLEL (governed by the worker pool), and
+        # each row polls its own task's status to glide. A reload reconnects because
+        # the task_ids are persisted here.
+        dispatched = dispatch_batch(
             creator_def,
             window_start,
             window_end,
             access_token=access_token,
             sample_overrides=sample_overrides_for(creator_def),
         )
-        base = {
+        per_opp[opp_id] = dispatched
+        entry = {
             "id": opp_id,
             "opportunity_id": opp_id,
             "workflow_definition_id": def_id,
-            "run_id": run.id,
+            "run_id": dispatched.get("run_id"),
+            "task_id": dispatched.get("task_id"),
+            "status": "running",
             "order": order,
         }
-        generation[str(opp_id)] = dict(base, status="running", processed=0, total=0)
-        _persist(generation)
-        _emit(
-            f"Opportunity #{opp_id}: starting…",
-            idx,
-            dict(base, status="running", processed=0, total=0, message="Starting…"),
-        )
-
-        # Throttle the generation persist to ~1.5s: run_audit_creation ticks per
-        # FLW/image (hundreds of times) but each persist is a rate-limited LabsRecord
-        # write, and the UI only needs a fresh snapshot roughly once a second.
-        _persist_generation = throttled(lambda: _persist(generation), interval=1.5)
-
-        def _relay(msg, processed=0, total=0, _base=base, _idx=idx, _oid=opp_id):
-            live = dict(_base, status="running", processed=processed, total=total, message=msg)
-            _emit(msg, _idx, live)  # best-effort live SSE item
-            # ALSO persist the progress into the generation entry (throttled) so the
-            # runner's periodic state refetch renders the bar — the same path that
-            # already shows the row as "running". This is what actually drives the
-            # live UI (the per-template SSE item stream isn't relied on).
-            generation[str(_oid)] = live
-            _persist_generation()
-
-        result = run_batch_in_process(run, job_config, access_token=access_token, progress_callback=_relay)
-        per_opp[opp_id] = result
-        entry = dict(base, status=result.get("status", "ready"), session_count=result.get("sessions_created", 0))
         generation[str(opp_id)] = entry
         _persist(generation)
-        _emit(f"Opportunity #{opp_id}: {entry['status']}", idx + 1, entry)
+        _emit(f"Opportunity #{opp_id}: dispatched", idx + 1, entry)
 
     return {"per_opp": per_opp, "generation": generation, "window_start": window_start, "window_end": window_end}
 
@@ -388,12 +365,16 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions, onU
     var [busyOpp, setBusyOpp] = React.useState(null);
     var [progress, setProgress] = React.useState(null);
     var [jobError, setJobError] = React.useState(null);
-    // Live per-opp rows streamed from the ONE program job via onItemResult (keyed
-    // by opportunity_id): each item carries the opp's {status, processed, total,
-    // message, run_id, session_count}. Merged over the persisted generation record
-    // so each row fills in place (pending → running w/ bar → ready/failed).
+    // Per-opp status the program dispatch stream reports (keyed by opportunity_id):
+    // {status, run_id, task_id, session_count, ...}. Merged over persisted generation.
     var [liveItems, setLiveItems] = React.useState({});
+    // Live PROGRESS of each opp's own audit job (opportunity_id -> {processed,total,
+    // message}), fetched by polling that job's status — the same job + status the
+    // per-opp workflow page shows. Poll-first holds no connection, so N opps in
+    // parallel each poll independently without contention.
+    var [oppProgress, setOppProgress] = React.useState({});
     var cleanupRef = React.useRef(null);
+    var oppStreamsRef = React.useRef({}); // opportunity_id -> {taskId, cleanup}
     var activeTaskRef = React.useRef(null); // program job task_id, for Cancel
 
     var isCompleted = view && view.isCompleted;
@@ -416,6 +397,47 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions, onU
             return n;
         });
     }
+
+    // For each opp that has a running audit job (a task_id), poll that job's own
+    // status so its row glides — reusing the exact job + status the per-opp workflow
+    // page uses. Poll-first (streamJobProgress defaults to polling) holds no
+    // connection, so all opps poll in parallel without starving the worker pool.
+    // Guarded by task_id so a per-opp Re-run reconnects to its NEW task; a reload
+    // reconnects because task_ids are persisted in the generation record.
+    React.useEffect(function () {
+        Object.keys(mergedGen).forEach(function (k) {
+            var g = mergedGen[k];
+            if (!g || g.status !== 'running' || !g.task_id) return;
+            var ex = oppStreamsRef.current[k];
+            if (ex && ex.taskId === g.task_id) return; // already polling this task
+            if (ex && ex.cleanup) ex.cleanup();          // task changed (re-run) → drop old
+            var oppId = g.opportunity_id;
+            var oppRunId = g.run_id;
+            var cleanup = actions.streamJobProgress(
+                g.task_id,
+                function (p) { setOppProgress(function (m) { var n = Object.assign({}, m); n[k] = p; return n; }); },
+                null,
+                function (results) {
+                    // Done — read the authoritative audit count from the same
+                    // sessions endpoint the per-opp page uses.
+                    fetch('/audit/api/workflow/' + oppRunId + '/sessions/?opportunity_id=' + oppId)
+                        .then(function (r) { return r.json(); })
+                        .then(function (d) {
+                            var count = (d && d.success && d.sessions) ? d.sessions.length : ((results && results.sessions_created) || 0);
+                            applyItem({ opportunity_id: oppId, run_id: oppRunId, status: 'ready', session_count: count });
+                        })
+                        .catch(function () { applyItem({ opportunity_id: oppId, run_id: oppRunId, status: 'ready', session_count: (results && results.sessions_created) || 0 }); });
+                },
+                function (err) { applyItem({ opportunity_id: oppId, run_id: oppRunId, status: 'failed' }); },
+                function () { applyItem({ opportunity_id: oppId, run_id: oppRunId, status: 'cancelled' }); },
+                oppRunId // run_id — lets the status endpoint terminate a dead/finished task
+            );
+            oppStreamsRef.current[k] = { taskId: g.task_id, cleanup: cleanup };
+        });
+    });
+    React.useEffect(function () {
+        return function () { Object.keys(oppStreamsRef.current).forEach(function (k) { var e = oppStreamsRef.current[k]; if (e && e.cleanup) e.cleanup(); }); };
+    }, []);
 
     function calculateDateRange(preset) {
         var today = new Date(); today.setHours(0, 0, 0, 0);
@@ -492,10 +514,17 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions, onU
     // Cancel the running program job (revokes the Celery task). Rows still
     // 'running' settle to 'cancelled' via the stream's cancel callback.
     function cancelRun() {
-        var tid = activeTaskRef.current;
-        if (!tid) return;
         setJobError(null);
-        actions.cancelJob(tid, instance.id).catch(function () {});
+        // Cancel the program dispatch job (if still dispatching) AND every opp's
+        // own running audit job — they run as independent tasks now.
+        if (activeTaskRef.current) actions.cancelJob(activeTaskRef.current, instance.id).catch(function () {});
+        Object.keys(mergedGen).forEach(function (k) {
+            var g = mergedGen[k];
+            if (g && g.status === 'running' && g.task_id) {
+                actions.cancelJob(g.task_id, g.run_id).catch(function () {});
+                applyItem({ opportunity_id: g.opportunity_id, run_id: g.run_id, status: 'cancelled' });
+            }
+        });
     }
 
     // Reconnect to a still-running job after a page reload — but guard against a
@@ -622,7 +651,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions, onU
         var oppId = source.opportunity_id;
         var gen = mergedGen[String(oppId)];
         var comp = completion[String(oppId)];
-        var prog = gen; // the merged item carries {processed,total,message} while running
+        var prog = oppProgress[String(oppId)] || gen; // live poll of this opp's own job
         var runLink = (gen && gen.run_id != null)
             ? React.createElement('a', {
                 href: '/labs/workflow/' + source.workflow_definition_id + '/run/?run_id=' + gen.run_id + '&opportunity_id=' + oppId,

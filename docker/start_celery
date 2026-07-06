@@ -4,4 +4,9 @@ set -o errexit
 set -o pipefail
 set -o nounset
 
-REMAP_SIGTERM=SIGQUIT celery -A config.celery_app worker -l INFO --concurrency 3 --max-tasks-per-child 20 --beat
+# concurrency 6: the program audit creator fans out one audit job PER OPPORTUNITY
+# and they run in parallel. Audit jobs are I/O-bound (Connect API + AI-review HTTP),
+# so N processes > vCPU count is fine — they mostly wait on I/O. 6 comfortably runs a
+# 4-opportunity program in parallel with headroom for other users; the 8 GB worker
+# has ample memory for the extra prefork processes.
+REMAP_SIGTERM=SIGQUIT celery -A config.celery_app worker -l INFO --concurrency 6 --max-tasks-per-child 20 --beat
