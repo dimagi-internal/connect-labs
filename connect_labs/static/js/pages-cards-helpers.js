@@ -1,7 +1,13 @@
 // Pure card-resolution logic for the pages surface bundle.
 // No DOM / React imports so it is unit-testable under vitest (Node, CommonJS).
 
-const SHIPPED_CARD_TYPES = ['stat', 'audit_summary', 'list', 'summary'];
+const SHIPPED_CARD_TYPES = [
+  'stat',
+  'audit_summary',
+  'list',
+  'summary',
+  'workflow_runs',
+];
 
 /**
  * Decide how a card payload should render.
