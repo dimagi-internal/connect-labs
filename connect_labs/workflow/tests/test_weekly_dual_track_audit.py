@@ -185,12 +185,16 @@ def test_handler_relays_per_flw_progress_for_gliding_bar():
     def cb(msg, processed=0, total=0):
         seen.append((msg, processed, total))
 
+    from connect_labs.audit.tasks import AUDIT_PROGRESS_RELAYS
+
     def fake_apply(kwargs=None):
-        # run_audit_creation invokes the passed progress_callback with per-FLW ticks.
-        pc = (kwargs or {}).get("progress_callback")
-        if pc:
-            pc("Creating audits · 1/3 field workers", processed=1, total=3)
-            pc("Creating audits · 3/3 field workers", processed=3, total=3)
+        # Simulate run_audit_creation: look up the in-process relay by
+        # workflow_run_id (NOT a serialized closure in kwargs) and fire per-FLW ticks.
+        assert "progress_callback" not in (kwargs or {})  # never through .apply()
+        relay = AUDIT_PROGRESS_RELAYS.get(555)
+        if relay:
+            relay("Creating audits · 1/3 field workers", processed=1, total=3)
+            relay("Creating audits · 3/3 field workers", processed=3, total=3)
         eager = mock.Mock()
         eager.result = {"sessions": [1]}
         return eager
@@ -208,13 +212,13 @@ def test_handler_relays_per_flw_progress_for_gliding_bar():
             {"run_id": 555, "opportunity_id": 101}, access_token="tok", progress_callback=cb
         )
 
-    # A progress_callback was threaded into run_audit_creation on every call.
-    assert all("progress_callback" in c.kwargs["kwargs"] for c in rac.apply.call_args_list)
-    # Its per-FLW ticks reached the caller with processed/total for a gliding bar,
+    # Per-FLW ticks reached the caller with processed/total for a gliding bar,
     # tag-prefixed so the row shows which track is generating.
     assert any(p == 1 and t == 3 for _, p, t in seen)
     assert any(p == 3 and t == 3 for _, p, t in seen)
     assert all(" · " in msg and "field workers" in msg for msg, _, _ in seen)
+    # The registry is cleaned up after the run (no leaked relays).
+    assert AUDIT_PROGRESS_RELAYS.get(555) is None
 
 
 def test_template_registered_and_multi_opp():
