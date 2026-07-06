@@ -27,8 +27,16 @@ describe('resolveCard', () => {
     });
   });
 
+  it('routes workflow_runs to a shipped renderer (not default, not render_code)', () => {
+    expect(resolveCard({ card_type: 'workflow_runs' })).toEqual({
+      mode: 'shipped',
+      cardType: 'workflow_runs',
+    });
+  });
+
   it('exposes the shipped card types', () => {
     expect(SHIPPED_CARD_TYPES).toContain('stat');
     expect(SHIPPED_CARD_TYPES).toContain('summary');
+    expect(SHIPPED_CARD_TYPES).toContain('workflow_runs');
   });
 });

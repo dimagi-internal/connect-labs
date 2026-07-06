@@ -50,6 +50,27 @@
     font-size: 0.9rem; border-style: dashed;
   }
   .pages-card--error { color: #b91c1c; border-color: #fecaca; background: #fef2f2; }
+  .pages-runs__table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  .pages-runs__table th {
+    text-align: left; font-size: 0.68rem; font-weight: 600; color: #6b7280;
+    text-transform: uppercase; letter-spacing: 0.04em;
+    padding: 0.35rem 0.5rem 0.35rem 0; border-bottom: 1px solid #f3f4f6;
+  }
+  .pages-runs__table td { padding: 0.5rem 0.5rem 0.5rem 0; border-bottom: 1px solid #f3f4f6; vertical-align: middle; }
+  .pages-runs__table tr:last-child td { border-bottom: none; }
+  .pages-run__id { font-weight: 600; color: #111827; white-space: nowrap; }
+  .pages-run__created { color: #4b5563; white-space: nowrap; }
+  .pages-run__status {
+    display: inline-flex; align-items: center; padding: 0.15rem 0.55rem;
+    border-radius: 999px; font-size: 0.72rem; font-weight: 600;
+  }
+  .pages-run__status--in-progress { background: #eef2ff; color: #4338ca; }
+  .pages-run__status--completed { background: #ecfdf5; color: #047857; }
+  .pages-run__open { text-align: right; }
+  .pages-run__open a { color: #4f46e5; font-weight: 600; text-decoration: none; white-space: nowrap; }
+  .pages-run__open a:hover { text-decoration: underline; }
+  .pages-runs__more { margin-top: 0.5rem; font-size: 0.75rem; color: #9ca3af; }
+  .pages-card__empty { color: #9ca3af; font-size: 0.9rem; padding: 0.25rem 0; }
 </style>
 
 <div class="pages-surface">

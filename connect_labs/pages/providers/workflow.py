@@ -66,19 +66,31 @@ class WorkflowCardProvider(base.CardProvider):
 
     def get_card_data(self, request, target: dict, options: dict) -> base.CardPayload:
         definition_id = int(target["definition_id"])
-        record = _load_definition(request, definition_id, target.get("opportunity_id"))
-        card = (record.data.get("card", {}) if record else {}) or {}
+        opportunity_id = target.get("opportunity_id")
 
-        cta = card.get("cta") or {
-            "label": "Open workflow",
-            "url": reverse("labs:workflow:run", kwargs={"definition_id": definition_id}),
-        }
-        title = options.get("title") or card.get("title") or (record.name if record else f"Workflow {definition_id}")
+        wda = WorkflowDataAccess(access_token=_access_token(request), opportunity_id=opportunity_id)
+        record = wda.get_definition(definition_id)
+        runs = wda.list_runs(definition_id) or []
+
+        # Newest first (created_at, fallback id), capped for the card.
+        runs = sorted(runs, key=lambda r: (getattr(r, "created_at", "") or "", r.id), reverse=True)
+        run_rows = [
+            {
+                "id": r.id,
+                "created": (getattr(r, "created_at", "") or "")[:10],
+                "status": r.status,
+                "open_url": (
+                    f"{reverse('labs:workflow:run', kwargs={'definition_id': definition_id})}"
+                    f"?run_id={r.id}&opportunity_id={opportunity_id}"
+                ),
+            }
+            for r in runs[:8]
+        ]
+
+        title = options.get("title") or (record.name if record else f"Workflow {definition_id}")
         return base.CardPayload(
             title=title,
-            card_type=card.get("card_type", "summary"),
-            metrics=card.get("metrics", []),
-            cta=cta,
-            render_code=card.get("render_code"),
-            data={"definition_id": definition_id},
+            card_type="workflow_runs",
+            body=(record.description if record else None),
+            data={"definition_id": definition_id, "runs": run_rows, "run_count": len(runs)},
         )

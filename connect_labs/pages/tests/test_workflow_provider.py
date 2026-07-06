@@ -8,6 +8,7 @@ def _definition_record():
     rec.opportunity_ids = [42]
     rec.opportunity_id = 42
     rec.name = "Weekly Performance Review"
+    rec.description = "Review each worker weekly"
     rec.data = {
         "card": {
             "card_type": "summary",
@@ -43,15 +44,38 @@ def test_entitled_false_when_opp_absent(mock_wda, mock_org):
 
 
 @patch("connect_labs.pages.providers.workflow.WorkflowDataAccess")
-def test_get_card_data_reads_declared_card_block_and_builds_cta(mock_wda):
+def test_get_card_data_emits_workflow_runs(mock_wda):
     mock_wda.return_value.get_definition.return_value = _definition_record()
+    run_a = MagicMock(id=5060, created_at="2026-07-01", status="in_progress")
+    run_b = MagicMock(id=5061, created_at="2026-07-08", status="completed")
+    mock_wda.return_value.list_runs.return_value = [run_a, run_b]
+
     prov = WorkflowCardProvider()
-    payload = prov.get_card_data(_request(), {"definition_id": 7}, {})
-    d = payload.to_dict()
-    assert d["title"] == "Weekly Review"
-    assert d["card_type"] == "summary"
-    assert d["metrics"] == [{"label": "Cadence", "value": "Weekly"}]
-    assert d["cta"]["url"] == "/labs/workflow/7/run/"
+    d = prov.get_card_data(_request(), {"definition_id": 5049, "opportunity_id": 1973}, {}).to_dict()
+
+    assert d["card_type"] == "workflow_runs"
+    assert d["title"] == "Weekly Performance Review"
+    runs = d["data"]["runs"]
+    assert [r["id"] for r in runs] == [5061, 5060]  # newest first
+    assert runs[0]["status"] == "completed"
+    assert runs[0]["created"] == "2026-07-08"
+    assert runs[0]["open_url"] == "/labs/workflow/5049/run/?run_id=5061&opportunity_id=1973"
+    assert "description" not in runs[0]  # no description/period in this card
+    assert d["data"]["run_count"] == 2
+    assert mock_wda.call_args.kwargs["opportunity_id"] == 1973
+
+
+@patch("connect_labs.pages.providers.workflow.WorkflowDataAccess")
+def test_get_card_data_caps_runs_at_8(mock_wda):
+    mock_wda.return_value.get_definition.return_value = _definition_record()
+    mock_wda.return_value.list_runs.return_value = [
+        MagicMock(id=i, created_at=f"2026-07-{i:02d}", status="in_progress") for i in range(1, 13)
+    ]
+    prov = WorkflowCardProvider()
+    d = prov.get_card_data(_request(), {"definition_id": 5049, "opportunity_id": 1973}, {}).to_dict()
+    assert len(d["data"]["runs"]) == 8
+    assert d["data"]["run_count"] == 12
+    assert d["data"]["runs"][0]["id"] == 12  # newest first
 
 
 @patch("connect_labs.pages.providers.workflow.get_org_data")
@@ -92,9 +116,10 @@ def test_entitled_false_when_target_opportunity_absent(mock_wda, mock_org):
 
 
 @patch("connect_labs.pages.providers.workflow.WorkflowDataAccess")
-def test_get_card_data_scopes_definition_read_by_target_opportunity(mock_wda):
+def test_get_card_data_scopes_reads_by_target_opportunity(mock_wda):
     mock_wda.return_value.get_definition.return_value = _definition_record()
+    mock_wda.return_value.list_runs.return_value = []
     prov = WorkflowCardProvider()
     prov.get_card_data(_request(), {"definition_id": 5049, "opportunity_id": 1973}, {})
-    # the definition read is scoped by the card's opportunity
+    # the definition + runs reads are scoped by the card's opportunity
     assert mock_wda.call_args.kwargs["opportunity_id"] == 1973
