@@ -132,7 +132,12 @@ def fetch_cchq_cases_as_visit_dicts(
         )
 
     case_type = data_source.case_type
-    cases = client.fetch_cases(case_type=case_type)
+    # raise_on_http_error=True: a silent partial/empty result here is
+    # indistinguishable from "this opportunity genuinely has zero work areas"
+    # to every downstream consumer (the analysis pipeline, the report render
+    # code) — unlike the campaign tool's worker roster, which already
+    # tolerates a partial fetch and has no way to react to a raised error.
+    cases = client.fetch_cases(case_type=case_type, raise_on_http_error=True)
     logger.info(f"[CCHQ Cases Fetcher] Fetched {len(cases)} '{case_type}' cases from {cc_domain}")
 
     return [normalize_cchq_case_to_visit_dict(case, opportunity_id, i) for i, case in enumerate(cases)]

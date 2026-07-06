@@ -137,3 +137,60 @@ class TestFetchCasesAuthHandling:
             cases = client.fetch_cases(case_type="work-area")
 
         assert cases == []
+
+
+class TestFetchCasesRaiseOnHttpError:
+    """raise_on_http_error=True (used by the analysis-pipeline WA fetcher, NOT
+    the campaign tool's worker roster) turns a silent partial/empty result
+    into a real exception — the diagnostic needed when a non-auth HTTP error
+    (not 401/403, so not caught by the auth-retry path above) is what's
+    actually producing "0 work areas" with no visible error anywhere."""
+
+    def test_non_auth_http_error_raises_when_opted_in(self):
+        client = _client()
+        error_response = MagicMock(spec=httpx.Response)
+        error_response.status_code = 404
+        error_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "404 Not Found", request=MagicMock(), response=error_response
+        )
+
+        with (
+            patch("httpx.get", return_value=error_response),
+            patch.object(client, "check_token_valid", return_value=True),
+        ):
+            with pytest.raises(httpx.HTTPStatusError):
+                client.fetch_cases(case_type="work-area", raise_on_http_error=True)
+
+    def test_request_error_raises_when_opted_in(self):
+        client = _client()
+
+        with (
+            patch("httpx.get", side_effect=httpx.ConnectError("connection refused")),
+            patch.object(client, "check_token_valid", return_value=True),
+        ):
+            with pytest.raises(httpx.ConnectError):
+                client.fetch_cases(case_type="work-area", raise_on_http_error=True)
+
+    def test_auth_error_still_raises_cchqautherror_when_opted_in(self):
+        """raise_on_http_error doesn't change 401/403 handling — that path
+        already raises CCHQAuthError regardless of this flag."""
+        client = _client()
+
+        with (
+            patch("httpx.get", return_value=_auth_error_response(401)),
+            patch.object(client, "check_token_valid", return_value=True),
+            patch.object(client, "_refresh_token", return_value=False),
+        ):
+            with pytest.raises(CCHQAuthError):
+                client.fetch_cases(case_type="work-area", raise_on_http_error=True)
+
+    def test_success_unaffected_by_flag(self):
+        client = _client()
+
+        with (
+            patch("httpx.get", return_value=_ok_response([{"case_id": "a"}])),
+            patch.object(client, "check_token_valid", return_value=True),
+        ):
+            cases = client.fetch_cases(case_type="work-area", raise_on_http_error=True)
+
+        assert cases == [{"case_id": "a"}]

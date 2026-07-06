@@ -310,6 +310,7 @@ class CommCareDataAccess:
         case_type: str,
         limit: int = 1000,
         additional_params: dict | None = None,
+        raise_on_http_error: bool = False,
     ) -> list[dict]:
         """
         Fetch cases from CommCare Case API v2 with pagination.
@@ -318,6 +319,13 @@ class CommCareDataAccess:
             case_type: Case type to fetch (e.g., 'deliver-unit')
             limit: Maximum cases per page (default 1000)
             additional_params: Optional additional query parameters
+            raise_on_http_error: If True, a non-auth HTTP/network error on any
+                page re-raises instead of silently returning whatever was
+                accumulated so far. Defaults to False to preserve existing
+                behavior for callers that already tolerate partial results
+                (e.g. the campaign tool's worker roster) — set True for
+                callers where a silent partial/empty result would be mistaken
+                for "this genuinely has no cases" (e.g. analysis pipelines).
 
         Returns:
             List of case dictionaries from CommCare API
@@ -326,7 +334,8 @@ class CommCareDataAccess:
             ValueError: If OAuth token is not configured or expired
             CCHQAuthError: If CommCare HQ rejects the request with 401/403
                 that survives a token-refresh-and-retry attempt
-            httpx.HTTPError: If API request fails for any other reason
+            httpx.HTTPError: If API request fails for any other reason AND
+                raise_on_http_error is True
         """
         if not self.check_token_valid():
             raise ValueError(
@@ -415,9 +424,13 @@ class CommCareDataAccess:
             logger.error(
                 f"HTTP {e.response.status_code} fetching {case_type} cases from CommCare " f"(page {page}): {e}"
             )
+            if raise_on_http_error:
+                raise
             return all_cases
         except httpx.RequestError as e:
             logger.error(f"Request error fetching {case_type} cases from CommCare (page {page}): {e}")
+            if raise_on_http_error:
+                raise
             return all_cases
 
         logger.info(f"Fetched total of {len(all_cases)} {case_type} cases from CommCare")
