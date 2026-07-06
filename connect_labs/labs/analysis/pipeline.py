@@ -698,16 +698,6 @@ class AnalysisPipeline:
                             access_token=self.access_token,
                             opportunity_id=opp_id,
                         )
-                        # TEMPORARY DIAGNOSTIC (remove once the program-owned
-                        # Ward Progress Tracker "0 work areas, no error"
-                        # investigation is resolved): pinpoint whether a
-                        # non-zero fetch is being lost in process_and_cache's
-                        # write/read-back, vs. the fetch itself genuinely
-                        # returning zero cases.
-                        yield (
-                            EVENT_STATUS,
-                            {"message": f"[DIAG] fetched {len(visit_dicts)} '{ct}' cases for opp {opp_id}"},
-                        )
                         raw_data_already_stored = False
                     else:
                         yield from self._consume_raw_visits_stream(
@@ -967,4 +957,4 @@ class AnalysisPipeline:
         except Exception as e:
             logger.error(f"[Pipeline/{self.backend_name}] Error: {e}", exc_info=True)
             sentry_sdk.capture_exception(e)
-            yield (EVENT_ERROR, {"message": str(e)})
+            yield (EVENT_ERROR, {"message": str(e), "exception": e})

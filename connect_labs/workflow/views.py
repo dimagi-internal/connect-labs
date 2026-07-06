@@ -3775,7 +3775,7 @@ class PipelineDataStreamView(BaseSSEStreamView):
                                 pipeline_id,
                                 opp_id,
                             )
-                            yield from mixin.stream_pipeline_events(pipeline_stream)
+                            yield from mixin.stream_pipeline_events(pipeline_stream, raise_on_error=True)
 
                             result = mixin._pipeline_result
                             from_cache = mixin._pipeline_from_cache

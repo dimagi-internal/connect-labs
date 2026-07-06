@@ -218,13 +218,14 @@ class AnalysisPipelineSSEMixin:
         self,
         pipeline_stream: Generator,
         send_sse_func: Callable[[str, dict | None, str | None], str] = send_sse_event,
+        raise_on_error: bool = False,
     ) -> Generator[str, None, None]:
         """
         Convert AnalysisPipeline stream events to SSE events.
 
-        Processes all pipeline events (STATUS, DOWNLOAD, RESULT) and yields
-        formatted SSE events. Stores the final result in self._pipeline_result
-        and cache status in self._pipeline_from_cache.
+        Processes all pipeline events (STATUS, DOWNLOAD, RESULT, ERROR) and
+        yields formatted SSE events. Stores the final result in
+        self._pipeline_result and cache status in self._pipeline_from_cache.
 
         Fetch progress events are yielded once per page from the v2 paginated API
         (up to 1000 rows per page). Each event is immediately converted to an SSE
@@ -233,14 +234,34 @@ class AnalysisPipelineSSEMixin:
         Args:
             pipeline_stream: Generator from pipeline.stream_analysis()
             send_sse_func: SSE formatting function (defaults to send_sse_event)
+            raise_on_error: If True, an EVENT_ERROR from the pipeline (its own
+                internal try/except caught something and gave up) re-raises the
+                original exception here instead of being silently dropped.
+                Defaults to False to preserve the historical behavior for
+                existing callers (labs/explorer, configurable_ui,
+                mbw_monitoring, custom_analysis/rutf, custom_analysis/kmc) that
+                have never handled a raised exception from this call — before
+                this flag existed, EVENT_ERROR matched none of the branches
+                below and was silently discarded, leaving
+                self._pipeline_result as None with no indication anything
+                failed (self._pipeline_from_cache could even end up True, as a
+                side effect of an unrelated earlier "checking ... cache..."
+                status message containing the word "cache"). Callers that DO
+                already wrap this call in a try/except (e.g. workflow/views.py
+                per-opp pipeline execution) should pass True so a real failure
+                surfaces as a real error instead of a fake empty success.
 
         Yields:
             Formatted SSE event strings
 
         Side Effects:
             Sets self._pipeline_result and self._pipeline_from_cache
+
+        Raises:
+            The original pipeline exception, if raise_on_error=True and the
+            pipeline yielded an EVENT_ERROR.
         """
-        from connect_labs.labs.analysis.pipeline import EVENT_DOWNLOAD, EVENT_RESULT, EVENT_STATUS
+        from connect_labs.labs.analysis.pipeline import EVENT_DOWNLOAD, EVENT_ERROR, EVENT_RESULT, EVENT_STATUS
 
         self._pipeline_result = None
         self._pipeline_from_cache = False
@@ -272,6 +293,13 @@ class AnalysisPipelineSSEMixin:
                 logger.debug("[SSE Mixin] Received result event")
                 self._pipeline_result = event_data
                 break
+
+            elif event_type == EVENT_ERROR:
+                message = event_data.get("message", "Pipeline error")
+                logger.warning(f"[SSE Mixin] Error event: {message}")
+                if raise_on_error:
+                    exc = event_data.get("exception")
+                    raise exc if exc is not None else RuntimeError(message)
 
 
 class CeleryTaskStreamView(BaseSSEStreamView):
