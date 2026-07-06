@@ -3280,7 +3280,10 @@ class JobStatusStreamView(LoginRequiredMixin, View):
             if aj_status == "running" and age is not None and age > STALE_SECONDS:
                 yield send_sse_event(
                     "Failed",
-                    error="The previous run didn't finish — the server job stopped before completing. Re-create to try again.",
+                    error=(
+                        "The previous run didn't finish — the server job stopped before "
+                        "completing. Re-create to try again."
+                    ),
                 )
                 return
 
