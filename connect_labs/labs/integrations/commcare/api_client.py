@@ -324,7 +324,9 @@ class CommCareDataAccess:
 
         Raises:
             ValueError: If OAuth token is not configured or expired
-            httpx.HTTPError: If API request fails
+            CCHQAuthError: If CommCare HQ rejects the request with 401/403
+                that survives a token-refresh-and-retry attempt
+            httpx.HTTPError: If API request fails for any other reason
         """
         if not self.check_token_valid():
             raise ValueError(
@@ -350,6 +352,7 @@ class CommCareDataAccess:
 
         # Paginate through results
         page = 0
+        retried_after_refresh = False
         try:
             while next_url:
                 page += 1
@@ -361,6 +364,38 @@ class CommCareDataAccess:
                     headers=headers,
                     timeout=60.0,
                 )
+
+                # Auth-error retry-once-after-refresh path — mirrors fetch_forms.
+                # Some CCHQ tokens come back from refresh with reduced scope or
+                # get de-authorized for a domain mid-session. Catch 401/403
+                # specifically, attempt a refresh once, retry. If the retry
+                # still fails, raise CCHQAuthError so the caller surfaces
+                # "Authorize CommCare HQ" instead of pretending the result was
+                # simply empty (the exact bug CCHQAuthError exists to prevent —
+                # see its docstring — that fetch_forms already guards against
+                # but this case-fetch path had been missing).
+                if response.status_code in (401, 403):
+                    if not retried_after_refresh:
+                        retried_after_refresh = True
+                        logger.warning(
+                            f"CCHQ case fetch got {response.status_code} on page {page}; "
+                            f"attempting token refresh + single retry"
+                        )
+                        if self._refresh_token():
+                            headers = {
+                                "Authorization": f"Bearer {self.access_token}",
+                                "Content-Type": "application/json",
+                            }
+                            page -= 1  # retry same page
+                            continue
+                    raise CCHQAuthError(
+                        f"CommCare HQ rejected case fetch with HTTP {response.status_code} "
+                        f"for domain {self.domain!r} after token refresh+retry. "
+                        f"User needs to re-authorize CommCare access.",
+                        status_code=response.status_code,
+                        domain=self.domain,
+                    )
+
                 response.raise_for_status()
 
                 data = response.json()
@@ -373,6 +408,9 @@ class CommCareDataAccess:
                 if next_url and not self._validate_pagination_url(next_url):
                     break
                 params = None  # Don't send params for next page URLs
+        except CCHQAuthError:
+            # Re-raise — auth errors must surface, not be swallowed.
+            raise
         except httpx.HTTPStatusError as e:
             logger.error(
                 f"HTTP {e.response.status_code} fetching {case_type} cases from CommCare " f"(page {page}): {e}"
