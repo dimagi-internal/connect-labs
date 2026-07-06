@@ -801,9 +801,12 @@ class ExperimentAuditCreateAPIView(LoginRequiredMixin, View):
                     "image_path": rf.get("image_path") or rf.get("imagePath", ""),
                     "field_path": rf.get("field_path") or rf.get("fieldPath", ""),
                     "label": rf.get("label", ""),
+                    "filter_by_image": rf.get("filter_by_image") or rf.get("filterByImage", False),
+                    "filter_by_field": rf.get("filter_by_field") or rf.get("filterByField", False),
                 }
                 for rf in related_fields_raw
-                if (rf.get("image_path") or rf.get("imagePath")) and (rf.get("field_path") or rf.get("fieldPath"))
+                # Require image_path; field_path is optional (image-only filter rules are valid)
+                if rf.get("image_path") or rf.get("imagePath")
             ]
 
             normalized_criteria = {
