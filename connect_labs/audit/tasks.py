@@ -431,6 +431,7 @@ def run_audit_creation(
     ai_auto_apply_actions: list[str] | None = None,
     image_audits: list[dict] | None = None,
     context_fields: list[dict] | None = None,
+    progress_callback=None,
 ) -> dict:
     """
     Create audit session(s) asynchronously.
@@ -519,6 +520,16 @@ def run_audit_creation(
         total_stages=total_stages,
         stage_name="Initializing",
     )
+
+    def _relay(processed, total, message):
+        """Forward fine-grained progress to an optional external callback (used by
+        the program creator to render a per-opp bar that glides per FLW/image),
+        in addition to this task's own Celery meta."""
+        if progress_callback:
+            try:
+                progress_callback(message, processed=processed, total=total)
+            except Exception:
+                logger.debug("[AuditCreation] progress_callback raised", exc_info=True)
 
     try:
         # Initialize data access
@@ -722,6 +733,7 @@ def run_audit_creation(
                     processed=idx + 1,
                     total=total_flws,
                 )
+                _relay(idx + 1, total_flws, f"Creating audits · {idx + 1}/{total_flws} field workers")
 
             logger.info(f"[AuditCreation] Created {len(sessions_created)} per-FLW sessions")
         elif not is_per_flw:
@@ -793,6 +805,7 @@ def run_audit_creation(
                     processed=processed,
                     total=total,
                 )
+                _relay(processed, total, f"AI review · {message}")
                 now = time.time()
                 if processed >= total or now - _ai_review_last_write["at"] >= 1.5:
                     _ai_review_last_write["at"] = now
