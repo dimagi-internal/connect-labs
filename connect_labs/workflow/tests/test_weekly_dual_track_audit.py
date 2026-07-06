@@ -171,19 +171,29 @@ def test_handler_reads_window_from_job_payload_when_state_lacks_it():
     assert result["successful"] == 4
 
 
-def test_handler_emits_processed_total_for_progress_bar():
-    """Each per-call progress message carries processed/total so the render can
-    show a real progress bar (idx of N) instead of a frozen spinner."""
+def test_handler_relays_per_flw_progress_for_gliding_bar():
+    """The handler passes a progress_callback into run_audit_creation so its
+    fine-grained per-FLW progress reaches the caller (tag-prefixed) — that's what
+    lets the program-creator row glide (e.g. 'muac · 3/3 field workers') instead of
+    stepping once per track."""
     from connect_labs.workflow.job_handlers import weekly_dual_track_audit as h
 
     run = _fake_run({"window_start": "2026-06-22", "window_end": "2026-06-28"})
-    eager = mock.Mock()
-    eager.result = {"sessions": [1]}
 
     seen = []
 
     def cb(msg, processed=0, total=0):
-        seen.append((processed, total))
+        seen.append((msg, processed, total))
+
+    def fake_apply(kwargs=None):
+        # run_audit_creation invokes the passed progress_callback with per-FLW ticks.
+        pc = (kwargs or {}).get("progress_callback")
+        if pc:
+            pc("Creating audits · 1/3 field workers", processed=1, total=3)
+            pc("Creating audits · 3/3 field workers", processed=3, total=3)
+        eager = mock.Mock()
+        eager.result = {"sessions": [1]}
+        return eager
 
     with (
         mock.patch.object(h, "WorkflowDataAccess") as WDA,
@@ -192,16 +202,19 @@ def test_handler_emits_processed_total_for_progress_bar():
         wda = WDA.return_value
         wda.get_run.return_value = run
         wda.get_definition.return_value = _fake_definition()
-        rac.apply.return_value = eager
+        rac.apply.side_effect = fake_apply
 
         h.weekly_dual_track_audit_create(
             {"run_id": 555, "opportunity_id": 101}, access_token="tok", progress_callback=cb
         )
 
-    # 4 calls (2 opps x 2 tracks); each emits (idx, 4).
-    assert (0, 4) in seen
-    assert (3, 4) in seen
-    assert all(total == 4 for _, total in seen)
+    # A progress_callback was threaded into run_audit_creation on every call.
+    assert all("progress_callback" in c.kwargs["kwargs"] for c in rac.apply.call_args_list)
+    # Its per-FLW ticks reached the caller with processed/total for a gliding bar,
+    # tag-prefixed so the row shows which track is generating.
+    assert any(p == 1 and t == 3 for _, p, t in seen)
+    assert any(p == 3 and t == 3 for _, p, t in seen)
+    assert all(" · " in msg and "field workers" in msg for msg, _, _ in seen)
 
 
 def test_template_registered_and_multi_opp():

@@ -74,13 +74,19 @@ def weekly_dual_track_audit_create(job_config: dict, access_token: str, progress
         successful, failed, sessions_created = 0, 0, 0
         for idx, call in enumerate(calls):
             opp = call["opportunities"][0]
-            _progress(
-                f"Creating audit {idx + 1}/{len(calls)} · opp {opp['id']} · {call['criteria']['tag']}",
-                processed=idx,
-                total=len(calls),
-            )
+            tag = call["criteria"]["tag"]
+
+            # Relay run_audit_creation's fine-grained per-FLW / per-image progress up
+            # to the caller's progress_callback so a program-creator row GLIDES
+            # (e.g. "muac · 7/20 field workers") instead of stepping per track. The
+            # tag prefix tells the row which track is generating.
+            def _track_progress(msg, processed=0, total=0, _tag=tag):
+                _progress(f"{_tag} · {msg}", processed=processed, total=total)
+
             try:
-                eager = run_audit_creation.apply(kwargs={"access_token": access_token, **call})
+                eager = run_audit_creation.apply(
+                    kwargs={"access_token": access_token, "progress_callback": _track_progress, **call}
+                )
                 res = eager.result if isinstance(eager.result, dict) else {}
                 # run_audit_creation returns created sessions under "sessions"
                 # (a list of {id, title, ...}); count those.
