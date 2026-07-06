@@ -140,21 +140,20 @@ def run_this_week_batch(definition, window_start, window_end, *, access_token, s
     }
 
 
-def run_batch_in_process(run, job_config, *, access_token, progress_callback=None):
-    """Run the audit-creation handler for an already-created batch ``run``
-    IN-PROCESS (not via Celery), forwarding its per-audit progress to
-    ``progress_callback``.
+def dispatch_batch(definition, window_start, window_end, *, access_token, sample_overrides=None):
+    """Create a fresh audit-batch run and DISPATCH its batch job ASYNC (``.delay``),
+    returning immediately without waiting.
 
-    This is what the program creator uses so ONE program job/SSE stream can relay
-    every opportunity's progress — the deployment's ASGI worker can only serve one
-    long-lived SSE stream at a time, so a stream-per-opp starves; a single relayed
-    stream does not. Returns ``{"run_id", "sessions_created", "status"}``.
+    This is the SAME ``weekly_dual_track_audit_create`` job the per-opp workflow
+    page runs — the program creator fans these out one per opportunity and each
+    row polls its own task's status (poll-first, holds no connection), so the
+    opportunities run and glide in PARALLEL (governed by the worker pool). Returns
+    ``{"run_id", "task_id", "status": "running"}``.
     """
-    from connect_labs.workflow.job_handlers.weekly_dual_track_audit import weekly_dual_track_audit_create
-
-    try:
-        res = weekly_dual_track_audit_create(job_config, access_token, progress_callback=progress_callback)
-        return {"run_id": run.id, "sessions_created": (res or {}).get("sessions_created", 0), "status": "ready"}
-    except Exception:
-        logger.exception("[audit_generation] in-process batch failed for run %s", run.id)
-        return {"run_id": run.id, "sessions_created": 0, "status": "failed"}
+    opp_id, run, job_config = create_batch_run(
+        definition, window_start, window_end, access_token=access_token, sample_overrides=sample_overrides
+    )
+    task = run_workflow_job.delay(
+        job_config=job_config, access_token=access_token, run_id=run.id, opportunity_id=opp_id
+    )
+    return {"run_id": run.id, "task_id": task.id, "status": "running"}
