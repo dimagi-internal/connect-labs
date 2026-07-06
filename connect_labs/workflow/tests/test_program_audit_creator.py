@@ -189,6 +189,39 @@ def test_fan_out_streams_running_progress_then_ready(monkeypatch):
     assert "id" in by_opp[1976][-1]  # keys the framework's per-item state write
 
 
+def test_fan_out_persists_live_progress_into_generation(monkeypatch):
+    """Progress ticks are persisted into the generation entry (processed/total/
+    message) so the runner's state refetch renders a live bar — not only streamed."""
+    from connect_labs.workflow import audit_generation as ag
+    from connect_labs.workflow.templates import program_audit_creator as m
+
+    state_writes = []
+
+    def make_wda(access_token=None, opportunity_id=None, **_):
+        wda = mock.Mock()
+        wda.get_definition.return_value = _mock_creator(opportunity_id)
+        wda.get_run.return_value = _run(700)
+        wda.update_run_state.side_effect = lambda rid, s: state_writes.append(s)
+        return wda
+
+    monkeypatch.setattr(m, "WorkflowDataAccess", make_wda)
+    _patch_inprocess(monkeypatch, ag, sessions=5, relay_progress=True)  # emits one progress tick
+
+    m.fan_out_generate(
+        definition=_program_def(instances=[{"opportunity_id": 1973, "workflow_definition_id": 42}]),
+        run_id=700,
+        access_token="t",
+        window=("2026-06-21", "2026-06-27"),
+    )
+
+    # Some persisted write for opp 1973 carried the live progress (not just 0/0).
+    progressed = [
+        w["generation"]["1973"] for w in state_writes if w.get("generation", {}).get("1973", {}).get("total", 0) > 0
+    ]
+    assert progressed, "expected a persisted generation write carrying processed/total > 0"
+    assert progressed[0]["message"]  # and a human message ("Creating audit 1/2")
+
+
 def test_fan_out_per_opp_recovery_merges_single_opp(monkeypatch):
     """only_opportunity_id (re-)runs ONE opp and merges it into the existing record,
     leaving the other opps' entries untouched."""

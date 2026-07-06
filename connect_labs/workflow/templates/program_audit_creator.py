@@ -210,8 +210,22 @@ def fan_out_generate(
             dict(base, status="running", processed=0, total=0, message="Starting…"),
         )
 
-        def _relay(msg, processed=0, total=0, _base=base, _idx=idx):
-            _emit(msg, _idx, dict(_base, status="running", processed=processed, total=total, message=msg))
+        import time as _time
+
+        _last_persist = [_time.monotonic() - 5]  # let the first tick persist immediately
+
+        def _relay(msg, processed=0, total=0, _base=base, _idx=idx, _oid=opp_id):
+            live = dict(_base, status="running", processed=processed, total=total, message=msg)
+            _emit(msg, _idx, live)  # best-effort live SSE item
+            # ALSO persist the progress into the generation entry (throttled) so the
+            # runner's periodic state refetch renders the bar — the same path that
+            # already shows the row as "running". This is what actually drives the
+            # live UI (the per-template SSE item stream isn't relied on).
+            now = _time.monotonic()
+            if now - _last_persist[0] >= 1.5:
+                _last_persist[0] = now
+                generation[str(_oid)] = live
+                _persist(generation)
 
         result = run_batch_in_process(run, job_config, access_token=access_token, progress_callback=_relay)
         per_opp[opp_id] = result
@@ -219,8 +233,6 @@ def fan_out_generate(
         generation[str(opp_id)] = entry
         _persist(generation)
         _emit(f"Opportunity #{opp_id}: {entry['status']}", idx + 1, entry)
-
-        _emit(f"Opportunity #{opp_id}: dispatched", idx + 1, entry)
 
     return {"per_opp": per_opp, "generation": generation, "window_start": window_start, "window_end": window_end}
 
