@@ -155,6 +155,12 @@
     {% if selected_opportunity_id or selected_flw or selected_date_from or selected_date_to %}
     <a href="{% url 'audit:session_list' %}" class="text-sm text-gray-500 hover:underline">{% translate "Clear filters" %}</a>
     {% endif %}
+    <button type="button" x-show="Object.keys(selectedSessions).length > 0" x-cloak
+            @click="bulkDeleteSessions()"
+            class="button button-sm outline-style text-red-700 border-red-300 hover:bg-red-50">
+      <i class="fa-solid fa-trash mr-2"></i>
+      {% translate "Delete Selected" %} (<span x-text="Object.keys(selectedSessions).length"></span>)
+    </button>
   </form>
   {% endif %}
 
@@ -185,6 +191,8 @@ function auditListPage() {
     loading: true,
     cancelUrlTemplate: '',
     deleteUrlTemplate: '',
+    selectedSessions: {},
+    selectAllChecked: false,
 
     init() {
       // Store the cancel/delete URL templates from data attributes
@@ -429,6 +437,86 @@ function auditListPage() {
       } catch (e) {
         console.error('Error deleting session:', e);
         alert('Failed to delete session: ' + e.message);
+      }
+    },
+
+    toggleSessionSelection(sessionId, status, checked) {
+      if (checked) {
+        this.selectedSessions[sessionId] = status;
+      } else {
+        delete this.selectedSessions[sessionId];
+        this.selectAllChecked = false;
+      }
+    },
+
+    toggleSelectAll(checked) {
+      this.$el.querySelectorAll('.session-select-checkbox').forEach((cb) => {
+        cb.checked = checked;
+        const id = cb.value;
+        const status = cb.dataset.status;
+        if (checked) {
+          this.selectedSessions[id] = status;
+        } else {
+          delete this.selectedSessions[id];
+        }
+      });
+    },
+
+    async bulkDeleteSessions() {
+      const entries = Object.entries(this.selectedSessions);
+      if (entries.length === 0) return;
+
+      const notInProgress = entries.filter(([, status]) => status !== 'in_progress');
+      if (notInProgress.length > 0) {
+        alert(
+          `Only audits with status "In Progress" can be deleted. ${notInProgress.length} of the ${entries.length} selected audit(s) have a different status — deselect them and try again.`
+        );
+        return;
+      }
+
+      if (!window.confirm(`Delete ${entries.length} audit session(s) permanently? This cannot be undone.`)) {
+        return;
+      }
+
+      const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value;
+      const failures = [];
+
+      for (const [sessionId] of entries) {
+        try {
+          const deleteUrl = this.deleteUrlTemplate.replace('/0/', `/${sessionId}/`);
+          const response = await fetch(deleteUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRFToken': csrfToken,
+            },
+          });
+
+          const contentType = response.headers.get('content-type');
+          if (response.redirected || !contentType || !contentType.includes('application/json')) {
+            failures.push(sessionId);
+            continue;
+          }
+
+          const data = await response.json();
+          if (data.success) {
+            delete this.selectedSessions[sessionId];
+            const cb = this.$el.querySelector(`.session-select-checkbox[value="${sessionId}"]`);
+            const row = cb ? cb.closest('tr') : null;
+            if (row) row.remove();
+          } else {
+            failures.push(sessionId);
+          }
+        } catch (e) {
+          console.error('Error deleting session:', sessionId, e);
+          failures.push(sessionId);
+        }
+      }
+
+      this.selectAllChecked = false;
+
+      if (failures.length > 0) {
+        alert(`Failed to delete ${failures.length} of ${entries.length} session(s).`);
       }
     }
   };
