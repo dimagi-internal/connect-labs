@@ -10,6 +10,16 @@ from connect_labs.utils.tables import DMYTColumn
 class AuditTable(tables.Table):
     """Styled table for displaying experiment-based audit sessions."""
 
+    select = tables.Column(
+        verbose_name=mark_safe(
+            '<input type="checkbox" class="rounded border-gray-300" '
+            'x-model="selectAllChecked" @change="toggleSelectAll($event.target.checked)">'
+        ),
+        orderable=False,
+        empty_values=(),
+        attrs={"td": {"class": "whitespace-nowrap"}},
+    )
+
     record_id = tables.Column(
         verbose_name=_("ID"),
         accessor="pk",
@@ -74,6 +84,7 @@ class AuditTable(tables.Table):
         # Note: AuditSessionRecord is not a Django model, it's a Python class
         # So we don't specify model= here
         fields = (
+            "select",
             "record_id",
             "title",
             "opportunity_name",
@@ -90,6 +101,18 @@ class AuditTable(tables.Table):
             "class": "base-table-full",
         }
         empty_text = _("No audit sessions yet. Create your first audit to get started.")
+
+    def render_select(self, record):
+        """Render a per-row checkbox for bulk selection."""
+        return format_html(
+            '<input type="checkbox" class="session-select-checkbox rounded border-gray-300" '
+            'value="{}" data-status="{}" '
+            "@change=\"toggleSessionSelection('{}', '{}', $event.target.checked)\">",
+            record.pk,
+            record.status or "",
+            record.pk,
+            record.status or "",
+        )
 
     def render_title(self, value, record):
         """Display title with optional tag."""
