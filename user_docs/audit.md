@@ -149,6 +149,19 @@ This means you can check the audit list at any point and see exactly how far alo
 
 ---
 
+## Deleting Audit Sessions
+
+You can delete multiple audit sessions at once directly from the sessions list.
+
+1. On the **Audit** sessions list page, tick the checkbox next to each session you want to delete.
+2. A **Delete Selected (N)** button appears next to the Filter button, where **N** is the number of sessions you have checked.
+3. Click **Delete Selected (N)** to remove those sessions.
+
+!!! warning "Only in-progress sessions can be deleted"
+    If any of the sessions you have selected has a status other than **In Progress**, the delete will be blocked and an error message will explain which sessions cannot be removed. Deselect any completed or otherwise finished sessions and try again.
+
+---
+
 ## Session Results
 
 After reviewing all images, click **Complete Session** to record the overall result.
@@ -216,7 +229,4 @@ Each image type is shown by its full question path (for example, `household_visi
 Once the AI agent has reviewed an image, a small label appears at the bottom of the tile (below the **Add Note** field) showing the agent name and its classification — for example, "MUAC OverZoom: Not Hyperzoomed" or "Scale Validation: Passed". If the AI encountered a problem with a specific image, the label turns red and shows the error message. This gives you a clear record of what the AI decided for every image, not just the ones that were flagged.
 
 **How long does AI review take?**
-For a typical session of around 30 images, AI review completes in about 2 minutes. Larger sessions will take a little longer, but the progress indicator on the session page updates as images are processed, and the audit list shows a live image count (for example, "Reviewed 45/136 images (12 passed, 3 failed)") that updates every couple of seconds.
-
-**Can I tell how far along the AI review is without opening the session?**
-Yes. The audit list shows a live count of how many images have been reviewed so far — for example, "Reviewed 45/136 images (12 passed, 3 failed)" — and updates every couple of seconds while the job is running. The progress bar on the session page also fills gradually and only turns green when the AI
+For a typical session of around 30 images, AI review
