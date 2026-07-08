@@ -424,6 +424,20 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions, onU
         }
     });
 
+    // Belt-and-suspenders: on first mount of an in-progress run that still shows any
+    // opp as "running", reconcile once unconditionally. The per-opp polls above can
+    // never resolve for an OLD run (Celery task results expire, so status.json goes
+    // unknown and onComplete never fires) — but the server reads each opp run's
+    // DURABLE active_job, so this heals a long-closed run the moment it's reopened.
+    var didMountReconcileRef = React.useRef(false);
+    React.useEffect(function () {
+        if (didMountReconcileRef.current) return;
+        if (!isCompleted && hasFired && anyOppRunning) {
+            didMountReconcileRef.current = true;
+            reconcileGeneration();
+        }
+    }, []);
+
     // For each opp that has a running audit job (a task_id), poll that job's own
     // status so its row glides — reusing the exact job + status the per-opp workflow
     // page uses. Poll-first (streamJobProgress defaults to polling) holds no
