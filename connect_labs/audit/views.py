@@ -8,6 +8,7 @@ store audit state in ExperimentRecords.
 Templates are reused from the existing audit views for consistency.
 """
 
+import csv
 import datetime
 import json
 import logging
@@ -30,7 +31,7 @@ from connect_labs.audit.data_access import AuditDataAccess
 from connect_labs.audit.models import AuditSessionRecord
 from connect_labs.audit.tables import AuditTable
 from connect_labs.labs import s3_export
-from connect_labs.labs.analysis.data_access import get_flw_names_for_opportunity
+from connect_labs.labs.analysis.data_access import fetch_opportunity_metadata, get_flw_names_for_opportunity
 from connect_labs.labs.analysis.sse_streaming import CeleryTaskStreamView
 from connect_labs.labs.context import get_org_data
 from connect_labs.utils.tables import get_validated_page_size
@@ -755,6 +756,56 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
             return JsonResponse({"error": "An internal error occurred"}, status=500)
         finally:
             data_access.close()
+
+
+class ExperimentBulkAssessmentExportCSVView(LoginRequiredMixin, View):
+    """Export the bulk assessment image list as CSV: filename, visit date, visit #, CommCareHQ form link."""
+
+    def get(self, request, session_id):
+        data_response = ExperimentBulkAssessmentDataView().get(request, session_id)
+        if data_response.status_code != 200:
+            return data_response
+
+        assessments = json.loads(data_response.content)["assessments"]
+        opportunity_id = assessments[0]["opportunity_id"] if assessments else None
+
+        data_access = AuditDataAccess(opportunity_id=opportunity_id, request=request)
+        try:
+            xform_id_by_visit = {}
+            if opportunity_id:
+                visit_ids = sorted({a["visit_id"] for a in assessments})
+                visits = data_access.get_visits_batch(visit_ids, opportunity_id)
+                xform_id_by_visit = {v["id"]: v.get("xform_id") for v in visits}
+
+            hq_link_base = self._resolve_hq_link_base(data_access, opportunity_id) if opportunity_id else None
+
+            response = HttpResponse(content_type="text/csv")
+            response["Content-Disposition"] = f'attachment; filename="audit_{session_id}_images.csv"'
+            writer = csv.writer(response)
+            writer.writerow(["Filename", "Visit Date", "#", "CommCareHQ Form URL"])
+            for assessment in assessments:
+                xform_id = xform_id_by_visit.get(assessment["visit_id"])
+                form_url = f"{hq_link_base}/{xform_id}/" if hq_link_base and xform_id else ""
+                writer.writerow([assessment["filename"], assessment["visit_date"], assessment["visit_id"], form_url])
+            return response
+        finally:
+            data_access.close()
+
+    @staticmethod
+    def _resolve_hq_link_base(data_access, opportunity_id):
+        """Return the CommCareHQ form_data base URL for an opportunity, or None if unresolvable."""
+        try:
+            metadata = fetch_opportunity_metadata(data_access.access_token, opportunity_id)
+        except Exception:
+            logger.exception(f"[Audit] Failed to resolve CommCareHQ domain for opportunity {opportunity_id}")
+            return None
+
+        domain = metadata.get("cc_domain")
+        if not domain:
+            return None
+        deliver_app = (metadata.get("raw") or {}).get("deliver_app") or {}
+        hq_server_url = (deliver_app.get("hq_server") or {}).get("url") or "https://www.commcarehq.org"
+        return f"{hq_server_url.rstrip('/')}/a/{domain}/reports/form_data"
 
 
 class ExperimentAuditImageConnectView(LoginRequiredMixin, View):
