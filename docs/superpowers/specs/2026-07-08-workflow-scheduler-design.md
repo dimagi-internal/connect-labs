@@ -79,7 +79,7 @@ references a definition by id).
 | `opportunity_id` | `IntegerField(null=True)`                   | Exactly one of opp/program set (mirrors `create_run` XOR) |
 | `program_id`     | `IntegerField(null=True)`                   | " |
 | `owner`          | `ForeignKey(User, on_delete=CASCADE)`       | Whose token runs it |
-| `cadence`        | `CharField(choices=daily/weekly/monthly)`   | |
+| `cadence`        | `CharField(choices=daily/weekdays/weekly/monthly)` | `weekdays` = Mon–Fri |
 | `hour`           | `PositiveSmallIntegerField` (0–23)          | Hour of day (UTC — see Open Questions) |
 | `day_of_week`    | `PositiveSmallIntegerField(null=True)` (0–6)| Weekly only |
 | `day_of_month`   | `PositiveSmallIntegerField(null=True)` (1–28)| Monthly only (cap at 28 to avoid missing months) |
@@ -125,8 +125,8 @@ so it is unit-testable in isolation.
   current `WorkflowSchedule` for this definition + context + user, or None).
 - In `list.html`, for schedulable rows show:
   - If no schedule: a **"Schedule"** button opening a small inline form/modal
-    (cadence select → daily/weekly/monthly; hour; day-of-week for weekly;
-    day-of-month for monthly).
+    (cadence select → daily / weekdays (Mon–Fri) / weekly / monthly; hour;
+    day-of-week for weekly; day-of-month for monthly).
   - If scheduled: a badge like **"⏱ Weekly · Mon 06:00"** plus **Edit** and
     **Remove** actions. `auth_expired` renders as **"⚠ needs re-login"**.
 - Scope (`opportunity_id` vs `program_id`) is taken from `request.labs_context`,
@@ -155,8 +155,9 @@ Explorer list page reads via the ORM directly (no API needed).
 
 ## Testing
 
-- **Unit:** `compute_next_run` for each cadence (incl. month-end/day-of-month
-  cap, and "already past today's hour" rolls to next period); ticker selects only
+- **Unit:** `compute_next_run` for each cadence (incl. `weekdays` skipping
+  Sat/Sun — e.g. a Friday-afternoon fire rolls to Monday; month-end/day-of-month
+  cap; and "already past today's hour" rolls to next period); ticker selects only
   `enabled=True, next_run_at<=now` and advances `next_run_at`;
   `run_scheduled_workflow` resolves token → calls `run_default_for_definition`
   (mocked) → records `ok`; `ConnectReLoginRequired` path sets `auth_expired` +
