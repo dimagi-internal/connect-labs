@@ -121,6 +121,19 @@
             <option value="fail">Failed</option>
           </select>
         </div>
+        <div x-show="flwSummaries.length > 1">
+          <label for="flw-filter" class="block text-sm font-medium text-gray-700 mb-1">FLW</label>
+          <select id="flw-filter"
+                  x-model="selectedFlw"
+                  @change="applyFilters()"
+                  :disabled="loading"
+                  class="border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-brand-indigo focus:border-brand-indigo disabled:bg-gray-100">
+            <option value="">All FLWs</option>
+            <template x-for="flw in flwSummaries" :key="flw.username">
+              <option :value="flw.username" x-text="flw.flw_name"></option>
+            </template>
+          </select>
+        </div>
         <div x-show="questionIds.length > 1">
           <label for="image-type-filter" class="block text-sm font-medium text-gray-700 mb-1">Image Type</label>
           <select id="image-type-filter"
@@ -347,6 +360,11 @@
           <div class="p-2">
             <!-- Metadata Section -->
             <div class="text-xs text-gray-500 flex flex-wrap gap-x-3 gap-y-0.5 mb-2">
+              <span x-show="assessment.flw_name || assessment.username"
+                    class="truncate max-w-[160px]"
+                    :title="assessment.flw_name || assessment.username">
+                <i class="fa-solid fa-user mr-1"></i><span x-text="assessment.flw_name || assessment.username"></span>
+              </span>
               <span><i class="fa-solid fa-calendar mr-1"></i><span x-text="assessment.visit_date"></span></span>
               <a :href="visitDetailUrl(assessment.visit_id)"
                  target="_blank"
@@ -715,6 +733,7 @@ function bulkAssessmentInterface() {
   return {
     selectedQuestionId: '{{ selected_question_id }}',
     selectedStatus: '{{ selected_status }}',
+    selectedFlw: '',
     widgetSize: 300,
     passThreshold: passThreshold,
     workflowRunId: workflowRunId,
@@ -932,7 +951,8 @@ function bulkAssessmentInterface() {
       this.assessments = this.allAssessments.filter((assessment) => {
         const questionMatch = !this.selectedQuestionId || assessment.question_id === this.selectedQuestionId;
         const statusMatch = this.selectedStatus === 'all' || assessment.status === this.selectedStatus;
-        return questionMatch && statusMatch;
+        const flwMatch = !this.selectedFlw || assessment.username === this.selectedFlw;
+        return questionMatch && statusMatch && flwMatch;
       });
       this.recalculateStats();
     },
