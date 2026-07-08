@@ -15,9 +15,9 @@
           Inspect and manage analysis cache entries
         </p>
       </div>
-      <a href="{% url 'explorer:index' %}" class="inline-flex items-center text-gray-600 hover:text-gray-900">
+      <a href="{% url 'labs_admin:index' %}" class="inline-flex items-center text-gray-600 hover:text-gray-900">
         <i class="fa-solid fa-arrow-left mr-2"></i>
-        Back to Explorer
+        Back to Admin
       </a>
     </div>
   </div>
@@ -325,7 +325,7 @@ function deleteSelected() {
     });
   });
 
-  fetch("{% url 'explorer:cache_delete' %}", {
+  fetch("{% url 'labs_admin:cache_delete' %}", {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
@@ -356,7 +356,7 @@ function deleteExpired() {
     return;
   }
 
-  fetch("{% url 'explorer:cache_delete' %}", {
+  fetch("{% url 'labs_admin:cache_delete' %}", {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
@@ -400,7 +400,7 @@ function confirmDeleteByOpportunity() {
     return;
   }
 
-  fetch("{% url 'explorer:cache_delete' %}", {
+  fetch("{% url 'labs_admin:cache_delete' %}", {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
@@ -481,7 +481,7 @@ function confirmDeleteByConfig() {
     return;
   }
 
-  fetch("{% url 'explorer:cache_delete' %}", {
+  fetch("{% url 'labs_admin:cache_delete' %}", {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',

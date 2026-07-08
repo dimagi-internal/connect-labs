@@ -264,7 +264,7 @@ def synthetic_repoint_by_source(
 def _load_opportunity_detail(opportunity_id: int, user) -> dict:
     """Pull live opportunity detail from prod via the user's OAuth token.
 
-    Uses the same /export/opportunity/<id>/ endpoint that the labs explorer's
+    Uses the same /export/opportunity/<id>/ endpoint that the labs admin's
     AppDownloaderDataAccess.get_opportunity_details hits, authenticated with
     the calling user's stored Connect access token.
 

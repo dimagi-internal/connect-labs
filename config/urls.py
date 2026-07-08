@@ -40,7 +40,7 @@ urlpatterns = [
         name="rooftop_surveys_legacy_redirect",
     ),
     path("mcp/", include("connect_labs.mcp.urls", namespace="mcp")),
-    path("labs/explorer/", include("connect_labs.labs.explorer.urls", namespace="explorer")),
+    path("labs/admin/", include("connect_labs.labs.admin.urls", namespace="labs_admin")),
     path("labs/", include("connect_labs.labs.urls", namespace="labs")),
     path(
         "custom_analysis/chc_nutrition/",

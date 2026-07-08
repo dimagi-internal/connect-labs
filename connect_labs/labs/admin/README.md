@@ -1,4 +1,21 @@
-# Labs Data Explorer
+# Labs Admin
+
+Internal (Dimagi-staff-only) tooling surfaced at `/labs/admin/`, presented as **Labs Admin**.
+The landing page groups the tools into three sections:
+
+- **Data Exploration** — Labs Record (browse/edit/delete records), Visit Inspector
+- **System & Ops** — Task Manager (kill Celery jobs), Cache Manager (wipe analysis cache)
+- **Data & Assets** — Admin Boundaries (load geoBoundaries), App Downloader (CCZ files)
+
+Access is gated by `AdminRequiredMixin` (`connect_labs/labs/view_mixins.py`), which grants access via the
+`"admin"` feature key — resolving to Dimagi users only. The boundary _management_ views are gated too, but the
+read-only boundary APIs consumed by microplans (`countries_api`, `coverage_api`, `resolve_many`) stay on plain
+`LoginRequired` so those cross-app flows keep working.
+
+> Package `connect_labs.labs.admin`, URL path `/labs/admin/`, Django namespace `labs_admin`
+> (not bare `admin` — that namespace belongs to `django.contrib.admin`). Was formerly `explorer`.
+
+## Labs Record
 
 A table-based UI for exploring, filtering, editing, and managing LabsRecord data in CommCare Connect Labs.
 
@@ -15,17 +32,17 @@ A table-based UI for exploring, filtering, editing, and managing LabsRecord data
 ## Structure
 
 ```
-explorer/
+admin/
 ├── __init__.py
 ├── data_access.py      # API client wrapper with context filtering
 ├── forms.py            # Filter, edit, and upload forms (crispy forms)
 ├── tables.py           # Django Tables2 table definition
-├── urls.py             # URL routing
+├── urls.py             # URL routing (app_name = "labs_admin")
 ├── utils.py            # JSON validation, export/import helpers
 ├── views.py            # List, edit, download, upload views
 └── README.md
 
-templates/labs/explorer/
+templates/labs/admin/
 ├── list.html           # Main table view with filters
 └── edit.html           # Dedicated edit page with JSON editor
 ```
@@ -34,7 +51,7 @@ templates/labs/explorer/
 
 ### Access
 
-Navigate to `/labs/explorer/` after logging into Labs and selecting a context (opportunity/program).
+Navigate to `/labs/admin/` after logging into Labs and selecting a context (opportunity/program).
 
 ### Filtering
 

@@ -1,5 +1,5 @@
 """
-Views for Labs Data Explorer
+Views for Labs Admin
 """
 
 import json
@@ -7,7 +7,6 @@ import logging
 from collections.abc import Generator
 
 from django.contrib import messages
-from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db import connection, transaction
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
@@ -16,19 +15,12 @@ from django.views import View
 from django.views.generic import TemplateView
 from django_tables2 import SingleTableView
 
-from connect_labs.labs.analysis.pipeline import AnalysisPipeline
-from connect_labs.labs.analysis.sse_streaming import AnalysisPipelineSSEMixin, BaseSSEStreamView, send_sse_event
-from connect_labs.labs.explorer.analysis_config import VISIT_INSPECTOR_CONFIG
-from connect_labs.labs.explorer.data_access import RecordExplorerDataAccess
-from connect_labs.labs.explorer.forms import (
-    RecordEditForm,
-    RecordFilterForm,
-    RecordUploadForm,
-    VisitInspectorFilterForm,
-)
-from connect_labs.labs.explorer.sql_validator import build_safe_query
-from connect_labs.labs.explorer.tables import LabsRecordTable
-from connect_labs.labs.explorer.utils import (
+from connect_labs.labs.admin.analysis_config import VISIT_INSPECTOR_CONFIG
+from connect_labs.labs.admin.data_access import RecordExplorerDataAccess
+from connect_labs.labs.admin.forms import RecordEditForm, RecordFilterForm, RecordUploadForm, VisitInspectorFilterForm
+from connect_labs.labs.admin.sql_validator import build_safe_query
+from connect_labs.labs.admin.tables import LabsRecordTable
+from connect_labs.labs.admin.utils import (
     export_records_to_json,
     filter_records_by_date,
     format_json,
@@ -36,25 +28,24 @@ from connect_labs.labs.explorer.utils import (
     parse_date_range,
     validate_import_data,
 )
+from connect_labs.labs.analysis.pipeline import AnalysisPipeline
+from connect_labs.labs.analysis.sse_streaming import AnalysisPipelineSSEMixin, BaseSSEStreamView, send_sse_event
+from connect_labs.labs.view_mixins import AdminRequiredMixin
 
 logger = logging.getLogger(__name__)
 
 
-class ExplorerIndexView(LoginRequiredMixin, TemplateView):
-    """
-    Landing page for Labs Explorer.
+class AdminIndexView(AdminRequiredMixin, TemplateView):
+    """Landing page for Labs Admin — grouped cards for data, ops, and asset tools."""
 
-    Shows cards for Labs Record and Visit Inspector.
-    """
-
-    template_name = "labs/explorer/index.html"
+    template_name = "labs/admin/index.html"
 
 
-class RecordListView(LoginRequiredMixin, SingleTableView):
+class RecordListView(AdminRequiredMixin, SingleTableView):
     """Main list view for browsing LabsRecord data."""
 
     table_class = LabsRecordTable
-    template_name = "labs/explorer/list.html"
+    template_name = "labs/admin/list.html"
     paginate_by = 25
     _all_records_cache = None  # Cache for all unfiltered records
 
@@ -155,10 +146,10 @@ class RecordListView(LoginRequiredMixin, SingleTableView):
         return context
 
 
-class RecordEditView(LoginRequiredMixin, TemplateView):
+class RecordEditView(AdminRequiredMixin, TemplateView):
     """Dedicated page for editing a record's JSON data."""
 
-    template_name = "labs/explorer/edit.html"
+    template_name = "labs/admin/edit.html"
 
     def get_context_data(self, **kwargs):
         """Load record and create edit form."""
@@ -206,7 +197,7 @@ class RecordEditView(LoginRequiredMixin, TemplateView):
                         data=new_data,
                     )
                     messages.success(request, f"Record {record_id} updated successfully")
-                    return redirect(reverse("explorer:list"))
+                    return redirect(reverse("labs_admin:list"))
                 finally:
                     data_access.close()
             except Exception as e:
@@ -219,7 +210,7 @@ class RecordEditView(LoginRequiredMixin, TemplateView):
         return render(request, self.template_name, context)
 
 
-class DownloadRecordsView(LoginRequiredMixin, View):
+class DownloadRecordsView(AdminRequiredMixin, View):
     """Download records as JSON file."""
 
     def get(self, request):
@@ -268,10 +259,10 @@ class DownloadRecordsView(LoginRequiredMixin, View):
         except Exception as e:
             logger.error(f"Failed to download records: {e}")
             messages.error(request, f"Failed to download records: {e}")
-            return redirect(reverse("explorer:list"))
+            return redirect(reverse("labs_admin:list"))
 
 
-class UploadRecordsView(LoginRequiredMixin, View):
+class UploadRecordsView(AdminRequiredMixin, View):
     """Upload/import records from JSON file."""
 
     def post(self, request):
@@ -286,7 +277,7 @@ class UploadRecordsView(LoginRequiredMixin, View):
             is_valid, error, validated_data = validate_import_data(json.dumps(records_data))
             if not is_valid:
                 messages.error(request, f"Invalid data: {error}")
-                return redirect(reverse("explorer:list"))
+                return redirect(reverse("labs_admin:list"))
 
             # Import records
             try:
@@ -305,10 +296,10 @@ class UploadRecordsView(LoginRequiredMixin, View):
                 for error in errors:
                     messages.error(request, f"{field}: {error}")
 
-        return redirect(reverse("explorer:list"))
+        return redirect(reverse("labs_admin:list"))
 
 
-class DeleteRecordsView(LoginRequiredMixin, View):
+class DeleteRecordsView(AdminRequiredMixin, View):
     """Delete selected records."""
 
     def post(self, request):
@@ -318,14 +309,14 @@ class DeleteRecordsView(LoginRequiredMixin, View):
 
         if not selected_ids:
             messages.error(request, "No records selected for deletion")
-            return redirect(reverse("explorer:list"))
+            return redirect(reverse("labs_admin:list"))
 
         # Convert to integers
         try:
             record_ids = [int(id_str) for id_str in selected_ids]
         except ValueError:
             messages.error(request, "Invalid record IDs")
-            return redirect(reverse("explorer:list"))
+            return redirect(reverse("labs_admin:list"))
 
         # Delete records via API
         try:
@@ -339,13 +330,13 @@ class DeleteRecordsView(LoginRequiredMixin, View):
             logger.error(f"Failed to delete records: {e}")
             messages.error(request, f"Failed to delete records: {e}")
 
-        return redirect(reverse("explorer:list"))
+        return redirect(reverse("labs_admin:list"))
 
 
-class VisitInspectorView(LoginRequiredMixin, TemplateView):
+class VisitInspectorView(AdminRequiredMixin, TemplateView):
     """Visit Inspector page for downloading and querying raw visit data."""
 
-    template_name = "labs/explorer/visit_inspector.html"
+    template_name = "labs/admin/visit_inspector.html"
 
     def get_context_data(self, **kwargs):
         """Provide initial page context - actual data loading happens via SSE."""
@@ -363,7 +354,7 @@ class VisitInspectorView(LoginRequiredMixin, TemplateView):
         context["has_connect_token"] = bool(labs_oauth.get("access_token"))
 
         # Provide the SSE stream API URL
-        context["stream_api_url"] = reverse("explorer:visit_inspector_stream")
+        context["stream_api_url"] = reverse("labs_admin:visit_inspector_stream")
 
         # Create filter form
         context["filter_form"] = VisitInspectorFilterForm()
@@ -371,7 +362,7 @@ class VisitInspectorView(LoginRequiredMixin, TemplateView):
         return context
 
 
-class VisitInspectorQueryView(LoginRequiredMixin, View):
+class VisitInspectorQueryView(AdminRequiredMixin, View):
     """Handle SQL query execution for visit filtering."""
 
     def post(self, request):
@@ -440,10 +431,10 @@ class VisitInspectorQueryView(LoginRequiredMixin, View):
             return JsonResponse({"success": False, "errors": [f"Query failed: {str(e)}"]}, status=500)
 
 
-class VisitViewView(LoginRequiredMixin, TemplateView):
+class VisitViewView(AdminRequiredMixin, TemplateView):
     """View a single visit's data in a formatted page."""
 
-    template_name = "labs/explorer/visit_view.html"
+    template_name = "labs/admin/visit_view.html"
 
     def get_context_data(self, **kwargs):
         """Load visit and display in formatted view."""
@@ -506,7 +497,7 @@ class VisitViewView(LoginRequiredMixin, TemplateView):
         return context
 
 
-class DownloadVisitView(LoginRequiredMixin, View):
+class DownloadVisitView(AdminRequiredMixin, View):
     """Download a single visit's form_json as a .json file."""
 
     def get(self, request, visit_id):
@@ -517,7 +508,7 @@ class DownloadVisitView(LoginRequiredMixin, View):
 
         if not opportunity_id:
             messages.error(request, "No opportunity selected")
-            return redirect(reverse("explorer:visit_inspector"))
+            return redirect(reverse("labs_admin:visit_inspector"))
 
         try:
             # Query the SQL cache for this visit
@@ -536,7 +527,7 @@ class DownloadVisitView(LoginRequiredMixin, View):
 
             if not row:
                 messages.error(request, f"Visit {visit_id} not found")
-                return redirect(reverse("explorer:visit_inspector"))
+                return redirect(reverse("labs_admin:visit_inspector"))
 
             # Extract form_json (5th column)
             form_json = row[4]
@@ -559,10 +550,10 @@ class DownloadVisitView(LoginRequiredMixin, View):
         except Exception as e:
             logger.error(f"[VisitInspector] Failed to download visit {visit_id}: {e}")
             messages.error(request, f"Failed to download visit: {e}")
-            return redirect(reverse("explorer:visit_inspector"))
+            return redirect(reverse("labs_admin:visit_inspector"))
 
 
-class VisitInspectorStreamView(AnalysisPipelineSSEMixin, BaseSSEStreamView):
+class VisitInspectorStreamView(AdminRequiredMixin, AnalysisPipelineSSEMixin, BaseSSEStreamView):
     """
     SSE streaming endpoint for Visit Inspector with real-time progress.
 
@@ -621,14 +612,14 @@ class VisitInspectorStreamView(AnalysisPipelineSSEMixin, BaseSSEStreamView):
 # =============================================================================
 
 
-class CacheManagerView(LoginRequiredMixin, TemplateView):
+class CacheManagerView(AdminRequiredMixin, TemplateView):
     """
     Cache Manager page for inspecting and managing analysis cache.
 
     Shows all cache entries with details and provides filtering and deletion options.
     """
 
-    template_name = "labs/explorer/cache_manager.html"
+    template_name = "labs/admin/cache_manager.html"
 
     def get_context_data(self, **kwargs):
         """Provide initial page context."""
@@ -644,13 +635,13 @@ class CacheManagerView(LoginRequiredMixin, TemplateView):
         context["show_expired_only"] = show_expired_only
 
         # Get cache details from SQL backend
-        from connect_labs.labs.analysis.backends.sql.cache import SQLCacheManager
-        from connect_labs.labs.explorer.utils import (
+        from connect_labs.labs.admin.utils import (
             get_cache_type_display,
             is_cache_expired,
             is_cache_expiring_soon,
             truncate_config_hash,
         )
+        from connect_labs.labs.analysis.backends.sql.cache import SQLCacheManager
 
         try:
             all_entries = SQLCacheManager.get_cache_details()
@@ -708,7 +699,7 @@ class CacheManagerView(LoginRequiredMixin, TemplateView):
         return context
 
 
-class CacheDeleteView(LoginRequiredMixin, View):
+class CacheDeleteView(AdminRequiredMixin, View):
     """Handle cache deletion requests."""
 
     def post(self, request):
@@ -820,7 +811,7 @@ class CacheDeleteView(LoginRequiredMixin, View):
             )
 
 
-class CacheStatsAPIView(LoginRequiredMixin, View):
+class CacheStatsAPIView(AdminRequiredMixin, View):
     """AJAX endpoint for cache statistics."""
 
     def get(self, request):
@@ -872,14 +863,14 @@ class CacheStatsAPIView(LoginRequiredMixin, View):
 # =============================================================================
 
 
-class TaskManagerView(LoginRequiredMixin, TemplateView):
+class TaskManagerView(AdminRequiredMixin, TemplateView):
     """
     Task Manager page for inspecting and managing Celery tasks.
 
     Shows active, scheduled, and recent tasks with the ability to terminate them.
     """
 
-    template_name = "labs/explorer/task_manager.html"
+    template_name = "labs/admin/task_manager.html"
 
     def get_context_data(self, **kwargs):
         """Provide task information context."""
@@ -1088,7 +1079,7 @@ class TaskManagerView(LoginRequiredMixin, TemplateView):
         return recent
 
 
-class TaskKillView(LoginRequiredMixin, View):
+class TaskKillView(AdminRequiredMixin, View):
     """Handle task termination requests."""
 
     def post(self, request):
@@ -1133,7 +1124,7 @@ class TaskKillView(LoginRequiredMixin, View):
             )
 
 
-class TaskStatusAPIView(LoginRequiredMixin, View):
+class TaskStatusAPIView(AdminRequiredMixin, View):
     """AJAX endpoint for task status."""
 
     def get(self, request, task_id):
@@ -1171,7 +1162,7 @@ class TaskStatusAPIView(LoginRequiredMixin, View):
 # =============================================================================
 
 
-class AppDownloaderView(LoginRequiredMixin, TemplateView):
+class AppDownloaderView(AdminRequiredMixin, TemplateView):
     """
     View for downloading CommCare apps (CCZ files) for active opportunities.
 
@@ -1179,7 +1170,7 @@ class AppDownloaderView(LoginRequiredMixin, TemplateView):
     users to select opportunities and download their learn or deliver apps.
     """
 
-    template_name = "labs/explorer/app_downloader.html"
+    template_name = "labs/admin/app_downloader.html"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -1196,7 +1187,7 @@ class AppDownloaderView(LoginRequiredMixin, TemplateView):
 
         # Fetch active opportunities from API
         try:
-            from connect_labs.labs.explorer.app_data_access import AppDownloaderDataAccess
+            from connect_labs.labs.admin.app_data_access import AppDownloaderDataAccess
 
             with AppDownloaderDataAccess(request=self.request) as data_access:
                 opportunities = data_access.get_active_opportunities()
@@ -1210,7 +1201,7 @@ class AppDownloaderView(LoginRequiredMixin, TemplateView):
         return context
 
 
-class DownloadAppView(LoginRequiredMixin, View):
+class DownloadAppView(AdminRequiredMixin, View):
     """
     Redirect to CommCare HQ to download a CCZ file directly.
 
@@ -1235,7 +1226,7 @@ class DownloadAppView(LoginRequiredMixin, View):
             return JsonResponse({"error": "Not authenticated"}, status=401)
 
         try:
-            from connect_labs.labs.explorer.app_data_access import AppDownloaderDataAccess
+            from connect_labs.labs.admin.app_data_access import AppDownloaderDataAccess
 
             with AppDownloaderDataAccess(request=request) as data_access:
                 # Get opportunity details
@@ -1281,7 +1272,7 @@ class DownloadAppView(LoginRequiredMixin, View):
             return JsonResponse({"error": f"Failed to get app info: {str(e)}"}, status=500)
 
 
-class BulkDownloadAppsView(LoginRequiredMixin, View):
+class BulkDownloadAppsView(AdminRequiredMixin, View):
     """
     Get direct CommCare HQ download URLs for multiple apps.
 
@@ -1324,7 +1315,7 @@ class BulkDownloadAppsView(LoginRequiredMixin, View):
             return JsonResponse({"error": "Not authenticated"}, status=401)
 
         try:
-            from connect_labs.labs.explorer.app_data_access import AppDownloaderDataAccess
+            from connect_labs.labs.admin.app_data_access import AppDownloaderDataAccess
 
             with AppDownloaderDataAccess(request=request) as data_access:
                 downloads = []
