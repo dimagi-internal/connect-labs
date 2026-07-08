@@ -388,6 +388,17 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions, onU
     var anyOppRunning = isRunning || genList.some(function (g) { return g && g.status === 'running'; });
     var oppsDone = genList.filter(function (g) { return g && g.status && g.status !== 'running'; }).length;
 
+    // Turn a raw job message into a clear two-step label. run_workflow_job always
+    // prefixes "Stage 1/1:" (audit jobs have no pipeline stage, so that count is
+    // meaningless) — the real phases are Creating audits → AI review, both already
+    // present in the message text. Strip the noise prefix and stamp the real step.
+    function stepLabel(msg) {
+        if (!msg) return 'Step 1 of 2 · Creating audits…';
+        var m = String(msg).replace(/^Stage \d+\/\d+:\s*/, '');
+        var isReview = /AI review/i.test(m);
+        return 'Step ' + (isReview ? 2 : 1) + ' of 2 · ' + m;
+    }
+
     // Merge one streamed per-opp update into the live map.
     function applyItem(item) {
         if (!item || item.opportunity_id == null) return;
@@ -718,7 +729,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions, onU
         if (isBusy) {
             // Show this opp's own audit-creation message ("Creating audit 3/8…")
             // relayed on the program stream, else a neutral running label.
-            stateLabel = (prog && prog.message) ? prog.message : (streamedRunning ? 'Generating audits…' : 'Re-running…');
+            stateLabel = (prog && prog.message) ? stepLabel(prog.message) : (streamedRunning ? 'Step 1 of 2 · Creating audits…' : 'Re-running…');
             statePill = pill('● running', 'indigo');
         }
         else if (!gen) { stateLabel = 'Not generated'; statePill = pill('pending', 'gray'); }
@@ -829,10 +840,6 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions, onU
                 anyOppRunning
                     ? 'Generating audits per opportunity — each row streams its own progress below.'
                     : 'This program run has been fired. To recover an opportunity that didn’t finish, use its Re-run button below.'),
-            (anyOppRunning && sources.length > 0)
-                ? React.createElement('div', { style: { marginTop: 10, height: 6, background: '#e5e7eb', borderRadius: 999 } },
-                    React.createElement('div', { style: { height: 6, borderRadius: 999, background: '#2563eb', width: Math.round(oppsDone / sources.length * 100) + '%', transition: 'width .3s' } }))
-                : null,
             // Cancel the running program job.
             anyOppRunning
                 ? React.createElement('div', { style: { marginTop: 12 } },
