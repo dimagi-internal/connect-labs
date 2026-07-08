@@ -151,3 +151,82 @@ class DeletedWorkflowBackup(models.Model):
 
     def __str__(self) -> str:
         return f"backup:def={self.definition_id}:opp={self.opportunity_id}:{self.name}"
+
+
+class WorkflowSchedule(models.Model):
+    """A recurring schedule that runs a workflow's default-run headlessly.
+
+    One row per (workflow definition, scope, owner). ``owner`` is the user whose
+    persisted Connect token (see UserConnectToken) is used to mint a fresh access
+    token at fire time — no token is stored here. Only workflows whose template
+    supports a default run can be scheduled.
+    """
+
+    CADENCE_DAILY = "daily"
+    CADENCE_WEEKDAYS = "weekdays"
+    CADENCE_WEEKLY = "weekly"
+    CADENCE_MONTHLY = "monthly"
+    CADENCE_CHOICES = [
+        (CADENCE_DAILY, "Daily"),
+        (CADENCE_WEEKDAYS, "Weekdays (Mon–Fri)"),
+        (CADENCE_WEEKLY, "Weekly"),
+        (CADENCE_MONTHLY, "Monthly"),
+    ]
+
+    STATUS_OK = "ok"
+    STATUS_FAILED = "failed"
+    STATUS_AUTH_EXPIRED = "auth_expired"
+    STATUS_RUNNING = "running"
+    STATUS_CHOICES = [
+        (STATUS_OK, "OK"),
+        (STATUS_FAILED, "Failed"),
+        (STATUS_AUTH_EXPIRED, "Auth expired"),
+        (STATUS_RUNNING, "Running"),
+    ]
+
+    definition_id = models.IntegerField()
+    definition_name = models.CharField(max_length=255, blank=True)
+    opportunity_id = models.IntegerField(null=True, blank=True)
+    program_id = models.IntegerField(null=True, blank=True)
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="workflow_schedules",
+    )
+
+    cadence = models.CharField(max_length=16, choices=CADENCE_CHOICES)
+    hour = models.PositiveSmallIntegerField(default=6)  # 0-23 UTC
+    day_of_week = models.PositiveSmallIntegerField(null=True, blank=True)  # 0=Mon..6=Sun, weekly only
+    day_of_month = models.PositiveSmallIntegerField(null=True, blank=True)  # 1-28, monthly only
+
+    enabled = models.BooleanField(default=True)
+    next_run_at = models.DateTimeField(null=True, blank=True)
+    last_run_at = models.DateTimeField(null=True, blank=True)
+    last_status = models.CharField(max_length=16, choices=STATUS_CHOICES, null=True, blank=True)
+    last_error = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "labs_workflow_schedule"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["definition_id", "opportunity_id", "program_id", "owner"],
+                name="uniq_schedule_per_definition_scope_owner",
+                # opportunity_id/program_id are nullable scope columns; without this,
+                # Postgres treats NULL as distinct from NULL and the constraint never
+                # fires for two schedules that are both opportunity- or program-scoped
+                # (the common case — one of the two is always null).
+                nulls_distinct=False,
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"WorkflowSchedule(def={self.definition_id}, {self.cadence}, owner={self.owner_id})"
+
+    def recompute_next_run(self, from_dt) -> None:
+        """Set ``next_run_at`` to the next fire time after ``from_dt`` and save it."""
+        from connect_labs.workflow.schedules import compute_next_run
+
+        self.next_run_at = compute_next_run(self.cadence, self.hour, self.day_of_week, self.day_of_month, from_dt)
+        if self.pk:
+            self.save(update_fields=["next_run_at"])
