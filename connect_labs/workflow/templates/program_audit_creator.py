@@ -376,6 +376,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions, onU
     var cleanupRef = React.useRef(null);
     var oppStreamsRef = React.useRef({}); // opportunity_id -> {taskId, cleanup}
     var activeTaskRef = React.useRef(null); // program job task_id, for Cancel
+    var genRef = React.useRef({});          // latest merged generation (for race-free persist)
 
     var isCompleted = view && view.isCompleted;
 
@@ -396,6 +397,23 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions, onU
             n[k] = Object.assign({}, n[k], item);
             return n;
         });
+    }
+
+    // Keep a ref to the latest merged generation so a per-opp completion can persist
+    // its terminal status WITHOUT clobbering sibling opps that finished meanwhile.
+    React.useEffect(function () { genRef.current = mergedGen; });
+
+    // The opp jobs run async and write completion only to THEIR OWN run's
+    // active_job — nothing else writes it back to THIS program run's generation. So
+    // when a row's poll reports terminal, persist that status+count into the program
+    // generation so a reload / the audit report / the completion gate see the truth
+    // (not a stale "running"). Race-free via genRef.
+    function persistOppTerminal(oppId, patch) {
+        var g = Object.assign({}, genRef.current);
+        var k = String(oppId);
+        g[k] = Object.assign({}, g[k], patch);
+        genRef.current = g;
+        onUpdateState({ generation: g }).catch(function () {});
     }
 
     // For each opp that has a running audit job (a task_id), poll that job's own
@@ -419,17 +437,22 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions, onU
                 null,
                 function (results) {
                     // Done — read the authoritative audit count from the same
-                    // sessions endpoint the per-opp page uses.
+                    // sessions endpoint the per-opp page uses, then reflect it in the
+                    // row AND persist it into the program generation.
                     fetch('/audit/api/workflow/' + oppRunId + '/sessions/?opportunity_id=' + oppId)
                         .then(function (r) { return r.json(); })
                         .then(function (d) {
                             var count = (d && d.success && d.sessions) ? d.sessions.length : ((results && results.sessions_created) || 0);
-                            applyItem({ opportunity_id: oppId, run_id: oppRunId, status: 'ready', session_count: count });
+                            var patch = { opportunity_id: oppId, run_id: oppRunId, status: 'ready', session_count: count };
+                            applyItem(patch); persistOppTerminal(oppId, patch);
                         })
-                        .catch(function () { applyItem({ opportunity_id: oppId, run_id: oppRunId, status: 'ready', session_count: (results && results.sessions_created) || 0 }); });
+                        .catch(function () {
+                            var patch = { opportunity_id: oppId, run_id: oppRunId, status: 'ready', session_count: (results && results.sessions_created) || 0 };
+                            applyItem(patch); persistOppTerminal(oppId, patch);
+                        });
                 },
-                function (err) { applyItem({ opportunity_id: oppId, run_id: oppRunId, status: 'failed' }); },
-                function () { applyItem({ opportunity_id: oppId, run_id: oppRunId, status: 'cancelled' }); },
+                function (err) { var p = { opportunity_id: oppId, run_id: oppRunId, status: 'failed' }; applyItem(p); persistOppTerminal(oppId, p); },
+                function () { var p = { opportunity_id: oppId, run_id: oppRunId, status: 'cancelled' }; applyItem(p); persistOppTerminal(oppId, p); },
                 oppRunId // run_id — lets the status endpoint terminate a dead/finished task
             );
             oppStreamsRef.current[k] = { taskId: g.task_id, cleanup: cleanup };
