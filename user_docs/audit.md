@@ -132,6 +132,17 @@ Once a session is created, open it to start the bulk assessment.
 | `→` | Next image     |
 | `←` | Previous image |
 
+### If an image does not load
+
+The review screen loads images in a controlled stream — a handful at a time — rather than all at once. This prevents request overloads on large sessions and means most photos appear reliably without any action on your part.
+
+If a photo still has trouble loading, the screen retries it automatically a few times. If it cannot load after those retries, the tile shows a clear **"Image failed to load"** message with a **Retry** button. Click **Retry** to attempt loading that photo again — a single click is usually enough to recover from a temporary connection hiccup.
+
+Once a photo has loaded, your browser keeps it cached, so scrolling through the grid or resizing your window will not cause it to reload.
+
+!!! tip "Persistent failures"
+    If a photo continues to fail after retrying, check your internet connection and try refreshing the page. If the problem affects many images, contact your program administrator.
+
 ---
 
 ## Tracking Audit Creation Progress
@@ -225,11 +236,4 @@ When a MUAC image type is selected, you can choose the **MUAC OverZoom** agent f
 **Can I control which AI verdicts are applied automatically?**
 Yes. When selecting an agent for an image type in Step 5 of the audit-creation wizard, each possible verdict has a checkbox. Tick it to have the AI pre-tag matching images with that result; leave it unticked so the AI flags and badges the image but leaves the Pass/Fail decision to you. The default is flag-only — nothing is pre-tagged unless you opt in. You can also bulk-apply any verdict with one click from the review queue (for example, **Fail all Hyperzoomed (N)**).
 
-**Where does the AI reviewer dropdown appear?**
-The dropdown appears directly beneath each image type in **Step 5 — Audit Field Configuration** of the audit-creation wizard, as soon as you tick that image type. This means you assign a reviewer per image type rather than choosing one reviewer for the whole session. The review queue reflects the assignments you made during setup.
-
-**Can I assign different AI reviewers to different photo types in the same session?**
-Yes. Because the AI reviewer dropdown is now attached to each individual image type, you can — for example — assign **MUAC OverZoom** to MUAC photos and **Scale Image Validation** to weight photos in the same session. Each photo type is assessed only by the reviewer you chose for it.
-
-**What is the Manual Scale Value field for Scale Image Validation?**
-When you select the **Scale Image Validation** reviewer for a weight-related image type, a **Manual Scale Value** dropdown appears asking you to pick the form field that
+**Where does the AI reviewer dropdown appear
