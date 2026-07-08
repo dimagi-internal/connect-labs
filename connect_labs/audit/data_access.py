@@ -12,6 +12,7 @@ Key optimizations:
 """
 
 import logging
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -1056,24 +1057,52 @@ class AuditDataAccess(BaseDataAccess):
 
         return results
 
+    # Bounded retry for the image proxy. Transient upstream hiccups (connection
+    # resets, 5xx) are retried with exponential backoff; 4xx responses fail fast
+    # (retrying a genuine "not found" / "forbidden" only wastes time).
+    IMAGE_DOWNLOAD_MAX_ATTEMPTS = 3
+    IMAGE_DOWNLOAD_BACKOFF_BASE = 0.3  # seconds; 0.3, 0.6, ...
+
     def download_image_from_connect(self, blob_id: str, opportunity_id: int) -> bytes:
-        """Download image from Connect API."""
-        try:
-            response = self.http_client.get(
-                f"{self.production_url}/export/opportunity/{opportunity_id}/image/",
-                params={"blob_id": blob_id},
-            )
-            response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            logger.error(
-                f"[Audit] HTTP {e.response.status_code} downloading image blob_id={blob_id} "
-                f"opp={opportunity_id}: {e}"
-            )
-            raise ValueError(f"Failed to download image (HTTP {e.response.status_code})") from e
-        except httpx.RequestError as e:
-            logger.error(f"[Audit] Request error downloading image blob_id={blob_id} opp={opportunity_id}: {e}")
-            raise ValueError("Failed to download image due to a connection error") from e
-        return response.content
+        """Download image from Connect API, retrying transient upstream failures."""
+        last_exc: Exception | None = None
+        for attempt in range(1, self.IMAGE_DOWNLOAD_MAX_ATTEMPTS + 1):
+            try:
+                response = self.http_client.get(
+                    f"{self.production_url}/export/opportunity/{opportunity_id}/image/",
+                    params={"blob_id": blob_id},
+                )
+                response.raise_for_status()
+                return response.content
+            except httpx.HTTPStatusError as e:
+                status = e.response.status_code
+                # Client errors are not going to fix themselves on retry.
+                if status < 500:
+                    logger.error(
+                        f"[Audit] HTTP {status} downloading image blob_id={blob_id} opp={opportunity_id}: {e}"
+                    )
+                    raise ValueError(f"Failed to download image (HTTP {status})") from e
+                last_exc = e
+                logger.warning(
+                    f"[Audit] HTTP {status} downloading image blob_id={blob_id} opp={opportunity_id} "
+                    f"(attempt {attempt}/{self.IMAGE_DOWNLOAD_MAX_ATTEMPTS})"
+                )
+            except httpx.RequestError as e:
+                last_exc = e
+                logger.warning(
+                    f"[Audit] Request error downloading image blob_id={blob_id} opp={opportunity_id} "
+                    f"(attempt {attempt}/{self.IMAGE_DOWNLOAD_MAX_ATTEMPTS}): {e}"
+                )
+            if attempt < self.IMAGE_DOWNLOAD_MAX_ATTEMPTS:
+                time.sleep(self.IMAGE_DOWNLOAD_BACKOFF_BASE * (2 ** (attempt - 1)))
+
+        logger.error(
+            f"[Audit] Giving up on image blob_id={blob_id} opp={opportunity_id} "
+            f"after {self.IMAGE_DOWNLOAD_MAX_ATTEMPTS} attempts: {last_exc}"
+        )
+        if isinstance(last_exc, httpx.HTTPStatusError):
+            raise ValueError(f"Failed to download image (HTTP {last_exc.response.status_code})") from last_exc
+        raise ValueError("Failed to download image due to a connection error") from last_exc
 
     def get_flw_names(self, opportunity_id: int | None = None) -> dict[str, str]:
         """

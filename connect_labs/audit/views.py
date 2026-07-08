@@ -774,6 +774,9 @@ class ExperimentAuditImageConnectView(LoginRequiredMixin, View):
                 response = HttpResponse(image_content, content_type="image/jpeg")
                 disposition = 'inline; filename="' + blob_id + '.jpg"'
                 response["Content-Disposition"] = disposition
+                # Blobs are immutable, so let the browser cache a fetched image and
+                # avoid re-hitting the proxy on every re-render / grid resize.
+                response["Cache-Control"] = "private, max-age=3600"
                 return response
             finally:
                 data_access.close()
@@ -792,6 +795,7 @@ class ExperimentAuditImageConnectView(LoginRequiredMixin, View):
             if data:
                 response = HttpResponse(data, content_type="image/jpeg")
                 response["Content-Disposition"] = f'inline; filename="{blob_id}.jpg"'
+                response["Cache-Control"] = "private, max-age=3600"
                 return response
         except Exception as e:
             logger.warning("Failed to serve synthetic image %s: %s", blob_id, e)

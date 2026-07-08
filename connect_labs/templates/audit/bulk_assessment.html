@@ -322,13 +322,33 @@
              }"
              @keydown.window="handleKeydown($event, assessment.id)">
           <div class="relative bg-gray-100"
-               :style="`height: ${widgetSize}px`">
-            <img :src="assessment.image_url"
-                 alt="Assessment image"
-                 class="w-full h-full object-contain cursor-zoom-in"
-                 loading="lazy"
-                 @click="openLightbox(assessment)"
-                 title="Click to zoom">
+               :style="`height: ${widgetSize}px`"
+               x-data="imageTile(assessment.image_url)">
+            <!-- Loading spinner (also shown while waiting for a concurrency slot) -->
+            <div x-show="status === 'loading'" class="absolute inset-0 flex items-center justify-center text-gray-400">
+              <i class="fa-solid fa-spinner fa-spin text-2xl"></i>
+            </div>
+            <!-- Image: concurrency-gated, auto-retries transient load failures -->
+            <template x-if="src">
+              <img :src="src"
+                   alt="Assessment image"
+                   class="w-full h-full object-contain cursor-zoom-in"
+                   x-show="status === 'loaded'"
+                   @load="onLoad()"
+                   @error="onError()"
+                   @click="openLightbox(assessment)"
+                   title="Click to zoom">
+            </template>
+            <!-- Failed-to-load placeholder with manual retry -->
+            <div x-show="status === 'error'"
+                 class="absolute inset-0 flex flex-col items-center justify-center text-gray-400 gap-2 p-2 text-center">
+              <i class="fa-solid fa-image-slash text-2xl"></i>
+              <span class="text-xs">Image failed to load</span>
+              <button @click="retry()"
+                      class="px-2 py-1 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300">
+                <i class="fa-solid fa-rotate-right mr-1"></i>Retry
+              </button>
+            </div>
             <!-- AI Result Badge - Top Left (only for failures/errors; passes are shown in the tile footer) -->
             <div class="absolute top-2 left-2"
                  x-show="aiResult && aiResult !== 'match'"
@@ -792,6 +812,69 @@ const connectUrl = '{{ connect_url|default:"https://connect.dimagi.com" }}';
 const orgSlug = '{{ org_slug|default:"" }}';
 const workflowRunId = {{ workflow_run_id|default:"null" }};
 const passThreshold = parseInt('{{ pass_threshold|default:"80" }}') || 80;
+
+// ── Image load concurrency gate ───────────────────────────────────────────
+// Large sessions can render hundreds of tiles. Firing every proxy request at
+// once amplifies transient upstream failures, so cap how many images fetch
+// concurrently; the rest queue and start as slots free up.
+const imageLoadGate = (function () {
+  const MAX_CONCURRENT = 6;
+  let active = 0;
+  const queue = [];
+  function pump() {
+    while (active < MAX_CONCURRENT && queue.length > 0) {
+      active++;
+      (queue.shift())();
+    }
+  }
+  return {
+    acquire() { return new Promise((resolve) => { queue.push(resolve); pump(); }); },
+    release() { active = Math.max(0, active - 1); pump(); },
+  };
+})();
+
+// Per-tile image loader: waits for a concurrency slot, then loads. Retries
+// transient failures a few times with exponential backoff (cache-busted so a
+// stale 404 isn't re-served), and falls back to a placeholder + manual retry.
+function imageTile(url) {
+  return {
+    baseUrl: url,
+    src: '',
+    status: 'loading',   // 'loading' | 'loaded' | 'error'
+    attempt: 0,
+    maxAttempts: 3,
+    _released: true,
+    init() { this.load(); },
+    async load() {
+      this.status = 'loading';
+      await imageLoadGate.acquire();
+      this._released = false;
+      // Only cache-bust on retries so first (and typical) loads stay cacheable.
+      this.src = this.attempt === 0
+        ? this.baseUrl
+        : this.baseUrl + (this.baseUrl.includes('?') ? '&' : '?') + 'retry=' + this.attempt;
+    },
+    _release() {
+      if (!this._released) { this._released = true; imageLoadGate.release(); }
+    },
+    onLoad() {
+      this.status = 'loaded';
+      this._release();
+    },
+    onError() {
+      this._release();
+      if (this.attempt < this.maxAttempts - 1) {
+        this.attempt++;
+        const delay = 300 * Math.pow(2, this.attempt - 1); // 300ms, 600ms
+        this.src = '';
+        setTimeout(() => this.load(), delay);
+      } else {
+        this.status = 'error';
+      }
+    },
+    retry() { this.attempt = 0; this.load(); },
+  };
+}
 
 function bulkAssessmentInterface() {
   return {
