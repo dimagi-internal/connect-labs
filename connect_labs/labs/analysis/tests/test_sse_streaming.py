@@ -35,7 +35,7 @@ def _consume(mixin, stream, **kwargs):
 class TestStreamPipelineEventsErrorHandling:
     def test_error_event_silently_dropped_by_default(self):
         """Preserves the historical behavior for callers that have never
-        handled a raised exception here (labs/explorer, configurable_ui,
+        handled a raised exception here (labs/admin, configurable_ui,
         mbw_monitoring, custom_analysis/rutf, custom_analysis/kmc)."""
         mixin = _Mixin()
         exc = ValueError("boom")

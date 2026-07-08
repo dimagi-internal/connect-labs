@@ -196,6 +196,14 @@ class LabsOverviewView(LoginRequiredMixin, TemplateView):
                 "color": "indigo",
                 "feature": "solicitations",
             },
+            {
+                "name": "Labs Admin",
+                "url": "/labs/admin/",
+                "icon": "fa-screwdriver-wrench",
+                "description": "Internal tools: inspect records & visits, manage cache & jobs, load boundary data",
+                "color": "rose",
+                "feature": "admin",
+            },
         ]
         context["labs_projects"] = [p for p in _all_labs_projects if _has_access(p["feature"])]
 

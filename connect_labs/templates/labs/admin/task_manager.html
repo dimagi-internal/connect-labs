@@ -15,9 +15,9 @@
           Monitor and manage Celery background tasks
         </p>
       </div>
-      <a href="{% url 'explorer:index' %}" class="inline-flex items-center text-gray-600 hover:text-gray-900">
+      <a href="{% url 'labs_admin:index' %}" class="inline-flex items-center text-gray-600 hover:text-gray-900">
         <i class="fa-solid fa-arrow-left mr-2"></i>
-        Back to Explorer
+        Back to Admin
       </a>
     </div>
   </div>
@@ -444,7 +444,7 @@ function hideKillModal() {
 function confirmKill() {
   if (!currentKillTaskId) return;
 
-  fetch("{% url 'explorer:task_kill' %}", {
+  fetch("{% url 'labs_admin:task_kill' %}", {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
