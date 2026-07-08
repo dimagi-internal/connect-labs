@@ -6,6 +6,11 @@
 {% block javascript %}
 {{ block.super }}
 {% if has_context and render_code and not error %}
+<!-- Shared runner UI primitive: the FLW audit-breakdown renderer, so a render
+     can draw the "Audit results by field worker" panel identically to the
+     opp-level run. Loaded before the bundle (defer preserves order). See
+     WORKFLOW_REFERENCE.md "Shared runner UI primitives". -->
+<script src="{% static 'js/labs_audit_breakdown.js' %}?v=1" defer></script>
 <script src="{% static 'bundles/js/workflow-runner-bundle.js' %}?v=3" defer></script>
 <!-- Chart.js for workflow visualizations -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>

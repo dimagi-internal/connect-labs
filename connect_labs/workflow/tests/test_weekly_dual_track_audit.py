@@ -231,6 +231,18 @@ def test_template_registered_and_multi_opp():
     assert isinstance(tpl["render_code"], str) and "startJob" in tpl["render_code"]
 
 
+def test_uses_shared_flw_breakdown_primitive():
+    """The FLW breakdown must render via the shared window.LabsAudit primitive,
+    not a re-inlined copy — that's what keeps this run, the program creator's
+    inline expand, and the pages card identical. See labs_audit_breakdown.js."""
+    from connect_labs.workflow.templates import get_template
+
+    rc = get_template("weekly_dual_track_audit")["render_code"]
+    assert "LabsAudit.renderFlwBreakdown" in rc
+    # And it should NOT have re-grown its own copy of the grouping helper.
+    assert "groupByOppFlw" not in rc
+
+
 def test_run_audit_creation_accepts_image_audits_contract():
     """Guard the cross-PR boundary: build_track_audit_calls emits image_audits /
     context_fields and the handler forwards them to run_audit_creation. The
