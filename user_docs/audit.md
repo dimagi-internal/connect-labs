@@ -102,7 +102,7 @@ Once a session is created, open it to start the bulk assessment.
     - **Ticked** — the AI pre-tags matching images with that result before you open the review queue.
     - **Unticked** — the AI still badges every image with its classification, but leaves the Pass/Fail decision to you.
 
-    The default is **flag-only** (all checkboxes unticked), so nothing is pre-tagged unless you opt in. This means the AI's assessments are always visible, but automated pre-tagging only happens when you have explicitly chosen it.
+    The default is **flag-only** (all checkboxes untinted), so nothing is pre-tagged unless you opt in. This means the AI's assessments are always visible, but automated pre-tagging only happens when you have explicitly chosen it.
 
     Regardless of your checkbox settings, you can always bulk-apply any verdict with one click — for example, **Fail all Hyperzoomed (N)** — directly from the review queue.
 
@@ -146,6 +146,18 @@ This means you can check the audit list at any point and see exactly how far alo
 
 !!! tip "Large audits"
     For sessions with many images, the live count gives you a reliable sense of how much longer to wait. You do not need to keep the page open — the job continues in the background and the count will be up to date when you return.
+
+### Program Audit Creator progress
+
+When you run the **Program Audit Creator** to generate audits across multiple opportunities at once, each opportunity row in the list shows its own live progress. Here is what you will see:
+
+- **Activity starts immediately.** As soon as an opportunity's job begins, its row updates straight away — showing "Creating audits · preparing…", then "fetching visits", then "extracting images". There is no silent waiting period at the start.
+- **Two clearly labelled steps.** Each row moves through two named steps rather than a generic stage counter:
+    - **Step 1 of 2 · Creating audits** — shows live detail such as how many field worker sessions have been created so far.
+    - **Step 2 of 2 · AI review** — shows how many images have been reviewed out of the total (for example, "45/136 images reviewed").
+- **No top-level progress bar.** The previous bar at the top of the page that stayed empty throughout the run and then jumped to complete has been removed. Each opportunity row has its own bar that fills in real time, and the page header continues to show how many opportunities have finished overall.
+
+You do not need to keep the page open — jobs run in the background and each row's count will be current when you return.
 
 ---
 
@@ -220,13 +232,4 @@ The dropdown appears directly beneath each image type in **Step 5 — Audit Fiel
 Yes. Because the AI reviewer dropdown is now attached to each individual image type, you can — for example — assign **MUAC OverZoom** to MUAC photos and **Scale Image Validation** to weight photos in the same session. Each photo type is assessed only by the reviewer you chose for it.
 
 **What is the Manual Scale Value field for Scale Image Validation?**
-When you select the **Scale Image Validation** reviewer for a weight-related image type, a **Manual Scale Value** dropdown appears asking you to pick the form field that holds the weight recorded by the FLW. The reviewer uses this to compare the recorded value against what is visible in the scale photo. If you leave this setting blank, the wizard will stop you before creating the session.
-
-**How are image types displayed when I select them?**
-Each image type is shown by its full question path (for example, `household_visit/child_screening/muac_photo`) so you can confirm exactly which form field you are selecting. If you regularly audit the same image types, you can pre-select them by adding `?image_paths=<full/path1>,<full/path2>` to the audit-creation URL.
-
-**What are the AI classification labels on each image tile?**
-Once the AI agent has reviewed an image, a small label appears at the bottom of the tile (below the **Add Note** field) showing the agent name and its classification — for example, "MUAC OverZoom: Not Hyperzoomed" or "Scale Validation: Passed". If the AI encountered a problem with a specific image, the label turns red and shows the error message. This gives you a clear record of what the AI decided for every image, not just the ones that were flagged.
-
-**How long does AI review take?**
-For a typical session of around 30 images, AI review
+When you select the **Scale Image Validation** reviewer for a weight-related image type, a **Manual Scale Value** dropdown appears asking you to pick the form field that
