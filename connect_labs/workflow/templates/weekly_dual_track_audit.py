@@ -443,6 +443,25 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
     var allComplete = sessions.length > 0 && openCount === 0;
     var isCompleted = view && view.isCompleted;
 
+    // ── View-only gate ────────────────────────────────────────────────────────
+    // A run is fired ONCE: as soon as its audits exist, this workflow becomes a
+    // read-only view of what was created (the program creator opens these runs to
+    // inspect, not to re-fire). "Already created" = the handler persisted a
+    // last_batch onto the run, or sessions loaded. Not view-only while a create
+    // job is actively running (show its progress) or before anything was created
+    // (show the creation UI so a never-run / recovered run can still fire).
+    var lastBatch = (runState && runState.last_batch) || null;
+    var createdCount = sessions.length || (lastBatch && lastBatch.sessions_created) || 0;
+    var hasCreated = !!lastBatch || sessions.length > 0;
+    var viewOnly = hasCreated && !isRunning;
+    var winStart = (lastBatch && lastBatch.window_start) || runState.window_start || startDate;
+    var winEnd = (lastBatch && lastBatch.window_end) || runState.window_end || endDate;
+    var fmtWin = function (d) {
+        if (!d) return '—';
+        try { return new Date(d + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }); }
+        catch (e) { return d; }
+    };
+
     const pathPills = (paths, color) => (
         (paths && paths.length)
             ? paths.map(p => (
@@ -458,7 +477,29 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                 <p className="text-gray-600 mt-1">{definition.description}</p>
             </div>
 
+            {/* ── View-only summary (audits already created) ──────────────── */}
+            {viewOnly && (
+                <div className="bg-white rounded-lg shadow-sm p-6">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                        <h3 className="text-sm font-medium text-gray-700">
+                            <i className="fa-solid fa-lock mr-2 text-gray-400"></i>Audits created — view only
+                        </h3>
+                        {isCompleted
+                            ? <span className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-600"><i className="fa-solid fa-lock mr-1"></i>Completed</span>
+                            : <span className="text-xs px-2 py-1 rounded bg-blue-50 text-blue-700"><i className="fa-solid fa-circle-check mr-1"></i>Created</span>}
+                    </div>
+                    <p className="text-sm text-gray-600 mt-2">
+                        Window <span className="font-medium text-gray-900">{fmtWin(winStart)} – {fmtWin(winEnd)}</span>
+                        {' · '}<span className="font-medium text-gray-900">{createdCount}</span> audit session{createdCount === 1 ? '' : 's'} across {oppIds.length} opportunit{oppIds.length === 1 ? 'y' : 'ies'}.
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                        This run's audits have already been created — creation controls are hidden. Review the results below.
+                    </p>
+                </div>
+            )}
+
             {/* ── Date window ─────────────────────────────────────────────── */}
+            {!viewOnly && (
             <div className="bg-white rounded-lg shadow-sm p-6">
                 <h3 className="text-sm font-medium text-gray-700 mb-3">
                     <i className="fa-solid fa-calendar-week mr-2 text-gray-400"></i>Audit window
@@ -489,8 +530,10 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                     </div>
                 </div>
             </div>
+            )}
 
             {/* ── Sampling rates (per-run, default from config) ───────────── */}
+            {!viewOnly && (
             <div className="bg-white rounded-lg shadow-sm p-6">
                 <h3 className="text-sm font-medium text-gray-700 mb-3">
                     <i className="fa-solid fa-percent mr-2 text-gray-400"></i>Sampling rates
@@ -522,6 +565,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                     </div>
                 </div>
             </div>
+            )}
 
             {/* ── Per-opp config preview (read-only) ──────────────────────── */}
             <div className="bg-white rounded-lg shadow-sm p-6">
@@ -562,6 +606,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
             </div>
 
             {/* ── Create button + progress ────────────────────────────────── */}
+            {!viewOnly && (
             <div className="bg-white rounded-lg shadow-sm p-6">
                 <button onClick={handleCreate}
                     disabled={!startDate || !endDate || isRunning || oppIds.length === 0 || instance.status === 'completed'}
@@ -614,6 +659,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                     </div>
                 )}
             </div>
+            )}
 
             {/* ── Audit results by field worker ───────────────────────────── */}
             <div className="bg-white rounded-lg shadow-sm p-6">

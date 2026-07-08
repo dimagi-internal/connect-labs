@@ -1184,6 +1184,15 @@
         function highlightWorkflow() {
             var params = new URLSearchParams(window.location.search);
             var id = params.get('highlight');
+            // Also honour a bare `#workflow-<id>` hash (a direct link, e.g. from a
+            // program dashboard), not just the ?highlight= redirect param — so both
+            // program- and opp-scoped deep links scroll to + glow the card. The
+            // browser's native anchor jump alone gives no highlight and can be
+            // unreliable when the list is long.
+            if (!id) {
+                var hm = (window.location.hash || '').match(/^#workflow-(\d+)$/);
+                if (hm) id = hm[1];
+            }
             if (!id) return;
             var card = document.getElementById('workflow-' + id)
                 || document.querySelector('[data-workflow-id="' + id + '"]');
