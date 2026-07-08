@@ -790,17 +790,17 @@ def run_scheduled_workflow(schedule_id: int) -> dict:
         return {"status": "auth_expired", "schedule_id": schedule_id}
     except Exception as e:  # noqa: BLE001 — record and stop, do not crash the worker
         sched.last_status = WorkflowSchedule.STATUS_FAILED
-        sched.last_error = f"token error: {e}"[:2000]
+        sched.last_error = str(e)[:2000]
         sched.last_run_at = dj_timezone.now()
         sched.save(update_fields=["last_status", "last_error", "last_run_at"])
         return {"status": "failed", "schedule_id": schedule_id}
 
-    if sched.opportunity_id:
-        da = WorkflowDataAccess(access_token=token, opportunity_id=sched.opportunity_id)
-    else:
-        da = WorkflowDataAccess(access_token=token, program_id=sched.program_id)
-
+    da = None
     try:
+        if sched.opportunity_id:
+            da = WorkflowDataAccess(access_token=token, opportunity_id=sched.opportunity_id)
+        else:
+            da = WorkflowDataAccess(access_token=token, program_id=sched.program_id)
         definition = da.get_definition(sched.definition_id)
         if definition is None:
             raise ValueError(f"definition {sched.definition_id} not found")
@@ -812,10 +812,11 @@ def run_scheduled_workflow(schedule_id: int) -> dict:
         sched.last_status = WorkflowSchedule.STATUS_FAILED
         sched.last_error = str(e)[:2000]
     finally:
-        try:
-            da.close()
-        except Exception:
-            pass
+        if da is not None:
+            try:
+                da.close()
+            except Exception:
+                pass
         sched.last_run_at = dj_timezone.now()
         sched.save(update_fields=["last_status", "last_error", "last_run_at"])
 

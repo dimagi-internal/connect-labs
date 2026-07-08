@@ -42,6 +42,25 @@ def test_run_scheduled_workflow_success_records_ok():
     assert sched.last_status == WorkflowSchedule.STATUS_OK
     assert sched.last_run_at is not None
     run_default.assert_called_once()
+    DA.assert_called_once_with(access_token="tok", opportunity_id=1237)
+
+
+@pytest.mark.django_db
+def test_run_scheduled_workflow_program_scoped_constructs_dao_with_program_id():
+    sched = _make_schedule(username="pete", opportunity_id=None, program_id=99)
+    with (
+        mock.patch("connect_labs.workflow.tasks.get_valid_access_token", return_value="tok"),
+        mock.patch("connect_labs.workflow.tasks.WorkflowDataAccess") as DA,
+        mock.patch("connect_labs.workflow.tasks.run_default_for_definition", return_value={"ran": True}),
+    ):
+        DA.return_value.get_definition.return_value = mock.Mock(id=42)
+        from connect_labs.workflow.tasks import run_scheduled_workflow
+
+        run_scheduled_workflow(sched.id)
+
+    sched.refresh_from_db()
+    assert sched.last_status == WorkflowSchedule.STATUS_OK
+    DA.assert_called_once_with(access_token="tok", program_id=99)
 
 
 @pytest.mark.django_db
