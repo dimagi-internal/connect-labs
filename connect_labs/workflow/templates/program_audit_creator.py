@@ -376,7 +376,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions, onU
     var cleanupRef = React.useRef(null);
     var oppStreamsRef = React.useRef({}); // opportunity_id -> {taskId, cleanup}
     var activeTaskRef = React.useRef(null); // program job task_id, for Cancel
-    var genRef = React.useRef({});          // latest merged generation (for race-free persist)
+    var reconcileRef = React.useRef(0);     // count of opps we've asked the server to reconcile
 
     var isCompleted = view && view.isCompleted;
 
@@ -399,22 +399,30 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions, onU
         });
     }
 
-    // Keep a ref to the latest merged generation so a per-opp completion can persist
-    // its terminal status WITHOUT clobbering sibling opps that finished meanwhile.
-    React.useEffect(function () { genRef.current = mergedGen; });
-
-    // The opp jobs run async and write completion only to THEIR OWN run's
-    // active_job — nothing else writes it back to THIS program run's generation. So
-    // when a row's poll reports terminal, persist that status+count into the program
-    // generation so a reload / the audit report / the completion gate see the truth
-    // (not a stale "running"). Race-free via genRef.
-    function persistOppTerminal(oppId, patch) {
-        var g = Object.assign({}, genRef.current);
-        var k = String(oppId);
-        g[k] = Object.assign({}, g[k], patch);
-        genRef.current = g;
-        onUpdateState({ generation: g }).catch(function () {});
+    // The opp jobs run async and write completion only to THEIR OWN run's active_job.
+    // A client state write can't reliably persist it back to the program generation
+    // (the runner's refetch + prod read-after-write lag revert it). So ask the SERVER
+    // to reconcile: it reads each opp run's authoritative state and writes the program
+    // generation server-side (monotonic, program-scoped). Fire-and-forget; called when
+    // the number of finished opps changes so the persisted state + its export catch up.
+    function reconcileGeneration() {
+        var el = document.getElementById('workflow-root');
+        var t = (el && el.dataset) ? el.dataset.csrfToken : '';
+        fetch('/labs/workflow/api/run/' + instance.id + '/reconcile-generation/', {
+            method: 'POST', headers: { 'X-CSRFToken': t }
+        }).catch(function () {});
     }
+
+    // Whenever more opps have reached a terminal state than the server has been told
+    // about, trigger a server-side reconcile so the persisted generation catches up.
+    // This fires while the page is open AND on a later reload (the polls re-detect
+    // completion), so a run whose page was closed mid-flight is fixed on next visit.
+    React.useEffect(function () {
+        if (oppsDone > reconcileRef.current) {
+            reconcileRef.current = oppsDone;
+            reconcileGeneration();
+        }
+    });
 
     // For each opp that has a running audit job (a task_id), poll that job's own
     // status so its row glides — reusing the exact job + status the per-opp workflow
@@ -443,16 +451,14 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions, onU
                         .then(function (r) { return r.json(); })
                         .then(function (d) {
                             var count = (d && d.success && d.sessions) ? d.sessions.length : ((results && results.sessions_created) || 0);
-                            var patch = { opportunity_id: oppId, run_id: oppRunId, status: 'ready', session_count: count };
-                            applyItem(patch); persistOppTerminal(oppId, patch);
+                            applyItem({ opportunity_id: oppId, run_id: oppRunId, status: 'ready', session_count: count });
                         })
                         .catch(function () {
-                            var patch = { opportunity_id: oppId, run_id: oppRunId, status: 'ready', session_count: (results && results.sessions_created) || 0 };
-                            applyItem(patch); persistOppTerminal(oppId, patch);
+                            applyItem({ opportunity_id: oppId, run_id: oppRunId, status: 'ready', session_count: (results && results.sessions_created) || 0 });
                         });
                 },
-                function (err) { var p = { opportunity_id: oppId, run_id: oppRunId, status: 'failed' }; applyItem(p); persistOppTerminal(oppId, p); },
-                function () { var p = { opportunity_id: oppId, run_id: oppRunId, status: 'cancelled' }; applyItem(p); persistOppTerminal(oppId, p); },
+                function (err) { applyItem({ opportunity_id: oppId, run_id: oppRunId, status: 'failed' }); },
+                function () { applyItem({ opportunity_id: oppId, run_id: oppRunId, status: 'cancelled' }); },
                 oppRunId // run_id — lets the status endpoint terminate a dead/finished task
             );
             oppStreamsRef.current[k] = { taskId: g.task_id, cleanup: cleanup };

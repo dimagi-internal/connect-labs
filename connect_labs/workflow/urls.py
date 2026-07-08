@@ -36,6 +36,9 @@ urlpatterns = [
     path("api/auth-status/", views.workflow_auth_status_api, name="api_auth_status"),
     # API endpoints - Workflow runs
     path("api/run/<int:run_id>/state/", views.update_state_api, name="api_update_state"),
+    path(
+        "api/run/<int:run_id>/reconcile-generation/", views.reconcile_generation_api, name="api_reconcile_generation"
+    ),
     path("api/run/<int:run_id>/worker-result/", views.save_worker_result_api, name="api_save_worker_result"),
     # Single terminal-transition verb. Atomic: build snapshot via the template's
     # `build_snapshot` hook (or the snapshot_inputs fallback), then flip status to

@@ -897,3 +897,86 @@ class TestResolvePipelineDefinitionCrossOpp:
             events = [json.loads(chunk[len("data: ") :]) for chunk in view.stream_data(request)]
 
         assert not any("not found" in (e.get("message") or "") for e in events)
+
+
+class TestReconcileGeneration:
+    """reconcile_generation_api flips a program run's per-opp generation statuses
+    from the authoritative per-opp run state (server-side, monotonic)."""
+
+    def _request(self, rf, dimagi_user):
+        request = rf.post("/labs/workflow/api/50/reconcile-generation/")
+        request.user = dimagi_user
+        request.labs_context = {"program_id": 176}
+        request.session = {"labs_oauth": {"access_token": "t"}}
+        return request
+
+    def _patched(self, program_run, opp_run, sessions):
+        def wda_factory(*args, **kwargs):
+            m = MagicMock()
+            # program-scoped (request=...) returns the program run; opp-scoped the opp run
+            m.get_run.return_value = program_run if "request" in kwargs else opp_run
+            return m
+
+        wda = patch("connect_labs.workflow.views.WorkflowDataAccess", side_effect=wda_factory)
+        ada = patch("connect_labs.audit.data_access.AuditDataAccess")
+        return wda, ada, sessions
+
+    def test_completed_with_audits_flips_to_ready(self, dimagi_user, rf: RequestFactory):
+        import json
+
+        program_run = SimpleNamespace(
+            data={"state": {"generation": {"1973": {"opportunity_id": 1973, "run_id": 900, "status": "running"}}}},
+            is_completed=False,
+        )
+        opp_run = SimpleNamespace(data={"state": {"active_job": {"status": "completed"}}})
+        wda, ada, _ = self._patched(program_run, opp_run, [1, 2, 3])
+
+        with wda, ada as MockADA:
+            MockADA.return_value.get_sessions_by_workflow_run.return_value = [1, 2, 3]
+            from connect_labs.workflow.views import reconcile_generation_api
+
+            resp = reconcile_generation_api(self._request(rf, dimagi_user), run_id=50)
+
+        assert resp.status_code == 200
+        body = json.loads(resp.content)
+        assert body["reconciled"] is True
+        assert body["generation"]["1973"]["status"] == "ready"
+        assert body["generation"]["1973"]["session_count"] == 3
+
+    def test_completed_with_no_audits_flips_to_failed(self, dimagi_user, rf: RequestFactory):
+        import json
+
+        program_run = SimpleNamespace(
+            data={"state": {"generation": {"1973": {"opportunity_id": 1973, "run_id": 900, "status": "running"}}}},
+            is_completed=False,
+        )
+        opp_run = SimpleNamespace(data={"state": {"active_job": {"status": "completed"}}})
+        wda, ada, _ = self._patched(program_run, opp_run, [])
+
+        with wda, ada as MockADA:
+            MockADA.return_value.get_sessions_by_workflow_run.return_value = []
+            from connect_labs.workflow.views import reconcile_generation_api
+
+            resp = reconcile_generation_api(self._request(rf, dimagi_user), run_id=50)
+
+        body = json.loads(resp.content)
+        assert body["generation"]["1973"]["status"] == "failed"
+
+    def test_still_running_opp_is_left_untouched(self, dimagi_user, rf: RequestFactory):
+        import json
+
+        program_run = SimpleNamespace(
+            data={"state": {"generation": {"1973": {"opportunity_id": 1973, "run_id": 900, "status": "running"}}}},
+            is_completed=False,
+        )
+        opp_run = SimpleNamespace(data={"state": {"active_job": {"status": "running"}}})
+        wda, ada, _ = self._patched(program_run, opp_run, [])
+
+        with wda, ada:
+            from connect_labs.workflow.views import reconcile_generation_api
+
+            resp = reconcile_generation_api(self._request(rf, dimagi_user), run_id=50)
+
+        body = json.loads(resp.content)
+        assert body["reconciled"] is False
+        assert body["generation"]["1973"]["status"] == "running"

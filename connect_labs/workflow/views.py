@@ -1520,6 +1520,82 @@ def update_state_api(request, run_id):
 
 @login_required
 @require_POST
+def reconcile_generation_api(request, run_id):
+    """Reconcile a program-audit run's per-opp ``generation`` statuses from the
+    AUTHORITATIVE per-opp run state.
+
+    The program creator fans out one async audit job per opportunity; each job
+    writes its completion only to ITS OWN run's ``active_job`` — nothing writes it
+    back to the program run's ``generation`` (and a client state write races the
+    runner's refetch + prod read-after-write lag, so it can't win). This endpoint
+    is the server-side, program-scoped writer: for each ``running`` generation
+    entry whose opp run is terminal, it flips the entry to its terminal status +
+    real audit count and persists it, so the program state (and its S3 export)
+    are accurate. MONOTONIC — only running→terminal, never reverts — so repeated /
+    concurrent calls converge.
+    """
+    from connect_labs.audit.data_access import AuditDataAccess
+
+    access_token = request.session.get("labs_oauth", {}).get("access_token")
+    if not access_token:
+        return JsonResponse({"error": "Not authenticated"}, status=401)
+
+    pwda = WorkflowDataAccess(request=request)  # program-scoped via session labs_context
+    try:
+        run = pwda.get_run(run_id)
+        if not run:
+            return JsonResponse({"error": "Run not found"}, status=404)
+        state = run.data.get("state", {}) or {}
+        generation = dict(state.get("generation") or {})
+        if run.is_completed:
+            return JsonResponse({"success": True, "generation": generation})
+
+        changed = False
+        for key, entry in generation.items():
+            if not isinstance(entry, dict) or entry.get("status") != "running":
+                continue
+            opp_id = entry.get("opportunity_id")
+            opp_run_id = entry.get("run_id")
+            if opp_id is None or opp_run_id is None:
+                continue
+
+            owda = WorkflowDataAccess(access_token=access_token, opportunity_id=opp_id)
+            try:
+                opp_run = owda.get_run(opp_run_id)
+            finally:
+                owda.close()
+            aj = ((getattr(opp_run, "data", None) or {}).get("state", {}) or {}).get("active_job", {}) or {}
+            aj_status = aj.get("status")
+            if aj_status not in ("completed", "failed", "cancelled"):
+                continue  # still running / unknown — leave as-is (monotonic)
+
+            ada = AuditDataAccess(request=request, access_token=access_token, opportunity_id=opp_id)
+            try:
+                sessions = ada.get_sessions_by_workflow_run(opp_run_id)
+            finally:
+                ada.close()
+            count = len(sessions or [])
+            # A completed job with no audits didn't really finish; surface as failed.
+            term = (
+                "ready"
+                if (aj_status == "completed" and count > 0)
+                else ("failed" if aj_status != "cancelled" else "cancelled")
+            )
+            generation[key] = {**entry, "status": term, "session_count": count}
+            changed = True
+
+        if changed:
+            pwda.update_run_state(run_id, {"generation": generation}, run=run)
+        return JsonResponse({"success": True, "generation": generation, "reconciled": changed})
+    except Exception:
+        logger.exception("Failed to reconcile generation for run %s", run_id)
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
+    finally:
+        pwda.close()
+
+
+@login_required
+@require_POST
 def save_worker_result_api(request, run_id):
     """Save an assessment result for a worker in a workflow run.
 
