@@ -70,6 +70,45 @@ def test_upsert_rejects_non_schedulable(client, logged_in):
 
 
 @pytest.mark.django_db
+def test_upsert_non_numeric_day_of_week_is_400(client, logged_in):
+    session = client.session
+    session["labs_oauth"] = {"access_token": "tok"}
+    session.save()
+    with (
+        mock.patch("connect_labs.workflow.views._resolve_schedule_scope", return_value=(1237, None)),
+        mock.patch("connect_labs.workflow.views.template_supports_default_run", return_value=True),
+        mock.patch("connect_labs.workflow.views.WorkflowDataAccess") as DA,
+    ):
+        definition = mock.Mock(id=42, template_type="program_audit_creator")
+        definition.name = "Weekly Review"
+        DA.return_value.get_definition.return_value = definition
+        url = reverse("labs:workflow:api_schedule_upsert", args=[42])
+        resp = client.post(
+            url,
+            data=json.dumps({"cadence": "weekly", "hour": 6, "day_of_week": "nope"}),
+            content_type="application/json",
+        )
+    assert resp.status_code == 400
+    assert not WorkflowSchedule.objects.filter(definition_id=42).exists()
+
+
+@pytest.mark.django_db
+def test_upsert_non_object_json_body_is_400(client, logged_in):
+    session = client.session
+    session["labs_oauth"] = {"access_token": "tok"}
+    session.save()
+    with (
+        mock.patch("connect_labs.workflow.views._resolve_schedule_scope", return_value=(1237, None)),
+        mock.patch("connect_labs.workflow.views.template_supports_default_run", return_value=True),
+        mock.patch("connect_labs.workflow.views.WorkflowDataAccess"),
+    ):
+        url = reverse("labs:workflow:api_schedule_upsert", args=[42])
+        resp = client.post(url, data=json.dumps([]), content_type="application/json")
+    assert resp.status_code == 400
+    assert not WorkflowSchedule.objects.filter(definition_id=42).exists()
+
+
+@pytest.mark.django_db
 def test_delete_removes_only_owners_schedule(client, logged_in):
     sched = WorkflowSchedule.objects.create(
         definition_id=42, opportunity_id=1237, owner=logged_in, definition_name="A", cadence="daily", hour=6
