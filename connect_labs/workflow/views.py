@@ -178,8 +178,9 @@ class WorkflowListView(LoginRequiredMixin, TemplateView):
 
     template_name = "workflow/list.html"
 
-    def _build_workflow_row(self, definition, runs, pipeline_access, pipeline_cache):
-        """Enrich one definition into a template row: sorted runs + pipeline names.
+    def _build_workflow_row(self, definition, runs, pipeline_access, pipeline_cache, schedules_by_def):
+        """Enrich one definition into a template row: sorted runs + pipeline names
+        + scheduling info.
 
         Shared by opp-mode and program-mode so both render identical cards.
         """
@@ -208,6 +209,20 @@ class WorkflowListView(LoginRequiredMixin, TemplateView):
                 }
             )
 
+        sched = schedules_by_def.get(definition.id)
+        schedule_dict = None
+        if sched is not None:
+            schedule_dict = {
+                "id": sched.id,
+                "cadence": sched.cadence,
+                "cadence_label": sched.get_cadence_display(),
+                "hour": sched.hour,
+                "day_of_week": sched.day_of_week,
+                "day_of_month": sched.day_of_month,
+                "enabled": sched.enabled,
+                "last_status": sched.last_status,
+            }
+
         return {
             "definition": definition,
             "runs": runs,
@@ -215,6 +230,8 @@ class WorkflowListView(LoginRequiredMixin, TemplateView):
             "pipelines": pipelines,
             "template_type": definition.template_type,
             "latest_run_id": runs[0].id if runs else 0,
+            "schedulable": template_supports_default_run(definition.template_type),
+            "schedule": schedule_dict,
         }
 
     def get_context_data(self, **kwargs):
@@ -289,10 +306,21 @@ class WorkflowListView(LoginRequiredMixin, TemplateView):
             for run in data_access.list_runs():
                 runs_by_def.setdefault(run.data.get("definition_id"), []).append(run)
 
+            from connect_labs.labs.models import WorkflowSchedule
+
+            schedules_by_def = {
+                s.definition_id: s
+                for s in WorkflowSchedule.objects.filter(owner=self.request.user, opportunity_id=opportunity_id)
+            }
+
             pipeline_cache = {}
             workflows_with_runs = [
                 self._build_workflow_row(
-                    definition, runs_by_def.get(definition.id, []), pipeline_access, pipeline_cache
+                    definition,
+                    runs_by_def.get(definition.id, []),
+                    pipeline_access,
+                    pipeline_cache,
+                    schedules_by_def,
                 )
                 for definition in opp_defs
             ]
@@ -343,10 +371,21 @@ class WorkflowListView(LoginRequiredMixin, TemplateView):
             for run in data_access.list_runs():
                 runs_by_def.setdefault(run.data.get("definition_id"), []).append(run)
 
+            from connect_labs.labs.models import WorkflowSchedule
+
+            schedules_by_def = {
+                s.definition_id: s
+                for s in WorkflowSchedule.objects.filter(owner=self.request.user, program_id=program_id)
+            }
+
             pipeline_cache = {}
             workflows_with_runs = [
                 self._build_workflow_row(
-                    definition, runs_by_def.get(definition.id, []), pipeline_access, pipeline_cache
+                    definition,
+                    runs_by_def.get(definition.id, []),
+                    pipeline_access,
+                    pipeline_cache,
+                    schedules_by_def,
                 )
                 for definition in owned_defs
             ]
