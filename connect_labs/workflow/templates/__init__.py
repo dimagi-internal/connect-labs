@@ -125,6 +125,14 @@ def run_default_for_definition(definition, *, access_token, request=None, **kwar
     return template["run_default"](definition=definition, access_token=access_token, request=request, **kwargs)
 
 
+def template_supports_default_run(template_key: str | None) -> bool:
+    """True iff the named template supports headless default-run (schedulable)."""
+    if not template_key:
+        return False
+    template = TEMPLATES.get(template_key)
+    return bool(template and template.get("supports_default_run") and callable(template.get("run_default")))
+
+
 def list_templates() -> list[dict]:
     """
     List available templates for creation/listing surfaces.
