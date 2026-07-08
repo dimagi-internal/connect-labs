@@ -615,6 +615,17 @@ def test_template_registered_with_flags():
     assert "program_audit_generate" in tpl["render_code"]
 
 
+def test_per_opp_rows_expand_via_shared_breakdown_primitive():
+    """Each per-opp row expands in place to the opp's FLW audit breakdown using
+    the shared window.LabsAudit primitive (lazy-fetching that opp run's
+    sessions) — the same renderer the opp-level run page uses."""
+    from connect_labs.workflow.templates import get_template
+
+    rc = get_template("program_audit_creator")["render_code"]
+    assert "LabsAudit.fetchSessions" in rc
+    assert "LabsAudit.renderFlwBreakdown" in rc
+
+
 def test_audit_par_no_longer_supports_default_run():
     from connect_labs.workflow.templates import get_template, run_default_for_definition
 

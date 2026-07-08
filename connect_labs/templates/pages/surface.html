@@ -84,5 +84,8 @@
 
 <!-- Babel standalone: same runtime the workflow runner uses for JSX escape-hatch cards. -->
 <script src="https://unpkg.com/@babel/standalone@7.23.5/babel.min.js"></script>
+<!-- Shared FLW audit-breakdown primitive (same file the workflow runner loads) so
+     the flw_audit_breakdown card renders identically to the workflow run. -->
+<script src="{% static 'js/labs_audit_breakdown.js' %}?v=1" defer></script>
 <script src="{% static 'bundles/js/pages-cards-bundle.js' %}" defer></script>
 {% endblock %}
