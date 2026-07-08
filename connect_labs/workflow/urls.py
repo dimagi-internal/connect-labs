@@ -117,6 +117,10 @@ urlpatterns = [
     # Generic "run a workflow in default (no-UI) mode" — dispatches to the
     # template's run_default hook (idempotent where the hook makes it so).
     path("api/<int:definition_id>/run-default/", views.run_default_api, name="api_run_default"),
+    # Schedule management (create/update, delete, enable/disable a recurring default-run).
+    path("api/<int:definition_id>/schedule/", views.schedule_upsert_api, name="api_schedule_upsert"),
+    path("api/schedule/<int:schedule_id>/delete/", views.schedule_delete_api, name="api_schedule_delete"),
+    path("api/schedule/<int:schedule_id>/toggle/", views.schedule_toggle_api, name="api_schedule_toggle"),
     path("api/job/<str:task_id>/status/", views.JobStatusStreamView.as_view(), name="api_job_status"),
     # Poll-first JSON status (default transport; the SSE stream above is opt-in).
     path("api/job/<str:task_id>/status.json", views.JobStatusAPIView.as_view(), name="api_job_status_json"),
