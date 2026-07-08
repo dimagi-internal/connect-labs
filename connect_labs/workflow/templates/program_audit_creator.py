@@ -373,6 +373,13 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions, onU
     // per-opp workflow page shows. Poll-first holds no connection, so N opps in
     // parallel each poll independently without contention.
     var [oppProgress, setOppProgress] = React.useState({});
+    // Inline "open the opp view here" expand: which opp rows are expanded, and the
+    // sessions each has lazy-fetched (keyed by opportunity_id). The breakdown
+    // itself is drawn by the shared window.LabsAudit primitive — the SAME renderer
+    // the opp-level run page uses — so expanding a row shows exactly the opp view.
+    var [expandedOpps, setExpandedOpps] = React.useState({});
+    var [oppSessions, setOppSessions] = React.useState({});      // opp_id -> sessions[]
+    var [oppSessionsLoading, setOppSessionsLoading] = React.useState({});
     var cleanupRef = React.useRef(null);
     var oppStreamsRef = React.useRef({}); // opportunity_id -> {taskId, cleanup}
     var activeTaskRef = React.useRef(null); // program job task_id, for Cancel
@@ -697,10 +704,30 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions, onU
         { id: 'custom', label: 'Custom' }
     ];
 
+    // Expand a row to show the opp's per-FLW audit breakdown inline (the same
+    // panel the opp-level run page shows). Lazy-fetch that opp run's sessions the
+    // first time it's opened, via the shared LabsAudit.fetchSessions helper.
+    function toggleExpand(oppId, oppRunId) {
+        var key = String(oppId);
+        var willOpen = !expandedOpps[key];
+        setExpandedOpps(function (m) { var n = Object.assign({}, m); n[key] = willOpen; return n; });
+        if (willOpen && oppRunId && oppSessions[key] === undefined && !oppSessionsLoading[key] && window.LabsAudit) {
+            setOppSessionsLoading(function (m) { var n = Object.assign({}, m); n[key] = true; return n; });
+            window.LabsAudit.fetchSessions(oppRunId, [oppId]).then(function (rows) {
+                setOppSessions(function (m) { var n = Object.assign({}, m); n[key] = rows; return n; });
+                setOppSessionsLoading(function (m) { var n = Object.assign({}, m); n[key] = false; return n; });
+            }).catch(function () {
+                setOppSessions(function (m) { var n = Object.assign({}, m); n[key] = []; return n; });
+                setOppSessionsLoading(function (m) { var n = Object.assign({}, m); n[key] = false; return n; });
+            });
+        }
+    }
+
     // ── Per-opp generation status rows ────────────────────────────────────────
     // One question per opp: is this week's audit ready? Show a readiness state +
     // the real audit count, and let a failed/empty (or not-yet-run) opp be
-    // (re-)run individually for recovery.
+    // (re-)run individually for recovery. Each row also expands in place to the
+    // opp's full per-FLW audit breakdown (the shared LabsAudit primitive).
     function statusRow(source) {
         var oppId = source.opportunity_id;
         var gen = mergedGen[String(oppId)];
@@ -748,26 +775,56 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions, onU
             }, gen ? 'Re-run' : 'Run')
             : null;
 
-        return React.createElement('div', {
-            key: oppId,
-            style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', border: '1px solid #e5e7eb', borderRadius: 8, marginBottom: 8, background: 'white' }
+        // Expand-in-place: a chevron reveals this opp's per-FLW audit breakdown
+        // below the row (only once there's a run to show).
+        var canExpand = !!(gen && gen.run_id != null);
+        var isExpanded = !!expandedOpps[String(oppId)];
+        var chevron = canExpand
+            ? React.createElement('button', {
+                onClick: function () { toggleExpand(oppId, gen.run_id); },
+                title: isExpanded ? 'Collapse audit results' : 'Show audit results',
+                style: { border: 'none', background: 'transparent', cursor: 'pointer', color: '#6b7280', marginRight: 6, fontSize: 12, padding: 4, flexShrink: 0 }
+            }, React.createElement('i', { className: 'fa-solid ' + (isExpanded ? 'fa-chevron-down' : 'fa-chevron-right') }))
+            : React.createElement('span', { style: { display: 'inline-block', width: 22, flexShrink: 0 } });
+
+        var row = React.createElement('div', {
+            style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', border: '1px solid #e5e7eb', borderRadius: isExpanded ? '8px 8px 0 0' : 8, background: 'white' }
         },
-            React.createElement('div', { style: { flex: 1, minWidth: 0, paddingRight: 12 } },
-                React.createElement('div', { style: { fontWeight: 600, color: '#111827', fontSize: 13 } }, 'Opp #' + oppId),
-                React.createElement('div', { style: { fontSize: 11, color: '#6b7280', marginTop: 2 } }, stateLabel),
-                // This opp's live audit-creation progress bar (same signal the
-                // per-opp workflow page shows).
-                (isBusy && prog && prog.total > 0)
-                    ? React.createElement('div', { style: { marginTop: 6, maxWidth: 380 } },
-                        React.createElement('div', { style: { height: 5, background: '#e5e7eb', borderRadius: 999 } },
-                            React.createElement('div', { style: { height: 5, borderRadius: 999, background: '#2563eb', width: Math.round((prog.processed || 0) / prog.total * 100) + '%', transition: 'width .3s' } })),
-                        React.createElement('div', { style: { fontSize: 10, color: '#9ca3af', marginTop: 3 } }, (prog.processed || 0) + ' / ' + prog.total))
-                    : null
+            React.createElement('div', { style: { display: 'flex', alignItems: 'center', flex: 1, minWidth: 0, paddingRight: 12 } },
+                chevron,
+                React.createElement('div', { style: { flex: 1, minWidth: 0 } },
+                    React.createElement('div', { style: { fontWeight: 600, color: '#111827', fontSize: 13 } }, 'Opp #' + oppId),
+                    React.createElement('div', { style: { fontSize: 11, color: '#6b7280', marginTop: 2 } }, stateLabel),
+                    // This opp's live audit-creation progress bar (same signal the
+                    // per-opp workflow page shows).
+                    (isBusy && prog && prog.total > 0)
+                        ? React.createElement('div', { style: { marginTop: 6, maxWidth: 380 } },
+                            React.createElement('div', { style: { height: 5, background: '#e5e7eb', borderRadius: 999 } },
+                                React.createElement('div', { style: { height: 5, borderRadius: 999, background: '#2563eb', width: Math.round((prog.processed || 0) / prog.total * 100) + '%', transition: 'width .3s' } })),
+                            React.createElement('div', { style: { fontSize: 10, color: '#9ca3af', marginTop: 3 } }, (prog.processed || 0) + ' / ' + prog.total))
+                        : null
+                )
             ),
             React.createElement('div', { style: { display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 } },
                 statePill, rerunBtn, runLink
             )
         );
+
+        // The inline breakdown — the SAME renderer the opp-level run page uses.
+        var expandedPanel = (canExpand && isExpanded)
+            ? React.createElement('div', { style: { border: '1px solid #e5e7eb', borderTop: 'none', borderRadius: '0 0 8px 8px', background: 'white', padding: 12 } },
+                window.LabsAudit
+                    ? window.LabsAudit.renderFlwBreakdown(React, {
+                        sessions: oppSessions[String(oppId)] || [],
+                        oppNames: {},
+                        workflowRunId: gen.run_id,
+                        loading: !!oppSessionsLoading[String(oppId)],
+                        title: null
+                    })
+                    : React.createElement('div', { style: { fontSize: 12, color: '#6b7280' } }, 'Audit breakdown unavailable.'))
+            : null;
+
+        return React.createElement('div', { key: oppId, style: { marginBottom: 8 } }, row, expandedPanel);
     }
 
     return React.createElement('div', { style: { padding: 16, background: '#f7f8fb', minHeight: '100vh' } },

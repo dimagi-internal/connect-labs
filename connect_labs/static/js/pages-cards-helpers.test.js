@@ -34,6 +34,13 @@ describe('resolveCard', () => {
     });
   });
 
+  it('routes flw_audit_breakdown to a shipped renderer', () => {
+    expect(resolveCard({ card_type: 'flw_audit_breakdown' })).toEqual({
+      mode: 'shipped',
+      cardType: 'flw_audit_breakdown',
+    });
+  });
+
   it('exposes the shipped card types', () => {
     expect(SHIPPED_CARD_TYPES).toContain('stat');
     expect(SHIPPED_CARD_TYPES).toContain('summary');

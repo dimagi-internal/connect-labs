@@ -105,6 +105,42 @@ function WorkflowRuns({ payload }: { payload: CardPayload }) {
   );
 }
 
+// The per-FLW audit breakdown, drawn by the shared window.LabsAudit primitive
+// (the SAME renderer the workflow run pages use). The card fetches the run's
+// sessions client-side so its data path matches the workflow surfaces exactly.
+function FlwAuditBreakdown({ payload }: { payload: CardPayload }) {
+  const data = payload.data || {};
+  const runId = data.workflow_run_id as number | undefined;
+  const oppIds = (data.opportunity_ids as (number | string)[]) || [];
+  const oppNames = (data.opp_names as Record<string, string>) || {};
+  const [sessions, setSessions] = React.useState<any[] | null>(null);
+  const LabsAudit = (window as any).LabsAudit;
+
+  React.useEffect(() => {
+    if (!LabsAudit || !runId) {
+      setSessions([]);
+      return;
+    }
+    LabsAudit.fetchSessions(runId, oppIds)
+      .then((rows: any[]) => setSessions(rows))
+      .catch(() => setSessions([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runId]);
+
+  if (!LabsAudit) {
+    return (
+      <div className="pages-card__empty">Audit breakdown unavailable.</div>
+    );
+  }
+  return LabsAudit.renderFlwBreakdown(React, {
+    sessions: sessions || [],
+    oppNames,
+    workflowRunId: runId,
+    loading: sessions === null,
+    title: null,
+  });
+}
+
 const RENDERERS: Record<string, React.FC<{ payload: CardPayload }>> = {
   stat: ({ payload }) => (
     <>
@@ -132,6 +168,7 @@ const RENDERERS: Record<string, React.FC<{ payload: CardPayload }>> = {
     </>
   ),
   workflow_runs: ({ payload }) => <WorkflowRuns payload={payload} />,
+  flw_audit_breakdown: ({ payload }) => <FlwAuditBreakdown payload={payload} />,
 };
 
 function DefaultRenderer({ payload }: { payload: CardPayload }) {
