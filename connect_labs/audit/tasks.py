@@ -561,6 +561,11 @@ def run_audit_creation(
 
         current_stage = 1
 
+        # Immediate first tick so a program-creator row shows life the instant the
+        # job starts, instead of sitting dead through the ~20s fetch+extract phases
+        # (those only reported to this task's own Celery meta, not the relay).
+        _relay(0, 0, "Creating audits · preparing…")
+
         # =========================================================================
         # STAGE 1: Fetch visit IDs (if not provided)
         # =========================================================================
@@ -591,6 +596,8 @@ def run_audit_creation(
                     processed=processed,
                     total=total,
                 )
+                # Relay to the program-creator row so it glides during fetch, too.
+                _relay(processed, total, "Creating audits · fetching visits")
 
             visit_ids = data_access.get_visit_ids_for_audit(
                 opportunity_ids, criteria=audit_criteria, progress_callback=on_visit_fetch_progress
@@ -642,6 +649,8 @@ def run_audit_creation(
                 processed=processed,
                 total=total,
             )
+            # Relay to the program-creator row so it glides during extraction, too.
+            _relay(processed, total, "Creating audits · extracting images")
 
         all_visit_images = data_access.extract_images_for_visits(
             visit_ids, opp_id, related_fields=related_fields, progress_callback=on_extraction_progress
