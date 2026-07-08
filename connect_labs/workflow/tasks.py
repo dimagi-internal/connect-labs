@@ -11,6 +11,8 @@ Provides async job execution for workflows with:
 import logging
 from datetime import datetime
 
+from django.utils import timezone as dj_timezone
+
 from config import celery_app
 from connect_labs.utils.celery import set_task_progress
 
@@ -749,3 +751,91 @@ def handle_pipeline_only_job(job_config: dict, access_token: str, progress_callb
 
 # Import job handler modules to trigger registration
 import connect_labs.workflow.job_handlers  # noqa: F401, E402
+
+# =============================================================================
+# Scheduled workflow tasks (see docs/superpowers/specs/2026-07-08-workflow-scheduler-design.md)
+# =============================================================================
+
+from connect_labs.labs.connect_tokens import ConnectReLoginRequired, get_valid_access_token  # noqa: E402
+from connect_labs.workflow.data_access import WorkflowDataAccess  # noqa: E402
+from connect_labs.workflow.templates import run_default_for_definition  # noqa: E402
+
+
+@celery_app.task
+def run_scheduled_workflow(schedule_id: int) -> dict:
+    """Execute one WorkflowSchedule's default-run now, recording the outcome.
+
+    Mints a fresh Connect token from the owner's persisted UserConnectToken (never
+    stores one). On a dead refresh token the schedule is auto-disabled and marked
+    ``auth_expired`` so the admin UI can prompt a re-login; other errors leave the
+    schedule enabled to retry next cadence.
+    """
+    from connect_labs.labs.models import WorkflowSchedule
+
+    try:
+        sched = WorkflowSchedule.objects.get(pk=schedule_id)
+    except WorkflowSchedule.DoesNotExist:
+        return {"status": "gone", "schedule_id": schedule_id}
+    if not sched.enabled:
+        return {"status": "disabled", "schedule_id": schedule_id}
+
+    try:
+        token = get_valid_access_token(sched.owner)
+    except ConnectReLoginRequired as e:
+        sched.last_status = WorkflowSchedule.STATUS_AUTH_EXPIRED
+        sched.last_error = str(e)[:2000]
+        sched.enabled = False
+        sched.last_run_at = dj_timezone.now()
+        sched.save(update_fields=["last_status", "last_error", "enabled", "last_run_at"])
+        return {"status": "auth_expired", "schedule_id": schedule_id}
+    except Exception as e:  # noqa: BLE001 — record and stop, do not crash the worker
+        sched.last_status = WorkflowSchedule.STATUS_FAILED
+        sched.last_error = f"token error: {e}"[:2000]
+        sched.last_run_at = dj_timezone.now()
+        sched.save(update_fields=["last_status", "last_error", "last_run_at"])
+        return {"status": "failed", "schedule_id": schedule_id}
+
+    if sched.opportunity_id:
+        da = WorkflowDataAccess(access_token=token, opportunity_id=sched.opportunity_id)
+    else:
+        da = WorkflowDataAccess(access_token=token, program_id=sched.program_id)
+
+    try:
+        definition = da.get_definition(sched.definition_id)
+        if definition is None:
+            raise ValueError(f"definition {sched.definition_id} not found")
+        run_default_for_definition(definition, access_token=token, request=None)
+        sched.last_status = WorkflowSchedule.STATUS_OK
+        sched.last_error = ""
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Scheduled workflow %s failed", schedule_id)
+        sched.last_status = WorkflowSchedule.STATUS_FAILED
+        sched.last_error = str(e)[:2000]
+    finally:
+        try:
+            da.close()
+        except Exception:
+            pass
+        sched.last_run_at = dj_timezone.now()
+        sched.save(update_fields=["last_status", "last_error", "last_run_at"])
+
+    return {"status": sched.last_status, "schedule_id": schedule_id}
+
+
+@celery_app.task
+def run_due_workflow_schedules() -> dict:
+    """Beat ticker: dispatch every enabled schedule whose next_run_at has passed.
+
+    Advances next_run_at at dispatch time (not in the worker) so a slow or failed
+    run cannot cause a redispatch storm.
+    """
+    from connect_labs.labs.models import WorkflowSchedule
+
+    now = dj_timezone.now()
+    due = WorkflowSchedule.objects.filter(enabled=True, next_run_at__lte=now)
+    dispatched = 0
+    for sched in due:
+        run_scheduled_workflow.delay(sched.pk)
+        sched.recompute_next_run(now)  # saves next_run_at
+        dispatched += 1
+    return {"dispatched": dispatched}
