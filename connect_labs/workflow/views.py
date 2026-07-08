@@ -3306,6 +3306,8 @@ def schedule_upsert_api(request, definition_id):
         body = json.loads(request.body or "{}")
     except ValueError:
         return JsonResponse({"error": "invalid JSON body"}, status=400)
+    if not isinstance(body, dict):
+        return JsonResponse({"error": "body must be a JSON object"}, status=400)
 
     cadence = body.get("cadence")
     valid_cadences = {c[0] for c in WorkflowSchedule.CADENCE_CHOICES}
@@ -3321,14 +3323,20 @@ def schedule_upsert_api(request, definition_id):
     day_of_week = body.get("day_of_week")
     day_of_month = body.get("day_of_month")
     if cadence == WorkflowSchedule.CADENCE_WEEKLY:
-        if day_of_week is None or not (0 <= int(day_of_week) <= 6):
+        try:
+            day_of_week = int(day_of_week)
+        except (TypeError, ValueError):
             return JsonResponse({"error": "weekly cadence needs day_of_week 0-6"}, status=400)
-        day_of_week = int(day_of_week)
+        if not 0 <= day_of_week <= 6:
+            return JsonResponse({"error": "weekly cadence needs day_of_week 0-6"}, status=400)
         day_of_month = None
     elif cadence == WorkflowSchedule.CADENCE_MONTHLY:
-        if day_of_month is None or not (1 <= int(day_of_month) <= 28):
+        try:
+            day_of_month = int(day_of_month)
+        except (TypeError, ValueError):
             return JsonResponse({"error": "monthly cadence needs day_of_month 1-28"}, status=400)
-        day_of_month = int(day_of_month)
+        if not 1 <= day_of_month <= 28:
+            return JsonResponse({"error": "monthly cadence needs day_of_month 1-28"}, status=400)
         day_of_week = None
     else:
         day_of_week = None
