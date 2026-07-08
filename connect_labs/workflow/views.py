@@ -15,6 +15,7 @@ from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse, StreamingHttpResponse
+from django.utils import timezone as dj_timezone
 from django.views import View
 from django.views.decorators.http import require_GET, require_POST
 from django.views.generic import TemplateView
@@ -30,6 +31,7 @@ from connect_labs.utils.feature_access import can_create_from_template, get_allo
 from connect_labs.workflow.data_access import PipelineCacheMiss, PipelineDataAccess, WorkflowDataAccess
 from connect_labs.workflow.templates import TEMPLATES
 from connect_labs.workflow.templates import create_workflow_from_template as create_from_template
+from connect_labs.workflow.templates import template_supports_default_run
 
 logger = logging.getLogger(__name__)
 
@@ -3273,6 +3275,136 @@ def start_job_api(request, run_id):
     except Exception:
         logger.exception("Failed to start job for run %s", run_id)
         return JsonResponse({"error": "An internal error occurred"}, status=500)
+
+
+def _resolve_schedule_scope(request):
+    """Return (opportunity_id, program_id) from labs_context. A patchable seam so
+    view tests don't have to reproduce the context middleware."""
+    labs_context = getattr(request, "labs_context", {}) or {}
+    return labs_context.get("opportunity_id"), labs_context.get("program_id")
+
+
+@login_required
+@require_POST
+def schedule_upsert_api(request, definition_id):
+    """Create or update the current user's schedule for this workflow + context.
+
+    Scope (opportunity vs program) is taken from labs_context, matching the list
+    view. Only workflows whose template supports default-run may be scheduled.
+    """
+    from connect_labs.labs.models import WorkflowSchedule
+
+    access_token = request.session.get("labs_oauth", {}).get("access_token")
+    if not access_token:
+        return JsonResponse({"error": "Not authenticated"}, status=401)
+
+    opportunity_id, program_id = _resolve_schedule_scope(request)
+    if not opportunity_id and not program_id:
+        return JsonResponse({"error": "opportunity_id or program_id required in context"}, status=400)
+
+    try:
+        body = json.loads(request.body or "{}")
+    except ValueError:
+        return JsonResponse({"error": "invalid JSON body"}, status=400)
+
+    cadence = body.get("cadence")
+    valid_cadences = {c[0] for c in WorkflowSchedule.CADENCE_CHOICES}
+    if cadence not in valid_cadences:
+        return JsonResponse({"error": f"cadence must be one of {sorted(valid_cadences)}"}, status=400)
+    try:
+        hour = int(body.get("hour", 6))
+    except (TypeError, ValueError):
+        return JsonResponse({"error": "hour must be an integer 0-23"}, status=400)
+    if not 0 <= hour <= 23:
+        return JsonResponse({"error": "hour must be 0-23"}, status=400)
+
+    day_of_week = body.get("day_of_week")
+    day_of_month = body.get("day_of_month")
+    if cadence == WorkflowSchedule.CADENCE_WEEKLY:
+        if day_of_week is None or not (0 <= int(day_of_week) <= 6):
+            return JsonResponse({"error": "weekly cadence needs day_of_week 0-6"}, status=400)
+        day_of_week = int(day_of_week)
+        day_of_month = None
+    elif cadence == WorkflowSchedule.CADENCE_MONTHLY:
+        if day_of_month is None or not (1 <= int(day_of_month) <= 28):
+            return JsonResponse({"error": "monthly cadence needs day_of_month 1-28"}, status=400)
+        day_of_month = int(day_of_month)
+        day_of_week = None
+    else:
+        day_of_week = None
+        day_of_month = None
+
+    # Load the definition (scoped) to (a) verify access and (b) snapshot its name.
+    if opportunity_id:
+        da = WorkflowDataAccess(access_token=access_token, opportunity_id=opportunity_id)
+    else:
+        da = WorkflowDataAccess(access_token=access_token, program_id=program_id)
+    try:
+        definition = da.get_definition(definition_id)
+    finally:
+        da.close()
+    if definition is None:
+        return JsonResponse({"error": "Workflow definition not found"}, status=404)
+    if not template_supports_default_run(definition.template_type):
+        return JsonResponse({"error": "This workflow does not support scheduling."}, status=400)
+
+    sched, _created = WorkflowSchedule.objects.update_or_create(
+        definition_id=definition_id,
+        opportunity_id=opportunity_id,
+        program_id=program_id if not opportunity_id else None,
+        owner=request.user,
+        defaults={
+            "definition_name": definition.name or f"Workflow {definition_id}",
+            "cadence": cadence,
+            "hour": hour,
+            "day_of_week": day_of_week,
+            "day_of_month": day_of_month,
+            "enabled": True,
+            "last_status": None,
+            "last_error": "",
+        },
+    )
+    sched.recompute_next_run(dj_timezone.now())
+    return JsonResponse(
+        {
+            "id": sched.id,
+            "cadence": sched.cadence,
+            "hour": sched.hour,
+            "day_of_week": sched.day_of_week,
+            "day_of_month": sched.day_of_month,
+            "enabled": sched.enabled,
+            "next_run_at": sched.next_run_at.isoformat() if sched.next_run_at else None,
+        }
+    )
+
+
+@login_required
+@require_POST
+def schedule_delete_api(request, schedule_id):
+    """Delete one of the current user's schedules."""
+    from connect_labs.labs.models import WorkflowSchedule
+
+    deleted, _ = WorkflowSchedule.objects.filter(pk=schedule_id, owner=request.user).delete()
+    if not deleted:
+        return JsonResponse({"error": "Schedule not found"}, status=404)
+    return JsonResponse({"deleted": True})
+
+
+@login_required
+@require_POST
+def schedule_toggle_api(request, schedule_id):
+    """Enable/disable one of the current user's schedules."""
+    from connect_labs.labs.models import WorkflowSchedule
+
+    try:
+        sched = WorkflowSchedule.objects.get(pk=schedule_id, owner=request.user)
+    except WorkflowSchedule.DoesNotExist:
+        return JsonResponse({"error": "Schedule not found"}, status=404)
+    sched.enabled = not sched.enabled
+    if sched.enabled:
+        sched.recompute_next_run(dj_timezone.now())
+    sched.save(update_fields=["enabled", "next_run_at"])
+    return JsonResponse({"enabled": sched.enabled})
 
 
 @login_required
