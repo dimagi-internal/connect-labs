@@ -663,6 +663,70 @@
                         alert('Failed to unshare: ' + e.message);
                     }
                     this.sharing = false;
+                },
+                scheduleModalOpen: false,
+                savingSchedule: false,
+                scheduleForm: {
+                    {% if workflow.schedule %}
+                    cadence: '{{ workflow.schedule.cadence }}',
+                    hour: {{ workflow.schedule.hour|default_if_none:6 }},
+                    day_of_week: {{ workflow.schedule.day_of_week|default_if_none:0 }},
+                    day_of_month: {{ workflow.schedule.day_of_month|default_if_none:1 }},
+                    {% else %}
+                    cadence: 'weekly',
+                    hour: 6,
+                    day_of_week: 0,
+                    day_of_month: 1,
+                    {% endif %}
+                },
+                async saveSchedule() {
+                    this.savingSchedule = true;
+                    const f = this.scheduleForm;
+                    const body = { cadence: f.cadence, hour: Number(f.hour) };
+                    if (f.cadence === 'weekly') body.day_of_week = Number(f.day_of_week);
+                    if (f.cadence === 'monthly') body.day_of_month = Number(f.day_of_month);
+                    try {
+                        const response = await fetch('{% url 'labs:workflow:api_schedule_upsert' workflow.definition.id %}', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRFToken': '{{ csrf_token }}'
+                            },
+                            body: JSON.stringify(body)
+                        });
+                        if (response.ok) {
+                            window.location.reload();
+                            return;
+                        } else {
+                            const data = await response.json();
+                            alert(data.error || 'Failed to save schedule');
+                        }
+                    } catch (e) {
+                        alert('Failed to save schedule: ' + e.message);
+                    }
+                    this.savingSchedule = false;
+                },
+                async removeSchedule() {
+                    {% if workflow.schedule %}
+                    this.savingSchedule = true;
+                    try {
+                        const response = await fetch('{% url 'labs:workflow:api_schedule_delete' workflow.schedule.id %}', {
+                            method: 'POST',
+                            headers: { 'X-CSRFToken': '{{ csrf_token }}' }
+                        });
+                        if (response.ok) {
+                            window.location.reload();
+                            return;
+                        } else {
+                            const data = await response.json();
+                            alert(data.error || 'Failed to remove schedule');
+                        }
+                    } catch (e) {
+                        alert('Failed to remove schedule: ' + e.message);
+                    }
+                    this.savingSchedule = false;
+                    {% endif %}
+                    this.scheduleModalOpen = false;
                 }
              }">
             <!-- Workflow Header Row -->
@@ -820,6 +884,32 @@
                             </button>
                         </div>
                     </div>
+                    <!-- Schedule control (only for schedulable workflows) -->
+                    {% if workflow.schedulable %}
+                    <div class="inline-flex items-center gap-2">
+                        {% if workflow.schedule %}
+                        <span class="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full
+                                     {% if workflow.schedule.last_status == 'auth_expired' %}bg-red-100 text-red-700
+                                     {% elif workflow.schedule.enabled %}bg-green-100 text-green-700
+                                     {% else %}bg-gray-100 text-gray-500{% endif %}">
+                            <i class="fa-regular fa-clock"></i>
+                            {% if workflow.schedule.last_status == 'auth_expired' %}
+                            Needs re-login
+                            {% elif workflow.schedule.enabled %}
+                            {{ workflow.schedule.cadence_label }}
+                            {% else %}
+                            Paused
+                            {% endif %}
+                        </span>
+                        {% endif %}
+                        <button type="button"
+                                class="inline-flex items-center px-3 py-1.5 border border-blue-300 rounded-md text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 hover:border-blue-400 transition-colors"
+                                @click="scheduleModalOpen = true">
+                            <i class="fa-regular fa-clock mr-1.5"></i>
+                            {% if workflow.schedule %}Edit schedule{% else %}Schedule{% endif %}
+                        </button>
+                    </div>
+                    {% endif %}
                     <!-- Delete Button -->
                     <div class="relative">
                         <button @click="showDeleteConfirm = true"
@@ -1155,6 +1245,67 @@
                             {% endfor %}
                         </tbody>
                     </table>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Schedule Modal -->
+            {% if workflow.schedulable %}
+            <div x-show="scheduleModalOpen" x-cloak
+                 class="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+                 @keydown.escape.window="scheduleModalOpen = false">
+                <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-md" @click.outside="scheduleModalOpen = false">
+                    <h3 class="text-lg font-semibold mb-4">Schedule workflow</h3>
+                    <label class="block text-sm font-medium mb-1">Cadence</label>
+                    <select x-model="scheduleForm.cadence" class="w-full border rounded px-3 py-2 mb-3">
+                        <option value="daily">Daily</option>
+                        <option value="weekdays">Weekdays (Mon&ndash;Fri)</option>
+                        <option value="weekly">Weekly</option>
+                        <option value="monthly">Monthly</option>
+                    </select>
+
+                    <template x-if="scheduleForm.cadence === 'weekly'">
+                        <div class="mb-3">
+                            <label class="block text-sm font-medium mb-1">Day of week</label>
+                            <select x-model="scheduleForm.day_of_week" class="w-full border rounded px-3 py-2">
+                                <option value="0">Monday</option>
+                                <option value="1">Tuesday</option>
+                                <option value="2">Wednesday</option>
+                                <option value="3">Thursday</option>
+                                <option value="4">Friday</option>
+                                <option value="5">Saturday</option>
+                                <option value="6">Sunday</option>
+                            </select>
+                        </div>
+                    </template>
+
+                    <template x-if="scheduleForm.cadence === 'monthly'">
+                        <div class="mb-3">
+                            <label class="block text-sm font-medium mb-1">Day of month (1&ndash;28)</label>
+                            <input type="number" min="1" max="28" x-model="scheduleForm.day_of_month"
+                                   class="w-full border rounded px-3 py-2">
+                        </div>
+                    </template>
+
+                    <label class="block text-sm font-medium mb-1">Hour (UTC, 0&ndash;23)</label>
+                    <input type="number" min="0" max="23" x-model="scheduleForm.hour"
+                           class="w-full border rounded px-3 py-2 mb-4">
+
+                    <div class="flex justify-between">
+                        <button type="button" class="text-red-600 text-sm"
+                                :disabled="savingSchedule"
+                                {% if workflow.schedule %}@click="removeSchedule()"{% else %}style="visibility:hidden"{% endif %}>
+                            Remove schedule
+                        </button>
+                        <div class="ml-auto flex gap-2">
+                            <button type="button" class="px-3 py-2 text-sm" :disabled="savingSchedule" @click="scheduleModalOpen = false">Cancel</button>
+                            <button type="button" class="px-4 py-2 bg-blue-600 text-white rounded text-sm disabled:opacity-50"
+                                    :disabled="savingSchedule" @click="saveSchedule()">
+                                <span x-show="!savingSchedule">Save</span>
+                                <span x-show="savingSchedule" x-cloak><i class="fa-solid fa-spinner fa-spin"></i></span>
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
             {% endif %}
