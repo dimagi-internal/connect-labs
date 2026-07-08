@@ -225,10 +225,6 @@ When you click through from the Program Audit Creator into a per-opportunity aud
 
 If a run never completed or encountered an error during generation, the create controls still appear so that your program administrator can run it again.
 
-### Marking a run complete
+### Expanding the per-field-worker audit breakdown in the Program Audit Creator
 
-Each per-opportunity audit workflow has a **Mark Run Complete** button. This button is **disabled** until every audit in that run is finished. While audits remain open, the button shows a count such as **"3 of 7 audits still open"** so it is always clear how much work remains.
-
-Once all audits are done the button becomes active. Clicking it locks the run as a completed historical record in the same way as concluding any other workflow run.
-
-!!! note
+Each opportunity row in the Program Audit Creator has an expand chevron (›). Clicking it opens an inline breakdown of that opportunity's full audit detail — every field worker listed with their MUAC and Other audit counts, image counts, pass/fail/pending results, and AI-flagged counts — exactly the same information you would see if you opened that opportunity's own run page. You can check where an organisation stands without navigating away from the Program
