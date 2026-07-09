@@ -225,15 +225,9 @@ class AuditTable(tables.Table):
             '<a href="{}" class="button button-sm outline-style text-green-700 border-green-300 hover:bg-green-50">'
             '<i class="fa-solid fa-clipboard-list mr-1"></i>{}'
             "</a>"
-            '<button type="button" @click="deleteSession({}, $event.currentTarget)" '
-            'class="button button-sm outline-style text-red-700 border-red-300 hover:bg-red-50" title="{}">'
-            '<i class="fa-solid fa-trash"></i>'
-            "</button>"
             "</div>",
             bulk_url,
             button_label,
             task_url,
             _("Create Task"),
-            record.pk,
-            _("Delete"),
         )
