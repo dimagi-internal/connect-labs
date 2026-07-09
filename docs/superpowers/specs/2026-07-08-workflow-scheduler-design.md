@@ -99,10 +99,16 @@ so it is unit-testable in isolation.
 ## Execution flow
 
 1. **Ticker** — seeded `PeriodicTask` → `run_due_workflow_schedules` (every 15
-   min). Selects `enabled=True, next_run_at <= now`. For each: dispatch
-   `run_scheduled_workflow.delay(schedule.id)` and set `next_run_at =
-   compute_next_run(schedule, now)`. (Advance `next_run_at` at dispatch time, not
-   in the worker, so a slow/failed run cannot cause a redispatch storm.)
+   min). Selects `enabled=True, next_run_at <= now`. For each due row it
+   **claims-before-dispatch**: advance `next_run_at = compute_next_run(schedule,
+   now)` via an optimistic conditional update
+   (`filter(pk=…, next_run_at=<current>).update(next_run_at=<next>)`) and only
+   `run_scheduled_workflow.delay(schedule.id)` if the claim won (rowcount 1).
+   This gives **at-most-once dispatch per window** even if a prior tick crashed
+   after enqueueing or two ticks overlap — the loser's update matches 0 rows and
+   skips. Missing a run on a worker crash is acceptable; double-firing a
+   non-idempotent `run_default` hook (e.g. `weekly_dual_track_audit`, which
+   creates a fresh audit batch each call) is not.
 2. **Worker** — `run_scheduled_workflow(schedule_id)`:
    - Load schedule (skip if gone/disabled).
    - `token = get_valid_access_token(schedule.owner)`.
@@ -111,8 +117,10 @@ so it is unit-testable in isolation.
    - Call `run_default_for_definition(definition, access_token=token, request=None)`.
    - Record `last_run_at=now`, `last_status="ok"`.
 3. **Failure handling:**
-   - `ConnectReLoginRequired` → `last_status="auth_expired"`, `enabled=False`
-     (auto-disable — retrying a dead refresh token is pointless), `last_error` set.
+   - `ConnectTokenError` (the base class — covers `ConnectReLoginRequired` plus
+     the permanent no-token / expired-with-no-refresh states) →
+     `last_status="auth_expired"`, `enabled=False` (auto-disable — retrying dead
+     auth is pointless), `last_error` set.
    - Any other exception → `last_status="failed"`, `last_error` set (truncated),
      schedule stays enabled (transient failures retry next cadence).
 
