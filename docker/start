@@ -10,5 +10,14 @@ WORKERS=${WEB_CONCURRENCY:-3}
 # lifespan, which the gthread WSGI worker cannot provide. UvicornWorker keeps
 # the gunicorn process model (WEB_CONCURRENCY workers, graceful reloads) while
 # running config.asgi:application as a native ASGI app.
+#
+# --no-control-socket disables gunicorn 25.1.0's new control socket (the backing
+# for the `gunicornc` runtime-management CLI, which we don't use). Its default
+# path is the relative `gunicorn.ctl`, created in the working dir (/app). The
+# container runs as non-root `django` but /app is root-owned, so the arbiter
+# can't create the socket and logs `Control server error: [Errno 13] Permission
+# denied` on every startup/worker-recycle. Serving is unaffected, but the noise
+# is misleading — disabling the feature we don't use removes it cleanly.
 gunicorn config.asgi:application --bind 0.0.0.0:8000 --chdir=/app --timeout 600 \
+    --no-control-socket \
     -k uvicorn.workers.UvicornWorker -w "$WORKERS"
