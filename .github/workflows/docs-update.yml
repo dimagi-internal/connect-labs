@@ -22,7 +22,10 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # Push via a deploy key, not GITHUB_TOKEN: main's ruleset requires
+          # changes to come through a PR, and GitHub Actions can't be a ruleset
+          # bypass actor — but a deploy key can (and is, on this repo's ruleset).
+          ssh-key: ${{ secrets.DOCS_BOT_DEPLOY_KEY }}
 
       - uses: actions/setup-python@v6
         with:

@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       run_migrations:
-        description: 'Run database migrations before deployment'
+        description: 'Force database migrations (normally auto-detected from the diff vs the deployed SHA)'
         type: boolean
         required: true
         default: false
@@ -71,6 +71,10 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+        with:
+          # Full history so the migration auto-detect step can diff against the
+          # SHA currently deployed (read from the registered task definition).
+          fetch-depth: 0
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6
@@ -193,17 +197,105 @@ jobs:
           cache-from: type=registry,ref=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:buildcache
           cache-to: type=registry,ref=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:buildcache,mode=max
 
-      - name: Run database migrations
-        if: ${{ github.event.inputs.run_migrations == 'true' }}
+      - name: Register task definitions from repo
+        id: taskdefs
         run: |
-          TASK_DEF_ARN=$(aws ecs describe-task-definition \
-            --task-definition ${{ env.ECS_WEB_SERVICE }} \
-            --query 'taskDefinition.taskDefinitionArn' \
-            --output text)
+          # The web/worker task definitions are version-controlled in
+          # deploy/task-definitions/. Registering them from the repo on every deploy
+          # makes the repo the single source of truth: the container command, CPU,
+          # env, and roles can no longer silently drift in the AWS console — which is
+          # exactly how the MCP broke (docker/start moved to ASGI but the registered
+          # command stayed WSGI, and the deploy only reused the in-AWS task def).
+          # Secrets stay as Secrets Manager ARN references in the JSON, never values.
+          #
+          # The image is pinned to the git SHA (not ':latest') at register time:
+          # a crash-restarted task then always pulls exactly the code its task
+          # def was registered with, even if a newer image has been pushed since,
+          # and rollback is just re-registering a previous revision. A GIT_SHA
+          # env var is injected alongside so the app can report what it's running
+          # (surfaced at /health/).
+          PINNED_IMAGE="${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
+          for KIND in web worker; do
+            jq --arg img "$PINNED_IMAGE" --arg sha "${{ github.sha }}" '
+              .containerDefinitions[0].image = $img
+              | .containerDefinitions[0].environment =
+                  ([.containerDefinitions[0].environment[]? | select(.name != "GIT_SHA")]
+                   + [{"name": "GIT_SHA", "value": $sha}])
+            ' "deploy/task-definitions/${KIND}.json" > "/tmp/taskdef-${KIND}.json"
+          done
+          WEB_TD=$(aws ecs register-task-definition \
+            --cli-input-json file:///tmp/taskdef-web.json \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          WORKER_TD=$(aws ecs register-task-definition \
+            --cli-input-json file:///tmp/taskdef-worker.json \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "Registered web:    $WEB_TD"
+          echo "Registered worker: $WORKER_TD"
+          echo "web_td=$WEB_TD" >> "$GITHUB_OUTPUT"
+          echo "worker_td=$WORKER_TD" >> "$GITHUB_OUTPUT"
 
+      - name: Decide whether migrations must run
+        id: migcheck
+        run: |
+          # Migrations used to be a human checkbox — which fails exactly when
+          # multiple people deploy: dev A merges a migration-bearing PR without
+          # deploying, dev B later deploys their own change with the box
+          # unchecked, and prod crashes on a missing column. Instead, diff the
+          # migrations/ trees between the SHA the web SERVICE is currently
+          # running (its task def's image tag — pinned to the git SHA by the
+          # register step above) and the SHA being deployed now. Zero cost when
+          # nothing changed; automatic when something did. The manual input
+          # remains as a force-override only.
+          #
+          # NB: read the service's task definition, not the latest registered
+          # one — the register step above already points that at THIS deploy.
+          if [ "${{ github.event.inputs.run_migrations }}" = "true" ]; then
+            echo "Manual override: run_migrations=true"
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          SERVICE_TD=$(aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_WEB_SERVICE }} \
+            --query 'services[0].taskDefinition' --output text 2>/dev/null) || true
+          DEPLOYED_IMAGE=""
+          if [ -n "$SERVICE_TD" ] && [ "$SERVICE_TD" != "None" ]; then
+            DEPLOYED_IMAGE=$(aws ecs describe-task-definition \
+              --task-definition "$SERVICE_TD" \
+              --query 'taskDefinition.containerDefinitions[0].image' \
+              --output text 2>/dev/null) || true
+          fi
+          DEPLOYED_TAG="${DEPLOYED_IMAGE##*:}"
+          echo "Service is running image tag: ${DEPLOYED_TAG:-<none>}"
+          if echo "$DEPLOYED_TAG" | grep -qE '^[0-9a-f]{40}$' && git cat-file -e "$DEPLOYED_TAG" 2>/dev/null; then
+            CHANGED=$(git diff --name-only "$DEPLOYED_TAG" "$GITHUB_SHA" -- '*/migrations/*.py')
+            if [ -n "$CHANGED" ]; then
+              echo "Migration files changed since deployed SHA ${DEPLOYED_TAG}:"
+              echo "$CHANGED"
+              echo "run=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "No migration changes between ${DEPLOYED_TAG} and ${GITHUB_SHA} — skipping migrate."
+              echo "run=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            # Tag isn't a known SHA (e.g. ':latest' from before pinning, or an
+            # unfetchable commit) — can't prove there's nothing to apply, so
+            # run migrate. It's idempotent; a no-op pass costs ~2 minutes once.
+            echo "Deployed SHA unknown — running migrate to be safe."
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run database migrations
+        if: ${{ steps.migcheck.outputs.run == 'true' }}
+        run: |
+          # Run on the task definition registered above so migrations come from
+          # the NEW image. (Before SHA-pinning this used the previously
+          # registered task def and only picked up new code via the mutable
+          # ':latest' tag — pinning would have silently made it migrate with
+          # OLD code.)
           TASK_ARN=$(aws ecs run-task \
             --cluster ${{ env.ECS_CLUSTER }} \
-            --task-definition $TASK_DEF_ARN \
+            --task-definition ${{ steps.taskdefs.outputs.web_td }} \
             --launch-type FARGATE \
             --network-configuration "awsvpcConfiguration={subnets=[subnet-06646effb09be2f42],securityGroups=[sg-0666a5ed512c97d9d],assignPublicIp=ENABLED}" \
             --overrides '{"containerOverrides":[{"name":"web","command":["python","manage.py","migrate_multi","--noinput","--skip-checks"]}]}' \
@@ -229,27 +321,6 @@ jobs:
             echo "Check CloudWatch Logs: https://console.aws.amazon.com/cloudwatch/home?region=${{ env.AWS_REGION }}#logsV2:log-groups/log-group/%2Fecs%2F${{ env.ECS_WEB_SERVICE }}"
             exit 1
           fi
-
-      - name: Register task definitions from repo
-        id: taskdefs
-        run: |
-          # The web/worker task definitions are version-controlled in
-          # deploy/task-definitions/. Registering them from the repo on every deploy
-          # makes the repo the single source of truth: the container command, CPU,
-          # env, and roles can no longer silently drift in the AWS console — which is
-          # exactly how the MCP broke (docker/start moved to ASGI but the registered
-          # command stayed WSGI, and the deploy only reused the in-AWS task def).
-          # Secrets stay as Secrets Manager ARN references in the JSON, never values.
-          WEB_TD=$(aws ecs register-task-definition \
-            --cli-input-json file://deploy/task-definitions/web.json \
-            --query 'taskDefinition.taskDefinitionArn' --output text)
-          WORKER_TD=$(aws ecs register-task-definition \
-            --cli-input-json file://deploy/task-definitions/worker.json \
-            --query 'taskDefinition.taskDefinitionArn' --output text)
-          echo "Registered web:    $WEB_TD"
-          echo "Registered worker: $WORKER_TD"
-          echo "web_td=$WEB_TD" >> "$GITHUB_OUTPUT"
-          echo "worker_td=$WORKER_TD" >> "$GITHUB_OUTPUT"
 
       - name: Deploy services (hard cutover)
         run: |

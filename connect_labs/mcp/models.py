@@ -55,6 +55,11 @@ class MCPAccessToken(models.Model):
     def __str__(self) -> str:
         return f"{self.name} ({self.user.username})"
 
+    #: Hard ceiling on token lifetime. No mint path may create an immortal
+    #: credential — with self-service PATs across many users, a leaked token
+    #: must age out even if nobody notices the leak.
+    MAX_TTL_DAYS = 365
+
     @classmethod
     def create_token(
         cls,
@@ -66,11 +71,14 @@ class MCPAccessToken(models.Model):
 
         The raw token is ONLY available at creation time. Store it yourself;
         the DB only has the hash.
+
+        ttl_days is clamped to MAX_TTL_DAYS; None / 0 (historically "no
+        expiry") also becomes MAX_TTL_DAYS.
         """
         raw = secrets.token_urlsafe(32)
-        expires_at = None
-        if ttl_days:
-            expires_at = timezone.now() + timedelta(days=ttl_days)
+        if not ttl_days or ttl_days > cls.MAX_TTL_DAYS:
+            ttl_days = cls.MAX_TTL_DAYS
+        expires_at = timezone.now() + timedelta(days=ttl_days)
         token = cls.objects.create(
             user=user,
             name=name,

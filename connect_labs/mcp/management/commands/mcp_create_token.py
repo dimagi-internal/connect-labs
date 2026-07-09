@@ -21,7 +21,7 @@ class Command(BaseCommand):
             "--ttl-days",
             type=int,
             default=90,
-            help="Lifetime in days (default: 90). Pass 0 for no expiry.",
+            help="Lifetime in days (default: 90, max 365 — 0 or larger values clamp to 365).",
         )
 
     def handle(self, *args, **opts):

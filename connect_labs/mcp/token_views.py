@@ -41,16 +41,20 @@ def tokens_index(request):
     return _render_index(request)
 
 
-def _parse_ttl(value: str | None) -> int | None:
-    """Convert form-string ttl_days to int|None. 0/empty → None (no expiry)."""
+def _parse_ttl(value: str | None) -> int:
+    """Convert form-string ttl_days to an int. Blank/invalid → 90.
+
+    0 (historically "no expiry") and anything above the model's MAX_TTL_DAYS
+    clamp to MAX_TTL_DAYS — self-service tokens must always age out.
+    """
     if value is None or value == "":
         return 90
     try:
         ttl = int(value)
     except (TypeError, ValueError):
         return 90
-    if ttl <= 0:
-        return None
+    if ttl <= 0 or ttl > MCPAccessToken.MAX_TTL_DAYS:
+        return MCPAccessToken.MAX_TTL_DAYS
     return ttl
 
 

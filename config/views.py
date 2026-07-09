@@ -1,9 +1,16 @@
+import os
+
 from django.http import HttpResponse, JsonResponse
 
 
 def health_check(request):
-    """Simple health check endpoint for load balancers"""
-    return HttpResponse("OK", status=200)
+    """Health check for load balancers, plus a deploy stamp.
+
+    GIT_SHA is injected into the task definition by the deploy workflow, so
+    this endpoint answers "what code is prod running?" — essential once
+    multiple people deploy independently.
+    """
+    return JsonResponse({"status": "OK", "git_sha": os.environ.get("GIT_SHA", "unknown")})
 
 
 def robots_txt(request):
