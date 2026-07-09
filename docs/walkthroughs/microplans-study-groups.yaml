@@ -218,73 +218,84 @@ scenes:
   title: Maya sees the programme covered all of Attakar
 - actions:
   - kind: click
-    must_succeed: false
-    note: Boundaries tab — turns on the admin-boundary map layer so the ward polygons are clickable
     target: css:#btn-area-admin
-  - kind: wait_for
     must_succeed: false
-    note: let the admin boundaries paint on the map (the FILL layer must be rendered before we click a
-      ward)
+    note: Boundaries tab — the boundary search + source controls mount in the map's LAYERS panel
+  - kind: wait_for
+    target: css:.mp-ab-search:visible
     seconds: 10
-    target: css:.mp-ab-search
-  - kind: map_click
     must_succeed: false
-    note: Maya clicks the Attakar ward directly on the MAP - the app's click-to-add handler adds it to
-      the left rail tagged intervention (no search box)
-    target: Attakar
-  - kind: wait_for
-    must_succeed: false
-    note: confirm Attakar landed in the left-rail selected list before switching modes
-    seconds: 8
-    target: css:.mp-ab-selected
+    note: the boundary search box is ready
   - kind: click
-    must_succeed: false
-    note: sampling mode - arm pills and the Compare button appear
     target: css:#btn-mode-sampling
+    must_succeed: false
+    note: Sampling mode — enables the two-arm workflow (Compare only offers once an intervention ward
+      is picked in sampling mode)
+  - kind: hold
+    seconds: 1
+    note: sampling mode engaged
+  - kind: fill
+    target: css:.mp-ab-search:visible
+    value: Attakar
+    must_succeed: false
+    note: search Attakar by name (the ward the programme served) — the debounced geocode lists it
   - kind: wait_for
+    target: css:.mp-ab-results:visible button
+    seconds: 10
     must_succeed: false
-    note: the Compare button only un-hides once an intervention ward is selected in sampling mode
-    seconds: 8
-    target: css:.mp-ab-compare
+    note: the search result appears
+  - kind: hold
+    seconds: 2
+    note: let the debounced result settle before clicking
   - kind: click
+    target: css:.mp-ab-results:visible button
     must_succeed: false
-    note: Compare surrounding boundaries - rank the neighbours by density overlap
-    target: css:.mp-ab-compare
+    note: click the Attakar result — adds it to the plan area tagged the intervention arm; this is the
+      reference the Compare ranking needs
   - kind: wait_for
-    must_succeed: false
-    note: wait for the ranking to finish — the header flips from "Processing N…" to "best match first"
-      only when every neighbour has been scored
-    seconds: 150
-    target: best match first
-  - kind: scroll_to
-    must_succeed: false
-    note: frame the ranked comparison table (#surrounding-compare) — the narrated subject — so each neighbour's
-      overlap %, distribution chart and row colour are legible rather than a thumbnail under the map
-    target: css:#surrounding-compare
-  - kind: click
-    must_succeed: false
-    note: open Match info + highlight the Match column as the narration introduces "Match is how similar
-      the two wards look overall"
-    target: css:.mp-ab-col-i[data-col="match"]
-  - kind: hold
-    note: Match column highlighted with its info popover — the overall-similarity metric
-    seconds: 8
-  - kind: click
-    must_succeed: false
-    note: Matched balance — the column that matters; moves both popover and highlight to the balance column
-      as the narration explains it's the number the comparability check reports
-    target: css:.mp-ab-col-i[data-col="balance"]
-  - kind: hold
-    note: Matched balance column highlighted — the number that actually decides the match
-    seconds: 15
-  - kind: click
-    must_succeed: false
-    note: Common support — moves popover + highlight to the common column as the narration explains matching
-      only draws from the shared density range
-    target: css:.mp-ab-col-i[data-col="common"]
-  - kind: hold
-    note: Common support column highlighted — the shared-range caveat
+    target: css:.mp-ab-compare:visible
     seconds: 12
+    must_succeed: false
+    note: Compare surrounding boundaries surfaces once an intervention ward is selected in sampling mode
+  - kind: hold
+    seconds: 2
+    note: Attakar tagged intervention; the Compare button is live
+  - kind: click
+    target: css:.mp-ab-compare:visible
+    must_succeed: false
+    note: run Compare — rank every neighbouring ward against Attakar by density overlap
+  - kind: wait_for
+    target: best match first
+    seconds: 180
+    must_succeed: false
+    note: wait for the ranking to finish — the header flips from 'Processing N…' to 'best match first'
+      once every neighbour is scored
+  - kind: scroll_to
+    target: css:#surrounding-compare
+    must_succeed: false
+    note: frame the ranked comparison table — each neighbour's overlap %, distribution chart and row colour
+  - kind: click
+    target: css:.mp-ab-col-i[data-col="match"]:visible
+    must_succeed: false
+    note: highlight the Match column as the narration introduces 'Match is how similar the two wards look
+      overall'
+  - kind: hold
+    seconds: 8
+    note: Match column highlighted — the overall-similarity metric
+  - kind: click
+    target: css:.mp-ab-col-i[data-col="balance"]:visible
+    must_succeed: false
+    note: Matched balance — the column that decides the match
+  - kind: hold
+    seconds: 15
+    note: Matched balance column highlighted
+  - kind: click
+    target: css:.mp-ab-col-i[data-col="common"]:visible
+    must_succeed: false
+    note: Common support — matching only draws from the shared density range
+  - kind: hold
+    seconds: 12
+    note: Common support column highlighted
   concept_claim: With Attakar tagged intervention, "Compare surrounding boundaries" ranks every bordering
     ward by how much its building-density distribution overlaps Attakar's (best match first) and fills
     each candidate on the map in its row colour, so the match is chosen from evidence rather than picked
@@ -318,31 +329,29 @@ scenes:
   pace: teach
 - actions:
   - kind: click
-    target: css:.mp-ab-col-i[data-col="common"]
+    target: css:.mp-ab-col-i[data-col="common"]:visible
     must_succeed: false
-    note: dismiss the column-info popup (open from scene 4) so it doesn't occlude Gura's Add button
+    note: keep Common support highlighted as the narration weighs Sopp vs Gura
   - kind: hold
-    note: Sopp and Gura are the best-balanced matches (0.02); Zankan was last cycle's intervention so
-      it's excluded — Maya picks Gura (most common support of the two)
     seconds: 2
+    note: Sopp and Gura both best-balanced at 0.02; Zankan was last cycle's own ward
   - kind: wait_for
+    target: css:.mp-ab-addbnd[data-name="Gura"]:visible
+    seconds: 10
     must_succeed: false
     note: Gura's row carries an Add-boundary button once the ranking is scored
-    seconds: 8
-    target: css:.mp-ab-addbnd[data-name="Gura"]
   - kind: scroll_to
+    target: css:.mp-ab-addbnd[data-name="Gura"]:visible
     must_succeed: false
-    note: frame the ranked table on Gura's row so the rejected top row (Zankan) and Gura's Add-boundary
-      button are both legibly in-frame for the narrated choice
-    target: css:.mp-ab-addbnd[data-name="Gura"]
+    note: frame Gura's row so the rejected top row and Gura's Add button are both legible
   - kind: click
+    target: css:.mp-ab-addbnd[data-name="Gura"]:visible
     must_succeed: false
-    note: Add boundary on Gura - the closest un-served neighbour - as the match arm
-    target: css:.mp-ab-addbnd[data-name="Gura"]
+    note: Add Gura — the closest un-served neighbour that shares the most common support — as the comparison
+      arm
   - kind: hold
-    note: Attakar (intervention) and Gura (match) both in one plan, each with its arm pill — Gura's row
-      flipped to its "added" state, legibly framed
     seconds: 4
+    note: Gura added as the match arm — the two-arm design is set
   concept_claim: The table ranks candidates by Matched balance, where Sopp and Gura tie best at 0.02 and
     Zankan trails at 0.03; Maya excludes Zankan because the programme treated it last cycle, then picks
     Gura over Sopp because Gura shares more Common support with Attakar, and clicks "Add boundary" on
@@ -475,50 +484,48 @@ scenes:
   title: Maya generates the two-arm plan in place
 - actions:
   - kind: wait_for
-    must_succeed: true
-    note: the program workspace shell has loaded — the "Candidate plans" disclosure (the draft inventory,
-      collapsed by default while finished studies lead the page under "Reviewed") is the static marker
-      the board rendered
-    seconds: 20
     target: Candidate plans
-  - kind: click
-    must_succeed: true
-    note: expand the collapsed draft inventory — the candidate plans (incl. the two-arm plan in draft)
-      live inside this <details>, closed by default so the finished studies lead; opening it reveals their
-      lifecycle controls
-    target: Candidate plans
-  - kind: wait_for
-    must_succeed: true
-    note: with the inventory open, plan 4493's row-scoped "Submit for review" button (data-transition
-      keyed to the plan) is now visible — the precise marker that the board loaded its plans AND 4493
-      is in draft
     seconds: 20
-    target: css:button[data-transition="4493"][data-to="in_review"]
-  - kind: click
     must_succeed: true
-    note: draft → in_review, scoped to plan 4493's card (data-transition); the board POSTs then re-renders
-      in place
-    target: css:button[data-transition="4493"][data-to="in_review"]
-  - kind: wait_for
-    must_succeed: true
-    note: after the in-place re-render, 4493's card now offers Approve (data-to=approved) — only present
-      while the plan is in_review
-    seconds: 15
-    target: css:button[data-transition="4493"][data-to="approved"]
-  - kind: click
-    must_succeed: true
-    note: in_review → approved, still scoped to plan 4493
-    target: css:button[data-transition="4493"][data-to="approved"]
-  - kind: wait_for
-    must_succeed: true
-    note: 'terminal state: 4493 is approved — its card now shows the forward "Deploy →" button (data-to=deployed),
-      which only renders once a plan is approved'
-    seconds: 15
-    target: css:button[data-transition="4493"][data-to="deployed"]
+    note: the program board loaded; the Candidate plans inventory is open by default (loose drafts present)
   - kind: hold
-    note: the two-arm plan is approved — the study is complete; the green Approved badge sits on 4493's
-      card in the Planning column
+    seconds: 2
+    note: let the plan rows hydrate from the plans API
+  - kind: scroll_to
+    target: css:button[data-transition="4493"][data-to="in_review"]:visible
+    must_succeed: false
+    note: frame plan 4493's row — a finished draft ready to advance (NOT toggling the inventory, which
+      is already open)
+  - kind: wait_for
+    target: css:button[data-transition="4493"][data-to="in_review"]:visible
+    seconds: 20
+    must_succeed: true
+    note: plan 4493's 'Submit for review' button is visible — the board loaded its plans and 4493 is in
+      draft
+  - kind: click
+    target: css:button[data-transition="4493"][data-to="in_review"]:visible
+    must_succeed: true
+    note: Submit for review — advance 4493 draft → in_review
+  - kind: wait_for
+    target: css:button[data-transition="4493"][data-to="approved"]:visible
+    seconds: 20
+    must_succeed: true
+    note: the row's action flips to 'Approve' once in review
+  - kind: hold
+    seconds: 2
+    note: in review
+  - kind: click
+    target: css:button[data-transition="4493"][data-to="approved"]:visible
+    must_succeed: true
+    note: Approve — advance in_review → approved; the study is ready for a survey firm
+  - kind: wait_for
+    target: css:button[data-transition="4493"][data-to="deployed"]:visible
+    seconds: 20
+    must_succeed: false
+    note: the approved plan now offers Deploy → (confirms the transition landed)
+  - kind: hold
     seconds: 4
+    note: plan Approved — each area keeps its arm labs-side, but the Connect export carries no arm column
   concept_claim: Maya advances the single two-arm plan draft → in_review → approved from the workspace,
     completing a balanced study. Each work area stores its arm labs-side so future analysis can distinguish
     the arms, while the arm is kept out of the LLO/field-facing Connect case properties and export — so
