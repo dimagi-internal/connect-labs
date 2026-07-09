@@ -724,7 +724,12 @@
       'border-purple-200 text-purple-700 bg-purple-50 hover:bg-purple-100 disabled:opacity-60';
     compareBtn.textContent = 'Compare surrounding boundaries';
     compareBtn.addEventListener('click', runCompare);
-    body.insertBefore(compareBtn, hintEl);
+    // With a controlsHost, `body` (the selected-list state node) is display:none —
+    // its live controls render in `sourceBody` (the map's Boundaries layer panel).
+    // Keep the Compare trigger WITH those visible controls; appending it to the
+    // hidden `body` (as before) orphaned the surrounding-ward comparison entirely.
+    if (controlsHost) sourceBody.appendChild(compareBtn);
+    else body.insertBefore(compareBtn, hintEl);
 
     function updateCompareBtn() {
       if (!compareBtn) return;
