@@ -2,6 +2,10 @@ name: "Bulk Image Audit — review-screen UI"
 narrative: "An NM reviewing FLW MUAC photos can now zoom into any image to read the tape before passing or failing it"
 base_url: "https://labs.connect.dimagi.com"
 
+# Warm the (slow) bulk-data fetch off-camera so the on-camera load doesn't
+# freeze-frame on a "Loading bulk assessment data…" spinner.
+prewarm: true
+
 # Auth is established out-of-band via `ace-labs-walkthrough-login` (headless
 # OAuth-via-CCHQ, cookies imported into the gstack browse profile). No in-spec
 # auth step. Data: the `program-admin-report` synthetic env (opps 10000/10001)
@@ -25,14 +29,14 @@ scenes:
       - { kind: wait_for, target: "Showing" }
       - { kind: hold, seconds: 2 }
 
+  # No `url` — continue on scene 1's page (the grid) so there is NO reload
+  # between beats; just perform the click-to-zoom on the already-loaded screen.
   - persona: nadia
     title: "Zoom into one photo to read the tape"
-    url: "/audit/4525/bulk/?opportunity_id=10000"
     show: "Clicking any photo opens a full-screen zoom lightbox that fills the viewport: the MUAC tape reading is legible, with a header showing the FLW, date, visit id and current Pass result, plus zoom +/- and reset controls and left/right arrows to move between photos."
     impressive_because: "This is the moment-of-truth for a pass/fail call — the global size slider could never make a single tape reading legible; click-to-zoom opens the photo filling the screen, without leaving the review flow"
     ai_quality: "The zoomed image fills the viewport and the MUAC tape numbers are readable; the header keeps the FLW/visit context visible while zoomed"
     actions:
-      - { kind: wait_for, target: "Showing" }
       - { kind: click, target: ".assessment-widget img", note: "open the zoom lightbox" }
       - { kind: wait_for, target: "Scroll to zoom" }
-      - { kind: hold, seconds: 2 }
+      - { kind: hold, seconds: 3 }
