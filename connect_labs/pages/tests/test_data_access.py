@@ -78,6 +78,15 @@ def test_update_surface_patches_public_scoped_record(mock_client_cls):
 
 
 @patch("connect_labs.pages.data_access.LabsRecordAPIClient")
+def test_delete_surface_deletes_record_by_id(mock_client_cls):
+    client = mock_client_cls.return_value
+    da = SurfaceDataAccess(access_token="tok", opportunity_id=1973)
+    out = da.delete_surface(record_id=6274)
+    client.delete_record.assert_called_once_with(6274)
+    assert out == {"deleted": True, "record_id": 6274}
+
+
+@patch("connect_labs.pages.data_access.LabsRecordAPIClient")
 def test_update_surface_defaults_to_not_public(mock_client_cls):
     client = mock_client_cls.return_value
     client.update_record.return_value = _fake_record(slug="s", title="T", cards=[{"id": 1}], options={})

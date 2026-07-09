@@ -46,6 +46,16 @@ def test_pages_update_writes_surface(mock_da_cls, _tok):
 
 @patch("connect_labs.mcp.tools.pages.require_connect_token", return_value="tok")
 @patch("connect_labs.mcp.tools.pages.SurfaceDataAccess")
+def test_pages_delete_removes_surface(mock_da_cls, _tok):
+    mock_da_cls.return_value.delete_surface.return_value = {"deleted": True, "record_id": 6274}
+    result = pages_tools.pages_delete(user=MagicMock(), record_id=6274, opportunity_id="1973")
+    assert result == {"deleted": True, "record_id": 6274}
+    assert mock_da_cls.call_args.kwargs["opportunity_id"] == 1973
+    mock_da_cls.return_value.delete_surface.assert_called_once_with(record_id=6274)
+
+
+@patch("connect_labs.mcp.tools.pages.require_connect_token", return_value="tok")
+@patch("connect_labs.mcp.tools.pages.SurfaceDataAccess")
 def test_pages_create_opp_scoped_not_public(mock_da_cls, _tok):
     mock_da_cls.return_value.create_surface.return_value = {"id": 1, "slug": "s"}
     pages_tools.pages_create(user=MagicMock(), slug="s", title="T", cards=[], opportunity_id="1973")
