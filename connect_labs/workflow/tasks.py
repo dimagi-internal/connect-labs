@@ -751,15 +751,14 @@ def handle_pipeline_only_job(job_config: dict, access_token: str, progress_callb
 
 # Import job handler modules to trigger registration
 import connect_labs.workflow.job_handlers  # noqa: F401, E402
-
-# =============================================================================
-# Scheduled workflow tasks (see docs/superpowers/specs/2026-07-08-workflow-scheduler-design.md)
-# =============================================================================
-
 from connect_labs.labs.connect_tokens import ConnectTokenError, get_valid_access_token  # noqa: E402
 from connect_labs.workflow.data_access import WorkflowDataAccess  # noqa: E402
 from connect_labs.workflow.schedules import compute_next_run  # noqa: E402
 from connect_labs.workflow.templates import run_default_for_definition  # noqa: E402
+
+# =============================================================================
+# Scheduled workflow tasks (see docs/superpowers/specs/2026-07-08-workflow-scheduler-design.md)
+# =============================================================================
 
 
 @celery_app.task
