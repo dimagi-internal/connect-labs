@@ -49,3 +49,29 @@ def test_program_view_ignores_stale_opp_fallback():
     # A program-view request resolves to a program run even if a stray opp
     # param rides along — the program context takes precedence.
     assert _resolve_run_scope({"program_id": 176}, post_opp="1973") == ("program", 176)
+
+
+def test_posted_program_wins_over_poisoned_session_opp():
+    # THE regression: a background tab opened an opp-scoped run link, poisoning
+    # the session with an opportunity_id. The program-page "Create Run" form
+    # still POSTs program_id — that explicit intent must win, or the program-
+    # owned definition 404s ("Workflow not found") under the wrong opp scope.
+    assert _resolve_run_scope({"opportunity_id": 1973}, post_program="176") == ("program", 176)
+
+
+def test_posted_program_only():
+    assert _resolve_run_scope({}, post_program="176") == ("program", 176)
+
+
+def test_get_program_resolves_program_scope():
+    assert _resolve_run_scope({}, get_program="176") == ("program", 176)
+
+
+def test_empty_program_field_falls_through_to_session_opp():
+    # An empty hidden program field (e.g. rendered with a blank value) must not
+    # hijack scope — fall through to the real session opportunity.
+    assert _resolve_run_scope({"opportunity_id": 1973}, post_program="") == ("opportunity", 1973)
+
+
+def test_empty_opp_field_with_posted_program_yields_program():
+    assert _resolve_run_scope({}, post_opp="", post_program="176") == ("program", 176)
