@@ -43,9 +43,14 @@ def test_entitled_false_when_opp_absent(mock_wda, mock_org):
     assert prov.entitled(_request(), {"definition_id": 7}) is False
 
 
+@patch("connect_labs.pages.providers.workflow.get_org_data")
 @patch("connect_labs.pages.providers.workflow.WorkflowDataAccess")
-def test_get_card_data_emits_workflow_runs(mock_wda):
-    mock_wda.return_value.get_definition.return_value = _definition_record()
+def test_get_card_data_emits_workflow_runs(mock_wda, mock_org):
+    rec = _definition_record()
+    rec.opportunity_ids = [1973]
+    rec.opportunity_id = 1973
+    mock_wda.return_value.get_definition.return_value = rec
+    mock_org.return_value = {"opportunities": [{"id": 1973, "name": "EHA-PRE-RCT"}]}
     run_a = MagicMock(id=5060, created_at="2026-07-01", status="in_progress")
     run_b = MagicMock(id=5061, created_at="2026-07-08", status="completed")
     mock_wda.return_value.list_runs.return_value = [run_a, run_b]
@@ -62,11 +67,17 @@ def test_get_card_data_emits_workflow_runs(mock_wda):
     assert runs[0]["open_url"] == "/labs/workflow/5049/run/?run_id=5061&opportunity_id=1973"
     assert "description" not in runs[0]  # no description/period in this card
     assert d["data"]["run_count"] == 2
+    # opp scope carried so the client can lazy-fetch each run's sessions on expand
+    assert d["data"]["opportunity_id"] == 1973
+    assert d["data"]["opportunity_ids"] == [1973]
+    assert d["data"]["opp_names"]["1973"] == "EHA-PRE-RCT"
     assert mock_wda.call_args.kwargs["opportunity_id"] == 1973
 
 
+@patch("connect_labs.pages.providers.workflow.get_org_data")
 @patch("connect_labs.pages.providers.workflow.WorkflowDataAccess")
-def test_get_card_data_caps_runs_at_8(mock_wda):
+def test_get_card_data_caps_runs_at_8(mock_wda, mock_org):
+    mock_org.return_value = {"opportunities": [{"id": 42, "name": "Opp"}]}
     mock_wda.return_value.get_definition.return_value = _definition_record()
     mock_wda.return_value.list_runs.return_value = [
         MagicMock(id=i, created_at=f"2026-07-{i:02d}", status="in_progress") for i in range(1, 13)
@@ -115,8 +126,10 @@ def test_entitled_false_when_target_opportunity_absent(mock_wda, mock_org):
     assert prov.entitled(_request(), {"definition_id": 5049, "opportunity_id": 9999}) is False
 
 
+@patch("connect_labs.pages.providers.workflow.get_org_data")
 @patch("connect_labs.pages.providers.workflow.WorkflowDataAccess")
-def test_get_card_data_scopes_reads_by_target_opportunity(mock_wda):
+def test_get_card_data_scopes_reads_by_target_opportunity(mock_wda, mock_org):
+    mock_org.return_value = {"opportunities": [{"id": 42, "name": "Opp"}]}
     mock_wda.return_value.get_definition.return_value = _definition_record()
     mock_wda.return_value.list_runs.return_value = []
     prov = WorkflowCardProvider()

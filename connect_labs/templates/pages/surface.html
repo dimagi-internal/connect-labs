@@ -72,6 +72,15 @@
   .pages-run__open a:hover { text-decoration: underline; }
   .pages-runs__more { margin-top: 0.5rem; font-size: 0.75rem; color: #9ca3af; }
   .pages-card__empty { color: #9ca3af; font-size: 0.9rem; padding: 0.25rem 0; }
+  /* A workflow-runs card holds an expandable breakdown — give it the full row. */
+  .pages-card--wide { grid-column: 1 / -1; }
+  .pages-run__chev { width: 1.5rem; padding-right: 0 !important; }
+  .pages-run__toggle {
+    border: none; background: transparent; cursor: pointer; color: #6b7280;
+    padding: 0.15rem 0.35rem; font-size: 0.75rem; line-height: 1;
+  }
+  .pages-run__toggle:hover { color: #4338ca; }
+  .pages-run__detail > td { padding: 0.25rem 0 0.75rem; }
 </style>
 
 <div class="pages-surface">
