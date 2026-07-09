@@ -50,6 +50,8 @@ This means each workflow appears in exactly one place. If you cannot find a work
 !!! note "Creating a run from the program view"
     Clicking **Create Run** on a program-owned workflow works the same as creating a run from any other context. Because these workflows are genuinely scoped to the program rather than to any opportunity, Create Run resolves correctly from the program view with no extra steps required.
 
+    If you have recently opened a per-opportunity run in another tab (for example, by clicking an "open run ↗" link), that should no longer affect Create Run on program-owned workflows. The program view keeps the program context in place, so Create Run on a program-owned workflow will always create the run under the program — not under whichever opportunity you last visited. If you do see a "Workflow not found" error, try refreshing the program workflow list page and clicking Create Run again.
+
 ---
 
 ## Scheduling a Workflow to Run Automatically
@@ -233,10 +235,4 @@ When a run is concluded, the snapshot captures what **that workflow** is current
 
 The **MBW Auditing V5** template uses a checklist-style conclude dialog that reflects how the MBW program team actually works. Before the run can be saved, the following two conditions must be met:
 
-1. **All triggered tasks are resolved** — every task that was created during the run must be marked as complete.
-2. **Every yellow-flagged FLW has an audit status set** — each worker whose row carries a yellow flag must have an audit status recorded before the run can close.
-
-These are the only two items the conclude dialog checks. Specifically:
-
-- Red-flagged FLWs do **not** require a task to be created before concluding.
-- Rows where the audit outcome
+1
