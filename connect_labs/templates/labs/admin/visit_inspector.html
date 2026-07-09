@@ -88,8 +88,8 @@
   <!-- Header -->
   <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
     <div>
-      <a href="{% url 'explorer:index' %}" class="text-sm text-blue-600 hover:underline mr-2">← Labs Explorer</a>
-      <a href="{% url 'explorer:list' %}" class="text-sm text-blue-600 hover:underline mr-2">Data Explorer</a>
+      <a href="{% url 'labs_admin:index' %}" class="text-sm text-blue-600 hover:underline mr-2">← Labs Admin</a>
+      <a href="{% url 'labs_admin:list' %}" class="text-sm text-blue-600 hover:underline mr-2">Records</a>
       <span class="text-sm text-gray-400 mx-2">|</span>
       <span class="text-sm text-brand-deep-purple font-semibold">Visit Inspector</span>
     </div>
@@ -332,12 +332,12 @@
                 <td x-text="visit.visit_date || 'N/A'"></td>
                 <td x-text="visit.status"></td>
                 <td class="flex gap-3">
-                  <a :href="`/labs/explorer/visit-inspector/view/${visit.visit_id}/`"
+                  <a :href="`/labs/admin/visit-inspector/view/${visit.visit_id}/`"
                      target="_blank"
                      class="text-blue-600 hover:underline">
                     <i class="fa-solid fa-eye mr-1"></i>View
                   </a>
-                  <a :href="`/labs/explorer/visit-inspector/download/${visit.visit_id}/`"
+                  <a :href="`/labs/admin/visit-inspector/download/${visit.visit_id}/`"
                      class="text-blue-600 hover:underline"
                      download>
                     <i class="fa-solid fa-download mr-1"></i>Download
@@ -586,7 +586,7 @@
         this.resetPagination();
 
         try {
-          const response = await fetch('{% url "explorer:visit_inspector_query" %}', {
+          const response = await fetch('{% url "labs_admin:visit_inspector_query" %}', {
             method: 'POST',
             headers: {
               'X-CSRFToken': formData.get('csrfmiddlewaretoken'),
@@ -624,7 +624,7 @@
 
             // Create a temporary link and click it to trigger download
             const link = document.createElement('a');
-            link.href = `/labs/explorer/visit-inspector/download/${visit.visit_id}/`;
+            link.href = `/labs/admin/visit-inspector/download/${visit.visit_id}/`;
             link.download = '';
             document.body.appendChild(link);
             link.click();

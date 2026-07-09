@@ -1979,7 +1979,7 @@ class ProgramBulkCreatePlanPageView(_LabsContextSyncMixin, LoginRequiredMixin, T
         context["program_id"] = program_id
         context["program_url"] = reverse("microplans:program_workspace", args=[program_id])
         context["bulk_create_url"] = reverse("microplans:program_bulk_create", args=[program_id])
-        context["resolve_many_url"] = "/labs/explorer/boundaries/resolve_many/"
+        context["resolve_many_url"] = "/labs/admin/boundaries/resolve_many/"
         # Sensible defaults for the Kano RCT demo arm.
         context["default_iso"] = "NGA"
         context["default_admin_level"] = 3

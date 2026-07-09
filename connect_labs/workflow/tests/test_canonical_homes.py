@@ -94,10 +94,10 @@ def test_opportunity_detail_is_single_owner_of_the_get():
     assert meta["raw"] == payload
 
 
-def test_explorer_get_opportunity_details_delegates_to_canonical():
-    """The explorer no longer re-implements the opportunity GET; it delegates."""
+def test_admin_get_opportunity_details_delegates_to_canonical():
+    """The labs admin app-downloader no longer re-implements the opportunity GET; it delegates."""
+    from connect_labs.labs.admin.app_data_access import AppDownloaderDataAccess
     from connect_labs.labs.analysis import data_access
-    from connect_labs.labs.explorer.app_data_access import AppDownloaderDataAccess
 
     da = AppDownloaderDataAccess(access_token="tok")
     payload = {"name": "Opp", "deliver_app": {}}

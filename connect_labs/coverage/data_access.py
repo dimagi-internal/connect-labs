@@ -6,6 +6,7 @@ which uses efficient CSV caching (same pathway as UI views).
 """
 
 import logging
+from urllib.parse import urlparse
 
 import httpx
 from django.conf import settings
@@ -105,6 +106,13 @@ class CoverageDataAccess:
                 all_cases.extend(cases)
 
                 next_url = data.get("next")
+                # Only follow same-host pagination links. CommCare's `next` always
+                # points back at the same HQ host; refusing an off-host `next`
+                # prevents the Bearer token from leaking to an unexpected origin if
+                # the upstream response is ever tampered with.
+                if next_url and urlparse(next_url).netloc not in ("", urlparse(endpoint).netloc):
+                    logger.warning("[Coverage] Refusing off-host pagination link: %s", next_url)
+                    break
                 params = None  # Don't send params for next page URLs
         except httpx.HTTPStatusError as e:
             logger.error(f"[Coverage] HTTP {e.response.status_code} fetching DUs from CommCare: {e}")

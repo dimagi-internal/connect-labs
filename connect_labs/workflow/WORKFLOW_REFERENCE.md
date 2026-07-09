@@ -466,6 +466,7 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
 - No imports -- only `React` is available as a global
 - CDN libraries available via `window`: Chart.js 4.4.0 (`window.Chart`), chartjs-adapter-date-fns 3.0.0, Leaflet 1.9.4 (`window.L`), Mapbox GL 3.13.0 (`window.mapboxgl`)
 - **Shared map components** for drawing CommCare / microplan data on a Mapbox map: `window.ConnectMap` (boundaries, points, survey pins), `window.PlanLayers` (the canonical microplan plan layers — work areas, PSU hulls, sample pins, footprints), and `window.MicroplansMapPanel` (the docked Layers toggle panel). **Use these instead of hand-rolling layer paint or toggles** — they are the same definitions the plan editor uses, so a render draws a plan identically. See [§4a Shared map components](#4a-shared-map-components-connectmap--planlayers).
+- **Shared runner UI primitives** for panels reused across templates: `window.LabsAudit` (the per-FLW "Audit results by field worker" breakdown). **Call these instead of re-inlining the markup** — they're static, tested components editable in the repo (`connect_labs/static/js/`), so every consumer stays identical. See [§4b Shared runner UI primitives](#4b-shared-runner-ui-primitives-windowlabsaudit).
 - Tailwind CSS classes are available for styling
 - All React hooks are accessed via `React.useState`, `React.useEffect`, `React.useMemo`, `React.useRef`, `React.useCallback`
 
@@ -572,6 +573,45 @@ fetch('/microplans/program/' + programId + '/plan/' + planId + '/')
     };
     window.PlanLayers.workAreas(map, { data: was });
   });
+```
+
+### 4b. Shared runner UI primitives (window.LabsAudit)
+
+Some panels are rendered **identically in more than one template** (and sometimes
+in the `pages` cards surface too). Those live as **static, versioned,
+unit-tested JS primitives** loaded on the runner page, and render code **calls**
+them instead of re-inlining the markup. This is the same pattern as the shared
+map components above — a small "runner UI kit" on `window.*`.
+
+**These primitives ARE editable — you just edit the component source file in the
+repo (in Claude Code, like everything else), and it ships on the next deploy.**
+They are static (not live-editable via the MCP `update_render_code` path) on
+purpose: that's what keeps every consumer byte-identical. **Do not copy a
+primitive's markup back into a template's `render_code`** — extend the primitive
+so all surfaces move together. When should something become a primitive? When it
+is (a) rendered identically in 2+ places, (b) stable, and (c) worth a unit test.
+One-off template layout stays in `render_code`.
+
+**`window.LabsAudit`** — the **per-FLW audit breakdown** ("Audit results by field
+worker": each field worker's MUAC + Other audit lines with pass/fail/pending/AI
+counts, deep-linking to the bulk review screen). Source:
+`connect_labs/static/js/labs_audit_breakdown.js` (tests:
+`labs_audit_breakdown.test.js`). Consumed by `weekly_dual_track_audit` (the
+opp-level run), `program_audit_creator` (each per-opp row expands to it), and the
+`flw_audit_breakdown` pages card.
+
+```javascript
+// Render the breakdown (returns a React element; it self-manages collapse):
+window.LabsAudit.renderFlwBreakdown(React, {
+  sessions,            // array from the /audit/api/workflow/<run_id>/sessions/ endpoint
+  oppNames,            // optional { "<opp_id>": "Display name" }
+  workflowRunId,       // for the bulk-review deep links
+  loading,             // optional: show a spinner instead of "no sessions"
+  title,               // optional: null hides the "Audit results by field worker" header
+});
+
+// Lazy-fetch a run's sessions across one or more opps (merged, de-duped):
+window.LabsAudit.fetchSessions(workflowRunId, [oppId1, oppId2]).then(function (sessions) { ... });
 ```
 
 ### Pipeline Data Access

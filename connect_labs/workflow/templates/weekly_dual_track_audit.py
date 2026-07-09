@@ -240,7 +240,6 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
     // Per-run sampling rates — default to the pinned config, adjustable before create.
     const [muacSample, setMuacSample] = React.useState(trackA.sample_percentage != null ? trackA.sample_percentage : 100);
     const [otherSample, setOtherSample] = React.useState(trackB.sample_percentage != null ? trackB.sample_percentage : 10);
-    const [collapsedOpps, setCollapsedOpps] = React.useState({});
     const cleanupRef = React.useRef(null);
     React.useEffect(() => () => { if (cleanupRef.current) cleanupRef.current(); }, []);
 
@@ -356,77 +355,6 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
         // (a redundant one races the server's write and can flake a 404).
         setProgress({ status: 'running', message: 'Starting…' });
         attachStream(resp.task_id);
-    };
-
-    // ── Group created sessions by opportunity_id then tag ─────────────────────
-    // Group by opp → FLW → { muac, rest } so each field worker's two audits sit
-    // together and their status/results are visible at a glance.
-    const groupByOppFlw = () => {
-        const byOpp = {};
-        sessions.forEach(s => {
-            const oid = s.opportunity_id != null ? String(s.opportunity_id) : 'unknown';
-            const flw = s.flw_username || 'unknown';
-            if (!byOpp[oid]) byOpp[oid] = { flws: {}, order: [] };
-            if (!byOpp[oid].flws[flw]) {
-                byOpp[oid].flws[flw] = { name: s.flw_display_name || s.flw_username || flw, muac: null, rest: null };
-                byOpp[oid].order.push(flw);
-            }
-            if (s.tag === 'muac') byOpp[oid].flws[flw].muac = s;
-            else if (s.tag === 'rest') byOpp[oid].flws[flw].rest = s;
-        });
-        return byOpp;
-    };
-    const grouped = groupByOppFlw();
-    const statsOf = (s) => (s && s.assessment_stats) || {};
-    const imagesOf = (s) => (s && s.image_count) || 0;               // real image count (assessment_stats.total = # assessments, 0 until reviewed)
-    const aiReviewedOf = (s) => { var a = statsOf(s); return (a.ai_match || 0) + (a.ai_no_match || 0); };
-    const humanReviewedOf = (s) => { var a = statsOf(s); return (a.pass || 0) + (a.fail || 0); };
-    const oppSummary = (oppData) => {
-        var out = { flws: 0, muacImages: 0, muacAiReviewed: 0, muacFlagged: 0, restImages: 0, restReviewed: 0 };
-        oppData.order.forEach(function (flw) {
-            var r = oppData.flws[flw]; out.flws++;
-            if (r.muac) { out.muacImages += imagesOf(r.muac); out.muacAiReviewed += aiReviewedOf(r.muac); out.muacFlagged += (statsOf(r.muac).ai_no_match || 0); }
-            if (r.rest) { out.restImages += imagesOf(r.rest); out.restReviewed += humanReviewedOf(r.rest); }
-        });
-        return out;
-    };
-    // One compact audit line: status + image count + pass/fail/pending + AI-review summary.
-    const auditLine = (label, s) => {
-        if (!s) return React.createElement('div', { className: 'text-xs text-gray-400 pl-2' }, label + ': not created');
-        var a = statsOf(s);
-        var images = imagesOf(s);
-        var reviewed = humanReviewedOf(s);
-        var pending = Math.max(0, images - reviewed);
-        var done = s.status === 'completed';
-        return React.createElement('a', {
-            href: bulkUrl(s),
-            className: 'flex items-center gap-3 px-3 py-1.5 rounded bg-gray-50 hover:bg-blue-50 border border-gray-200 text-xs'
-        },
-            React.createElement('span', { className: 'font-semibold text-gray-700 w-12' }, label),
-            React.createElement('span', {
-                className: 'px-1.5 py-0.5 rounded ' + (done ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700')
-            }, done ? 'Completed' : 'In progress'),
-            React.createElement('span', { className: 'text-gray-500 w-16' }, images + ' images'),
-            React.createElement('span', { className: 'flex-1' },
-                React.createElement('span', { className: 'text-green-600 font-medium' }, (a.pass || 0) + ' pass'),
-                ' · ',
-                React.createElement('span', { className: 'text-red-600 font-medium' }, (a.fail || 0) + ' fail'),
-                ' · ',
-                React.createElement('span', { className: 'text-gray-500' }, pending + ' pending')
-            ),
-            label === 'MUAC'
-                ? React.createElement('span', { className: (a.ai_no_match || 0) > 0 ? 'text-amber-600 font-medium' : 'text-gray-500' },
-                    'AI: ' + (a.ai_no_match || 0) + ' flagged / ' + aiReviewedOf(s) + ' reviewed')
-                : React.createElement('span', { className: 'text-gray-300' }, 'no AI'),
-            React.createElement('i', { className: 'fa-solid fa-arrow-up-right-from-square text-blue-500' })
-        );
-    };
-
-    const bulkUrl = (s) => {
-        const params = new URLSearchParams();
-        if (s.opportunity_id != null) params.set('opportunity_id', s.opportunity_id);
-        if (instance.id) params.set('workflow_run_id', instance.id);
-        return '/audit/' + s.id + '/bulk/?' + params.toString();
     };
 
     const datePresets = [
@@ -662,57 +590,20 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
             )}
 
             {/* ── Audit results by field worker ───────────────────────────── */}
+            {/* Rendered by the shared window.LabsAudit primitive so the opp run,
+                the program creator's expandable rows, and the pages card all draw
+                this panel identically. Edit the component in
+                connect_labs/static/js/labs_audit_breakdown.js — not here. */}
             <div className="bg-white rounded-lg shadow-sm p-6">
-                <h3 className="text-sm font-medium text-gray-700 mb-3">
-                    <i className="fa-solid fa-user-check mr-2 text-gray-400"></i>Audit results by field worker
-                </h3>
-                {loadingSessions
-                    ? <div className="text-sm text-gray-500"><i className="fa-solid fa-spinner fa-spin mr-2"></i>Loading…</div>
-                    : sessions.length === 0
-                        ? <div className="text-sm text-gray-500">No sessions yet — set a window and create audits.</div>
-                        : (
-                            <div className="space-y-4">
-                                {Object.keys(grouped).map(oid => {
-                                    var oppData = grouped[oid];
-                                    var sum = oppSummary(oppData);
-                                    var collapsed = !!collapsedOpps[oid];
-                                    return (
-                                        <div key={oid} className="border border-gray-200 rounded-lg overflow-hidden">
-                                            <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 cursor-pointer hover:bg-gray-100"
-                                                onClick={() => setCollapsedOpps(c => Object.assign({}, c, { [oid]: !c[oid] }))}>
-                                                <div className="text-sm font-semibold text-gray-900 flex items-center">
-                                                    <i className={'fa-solid mr-2 text-gray-400 ' + (collapsed ? 'fa-chevron-right' : 'fa-chevron-down')}></i>
-                                                    {oppNames[oid] || ('Opportunity ' + oid)}
-                                                    <span className="ml-2 text-xs text-gray-400 font-mono">#{oid}</span>
-                                                </div>
-                                                <div className="text-xs text-gray-500 mt-1 pl-6">
-                                                    {sum.flws} field worker{sum.flws === 1 ? '' : 's'}
-                                                    {' · MUAC '}{sum.muacImages}{' imgs, '}{sum.muacAiReviewed}{' AI-reviewed, '}
-                                                    <span className={sum.muacFlagged > 0 ? 'text-amber-600 font-medium' : ''}>{sum.muacFlagged} flagged</span>
-                                                    {' · Other '}{sum.restImages}{' imgs, '}{sum.restReviewed}{' human-reviewed'}
-                                                </div>
-                                            </div>
-                                            {!collapsed && (
-                                            <div className="divide-y divide-gray-100">
-                                                {oppData.order.map(flw => {
-                                                    var r = oppData.flws[flw];
-                                                    return (
-                                                        <div key={flw} className="px-4 py-3">
-                                                            <div className="text-sm font-medium text-gray-800 mb-1.5">{r.name}</div>
-                                                            <div className="space-y-1">
-                                                                {auditLine('MUAC', r.muac)}
-                                                                {auditLine('Other', r.rest)}
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                            )}
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        )}
+                {window.LabsAudit
+                    ? window.LabsAudit.renderFlwBreakdown(React, {
+                        sessions: sessions,
+                        oppNames: oppNames,
+                        workflowRunId: instance.id,
+                        loading: loadingSessions,
+                        emptyText: 'No sessions yet — set a window and create audits.',
+                      })
+                    : <div className="text-sm text-gray-500">Loading…</div>}
             </div>
 
             {/* ── Completion ─────────────────────────────────────────────── */}

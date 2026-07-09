@@ -22,7 +22,7 @@ class Command(BaseCommand):
 
         self.stdout.write(f"\nTesting all labs URLs for {user_email}\n")
 
-        projects = ["solicitations", "tasks", "audit", "explorer"]
+        projects = ["solicitations", "tasks", "audit", "admin"]
 
         for project in projects:
             command_name = f"test_{project}_urls"

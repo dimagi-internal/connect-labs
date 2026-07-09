@@ -6,7 +6,7 @@ from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Column, Div, Field, Layout, Row, Submit
 from django import forms
 
-from connect_labs.labs.explorer.sql_validator import validate_where_clause
+from connect_labs.labs.admin.sql_validator import validate_where_clause
 
 
 class RecordFilterForm(forms.Form):

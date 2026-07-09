@@ -54,9 +54,9 @@
 <div class="flex flex-col gap-4 w-full max-w-6xl mx-auto px-4">
   <!-- Breadcrumb -->
   <div class="breadcrumb">
-    <a href="{% url 'explorer:list' %}">
+    <a href="{% url 'labs_admin:list' %}">
       <i class="fa-solid fa-arrow-left mr-1"></i>
-      Data Explorer
+      Records
     </a>
     <span>/</span>
     <span>Record #{{ record.id }}</span>
@@ -77,7 +77,7 @@
         <span class="record-meta-label">Parent Record:</span>
         <span>
           {% if record.labs_record_id %}
-          <a href="{% url 'explorer:edit' pk=record.labs_record_id %}?opportunity_id={{ record.opportunity_id }}">
+          <a href="{% url 'labs_admin:edit' pk=record.labs_record_id %}?opportunity_id={{ record.opportunity_id }}">
             Record #{{ record.labs_record_id }}
           </a>
           {% else %}
@@ -138,7 +138,7 @@
             <i class="fa-solid fa-save mr-2"></i>
             Save Changes
           </button>
-          <a href="{% url 'explorer:list' %}" class="button button-md outline-style">
+          <a href="{% url 'labs_admin:list' %}" class="button button-md outline-style">
             <i class="fa-solid fa-times mr-2"></i>
             Cancel
           </a>

@@ -6,9 +6,26 @@ Provides patterns for async loading of heavy data operations.
 
 import logging
 
+from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.http import JsonResponse
 
+from connect_labs.utils.feature_access import user_has_feature_access
+
 logger = logging.getLogger(__name__)
+
+
+class AdminRequiredMixin(LoginRequiredMixin, UserPassesTestMixin):
+    """Gate Labs Admin tooling to Dimagi staff.
+
+    The Admin tools (formerly "Explorer") perform destructive/operational
+    actions — deleting Labs Records, wiping the analysis cache, killing Celery
+    jobs, loading boundary data. Access is granted via the ``"admin"`` feature
+    key, which — because it is absent from ``EXTERNAL_USER_FEATURES`` — resolves
+    to Dimagi users only. Non-Dimagi users get a 403.
+    """
+
+    def test_func(self):
+        return user_has_feature_access(self.request.user, "admin")
 
 
 class AsyncLoadingViewMixin:

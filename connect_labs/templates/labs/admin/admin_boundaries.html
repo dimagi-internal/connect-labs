@@ -15,9 +15,9 @@
           Manage administrative boundary data from multiple sources
         </p>
       </div>
-      <a href="{% url 'explorer:index' %}" class="inline-flex items-center text-gray-600 hover:text-gray-900">
+      <a href="{% url 'labs_admin:index' %}" class="inline-flex items-center text-gray-600 hover:text-gray-900">
         <i class="fa-solid fa-arrow-left mr-2"></i>
-        Back to Explorer
+        Back to Admin
       </a>
     </div>
   </div>
@@ -566,7 +566,7 @@ document.getElementById('loadForm').addEventListener('submit', function(e) {
     clear: clear ? 'true' : 'false'
   });
 
-  const streamUrl = "{% url 'explorer:admin_boundaries:load_stream' %}?" + params.toString();
+  const streamUrl = "{% url 'labs_admin:admin_boundaries:load_stream' %}?" + params.toString();
 
   // Create EventSource for SSE
   currentEventSource = new EventSource(streamUrl);
@@ -678,7 +678,7 @@ function confirmDelete() {
     params.append('source', pendingDeleteSource);
   }
 
-  fetch("{% url 'explorer:admin_boundaries:delete' %}", {
+  fetch("{% url 'labs_admin:admin_boundaries:delete' %}", {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
@@ -735,7 +735,7 @@ document.getElementById('geopodeUploadForm').addEventListener('submit', function
   formData.append('clear', clearCheckbox.checked ? 'true' : 'false');
 
   // Upload the file
-  fetch("{% url 'explorer:admin_boundaries:upload_geopode' %}", {
+  fetch("{% url 'labs_admin:admin_boundaries:upload_geopode' %}", {
     method: 'POST',
     headers: {
       'X-CSRFToken': csrftoken

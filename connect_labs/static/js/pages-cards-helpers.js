@@ -7,6 +7,7 @@ const SHIPPED_CARD_TYPES = [
   'list',
   'summary',
   'workflow_runs',
+  'flw_audit_breakdown',
 ];
 
 /**

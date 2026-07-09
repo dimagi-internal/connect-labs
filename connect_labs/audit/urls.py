@@ -95,6 +95,11 @@ urlpatterns = [
         name="bulk_assessment_data",
     ),
     path(
+        "api/<int:session_id>/bulk-data/export/",
+        views.ExperimentBulkAssessmentExportCSVView.as_view(),
+        name="bulk_assessment_export_csv",
+    ),
+    path(
         "image/<int:opp_id>/<str:blob_id>/",
         views.ExperimentAuditImageConnectView.as_view(),
         name="audit_image_connect",
