@@ -34,6 +34,15 @@ Navigate to **Audit** in the top menu, then click **Create Audit Session**.
 - Labs shows how many visits match your criteria before you commit, including a list of matched field workers shown by their **real display names** (not internal ID codes)
 - Adjust filters if needed, then click **Create**
 
+**Step 3 — Sampling and filters:**
+
+After setting your date range and sample size, two additional filter sections appear below the sampling configuration:
+
+- **Deliver Unit Type** — a checkbox list of the form names used to submit visits. Tick one or more to include only visits submitted with those forms. Leave all unticked to include all forms.
+- **Visit Type** — a checkbox list of visit statuses (for example, Pending, Approved, Rejected, Over Limit). Tick one or more to include only visits with those statuses. Leave all unticked to include all statuses.
+
+Both filters are applied when you click **Update Preview**, so you can see exactly how many visits match before you proceed.
+
 **Step 5 — Audit Field Configuration:**
 
 This step appears once you have selected your opportunities. It has two sections:
@@ -45,6 +54,19 @@ This step appears once you have selected your opportunities. It has two sections
     - **MUAC OverZoom** requires no extra settings.
     If a reviewer needs a setting and you leave it blank, the wizard will stop you before creating the session.
 - **Context fields** (collapsed by default) — optionally associate any supporting form fields (such as a recorded measurement value) with an image type so that human reviewers can see the relevant data alongside each photo. These associations have no effect on AI review.
+
+**Pass Threshold:**
+
+Also on the metadata step of the wizard, you can set a **Pass Threshold** using a slider. The slider ranges from **75% to 100%** and defaults to **100%**.
+
+The threshold controls how the overall audit result is calculated when a reviewer completes the session:
+
+- If the percentage of assessments that passed meets or exceeds the threshold, the audit is marked **Pass**.
+- If it falls below the threshold, the audit is marked **Fail**.
+
+At the default of 100%, any single failed assessment will fail the entire audit — the same behaviour as before this option was introduced. Lowering the threshold allows a small number of failures without failing the whole audit.
+
+The configured threshold is shown as small italic text — *Pass Threshold : x%* — underneath the FLW Summary table on the review page, so reviewers can see the standard that applies to the session they are working in.
 
 !!! tip "Quick-create links"
     If you regularly audit the same image types, you can pre-select them by adding `?image_paths=<full/path1>,<full/path2>` to the audit-creation URL. The picker will open with those types already selected, saving setup time.
@@ -191,10 +213,14 @@ You can delete multiple audit sessions at once directly from the sessions list.
 
 1. On the **Audit** sessions list page, tick the checkbox next to each session you want to delete.
 2. A **Delete Selected (N)** button appears next to the Filter button, where **N** is the number of sessions you have checked.
-3. Click **Delete Selected (N)** to remove those sessions.
+3. Click **Delete Selected (N)**. A loading spinner appears on the button while the deletion is in progress.
+4. Once complete, a notification appears confirming success or describing any errors, and the list refreshes automatically.
 
 !!! warning "Only in-progress sessions can be deleted"
     If any of the sessions you have selected has a status other than **In Progress**, the delete will be blocked and an error message will explain which sessions cannot be removed. Deselect any completed or otherwise finished sessions and try again.
+
+!!! note "No per-row delete button"
+    The individual delete button that previously appeared on each session row has been removed. Bulk select-and-delete is now the only way to delete sessions.
 
 ---
 
@@ -209,6 +235,8 @@ The session list shows:
 - Session status (In Progress / Complete)
 - Link to any tasks created from this session
 
+The overall **Pass** or **Fail** result is determined by the Pass Threshold you set when creating the session. If the percentage of images marked Pass meets or exceeds the threshold, the session is marked Pass; otherwise it is marked Fail. The threshold in effect is shown as small italic text — *Pass Threshold : x%* — beneath the FLW Summary table on the review page.
+
 !!! tip "Creating follow-up tasks"
 After completing a session, click **Create Task** next to any flagged visit to open a follow-up task pre-filled with the worker's details. See [Task Management](task-management.md) for how tasks work.
 
@@ -222,26 +250,4 @@ To access a demo audit session, select a **synthetic opportunity** from the oppo
 
 Synthetic audit sessions are built to tell a coherent story out of the box:
 
-- **Audit notes** carry in-story context (for example, "Weekly SOP audit — MUAC photo review for a flagged screening pattern…") rather than any production or recording instructions.
-- **Timelines are realistic** — an "Audit Last 7 days" session spans seven separate household visits across seven workdays, each with its own timestamp. Completed sessions show an accurate "Completed on" date, and closed tasks show a closing message that matches the date in the task history.
-- **The Program Admin Report grid covers four completed weeks.** Northern Cluster reads **4/4 runs, SOP MET** and Southern Cluster reads **3/4, BELOW**. The report window ends at the current date and slides forward automatically, so the grid stays current-dated without any manual updates.
-- **AI coaching transcripts** unfold with varied reply gaps for a natural conversation feel.
-
-!!! note "Synthetic data is read-only for demo purposes"
-You can navigate and explore all audit drill-downs in a synthetic opportunity, but changes you make (such as overriding Pass/Fail results) do not affect any real program data.
-
----
-
-## Common Questions
-
-**Why are some visits missing?**
-Visits only appear if they have images attached to the question types you selected. If a FLW didn't upload a photo for that question, their visits won't be included.
-
-**Can I pause and come back?**
-Yes — your progress saves automatically. Open the session anytime to continue where you left off.
-
-**What does the AI check for?**
-The AI looks at image quality (blur, brightness, framing), whether the measurement shown is within expected ranges, and whether required items are visible. It does not access patient health records — only the images themselves.
-
-**What is the MUAC OverZoom agent?**
-When a MUAC image type is selected, you can choose the **MUAC OverZoom** agent from the AI reviewer dropdown that appears beneath that image type. It automatically identifies photos taken with excessive zoom and badges them with its classification. If you have ticked the pre-tag checkbox for hyperzoomed images, those images are also pre-tagged **Fail** with a red **Hyperzoomed** badge before your review begins. If the checkbox is unticked, the badge still shows the AI's classification but no Pass/Fail is applied automatically.
+- **
