@@ -76,7 +76,7 @@ def test_get_card_data_emits_workflow_runs(mock_wda, mock_org):
 
 @patch("connect_labs.pages.providers.workflow.get_org_data")
 @patch("connect_labs.pages.providers.workflow.WorkflowDataAccess")
-def test_get_card_data_caps_runs_at_8(mock_wda, mock_org):
+def test_get_card_data_returns_all_runs(mock_wda, mock_org):
     mock_org.return_value = {"opportunities": [{"id": 42, "name": "Opp"}]}
     mock_wda.return_value.get_definition.return_value = _definition_record()
     mock_wda.return_value.list_runs.return_value = [
@@ -84,7 +84,8 @@ def test_get_card_data_caps_runs_at_8(mock_wda, mock_org):
     ]
     prov = WorkflowCardProvider()
     d = prov.get_card_data(_request(), {"definition_id": 5049, "opportunity_id": 1973}, {}).to_dict()
-    assert len(d["data"]["runs"]) == 8
+    # No cap — every run is shown (each row is expandable).
+    assert len(d["data"]["runs"]) == 12
     assert d["data"]["run_count"] == 12
     assert d["data"]["runs"][0]["id"] == 12  # newest first
 

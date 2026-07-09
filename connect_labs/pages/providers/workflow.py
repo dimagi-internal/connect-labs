@@ -72,7 +72,8 @@ class WorkflowCardProvider(base.CardProvider):
         record = wda.get_definition(definition_id)
         runs = wda.list_runs(definition_id) or []
 
-        # Newest first (created_at, fallback id), capped for the card.
+        # Newest first (created_at, fallback id). Show every run — each row is
+        # expandable, so there's no reason to truncate the list.
         runs = sorted(runs, key=lambda r: (getattr(r, "created_at", "") or "", r.id), reverse=True)
         run_rows = [
             {
@@ -84,7 +85,7 @@ class WorkflowCardProvider(base.CardProvider):
                     f"?run_id={r.id}&opportunity_id={opportunity_id}"
                 ),
             }
-            for r in runs[:8]
+            for r in runs
         ]
 
         title = options.get("title") or (record.name if record else f"Workflow {definition_id}")
