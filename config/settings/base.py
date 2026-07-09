@@ -1,6 +1,7 @@
 """
 Base settings to build other settings files upon.
 """
+
 import os
 import sys
 from pathlib import Path
@@ -270,6 +271,11 @@ SESSION_COOKIE_HTTPONLY = True
 CSRF_COOKIE_HTTPONLY = True
 CSRF_USE_SESSIONS = True
 X_FRAME_OPTIONS = "DENY"
+# Pin SameSite explicitly rather than relying on Django's implicit "Lax" default,
+# so the CSRF mitigation for session-authenticated endpoints is intentional and
+# can't silently drift if a future change touches cookie config.
+SESSION_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_SAMESITE = "Lax"
 
 # EMAIL
 # ------------------------------------------------------------------------------

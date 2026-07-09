@@ -439,9 +439,11 @@ def test_profile_opp_tool_invokes_service(tmp_path):
     class _User:
         email = "jjackson@dimagi.com"
 
-    with patch.object(tools, "require_connect_token", return_value="tok"), patch.object(
-        tools, "profile_opp_to_bundle", return_value=tmp_path / "523"
-    ) as svc, patch.object(tools, "_require_opportunity_access", return_value=None):
+    with (
+        patch.object(tools, "require_connect_token", return_value="tok"),
+        patch.object(tools, "profile_opp_to_bundle", return_value=tmp_path / "523") as svc,
+        patch.object(tools, "_require_opportunity_access", return_value=None),
+    ):
         out = tools.synthetic_profile_opp(_User(), source_opportunity_id=523, out_dir=str(tmp_path))
     assert svc.called
     assert out["bundle_dir"].endswith("523")
@@ -462,10 +464,11 @@ def test_clone_profile_tool_returns_updated_spec():
         return spec
 
     spec_yaml = "opportunity_ids: [523, 524]\nbundle_root: 'gdrive:'\nprogram_name: KMC\n"
-    with patch.object(tools, "require_connect_token", return_value="tok"), patch.object(
-        tools, "_require_opportunity_access", return_value=None
-    ), patch.object(tools, "DriveClient", return_value=object()), patch.object(
-        tools, "profile_cohort", side_effect=fake_profile_cohort
+    with (
+        patch.object(tools, "require_connect_token", return_value="tok"),
+        patch.object(tools, "_require_opportunity_access", return_value=None),
+        patch.object(tools, "DriveClient", return_value=object()),
+        patch.object(tools, "profile_cohort", side_effect=fake_profile_cohort),
     ):
         out = tools.synthetic_clone_profile(_User(), spec_yaml=spec_yaml)
     assert out["bundle_root"] == "gdrive:run123"
@@ -482,23 +485,16 @@ def test_clone_profile_tool_returns_updated_spec():
 
 
 @pytest.mark.django_db
-def test_require_access_allows_labs_only_id_for_opted_in_user_across_domain(user):
-    """Path 2: an opted-in caller reaches a labs-only id-floor opp even when Path 1
-    (domain visibility) would deny — e.g. an ``@dimagi-ai.com`` user reaching an
-    opp registered for ``@dimagi.com``.
-
-    NOTE: ``is_labs_only_opportunity_id`` is row-dependent — it only returns True
-    when a ``labs_only=True`` ``SyntheticOpportunity`` row exists for the id (the
-    same predicate ``LabsRecordAPIClient`` uses to route to the local backend).
-    So Path 2's job is NOT to grant access to a bare id with no row; it's to
-    decouple gate access from ``allowed_domains`` for opted-in callers, matching
-    the ungated ``workflow_*`` tools. We register the row with a domain the user
-    does not match, so Path 1 fails and only Path 2 can let this through.
+def test_require_access_allows_dimagi_internal_across_domain(user):
+    """Dimagi-internal users are the platform operators: they reach a labs-only opp
+    scoped to another Dimagi-internal domain (an ``@dimagi-ai.com`` user reaching an
+    opp registered for ``@dimagi.com``). The ``view_synthetic_opps`` UI toggle is a
+    picker convenience, not a security control, so access does not depend on it.
     """
     user.email = "ace@dimagi-ai.com"
-    user.view_synthetic_opps = True
+    user.view_synthetic_opps = False  # toggle off must NOT affect data access
     user.save()
-    labs_only_id = LABS_ONLY_OPP_ID_FLOOR + 8  # e.g. 10008
+    labs_only_id = LABS_ONLY_OPP_ID_FLOOR + 8
     SyntheticOpportunity.objects.create(
         opportunity_id=labs_only_id,
         gdrive_folder_id="folder-x",
@@ -506,20 +502,38 @@ def test_require_access_allows_labs_only_id_for_opted_in_user_across_domain(user
         enabled=True,
         allowed_domains=["@dimagi.com"],  # does NOT include @dimagi-ai.com
     )
-    # Path 1 would deny (domain mismatch)...
-    opp = SyntheticOpportunity.objects.get(opportunity_id=labs_only_id)
-    assert opp.is_visible_to(user) is False
-    # ...but Path 2 allows the opted-in caller. Does not raise.
+    # Allowed via the Dimagi-internal operator carve-out. Does not raise.
     _REAL_REQUIRE_OPPORTUNITY_ACCESS(user, labs_only_id)
 
 
 @pytest.mark.django_db
-def test_require_access_denies_labs_only_id_for_non_opted_in_user(user):
-    """Path 2: a labs-only id is denied with PERMISSION_DENIED when the caller has
-    NOT opted in (``view_synthetic_opps=False``), even with a registered row whose
-    domain the user doesn't match.
+def test_require_access_denies_partner_outside_allowed_domains(user):
+    """A non-Dimagi (partner) user whose email domain is NOT in the opp's
+    ``allowed_domains`` is denied — the enforced cross-tenant boundary. The
+    self-serve ``view_synthetic_opps`` flag cannot grant this access.
     """
-    user.email = "ace@dimagi-ai.com"
+    user.email = "worker@partner-x.com"
+    user.view_synthetic_opps = True  # self-granted flag is not a security boundary
+    user.save()
+    labs_only_id = LABS_ONLY_OPP_ID_FLOOR + 8
+    SyntheticOpportunity.objects.create(
+        opportunity_id=labs_only_id,
+        gdrive_folder_id="folder-x",
+        labs_only=True,
+        enabled=True,
+        allowed_domains=["@partner-y.com"],
+    )
+
+    with pytest.raises(MCPToolError) as exc:
+        _REAL_REQUIRE_OPPORTUNITY_ACCESS(user, labs_only_id)
+    assert exc.value.code == "PERMISSION_DENIED"
+
+
+@pytest.mark.django_db
+def test_require_access_allows_partner_within_allowed_domains(user):
+    """A partner user whose email domain matches ``allowed_domains`` is allowed,
+    independent of the ``view_synthetic_opps`` toggle."""
+    user.email = "worker@partner-y.com"
     user.view_synthetic_opps = False
     user.save()
     labs_only_id = LABS_ONLY_OPP_ID_FLOOR + 8
@@ -528,12 +542,9 @@ def test_require_access_denies_labs_only_id_for_non_opted_in_user(user):
         gdrive_folder_id="folder-x",
         labs_only=True,
         enabled=True,
-        allowed_domains=["@dimagi.com"],
+        allowed_domains=["@partner-y.com"],
     )
-
-    with pytest.raises(MCPToolError) as exc:
-        _REAL_REQUIRE_OPPORTUNITY_ACCESS(user, labs_only_id)
-    assert exc.value.code == "PERMISSION_DENIED"
+    _REAL_REQUIRE_OPPORTUNITY_ACCESS(user, labs_only_id)  # does not raise
 
 
 @pytest.mark.django_db

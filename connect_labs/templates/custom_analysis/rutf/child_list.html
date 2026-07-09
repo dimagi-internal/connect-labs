@@ -343,7 +343,7 @@ function rutfChildList() {
             // Build inspector URL using Django-provided query template
             const queryTemplate = '{{ inspector_query_template|escapejs }}';
             const query = queryTemplate.replace('{}', childId);
-            return '/labs/explorer/visit-inspector/?query=' + encodeURIComponent(query);
+            return '/labs/admin/visit-inspector/?query=' + encodeURIComponent(query);
         }
     };
 }

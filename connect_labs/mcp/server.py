@@ -244,6 +244,22 @@ def _run_registry_tool(spec: RegistryToolSpec, arguments: dict) -> ToolResult:
     """
     user = current_user()
 
+    # Central labs-only access gate. Any tool scoped to a labs-only opp/program
+    # routes to the local backend with no downstream Connect membership check, so
+    # enforce the synthetic access model here — one place every tool passes through,
+    # rather than relying on each handler to remember its own gate. Real opps are
+    # untouched (the production API enforces them per request).
+    from connect_labs.labs.synthetic.access import labs_only_scope_denied_reason
+
+    denied = labs_only_scope_denied_reason(
+        user,
+        opportunity_id=arguments.get("opportunity_id"),
+        program_id=arguments.get("program_id"),
+    )
+    if denied:
+        _write_audit(user, spec.name, arguments, success=False, error_code="PERMISSION_DENIED", is_write=spec.is_write)
+        raise ToolError(denied)
+
     if spec.is_write:
         try:
             enforce_write_limit(user)

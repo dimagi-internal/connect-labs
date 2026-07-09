@@ -69,10 +69,10 @@
   <!-- Header -->
   <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
     <div>
-      <a href="{% url 'explorer:index' %}" class="text-sm text-blue-600 hover:underline mr-2">← Labs Explorer</a>
-      <span class="text-sm text-brand-deep-purple font-semibold">Data Explorer</span>
+      <a href="{% url 'labs_admin:index' %}" class="text-sm text-blue-600 hover:underline mr-2">← Labs Admin</a>
+      <span class="text-sm text-brand-deep-purple font-semibold">Records</span>
       <span class="text-sm text-gray-400 mx-2">|</span>
-      <a href="{% url 'explorer:visit_inspector' %}" class="text-sm text-blue-600 hover:underline">Visit Inspector</a>
+      <a href="{% url 'labs_admin:visit_inspector' %}" class="text-sm text-blue-600 hover:underline">Visit Inspector</a>
     </div>
     <div class="flex gap-x-3 items-center">
       {% if has_connect_token %}
@@ -153,7 +153,7 @@
                @click.self="showUpload = false">
             <div class="bg-white rounded-lg p-6 max-w-md w-full">
               <h3 class="text-lg font-semibold mb-4">Upload Records</h3>
-              <form method="post" action="{% url 'explorer:upload' %}" enctype="multipart/form-data">
+              <form method="post" action="{% url 'labs_admin:upload' %}" enctype="multipart/form-data">
                 {% csrf_token %}
                 <div class="mb-4">
                   <label for="file" class="block text-sm font-medium text-gray-700 mb-2">
@@ -209,7 +209,7 @@
     const params = new URLSearchParams(window.location.search);
     selectedIds.forEach(id => params.append('selected_ids', id));
 
-    window.location.href = '{% url "explorer:download" %}?' + params.toString();
+    window.location.href = '{% url "labs_admin:download" %}?' + params.toString();
   }
 
   function deleteSelected() {
@@ -228,7 +228,7 @@
 
     const form = document.createElement('form');
     form.method = 'POST';
-    form.action = '{% url "explorer:delete" %}';
+    form.action = '{% url "labs_admin:delete" %}';
 
     const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
     const csrfInput = document.createElement('input');

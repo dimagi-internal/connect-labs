@@ -71,6 +71,20 @@ Coverage data loads progressively as you interact with the map. A loading indica
 
 ---
 
+## Labs-Only (Synthetic) Opportunities
+
+Some opportunities in Connect Labs are synthetic — used for testing and piloting workflows before they go live. Access to these labs-only opportunities is scoped to your organization:
+
+- You will only see synthetic opportunities that your partner organization has been allow-listed for.
+- Dimagi platform staff and the person who created the opportunity can always access it.
+- A synthetic opportunity that has no allow-list restrictions remains open to all logged-in users — this is the default when a new synthetic opportunity is first created.
+- Standard (real) Connect opportunities are not affected by this; they follow the same access rules as always.
+
+!!! note "Can't find a synthetic opportunity?"
+If you believe you should have access to a labs-only opportunity but it isn't appearing, contact your Dimagi program contact to confirm your organization has been added to the opportunity's allow-list.
+
+---
+
 ## Common Questions
 
 **My delivery units aren't showing on the map.**

@@ -150,6 +150,7 @@ def validate_url_safe(url: str) -> str | None:
 def _fetch_url_content(url: str, max_chars: int = 10000) -> str:
     """Fetch a URL and return its text content, truncated."""
     import re
+    from urllib.parse import urlparse
 
     import httpx
 
@@ -159,7 +160,30 @@ def _fetch_url_content(url: str, max_chars: int = 10000) -> str:
         return block_reason
 
     try:
-        resp = httpx.get(url, follow_redirects=True, timeout=15.0)
+        # Follow redirects manually and re-validate EVERY hop. httpx's built-in
+        # follow_redirects resolves and fetches redirect targets on its own, so a
+        # public URL that 302s to http://169.254.169.254/ (IMDS) or the ECS
+        # task-role creds endpoint would bypass the initial validate_url_safe check.
+        # Re-running validation per hop (which re-resolves the host each time) also
+        # closes the DNS-rebinding TOCTOU window. Only http/https are followed.
+        resp = None
+        current = url
+        for _ in range(5):  # cap redirect chain length
+            resp = httpx.get(current, follow_redirects=False, timeout=15.0)
+            if resp.is_redirect:
+                location = resp.headers.get("location", "")
+                if not location:
+                    break
+                current = str(resp.url.join(location))
+                if urlparse(current).scheme not in ("http", "https"):
+                    return "[Blocked: URL points to internal/private address]"
+                block_reason = validate_url_safe(current)
+                if block_reason:
+                    return block_reason
+                continue
+            break
+        else:
+            return f"[Failed to fetch {url}: too many redirects]"
         resp.raise_for_status()
         html = resp.text
         # Strip HTML tags for a rough text extraction
@@ -472,9 +496,9 @@ class SolicitationCreateView(ManagerRequiredMixin, TemplateView):
     def post(self, request, *args, **kwargs):
         if not _has_context(request):
             ctx = self.get_context_data(**kwargs)
-            ctx[
-                "error"
-            ] = "Please select a program or organization from the context selector before creating a solicitation."
+            ctx["error"] = (
+                "Please select a program or organization from the context selector before creating a solicitation."
+            )
             return self.render_to_response(ctx)
 
         form = SolicitationForm(request.POST)

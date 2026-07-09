@@ -119,6 +119,19 @@ When the team agrees on a winner:
 !!! info "Coverage area assignments after award"
 In the current version, the coverage areas selected by an applicant are captured for your review alongside the rest of their response. Formal area assignment to the awarded organization is handled outside Labs as part of your normal award process.
 
+### Access to Labs-Only Solicitations
+
+Some solicitations in Labs are marked as labs-only (also called synthetic opportunities). These are used for pilot programs, testing, and other work that is not part of the main Connect marketplace.
+
+Access to a labs-only solicitation is controlled by an **allowed domains** list — a set of email domains whose users are permitted to see and interact with that solicitation. If your organization's email domain is on the list, you can access the solicitation normally. If it is not, the solicitation will not appear for you, even if you have the direct link.
+
+!!! info "Who always has access"
+Dimagi platform staff and the person who originally created the solicitation retain access regardless of the allowed domains list. A labs-only solicitation with no allowed domains configured remains open to all logged-in users — this is the default when no restriction has been set.
+
+Standard (non-labs-only) solicitations on Connect are not affected by this — access rules for those work as they always have.
+
+If you believe you should have access to a labs-only solicitation but cannot see it, contact your Labs administrator to confirm your email domain has been added to the allowed domains list for that solicitation.
+
 ---
 
 ## For Implementing Organizations (Submitting)
@@ -213,16 +226,4 @@ After you save a new solicitation, Labs takes you directly to that solicitation'
 **The "Generate Criteria" button or the AI Application Coach isn't working — what should I do?**
 Both AI features were temporarily returning errors for all users on Labs. This has been fixed and both tools should now work as expected. If you click **Generate Criteria** on the solicitation creation form or use the AI Application Coach on the response form and still see an error, try refreshing the page and attempting again. If the problem persists, contact your Labs administrator.
 
-**The Award action was cut off on the right side of the responses table — is that a known issue?**
-This has been fixed. The **Actions** column is now pinned to the right edge of the responses table so the Award control is always visible, regardless of how wide the table is or what screen size you are using. The Score cell is also no longer clipped by the pinned column.
-
-**The answer boxes on the response form were too small and cut off my text — is that a known issue?**
-This has been fixed. Answer boxes and notes fields now size to fit their content automatically, so your text is always fully visible as you type without being clipped.
-
-**The solicitation title created from a plan group was repeating the place name twice — is that a known issue?**
-This has been fixed. The pre-filled title no longer duplicates the place name when the group name and region name are the same.
-
-**The solicitation was showing "1 questions" instead of "1 question" — is that a known issue?**
-This has been fixed. The question count now pluralizes correctly — "1 question" for a single question and the appropriate plural for any other number.
-
-**The AI Application Coach feedback was hard to read — is that a known issue?**
+**The Award action was cut off on the right side of the

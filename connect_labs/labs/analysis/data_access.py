@@ -151,7 +151,7 @@ def fetch_opportunity_detail(access_token: str, opportunity_id: int) -> dict:
 
     ``GET /export/opportunity/{id}/`` -> the opportunity dict (includes the
     ``learn_app`` / ``deliver_app`` sub-objects). Single owner of this call so
-    callers (cc_domain resolution, the explorer app-downloader) don't each
+    callers (cc_domain resolution, the labs admin app-downloader) don't each
     re-implement it.
 
     Raises:

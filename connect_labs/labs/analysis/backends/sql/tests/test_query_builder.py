@@ -5,9 +5,13 @@ GROUP BY / correlated-subquery bug that broke `first`/`last` aggregations
 for every pipeline preview.
 """
 
+import pytest
+
 from connect_labs.labs.analysis.backends.sql.query_builder import (
     _aggregation_to_sql,
     _date_window_where,
+    _sql_ident,
+    _sql_str,
     build_flw_aggregation_query,
 )
 from connect_labs.labs.analysis.config import AnalysisPipelineConfig, FieldComputation
@@ -57,6 +61,48 @@ class TestBuildFlwAggregationQuery:
         query = build_flw_aggregation_query(config, opportunity_id=999)
         assert "visit_date >=" not in query
         assert "visit_date <" not in query
+
+    def test_filter_value_single_quote_is_escaped(self):
+        """A single quote in a user-supplied filter_value must be doubled, not
+        allowed to break out of the string literal (SQL injection). The FILTER
+        predicate keeps the value intact — just quote-escaped."""
+        config = _config(
+            [
+                FieldComputation(
+                    name="anc",
+                    path="form.x",
+                    aggregation="count",
+                    filter_path="form.form_name",
+                    filter_value="x' OR '1'='1",
+                    filter_op="eq",
+                )
+            ]
+        )
+        query = build_flw_aggregation_query(config, opportunity_id=999)
+        # The raw injection string must not appear; the escaped form must.
+        assert "x' OR '1'='1" not in query
+        assert "x'' OR ''1''=''1" in query
+
+    def test_field_name_alias_rejects_injection(self):
+        """A field name is emitted as an unquoted column alias; anything that
+        isn't a bare identifier (e.g. contains a comma + subquery) is rejected
+        rather than interpolated."""
+        config = _config([FieldComputation(name="n, (SELECT 1) AS x", path="form.x", aggregation="count")])
+        with pytest.raises(ValueError):
+            build_flw_aggregation_query(config, opportunity_id=999)
+
+    def test_jsonb_path_quote_is_escaped(self):
+        """A quote inside a JSONB path segment is escaped inside the ->>'...'
+        extraction rather than breaking out of it."""
+        config = _config([FieldComputation(name="n", path="form.a'b", aggregation="count")])
+        query = build_flw_aggregation_query(config, opportunity_id=999)
+        assert "->>'a''b'" in query
+
+    def test_sql_helpers_are_behavior_preserving_for_clean_input(self):
+        """The escaping helpers are no-ops for normal pipeline values, so
+        existing generated SQL is byte-identical."""
+        assert _sql_str("ANC Visit ") == "ANC Visit "
+        assert _sql_ident("muac_cm") == "muac_cm"
 
     def test_period_window_adds_half_open_visit_date_predicate(self):
         """A set [date_from, date_to) window scopes the aggregation by visit_date

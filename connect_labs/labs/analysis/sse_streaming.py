@@ -294,7 +294,7 @@ class AnalysisPipelineSSEMixin:
                 internal try/except caught something and gave up) re-raises the
                 original exception here instead of being silently dropped.
                 Defaults to False to preserve the historical behavior for
-                existing callers (labs/explorer, configurable_ui,
+                existing callers (labs/admin, configurable_ui,
                 mbw_monitoring, custom_analysis/rutf, custom_analysis/kmc) that
                 have never handled a raised exception from this call — before
                 this flag existed, EVENT_ERROR matched none of the branches

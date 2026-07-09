@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Generator
 
 from django.contrib import messages
@@ -285,6 +286,11 @@ def test_access_view(request):
     folder_id = request.GET.get("folder_id", "").strip()
     if not folder_id:
         return JsonResponse({"ok": False, "error": "folder_id is required"}, status=400)
+    # Drive file IDs are restricted to this charset. Rejecting anything else stops a
+    # quote (') in folder_id from breaking out of the Drive `q` clause in
+    # DriveClient.list_folder (query-operator injection / folder enumeration).
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", folder_id):
+        return JsonResponse({"ok": False, "error": "invalid folder_id"}, status=400)
     try:
         drive = DriveClient()
         files = drive.list_folder(folder_id)

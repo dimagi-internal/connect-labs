@@ -6,7 +6,7 @@ import django_tables2 as tables
 from django.urls import reverse
 from django.utils.html import format_html
 
-from connect_labs.labs.explorer.utils import truncate_json_preview
+from connect_labs.labs.admin.utils import truncate_json_preview
 
 
 class LabsRecordTable(tables.Table):
@@ -103,5 +103,5 @@ class LabsRecordTable(tables.Table):
 
     def render_actions(self, record):
         """Render action buttons."""
-        edit_url = reverse("explorer:edit", kwargs={"pk": record.id})
+        edit_url = reverse("labs_admin:edit", kwargs={"pk": record.id})
         return format_html('<a href="{}" class="btn btn-sm btn-primary">Edit</a>', edit_url)

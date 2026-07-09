@@ -9,6 +9,7 @@ Translates field computations to PostgreSQL queries that:
 """
 
 import logging
+import re
 
 from django.db import connection
 
@@ -21,6 +22,37 @@ from connect_labs.labs.analysis.config import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+# --- SQL-injection safety helpers -------------------------------------------
+# This builder assembles SQL as f-strings from an AnalysisPipelineConfig that is
+# derived verbatim from a user-supplied pipeline schema (field name/path/
+# filter_value) and from entity/date/status query filters. Every user-derived
+# value must pass through one of these before it reaches the query text.
+#
+# _sql_str: for values interpolated inside a single-quoted string literal
+#   ('...'). Doubling the single quote is the standard escape under
+#   standard_conforming_strings (PostgreSQL/Django default). Behavior-preserving
+#   for quote-free values, and it also fixes latent breakage on legitimate values
+#   that contain an apostrophe.
+# _sql_ident: for values interpolated as an unquoted SQL identifier (a column
+#   alias, `... as <name>`). Any value that isn't already a bare identifier would
+#   have produced invalid SQL before this change, so validating here rejects only
+#   already-broken or injected names — never a currently-working pipeline.
+
+
+def _sql_str(value) -> str:
+    return str(value).replace("'", "''")
+
+
+_SQL_IDENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_$]*")
+
+
+def _sql_ident(name) -> str:
+    text = str(name)
+    if not _SQL_IDENT_RE.fullmatch(text):
+        raise ValueError(f"Unsafe SQL identifier (must be a bare column name): {name!r}")
+    return text
 
 
 def _pipeline_scope_where(opportunity_id: int, pipeline_id: int | None, *, alias: str = "") -> str:
@@ -91,9 +123,9 @@ def _jsonb_path_to_sql(path: str, column: str = "form_json") -> str:
     sql_parts = [column]
     for i, part in enumerate(parts):
         if i == len(parts) - 1:
-            sql_parts.append(f"->>'{part}'")
+            sql_parts.append(f"->>'{_sql_str(part)}'")
         else:
-            sql_parts.append(f"->'{part}'")
+            sql_parts.append(f"->'{_sql_str(part)}'")
 
     return "".join(sql_parts)
 
@@ -126,13 +158,16 @@ def _build_join_subquery(joins: list[JoinConfig], opportunity_id: int, pipeline_
                 "the orchestration layer must populate it before SQL build."
             )
 
-        cache_alias = f"_jcache_{j.from_alias}"
+        cache_alias = f"_jcache_{_sql_ident(j.from_alias)}"
 
         # Per-row joined object keyed by output names — built from the
         # pre-aggregated subquery's pre-sliced JSONB column.
-        kv_pairs = [f"'{jf['name']}', {cache_alias}.computed_fields_json->'{jf['name']}'" for jf in j.fields]
+        kv_pairs = [
+            f"'{_sql_str(jf['name'])}', {cache_alias}.computed_fields_json->'{_sql_str(jf['name'])}'"
+            for jf in j.fields
+        ]
         per_alias_object = f"COALESCE(jsonb_build_object({', '.join(kv_pairs)}), '{{}}'::jsonb)"
-        join_obj_kvs.append(f"'{j.from_alias}', {per_alias_object}")
+        join_obj_kvs.append(f"'{_sql_str(j.from_alias)}', {per_alias_object}")
 
         # Local key extraction (JSONB path on the visit's form_json).
         local_key_sql = _jsonb_path_to_sql(j.local_key, "rv.form_json")
@@ -140,25 +175,24 @@ def _build_join_subquery(joins: list[JoinConfig], opportunity_id: int, pipeline_
         # Pre-aggregate the joined cache by remote_key_field; pick the latest
         # per key so multiple cache rows for the same key don't multiply visit rows.
         # Build a sliced JSONB object containing only the requested fields.
-        remote_kv_pairs = [f"'{jf['name']}', computed_fields->'{jf['from']}'" for jf in j.fields]
+        remote_kv_pairs = [f"'{_sql_str(jf['name'])}', computed_fields->'{_sql_str(jf['from'])}'" for jf in j.fields]
         remote_obj = f"jsonb_build_object({', '.join(remote_kv_pairs)})"
 
-        join_clauses.append(
-            f"""LEFT JOIN (
-                SELECT DISTINCT ON (computed_fields->>'{j.remote_key_field}')
-                    computed_fields->>'{j.remote_key_field}' AS join_key,
+        _remote_key = _sql_str(j.remote_key_field)
+        join_clauses.append(f"""LEFT JOIN (
+                SELECT DISTINCT ON (computed_fields->>'{_remote_key}')
+                    computed_fields->>'{_remote_key}' AS join_key,
                     {remote_obj} AS computed_fields_json
                 FROM labs_computed_visit_cache
                 WHERE opportunity_id = {opportunity_id}
-                  AND config_hash = '{j.resolved_config_hash}'
-                  AND computed_fields->>'{j.remote_key_field}' IS NOT NULL
+                  AND config_hash = '{_sql_str(j.resolved_config_hash)}'
+                  AND computed_fields->>'{_remote_key}' IS NOT NULL
                 ORDER BY
-                    computed_fields->>'{j.remote_key_field}',
+                    computed_fields->>'{_remote_key}',
                     visit_date DESC NULLS LAST,
                     visit_id DESC
             ) {cache_alias}
-                ON {cache_alias}.join_key = {local_key_sql}"""
-        )
+                ON {cache_alias}.join_key = {local_key_sql}""")
 
     joined_object = f"jsonb_build_object({', '.join(join_obj_kvs)})"
     join_clauses_sql = "\n            ".join(join_clauses)
@@ -582,9 +616,9 @@ def _aggregation_to_sql(
         # contains_word does its own tokenization (string_to_array) which
         # naturally handles whitespace; TRIM is unnecessary there.
         if filter_op == "eq":
-            predicate = f"TRIM({filter_sql}) = '{filter_value}'"
+            predicate = f"TRIM({filter_sql}) = '{_sql_str(filter_value)}'"
         elif filter_op == "contains_word":
-            predicate = f"'{filter_value}' = ANY(string_to_array(COALESCE({filter_sql}, ''), ' '))"
+            predicate = f"'{_sql_str(filter_value)}' = ANY(string_to_array(COALESCE({filter_sql}, ''), ' '))"
         else:
             raise ValueError(f"Unknown filter_op {filter_op!r} on field {field_name!r}. Valid: 'eq', 'contains_word'.")
         base = f"{base} FILTER (WHERE {predicate})"
@@ -687,7 +721,7 @@ def _pre_aggregated_field_sql_via_per_mother_cte(field: FieldComputation) -> str
     dup_share count value frequencies; everything else uses _outer_agg_over_v.
     """
     cte = _per_mother_cte_name(field.pre_aggregate_by)
-    column = f"{field.name}_per_mother"
+    column = f"{_sql_ident(field.name)}_per_mother"
     if field.aggregation == "mode_share":
         return f"""(
             SELECT MAX(c)::float / NULLIF(SUM(c), 0)
@@ -803,10 +837,10 @@ def _pre_aggregated_field_sql(
         else:
             inner_filter_sql = _jsonb_path_to_sql(field.filter_path)
         if field.filter_op == "eq":
-            inner_where_clauses.append(f"TRIM({inner_filter_sql}) = '{field.filter_value}'")
+            inner_where_clauses.append(f"TRIM({inner_filter_sql}) = '{_sql_str(field.filter_value)}'")
         elif field.filter_op == "contains_word":
             inner_where_clauses.append(
-                f"'{field.filter_value}' = ANY(string_to_array(COALESCE({inner_filter_sql}, ''), ' '))"
+                f"'{_sql_str(field.filter_value)}' = ANY(string_to_array(COALESCE({inner_filter_sql}, ''), ' '))"
             )
 
     inner_where = " AND ".join(inner_where_clauses)
@@ -907,6 +941,11 @@ def _owner_cte_name(pre_aggregate_by: str) -> str:
     per outer row.
     """
     sanitized = pre_aggregate_by.replace(".", "_").replace("@", "")
+    # Strip anything that isn't identifier-safe so a quote/space/semicolon in
+    # pre_aggregate_by can't break out of this interpolated CTE alias. Legit JSONB
+    # paths only contain letters/digits/underscore after the replacements above,
+    # so this is a no-op for real input.
+    sanitized = re.sub(r"[^A-Za-z0-9_]", "", sanitized)
     return f"_owners_{sanitized}"
 
 
@@ -951,6 +990,7 @@ def _collect_owner_ctes(config: AnalysisPipelineConfig, opportunity_id: int) -> 
 def _per_mother_cte_name(pre_aggregate_by: str) -> str:
     """CTE alias for the per-pre_group collapse. One per distinct pre_aggregate_by."""
     sanitized = pre_aggregate_by.replace(".", "_").replace("@", "")
+    sanitized = re.sub(r"[^A-Za-z0-9_]", "", sanitized)
     return f"_per_mother_{sanitized}"
 
 
@@ -1000,11 +1040,13 @@ def _build_per_mother_cte(
                 filter_sql = _jsonb_path_to_sql(f.filter_path, "sub.form_json")
             if f.filter_op == "eq":
                 filter_clause = (
-                    f" FILTER (WHERE TRIM({filter_sql}) = '{f.filter_value}' AND {transformed_expr} IS NOT NULL)"
+                    f" FILTER (WHERE TRIM({filter_sql}) = '{_sql_str(f.filter_value)}'"
+                    f" AND {transformed_expr} IS NOT NULL)"
                 )
             elif f.filter_op == "contains_word":
                 filter_clause = (
-                    f" FILTER (WHERE '{f.filter_value}' = ANY(string_to_array(COALESCE({filter_sql}, ''), ' ')) "
+                    f" FILTER (WHERE '{_sql_str(f.filter_value)}' = ANY("
+                    f"string_to_array(COALESCE({filter_sql}, ''), ' ')) "
                     f"AND {transformed_expr} IS NOT NULL)"
                 )
         else:
@@ -1164,7 +1206,7 @@ def build_flw_aggregation_query(
         # Single-pass field handling continues below for the typical case.
         if field.pre_aggregate_by:
             pre_agg_sql = _pre_aggregated_field_sql(field, inner_source=visit_source, pipeline_id=pipeline_id)
-            select_parts.append(f"{pre_agg_sql} as {field.name}")
+            select_parts.append(f"{pre_agg_sql} as {_sql_ident(field.name)}")
             continue
 
         paths = field.paths if field.paths else [field.path]
@@ -1173,7 +1215,7 @@ def build_flw_aggregation_query(
 
         if field.aggregation == "list":
             agg_expr = f"ARRAY_AGG({transformed_expr}) FILTER (WHERE {transformed_expr} IS NOT NULL)"
-            select_parts.append(f"{agg_expr} as {field.name}")
+            select_parts.append(f"{agg_expr} as {_sql_ident(field.name)}")
         else:
             agg_expr = _aggregation_to_sql(
                 field.aggregation,
@@ -1186,13 +1228,13 @@ def build_flw_aggregation_query(
                 inner_source=visit_source,
                 pipeline_id=pipeline_id,
             )
-            select_parts.append(f"{agg_expr} as {field.name}")
+            select_parts.append(f"{agg_expr} as {_sql_ident(field.name)}")
 
     # Add histogram fields
     for hist in config.histograms:
         hist_fields = _build_histogram_fields(hist, opportunity_id)
         for field_name, field_sql in hist_fields:
-            select_parts.append(f"{field_sql} as {field_name}")
+            select_parts.append(f"{field_sql} as {_sql_ident(field_name)}")
 
     select_clause = ",\n    ".join(select_parts)
     # Period scoping (ace#764): append the run's half-open visit-date window
@@ -1319,7 +1361,7 @@ def build_entity_aggregation_query(
 
         if field.aggregation == "list":
             agg_expr = f"ARRAY_AGG({transformed_expr}) FILTER (WHERE {transformed_expr} IS NOT NULL)"
-            select_parts.append(f"{agg_expr} as {field.name}")
+            select_parts.append(f"{agg_expr} as {_sql_ident(field.name)}")
         else:
             agg_expr = _aggregation_to_sql(
                 field.aggregation,
@@ -1331,13 +1373,13 @@ def build_entity_aggregation_query(
                 filter_op=field.filter_op,
                 pipeline_id=pipeline_id,
             )
-            select_parts.append(f"{agg_expr} as {field.name}")
+            select_parts.append(f"{agg_expr} as {_sql_ident(field.name)}")
 
     # Add histogram fields (same code as FLW — doesn't reference username)
     for hist in config.histograms:
         hist_fields = _build_histogram_fields(hist, opportunity_id)
         for field_name, field_sql in hist_fields:
-            select_parts.append(f"{field_sql} as {field_name}")
+            select_parts.append(f"{field_sql} as {_sql_ident(field_name)}")
 
     select_clause = ",\n    ".join(select_parts)
     where_clause = _pipeline_scope_where(opportunity_id, pipeline_id)
@@ -1470,7 +1512,7 @@ def build_visit_extraction_query(
     for field in config.fields:
         # Handle extractor fields — need post-processing with full visit context
         if field.extractor and callable(field.extractor):
-            select_parts.append(f"NULL as {field.name}")
+            select_parts.append(f"NULL as {_sql_ident(field.name)}")
             computed_field_names.append(field.name)
             continue
 
@@ -1483,14 +1525,14 @@ def build_visit_extraction_query(
             if "visit_data" in params or len(params) == 0:
                 # This field will be computed in post-processing with full visit context
                 # Don't try to extract from form_json, just add a NULL placeholder
-                select_parts.append(f"NULL as {field.name}")
+                select_parts.append(f"NULL as {_sql_ident(field.name)}")
                 computed_field_names.append(field.name)
                 continue
 
         paths = field.paths if field.paths else [field.path]
         value_expr = _paths_to_coalesce_sql(paths)
         transformed_expr = _transform_to_sql(field, value_expr)
-        select_parts.append(f"{transformed_expr} as {field.name}")
+        select_parts.append(f"{transformed_expr} as {_sql_ident(field.name)}")
         computed_field_names.append(field.name)
 
     select_clause = ",\n    ".join(select_parts)
@@ -1502,29 +1544,31 @@ def build_visit_extraction_query(
     # Add entity_id filter if present
     if "entity_id" in config.filters:
         entity_id = config.filters["entity_id"]
-        where_clauses.append(f"entity_id = '{entity_id}'")
+        where_clauses.append(f"entity_id = '{_sql_str(entity_id)}'")
 
     # Add status filter if present
     if "status" in config.filters:
         statuses = config.filters["status"]
         if not isinstance(statuses, list):
             statuses = [statuses]
-        status_list = ", ".join([f"'{s}'" for s in statuses])
+        status_list = ", ".join([f"'{_sql_str(s)}'" for s in statuses])
         where_clauses.append(f"status IN ({status_list})")
 
     # Add flagged filter if present
     if "flagged" in config.filters:
         flagged = config.filters["flagged"]
-        where_clauses.append(f"flagged = {flagged}")
+        # Emit a literal boolean, never the raw value, so a string filter can't inject.
+        flagged_sql = "true" if flagged in (True, 1, "true", "True", "1") else "false"
+        where_clauses.append(f"flagged = {flagged_sql}")
 
     # Add date range filters if present
     if "date_from" in config.filters:
         date_from = config.filters["date_from"]
-        where_clauses.append(f"visit_date >= '{date_from}'")
+        where_clauses.append(f"visit_date >= '{_sql_str(date_from)}'")
 
     if "date_to" in config.filters:
         date_to = config.filters["date_to"]
-        where_clauses.append(f"visit_date <= '{date_to}'")
+        where_clauses.append(f"visit_date <= '{_sql_str(date_to)}'")
 
     where_clause = " AND ".join(where_clauses)
 
@@ -1571,9 +1615,9 @@ def build_visit_extraction_query(
             if not field_name:
                 continue
             if op == "is_not_null":
-                predicates.append(f"{field_name} IS NOT NULL")
+                predicates.append(f"{_sql_ident(field_name)} IS NOT NULL")
             elif op == "is_null":
-                predicates.append(f"{field_name} IS NULL")
+                predicates.append(f"{_sql_ident(field_name)} IS NULL")
             else:
                 raise ValueError(f"Unknown extracted_filter op {op!r} for field {field_name!r}")
         if predicates:

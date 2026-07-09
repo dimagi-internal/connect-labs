@@ -12,7 +12,8 @@ services:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
     ports:
-      - '5432:5432'
+      # Bind to loopback only so the trivial dev creds aren't reachable from the LAN.
+      - '127.0.0.1:5432:5432'
     healthcheck:
       test: pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}
       interval: 2s
@@ -24,7 +25,7 @@ services:
     volumes:
       - redis_data:/data
     ports:
-      - '6379:6379'
+      - '127.0.0.1:6379:6379'
     healthcheck:
       test: bash -c 'exec 6<>/dev/tcp/redis/6379'
       interval: 2s

@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import secrets
 
 import httpx
@@ -80,6 +81,10 @@ class DriveClient:
 
     def list_folder(self, folder_id: str) -> dict[str, str]:
         """Return {filename: file_id} for immediate children of `folder_id`."""
+        # Defense-in-depth: Drive IDs only ever use this charset, so a stray quote
+        # can't break out of the `q` clause below into arbitrary Drive query operators.
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", folder_id or ""):
+            raise DriveAPIError(f"list_folder: invalid folder_id {folder_id!r}")
         params = {
             "q": f"'{folder_id}' in parents and trashed = false",
             "fields": "files(id,name)",
