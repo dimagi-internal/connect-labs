@@ -1973,40 +1973,59 @@ def get_snapshot_api(request, run_id):
         return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
-def _resolve_run_scope(labs_context, post_opp=None, get_opp=None):
+def _resolve_run_scope(labs_context, post_opp=None, get_opp=None, post_program=None, get_program=None):
     """Decide whether a start-run request creates a PROGRAM-scoped or an
-    OPP-scoped run, from the request's labs context (+ POST/GET opp fallback).
+    OPP-scoped run, from the request's own params first, then its labs context.
 
-    Program-owned workflows live in the program view: their session context
-    carries ``program_id`` and NO ``opportunity_id``. Their runs are
-    program-scoped (no owning opp). Everything else is opp-scoped — a session
-    opportunity, or (for a program-view card started before this change, or an
-    opp-owned workflow reached without a session opp) an explicit POST/GET
-    ``opportunity_id`` fallback.
+    Program-owned workflows live in the program view: the "Create Run" form
+    submits the ``program_id`` as an explicit hidden field. That explicit signal
+    is the user's stated intent for THIS request and must win over ambient
+    session context — which a background tab that opened an opp-scoped run link
+    (e.g. the program creator's per-opp "open run ↗" links) can silently poison
+    with an ``opportunity_id``. Without honoring the posted program_id, such a
+    poisoned session resolves to opp scope and "Create Run" 404s with
+    "Workflow not found" for the program-owned definition.
+
+    Precedence:
+      1. explicit ``program_id`` (POST/GET) → program run
+      2. program-scoped session context (``program_id``, no ``opportunity_id``)
+      3. session ``opportunity_id`` (the run's owner)
+      4. explicit ``opportunity_id`` (POST preferred over GET)
 
     Returns ``("program", program_id)``, ``("opportunity", opp_id)``, or
     ``(None, None)`` when neither can be resolved.
     """
+
+    def _as_int(value):
+        try:
+            return int(value) if value not in (None, "") else None
+        except (TypeError, ValueError):
+            return None
+
     ctx_opp = labs_context.get("opportunity_id")
-    program_id = labs_context.get("program_id")
+    ctx_program = labs_context.get("program_id")
 
-    # Program-scoped context (program view) → program run, no owning opp.
-    if program_id and not ctx_opp:
-        try:
-            return ("program", int(program_id))
-        except (TypeError, ValueError):
-            return (None, None)
+    # 1. Explicit program_id from the submitted form / URL — the user's stated
+    #    intent, authoritative over any ambient (session) context.
+    explicit_program = _as_int(post_program if post_program not in (None, "") else get_program)
+    if explicit_program is not None:
+        return ("program", explicit_program)
 
-    # Opp path: session opp, else the POST/GET opp fallback.
-    opp = ctx_opp
-    if not opp:
-        raw_opp = post_opp or get_opp
-        try:
-            opp = int(raw_opp) if raw_opp else None
-        except (TypeError, ValueError):
-            opp = None
-    if opp:
-        return ("opportunity", int(opp))
+    # 2. Program-scoped context (program view) → program run, no owning opp.
+    if ctx_program and not ctx_opp:
+        program_id = _as_int(ctx_program)
+        return ("program", program_id) if program_id is not None else (None, None)
+
+    # 3. Session opportunity (the run's owner).
+    if ctx_opp:
+        opp = _as_int(ctx_opp)
+        return ("opportunity", opp) if opp is not None else (None, None)
+
+    # 4. Explicit opp fallback (POST preferred over GET).
+    explicit_opp = _as_int(post_opp if post_opp not in (None, "") else get_opp)
+    if explicit_opp is not None:
+        return ("opportunity", explicit_opp)
+
     return (None, None)
 
 
@@ -2019,10 +2038,11 @@ def start_run_api(request, definition_id):
     Now an explicit user action: client POSTs here, gets back the new run_id,
     redirects to ?run_id=<id>.
 
-    Program-aware: a program-owned workflow (session context has ``program_id``
-    and no ``opportunity_id``) creates a PROGRAM-scoped run with no owning
-    opportunity; everything else creates an opp-scoped run (session opp, or a
-    POST/GET ``opportunity_id`` fallback).
+    Program-aware: the "Create Run" form submits an explicit ``program_id``
+    (program-owned workflow) or ``opportunity_id`` (opp-owned) hidden field.
+    That explicit scope wins over ambient session context (see
+    ``_resolve_run_scope``), so a program run is created even when the session
+    was poisoned with a stray ``opportunity_id`` by a background tab.
 
     Failure mode: returns 4xx if the workflow doesn't exist or neither a
     program nor an opportunity can be resolved from the request.
@@ -2035,6 +2055,8 @@ def start_run_api(request, definition_id):
         labs_context,
         post_opp=request.POST.get("opportunity_id"),
         get_opp=request.GET.get("opportunity_id"),
+        post_program=request.POST.get("program_id"),
+        get_program=request.GET.get("program_id"),
     )
     if scope is None:
         return JsonResponse({"error": "Select an opportunity before starting a run"}, status=400)
@@ -2081,7 +2103,12 @@ def start_run_api(request, definition_id):
         except Exception:
             logger.exception("Failed to S3-mirror new run %s", run.id)
 
-        redirect_url = f"/labs/workflow/{definition_id}/run/?run_id={run.id}"
+        # Carry the resolved scope into the run URL so the runner lands
+        # correctly scoped without leaning on the session→URL heal — a
+        # program-owned run opened with only ?run_id would otherwise resolve
+        # against a poisoned/empty session and 404.
+        scope_param = f"program_id={scope_id}" if scope == "program" else f"opportunity_id={scope_id}"
+        redirect_url = f"/labs/workflow/{definition_id}/run/?run_id={run.id}&{scope_param}"
 
         # If the request came from an HTML form (e.g. the run-picker page's
         # "Start Run" button), redirect into the new run. Programmatic clients
