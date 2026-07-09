@@ -34,6 +34,7 @@ elif sys.platform == "win32":
         r"C:\OSGeo4W\bin",
         r"C:\OSGeo4W64\bin",
         r"C:\Program Files\GDAL\bin",
+        r"C:\Program Files\GDAL",  # GISInternals / winget GDAL: DLLs live here directly
     ]
     for osgeo_path in osgeo4w_paths:
         if Path(osgeo_path).exists():
@@ -43,6 +44,9 @@ elif sys.platform == "win32":
             # Find GDAL DLL
             gdal_dlls = list(Path(osgeo_path).glob("gdal*.dll"))
             main_gdal = next((d for d in gdal_dlls if d.stem.replace("gdal", "").isdigit()), None)
+            if not main_gdal:
+                # GISInternals / winget GDAL ships an unversioned gdal.dll
+                main_gdal = next((d for d in gdal_dlls if d.stem == "gdal"), None)
             if main_gdal:
                 GDAL_LIBRARY_PATH = str(main_gdal)
 
