@@ -34,6 +34,7 @@ from connect_labs.labs import s3_export
 from connect_labs.labs.analysis.data_access import fetch_opportunity_metadata, get_flw_names_for_opportunity
 from connect_labs.labs.analysis.sse_streaming import CeleryTaskStreamView
 from connect_labs.labs.context import get_org_data
+from connect_labs.opportunity.models import VisitValidationStatus
 from connect_labs.utils.tables import get_validated_page_size
 
 logger = logging.getLogger(__name__)
@@ -80,6 +81,11 @@ class ExperimentAuditCreateView(LoginRequiredMixin, TemplateView):
                 }
                 for opp in opportunities
             ]
+        )
+
+        # Visit status choices for the "Visit Type" filter (Step 3)
+        context["visit_status_options"] = json.dumps(
+            [{"value": value, "label": str(label)} for value, label in VisitValidationStatus.choices]
         )
 
         # Quick creation URL parameters for pre-filling the wizard
@@ -901,6 +907,8 @@ class ExperimentAuditCreateAPIView(LoginRequiredMixin, View):
                 "count_across_all": criteria.get("countAcrossAll", 100),
                 "sample_percentage": criteria.get("sample_percentage", criteria.get("samplePercentage", 100)),
                 "selected_flw_user_ids": criteria.get("selected_flw_user_ids", []),
+                "deliver_unit_types": criteria.get("deliver_unit_types") or criteria.get("deliverUnitTypes") or [],
+                "visit_statuses": criteria.get("visit_statuses") or criteria.get("visitStatuses") or [],
                 "related_fields": related_fields or None,
             }
 
@@ -1424,6 +1432,8 @@ class ExperimentAuditPreviewAPIView(LoginRequiredMixin, View):
                 "count_per_opp": criteria.get("countPerOpp", 10),
                 "count_across_all": criteria.get("countAcrossAll", 100),
                 "sample_percentage": criteria.get("sample_percentage", criteria.get("samplePercentage", 100)),
+                "deliver_unit_types": criteria.get("deliver_unit_types") or criteria.get("deliverUnitTypes") or [],
+                "visit_statuses": criteria.get("visit_statuses") or criteria.get("visitStatuses") or [],
             }
 
             # Get visit IDs AND filtered visits in one call (avoids redundant fetches)
@@ -2161,3 +2171,30 @@ class OpportunityFieldQuestionsAPIView(LoginRequiredMixin, View):
 
         result = [{"id": p, "label": p.rsplit("/", 1)[-1], "path": p} for p in sorted(seen_paths)]
         return JsonResponse(result, safe=False)
+
+
+class OpportunityDeliverUnitTypesAPIView(LoginRequiredMixin, View):
+    """List distinct deliver unit types seen in an opportunity's visits.
+
+    Backs the "Deliver Unit Type" filter dropdown in the audit creation wizard
+    (Step 3). Uses the raw visit cache (populated on demand if missing).
+
+    Connect never exposes a deliver-unit display name via its export API — only
+    the numeric FK id — so "deliver unit type" is derived from the submitted
+    form's own display name (form.@name in form_json), which is a stable,
+    human-readable proxy since each deliver unit maps to one form.
+
+    GET /audit/api/opportunity/<opp_id>/deliver-unit-types/
+    Response: ["Deliver Unit Name 1", "Deliver Unit Name 2", ...]
+    """
+
+    def get(self, request, opp_id: int):
+        data_access = AuditDataAccess(opportunity_id=opp_id, request=request)
+        try:
+            deliver_unit_types = data_access.get_deliver_unit_types(opp_id)
+            return JsonResponse(deliver_unit_types, safe=False)
+        except Exception:
+            logger.exception("[DeliverUnitTypes] Failed to list deliver unit types for opp %s", opp_id)
+            return JsonResponse({"error": "An internal error occurred"}, status=500)
+        finally:
+            data_access.close()

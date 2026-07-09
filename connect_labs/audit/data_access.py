@@ -86,6 +86,12 @@ class AuditCriteria:
     count_across_all: int = 100
     sample_percentage: int = 100
     selected_flw_user_ids: list[str] | None = None
+    # Filter to specific deliver unit type(s) — derived from form.@name in form_json,
+    # since Connect never exposes a deliver-unit name, only the numeric FK id.
+    deliver_unit_types: list[str] | None = None
+    visit_statuses: list[
+        str
+    ] | None = None  # Filter to specific visit status(es): pending/approved/rejected/over_limit
     related_fields: list[dict] | None = None  # List of {image_path, field_path, label}
 
     @classmethod
@@ -108,6 +114,12 @@ class AuditCriteria:
                 if rf.get("image_path") or rf.get("imagePath")
             ]
 
+        deliver_unit_types_raw = data.get("deliver_unit_types") or data.get("deliverUnitTypes") or []
+        deliver_unit_types = [du for du in deliver_unit_types_raw if du] or None
+
+        visit_statuses_raw = data.get("visit_statuses") or data.get("visitStatuses") or []
+        visit_statuses = [s for s in visit_statuses_raw if s] or None
+
         return cls(
             audit_type=data.get("audit_type") or data.get("type", "date_range"),
             start_date=data.get("start_date") or data.get("startDate"),
@@ -117,6 +129,8 @@ class AuditCriteria:
             count_across_all=data.get("count_across_all") or data.get("countAcrossAll", 100),
             sample_percentage=data.get("sample_percentage") or data.get("samplePercentage", 100),
             selected_flw_user_ids=data.get("selected_flw_user_ids") or data.get("selected_usernames", []),
+            deliver_unit_types=deliver_unit_types,
+            visit_statuses=visit_statuses,
             related_fields=related_fields or None,
         )
 
@@ -176,6 +190,23 @@ def filter_visits_for_audit(
     # Filter by selected FLWs if provided
     if criteria.selected_flw_user_ids and "username" in df.columns:
         df = df[df["username"].isin(criteria.selected_flw_user_ids)]
+
+    # Filter by deliver unit type(s) if provided — derived from form.@name, since
+    # Connect never exposes a deliver-unit name, only the numeric FK id.
+    if criteria.deliver_unit_types and "form_json" in df.columns:
+
+        def _form_name(form_json):
+            if isinstance(form_json, dict):
+                form = form_json.get("form")
+                if isinstance(form, dict):
+                    return form.get("@name")
+            return None
+
+        df = df[df["form_json"].apply(_form_name).isin(criteria.deliver_unit_types)]
+
+    # Filter by visit status(es) if provided
+    if criteria.visit_statuses and "status" in df.columns:
+        df = df[df["status"].isin(criteria.visit_statuses)]
 
     # Apply sample percentage — sample per FLW for equal representation, then shuffle
     if criteria.sample_percentage < 100 and len(df) > 0:
@@ -381,6 +412,8 @@ class AuditDataAccess(BaseDataAccess):
                     last_n_per_user=last_n_per_user,
                     last_n_total=effective_last_n,
                     sample_percentage=criteria.sample_percentage if len(opportunity_ids) == 1 else 100,
+                    deliver_unit_types=criteria.deliver_unit_types or None,
+                    visit_statuses=criteria.visit_statuses or None,
                     return_visit_data=return_visits,
                 )
                 if return_visits:
@@ -1133,6 +1166,28 @@ class AuditDataAccess(BaseDataAccess):
         except Exception as e:
             logger.warning(f"[FLWNames] Failed to fetch FLW names for opportunity {opp_id}: {e}")
             return {}
+
+    def get_deliver_unit_types(self, opportunity_id: int | None = None) -> list[str]:
+        """
+        Get distinct deliver unit types (form.@name) seen in an opportunity's visits.
+
+        Used to populate the "Deliver Unit Type" filter dropdown in the audit
+        creation wizard. Backed by the raw visit cache (populated on demand).
+        Connect never exposes a deliver-unit name (only the numeric FK id), so
+        this uses the submitted form's own display name as a proxy.
+
+        Returns:
+            List of deliver unit type names.
+        """
+        opp_id = opportunity_id or self.opportunity_id
+        if not opp_id:
+            return []
+
+        try:
+            return self.pipeline.get_deliver_unit_types_for_opportunity(opp_id)
+        except Exception as e:
+            logger.warning(f"[DeliverUnitTypes] Failed to fetch deliver unit types for opportunity {opp_id}: {e}")
+            return []
 
     # =========================================================================
     # Audit Creation Job Management (for async creation tracking)

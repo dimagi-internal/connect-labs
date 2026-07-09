@@ -232,6 +232,8 @@ class AnalysisPipeline:
         last_n_per_user: int | None = None,
         last_n_total: int | None = None,
         sample_percentage: int = 100,
+        deliver_unit_types: list[str] | None = None,
+        visit_statuses: list[str] | None = None,
         return_visit_data: bool = False,
     ) -> list[int] | tuple[list[int], list[dict]]:
         """
@@ -248,6 +250,10 @@ class AnalysisPipeline:
             last_n_per_user: Take only last N visits per user
             last_n_total: Take only last N visits total
             sample_percentage: Random sample percentage (1-100)
+            deliver_unit_types: Filter to specific deliver unit type(s), derived from
+                form.@name (None = all) — Connect never exposes a deliver-unit name,
+                only the numeric FK id, so the form's own display name is used instead.
+            visit_statuses: Filter to specific visit status(es) (None = all)
             return_visit_data: If True, also return filtered visit dicts (slim, no form_json)
 
         Returns:
@@ -267,7 +273,29 @@ class AnalysisPipeline:
             last_n_per_user=last_n_per_user,
             last_n_total=last_n_total,
             sample_percentage=sample_percentage,
+            deliver_unit_types=deliver_unit_types,
+            visit_statuses=visit_statuses,
             return_visit_data=return_visit_data,
+        )
+
+    def get_deliver_unit_types_for_opportunity(self, opportunity_id: int | None = None) -> list[str]:
+        """
+        Get distinct deliver unit types (form.@name) seen in an opportunity's cached raw visits.
+
+        Args:
+            opportunity_id: Opportunity ID (defaults to labs_context)
+
+        Returns:
+            List of deliver unit type names.
+        """
+        opp_id = opportunity_id or self.opportunity_id
+        if not opp_id:
+            return []
+
+        return self.backend.get_deliver_unit_types_for_opportunity(
+            opportunity_id=opp_id,
+            access_token=self.access_token,
+            expected_visit_count=self.visit_count,
         )
 
     # -------------------------------------------------------------------------

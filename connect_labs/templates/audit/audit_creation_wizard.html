@@ -566,6 +566,56 @@
       </div>
     </div>
 
+    <!-- Deliver Unit & Visit Type Filters -->
+    <div class="mt-6 pt-6 border-t border-gray-200">
+      <label class="block text-sm font-medium text-gray-700 mb-3">
+        <i class="fa-solid fa-filter mr-1"></i>
+        Additional Filters
+      </label>
+      <p class="text-xs text-gray-600 mb-4">
+        Optionally narrow the audit to specific delivery units and/or visit statuses. Leave a filter empty to include all.
+      </p>
+
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm text-gray-700 mb-2">Deliver Unit Type</label>
+          <div class="border border-gray-300 rounded-md p-3 max-h-40 overflow-y-auto space-y-2">
+            <p class="text-xs text-gray-500" x-show="deliverUnitTypesLoading">Loading delivery unit types...</p>
+            <p class="text-xs text-gray-500" x-show="!deliverUnitTypesLoading && availableDeliverUnitTypes.length === 0">
+              <span x-show="selectedOpportunities.length > 0">No delivery unit types found for the selected opportunit(y/ies).</span>
+              <span x-show="selectedOpportunities.length === 0">Select an opportunity to see delivery unit types.</span>
+            </p>
+            <template x-for="duType in availableDeliverUnitTypes" :key="duType">
+              <label class="flex items-center gap-2 text-sm text-gray-700">
+                <input type="checkbox" :value="duType" x-model="auditCriteria.deliverUnitTypes"
+                       class="rounded border-gray-300 text-brand-indigo focus:ring-brand-indigo">
+                <span x-text="duType"></span>
+              </label>
+            </template>
+          </div>
+          <p class="text-xs text-gray-500 mt-1" x-show="auditCriteria.deliverUnitTypes.length > 0">
+            <span x-text="auditCriteria.deliverUnitTypes.length"></span> selected
+          </p>
+        </div>
+
+        <div>
+          <label class="block text-sm text-gray-700 mb-2">Visit Type</label>
+          <div class="border border-gray-300 rounded-md p-3 space-y-2">
+            <template x-for="vs in visitStatusOptions" :key="vs.value">
+              <label class="flex items-center gap-2 text-sm text-gray-700">
+                <input type="checkbox" :value="vs.value" x-model="auditCriteria.visitStatuses"
+                       class="rounded border-gray-300 text-brand-indigo focus:ring-brand-indigo">
+                <span x-text="vs.label"></span>
+              </label>
+            </template>
+          </div>
+          <p class="text-xs text-gray-500 mt-1" x-show="auditCriteria.visitStatuses.length > 0">
+            <span x-text="auditCriteria.visitStatuses.length"></span> selected
+          </p>
+        </div>
+      </div>
+    </div>
+
     <!-- Update Preview Button -->
     <div class="flex justify-center mt-6">
       <button
@@ -1076,8 +1126,21 @@ function auditCreationPage() {
       countAcrossAll: 1000,
       allVisitsPerFlw: false,
       samplePercentage: 100,
+      deliverUnitTypes: [],  // Deliver unit types to filter to (empty = all)
+      visitStatuses: [],   // Visit statuses to filter to, e.g. 'approved'/'rejected'/'pending' (empty = all)
       relatedFields: []  // Array of {imagePath, fieldPath, label, filterByImage, filterByField} rules
     },
+
+    // Deliver unit types auto-detected from the selected opportunities' visits, for the
+    // "Deliver Unit Type" filter. Mirrors loadImageTypes/loadFieldPaths. Connect never
+    // exposes a deliver-unit display name, only the numeric FK id, so this is derived
+    // from each visit's form.@name (its submitted form's display name) instead.
+    availableDeliverUnitTypes: [],    // [name, ...] unioned across selected opps
+    deliverUnitTypesLoading: false,
+    deliverUnitTypesLoadedKey: '',    // cache key (sorted opp ids) to skip redundant refetches
+
+    // Visit status choices for the "Visit Type" filter (fixed enum, from the server).
+    visitStatusOptions: {{ visit_status_options|safe }},
 
     // Image types auto-detected from the selected opportunities' submissions.
     // Picking some scopes the audit to visits that have those photos (filter_by_image),
@@ -1170,6 +1233,7 @@ function auditCreationPage() {
       }
       this.loadImageTypes();
       this.loadFieldPaths();
+      this.loadDeliverUnitTypes();
     },
 
     removeOpportunitySelection(opportunity) {
@@ -1179,6 +1243,7 @@ function auditCreationPage() {
       }
       this.loadImageTypes();
       this.loadFieldPaths();
+      this.loadDeliverUnitTypes();
     },
 
 
@@ -1239,6 +1304,7 @@ function auditCreationPage() {
       this.auditTag = '';
       this.loadImageTypes();
       this.loadFieldPaths();
+      this.loadDeliverUnitTypes();
     },
 
     // Discover image types from the selected opportunities' recent submissions and
@@ -1314,6 +1380,41 @@ function auditCreationPage() {
         this.availableFieldPaths = [];
       } finally {
         this.fieldPathsLoading = false;
+      }
+    },
+
+    // Discover deliver unit types seen across selected opps' visits, for the "Deliver
+    // Unit Type" filter. Mirrors loadImageTypes/loadFieldPaths (per-opp calls, unioned,
+    // cached by the exact opp set). Values are form.@name strings, not IDs — Connect
+    // never exposes a deliver-unit display name via its export API.
+    async loadDeliverUnitTypes() {
+      const oppIds = this.selectedOpportunities.map(o => o.id);
+      const key = [...oppIds].sort((a, b) => a - b).join(',');
+      if (key === this.deliverUnitTypesLoadedKey) return;
+      if (oppIds.length === 0) {
+        this.availableDeliverUnitTypes = [];
+        this.deliverUnitTypesLoadedKey = '';
+        return;
+      }
+      this.deliverUnitTypesLoading = true;
+      try {
+        const lists = await Promise.all(oppIds.map(async oppId => {
+          const resp = await fetch(`/audit/api/opportunity/${oppId}/deliver-unit-types/`);
+          if (!resp.ok) throw new Error(`opportunity ${oppId}: HTTP ${resp.status}`);
+          return resp.json();
+        }));
+        const unique = new Set();
+        lists.flat().forEach(name => { if (name) unique.add(name); });
+        this.availableDeliverUnitTypes = Array.from(unique).sort((a, b) => a.localeCompare(b));
+        // Drop any previously-selected deliver unit types that no longer exist in the new set
+        const availTypes = new Set(this.availableDeliverUnitTypes);
+        this.auditCriteria.deliverUnitTypes = this.auditCriteria.deliverUnitTypes.filter(t => availTypes.has(t));
+        this.deliverUnitTypesLoadedKey = key;
+      } catch (e) {
+        console.error('Could not load deliver unit types:', e);
+        this.availableDeliverUnitTypes = [];
+      } finally {
+        this.deliverUnitTypesLoading = false;
       }
     },
 
@@ -1761,6 +1862,8 @@ function auditCreationPage() {
           tag: this.auditTag,
           pass_threshold: this.auditPassThreshold,
           selected_flw_user_ids: this.selectedFlwUserIds,  // Include FLW selections
+          deliver_unit_types: this.auditCriteria.deliverUnitTypes,
+          visit_statuses: this.auditCriteria.visitStatuses,
           // Include related fields configuration (filter out incomplete rules)
           relatedFields: this.buildRelatedFieldsPayload()
         };
@@ -1842,6 +1945,8 @@ function auditCreationPage() {
           tag: this.auditTag,
           pass_threshold: this.auditPassThreshold,
           selected_flw_user_ids: this.selectedFlwUserIds,
+          deliver_unit_types: this.auditCriteria.deliverUnitTypes,
+          visit_statuses: this.auditCriteria.visitStatuses,
           // The backend builds related_fields from image_audits/context_fields below.
           relatedFields: []
         };
@@ -2100,6 +2205,7 @@ function auditCreationPage() {
       // Detect image types now in case an opportunity was pre-selected from labs_context
       this.loadImageTypes();
       this.loadFieldPaths();
+      this.loadDeliverUnitTypes();
     },
 
     // Load available AI agents
