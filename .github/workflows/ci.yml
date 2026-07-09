@@ -61,6 +61,11 @@ jobs:
       CELERY_BROKER_URL: 'redis://localhost:6379/0'
       REDIS_URL: 'redis://localhost:6379/0'
       DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/postgres'
+      # Deliberately fake: pydantic-ai agent construction requires the var to
+      # exist (funder_dashboard agent tests), but unit tests must never be able
+      # to reach the real API — a test that actually calls Anthropic should
+      # fail loudly here, not silently spend money.
+      ANTHROPIC_API_KEY: 'sk-ant-ci-dummy-key-not-real'
 
     steps:
       - name: Checkout Code Repository
