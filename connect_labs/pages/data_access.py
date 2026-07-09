@@ -109,6 +109,13 @@ class SurfaceDataAccess:
         )
         return self._normalize(record)
 
+    def delete_surface(self, record_id: int) -> dict:
+        """Hard-delete a surface record by id. Scope is carried by the client so
+        the backend authorizes the delete (and synthetic opps short-circuit to
+        the local backend)."""
+        self.client.delete_record(record_id)
+        return {"deleted": True, "record_id": record_id}
+
 
 def _first_match(records):
     records = list(records or [])
