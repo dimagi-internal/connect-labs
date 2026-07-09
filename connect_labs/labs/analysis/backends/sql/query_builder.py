@@ -179,7 +179,8 @@ def _build_join_subquery(joins: list[JoinConfig], opportunity_id: int, pipeline_
         remote_obj = f"jsonb_build_object({', '.join(remote_kv_pairs)})"
 
         _remote_key = _sql_str(j.remote_key_field)
-        join_clauses.append(f"""LEFT JOIN (
+        join_clauses.append(
+            f"""LEFT JOIN (
                 SELECT DISTINCT ON (computed_fields->>'{_remote_key}')
                     computed_fields->>'{_remote_key}' AS join_key,
                     {remote_obj} AS computed_fields_json
@@ -192,7 +193,8 @@ def _build_join_subquery(joins: list[JoinConfig], opportunity_id: int, pipeline_
                     visit_date DESC NULLS LAST,
                     visit_id DESC
             ) {cache_alias}
-                ON {cache_alias}.join_key = {local_key_sql}""")
+                ON {cache_alias}.join_key = {local_key_sql}"""
+        )
 
     joined_object = f"jsonb_build_object({', '.join(join_obj_kvs)})"
     join_clauses_sql = "\n            ".join(join_clauses)

@@ -496,9 +496,9 @@ class SolicitationCreateView(ManagerRequiredMixin, TemplateView):
     def post(self, request, *args, **kwargs):
         if not _has_context(request):
             ctx = self.get_context_data(**kwargs)
-            ctx["error"] = (
-                "Please select a program or organization from the context selector before creating a solicitation."
-            )
+            ctx[
+                "error"
+            ] = "Please select a program or organization from the context selector before creating a solicitation."
             return self.render_to_response(ctx)
 
         form = SolicitationForm(request.POST)

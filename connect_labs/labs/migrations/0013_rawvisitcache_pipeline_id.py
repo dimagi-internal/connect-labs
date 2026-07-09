@@ -27,7 +27,6 @@ def noop_reverse(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("labs", "0011_cache_unique_constraints"),
         ("labs", "0012_haversine_function"),

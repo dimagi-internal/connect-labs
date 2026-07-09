@@ -4,21 +4,20 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('microplans', '0003_footprintbuilding_dataset'),
+        ("microplans", "0003_footprintbuilding_dataset"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='BarrierArea',
+            name="BarrierArea",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('area_hash', models.CharField(max_length=64, unique=True)),
-                ('overture_release', models.CharField(max_length=32)),
-                ('n_features', models.IntegerField(default=0)),
-                ('geom_json', models.JSONField(blank=True, null=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
+                ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("area_hash", models.CharField(max_length=64, unique=True)),
+                ("overture_release", models.CharField(max_length=32)),
+                ("n_features", models.IntegerField(default=0)),
+                ("geom_json", models.JSONField(blank=True, null=True)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
             ],
         ),
     ]

@@ -9,10 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from connect_labs.labs.synthetic.access import (
-    labs_only_scope_denied_reason,
-    user_can_access_labs_only_opp,
-)
+from connect_labs.labs.synthetic.access import labs_only_scope_denied_reason, user_can_access_labs_only_opp
 from connect_labs.labs.synthetic.models import LABS_ONLY_OPP_ID_FLOOR, SyntheticOpportunity
 from connect_labs.users.models import User
 

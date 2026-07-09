@@ -4,7 +4,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("admin_boundaries", "0002_adminboundary_unique_source_boundary_id"),
     ]
