@@ -8,6 +8,7 @@ would take: portfolio → create fund → view detail → edit fund.
 Run:
     pytest connect_labs/funder_dashboard/tests/test_e2e_fund_flow.py -v
 """
+
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -121,8 +122,13 @@ class TestStep1Portfolio:
         assert "Test Fund" in content
         assert "Funder Dashboard" in content
 
-    def test_portfolio_without_org_context(self):
-        """Portfolio page shows empty state when no org selected."""
+    @patch("connect_labs.funder_dashboard.views.FunderDashboardDataAccess")
+    def test_portfolio_without_org_context(self, MockDA):
+        """Funds are public, so the portfolio loads even with no org selected
+        (the view sets has_context=True unconditionally). With no funds available
+        it renders the empty state."""
+        MockDA.return_value.get_funds.return_value = []
+
         request = _make_request("/funder/")
         request.labs_context = {}
 
@@ -131,7 +137,7 @@ class TestStep1Portfolio:
         view.kwargs = {}
         ctx = view.get_context_data()
 
-        assert ctx["has_context"] is False
+        assert ctx["has_context"] is True
         assert ctx["funds"] == []
 
 
