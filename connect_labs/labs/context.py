@@ -4,6 +4,7 @@ Labs Context Management
 Provides unified context selection (organization, program, opportunity) that works
 across all labs projects. Context is represented as URL parameters and backed by session.
 """
+
 import logging
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
@@ -207,6 +208,10 @@ def validate_context_access(request: HttpRequest, context: dict) -> dict:
     # organization_id (a slug) stays unresolved without cached data, which is correct.
     org_data = get_org_data(request) or {}
 
+    # Lazy import to avoid any import-time cycle with the synthetic app during
+    # middleware initialization.
+    from connect_labs.labs.synthetic.access import labs_only_scope_denied_reason
+
     validated = {}
 
     # Validate organization_id
@@ -243,9 +248,18 @@ def validate_context_access(request: HttpRequest, context: dict) -> dict:
         # downstream LabsRecord API enforces real access per request. Without this,
         # /microplans/program/N/ for an accessible-but-not-cached program left the
         # context unset and the picker pill stuck on the previous (stale) selection.
+        #
+        # Exception: labs-only programs have NO production Connect side to enforce
+        # access downstream — they route to the local backend. So the pass-through
+        # would let any authenticated user scope to another tenant's labs-only
+        # program. Gate labs-only scopes here against the synthetic access model.
         if not program_found:
-            logger.info(f"Program {program_id} not in cached OAuth data, passing through for API validation")
-            validated["program_id"] = program_id
+            denied = labs_only_scope_denied_reason(getattr(request, "user", None), program_id=program_id)
+            if denied:
+                logger.warning("Blocking labs-only program scope: %s", denied)
+            else:
+                logger.info(f"Program {program_id} not in cached OAuth data, passing through for API validation")
+                validated["program_id"] = program_id
 
     # Validate opportunity_id
     if "opportunity_id" in context:
@@ -260,10 +274,18 @@ def validate_context_access(request: HttpRequest, context: dict) -> dict:
                 break
 
         # If opportunity not found in cached data, still pass through the ID
-        # Let the view/API handle authorization (handles managed opps bug)
+        # Let the view/API handle authorization (handles managed opps bug).
+        #
+        # Exception: labs-only opps route to the local backend with no downstream
+        # Connect check, so pass-through would expose another tenant's synthetic
+        # records. Gate labs-only scopes against the synthetic access model.
         if not opp_found:
-            logger.info(f"Opportunity {opp_id} not in cached OAuth data, passing through for API validation")
-            validated["opportunity_id"] = opp_id
+            denied = labs_only_scope_denied_reason(getattr(request, "user", None), opportunity_id=opp_id)
+            if denied:
+                logger.warning("Blocking labs-only opportunity scope: %s", denied)
+            else:
+                logger.info(f"Opportunity {opp_id} not in cached OAuth data, passing through for API validation")
+                validated["opportunity_id"] = opp_id
 
     return validated
 

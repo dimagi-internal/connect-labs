@@ -5,6 +5,7 @@ and authentication requirements.
 
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 from django.test import RequestFactory
 
@@ -51,6 +52,7 @@ class TestSSRFProtection:
     def test_fetch_url_content_allows_public_url(self):
         """A valid public URL should attempt the HTTP fetch (mocked)."""
         mock_response = MagicMock()
+        mock_response.is_redirect = False  # not a redirect; return the body
         mock_response.text = "<html><body>Hello world</body></html>"
         mock_response.raise_for_status = MagicMock()
 
@@ -65,6 +67,27 @@ class TestSSRFProtection:
 
         mock_get.assert_called_once()
         assert "Hello world" in result
+
+    def test_fetch_url_content_revalidates_redirect_target(self):
+        """A public URL that redirects to an internal address must be blocked:
+        the redirect target is re-validated, not blindly followed (SSRF via
+        redirect bypass). validate_url_safe passes the first (public) URL and
+        blocks the second (internal) one."""
+        redirect = MagicMock()
+        redirect.is_redirect = True
+        redirect.headers = {"location": "http://169.254.169.254/latest/meta-data/"}
+        redirect.url = httpx.URL("https://example.com/page")
+
+        with (
+            patch(
+                "connect_labs.solicitations.views.validate_url_safe",
+                side_effect=[None, "[Blocked: URL points to internal/private address]"],
+            ),
+            patch("httpx.get", return_value=redirect),
+        ):
+            result = _fetch_url_content("https://example.com/page")
+
+        assert "Blocked" in result
 
     def test_validate_url_safe_allows_public(self):
         """A public hostname resolving to a public IP should return None (safe)."""

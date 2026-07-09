@@ -133,6 +133,36 @@ class SyntheticOpportunity(models.Model):
         allowlist_is_dimagi = any(d.strip().lower() in DIMAGI_INTERNAL_DOMAINS for d in self.allowed_domains)
         return user_is_dimagi and allowlist_is_dimagi
 
+    def is_accessible_to(self, user) -> bool:
+        """Security boundary for READING/WRITING this labs-only opp's records.
+
+        Distinct from ``is_visible_to`` (which also requires the ``view_synthetic_opps``
+        picker toggle — a UI opt-in, not a security control). Labs-only opps route to
+        a local backend with no production Connect membership check behind them, so
+        this predicate is what actually isolates one tenant's records from another's.
+        It is enforced at the two request chokepoints (``validate_context_access`` for
+        the web app, and the MCP tool dispatcher).
+
+        Access rules:
+        * The creator always retains access.
+        * Dimagi-internal users are the platform operators and keep broad access
+          across labs-only opps (mirrors the existing Dimagi-equivalence carve-outs
+          in ``is_visible_to`` / the MCP access gate).
+        * Non-Dimagi (partner) users are gated on ``allowed_domains``: an empty list
+          means no restriction (the field's documented default); a non-empty list
+          requires the user's email domain to match.
+        """
+        if not self.labs_only:
+            return False
+        if self.created_by_id and self.created_by_id == getattr(user, "id", None):
+            return True
+        email = (getattr(user, "email", "") or "").lower()
+        if any(email.endswith(d) for d in DIMAGI_INTERNAL_DOMAINS):
+            return True
+        if not self.allowed_domains:
+            return True
+        return any(email.endswith(d.strip().lower()) for d in self.allowed_domains)
+
 
 class LabsLocalRecord(models.Model):
     """LabsRecord stored in the labs DB instead of production Connect.
