@@ -973,6 +973,8 @@ class SQLBackend:
         last_n_per_user: int | None = None,
         last_n_total: int | None = None,
         sample_percentage: int = 100,
+        deliver_unit_types: list[str] | None = None,
+        visit_statuses: list[str] | None = None,
         return_visit_data: bool = False,
     ) -> list[int] | tuple[list[int], list[dict]]:
         """
@@ -1011,6 +1013,8 @@ class SQLBackend:
                 last_n_per_user=last_n_per_user,
                 last_n_total=last_n_total,
                 sample_percentage=sample_percentage,
+                deliver_unit_types=deliver_unit_types,
+                visit_statuses=visit_statuses,
             )
             visit_ids = [v["id"] for v in visits]
             logger.info(f"[SQL] Filtered to {len(visit_ids)} visits (with data)")
@@ -1024,6 +1028,23 @@ class SQLBackend:
                 last_n_per_user=last_n_per_user,
                 last_n_total=last_n_total,
                 sample_percentage=sample_percentage,
+                deliver_unit_types=deliver_unit_types,
+                visit_statuses=visit_statuses,
             )
             logger.info(f"[SQL] Filtered to {len(visit_ids)} visit IDs")
             return visit_ids
+
+    def get_deliver_unit_types_for_opportunity(
+        self,
+        opportunity_id: int,
+        access_token: str,
+        expected_visit_count: int | None,
+    ) -> list[str]:
+        """Get distinct deliver unit types (form.@name) seen in an opportunity's cached raw visits."""
+        cache_manager = SQLCacheManager(opportunity_id, config=None)
+
+        if not cache_manager.has_valid_raw_cache(expected_visit_count or 0):
+            logger.info(f"[SQL] Cache miss during deliver-unit-type lookup, populating for opp {opportunity_id}")
+            self.fetch_raw_visits(opportunity_id, access_token, expected_visit_count)
+
+        return cache_manager.get_distinct_deliver_unit_types()

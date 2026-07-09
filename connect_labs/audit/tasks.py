@@ -681,6 +681,7 @@ def run_audit_creation(
         sessions_created = []
         session_title = criteria.get("title", "")
         session_tag = criteria.get("tag", "")
+        session_pass_threshold = criteria.get("pass_threshold", 100)
 
         # Fetch FLW display names for use in session titles
         flw_display_names = {}
@@ -733,6 +734,7 @@ def run_audit_creation(
                     visit_images=flw_images,
                     related_fields=related_fields,
                     workflow_run_id=workflow_run_id,
+                    pass_threshold=session_pass_threshold,
                 )
 
                 sessions_created.append(
@@ -772,6 +774,7 @@ def run_audit_creation(
                 visit_images=all_visit_images,
                 related_fields=related_fields,
                 workflow_run_id=workflow_run_id,
+                pass_threshold=session_pass_threshold,
             )
 
             sessions_created.append(

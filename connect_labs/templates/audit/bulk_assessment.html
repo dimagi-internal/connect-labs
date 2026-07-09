@@ -569,6 +569,7 @@
           </tbody>
         </table>
       </div>
+      <p class="text-xs italic text-gray-500 mt-2">Pass Threshold : <span x-text="auditPassThreshold"></span>%</p>
     </div>
   </template>
 
@@ -816,6 +817,10 @@ const connectUrl = '{{ connect_url|default:"https://connect.dimagi.com" }}';
 const orgSlug = '{{ org_slug|default:"" }}';
 const workflowRunId = {{ workflow_run_id|default:"null" }};
 const passThreshold = parseInt('{{ pass_threshold|default:"80" }}') || 80;
+// Audit-level pass % threshold configured at creation time (75-100, default 100) — determines
+// whether the whole audit is marked pass/fail on completion. Distinct from `passThreshold`
+// above, which only drives the per-FLW "needs a follow-up task" coloring.
+const auditPassThreshold = parseInt('{{ session.pass_threshold|default:"100" }}') || 100;
 
 // ── Image load concurrency gate ───────────────────────────────────────────
 // Large sessions can render hundreds of tiles. Firing every proxy request at
@@ -887,6 +892,7 @@ function bulkAssessmentInterface() {
     selectedFlw: '',
     widgetSize: 300,
     passThreshold: passThreshold,
+    auditPassThreshold: auditPassThreshold,
     workflowRunId: workflowRunId,
     backUrl: null,
     stats: {
@@ -1229,6 +1235,12 @@ function bulkAssessmentInterface() {
         else flwMap[key].pending++;
       });
       return Object.values(flwMap).sort((a, b) => a.username.localeCompare(b.username));
+    },
+    // Overall audit pass % across all assessed images — compared against auditPassThreshold
+    // to decide the audit's overall_result on completion. No assessments yet => 100 (vacuous pass).
+    get auditPassPercentage() {
+      const denom = this.stats.pass + this.stats.fail + (this.stats.incomplete || 0);
+      return denom > 0 ? Math.round((this.stats.pass / denom) * 100) : 100;
     },
     get aiAgentLabel() {
       if (!this.aiAgentId) return null;
@@ -1735,8 +1747,8 @@ function bulkAssessmentInterface() {
             : '{% url "audit:session_list" %}';
           window.location.href = redirectUrl;
         } else {
-          // Complete the session
-          const overallResult = this.stats.fail > 0 ? 'fail' : 'pass';
+          // Complete the session — pass if the overall pass % meets the audit's configured threshold
+          const overallResult = this.auditPassPercentage >= this.auditPassThreshold ? 'pass' : 'fail';
           formData.append('overall_result', overallResult);
           formData.append('notes', this.completionNotes);
           formData.append('kpi_notes', '');

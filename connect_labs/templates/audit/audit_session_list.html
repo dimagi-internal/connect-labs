@@ -157,9 +157,11 @@
     {% endif %}
     <button type="button" x-show="Object.keys(selectedSessions).length > 0" x-cloak
             @click="bulkDeleteSessions()"
-            class="button button-sm outline-style text-red-700 border-red-300 hover:bg-red-50">
-      <i class="fa-solid fa-trash mr-2"></i>
-      {% translate "Delete Selected" %} (<span x-text="Object.keys(selectedSessions).length"></span>)
+            :disabled="bulkDeleting"
+            class="button button-sm outline-style text-red-700 border-red-300 hover:bg-red-50 disabled:opacity-60 disabled:cursor-not-allowed">
+      <i class="fa-solid mr-2" :class="bulkDeleting ? 'fa-spinner fa-spin' : 'fa-trash'"></i>
+      <span x-show="!bulkDeleting">{% translate "Delete Selected" %} (<span x-text="Object.keys(selectedSessions).length"></span>)</span>
+      <span x-show="bulkDeleting">{% translate "Deleting..." %}</span>
     </button>
   </form>
   {% endif %}
@@ -178,6 +180,20 @@
       {% render_table table %}
     {% endif %}
   </div>
+
+  <!-- Bulk Delete Notification -->
+  <div x-show="notification.show" x-cloak
+       x-transition:enter="transition ease-out duration-300 transform"
+       x-transition:enter-start="translate-y-2 opacity-0"
+       x-transition:enter-end="translate-y-0 opacity-100"
+       x-transition:leave="transition ease-in duration-200"
+       x-transition:leave-start="opacity-100"
+       x-transition:leave-end="opacity-0"
+       class="fixed bottom-4 right-4 px-4 py-3 rounded-lg shadow-lg flex items-center gap-3 z-50 text-white"
+       :class="notification.type === 'success' ? 'bg-green-600' : 'bg-red-600'">
+    <i class="fa-solid" :class="notification.type === 'success' ? 'fa-circle-check' : 'fa-circle-exclamation'"></i>
+    <span x-text="notification.message"></span>
+  </div>
 </div>
 
 {% endblock %}
@@ -193,6 +209,8 @@ function auditListPage() {
     deleteUrlTemplate: '',
     selectedSessions: {},
     selectAllChecked: false,
+    bulkDeleting: false,
+    notification: { show: false, type: 'success', message: '' },
 
     init() {
       // Store the cancel/delete URL templates from data attributes
@@ -200,6 +218,26 @@ function auditListPage() {
       this.deleteUrlTemplate = this.$el.dataset.deleteUrl || '';
       // Load jobs from API
       this.loadJobs();
+
+      // Bulk delete reloads the page to refresh the list, so the outcome
+      // notification has to survive the reload — stash it and show it here.
+      const pending = sessionStorage.getItem('auditBulkDeleteNotification');
+      if (pending) {
+        sessionStorage.removeItem('auditBulkDeleteNotification');
+        try {
+          const { type, message } = JSON.parse(pending);
+          this.showNotification(type, message);
+        } catch (e) {
+          console.error('Error parsing pending notification:', e);
+        }
+      }
+    },
+
+    showNotification(type, message) {
+      this.notification = { show: true, type, message };
+      setTimeout(() => {
+        this.notification.show = false;
+      }, 4000);
     },
 
     // Bar width that reflects progress WITHIN the current stage, so the final
@@ -396,50 +434,6 @@ function auditListPage() {
       }
     },
 
-    async deleteSession(sessionId, buttonEl) {
-      if (!window.confirm('Delete this audit session permanently? This cannot be undone.')) {
-        return;
-      }
-
-      try {
-        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value;
-        const deleteUrl = this.deleteUrlTemplate.replace('/0/', `/${sessionId}/`);
-
-        const response = await fetch(deleteUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-CSRFToken': csrfToken,
-          },
-        });
-
-        if (response.redirected) {
-          alert('Session expired. Please refresh the page.');
-          return;
-        }
-
-        const contentType = response.headers.get('content-type');
-        if (!contentType || !contentType.includes('application/json')) {
-          const text = await response.text();
-          console.error('Non-JSON response:', response.status, text.substring(0, 500));
-          alert(`Failed to delete session: Server returned ${response.status}`);
-          return;
-        }
-
-        const data = await response.json();
-
-        if (data.success) {
-          const row = buttonEl.closest('tr');
-          if (row) row.remove();
-        } else {
-          alert(data.error || 'Failed to delete session');
-        }
-      } catch (e) {
-        console.error('Error deleting session:', e);
-        alert('Failed to delete session: ' + e.message);
-      }
-    },
-
     toggleSessionSelection(sessionId, status, checked) {
       if (checked) {
         this.selectedSessions[sessionId] = status;
@@ -478,8 +472,10 @@ function auditListPage() {
         return;
       }
 
+      this.bulkDeleting = true;
       const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value;
       const failures = [];
+      let successCount = 0;
 
       for (const [sessionId] of entries) {
         try {
@@ -500,10 +496,7 @@ function auditListPage() {
 
           const data = await response.json();
           if (data.success) {
-            delete this.selectedSessions[sessionId];
-            const cb = this.$el.querySelector(`.session-select-checkbox[value="${sessionId}"]`);
-            const row = cb ? cb.closest('tr') : null;
-            if (row) row.remove();
+            successCount++;
           } else {
             failures.push(sessionId);
           }
@@ -513,11 +506,22 @@ function auditListPage() {
         }
       }
 
-      this.selectAllChecked = false;
-
-      if (failures.length > 0) {
-        alert(`Failed to delete ${failures.length} of ${entries.length} session(s).`);
+      let notifType;
+      let notifMessage;
+      if (failures.length === 0) {
+        notifType = 'success';
+        notifMessage = `Deleted ${successCount} audit session${successCount === 1 ? '' : 's'} successfully.`;
+      } else if (successCount === 0) {
+        notifType = 'error';
+        notifMessage = `Failed to delete ${failures.length} audit session${failures.length === 1 ? '' : 's'}.`;
+      } else {
+        notifType = 'error';
+        notifMessage = `Deleted ${successCount} of ${entries.length} session(s) — ${failures.length} failed.`;
       }
+      sessionStorage.setItem('auditBulkDeleteNotification', JSON.stringify({ type: notifType, message: notifMessage }));
+
+      // Reload to refresh the list from the server — the notification above survives via sessionStorage.
+      window.location.reload();
     }
   };
 }

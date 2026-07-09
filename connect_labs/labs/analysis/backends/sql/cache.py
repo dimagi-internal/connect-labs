@@ -9,6 +9,7 @@ import random
 from datetime import date, datetime, timedelta
 
 from django.db import IntegrityError, transaction
+from django.db.models.fields.json import KeyTextTransform
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
 
@@ -960,6 +961,16 @@ class SQLCacheManager:
     # Visit Filtering (for Audit)
     # -------------------------------------------------------------------------
 
+    @staticmethod
+    def _form_name_transform() -> KeyTextTransform:
+        """SQL expression extracting form_json["form"]["@name"] — the form's display name.
+
+        Connect never serializes a deliver-unit *name*, only the numeric FK id, so
+        the "deliver unit type" filter uses this instead (each deliver unit maps to
+        one form, and its `@name` is stable and human-readable).
+        """
+        return KeyTextTransform("@name", KeyTextTransform("form", "form_json"))
+
     def filter_visits(
         self,
         usernames: list[str] | None = None,
@@ -968,6 +979,8 @@ class SQLCacheManager:
         last_n_per_user: int | None = None,
         last_n_total: int | None = None,
         sample_percentage: int = 100,
+        deliver_unit_types: list[str] | None = None,
+        visit_statuses: list[str] | None = None,
     ):
         """
         Build a filtered queryset of visits using SQL.
@@ -982,7 +995,8 @@ class SQLCacheManager:
         logger.info(
             f"[SQLCache.filter_visits] last_n_total={last_n_total}, "
             f"last_n_per_user={last_n_per_user}, usernames={usernames is not None}, "
-            f"sample_percentage={sample_percentage}"
+            f"sample_percentage={sample_percentage}, deliver_unit_types={deliver_unit_types}, "
+            f"visit_statuses={visit_statuses}"
         )
 
         # Start with base queryset (valid cache)
@@ -997,6 +1011,18 @@ class SQLCacheManager:
             qs = qs.filter(visit_date__gte=start_date)
         if end_date:
             qs = qs.filter(visit_date__lte=end_date)
+
+        # Filter by deliver unit type(s). Connect's own deliver_unit/deliver_unit_id
+        # fields are just the numeric FK PK (no name is ever serialized by the export
+        # API), so "deliver unit type" is instead derived from the submitted form's
+        # display name (form.@name in form_json) — the same proxy already used
+        # elsewhere in this codebase (RUTF/KMC timeline configs) as "visit type".
+        if deliver_unit_types:
+            qs = qs.annotate(_form_name=self._form_name_transform()).filter(_form_name__in=deliver_unit_types)
+
+        # Filter by visit status(es)
+        if visit_statuses:
+            qs = qs.filter(status__in=visit_statuses)
 
         # Apply last_n_per_user using window function
         if last_n_per_user:
@@ -1033,6 +1059,8 @@ class SQLCacheManager:
         last_n_per_user: int | None = None,
         last_n_total: int | None = None,
         sample_percentage: int = 100,
+        deliver_unit_types: list[str] | None = None,
+        visit_statuses: list[str] | None = None,
     ) -> list[int]:
         """Get filtered visit IDs using SQL. Returns only IDs (very fast)."""
         qs = self.filter_visits(
@@ -1042,6 +1070,8 @@ class SQLCacheManager:
             last_n_per_user=last_n_per_user,
             last_n_total=last_n_total,
             sample_percentage=sample_percentage,
+            deliver_unit_types=deliver_unit_types,
+            visit_statuses=visit_statuses,
         )
         return list(qs.values_list("visit_id", flat=True))
 
@@ -1053,6 +1083,8 @@ class SQLCacheManager:
         last_n_per_user: int | None = None,
         last_n_total: int | None = None,
         sample_percentage: int = 100,
+        deliver_unit_types: list[str] | None = None,
+        visit_statuses: list[str] | None = None,
     ) -> list[dict]:
         """
         Get filtered visits WITHOUT form_json (slim mode).
@@ -1066,6 +1098,8 @@ class SQLCacheManager:
             last_n_per_user=last_n_per_user,
             last_n_total=last_n_total,
             sample_percentage=sample_percentage,
+            deliver_unit_types=deliver_unit_types,
+            visit_statuses=visit_statuses,
         )
 
         # Defer heavy columns
@@ -1094,3 +1128,16 @@ class SQLCacheManager:
 
         logger.info(f"[SQLCache] Filtered to {len(visits)} visits (slim)")
         return visits
+
+    def get_distinct_deliver_unit_types(self) -> list[str]:
+        """Get distinct deliver unit types (form.@name) seen in cached raw visits, for audit filter dropdowns."""
+        qs = (
+            self.get_raw_visits_queryset()
+            .annotate(_form_name=self._form_name_transform())
+            .exclude(_form_name__isnull=True)
+            .exclude(_form_name="")
+            .values_list("_form_name", flat=True)
+            .distinct()
+            .order_by("_form_name")
+        )
+        return list(qs)
