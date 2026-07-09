@@ -10,9 +10,10 @@ from unittest.mock import MagicMock, patch
 
 
 class FakeSession:
-    def __init__(self, id, opportunity_id):
+    def __init__(self, id, opportunity_id, labs_record_id=None):
         self.id = id
         self.opportunity_id = opportunity_id
+        self.labs_record_id = labs_record_id
 
 
 class TestGetAuditSessionsProgramScope:
@@ -135,3 +136,81 @@ class TestGetAuditSessionsProgramScope:
             sessions = da.get_audit_sessions()
 
             assert [s.id for s in sessions] == [5]
+
+
+class TestGetSessionsByWorkflowRunProgramScope:
+    """get_sessions_by_workflow_run() shares the same fan-out helper as
+    get_audit_sessions() — a multi-opp workflow run's linked sessions are
+    each individually opportunity-tagged (whichever opp was active when
+    that particular session was created), so it needs the identical
+    program-scoped union, not just sessions matching self.program_id."""
+
+    def test_fans_out_and_filters_by_labs_record_id_across_program_opportunities(self):
+        with (
+            patch("connect_labs.workflow.data_access.LabsRecordAPIClient") as MockAPI,
+            patch("connect_labs.labs.context.get_org_data") as mock_get_org_data,
+            patch("connect_labs.workflow.data_access.settings") as mock_settings,
+        ):
+            mock_settings.CONNECT_PRODUCTION_URL = "https://example.com"
+            mock_get_org_data.return_value = {
+                "opportunities": [
+                    {"id": 1973, "program": 176},
+                    {"id": 1976, "program": 176},
+                ]
+            }
+
+            program_scoped_client = MagicMock()
+            program_scoped_client.get_records.return_value = []
+
+            opp_1973_client = MagicMock()
+            opp_1973_client.get_records.return_value = [
+                FakeSession(id=1, opportunity_id=1973, labs_record_id=42),
+                FakeSession(id=2, opportunity_id=1973, labs_record_id=99),  # different run — excluded
+            ]
+
+            opp_1976_client = MagicMock()
+            opp_1976_client.get_records.return_value = [
+                FakeSession(id=3, opportunity_id=1976, labs_record_id=42),
+            ]
+
+            def fake_client_factory(access_token, opportunity_id=None, organization_id=None, program_id=None):
+                if program_id == 176 and opportunity_id is None:
+                    return program_scoped_client
+                if opportunity_id == 1973:
+                    return opp_1973_client
+                if opportunity_id == 1976:
+                    return opp_1976_client
+                raise AssertionError(f"Unexpected client construction: opp={opportunity_id} program={program_id}")
+
+            MockAPI.side_effect = fake_client_factory
+
+            from connect_labs.audit.data_access import AuditDataAccess
+
+            da = AuditDataAccess(program_id=176, access_token="fake")
+            sessions = da.get_sessions_by_workflow_run(42)
+
+            # Session 2 (run 99) is filtered out; sessions 1 and 3 span TWO
+            # different opportunities and both survive — proving the fix.
+            assert sorted(s.id for s in sessions) == [1, 3]
+
+    def test_opportunity_scoped_call_is_unaffected_no_fanout(self):
+        with (
+            patch("connect_labs.workflow.data_access.LabsRecordAPIClient") as MockAPI,
+            patch("connect_labs.labs.context.get_org_data") as mock_get_org_data,
+            patch("connect_labs.workflow.data_access.settings") as mock_settings,
+        ):
+            mock_settings.CONNECT_PRODUCTION_URL = "https://example.com"
+            mock_client = MagicMock()
+            mock_client.get_records.return_value = [
+                FakeSession(id=1, opportunity_id=1973, labs_record_id=42),
+                FakeSession(id=2, opportunity_id=1973, labs_record_id=99),
+            ]
+            MockAPI.return_value = mock_client
+
+            from connect_labs.audit.data_access import AuditDataAccess
+
+            da = AuditDataAccess(opportunity_id=1973, access_token="fake")
+            sessions = da.get_sessions_by_workflow_run(42)
+
+            assert [s.id for s in sessions] == [1]
+            mock_get_org_data.assert_not_called()

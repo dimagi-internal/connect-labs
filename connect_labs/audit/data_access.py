@@ -982,7 +982,17 @@ class AuditDataAccess(BaseDataAccess):
         kwargs = {}
         if status:
             kwargs["status"] = status
+        return self._query_audit_sessions(username=username, **kwargs)
 
+    def _query_audit_sessions(self, username: str | None = None, **kwargs) -> list[AuditSessionRecord]:
+        """Fetch every AuditSession record visible to this DataAccess's scope.
+
+        Shared by get_audit_sessions() and get_sessions_by_workflow_run() —
+        both need the full unfiltered set in scope before applying their own
+        client-side filter (query params / labs_record_id match). See
+        get_audit_sessions's docstring for why program-scoped callers fan out
+        across member opportunities instead of a single scoped query.
+        """
         if self.program_id and not self.opportunity_id:
             return self._get_audit_sessions_for_program(username=username, **kwargs)
 
@@ -1041,8 +1051,14 @@ class AuditDataAccess(BaseDataAccess):
         Get all audit sessions linked to a workflow run.
 
         Sessions created from a workflow have their labs_record_id pointing to
-        the workflow run record. This method queries all sessions and filters
-        by that link.
+        the workflow run record. This method queries all sessions in scope
+        and filters by that link — the API doesn't support filtering by
+        labs_record_id server-side. Uses the same program-scoped fan-out as
+        get_audit_sessions(): a multi-opp workflow run's linked sessions are
+        each individually opportunity-tagged (whichever opp was active when
+        that particular session was created), so a program-scoped caller
+        needs every member opportunity's sessions, not just ones that
+        happen to carry a program_id field themselves.
 
         Args:
             workflow_run_id: ID of the workflow run record
@@ -1050,12 +1066,7 @@ class AuditDataAccess(BaseDataAccess):
         Returns:
             List of AuditSessionRecord objects linked to the workflow run
         """
-        # Get all sessions (the API doesn't support filtering by labs_record_id)
-        all_sessions = self.labs_api.get_records(
-            experiment="audit",
-            type="AuditSession",
-            model_class=AuditSessionRecord,
-        )
+        all_sessions = self._query_audit_sessions()
 
         # Filter to sessions linked to this workflow run
         return [s for s in all_sessions if s.labs_record_id == workflow_run_id]
