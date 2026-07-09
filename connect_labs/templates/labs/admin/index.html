@@ -116,6 +116,27 @@
           </div>
         </a>
 
+        <!-- Scheduled Workflows Card -->
+        <a href="{% url 'labs_admin:schedules' %}" class="group h-full">
+          <div class="border-2 border-gray-200 hover:border-purple-500 rounded-lg p-6 transition-all hover:shadow-md bg-gray-50 hover:bg-white h-full flex flex-col">
+            <div class="flex items-center mb-4">
+              <div class="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center mr-4 flex-shrink-0">
+                <i class="fa-regular fa-clock text-2xl text-purple-600"></i>
+              </div>
+              <div>
+                <h3 class="text-xl font-bold text-gray-900 group-hover:text-purple-600">Scheduled Workflows</h3>
+              </div>
+            </div>
+            <p class="text-sm text-gray-600 leading-relaxed mb-4 flex-grow">
+              View every workflow schedule, see when each next runs and its last status, and disable or delete schedules.
+            </p>
+            <div class="flex items-center text-purple-600 text-sm font-semibold mt-auto">
+              <span>Open Scheduled Workflows</span>
+              <i class="fa-solid fa-chevron-right ml-2 text-xs group-hover:translate-x-1 transition-transform"></i>
+            </div>
+          </div>
+        </a>
+
         <!-- Cache Manager Card -->
         <a href="{% url 'labs_admin:cache_manager' %}" class="group h-full">
           <div class="border-2 border-gray-200 hover:border-green-500 rounded-lg p-6 transition-all hover:shadow-md bg-gray-50 hover:bg-white h-full flex flex-col">

@@ -1023,8 +1023,7 @@ class TaskManagerView(AdminRequiredMixin, TemplateView):
             # Query workflow runs that have active_job state
             # This gives us visibility into workflow-related tasks
             with connection.cursor() as cursor:
-                cursor.execute(
-                    """
+                cursor.execute("""
                     SELECT
                         id,
                         data->'state'->'active_job'->>'job_id' as task_id,
@@ -1039,8 +1038,7 @@ class TaskManagerView(AdminRequiredMixin, TemplateView):
                     WHERE data->'state'->'active_job'->>'job_id' IS NOT NULL
                     ORDER BY (data->'state'->'active_job'->>'started_at')::timestamp DESC NULLS LAST
                     LIMIT 50
-                """
-                )
+                """)
 
                 columns = [col[0] for col in cursor.description]
                 for row in cursor.fetchall():
@@ -1377,3 +1375,56 @@ class BulkDownloadAppsView(AdminRequiredMixin, View):
         except Exception as e:
             logger.error(f"[AppDownloader] Failed to get download URLs: {e}")
             return JsonResponse({"error": f"Failed to get download URLs: {str(e)}"}, status=500)
+
+
+# =============================================================================
+# Scheduled Workflows (admin-scoped: acts on ANY owner's schedule)
+# =============================================================================
+
+
+class ScheduleListView(AdminRequiredMixin, TemplateView):
+    """Admin list of every workflow schedule, with enable/disable + delete."""
+
+    template_name = "labs/admin/schedules.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        from connect_labs.labs.models import WorkflowSchedule
+
+        context["schedules"] = WorkflowSchedule.objects.select_related("owner").order_by("-enabled", "next_run_at")
+        return context
+
+
+class ScheduleToggleView(AdminRequiredMixin, View):
+    """Enable/disable any schedule (admin action, not owner-scoped)."""
+
+    def post(self, request, schedule_id):
+        from django.utils import timezone as dj_timezone
+
+        from connect_labs.labs.models import WorkflowSchedule
+
+        try:
+            sched = WorkflowSchedule.objects.get(pk=schedule_id)
+        except WorkflowSchedule.DoesNotExist:
+            messages.error(request, "Schedule not found")
+            return redirect(reverse("labs_admin:schedules"))
+        sched.enabled = not sched.enabled
+        if sched.enabled:
+            sched.recompute_next_run(dj_timezone.now())  # recompute_next_run saves next_run_at when pk is set
+        sched.save(update_fields=["enabled", "next_run_at"])
+        messages.success(request, f"Schedule {'enabled' if sched.enabled else 'disabled'}.")
+        return redirect(reverse("labs_admin:schedules"))
+
+
+class ScheduleDeleteView(AdminRequiredMixin, View):
+    """Delete any schedule (admin action, not owner-scoped)."""
+
+    def post(self, request, schedule_id):
+        from connect_labs.labs.models import WorkflowSchedule
+
+        deleted, _ = WorkflowSchedule.objects.filter(pk=schedule_id).delete()
+        if deleted:
+            messages.success(request, "Schedule deleted.")
+        else:
+            messages.error(request, "Schedule not found")
+        return redirect(reverse("labs_admin:schedules"))
