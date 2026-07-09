@@ -793,7 +793,7 @@
                @mousedown.prevent="lightboxDragStart($event)"
                :style="`transform: translate(${lightbox.tx}px, ${lightbox.ty}px) scale(${lightbox.scale}); transition: ${lightbox.dragging ? 'none' : 'transform 0.1s ease-out'};`"
                :class="lightbox.scale > 1 ? (lightbox.dragging ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-zoom-in'"
-               class="max-h-full max-w-full object-contain"
+               class="w-full h-full object-contain"
                @click.stop="lightbox.scale <= 1 && lightboxZoom(2)">
           <button @click.stop="lightboxStep(1)" title="Next (→)" x-show="assessments.length > 1"
                   class="absolute right-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/10 hover:bg-white/25 text-white z-10"><i class="fa-solid fa-chevron-right text-xl"></i></button>
