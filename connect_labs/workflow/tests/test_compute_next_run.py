@@ -1,12 +1,6 @@
 from datetime import datetime, timezone
 
-from connect_labs.workflow.schedules import (
-    DAILY,
-    MONTHLY,
-    WEEKDAYS,
-    WEEKLY,
-    compute_next_run,
-)
+from connect_labs.workflow.schedules import DAILY, MONTHLY, WEEKDAYS, WEEKLY, compute_next_run
 
 # Wednesday 2026-07-08 09:30 UTC as the reference "now".
 NOW = datetime(2026, 7, 8, 9, 30, tzinfo=timezone.utc)
