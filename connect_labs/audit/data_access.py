@@ -966,10 +966,25 @@ class AuditDataAccess(BaseDataAccess):
         username: str | None = None,
         status: str | None = None,
     ) -> list[AuditSessionRecord]:
-        """Query audit sessions."""
+        """Query audit sessions.
+
+        Program-scoped callers (self.program_id set, no self.opportunity_id)
+        get the union of every session across the program's member
+        opportunities, not just sessions that happen to carry a program_id
+        field themselves. Audit sessions are almost always created while a
+        single OPPORTUNITY is selected — the common case — so they're tagged
+        with opportunity_id only. The production API does a literal field
+        match; it doesn't resolve the opportunity->program hierarchy. A plain
+        program_id-scoped query therefore silently misses every session
+        created under one of the program's opportunities, which is exactly
+        the "some but not all audits show under the program" bug this fixes.
+        """
         kwargs = {}
         if status:
             kwargs["status"] = status
+
+        if self.program_id and not self.opportunity_id:
+            return self._get_audit_sessions_for_program(username=username, **kwargs)
 
         return self.labs_api.get_records(
             experiment="audit",
@@ -978,6 +993,48 @@ class AuditDataAccess(BaseDataAccess):
             model_class=AuditSessionRecord,
             **kwargs,
         )
+
+    def _get_audit_sessions_for_program(self, username: str | None = None, **kwargs) -> list[AuditSessionRecord]:
+        """Fan out across every opportunity in self.program_id and merge, deduped by id.
+
+        Also includes anything already queryable under self.program_id
+        directly, in case some sessions do carry that field.
+        """
+        from connect_labs.labs.context import get_org_data
+
+        org_data = get_org_data(self.request)  # safe on request=None — returns {}
+        opp_ids = [
+            o.get("id")
+            for o in org_data.get("opportunities", [])
+            if o.get("program") == self.program_id and o.get("id") is not None
+        ]
+
+        by_id: dict[int, AuditSessionRecord] = {}
+
+        for session in self.labs_api.get_records(
+            experiment="audit",
+            type="AuditSession",
+            username=username,
+            model_class=AuditSessionRecord,
+            **kwargs,
+        ):
+            by_id[session.id] = session
+
+        for opp_id in opp_ids:
+            opp_access = AuditDataAccess(opportunity_id=opp_id, access_token=self.access_token)
+            try:
+                for session in opp_access.labs_api.get_records(
+                    experiment="audit",
+                    type="AuditSession",
+                    username=username,
+                    model_class=AuditSessionRecord,
+                    **kwargs,
+                ):
+                    by_id[session.id] = session
+            finally:
+                opp_access.close()
+
+        return list(by_id.values())
 
     def get_sessions_by_workflow_run(self, workflow_run_id: int) -> list[AuditSessionRecord]:
         """
