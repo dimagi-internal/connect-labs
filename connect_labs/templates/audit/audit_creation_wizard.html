@@ -824,6 +824,34 @@
       </div>
     </div>
 
+    <!-- Pass Threshold Configuration -->
+    <div class="mt-2 mb-6 pt-6 border-t border-gray-200">
+      <label class="block text-sm font-medium text-gray-700 mb-3">
+        <i class="fa-solid fa-check-double mr-1"></i>
+        Pass Threshold
+      </label>
+      <p class="text-xs text-gray-600 mb-4">
+        Minimum percentage of assessments that must pass for the whole audit to be marked "Pass" when the review is completed. At 100%, a single failed assessment still fails the audit.
+      </p>
+
+      <div class="flex items-center justify-between mb-2">
+        <label class="text-sm text-gray-700">Pass %</label>
+        <span class="text-lg font-semibold text-brand-indigo" x-text="auditPassThreshold + '%'"></span>
+      </div>
+      <input
+        type="range"
+        x-model.number="auditPassThreshold"
+        min="75"
+        max="100"
+        step="1"
+        class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-brand-indigo"
+      >
+      <div class="flex justify-between text-xs text-gray-400 mt-1">
+        <span>75%</span>
+        <span>100%</span>
+      </div>
+    </div>
+
     <div class="flex justify-end gap-4">
       <button
         @click="clearAllSelections()"
@@ -1107,6 +1135,8 @@ function auditCreationPage() {
     // Audit metadata
     auditTitle: '',
     auditTag: '',
+    // % of assessments that must pass for the whole audit to be marked pass (75-100)
+    auditPassThreshold: 100,
 
     // Quick filter for specific username (from URL params)
     quickFilterUsername: null,
@@ -1729,6 +1759,7 @@ function auditCreationPage() {
           countAcrossAll: this.auditCriteria.countAcrossAll,
           title: this.auditTitle,
           tag: this.auditTag,
+          pass_threshold: this.auditPassThreshold,
           selected_flw_user_ids: this.selectedFlwUserIds,  // Include FLW selections
           // Include related fields configuration (filter out incomplete rules)
           relatedFields: this.buildRelatedFieldsPayload()
@@ -1809,6 +1840,7 @@ function auditCreationPage() {
           countAcrossAll: this.auditCriteria.countAcrossAll,
           title: this.auditTitle,
           tag: this.auditTag,
+          pass_threshold: this.auditPassThreshold,
           selected_flw_user_ids: this.selectedFlwUserIds,
           // The backend builds related_fields from image_audits/context_fields below.
           relatedFields: []

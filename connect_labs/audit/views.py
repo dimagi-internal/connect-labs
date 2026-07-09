@@ -962,6 +962,7 @@ class ExperimentAuditCreateAPIView(LoginRequiredMixin, View):
 
             # User-provided title suffix
             title_suffix = criteria.get("title", "").strip()
+            pass_threshold = criteria.get("pass_threshold", 100)
 
             # For per_flw granularity with multiple FLWs, create separate sessions
             if granularity == "per_flw" and selected_flw_user_ids and len(selected_flw_user_ids) > 1:
@@ -1009,6 +1010,7 @@ class ExperimentAuditCreateAPIView(LoginRequiredMixin, View):
                         opportunity_name=opp_name or "",
                         visit_images=flw_images,
                         workflow_run_id=None,  # Created from wizard UI
+                        pass_threshold=pass_threshold,
                     )
                     sessions_created.append({"session_id": session.id, "flw_id": flw_id, "visits": len(flw_visit_ids)})
                     s3_export.upsert_audit_session(session)
@@ -1064,6 +1066,7 @@ class ExperimentAuditCreateAPIView(LoginRequiredMixin, View):
                 opportunity_name=opp_name or "",
                 visit_images=all_visit_images,
                 workflow_run_id=None,  # Created from wizard UI
+                pass_threshold=pass_threshold,
             )
             s3_export.upsert_audit_session(session)
 

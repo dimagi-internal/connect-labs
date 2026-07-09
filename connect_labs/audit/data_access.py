@@ -779,6 +779,7 @@ class AuditDataAccess(BaseDataAccess):
         visit_images: dict[str, list] | None = None,  # Pass pre-extracted images for batch operations
         related_fields: list[dict] | None = None,  # Related field rules for image extraction
         workflow_run_id: int | None = None,  # Optional link to workflow run that created this session
+        pass_threshold: int = 100,  # Min % of assessments that must pass for the audit to pass overall
     ) -> AuditSessionRecord:
         """
         Create an audit session with extracted image metadata.
@@ -799,6 +800,7 @@ class AuditDataAccess(BaseDataAccess):
             visit_images: Pre-extracted images dict (avoids re-extraction)
             related_fields: Related field rules for image extraction
             workflow_run_id: Optional workflow run ID if created from a workflow
+            pass_threshold: Min % of assessments that must pass for the audit to pass overall (75-100)
         """
         opp_id = opportunity_id or self.opportunity_id
 
@@ -848,6 +850,7 @@ class AuditDataAccess(BaseDataAccess):
             "tag": tag,
             "status": "in_progress",
             "overall_result": None,
+            "pass_threshold": pass_threshold,
             "notes": "",
             "kpi_notes": "",
             "visit_ids": visit_ids,

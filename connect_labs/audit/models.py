@@ -34,6 +34,11 @@ class AuditSessionRecord(LocalLabsRecord):
         return self.data.get("overall_result")
 
     @property
+    def pass_threshold(self):
+        """Minimum % of assessments that must pass for the audit to be marked pass (75-100, default 100)."""
+        return self.data.get("pass_threshold", 100)
+
+    @property
     def completed_at(self):
         """When the image review was completed (None while in progress).
 
