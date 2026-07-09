@@ -3,7 +3,7 @@ from unittest import mock
 
 import pytest
 
-from connect_labs.labs.connect_tokens import ConnectReLoginRequired
+from connect_labs.labs.connect_tokens import ConnectReLoginRequired, ConnectTokenError
 from connect_labs.labs.models import WorkflowSchedule
 from connect_labs.users.models import User
 
@@ -116,3 +116,37 @@ def test_ticker_dispatches_only_due_enabled_and_advances():
     assert dispatched_ids == {due.pk}
     due.refresh_from_db()
     assert due.next_run_at > now  # advanced
+
+
+@pytest.mark.django_db
+def test_ticker_claim_prevents_double_dispatch():
+    now = datetime.now(tz=timezone.utc)
+    sched = _make_schedule(username="dbl")
+    WorkflowSchedule.objects.filter(pk=sched.pk).update(next_run_at=now - timedelta(minutes=5))
+
+    with mock.patch("connect_labs.workflow.tasks.run_scheduled_workflow.delay") as delay:
+        from connect_labs.workflow.tasks import run_due_workflow_schedules
+
+        # Simulate a crashed/replayed tick: run the ticker twice back-to-back. The
+        # first call claims the row (advances next_run_at into the future), so the
+        # second call sees nothing due and dispatches nothing.
+        run_due_workflow_schedules()
+        run_due_workflow_schedules()
+
+    assert delay.call_count == 1
+
+
+@pytest.mark.django_db
+def test_run_scheduled_workflow_no_token_disables():
+    sched = _make_schedule(username="notok")
+    with mock.patch(
+        "connect_labs.workflow.tasks.get_valid_access_token",
+        side_effect=ConnectTokenError("no token"),
+    ):
+        from connect_labs.workflow.tasks import run_scheduled_workflow
+
+        run_scheduled_workflow(sched.id)
+
+    sched.refresh_from_db()
+    assert sched.last_status == WorkflowSchedule.STATUS_AUTH_EXPIRED
+    assert sched.enabled is False

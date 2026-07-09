@@ -756,8 +756,9 @@ import connect_labs.workflow.job_handlers  # noqa: F401, E402
 # Scheduled workflow tasks (see docs/superpowers/specs/2026-07-08-workflow-scheduler-design.md)
 # =============================================================================
 
-from connect_labs.labs.connect_tokens import ConnectReLoginRequired, get_valid_access_token  # noqa: E402
+from connect_labs.labs.connect_tokens import ConnectTokenError, get_valid_access_token  # noqa: E402
 from connect_labs.workflow.data_access import WorkflowDataAccess  # noqa: E402
+from connect_labs.workflow.schedules import compute_next_run  # noqa: E402
 from connect_labs.workflow.templates import run_default_for_definition  # noqa: E402
 
 
@@ -781,7 +782,11 @@ def run_scheduled_workflow(schedule_id: int) -> dict:
 
     try:
         token = get_valid_access_token(sched.owner)
-    except ConnectReLoginRequired as e:
+    except ConnectTokenError as e:
+        # Base ConnectTokenError covers ALL permanent dead-auth states — no stored
+        # UserConnectToken, expired-with-no-refresh-token, and the ConnectReLoginRequired
+        # subclass (dead refresh token). Auto-disable + mark auth_expired so the admin UI
+        # prompts a re-login; the generic except below stays for transient network errors.
         sched.last_status = WorkflowSchedule.STATUS_AUTH_EXPIRED
         sched.last_error = str(e)[:2000]
         sched.enabled = False
@@ -827,8 +832,9 @@ def run_scheduled_workflow(schedule_id: int) -> dict:
 def run_due_workflow_schedules() -> dict:
     """Beat ticker: dispatch every enabled schedule whose next_run_at has passed.
 
-    Advances next_run_at at dispatch time (not in the worker) so a slow or failed
-    run cannot cause a redispatch storm.
+    Claims each due row by advancing next_run_at BEFORE dispatch (optimistic
+    conditional update), so dispatch is at-most-once per window even across beat
+    crashes or overlapping ticks.
     """
     from connect_labs.labs.models import WorkflowSchedule
 
@@ -836,7 +842,15 @@ def run_due_workflow_schedules() -> dict:
     due = WorkflowSchedule.objects.filter(enabled=True, next_run_at__lte=now)
     dispatched = 0
     for sched in due:
-        run_scheduled_workflow.delay(sched.pk)
-        sched.recompute_next_run(now)  # saves next_run_at
-        dispatched += 1
+        next_at = compute_next_run(sched.cadence, sched.hour, sched.day_of_week, sched.day_of_month, now)
+        # Optimistic claim: advance next_run_at BEFORE dispatch, conditional on it being unchanged.
+        # Makes dispatch at-most-once per window even if a prior tick crashed after enqueueing,
+        # or two ticks overlap — the loser's UPDATE matches 0 rows and skips. Missing a run on a
+        # worker crash is acceptable; double-firing a non-idempotent hook is not.
+        claimed = WorkflowSchedule.objects.filter(pk=sched.pk, next_run_at=sched.next_run_at).update(
+            next_run_at=next_at
+        )
+        if claimed:
+            run_scheduled_workflow.delay(sched.pk)
+            dispatched += 1
     return {"dispatched": dispatched}
