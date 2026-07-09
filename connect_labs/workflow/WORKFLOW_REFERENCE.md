@@ -1637,3 +1637,12 @@ boundary `get_relay` returns `None`, a safe no-op.
 | `build_task_progress(state, info)`                           | `connect_labs/labs/analysis/sse_streaming.py` | The single Celery-meta → UI-progress translation. Every SSE + poll endpoint goes through it — never re-derive the shape. |
 | `streamTaskProgress({transport, statusUrl, streamUrl}, cbs)` | `connect_labs/static/js/task-progress.ts`     | Poll-first (default) or SSE progress client; `onItemResult` / `onCancelled` optional.                                    |
 | `JobStatusAPIView`                                           | `connect_labs/workflow/views.py`              | JSON poll endpoint for a workflow job (`api/job/<task_id>/status.json`).                                                 |
+
+## 12. Scheduling (recurring default runs)
+
+Any workflow whose template supports a **default run** (`TEMPLATE["supports_default_run"] = True` + a callable `run_default` hook — see §"Default run") can be scheduled to run itself on a recurring cadence with no user logged in.
+
+- **Model:** `connect_labs.labs.models.WorkflowSchedule` — one row per `(definition_id, scope, owner)`. Scope is `opportunity_id` XOR `program_id` (from `labs_context`). Cadences: `daily`, `weekdays` (Mon–Fri), `weekly` (+`day_of_week`), `monthly` (+`day_of_month` 1–28), each at a chosen `hour` (UTC). Next-fire math lives in the pure helper `connect_labs.workflow.schedules.compute_next_run`.
+- **Identity / auth:** a schedule stores only its **owner**, never a token. At fire time the run mints a fresh Connect access token from the owner's persisted `UserConnectToken` via `connect_labs.labs.connect_tokens.get_valid_access_token(owner)`. If that refresh token is dead (`ConnectReLoginRequired`), the schedule is auto-disabled and marked `auth_expired` ("Needs re-login" in the UI).
+- **Execution:** a single seeded `PeriodicTask` (django-celery-beat, every 15 min) runs `connect_labs.workflow.tasks.run_due_workflow_schedules`, which dispatches `run_scheduled_workflow.delay(schedule_id)` for each enabled, due row and advances `next_run_at` at dispatch time. `run_scheduled_workflow` resolves the token, loads the definition, and calls `run_default_for_definition`. `run_default` hooks are idempotent per window, so a fire never double-creates.
+- **UIs:** enable/edit a schedule per-row from the **workflow list screen** (owner-scoped, self-service); manage/disable/delete **all** schedules from **Labs Admin → Scheduled Workflows** (`labs_admin:schedules`, Dimagi-gated, acts on any owner's schedule).
