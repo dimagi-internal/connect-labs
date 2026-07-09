@@ -77,6 +77,14 @@
           "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ocs-oauth-client-secret-xDfhky"
         },
         {
+          "name": "CONNECT_OAUTH_CLIENT_ID",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-connect-oauth-client-id-9obT8Q"
+        },
+        {
+          "name": "CONNECT_OAUTH_CLIENT_SECRET",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-connect-oauth-client-secret-as2RFY"
+        },
+        {
           "name": "SCALE_VALIDATION_API_KEY",
           "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-scale-validation-api-key-OR5xdE"
         },
