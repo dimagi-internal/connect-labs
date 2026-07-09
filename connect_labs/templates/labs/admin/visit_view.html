@@ -55,7 +55,7 @@
 <div class="flex flex-col gap-4 w-full max-w-6xl mx-auto px-4">
   <!-- Breadcrumb -->
   <div class="breadcrumb">
-    <a href="{% url 'explorer:visit_inspector' %}">
+    <a href="{% url 'labs_admin:visit_inspector' %}">
       <i class="fa-solid fa-arrow-left mr-1"></i>
       Visit Inspector
     </a>
@@ -68,7 +68,7 @@
     <h1 class="text-2xl font-bold text-brand-deep-purple">
       View Visit #{{ visit_id }}
     </h1>
-    <a href="{% url 'explorer:download_visit' visit_id %}"
+    <a href="{% url 'labs_admin:download_visit' visit_id %}"
        class="button button-sm primary-dark"
        download>
       <i class="fa-solid fa-download"></i>

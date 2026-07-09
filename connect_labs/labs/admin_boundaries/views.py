@@ -24,11 +24,12 @@ from connect_labs.labs.admin_boundaries.services import (
     stream_load_country,
 )
 from connect_labs.labs.analysis.sse_streaming import BaseSSEStreamView, send_sse_event
+from connect_labs.labs.view_mixins import AdminRequiredMixin
 
 logger = logging.getLogger(__name__)
 
 
-class AdminBoundariesView(LoginRequiredMixin, TemplateView):
+class AdminBoundariesView(AdminRequiredMixin, TemplateView):
     """
     Admin Boundaries management page.
 
@@ -36,7 +37,7 @@ class AdminBoundariesView(LoginRequiredMixin, TemplateView):
     Uses single-country workflow with registry-based source selection.
     """
 
-    template_name = "labs/explorer/admin_boundaries.html"
+    template_name = "labs/admin/admin_boundaries.html"
 
     def get_context_data(self, **kwargs):
         """Provide boundary statistics, registry data, and filtered boundaries."""
@@ -123,7 +124,7 @@ class AdminBoundariesView(LoginRequiredMixin, TemplateView):
         return context
 
 
-class LoadBoundariesView(LoginRequiredMixin, View):
+class LoadBoundariesView(AdminRequiredMixin, View):
     """Handle boundary loading requests from the web UI."""
 
     def post(self, request):
@@ -243,7 +244,7 @@ class LoadBoundariesView(LoginRequiredMixin, View):
             )
 
 
-class DeleteBoundariesView(LoginRequiredMixin, View):
+class DeleteBoundariesView(AdminRequiredMixin, View):
     """Handle boundary deletion requests."""
 
     def post(self, request):
@@ -362,7 +363,7 @@ class BoundaryStatsAPIView(LoginRequiredMixin, View):
             return JsonResponse({"success": False, "error": f"Failed to get stats: {str(e)}"}, status=500)
 
 
-class LoadBoundariesStreamView(BaseSSEStreamView):
+class LoadBoundariesStreamView(AdminRequiredMixin, BaseSSEStreamView):
     """
     SSE streaming endpoint for boundary loading with real-time progress.
 
@@ -428,7 +429,7 @@ class LoadBoundariesStreamView(BaseSSEStreamView):
             yield send_sse_event(f"Error: {str(e)}", error=str(e))
 
 
-class UploadGeoPoDEView(LoginRequiredMixin, View):
+class UploadGeoPoDEView(AdminRequiredMixin, View):
     """Handle GeoPoDe ZIP file uploads."""
 
     def post(self, request):
@@ -503,7 +504,7 @@ class UploadGeoPoDEView(LoginRequiredMixin, View):
             )
 
 
-class UploadGeoPoDEStreamView(BaseSSEStreamView):
+class UploadGeoPoDEStreamView(AdminRequiredMixin, BaseSSEStreamView):
     """
     SSE streaming endpoint for GeoPoDe file upload with real-time progress.
 
@@ -669,7 +670,7 @@ class AvailableCountriesAPIView(LoginRequiredMixin, View):
             )
 
 
-class BoundaryMapView(LoginRequiredMixin, TemplateView):
+class BoundaryMapView(AdminRequiredMixin, TemplateView):
     """
     Map visualization for admin boundaries across multiple opportunities.
 
@@ -677,7 +678,7 @@ class BoundaryMapView(LoginRequiredMixin, TemplateView):
     Supports filtering by opportunity IDs, country, or funder.
     """
 
-    template_name = "labs/explorer/boundary_map.html"
+    template_name = "labs/admin/boundary_map.html"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -723,7 +724,7 @@ class BoundaryMapView(LoginRequiredMixin, TemplateView):
         return []
 
 
-class BoundaryMapAPIView(LoginRequiredMixin, View):
+class BoundaryMapAPIView(AdminRequiredMixin, View):
     """
     API endpoint to get aggregated boundary GeoJSON for multiple opportunities.
 
@@ -926,7 +927,7 @@ class BoundaryMapAPIView(LoginRequiredMixin, View):
 
 
 class ResolveManyByNameAPIView(LoginRequiredMixin, View):
-    """POST /labs/explorer/boundaries/resolve_many/
+    """POST /labs/admin/boundaries/resolve_many/
 
     Resolve a list of admin-boundary names (e.g. ward names) into their
     matched boundary records — id, name, parent LGA, population — or, for

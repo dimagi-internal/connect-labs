@@ -12,8 +12,8 @@ Usage:
     - default_iso_code: (optional) Pre-select a country ISO code
 
 Requirements:
-    - API endpoint accessible at /labs/explorer/boundaries/api/coverage/
-    - API endpoint accessible at /labs/explorer/boundaries/api/countries/
+    - API endpoint accessible at /labs/admin/boundaries/api/coverage/
+    - API endpoint accessible at /labs/admin/boundaries/api/countries/
     - Visit data must be cached (pipeline must have run for this opportunity)
 {% endcomment %}
 
@@ -116,8 +116,8 @@ Requirements:
     // Configuration
     const opportunityId = {{ opportunity_id|default:"null" }};
     const defaultIsoCode = "{{ default_iso_code|default:'' }}";
-    const countriesApiUrl = "{% url 'explorer:admin_boundaries:countries_api' %}";
-    const coverageApiUrl = "{% url 'explorer:admin_boundaries:coverage_api' %}";
+    const countriesApiUrl = "{% url 'labs_admin:admin_boundaries:countries_api' %}";
+    const coverageApiUrl = "{% url 'labs_admin:admin_boundaries:coverage_api' %}";
 
     // DOM elements
     const countrySelect = document.getElementById('boundary-country-select');

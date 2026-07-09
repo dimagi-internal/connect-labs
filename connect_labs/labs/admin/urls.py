@@ -6,11 +6,11 @@ from django.urls import include, path
 
 from . import views
 
-app_name = "explorer"
+app_name = "labs_admin"
 
 urlpatterns = [
-    # Explorer Landing Page
-    path("", views.ExplorerIndexView.as_view(), name="index"),
+    # Admin Landing Page
+    path("", views.AdminIndexView.as_view(), name="index"),
     # Labs Record
     path("records/", views.RecordListView.as_view(), name="list"),
     path("records/<int:pk>/edit/", views.RecordEditView.as_view(), name="edit"),

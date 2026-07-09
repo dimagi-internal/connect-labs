@@ -11,7 +11,7 @@
       <h1 class="text-3xl font-bold text-gray-900">Admin Boundary Map</h1>
       <p class="text-gray-600 mt-1">Visualize admin boundaries across opportunities</p>
     </div>
-    <a href="{% url 'explorer:admin_boundaries:index' %}" class="inline-flex items-center text-gray-600 hover:text-gray-900">
+    <a href="{% url 'labs_admin:admin_boundaries:index' %}" class="inline-flex items-center text-gray-600 hover:text-gray-900">
       <i class="fa-solid fa-arrow-left mr-2"></i>
       Back to Boundaries
     </a>
@@ -207,7 +207,7 @@ function boundaryMap() {
     filteredGeojsonData: null,
 
     // API URL
-    apiUrl: '{% url "explorer:admin_boundaries:map_api" %}',
+    apiUrl: '{% url "labs_admin:admin_boundaries:map_api" %}',
 
     // Color scale (blues)
     getColor(intensity) {

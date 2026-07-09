@@ -416,7 +416,7 @@ class LabsContextMiddleware(MiddlewareMixin):
                 "/tasks/",
                 "/solicitations/",
                 "/ai/",
-                "/labs/explorer/",
+                "/labs/admin/",
                 "/labs/workflow/",
                 "/labs/pipelines/",
                 "/labs/scout/",

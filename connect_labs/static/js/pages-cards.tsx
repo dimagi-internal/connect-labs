@@ -64,9 +64,37 @@ function StatusPill({ status }: { status?: string }) {
   );
 }
 
+// A runs list where each run expands in place to its per-FLW audit breakdown
+// (the shared window.LabsAudit primitive — the same panel the workflow run page
+// shows). One card, all runs, expand whichever you want — no pinned run.
 function WorkflowRuns({ payload }: { payload: CardPayload }) {
   const runs = (payload.data?.runs as WorkflowRun[]) || [];
   const total = (payload.data?.run_count as number) ?? runs.length;
+  const oppId = payload.data?.opportunity_id as number | string | undefined;
+  const oppIds =
+    (payload.data?.opportunity_ids as (number | string)[]) ||
+    (oppId != null ? [oppId] : []);
+  const oppNames = (payload.data?.opp_names as Record<string, string>) || {};
+  const LabsAudit = (window as any).LabsAudit;
+  const canExpand = !!LabsAudit && oppIds.length > 0;
+
+  const [expanded, setExpanded] = React.useState<Record<number, boolean>>({});
+  // undefined = never fetched, null = loading, array = loaded.
+  const [sessions, setSessions] = React.useState<
+    Record<number, any[] | null | undefined>
+  >({});
+
+  const toggle = (runId: number) => {
+    const willOpen = !expanded[runId];
+    setExpanded((e) => ({ ...e, [runId]: willOpen }));
+    if (willOpen && sessions[runId] === undefined && canExpand) {
+      setSessions((s) => ({ ...s, [runId]: null }));
+      LabsAudit.fetchSessions(runId, oppIds)
+        .then((rows: any[]) => setSessions((s) => ({ ...s, [runId]: rows })))
+        .catch(() => setSessions((s) => ({ ...s, [runId]: [] })));
+    }
+  };
+
   if (runs.length === 0) {
     return <div className="pages-card__empty">No runs yet.</div>;
   }
@@ -75,6 +103,7 @@ function WorkflowRuns({ payload }: { payload: CardPayload }) {
       <table className="pages-runs__table">
         <thead>
           <tr>
+            {canExpand && <th></th>}
             <th>Run</th>
             <th>Created</th>
             <th>Status</th>
@@ -82,18 +111,54 @@ function WorkflowRuns({ payload }: { payload: CardPayload }) {
           </tr>
         </thead>
         <tbody>
-          {runs.map((r) => (
-            <tr key={r.id}>
-              <td className="pages-run__id">Run #{r.id}</td>
-              <td className="pages-run__created">{r.created || '—'}</td>
-              <td>
-                <StatusPill status={r.status} />
-              </td>
-              <td className="pages-run__open">
-                <a href={r.open_url}>Open →</a>
-              </td>
-            </tr>
-          ))}
+          {runs.map((r) => {
+            const isOpen = !!expanded[r.id];
+            const rows = sessions[r.id];
+            return (
+              <React.Fragment key={r.id}>
+                <tr>
+                  {canExpand && (
+                    <td className="pages-run__chev">
+                      <button
+                        type="button"
+                        className="pages-run__toggle"
+                        aria-label={isOpen ? 'Collapse' : 'Expand'}
+                        onClick={() => toggle(r.id)}
+                      >
+                        <i
+                          className={
+                            'fa-solid ' +
+                            (isOpen ? 'fa-chevron-down' : 'fa-chevron-right')
+                          }
+                        />
+                      </button>
+                    </td>
+                  )}
+                  <td className="pages-run__id">Run #{r.id}</td>
+                  <td className="pages-run__created">{r.created || '—'}</td>
+                  <td>
+                    <StatusPill status={r.status} />
+                  </td>
+                  <td className="pages-run__open">
+                    <a href={r.open_url}>Open →</a>
+                  </td>
+                </tr>
+                {canExpand && isOpen && (
+                  <tr className="pages-run__detail">
+                    <td colSpan={5}>
+                      {LabsAudit.renderFlwBreakdown(React, {
+                        sessions: rows || [],
+                        oppNames,
+                        workflowRunId: r.id,
+                        loading: rows === null || rows === undefined,
+                        title: null,
+                      })}
+                    </td>
+                  </tr>
+                )}
+              </React.Fragment>
+            );
+          })}
         </tbody>
       </table>
       {total > runs.length && (
@@ -103,6 +168,42 @@ function WorkflowRuns({ payload }: { payload: CardPayload }) {
       )}
     </div>
   );
+}
+
+// The per-FLW audit breakdown, drawn by the shared window.LabsAudit primitive
+// (the SAME renderer the workflow run pages use). The card fetches the run's
+// sessions client-side so its data path matches the workflow surfaces exactly.
+function FlwAuditBreakdown({ payload }: { payload: CardPayload }) {
+  const data = payload.data || {};
+  const runId = data.workflow_run_id as number | undefined;
+  const oppIds = (data.opportunity_ids as (number | string)[]) || [];
+  const oppNames = (data.opp_names as Record<string, string>) || {};
+  const [sessions, setSessions] = React.useState<any[] | null>(null);
+  const LabsAudit = (window as any).LabsAudit;
+
+  React.useEffect(() => {
+    if (!LabsAudit || !runId) {
+      setSessions([]);
+      return;
+    }
+    LabsAudit.fetchSessions(runId, oppIds)
+      .then((rows: any[]) => setSessions(rows))
+      .catch(() => setSessions([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runId]);
+
+  if (!LabsAudit) {
+    return (
+      <div className="pages-card__empty">Audit breakdown unavailable.</div>
+    );
+  }
+  return LabsAudit.renderFlwBreakdown(React, {
+    sessions: sessions || [],
+    oppNames,
+    workflowRunId: runId,
+    loading: sessions === null,
+    title: null,
+  });
 }
 
 const RENDERERS: Record<string, React.FC<{ payload: CardPayload }>> = {
@@ -132,6 +233,7 @@ const RENDERERS: Record<string, React.FC<{ payload: CardPayload }>> = {
     </>
   ),
   workflow_runs: ({ payload }) => <WorkflowRuns payload={payload} />,
+  flw_audit_breakdown: ({ payload }) => <FlwAuditBreakdown payload={payload} />,
 };
 
 function DefaultRenderer({ payload }: { payload: CardPayload }) {
@@ -197,7 +299,14 @@ function CardShell({ slug, index }: { slug: string; index: number }) {
   if (error) return <div className="pages-card pages-card--error">{error}</div>;
   if (!payload)
     return <div className="pages-card pages-card--loading">Loading…</div>;
-  return <div className="pages-card">{<CardBody payload={payload} />}</div>;
+  // A runs card holds an expandable breakdown that needs room — let it span the
+  // full grid width instead of sitting in a narrow column.
+  const wide = payload.card_type === 'workflow_runs';
+  return (
+    <div className={'pages-card' + (wide ? ' pages-card--wide' : '')}>
+      <CardBody payload={payload} />
+    </div>
+  );
 }
 
 export function mountSurface() {

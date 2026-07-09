@@ -96,7 +96,7 @@
   <!-- Header -->
   <div class="flex relative mx-auto items-center justify-between w-full px-4 bg-slate-50 rounded-lg shadow-sm h-14">
     <div>
-      <a href="{% url 'explorer:index' %}" class="text-sm text-blue-600 hover:underline mr-2">
+      <a href="{% url 'labs_admin:index' %}" class="text-sm text-blue-600 hover:underline mr-2">
         <i class="fa-solid fa-arrow-left mr-1"></i> Labs Explorer
       </a>
       <span class="text-sm text-brand-deep-purple font-semibold">App Downloader</span>
@@ -207,8 +207,8 @@
             <td>{{ opp.program_name|default:"-" }}</td>
             <td class="text-nowrap">{{ opp.end_date }}</td>
             <td class="whitespace-nowrap">
-              <a href="{% url 'explorer:download_app' opp_id=opp.id app_type='learn' %}" class="button button-sm outline-style mr-2" title="Download Learn App CCZ">Learn</a>
-              <a href="{% url 'explorer:download_app' opp_id=opp.id app_type='deliver' %}" class="button button-sm outline-style" title="Download Deliver App CCZ">Deliver</a>
+              <a href="{% url 'labs_admin:download_app' opp_id=opp.id app_type='learn' %}" class="button button-sm outline-style mr-2" title="Download Learn App CCZ">Learn</a>
+              <a href="{% url 'labs_admin:download_app' opp_id=opp.id app_type='deliver' %}" class="button button-sm outline-style" title="Download Deliver App CCZ">Deliver</a>
             </td>
           </tr>
           {% empty %}
@@ -293,7 +293,7 @@ function appDownloader() {
         formData.append('app_type', appType);
         formData.append('opp_ids', this.selectedIds.join(','));
 
-        const response = await fetch('{% url "explorer:bulk_download_apps" %}', {
+        const response = await fetch('{% url "labs_admin:bulk_download_apps" %}', {
           method: 'POST',
           body: formData,
         });
