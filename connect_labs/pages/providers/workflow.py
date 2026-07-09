@@ -88,9 +88,27 @@ class WorkflowCardProvider(base.CardProvider):
         ]
 
         title = options.get("title") or (record.name if record else f"Workflow {definition_id}")
+        # Carry the opportunity scope so the client card can lazy-fetch each run's
+        # audit sessions on expand (window.LabsAudit.fetchSessions) and render the
+        # per-FLW breakdown inline — one card, every run expandable.
+        opp_ids = (record.opportunity_ids if record else None) or (
+            [opportunity_id] if opportunity_id is not None else []
+        )
+        opp_names = {}
+        allowed = {str(o.get("id")): (o.get("name") or "") for o in get_org_data(request).get("opportunities", [])}
+        for oid in opp_ids:
+            if allowed.get(str(oid)):
+                opp_names[str(oid)] = allowed[str(oid)]
         return base.CardPayload(
             title=title,
             card_type="workflow_runs",
             body=(record.description if record else None),
-            data={"definition_id": definition_id, "runs": run_rows, "run_count": len(runs)},
+            data={
+                "definition_id": definition_id,
+                "runs": run_rows,
+                "run_count": len(runs),
+                "opportunity_id": opportunity_id,
+                "opportunity_ids": [int(o) if str(o).isdigit() else o for o in opp_ids],
+                "opp_names": opp_names,
+            },
         )
