@@ -15,6 +15,7 @@ from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse, StreamingHttpResponse
+from django.utils import timezone as dj_timezone
 from django.views import View
 from django.views.decorators.http import require_GET, require_POST
 from django.views.generic import TemplateView
@@ -30,6 +31,7 @@ from connect_labs.utils.feature_access import can_create_from_template, get_allo
 from connect_labs.workflow.data_access import PipelineCacheMiss, PipelineDataAccess, WorkflowDataAccess
 from connect_labs.workflow.templates import TEMPLATES
 from connect_labs.workflow.templates import create_workflow_from_template as create_from_template
+from connect_labs.workflow.templates import template_supports_default_run
 
 logger = logging.getLogger(__name__)
 
@@ -176,8 +178,9 @@ class WorkflowListView(LoginRequiredMixin, TemplateView):
 
     template_name = "workflow/list.html"
 
-    def _build_workflow_row(self, definition, runs, pipeline_access, pipeline_cache):
-        """Enrich one definition into a template row: sorted runs + pipeline names.
+    def _build_workflow_row(self, definition, runs, pipeline_access, pipeline_cache, schedules_by_def):
+        """Enrich one definition into a template row: sorted runs + pipeline names
+        + scheduling info.
 
         Shared by opp-mode and program-mode so both render identical cards.
         """
@@ -206,6 +209,20 @@ class WorkflowListView(LoginRequiredMixin, TemplateView):
                 }
             )
 
+        sched = schedules_by_def.get(definition.id)
+        schedule_dict = None
+        if sched is not None:
+            schedule_dict = {
+                "id": sched.id,
+                "cadence": sched.cadence,
+                "cadence_label": sched.get_cadence_display(),
+                "hour": sched.hour,
+                "day_of_week": sched.day_of_week,
+                "day_of_month": sched.day_of_month,
+                "enabled": sched.enabled,
+                "last_status": sched.last_status,
+            }
+
         return {
             "definition": definition,
             "runs": runs,
@@ -213,6 +230,8 @@ class WorkflowListView(LoginRequiredMixin, TemplateView):
             "pipelines": pipelines,
             "template_type": definition.template_type,
             "latest_run_id": runs[0].id if runs else 0,
+            "schedulable": template_supports_default_run(definition.template_type),
+            "schedule": schedule_dict,
         }
 
     def get_context_data(self, **kwargs):
@@ -287,10 +306,21 @@ class WorkflowListView(LoginRequiredMixin, TemplateView):
             for run in data_access.list_runs():
                 runs_by_def.setdefault(run.data.get("definition_id"), []).append(run)
 
+            from connect_labs.labs.models import WorkflowSchedule
+
+            schedules_by_def = {
+                s.definition_id: s
+                for s in WorkflowSchedule.objects.filter(owner=self.request.user, opportunity_id=opportunity_id)
+            }
+
             pipeline_cache = {}
             workflows_with_runs = [
                 self._build_workflow_row(
-                    definition, runs_by_def.get(definition.id, []), pipeline_access, pipeline_cache
+                    definition,
+                    runs_by_def.get(definition.id, []),
+                    pipeline_access,
+                    pipeline_cache,
+                    schedules_by_def,
                 )
                 for definition in opp_defs
             ]
@@ -341,10 +371,21 @@ class WorkflowListView(LoginRequiredMixin, TemplateView):
             for run in data_access.list_runs():
                 runs_by_def.setdefault(run.data.get("definition_id"), []).append(run)
 
+            from connect_labs.labs.models import WorkflowSchedule
+
+            schedules_by_def = {
+                s.definition_id: s
+                for s in WorkflowSchedule.objects.filter(owner=self.request.user, program_id=program_id)
+            }
+
             pipeline_cache = {}
             workflows_with_runs = [
                 self._build_workflow_row(
-                    definition, runs_by_def.get(definition.id, []), pipeline_access, pipeline_cache
+                    definition,
+                    runs_by_def.get(definition.id, []),
+                    pipeline_access,
+                    pipeline_cache,
+                    schedules_by_def,
                 )
                 for definition in owned_defs
             ]
@@ -3273,6 +3314,144 @@ def start_job_api(request, run_id):
     except Exception:
         logger.exception("Failed to start job for run %s", run_id)
         return JsonResponse({"error": "An internal error occurred"}, status=500)
+
+
+def _resolve_schedule_scope(request):
+    """Return (opportunity_id, program_id) from labs_context. A patchable seam so
+    view tests don't have to reproduce the context middleware."""
+    labs_context = getattr(request, "labs_context", {}) or {}
+    return labs_context.get("opportunity_id"), labs_context.get("program_id")
+
+
+@login_required
+@require_POST
+def schedule_upsert_api(request, definition_id):
+    """Create or update the current user's schedule for this workflow + context.
+
+    Scope (opportunity vs program) is taken from labs_context, matching the list
+    view. Only workflows whose template supports default-run may be scheduled.
+    """
+    from connect_labs.labs.models import WorkflowSchedule
+
+    access_token = request.session.get("labs_oauth", {}).get("access_token")
+    if not access_token:
+        return JsonResponse({"error": "Not authenticated"}, status=401)
+
+    opportunity_id, program_id = _resolve_schedule_scope(request)
+    if not opportunity_id and not program_id:
+        return JsonResponse({"error": "opportunity_id or program_id required in context"}, status=400)
+
+    try:
+        body = json.loads(request.body or "{}")
+    except ValueError:
+        return JsonResponse({"error": "invalid JSON body"}, status=400)
+    if not isinstance(body, dict):
+        return JsonResponse({"error": "body must be a JSON object"}, status=400)
+
+    cadence = body.get("cadence")
+    valid_cadences = {c[0] for c in WorkflowSchedule.CADENCE_CHOICES}
+    if cadence not in valid_cadences:
+        return JsonResponse({"error": f"cadence must be one of {sorted(valid_cadences)}"}, status=400)
+    try:
+        hour = int(body.get("hour", 6))
+    except (TypeError, ValueError):
+        return JsonResponse({"error": "hour must be an integer 0-23"}, status=400)
+    if not 0 <= hour <= 23:
+        return JsonResponse({"error": "hour must be 0-23"}, status=400)
+
+    day_of_week = body.get("day_of_week")
+    day_of_month = body.get("day_of_month")
+    if cadence == WorkflowSchedule.CADENCE_WEEKLY:
+        try:
+            day_of_week = int(day_of_week)
+        except (TypeError, ValueError):
+            return JsonResponse({"error": "weekly cadence needs day_of_week 0-6"}, status=400)
+        if not 0 <= day_of_week <= 6:
+            return JsonResponse({"error": "weekly cadence needs day_of_week 0-6"}, status=400)
+        day_of_month = None
+    elif cadence == WorkflowSchedule.CADENCE_MONTHLY:
+        try:
+            day_of_month = int(day_of_month)
+        except (TypeError, ValueError):
+            return JsonResponse({"error": "monthly cadence needs day_of_month 1-28"}, status=400)
+        if not 1 <= day_of_month <= 28:
+            return JsonResponse({"error": "monthly cadence needs day_of_month 1-28"}, status=400)
+        day_of_week = None
+    else:
+        day_of_week = None
+        day_of_month = None
+
+    # Load the definition (scoped) to (a) verify access and (b) snapshot its name.
+    if opportunity_id:
+        da = WorkflowDataAccess(access_token=access_token, opportunity_id=opportunity_id)
+    else:
+        da = WorkflowDataAccess(access_token=access_token, program_id=program_id)
+    try:
+        definition = da.get_definition(definition_id)
+    finally:
+        da.close()
+    if definition is None:
+        return JsonResponse({"error": "Workflow definition not found"}, status=404)
+    if not template_supports_default_run(definition.template_type):
+        return JsonResponse({"error": "This workflow does not support scheduling."}, status=400)
+
+    sched, _created = WorkflowSchedule.objects.update_or_create(
+        definition_id=definition_id,
+        opportunity_id=opportunity_id,
+        program_id=program_id if not opportunity_id else None,
+        owner=request.user,
+        defaults={
+            "definition_name": definition.name or f"Workflow {definition_id}",
+            "cadence": cadence,
+            "hour": hour,
+            "day_of_week": day_of_week,
+            "day_of_month": day_of_month,
+            "enabled": True,
+            "last_status": None,
+            "last_error": "",
+        },
+    )
+    sched.recompute_next_run(dj_timezone.now())
+    return JsonResponse(
+        {
+            "id": sched.id,
+            "cadence": sched.cadence,
+            "hour": sched.hour,
+            "day_of_week": sched.day_of_week,
+            "day_of_month": sched.day_of_month,
+            "enabled": sched.enabled,
+            "next_run_at": sched.next_run_at.isoformat() if sched.next_run_at else None,
+        }
+    )
+
+
+@login_required
+@require_POST
+def schedule_delete_api(request, schedule_id):
+    """Delete one of the current user's schedules."""
+    from connect_labs.labs.models import WorkflowSchedule
+
+    deleted, _ = WorkflowSchedule.objects.filter(pk=schedule_id, owner=request.user).delete()
+    if not deleted:
+        return JsonResponse({"error": "Schedule not found"}, status=404)
+    return JsonResponse({"deleted": True})
+
+
+@login_required
+@require_POST
+def schedule_toggle_api(request, schedule_id):
+    """Enable/disable one of the current user's schedules."""
+    from connect_labs.labs.models import WorkflowSchedule
+
+    try:
+        sched = WorkflowSchedule.objects.get(pk=schedule_id, owner=request.user)
+    except WorkflowSchedule.DoesNotExist:
+        return JsonResponse({"error": "Schedule not found"}, status=404)
+    sched.enabled = not sched.enabled
+    if sched.enabled:
+        sched.recompute_next_run(dj_timezone.now())
+    sched.save(update_fields=["enabled", "next_run_at"])
+    return JsonResponse({"enabled": sched.enabled})
 
 
 @login_required

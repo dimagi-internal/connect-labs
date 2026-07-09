@@ -35,6 +35,10 @@ urlpatterns = [
     path("app-downloader/", views.AppDownloaderView.as_view(), name="app_downloader"),
     path("app-downloader/download/<int:opp_id>/<str:app_type>/", views.DownloadAppView.as_view(), name="download_app"),
     path("app-downloader/bulk-download/", views.BulkDownloadAppsView.as_view(), name="bulk_download_apps"),
+    # Scheduled Workflows
+    path("schedules/", views.ScheduleListView.as_view(), name="schedules"),
+    path("schedules/<int:schedule_id>/toggle/", views.ScheduleToggleView.as_view(), name="schedule_toggle"),
+    path("schedules/<int:schedule_id>/delete/", views.ScheduleDeleteView.as_view(), name="schedule_delete"),
     # Admin Boundaries
     path("boundaries/", include("connect_labs.labs.admin_boundaries.urls")),
 ]
