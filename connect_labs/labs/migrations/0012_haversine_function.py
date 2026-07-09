@@ -68,7 +68,6 @@ DROP FUNCTION IF EXISTS haversine_meters(
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("labs", "0011_cache_unique_constraints"),
     ]

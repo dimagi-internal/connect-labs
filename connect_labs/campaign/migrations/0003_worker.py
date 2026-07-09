@@ -5,7 +5,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("campaign", "0002_campaign_workspace_donor_householdstat_region_and_more"),
     ]

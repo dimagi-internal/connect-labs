@@ -4,7 +4,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("synthetic", "0006_syntheticopportunity_visit_count"),
     ]

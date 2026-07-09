@@ -19,10 +19,7 @@ from __future__ import annotations
 
 from django.db.models import Q
 
-from connect_labs.labs.synthetic.local_records_backend import (
-    is_labs_only_opportunity_id,
-    is_labs_only_program_id,
-)
+from connect_labs.labs.synthetic.local_records_backend import is_labs_only_opportunity_id, is_labs_only_program_id
 from connect_labs.labs.synthetic.models import SyntheticOpportunity
 
 

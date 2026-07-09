@@ -4,15 +4,14 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('microplans', '0002_footprintbuilding_geom_json'),
+        ("microplans", "0002_footprintbuilding_geom_json"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='footprintbuilding',
-            name='dataset',
+            model_name="footprintbuilding",
+            name="dataset",
             field=models.CharField(blank=True, max_length=64, null=True),
         ),
     ]
