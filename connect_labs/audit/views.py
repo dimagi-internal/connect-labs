@@ -1777,13 +1777,18 @@ class WorkflowSessionsAPIView(LoginRequiredMixin, View):
                 sessions = data_access.get_sessions_by_workflow_run(workflow_run_id)
                 session_dicts = [s.to_summary_dict() for s in sessions]
 
-                # Fetch FLW display names and add to each session
-                # Get opportunity_id from first session (all should be same opportunity)
+                # Fetch FLW display names and add to each session. A
+                # program-scoped workflow run's linked sessions can span
+                # MULTIPLE opportunities (see get_sessions_by_workflow_run's
+                # program fan-out) — resolve names per distinct opportunity
+                # present in the results, not just the first session's.
                 if session_dicts:
-                    opp_id = session_dicts[0].get("opportunity_id")
-                    if opp_id:
+                    opp_ids = {sd.get("opportunity_id") for sd in session_dicts if sd.get("opportunity_id")}
+                    if opp_ids:
                         try:
-                            flw_names = data_access.get_flw_names(opp_id)
+                            flw_names = {}
+                            for opp_id in opp_ids:
+                                flw_names.update(data_access.get_flw_names(opp_id))
                             for session_dict in session_dicts:
                                 username = session_dict.get("flw_username", "")
                                 session_dict["flw_display_name"] = flw_names.get(username, username)
