@@ -4,14 +4,16 @@ env:
   DOCKER_BUILDKIT: 1
   COMPOSE_DOCKER_CLI_BUILD: 1
 
+# No paths-ignore: the linter/pytest jobs are required status checks on main
+# (branch ruleset), and a path-filtered workflow never reports its checks on a
+# docs-only PR — which would leave that PR permanently unmergeable. Running CI
+# on docs changes costs a few runner-minutes; a stuck PR costs more.
 on:
   pull_request:
     branches: ['main']
-    paths-ignore: ['docs/**']
 
   push:
     branches: ['main']
-    paths-ignore: ['docs/**']
 
 concurrency:
   group: ${{ github.head_ref || github.run_id }}
@@ -85,5 +87,8 @@ jobs:
           pip install -r requirements-dev.txt
 
       - name: Run tests
+        # Whole test tree, not a hand-maintained app list — the old explicit list
+        # silently skipped campaign, mcp, pages, funder_dashboard, and others as
+        # they were added. No -x: report every failure, not just the first.
         run: |
-          pytest connect_labs/labs/ connect_labs/audit/ connect_labs/tasks/ connect_labs/workflow/ connect_labs/ai/ connect_labs/solicitations/ connect_labs/coverage/ connect_labs/microplans/ -x
+          pytest connect_labs/

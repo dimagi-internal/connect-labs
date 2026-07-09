@@ -73,13 +73,17 @@ def test_create_renders_raw_token_and_snippet(client, alice):
 
 
 @pytest.mark.django_db
-def test_create_zero_ttl_means_no_expiry(client, alice):
+def test_create_zero_ttl_clamps_to_max(client, alice):
+    # "No expiry" is no longer a thing — 0 clamps to MAX_TTL_DAYS so every
+    # self-service token ages out.
     client.post(
         reverse("labs:mcp_tokens_create"),
         {"name": "forever", "ttl_days": "0"},
     )
     token = MCPAccessToken.objects.get(user=alice, name="forever")
-    assert token.expires_at is None
+    assert token.expires_at is not None
+    delta = token.expires_at - timezone.now()
+    assert 360 <= delta.days <= MCPAccessToken.MAX_TTL_DAYS
 
 
 @pytest.mark.django_db
