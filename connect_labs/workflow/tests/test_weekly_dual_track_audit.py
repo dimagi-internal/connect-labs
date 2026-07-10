@@ -64,6 +64,53 @@ def test_builds_two_calls_per_opp_with_tags_and_image_audits():
     assert {e["image_path"] for e in b["image_audits"]} == {"form.house", "form.id"}
 
 
+def test_omits_pr884_filters_from_criteria_when_not_provided():
+    """Default behavior (no filters passed) must be unchanged — no new keys leak in."""
+    calls = build_track_audit_calls(
+        opportunity_ids=[101],
+        opp_names={"101": "Opp A"},
+        per_opp={"101": {"muac_image_paths": ["form.muac"]}},
+        track_a=TRACK_A,
+        track_b=TRACK_B,
+        window_start="2026-06-22",
+        window_end="2026-06-28",
+        username="nm1",
+        workflow_run_id=555,
+    )
+    assert len(calls) == 1
+    for key in ("pass_threshold", "deliver_unit_types", "visit_statuses"):
+        assert key not in calls[0]["criteria"]
+
+
+def test_applies_pr884_filters_identically_to_every_track():
+    """pass_threshold / deliver_unit_types / visit_statuses (PR #884) land on every
+    track's criteria unchanged, so AuditCriteria.from_dict parses them downstream."""
+    calls = build_track_audit_calls(
+        opportunity_ids=[101],
+        opp_names={"101": "Opp A"},
+        per_opp={
+            "101": {
+                "muac_image_paths": ["form.muac"],
+                "rest_image_paths": ["form.house"],
+            }
+        },
+        track_a=TRACK_A,
+        track_b=TRACK_B,
+        window_start="2026-06-22",
+        window_end="2026-06-28",
+        username="nm1",
+        workflow_run_id=555,
+        pass_threshold=85,
+        deliver_unit_types=["CHW Home Visit"],
+        visit_statuses=["approved", "pending"],
+    )
+    assert len(calls) == 2
+    for call in calls:
+        assert call["criteria"]["pass_threshold"] == 85
+        assert call["criteria"]["deliver_unit_types"] == ["CHW Home Visit"]
+        assert call["criteria"]["visit_statuses"] == ["approved", "pending"]
+
+
 def test_skips_track_with_no_image_paths():
     calls = build_track_audit_calls(
         opportunity_ids=[101],
@@ -294,6 +341,79 @@ def test_handler_applies_per_run_sampling_override():
         by_tag[cr["tag"]] = cr["sample_percentage"]
     assert by_tag["muac"] == 50
     assert by_tag["rest"] == 25
+
+
+def test_handler_applies_pr884_filters_from_job_payload():
+    """PR #884 filters chosen on a program/creator Generate screen ride through
+    job_config onto every track's run_audit_creation criteria."""
+    from connect_labs.workflow.job_handlers import weekly_dual_track_audit as h
+
+    run = _fake_run({"window_start": "2026-06-22", "window_end": "2026-06-28"})
+    eager = mock.Mock()
+    eager.result = {"sessions": [1]}
+
+    with (
+        mock.patch.object(h, "WorkflowDataAccess") as WDA,
+        mock.patch.object(h, "run_audit_creation") as rac,
+    ):
+        wda = WDA.return_value
+        wda.get_run.return_value = run
+        wda.get_definition.return_value = _fake_definition()
+        rac.apply.return_value = eager
+
+        h.weekly_dual_track_audit_create(
+            {
+                "run_id": 555,
+                "opportunity_id": 101,
+                "window_start": "2026-06-22",
+                "window_end": "2026-06-28",
+                "pass_threshold": 85,
+                "deliver_unit_types": ["CHW Home Visit"],
+                "visit_statuses": ["approved", "pending"],
+            },
+            access_token="tok",
+        )
+
+    for c in rac.apply.call_args_list:
+        cr = c.kwargs["kwargs"]["criteria"]
+        assert cr["pass_threshold"] == 85
+        assert cr["deliver_unit_types"] == ["CHW Home Visit"]
+        assert cr["visit_statuses"] == ["approved", "pending"]
+
+
+def test_handler_falls_back_to_persisted_pr884_filters_when_payload_lacks_them():
+    """A re-run without a fresh job payload (e.g. cron) reuses whatever filters
+    were last persisted onto run state, mirroring the window fallback."""
+    from connect_labs.workflow.job_handlers import weekly_dual_track_audit as h
+
+    run = _fake_run(
+        {
+            "window_start": "2026-06-22",
+            "window_end": "2026-06-28",
+            "pass_threshold": 90,
+            "deliver_unit_types": ["Malnutrition Screening"],
+            "visit_statuses": ["rejected"],
+        }
+    )
+    eager = mock.Mock()
+    eager.result = {"sessions": [1]}
+
+    with (
+        mock.patch.object(h, "WorkflowDataAccess") as WDA,
+        mock.patch.object(h, "run_audit_creation") as rac,
+    ):
+        wda = WDA.return_value
+        wda.get_run.return_value = run
+        wda.get_definition.return_value = _fake_definition()
+        rac.apply.return_value = eager
+
+        h.weekly_dual_track_audit_create({"run_id": 555, "opportunity_id": 101}, access_token="tok")
+
+    for c in rac.apply.call_args_list:
+        cr = c.kwargs["kwargs"]["criteria"]
+        assert cr["pass_threshold"] == 90
+        assert cr["deliver_unit_types"] == ["Malnutrition Screening"]
+        assert cr["visit_statuses"] == ["rejected"]
 
 
 # ── Task 2: saved-runs completion-gate snapshot hook ─────────────────────────

@@ -59,6 +59,14 @@ def weekly_dual_track_audit_create(job_config: dict, access_token: str, progress
         if job_config.get("other_sample_percentage") is not None:
             track_b["sample_percentage"] = job_config["other_sample_percentage"]
 
+        # Per-run audit-quality filters (PR #884): pass threshold, deliver unit
+        # type, visit status. Same window_start/window_end fallback pattern —
+        # prefer the job payload, fall back to whatever was last persisted onto
+        # run state (so a per-opp re-run without a fresh payload stays consistent).
+        pass_threshold = job_config.get("pass_threshold", state.get("pass_threshold"))
+        deliver_unit_types = job_config.get("deliver_unit_types", state.get("deliver_unit_types"))
+        visit_statuses = job_config.get("visit_statuses", state.get("visit_statuses"))
+
         calls = build_track_audit_calls(
             opportunity_ids=definition.data.get("opportunity_ids") or [opportunity_id],
             opp_names=batch.get("opp_names", {}),
@@ -69,6 +77,9 @@ def weekly_dual_track_audit_create(job_config: dict, access_token: str, progress
             window_end=window_end,
             username=run.username or job_config.get("username", ""),
             workflow_run_id=run_id,
+            pass_threshold=pass_threshold,
+            deliver_unit_types=deliver_unit_types,
+            visit_statuses=visit_statuses,
         )
 
         from connect_labs.utils.progress_relays import pop_relay, register_relay
@@ -119,7 +130,14 @@ def weekly_dual_track_audit_create(job_config: dict, access_token: str, progress
         # skip its own fragile session-scoped state write.
         wda.update_run_state(
             run_id,
-            {"window_start": window_start, "window_end": window_end, "last_batch": last_batch},
+            {
+                "window_start": window_start,
+                "window_end": window_end,
+                "last_batch": last_batch,
+                "pass_threshold": pass_threshold,
+                "deliver_unit_types": deliver_unit_types,
+                "visit_statuses": visit_statuses,
+            },
         )
     finally:
         wda.close()

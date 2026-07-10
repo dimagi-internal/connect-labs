@@ -82,11 +82,18 @@ def sample_overrides_for(definition):
     }
 
 
-def create_batch_run(definition, window_start, window_end, *, access_token, sample_overrides=None):
+def create_batch_run(
+    definition, window_start, window_end, *, access_token, sample_overrides=None, criteria_overrides=None
+):
     """Create ONE fresh audit-batch run for ``definition``'s opportunity and build
     the ``weekly_dual_track_audit_create`` job_config. Returns ``(opp_id, run,
     job_config)``. Shared by the eager (cron) path and the in-process, progress-
     relayed fan-out (program creator).
+
+    ``criteria_overrides`` (optional dict with ``pass_threshold``,
+    ``deliver_unit_types``, ``visit_statuses``) rides through job_config to the
+    ``weekly_dual_track_audit_create`` handler, which applies it to every
+    per-opp/per-track ``run_audit_creation`` call — see PR #884.
     """
     opp_id = definition.opportunity_id or definition.opportunity_ids[0]
     def_id = definition.id
@@ -114,10 +121,15 @@ def create_batch_run(definition, window_start, window_end, *, access_token, samp
     if sample_overrides:
         # {muac_sample_percentage, other_sample_percentage}
         job_config.update(sample_overrides)
+    if criteria_overrides:
+        # {pass_threshold, deliver_unit_types, visit_statuses}
+        job_config.update(criteria_overrides)
     return opp_id, run, job_config
 
 
-def run_this_week_batch(definition, window_start, window_end, *, access_token, sample_overrides=None):
+def run_this_week_batch(
+    definition, window_start, window_end, *, access_token, sample_overrides=None, criteria_overrides=None
+):
     """Create a fresh audit-batch run and fire the batch job SYNCHRONOUSLY (eager).
 
     Used by the no-UI cron/default-run path. Returns
@@ -125,7 +137,12 @@ def run_this_week_batch(definition, window_start, window_end, *, access_token, s
     batch errored). NOT idempotent — every call creates + fires a new run.
     """
     opp_id, run, job_config = create_batch_run(
-        definition, window_start, window_end, access_token=access_token, sample_overrides=sample_overrides
+        definition,
+        window_start,
+        window_end,
+        access_token=access_token,
+        sample_overrides=sample_overrides,
+        criteria_overrides=criteria_overrides,
     )
     # bind=True Celery task; run synchronously in-process via .apply().
     eager = run_workflow_job.apply(
@@ -140,7 +157,9 @@ def run_this_week_batch(definition, window_start, window_end, *, access_token, s
     }
 
 
-def dispatch_batch(definition, window_start, window_end, *, access_token, sample_overrides=None):
+def dispatch_batch(
+    definition, window_start, window_end, *, access_token, sample_overrides=None, criteria_overrides=None
+):
     """Create a fresh audit-batch run and DISPATCH its batch job ASYNC (``.delay``),
     returning immediately without waiting.
 
@@ -151,7 +170,12 @@ def dispatch_batch(definition, window_start, window_end, *, access_token, sample
     ``{"run_id", "task_id", "status": "running"}``.
     """
     opp_id, run, job_config = create_batch_run(
-        definition, window_start, window_end, access_token=access_token, sample_overrides=sample_overrides
+        definition,
+        window_start,
+        window_end,
+        access_token=access_token,
+        sample_overrides=sample_overrides,
+        criteria_overrides=criteria_overrides,
     )
     task = run_workflow_job.delay(
         job_config=job_config, access_token=access_token, run_id=run.id, opportunity_id=opp_id

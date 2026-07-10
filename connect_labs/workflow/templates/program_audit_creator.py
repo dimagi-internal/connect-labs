@@ -87,7 +87,15 @@ def _run_has_window(run, window_start):
 
 
 def fan_out_generate(
-    *, definition, run_id, access_token, request=None, window=None, progress_callback=None, only_opportunity_id=None
+    *,
+    definition,
+    run_id,
+    access_token,
+    request=None,
+    window=None,
+    progress_callback=None,
+    only_opportunity_id=None,
+    criteria_overrides=None,
 ) -> dict:
     """Fire this program run's audit generation into each per-opp creator.
 
@@ -103,12 +111,20 @@ def fan_out_generate(
     NOT re-fire — recovery is per-opp. Pass ``only_opportunity_id`` to (re-)run a
     single opportunity; its entry is merged into the existing record.
 
+    ``criteria_overrides`` (optional dict with ``pass_threshold``,
+    ``deliver_unit_types``, ``visit_statuses``) is applied to every audit created
+    by this fire — persisted onto the PROGRAM run's state so a later per-opp
+    re-run reuses the same filters. See PR #884 for these three filters'
+    original (Django wizard) implementation; ``AuditCriteria.from_dict`` already
+    understands these keys unchanged.
+
     Returns ``{"per_opp": {opp_id: result}, "generation", "window_start",
     "window_end"}``.
     """
     from connect_labs.workflow.audit_generation import dispatch_batch, sample_overrides_for
 
     window_start, window_end = window if window else (None, None)
+    criteria_overrides = criteria_overrides or {}
     all_sources = _resolve_instances(definition)
     order_of = {s["opportunity_id"]: i for i, s in enumerate(all_sources)}
 
@@ -117,9 +133,18 @@ def fan_out_generate(
     pwda = _program_run_dao(definition, access_token)
     try:
         prun = pwda.get_run(run_id)
-        existing = ((getattr(prun, "data", None) or {}).get("state", {}) or {}).get("generation") or {} if prun else {}
+        prun_state = (getattr(prun, "data", None) or {}).get("state", {}) or {} if prun else {}
+        existing = prun_state.get("generation") or {}
     finally:
         pwda.close()
+
+    # A per-opp re-run doesn't re-send filters (the render only sends them on the
+    # initial fire) — reuse whatever was persisted from the program run's first
+    # fire so recovery stays consistent with the rest of the run.
+    if not criteria_overrides:
+        criteria_overrides = {
+            k: prun_state[k] for k in ("pass_threshold", "deliver_unit_types", "visit_statuses") if k in prun_state
+        }
 
     if only_opportunity_id is None and existing:
         # Already fired — do not re-create the whole fan-out. Recovery is per-opp.
@@ -150,10 +175,17 @@ def fan_out_generate(
         # Persist the accumulating fan-out record onto the PROGRAM run, scoped to
         # the PROGRAM run's owner (program-scoped when program-owned, else the
         # creator's owning opp), so a reload reflects each opp's run + status.
+        # Filters are persisted too so a later per-opp re-run reuses them.
         pwda = _program_run_dao(definition, access_token)
         try:
             pwda.update_run_state(
-                run_id, {"generation": dict(generation), "window_start": window_start, "window_end": window_end}
+                run_id,
+                {
+                    "generation": dict(generation),
+                    "window_start": window_start,
+                    "window_end": window_end,
+                    **criteria_overrides,
+                },
             )
         finally:
             pwda.close()
@@ -195,6 +227,7 @@ def fan_out_generate(
             window_end,
             access_token=access_token,
             sample_overrides=sample_overrides_for(creator_def),
+            criteria_overrides=criteria_overrides,
         )
         per_opp[opp_id] = dispatched
         entry = {
@@ -361,6 +394,24 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions, onU
     var [datePreset, setDatePreset] = React.useState(runState.date_preset || 'last_week');
     var [startDate, setStartDate] = React.useState(runState.window_start || '');
     var [endDate, setEndDate] = React.useState(runState.window_end || '');
+    // Audit-quality filters (PR #884, ported from the Django creation wizard).
+    // Applied identically across every opp/track this program run fires.
+    var [passThreshold, setPassThreshold] = React.useState(runState.pass_threshold != null ? runState.pass_threshold : 100);
+    var [deliverUnitTypes, setDeliverUnitTypes] = React.useState(runState.deliver_unit_types || []);
+    var [visitStatuses, setVisitStatuses] = React.useState(runState.visit_statuses || []);
+    // Deliver unit types (form.@name) unioned across every source opportunity's
+    // visits — same discovery endpoint the Django wizard uses.
+    var [availableDeliverUnitTypes, setAvailableDeliverUnitTypes] = React.useState([]);
+    var [deliverUnitTypesLoading, setDeliverUnitTypesLoading] = React.useState(false);
+    // Visit status is a small fixed enum (VisitValidationStatus) — no discovery call needed.
+    var VISIT_STATUS_OPTIONS = [
+        { value: 'pending', label: 'Pending' },
+        { value: 'approved', label: 'Approved' },
+        { value: 'rejected', label: 'Rejected' },
+        { value: 'over_limit', label: 'Over Limit' },
+        { value: 'duplicate', label: 'Duplicate' },
+        { value: 'trial', label: 'Trial' }
+    ];
     var [isRunning, setIsRunning] = React.useState(false);
     var [busyOpp, setBusyOpp] = React.useState(null);
     var [progress, setProgress] = React.useState(null);
@@ -539,6 +590,26 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions, onU
     React.useEffect(function () { if (!startDate && !endDate) applyPreset('last_week'); }, []);
     React.useEffect(function () { return function () { if (cleanupRef.current) cleanupRef.current(); }; }, []);
 
+    // Discover deliver unit types (form.@name) across every source opportunity's
+    // visits, union them, and drop any previously-selected type that's no longer
+    // available. Runs once — sources are fixed config, not user-editable here.
+    React.useEffect(function () {
+        var oppIds = sources.map(function (s) { return s.opportunity_id; }).filter(function (id) { return id != null; });
+        if (oppIds.length === 0) return;
+        setDeliverUnitTypesLoading(true);
+        Promise.all(oppIds.map(function (oppId) {
+            return fetch('/audit/api/opportunity/' + oppId + '/deliver-unit-types/')
+                .then(function (r) { return r.ok ? r.json() : []; })
+                .catch(function () { return []; });
+        })).then(function (lists) {
+            var unique = {};
+            lists.forEach(function (list) { (list || []).forEach(function (name) { if (name) unique[name] = true; }); });
+            var types = Object.keys(unique).sort();
+            setAvailableDeliverUnitTypes(types);
+            setDeliverUnitTypes(function (prev) { return prev.filter(function (t) { return types.indexOf(t) !== -1; }); });
+        }).finally(function () { setDeliverUnitTypesLoading(false); });
+    }, []);
+
     function attachStream(taskId) {
         activeTaskRef.current = taskId;
         var cleanup = actions.streamJobProgress(
@@ -618,7 +689,10 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions, onU
             program_id: instance.program_id,
             only_opportunity_id: oppId,
             window_start: runState.window_start || startDate,
-            window_end: runState.window_end || endDate
+            window_end: runState.window_end || endDate,
+            pass_threshold: runState.pass_threshold != null ? runState.pass_threshold : passThreshold,
+            deliver_unit_types: runState.deliver_unit_types || deliverUnitTypes,
+            visit_statuses: runState.visit_statuses || visitStatuses
         }).then(function (resp) {
             if (!resp || !resp.success || !resp.task_id) {
                 setBusyOpp(null); setJobError((resp && resp.error) || ('Failed to start re-run for opp #' + oppId)); return;
@@ -649,6 +723,9 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions, onU
             program_id: instance.program_id,
             window_start: startDate,
             window_end: endDate,
+            pass_threshold: passThreshold,
+            deliver_unit_types: deliverUnitTypes,
+            visit_statuses: visitStatuses,
         }).then(function (resp) {
             if (!resp || !resp.success || !resp.task_id) {
                 setIsRunning(false); setJobError((resp && resp.error) || 'Failed to start generation'); return;
@@ -862,7 +939,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions, onU
                     }, p.label);
                 })
             ),
-            React.createElement('div', { style: { display: 'flex', gap: 16, alignItems: 'flex-end', flexWrap: 'wrap' } },
+            React.createElement('div', { style: { display: 'flex', gap: 16, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 16 } },
                 React.createElement('div', null,
                     React.createElement('label', { style: { display: 'block', fontSize: 11, color: '#6b7280', marginBottom: 4 } }, 'Start'),
                     React.createElement('input', { type: 'date', value: startDate, onChange: function (e) { setStartDate(e.target.value); setDatePreset('custom'); }, className: 'border border-gray-300 rounded px-3 py-2 text-sm' })
@@ -870,13 +947,76 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions, onU
                 React.createElement('div', null,
                     React.createElement('label', { style: { display: 'block', fontSize: 11, color: '#6b7280', marginBottom: 4 } }, 'End'),
                     React.createElement('input', { type: 'date', value: endDate, onChange: function (e) { setEndDate(e.target.value); setDatePreset('custom'); }, className: 'border border-gray-300 rounded px-3 py-2 text-sm' })
-                ),
-                React.createElement('button', {
-                    onClick: handleGenerate,
-                    disabled: !startDate || !endDate || isRunning || sources.length === 0,
-                    className: 'inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 font-medium'
-                }, isRunning ? 'Generating…' : ('Generate audit runs for all ' + sources.length + ' opportunit' + (sources.length === 1 ? 'y' : 'ies')))
+                )
             ),
+            // Audit-quality filters (PR #884, ported from the Django creation wizard):
+            // Pass Threshold slider, Deliver Unit Type + Visit Type checkbox lists.
+            React.createElement('div', { style: { borderTop: '1px solid #e5e7eb', paddingTop: 14, marginBottom: 16 } },
+                React.createElement('div', { style: { fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 10 } }, 'Filters'),
+                React.createElement('div', { style: { marginBottom: 16, maxWidth: 420 } },
+                    React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', marginBottom: 4 } },
+                        React.createElement('label', { style: { fontSize: 12, color: '#374151' } }, 'Pass Threshold'),
+                        React.createElement('span', { style: { fontSize: 13, fontWeight: 600, color: '#4f46e5' } }, passThreshold + '%')
+                    ),
+                    React.createElement('input', {
+                        type: 'range', min: 75, max: 100, step: 1, value: passThreshold,
+                        onChange: function (e) { setPassThreshold(parseInt(e.target.value, 10)); },
+                        style: { width: '100%' }
+                    }),
+                    React.createElement('div', { style: { fontSize: 11, color: '#9ca3af', marginTop: 2 } },
+                        'Minimum % of assessments that must pass for an audit to be marked "Pass". At 100%, a single failed assessment still fails the audit.')
+                ),
+                React.createElement('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 } },
+                    React.createElement('div', null,
+                        React.createElement('label', { style: { display: 'block', fontSize: 12, color: '#374151', marginBottom: 6 } }, 'Deliver Unit Type'),
+                        React.createElement('div', { style: { border: '1px solid #d1d5db', borderRadius: 6, padding: 10, maxHeight: 140, overflowY: 'auto' } },
+                            deliverUnitTypesLoading
+                                ? React.createElement('div', { style: { fontSize: 12, color: '#9ca3af' } }, 'Loading delivery unit types…')
+                                : (availableDeliverUnitTypes.length === 0
+                                    ? React.createElement('div', { style: { fontSize: 12, color: '#9ca3af' } }, 'No delivery unit types found.')
+                                    : availableDeliverUnitTypes.map(function (duType) {
+                                        return React.createElement('label', { key: duType, style: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#374151', marginBottom: 4 } },
+                                            React.createElement('input', {
+                                                type: 'checkbox',
+                                                checked: deliverUnitTypes.indexOf(duType) !== -1,
+                                                onChange: function (e) {
+                                                    setDeliverUnitTypes(function (prev) {
+                                                        return e.target.checked ? prev.concat([duType]) : prev.filter(function (t) { return t !== duType; });
+                                                    });
+                                                }
+                                            }),
+                                            duType
+                                        );
+                                    }))
+                        )
+                    ),
+                    React.createElement('div', null,
+                        React.createElement('label', { style: { display: 'block', fontSize: 12, color: '#374151', marginBottom: 6 } }, 'Visit Type'),
+                        React.createElement('div', { style: { border: '1px solid #d1d5db', borderRadius: 6, padding: 10 } },
+                            VISIT_STATUS_OPTIONS.map(function (vs) {
+                                return React.createElement('label', { key: vs.value, style: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#374151', marginBottom: 4 } },
+                                    React.createElement('input', {
+                                        type: 'checkbox',
+                                        checked: visitStatuses.indexOf(vs.value) !== -1,
+                                        onChange: function (e) {
+                                            setVisitStatuses(function (prev) {
+                                                return e.target.checked ? prev.concat([vs.value]) : prev.filter(function (v) { return v !== vs.value; });
+                                            });
+                                        }
+                                    }),
+                                    vs.label
+                                );
+                            })
+                        )
+                    )
+                ),
+                React.createElement('div', { style: { fontSize: 11, color: '#9ca3af', marginTop: 8 } }, 'Leave a filter empty to include all.')
+            ),
+            React.createElement('button', {
+                onClick: handleGenerate,
+                disabled: !startDate || !endDate || isRunning || sources.length === 0,
+                className: 'inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 font-medium'
+            }, isRunning ? 'Generating…' : ('Generate audit runs for all ' + sources.length + ' opportunit' + (sources.length === 1 ? 'y' : 'ies'))),
             progress && isRunning
                 ? React.createElement('div', { style: { marginTop: 14, background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: 12, fontSize: 13, color: '#1e40af' } },
                     (progress.message || 'Working…') + (progress.total > 0 ? ' (' + (progress.processed || 0) + '/' + progress.total + ')' : ''))

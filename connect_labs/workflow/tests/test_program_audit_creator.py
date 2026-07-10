@@ -67,7 +67,7 @@ def _patch_dispatch(monkeypatch, ag):
     """Patch dispatch_batch so fan_out dispatches each opp's audit job ASYNC (the
     parallel model) without hitting the real WorkflowDataAccess / Celery."""
 
-    def fake_dispatch(defn, ws, we, *, access_token, sample_overrides=None):
+    def fake_dispatch(defn, ws, we, *, access_token, sample_overrides=None, criteria_overrides=None):
         return {"run_id": defn.id + 1000, "task_id": "task-" + str(defn.id), "status": "running"}
 
     monkeypatch.setattr(ag, "dispatch_batch", fake_dispatch)
@@ -105,6 +105,91 @@ def test_fan_out_dispatches_async_and_records_task_ids(monkeypatch):
     assert last["generation"]["1976"]["run_id"] == 40 + 1976 + 1000
     assert last["generation"]["1976"]["task_id"] == "task-" + str(40 + 1976)
     assert last["generation"]["1976"]["status"] == "running"
+
+
+def test_fan_out_passes_criteria_overrides_to_dispatch_and_persists_them(monkeypatch):
+    """PR #884 filters (pass_threshold/deliver_unit_types/visit_statuses) chosen on
+    the program Generate screen ride through to each opp's dispatch_batch call and
+    get persisted onto the program run's state (so a later per-opp re-run can
+    reuse them without the render resending)."""
+    from connect_labs.workflow import audit_generation as ag
+    from connect_labs.workflow.templates import program_audit_creator as m
+
+    state_writes = []
+    dispatch_calls = []
+
+    def make_wda(access_token=None, opportunity_id=None, **_):
+        wda = mock.Mock()
+        wda.get_definition.return_value = _mock_creator(opportunity_id)
+        wda.get_run.return_value = _run(700)
+        wda.update_run_state.side_effect = lambda rid, s: state_writes.append(s)
+        return wda
+
+    def fake_dispatch(defn, ws, we, *, access_token, sample_overrides=None, criteria_overrides=None):
+        dispatch_calls.append(criteria_overrides)
+        return {"run_id": defn.id + 1000, "task_id": "task-" + str(defn.id), "status": "running"}
+
+    monkeypatch.setattr(m, "WorkflowDataAccess", make_wda)
+    monkeypatch.setattr(ag, "dispatch_batch", fake_dispatch)
+
+    overrides = {"pass_threshold": 85, "deliver_unit_types": ["CHW Home Visit"], "visit_statuses": ["approved"]}
+    m.fan_out_generate(
+        definition=_program_def(),
+        run_id=700,
+        access_token="t",
+        window=("2026-06-21", "2026-06-27"),
+        criteria_overrides=overrides,
+    )
+
+    assert dispatch_calls == [overrides, overrides]  # one per opp, unchanged
+    last = state_writes[-1]
+    assert last["pass_threshold"] == 85
+    assert last["deliver_unit_types"] == ["CHW Home Visit"]
+    assert last["visit_statuses"] == ["approved"]
+
+
+def test_fan_out_per_opp_recovery_reuses_persisted_criteria_overrides(monkeypatch):
+    """A per-opp re-run (only_opportunity_id set) that doesn't resend filters must
+    reuse whatever was persisted from the run's original fire."""
+    from connect_labs.workflow import audit_generation as ag
+    from connect_labs.workflow.templates import program_audit_creator as m
+
+    dispatch_calls = []
+
+    def make_wda(access_token=None, opportunity_id=None, **_):
+        wda = mock.Mock()
+        wda.get_definition.return_value = _mock_creator(opportunity_id)
+        prun = mock.Mock()
+        prun.data = {
+            "state": {
+                "generation": {"1973": {"opportunity_id": 1973, "run_id": 9, "status": "ready", "order": 0}},
+                "pass_threshold": 90,
+                "deliver_unit_types": ["Malnutrition Screening"],
+                "visit_statuses": ["rejected"],
+            }
+        }
+        wda.get_run.return_value = prun
+        wda.update_run_state.side_effect = lambda rid, s: None
+        return wda
+
+    def fake_dispatch(defn, ws, we, *, access_token, sample_overrides=None, criteria_overrides=None):
+        dispatch_calls.append(criteria_overrides)
+        return {"run_id": 999, "task_id": "task-redo", "status": "running"}
+
+    monkeypatch.setattr(m, "WorkflowDataAccess", make_wda)
+    monkeypatch.setattr(ag, "dispatch_batch", fake_dispatch)
+
+    m.fan_out_generate(
+        definition=_program_def(),
+        run_id=700,
+        access_token="t",
+        window=("2026-06-21", "2026-06-27"),
+        only_opportunity_id=1976,
+    )
+
+    assert dispatch_calls == [
+        {"pass_threshold": 90, "deliver_unit_types": ["Malnutrition Screening"], "visit_statuses": ["rejected"]}
+    ]
 
 
 def test_fan_out_single_fire_guard_skips_when_already_fired(monkeypatch):
@@ -218,7 +303,7 @@ def test_fan_out_per_opp_recovery_merges_single_opp(monkeypatch):
     monkeypatch.setattr(
         ag,
         "dispatch_batch",
-        lambda defn, ws, we, *, access_token, sample_overrides=None: {
+        lambda defn, ws, we, *, access_token, sample_overrides=None, criteria_overrides=None: {
             "run_id": 999,
             "task_id": "task-redo",
             "status": "running",

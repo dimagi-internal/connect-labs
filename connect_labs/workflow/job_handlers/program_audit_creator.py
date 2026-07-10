@@ -26,6 +26,14 @@ def program_audit_generate(job_config: dict, access_token: str, progress_callbac
     if not run_id:
         raise ValueError("program_audit_generate requires run_id in job_config")
 
+    # Audit-quality filters (PR #884) chosen on the program Generate screen,
+    # applied identically to every opp/track this fire creates. Omitted keys
+    # fall back to whatever fan_out_generate finds persisted on the run (e.g.
+    # a per-opp re-run that doesn't resend them).
+    criteria_overrides = {
+        k: job_config[k] for k in ("pass_threshold", "deliver_unit_types", "visit_statuses") if k in job_config
+    }
+
     from connect_labs.workflow.templates.program_audit_creator import fan_out_generate
 
     # Scoped read of the program run + its definition (Global Constraint): a
@@ -60,6 +68,7 @@ def program_audit_generate(job_config: dict, access_token: str, progress_callbac
         window=(window_start, window_end),
         progress_callback=_progress,
         only_opportunity_id=only_opportunity_id,
+        criteria_overrides=criteria_overrides,
     )
 
     per_opp = result.get("per_opp", {})
