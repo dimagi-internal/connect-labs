@@ -1,0 +1,46 @@
+name: "Bulk Image Audit — reopen a completed audit"
+narrative: "An NM can return to a completed audit, reopen it, and modify results before resubmitting — the audit is no longer locked forever at completion"
+base_url: "https://labs.connect.dimagi.com"
+
+# Warm the (slow) bulk-data fetch off-camera so the on-camera load doesn't
+# freeze-frame on a "Loading bulk assessment data…" spinner.
+prewarm: true
+
+# Auth is established out-of-band via `ace-labs-walkthrough-login` (headless
+# OAuth-via-CCHQ, cookies imported into the gstack browse profile). Data: the
+# `program-admin-report` synthetic env — audit session 4525 (opp 10000) is a
+# COMPLETED MUAC audit, which is exactly the state the reopen flow starts from.
+# NOTE: recording MUTATES 4525 (completed → in_progress); re-run
+# `synthetic_env_ensure` for the env afterwards to restore the completed state.
+# The engine auto-accepts the native confirm() dialog (record_video.py context
+# dialog handler), so the reopen click proceeds unprompted.
+
+personas:
+  nadia:
+    name: "Nadia Bello"
+    role: "Network Manager"
+    color: "#2563eb"
+    intro: "Nadia completed this MUAC photo audit two months ago. New context on one visit means she needs to go back in and revise a result — which used to be impossible once an audit was completed."
+
+scenes:
+  - persona: nadia
+    title: "A completed audit is locked"
+    url: "/audit/4525/bulk/?opportunity_id=10000"
+    show: "The completed audit's review screen — the green completion banner states when it was completed and that pass/fail is read-only, and now carries a Reopen Audit button on its right edge."
+    impressive_because: "The escape hatch is exactly where the lock is announced — the banner that tells you it's read-only is the same place you unlock it"
+    actions:
+      - { kind: wait_for, target: "Completed on" }
+      - { kind: hold, seconds: 2.5 }
+
+  # No `url` — continue on scene 1's page so the reopen happens on the
+  # already-loaded screen: click → (auto-accepted) confirm → reload into the
+  # editable in_progress state.
+  - persona: nadia
+    title: "Reopen, modify, resubmit"
+    show: "Clicking Reopen Audit returns the audit to in-progress: the completion banner is gone and the pass/fail controls are live again, ready for Nadia to revise the result and complete the review a second time."
+    impressive_because: "This finishes the return-to-a-saved-audit loop from the feedback doc — reopen, modify, resubmit, without admin surgery on the session record"
+    ai_quality: "After the reload the green completed banner is absent and the review controls (pass/fail, Complete Image Review button) render in their editable state"
+    actions:
+      - { kind: click, target: "text:Reopen Audit", note: "confirm dialog is auto-accepted; page reloads", must_succeed: true }
+      - { kind: wait_for, target: "Complete Image Review" }
+      - { kind: hold, seconds: 3 }
