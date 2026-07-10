@@ -922,17 +922,23 @@ class AuditDataAccess(BaseDataAccess):
     def get_audit_session(
         self, session_id: int, try_multiple_opportunities: bool = False
     ) -> AuditSessionRecord | None:
-        """Get an audit session by ID."""
+        """Get an audit session by ID.
+
+        Uses the API's server-side id filter (get_record_by_id) — one small
+        request — NOT a fetch-all-and-scan. The previous implementation pulled
+        every AuditSession in scope (full payloads, dominated by visit_images
+        metadata) to find one id, and repeated that dump per opportunity in the
+        cross-opp fallback; the review screen paid it twice per open (#905).
+        """
         # First try with current opportunity_id
-        sessions = self.labs_api.get_records(
+        session = self.labs_api.get_record_by_id(
+            session_id,
             experiment="audit",
             type="AuditSession",
             model_class=AuditSessionRecord,
         )
-
-        for session in sessions:
-            if session.id == session_id:
-                return session
+        if session:
+            return session
 
         # If not found and try_multiple_opportunities is True, search other opportunities
         if try_multiple_opportunities:
@@ -946,14 +952,14 @@ class AuditDataAccess(BaseDataAccess):
 
                     temp_labs_api = LabsRecordAPIClient(self.access_token, opp_id)
                     try:
-                        sessions = temp_labs_api.get_records(
+                        session = temp_labs_api.get_record_by_id(
+                            session_id,
                             experiment="audit",
                             type="AuditSession",
                             model_class=AuditSessionRecord,
                         )
-                        for session in sessions:
-                            if session.id == session_id:
-                                return session
+                        if session:
+                            return session
                     finally:
                         temp_labs_api.close()
             except Exception:
