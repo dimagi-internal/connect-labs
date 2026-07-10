@@ -33,12 +33,23 @@ def build_track_audit_calls(
     window_end,
     username,
     workflow_run_id,
+    pass_threshold=None,
+    deliver_unit_types=None,
+    visit_statuses=None,
 ):
     """Build the per-opp, per-track run_audit_creation kwargs for one weekly batch.
 
     Returns a flat list of kwargs dicts. A track is skipped when its per-opp
     image-path list is empty. JSON-coerced string keys are used to look up
     per_opp / opp_names, so callers may pass either int or str opp ids.
+
+    ``pass_threshold``/``deliver_unit_types``/``visit_statuses`` (PR #884) are
+    applied identically to every track's criteria when provided — they scope
+    which visits are audited (deliver unit type, visit status) and how the
+    resulting audit's overall_result is decided (pass threshold), same as the
+    Django creation wizard. ``AuditCriteria.from_dict`` (in
+    ``connect_labs.audit.data_access``) already understands these keys, so no
+    changes were needed to ``run_audit_creation`` itself.
     """
     calls = []
     for opp_id in opportunity_ids:
@@ -52,19 +63,26 @@ def build_track_audit_calls(
             image_audits = _image_audits(paths, track.get("reviewer"))
             if not image_audits:
                 continue
+            criteria = {
+                "audit_type": "date_range",
+                "start_date": window_start,
+                "end_date": window_end,
+                "sample_percentage": track["sample_percentage"],
+                "granularity": "per_flw",
+                "tag": track["tag"],
+                # related_fields is derived by run_audit_creation from image_audits.
+            }
+            if pass_threshold is not None:
+                criteria["pass_threshold"] = pass_threshold
+            if deliver_unit_types is not None:
+                criteria["deliver_unit_types"] = deliver_unit_types
+            if visit_statuses is not None:
+                criteria["visit_statuses"] = visit_statuses
             calls.append(
                 {
                     "username": username,
                     "opportunities": [{"id": opp_id, "name": name}],
-                    "criteria": {
-                        "audit_type": "date_range",
-                        "start_date": window_start,
-                        "end_date": window_end,
-                        "sample_percentage": track["sample_percentage"],
-                        "granularity": "per_flw",
-                        "tag": track["tag"],
-                        # related_fields is derived by run_audit_creation from image_audits.
-                    },
+                    "criteria": criteria,
                     "workflow_run_id": workflow_run_id,
                     "image_audits": image_audits,
                     "context_fields": None,

@@ -1105,6 +1105,11 @@
                                     {% endif %}
                                     {% endwith %}
                                     {% endif %}
+                                    {% if workflow.template_type == "program_audit_creator" and run.state.window_start %}
+                                    <div class="mt-0.5 text-xs text-indigo-600">
+                                        {{ run.state.window_start }} &ndash; {{ run.state.window_end }}
+                                    </div>
+                                    {% endif %}
                                 </td>
                                 <td class="py-3">
                                     <span class="text-sm text-gray-500">
