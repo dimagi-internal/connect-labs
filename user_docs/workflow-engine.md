@@ -206,6 +206,45 @@ Program managers can update a case's status directly from the workflow view. Sta
 
 ---
 
+## Program Audit Creator
+
+The **CHC PRE-RCT — Program Audit Creator** workflow lets you generate audits across all opportunities in the program in a single step. When you open the Generate screen, you will see an audit window date range followed by a **Filters** section, and then the **Generate** button.
+
+### Generate screen filters
+
+The Filters section contains three optional controls. Leaving any filter empty includes everything — the behaviour is identical to how the workflow worked before these filters were added.
+
+**Pass Threshold**
+
+A slider ranging from 75% to 100% (default: 100%). This sets the minimum percentage of assessments that must pass for an audit to be marked "Pass" overall. Lowering the threshold means more audits will qualify as passing; keeping it at 100% requires every assessment to pass.
+
+**Deliver Unit Type**
+
+A set of checkboxes populated automatically from the visits recorded across the selected opportunities. Check one or more types to include only visits of those types in the generated audits. If no boxes are checked, all deliver unit types are included.
+
+**Visit Type**
+
+Checkboxes for the visit's payment status. The available options are:
+
+| Option | What it includes |
+|---|---|
+| Pending | Visits awaiting approval |
+| Approved | Visits that have been approved for payment |
+| Rejected | Visits that have been rejected |
+| Over Limit | Visits that exceed the payment cap |
+| Duplicate | Visits flagged as duplicates |
+| Trial | Trial or test visits |
+
+Check one or more options to restrict the audits to visits with those statuses. If no boxes are checked, all visit types are included.
+
+These three filters work together: only visits that match every checked filter are included when audits are generated. Using the same filter settings across a weekly run ensures all four opportunities are audited consistently with a single Generate click.
+
+### Run list — audit window display
+
+On the workflow run list page, each Program Audit Creator run shows its audit window (for example, **2026-06-22 – 2026-06-28**) beneath the run number, once a window has been set for that run. This makes it easy to identify which week a run covers without opening it.
+
+---
+
 ## Concluding a Run
 
 When you are ready to save a run as complete, click **Conclude** on the workflow run. The system freezes exactly the dashboard you were looking at — the data already on your screen — and saves it as a locked historical record. Conclude never refetches or recomputes data behind your back, so on large opportunities it completes in seconds rather than waiting for a server-side rebuild.
@@ -216,23 +255,4 @@ When you are ready to save a run as complete, click **Conclude** on the workflow
 When a run is concluded, the snapshot captures what **that workflow** is currently set up to track at the time you click Conclude. This means:
 
 - If your team has added new data pipelines or tracking fields to the workflow since it was first created, those additions will be included in the snapshot — as long as the workflow's manifest has been updated to reflect them.
-- Workflows that were built from scratch rather than from a starter template can also use the conclude-and-save flow in the same way.
-
-**For recurring periodic reviews** (such as the LLO Weekly FLW Review), each concluded run saves only the figures for its own period. Week 1's snapshot shows Week 1 visits, Week 2's snapshot shows Week 2 visits, and so on. This means you can open any past weekly run and see exactly what that week looked like, and week-over-week comparisons reflect genuine change rather than the same all-time totals repeated across every run.
-
-!!! note "Keeping snapshots current after workflow changes"
-    If your program administrator adds new pipelines or columns to a workflow, those changes will appear in future concluded runs automatically once the workflow's manifest is updated. Runs that were already concluded before the change are unaffected — they remain exactly as they were saved.
-
-!!! note "If Conclude fails with a template error"
-    In rare cases — most commonly seen on MBW Auditing workflows — Conclude may show an error such as *"Failed to complete run: Workflow has no template_type; cannot resolve completion handler."* This happens when the workflow's internal definition is missing its template link.
-
-    The system now recovers from this automatically: if the workflow's name matches a known template, Conclude will succeed and the workflow will repair itself in the process. If the name does not match any known template, the error message will tell you exactly what needs to be corrected. In that case, contact your program administrator or post in **#connect-labs** with the workflow name and run number so the link can be restored.
-
-!!! note "If Conclude fails with a snapshot size error"
-    On very large opportunities, Conclude may show an error indicating the snapshot is too large to save. This is a safeguard to protect system stability. Contact your program administrator or post in **#connect-labs** with the workflow name and run number so the snapshot scope can be reviewed and adjusted.
-
-### MBW Auditing V5 — conclude requirements
-
-The **MBW Auditing V5** template uses a checklist-style conclude dialog that reflects how the MBW program team actually works. Before the run can be saved, the following two conditions must be met:
-
-1
+- Workflows that were built from scratch
