@@ -622,16 +622,27 @@
 
       {% if session.status == 'completed' %}
       <div class="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
-        <div class="flex items-center gap-2">
-          <i class="fa-solid fa-check-circle text-green-600"></i>
-          <span class="text-sm text-green-700">
-            Completed on {{ session.completed_at|date:"M d, Y \\a\\t H:i" }}
-          </span>
+        <div class="flex items-center justify-between gap-4">
+          <div>
+            <div class="flex items-center gap-2">
+              <i class="fa-solid fa-check-circle text-green-600"></i>
+              <span class="text-sm text-green-700">
+                Completed on {{ session.completed_at|date:"M d, Y \\a\\t H:i" }}
+              </span>
+            </div>
+            <p class="text-xs text-green-600 mt-1 ml-6">
+              <i class="fa-solid fa-lock mr-1"></i>
+              Pass/fail is read-only. Notes can still be updated and saved.
+            </p>
+          </div>
+          <button @click="uncompleteAudit()"
+                  :disabled="submittingCompletion"
+                  class="px-4 py-2 text-sm font-medium text-green-700 bg-white border border-green-300 rounded-lg hover:bg-green-100 transition-colors flex items-center gap-2 shrink-0"
+                  :class="submittingCompletion ? 'opacity-50 cursor-not-allowed' : ''">
+            <i class="fa-solid fa-rotate-left"></i>
+            Reopen Audit
+          </button>
         </div>
-        <p class="text-xs text-green-600 mt-1 ml-6">
-          <i class="fa-solid fa-lock mr-1"></i>
-          Pass/fail is read-only. Notes can still be updated and saved.
-        </p>
       </div>
       {% endif %}
 
