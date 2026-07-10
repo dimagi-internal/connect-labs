@@ -12,6 +12,9 @@
       <h1 class="text-xl font-bold mb-1">Bulk Assessment</h1>
       <p class="text-sm opacity-90 truncate"
          x-text="(bulkPrimaryUsername || bulkOpportunityName) ? [bulkPrimaryUsername, bulkOpportunityName].filter(Boolean).join(' - ') : (loading ? 'Loading...' : 'N/A')"></p>
+      <p class="text-sm opacity-90 truncate" x-show="bulkPrimaryFlwName">
+        FLW Name : <span x-text="bulkPrimaryFlwName"></span>
+      </p>
       <p class="text-xs opacity-75"
          x-text="(bulkStartDate && bulkEndDate) ? bulkStartDate + ' to ' + bulkEndDate : (loading ? 'Loading...' : '')"></p>
       <div class="flex gap-2 mt-2">
@@ -197,6 +200,11 @@
                 class="px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium disabled:opacity-50">
           <i class="fa-solid fa-times mr-1"></i>Fail All Pending
         </button>
+        <button @click="markAllDuplicateFake()"
+                :disabled="isReadOnly || loading || bulkProcessing"
+                class="px-3 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors text-sm font-medium disabled:opacity-50">
+          <i class="fa-solid fa-exclamation mr-1"></i>Mark All Duplicate/Fake
+        </button>
         <button @click="clearAllAssessments()"
                 :disabled="isReadOnly || loading || bulkProcessing"
                 class="px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium disabled:opacity-50">
@@ -267,6 +275,7 @@
              :class="{
                'border-green-500': assessment.result === 'pass',
                'border-red-500': assessment.result === 'fail',
+               'border-orange-500': assessment.result === 'duplicate_fake',
                'border-gray-200': !assessment.result
              }"
              x-data="{
@@ -376,10 +385,12 @@
               <span class="px-2 py-1 rounded text-xs font-bold text-white"
                     :class="{
                       'bg-green-600': result === 'pass',
-                      'bg-red-600': result === 'fail'
+                      'bg-red-600': result === 'fail',
+                      'bg-orange-500': result === 'duplicate_fake'
                     }">
                 <span x-show="result === 'pass'"><i class="fa-solid fa-check mr-1"></i>PASS</span>
                 <span x-show="result === 'fail'"><i class="fa-solid fa-times mr-1"></i>FAIL</span>
+                <span x-show="result === 'duplicate_fake'"><i class="fa-solid fa-exclamation mr-1"></i>DUPLICATE/FAKE</span>
               </span>
             </div>
           </div>
@@ -442,7 +453,7 @@
             </template>
 
             <!-- Human Review Section -->
-            <div class="flex gap-1.5 mb-1.5">
+            <div class="flex gap-1.5 mb-1">
               <button @click="updateResult(result === 'pass' ? '' : 'pass')"
                       :disabled="saving"
                       :class="{
@@ -461,14 +472,16 @@
                       class="flex-1 py-1.5 px-2 rounded text-xs font-medium transition-colors disabled:opacity-50">
                 <i class="fa-solid fa-times mr-1"></i>Fail
               </button>
-              <button @click="updateResult(result === 'incomplete' ? '' : 'incomplete')"
+            </div>
+            <div class="mb-1.5">
+              <button @click="updateResult(result === 'duplicate_fake' ? '' : 'duplicate_fake')"
                       :disabled="saving"
                       :class="{
-                        'bg-gray-900 text-white shadow-sm': result === 'incomplete',
-                        'bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-800': result !== 'incomplete'
+                        'bg-orange-500 text-white shadow-sm': result === 'duplicate_fake',
+                        'bg-gray-100 text-gray-600 hover:bg-orange-50 hover:text-orange-700': result !== 'duplicate_fake'
                       }"
-                      class="flex-1 py-1.5 px-2 rounded text-xs font-medium transition-colors disabled:opacity-50">
-                <i class="fa-solid fa-circle-half-stroke mr-1"></i>Incomplete
+                      class="w-full py-1.5 px-2 rounded text-xs font-medium transition-colors disabled:opacity-50">
+                <i class="fa-solid fa-exclamation mr-1"></i>Duplicate/Fake
               </button>
             </div>
             <div x-data="{ showNotes: notes ? true : false }">
@@ -514,7 +527,7 @@
               <th class="px-4 py-3 text-center text-xs font-medium text-gray-700 uppercase tracking-wider">Pending</th>
               <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Pass</th>
               <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Fail</th>
-              <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Incomplete</th>
+              <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Duplicate/Fake</th>
               <th class="px-4 py-3 text-center text-xs font-medium text-gray-700 uppercase tracking-wider">% Passed</th>
               <th class="px-4 py-3 text-center text-xs font-medium text-gray-700 uppercase tracking-wider">Actions</th>
             </tr>
@@ -534,12 +547,12 @@
                   <span class="text-red-600 font-medium" x-text="flw.failed"></span>
                 </td>
                 <td class="px-4 py-3 text-center">
-                  <span class="text-orange-500 font-medium" x-text="flw.incomplete"></span>
+                  <span class="text-orange-500 font-medium" x-text="flw.duplicateFake"></span>
                 </td>
                 <td class="px-4 py-3 text-center">
                   <span class="font-medium"
-                        :class="(flw.passed + flw.failed + flw.incomplete) > 0 && (flw.passed / (flw.passed + flw.failed + flw.incomplete) * 100) >= passThreshold ? 'text-green-600' : 'text-red-600'"
-                        x-text="(flw.passed + flw.failed + flw.incomplete) > 0 ? Math.round(flw.passed / (flw.passed + flw.failed + flw.incomplete) * 100) + '%' : '—'"></span>
+                        :class="flw.total > 0 && (flw.passed / flw.total * 100) >= passThreshold ? 'text-green-600' : 'text-red-600'"
+                        x-text="flw.total > 0 ? Math.round(flw.passed / flw.total * 100) + '%' : '—'"></span>
                 </td>
                 <td class="px-4 py-3 text-center">
                   <template x-if="isReadOnly">
@@ -555,7 +568,7 @@
                             :disabled="createdTaskFLWs.has(flw.username)"
                             :class="createdTaskFLWs.has(flw.username)
                               ? 'bg-red-50 text-red-600 border-red-200 cursor-not-allowed'
-                              : ((flw.passed + flw.failed + flw.incomplete) > 0 && (flw.passed / (flw.passed + flw.failed + flw.incomplete) * 100) >= passThreshold
+                              : (flw.total > 0 && (flw.passed / flw.total * 100) >= passThreshold
                                   ? 'bg-gray-100 text-gray-400 border-gray-200'
                                   : 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100')"
                             class="inline-flex items-center gap-1 px-2 py-1 text-xs border rounded transition-colors">
@@ -771,8 +784,8 @@
             <span x-show="lightboxAssessment.question_id" class="truncate max-w-[160px]"><i class="fa-solid fa-tag mr-0.5 text-gray-400"></i><span x-text="(lightboxAssessment.question_id || '').split('/').pop()"></span></span>
             <template x-if="lightboxAssessment.result">
               <span class="px-2 py-0.5 rounded text-xs font-bold"
-                    :class="{ 'bg-green-600 text-white': lightboxAssessment.result === 'pass', 'bg-red-600 text-white': lightboxAssessment.result === 'fail', 'bg-gray-700 text-white': lightboxAssessment.result === 'incomplete' }"
-                    x-text="lightboxAssessment.result.toUpperCase()"></span>
+                    :class="{ 'bg-green-600 text-white': lightboxAssessment.result === 'pass', 'bg-red-600 text-white': lightboxAssessment.result === 'fail', 'bg-orange-500 text-white': lightboxAssessment.result === 'duplicate_fake' }"
+                    x-text="lightboxAssessment.result === 'duplicate_fake' ? 'DUPLICATE/FAKE' : lightboxAssessment.result.toUpperCase()"></span>
             </template>
           </div>
           <div class="flex items-center gap-2 flex-shrink-0">
@@ -943,6 +956,7 @@ function bulkAssessmentInterface() {
     assessments: [],
     questionIds: [],
     bulkPrimaryUsername: '',
+    bulkPrimaryFlwName: '',
     bulkOpportunityName: '',
     bulkStartDate: '',
     bulkEndDate: '',
@@ -1056,6 +1070,7 @@ function bulkAssessmentInterface() {
           throw new Error(data.error || 'Failed to load bulk assessment data');
         }
         this.bulkPrimaryUsername = data.bulk_primary_username || '';
+        this.bulkPrimaryFlwName = data.bulk_primary_flw_name || '';
         this.bulkOpportunityName = data.bulk_opportunity_name || '';
         this.bulkStartDate = data.bulk_start_date || '';
         this.bulkEndDate = data.bulk_end_date || '';
@@ -1226,21 +1241,21 @@ function bulkAssessmentInterface() {
       this.allAssessments.forEach((a) => {
         const key = a.username || 'Unknown';
         if (!flwMap[key]) {
-          flwMap[key] = { username: key, flw_name: a.flw_name || key, passed: 0, failed: 0, incomplete: 0, pending: 0, total: 0 };
+          flwMap[key] = { username: key, flw_name: a.flw_name || key, passed: 0, failed: 0, duplicateFake: 0, pending: 0, total: 0 };
         }
         flwMap[key].total++;
         if (a.result === 'pass') flwMap[key].passed++;
         else if (a.result === 'fail') flwMap[key].failed++;
-        else if (a.result === 'incomplete') flwMap[key].incomplete++;
+        else if (a.result === 'duplicate_fake') flwMap[key].duplicateFake++;
         else flwMap[key].pending++;
       });
       return Object.values(flwMap).sort((a, b) => a.username.localeCompare(b.username));
     },
-    // Overall audit pass % across all assessed images — compared against auditPassThreshold
-    // to decide the audit's overall_result on completion. No assessments yet => 100 (vacuous pass).
+    // Overall audit pass % across every image in the audit (not just the ones
+    // assessed so far) — compared against auditPassThreshold to decide the
+    // audit's overall_result on completion. No images yet => 100 (vacuous pass).
     get auditPassPercentage() {
-      const denom = this.stats.pass + this.stats.fail + (this.stats.incomplete || 0);
-      return denom > 0 ? Math.round((this.stats.pass / denom) * 100) : 100;
+      return this.stats.total > 0 ? Math.round((this.stats.pass / this.stats.total) * 100) : 100;
     },
     get aiAgentLabel() {
       if (!this.aiAgentId) return null;
@@ -1251,14 +1266,14 @@ function bulkAssessmentInterface() {
       const total = this.allAssessments.length;
       const passCount = this.allAssessments.filter((a) => a.result === 'pass').length;
       const failCount = this.allAssessments.filter((a) => a.result === 'fail').length;
-      const incompleteCount = this.allAssessments.filter((a) => a.result === 'incomplete').length;
-      const pendingCount = total - passCount - failCount - incompleteCount;
+      const duplicateFakeCount = this.allAssessments.filter((a) => a.result === 'duplicate_fake').length;
+      const pendingCount = total - passCount - failCount - duplicateFakeCount;
       this.stats = {
         total,
         pending: pendingCount,
         pass: passCount,
         fail: failCount,
-        incomplete: incompleteCount,
+        duplicateFake: duplicateFakeCount,
       };
     },
     updateAssessmentLocal(visitId, blobId, questionId, resultValue, notesValue, aiResult, aiNotes) {
@@ -1445,6 +1460,32 @@ function bulkAssessmentInterface() {
           assessment.blob_id,
           assessment.question_id,
           'fail',
+          assessment.notes,
+        );
+      }
+      this.bulkProcessing = false;
+      // Trigger reactivity once after all updates
+      this.allAssessments = [...this.allAssessments];
+      this.assessments = [...this.assessments];
+      this.recalculateStats();
+    },
+    markAllDuplicateFake() {
+      if (this.loading || this.bulkProcessing) {
+        return;
+      }
+      if (this.assessments.length === 0) {
+        return;
+      }
+      // Unlike Pass/Fail All Pending, this overrides every currently-visible
+      // image regardless of its existing result — the whole batch is being
+      // flagged as duplicate/fake.
+      this.bulkProcessing = true;
+      for (const assessment of this.assessments) {
+        this.updateAssessmentLocal(
+          assessment.visit_id,
+          assessment.blob_id,
+          assessment.question_id,
+          'duplicate_fake',
           assessment.notes,
         );
       }
@@ -1764,7 +1805,7 @@ function bulkAssessmentInterface() {
 
           // Update workflow run state if launched from a workflow
           if (workflowRunId) {
-            const totalAssessed = this.stats.pass + this.stats.fail + (this.stats.incomplete || 0);
+            const totalAssessed = this.stats.pass + this.stats.fail + (this.stats.duplicateFake || 0);
             const avgPassed = totalAssessed > 0 ? Math.round(this.stats.pass / totalAssessed * 100) : null;
             try {
               await fetch('/labs/workflow/api/run/' + workflowRunId + '/state/', {

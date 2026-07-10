@@ -749,6 +749,7 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
                 "fail_count": fail_count,
                 "visit_summaries": visit_summaries,
                 "bulk_primary_username": bulk_primary_username,
+                "bulk_primary_flw_name": flw_names.get(bulk_primary_username, bulk_primary_username),
                 "bulk_opportunity_name": primary_opportunity,
                 "bulk_start_date": start_date_display,
                 "bulk_end_date": end_date_display,
