@@ -13,7 +13,7 @@ flowchart LR
     C -->|Yes| D[AI flags\nsuspect images]
     C -->|No| E[Human review\nbulk assessment]
     D --> E
-    E --> F[Pass / Fail\nper image]
+    E --> F[Pass / Fail /\nDuplicate/Fake\nper image]
     F --> G[Session complete\nwith overall result]
 ```
 
@@ -64,6 +64,8 @@ The threshold controls how the overall audit result is calculated when a reviewe
 - If the percentage of assessments that passed meets or exceeds the threshold, the audit is marked **Pass**.
 - If it falls below the threshold, the audit is marked **Fail**.
 
+The pass percentage is calculated by dividing the number of images marked Pass by the FLW's **total image count** for the session — not just the images assessed so far. This means the percentage shown in the FLW Summary table accurately reflects progress against the full sample at all times.
+
 At the default of 100%, any single failed assessment will fail the entire audit — the same behaviour as before this option was introduced. Lowering the threshold allows a small number of failures without failing the whole audit.
 
 The configured threshold is shown as small italic text — *Pass Threshold : x%* — underneath the FLW Summary table on the review page, so reviewers can see the standard that applies to the session they are working in.
@@ -94,13 +96,18 @@ The default is **flag-only** (all checkboxes unticked), so nothing is pre-tagged
 
 Once a session is created, open it to start the bulk assessment.
 
+The bulk assessment page header identifies the field worker being reviewed as **FLW Name : `<name>`**, using the FLW's real display name so you can always confirm whose images you are looking at.
+
 === "Standard Review"
 
     Images are shown one at a time alongside the related visit data — FLW name, visit date, and patient name.
 
-    - Mark each image **Pass** or **Fail**
-    - Add optional notes
-    - Your progress saves automatically
+    Each image has three assessment options:
+
+    - **Pass** and **Fail** appear side by side as before.
+    - **Duplicate/Fake** appears as a full-width button below Pass and Fail (shown in orange with an exclamation icon). Use this when an image appears to be a duplicate submission or a fabricated photo rather than a genuine field visit. The image card border, corner badge, and lightbox all use the same orange treatment when this option is selected.
+
+    Add optional notes to any image, then move to the next. Your progress saves automatically.
 
 === "AI-Assisted Review"
 
@@ -115,7 +122,7 @@ Once a session is created, open it to start the bulk assessment.
 
     If no agent is selected for an image type, that type's photos are not pre-screened by AI — the workflow behaves exactly as standard review for those images.
 
-    AI results appear alongside each image as suggestions — you make the final Pass/Fail call. Images flagged by the AI are highlighted so you can prioritize reviewing them first.
+    AI results appear alongside each image as suggestions — you make the final Pass/Fail/Duplicate/Fake call. Images flagged by the AI are highlighted so you can prioritize reviewing them first.
 
     ### Choosing how the AI applies its verdicts
 
@@ -145,6 +152,20 @@ Once a session is created, open it to start the bulk assessment.
     !!! tip "MUAC OverZoom pre-tagging"
     When the MUAC OverZoom agent is used and the pre-tag checkbox for hyperzoomed images is ticked, images it identifies as hyperzoomed arrive in your review queue already marked **Fail** with a red **Hyperzoomed** badge. If the checkbox is unticked, those images are still badged with the AI classification label but appear as normal pending photos for your human review. In both cases, you can confirm each result or override it if you disagree.
 
+### Bulk actions
+
+At the top of the bulk assessment page, several bulk action buttons let you apply results to multiple images at once:
+
+| Button | What it does |
+| --- | --- |
+| **Pass All Pending** | Marks every image that has not yet been assessed as Pass |
+| **Fail All Pending** | Marks every image that has not yet been assessed as Fail |
+| **Mark All Duplicate/Fake** | Marks **every currently-visible image** as Duplicate/Fake, including images that already have a Pass or Fail result |
+| **Clear All Assessments** | Removes all results from every image in the current view |
+
+!!! warning "Mark All Duplicate/Fake overrides existing results"
+    Unlike the Pass/Fail pending buttons, **Mark All Duplicate/Fake** replaces any existing assessment on an image. Use it when you have determined that an entire batch of images from a session is invalid.
+
 **Keyboard shortcuts** (work in both review modes):
 
 | Key | Action         |
@@ -153,6 +174,15 @@ Once a session is created, open it to start the bulk assessment.
 | `F` | Mark Fail      |
 | `→` | Next image     |
 | `←` | Previous image |
+
+### FLW Summary table
+
+The FLW Summary table on the review page shows a row for each field worker in the session. The columns include:
+
+- **% Passed** — the number of images marked Pass divided by the FLW's **total image count** for the session. This gives an accurate picture of overall performance even before all images have been reviewed.
+- **Duplicate/Fake** — the count of images marked Duplicate/Fake for that FLW. This column was previously labelled "Incomplete."
+
+The Pass Threshold in effect is shown as small italic text — *Pass Threshold : x%* — beneath the table.
 
 ### Exporting the Image List
 
@@ -212,42 +242,4 @@ You do not need to keep the page open — jobs run in the background and each ro
 You can delete multiple audit sessions at once directly from the sessions list.
 
 1. On the **Audit** sessions list page, tick the checkbox next to each session you want to delete.
-2. A **Delete Selected (N)** button appears next to the Filter button, where **N** is the number of sessions you have checked.
-3. Click **Delete Selected (N)**. A loading spinner appears on the button while the deletion is in progress.
-4. Once complete, a notification appears confirming success or describing any errors, and the list refreshes automatically.
-
-!!! warning "Only in-progress sessions can be deleted"
-    If any of the sessions you have selected has a status other than **In Progress**, the delete will be blocked and an error message will explain which sessions cannot be removed. Deselect any completed or otherwise finished sessions and try again.
-
-!!! note "No per-row delete button"
-    The individual delete button that previously appeared on each session row has been removed. Bulk select-and-delete is now the only way to delete sessions.
-
----
-
-## Session Results
-
-After reviewing all images, click **Complete Session** to record the overall result.
-
-The session list shows:
-
-- Number of images reviewed
-- Pass rate for the session
-- Session status (In Progress / Complete)
-- Link to any tasks created from this session
-
-The overall **Pass** or **Fail** result is determined by the Pass Threshold you set when creating the session. If the percentage of images marked Pass meets or exceeds the threshold, the session is marked Pass; otherwise it is marked Fail. The threshold in effect is shown as small italic text — *Pass Threshold : x%* — beneath the FLW Summary table on the review page.
-
-!!! tip "Creating follow-up tasks"
-After completing a session, click **Create Task** next to any flagged visit to open a follow-up task pre-filled with the worker's details. See [Task Management](task-management.md) for how tasks work.
-
----
-
-## Demoing Audit Without Real Patient Data
-
-Synthetic opportunities include fully populated audit content — MUAC photos, pre-reviewed sessions with pass/fail results, linked follow-up tasks, and OCS coaching transcripts — so you can walk stakeholders or funders through the complete program management loop without using any real patient data.
-
-To access a demo audit session, select a **synthetic opportunity** from the opportunity list (for example, **CHC Nutrition — Northern Cluster (demo)** or **CHC Nutrition — Southern Cluster (demo)**). Audit sessions, tasks, and coaching transcripts within synthetic opportunities are pre-filled with realistic sample data and behave exactly like live sessions, but no real FLW or patient information is involved.
-
-Synthetic audit sessions are built to tell a coherent story out of the box:
-
-- **
+2. A **
