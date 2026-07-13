@@ -40,7 +40,10 @@
   }
   function humanReviewedOf(s) {
     var a = statsOf(s);
-    return (a.pass || 0) + (a.fail || 0);
+    return (a.pass || 0) + (a.fail || 0) + (a.duplicate_fake || 0);
+  }
+  function duplicateFakeOf(s) {
+    return statsOf(s).duplicate_fake || 0;
   }
 
   // Group sessions by opportunity → field worker → { muac, rest }.
@@ -151,7 +154,15 @@
     var images = imagesOf(s);
     var reviewed = humanReviewedOf(s);
     var pending = Math.max(0, images - reviewed);
+    var duplicates = duplicateFakeOf(s);
     var done = s.status === 'completed';
+    var failed = done && s.overall_result === 'fail';
+    var statusText = failed ? 'Fail' : done ? 'Completed' : 'In progress';
+    var statusClass = failed
+      ? 'bg-red-100 text-red-700'
+      : done
+      ? 'bg-green-100 text-green-700'
+      : 'bg-yellow-100 text-yellow-700';
     return h(
       'a',
       {
@@ -162,14 +173,8 @@
       h('span', { className: 'font-semibold text-gray-700 w-12' }, label),
       h(
         'span',
-        {
-          className:
-            'px-1.5 py-0.5 rounded ' +
-            (done
-              ? 'bg-green-100 text-green-700'
-              : 'bg-yellow-100 text-yellow-700'),
-        },
-        done ? 'Completed' : 'In progress',
+        { className: 'px-1.5 py-0.5 rounded ' + statusClass },
+        statusText,
       ),
       h('span', { className: 'text-gray-500 w-16' }, images + ' images'),
       h(
@@ -185,6 +190,12 @@
           'span',
           { className: 'text-red-600 font-medium' },
           (a.fail || 0) + ' fail',
+        ),
+        ' · ',
+        h(
+          'span',
+          { className: 'text-orange-600 font-medium' },
+          duplicates + ' duplicates',
         ),
         ' · ',
         h('span', { className: 'text-gray-500' }, pending + ' pending'),
@@ -377,6 +388,8 @@
   LabsAudit.oppSummary = oppSummary;
   LabsAudit.bulkUrl = bulkUrl;
   LabsAudit.fetchSessions = fetchSessions;
+  LabsAudit.humanReviewedOf = humanReviewedOf;
+  LabsAudit.duplicateFakeOf = duplicateFakeOf;
 
   if (typeof window !== 'undefined') window.LabsAudit = LabsAudit;
   if (typeof module !== 'undefined' && module.exports)
