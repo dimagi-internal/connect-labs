@@ -102,6 +102,11 @@ The bulk assessment page header identifies the field worker being reviewed as **
 
     Images are shown one at a time alongside the related visit data — FLW name, visit date, and patient name.
 
+    Each image tile also shows the **entity ID** for the visit — for example, the specific child a home visit was recorded for. This appears below the question tag on the tile, marked with a child icon. The same information is shown next to the question tag when you open an image in the full-screen lightbox view. The entity ID is displayed in full (it wraps to a second line rather than being cut off with "..."), so you always see the complete identifier.
+
+    !!! tip "Older audit sessions"
+        Entity IDs are shown for all sessions, including those created before this feature was introduced. The page fetches any missing IDs automatically the first time you open an older session.
+
     Each image has three assessment options:
 
     - **Pass** and **Fail** appear side by side as before.
@@ -123,6 +128,11 @@ The bulk assessment page header identifies the field worker being reviewed as **
     If no agent is selected for an image type, that type's photos are not pre-screened by AI — the workflow behaves exactly as standard review for those images.
 
     AI results appear alongside each image as suggestions — you make the final Pass/Fail/Duplicate/Fake call. Images flagged by the AI are highlighted so you can prioritize reviewing them first.
+
+    Each image tile also shows the **entity ID** for the visit — for example, the specific child a home visit was recorded for. This appears below the question tag on the tile, marked with a child icon. The same information is shown next to the question tag when you open an image in the full-screen lightbox view. The entity ID is displayed in full (it wraps to a second line rather than being cut off with "..."), so you always see the complete identifier.
+
+    !!! tip "Older audit sessions"
+        Entity IDs are shown for all sessions, including those created before this feature was introduced. The page fetches any missing IDs automatically the first time you open an older session.
 
     ### Choosing how the AI applies its verdicts
 
@@ -225,21 +235,4 @@ This means you can check the audit list at any point and see exactly how far alo
 
 ### Program Audit Creator progress
 
-When you run the **Program Audit Creator** to generate audits across multiple opportunities at once, each opportunity row in the list shows its own live progress. Here is what you will see:
-
-- **Activity starts immediately.** As soon as an opportunity's job begins, its row updates straight away — showing "Creating audits · preparing…", then "fetching visits", then "extracting images". There is no silent waiting period at the start.
-- **Two clearly labelled steps.** Each row moves through two named steps rather than a generic stage counter:
-    - **Step 1 of 2 · Creating audits** — shows live detail such as how many field worker sessions have been created so far.
-    - **Step 2 of 2 · AI review** — shows how many images have been reviewed out of the total (for example, "45/136 images reviewed").
-- **No top-level progress bar.** The previous bar at the top of the page that stayed empty throughout the run and then jumped to complete has been removed. Each opportunity row has its own bar that fills in real time, and the page header continues to show how many opportunities have finished overall.
-
-You do not need to keep the page open — jobs run in the background and each row's count will be current when you return.
-
----
-
-## Deleting Audit Sessions
-
-You can delete multiple audit sessions at once directly from the sessions list.
-
-1. On the **Audit** sessions list page, tick the checkbox next to each session you want to delete.
-2. A **
+When you run the **Program Audit Creator** to generate audits across multiple opportunities at once, each opportunity row in the list shows its own live progress. Here is what you
