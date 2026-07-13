@@ -136,6 +136,46 @@ def test_compute_flw_indicators_gap_percentage():
     assert result["median_gap_minutes"] == 6.0
 
 
+def test_compute_flw_indicators_gap_excludes_cross_day_pairs():
+    # Day 1: two visits 2 min apart. Day 2 (next day): two visits 4 min apart.
+    # The overnight transition between day 1's last visit and day 2's first
+    # visit (~16 hours) must NEVER be treated as a "gap between forms" — if it
+    # were, it would swamp the median/pct/distance with an irrelevant huge value.
+    visits = [
+        _visit(child_case_id="c1", time_start="2026-07-06T08:00:00Z", time_end="2026-07-06T08:05:00Z"),
+        _visit(child_case_id="c2", time_start="2026-07-06T08:07:00Z", time_end="2026-07-06T08:12:00Z"),
+        _visit(child_case_id="c3", time_start="2026-07-07T08:00:00Z", time_end="2026-07-07T08:05:00Z"),
+        _visit(child_case_id="c4", time_start="2026-07-07T08:09:00Z", time_end="2026-07-07T08:14:00Z"),
+    ]
+    result = compute_flw_indicators(visits)
+    # Only 2 same-day gaps exist (2min on day 1, 4min on day 2) -- NOT 3 gaps
+    # (which is what you'd get if the ~16-hour overnight transition were
+    # wrongly included as a third "gap").
+    assert result["pct_gap_lt_3min"] == 50.0  # 1 of 2 gaps (the 2min one) < 3min
+    assert result["median_gap_minutes"] == 3.0  # median of [2, 4]
+    assert result["days_worked"] == 2
+
+
+def test_compute_flw_indicators_distance_and_speed_exclude_cross_day_pairs():
+    # Day 1's last visit and day 2's first visit are far apart but ~16 hours
+    # elapsed -- if compared, the IMPLIED speed would be tiny (not a real
+    # speed flag) but the DISTANCE would still wrongly inflate the week's
+    # average. Neither should happen: the pair must never be formed at all.
+    visits = [
+        _visit(
+            child_case_id="c1", lat=12.0, lon=9.0, time_start="2026-07-06T08:00:00Z", time_end="2026-07-06T08:05:00Z"
+        ),
+        _visit(
+            child_case_id="c2", lat=13.0, lon=9.0, time_start="2026-07-07T08:00:00Z", time_end="2026-07-07T08:05:00Z"
+        ),
+    ]
+    result = compute_flw_indicators(visits)
+    # Only 1 visit per day -> zero within-day consecutive pairs at all.
+    assert result["avg_distance_between_visits_m"] is None
+    assert result["pct_gap_lt_3min"] is None
+    assert result["fraud"]["implied_speed_flag_count"] == 0
+
+
 def test_compute_flw_indicators_gps_accuracy_flags():
     visits = [
         _visit(child_case_id="c1", accuracy=0.0),  # flagged: exactly 0

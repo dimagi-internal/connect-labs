@@ -64,6 +64,69 @@ def test_backfill_calls_run_default_once_per_week_with_non_overlapping_windows(
 
 
 @pytest.mark.django_db
+@mock.patch("connect_labs.workflow.management.commands.backfill_flw_weekly_audit_report.run_default")
+@mock.patch("connect_labs.workflow.management.commands.backfill_flw_weekly_audit_report.WorkflowDataAccess")
+@mock.patch("connect_labs.workflow.management.commands.backfill_flw_weekly_audit_report.get_valid_access_token")
+def test_backfill_replace_existing_deletes_only_matching_period_runs(mock_get_token, MockWDA, mock_run_default):
+    """--replace-existing deletes any pre-existing run(s) for the exact same
+    (definition, period_start) before creating the new one -- e.g. after a
+    fix to flw_audit_compute.py, so a re-run replaces stale runs computed
+    under the old logic instead of piling up duplicates alongside them."""
+    User.objects.create(username="wouter", email="wvink@dimagi.com")
+    mock_get_token.return_value = "connect-tok"
+    mock_run_default.return_value = {"opportunities": {}, "period_start": "x", "period_end": "y"}
+
+    fetch_instance = mock.Mock()
+    fetch_instance.get_definition.return_value = _make_definition()
+    MockWDA.return_value = fetch_instance
+
+    out = StringIO()
+    call_command(
+        "backfill_flw_weekly_audit_report",
+        "--definition",
+        "6621",
+        "--program",
+        "176",
+        "--owner-email",
+        "wvink@dimagi.com",
+        "--weeks",
+        "2",
+        stdout=out,
+    )
+    # Without --replace-existing, list_runs/delete_run are never touched.
+    fetch_instance.list_runs.assert_not_called()
+    fetch_instance.delete_run.assert_not_called()
+
+    windows = [call.kwargs["window"] for call in mock_run_default.call_args_list]
+    stale_period = windows[0][0].date().isoformat()  # the first week's own window_start
+
+    stale_run = mock.Mock(id=555, opportunity_id=1973, data={"period_start": stale_period})
+    other_run = mock.Mock(id=556, opportunity_id=1976, data={"period_start": "1999-01-01"})  # different week
+    fetch_instance.list_runs.return_value = [stale_run, other_run]
+
+    mock_run_default.reset_mock()
+    out2 = StringIO()
+    call_command(
+        "backfill_flw_weekly_audit_report",
+        "--definition",
+        "6621",
+        "--program",
+        "176",
+        "--owner-email",
+        "wvink@dimagi.com",
+        "--weeks",
+        "2",
+        "--replace-existing",
+        stdout=out2,
+    )
+
+    # Only the run matching this exact period_start was deleted.
+    fetch_instance.delete_run.assert_any_call(555, delete_linked=True)
+    assert mock.call(556, delete_linked=True) not in fetch_instance.delete_run.call_args_list
+    assert "Deleted stale run 555" in out2.getvalue()
+
+
+@pytest.mark.django_db
 @mock.patch("connect_labs.workflow.management.commands.backfill_flw_weekly_audit_report.WorkflowDataAccess")
 @mock.patch("connect_labs.workflow.management.commands.backfill_flw_weekly_audit_report.get_valid_access_token")
 def test_backfill_raises_when_definition_not_found(mock_get_token, MockWDA):
