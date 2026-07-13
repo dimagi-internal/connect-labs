@@ -38,8 +38,26 @@ DEFINITION = {
     "pipeline_sources": [],
 }
 
-RENDER_CODE = r"""function WorkflowUI({ definition }) {
+RENDER_CODE = r"""function WorkflowUI({ definition, workers }) {
     var sourceDefinitionId = definition.config && definition.config.source_definition_id;
+
+    // Opportunity names (including the LLO name, e.g. "CHC PRE-RCT (Nigeria) - EHA")
+    // come from a JSON blob the base template embeds — same convention chc_audit_history
+    // (workflow 5181) uses, rather than a hardcoded id->name map.
+    var oppNames = React.useMemo(function () {
+        var m = {};
+        try {
+            var el = document.getElementById("user-opportunities");
+            if (el) JSON.parse(el.textContent).forEach(function (o) { m[o.id] = o.name; });
+        } catch (e) { console.error("FLW trend dashboard: failed to parse user-opportunities", e); }
+        return m;
+    }, []);
+
+    var nameMap = React.useMemo(function () {
+        var m = {};
+        (workers || []).forEach(function (w) { if (w.username) m[w.username] = w.name || w.username; });
+        return m;
+    }, [workers]);
 
     var _state = React.useState({ loading: true, error: null, weeks: [] });
     var state = _state[0];
@@ -71,11 +89,11 @@ RENDER_CODE = r"""function WorkflowUI({ definition }) {
         return Object.keys(ids).map(Number).sort(function (a, b) { return a - b; });
     }, [state.weeks]);
 
-    var _selectedOpps = React.useState(null); // null = all
-    var selectedOpps = _selectedOpps[0];
-    var setSelectedOpps = _selectedOpps[1];
+    var _selectedOpp = React.useState("all"); // "all" or a single opportunity_id (as string)
+    var selectedOpp = _selectedOpp[0];
+    var setSelectedOpp = _selectedOpp[1];
 
-    var effectiveOpps = selectedOpps === null ? opportunityOptions : selectedOpps;
+    var effectiveOpps = selectedOpp === "all" ? opportunityOptions : [Number(selectedOpp)];
 
     var weeksInScope = React.useMemo(function () {
         return state.weeks.filter(function (w) { return effectiveOpps.indexOf(w.opportunity_id) !== -1; });
@@ -146,14 +164,16 @@ RENDER_CODE = r"""function WorkflowUI({ definition }) {
 
             <FilterBar
                 opportunityOptions={opportunityOptions}
-                selectedOpps={selectedOpps}
-                onChangeOpps={setSelectedOpps}
+                selectedOpp={selectedOpp}
+                onChangeOpp={setSelectedOpp}
+                oppNames={oppNames}
                 flwOptions={flwOptions}
                 selectedFlw={selectedFlw}
                 onChangeFlw={setSelectedFlw}
+                nameMap={nameMap}
             />
 
-            <TrendSection weeks={sortedWeeks} flw={selectedFlw} />
+            <TrendSection weeks={sortedWeeks} flw={selectedFlw} flwName={nameMap[selectedFlw] || selectedFlw} />
 
             <DistributionSection
                 weeks={sortedWeeks}
@@ -165,40 +185,25 @@ RENDER_CODE = r"""function WorkflowUI({ definition }) {
     );
 }
 
-function FilterBar({ opportunityOptions, selectedOpps, onChangeOpps, flwOptions, selectedFlw, onChangeFlw }) {
-    var effective = selectedOpps === null ? opportunityOptions : selectedOpps;
-
-    function toggleOpp(oppId) {
-        var next = effective.slice();
-        var idx = next.indexOf(oppId);
-        if (idx === -1) next.push(oppId); else next.splice(idx, 1);
-        onChangeOpps(next.length === opportunityOptions.length ? null : next);
-    }
-
+function FilterBar({ opportunityOptions, selectedOpp, onChangeOpp, oppNames, flwOptions, selectedFlw, onChangeFlw, nameMap }) {
     return (
         <div className="bg-white rounded-lg border p-4 flex flex-wrap gap-6 items-start">
             <div>
-                <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Opportunities</div>
-                <div className="flex flex-wrap gap-2">
-                    <button
-                        className={"px-2 py-1 rounded text-sm border " + (selectedOpps === null ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-700 border-gray-300")}
-                        onClick={function () { onChangeOpps(null); }}
-                    >
-                        All
-                    </button>
+                <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Opportunity</div>
+                <select
+                    className="border rounded px-2 py-1 text-sm"
+                    value={selectedOpp}
+                    onChange={function (e) { onChangeOpp(e.target.value); }}
+                >
+                    <option value="all">All Opportunities</option>
                     {opportunityOptions.map(function (oppId) {
-                        var active = effective.indexOf(oppId) !== -1;
                         return (
-                            <button
-                                key={oppId}
-                                className={"px-2 py-1 rounded text-sm border " + (active ? "bg-blue-100 text-blue-800 border-blue-300" : "bg-white text-gray-500 border-gray-300")}
-                                onClick={function () { toggleOpp(oppId); }}
-                            >
-                                Opp {oppId}
-                            </button>
+                            <option key={oppId} value={String(oppId)}>
+                                {oppNames[oppId] || "Opp #" + oppId}
+                            </option>
                         );
                     })}
-                </div>
+                </select>
             </div>
             <div>
                 <div className="text-xs font-semibold text-gray-500 uppercase mb-1">FLW (single-select)</div>
@@ -209,7 +214,7 @@ function FilterBar({ opportunityOptions, selectedOpps, onChangeOpps, flwOptions,
                 >
                     {flwOptions.length === 0 && <option value="">No FLWs in scope</option>}
                     {flwOptions.map(function (u) {
-                        return <option key={u} value={u}>{u}</option>;
+                        return <option key={u} value={u}>{nameMap[u] || u}</option>;
                     })}
                 </select>
             </div>
@@ -245,7 +250,7 @@ function getByPath(obj, path) {
     return cur;
 }
 
-function TrendSection({ weeks, flw }) {
+function TrendSection({ weeks, flw, flwName }) {
     var series = React.useMemo(function () {
         if (!flw) return {};
         var out = {};
@@ -266,7 +271,7 @@ function TrendSection({ weeks, flw }) {
 
     return (
         <div>
-            <h2 className="text-lg font-semibold mb-2">Trends — {flw}</h2>
+            <h2 className="text-lg font-semibold mb-2">Trends — {flwName || flw}</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {TREND_INDICATORS.map(function (ind) {
                     return (
@@ -281,6 +286,20 @@ function TrendSection({ weeks, flw }) {
             </div>
         </div>
     );
+}
+
+var MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function formatShortDate(isoDate) {
+    // "2026-07-06" -> "Jul 6". Parsed as plain string components (not `new Date`)
+    // so it can't drift a day from browser-timezone conversion of a date-only string.
+    if (!isoDate) return "";
+    var parts = isoDate.split("-");
+    if (parts.length < 3) return isoDate;
+    var month = parseInt(parts[1], 10) - 1;
+    var day = parseInt(parts[2], 10);
+    if (month < 0 || month > 11 || isNaN(day)) return isoDate;
+    return MONTH_ABBR[month] + " " + day;
 }
 
 function linearTrendline(values) {
@@ -311,7 +330,7 @@ function LineTrendChart({ chartId, label, points }) {
         if (!canvasRef.current || !window.Chart) return;
         if (chartInstance.current) chartInstance.current.destroy();
 
-        var labels = points.map(function (p) { return p.period_start; });
+        var labels = points.map(function (p) { return formatShortDate(p.period_start); });
         var values = points.map(function (p) { return p.value; });
         var trend = linearTrendline(values);
 
@@ -502,7 +521,7 @@ function MuacTrendChart({ chartId, series }) {
         if (!canvasRef.current || !window.Chart) return;
         if (chartInstance.current) chartInstance.current.destroy();
 
-        var labels = series.map(function (s) { return s.period_start; });
+        var labels = series.map(function (s) { return formatShortDate(s.period_start); });
         chartInstance.current = new window.Chart(canvasRef.current, {
             type: "line",
             data: {
@@ -536,7 +555,7 @@ function AgeBandTrendChart({ chartId, series }) {
         if (!canvasRef.current || !window.Chart) return;
         if (chartInstance.current) chartInstance.current.destroy();
 
-        var labels = series.map(function (s) { return s.period_start; });
+        var labels = series.map(function (s) { return formatShortDate(s.period_start); });
         var datasets = AGE_BANDS.map(function (band, i) {
             return {
                 label: band.label + "mo",
