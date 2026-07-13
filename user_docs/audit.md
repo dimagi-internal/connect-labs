@@ -194,6 +194,14 @@ The FLW Summary table on the review page shows a row for each field worker in th
 
 The Pass Threshold in effect is shown as small italic text — *Pass Threshold : x%* — beneath the table.
 
+### Completing a Review
+
+When you click **Complete Review**, Labs saves the audit and calculates the overall result. If the same audit session was open in two browser tabs and both tabs submit **Complete Review**, only the first submission is accepted. The second tab will show the message:
+
+> **"This audit has already been saved. Refresh the page to see the updated audit."**
+
+If you see this message, simply refresh the page to view the saved audit result. No action or re-submission is needed.
+
 ### Exporting the Image List
 
 On the Bulk Assessment page, click **Export CSV** to download a spreadsheet of every image in the session. The file includes:
@@ -228,11 +236,4 @@ When you create an audit session that includes an AI reviewer, the work happens 
 - **The audit list shows a live image count** — for example, "Reviewed 45/136 images (12 passed, 3 failed)" — that updates every couple of seconds while reviewing is in progress.
 - **The counter next to the bar** shows the image count during the AI-review step (for example, "45/136") rather than a stage number.
 
-This means you can check the audit list at any point and see exactly how far along the AI review is before you open the session.
-
-!!! tip "Large audits"
-    For sessions with many images, the live count gives you a reliable sense of how much longer to wait. You do not need to keep the page open — the job continues in the background and the count will be up to date when you return.
-
-### Program Audit Creator progress
-
-When you run the **Program Audit Creator** to generate audits across multiple opportunities at once, each opportunity row in the list shows its own live progress. Here is what you
+This means you can check the audit list at any point and see exactly how far along the AI review is before you
