@@ -304,6 +304,7 @@ class AuditSessionRecord(LocalLabsRecord):
                 "total": int,           # Total assessments
                 "pass": int,            # Human: pass count
                 "fail": int,            # Human: fail count
+                "duplicate_fake": int,  # Human: flagged as a duplicate/fake image
                 "pending": int,         # Human: not yet assessed
                 "ai_match": int,        # AI: match count
                 "ai_no_match": int,     # AI: no_match count
@@ -315,6 +316,7 @@ class AuditSessionRecord(LocalLabsRecord):
             "total": 0,
             "pass": 0,
             "fail": 0,
+            "duplicate_fake": 0,
             "pending": 0,
             "ai_match": 0,
             "ai_no_match": 0,
@@ -326,12 +328,19 @@ class AuditSessionRecord(LocalLabsRecord):
             for assessment in visit_result.get("assessments", {}).values():
                 stats["total"] += 1
 
-                # Human assessment result
+                # Human assessment result. "duplicate_fake" is a distinct
+                # bucket from "pending" — it's a completed assessment (the
+                # image was reviewed and flagged), not an unreviewed one. It
+                # already counts against the pass rate the same way fail
+                # does, since neither is counted in "pass" and pass rate is
+                # computed as pass/total.
                 result = assessment.get("result")
                 if result == "pass":
                     stats["pass"] += 1
                 elif result == "fail":
                     stats["fail"] += 1
+                elif result == "duplicate_fake":
+                    stats["duplicate_fake"] += 1
                 else:
                     stats["pending"] += 1
 
@@ -381,7 +390,7 @@ class AuditSessionRecord(LocalLabsRecord):
 
         Returns:
             Dict keyed by question_id -> {"label": str, "pass": int, "fail": int,
-            "pending": int, "total": int}
+            "duplicate_fake": int, "pending": int, "total": int}
         """
         by_question: dict[str, dict] = {}
         for visit_result in self.data.get("visit_results", {}).values():
@@ -389,14 +398,27 @@ class AuditSessionRecord(LocalLabsRecord):
                 qid = assessment.get("question_id") or "unknown"
                 bucket = by_question.setdefault(
                     qid,
-                    {"label": qid.rsplit("/", 1)[-1], "pass": 0, "fail": 0, "pending": 0, "total": 0},
+                    {
+                        "label": qid.rsplit("/", 1)[-1],
+                        "pass": 0,
+                        "fail": 0,
+                        "duplicate_fake": 0,
+                        "pending": 0,
+                        "total": 0,
+                    },
                 )
                 bucket["total"] += 1
+                # "duplicate_fake" is a distinct, completed assessment outcome
+                # (the image was reviewed and flagged) — not "pending" (not
+                # yet reviewed). See get_assessment_stats for why pass/total
+                # already treats it as failing without further bucket math.
                 result = assessment.get("result")
                 if result == "pass":
                     bucket["pass"] += 1
                 elif result == "fail":
                     bucket["fail"] += 1
+                elif result == "duplicate_fake":
+                    bucket["duplicate_fake"] += 1
                 else:
                     bucket["pending"] += 1
         return by_question
@@ -426,6 +448,9 @@ class AuditSessionRecord(LocalLabsRecord):
         Used by the opportunity-scoped sessions-summary API so callers (e.g.
         a Labs workflow's render code) can display per-photo-type pass/fail
         without fetching or parsing full per-image assessment data themselves.
+        Includes pass_threshold so callers don't need their own hardcoded
+        cutoff — each session's own configured threshold is the source of
+        truth for whether its images "passed" overall.
         """
         criteria = self.criteria or {}
         start_date = criteria.get("start_date")
@@ -442,5 +467,6 @@ class AuditSessionRecord(LocalLabsRecord):
             "start_date": start_date,
             "end_date": end_date,
             "completed_at": self.data.get("completed_at"),
+            "pass_threshold": self.pass_threshold,
             "by_question": self.get_assessment_stats_by_question(),
         }
