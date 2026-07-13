@@ -174,21 +174,39 @@ def compute_flw_indicators(visits: list[dict]) -> dict:
         parsed.append(row)
 
     total_forms = len(parsed)
-    ordered = sorted(parsed, key=lambda r: r["_time_start"])
+
+    # Every "difference between visits" indicator (gap in time, distance, implied
+    # speed) must only compare consecutive visits WITHIN the same calendar day —
+    # comparing the last visit of one working day to the first visit of the next
+    # (which could be many hours apart, spanning the FLW's off-hours/overnight)
+    # is not a real "gap between forms" and previously inflated/distorted these
+    # numbers. Build the day-grouping once and reuse it for every per-day and
+    # per-week-pooled-from-per-day computation below (days_worked, daily span,
+    # gap/distance/speed, near-duplicate GPS) instead of computing it twice.
+    by_day: dict[str, list[dict]] = defaultdict(list)
+    for r in parsed:
+        by_day[wat_date(r["_time_start"])].append(r)
+    for day_rows in by_day.values():
+        day_rows.sort(key=lambda r: r["_time_start"])
 
     # --- Visit timing / cadence ---
+    # Pairs are only ever formed between consecutive visits on the SAME day, then
+    # pooled across the week's days into single week-level statistics (a true
+    # median/average over every same-day gap this week, not an average of daily
+    # medians) — cross-day transitions are never compared at all.
     gaps_minutes = []
     distances_m = []
     speed_flags = 0
-    for prev, curr in zip(ordered, ordered[1:]):
-        gap = (curr["_time_start"] - prev["_time_end"]).total_seconds() / 60.0
-        gaps_minutes.append(gap)
-        dist = haversine_meters(prev["_lat"], prev["_lon"], curr["_lat"], curr["_lon"])
-        if dist is not None:
-            distances_m.append(dist)
-            hours = (curr["_time_start"] - prev["_time_start"]).total_seconds() / 3600.0
-            if hours > 0 and (dist / 1000.0) / hours > IMPLIED_SPEED_MAX_KMH:
-                speed_flags += 1
+    for day_rows in by_day.values():
+        for prev, curr in zip(day_rows, day_rows[1:]):
+            gap = (curr["_time_start"] - prev["_time_end"]).total_seconds() / 60.0
+            gaps_minutes.append(gap)
+            dist = haversine_meters(prev["_lat"], prev["_lon"], curr["_lat"], curr["_lon"])
+            if dist is not None:
+                distances_m.append(dist)
+                hours = (curr["_time_start"] - prev["_time_start"]).total_seconds() / 3600.0
+                if hours > 0 and (dist / 1000.0) / hours > IMPLIED_SPEED_MAX_KMH:
+                    speed_flags += 1
 
     pct_gap_lt_3min = (
         (sum(1 for g in gaps_minutes if g < GAP_MINUTES_THRESHOLD) / len(gaps_minutes) * 100.0)
@@ -198,9 +216,6 @@ def compute_flw_indicators(visits: list[dict]) -> dict:
     median_gap_minutes = statistics.median(gaps_minutes) if gaps_minutes else None
     avg_distance_m = statistics.mean(distances_m) if distances_m else None
 
-    by_day: dict[str, list[dict]] = defaultdict(list)
-    for r in ordered:
-        by_day[wat_date(r["_time_start"])].append(r)
     daily_spans_minutes = []
     for day_rows in by_day.values():
         start = min(r["_time_start"] for r in day_rows)
@@ -219,11 +234,16 @@ def compute_flw_indicators(visits: list[dict]) -> dict:
         1 for r in parsed if (r["_time_end"] - r["_time_start"]).total_seconds() / 60.0 < FORM_DURATION_MIN_MINUTES
     )
 
+    # NOTE on near_duplicate_count: this counts every PAIR of same-day visits
+    # under different households within GPS_NEAR_DUPLICATE_MAX_M, not distinct
+    # flagged visits — a day with k visits genuinely clustered together (e.g. a
+    # dense compound with several officially-separate households) produces
+    # C(k,2) pairs, which grows quadratically and can look alarmingly high even
+    # when every visit is legitimate. Revisit this counting method (e.g. count
+    # distinct visits involved in at least one near pair, not every pair) once
+    # a few weeks of real distributions are visible — see flw_audit_workflows_spec.md Q10.
     near_duplicate_count = 0
-    by_day_all = defaultdict(list)
-    for r in parsed:
-        by_day_all[wat_date(r["_time_start"])].append(r)
-    for day_rows in by_day_all.values():
+    for day_rows in by_day.values():
         for i, a in enumerate(day_rows):
             for b in day_rows[i + 1 :]:
                 if a.get("hh_case_id") and b.get("hh_case_id") and a["hh_case_id"] != b["hh_case_id"]:
