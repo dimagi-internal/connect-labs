@@ -421,9 +421,9 @@ class ExperimentAuditCompleteView(LoginRequiredMixin, View):
             finally:
                 data_access.close()
 
-        except Exception:
+        except Exception as e:
             logger.exception("Failed to complete audit session")
-            return JsonResponse({"error": "An internal error occurred"}, status=500)
+            return JsonResponse({"error": f"An internal error occurred: {e}"}, status=500)
 
 
 class ExperimentAuditUncompleteView(LoginRequiredMixin, View):
@@ -1787,6 +1787,7 @@ class WorkflowSessionsAPIView(LoginRequiredMixin, View):
                             "total": int,
                             "pass": int,
                             "fail": int,
+                            "duplicate_fake": int,
                             "pending": int,
                             "ai_match": int,
                             "ai_no_match": int,

@@ -3,7 +3,8 @@ import { describe, it, expect } from 'vitest';
 
 import LabsAudit from './labs_audit_breakdown.js';
 
-const { groupByOppFlw, oppSummary, bulkUrl } = LabsAudit;
+const { groupByOppFlw, oppSummary, bulkUrl, humanReviewedOf, duplicateFakeOf } =
+  LabsAudit;
 
 function session(over) {
   return Object.assign(
@@ -88,6 +89,51 @@ describe('oppSummary', () => {
       restImages: 4,
       restReviewed: 4, // pass + fail
     });
+  });
+
+  it('rolls up restReviewed including duplicate_fake (a reviewed image, just categorized as duplicate)', () => {
+    const grouped = groupByOppFlw([
+      session({
+        id: 1,
+        tag: 'rest',
+        image_count: 6,
+        assessment_stats: {
+          pass: 2,
+          fail: 1,
+          duplicate_fake: 2,
+          ai_match: 0,
+          ai_no_match: 0,
+        },
+      }),
+    ]);
+    const sum = oppSummary(grouped['1973']);
+    expect(sum.restReviewed).toBe(5); // pass + fail + duplicate_fake
+  });
+});
+
+describe('humanReviewedOf / duplicateFakeOf', () => {
+  it('counts duplicate_fake as reviewed, not pending', () => {
+    const s = session({
+      image_count: 10,
+      assessment_stats: {
+        pass: 4,
+        fail: 2,
+        duplicate_fake: 3,
+        ai_match: 0,
+        ai_no_match: 0,
+      },
+    });
+    expect(humanReviewedOf(s)).toBe(9); // pass + fail + duplicate_fake
+    expect(duplicateFakeOf(s)).toBe(3);
+    expect(s.image_count - humanReviewedOf(s)).toBe(1); // pending
+  });
+
+  it('defaults to 0 when duplicate_fake is absent (sessions predating the field)', () => {
+    const s = session({
+      assessment_stats: { pass: 1, fail: 1, ai_match: 0, ai_no_match: 0 },
+    });
+    expect(humanReviewedOf(s)).toBe(2);
+    expect(duplicateFakeOf(s)).toBe(0);
   });
 });
 
