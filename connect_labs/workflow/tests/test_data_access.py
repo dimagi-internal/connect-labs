@@ -500,6 +500,152 @@ class TestCreateWorkflowFromTemplatePipelineCreation:
             assert f"view.pipelines.{alias}" in RENDER_CODE
 
 
+class TestCreateWorkflowFromTemplateProgramOwnedPipelineScope:
+    """Regression: a program-owned workflow's data_access is scoped
+    opportunity_id=None/program_id=<X> — copying that scope straight onto an
+    auto-created pipeline (the old behaviour) produces a program-scoped-only
+    pipeline record that pipeline_get/pipeline_preview/the real
+    get_pipeline_data runtime path (all opportunity_id-only readers) can
+    never find. The created pipeline must instead be anchored to a real
+    member opportunity, matching how pipelines are opp-owned everywhere else
+    in this codebase."""
+
+    def _make_program_scoped_wda(self, program_id=176):
+        wda = MagicMock()
+        wda.opportunity_id = None
+        wda.program_id = program_id
+        wda.organization_id = None
+        wda.access_token = "fake-token"
+        return wda
+
+    def test_pipeline_anchored_to_first_opportunity_id_when_program_owned(self):
+        from connect_labs.workflow.templates import TEMPLATES, create_workflow_from_template
+
+        TEMPLATES["__test_program_owned_pipeline__"] = {
+            "key": "__test_program_owned_pipeline__",
+            "name": "T",
+            "description": "d",
+            "multi_opp": True,
+            "definition": {"name": "T", "description": "d", "statuses": [], "config": {}},
+            "render_code": "function X(){return null}",
+            "pipeline_schema": {
+                "name": "P",
+                "description": "p",
+                "version": 1,
+                "grouping_key": "u",
+                "terminal_stage": "agg",
+                "fields": [],
+            },
+        }
+        try:
+            wda = self._make_program_scoped_wda()
+            wda.create_definition = MagicMock(
+                return_value=_make_definition_record(definition_id=10, opportunity_id=None)
+            )
+            wda.save_render_code = MagicMock()
+
+            with patch("connect_labs.workflow.data_access.PipelineDataAccess") as MockPipelineAccess:
+                mock_instance = MagicMock()
+                mock_pipeline = MagicMock()
+                mock_pipeline.id = 555
+                mock_instance.create_definition.return_value = mock_pipeline
+                MockPipelineAccess.return_value = mock_instance
+
+                create_workflow_from_template(
+                    wda, "__test_program_owned_pipeline__", request=None, opportunity_ids=[1973, 1976, 1978, 1982]
+                )
+
+                call_kwargs = MockPipelineAccess.call_args.kwargs
+                # Anchored to the first spanned opportunity, NOT the program.
+                assert call_kwargs["opportunity_id"] == 1973
+                assert call_kwargs["program_id"] is None
+        finally:
+            del TEMPLATES["__test_program_owned_pipeline__"]
+
+    def test_pipeline_falls_back_to_program_scope_when_no_opportunity_ids(self):
+        """No member opportunities were given at all — nothing better to
+        anchor to, so preserve the (still imperfect, but no worse than
+        before) program-scoped fallback rather than crashing."""
+        from connect_labs.workflow.templates import TEMPLATES, create_workflow_from_template
+
+        TEMPLATES["__test_program_owned_no_opps__"] = {
+            "key": "__test_program_owned_no_opps__",
+            "name": "T",
+            "description": "d",
+            "definition": {"name": "T", "description": "d", "statuses": [], "config": {}},
+            "render_code": "function X(){return null}",
+            "pipeline_schema": {
+                "name": "P",
+                "description": "p",
+                "version": 1,
+                "grouping_key": "u",
+                "terminal_stage": "agg",
+                "fields": [],
+            },
+        }
+        try:
+            wda = self._make_program_scoped_wda()
+            wda.create_definition = MagicMock(
+                return_value=_make_definition_record(definition_id=11, opportunity_id=None)
+            )
+            wda.save_render_code = MagicMock()
+
+            with patch("connect_labs.workflow.data_access.PipelineDataAccess") as MockPipelineAccess:
+                mock_instance = MagicMock()
+                mock_pipeline = MagicMock()
+                mock_pipeline.id = 556
+                mock_instance.create_definition.return_value = mock_pipeline
+                MockPipelineAccess.return_value = mock_instance
+
+                create_workflow_from_template(wda, "__test_program_owned_no_opps__", request=None)
+
+                call_kwargs = MockPipelineAccess.call_args.kwargs
+                assert call_kwargs["opportunity_id"] is None
+                assert call_kwargs["program_id"] == 176
+        finally:
+            del TEMPLATES["__test_program_owned_no_opps__"]
+
+    def test_opportunity_owned_workflow_unaffected(self, workflow_data_access):
+        """Sanity check: the ordinary opportunity-owned path (data_access
+        already has an opportunity_id) is untouched by this fix."""
+        wda, _ = workflow_data_access  # opportunity_id=700, per the fixture
+        from connect_labs.workflow.templates import TEMPLATES, create_workflow_from_template
+
+        TEMPLATES["__test_opp_owned_pipeline__"] = {
+            "key": "__test_opp_owned_pipeline__",
+            "name": "T",
+            "description": "d",
+            "definition": {"name": "T", "description": "d", "statuses": [], "config": {}},
+            "render_code": "function X(){return null}",
+            "pipeline_schema": {
+                "name": "P",
+                "description": "p",
+                "version": 1,
+                "grouping_key": "u",
+                "terminal_stage": "agg",
+                "fields": [],
+            },
+        }
+        try:
+            wda.create_definition = MagicMock(return_value=_make_definition_record(definition_id=12))
+            wda.save_render_code = MagicMock()
+
+            with patch("connect_labs.workflow.data_access.PipelineDataAccess") as MockPipelineAccess:
+                mock_instance = MagicMock()
+                mock_pipeline = MagicMock()
+                mock_pipeline.id = 557
+                mock_instance.create_definition.return_value = mock_pipeline
+                MockPipelineAccess.return_value = mock_instance
+
+                create_workflow_from_template(wda, "__test_opp_owned_pipeline__", request=None)
+
+                call_kwargs = MockPipelineAccess.call_args.kwargs
+                assert call_kwargs["opportunity_id"] == 700
+                assert call_kwargs["program_id"] is None
+        finally:
+            del TEMPLATES["__test_opp_owned_pipeline__"]
+
+
 class TestGetPipelineDataMultiOpp:
     def _make_definition(self, opportunity_ids=None, pipeline_sources=None):
         data = {

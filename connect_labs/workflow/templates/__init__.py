@@ -535,10 +535,26 @@ def _create_workflow_from_template_scoped(
     # created unscoped and subsequent scoped reads (`pipeline_get`, list views)
     # can't see it. The web path gets this for free via
     # ``request.labs_context``; the MCP path has to pass them explicitly.
+    #
+    # Pipelines are ALWAYS opportunity-owned in this codebase — every reader
+    # (pipeline_get, pipeline_preview, and the runtime PipelineDataAccess
+    # constructed by WorkflowDataAccess.get_pipeline_data) looks a pipeline up
+    # by opportunity_id, never by program_id. A program-owned workflow's
+    # ``data_access`` has no opportunity_id of its own (opportunity_id=None,
+    # program_id=<X>) — copying that scope straight onto a newly-created
+    # pipeline produces a program-scoped-only record that every one of those
+    # readers then reports as "not found", including at real run time. Fall
+    # back to the first spanned opportunity (the same anchor opportunity the
+    # manual pipeline-bootstrap pattern elsewhere in this codebase already
+    # uses for program-owned workflows) so the pipeline lands somewhere every
+    # reader can actually find it.
+    dao_opportunity_id = getattr(data_access, "opportunity_id", None)
+    dao_program_id = getattr(data_access, "program_id", None)
+    pipeline_opportunity_id = dao_opportunity_id or (opportunity_ids[0] if opportunity_ids else None)
     pipeline_access_token = getattr(data_access, "access_token", None)
     pipeline_scope_kwargs = {
-        "opportunity_id": getattr(data_access, "opportunity_id", None),
-        "program_id": getattr(data_access, "program_id", None),
+        "opportunity_id": pipeline_opportunity_id,
+        "program_id": None if pipeline_opportunity_id else dao_program_id,
         "organization_id": getattr(data_access, "organization_id", None),
     }
     can_create_pipelines = bool(request) or bool(pipeline_access_token)
