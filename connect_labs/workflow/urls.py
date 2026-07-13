@@ -130,6 +130,11 @@ urlpatterns = [
     path("api/prev-categories/", views.prev_categories_api, name="api_prev_categories"),
     path("api/open-run-state/", views.open_run_state_api, name="api_open_run_state"),
     path("api/run-category-history/", views.run_category_history_api, name="api_run_category_history"),
+    path(
+        "api/flw-audit-report-history/",
+        views.flw_audit_report_history_api,
+        name="api_flw_audit_report_history",
+    ),
     # Image proxy and visit images API
     path("api/image/<int:opp_id>/<str:blob_id>/", views.WorkflowImageProxyView.as_view(), name="api_image_proxy"),
     path("api/<int:opp_id>/visit-images/", views.visit_images_api, name="api_visit_images"),

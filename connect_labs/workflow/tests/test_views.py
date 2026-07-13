@@ -980,3 +980,70 @@ class TestReconcileGeneration:
         body = json.loads(resp.content)
         assert body["reconciled"] is False
         assert body["generation"]["1973"]["status"] == "running"
+
+
+class TestFlwAuditReportHistoryApi:
+    """flw_audit_trend_dashboard reads this endpoint to chart
+    flw_weekly_audit_report's saved weekly snapshots across opportunities."""
+
+    def _request(self, rf, user, definition_id=None):
+        params = {"definition_id": str(definition_id)} if definition_id is not None else {}
+        request = rf.get("/labs/workflow/api/flw-audit-report-history/", params)
+        request.user = user
+        request.labs_context = {"program_id": 176}
+        request.session = {"labs_oauth": {"access_token": "t"}}
+        return request
+
+    def _run(self, run_id, opportunity_id, report=None, completed=True):
+        data = {"status": "completed" if completed else "in_progress"}
+        if report is not None:
+            data["snapshot"] = {"state": {"flw_audit_report": report}}
+        return SimpleNamespace(id=run_id, opportunity_id=opportunity_id, data=data, is_completed=completed)
+
+    def test_requires_definition_id(self, dimagi_user, rf: RequestFactory):
+        import json
+
+        from connect_labs.workflow.views import flw_audit_report_history_api
+
+        resp = flw_audit_report_history_api(self._request(rf, dimagi_user))
+
+        assert resp.status_code == 400
+        assert "definition_id" in json.loads(resp.content)["error"]
+
+    def test_returns_one_entry_per_completed_run_with_a_report(self, dimagi_user, rf: RequestFactory):
+        import json
+
+        report_1973 = {"period_start": "2026-07-06", "period_end": "2026-07-12", "flws": [{"username": "alice"}]}
+        report_1982 = {"period_start": "2026-07-06", "period_end": "2026-07-12", "flws": [{"username": "bob"}]}
+        runs = [
+            self._run(1, 1973, report=report_1973),
+            self._run(2, 1982, report=report_1982),
+            self._run(3, 1976, report=None),  # completed but no snapshot yet (shouldn't happen, but tolerate)
+            self._run(4, 1978, report={"period_start": "2026-07-06", "flws": []}, completed=False),  # in_progress
+        ]
+
+        with patch("connect_labs.workflow.views.WorkflowDataAccess") as MockWDA:
+            mock_wda = MagicMock()
+            mock_wda.list_runs.return_value = runs
+            MockWDA.return_value = mock_wda
+
+            from connect_labs.workflow.views import flw_audit_report_history_api
+
+            resp = flw_audit_report_history_api(self._request(rf, dimagi_user, definition_id=6621))
+
+        assert resp.status_code == 200
+        body = json.loads(resp.content)
+        mock_wda.list_runs.assert_called_once_with(definition_id=6621)
+        assert {w["opportunity_id"] for w in body["weeks"]} == {1973, 1982}
+        week_1973 = next(w for w in body["weeks"] if w["opportunity_id"] == 1973)
+        assert week_1973["flws"] == [{"username": "alice"}]
+
+    def test_invalid_definition_id_returns_400(self, dimagi_user, rf: RequestFactory):
+        import json
+
+        from connect_labs.workflow.views import flw_audit_report_history_api
+
+        resp = flw_audit_report_history_api(self._request(rf, dimagi_user, definition_id="not-a-number"))
+
+        assert resp.status_code == 400
+        assert "integer" in json.loads(resp.content)["error"]
