@@ -3942,6 +3942,60 @@ def run_category_history_api(request):
 
 
 @login_required
+@require_GET
+def flw_audit_report_history_api(request):
+    """
+    Return every completed run's flw_audit_report snapshot for a given
+    source workflow definition (see flw_weekly_audit_report's run_default),
+    flattened into one entry per opportunity per week, for the trend
+    dashboard (flw_audit_trend_dashboard) to chart.
+
+    ?definition_id=<id> selects the source workflow (the weekly-report
+    generator, not this dashboard's own definition). Scoped via
+    request.labs_context same as any other page — WorkflowDataAccess.list_runs
+    already fans out across a program-owned definition's own member
+    opportunities, so this correctly picks up per-opportunity runs regardless
+    of whether the current page is opened at the program or opportunity level.
+    """
+    definition_id = request.GET.get("definition_id")
+    if not definition_id:
+        return JsonResponse({"error": "definition_id is required"}, status=400)
+    try:
+        definition_id = int(definition_id)
+    except (TypeError, ValueError):
+        return JsonResponse({"error": "definition_id must be an integer"}, status=400)
+
+    try:
+        wf_access = WorkflowDataAccess(request=request)
+        runs = wf_access.list_runs(definition_id=definition_id)
+        wf_access.close()
+
+        weeks = []
+        for run in runs:
+            if not run.is_completed:
+                continue
+            report = ((run.data.get("snapshot") or {}).get("state") or {}).get("flw_audit_report")
+            if not report:
+                continue
+            weeks.append(
+                {
+                    "run_id": run.id,
+                    "opportunity_id": run.opportunity_id,
+                    "period_start": report.get("period_start"),
+                    "period_end": report.get("period_end"),
+                    "generated_at": report.get("generated_at"),
+                    "flws": report.get("flws") or [],
+                }
+            )
+
+        weeks.sort(key=lambda w: (w["period_start"] or "", w["opportunity_id"] or 0))
+        return JsonResponse({"weeks": weeks})
+    except Exception:
+        logger.exception("Failed to fetch flw_audit_report history for definition %s", definition_id)
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
+
+
+@login_required
 def open_run_state_api(request):
     """
     Return merged worker_results and audit_statuses across all open (in-progress
