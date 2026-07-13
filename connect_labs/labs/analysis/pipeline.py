@@ -64,7 +64,13 @@ class AnalysisPipeline:
     Use this instead of importing from api_cache.py or backends directly.
     """
 
-    def __init__(self, request: HttpRequest | None = None, *, access_token: str | None = None):
+    def __init__(
+        self,
+        request: HttpRequest | None = None,
+        *,
+        access_token: str | None = None,
+        cchq_access_token: str | None = None,
+    ):
         """
         Initialize pipeline with request context or explicit access_token.
 
@@ -72,9 +78,14 @@ class AnalysisPipeline:
             request: HttpRequest with labs_oauth and labs_context (web path)
             access_token: OAuth token for Connect APIs (MCP/non-request path).
                           Mutually exclusive with deriving the token from request.
+            cchq_access_token: CommCare HQ OAuth token for cchq_forms/cchq_cases
+                          data sources (MCP/celery/non-request path), obtained via
+                          get_valid_cchq_access_token(user). Mutually exclusive
+                          with deriving the token from the request's session.
 
         Either ``request`` (with a valid labs_oauth session) or ``access_token``
         must be provided.  When both are given, ``access_token`` takes precedence.
+        Same precedence for ``cchq_access_token`` vs. the request's session.
         """
         self.request = request
         self.backend = get_backend()
@@ -91,10 +102,13 @@ class AnalysisPipeline:
 
         self.access_token = access_token
 
-        # CCHQ OAuth token (for cchq_forms data sources — only available via request)
-        self.cchq_access_token = (
-            request.session.get("commcare_oauth", {}).get("access_token") if request is not None else None
-        )
+        # CCHQ OAuth token (for cchq_forms/cchq_cases data sources): explicit kwarg
+        # wins (headless callers — e.g. a scheduled celery task using a durable,
+        # DB-persisted UserCCHQToken via get_valid_cchq_access_token), otherwise
+        # extract from the request's session (web path).
+        if cchq_access_token is None and request is not None:
+            cchq_access_token = request.session.get("commcare_oauth", {}).get("access_token")
+        self.cchq_access_token = cchq_access_token
         self.labs_context = getattr(request, "labs_context", {}) if request is not None else {}
 
     @property
@@ -545,6 +559,7 @@ class AnalysisPipeline:
                                 data_source=unfiltered_config.data_source,
                                 access_token=self.access_token,
                                 opportunity_id=opp_id,
+                                cchq_access_token=self.cchq_access_token,
                             )
                             raw_data_already_stored = False
                         elif unfiltered_config.data_source.type == "ocs_sessions":
@@ -594,6 +609,7 @@ class AnalysisPipeline:
                                 data_source=unfiltered_config.data_source,
                                 access_token=self.access_token,
                                 opportunity_id=opp_id,
+                                cchq_access_token=self.cchq_access_token,
                             )
                             raw_data_already_stored = False
                         else:
@@ -676,6 +692,7 @@ class AnalysisPipeline:
                             data_source=unfiltered_config.data_source,
                             access_token=self.access_token,
                             opportunity_id=opp_id,
+                            cchq_access_token=self.cchq_access_token,
                         )
                         raw_data_already_stored = False
                     elif unfiltered_config.data_source.type == "ocs_sessions":
@@ -725,6 +742,7 @@ class AnalysisPipeline:
                             data_source=unfiltered_config.data_source,
                             access_token=self.access_token,
                             opportunity_id=opp_id,
+                            cchq_access_token=self.cchq_access_token,
                         )
                         raw_data_already_stored = False
                     else:
@@ -803,6 +821,7 @@ class AnalysisPipeline:
                         data_source=config.data_source,
                         access_token=self.access_token,
                         opportunity_id=opp_id,
+                        cchq_access_token=self.cchq_access_token,
                     ):
                         buffer.append(visit_dict)
                         if len(buffer) >= CCHQ_CHUNK_SIZE:
@@ -914,6 +933,7 @@ class AnalysisPipeline:
                     data_source=config.data_source,
                     access_token=self.access_token,
                     opportunity_id=opp_id,
+                    cchq_access_token=self.cchq_access_token,
                 )
                 if not visit_dicts:
                     yield (EVENT_STATUS, {"message": f"No '{ct}' cases found"})

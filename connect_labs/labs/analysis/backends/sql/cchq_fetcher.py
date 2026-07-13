@@ -81,39 +81,42 @@ def fetch_cchq_forms_as_visit_dicts(
     data_source: DataSourceConfig,
     access_token: str,
     opportunity_id: int,
+    *,
+    cchq_access_token: str | None = None,
 ) -> list[dict]:
     """
     Fetch CCHQ forms and return them as normalized visit dicts.
 
     Args:
         request: HttpRequest with commcare_oauth in session, or ``None`` for
-            headless callers (MCP, scripts). When ``None``, this function
-            raises :class:`CCHQHeadlessError` early with a clear message —
-            it does NOT attempt to silently fall back, because there is no
-            way to authenticate to CommCare HQ without a session OAuth token.
+            headless callers that instead pass ``cchq_access_token``.
         data_source: DataSourceConfig with type="cchq_forms"
         access_token: Connect OAuth token (for opportunity metadata)
         opportunity_id: Opportunity ID (for metadata lookup)
+        cchq_access_token: pre-fetched CommCare HQ OAuth access token for
+            headless callers (e.g. a scheduled celery task), obtained via
+            ``get_valid_cchq_access_token(user)``. Required when ``request``
+            is ``None``.
 
     Returns:
         List of visit-shaped dicts ready for SQL backend processing
 
     Raises:
-        CCHQHeadlessError: If ``request`` is ``None``. CCHQ data sources
-            require a Django session OAuth token; headless callers cannot
-            run cchq_forms pipelines. Surfaced before the (potentially slow)
-            metadata fetch so the failure is fast and the message is direct.
+        CCHQHeadlessError: If both ``request`` and ``cchq_access_token`` are
+            ``None``. Surfaced before the (potentially slow) metadata fetch
+            so the failure is fast and the message is direct.
     """
-    if request is None:
+    if request is None and cchq_access_token is None:
         # Import here to avoid a top-level cycle.
         from connect_labs.labs.integrations.commcare.api_client import CCHQHeadlessError
 
         raise CCHQHeadlessError(
             "Pipeline data_source.type is 'cchq_forms', which requires a "
             "CommCare HQ OAuth token from the user's web session. This call "
-            "is running in a headless context (no request) so no token is "
-            "available. Run the preview from the web UI, or convert the "
-            "pipeline to a connect_csv data source."
+            "is running in a headless context (no request) and no "
+            "cchq_access_token was provided. Run the preview from the web "
+            "UI, pass a token from get_valid_cchq_access_token(user), or "
+            "convert the pipeline to a connect_csv data source."
         )
 
     metadata = fetch_opportunity_metadata(access_token, opportunity_id)
@@ -125,7 +128,7 @@ def fetch_cchq_forms_as_visit_dicts(
     if not app_id and data_source.app_id_source == "opportunity":
         app_id = metadata.get("cc_app_id", "")
 
-    client = CommCareDataAccess(request, cc_domain)
+    client = CommCareDataAccess(request, cc_domain, cchq_access_token=cchq_access_token)
     if not client.check_token_valid():
         raise ValueError(
             "CommCare OAuth not configured or expired. " "Please authorize CommCare access at /labs/commcare/initiate/"
@@ -188,26 +191,30 @@ def iter_cchq_forms_as_visit_dicts(
     data_source: DataSourceConfig,
     access_token: str,
     opportunity_id: int,
+    *,
+    cchq_access_token: str | None = None,
 ):
     """Streaming variant of `fetch_cchq_forms_as_visit_dicts` — yields one
     visit_dict per form without loading the whole list into memory.
 
-    Same auth + xmlns-discovery contract as `fetch_cchq_forms_as_visit_dicts`;
-    the only difference is the body is a generator delegating to
-    `client.iter_forms`. Use this when downstream callers can chunk-process
-    so the cchq fetch + storage path stays bounded in memory regardless of
-    form count. The non-streaming variant OOM'd Fargate workers at ~26k MBW
-    registrations (~7KB each → ~180MB JSON, then ORM bulk_create on top).
+    Same auth + xmlns-discovery contract as `fetch_cchq_forms_as_visit_dicts`
+    (including the ``cchq_access_token`` headless path); the only difference
+    is the body is a generator delegating to `client.iter_forms`. Use this
+    when downstream callers can chunk-process so the cchq fetch + storage
+    path stays bounded in memory regardless of form count. The non-streaming
+    variant OOM'd Fargate workers at ~26k MBW registrations (~7KB each →
+    ~180MB JSON, then ORM bulk_create on top).
     """
-    if request is None:
+    if request is None and cchq_access_token is None:
         from connect_labs.labs.integrations.commcare.api_client import CCHQHeadlessError
 
         raise CCHQHeadlessError(
             "Pipeline data_source.type is 'cchq_forms', which requires a "
             "CommCare HQ OAuth token from the user's web session. This call "
-            "is running in a headless context (no request) so no token is "
-            "available. Run the preview from the web UI, or convert the "
-            "pipeline to a connect_csv data source."
+            "is running in a headless context (no request) and no "
+            "cchq_access_token was provided. Run the preview from the web "
+            "UI, pass a token from get_valid_cchq_access_token(user), or "
+            "convert the pipeline to a connect_csv data source."
         )
 
     metadata = fetch_opportunity_metadata(access_token, opportunity_id)
@@ -219,7 +226,7 @@ def iter_cchq_forms_as_visit_dicts(
     if not app_id and data_source.app_id_source == "opportunity":
         app_id = metadata.get("cc_app_id", "")
 
-    client = CommCareDataAccess(request, cc_domain)
+    client = CommCareDataAccess(request, cc_domain, cchq_access_token=cchq_access_token)
     if not client.check_token_valid():
         raise ValueError(
             "CommCare OAuth not configured or expired. Please authorize CommCare access at /labs/commcare/initiate/"

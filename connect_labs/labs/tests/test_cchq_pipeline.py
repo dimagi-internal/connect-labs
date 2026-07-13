@@ -151,3 +151,58 @@ class TestHeadlessGuard:
         client = CommCareDataAccess(request=None, domain="example")
         with pytest.raises(CCHQHeadlessError):
             client.check_token_valid()
+
+
+class TestHeadlessWithToken:
+    """When a headless caller supplies a pre-fetched cchq_access_token (e.g. a
+    scheduled celery task using get_valid_cchq_access_token(user)), the same
+    request=None path must NOT raise CCHQHeadlessError — this is the whole
+    point of the token added for unattended (Monday 1am) workflow runs."""
+
+    def test_commcare_data_access_accepts_headless_token(self):
+        from connect_labs.labs.integrations.commcare.api_client import CommCareDataAccess
+
+        client = CommCareDataAccess(request=None, domain="example", cchq_access_token="pre-fetched-token")
+        assert client.check_token_valid() is True
+        assert client.access_token == "pre-fetched-token"
+
+    def test_fetch_cchq_forms_does_not_raise_when_headless_token_provided(self, monkeypatch):
+        from connect_labs.labs.analysis.backends.sql import cchq_fetcher
+        from connect_labs.labs.analysis.config import DataSourceConfig
+        from connect_labs.labs.integrations.commcare.api_client import CommCareDataAccess
+
+        monkeypatch.setattr(
+            cchq_fetcher, "fetch_opportunity_metadata", lambda access_token, opportunity_id: {"cc_domain": "example"}
+        )
+        monkeypatch.setattr(CommCareDataAccess, "verify_hq_access", lambda self: True)
+        monkeypatch.setattr(CommCareDataAccess, "discover_form_xmlns", lambda self, form_name: None)
+
+        ds = DataSourceConfig(type="cchq_forms", form_name="visit", app_id="app-1")
+
+        # Should reach the "could not discover xmlns" empty-return path, not
+        # CCHQHeadlessError — proving the headless token path is honored.
+        result = cchq_fetcher.fetch_cchq_forms_as_visit_dicts(
+            request=None,
+            data_source=ds,
+            access_token="connect-token",
+            opportunity_id=765,
+            cchq_access_token="pre-fetched-token",
+        )
+        assert result == []
+
+    def test_fetch_cchq_cases_raises_headless_error_without_any_token(self):
+        import pytest
+
+        from connect_labs.labs.analysis.backends.sql.cchq_cases_fetcher import fetch_cchq_cases_as_visit_dicts
+        from connect_labs.labs.analysis.config import DataSourceConfig
+        from connect_labs.labs.integrations.commcare.api_client import CCHQHeadlessError
+
+        ds = DataSourceConfig(type="cchq_cases", case_type="work-area")
+
+        with pytest.raises(CCHQHeadlessError):
+            fetch_cchq_cases_as_visit_dicts(
+                request=None,
+                data_source=ds,
+                access_token="connect-token",
+                opportunity_id=765,
+            )

@@ -74,24 +74,30 @@ def fetch_cchq_cases_as_visit_dicts(
     data_source: DataSourceConfig,
     access_token: str,
     opportunity_id: int,
+    *,
+    cchq_access_token: str | None = None,
 ) -> list[dict]:
     """
     Fetch CCHQ cases of ``data_source.case_type`` for the opportunity's HQ domain
     and return them as normalized visit dicts.
 
     Args:
-        request: HttpRequest with commcare_oauth in session. Required — the Case
-            API needs a CommCare HQ OAuth token that only exists on the web
-            session. Headless callers (MCP/scripts) cannot authenticate to CCHQ.
+        request: HttpRequest with commcare_oauth in session, or ``None`` for
+            headless callers that instead pass ``cchq_access_token``.
         data_source: DataSourceConfig with type="cchq_cases" and case_type set.
         access_token: Connect OAuth token (used only for opportunity metadata).
         opportunity_id: Opportunity ID (for cc_domain lookup).
+        cchq_access_token: pre-fetched CommCare HQ OAuth access token for
+            headless callers (e.g. a scheduled celery task), obtained via
+            ``get_valid_cchq_access_token(user)``. Required when ``request``
+            is ``None``.
 
     Returns:
         List of visit-shaped dicts ready for SQL backend processing.
 
     Raises:
-        CCHQHeadlessError: If ``request`` is ``None``.
+        CCHQHeadlessError: If both ``request`` and ``cchq_access_token`` are
+            ``None``.
         ValueError: If case_type is unset, cc_domain is unresolved, or the
             CommCare OAuth token is missing/expired.
         CCHQAuthError: If CCHQ rejects the access probe for the domain.
@@ -99,14 +105,15 @@ def fetch_cchq_cases_as_visit_dicts(
     if not data_source.case_type:
         raise ValueError("cchq_cases data source requires case_type to be set in the pipeline schema.")
 
-    if request is None:
+    if request is None and cchq_access_token is None:
         from connect_labs.labs.integrations.commcare.api_client import CCHQHeadlessError
 
         raise CCHQHeadlessError(
             "Pipeline data_source.type is 'cchq_cases', which requires a "
             "CommCare HQ OAuth token from the user's web session. This call "
-            "is running in a headless context (no request) so no token is "
-            "available. Run the preview from the web UI."
+            "is running in a headless context (no request) and no "
+            "cchq_access_token was provided. Run the preview from the web "
+            "UI, or pass a token from get_valid_cchq_access_token(user)."
         )
 
     metadata = fetch_opportunity_metadata(access_token, opportunity_id)
@@ -114,7 +121,7 @@ def fetch_cchq_cases_as_visit_dicts(
     if not cc_domain:
         raise ValueError(f"No cc_domain found for opportunity {opportunity_id}")
 
-    client = CommCareDataAccess(request, cc_domain)
+    client = CommCareDataAccess(request, cc_domain, cchq_access_token=cchq_access_token)
     if not client.check_token_valid():
         raise ValueError(
             "CommCare OAuth not configured or expired. " "Please authorize CommCare access at /labs/commcare/initiate/"

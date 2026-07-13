@@ -120,6 +120,39 @@ class UserConnectToken(models.Model):
         return timezone.now() >= (self.expires_at - timedelta(seconds=60))
 
 
+class UserCCHQToken(models.Model):
+    """Persistent store of a user's CommCare HQ OAuth token.
+
+    Populated when the user connects CommCare HQ via the labs OAuth flow
+    (/labs/commcare/initiate/). Looked up by headless callers (celery tasks,
+    management commands) to act on a user's behalf without a browser session,
+    mirroring UserConnectToken for CommCare HQ instead of Connect.
+
+    The refresh_token is used to extend the access_token when it expires.
+    """
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="cchq_token",
+    )
+    access_token = models.TextField()
+    refresh_token = models.TextField(blank=True)
+    expires_at = models.DateTimeField()
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "labs_user_cchq_token"
+
+    def __str__(self) -> str:
+        return f"CCHQToken({self.user.username})"
+
+    @property
+    def is_expired(self) -> bool:
+        # Treat tokens within 60 seconds of expiry as expired to avoid races.
+        return timezone.now() >= (self.expires_at - timedelta(seconds=60))
+
+
 class DeletedWorkflowBackup(models.Model):
     """Safety copy of a workflow definition, written just before it is deleted.
 
