@@ -746,7 +746,23 @@ class WorkflowDataAccess(BaseDataAccess):
     # -------------------------------------------------------------------------
 
     def list_runs(self, definition_id: int | None = None) -> list[WorkflowRunRecord]:
-        """List workflow runs."""
+        """List workflow runs.
+
+        When this DAO is program-scoped (``program_id`` set, no owning
+        ``opportunity_id`` of its own), also fans out across the relevant
+        definition(s)' own ``opportunity_ids`` and merges the results, deduped
+        by id. A program-owned MULTI-OPP definition's per-report runs are
+        created opportunity_id-scoped, one per member opportunity (see
+        flw_weekly_audit_report's run_default) — a program-scoped-only query
+        can never see those: the production API does an exact-match scope
+        filter, not a hierarchy resolution, so an opportunity-tagged record is
+        invisible to a program_id-only query. This is the same bug class as
+        the program-view audit-session gap (fixed for AuditDataAccess) —
+        confirmed live: workflow 6621's 16 backfilled per-opportunity runs
+        were invisible on the program-scoped workflow list page, showing only
+        the 2 runs created directly from that page (which really are
+        program-scoped).
+        """
         records = self.labs_api.get_records(
             experiment=self.EXPERIMENT,
             type="workflow_run",
@@ -754,6 +770,26 @@ class WorkflowDataAccess(BaseDataAccess):
         )
         if definition_id:
             records = [r for r in records if r.data.get("definition_id") == definition_id]
+
+        if self.opportunity_id is None and self.program_id is not None:
+            by_id = {r.id: r for r in records}
+            if definition_id:
+                definition = self.get_definition(definition_id)
+                member_opp_ids = set(definition.opportunity_ids) if definition else set()
+            else:
+                member_opp_ids = {
+                    opp_id for definition in self.list_definitions() for opp_id in definition.opportunity_ids
+                }
+            for opp_id in member_opp_ids:
+                opp_access = WorkflowDataAccess(access_token=self.access_token, opportunity_id=opp_id)
+                try:
+                    opp_runs = opp_access.list_runs(definition_id)
+                finally:
+                    opp_access.close()
+                for run in opp_runs:
+                    by_id[run.id] = run
+            records = list(by_id.values())
+
         return records
 
     def get_run(self, run_id: int) -> WorkflowRunRecord | None:
