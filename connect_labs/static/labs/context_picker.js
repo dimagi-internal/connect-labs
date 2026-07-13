@@ -93,20 +93,23 @@
 
       // ---- which filters this surface supports ----
       // navbar (scope unset): per-URL pathFilters. scoped callers: use config.scope.
+      // Every page allows org + program + opp selection together — previously several
+      // opp-scoped pages excluded 'programs' (and some excluded 'orgs'), which silently
+      // dropped a program click with no error once an opportunity was already selected.
       pathFilters: {
         '/labs/overview': ['orgs', 'programs', 'opps'],
-        '/labs/workflow/': ['opps'],
-        '/labs/pipelines/': ['opps'],
-        '/labs/scout/': ['opps'],
-        '/labs/scout-prod/': ['opps'],
-        '/solicitations/': ['programs'],
+        '/labs/workflow/': ['orgs', 'programs', 'opps'],
+        '/labs/pipelines/': ['orgs', 'programs', 'opps'],
+        '/labs/scout/': ['orgs', 'programs', 'opps'],
+        '/labs/scout-prod/': ['orgs', 'programs', 'opps'],
+        '/solicitations/': ['orgs', 'programs', 'opps'],
         '/explorer/': ['orgs', 'programs', 'opps'],
-        '/audit/': ['programs', 'opps'],
-        '/tasks/': ['programs', 'opps'],
-        '/coverage/': ['opps'],
-        '/custom_analysis/': ['opps'],
-        '/funder/': ['orgs', 'programs'],
-        '/labs/synthetic/': ['opps'],
+        '/audit/': ['orgs', 'programs', 'opps'],
+        '/tasks/': ['orgs', 'programs', 'opps'],
+        '/coverage/': ['orgs', 'programs', 'opps'],
+        '/custom_analysis/': ['orgs', 'programs', 'opps'],
+        '/funder/': ['orgs', 'programs', 'opps'],
+        '/labs/synthetic/': ['orgs', 'programs', 'opps'],
       },
 
       pathSupports(filter) {
@@ -207,6 +210,39 @@
         this.selectedOpps = [];
       },
 
+      // Immediately clears the applied context (session + URL), rather than just
+      // resetting the picker's pending local selection — the old "Clear" button
+      // only did the latter, so it silently did nothing until the user also
+      // clicked "Apply Selection". This is the one the footer's Clear button
+      // calls directly, so one click actually resets and reloads.
+      clearContext() {
+        this.clearSelection();
+        if (this.mode === 'multi') {
+          this.open = false;
+          return;
+        }
+        this._submitClearContext();
+      },
+
+      _submitClearContext() {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '/labs/clear-context/';
+        const csrfToken =
+          document.querySelector('[name=csrfmiddlewaretoken]')?.value ||
+          document.querySelector('meta[name="csrf-token"]')?.content ||
+          this.getCookie('csrftoken');
+        if (csrfToken) {
+          const csrfInput = document.createElement('input');
+          csrfInput.type = 'hidden';
+          csrfInput.name = 'csrfmiddlewaretoken';
+          csrfInput.value = csrfToken;
+          form.appendChild(csrfInput);
+        }
+        document.body.appendChild(form);
+        form.submit();
+      },
+
       applySelection() {
         // Multi mode (or any caller-supplied onApply) hands off to the callback.
         if (this.mode === 'multi' || typeof config.onApply === 'function') {
@@ -231,22 +267,7 @@
           (this.selectedOpp && this.showOpps);
 
         if (!hasSelection) {
-          const form = document.createElement('form');
-          form.method = 'POST';
-          form.action = '/labs/clear-context/';
-          const csrfToken =
-            document.querySelector('[name=csrfmiddlewaretoken]')?.value ||
-            document.querySelector('meta[name="csrf-token"]')?.content ||
-            this.getCookie('csrftoken');
-          if (csrfToken) {
-            const csrfInput = document.createElement('input');
-            csrfInput.type = 'hidden';
-            csrfInput.name = 'csrfmiddlewaretoken';
-            csrfInput.value = csrfToken;
-            form.appendChild(csrfInput);
-          }
-          document.body.appendChild(form);
-          form.submit();
+          this._submitClearContext();
         } else {
           const url = new URL(window.location.href);
           url.searchParams.delete('organization_id');

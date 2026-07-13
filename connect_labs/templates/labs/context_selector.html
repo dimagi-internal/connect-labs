@@ -84,13 +84,14 @@ multi-select opportunity picker).
         <div class="flex items-center space-x-3">
           <input type="number" id="cache-tolerance" x-model="cacheTolerance" class="hidden">
           <button type="button"
-                  @click="clearSelection()"
+                  @click="clearContext()"
                   x-show="hasSelection"
+                  title="Clear the applied context and start selection fresh"
                   class="px-4 py-2 text-sm text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg font-medium transition flex items-center">
             <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
             </svg>
-            Clear
+            Clear Context
           </button>
           <button type="button"
                   @click="applySelection()"
