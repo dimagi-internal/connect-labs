@@ -59,38 +59,61 @@ class CommCareDataAccess:
 
     Uses the CommCare OAuth token stored in request.session["commcare_oauth"].
 
-    Constructed with ``request=None`` only as a placeholder — every call
-    that touches CCHQ will then raise :class:`CCHQHeadlessError` because
-    there is no OAuth token to authenticate with. This shape lets headless
-    callers (MCP, management commands) instantiate the client and surface a
-    clean error rather than crashing with ``'NoneType' object has no
-    attribute 'session'``.
+    Constructed with ``request=None`` and no ``cchq_access_token`` only as a
+    placeholder — every call that touches CCHQ will then raise
+    :class:`CCHQHeadlessError` because there is no OAuth token to
+    authenticate with. This shape lets headless callers (MCP, management
+    commands) instantiate the client and surface a clean error rather than
+    crashing with ``'NoneType' object has no attribute 'session'``.
+
+    Headless callers that DO have a durable token — obtained via
+    ``connect_labs.labs.integrations.commcare.cchq_tokens.get_valid_cchq_access_token(user)``,
+    which is backed by a DB-persisted, auto-refreshing ``UserCCHQToken`` row
+    rather than a browser session — can pass it as ``cchq_access_token`` to
+    run fully unattended (e.g. a scheduled celery task). This token is used
+    as-is for the lifetime of this client; if it expires mid-use the caller
+    should catch the resulting 401 and re-fetch a fresh token by calling
+    ``get_valid_cchq_access_token(user)`` again, rather than expecting this
+    class to refresh a token it didn't mint itself.
     """
 
-    def __init__(self, request: HttpRequest | None, domain: str):
+    def __init__(self, request: HttpRequest | None, domain: str, *, cchq_access_token: str | None = None):
         """
         Initialize CommCare data access.
 
         Args:
             request: HttpRequest with commcare_oauth in session, or ``None``
-                for headless callers. ``None`` is allowed only so callers can
-                handle the resulting :class:`CCHQHeadlessError` cleanly —
-                CCHQ-touching methods will not work.
+                for headless callers. When ``None`` and ``cchq_access_token``
+                is also not provided, CCHQ-touching methods will raise
+                :class:`CCHQHeadlessError` so callers can handle it cleanly.
             domain: CommCare domain to query
+            cchq_access_token: a pre-fetched, already-valid CommCare HQ OAuth
+                access token for headless use (see class docstring). Mutually
+                exclusive in practice with ``request`` — when both happen to
+                be given, this explicit token wins.
         """
         self.request = request
         self.domain = domain
+        self._headless_access_token = cchq_access_token is not None
 
-        # Get CommCare OAuth token from session. In headless mode (request=None)
-        # there is no session, so we record an empty config and let downstream
-        # methods raise CCHQHeadlessError. This is preferable to crashing here
-        # because some callers (e.g. fetchers that probe with verify_hq_access)
-        # want to instantiate the client and *then* check.
-        if request is not None:
+        if cchq_access_token is not None:
+            # Headless mode with a durable, pre-fetched token: no session to read
+            # expires_at from, and none needed — the caller is responsible for
+            # having refreshed it (get_valid_cchq_access_token does this).
+            self.commcare_oauth = {"access_token": cchq_access_token}
+            self.access_token = cchq_access_token
+        elif request is not None:
             self.commcare_oauth = request.session.get("commcare_oauth", {})
+            self.access_token = self.commcare_oauth.get("access_token")
         else:
+            # Get CommCare OAuth token from session. In headless mode (request=None,
+            # no cchq_access_token) there is no session, so we record an empty config
+            # and let downstream methods raise CCHQHeadlessError. This is preferable
+            # to crashing here because some callers (e.g. fetchers that probe with
+            # verify_hq_access) want to instantiate the client and *then* check.
             self.commcare_oauth = {}
-        self.access_token = self.commcare_oauth.get("access_token")
+            self.access_token = None
+
         self.base_url = getattr(settings, "COMMCARE_HQ_URL", "https://www.commcarehq.org")
 
         if not self.access_token and request is not None:
@@ -113,22 +136,33 @@ class CommCareDataAccess:
 
         Raises:
             CCHQHeadlessError: If this client was constructed without a request
-                (headless / MCP context). CCHQ data sources require a web
-                session OAuth token — there is no fallback today, so failing
-                fast with a typed error beats returning False (which callers
-                tend to translate into a misleading "no data" empty result).
+                AND without a headless ``cchq_access_token``. CCHQ data
+                sources require either a web session OAuth token or a
+                pre-fetched durable token — there is no other fallback, so
+                failing fast with a typed error beats returning False (which
+                callers tend to translate into a misleading "no data" empty
+                result).
         """
-        if self.request is None:
+        if self.request is None and not self._headless_access_token:
             raise CCHQHeadlessError(
                 "CommCare HQ access requires a web session OAuth token, "
-                "but this call is running in a headless context (no request). "
-                "Pipelines that use the cchq_forms data source can only be "
-                "executed from the web UI today. To exercise the pipeline "
-                "from MCP / scripts, switch the data source to connect_csv, "
-                "or run the preview from the web."
+                "but this call is running in a headless context (no request) "
+                "with no cchq_access_token provided. Pipelines that use the "
+                "cchq_forms/cchq_cases data sources can only be executed from "
+                "the web UI, or headlessly by passing a token obtained via "
+                "get_valid_cchq_access_token(user). To exercise the pipeline "
+                "from MCP / scripts without either, switch the data source "
+                "to connect_csv, or run the preview from the web."
             )
         if not self.access_token:
             return False
+
+        if self._headless_access_token:
+            # Freshness is the caller's responsibility (get_valid_cchq_access_token
+            # refreshes before handing us the token) — there's no session to read
+            # an expires_at from, and nothing useful to refresh here if it's stale;
+            # a stale token will simply 401 on the next real request.
+            return True
 
         # Check expiration
         expires_at = self.commcare_oauth.get("expires_at", 0)

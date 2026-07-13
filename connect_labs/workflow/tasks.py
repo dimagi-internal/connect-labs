@@ -752,6 +752,10 @@ def handle_pipeline_only_job(job_config: dict, access_token: str, progress_callb
 # Import job handler modules to trigger registration
 import connect_labs.workflow.job_handlers  # noqa: F401, E402
 from connect_labs.labs.connect_tokens import ConnectTokenError, get_valid_access_token  # noqa: E402
+from connect_labs.labs.integrations.commcare.cchq_tokens import (  # noqa: E402
+    CCHQTokenError,
+    get_valid_cchq_access_token,
+)
 from connect_labs.workflow.data_access import WorkflowDataAccess  # noqa: E402
 from connect_labs.workflow.schedules import compute_next_run  # noqa: E402
 from connect_labs.workflow.templates import run_default_for_definition  # noqa: E402
@@ -799,6 +803,21 @@ def run_scheduled_workflow(schedule_id: int) -> dict:
         sched.save(update_fields=["last_status", "last_error", "last_run_at"])
         return {"status": "failed", "schedule_id": schedule_id}
 
+    # CommCare HQ token is best-effort and OPTIONAL here: most scheduled templates
+    # (e.g. weekly_dual_track_audit) only touch Connect-native data and never need
+    # one. Only templates whose default-run reads a cchq_forms/cchq_cases pipeline
+    # actually consume cchq_access_token; for everyone else it's simply unused. A
+    # missing/expired CCHQ token must never block a schedule that doesn't need it,
+    # so failures here are logged and swallowed rather than raised — a template
+    # that DOES need CCHQ data will surface its own clear CCHQHeadlessError/
+    # CCHQAuthError below (caught by the generic except, recorded as STATUS_FAILED)
+    # if no token was available.
+    try:
+        cchq_token = get_valid_cchq_access_token(sched.owner)
+    except CCHQTokenError as e:
+        logger.info("No usable CommCare HQ token for schedule %s owner %s: %s", schedule_id, sched.owner, e)
+        cchq_token = None
+
     da = None
     try:
         if sched.opportunity_id:
@@ -808,7 +827,7 @@ def run_scheduled_workflow(schedule_id: int) -> dict:
         definition = da.get_definition(sched.definition_id)
         if definition is None:
             raise ValueError(f"definition {sched.definition_id} not found")
-        run_default_for_definition(definition, access_token=token, request=None)
+        run_default_for_definition(definition, access_token=token, request=None, cchq_access_token=cchq_token)
         sched.last_status = WorkflowSchedule.STATUS_OK
         sched.last_error = ""
     except Exception as e:  # noqa: BLE001

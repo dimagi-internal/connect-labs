@@ -8,6 +8,7 @@ import hashlib
 import logging
 import secrets
 from base64 import urlsafe_b64encode
+from datetime import timedelta
 from urllib.parse import urlencode
 
 import httpx
@@ -18,6 +19,8 @@ from django.shortcuts import redirect
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
+
+from connect_labs.labs.models import UserCCHQToken
 
 logger = logging.getLogger(__name__)
 
@@ -144,6 +147,18 @@ def labs_commcare_callback(request: HttpRequest) -> HttpResponseRedirect:
             "expires_at": timezone.now().timestamp() + token_data.get("expires_in", 3600),
             "token_type": token_data.get("token_type", "Bearer"),
         }
+
+        # Also persist to DB so headless callers (celery tasks, management commands)
+        # can look up this token without a browser session — mirrors how the Connect
+        # OAuth callback persists UserConnectToken alongside its own session write.
+        UserCCHQToken.objects.update_or_create(
+            user=request.user,
+            defaults={
+                "access_token": token_data["access_token"],
+                "refresh_token": token_data.get("refresh_token", ""),
+                "expires_at": timezone.now() + timedelta(seconds=token_data.get("expires_in", 3600)),
+            },
+        )
 
         # Clean up OAuth flow data
         request.session.pop("commcare_oauth_next", None)

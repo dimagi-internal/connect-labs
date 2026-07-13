@@ -150,3 +150,54 @@ def test_run_scheduled_workflow_no_token_disables():
     sched.refresh_from_db()
     assert sched.last_status == WorkflowSchedule.STATUS_AUTH_EXPIRED
     assert sched.enabled is False
+
+
+@pytest.mark.django_db
+def test_run_scheduled_workflow_forwards_cchq_token_when_available():
+    """A schedule whose owner has authorized CommCare HQ gets that token forwarded
+    to run_default_for_definition, so templates reading cchq_forms/cchq_cases
+    pipelines can run headlessly (this is the whole point of the CCHQ token work —
+    see get_valid_cchq_access_token)."""
+    sched = _make_schedule(username="hascchq")
+    with (
+        mock.patch("connect_labs.workflow.tasks.get_valid_access_token", return_value="tok"),
+        mock.patch("connect_labs.workflow.tasks.get_valid_cchq_access_token", return_value="cchq-tok"),
+        mock.patch("connect_labs.workflow.tasks.WorkflowDataAccess") as DA,
+        mock.patch(
+            "connect_labs.workflow.tasks.run_default_for_definition", return_value={"ran": True}
+        ) as run_default,
+    ):
+        DA.return_value.get_definition.return_value = mock.Mock(id=42)
+        from connect_labs.workflow.tasks import run_scheduled_workflow
+
+        run_scheduled_workflow(sched.id)
+
+    sched.refresh_from_db()
+    assert sched.last_status == WorkflowSchedule.STATUS_OK
+    run_default.assert_called_once_with(mock.ANY, access_token="tok", request=None, cchq_access_token="cchq-tok")
+
+
+@pytest.mark.django_db
+def test_run_scheduled_workflow_missing_cchq_token_does_not_block_run():
+    """A schedule whose owner never authorized CommCare HQ (or whose CCHQ token
+    died) must still run normally for templates that don't need CCHQ data —
+    only cchq_access_token becomes None, nothing else changes."""
+    from connect_labs.labs.integrations.commcare.cchq_tokens import CCHQTokenError
+
+    sched = _make_schedule(username="nocchq")
+    with (
+        mock.patch("connect_labs.workflow.tasks.get_valid_access_token", return_value="tok"),
+        mock.patch("connect_labs.workflow.tasks.get_valid_cchq_access_token", side_effect=CCHQTokenError("no cchq")),
+        mock.patch("connect_labs.workflow.tasks.WorkflowDataAccess") as DA,
+        mock.patch(
+            "connect_labs.workflow.tasks.run_default_for_definition", return_value={"ran": True}
+        ) as run_default,
+    ):
+        DA.return_value.get_definition.return_value = mock.Mock(id=42)
+        from connect_labs.workflow.tasks import run_scheduled_workflow
+
+        run_scheduled_workflow(sched.id)
+
+    sched.refresh_from_db()
+    assert sched.last_status == WorkflowSchedule.STATUS_OK
+    run_default.assert_called_once_with(mock.ANY, access_token="tok", request=None, cchq_access_token=None)
