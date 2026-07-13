@@ -105,6 +105,7 @@ def extract_images_with_question_ids(visit_data: dict) -> list[dict]:
     # Extract visit-level metadata
     username = visit_data.get("username") or ""
     entity_name = visit_data.get("entity_name") or "No Entity"
+    entity_id = visit_data.get("entity_id") or ""
 
     # Build filename->path map in a SINGLE traversal (O(m) where m=tree size)
     form_data = form_json.get("form", form_json)
@@ -130,6 +131,7 @@ def extract_images_with_question_ids(visit_data: dict) -> list[dict]:
                 "username": username,
                 "visit_date": visit_date,
                 "entity_name": entity_name,
+                "entity_id": entity_id,
             }
         )
 
