@@ -544,6 +544,9 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
             all_assessments: list[dict] = []
             bulk_primary_username = ""
             assessment_counter = 0  # Counter to ensure unique IDs even for duplicate visits
+            # Sessions created before entity_id was captured in visit_images have none stored;
+            # collect those visit_ids so we can backfill with one lightweight bulk fetch below.
+            visits_missing_entity_id: set[int] = set()
 
             # Build image filter from session's stored related_fields (for display-time filtering
             # of sessions created before storage-level filtering was applied)
@@ -598,6 +601,9 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
                         latest_visit = visit_date_local
 
                 entity_name = first_image.get("entity_name", "No Entity")
+                entity_id = first_image.get("entity_id", "")
+                if not entity_id:
+                    visits_missing_entity_id.add(visit_id)
 
                 # Convert to dict for easy lookup
                 blob_metadata = {
@@ -636,6 +642,7 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
                             "visit_date": visit_date_display,
                             "visit_date_sort": visit_date_sort,
                             "entity_name": entity_name,
+                            "entity_id": entity_id,
                             "username": username,
                             "flw_name": flw_names.get(username, username),
                             "opportunity_id": opportunity_id,
@@ -671,6 +678,7 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
                             "visit_date": visit_date_display,
                             "visit_date_sort": visit_date_sort,
                             "entity_name": entity_name,
+                            "entity_id": entity_id,
                             "username": username,
                             "flw_name": flw_names.get(username, username),
                             "opportunity_id": opportunity_id,
@@ -678,6 +686,25 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
                             "ai_notes": assessment_data.get("ai_notes", ""),
                         }
                     )
+
+            # Backfill entity_id for audit sessions created before it was captured in
+            # visit_images, via one lightweight bulk fetch (skip_form_json) instead of
+            # re-running full image extraction.
+            if visits_missing_entity_id:
+                try:
+                    backfill_visits = data_access.pipeline.fetch_raw_visits(
+                        opportunity_id=opportunity_id,
+                        skip_form_json=True,
+                        filter_visit_ids=visits_missing_entity_id,
+                    )
+                    # RawVisitCache.visit_id is a CharField, so keys here are strings — normalize
+                    # to str on both sides since assessment["visit_id"] is stored as an int.
+                    entity_id_by_visit = {str(v["id"]): str(v.get("entity_id") or "") for v in backfill_visits}
+                except Exception:
+                    entity_id_by_visit = {}
+                for assessment in all_assessments:
+                    if not assessment.get("entity_id"):
+                        assessment["entity_id"] = entity_id_by_visit.get(str(assessment["visit_id"]), "")
 
             all_assessments.sort(key=lambda a: a.get("visit_date_sort") or "")
 

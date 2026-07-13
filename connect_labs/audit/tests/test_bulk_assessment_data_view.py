@@ -95,6 +95,79 @@ def test_bulk_primary_flw_name_resolves_via_flw_names(labs_client, monkeypatch):
     assert data["bulk_primary_flw_name"] == "Jane Doe"
 
 
+def test_assessment_entity_id_passes_through_when_already_stored(labs_client, monkeypatch):
+    """New audit sessions store entity_id directly on each visit_images entry —
+    it should reach the assessment unchanged, no backfill needed."""
+    from connect_labs.audit import views
+
+    username = "26a4b2fb1c4d2f260c5e"
+    session = _make_session(username)
+    session.data["visit_images"]["111"][0]["entity_id"] = "ALIYU-20240610"
+
+    class FakeDataAccess:
+        def __init__(self, *a, **k):
+            pass
+
+        def get_audit_session(self, session_id, try_multiple_opportunities=False):
+            return session
+
+        def get_opportunity_details(self, opportunity_id):
+            return {"name": "EHA-PRE-RCT Connect-CHC 2026"}
+
+        def get_flw_names(self, opportunity_id):
+            return {}
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(views, "AuditDataAccess", FakeDataAccess)
+
+    response = labs_client.get(f"/audit/api/{session.id}/bulk-data/")
+    data = response.json()
+
+    assert data["assessments"][0]["entity_id"] == "ALIYU-20240610"
+
+
+def test_assessment_entity_id_backfills_for_legacy_sessions(labs_client, monkeypatch):
+    """Sessions created before entity_id was captured have none stored on
+    visit_images. The view should backfill it via a bulk visit fetch, matching
+    on visit_id even though the cache backend returns it as a string (CharField)
+    while the assessment's visit_id is an int — a mismatch that used to make the
+    backfill silently miss every time."""
+    from connect_labs.audit import views
+
+    username = "26a4b2fb1c4d2f260c5e"
+    session = _make_session(username)  # no entity_id on the stored image
+
+    class FakePipeline:
+        def fetch_raw_visits(self, opportunity_id, skip_form_json, filter_visit_ids):
+            assert 111 in filter_visit_ids
+            return [{"id": "111", "entity_id": "ALIYU-20240610"}]  # string id, like RawVisitCache
+
+    class FakeDataAccess:
+        def __init__(self, *a, **k):
+            self.pipeline = FakePipeline()
+
+        def get_audit_session(self, session_id, try_multiple_opportunities=False):
+            return session
+
+        def get_opportunity_details(self, opportunity_id):
+            return {"name": "EHA-PRE-RCT Connect-CHC 2026"}
+
+        def get_flw_names(self, opportunity_id):
+            return {}
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(views, "AuditDataAccess", FakeDataAccess)
+
+    response = labs_client.get(f"/audit/api/{session.id}/bulk-data/")
+    data = response.json()
+
+    assert data["assessments"][0]["entity_id"] == "ALIYU-20240610"
+
+
 def test_bulk_primary_flw_name_falls_back_to_username_when_unresolved(labs_client, monkeypatch):
     """If the FLW name lookup doesn't have an entry, fall back to the raw
     username — same behavior as the per-assessment flw_name field."""
