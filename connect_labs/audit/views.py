@@ -392,6 +392,16 @@ class ExperimentAuditCompleteView(LoginRequiredMixin, View):
                 if not session:
                     return JsonResponse({"error": "Session not found"}, status=404)
 
+                # Guard against a duplicate submission (e.g. the same audit open in two
+                # tabs, both completing it) racing to complete an already-completed
+                # session — fail fast with a clear message instead of attempting a
+                # second write that the underlying API may reject.
+                if session.status == "completed":
+                    return JsonResponse(
+                        {"error": "This audit has already been saved. Refresh the page to see the updated audit."},
+                        status=409,
+                    )
+
                 # Get visit_results from frontend
                 visit_results_json = request.POST.get("visit_results")
                 if visit_results_json:
