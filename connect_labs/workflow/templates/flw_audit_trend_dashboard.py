@@ -140,6 +140,12 @@ RENDER_CODE = r"""function WorkflowUI({ definition, workers }) {
         return out;
     }, [sortedWeeks]);
 
+    var periodEndByStart = React.useMemo(function () {
+        var m = {};
+        sortedWeeks.forEach(function (w) { if (w.period_start && !m[w.period_start] && w.period_end) m[w.period_start] = w.period_end; });
+        return m;
+    }, [sortedWeeks]);
+
     var _selectedPeriod = React.useState(null);
     var selectedPeriod = _selectedPeriod[0];
     var setSelectedPeriod = _selectedPeriod[1];
@@ -197,6 +203,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, workers }) {
             <DistributionSection
                 weeks={sortedWeeks}
                 distinctPeriods={distinctPeriods}
+                periodEndByStart={periodEndByStart}
                 selectedPeriod={selectedPeriod}
                 onChangePeriod={setSelectedPeriod}
                 selectedFlw={selectedFlw}
@@ -295,19 +302,24 @@ function InfoTooltip({ text }) {
 // reference lines at meaningful, already-established values from Workflow
 // 1's own compute logic (see flw_audit_compute.py) — only added where a real
 // threshold exists, not invented ones.
+// Rendered together as one 2-line chart (see CombinedLineChart) instead of
+// two separate single-line charts, since they're most useful compared side
+// by side (forms submitted vs. visits actually approved).
+var FORMS_VISITS_INDICATORS = [
+    { path: "total_service_delivery_forms", label: "Total Service Delivery Forms", kind: "sum", tooltip: "Total Health Service Delivery forms submitted this week.", color: "#2563eb" },
+    { path: "total_approved_visits", label: "Total Approved Visits", kind: "sum", tooltip: "Total visits approved in Connect this week.", color: "#16a34a" },
+];
+
 var TREND_INDICATORS = [
-    { path: "total_service_delivery_forms", label: "Total Service Delivery Forms", kind: "sum", tooltip: "Total Health Service Delivery forms submitted this week." },
-    { path: "total_approved_visits", label: "Total Approved Visits", kind: "sum", tooltip: "Total visits approved in Connect this week." },
     { path: "days_worked", label: "Days Worked", kind: "sum", tooltip: "Number of distinct days with at least one visit this week." },
     { path: "avg_children_per_household", label: "Avg Children per Household", kind: "avg", tooltip: "Average number of distinct children seen per household visited this week." },
-    { path: "pct_gap_lt_3min", label: "% Gap < 3min Between Forms", kind: "avg", tooltip: "Share of consecutive form submissions less than 3 minutes apart — a possible sign of rushed or fabricated visits." },
-    { path: "median_gap_minutes", label: "Median Gap (minutes)", kind: "avg", tooltip: "Median time between consecutive form submissions this week." },
-    { path: "avg_distance_between_visits_m", label: "Avg Distance Between Visits (m)", kind: "avg", tooltip: "Average GPS distance between consecutive visits this week." },
+    { path: "pct_gap_lt_3min", label: "% Gap < 3min Between Forms", kind: "avg", tooltip: "Share of consecutive same-day form submissions less than 3 minutes apart — a possible sign of rushed or fabricated visits." },
+    { path: "median_gap_minutes", label: "Median Gap (minutes)", kind: "avg", tooltip: "Median time between consecutive same-day form submissions, pooled across the week." },
+    { path: "avg_distance_between_visits_m", label: "Avg Distance Between Visits (m)", kind: "avg", tooltip: "Average GPS distance between consecutive same-day visits, pooled across the week." },
     { path: "avg_time_first_last_visit_minutes", label: "Avg First→Last Visit Span (min/day)", kind: "avg", tooltip: "Average span between the first and last visit on each day worked." },
     { path: "pct_same_dob_within_household", label: "% Same-DOB Within Household", kind: "avg", tooltip: "Share of households with two or more children sharing the same date of birth — a possible data-entry duplicate." },
     { path: "fraud.gps_accuracy_flag_pct", label: "GPS Accuracy Flag %", kind: "avg", tooltip: "Share of visits with GPS accuracy worse than 100m, or exactly 0 (no fix)." },
     { path: "fraud.gps_near_duplicate_count", label: "GPS Near-Duplicate Count", kind: "sum", tooltip: "Visits within 10m of another visit logged to a different household the same day." },
-    { path: "fraud.implied_speed_flag_count", label: "Implied-Speed Flag Count", kind: "sum", tooltip: "Consecutive visits implying travel faster than 60 km/h." },
     { path: "fraud.form_duration_outlier_count", label: "Form Duration Outlier Count", kind: "sum", tooltip: "Forms completed in under 2 minutes." },
     {
         path: "fraud.age_heaping_whipple_index",
@@ -342,23 +354,38 @@ function combineForWeek(rows, path, kind) {
 function TrendSection({ weeks, flw, flwName, flwCount }) {
     var isAll = flw === "__all__";
 
+    var groupedWeeks = React.useMemo(function () { return groupWeeksByPeriod(weeks); }, [weeks]);
+
+    var ALL_PATHS = React.useMemo(function () { return FORMS_VISITS_INDICATORS.concat(TREND_INDICATORS); }, []);
+
     var series = React.useMemo(function () {
         var out = {};
-        TREND_INDICATORS.forEach(function (ind) { out[ind.path] = []; });
-        weeks.forEach(function (w) {
+        ALL_PATHS.forEach(function (ind) { out[ind.path] = []; });
+        groupedWeeks.forEach(function (w) {
             var rows = w.flws || [];
             var relevant = isAll ? rows : rows.filter(function (f) { return f.username === flw; });
-            TREND_INDICATORS.forEach(function (ind) {
-                out[ind.path].push({ period_start: w.period_start, value: combineForWeek(relevant, ind.path, ind.kind) });
+            ALL_PATHS.forEach(function (ind) {
+                out[ind.path].push({
+                    period_start: w.period_start,
+                    period_end: w.period_end,
+                    value: combineForWeek(relevant, ind.path, ind.kind),
+                });
             });
         });
         return out;
-    }, [weeks, flw, isAll]);
+    }, [groupedWeeks, flw, isAll, ALL_PATHS]);
 
     return (
         <div>
             <h2 className="text-lg font-semibold mb-2">Trends — {flwName}</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <CombinedLineChart
+                    chartId="trend-forms-visits"
+                    indicators={FORMS_VISITS_INDICATORS}
+                    series={series}
+                    isAll={isAll}
+                    flwCount={flwCount}
+                />
                 {TREND_INDICATORS.map(function (ind) {
                     return (
                         <LineTrendChart
@@ -393,6 +420,34 @@ function formatShortDate(isoDate) {
     return MONTH_ABBR[month] + " " + day;
 }
 
+function formatDateRange(startIso, endIso) {
+    // Workflow 1's snapshot already stores period_start/period_end as the full
+    // inclusive Mon-Sun window (see flw_weekly_audit_report.py run_default) —
+    // this just surfaces both ends instead of only period_start.
+    var start = formatShortDate(startIso);
+    if (!endIso || endIso === startIso) return start;
+    return start + " – " + formatShortDate(endIso);
+}
+
+function groupWeeksByPeriod(weeks) {
+    // Merges every opportunity's own run for the same period_start into one
+    // point — otherwise selecting "All Opportunities" plots one point per
+    // opportunity-run instead of one combined point per week.
+    var byPeriod = {};
+    var order = [];
+    (weeks || []).forEach(function (w) {
+        var key = w.period_start;
+        if (!byPeriod[key]) {
+            byPeriod[key] = { period_start: w.period_start, period_end: w.period_end, flws: [] };
+            order.push(key);
+        }
+        byPeriod[key].flws = byPeriod[key].flws.concat(w.flws || []);
+        if (!byPeriod[key].period_end && w.period_end) byPeriod[key].period_end = w.period_end;
+    });
+    order.sort(function (a, b) { return a.localeCompare(b); });
+    return order.map(function (key) { return byPeriod[key]; });
+}
+
 function linearTrendline(values) {
     var n = values.length;
     var clean = values.map(function (v) { return typeof v === "number" ? v : null; });
@@ -423,7 +478,7 @@ function LineTrendChart({ chartId, label, tooltip, points, isAll, kind, flwCount
         if (!canvasRef.current || !window.Chart) return;
         if (chartInstance.current) chartInstance.current.destroy();
 
-        var labels = points.map(function (p) { return formatShortDate(p.period_start); });
+        var labels = points.map(function (p) { return formatDateRange(p.period_start, p.period_end); });
         var values = points.map(function (p) { return p.value; });
         var trend = linearTrendline(values);
 
@@ -467,6 +522,50 @@ function LineTrendChart({ chartId, label, tooltip, points, isAll, kind, flwCount
                         ? "Sum across " + flwCount + " FLW(s) in scope"
                         : "Avg across " + flwCount + " FLW(s) in scope — approximate, not re-derived from raw visits"}
                 </div>
+            )}
+            <div style={{ height: "160px" }}><canvas id={chartId} ref={canvasRef}></canvas></div>
+        </div>
+    );
+}
+
+function CombinedLineChart({ chartId, indicators, series, isAll, flwCount }) {
+    var canvasRef = React.useRef(null);
+    var chartInstance = React.useRef(null);
+    var points = series[indicators[0].path] || [];
+
+    React.useEffect(function () {
+        if (!canvasRef.current || !window.Chart) return;
+        if (chartInstance.current) chartInstance.current.destroy();
+
+        var labels = points.map(function (p) { return formatDateRange(p.period_start, p.period_end); });
+        var datasets = indicators.map(function (ind) {
+            var values = (series[ind.path] || []).map(function (p) { return p.value; });
+            return { label: ind.label, data: values, borderColor: ind.color, backgroundColor: ind.color, tension: 0.15, pointRadius: 3 };
+        });
+
+        chartInstance.current = new window.Chart(canvasRef.current, {
+            type: "line",
+            data: { labels: labels, datasets: datasets },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: true, labels: { boxWidth: 10, font: { size: 9 } } } },
+                scales: { x: { ticks: { maxRotation: 45, minRotation: 45 } } },
+            },
+        });
+        return function () { if (chartInstance.current) chartInstance.current.destroy(); };
+    }, [points, series, indicators]);
+
+    var tooltip = indicators.map(function (ind) { return ind.label + ": " + ind.tooltip; }).join(" ");
+
+    return (
+        <div className="bg-white rounded-lg border p-3">
+            <div className="flex items-center text-sm font-medium text-gray-700 mb-1">
+                <span>Forms Submitted vs. Approved Visits</span>
+                <InfoTooltip text={tooltip} />
+            </div>
+            {isAll && (
+                <div className="text-[11px] text-gray-400 mb-1">Sum across {flwCount} FLW(s) in scope</div>
             )}
             <div style={{ height: "160px" }}><canvas id={chartId} ref={canvasRef}></canvas></div>
         </div>
@@ -549,7 +648,7 @@ function rowsForFlwFilter(flws, selectedFlw) {
     return selectedFlw === "__all__" ? rows : rows.filter(function (f) { return f.username === selectedFlw; });
 }
 
-function DistributionSection({ weeks, distinctPeriods, selectedPeriod, onChangePeriod, selectedFlw, flwName }) {
+function DistributionSection({ weeks, distinctPeriods, periodEndByStart, selectedPeriod, onChangePeriod, selectedFlw, flwName }) {
     var weekRowsForPeriod = React.useMemo(function () {
         return weeks.filter(function (w) { return w.period_start === selectedPeriod; });
     }, [weeks, selectedPeriod]);
@@ -573,8 +672,8 @@ function DistributionSection({ weeks, distinctPeriods, selectedPeriod, onChangeP
             byPeriod[w.period_start].yellow += t.yellow;
             byPeriod[w.period_start].green += t.green;
         });
-        return distinctPeriods.map(function (p) { return { period_start: p, value: byPeriod[p] || { red: 0, yellow: 0, green: 0 } }; });
-    }, [weeks, distinctPeriods, selectedFlw]);
+        return distinctPeriods.map(function (p) { return { period_start: p, period_end: periodEndByStart[p], value: byPeriod[p] || { red: 0, yellow: 0, green: 0 } }; });
+    }, [weeks, distinctPeriods, periodEndByStart, selectedFlw]);
 
     var ageTrendSeries = React.useMemo(function () {
         var byPeriod = {};
@@ -582,8 +681,8 @@ function DistributionSection({ weeks, distinctPeriods, selectedPeriod, onChangeP
             var bands = ageBandCounts(sumHistograms(rowsForFlwFilter(w.flws, selectedFlw), "children_by_age_month"));
             byPeriod[w.period_start] = bands;
         });
-        return distinctPeriods.map(function (p) { return { period_start: p, value: byPeriod[p] || {} }; });
-    }, [weeks, distinctPeriods, selectedFlw]);
+        return distinctPeriods.map(function (p) { return { period_start: p, period_end: periodEndByStart[p], value: byPeriod[p] || {} }; });
+    }, [weeks, distinctPeriods, periodEndByStart, selectedFlw]);
 
     return (
         <div className="space-y-6">
@@ -595,7 +694,7 @@ function DistributionSection({ weeks, distinctPeriods, selectedPeriod, onChangeP
                         value={selectedPeriod || ""}
                         onChange={function (e) { onChangePeriod(e.target.value); }}
                     >
-                        {distinctPeriods.map(function (p) { return <option key={p} value={p}>{formatShortDate(p)}</option>; })}
+                        {distinctPeriods.map(function (p) { return <option key={p} value={p}>{formatDateRange(p, periodEndByStart[p])}</option>; })}
                     </select>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -694,7 +793,7 @@ function MuacTrendChart({ chartId, series }) {
         if (!canvasRef.current || !window.Chart) return;
         if (chartInstance.current) chartInstance.current.destroy();
 
-        var labels = series.map(function (s) { return formatShortDate(s.period_start); });
+        var labels = series.map(function (s) { return formatDateRange(s.period_start, s.period_end); });
         chartInstance.current = new window.Chart(canvasRef.current, {
             type: "line",
             data: {
@@ -731,7 +830,7 @@ function AgeBandTrendChart({ chartId, series }) {
         if (!canvasRef.current || !window.Chart) return;
         if (chartInstance.current) chartInstance.current.destroy();
 
-        var labels = series.map(function (s) { return formatShortDate(s.period_start); });
+        var labels = series.map(function (s) { return formatDateRange(s.period_start, s.period_end); });
         var datasets = AGE_BANDS.map(function (band, i) {
             return {
                 label: band.label + "mo",
