@@ -2,7 +2,20 @@ function WorkflowUI(props) {
   var definition = props.definition;
   var pipelines = props.pipelines;
 
-  var MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  var MONTH_NAMES = [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
 
   function monthKey(dateStr) {
     if (!dateStr) return null;
@@ -34,7 +47,12 @@ function WorkflowUI(props) {
   }
 
   function derivePriority(r) {
-    if (r.visit === 'Missed' || r.functionality === 'Non-functional' || r.stock === 'Empty') return 'Urgent action';
+    if (
+      r.visit === 'Missed' ||
+      r.functionality === 'Non-functional' ||
+      r.stock === 'Empty'
+    )
+      return 'Urgent action';
     if (
       r.functionality === 'Functional with issue' ||
       r.unresolved ||
@@ -52,9 +70,11 @@ function WorkflowUI(props) {
     if (r.stock === 'Empty') return 'No chlorine at visit';
     if (r.functionality === 'Non-functional') return 'Broken / unusable';
     if (r.visit === 'Missed') return 'Missed visit';
-    if (r.openIssue === 'Tap' && r.functionality !== 'Non-functional') return 'Needs minor repair (tap)';
+    if (r.openIssue === 'Tap' && r.functionality !== 'Non-functional')
+      return 'Needs minor repair (tap)';
     if (r.openIssue === 'Tap') return 'Broken / unusable (tap)';
-    if (r.openIssue === 'Frame' && r.functionality !== 'Non-functional') return 'Needs minor repair (frame)';
+    if (r.openIssue === 'Frame' && r.functionality !== 'Non-functional')
+      return 'Needs minor repair (frame)';
     if (r.openIssue === 'Frame') return 'Broken / unusable (frame)';
     if (r.visit === 'Delayed') return 'Late visit';
     if (r.usage === 'Low') return 'Low uptake';
@@ -106,7 +126,11 @@ function WorkflowUI(props) {
             byMonth[mk] = { visitsThisMonth: [] };
             monthOrder.push(mk);
           }
-          byMonth[mk].visitsThisMonth.push({ v: v, effective: effective, visitLbl: visitLbl });
+          byMonth[mk].visitsThisMonth.push({
+            v: v,
+            effective: effective,
+            visitLbl: visitLbl,
+          });
         });
 
         monthOrder.forEach(function (mk) {
@@ -115,7 +139,9 @@ function WorkflowUI(props) {
           var hh_visited = parseInt(primary.effective.hh_visited, 10) || 0;
           var hh_valid = parseInt(primary.effective.hh_valid, 10) || 0;
           var usage = usageLabel(hh_valid, hh_visited);
-          var unresolved = primary.effective.open_issue !== 'None' || primary.effective.functionality !== 'Functional';
+          var unresolved =
+            primary.effective.open_issue !== 'None' ||
+            primary.effective.functionality !== 'Functional';
 
           var r = {
             entityId: eid,
@@ -129,7 +155,12 @@ function WorkflowUI(props) {
             openIssue: primary.effective.open_issue,
             waterpoint: primary.effective.waterpoint,
             usage: usage,
-            hhChecks: hh_visited + ' visited / ' + hh_valid + ' valid FCR ' + (hh_valid === 1 ? 'test' : 'tests'),
+            hhChecks:
+              hh_visited +
+              ' visited / ' +
+              hh_valid +
+              ' valid FCR ' +
+              (hh_valid === 1 ? 'test' : 'tests'),
             unresolved: unresolved,
             secondVisitThisMonth: entries.length > 1,
             visitDate: primary.v.visit_date,
@@ -244,19 +275,39 @@ function WorkflowUI(props) {
   };
 
   function priorityPill(p) {
-    return p === 'Urgent action' ? pillClass.red : p === 'Follow up' ? pillClass.yellow : pillClass.green;
+    return p === 'Urgent action'
+      ? pillClass.red
+      : p === 'Follow up'
+      ? pillClass.yellow
+      : pillClass.green;
   }
   function visitPill(v) {
-    return v === 'On time' ? pillClass.green : v === 'Delayed' ? pillClass.yellow : pillClass.red;
+    return v === 'On time'
+      ? pillClass.green
+      : v === 'Delayed'
+      ? pillClass.yellow
+      : pillClass.red;
   }
   function functionalityPill(f) {
-    return f === 'Functional' ? pillClass.green : f === 'Functional with issue' ? pillClass.yellow : pillClass.red;
+    return f === 'Functional'
+      ? pillClass.green
+      : f === 'Functional with issue'
+      ? pillClass.yellow
+      : pillClass.red;
   }
   function stockPill(s) {
-    return s === 'Full' ? pillClass.green : s === 'Low' ? pillClass.yellow : pillClass.red;
+    return s === 'Full'
+      ? pillClass.green
+      : s === 'Low'
+      ? pillClass.yellow
+      : pillClass.red;
   }
   function usagePill(u) {
-    return u === 'High' ? pillClass.green : u === 'Mixed' ? pillClass.yellow : pillClass.red;
+    return u === 'High'
+      ? pillClass.green
+      : u === 'Mixed'
+      ? pillClass.yellow
+      : pillClass.red;
   }
 
   if (activeDetail) {
@@ -272,9 +323,12 @@ function WorkflowUI(props) {
       <div className="max-w-6xl mx-auto p-4 space-y-4">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h3 className="text-lg font-bold text-blue-800">{activeDetail} &mdash; visit history</h3>
+            <h3 className="text-lg font-bold text-blue-800">
+              {activeDetail} &mdash; visit history
+            </h3>
             <div className="text-sm text-gray-500">
-              {history.length ? history[0].ward : ''}, {history.length ? history[0].lga : ''} &middot; synthetic data
+              {history.length ? history[0].ward : ''},{' '}
+              {history.length ? history[0].lga : ''} &middot; synthetic data
             </div>
           </div>
           <button
@@ -306,22 +360,57 @@ function WorkflowUI(props) {
                   <tr key={idx} className="border-t border-gray-100">
                     <td className="p-3">{r.month}</td>
                     <td className="p-3">
-                      <span className={'inline-flex px-2 py-1 rounded-full text-xs font-semibold ' + visitPill(r.visit)}>{r.visit}</span>
+                      <span
+                        className={
+                          'inline-flex px-2 py-1 rounded-full text-xs font-semibold ' +
+                          visitPill(r.visit)
+                        }
+                      >
+                        {r.visit}
+                      </span>
                     </td>
                     <td className="p-3">
-                      <span className={'inline-flex px-2 py-1 rounded-full text-xs font-semibold ' + functionalityPill(r.functionality)}>
+                      <span
+                        className={
+                          'inline-flex px-2 py-1 rounded-full text-xs font-semibold ' +
+                          functionalityPill(r.functionality)
+                        }
+                      >
                         {r.functionality}
                       </span>
                     </td>
                     <td className="p-3">
-                      <span className={'inline-flex px-2 py-1 rounded-full text-xs font-semibold ' + stockPill(r.stock)}>{r.stock}</span>
+                      <span
+                        className={
+                          'inline-flex px-2 py-1 rounded-full text-xs font-semibold ' +
+                          stockPill(r.stock)
+                        }
+                      >
+                        {r.stock}
+                      </span>
                     </td>
-                    <td className="p-3 text-xs text-gray-600">{r.waterpoint}</td>
-                    <td className="p-3">
-                      <span className={'inline-flex px-2 py-1 rounded-full text-xs font-semibold ' + usagePill(r.usage)}>{r.usage}</span>
+                    <td className="p-3 text-xs text-gray-600">
+                      {r.waterpoint}
                     </td>
                     <td className="p-3">
-                      <span className={'inline-flex px-2 py-1 rounded-full text-xs font-semibold ' + priorityPill(r.priority)}>{r.priority}</span>
+                      <span
+                        className={
+                          'inline-flex px-2 py-1 rounded-full text-xs font-semibold ' +
+                          usagePill(r.usage)
+                        }
+                      >
+                        {r.usage}
+                      </span>
+                    </td>
+                    <td className="p-3">
+                      <span
+                        className={
+                          'inline-flex px-2 py-1 rounded-full text-xs font-semibold ' +
+                          priorityPill(r.priority)
+                        }
+                      >
+                        {r.priority}
+                      </span>
                     </td>
                     <td className="p-3 text-xs text-gray-600">{r.reason}</td>
                   </tr>
@@ -364,45 +453,49 @@ function WorkflowUI(props) {
   var p1Kpis = [
     {
       name: 'Visited on time',
-      value: pct(
-        filteredAll.filter(function (r) {
-          return r.visit === 'On time';
-        }).length,
-        filteredAll.length,
-      ) + '%',
+      value:
+        pct(
+          filteredAll.filter(function (r) {
+            return r.visit === 'On time';
+          }).length,
+          filteredAll.length,
+        ) + '%',
       note: '% of dispensers visited within 0-2 days of schedule',
       cls: 'text-green-700',
     },
     {
       name: 'Working dispenser',
-      value: pct(
-        filteredAll.filter(function (r) {
-          return r.functionality !== 'Non-functional';
-        }).length,
-        filteredAll.length,
-      ) + '%',
+      value:
+        pct(
+          filteredAll.filter(function (r) {
+            return r.functionality !== 'Non-functional';
+          }).length,
+          filteredAll.length,
+        ) + '%',
       note: '% dispensers functional at latest verified visit',
       cls: 'text-green-700',
     },
     {
       name: 'Empty when visited',
-      value: pct(
-        filteredAll.filter(function (r) {
-          return r.stock === 'Empty';
-        }).length,
-        filteredAll.length,
-      ) + '%',
+      value:
+        pct(
+          filteredAll.filter(function (r) {
+            return r.stock === 'Empty';
+          }).length,
+          filteredAll.length,
+        ) + '%',
       note: '% visits where dispenser was empty on arrival',
       cls: 'text-red-700',
     },
     {
       name: 'Non-functional',
-      value: pct(
-        filteredAll.filter(function (r) {
-          return r.functionality === 'Non-functional';
-        }).length,
-        filteredAll.length,
-      ) + '%',
+      value:
+        pct(
+          filteredAll.filter(function (r) {
+            return r.functionality === 'Non-functional';
+          }).length,
+          filteredAll.length,
+        ) + '%',
       note: '% dispensers unusable at latest verified visit',
       cls: 'text-red-700',
     },
@@ -417,45 +510,49 @@ function WorkflowUI(props) {
   var p2Kpis = [
     {
       name: 'Visited but late',
-      value: pct(
-        filteredAll.filter(function (r) {
-          return r.visit === 'Delayed';
-        }).length,
-        filteredAll.length,
-      ) + '%',
+      value:
+        pct(
+          filteredAll.filter(function (r) {
+            return r.visit === 'Delayed';
+          }).length,
+          filteredAll.length,
+        ) + '%',
       note: '% visits completed 3+ days after schedule',
       cls: 'text-orange-700',
     },
     {
       name: 'Routine visits delayed',
-      value: pct(
-        filteredAll.filter(function (r) {
-          return r.visit !== 'On time';
-        }).length,
-        filteredAll.length,
-      ) + '%',
+      value:
+        pct(
+          filteredAll.filter(function (r) {
+            return r.visit !== 'On time';
+          }).length,
+          filteredAll.length,
+        ) + '%',
       note: '% dispensers with delayed or missed visits',
       cls: 'text-orange-700',
     },
     {
       name: 'Low uptake',
-      value: pct(
-        filteredAll.filter(function (r) {
-          return r.usage === 'Low';
-        }).length,
-        filteredAll.length,
-      ) + '%',
+      value:
+        pct(
+          filteredAll.filter(function (r) {
+            return r.usage === 'Low';
+          }).length,
+          filteredAll.length,
+        ) + '%',
       note: '% dispensers where household checks suggest weak chlorine use',
       cls: 'text-orange-700',
     },
     {
       name: 'Mixed uptake',
-      value: pct(
-        filteredAll.filter(function (r) {
-          return r.usage === 'Mixed';
-        }).length,
-        filteredAll.length,
-      ) + '%',
+      value:
+        pct(
+          filteredAll.filter(function (r) {
+            return r.usage === 'Mixed';
+          }).length,
+          filteredAll.length,
+        ) + '%',
       note: '% dispensers where household checks show mixed chlorine use',
       cls: 'text-orange-700',
     },
@@ -476,9 +573,16 @@ function WorkflowUI(props) {
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         {items.map(function (k, idx) {
           return (
-            <div key={idx} className="border border-gray-200 rounded-xl p-3 bg-white min-h-[150px]">
-              <div className="text-xs font-bold text-gray-700 min-h-[32px]">{k.name}</div>
-              <div className={'text-2xl font-extrabold my-2 ' + k.cls}>{k.value}</div>
+            <div
+              key={idx}
+              className="border border-gray-200 rounded-xl p-3 bg-white min-h-[150px]"
+            >
+              <div className="text-xs font-bold text-gray-700 min-h-[32px]">
+                {k.name}
+              </div>
+              <div className={'text-2xl font-extrabold my-2 ' + k.cls}>
+                {k.value}
+              </div>
               <div className="text-xs text-gray-500 leading-snug">{k.note}</div>
             </div>
           );
@@ -489,7 +593,11 @@ function WorkflowUI(props) {
 
   function renderTable(rows) {
     if (!rows.length) {
-      return <div className="text-sm text-gray-500 p-3">No dispensers in this section for the selected filters.</div>;
+      return (
+        <div className="text-sm text-gray-500 p-3">
+          No dispensers in this section for the selected filters.
+        </div>
+      );
     }
     return (
       <div className="overflow-auto border border-gray-200 rounded-lg bg-white">
@@ -513,10 +621,19 @@ function WorkflowUI(props) {
                   }}
                 >
                   <td className="p-3">{idx + 1}</td>
-                  <td className="p-3 font-semibold text-blue-700">{r.community}</td>
+                  <td className="p-3 font-semibold text-blue-700">
+                    {r.community}
+                  </td>
                   <td className="p-3">{r.reason}</td>
                   <td className="p-3">
-                    <span className={'inline-flex px-2 py-1 rounded-full text-xs font-semibold ' + priorityPill(r.priority)}>{r.priority}</span>
+                    <span
+                      className={
+                        'inline-flex px-2 py-1 rounded-full text-xs font-semibold ' +
+                        priorityPill(r.priority)
+                      }
+                    >
+                      {r.priority}
+                    </span>
                   </td>
                 </tr>
               );
@@ -531,18 +648,26 @@ function WorkflowUI(props) {
     <div className="max-w-6xl mx-auto p-4 space-y-4">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">{definition.name}</h1>
-          <div className="text-sm text-gray-500">Priority-based operational overview &middot; 1 rider &middot; 25 dispensers &middot; Jakusko LGA</div>
+          <h1 className="text-2xl font-bold text-gray-900">
+            {definition.name}
+          </h1>
+          <div className="text-sm text-gray-500">
+            Priority-based operational overview &middot; 1 rider &middot; 25
+            dispensers &middot; Jakusko LGA
+          </div>
         </div>
       </div>
 
       <div className="bg-yellow-50 border border-yellow-300 text-yellow-800 rounded-xl px-4 py-2 text-center text-xs font-bold">
-        &#9888; SYNTHETIC TEST DATA &mdash; generated for internal review only, does not reflect real Connect data
+        &#9888; SYNTHETIC TEST DATA &mdash; generated for internal review only,
+        does not reflect real Connect data
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 bg-white border border-gray-200 rounded-xl p-4">
         <div>
-          <label className="block text-xs font-semibold text-gray-600 mb-1">Month</label>
+          <label className="block text-xs font-semibold text-gray-600 mb-1">
+            Month
+          </label>
           <select
             className="w-full border border-gray-300 rounded-lg h-10 px-2 text-sm"
             value={effectiveMonth}
@@ -562,7 +687,9 @@ function WorkflowUI(props) {
           </select>
         </div>
         <div>
-          <label className="block text-xs font-semibold text-gray-600 mb-1">Ward</label>
+          <label className="block text-xs font-semibold text-gray-600 mb-1">
+            Ward
+          </label>
           <select
             className="w-full border border-gray-300 rounded-lg h-10 px-2 text-sm"
             value={selectedWard}
@@ -582,7 +709,9 @@ function WorkflowUI(props) {
           </select>
         </div>
         <div>
-          <label className="block text-xs font-semibold text-gray-600 mb-1">Select dispenser</label>
+          <label className="block text-xs font-semibold text-gray-600 mb-1">
+            Select dispenser
+          </label>
           <select
             className="w-full border border-gray-300 rounded-lg h-10 px-2 text-sm"
             value={selectedDispenser}
@@ -601,7 +730,9 @@ function WorkflowUI(props) {
           </select>
         </div>
         <div>
-          <label className="block text-xs font-semibold text-gray-600 mb-1">Search dispenser</label>
+          <label className="block text-xs font-semibold text-gray-600 mb-1">
+            Search dispenser
+          </label>
           <input
             className="w-full border border-gray-300 rounded-lg h-10 px-2 text-sm"
             placeholder="Search Settlement..."
@@ -617,29 +748,44 @@ function WorkflowUI(props) {
       <div className="bg-blue-50 border border-blue-200 text-blue-900 rounded-xl p-4 text-sm">
         <div className="font-bold mb-1">How to read this</div>
         <ul className="list-disc ml-5 space-y-1">
-          <li>Priority 1 focuses on whether communities currently have access to chlorine, including missed rider visits where current status is unknown.</li>
+          <li>
+            Priority 1 focuses on whether communities currently have access to
+            chlorine, including missed rider visits where current status is
+            unknown.
+          </li>
           <li>Priority 2 focuses on delays and weaker performance signals.</li>
         </ul>
       </div>
 
       <div className="border border-red-200 rounded-xl overflow-hidden">
         <div className="bg-red-50 p-4">
-          <h2 className="text-lg font-bold text-red-700">Priority 1 &mdash; Functionality and access</h2>
+          <h2 className="text-lg font-bold text-red-700">
+            Priority 1 &mdash; Functionality and access
+          </h2>
           <div className="text-sm text-gray-700 mt-1">
-            Communities may not be getting access to chlorine due to refill or maintenance issues, including missed rider visits where current status is unknown.
+            Communities may not be getting access to chlorine due to refill or
+            maintenance issues, including missed rider visits where current
+            status is unknown.
           </div>
         </div>
         <div className="p-4 space-y-3">
           {renderKpiGrid(p1Kpis)}
           <div className="border border-red-200 bg-red-50 rounded-xl p-3">
-            <div className="text-xs font-bold text-red-800">Priority 1 headline flag</div>
+            <div className="text-xs font-bold text-red-800">
+              Priority 1 headline flag
+            </div>
             <div className="text-lg font-extrabold text-red-600">
               {missedCount} missed visit{missedCount === 1 ? '' : 's'}
             </div>
-            <div className="text-xs text-gray-500">Missed rider visits are treated as Priority 1 because current dispenser status may be unknown.</div>
+            <div className="text-xs text-gray-500">
+              Missed rider visits are treated as Priority 1 because current
+              dispenser status may be unknown.
+            </div>
           </div>
           <div>
-            <div className="text-sm font-bold mb-1">High-priority dispensers</div>
+            <div className="text-sm font-bold mb-1">
+              High-priority dispensers
+            </div>
             {renderTable(p1Rows)}
           </div>
         </div>
@@ -647,8 +793,13 @@ function WorkflowUI(props) {
 
       <div className="border border-yellow-300 rounded-xl overflow-hidden">
         <div className="bg-yellow-50 p-4">
-          <h2 className="text-lg font-bold text-yellow-700">Priority 2 &mdash; Performance delays and usage concerns</h2>
-          <div className="text-sm text-gray-700 mt-1">Maintenance delays or weak household use signals that need follow-up.</div>
+          <h2 className="text-lg font-bold text-yellow-700">
+            Priority 2 &mdash; Performance delays and usage concerns
+          </h2>
+          <div className="text-sm text-gray-700 mt-1">
+            Maintenance delays or weak household use signals that need
+            follow-up.
+          </div>
         </div>
         <div className="p-4 space-y-3">
           {renderKpiGrid(p2Kpis)}
@@ -661,13 +812,16 @@ function WorkflowUI(props) {
 
       <div className="flex flex-wrap justify-center gap-6 text-xs text-gray-600 border border-gray-200 rounded-xl p-3 bg-white">
         <span>
-          <span className="inline-block w-3 h-3 rounded-full bg-green-500 mr-1"></span>Green = acceptable
+          <span className="inline-block w-3 h-3 rounded-full bg-green-500 mr-1"></span>
+          Green = acceptable
         </span>
         <span>
-          <span className="inline-block w-3 h-3 rounded-full bg-yellow-400 mr-1"></span>Yellow = needs attention
+          <span className="inline-block w-3 h-3 rounded-full bg-yellow-400 mr-1"></span>
+          Yellow = needs attention
         </span>
         <span>
-          <span className="inline-block w-3 h-3 rounded-full bg-red-500 mr-1"></span>Red = urgent risk
+          <span className="inline-block w-3 h-3 rounded-full bg-red-500 mr-1"></span>
+          Red = urgent risk
         </span>
       </div>
     </div>
