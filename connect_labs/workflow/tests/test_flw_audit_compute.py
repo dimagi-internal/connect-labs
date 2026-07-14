@@ -85,6 +85,8 @@ def _visit(
     gender="male",
     dob="2024-07-06",
     form_display_name="Health Service Delivery",
+    dw_meds_delivery_status=None,
+    received_any_vaccine=None,
 ):
     return {
         "username": username,
@@ -101,6 +103,8 @@ def _visit(
         "childs_gender": gender,
         "childs_dob": dob,
         "form_display_name": form_display_name,
+        "dw_meds_delivery_status": dw_meds_delivery_status,
+        "received_any_vaccine": received_any_vaccine,
     }
 
 
@@ -282,6 +286,50 @@ def test_compute_flw_indicators_muac_value_histogram_is_exact_not_bucketed():
     assert result["children_by_muac_value"]["17.2"] == 1
     # Bucketed histogram still merges 11.5 and 11.7 together, unlike the exact one.
     assert result["children_by_muac_bucket"]["11.5-12.0"] == 3
+
+
+def test_compute_flw_indicators_coverage_counts():
+    visits = [
+        _visit(child_case_id="c1", muac_cm=15.0, dw_meds_delivery_status="DW Delivered", received_any_vaccine="yes"),
+        _visit(child_case_id="c2", muac_cm=None, dw_meds_delivery_status=None, received_any_vaccine="no"),
+        _visit(child_case_id="c3", muac_cm=14.0, dw_meds_delivery_status="Not Delivered", received_any_vaccine=None),
+    ]
+    result = compute_flw_indicators(visits)
+    assert result["registered_children_count"] == 3  # every distinct child seen this week
+    assert result["muac_taken_count"] == 2  # c1, c3 have a muac_cm value; c2 doesn't
+    assert result["dewormed_count"] == 1  # only c1's status is exactly "DW Delivered"
+    assert result["vaccinated_count"] == 1  # only c1's received_any_vaccine is "yes"
+
+
+def test_compute_flw_indicators_dewormed_and_vaccinated_count_any_visit_not_just_first():
+    # A child's deworming/vaccination can land on a LATER visit this week, not
+    # necessarily their first -- unlike the demographic buckets (age/muac),
+    # which only look at each child's first visit this week.
+    visits = [
+        _visit(
+            child_case_id="c1",
+            time_start="2026-07-06T08:00:00Z",
+            dw_meds_delivery_status=None,
+            received_any_vaccine=None,
+        ),
+        _visit(
+            child_case_id="c1",
+            time_start="2026-07-08T08:00:00Z",
+            dw_meds_delivery_status="DW Delivered",
+            received_any_vaccine="yes",
+        ),
+    ]
+    result = compute_flw_indicators(visits)
+    assert result["dewormed_count"] == 1
+    assert result["vaccinated_count"] == 1
+
+
+def test_compute_flw_indicators_coverage_counts_empty():
+    result = compute_flw_indicators([])
+    assert result["registered_children_count"] == 0
+    assert result["muac_taken_count"] == 0
+    assert result["dewormed_count"] == 0
+    assert result["vaccinated_count"] == 0
 
 
 def test_compute_flw_indicators_dedupes_repeat_visit_to_same_child():

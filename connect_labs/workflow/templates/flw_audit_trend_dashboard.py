@@ -357,6 +357,16 @@ var FORMS_VISITS_INDICATORS = [
     { path: "total_approved_visits", label: "Total Approved Visits", kind: "sum", tooltip: "Total visits approved in Connect this week.", color: "#16a34a" },
 ];
 
+// Service-delivery coverage counts (see Connect-CHC System Design Document's
+// calculations-group walkthrough) -- rendered together as one 4-line chart
+// (see CombinedLineChart), same pattern as FORMS_VISITS_INDICATORS.
+var COVERAGE_INDICATORS = [
+    { path: "registered_children_count", label: "Registered Children", kind: "sum", tooltip: "Distinct children with at least one visit this week.", color: "#2563eb" },
+    { path: "muac_taken_count", label: "MUAC Taken", kind: "sum", tooltip: "Distinct children with a MUAC measurement recorded this week.", color: "#16a34a" },
+    { path: "dewormed_count", label: "Dewormed", kind: "sum", tooltip: "Distinct children with deworming actually delivered (dw_meds_delivery_status = \"DW Delivered\") on at least one visit this week.", color: "#d97706" },
+    { path: "vaccinated_count", label: "Vaccinated", kind: "sum", tooltip: "Distinct children recorded as having received a vaccine (received_any_vaccine = \"yes\") on at least one visit this week.", color: "#7c3aed" },
+];
+
 var TREND_INDICATORS = [
     { path: "days_worked", label: "Days Worked", kind: "sum", tooltip: "Number of distinct days with at least one visit this week." },
     { path: "avg_children_per_household", label: "Avg Children per Household", kind: "avg", tooltip: "Average number of distinct children seen per household visited this week." },
@@ -393,7 +403,7 @@ function TrendSection({ weeks, flw, flwName, flwCount }) {
 
     var groupedWeeks = React.useMemo(function () { return groupWeeksByPeriod(weeks); }, [weeks]);
 
-    var ALL_PATHS = React.useMemo(function () { return FORMS_VISITS_INDICATORS.concat(TREND_INDICATORS); }, []);
+    var ALL_PATHS = React.useMemo(function () { return FORMS_VISITS_INDICATORS.concat(COVERAGE_INDICATORS).concat(TREND_INDICATORS); }, []);
 
     var series = React.useMemo(function () {
         var out = {};
@@ -418,7 +428,16 @@ function TrendSection({ weeks, flw, flwName, flwCount }) {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <CombinedLineChart
                     chartId="trend-forms-visits"
+                    title="Forms Submitted vs. Approved Visits"
                     indicators={FORMS_VISITS_INDICATORS}
+                    series={series}
+                    isAll={isAll}
+                    flwCount={flwCount}
+                />
+                <CombinedLineChart
+                    chartId="trend-coverage"
+                    title="Service Coverage"
+                    indicators={COVERAGE_INDICATORS}
                     series={series}
                     isAll={isAll}
                     flwCount={flwCount}
@@ -565,7 +584,7 @@ function LineTrendChart({ chartId, label, tooltip, points, isAll, kind, flwCount
     );
 }
 
-function CombinedLineChart({ chartId, indicators, series, isAll, flwCount }) {
+function CombinedLineChart({ chartId, title, indicators, series, isAll, flwCount }) {
     var canvasRef = React.useRef(null);
     var chartInstance = React.useRef(null);
     var points = series[indicators[0].path] || [];
@@ -598,7 +617,7 @@ function CombinedLineChart({ chartId, indicators, series, isAll, flwCount }) {
     return (
         <div className="bg-white rounded-lg border p-3">
             <div className="flex items-center text-sm font-medium text-gray-700 mb-1">
-                <span>Forms Submitted vs. Approved Visits</span>
+                <span>{title}</span>
                 <InfoTooltip text={tooltip} />
             </div>
             {isAll && (
@@ -784,6 +803,12 @@ function DistributionSnapshotSection({ weeks, distinctPeriods, periodEndByStart,
     var ageByMonth = React.useMemo(function () { return sumHistograms(flwRowsForPeriod, "children_by_age_month"); }, [flwRowsForPeriod]);
     var ageByMonthExpected = React.useMemo(function () { return expectedUniformAgeMonthCounts(ageByMonth); }, [ageByMonth]);
 
+    var coverageCounts = React.useMemo(function () {
+        var out = {};
+        COVERAGE_INDICATORS.forEach(function (ind) { out[ind.path] = combineForWeek(flwRowsForPeriod, ind.path, ind.kind); });
+        return out;
+    }, [flwRowsForPeriod]);
+
     return (
         <div>
             <div className="flex items-center gap-3 mb-2">
@@ -814,6 +839,7 @@ function DistributionSnapshotSection({ weeks, distinctPeriods, periodEndByStart,
                     order={AGE_MONTH_LABELS}
                     referenceLine={{ label: "Expected (uniform, no heaping)", values: ageByMonthExpected }}
                 />
+                <CoverageBarChart chartId="coverage-hist" indicators={COVERAGE_INDICATORS} counts={coverageCounts} />
             </div>
         </div>
     );
@@ -870,6 +896,39 @@ function BarHistogramChart({ chartId, label, tooltip, buckets, order, barColorFn
         <div className="bg-white rounded-lg border p-3">
             <div className="flex items-center text-sm font-medium text-gray-700 mb-1">
                 <span>{label}</span>
+                <InfoTooltip text={tooltip} />
+            </div>
+            <div style={{ height: "220px" }}><canvas id={chartId} ref={canvasRef}></canvas></div>
+        </div>
+    );
+}
+
+function CoverageBarChart({ chartId, indicators, counts }) {
+    var canvasRef = React.useRef(null);
+    var chartInstance = React.useRef(null);
+
+    React.useEffect(function () {
+        if (!canvasRef.current || !window.Chart) return;
+        if (chartInstance.current) chartInstance.current.destroy();
+
+        var labels = indicators.map(function (ind) { return ind.label; });
+        var values = indicators.map(function (ind) { return counts[ind.path] || 0; });
+        var colors = indicators.map(function (ind) { return ind.color; });
+
+        chartInstance.current = new window.Chart(canvasRef.current, {
+            type: "bar",
+            data: { labels: labels, datasets: [{ label: "Children", data: values, backgroundColor: colors }] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } },
+        });
+        return function () { if (chartInstance.current) chartInstance.current.destroy(); };
+    }, [indicators, counts]);
+
+    var tooltip = indicators.map(function (ind) { return ind.label + ": " + ind.tooltip; }).join(" ");
+
+    return (
+        <div className="bg-white rounded-lg border p-3">
+            <div className="flex items-center text-sm font-medium text-gray-700 mb-1">
+                <span>Service Coverage</span>
                 <InfoTooltip text={tooltip} />
             </div>
             <div style={{ height: "220px" }}><canvas id={chartId} ref={canvasRef}></canvas></div>

@@ -109,6 +109,20 @@ PIPELINE_SCHEMAS = [
                     "path": "form.calculations.all_service_del_checks",
                     "aggregation": "first",
                 },
+                {
+                    "name": "dw_meds_delivery_status",
+                    "path": "form.case.update.dw_meds_delivery_status",
+                    "aggregation": "first",
+                    "description": "'DW Delivered' when deworming meds were actually administered this visit "
+                    "(see Connect-CHC System Design Document's dw_check logic) -- distinct from all_service_del_checks, "
+                    "which also passes on a valid exemption (too young, recently dosed, unwell).",
+                },
+                {
+                    "name": "received_any_vaccine",
+                    "path": "form.case.update.received_any_vaccine",
+                    "aggregation": "first",
+                    "description": "'yes'/'no' -- whether the child received a vaccine this visit.",
+                },
             ],
         },
     },

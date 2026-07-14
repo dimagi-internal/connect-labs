@@ -12,7 +12,7 @@ pipeline schema — see the template file for the exact FieldComputation paths):
     childs_gender, childs_dob, age_months, age_days, hh_case_id,
     child_case_id, wa_caseid, current_accuracy, accuracy_minimum,
     normalized_lat, normalized_lon, time_start, time_end,
-    all_service_del_checks
+    all_service_del_checks, dw_meds_delivery_status, received_any_vaccine
 """
 from __future__ import annotations
 
@@ -147,6 +147,21 @@ def _dedup_children_this_week(visits: list[dict]) -> dict[str, dict]:
             continue
         by_child.setdefault(cid, v)
     return by_child
+
+
+def _count_children_matching_any_visit(visits: list[dict], predicate) -> int:
+    """Count of distinct children (by child_case_id) where `predicate` is true
+    for at least one of their visits this week -- unlike the demographic
+    indicators above (which use only each child's first visit), a
+    service-delivery outcome like "was this child dewormed this week" should
+    count if it happened on ANY visit, since the delivering visit isn't
+    necessarily the child's first one this week."""
+    by_child: dict[str, list[dict]] = defaultdict(list)
+    for v in visits:
+        cid = v.get("child_case_id")
+        if cid:
+            by_child[cid].append(v)
+    return sum(1 for child_visits in by_child.values() if any(predicate(v) for v in child_visits))
 
 
 def compute_flw_indicators(visits: list[dict]) -> dict:
@@ -304,6 +319,19 @@ def compute_flw_indicators(visits: list[dict]) -> dict:
         if c["_muac_cm"] is not None:
             children_by_muac_value[f"{c['_muac_cm']:.1f}"] += 1
 
+    # --- Service-delivery coverage counts (distinct children this week) ---
+    # See Connect-CHC System Design Document's calculations-group walkthrough:
+    # dw_meds_delivery_status == "DW Delivered" and received_any_vaccine == "yes"
+    # are the actual delivery outcomes, distinct from dw_check/vc_check (which
+    # also pass on a valid exemption -- too young, recently dosed, unwell --
+    # and so are NOT "was this service actually delivered" signals).
+    registered_children_count = len(children_this_week)
+    muac_taken_count = sum(1 for c in children_this_week.values() if c["_muac_cm"] is not None)
+    dewormed_count = _count_children_matching_any_visit(
+        parsed, lambda v: v.get("dw_meds_delivery_status") == "DW Delivered"
+    )
+    vaccinated_count = _count_children_matching_any_visit(parsed, lambda v: v.get("received_any_vaccine") == "yes")
+
     # --- Support-only: raw inputs for a later MUAC-for-age z-score analysis ---
     muacz_inputs = [
         {
@@ -327,6 +355,10 @@ def compute_flw_indicators(visits: list[dict]) -> dict:
         "children_by_muac_bucket": dict(children_by_muac_bucket),
         "children_by_muac_value": dict(children_by_muac_value),
         "pct_same_dob_within_household": _round(pct_same_dob_within_household),
+        "registered_children_count": registered_children_count,
+        "muac_taken_count": muac_taken_count,
+        "dewormed_count": dewormed_count,
+        "vaccinated_count": vaccinated_count,
         "fraud": {
             "gps_accuracy_flag_count": gps_accuracy_flags,
             "gps_accuracy_flag_pct": _round(gps_accuracy_flags / total_forms * 100.0) if total_forms else None,
