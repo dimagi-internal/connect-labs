@@ -245,14 +245,26 @@ On the workflow run list page, each Program Audit Creator run shows its audit wi
 
 ---
 
-## Concluding a Run
+## Jakusko Chlorine Dispenser Dashboard
 
-When you are ready to save a run as complete, click **Conclude** on the workflow run. The system freezes exactly the dashboard you were looking at — the data already on your screen — and saves it as a locked historical record. Conclude never refetches or recomputes data behind your back, so on large opportunities it completes in seconds rather than waiting for a server-side rebuild.
+!!! warning "Synthetic test data only"
+    This dashboard is a sandbox demo built for internal testing of dashboarding and calculations. A visible banner inside the dashboard reminds you of this at all times. No real Connect opportunity or production data is read or written — all figures are entirely synthetic.
 
-!!! note "Make sure the dashboard has finished loading before you conclude"
-    Because Conclude saves what is on screen, the dashboard must be fully loaded before you click the button. If the page is still loading data when you click Conclude, you will see a message asking you to reload the run page, let the dashboard finish loading, and then conclude again. This ensures the snapshot captures a complete picture rather than a partial one.
+The **Jakusko Chlorine Dispenser** workflow provides a priority-bucket operational view for a chlorine dispenser pilot. It organises dispensers into two buckets that mirror the program's operational priorities, so the most urgent issues surface at the top.
 
-When a run is concluded, the snapshot captures what **that workflow** is currently set up to track at the time you click Conclude. This means:
+### Priority buckets
 
-- If your team has added new data pipelines or tracking fields to the workflow since it was first created, those additions will be included in the snapshot — as long as the workflow's manifest has been updated to reflect them.
-- Workflows that were built from scratch
+**Priority 1 — Functionality and access**
+
+This bucket highlights dispensers that need immediate attention:
+
+| Signal | What it means |
+|---|---|
+| Missed visits | A scheduled visit did not take place |
+| Non-functional dispensers | The dispenser has been recorded as not working |
+| Empty stock | The dispenser has run out of chlorine |
+| Urgent-action wards | Wards that have been escalated for urgent follow-up |
+
+**Priority 2 — Performance delays and usage concerns**
+
+This bucket surfaces issues that are less urgent but still require
