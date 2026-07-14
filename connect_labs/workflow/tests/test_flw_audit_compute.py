@@ -266,6 +266,24 @@ def test_compute_flw_indicators_age_and_muac_buckets():
     assert result["children_by_muac_bucket"]["17.0-17.5"] == 1
 
 
+def test_compute_flw_indicators_muac_value_histogram_is_exact_not_bucketed():
+    # Two distinct recorded values that fall in the SAME 0.5cm bucket (11.5 and
+    # 11.7 both bucket to "11.5-12.0") must stay distinct in the exact-value
+    # histogram -- this is the whole point of the field vs. children_by_muac_bucket.
+    visits = [
+        _visit(child_case_id="c1", muac_cm=11.5),
+        _visit(child_case_id="c2", muac_cm=11.5),  # same exact value as c1
+        _visit(child_case_id="c3", muac_cm=11.7),  # same bucket as c1/c2, different exact value
+        _visit(child_case_id="c4", muac_cm=17.2),
+    ]
+    result = compute_flw_indicators(visits)
+    assert result["children_by_muac_value"]["11.5"] == 2
+    assert result["children_by_muac_value"]["11.7"] == 1
+    assert result["children_by_muac_value"]["17.2"] == 1
+    # Bucketed histogram still merges 11.5 and 11.7 together, unlike the exact one.
+    assert result["children_by_muac_bucket"]["11.5-12.0"] == 3
+
+
 def test_compute_flw_indicators_dedupes_repeat_visit_to_same_child():
     # Same child visited twice this week -> counted once for age/muac/household buckets,
     # but every visit still counts toward total_service_delivery_forms/cadence stats.
