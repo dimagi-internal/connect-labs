@@ -295,6 +295,15 @@ def compute_flw_indicators(visits: list[dict]) -> dict:
         if c["_muac_cm"] is not None:
             children_by_muac_bucket[muac_bucket_label(c["_muac_cm"])] += 1
 
+    # Exact recorded MUAC values (1 decimal place, matching the field's own
+    # precision -- see the hsd_visits pipeline schema), as opposed to the 0.5cm
+    # bucketed histogram above -- lets the dashboard show a distribution of
+    # actual measurements as recorded, not grouped into ranges.
+    children_by_muac_value: dict[str, int] = defaultdict(int)
+    for c in children_this_week.values():
+        if c["_muac_cm"] is not None:
+            children_by_muac_value[f"{c['_muac_cm']:.1f}"] += 1
+
     # --- Support-only: raw inputs for a later MUAC-for-age z-score analysis ---
     muacz_inputs = [
         {
@@ -316,6 +325,7 @@ def compute_flw_indicators(visits: list[dict]) -> dict:
         "avg_children_per_household": _round(avg_children_per_household),
         "children_by_age_month": children_by_age_month,
         "children_by_muac_bucket": dict(children_by_muac_bucket),
+        "children_by_muac_value": dict(children_by_muac_value),
         "pct_same_dob_within_household": _round(pct_same_dob_within_household),
         "fraud": {
             "gps_accuracy_flag_count": gps_accuracy_flags,

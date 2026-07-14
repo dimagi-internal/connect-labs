@@ -321,16 +321,6 @@ var TREND_INDICATORS = [
     { path: "fraud.gps_accuracy_flag_pct", label: "GPS Accuracy Flag %", kind: "avg", tooltip: "Share of visits with GPS accuracy worse than 100m, or exactly 0 (no fix)." },
     { path: "fraud.gps_near_duplicate_count", label: "GPS Near-Duplicate Count", kind: "sum", tooltip: "Visits within 10m of another visit logged to a different household the same day." },
     { path: "fraud.form_duration_outlier_count", label: "Form Duration Outlier Count", kind: "sum", tooltip: "Forms completed in under 2 minutes." },
-    {
-        path: "fraud.age_heaping_whipple_index",
-        label: "Age-Heaping Whipple Index",
-        kind: "avg",
-        tooltip: "Measure of age heaping at 12/24/36/48 months — 100 is expected with no heaping, values above 125 are flagged.",
-        thresholds: [
-            { value: 100, label: "Expected (no heaping)" },
-            { value: 125, label: "Flag threshold" },
-        ],
-    },
     { path: "fraud.duplicate_child_count", label: "Duplicate Child Count", kind: "sum", tooltip: "Children sharing the same date of birth across more than one household." },
 ];
 
@@ -589,6 +579,21 @@ function muacZoneColor(label) {
     return "#16a34a"; // green: normal
 }
 
+function muacValueZoneColor(label) {
+    // Same WHO SAM/MAM thresholds as muacZoneColor, but applied directly to an
+    // exact recorded value label (e.g. "11.5") instead of a bucket-range label
+    // (e.g. "11.5-12.0") -- muacBucketMidpoint's range-splitting logic doesn't
+    // apply here since there's no range to split.
+    var v = parseFloat(label);
+    if (v < 11.5) return "#dc2626"; // red: SAM
+    if (v < 12.5) return "#d97706"; // yellow: MAM
+    return "#16a34a"; // green: normal
+}
+
+function sortedValueLabels(buckets) {
+    return Object.keys(buckets).sort(function (a, b) { return parseFloat(a) - parseFloat(b); });
+}
+
 function muacTriage(muacBuckets) {
     // WHO SAM/MAM convention: red <11.5cm, yellow 11.5-12.5cm, green >=12.5cm.
     var red = 0, yellow = 0, green = 0;
@@ -626,10 +631,46 @@ function ageBandCounts(ageByMonth) {
 function expectedUniformAgeBandCounts(ageBands) {
     // If ages were evenly spread across all 60 months with no heaping, each
     // band's expected share is proportional to its width (in months) out of
-    // 60 — the same "uniform" assumption Workflow 1's Whipple's-index-style
-    // age-heaping check is built on (see flw_audit_compute.py whipple_index).
+    // 60 — the same "uniform" assumption flw_audit_compute.py's age-heaping
+    // check (whipple_index) is built on.
     var total = Object.keys(ageBands).reduce(function (a, k) { return a + (ageBands[k] || 0); }, 0);
     return AGE_BANDS.map(function (b) { return total * (b.max - b.min + 1) / 60; });
+}
+
+var AGE_MONTH_LABELS = (function () {
+    var out = [];
+    for (var m = 0; m <= 59; m++) out.push(String(m));
+    return out;
+})();
+
+function expectedUniformAgeMonthCounts(ageByMonth) {
+    // Individual-month version of expectedUniformAgeBandCounts: with no
+    // heaping, every one of the 60 months should get an equal share — a flat
+    // reference line at total/60 makes spikes at 12/24/36/48mo (the classic
+    // heaping ages) directly visible, the same signal age_heaping_whipple_index
+    // summarized as a single number.
+    var total = Object.keys(ageByMonth || {}).reduce(function (a, k) { return a + (ageByMonth[k] || 0); }, 0);
+    var expected = total / 60;
+    return AGE_MONTH_LABELS.map(function () { return expected; });
+}
+
+function muacTriagePercents(triage) {
+    var total = (triage.red || 0) + (triage.yellow || 0) + (triage.green || 0);
+    if (!total) return { red: null, yellow: null, green: null };
+    return {
+        red: (triage.red / total) * 100,
+        yellow: (triage.yellow / total) * 100,
+        green: (triage.green / total) * 100,
+    };
+}
+
+function ageBandPercents(bandCounts) {
+    var total = Object.keys(bandCounts || {}).reduce(function (a, k) { return a + (bandCounts[k] || 0); }, 0);
+    var out = {};
+    AGE_BANDS.forEach(function (b) {
+        out[b.label] = total ? ((bandCounts[b.label] || 0) / total) * 100 : null;
+    });
+    return out;
 }
 
 function sumHistograms(rows, key) {
@@ -660,8 +701,11 @@ function DistributionSection({ weeks, distinctPeriods, periodEndByStart, selecte
     }, [weekRowsForPeriod, selectedFlw]);
 
     var muacBuckets = React.useMemo(function () { return sumHistograms(flwRowsForPeriod, "children_by_muac_bucket"); }, [flwRowsForPeriod]);
-    var ageBuckets = React.useMemo(function () { return ageBandCounts(sumHistograms(flwRowsForPeriod, "children_by_age_month")); }, [flwRowsForPeriod]);
+    var muacValues = React.useMemo(function () { return sumHistograms(flwRowsForPeriod, "children_by_muac_value"); }, [flwRowsForPeriod]);
+    var ageByMonth = React.useMemo(function () { return sumHistograms(flwRowsForPeriod, "children_by_age_month"); }, [flwRowsForPeriod]);
+    var ageBuckets = React.useMemo(function () { return ageBandCounts(ageByMonth); }, [ageByMonth]);
     var ageExpected = React.useMemo(function () { return expectedUniformAgeBandCounts(ageBuckets); }, [ageBuckets]);
+    var ageByMonthExpected = React.useMemo(function () { return expectedUniformAgeMonthCounts(ageByMonth); }, [ageByMonth]);
 
     var muacTrendSeries = React.useMemo(function () {
         var byPeriod = {};
@@ -712,6 +756,22 @@ function DistributionSection({ weeks, distinctPeriods, periodEndByStart, selecte
                         buckets={ageBuckets}
                         order={AGE_BANDS.map(function (b) { return b.label; })}
                         referenceLine={{ label: "Expected (uniform, no heaping)", values: ageExpected }}
+                    />
+                    <BarHistogramChart
+                        chartId="muac-value-hist"
+                        label="MUAC Distribution (Recorded Values)"
+                        tooltip="Count of children at each exact recorded MUAC value this week (not grouped into 0.5cm ranges), colored by WHO zone."
+                        buckets={muacValues}
+                        order={sortedValueLabels(muacValues)}
+                        barColorFn={muacValueZoneColor}
+                    />
+                    <BarHistogramChart
+                        chartId="age-month-hist"
+                        label="Children by Age (Individual Months)"
+                        tooltip="Count of children at each individual age in months this week (not grouped into bands); the dashed line is the expected count per month if ages were evenly spread with no heaping — spikes at 12/24/36/48mo indicate age-heaping."
+                        buckets={ageByMonth}
+                        order={AGE_MONTH_LABELS}
+                        referenceLine={{ label: "Expected (uniform, no heaping)", values: ageByMonthExpected }}
                     />
                 </div>
             </div>
@@ -786,6 +846,12 @@ function BarHistogramChart({ chartId, label, tooltip, buckets, order, barColorFn
 }
 
 function MuacTrendChart({ chartId, series }) {
+    // Rendered as a 100%-stacked bar (not 3 overlapping lines): with red and
+    // yellow both near/at zero most weeks, their lines sit on top of each
+    // other at y=0 and one becomes invisible behind the other. A stacked bar
+    // shows each zone as its own visible-width segment, and normalizing to
+    // 100% directly answers "what % of children are in each zone" instead of
+    // raw (opportunity/FLW-count-dependent) counts.
     var canvasRef = React.useRef(null);
     var chartInstance = React.useRef(null);
 
@@ -794,17 +860,25 @@ function MuacTrendChart({ chartId, series }) {
         if (chartInstance.current) chartInstance.current.destroy();
 
         var labels = series.map(function (s) { return formatDateRange(s.period_start, s.period_end); });
+        var pcts = series.map(function (s) { return muacTriagePercents(s.value); });
         chartInstance.current = new window.Chart(canvasRef.current, {
-            type: "line",
+            type: "bar",
             data: {
                 labels: labels,
                 datasets: [
-                    { label: "Red (SAM, <11.5cm)", data: series.map(function (s) { return s.value.red; }), borderColor: "#dc2626", tension: 0.15 },
-                    { label: "Yellow (MAM, 11.5-12.5cm)", data: series.map(function (s) { return s.value.yellow; }), borderColor: "#d97706", tension: 0.15 },
-                    { label: "Green (Normal, ≥12.5cm)", data: series.map(function (s) { return s.value.green; }), borderColor: "#16a34a", tension: 0.15 },
+                    { label: "Red (SAM, <11.5cm)", data: pcts.map(function (p) { return p.red; }), backgroundColor: "#dc2626", stack: "muac" },
+                    { label: "Yellow (MAM, 11.5-12.5cm)", data: pcts.map(function (p) { return p.yellow; }), backgroundColor: "#d97706", stack: "muac" },
+                    { label: "Green (Normal, ≥12.5cm)", data: pcts.map(function (p) { return p.green; }), backgroundColor: "#16a34a", stack: "muac" },
                 ],
             },
-            options: { responsive: true, maintainAspectRatio: false },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: { stacked: true },
+                    y: { stacked: true, min: 0, max: 100, ticks: { callback: function (v) { return v + "%"; } } },
+                },
+            },
         });
         return function () { if (chartInstance.current) chartInstance.current.destroy(); };
     }, [series]);
@@ -812,8 +886,8 @@ function MuacTrendChart({ chartId, series }) {
     return (
         <div className="bg-white rounded-lg border p-3">
             <div className="flex items-center text-sm font-medium text-gray-700 mb-1">
-                <span>MUAC Bucket Counts Over Time</span>
-                <InfoTooltip text="Weekly count of children in each WHO MUAC zone (red/yellow/green) over time." />
+                <span>MUAC Zone Composition Over Time</span>
+                <InfoTooltip text="Weekly % of children in each WHO MUAC zone (red/yellow/green), stacked to 100%." />
             </div>
             <div style={{ height: "220px" }}><canvas id={chartId} ref={canvasRef}></canvas></div>
         </div>
@@ -831,10 +905,11 @@ function AgeBandTrendChart({ chartId, series }) {
         if (chartInstance.current) chartInstance.current.destroy();
 
         var labels = series.map(function (s) { return formatDateRange(s.period_start, s.period_end); });
+        var pcts = series.map(function (s) { return ageBandPercents(s.value || {}); });
         var datasets = AGE_BANDS.map(function (band, i) {
             return {
                 label: band.label + "mo",
-                data: series.map(function (s) { return (s.value && s.value[band.label]) || 0; }),
+                data: pcts.map(function (p) { return p[band.label]; }),
                 borderColor: AGE_BAND_COLORS[i % AGE_BAND_COLORS.length],
                 tension: 0.15,
             };
@@ -842,7 +917,11 @@ function AgeBandTrendChart({ chartId, series }) {
         chartInstance.current = new window.Chart(canvasRef.current, {
             type: "line",
             data: { labels: labels, datasets: datasets },
-            options: { responsive: true, maintainAspectRatio: false },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: { y: { min: 0, max: 100, ticks: { callback: function (v) { return v + "%"; } } } },
+            },
         });
         return function () { if (chartInstance.current) chartInstance.current.destroy(); };
     }, [series]);
@@ -850,8 +929,8 @@ function AgeBandTrendChart({ chartId, series }) {
     return (
         <div className="bg-white rounded-lg border p-3">
             <div className="flex items-center text-sm font-medium text-gray-700 mb-1">
-                <span>Children by Age Band Over Time</span>
-                <InfoTooltip text="Weekly count of children in each age band over time." />
+                <span>Children by Age Band Over Time (% of children)</span>
+                <InfoTooltip text="Weekly % of children in each age band over time." />
             </div>
             <div style={{ height: "220px" }}><canvas id={chartId} ref={canvasRef}></canvas></div>
         </div>
