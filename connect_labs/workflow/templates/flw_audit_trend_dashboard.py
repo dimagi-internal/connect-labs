@@ -32,8 +32,9 @@ DEFINITION = {
     "name": "FLW Audit Trend Dashboard",
     "description": (
         "Program 176 (CHC PRE-RCT Nigeria) cross-opportunity trend view over the FLW Weekly "
-        "Audit Report's saved weekly snapshots — filter by opportunity and FLW, see indicator "
-        "trends and MUAC/age distribution snapshots + trends."
+        "Audit Report's saved weekly snapshots — filter by opportunity and FLW. Trends tab: "
+        "every indicator over time. Snapshot tab: pick one week (or all weeks) to see MUAC/age "
+        "distributions at that point in time."
     ),
     "version": 1,
     "templateType": "flw_audit_trend_dashboard",
@@ -146,16 +147,22 @@ RENDER_CODE = r"""function WorkflowUI({ definition, workers }) {
         return m;
     }, [sortedWeeks]);
 
+    // "__all__" (aggregate every week in scope) or a single period_start.
     var _selectedPeriod = React.useState(null);
     var selectedPeriod = _selectedPeriod[0];
     var setSelectedPeriod = _selectedPeriod[1];
 
     React.useEffect(function () {
         if (distinctPeriods.length === 0) return;
-        if (!selectedPeriod || distinctPeriods.indexOf(selectedPeriod) === -1) {
+        var isValid = selectedPeriod === "__all__" || distinctPeriods.indexOf(selectedPeriod) !== -1;
+        if (!selectedPeriod || !isValid) {
             setSelectedPeriod(distinctPeriods[distinctPeriods.length - 1]);
         }
     }, [distinctPeriods]);
+
+    var _activeTab = React.useState("trends"); // "trends" or "snapshot"
+    var activeTab = _activeTab[0];
+    var setActiveTab = _activeTab[1];
 
     if (state.loading) return <div className="p-6 text-gray-600">Loading trend data...</div>;
     if (state.error) return <div className="p-6 text-red-600">Error: {state.error}</div>;
@@ -193,22 +200,62 @@ RENDER_CODE = r"""function WorkflowUI({ definition, workers }) {
                 Showing: <span className="font-semibold">{oppScopeLabel}</span> · <span className="font-semibold">{flwScopeLabel}</span>
             </div>
 
-            <TrendSection
-                weeks={sortedWeeks}
-                flw={selectedFlw}
-                flwName={flwScopeLabel}
-                flwCount={flwOptions.length}
-            />
+            <TabBar activeTab={activeTab} onChange={setActiveTab} />
 
-            <DistributionSection
-                weeks={sortedWeeks}
-                distinctPeriods={distinctPeriods}
-                periodEndByStart={periodEndByStart}
-                selectedPeriod={selectedPeriod}
-                onChangePeriod={setSelectedPeriod}
-                selectedFlw={selectedFlw}
-                flwName={flwScopeLabel}
-            />
+            {activeTab === "trends" && (
+                <div className="space-y-6">
+                    <TrendSection
+                        weeks={sortedWeeks}
+                        flw={selectedFlw}
+                        flwName={flwScopeLabel}
+                        flwCount={flwOptions.length}
+                    />
+                    <DistributionTrendCharts
+                        weeks={sortedWeeks}
+                        selectedFlw={selectedFlw}
+                        flwName={flwScopeLabel}
+                    />
+                </div>
+            )}
+
+            {activeTab === "snapshot" && (
+                <DistributionSnapshotSection
+                    weeks={sortedWeeks}
+                    distinctPeriods={distinctPeriods}
+                    periodEndByStart={periodEndByStart}
+                    selectedPeriod={selectedPeriod}
+                    onChangePeriod={setSelectedPeriod}
+                    selectedFlw={selectedFlw}
+                    flwName={flwScopeLabel}
+                />
+            )}
+        </div>
+    );
+}
+
+function TabBar({ activeTab, onChange }) {
+    var tabs = [
+        { key: "trends", label: "Trends" },
+        { key: "snapshot", label: "Snapshot" },
+    ];
+    return (
+        <div className="flex gap-1 border-b border-gray-200">
+            {tabs.map(function (t) {
+                var isActive = activeTab === t.key;
+                return (
+                    <button
+                        key={t.key}
+                        type="button"
+                        onClick={function () { onChange(t.key); }}
+                        className={
+                            "px-4 py-2 text-sm font-medium border-b-2 -mb-px " +
+                            (isActive ? "border-indigo-600 text-indigo-700" : "border-transparent text-gray-500 hover:text-gray-700")
+                        }
+                    >
+                        {t.label}
+                    </button>
+                );
+            })}
         </div>
     );
 }
@@ -572,18 +619,10 @@ function muacBucketMidpoint(label) {
     return (parseFloat(parts[0]) + parseFloat(parts[1])) / 2;
 }
 
-function muacZoneColor(label) {
-    var mid = muacBucketMidpoint(label);
-    if (mid < 11.5) return "#dc2626"; // red: SAM
-    if (mid < 12.5) return "#d97706"; // yellow: MAM
-    return "#16a34a"; // green: normal
-}
-
 function muacValueZoneColor(label) {
-    // Same WHO SAM/MAM thresholds as muacZoneColor, but applied directly to an
-    // exact recorded value label (e.g. "11.5") instead of a bucket-range label
-    // (e.g. "11.5-12.0") -- muacBucketMidpoint's range-splitting logic doesn't
-    // apply here since there's no range to split.
+    // Same WHO SAM/MAM thresholds used elsewhere (see muacTriage), applied
+    // directly to an exact recorded value label (e.g. "11.5") instead of a
+    // bucket-range label (e.g. "11.5-12.0").
     var v = parseFloat(label);
     if (v < 11.5) return "#dc2626"; // red: SAM
     if (v < 12.5) return "#d97706"; // yellow: MAM
@@ -628,15 +667,6 @@ function ageBandCounts(ageByMonth) {
     return out;
 }
 
-function expectedUniformAgeBandCounts(ageBands) {
-    // If ages were evenly spread across all 60 months with no heaping, each
-    // band's expected share is proportional to its width (in months) out of
-    // 60 — the same "uniform" assumption flw_audit_compute.py's age-heaping
-    // check (whipple_index) is built on.
-    var total = Object.keys(ageBands).reduce(function (a, k) { return a + (ageBands[k] || 0); }, 0);
-    return AGE_BANDS.map(function (b) { return total * (b.max - b.min + 1) / 60; });
-}
-
 var AGE_MONTH_LABELS = (function () {
     var out = [];
     for (var m = 0; m <= 59; m++) out.push(String(m));
@@ -644,8 +674,7 @@ var AGE_MONTH_LABELS = (function () {
 })();
 
 function expectedUniformAgeMonthCounts(ageByMonth) {
-    // Individual-month version of expectedUniformAgeBandCounts: with no
-    // heaping, every one of the 60 months should get an equal share — a flat
+    // With no heaping, every one of the 60 months should get an equal share — a flat
     // reference line at total/60 makes spikes at 12/24/36/48mo (the classic
     // heaping ages) directly visible, the same signal age_heaping_whipple_index
     // summarized as a single number.
@@ -689,23 +718,21 @@ function rowsForFlwFilter(flws, selectedFlw) {
     return selectedFlw === "__all__" ? rows : rows.filter(function (f) { return f.username === selectedFlw; });
 }
 
-function DistributionSection({ weeks, distinctPeriods, periodEndByStart, selectedPeriod, onChangePeriod, selectedFlw, flwName }) {
-    var weekRowsForPeriod = React.useMemo(function () {
-        return weeks.filter(function (w) { return w.period_start === selectedPeriod; });
-    }, [weeks, selectedPeriod]);
-
-    var flwRowsForPeriod = React.useMemo(function () {
+function DistributionTrendCharts({ weeks, selectedFlw, flwName }) {
+    var distinctPeriods = React.useMemo(function () {
+        var seen = {};
         var out = [];
-        weekRowsForPeriod.forEach(function (w) { out = out.concat(rowsForFlwFilter(w.flws, selectedFlw)); });
+        weeks.forEach(function (w) {
+            if (w.period_start && !seen[w.period_start]) { seen[w.period_start] = true; out.push(w.period_start); }
+        });
         return out;
-    }, [weekRowsForPeriod, selectedFlw]);
+    }, [weeks]);
 
-    var muacBuckets = React.useMemo(function () { return sumHistograms(flwRowsForPeriod, "children_by_muac_bucket"); }, [flwRowsForPeriod]);
-    var muacValues = React.useMemo(function () { return sumHistograms(flwRowsForPeriod, "children_by_muac_value"); }, [flwRowsForPeriod]);
-    var ageByMonth = React.useMemo(function () { return sumHistograms(flwRowsForPeriod, "children_by_age_month"); }, [flwRowsForPeriod]);
-    var ageBuckets = React.useMemo(function () { return ageBandCounts(ageByMonth); }, [ageByMonth]);
-    var ageExpected = React.useMemo(function () { return expectedUniformAgeBandCounts(ageBuckets); }, [ageBuckets]);
-    var ageByMonthExpected = React.useMemo(function () { return expectedUniformAgeMonthCounts(ageByMonth); }, [ageByMonth]);
+    var periodEndByStart = React.useMemo(function () {
+        var m = {};
+        weeks.forEach(function (w) { if (w.period_start && !m[w.period_start] && w.period_end) m[w.period_start] = w.period_end; });
+        return m;
+    }, [weeks]);
 
     var muacTrendSeries = React.useMemo(function () {
         var byPeriod = {};
@@ -729,59 +756,64 @@ function DistributionSection({ weeks, distinctPeriods, periodEndByStart, selecte
     }, [weeks, distinctPeriods, periodEndByStart, selectedFlw]);
 
     return (
-        <div className="space-y-6">
-            <div>
-                <div className="flex items-center gap-3 mb-2">
-                    <h2 className="text-lg font-semibold">Distribution Snapshot — {flwName}</h2>
-                    <select
-                        className="border rounded px-2 py-1 text-sm"
-                        value={selectedPeriod || ""}
-                        onChange={function (e) { onChangePeriod(e.target.value); }}
-                    >
-                        {distinctPeriods.map(function (p) { return <option key={p} value={p}>{formatDateRange(p, periodEndByStart[p])}</option>; })}
-                    </select>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <BarHistogramChart
-                        chartId="muac-hist"
-                        label="MUAC Distribution (0.5cm buckets)"
-                        tooltip="Distribution of children's MUAC measurements this week, colored by WHO zone: red = SAM (<11.5cm), yellow = MAM (11.5-12.5cm), green = normal (≥12.5cm)."
-                        buckets={muacBuckets}
-                        barColorFn={muacZoneColor}
-                    />
-                    <BarHistogramChart
-                        chartId="age-hist"
-                        label="Children by Age Band (months)"
-                        tooltip="Distribution of children's ages this week; the dashed line is the expected count per band if ages were evenly spread with no heaping."
-                        buckets={ageBuckets}
-                        order={AGE_BANDS.map(function (b) { return b.label; })}
-                        referenceLine={{ label: "Expected (uniform, no heaping)", values: ageExpected }}
-                    />
-                    <BarHistogramChart
-                        chartId="muac-value-hist"
-                        label="MUAC Distribution (Recorded Values)"
-                        tooltip="Count of children at each exact recorded MUAC value this week (not grouped into 0.5cm ranges), colored by WHO zone."
-                        buckets={muacValues}
-                        order={sortedValueLabels(muacValues)}
-                        barColorFn={muacValueZoneColor}
-                    />
-                    <BarHistogramChart
-                        chartId="age-month-hist"
-                        label="Children by Age (Individual Months)"
-                        tooltip="Count of children at each individual age in months this week (not grouped into bands); the dashed line is the expected count per month if ages were evenly spread with no heaping — spikes at 12/24/36/48mo indicate age-heaping."
-                        buckets={ageByMonth}
-                        order={AGE_MONTH_LABELS}
-                        referenceLine={{ label: "Expected (uniform, no heaping)", values: ageByMonthExpected }}
-                    />
-                </div>
+        <div>
+            <h2 className="text-lg font-semibold mb-2">Distribution Trend — {flwName}</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <MuacTrendChart chartId="muac-trend" series={muacTrendSeries} />
+                <AgeBandTrendChart chartId="age-trend" series={ageTrendSeries} />
             </div>
+        </div>
+    );
+}
 
-            <div>
-                <h2 className="text-lg font-semibold mb-2">Distribution Trend — {flwName}</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <MuacTrendChart chartId="muac-trend" series={muacTrendSeries} />
-                    <AgeBandTrendChart chartId="age-trend" series={ageTrendSeries} />
-                </div>
+function DistributionSnapshotSection({ weeks, distinctPeriods, periodEndByStart, selectedPeriod, onChangePeriod, selectedFlw, flwName }) {
+    var isAllWeeks = selectedPeriod === "__all__";
+
+    var weekRowsForPeriod = React.useMemo(function () {
+        if (isAllWeeks) return weeks;
+        return weeks.filter(function (w) { return w.period_start === selectedPeriod; });
+    }, [weeks, selectedPeriod, isAllWeeks]);
+
+    var flwRowsForPeriod = React.useMemo(function () {
+        var out = [];
+        weekRowsForPeriod.forEach(function (w) { out = out.concat(rowsForFlwFilter(w.flws, selectedFlw)); });
+        return out;
+    }, [weekRowsForPeriod, selectedFlw]);
+
+    var muacValues = React.useMemo(function () { return sumHistograms(flwRowsForPeriod, "children_by_muac_value"); }, [flwRowsForPeriod]);
+    var ageByMonth = React.useMemo(function () { return sumHistograms(flwRowsForPeriod, "children_by_age_month"); }, [flwRowsForPeriod]);
+    var ageByMonthExpected = React.useMemo(function () { return expectedUniformAgeMonthCounts(ageByMonth); }, [ageByMonth]);
+
+    return (
+        <div>
+            <div className="flex items-center gap-3 mb-2">
+                <h2 className="text-lg font-semibold">Distribution Snapshot — {flwName}</h2>
+                <select
+                    className="border rounded px-2 py-1 text-sm"
+                    value={selectedPeriod || ""}
+                    onChange={function (e) { onChangePeriod(e.target.value); }}
+                >
+                    <option value="__all__">All Weeks</option>
+                    {distinctPeriods.map(function (p) { return <option key={p} value={p}>{formatDateRange(p, periodEndByStart[p])}</option>; })}
+                </select>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <BarHistogramChart
+                    chartId="muac-value-hist"
+                    label="MUAC Distribution (Recorded Values)"
+                    tooltip="Count of children at each exact recorded MUAC value (not grouped into 0.5cm ranges), colored by WHO zone."
+                    buckets={muacValues}
+                    order={sortedValueLabels(muacValues)}
+                    barColorFn={muacValueZoneColor}
+                />
+                <BarHistogramChart
+                    chartId="age-month-hist"
+                    label="Children by Age (Individual Months)"
+                    tooltip="Count of children at each individual age in months (not grouped into bands); the dashed line is the expected count per month if ages were evenly spread with no heaping — spikes at 12/24/36/48mo indicate age-heaping."
+                    buckets={ageByMonth}
+                    order={AGE_MONTH_LABELS}
+                    referenceLine={{ label: "Expected (uniform, no heaping)", values: ageByMonthExpected }}
+                />
             </div>
         </div>
     );
