@@ -209,11 +209,19 @@ RENDER_CODE = r"""function WorkflowUI({ definition, workers }) {
                         flw={selectedFlw}
                         flwName={flwScopeLabel}
                         flwCount={flwOptions.length}
+                        selectedOpp={selectedOpp}
+                        oppNames={oppNames}
+                        nameMap={nameMap}
+                        opportunityOptions={opportunityOptions}
                     />
                     <DistributionTrendCharts
                         weeks={sortedWeeks}
                         selectedFlw={selectedFlw}
                         flwName={flwScopeLabel}
+                        selectedOpp={selectedOpp}
+                        oppNames={oppNames}
+                        nameMap={nameMap}
+                        opportunityOptions={opportunityOptions}
                     />
                 </div>
             )}
@@ -398,20 +406,94 @@ function combineForWeek(rows, path, kind) {
     return kind === "sum" ? sum : sum / vals.length;
 }
 
-function TrendSection({ weeks, flw, flwName, flwCount }) {
+var ENTITY_COLORS = ["#2563eb", "#dc2626", "#16a34a", "#d97706", "#7c3aed", "#db2777", "#0891b2", "#65a30d", "#ea580c", "#4f46e5", "#0d9488", "#be123c"];
+
+function colorForEntityIndex(i) {
+    return ENTITY_COLORS[i % ENTITY_COLORS.length];
+}
+
+// Resolves how the Trends tab's per-indicator charts should split into
+// entity lines/bars given the current Opportunity/FLW filter selection, so
+// users can spot per-FLW/per-LLO patterns and outliers directly instead of
+// always collapsing everyone into one combined line:
+// - one specific FLW selected -> a single entity (that FLW alone)
+// - "All FLWs" within one selected opportunity -> one entity per FLW in that LLO
+// - "All FLWs" across "All Opportunities" -> one entity per LLO (aggregating its own FLWs)
+function resolveTrendEntities(weeks, selectedOpp, selectedFlw, oppNames, nameMap, opportunityOptions) {
+    if (selectedFlw !== "__all__") {
+        return {
+            mode: "flw-single",
+            entities: [{ key: selectedFlw, label: nameMap[selectedFlw] || selectedFlw, matches: function (f) { return f.username === selectedFlw; } }],
+        };
+    }
+    if (selectedOpp !== "all") {
+        var names = {};
+        weeks.forEach(function (w) { (w.flws || []).forEach(function (f) { if (f.username) names[f.username] = true; }); });
+        return {
+            mode: "flw-all",
+            entities: Object.keys(names).sort().map(function (u) {
+                return { key: u, label: nameMap[u] || u, matches: function (f) { return f.username === u; } };
+            }),
+        };
+    }
+    return {
+        mode: "llo-all",
+        entities: opportunityOptions.map(function (id) {
+            return { key: String(id), label: oppNames[id] || "Opp #" + id, opportunityId: id };
+        }),
+    };
+}
+
+// Rows for one entity, scoped to the given (already period-filtered) weeks.
+// llo-all entities are matched by the parent week's own opportunity_id (FLW
+// rows don't carry it individually); flw-* entities are matched per-row.
+function rowsForEntity(weeksForPeriod, entity, mode) {
+    var out = [];
+    if (mode === "llo-all") {
+        weeksForPeriod.forEach(function (w) {
+            if (w.opportunity_id === entity.opportunityId) out = out.concat(w.flws || []);
+        });
+        return out;
+    }
+    weeksForPeriod.forEach(function (w) { out = out.concat((w.flws || []).filter(entity.matches)); });
+    return out;
+}
+
+// Distinct period_start values across a raw (non-period-grouped) weeks list,
+// sorted ascending, each paired with its period_end.
+function distinctPeriodsFromWeeks(weeks) {
+    var endByStart = {};
+    var order = [];
+    weeks.forEach(function (w) {
+        if (!w.period_start) return;
+        if (endByStart[w.period_start] === undefined) {
+            endByStart[w.period_start] = w.period_end || null;
+            order.push(w.period_start);
+        } else if (!endByStart[w.period_start] && w.period_end) {
+            endByStart[w.period_start] = w.period_end;
+        }
+    });
+    order.sort(function (a, b) { return a.localeCompare(b); });
+    return order.map(function (p) { return { period_start: p, period_end: endByStart[p] }; });
+}
+
+function TrendSection({ weeks, flw, flwName, flwCount, selectedOpp, oppNames, nameMap, opportunityOptions }) {
     var isAll = flw === "__all__";
 
+    // Forms-vs-Visits and Service Coverage stay as single combined lines
+    // (they compare two/four DIFFERENT indicators against each other, not
+    // one indicator across entities) -- unchanged from before.
     var groupedWeeks = React.useMemo(function () { return groupWeeksByPeriod(weeks); }, [weeks]);
 
-    var ALL_PATHS = React.useMemo(function () { return FORMS_VISITS_INDICATORS.concat(COVERAGE_INDICATORS).concat(TREND_INDICATORS); }, []);
+    var COMBINED_PATHS = React.useMemo(function () { return FORMS_VISITS_INDICATORS.concat(COVERAGE_INDICATORS); }, []);
 
-    var series = React.useMemo(function () {
+    var combinedSeries = React.useMemo(function () {
         var out = {};
-        ALL_PATHS.forEach(function (ind) { out[ind.path] = []; });
+        COMBINED_PATHS.forEach(function (ind) { out[ind.path] = []; });
         groupedWeeks.forEach(function (w) {
             var rows = w.flws || [];
             var relevant = isAll ? rows : rows.filter(function (f) { return f.username === flw; });
-            ALL_PATHS.forEach(function (ind) {
+            COMBINED_PATHS.forEach(function (ind) {
                 out[ind.path].push({
                     period_start: w.period_start,
                     period_end: w.period_end,
@@ -420,7 +502,33 @@ function TrendSection({ weeks, flw, flwName, flwCount }) {
             });
         });
         return out;
-    }, [groupedWeeks, flw, isAll, ALL_PATHS]);
+    }, [groupedWeeks, flw, isAll, COMBINED_PATHS]);
+
+    // The per-indicator TREND_INDICATORS charts, on the other hand, split
+    // into one line per entity (LLO or FLW) -- see resolveTrendEntities.
+    var trendMode = React.useMemo(function () {
+        return resolveTrendEntities(weeks, selectedOpp, flw, oppNames, nameMap, opportunityOptions);
+    }, [weeks, selectedOpp, flw, oppNames, nameMap, opportunityOptions]);
+
+    var distinctPeriodList = React.useMemo(function () { return distinctPeriodsFromWeeks(weeks); }, [weeks]);
+
+    var entitySeries = React.useMemo(function () {
+        var out = {};
+        trendMode.entities.forEach(function (ent) {
+            out[ent.key] = {};
+            TREND_INDICATORS.forEach(function (ind) { out[ent.key][ind.path] = []; });
+        });
+        distinctPeriodList.forEach(function (period) {
+            var weeksThisPeriod = weeks.filter(function (w) { return w.period_start === period.period_start; });
+            trendMode.entities.forEach(function (ent) {
+                var rows = rowsForEntity(weeksThisPeriod, ent, trendMode.mode);
+                TREND_INDICATORS.forEach(function (ind) {
+                    out[ent.key][ind.path].push({ period_start: period.period_start, period_end: period.period_end, value: combineForWeek(rows, ind.path, ind.kind) });
+                });
+            });
+        });
+        return out;
+    }, [trendMode, distinctPeriodList, weeks]);
 
     return (
         <div>
@@ -430,7 +538,7 @@ function TrendSection({ weeks, flw, flwName, flwCount }) {
                     chartId="trend-forms-visits"
                     title="Forms Submitted vs. Approved Visits"
                     indicators={FORMS_VISITS_INDICATORS}
-                    series={series}
+                    series={combinedSeries}
                     isAll={isAll}
                     flwCount={flwCount}
                 />
@@ -438,7 +546,7 @@ function TrendSection({ weeks, flw, flwName, flwCount }) {
                     chartId="trend-coverage"
                     title="Service Coverage"
                     indicators={COVERAGE_INDICATORS}
-                    series={series}
+                    series={combinedSeries}
                     isAll={isAll}
                     flwCount={flwCount}
                 />
@@ -449,10 +557,11 @@ function TrendSection({ weeks, flw, flwName, flwCount }) {
                             chartId={"trend-" + ind.path}
                             label={ind.label}
                             tooltip={ind.tooltip}
-                            points={series[ind.path] || []}
-                            isAll={isAll}
+                            entities={trendMode.entities}
+                            mode={trendMode.mode}
+                            seriesByEntity={entitySeries}
+                            path={ind.path}
                             kind={ind.kind}
-                            flwCount={flwCount}
                             thresholds={ind.thresholds}
                         />
                     );
@@ -526,7 +635,12 @@ function linearTrendline(values) {
 
 var THRESHOLD_COLORS = ["#f59e0b", "#dc2626", "#7c3aed"];
 
-function LineTrendChart({ chartId, label, tooltip, points, isAll, kind, flwCount, thresholds }) {
+function LineTrendChart({ chartId, label, tooltip, entities, mode, seriesByEntity, path, kind, thresholds }) {
+    // One line per entity (LLO or FLW, see resolveTrendEntities) instead of a
+    // single collapsed line -- lets patterns/outliers across FLWs or LLOs be
+    // spotted directly; hovering a line shows its entity name via Chart.js's
+    // default per-dataset tooltip. The dashed linear-trend overlay only makes
+    // sense for a single line, so it's skipped once there's more than one.
     var canvasRef = React.useRef(null);
     var chartInstance = React.useRef(null);
 
@@ -534,18 +648,23 @@ function LineTrendChart({ chartId, label, tooltip, points, isAll, kind, flwCount
         if (!canvasRef.current || !window.Chart) return;
         if (chartInstance.current) chartInstance.current.destroy();
 
-        var labels = points.map(function (p) { return formatDateRange(p.period_start, p.period_end); });
-        var values = points.map(function (p) { return p.value; });
-        var trend = linearTrendline(values);
+        var firstPoints = (entities[0] && seriesByEntity[entities[0].key] && seriesByEntity[entities[0].key][path]) || [];
+        var labels = firstPoints.map(function (p) { return formatDateRange(p.period_start, p.period_end); });
 
-        var datasets = [
-            { label: label, data: values, borderColor: "#2563eb", backgroundColor: "#2563eb", tension: 0.15, pointRadius: 3 },
-            { label: "Trend", data: trend, borderColor: "#9ca3af", borderDash: [4, 4], pointRadius: 0, borderWidth: 1 },
-        ];
+        var datasets = entities.map(function (ent, i) {
+            var pts = (seriesByEntity[ent.key] && seriesByEntity[ent.key][path]) || [];
+            var color = colorForEntityIndex(i);
+            return { label: ent.label, data: pts.map(function (p) { return p.value; }), borderColor: color, backgroundColor: color, tension: 0.15, pointRadius: 3 };
+        });
+
+        if (entities.length === 1) {
+            datasets.push({ label: "Trend", data: linearTrendline(datasets[0].data), borderColor: "#9ca3af", borderDash: [4, 4], pointRadius: 0, borderWidth: 1 });
+        }
+
         (thresholds || []).forEach(function (t, i) {
             datasets.push({
                 label: t.label,
-                data: values.map(function () { return t.value; }),
+                data: labels.map(function () { return t.value; }),
                 borderColor: THRESHOLD_COLORS[i % THRESHOLD_COLORS.length],
                 borderDash: [2, 2],
                 pointRadius: 0,
@@ -559,12 +678,16 @@ function LineTrendChart({ chartId, label, tooltip, points, isAll, kind, flwCount
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                plugins: { legend: { display: (thresholds || []).length > 0, labels: { boxWidth: 10, font: { size: 9 } } } },
+                plugins: { legend: { display: entities.length > 1 || (thresholds || []).length > 0, labels: { boxWidth: 10, font: { size: 9 } } } },
                 scales: { x: { ticks: { maxRotation: 45, minRotation: 45 } } },
             },
         });
         return function () { if (chartInstance.current) chartInstance.current.destroy(); };
-    }, [points, label, thresholds]);
+    }, [entities, seriesByEntity, path, thresholds]);
+
+    var modeCaption = entities.length > 1 && mode === "llo-all"
+        ? (kind === "sum" ? "One line per LLO, summing its FLWs" : "One line per LLO, averaging its FLWs — approximate, not re-derived from raw visits")
+        : null;
 
     return (
         <div className="bg-white rounded-lg border p-3">
@@ -572,12 +695,8 @@ function LineTrendChart({ chartId, label, tooltip, points, isAll, kind, flwCount
                 <span>{label}</span>
                 <InfoTooltip text={tooltip} />
             </div>
-            {isAll && (
-                <div className="text-[11px] text-gray-400 mb-1">
-                    {kind === "sum"
-                        ? "Sum across " + flwCount + " FLW(s) in scope"
-                        : "Avg across " + flwCount + " FLW(s) in scope — approximate, not re-derived from raw visits"}
-                </div>
+            {modeCaption && (
+                <div className="text-[11px] text-gray-400 mb-1">{modeCaption}</div>
             )}
             <div style={{ height: "160px" }}><canvas id={chartId} ref={canvasRef}></canvas></div>
         </div>
@@ -737,7 +856,7 @@ function rowsForFlwFilter(flws, selectedFlw) {
     return selectedFlw === "__all__" ? rows : rows.filter(function (f) { return f.username === selectedFlw; });
 }
 
-function DistributionTrendCharts({ weeks, selectedFlw, flwName }) {
+function DistributionTrendCharts({ weeks, selectedFlw, flwName, selectedOpp, oppNames, nameMap, opportunityOptions }) {
     var distinctPeriods = React.useMemo(function () {
         var seen = {};
         var out = [];
@@ -753,17 +872,30 @@ function DistributionTrendCharts({ weeks, selectedFlw, flwName }) {
         return m;
     }, [weeks]);
 
-    var muacTrendSeries = React.useMemo(function () {
-        var byPeriod = {};
-        weeks.forEach(function (w) {
-            var t = muacTriage(sumHistograms(rowsForFlwFilter(w.flws, selectedFlw), "children_by_muac_bucket"));
-            if (!byPeriod[w.period_start]) byPeriod[w.period_start] = { red: 0, yellow: 0, green: 0 };
-            byPeriod[w.period_start].red += t.red;
-            byPeriod[w.period_start].yellow += t.yellow;
-            byPeriod[w.period_start].green += t.green;
+    // MUAC Zone Composition splits into one bar-group per entity (LLO or FLW,
+    // same rule as the Trends tab's line charts -- see resolveTrendEntities).
+    // Children by Age Band intentionally does NOT split this way (kept as one
+    // combined view, respecting only the FLW filter) -- 6 bands x up to 10
+    // FLWs would be 60 lines, unreadable.
+    var trendMode = React.useMemo(function () {
+        return resolveTrendEntities(weeks, selectedOpp, selectedFlw, oppNames, nameMap, opportunityOptions);
+    }, [weeks, selectedOpp, selectedFlw, oppNames, nameMap, opportunityOptions]);
+
+    var distinctPeriodList = React.useMemo(function () { return distinctPeriodsFromWeeks(weeks); }, [weeks]);
+
+    var muacEntitySeries = React.useMemo(function () {
+        var out = {};
+        trendMode.entities.forEach(function (ent) { out[ent.key] = []; });
+        distinctPeriodList.forEach(function (period) {
+            var weeksThisPeriod = weeks.filter(function (w) { return w.period_start === period.period_start; });
+            trendMode.entities.forEach(function (ent) {
+                var rows = rowsForEntity(weeksThisPeriod, ent, trendMode.mode);
+                var t = muacTriage(sumHistograms(rows, "children_by_muac_bucket"));
+                out[ent.key].push({ period_start: period.period_start, period_end: period.period_end, value: t });
+            });
         });
-        return distinctPeriods.map(function (p) { return { period_start: p, period_end: periodEndByStart[p], value: byPeriod[p] || { red: 0, yellow: 0, green: 0 } }; });
-    }, [weeks, distinctPeriods, periodEndByStart, selectedFlw]);
+        return out;
+    }, [trendMode, distinctPeriodList, weeks]);
 
     var ageTrendSeries = React.useMemo(function () {
         var byPeriod = {};
@@ -778,7 +910,7 @@ function DistributionTrendCharts({ weeks, selectedFlw, flwName }) {
         <div>
             <h2 className="text-lg font-semibold mb-2">Distribution Trend — {flwName}</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <MuacTrendChart chartId="muac-trend" series={muacTrendSeries} />
+                <MuacTrendChart chartId="muac-trend" entities={trendMode.entities} mode={trendMode.mode} entitySeries={muacEntitySeries} />
                 <AgeBandTrendChart chartId="age-trend" series={ageTrendSeries} />
             </div>
         </div>
@@ -936,13 +1068,16 @@ function CoverageBarChart({ chartId, indicators, counts }) {
     );
 }
 
-function MuacTrendChart({ chartId, series }) {
-    // Rendered as a 100%-stacked bar (not 3 overlapping lines): with red and
-    // yellow both near/at zero most weeks, their lines sit on top of each
-    // other at y=0 and one becomes invisible behind the other. A stacked bar
-    // shows each zone as its own visible-width segment, and normalizing to
-    // 100% directly answers "what % of children are in each zone" instead of
-    // raw (opportunity/FLW-count-dependent) counts.
+function MuacTrendChart({ chartId, entities, mode, entitySeries }) {
+    // Rendered as a 100%-stacked bar per entity (not 3 overlapping lines):
+    // with red and yellow both near/at zero most weeks, their lines would sit
+    // on top of each other at y=0 and one becomes invisible behind the other.
+    // A stacked bar shows each zone as its own visible-width segment. When
+    // multiple entities (LLOs or FLWs) are in scope, each week shows one
+    // stacked bar PER entity, touching its neighbors (barPercentage: 1) with
+    // a gap between weeks (categoryPercentage < 1) -- via Chart.js's
+    // grouped-stacked-bar support (datasets sharing a `stack` id stack on top
+    // of each other; different `stack` ids group side by side).
     var canvasRef = React.useRef(null);
     var chartInstance = React.useRef(null);
 
@@ -950,35 +1085,61 @@ function MuacTrendChart({ chartId, series }) {
         if (!canvasRef.current || !window.Chart) return;
         if (chartInstance.current) chartInstance.current.destroy();
 
-        var labels = series.map(function (s) { return formatDateRange(s.period_start, s.period_end); });
-        var pcts = series.map(function (s) { return muacTriagePercents(s.value); });
+        var firstSeries = (entities[0] && entitySeries[entities[0].key]) || [];
+        var labels = firstSeries.map(function (s) { return formatDateRange(s.period_start, s.period_end); });
+
+        var datasets = [];
+        entities.forEach(function (ent, i) {
+            var pcts = (entitySeries[ent.key] || []).map(function (s) { return muacTriagePercents(s.value); });
+            var stackId = "ent" + i;
+            datasets.push({ label: "Red", stack: stackId, backgroundColor: "#dc2626", data: pcts.map(function (p) { return p.red; }), _entityLabel: ent.label, _zone: "Red (SAM, <11.5cm)" });
+            datasets.push({ label: "Yellow", stack: stackId, backgroundColor: "#d97706", data: pcts.map(function (p) { return p.yellow; }), _entityLabel: ent.label, _zone: "Yellow (MAM, 11.5-12.5cm)" });
+            datasets.push({ label: "Green", stack: stackId, backgroundColor: "#16a34a", data: pcts.map(function (p) { return p.green; }), _entityLabel: ent.label, _zone: "Green (Normal, ≥12.5cm)" });
+        });
+
         chartInstance.current = new window.Chart(canvasRef.current, {
             type: "bar",
-            data: {
-                labels: labels,
-                datasets: [
-                    { label: "Red (SAM, <11.5cm)", data: pcts.map(function (p) { return p.red; }), backgroundColor: "#dc2626", stack: "muac" },
-                    { label: "Yellow (MAM, 11.5-12.5cm)", data: pcts.map(function (p) { return p.yellow; }), backgroundColor: "#d97706", stack: "muac" },
-                    { label: "Green (Normal, ≥12.5cm)", data: pcts.map(function (p) { return p.green; }), backgroundColor: "#16a34a", stack: "muac" },
-                ],
-            },
+            data: { labels: labels, datasets: datasets },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
                 scales: {
-                    x: { stacked: true },
+                    x: { stacked: true, categoryPercentage: 0.9, barPercentage: 1.0 },
                     y: { stacked: true, min: 0, max: 100, ticks: { callback: function (v) { return v + "%"; } } },
+                },
+                plugins: {
+                    legend: {
+                        labels: {
+                            filter: function (item, data) {
+                                return data.datasets.findIndex(function (d) { return d.label === item.text; }) === item.datasetIndex;
+                            },
+                        },
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function (context) {
+                                var ds = context.dataset;
+                                var v = context.raw;
+                                var pct = v === null || v === undefined ? "–" : v.toFixed(1) + "%";
+                                return (entities.length > 1 ? ds._entityLabel + " — " : "") + ds._zone + ": " + pct;
+                            },
+                        },
+                    },
                 },
             },
         });
         return function () { if (chartInstance.current) chartInstance.current.destroy(); };
-    }, [series]);
+    }, [entities, entitySeries]);
+
+    var tooltipText = entities.length > 1
+        ? "Weekly % of children in each WHO MUAC zone (red/yellow/green), stacked to 100% -- one bar per " + (mode === "llo-all" ? "LLO" : "FLW") + ", hover for exact values."
+        : "Weekly % of children in each WHO MUAC zone (red/yellow/green), stacked to 100%.";
 
     return (
         <div className="bg-white rounded-lg border p-3">
             <div className="flex items-center text-sm font-medium text-gray-700 mb-1">
                 <span>MUAC Zone Composition Over Time</span>
-                <InfoTooltip text="Weekly % of children in each WHO MUAC zone (red/yellow/green), stacked to 100%." />
+                <InfoTooltip text={tooltipText} />
             </div>
             <div style={{ height: "220px" }}><canvas id={chartId} ref={canvasRef}></canvas></div>
         </div>
