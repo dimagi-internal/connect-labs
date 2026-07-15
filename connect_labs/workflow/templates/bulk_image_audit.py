@@ -60,6 +60,9 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
     const [threshold, setThreshold] = React.useState(
         instance.state?.config?.threshold ?? 80
     );
+    const [excludePriorAudited, setExcludePriorAudited] = React.useState(
+        instance.state?.config?.exclude_prior_audited ?? false
+    );
 
     // ── Dynamic image type state ─────────────────────────────────────────────
     const [imageQuestions, setImageQuestions] = React.useState(
@@ -336,6 +339,7 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
             sample_percentage: samplePct,
             threshold: threshold,
             date_preset: datePreset,
+            exclude_prior_audited: excludePriorAudited,
             ai_agent_id: selectedAiAgent || null,
             ai_auto_apply_actions: selectedAiAgent ? aiAutoApplyActions : [],
         };
@@ -361,6 +365,7 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
             end_date: auditMode === 'date_range' ? endDate : null,
             count_per_opp: auditMode === 'last_n_per_opp' ? lastNCount : null,
             sample_percentage: samplePct,
+            exclude_prior_audited: excludePriorAudited,
             related_fields: selectedTypes.map(t => ({
                 image_path: t.path,
                 filter_by_image: true,
@@ -877,6 +882,12 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
                         className="w-20 border border-gray-300 rounded px-3 py-2 text-sm text-center" />
                     <label className="text-sm text-gray-700">% of matching visits</label>
                 </div>
+                <label className="flex items-center gap-2 text-sm text-gray-700 mt-2">
+                    <input type="checkbox"
+                           checked={excludePriorAudited}
+                           onChange={e => setExcludePriorAudited(e.target.checked)} />
+                    Exclude images already audited in a completed session
+                </label>
             </div>
 
             {/* Passing threshold */}

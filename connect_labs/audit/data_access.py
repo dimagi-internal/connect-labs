@@ -93,6 +93,7 @@ class AuditCriteria:
         str
     ] | None = None  # Filter to specific visit status(es): pending/approved/rejected/over_limit
     related_fields: list[dict] | None = None  # List of {image_path, field_path, label}
+    exclude_prior_audited: bool = False  # Drop images already audited in a completed session
 
     @classmethod
     def from_dict(cls, data: dict) -> "AuditCriteria":
@@ -132,6 +133,7 @@ class AuditCriteria:
             deliver_unit_types=deliver_unit_types,
             visit_statuses=visit_statuses,
             related_fields=related_fields or None,
+            exclude_prior_audited=bool(data.get("exclude_prior_audited") or data.get("excludePriorAudited") or False),
         )
 
 
@@ -223,6 +225,60 @@ def filter_visits_for_audit(
     if return_visits:
         return df.to_dict("records")
     return df["id"].dropna().astype(int).unique().tolist()
+
+
+_AUDIT_VERDICTS = {"pass", "fail", "duplicate_fake"}
+
+
+def build_prior_audit_index(sessions, exclude_session_id=None) -> dict:
+    """Map "<visit_id>:<blob_id>" -> prior verdict, from COMPLETED sessions only.
+
+    Only images with a human verdict (pass/fail/duplicate_fake) count. When an
+    image was audited in more than one completed session, the most-recently
+    completed verdict wins. `exclude_session_id` skips a session so it never
+    flags its own images (matters for reopened sessions).
+    """
+    index: dict[str, dict] = {}
+    dt_by_key: dict[str, object] = {}
+    for session in sessions:
+        if session.status != "completed":
+            continue
+        if exclude_session_id is not None and session.id == exclude_session_id:
+            continue
+        completed_at = session.completed_at  # datetime | None
+        for visit_key, visit_result in (session.data.get("visit_results") or {}).items():
+            for blob_id, assessment in (visit_result.get("assessments") or {}).items():
+                result = assessment.get("result")
+                if result not in _AUDIT_VERDICTS:
+                    continue
+                key = f"{visit_key}:{blob_id}"
+                prev_dt = dt_by_key.get(key)
+                if prev_dt is not None and (completed_at is None or completed_at <= prev_dt):
+                    continue
+                dt_by_key[key] = completed_at
+                index[key] = {
+                    "result": result,
+                    "session_id": session.id,
+                    "session_title": session.data.get("title", ""),
+                    "completed_at": completed_at.isoformat() if completed_at else None,
+                }
+    return index
+
+
+def filter_out_prior_audited(all_visit_images: dict, prior_index: dict) -> tuple[dict, int]:
+    """Drop images whose "<visit_id>:<blob_id>" is in prior_index.
+
+    Returns (filtered_visit_images, excluded_count). Visits left with no images
+    are removed from the result.
+    """
+    filtered: dict = {}
+    excluded = 0
+    for visit_key, images in all_visit_images.items():
+        kept = [img for img in images if f"{visit_key}:{img.get('blob_id')}" not in prior_index]
+        excluded += len(images) - len(kept)
+        if kept:
+            filtered[visit_key] = kept
+    return filtered, excluded
 
 
 def generate_audit_description(criteria: AuditCriteria) -> str:
@@ -989,6 +1045,15 @@ class AuditDataAccess(BaseDataAccess):
         if status:
             kwargs["status"] = status
         return self._query_audit_sessions(username=username, **kwargs)
+
+    def get_prior_audited_images(self, opportunity_id, exclude_session_id=None) -> dict:
+        """Prior-audit index for one opportunity, from its completed sessions.
+
+        Filters to this opportunity even under program scope (get_audit_sessions
+        fans out across a program's opportunities).
+        """
+        sessions = [s for s in self.get_audit_sessions() if s.opportunity_id == opportunity_id]
+        return build_prior_audit_index(sessions, exclude_session_id=exclude_session_id)
 
     def _query_audit_sessions(self, username: str | None = None, **kwargs) -> list[AuditSessionRecord]:
         """Fetch every AuditSession record visible to this DataAccess's scope.
