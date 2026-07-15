@@ -5,6 +5,7 @@ The bulk assessment page's header used to show the FLW's raw Connect username
 summary only threaded through `bulk_primary_username` — unlike the per-assessment
 rows, which already resolve names via `flw_names.get(username, username)`.
 """
+
 import time
 
 import pytest
@@ -233,8 +234,14 @@ def test_prior_audited_fields_present(labs_client, monkeypatch):
             return {}
 
         def get_prior_audited_images(self, opportunity_id, exclude_session_id=None):
-            return {"111:b1": {"result": "fail", "session_id": 9, "session_title": "Old",
-                               "completed_at": "2026-05-01T00:00:00Z"}}
+            return {
+                "111:b1": {
+                    "result": "fail",
+                    "session_id": 9,
+                    "session_title": "Old",
+                    "completed_at": "2026-05-01T00:00:00Z",
+                }
+            }
 
         def close(self):
             pass

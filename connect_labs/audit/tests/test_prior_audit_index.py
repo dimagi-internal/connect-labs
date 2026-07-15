@@ -1,4 +1,5 @@
 """Unit tests for the prior-audit index (Must-have #5)."""
+
 from connect_labs.audit.data_access import build_prior_audit_index
 from connect_labs.audit.models import AuditSessionRecord
 
@@ -7,8 +8,9 @@ def _session(id, status, visit_results, completed_at=None, title=""):
     data = {"status": status, "visit_results": visit_results, "title": title}
     if completed_at:
         data["completed_at"] = completed_at
-    return AuditSessionRecord({"id": id, "experiment": "audit", "type": "AuditSession",
-                               "opportunity_id": 1973, "data": data})
+    return AuditSessionRecord(
+        {"id": id, "experiment": "audit", "type": "AuditSession", "opportunity_id": 1973, "data": data}
+    )
 
 
 def _vr(**assessments):

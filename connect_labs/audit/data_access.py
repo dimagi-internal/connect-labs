@@ -133,9 +133,7 @@ class AuditCriteria:
             deliver_unit_types=deliver_unit_types,
             visit_statuses=visit_statuses,
             related_fields=related_fields or None,
-            exclude_prior_audited=bool(
-                data.get("exclude_prior_audited") or data.get("excludePriorAudited") or False
-            ),
+            exclude_prior_audited=bool(data.get("exclude_prior_audited") or data.get("excludePriorAudited") or False),
         )
 
 

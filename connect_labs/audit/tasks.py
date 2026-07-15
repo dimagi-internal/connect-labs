@@ -664,9 +664,7 @@ def run_audit_creation(
             prior_index = data_access.get_prior_audited_images(opp_id)
             all_visit_images, excluded_count = filter_out_prior_audited(all_visit_images, prior_index)
             image_count = sum(len(imgs) for imgs in all_visit_images.values())
-            logger.info(
-                f"[AuditCreation] Excluded {excluded_count} previously-audited images; {image_count} remain"
-            )
+            logger.info(f"[AuditCreation] Excluded {excluded_count} previously-audited images; {image_count} remain")
             set_task_progress(
                 self,
                 f"Excluded {excluded_count} previously-audited images",

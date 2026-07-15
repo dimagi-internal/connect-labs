@@ -572,9 +572,7 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
 
             prior_audit_index = {}
             try:
-                prior_audit_index = data_access.get_prior_audited_images(
-                    opportunity_id, exclude_session_id=session_id
-                )
+                prior_audit_index = data_access.get_prior_audited_images(opportunity_id, exclude_session_id=session_id)
             except Exception:
                 logger.warning("Failed to build prior-audit index for opp %s", opportunity_id, exc_info=True)
 
