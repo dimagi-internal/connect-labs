@@ -151,7 +151,10 @@ def fetch_connect_export_as_visit_dicts(
     params: dict = {"page_size": DEFAULT_PAGE_SIZE}
     next_url: str | None = url
 
-    with httpx.Client(headers=headers, timeout=60.0) as client:
+    # follow_redirects=True: some opportunity domains 301-redirect this endpoint
+    # (observed live — httpx.Client does not follow redirects by default, so
+    # raise_for_status() below was treating the 301 itself as a hard failure).
+    with httpx.Client(headers=headers, timeout=60.0, follow_redirects=True) as client:
         while next_url:
             page += 1
             try:
