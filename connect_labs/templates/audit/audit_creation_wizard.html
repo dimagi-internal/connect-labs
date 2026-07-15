@@ -902,6 +902,18 @@
       </div>
     </div>
 
+    <!-- Exclude Previously-Audited Images -->
+    <div class="mt-2 mb-6">
+      <label class="flex items-center cursor-pointer">
+        <input
+          type="checkbox"
+          x-model="excludePriorAudited"
+          class="h-4 w-4 text-brand-indigo focus:ring-brand-indigo border-gray-300 rounded"
+        >
+        <span class="ml-2 text-sm text-gray-700">Exclude images already audited in a completed session</span>
+      </label>
+    </div>
+
     <div class="flex justify-end gap-4">
       <button
         @click="clearAllSelections()"
@@ -1200,6 +1212,8 @@ function auditCreationPage() {
     auditTag: '',
     // % of assessments that must pass for the whole audit to be marked pass (75-100)
     auditPassThreshold: 100,
+    // Skip images already audited to a completed session (opt-in)
+    excludePriorAudited: false,
 
     // Quick filter for specific username (from URL params)
     quickFilterUsername: null,
@@ -1947,6 +1961,7 @@ function auditCreationPage() {
           selected_flw_user_ids: this.selectedFlwUserIds,
           deliver_unit_types: this.auditCriteria.deliverUnitTypes,
           visit_statuses: this.auditCriteria.visitStatuses,
+          exclude_prior_audited: this.excludePriorAudited,
           // The backend builds related_fields from image_audits/context_fields below.
           relatedFields: []
         };
