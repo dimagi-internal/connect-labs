@@ -93,6 +93,7 @@ class AuditCriteria:
         str
     ] | None = None  # Filter to specific visit status(es): pending/approved/rejected/over_limit
     related_fields: list[dict] | None = None  # List of {image_path, field_path, label}
+    exclude_prior_audited: bool = False  # Drop images already audited in a completed session
 
     @classmethod
     def from_dict(cls, data: dict) -> "AuditCriteria":
@@ -132,6 +133,9 @@ class AuditCriteria:
             deliver_unit_types=deliver_unit_types,
             visit_statuses=visit_statuses,
             related_fields=related_fields or None,
+            exclude_prior_audited=bool(
+                data.get("exclude_prior_audited") or data.get("excludePriorAudited") or False
+            ),
         )
 
 
