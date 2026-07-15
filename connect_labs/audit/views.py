@@ -570,6 +570,25 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
             except Exception:
                 pass
 
+            prior_audit_index = {}
+            try:
+                prior_audit_index = data_access.get_prior_audited_images(
+                    opportunity_id, exclude_session_id=session_id
+                )
+            except Exception:
+                logger.warning("Failed to build prior-audit index for opp %s", opportunity_id, exc_info=True)
+
+            def prior_fields(visit_id, blob_id):
+                entry = prior_audit_index.get(f"{visit_id}:{blob_id}")
+                if not entry:
+                    return {"prior_audited": False, "prior_result": "", "prior_session_date": ""}
+                raw = entry.get("completed_at") or ""
+                return {
+                    "prior_audited": True,
+                    "prior_result": entry.get("result") or "",
+                    "prior_session_date": raw[:10],
+                }
+
             # Use stored visit_images data - no need to fetch visits again!
             for visit_id in visit_ids:
                 visit_result_entry = session.get_visit_result(visit_id) or {}
@@ -640,6 +659,7 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
                     assessment_id = str(assessment_counter) + ":" + str(visit_id) + ":" + str(blob_id)
                     all_assessments.append(
                         {
+                            **prior_fields(visit_id, blob_id),
                             "id": assessment_id,
                             "visit_id": visit_id,
                             "blob_id": blob_id,
@@ -676,6 +696,7 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
                     assessment_id = str(assessment_counter) + ":" + str(visit_id) + ":" + str(blob_id)
                     all_assessments.append(
                         {
+                            **prior_fields(visit_id, blob_id),
                             "id": assessment_id,
                             "visit_id": visit_id,
                             "blob_id": blob_id,

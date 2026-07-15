@@ -83,6 +83,9 @@ def test_bulk_primary_flw_name_resolves_via_flw_names(labs_client, monkeypatch):
         def get_flw_names(self, opportunity_id):
             return {username: "Jane Doe"}
 
+        def get_prior_audited_images(self, opportunity_id, exclude_session_id=None):
+            return {}
+
         def close(self):
             pass
 
@@ -117,6 +120,9 @@ def test_assessment_entity_id_passes_through_when_already_stored(labs_client, mo
         def get_flw_names(self, opportunity_id):
             return {}
 
+        def get_prior_audited_images(self, opportunity_id, exclude_session_id=None):
+            return {}
+
         def close(self):
             pass
 
@@ -126,6 +132,7 @@ def test_assessment_entity_id_passes_through_when_already_stored(labs_client, mo
     data = response.json()
 
     assert data["assessments"][0]["entity_id"] == "ALIYU-20240610"
+    assert data["assessments"][0]["prior_audited"] is False
 
 
 def test_assessment_entity_id_backfills_for_legacy_sessions(labs_client, monkeypatch):
@@ -155,6 +162,9 @@ def test_assessment_entity_id_backfills_for_legacy_sessions(labs_client, monkeyp
             return {"name": "EHA-PRE-RCT Connect-CHC 2026"}
 
         def get_flw_names(self, opportunity_id):
+            return {}
+
+        def get_prior_audited_images(self, opportunity_id, exclude_session_id=None):
             return {}
 
         def close(self):
@@ -189,6 +199,9 @@ def test_bulk_primary_flw_name_falls_back_to_username_when_unresolved(labs_clien
         def get_flw_names(self, opportunity_id):
             return {}
 
+        def get_prior_audited_images(self, opportunity_id, exclude_session_id=None):
+            return {}
+
         def close(self):
             pass
 
@@ -198,3 +211,38 @@ def test_bulk_primary_flw_name_falls_back_to_username_when_unresolved(labs_clien
     data = response.json()
 
     assert data["bulk_primary_flw_name"] == username
+
+
+def test_prior_audited_fields_present(labs_client, monkeypatch):
+    from connect_labs.audit import views
+
+    username = "26a4b2fb1c4d2f260c5e"
+    session = _make_session(username)
+
+    class FakeDataAccess:
+        def __init__(self, *a, **k):
+            pass
+
+        def get_audit_session(self, session_id, try_multiple_opportunities=False):
+            return session
+
+        def get_opportunity_details(self, opportunity_id):
+            return {"name": "Readers"}
+
+        def get_flw_names(self, opportunity_id):
+            return {}
+
+        def get_prior_audited_images(self, opportunity_id, exclude_session_id=None):
+            return {"111:b1": {"result": "fail", "session_id": 9, "session_title": "Old",
+                               "completed_at": "2026-05-01T00:00:00Z"}}
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(views, "AuditDataAccess", FakeDataAccess)
+
+    response = labs_client.get(f"/audit/api/{session.id}/bulk-data/")
+    a = response.json()["assessments"][0]
+    assert a["prior_audited"] is True
+    assert a["prior_result"] == "fail"
+    assert a["prior_session_date"] == "2026-05-01"
