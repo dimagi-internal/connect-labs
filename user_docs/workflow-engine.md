@@ -50,7 +50,7 @@ This means each workflow appears in exactly one place. If you cannot find a work
 !!! note "Creating a run from the program view"
     Clicking **Create Run** on a program-owned workflow works the same as creating a run from any other context. Because these workflows are genuinely scoped to the program rather than to any opportunity, Create Run resolves correctly from the program view with no extra steps required.
 
-    If you have recently opened a per-opportunity run in another tab (for example, by clicking an "open run ↗" link), that should no longer affect Create Run on program-owned workflows. The program view keeps the program context in place, so Create Run on a program-owned workflow will always create the run under the program — not under whichever opportunity you last visited. If you do see a "Workflow not found" error, try refreshing the program workflow list page and clicking Create Run again.
+    If you have recently opened a per-opportunity run in another tab (for example, by clicking an "open run ↗" link"), that should no longer affect Create Run on program-owned workflows. The program view keeps the program context in place, so Create Run on a program-owned workflow will always create the run under the program — not under whichever opportunity you last visited. If you do see a "Workflow not found" error, try refreshing the program workflow list page and clicking Create Run again.
 
 ---
 
@@ -245,26 +245,19 @@ On the workflow run list page, each Program Audit Creator run shows its audit wi
 
 ---
 
-## Jakusko Chlorine Dispenser Dashboard
+## Bulk Image Audits
 
-!!! warning "Synthetic test data only"
-    This dashboard is a sandbox demo built for internal testing of dashboarding and calculations. A visible banner inside the dashboard reminds you of this at all times. No real Connect opportunity or production data is read or written — all figures are entirely synthetic.
+### Previously-audited image badges
 
-The **Jakusko Chlorine Dispenser** workflow provides a priority-bucket operational view for a chlorine dispenser pilot. It organises dispensers into two buckets that mirror the program's operational priorities, so the most urgent issues surface at the top.
+When reviewing images in the bulk image audit grid, any photo that was already given a verdict in an earlier **completed** audit shows an **Audited** badge displaying that prior verdict — for example, **Audited: Passed**, **Audited: Failed**, or **Audited: Dup·Fake**. Hovering over the badge shows the date of the earlier audit.
 
-### Priority buckets
+This lets reviewers see at a glance that a decision already exists for a photo before assigning a new one. A photo never shows a badge from the audit currently being reviewed — the badge only ever reflects *other* completed audits.
 
-**Priority 1 — Functionality and access**
+### Excluding already-audited images from a new audit
 
-This bucket highlights dispensers that need immediate attention:
+When creating a new bulk image audit — either from a workflow or from the standalone audit wizard — an optional checkbox is available: **Exclude images already audited in a completed session.**
 
-| Signal | What it means |
-|---|---|
-| Missed visits | A scheduled visit did not take place |
-| Non-functional dispensers | The dispenser has been recorded as not working |
-| Empty stock | The dispenser has run out of chlorine |
-| Urgent-action wards | Wards that have been escalated for urgent follow-up |
+- **Left unchecked (the default):** all images in scope are included, exactly as before.
+- **Checked:** any photo that already has a verdict from a completed audit is skipped. Only images that have never been audited are included in the new session.
 
-**Priority 2 — Performance delays and usage concerns**
-
-This bucket surfaces issues that are less urgent but still require
+The number of images skipped

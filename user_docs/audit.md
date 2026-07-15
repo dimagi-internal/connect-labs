@@ -54,6 +54,7 @@ This step appears once you have selected your opportunities. It has two sections
     - **MUAC OverZoom** requires no extra settings.
     If a reviewer needs a setting and you leave it blank, the wizard will stop you before creating the session.
 - **Context fields** (collapsed by default) — optionally associate any supporting form fields (such as a recorded measurement value) with an image type so that human reviewers can see the relevant data alongside each photo. These associations have no effect on AI review.
+- **Exclude already-audited images** — a checkbox option that controls whether photos previously judged in a completed audit session are included in this new session. Leave it **unchecked** (the default) to include all matching images as normal. **Check it** and the new session will skip any photo that has already received a verdict in an earlier completed audit — so reviewers only assess images that have never been audited before. The number of images skipped is recorded in the creation log.
 
 **Pass Threshold:**
 
@@ -112,6 +113,8 @@ The bulk assessment page header identifies the field worker being reviewed as **
     - **Pass** and **Fail** appear side by side as before.
     - **Duplicate/Fake** appears as a full-width button below Pass and Fail (shown in orange with an exclamation icon). Use this when an image appears to be a duplicate submission or a fabricated photo rather than a genuine field visit. The image card border, corner badge, and lightbox all use the same orange treatment when this option is selected.
 
+    If a photo was already given a verdict in an earlier completed audit session, it shows an **Audited** badge on the image tile — for example, **Audited: Passed**, **Audited: Failed**, or **Audited: Dup·Fake**. Hover over the badge to see the date of the earlier audit. This badge only reflects *other* completed audits, not the current session. You can still assess the image normally — the badge is informational only.
+
     Add optional notes to any image, then move to the next. Your progress saves automatically.
 
 === "AI-Assisted Review"
@@ -133,6 +136,8 @@ The bulk assessment page header identifies the field worker being reviewed as **
 
     !!! tip "Older audit sessions"
         Entity IDs are shown for all sessions, including those created before this feature was introduced. The page fetches any missing IDs automatically the first time you open an older session.
+
+    If a photo was already given a verdict in an earlier completed audit session, it shows an **Audited** badge on the image tile — for example, **Audited: Passed**, **Audited: Failed**, or **Audited: Dup·Fake**. Hover over the badge to see the date of the earlier audit. This badge only reflects *other* completed audits, not the current session. You can still assess the image normally — the badge is informational only.
 
     ### Choosing how the AI applies its verdicts
 
@@ -219,21 +224,4 @@ This is useful when you want to share the image list with colleagues, track revi
 
 The review screen loads images in a controlled stream — a handful at a time — rather than all at once. This prevents request overloads on large sessions and means most photos appear reliably without any action on your part.
 
-If a photo still has trouble loading, the screen retries it automatically a few times. If it cannot load after those retries, the tile shows a clear **"Image failed to load"** message with a **Retry** button. Click **Retry** to attempt loading that photo again — a single click is usually enough to recover from a temporary connection hiccup.
-
-Once a photo has loaded, your browser keeps it cached, so scrolling through the grid or resizing your window will not cause it to reload.
-
-!!! tip "Persistent failures"
-    If a photo continues to fail after retrying, check your internet connection and try refreshing the page. If the problem affects many images, contact your program administrator.
-
----
-
-## Tracking Audit Creation Progress
-
-When you create an audit session that includes an AI reviewer, the work happens in the background. The progress indicator now reflects what is actually happening in real time:
-
-- **The progress bar fills gradually** as the AI works through images. It only turns green and shows as complete when every image has been reviewed — it no longer jumps to full as soon as the AI step begins.
-- **The audit list shows a live image count** — for example, "Reviewed 45/136 images (12 passed, 3 failed)" — that updates every couple of seconds while reviewing is in progress.
-- **The counter next to the bar** shows the image count during the AI-review step (for example, "45/136") rather than a stage number.
-
-This means you can check the audit list at any point and see exactly how far along the AI review is before you
+If a photo still has trouble loading, the screen retries it automatically a few times. If it cannot load after those retries, the
