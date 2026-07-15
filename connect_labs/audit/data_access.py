@@ -267,6 +267,22 @@ def build_prior_audit_index(sessions, exclude_session_id=None) -> dict:
     return index
 
 
+def filter_out_prior_audited(all_visit_images: dict, prior_index: dict) -> tuple[dict, int]:
+    """Drop images whose "<visit_id>:<blob_id>" is in prior_index.
+
+    Returns (filtered_visit_images, excluded_count). Visits left with no images
+    are removed from the result.
+    """
+    filtered: dict = {}
+    excluded = 0
+    for visit_key, images in all_visit_images.items():
+        kept = [img for img in images if f"{visit_key}:{img.get('blob_id')}" not in prior_index]
+        excluded += len(images) - len(kept)
+        if kept:
+            filtered[visit_key] = kept
+    return filtered, excluded
+
+
 def generate_audit_description(criteria: AuditCriteria) -> str:
     """Generate human-readable description of audit criteria."""
     parts = []

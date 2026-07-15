@@ -658,6 +658,23 @@ def run_audit_creation(
         image_count = sum(len(imgs) for imgs in all_visit_images.values())
         logger.info(f"[AuditCreation] Extracted {image_count} images from {len(visit_ids)} visits")
 
+        if audit_criteria.exclude_prior_audited:
+            from connect_labs.audit.data_access import filter_out_prior_audited
+
+            prior_index = data_access.get_prior_audited_images(opp_id)
+            all_visit_images, excluded_count = filter_out_prior_audited(all_visit_images, prior_index)
+            image_count = sum(len(imgs) for imgs in all_visit_images.values())
+            logger.info(
+                f"[AuditCreation] Excluded {excluded_count} previously-audited images; {image_count} remain"
+            )
+            set_task_progress(
+                self,
+                f"Excluded {excluded_count} previously-audited images",
+                current_stage=current_stage,
+                total_stages=total_stages,
+                stage_name="Extracting images",
+            )
+
         current_stage += 1
 
         # =========================================================================
