@@ -912,6 +912,9 @@
         >
         <span class="ml-2 text-sm text-gray-700">Exclude images already audited in a completed session</span>
       </label>
+      <p x-show="excludePriorAudited" class="mt-1 ml-6 text-xs text-gray-500">
+        Applied via <span class="font-medium">Create Asynchronously</span> only.
+      </p>
     </div>
 
     <div class="flex justify-end gap-4">
@@ -929,7 +932,8 @@
       </button>
       <button
         @click="createAuditSession()"
-        :disabled="!isAuditCriteriaValid() || creating || creatingAsync"
+        :disabled="!isAuditCriteriaValid() || creating || creatingAsync || excludePriorAudited"
+        :title="excludePriorAudited ? 'Use \'Create Asynchronously\' to apply the exclude-already-audited filter' : ''"
         class="px-4 py-2 bg-brand-indigo text-white rounded-md hover:bg-brand-indigo/90 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-2">
         <i class="fa-solid fa-plus" :class="{'fa-spin': creating}"></i>
         <span x-text="creating ? 'Creating...' : 'Create Audit Session'"></span>
