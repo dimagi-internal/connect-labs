@@ -863,7 +863,9 @@ class ExperimentBulkAssessmentExportCSVView(LoginRequiredMixin, View):
             if opportunity_id:
                 visit_ids = sorted({a["visit_id"] for a in assessments})
                 visits = data_access.get_visits_batch(visit_ids, opportunity_id)
-                xform_id_by_visit = {v["id"]: v.get("xform_id") for v in visits}
+                # RawVisitCache.visit_id is a CharField, so keys here are strings — normalize
+                # to str on both sides since assessment["visit_id"] is stored as an int.
+                xform_id_by_visit = {str(v["id"]): v.get("xform_id") for v in visits}
 
             hq_link_base = self._resolve_hq_link_base(data_access, opportunity_id) if opportunity_id else None
 
@@ -872,7 +874,7 @@ class ExperimentBulkAssessmentExportCSVView(LoginRequiredMixin, View):
             writer = csv.writer(response)
             writer.writerow(["Filename", "Visit Date", "#", "CommCareHQ Form URL"])
             for assessment in assessments:
-                xform_id = xform_id_by_visit.get(assessment["visit_id"])
+                xform_id = xform_id_by_visit.get(str(assessment["visit_id"]))
                 form_url = f"{hq_link_base}/{xform_id}/" if hq_link_base and xform_id else ""
                 writer.writerow([assessment["filename"], assessment["visit_date"], assessment["visit_id"], form_url])
             return response
@@ -929,8 +931,10 @@ class VisitClusterExportCSVView(LoginRequiredMixin, View):
             if opportunity_id:
                 try:
                     visits = data_access.get_visits_batch(group["visit_ids"], opportunity_id)
-                    link_id_by_visit = {v["id"]: (v.get("user_id"), v.get("user_visit_id")) for v in visits}
-                    visit_location_by_id = {v["id"]: v.get("location", "") for v in visits}
+                    # RawVisitCache.visit_id is a CharField, so keys here are strings — normalize
+                    # to str on both sides since visit_id (below) is stored as an int.
+                    link_id_by_visit = {str(v["id"]): (v.get("user_id"), v.get("user_visit_id")) for v in visits}
+                    visit_location_by_id = {str(v["id"]): v.get("location", "") for v in visits}
                 except Exception:
                     logger.exception(f"[Audit] Failed to fetch visit batch for opportunity {opportunity_id}")
 
@@ -941,8 +945,8 @@ class VisitClusterExportCSVView(LoginRequiredMixin, View):
 
             for visit_id in group["visit_ids"]:
                 images = visit_images.get(str(visit_id), [])
-                user_id, user_visit_id = link_id_by_visit.get(visit_id, (None, None))
-                location = visit_location_by_id.get(visit_id, "")
+                user_id, user_visit_id = link_id_by_visit.get(str(visit_id), (None, None))
+                location = visit_location_by_id.get(str(visit_id), "")
                 visit_url = (
                     f"{connect_url}/a/{org_slug}/opportunity/{opportunity_id}/user_visits/"
                     f"?user={user_id}&visit_id={user_visit_id}"

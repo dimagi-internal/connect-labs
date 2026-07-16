@@ -566,10 +566,16 @@ class AuditDataAccess(BaseDataAccess):
         return None
 
     def get_visits_batch(self, visit_ids: list[int], opportunity_id: int) -> list[dict]:
-        """Batch fetch multiple visits."""
+        """Batch fetch multiple visits.
+
+        Normalizes to str for comparison since RawVisitCache.visit_id is a CharField
+        (cache-hit visits return str ids) while callers pass int visit_ids (cache-miss
+        visits return int ids from the raw API response) -- see the identical fix at
+        ExperimentBulkAssessmentDataView.get's entity_id backfill.
+        """
         all_visits = self._fetch_visits_for_opportunity(opportunity_id)
-        visit_id_set = set(visit_ids)
-        return [v for v in all_visits if v["id"] in visit_id_set]
+        visit_id_strs = {str(vid) for vid in visit_ids}
+        return [v for v in all_visits if str(v["id"]) in visit_id_strs]
 
     # =========================================================================
     # Image Extraction (uses analysis pipeline's FieldComputation)

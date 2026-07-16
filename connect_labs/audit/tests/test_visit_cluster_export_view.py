@@ -71,11 +71,14 @@ def test_export_csv_returns_one_row_per_image_in_the_group(labs_client, monkeypa
             return session
 
         def get_visits_batch(self, visit_ids, opportunity_id):
+            # Ids returned as strings, matching the real cache-hit shape (RawVisitCache.visit_id
+            # is a CharField) -- while group["visit_ids"] (and the export loop's visit_id) are
+            # ints. This is exactly the shape that used to make the lookup silently miss.
             return [
-                {"id": 111, "user_id": "u-1", "user_visit_id": "uv-111", "location": "1.234 5.678 0 5"},
+                {"id": "111", "user_id": "u-1", "user_visit_id": "uv-111", "location": "1.234 5.678 0 5"},
                 # No "location" key at all for visit 112, to prove the missing-key case
                 # degrades to blank rather than reusing visit 111's value.
-                {"id": 112, "user_id": "u-1", "user_visit_id": "uv-112"},
+                {"id": "112", "user_id": "u-1", "user_visit_id": "uv-112"},
             ]
 
         def close(self):
