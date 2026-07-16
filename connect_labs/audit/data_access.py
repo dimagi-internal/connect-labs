@@ -869,6 +869,7 @@ class AuditDataAccess(BaseDataAccess):
         related_fields: list[dict] | None = None,  # Related field rules for image extraction
         workflow_run_id: int | None = None,  # Optional link to workflow run that created this session
         pass_threshold: int = 100,  # Min % of assessments that must pass for the audit to pass overall
+        visit_clusters: list[dict] | None = None,  # Optional visit-clustering groupings (see visit_clustering.py)
     ) -> AuditSessionRecord:
         """
         Create an audit session with extracted image metadata.
@@ -890,6 +891,7 @@ class AuditDataAccess(BaseDataAccess):
             related_fields: Related field rules for image extraction
             workflow_run_id: Optional workflow run ID if created from a workflow
             pass_threshold: Min % of assessments that must pass for the audit to pass overall (75-100)
+            visit_clusters: Optional visit-clustering groupings; stored as-is, never computed here.
         """
         opp_id = opportunity_id or self.opportunity_id
 
@@ -951,6 +953,7 @@ class AuditDataAccess(BaseDataAccess):
             "image_count": image_count,
             "related_fields": related_fields or [],  # Store config for reference
             "criteria": criteria_dict,  # Store criteria for traceability
+            "visit_clusters": visit_clusters or [],
         }
 
         record = self.labs_api.create_record(

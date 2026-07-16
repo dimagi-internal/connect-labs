@@ -382,6 +382,7 @@ class AuditSessionRecord(LocalLabsRecord):
             "assessment_stats": stats,
             "workflow_run_id": self.workflow_run_id,
             "flw_username": self.flw_username,
+            "visit_clusters": self.data.get("visit_clusters", []),
         }
 
     def get_assessment_stats_by_question(self) -> dict:
