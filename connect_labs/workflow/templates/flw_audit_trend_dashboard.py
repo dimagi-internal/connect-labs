@@ -771,6 +771,18 @@ function sortedValueLabels(buckets) {
     return Object.keys(buckets).sort(function (a, b) { return parseFloat(a) - parseFloat(b); });
 }
 
+function muacValuesToPercents(buckets) {
+    // Same buckets, expressed as % of the total children in scope rather than
+    // raw counts -- lets distribution shape be compared across periods/FLW
+    // scopes with very different sample sizes.
+    var total = Object.keys(buckets || {}).reduce(function (a, k) { return a + (buckets[k] || 0); }, 0);
+    var out = {};
+    Object.keys(buckets || {}).forEach(function (k) {
+        out[k] = total ? ((buckets[k] || 0) / total) * 100 : 0;
+    });
+    return out;
+}
+
 function muacTriage(muacBuckets) {
     // WHO SAM/MAM convention: red <11.5cm, yellow 11.5-12.5cm, green >=12.5cm.
     var red = 0, yellow = 0, green = 0;
@@ -932,6 +944,7 @@ function DistributionSnapshotSection({ weeks, distinctPeriods, periodEndByStart,
     }, [weekRowsForPeriod, selectedFlw]);
 
     var muacValues = React.useMemo(function () { return sumHistograms(flwRowsForPeriod, "children_by_muac_value"); }, [flwRowsForPeriod]);
+    var muacValuePercents = React.useMemo(function () { return muacValuesToPercents(muacValues); }, [muacValues]);
     var ageByMonth = React.useMemo(function () { return sumHistograms(flwRowsForPeriod, "children_by_age_month"); }, [flwRowsForPeriod]);
     var ageByMonthExpected = React.useMemo(function () { return expectedUniformAgeMonthCounts(ageByMonth); }, [ageByMonth]);
 
@@ -964,6 +977,15 @@ function DistributionSnapshotSection({ weeks, distinctPeriods, periodEndByStart,
                     barColorFn={muacValueZoneColor}
                 />
                 <BarHistogramChart
+                    chartId="muac-value-hist-pct"
+                    label="MUAC Distribution (% of Children)"
+                    tooltip="Share of children at each exact recorded MUAC value (not grouped into 0.5cm ranges), colored by WHO zone."
+                    buckets={muacValuePercents}
+                    order={sortedValueLabels(muacValues)}
+                    barColorFn={muacValueZoneColor}
+                    percentAxis={true}
+                />
+                <BarHistogramChart
                     chartId="age-month-hist"
                     label="Children by Age (Individual Months)"
                     tooltip="Count of children at each individual age in months (not grouped into bands); the dashed line is the expected count per month if ages were evenly spread with no heaping — spikes at 12/24/36/48mo indicate age-heaping."
@@ -982,7 +1004,7 @@ function sortedBucketLabels(buckets, order) {
     return Object.keys(buckets).sort(function (a, b) { return muacBucketMidpoint(a) - muacBucketMidpoint(b); });
 }
 
-function BarHistogramChart({ chartId, label, tooltip, buckets, order, barColorFn, referenceLine }) {
+function BarHistogramChart({ chartId, label, tooltip, buckets, order, barColorFn, referenceLine, percentAxis }) {
     var canvasRef = React.useRef(null);
     var chartInstance = React.useRef(null);
 
@@ -1019,10 +1041,11 @@ function BarHistogramChart({ chartId, label, tooltip, buckets, order, barColorFn
                 responsive: true,
                 maintainAspectRatio: false,
                 plugins: { legend: { display: !!referenceLine, labels: { boxWidth: 10, font: { size: 9 } } } },
+                scales: percentAxis ? { y: { ticks: { callback: function (v) { return v + "%"; } } } } : undefined,
             },
         });
         return function () { if (chartInstance.current) chartInstance.current.destroy(); };
-    }, [buckets, label, order, referenceLine]);
+    }, [buckets, label, order, referenceLine, percentAxis]);
 
     return (
         <div className="bg-white rounded-lg border p-3">
