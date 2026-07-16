@@ -896,6 +896,68 @@ class ExperimentBulkAssessmentExportCSVView(LoginRequiredMixin, View):
         return f"{hq_server_url.rstrip('/')}/a/{domain}/reports/form_data"
 
 
+class VisitClusterExportCSVView(LoginRequiredMixin, View):
+    """Export one visit-clustering grouping's images as CSV: filename, visit date,
+    GPS location, beneficiary name, and a link to the visit in Connect."""
+
+    def get(self, request, session_id, group_id):
+        data_access = AuditDataAccess(request=request)
+        try:
+            session = data_access.get_audit_session(session_id, try_multiple_opportunities=True)
+            if not session:
+                return JsonResponse({"error": "Session not found"}, status=404)
+
+            group = next((g for g in session.data.get("visit_clusters", []) if g.get("group_id") == group_id), None)
+            if not group:
+                return JsonResponse({"error": "Grouping not found"}, status=404)
+
+            opportunity_id = session.opportunity_id
+            visit_images = session.data.get("visit_images", {})
+
+            org_slug = ""
+            if opportunity_id:
+                org_data = get_org_data(request)
+                for opp in org_data.get("opportunities", []):
+                    if opp.get("id") == opportunity_id:
+                        org_slug = opp.get("organization", "")
+                        break
+
+            connect_url = getattr(settings, "CONNECT_PRODUCTION_URL", "https://connect.dimagi.com").rstrip("/")
+
+            link_id_by_visit = {}
+            if opportunity_id:
+                visits = data_access.get_visits_batch(group["visit_ids"], opportunity_id)
+                link_id_by_visit = {v["id"]: (v.get("user_id"), v.get("user_visit_id")) for v in visits}
+
+            response = HttpResponse(content_type="text/csv")
+            response["Content-Disposition"] = f'attachment; filename="visit_cluster_{group_id}.csv"'
+            writer = csv.writer(response)
+            writer.writerow(["Filename", "Visit Date", "GPS Location", "Beneficiary Name", "Connect Visit URL"])
+
+            for visit_id in group["visit_ids"]:
+                images = visit_images.get(str(visit_id), [])
+                user_id, user_visit_id = link_id_by_visit.get(visit_id, (None, None))
+                visit_url = (
+                    f"{connect_url}/a/{org_slug}/opportunity/{opportunity_id}/user_visits/"
+                    f"?user={user_id}&visit_id={user_visit_id}"
+                    if org_slug and user_id and user_visit_id
+                    else ""
+                )
+                for image in images:
+                    writer.writerow(
+                        [
+                            image.get("name", ""),
+                            image.get("visit_date", ""),
+                            image.get("location", ""),
+                            image.get("entity_name", ""),
+                            visit_url,
+                        ]
+                    )
+            return response
+        finally:
+            data_access.close()
+
+
 class ExperimentAuditImageConnectView(LoginRequiredMixin, View):
     """Serve audit visit images from Connect API (no CommCare HQ)"""
 
