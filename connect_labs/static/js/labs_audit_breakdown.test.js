@@ -3,8 +3,14 @@ import { describe, it, expect } from 'vitest';
 
 import LabsAudit from './labs_audit_breakdown.js';
 
-const { groupByOppFlw, oppSummary, bulkUrl, humanReviewedOf, duplicateFakeOf } =
-  LabsAudit;
+const {
+  groupByOppFlw,
+  oppSummary,
+  bulkUrl,
+  humanReviewedOf,
+  duplicateFakeOf,
+  clusterCountOf,
+} = LabsAudit;
 
 function session(over) {
   return Object.assign(
@@ -146,5 +152,21 @@ describe('bulkUrl', () => {
 
   it('omits params that are absent', () => {
     expect(bulkUrl({ id: 42, opportunity_id: null })).toBe('/audit/42/bulk/?');
+  });
+});
+
+describe('clusterCountOf', () => {
+  it('counts the visit_clusters groupings on a session', () => {
+    const s = session({
+      visit_clusters: [
+        { group_id: 'g1', visit_ids: [111, 112], image_count: 4 },
+        { group_id: 'g2', visit_ids: [130, 131, 132], image_count: 7 },
+      ],
+    });
+    expect(clusterCountOf(s)).toBe(2);
+  });
+
+  it('defaults to 0 when visit_clusters is absent (sessions predating the field)', () => {
+    expect(clusterCountOf(session({}))).toBe(0);
   });
 });
