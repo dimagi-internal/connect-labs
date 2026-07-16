@@ -120,6 +120,8 @@ def _model_to_visit_dict(row, skip_form_json=False) -> dict:
         "date_created": row.date_created.isoformat() if row.date_created else None,
         "completed_work_id": row.completed_work_id,
         "images": row.images,
+        "user_id": row.user_id or None,
+        "user_visit_id": row.user_visit_id or None,
     }
 
 

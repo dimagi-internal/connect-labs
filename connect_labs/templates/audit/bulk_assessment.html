@@ -126,6 +126,7 @@
             <option value="pending">Pending</option>
             <option value="pass">Passed</option>
             <option value="fail">Failed</option>
+            <option value="duplicate_fake">Duplicate/Fake</option>
           </select>
         </div>
         <div x-show="flwSummaries.length > 1">
@@ -292,6 +293,7 @@
                set aiResult(v) { assessment.ai_result = v; },
                get aiNotes() { return assessment.ai_notes || ''; },
                set aiNotes(v) { assessment.ai_notes = v; },
+               get aiConfidence() { return typeof assessment.ai_confidence === 'number' ? assessment.ai_confidence : null; },
                get aiClassLabel() {
                  if (!this.aiResult) return '';
                  if (this.aiResult === 'error') return this.aiNotes || 'Error';
@@ -413,7 +415,7 @@
                 <i class="fa-solid fa-user mr-1"></i><span x-text="assessment.flw_name || assessment.username"></span>
               </span>
               <span><i class="fa-solid fa-calendar mr-1"></i><span x-text="assessment.visit_date"></span></span>
-              <a :href="visitDetailUrl(assessment.visit_id)"
+              <a :href="visitDetailUrl(assessment.user_id, assessment.user_visit_id, assessment.visit_id)"
                  target="_blank"
                  class="text-brand-indigo hover:underline">
                 <i class="fa-solid fa-hashtag mr-0.5"></i><span x-text="assessment.visit_id"></span>
@@ -461,7 +463,7 @@
                           'text-orange-700': aiResult === 'no_match',
                           'text-gray-600': aiResult === 'error'
                         }"
-                        x-text="aiResult === 'match' ? 'Match' : (aiResult === 'no_match' ? (aiNotes || 'No Match') : 'Error')"></span>
+                        x-text="aiResult === 'match' ? 'Match' : (aiResult === 'no_match' ? ((aiNotes || 'No Match') + (aiConfidence !== null ? ': confidence ' + aiConfidence.toFixed(3) : '')) : 'Error')"></span>
                 </div>
                 <div class="text-gray-600 mt-0.5 leading-tight" x-show="aiNotes && aiResult === 'error'" x-text="aiNotes"></div>
               </div>
@@ -827,7 +829,7 @@
             <span class="text-gray-300 w-12 text-center" x-text="Math.round(lightbox.scale * 100) + '%'"></span>
             <button @click="lightboxZoom(1.25)" title="Zoom in (+)" class="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 text-white"><i class="fa-solid fa-magnifying-glass-plus"></i></button>
             <button @click="lightboxReset()" title="Reset zoom (0)" class="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 text-white"><i class="fa-solid fa-arrows-to-dot"></i></button>
-            <a :href="visitDetailUrl(lightboxAssessment.visit_id)" target="_blank" title="Open visit in Connect" class="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center"><i class="fa-solid fa-arrow-up-right-from-square"></i></a>
+            <a :href="visitDetailUrl(lightboxAssessment.user_id, lightboxAssessment.user_visit_id, lightboxAssessment.visit_id)" target="_blank" title="Open visit in Connect" class="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center"><i class="fa-solid fa-arrow-up-right-from-square"></i></a>
             <button @click="closeLightbox()" title="Close (Esc)" class="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
           </div>
         </div>
@@ -1078,11 +1080,12 @@ function bulkAssessmentInterface() {
       }
       window.history.replaceState({}, '', url);
     },
-    visitDetailUrl(visitId) {
-      // Construct URL to Connect production for visit details
-      // Format: https://connect.dimagi.com/a/{org_slug}/opportunity/{opp_id}/user_visit_details/{visit_id}/
-      if (this.connectUrl && this.orgSlug && this.opportunityId) {
-        return `${this.connectUrl}/a/${this.orgSlug}/opportunity/${this.opportunityId}/user_visit_details/${visitId}/`;
+    visitDetailUrl(userId, userVisitId, visitId) {
+      // Construct the shareable-visit-link URL to Connect production.
+      // Format: https://connect.dimagi.com/a/{org_slug}/opportunity/{opp_id}/user_visits/?user={user_id}&visit_id={user_visit_id}
+      if (this.connectUrl && this.orgSlug && this.opportunityId && userId && userVisitId) {
+        const params = new URLSearchParams({ user: userId, visit_id: userVisitId });
+        return `${this.connectUrl}/a/${this.orgSlug}/opportunity/${this.opportunityId}/user_visits/?${params}`;
       }
       // Fallback to labs visit detail view if missing data
       return `/audit/visits/${visitId}/`;

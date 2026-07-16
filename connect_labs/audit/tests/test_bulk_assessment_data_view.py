@@ -6,6 +6,8 @@ summary only threaded through `bulk_primary_username` — unlike the per-assessm
 rows, which already resolve names via `flw_names.get(username, username)`.
 """
 
+import csv
+import io
 import time
 
 import pytest
@@ -253,3 +255,58 @@ def test_prior_audited_fields_present(labs_client, monkeypatch):
     assert a["prior_audited"] is True
     assert a["prior_result"] == "fail"
     assert a["prior_session_date"] == "2026-05-01"
+
+
+def test_csv_export_resolves_xform_id_when_visit_batch_returns_string_ids(labs_client, monkeypatch):
+    """ExperimentBulkAssessmentExportCSVView builds xform_id_by_visit from
+    get_visits_batch's results and looks it up by assessment["visit_id"] (an int).
+    On a warm SQL cache, get_visits_batch returns visits with str ids
+    (RawVisitCache.visit_id is a CharField) -- the lookup must normalize to str
+    on both sides or it silently blanks the CommCareHQ Form URL column."""
+    from connect_labs.audit import views
+
+    username = "26a4b2fb1c4d2f260c5e"
+    session = _make_session(username)
+
+    class FakeDataAccess:
+        def __init__(self, *a, **k):
+            self.access_token = "test-token-abc"
+
+        def get_audit_session(self, session_id, try_multiple_opportunities=False):
+            return session
+
+        def get_opportunity_details(self, opportunity_id):
+            return {"name": "EHA-PRE-RCT Connect-CHC 2026"}
+
+        def get_flw_names(self, opportunity_id):
+            return {}
+
+        def get_prior_audited_images(self, opportunity_id, exclude_session_id=None):
+            return {}
+
+        def get_visits_batch(self, visit_ids, opportunity_id):
+            assert 111 in visit_ids
+            # String id, like a warm RawVisitCache hit, while visit_ids (above) are ints.
+            return [{"id": "111", "xform_id": "xform-abc-123"}]
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(views, "AuditDataAccess", FakeDataAccess)
+    monkeypatch.setattr(
+        views,
+        "fetch_opportunity_metadata",
+        lambda access_token, opportunity_id: {
+            "cc_domain": "eha-clinics-reach",
+            "raw": {"deliver_app": {"hq_server": {"url": "https://www.commcarehq.org"}}},
+        },
+    )
+
+    response = labs_client.get(f"/audit/api/{session.id}/bulk-data/export/")
+    assert response.status_code == 200
+    assert response["Content-Type"] == "text/csv"
+
+    rows = list(csv.reader(io.StringIO(response.content.decode())))
+    assert rows[0] == ["Filename", "Visit Date", "#", "CommCareHQ Form URL"]
+    assert rows[1][0] == "img1.jpg"
+    assert rows[1][3] == "https://www.commcarehq.org/a/eha-clinics-reach/reports/form_data/xform-abc-123/"

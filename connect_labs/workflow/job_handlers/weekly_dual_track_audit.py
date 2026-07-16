@@ -66,6 +66,10 @@ def weekly_dual_track_audit_create(job_config: dict, access_token: str, progress
         pass_threshold = job_config.get("pass_threshold", state.get("pass_threshold"))
         deliver_unit_types = job_config.get("deliver_unit_types", state.get("deliver_unit_types"))
         visit_statuses = job_config.get("visit_statuses", state.get("visit_statuses"))
+        enable_time_gap = job_config.get("enable_time_gap", state.get("enable_time_gap"))
+        time_gap_minutes = job_config.get("time_gap_minutes", state.get("time_gap_minutes"))
+        enable_distance = job_config.get("enable_distance", state.get("enable_distance"))
+        distance_meters = job_config.get("distance_meters", state.get("distance_meters"))
 
         calls = build_track_audit_calls(
             opportunity_ids=definition.data.get("opportunity_ids") or [opportunity_id],
@@ -80,6 +84,10 @@ def weekly_dual_track_audit_create(job_config: dict, access_token: str, progress
             pass_threshold=pass_threshold,
             deliver_unit_types=deliver_unit_types,
             visit_statuses=visit_statuses,
+            enable_time_gap=enable_time_gap,
+            time_gap_minutes=time_gap_minutes,
+            enable_distance=enable_distance,
+            distance_meters=distance_meters,
         )
 
         from connect_labs.utils.progress_relays import pop_relay, register_relay
@@ -137,6 +145,10 @@ def weekly_dual_track_audit_create(job_config: dict, access_token: str, progress
                 "pass_threshold": pass_threshold,
                 "deliver_unit_types": deliver_unit_types,
                 "visit_statuses": visit_statuses,
+                "enable_time_gap": enable_time_gap,
+                "time_gap_minutes": time_gap_minutes,
+                "enable_distance": enable_distance,
+                "distance_meters": distance_meters,
             },
         )
     finally:

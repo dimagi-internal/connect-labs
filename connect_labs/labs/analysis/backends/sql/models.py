@@ -61,6 +61,12 @@ class RawVisitCache(models.Model):
     date_created = models.DateTimeField(null=True, blank=True)
     completed_work_id = models.IntegerField(null=True, blank=True)
     images = models.JSONField(default=list, blank=True)
+    user_id = models.CharField(
+        max_length=64, blank=True, help_text="Connect user UUID, for building shareable visit links"
+    )
+    user_visit_id = models.CharField(
+        max_length=64, blank=True, help_text="Connect UserVisit UUID, for building shareable visit links"
+    )
 
     class Meta:
         app_label = "labs"

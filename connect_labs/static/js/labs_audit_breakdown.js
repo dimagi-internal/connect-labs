@@ -45,6 +45,9 @@
   function duplicateFakeOf(s) {
     return statsOf(s).duplicate_fake || 0;
   }
+  function clusterCountOf(s) {
+    return (s && s.visit_clusters && s.visit_clusters.length) || 0;
+  }
 
   // Group sessions by opportunity → field worker → { muac, rest }.
   function groupByOppFlw(sessions) {
@@ -142,84 +145,156 @@
   }
 
   // ── One compact audit line: status + images + pass/fail/pending + AI ──────
-  function auditLine(React, label, s, workflowRunId) {
+  // Self-manages its own "expanded" state for the Duplicate Groupings panel via
+  // a tiny wrapper component (needs React.useState, unlike the rest of this file's
+  // stateless helpers).
+  function makeAuditLine(React) {
     var h = React.createElement;
-    if (!s)
+    return function AuditLine(props) {
+      var label = props.label;
+      var s = props.session;
+      var workflowRunId = props.workflowRunId;
+
+      var st = React.useState(false);
+      var expanded = st[0];
+      var setExpanded = st[1];
+
+      if (!s)
+        return h(
+          'div',
+          { className: 'text-xs text-gray-400 pl-2' },
+          label + ': not created',
+        );
+
+      var a = statsOf(s);
+      var images = imagesOf(s);
+      var reviewed = humanReviewedOf(s);
+      var pending = Math.max(0, images - reviewed);
+      var duplicates = duplicateFakeOf(s);
+      var clusters = (s && s.visit_clusters) || [];
+      var done = s.status === 'completed';
+      var failed = done && s.overall_result === 'fail';
+      var statusText = failed ? 'Fail' : done ? 'Completed' : 'In progress';
+      var statusClass = failed
+        ? 'bg-red-100 text-red-700'
+        : done
+        ? 'bg-green-100 text-green-700'
+        : 'bg-yellow-100 text-yellow-700';
+
       return h(
         'div',
-        { className: 'text-xs text-gray-400 pl-2' },
-        label + ': not created',
-      );
-    var a = statsOf(s);
-    var images = imagesOf(s);
-    var reviewed = humanReviewedOf(s);
-    var pending = Math.max(0, images - reviewed);
-    var duplicates = duplicateFakeOf(s);
-    var done = s.status === 'completed';
-    var failed = done && s.overall_result === 'fail';
-    var statusText = failed ? 'Fail' : done ? 'Completed' : 'In progress';
-    var statusClass = failed
-      ? 'bg-red-100 text-red-700'
-      : done
-      ? 'bg-green-100 text-green-700'
-      : 'bg-yellow-100 text-yellow-700';
-    return h(
-      'a',
-      {
-        href: bulkUrl(s, workflowRunId),
-        className:
-          'flex items-center gap-3 px-3 py-1.5 rounded bg-gray-50 hover:bg-blue-50 border border-gray-200 text-xs',
-      },
-      h('span', { className: 'font-semibold text-gray-700 w-12' }, label),
-      h(
-        'span',
-        { className: 'px-1.5 py-0.5 rounded ' + statusClass },
-        statusText,
-      ),
-      h('span', { className: 'text-gray-500 w-16' }, images + ' images'),
-      h(
-        'span',
-        { className: 'flex-1' },
+        {
+          className:
+            'flex items-center gap-3 px-3 py-1.5 rounded bg-gray-50 border border-gray-200 text-xs',
+        },
+        h('span', { className: 'font-semibold text-gray-700 w-12' }, label),
         h(
           'span',
-          { className: 'text-green-600 font-medium' },
-          (a.pass || 0) + ' pass',
+          { className: 'px-1.5 py-0.5 rounded ' + statusClass },
+          statusText,
         ),
-        ' · ',
+        h('span', { className: 'text-gray-500 w-16' }, images + ' images'),
         h(
           'span',
-          { className: 'text-red-600 font-medium' },
-          (a.fail || 0) + ' fail',
-        ),
-        ' · ',
-        h(
-          'span',
-          { className: 'text-orange-600 font-medium' },
-          duplicates + ' duplicates',
-        ),
-        ' · ',
-        h('span', { className: 'text-gray-500' }, pending + ' pending'),
-      ),
-      label === 'MUAC'
-        ? h(
+          { className: 'flex-1' },
+          h(
             'span',
-            {
-              className:
-                (a.ai_no_match || 0) > 0
-                  ? 'text-amber-600 font-medium'
-                  : 'text-gray-500',
-            },
-            'AI: ' +
-              (a.ai_no_match || 0) +
-              ' flagged / ' +
-              aiReviewedOf(s) +
-              ' reviewed',
-          )
-        : h('span', { className: 'text-gray-300' }, 'no AI'),
-      h('i', {
-        className: 'fa-solid fa-arrow-up-right-from-square text-blue-500',
-      }),
-    );
+            { className: 'text-green-600 font-medium' },
+            (a.pass || 0) + ' pass',
+          ),
+          ' · ',
+          h(
+            'span',
+            { className: 'text-red-600 font-medium' },
+            (a.fail || 0) + ' fail',
+          ),
+          ' · ',
+          h(
+            'span',
+            { className: 'text-orange-600 font-medium' },
+            duplicates + ' duplicates',
+          ),
+          ' · ',
+          h('span', { className: 'text-gray-500' }, pending + ' pending'),
+        ),
+        label === 'MUAC'
+          ? h(
+              'span',
+              {
+                className:
+                  (a.ai_no_match || 0) > 0
+                    ? 'text-amber-600 font-medium'
+                    : 'text-gray-500',
+              },
+              'AI: ' +
+                (a.ai_no_match || 0) +
+                ' flagged / ' +
+                aiReviewedOf(s) +
+                ' reviewed',
+            )
+          : h('span', { className: 'text-gray-300' }, 'no AI'),
+        clusters.length > 0
+          ? h(
+              'button',
+              {
+                onClick: function () {
+                  setExpanded(!expanded);
+                },
+                className:
+                  'px-2 py-0.5 rounded bg-purple-50 text-purple-700 hover:bg-purple-100 font-medium whitespace-nowrap',
+              },
+              clusters.length +
+                ' Duplicate Grouping' +
+                (clusters.length === 1 ? '' : 's'),
+            )
+          : null,
+        h(
+          'a',
+          {
+            href: bulkUrl(s, workflowRunId),
+            title: 'Open in Connect',
+            className: 'text-blue-500 hover:text-blue-700',
+          },
+          h('i', {
+            className: 'fa-solid fa-arrow-up-right-from-square',
+          }),
+        ),
+        expanded
+          ? h(
+              'div',
+              {
+                className:
+                  'basis-full mt-1.5 pl-16 space-y-1 text-xs text-gray-700',
+              },
+              clusters.map(function (c, i) {
+                return h(
+                  'div',
+                  { key: c.group_id, className: 'flex items-center gap-2' },
+                  h(
+                    'span',
+                    null,
+                    'Group ' + (i + 1) + ' — ' + c.image_count + ' images',
+                  ),
+                  h(
+                    'a',
+                    {
+                      href:
+                        '/audit/api/' +
+                        s.id +
+                        '/visit-clusters/' +
+                        c.group_id +
+                        '/export.csv',
+                      className: 'text-blue-500 hover:underline',
+                    },
+                    h('i', { className: 'fa-solid fa-download mr-1' }),
+                    'Download CSV',
+                  ),
+                );
+              }),
+            )
+          : null,
+      );
+    };
   }
 
   // ── The self-managing breakdown component ─────────────────────────────────
@@ -227,6 +302,7 @@
   // as the SAME component type and its collapse state survives.
   function makeBreakdown(React) {
     var h = React.createElement;
+    var AuditLine = makeAuditLine(React);
     return function FlwAuditBreakdown(props) {
       var sessions = props.sessions || [];
       var oppNames = props.oppNames || {};
@@ -355,8 +431,16 @@
                         h(
                           'div',
                           { className: 'space-y-1' },
-                          auditLine(React, 'MUAC', r.muac, workflowRunId),
-                          auditLine(React, 'Other', r.rest, workflowRunId),
+                          h(AuditLine, {
+                            label: 'MUAC',
+                            session: r.muac,
+                            workflowRunId: workflowRunId,
+                          }),
+                          h(AuditLine, {
+                            label: 'Other',
+                            session: r.rest,
+                            workflowRunId: workflowRunId,
+                          }),
                         ),
                       );
                     }),
@@ -390,6 +474,7 @@
   LabsAudit.fetchSessions = fetchSessions;
   LabsAudit.humanReviewedOf = humanReviewedOf;
   LabsAudit.duplicateFakeOf = duplicateFakeOf;
+  LabsAudit.clusterCountOf = clusterCountOf;
 
   if (typeof window !== 'undefined') window.LabsAudit = LabsAudit;
   if (typeof module !== 'undefined' && module.exports)

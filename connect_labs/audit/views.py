@@ -650,7 +650,7 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
                     question_ids.add(question_id)
                     assessment_data = assessments_map.get(blob_id, {})
                     result_value = assessment_data.get("result") or ""
-                    status_value = result_value if result_value in {"pass", "fail"} else "pending"
+                    status_value = result_value if result_value in {"pass", "fail", "duplicate_fake"} else "pending"
 
                     # Use counter to ensure unique IDs even if same visit appears multiple times
                     assessment_counter += 1
@@ -677,6 +677,7 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
                             "related_fields": metadata.get("related_fields", []),
                             "ai_result": assessment_data.get("ai_result", ""),
                             "ai_notes": assessment_data.get("ai_notes", ""),
+                            "ai_confidence": assessment_data.get("ai_confidence"),
                         }
                     )
                     seen_blob_ids.add(blob_id)
@@ -687,7 +688,7 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
                     question_id = assessment_data.get("question_id") or ""
                     question_ids.add(question_id)
                     result_value = assessment_data.get("result") or ""
-                    status_value = result_value if result_value in {"pass", "fail"} else "pending"
+                    status_value = result_value if result_value in {"pass", "fail", "duplicate_fake"} else "pending"
 
                     # Use counter to ensure unique IDs
                     assessment_counter += 1
@@ -713,6 +714,7 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
                             "opportunity_id": opportunity_id,
                             "ai_result": assessment_data.get("ai_result", ""),
                             "ai_notes": assessment_data.get("ai_notes", ""),
+                            "ai_confidence": assessment_data.get("ai_confidence"),
                         }
                     )
 
@@ -734,6 +736,29 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
                 for assessment in all_assessments:
                     if not assessment.get("entity_id"):
                         assessment["entity_id"] = entity_id_by_visit.get(str(assessment["visit_id"]), "")
+
+            # Attach the Connect UUIDs needed to build a shareable visit link
+            # (`user_visits_list?user=<user_id>&visit_id=<user_visit_id>`) — not
+            # captured in visit_images at session-creation time, so fetched fresh
+            # via one lightweight bulk lookup (skip_form_json) rather than stored.
+            visit_ids_for_links = {a["visit_id"] for a in all_assessments}
+            link_ids_by_visit: dict[str, tuple[str | None, str | None]] = {}
+            if visit_ids_for_links:
+                try:
+                    link_visits = data_access.pipeline.fetch_raw_visits(
+                        opportunity_id=opportunity_id,
+                        skip_form_json=True,
+                        filter_visit_ids=visit_ids_for_links,
+                    )
+                    # RawVisitCache.visit_id is a CharField, so keys here are strings — normalize
+                    # to str on both sides since assessment["visit_id"] is stored as an int.
+                    link_ids_by_visit = {str(v["id"]): (v.get("user_id"), v.get("user_visit_id")) for v in link_visits}
+                except Exception:
+                    logger.exception(f"[Audit] Failed to fetch shareable-link IDs for opportunity {opportunity_id}")
+            for assessment in all_assessments:
+                user_id, user_visit_id = link_ids_by_visit.get(str(assessment["visit_id"]), (None, None))
+                assessment["user_id"] = user_id
+                assessment["user_visit_id"] = user_visit_id
 
             all_assessments.sort(key=lambda a: a.get("visit_date_sort") or "")
 
@@ -838,7 +863,9 @@ class ExperimentBulkAssessmentExportCSVView(LoginRequiredMixin, View):
             if opportunity_id:
                 visit_ids = sorted({a["visit_id"] for a in assessments})
                 visits = data_access.get_visits_batch(visit_ids, opportunity_id)
-                xform_id_by_visit = {v["id"]: v.get("xform_id") for v in visits}
+                # RawVisitCache.visit_id is a CharField, so keys here are strings — normalize
+                # to str on both sides since assessment["visit_id"] is stored as an int.
+                xform_id_by_visit = {str(v["id"]): v.get("xform_id") for v in visits}
 
             hq_link_base = self._resolve_hq_link_base(data_access, opportunity_id) if opportunity_id else None
 
@@ -847,7 +874,7 @@ class ExperimentBulkAssessmentExportCSVView(LoginRequiredMixin, View):
             writer = csv.writer(response)
             writer.writerow(["Filename", "Visit Date", "#", "CommCareHQ Form URL"])
             for assessment in assessments:
-                xform_id = xform_id_by_visit.get(assessment["visit_id"])
+                xform_id = xform_id_by_visit.get(str(assessment["visit_id"]))
                 form_url = f"{hq_link_base}/{xform_id}/" if hq_link_base and xform_id else ""
                 writer.writerow([assessment["filename"], assessment["visit_date"], assessment["visit_id"], form_url])
             return response
@@ -869,6 +896,76 @@ class ExperimentBulkAssessmentExportCSVView(LoginRequiredMixin, View):
         deliver_app = (metadata.get("raw") or {}).get("deliver_app") or {}
         hq_server_url = (deliver_app.get("hq_server") or {}).get("url") or "https://www.commcarehq.org"
         return f"{hq_server_url.rstrip('/')}/a/{domain}/reports/form_data"
+
+
+class VisitClusterExportCSVView(LoginRequiredMixin, View):
+    """Export one visit-clustering grouping's images as CSV: filename, visit date,
+    GPS location, beneficiary name, and a link to the visit in Connect."""
+
+    def get(self, request, session_id, group_id):
+        data_access = AuditDataAccess(request=request)
+        try:
+            session = data_access.get_audit_session(session_id, try_multiple_opportunities=True)
+            if not session:
+                return JsonResponse({"error": "Session not found"}, status=404)
+
+            group = next((g for g in session.data.get("visit_clusters", []) if g.get("group_id") == group_id), None)
+            if not group:
+                return JsonResponse({"error": "Grouping not found"}, status=404)
+
+            opportunity_id = session.opportunity_id
+            visit_images = session.data.get("visit_images", {})
+
+            org_slug = ""
+            if opportunity_id:
+                org_data = get_org_data(request)
+                for opp in org_data.get("opportunities", []):
+                    if opp.get("id") == opportunity_id:
+                        org_slug = opp.get("organization", "")
+                        break
+
+            connect_url = getattr(settings, "CONNECT_PRODUCTION_URL", "https://connect.dimagi.com").rstrip("/")
+
+            link_id_by_visit = {}
+            visit_location_by_id = {}
+            if opportunity_id:
+                try:
+                    visits = data_access.get_visits_batch(group["visit_ids"], opportunity_id)
+                    # RawVisitCache.visit_id is a CharField, so keys here are strings — normalize
+                    # to str on both sides since visit_id (below) is stored as an int.
+                    link_id_by_visit = {str(v["id"]): (v.get("user_id"), v.get("user_visit_id")) for v in visits}
+                    visit_location_by_id = {str(v["id"]): v.get("location", "") for v in visits}
+                except Exception:
+                    logger.exception(f"[Audit] Failed to fetch visit batch for opportunity {opportunity_id}")
+
+            response = HttpResponse(content_type="text/csv")
+            response["Content-Disposition"] = f'attachment; filename="visit_cluster_{group_id}.csv"'
+            writer = csv.writer(response)
+            writer.writerow(["Filename", "Visit Date", "GPS Location", "Beneficiary Name", "Connect Visit URL"])
+
+            for visit_id in group["visit_ids"]:
+                images = visit_images.get(str(visit_id), [])
+                user_id, user_visit_id = link_id_by_visit.get(str(visit_id), (None, None))
+                location = visit_location_by_id.get(str(visit_id), "")
+                visit_url = (
+                    f"{connect_url}/a/{org_slug}/opportunity/{opportunity_id}/user_visits/"
+                    f"?user={user_id}&visit_id={user_visit_id}"
+                    if org_slug and user_id and user_visit_id
+                    else ""
+                )
+                for image in images:
+                    writer.writerow(
+                        [
+                            image.get("name", ""),
+                            image.get("visit_date", ""),
+                            location,
+                            image.get("entity_name", ""),
+                            visit_url,
+                        ]
+                    )
+            return response
+        finally:
+            data_access.close()
 
 
 class ExperimentAuditImageConnectView(LoginRequiredMixin, View):

@@ -210,6 +210,7 @@ class AuditSessionRecord(LocalLabsRecord):
         notes: str,
         ai_result: str | None = None,
         ai_notes: str | None = None,
+        ai_confidence: float | None = None,
     ):
         """
         Set/update assessment for an image.
@@ -222,6 +223,7 @@ class AuditSessionRecord(LocalLabsRecord):
             notes: Notes about the assessment
             ai_result: AI review result ("match", "no_match", "error", or None)
             ai_notes: AI review notes/details
+            ai_confidence: AI review confidence score (0.0-1.0), if the agent reported one
         """
         visit_key = str(visit_id)
 
@@ -246,6 +248,8 @@ class AuditSessionRecord(LocalLabsRecord):
             assessment["ai_result"] = ai_result
         if ai_notes is not None:
             assessment["ai_notes"] = ai_notes
+        if ai_confidence is not None:
+            assessment["ai_confidence"] = ai_confidence
 
         visit_result["assessments"][blob_id] = assessment
 
@@ -378,6 +382,7 @@ class AuditSessionRecord(LocalLabsRecord):
             "assessment_stats": stats,
             "workflow_run_id": self.workflow_run_id,
             "flw_username": self.flw_username,
+            "visit_clusters": self.data.get("visit_clusters", []),
         }
 
     def get_assessment_stats_by_question(self) -> dict:
