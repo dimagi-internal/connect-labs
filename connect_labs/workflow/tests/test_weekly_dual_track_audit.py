@@ -467,3 +467,116 @@ def test_build_snapshot_returns_rollup_when_all_complete():
     assert snap["completed_counts"]["incomplete"] == 0
     assert snap["window_start"] == "2026-06-21"
     assert "flw1" in {r["flw_id"] for r in snap["audit_summary"]["flw_rows"]}
+
+
+def test_applies_visit_clustering_filters_identically_to_every_track():
+    calls = build_track_audit_calls(
+        opportunity_ids=[101],
+        opp_names={"101": "Opp A"},
+        per_opp={"101": {"muac_image_paths": ["form.muac"], "rest_image_paths": ["form.house"]}},
+        track_a=TRACK_A,
+        track_b=TRACK_B,
+        window_start="2026-06-22",
+        window_end="2026-06-28",
+        username="nm1",
+        workflow_run_id=555,
+        enable_time_gap=True,
+        time_gap_minutes=15,
+        enable_distance=True,
+        distance_meters=20,
+    )
+    assert len(calls) == 2
+    for call in calls:
+        assert call["criteria"]["enable_time_gap"] is True
+        assert call["criteria"]["time_gap_minutes"] == 15
+        assert call["criteria"]["enable_distance"] is True
+        assert call["criteria"]["distance_meters"] == 20
+
+
+def test_omits_visit_clustering_filters_from_criteria_when_not_provided():
+    calls = build_track_audit_calls(
+        opportunity_ids=[101],
+        opp_names={"101": "Opp A"},
+        per_opp={"101": {"muac_image_paths": ["form.muac"]}},
+        track_a=TRACK_A,
+        track_b=TRACK_B,
+        window_start="2026-06-22",
+        window_end="2026-06-28",
+        username="nm1",
+        workflow_run_id=555,
+    )
+    for key in ("enable_time_gap", "time_gap_minutes", "enable_distance", "distance_meters"):
+        assert key not in calls[0]["criteria"]
+
+
+def test_handler_applies_visit_clustering_filters_from_job_payload():
+    from connect_labs.workflow.job_handlers import weekly_dual_track_audit as h
+
+    run = _fake_run({"window_start": "2026-06-22", "window_end": "2026-06-28"})
+    eager = mock.Mock()
+    eager.result = {"sessions": [1]}
+
+    with (
+        mock.patch.object(h, "WorkflowDataAccess") as WDA,
+        mock.patch.object(h, "run_audit_creation") as rac,
+    ):
+        wda = WDA.return_value
+        wda.get_run.return_value = run
+        wda.get_definition.return_value = _fake_definition()
+        rac.apply.return_value = eager
+
+        h.weekly_dual_track_audit_create(
+            {
+                "run_id": 555,
+                "opportunity_id": 101,
+                "window_start": "2026-06-22",
+                "window_end": "2026-06-28",
+                "enable_time_gap": True,
+                "time_gap_minutes": 15,
+                "enable_distance": False,
+                "distance_meters": 20,
+            },
+            access_token="tok",
+        )
+
+    for c in rac.apply.call_args_list:
+        cr = c.kwargs["kwargs"]["criteria"]
+        assert cr["enable_time_gap"] is True
+        assert cr["time_gap_minutes"] == 15
+        assert cr["enable_distance"] is False
+        assert cr["distance_meters"] == 20
+
+
+def test_handler_falls_back_to_persisted_visit_clustering_filters_when_payload_lacks_them():
+    from connect_labs.workflow.job_handlers import weekly_dual_track_audit as h
+
+    run = _fake_run(
+        {
+            "window_start": "2026-06-22",
+            "window_end": "2026-06-28",
+            "enable_time_gap": True,
+            "time_gap_minutes": 12,
+            "enable_distance": True,
+            "distance_meters": 8,
+        }
+    )
+    eager = mock.Mock()
+    eager.result = {"sessions": [1]}
+
+    with (
+        mock.patch.object(h, "WorkflowDataAccess") as WDA,
+        mock.patch.object(h, "run_audit_creation") as rac,
+    ):
+        wda = WDA.return_value
+        wda.get_run.return_value = run
+        wda.get_definition.return_value = _fake_definition()
+        rac.apply.return_value = eager
+
+        h.weekly_dual_track_audit_create({"run_id": 555, "opportunity_id": 101}, access_token="tok")
+
+    for c in rac.apply.call_args_list:
+        cr = c.kwargs["kwargs"]["criteria"]
+        assert cr["enable_time_gap"] is True
+        assert cr["time_gap_minutes"] == 12
+        assert cr["enable_distance"] is True
+        assert cr["distance_meters"] == 8

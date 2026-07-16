@@ -36,6 +36,10 @@ def build_track_audit_calls(
     pass_threshold=None,
     deliver_unit_types=None,
     visit_statuses=None,
+    enable_time_gap=None,
+    time_gap_minutes=None,
+    enable_distance=None,
+    distance_meters=None,
 ):
     """Build the per-opp, per-track run_audit_creation kwargs for one weekly batch.
 
@@ -47,7 +51,8 @@ def build_track_audit_calls(
     applied identically to every track's criteria when provided — they scope
     which visits are audited (deliver unit type, visit status) and how the
     resulting audit's overall_result is decided (pass threshold), same as the
-    Django creation wizard. ``AuditCriteria.from_dict`` (in
+    Django creation wizard. ``enable_time_gap``/``time_gap_minutes``/``enable_distance``/``distance_meters`` (visit clustering) are applied identically to every track's criteria when provided.
+    ``AuditCriteria.from_dict`` (in
     ``connect_labs.audit.data_access``) already understands these keys, so no
     changes were needed to ``run_audit_creation`` itself.
     """
@@ -78,6 +83,14 @@ def build_track_audit_calls(
                 criteria["deliver_unit_types"] = deliver_unit_types
             if visit_statuses is not None:
                 criteria["visit_statuses"] = visit_statuses
+            if enable_time_gap is not None:
+                criteria["enable_time_gap"] = enable_time_gap
+            if time_gap_minutes is not None:
+                criteria["time_gap_minutes"] = time_gap_minutes
+            if enable_distance is not None:
+                criteria["enable_distance"] = enable_distance
+            if distance_meters is not None:
+                criteria["distance_meters"] = distance_meters
             calls.append(
                 {
                     "username": username,
