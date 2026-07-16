@@ -55,6 +55,7 @@ This step appears once you have selected your opportunities. It has two sections
     If a reviewer needs a setting and you leave it blank, the wizard will stop you before creating the session.
 - **Context fields** (collapsed by default) — optionally associate any supporting form fields (such as a recorded measurement value) with an image type so that human reviewers can see the relevant data alongside each photo. These associations have no effect on AI review.
 - **Exclude already-audited images** — a checkbox option that controls whether photos previously judged in a completed audit session are included in this new session. Leave it **unchecked** (the default) to include all matching images as normal. **Check it** and the new session will skip any photo that has already received a verdict in an earlier completed audit — so reviewers only assess images that have never been audited before. The number of images skipped is recorded in the creation log.
+- **Visit Clustering** — an optional filter available in the Weekly Dual-Track Image Audit workflow, shown alongside the existing Audit Window and Sampling rate settings. When enabled, it groups consecutive visits by the same field worker that are close together in time and/or GPS location. This is useful for spotting likely duplicate or re-photographed measurements. Visit Clustering never changes which images are included in the audit — it only adds a **N Duplicate Groupings** button next to each MUAC/Other row in the session. Clicking that button expands a list of CSV downloads, one per grouping, for further duplicate-detection analysis. If both Visit Clustering checkboxes are left unticked, nothing changes from the standard workflow.
 
 **Pass Threshold:**
 
@@ -117,6 +118,8 @@ The bulk assessment page header identifies the field worker being reviewed as **
 
     Add optional notes to any image, then move to the next. Your progress saves automatically.
 
+    The **#** link on each image tile opens the original visit record directly in Connect. This link is correct for all sessions, including those created previously.
+
 === "AI-Assisted Review"
 
     Before you start, click **Run AI Review** to have AI pre-screen all images in the session. AI review processes multiple images at the same time, so a session of around 30 images typically completes in about 2 minutes.
@@ -139,6 +142,8 @@ The bulk assessment page header identifies the field worker being reviewed as **
 
     If a photo was already given a verdict in an earlier completed audit session, it shows an **Audited** badge on the image tile — for example, **Audited: Passed**, **Audited: Failed**, or **Audited: Dup·Fake**. Hover over the badge to see the date of the earlier audit. This badge only reflects *other* completed audits, not the current session. You can still assess the image normally — the badge is informational only.
 
+    The **#** link on each image tile opens the original visit record directly in Connect. This link is correct for all sessions, including those created previously.
+
     ### Choosing how the AI applies its verdicts
 
     Next to each AI Review Agent dropdown (in Step 5 of the wizard), each possible AI verdict has a checkbox — for example, "Automatically pre-tag photos flagged as hyperzoomed as Fail" or "Automatically pre-tag readings that match the scale as Pass". You can tick any combination of these:
@@ -157,15 +162,17 @@ The bulk assessment page header identifies the field worker being reviewed as **
 
     | Agent | Possible label |
     | --- | --- |
-    | **MUAC OverZoom** | "MUAC OverZoom: Hyperzoomed" or "MUAC OverZoom: Not Hyperzoomed" |
+    | **MUAC OverZoom** | "MUAC OverZoom: Hyperzoomed: confidence 0.XXX" or "MUAC OverZoom: Not Hyperzoomed" |
     | **Scale Image Validation** | "Scale Validation: Passed" or "Scale Validation: Failed" |
+
+    The confidence score shown in the MUAC OverZoom hyperzoomed label (for example, **Hyperzoomed: confidence 0.823**) is the AI's measure of how certain it was about that classification. A score closer to 1.0 means higher confidence. Use this to help decide whether to accept or override the AI's suggestion — a low confidence score may warrant a closer look at the image.
 
     If the AI encountered a problem reviewing a specific image, the label turns red and shows the error message. Images that have not yet been reviewed by the AI show no label.
 
     These labels let you see at a glance what the AI classified every image as — not just the ones that were flagged — without relying solely on any pre-tag badge.
 
     !!! tip "MUAC OverZoom pre-tagging"
-    When the MUAC OverZoom agent is used and the pre-tag checkbox for hyperzoomed images is ticked, images it identifies as hyperzoomed arrive in your review queue already marked **Fail** with a red **Hyperzoomed** badge. If the checkbox is unticked, those images are still badged with the AI classification label but appear as normal pending photos for your human review. In both cases, you can confirm each result or override it if you disagree.
+    When the MUAC OverZoom agent is used and the pre-tag checkbox for hyperzoomed images is ticked, images it identifies as hyperzoomed arrive in your review queue already marked **Fail** with a red **Hyperzoomed** badge showing the confidence score. If the checkbox is unticked, those images are still badged with the AI classification label but appear as normal pending photos for your human review. In both cases, you can confirm each result or override it if you disagree.
 
 ### Bulk actions
 
@@ -190,38 +197,20 @@ At the top of the bulk assessment page, several bulk action buttons let you appl
 | `→` | Next image     |
 | `←` | Previous image |
 
+### Filtering images in the review queue
+
+The **Status filter** at the top of the bulk assessment page lets you narrow the images shown to a particular result. The available options are:
+
+| Filter | What it shows |
+| --- | --- |
+| **All** | Every image in the session |
+| **Pending** | Images that have not yet been assessed |
+| **Pass** | Images marked Pass |
+| **Fail** | Images marked Fail |
+| **Duplicate/Fake** | Images marked Duplicate/Fake |
+
 ### FLW Summary table
 
 The FLW Summary table on the review page shows a row for each field worker in the session. The columns include:
 
-- **% Passed** — the number of images marked Pass divided by the FLW's **total image count** for the session. This gives an accurate picture of overall performance even before all images have been reviewed.
-- **Duplicate/Fake** — the count of images marked Duplicate/Fake for that FLW. This column was previously labelled "Incomplete."
-
-The Pass Threshold in effect is shown as small italic text — *Pass Threshold : x%* — beneath the table.
-
-### Completing a Review
-
-When you click **Complete Review**, Labs saves the audit and calculates the overall result. If the same audit session was open in two browser tabs and both tabs submit **Complete Review**, only the first submission is accepted. The second tab will show the message:
-
-> **"This audit has already been saved. Refresh the page to see the updated audit."**
-
-If you see this message, simply refresh the page to view the saved audit result. No action or re-submission is needed.
-
-### Exporting the Image List
-
-On the Bulk Assessment page, click **Export CSV** to download a spreadsheet of every image in the session. The file includes:
-
-| Column | What it contains |
-| --- | --- |
-| **Filename** | The name of the image file |
-| **Visit date** | The date the visit took place |
-| **Visit number** | The visit identifier |
-| **Form link** | A direct link to view the full form submission in CommCareHQ |
-
-This is useful when you want to share the image list with colleagues, track review progress in a spreadsheet, or look up the original form submission without searching CommCareHQ manually.
-
-### If an image does not load
-
-The review screen loads images in a controlled stream — a handful at a time — rather than all at once. This prevents request overloads on large sessions and means most photos appear reliably without any action on your part.
-
-If a photo still has trouble loading, the screen retries it automatically a few times. If it cannot load after those retries, the
+- **%
