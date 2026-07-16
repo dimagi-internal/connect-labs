@@ -12,6 +12,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from config import celery_app
+from connect_labs.audit.data_access import AuditCriteria, AuditDataAccess, create_mock_request
+from connect_labs.audit.visit_clustering import build_flw_visit_clusters
 from connect_labs.utils.celery import set_task_progress
 from connect_labs.utils.progress_relays import _RELAYS as AUDIT_PROGRESS_RELAYS  # noqa: F401  (back-compat alias)
 from connect_labs.utils.progress_relays import get_relay
@@ -473,8 +475,6 @@ def run_audit_creation(
     Returns:
         Result dict with session_ids, etc.
     """
-    from connect_labs.audit.data_access import AuditCriteria, AuditDataAccess, create_mock_request
-
     # Apply template overrides
     if template_overrides:
         criteria = {**criteria, **template_overrides}
@@ -662,6 +662,20 @@ def run_audit_creation(
         image_count = sum(len(imgs) for imgs in all_visit_images.values())
         logger.info(f"[AuditCreation] Extracted {image_count} images from {len(visit_ids)} visits")
 
+        # Visit Clustering (optional 3rd filter): fetch visit_date + location once
+        # for every visit in this batch, when either checkbox is enabled. Zero cost
+        # when disabled -- matches "nothing changes in the output" from the spec.
+        clustering_enabled = bool(criteria.get("enable_time_gap") or criteria.get("enable_distance"))
+        visit_meta_by_id: dict[str, dict] = {}
+        if clustering_enabled:
+            try:
+                meta_visits = data_access.pipeline.fetch_raw_visits(
+                    opportunity_id=opp_id, skip_form_json=True, filter_visit_ids=set(visit_ids)
+                )
+                visit_meta_by_id = {str(v["id"]): v for v in meta_visits}
+            except Exception:
+                logger.exception(f"[AuditCreation] Failed to fetch visit metadata for clustering, opp={opp_id}")
+
         if audit_criteria.exclude_prior_audited:
             from connect_labs.audit.data_access import filter_out_prior_audited
 
@@ -742,6 +756,20 @@ def run_audit_creation(
                 flw_display_name = flw_display_names.get(flw_id, flw_id)
                 flw_title = f"{flw_display_name} - {session_title}" if session_title else flw_display_name
 
+                flw_clusters = (
+                    build_flw_visit_clusters(
+                        flw_visit_list,
+                        visit_meta_by_id,
+                        flw_images,
+                        enable_time_gap=bool(criteria.get("enable_time_gap")),
+                        time_gap_minutes=criteria.get("time_gap_minutes", 10),
+                        enable_distance=bool(criteria.get("enable_distance")),
+                        distance_meters=criteria.get("distance_meters", 10),
+                    )
+                    if clustering_enabled
+                    else []
+                )
+
                 session = data_access.create_audit_session(
                     username=username,
                     visit_ids=flw_visit_list,
@@ -754,6 +782,7 @@ def run_audit_creation(
                     related_fields=related_fields,
                     workflow_run_id=workflow_run_id,
                     pass_threshold=session_pass_threshold,
+                    visit_clusters=flw_clusters,
                 )
 
                 sessions_created.append(
