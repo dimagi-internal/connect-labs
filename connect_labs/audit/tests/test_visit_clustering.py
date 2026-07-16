@@ -135,3 +135,26 @@ def test_build_flw_visit_clusters_handles_missing_visit_meta_gracefully():
         [1, 2], {"1": {"visit_date": "2026-06-22T10:00:00Z", "location": None}}, {}, enable_time_gap=True
     )
     assert clusters == []
+
+
+def test_naive_iso_datetime_pairs_with_aware_iso_datetime():
+    # Regression: naive-ISO-datetime (no trailing Z) paired with Z-suffixed aware datetime
+    # must not crash with "can't compare offset-naive and offset-aware datetimes"
+    visits = [
+        _v(1, "2026-06-22T10:00:00", None),  # no trailing Z -> naive, should be normalized
+        _v(2, "2026-06-22T10:05:00Z", None),  # aware
+    ]
+    clusters = compute_visit_clusters(visits, enable_time_gap=True, time_gap_minutes=10)
+    assert len(clusters) == 1
+    assert clusters[0]["visit_ids"] == [1, 2]
+
+
+def test_naive_datetime_paired_with_missing_visit_date():
+    # Regression: naive-datetime visit paired with a visit that has no visit_date (None)
+    # must not crash and must not cluster (fail-safe, since counterpart datetime is unknown)
+    visits = [
+        _v(1, "2026-06-22T10:00:00", None),  # naive, should be normalized
+        _v(2, None, None),  # missing visit_date
+    ]
+    clusters = compute_visit_clusters(visits, enable_time_gap=True, time_gap_minutes=1000000)
+    assert clusters == []  # no clustering because visit 2 has no datetime

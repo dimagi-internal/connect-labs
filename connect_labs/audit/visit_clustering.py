@@ -5,6 +5,10 @@ additive metadata: never changes which visits/images an audit session
 includes. See docs/superpowers/specs/2026-07-16-visit-clustering-design.md.
 """
 
+from datetime import datetime
+from datetime import timezone as datetime_timezone
+
+from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
 from geopy.distance import distance as geopy_distance
 
@@ -15,12 +19,13 @@ def _parse_visit_datetime(value):
         return None
     dt = parse_datetime(value)
     if dt is not None:
+        # Normalize naive datetimes to UTC-aware to avoid comparison errors.
+        if timezone.is_naive(dt):
+            dt = timezone.make_aware(dt, datetime_timezone.utc)
         return dt
     d = parse_date(value)
     if d is not None:
-        from datetime import datetime, timezone
-
-        return datetime(d.year, d.month, d.day, tzinfo=timezone.utc)
+        return datetime(d.year, d.month, d.day, tzinfo=datetime_timezone.utc)
     return None
 
 
@@ -86,9 +91,7 @@ def compute_visit_clusters(
     # Missing dates sort last so they never get placed adjacent to a real
     # neighbor by sort order alone -- the fail-safe check in _pair_qualifies
     # still applies regardless, but this keeps grouping deterministic.
-    from datetime import datetime, timezone
-
-    parsed.sort(key=lambda p: p["dt"] or datetime.max.replace(tzinfo=timezone.utc))
+    parsed.sort(key=lambda p: p["dt"] or datetime.max.replace(tzinfo=datetime_timezone.utc))
 
     groups = []
     current = [parsed[0]] if parsed else []
