@@ -201,6 +201,8 @@ class SQLCacheManager:
                     date_created=_parse_datetime(v.get("date_created")),
                     completed_work_id=v.get("completed_work_id"),
                     images=v.get("images") or [],
+                    user_id=v.get("user_id") or "",
+                    user_visit_id=v.get("user_visit_id") or "",
                 )
             )
 
@@ -287,6 +289,8 @@ class SQLCacheManager:
                     date_created=_parse_datetime(v.get("date_created")),
                     completed_work_id=v.get("completed_work_id"),
                     images=v.get("images") or [],
+                    user_id=v.get("user_id") or "",
+                    user_visit_id=v.get("user_visit_id") or "",
                 )
             )
         # The unique constraint is (opportunity_id, visit_count, visit_id);

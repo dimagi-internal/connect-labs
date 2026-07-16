@@ -8,10 +8,12 @@ from connect_labs.labs.ai_review_agents.types import ReviewResult
 class _FakeSession:
     def __init__(self, data):
         self.data = data
-        self.assessments = []  # (visit_id, blob_id, question_id, result, ai_result, ai_notes)
+        self.assessments = []  # (visit_id, blob_id, question_id, result, ai_result, ai_notes, ai_confidence)
 
-    def set_assessment(self, visit_id, blob_id, question_id, result, notes, ai_result=None, ai_notes=None):
-        self.assessments.append((visit_id, blob_id, question_id, result, ai_result, ai_notes))
+    def set_assessment(
+        self, visit_id, blob_id, question_id, result, notes, ai_result=None, ai_notes=None, ai_confidence=None
+    ):
+        self.assessments.append((visit_id, blob_id, question_id, result, ai_result, ai_notes, ai_confidence))
 
 
 class _FakeDataAccess:

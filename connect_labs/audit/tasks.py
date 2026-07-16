@@ -277,10 +277,10 @@ def _run_ai_review_on_sessions(
                 try:
                     img_bytes = data_access.download_image_from_connect(b_id, opp_id)
                     if not img_bytes:
-                        return (v_id, b_id, q_id, rdg, img_qid, None, None, True)  # skipped
+                        return (v_id, b_id, q_id, rdg, img_qid, None, None, None, True)  # skipped
                 except Exception as exc:
                     logger.warning(f"[AIReview] Failed to fetch image {b_id}: {exc}")
-                    return (v_id, b_id, q_id, rdg, img_qid, None, None, True)  # skipped
+                    return (v_id, b_id, q_id, rdg, img_qid, None, None, None, True)  # skipped
 
                 from connect_labs.labs.ai_review_agents.types import ReviewContext
 
@@ -295,8 +295,10 @@ def _run_ai_review_on_sessions(
                     },
                 )
                 ai_n = None
+                ai_c = None
                 try:
                     rv = agent.review(ctx)
+                    ai_c = rv.confidence
                     if rv.passed:
                         ai_r = "match"
                         # pass_label provides a human-readable classification for the tile footer
@@ -315,7 +317,7 @@ def _run_ai_review_on_sessions(
                     ai_r = "error"
                     ai_n = str(exc)
 
-                return (v_id, b_id, q_id, rdg, img_qid, ai_r, ai_n, False)  # not skipped
+                return (v_id, b_id, q_id, rdg, img_qid, ai_r, ai_n, ai_c, False)  # not skipped
 
             with ThreadPoolExecutor(max_workers=5) as pool:
                 fut_map = {pool.submit(_fetch_and_review, item): item for item in work_items}
@@ -329,6 +331,7 @@ def _run_ai_review_on_sessions(
                             img_qid,
                             ai_result,
                             ai_notes,
+                            ai_confidence,
                             skipped,
                         ) = fut.result()
                     except Exception as exc:
@@ -368,6 +371,7 @@ def _run_ai_review_on_sessions(
                             notes="",
                             ai_result=ai_result,
                             ai_notes=ai_notes,
+                            ai_confidence=ai_confidence,
                         )
                         session_updated = True
 

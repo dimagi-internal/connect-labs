@@ -34,6 +34,8 @@ ALL_VISIT_KEYS = [
     "date_created",
     "completed_work_id",
     "images",
+    "user_id",
+    "user_visit_id",
 ]
 
 # Slim mode excludes form_json — used when the analysis pipeline reads
@@ -104,4 +106,6 @@ def record_to_visit_dict(
         "date_created": record.get("date_created"),
         "completed_work_id": record.get("completed_work_id"),
         "images": images,
+        "user_id": record.get("user_id"),
+        "user_visit_id": record.get("user_visit_id"),
     }

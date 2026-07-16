@@ -650,7 +650,7 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
                     question_ids.add(question_id)
                     assessment_data = assessments_map.get(blob_id, {})
                     result_value = assessment_data.get("result") or ""
-                    status_value = result_value if result_value in {"pass", "fail"} else "pending"
+                    status_value = result_value if result_value in {"pass", "fail", "duplicate_fake"} else "pending"
 
                     # Use counter to ensure unique IDs even if same visit appears multiple times
                     assessment_counter += 1
@@ -677,6 +677,7 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
                             "related_fields": metadata.get("related_fields", []),
                             "ai_result": assessment_data.get("ai_result", ""),
                             "ai_notes": assessment_data.get("ai_notes", ""),
+                            "ai_confidence": assessment_data.get("ai_confidence"),
                         }
                     )
                     seen_blob_ids.add(blob_id)
@@ -687,7 +688,7 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
                     question_id = assessment_data.get("question_id") or ""
                     question_ids.add(question_id)
                     result_value = assessment_data.get("result") or ""
-                    status_value = result_value if result_value in {"pass", "fail"} else "pending"
+                    status_value = result_value if result_value in {"pass", "fail", "duplicate_fake"} else "pending"
 
                     # Use counter to ensure unique IDs
                     assessment_counter += 1
@@ -713,6 +714,7 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
                             "opportunity_id": opportunity_id,
                             "ai_result": assessment_data.get("ai_result", ""),
                             "ai_notes": assessment_data.get("ai_notes", ""),
+                            "ai_confidence": assessment_data.get("ai_confidence"),
                         }
                     )
 
@@ -734,6 +736,29 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
                 for assessment in all_assessments:
                     if not assessment.get("entity_id"):
                         assessment["entity_id"] = entity_id_by_visit.get(str(assessment["visit_id"]), "")
+
+            # Attach the Connect UUIDs needed to build a shareable visit link
+            # (`user_visits_list?user=<user_id>&visit_id=<user_visit_id>`) — not
+            # captured in visit_images at session-creation time, so fetched fresh
+            # via one lightweight bulk lookup (skip_form_json) rather than stored.
+            visit_ids_for_links = {a["visit_id"] for a in all_assessments}
+            link_ids_by_visit: dict[str, tuple[str | None, str | None]] = {}
+            if visit_ids_for_links:
+                try:
+                    link_visits = data_access.pipeline.fetch_raw_visits(
+                        opportunity_id=opportunity_id,
+                        skip_form_json=True,
+                        filter_visit_ids=visit_ids_for_links,
+                    )
+                    # RawVisitCache.visit_id is a CharField, so keys here are strings — normalize
+                    # to str on both sides since assessment["visit_id"] is stored as an int.
+                    link_ids_by_visit = {str(v["id"]): (v.get("user_id"), v.get("user_visit_id")) for v in link_visits}
+                except Exception:
+                    logger.exception(f"[Audit] Failed to fetch shareable-link IDs for opportunity {opportunity_id}")
+            for assessment in all_assessments:
+                user_id, user_visit_id = link_ids_by_visit.get(str(assessment["visit_id"]), (None, None))
+                assessment["user_id"] = user_id
+                assessment["user_visit_id"] = user_visit_id
 
             all_assessments.sort(key=lambda a: a.get("visit_date_sort") or "")
 
