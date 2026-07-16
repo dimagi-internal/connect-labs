@@ -925,9 +925,14 @@ class VisitClusterExportCSVView(LoginRequiredMixin, View):
             connect_url = getattr(settings, "CONNECT_PRODUCTION_URL", "https://connect.dimagi.com").rstrip("/")
 
             link_id_by_visit = {}
+            visit_location_by_id = {}
             if opportunity_id:
-                visits = data_access.get_visits_batch(group["visit_ids"], opportunity_id)
-                link_id_by_visit = {v["id"]: (v.get("user_id"), v.get("user_visit_id")) for v in visits}
+                try:
+                    visits = data_access.get_visits_batch(group["visit_ids"], opportunity_id)
+                    link_id_by_visit = {v["id"]: (v.get("user_id"), v.get("user_visit_id")) for v in visits}
+                    visit_location_by_id = {v["id"]: v.get("location", "") for v in visits}
+                except Exception:
+                    logger.exception(f"[Audit] Failed to fetch visit batch for opportunity {opportunity_id}")
 
             response = HttpResponse(content_type="text/csv")
             response["Content-Disposition"] = f'attachment; filename="visit_cluster_{group_id}.csv"'
@@ -937,6 +942,7 @@ class VisitClusterExportCSVView(LoginRequiredMixin, View):
             for visit_id in group["visit_ids"]:
                 images = visit_images.get(str(visit_id), [])
                 user_id, user_visit_id = link_id_by_visit.get(visit_id, (None, None))
+                location = visit_location_by_id.get(visit_id, "")
                 visit_url = (
                     f"{connect_url}/a/{org_slug}/opportunity/{opportunity_id}/user_visits/"
                     f"?user={user_id}&visit_id={user_visit_id}"
@@ -948,7 +954,7 @@ class VisitClusterExportCSVView(LoginRequiredMixin, View):
                         [
                             image.get("name", ""),
                             image.get("visit_date", ""),
-                            image.get("location", ""),
+                            location,
                             image.get("entity_name", ""),
                             visit_url,
                         ]
