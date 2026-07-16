@@ -580,3 +580,24 @@ def test_handler_falls_back_to_persisted_visit_clustering_filters_when_payload_l
         assert cr["time_gap_minutes"] == 12
         assert cr["enable_distance"] is True
         assert cr["distance_meters"] == 8
+
+
+def test_definition_pins_visit_clustering_defaults():
+    from connect_labs.workflow.templates.weekly_dual_track_audit import DEFINITION
+
+    vc = DEFINITION["config"]["audit_batch"]["visit_clustering"]
+    assert vc == {
+        "enable_time_gap": False,
+        "time_gap_minutes": 10,
+        "enable_distance": False,
+        "distance_meters": 10,
+    }
+
+
+def test_render_code_includes_visit_clustering_card():
+    from connect_labs.workflow.templates import get_template
+
+    rc = get_template("weekly_dual_track_audit")["render_code"]
+    assert "Visit Clustering" in rc
+    assert "enable_time_gap" in rc
+    assert "enable_distance" in rc

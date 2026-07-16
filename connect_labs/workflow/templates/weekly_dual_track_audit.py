@@ -196,6 +196,12 @@ DEFINITION = {
             "track_b": {"tag": "rest", "sample_percentage": 10, "reviewer": None},
             "per_opp": {},  # { "<opp_id>": {"muac_image_paths": [...], "rest_image_paths": [...]} }
             "opp_names": {},  # { "<opp_id>": "Opp display name" }
+            "visit_clustering": {
+                "enable_time_gap": False,
+                "time_gap_minutes": 10,
+                "enable_distance": False,
+                "distance_meters": 10,
+            },
         }
     },
     "pipeline_sources": [],
@@ -271,6 +277,12 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
     // Per-run sampling rates — default to the pinned config, adjustable before create.
     const [muacSample, setMuacSample] = React.useState(trackA.sample_percentage != null ? trackA.sample_percentage : 100);
     const [otherSample, setOtherSample] = React.useState(trackB.sample_percentage != null ? trackB.sample_percentage : 10);
+    // Visit Clustering (optional 3rd filter) — defaults from pinned config, per-run adjustable.
+    const clustering = batch.visit_clustering || {};
+    const [enableTimeGap, setEnableTimeGap] = React.useState(!!clustering.enable_time_gap);
+    const [timeGapMinutes, setTimeGapMinutes] = React.useState(clustering.time_gap_minutes != null ? clustering.time_gap_minutes : 10);
+    const [enableDistance, setEnableDistance] = React.useState(!!clustering.enable_distance);
+    const [distanceMeters, setDistanceMeters] = React.useState(clustering.distance_meters != null ? clustering.distance_meters : 10);
     const cleanupRef = React.useRef(null);
     React.useEffect(() => () => { if (cleanupRef.current) cleanupRef.current(); }, []);
 
@@ -373,6 +385,10 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                 window_end: endDate,
                 muac_sample_percentage: Number(muacSample),
                 other_sample_percentage: Number(otherSample),
+                enable_time_gap: enableTimeGap,
+                time_gap_minutes: Number(timeGapMinutes),
+                enable_distance: enableDistance,
+                distance_meters: Number(distanceMeters),
             });
         } catch (e) {
             setIsRunning(false); setJobError('Failed to start job: ' + (e.message || e)); return;
@@ -526,6 +542,45 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
             </div>
             )}
 
+            {/* ── Visit Clustering (optional 3rd filter) ──────────────────────── */}
+            {!viewOnly && (
+            <div className="bg-white rounded-lg shadow-sm p-6">
+                <h3 className="text-sm font-medium text-gray-700 mb-3">
+                    <i className="fa-solid fa-layer-group mr-2 text-gray-400"></i>Visit Clustering
+                </h3>
+                <p className="text-xs text-gray-500 mb-3">
+                    Optional — groups consecutive visits by the same field worker that are close in time
+                    and/or location, for duplicate-detection review. Leave both unchecked to skip this entirely.
+                </p>
+                <div className="space-y-3">
+                    <div className="flex items-center gap-3">
+                        <input type="checkbox" checked={enableTimeGap}
+                            onChange={e => setEnableTimeGap(e.target.checked)}
+                            disabled={isRunning || instance.status === 'completed'}
+                            className="w-4 h-4" />
+                        <span className="text-sm text-gray-700">Group visits within</span>
+                        <input type="number" min="1" value={timeGapMinutes}
+                            onChange={e => setTimeGapMinutes(e.target.value)}
+                            disabled={!enableTimeGap || isRunning || instance.status === 'completed'}
+                            className="border border-gray-300 rounded px-2 py-1 text-sm w-20 disabled:bg-gray-100" />
+                        <span className="text-sm text-gray-700">minutes of each other (by visit date)</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <input type="checkbox" checked={enableDistance}
+                            onChange={e => setEnableDistance(e.target.checked)}
+                            disabled={isRunning || instance.status === 'completed'}
+                            className="w-4 h-4" />
+                        <span className="text-sm text-gray-700">Group visits within</span>
+                        <input type="number" min="1" value={distanceMeters}
+                            onChange={e => setDistanceMeters(e.target.value)}
+                            disabled={!enableDistance || isRunning || instance.status === 'completed'}
+                            className="border border-gray-300 rounded px-2 py-1 text-sm w-20 disabled:bg-gray-100" />
+                        <span className="text-sm text-gray-700">meters of each other (by GPS location)</span>
+                    </div>
+                </div>
+            </div>
+            )}
+
             {/* ── Per-opp config preview (read-only) ──────────────────────── */}
             <div className="bg-white rounded-lg shadow-sm p-6">
                 <h3 className="text-sm font-medium text-gray-700 mb-3">
@@ -568,7 +623,9 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
             {!viewOnly && (
             <div className="bg-white rounded-lg shadow-sm p-6">
                 <button onClick={handleCreate}
-                    disabled={!startDate || !endDate || isRunning || oppIds.length === 0 || instance.status === 'completed'}
+                    disabled={!startDate || !endDate || isRunning || oppIds.length === 0 || instance.status === 'completed'
+                        || (enableTimeGap && !(Number(timeGapMinutes) > 0))
+                        || (enableDistance && !(Number(distanceMeters) > 0))}
                     title={instance.status === 'completed' ? 'Run is completed; cannot create new audits.' : ''}
                     className={'inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg ' +
                         'hover:bg-blue-700 disabled:bg-gray-400 font-medium'}>
