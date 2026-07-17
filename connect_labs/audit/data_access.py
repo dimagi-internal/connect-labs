@@ -94,6 +94,9 @@ class AuditCriteria:
     ] | None = None  # Filter to specific visit status(es): pending/approved/rejected/over_limit
     related_fields: list[dict] | None = None  # List of {image_path, field_path, label}
     exclude_prior_audited: bool = False  # Drop images already audited in a completed session
+    # Restrict date_range audits to visits falling on these ISO weekdays (1=Monday..7=Sunday).
+    # None/empty = no restriction (all days). Only meaningful when audit_type == "date_range".
+    days_of_week: list[int] | None = None
 
     @classmethod
     def from_dict(cls, data: dict) -> "AuditCriteria":
@@ -121,6 +124,9 @@ class AuditCriteria:
         visit_statuses_raw = data.get("visit_statuses") or data.get("visitStatuses") or []
         visit_statuses = [s for s in visit_statuses_raw if s] or None
 
+        days_of_week_raw = data.get("days_of_week") or data.get("daysOfWeek") or []
+        days_of_week = [int(d) for d in days_of_week_raw if d] or None
+
         return cls(
             audit_type=data.get("audit_type") or data.get("type", "date_range"),
             start_date=data.get("start_date") or data.get("startDate"),
@@ -134,6 +140,7 @@ class AuditCriteria:
             visit_statuses=visit_statuses,
             related_fields=related_fields or None,
             exclude_prior_audited=bool(data.get("exclude_prior_audited") or data.get("excludePriorAudited") or False),
+            days_of_week=days_of_week,
         )
 
 
@@ -173,6 +180,10 @@ def filter_visits_for_audit(
         if criteria.end_date and "visit_date" in df.columns:
             end = pd.to_datetime(criteria.end_date)
             df = df[df["visit_date"].dt.date <= end.date()]
+        if criteria.days_of_week and "visit_date" in df.columns:
+            # pandas .dt.dayofweek is Monday=0..Sunday=6; +1 gives ISO weekday
+            # (Monday=1..Sunday=7), matching AuditCriteria.days_of_week.
+            df = df[(df["visit_date"].dt.dayofweek + 1).isin(criteria.days_of_week)]
 
     elif criteria.audit_type == "last_n_per_flw":
         if "visit_date" in df.columns and "username" in df.columns:
@@ -416,15 +427,17 @@ class AuditDataAccess(BaseDataAccess):
         last_n_total = None
         start_date = None
         end_date = None
+        days_of_week = None
 
         if criteria.audit_type == "last_n_per_flw":
             last_n_per_user = criteria.count_per_flw
         elif criteria.audit_type == "last_n_across_all":
             last_n_total = criteria.count_across_all
         elif criteria.audit_type == "date_range":
-            # Only apply date filters for date_range audit type
+            # Only apply date/weekday filters for date_range audit type
             start_date = criteria.start_date
             end_date = criteria.end_date
+            days_of_week = criteria.days_of_week
         # Note: "last_n_per_opp" is handled at the aggregate level below
 
         # DEBUG: Log filter parameters
@@ -470,6 +483,7 @@ class AuditDataAccess(BaseDataAccess):
                     sample_percentage=criteria.sample_percentage if len(opportunity_ids) == 1 else 100,
                     deliver_unit_types=criteria.deliver_unit_types or None,
                     visit_statuses=criteria.visit_statuses or None,
+                    days_of_week=days_of_week or None,
                     return_visit_data=return_visits,
                 )
                 if return_visits:

@@ -1588,6 +1588,7 @@ class ExperimentAuditPreviewAPIView(LoginRequiredMixin, View):
                 "sample_percentage": criteria.get("sample_percentage", criteria.get("samplePercentage", 100)),
                 "deliver_unit_types": criteria.get("deliver_unit_types") or criteria.get("deliverUnitTypes") or [],
                 "visit_statuses": criteria.get("visit_statuses") or criteria.get("visitStatuses") or [],
+                "days_of_week": criteria.get("days_of_week") or criteria.get("daysOfWeek") or [],
             }
 
             # Get visit IDs AND filtered visits in one call (avoids redundant fetches)

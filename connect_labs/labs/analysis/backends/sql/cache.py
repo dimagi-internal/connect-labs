@@ -985,6 +985,7 @@ class SQLCacheManager:
         sample_percentage: int = 100,
         deliver_unit_types: list[str] | None = None,
         visit_statuses: list[str] | None = None,
+        days_of_week: list[int] | None = None,
     ):
         """
         Build a filtered queryset of visits using SQL.
@@ -993,7 +994,7 @@ class SQLCacheManager:
         Uses window functions for last_n_per_user (much faster than Python groupby).
         """
         from django.db.models import F, Window
-        from django.db.models.functions import RowNumber
+        from django.db.models.functions import ExtractWeekDay, RowNumber
 
         # DEBUG: Log filter parameters
         logger.info(
@@ -1015,6 +1016,13 @@ class SQLCacheManager:
             qs = qs.filter(visit_date__gte=start_date)
         if end_date:
             qs = qs.filter(visit_date__lte=end_date)
+
+        # Filter by day(s) of week. days_of_week is ISO weekday (1=Monday..7=Sunday);
+        # Django's ExtractWeekDay uses the SQL/US convention (1=Sunday..7=Saturday), so
+        # convert: django_dow = (iso_dow % 7) + 1.
+        if days_of_week:
+            django_dows = [(d % 7) + 1 for d in days_of_week]
+            qs = qs.annotate(_dow=ExtractWeekDay("visit_date")).filter(_dow__in=django_dows)
 
         # Filter by deliver unit type(s). Connect's own deliver_unit/deliver_unit_id
         # fields are just the numeric FK PK (no name is ever serialized by the export
@@ -1065,6 +1073,7 @@ class SQLCacheManager:
         sample_percentage: int = 100,
         deliver_unit_types: list[str] | None = None,
         visit_statuses: list[str] | None = None,
+        days_of_week: list[int] | None = None,
     ) -> list[int]:
         """Get filtered visit IDs using SQL. Returns only IDs (very fast)."""
         qs = self.filter_visits(
@@ -1076,6 +1085,7 @@ class SQLCacheManager:
             sample_percentage=sample_percentage,
             deliver_unit_types=deliver_unit_types,
             visit_statuses=visit_statuses,
+            days_of_week=days_of_week,
         )
         return list(qs.values_list("visit_id", flat=True))
 
@@ -1089,6 +1099,7 @@ class SQLCacheManager:
         sample_percentage: int = 100,
         deliver_unit_types: list[str] | None = None,
         visit_statuses: list[str] | None = None,
+        days_of_week: list[int] | None = None,
     ) -> list[dict]:
         """
         Get filtered visits WITHOUT form_json (slim mode).
@@ -1104,6 +1115,7 @@ class SQLCacheManager:
             sample_percentage=sample_percentage,
             deliver_unit_types=deliver_unit_types,
             visit_statuses=visit_statuses,
+            days_of_week=days_of_week,
         )
 
         # Defer heavy columns
