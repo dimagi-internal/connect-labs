@@ -778,15 +778,20 @@ class TestPipelineDataProgramOwnedFallback:
 
 
 class TestWorkflowRunViewProgramScopedInstance:
-    """The JS `instance` prop must reflect the RUN RECORD's own ownership, not
-    the ambient request/session labs_context — which can carry a stale
-    `opportunity_id` (e.g. left over from the workflow list page's background
-    per-opp fetches) even while viewing a program-scoped run. Reproduced via a
-    real browser session: a program-owned Weekly Dual-Track Audit run's
-    "Create Audits" button read a stale non-null instance.opportunity_id,
-    sent it to startJob, and start_job_api's dispatch logic picked the
-    opp-scoped branch instead of program-scoped — 404ing on get_run() and
-    failing the whole batch with a generic "internal error"."""
+    """The JS `instance` prop (and its apiEndpoints) must reflect the RUN
+    RECORD's own ownership, not the ambient request/session labs_context —
+    which can carry a stale `opportunity_id` (e.g. left over from the workflow
+    list page's or the run page's own per-opp background fetches) even while
+    viewing a program-scoped run. Reproduced via a real browser session in two
+    stages: (1) a program-owned Weekly Dual-Track Audit run's "Create Audits"
+    button read a stale non-null instance.opportunity_id, sent it to startJob,
+    and start_job_api's dispatch logic picked the opp-scoped branch instead of
+    program-scoped — 404ing on get_run() and failing the whole batch with a
+    generic "internal error"; (2) after fixing that, the job succeeded but a
+    *separate* "Failed to update state" error appeared, because
+    apiEndpoints.updateState/etc. carried no scope of their own and fell
+    through to the same session, which by click time had been clobbered to a
+    stale opportunity_id with program_id gone entirely."""
 
     def test_instance_opportunity_id_reflects_run_record_not_stale_session_context(
         self, dimagi_user, rf: RequestFactory
@@ -840,6 +845,19 @@ class TestWorkflowRunViewProgramScopedInstance:
         instance = context["workflow_data"]["instance"]
         assert instance["opportunity_id"] is None
         assert instance["program_id"] == 176
+
+        # apiEndpoints must carry the run's own scope as an explicit query
+        # param too — otherwise update_state_api etc. (which build
+        # WorkflowDataAccess(request=request) from ambient labs_context alone)
+        # fall through to whatever the session holds when the fetch actually
+        # fires, which unrelated same-page background requests can have
+        # clobbered by then. Reproduced live as "Failed to update state" on a
+        # program-owned run right after its audit-creation job succeeded.
+        endpoints = context["workflow_data"]["apiEndpoints"]
+        assert endpoints["updateState"] == "/labs/workflow/api/run/6823/state/?program_id=176"
+        assert endpoints["saveWorkerResult"] == "/labs/workflow/api/run/6823/worker-result/?program_id=176"
+        assert endpoints["completeRun"] == "/labs/workflow/api/run/6823/complete/?program_id=176"
+        assert endpoints["getSnapshot"] == "/labs/workflow/api/run/6823/snapshot/?program_id=176"
 
 
 class TestResolvePipelineDefinitionCrossOpp:

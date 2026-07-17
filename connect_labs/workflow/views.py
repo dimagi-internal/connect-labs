@@ -857,6 +857,21 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
             # Pass empty data initially; frontend will connect to SSE stream
             pipeline_data = {}
 
+            # Stamp the run's own scope onto its API endpoints as an explicit URL
+            # query param. Without this, these fetches fall through to whatever
+            # request.labs_context/session happens to hold at click time — which
+            # unrelated same-page background requests (e.g. the per-opportunity
+            # sessions-list fetch) can clobber between page load and the actual
+            # click, especially for a program-owned run (session drifts to a
+            # stale member opp with program_id gone entirely). Reproduced live as
+            # a "Failed to update state" error on a program-owned run whose
+            # audit-creation job had otherwise completed successfully.
+            run_scope_qs = (
+                f"?opportunity_id={run_data['opportunity_id']}"
+                if run_data.get("opportunity_id")
+                else (f"?program_id={run_data['program_id']}" if run_data.get("program_id") else "")
+            )
+
             # Prepare data for React (pass as dict, json_script will handle encoding)
             context["workflow_data"] = {
                 "definition": definition.data,
@@ -884,7 +899,9 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                 },
                 "apiEndpoints": {
                     # In edit mode, state updates are local only
-                    "updateState": None if is_edit_mode else f"/labs/workflow/api/run/{run_data['id']}/state/",
+                    "updateState": (
+                        None if is_edit_mode else f"/labs/workflow/api/run/{run_data['id']}/state/{run_scope_qs}"
+                    ),
                     "getWorkers": "/labs/workflow/api/workers/",
                     "getPipelineData": f"/labs/workflow/api/{definition_id}/pipeline-data/",
                     # SSE stream for async pipeline data loading
@@ -892,13 +909,17 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                     # Framework: auth-status for declared auth_requires
                     "authStatus": "/labs/workflow/api/auth-status/",
                     # MBW monitoring actions
-                    "saveWorkerResult": f"/labs/workflow/api/run/{run_data['id']}/worker-result/",
+                    "saveWorkerResult": f"/labs/workflow/api/run/{run_data['id']}/worker-result/{run_scope_qs}",
                     # Single completion verb — handles snapshot build + status flip atomically.
-                    "completeRun": (None if is_edit_mode else f"/labs/workflow/api/run/{run_data['id']}/complete/"),
+                    "completeRun": (
+                        None if is_edit_mode else f"/labs/workflow/api/run/{run_data['id']}/complete/{run_scope_qs}"
+                    ),
                     "updateOpportunityIds": f"/labs/workflow/api/{definition_id}/opportunity-ids/",
                     # Read-only snapshot inspection (debug); render code reads
                     # instance.snapshot via the useRunView helper, not this URL.
-                    "getSnapshot": (None if is_edit_mode else f"/labs/workflow/api/run/{run_data['id']}/snapshot/"),
+                    "getSnapshot": (
+                        None if is_edit_mode else f"/labs/workflow/api/run/{run_data['id']}/snapshot/{run_scope_qs}"
+                    ),
                 },
             }
 
