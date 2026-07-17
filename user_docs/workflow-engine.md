@@ -247,6 +247,10 @@ On the workflow run list page, each Program Audit Creator run shows its audit wi
 
 ## Bulk Image Audits
 
+### Session labels
+
+When a bulk image audit covers every field worker together, the run screen labels it **"All FLWs (N)"** — where N is the number of field workers included — so it is immediately clear the review spans the whole group. Sessions scoped to a single field worker continue to show that individual's name.
+
 ### Previously-audited image badges
 
 When reviewing images in the bulk image audit grid, any photo that was already given a verdict in an earlier **completed** audit shows an **Audited** badge displaying that prior verdict — for example, **Audited: Passed**, **Audited: Failed**, or **Audited: Dup·Fake**. Hovering over the badge shows the date of the earlier audit.
@@ -255,9 +259,4 @@ This lets reviewers see at a glance that a decision already exists for a photo b
 
 ### Excluding already-audited images from a new audit
 
-When creating a new bulk image audit — either from a workflow or from the standalone audit wizard — an optional checkbox is available: **Exclude images already audited in a completed session.**
-
-- **Left unchecked (the default):** all images in scope are included, exactly as before.
-- **Checked:** any photo that already has a verdict from a completed audit is skipped. Only images that have never been audited are included in the new session.
-
-The number of images skipped
+When creating a new bulk image audit — either from a workflow or from the standalone audit wizard — an optional checkbox is available: **Exclude images already audited

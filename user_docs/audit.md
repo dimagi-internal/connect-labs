@@ -34,6 +34,9 @@ Navigate to **Audit** in the top menu, then click **Create Audit Session**.
 - Labs shows how many visits match your criteria before you commit, including a list of matched field workers shown by their **real display names** (not internal ID codes)
 - Adjust filters if needed, then click **Create**
 
+!!! warning "Creating a second session on the same run"
+    If a run already has an audit session and you click **Create** again — for example, after reverting and adjusting parameters — Labs will ask you to confirm: *"This run already has 1 audit session. Create another one anyway?"* This prevents accidentally ending up with a duplicate session you did not intend to create.
+
 **Step 3 — Sampling and filters:**
 
 After setting your date range and sample size, two additional filter sections appear below the sampling configuration:
@@ -90,7 +93,7 @@ The default is **flag-only** (all checkboxes unticked), so nothing is pre-tagged
     Start with the default flag-only setting. Review a session to see how well the AI's classifications match your program standards, then enable pre-tagging for the verdicts you consistently agree with.
 
 !!! tip "Large audits"
-    Creating a session with many visits runs in the background. You'll see a progress indicator — come back in a few minutes for large samples.
+    Creating a session with many visits runs in the background. You'll see a progress indicator — come back in a few minutes for large samples. If you cancel while the session is still being built, the background job will stop before creating the session, so no partial or orphaned session is left behind.
 
 ---
 
@@ -98,7 +101,7 @@ The default is **flag-only** (all checkboxes unticked), so nothing is pre-tagged
 
 Once a session is created, open it to start the bulk assessment.
 
-The bulk assessment page header identifies the field worker being reviewed as **FLW Name : `<name>`**, using the FLW's real display name so you can always confirm whose images you are looking at.
+The bulk assessment page header identifies the field worker being reviewed. For a **combined session** — a bulk image audit covering every field worker at once — the header shows **"All FLWs (N)"**, where N is the total number of field workers included, so it is clear the review spans the full group. For a session scoped to an individual field worker, the header shows that person's real display name as **FLW Name : `<name>`**.
 
 === "Standard Review"
 
@@ -194,23 +197,4 @@ At the top of the bulk assessment page, several bulk action buttons let you appl
 | --- | -------------- |
 | `P` | Mark Pass      |
 | `F` | Mark Fail      |
-| `→` | Next image     |
-| `←` | Previous image |
-
-### Filtering images in the review queue
-
-The **Status filter** at the top of the bulk assessment page lets you narrow the images shown to a particular result. The available options are:
-
-| Filter | What it shows |
-| --- | --- |
-| **All** | Every image in the session |
-| **Pending** | Images that have not yet been assessed |
-| **Pass** | Images marked Pass |
-| **Fail** | Images marked Fail |
-| **Duplicate/Fake** | Images marked Duplicate/Fake |
-
-### FLW Summary table
-
-The FLW Summary table on the review page shows a row for each field worker in the session. The columns include:
-
-- **%
+| `→` |
