@@ -707,8 +707,14 @@
               Saving...
             </span>
           </button>
-          <span x-show="hasUnsavedChanges" class="text-sm text-orange-600 font-medium">
-            <i class="fa-solid fa-exclamation-triangle mr-1"></i>Unsaved changes
+          <span x-show="autoSaveStatus === 'saving'" class="text-sm text-gray-500 font-medium">
+            <i class="fa-solid fa-spinner fa-spin mr-1"></i>Saving…
+          </span>
+          <span x-show="autoSaveStatus === 'saved' && !hasUnsavedChanges" class="text-sm text-green-600 font-medium">
+            <i class="fa-solid fa-circle-check mr-1"></i>All changes saved
+          </span>
+          <span x-show="hasUnsavedChanges && autoSaveStatus === 'error'" class="text-sm text-orange-600 font-medium">
+            <i class="fa-solid fa-exclamation-triangle mr-1"></i>Unsaved changes — retrying…
           </span>
         </div>
       </div>
@@ -974,6 +980,8 @@ function bulkAssessmentInterface() {
     currentAgentActions: {},
     hasUnsavedChanges: false,
     saving: false,
+    autoSaveTimer: null,
+    autoSaveStatus: 'idle', // idle | saving | saved | error
     showApplyModal: false,
     showSuccessModal: false,
     applyingResults: false,
@@ -1369,6 +1377,7 @@ function bulkAssessmentInterface() {
         this.recalculateStats();
       }
       this.hasUnsavedChanges = true;
+      this.scheduleAutoSave();
 
       return resultValue || '';
     },
@@ -1767,6 +1776,43 @@ function bulkAssessmentInterface() {
       } catch (error) {
         alert('Error saving audit: ' + error.message);
         throw error;
+      } finally {
+        this.saving = false;
+      }
+    },
+    scheduleAutoSave() {
+      // Debounce a silent save of the current tagging so a closed tab or
+      // timeout no longer loses pass/fail/duplicate/notes edits.
+      if (this.isReadOnly) return;
+      if (this.autoSaveTimer) clearTimeout(this.autoSaveTimer);
+      this.autoSaveTimer = setTimeout(() => this.autoSave(), 1500);
+    },
+    async autoSave() {
+      if (this.isReadOnly || !this.hasUnsavedChanges) return;
+      // Don't collide with a manual save / completion in flight — retry shortly.
+      if (this.saving || this.submittingCompletion) {
+        this.scheduleAutoSave();
+        return;
+      }
+      this.saving = true;
+      this.autoSaveStatus = 'saving';
+      try {
+        const formData = new FormData();
+        formData.append('visit_results', JSON.stringify(this.visitResults));
+        formData.append('csrfmiddlewaretoken', this.csrfToken);
+        const response = await fetch(this.saveUrl, { method: 'POST', body: formData });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+          throw new Error(data.error || 'Failed to auto-save');
+        }
+        this.hasUnsavedChanges = false;
+        this.autoSaveStatus = 'saved';
+      } catch (error) {
+        // Leave hasUnsavedChanges set so the tab-close warning still fires; no
+        // alert (autosave is silent). Retry after the debounce interval.
+        this.autoSaveStatus = 'error';
+        console.error('Auto-save failed:', error);
+        this.scheduleAutoSave();
       } finally {
         this.saving = false;
       }
