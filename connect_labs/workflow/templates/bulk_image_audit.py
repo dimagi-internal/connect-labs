@@ -254,6 +254,28 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
             .catch(() => []);
     };
 
+    // Delete an in-progress session directly from the run screen (e.g. a stray
+    // session left by a reverted creation). Completed sessions are not deletable.
+    const [deletingSessionId, setDeletingSessionId] = React.useState(null);
+    const deleteSession = async (session) => {
+        if (session.status === 'completed') return;
+        if (!window.confirm('Delete this in-progress audit session permanently? This cannot be undone.')) return;
+        setDeletingSessionId(session.id);
+        try {
+            const res = await fetch('/audit/api/' + session.id + '/delete/', {
+                method: 'POST',
+                headers: { 'X-CSRFToken': getCsrfToken() },
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) throw new Error(data.error || 'Failed to delete session');
+            await refreshSessions();
+        } catch (e) {
+            alert('Error deleting session: ' + (e.message || e));
+        } finally {
+            setDeletingSessionId(null);
+        }
+    };
+
     // Reconnect to running job on page load (if user refreshed mid-creation)
     React.useEffect(() => {
         try {
@@ -663,6 +685,22 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
                                                         : 'fa-arrow-up-right-from-square')}></i>
                                                 {session.status === 'completed' ? 'View' : 'Review'}
                                             </a>
+                                            {session.status !== 'completed' && (
+                                                <button
+                                                    onClick={() => deleteSession(session)}
+                                                    disabled={deletingSessionId === session.id}
+                                                    title="Delete this in-progress session"
+                                                    className={'ml-2 inline-flex items-center px-3 py-1.5 text-sm ' +
+                                                        'bg-red-50 text-red-700 rounded hover:bg-red-100 ' +
+                                                        'border border-red-200 transition-colors disabled:opacity-50'}
+                                                >
+                                                    <i className={'fa-solid mr-1.5 ' +
+                                                        (deletingSessionId === session.id
+                                                            ? 'fa-spinner fa-spin'
+                                                            : 'fa-trash')}></i>
+                                                    Delete
+                                                </button>
+                                            )}
                                         </td>
                                     </tr>
                                 );
