@@ -265,6 +265,35 @@ def build_prior_audit_index(sessions, exclude_session_id=None) -> dict:
     return index
 
 
+def _created_session_ids(info) -> list:
+    """Extract created audit-session ids from a task result / job-record dict.
+
+    The creation task records created sessions under the "sessions" key as a
+    list of ``{"id", ...}`` dicts (see tasks.py). Older / AI-review payloads
+    used a flat "session_ids" list. Accept both, plus a nested "result" dict,
+    and de-duplicate. Used by cancel cleanup to delete the sessions an
+    abandoned/cancelled creation actually created.
+    """
+    if not isinstance(info, dict):
+        return []
+    out: list = []
+    sessions = info.get("sessions")
+    if isinstance(sessions, list):
+        for s in sessions:
+            sid = s.get("id") if isinstance(s, dict) else s
+            if sid and sid not in out:
+                out.append(sid)
+    for sid in info.get("session_ids") or []:
+        if sid and sid not in out:
+            out.append(sid)
+    nested = info.get("result")
+    if isinstance(nested, dict):
+        for sid in _created_session_ids(nested):
+            if sid not in out:
+                out.append(sid)
+    return out
+
+
 def filter_out_prior_audited(all_visit_images: dict, prior_index: dict) -> tuple[dict, int]:
     """Drop images whose "<visit_id>:<blob_id>" is in prior_index.
 
@@ -1599,14 +1628,17 @@ class AuditDataAccess(BaseDataAccess):
             if cleanup_objects:
                 # celery_result.info may be an exception object if task failed,
                 # so we need to check it's actually a dict before calling .get()
+                # The task records created sessions under the "sessions" key
+                # (list of {"id", ...} dicts); read that, with legacy/nested
+                # fallbacks. (The old code read a "session_ids" key the task
+                # never writes, so cleanup was a silent no-op and orphaned the
+                # session.)
                 task_info = celery_result.info if isinstance(celery_result.info, dict) else {}
-                session_ids = task_info.get("session_ids", [])
+                session_ids = _created_session_ids(task_info)
 
-                # Also check job record for IDs if available
-                if job_record:
-                    job_data = job_record.data or {}
-                    if not session_ids:
-                        session_ids = job_data.get("session_ids", [])
+                # Also check the job record's stored payload if available
+                if not session_ids and job_record:
+                    session_ids = _created_session_ids(job_record.data or {})
 
                 # Delete sessions
                 for session_id in session_ids:
