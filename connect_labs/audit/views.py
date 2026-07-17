@@ -426,6 +426,14 @@ class ExperimentAuditCompleteView(LoginRequiredMixin, View):
                 session = data_access.save_audit_session(session)
                 s3_export.upsert_audit_session(session)
 
+                # If this session belongs to a workflow run, complete the run
+                # once ALL of its linked sessions are completed. The run's
+                # status is otherwise never written to "completed" (the
+                # bulk_image_audit completion path routes status through the
+                # state endpoint, which strips it), leaving the run stuck at
+                # "In Progress" on the workflow list.
+                self._maybe_complete_workflow_run(request, data_access, session)
+
                 return JsonResponse({"success": True})
 
             finally:
@@ -434,6 +442,33 @@ class ExperimentAuditCompleteView(LoginRequiredMixin, View):
         except Exception as e:
             logger.exception("Failed to complete audit session")
             return JsonResponse({"error": f"An internal error occurred: {e}"}, status=500)
+
+    def _maybe_complete_workflow_run(self, request, data_access, session):
+        """Complete the linked workflow run once all its sessions are done.
+
+        Best-effort: any failure here is logged and swallowed so it never
+        breaks the (already-successful) session completion.
+        """
+        from connect_labs.audit.data_access import all_sessions_completed
+        from connect_labs.workflow.data_access import WorkflowDataAccess
+
+        run_id = getattr(session, "labs_record_id", None)
+        if not run_id:
+            return
+        try:
+            sessions = data_access.get_sessions_by_workflow_run(run_id)
+            if not all_sessions_completed(sessions):
+                return
+            workflow_data_access = WorkflowDataAccess(request=request)
+            try:
+                # Action-shaped audit runs have no snapshot contract; an empty
+                # snapshot is correct. complete_run is idempotent (returns None
+                # if the run is already completed).
+                workflow_data_access.complete_run(run_id, snapshot={})
+            finally:
+                workflow_data_access.close()
+        except Exception:
+            logger.warning("Failed to complete workflow run %s after session completion", run_id, exc_info=True)
 
 
 class ExperimentAuditUncompleteView(LoginRequiredMixin, View):
