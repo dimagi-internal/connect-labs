@@ -347,6 +347,18 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
         if (selectedOpps.length === 0) return;
         if (selectedImageTypeIds.length === 0) return;
 
+        // This run already has session(s) — confirm before adding another, so a
+        // re-run after reverting doesn't silently stack a second (stray) session.
+        if (linkedSessions.length > 0) {
+            const n = linkedSessions.length;
+            if (!window.confirm(
+                'This run already has ' + n + ' audit session' + (n === 1 ? '' : 's') +
+                '. Create another one anyway?'
+            )) {
+                return;
+            }
+        }
+
         const selectedTypes = imageQuestions.filter(q => selectedImageTypeIds.includes(q.id));
 
         const config = {
@@ -631,14 +643,25 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
                                 return (
                                     <tr key={session.id} className="hover:bg-gray-50">
                                         <td className="px-4 py-4">
-                                            <div className="text-sm font-medium text-gray-900">
-                                                {session.flw_display_name || session.flw_username || 'Unknown'}
-                                            </div>
-                                            {session.flw_display_name !== session.flw_username
-                                                && session.flw_username && (
-                                                <div className="text-xs text-gray-400 mt-0.5 font-mono">
-                                                    {session.flw_username}
+                                            {session.flw_count > 1 ? (
+                                                <div className="text-sm font-medium text-gray-900">
+                                                    All FLWs{' '}
+                                                    <span className="text-gray-400 font-normal">
+                                                        ({session.flw_count})
+                                                    </span>
                                                 </div>
+                                            ) : (
+                                                <React.Fragment>
+                                                    <div className="text-sm font-medium text-gray-900">
+                                                        {session.flw_display_name || session.flw_username || 'Unknown'}
+                                                    </div>
+                                                    {session.flw_display_name !== session.flw_username
+                                                        && session.flw_username && (
+                                                        <div className="text-xs text-gray-400 mt-0.5 font-mono">
+                                                            {session.flw_username}
+                                                        </div>
+                                                    )}
+                                                </React.Fragment>
                                             )}
                                         </td>
                                         <td className="px-4 py-4 text-center">

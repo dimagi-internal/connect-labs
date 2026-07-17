@@ -361,6 +361,21 @@ class AuditSessionRecord(LocalLabsRecord):
 
         return stats
 
+    def get_flw_count(self) -> int:
+        """Number of distinct FLWs (usernames) whose images are in this session.
+
+        A combined session spans many FLWs; per-FLW sessions have exactly one.
+        Lets the UI label combined sessions honestly instead of showing a single
+        (first) FLW's name for everyone's images.
+        """
+        usernames = set()
+        for images in self.data.get("visit_images", {}).values():
+            for img in images or []:
+                username = img.get("username")
+                if username:
+                    usernames.add(username)
+        return len(usernames)
+
     def to_summary_dict(self) -> dict:
         """
         Convert session to a summary dict for API responses.
@@ -382,6 +397,7 @@ class AuditSessionRecord(LocalLabsRecord):
             "assessment_stats": stats,
             "workflow_run_id": self.workflow_run_id,
             "flw_username": self.flw_username,
+            "flw_count": self.get_flw_count(),
             "visit_clusters": self.data.get("visit_clusters", []),
         }
 
