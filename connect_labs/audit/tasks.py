@@ -12,7 +12,12 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from config import celery_app
-from connect_labs.audit.data_access import AuditCriteria, AuditDataAccess, create_mock_request
+from connect_labs.audit.data_access import (
+    AuditCriteria,
+    AuditDataAccess,
+    create_mock_request,
+    is_audit_creation_cancelled,
+)
 from connect_labs.audit.visit_clustering import build_flw_visit_clusters
 from connect_labs.utils.celery import set_task_progress
 from connect_labs.utils.progress_relays import _RELAYS as AUDIT_PROGRESS_RELAYS  # noqa: F401  (back-compat alias)
@@ -692,6 +697,16 @@ def run_audit_creation(
             )
 
         current_stage += 1
+
+        # Cooperative cancellation: if the user cancelled while we were fetching
+        # visits / extracting images, abort BEFORE creating any session so a
+        # reverted creation can't leave a stray session behind.
+        if is_audit_creation_cancelled(task_id):
+            logger.info(f"[AuditCreation] Task {task_id} cancelled before session creation — aborting")
+            _update_job_progress(
+                data_access, task_id, username, status="cancelled", message="Cancelled before session creation"
+            )
+            return {"success": False, "cancelled": True, "sessions": []}
 
         # =========================================================================
         # STAGE 3: Create session(s)

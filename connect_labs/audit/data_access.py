@@ -18,6 +18,7 @@ from dataclasses import dataclass
 
 import httpx
 import pandas as pd
+from django.core.cache import cache
 from django.http import HttpRequest
 
 from connect_labs.audit.analysis_config import AUDIT_EXTRACTION_CONFIG
@@ -263,6 +264,27 @@ def build_prior_audit_index(sessions, exclude_session_id=None) -> dict:
                     "completed_at": completed_at.isoformat() if completed_at else None,
                 }
     return index
+
+
+_AUDIT_CANCEL_FLAG_TTL = 3600
+
+
+def _audit_cancel_flag_key(task_id: str) -> str:
+    return f"audit_creation_cancelled:{task_id}"
+
+
+def mark_audit_creation_cancelled(task_id: str) -> None:
+    """Set a cross-process flag (Redis cache) so a running creation worker can
+    cooperatively abort before it creates a session. Complements the Celery
+    revoke, which can race session creation. No-op for a falsy task_id.
+    """
+    if task_id:
+        cache.set(_audit_cancel_flag_key(task_id), True, timeout=_AUDIT_CANCEL_FLAG_TTL)
+
+
+def is_audit_creation_cancelled(task_id: str) -> bool:
+    """True if this audit-creation task has been flagged cancelled."""
+    return bool(task_id) and bool(cache.get(_audit_cancel_flag_key(task_id)))
 
 
 def _created_session_ids(info) -> list:
@@ -1625,6 +1647,10 @@ class AuditDataAccess(BaseDataAccess):
             if not task_id:
                 result["error"] = "No task_id provided or found"
                 return result
+
+            # Set the cooperative-cancel flag FIRST so a worker mid-run can
+            # abort before creating a session (the revoke below can race it).
+            mark_audit_creation_cancelled(task_id)
 
             # Check task state and revoke if running
             celery_result = AsyncResult(task_id)
