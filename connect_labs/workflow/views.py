@@ -3285,11 +3285,24 @@ def start_job_api(request, run_id):
         # opp-owned run is dispatched opp-scoped. Read both signals from the
         # session context (with the render's job_config as a fallback source).
         labs_context = getattr(request, "labs_context", {}) or {}
-        program_id = labs_context.get("program_id") or (job_config or {}).get("program_id")
+        job_config_opportunity_id = (job_config or {}).get("opportunity_id")
+        job_config_program_id = (job_config or {}).get("program_id")
+        program_id = labs_context.get("program_id") or job_config_program_id
         candidates = []
-        for c in (labs_context.get("opportunity_id"), (job_config or {}).get("opportunity_id")):
-            if c and c not in candidates:
-                candidates.append(c)
+        # If the render explicitly declares this run program-owned (program_id
+        # set, no opportunity_id, in job_config — which WorkflowRunView builds
+        # from the RUN RECORD's own opportunity_id/program_id, not ambient
+        # context), trust that over labs_context.opportunity_id. Session-level
+        # labs_context is a page-wide side channel that unrelated same-page
+        # background fetches (e.g. a per-opportunity sessions-list call) can
+        # clobber between page load and this POST, long after the run's own
+        # true scope was already known — see the "Create Audits" 500 on a
+        # program-owned Weekly Dual-Track Audit run for the reproduction.
+        trust_program_scope = bool(job_config_program_id) and not job_config_opportunity_id
+        if not trust_program_scope:
+            for c in (labs_context.get("opportunity_id"), job_config_opportunity_id):
+                if c and c not in candidates:
+                    candidates.append(c)
 
         if program_id and not candidates:
             # Program dispatch: the run resolves by program_id alone. Confirm it
