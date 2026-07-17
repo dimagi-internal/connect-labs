@@ -730,10 +730,21 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                 run_data = {
                     "id": run.id,
                     "definition_id": definition_id,
-                    "opportunity_id": opportunity_id,
+                    # Use the RUN RECORD's own ownership, not the ambient
+                    # request/session labs_context. A program-owned run's
+                    # opportunity_id is None on the record itself, but the
+                    # session's "current opportunity" can be non-None here —
+                    # e.g. left over from the workflow list page's background
+                    # per-opp fetches — even while viewing a program-scoped
+                    # page. Trusting that stale value made instance.opportunity_id
+                    # non-null for a program-owned run, so the "Create Audits"
+                    # button sent a real opportunity_id to startJob and
+                    # start_job_api dispatched opp-scoped instead of
+                    # program-scoped, 404ing on get_run() and failing the batch.
+                    "opportunity_id": run.opportunity_id,
                     # Program-owned runs have no owning opp; the render reads
                     # instance.program_id to dispatch program-scoped jobs.
-                    "program_id": program_id,
+                    "program_id": run.program_id,
                     "opportunity_ids": effective_opp_ids,
                     "opportunity_name": labs_context.get("opportunity", {}).get("name"),
                     # Canonical lifecycle: in_progress | completed. The proxy
