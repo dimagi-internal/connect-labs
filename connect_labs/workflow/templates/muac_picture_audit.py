@@ -193,6 +193,16 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
     const [availableAIAgents, setAvailableAIAgents] = React.useState([]);
     const aiAgentsLoadedRef = React.useRef(false);
 
+    // This workflow only ever audits MUAC images — discovered image types are
+    // filtered down to MUAC-matching fields (case-insensitive substring match
+    // on label or path), and every match is auto-selected by default. Unlike
+    // the reference wizard, an empty selection here does NOT mean "audit every
+    // image" — see handleCreate's validation, which requires at least one.
+    const isMuacImageType = (t) => {
+        const hay = ((t.label || '') + ' ' + (t.path || '')).toLowerCase();
+        return hay.indexOf('muac') !== -1;
+    };
+
     React.useEffect(() => {
         const key = selectedOppIds.slice().sort().join(',');
         if (!key || key === imageTypesLoadedKeyRef.current) return;
@@ -202,8 +212,9 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
         )).then(arrs => {
             const seen = {}; const all = [];
             arrs.forEach(list => (list || []).forEach(t => { if (!seen[t.id]) { seen[t.id] = true; all.push(t); } }));
-            setAvailableImageTypes(all);
-            setSelectedImagePaths(prev => prev.filter(p => all.some(t => t.path === p)));
+            const muacOnly = all.filter(isMuacImageType);
+            setAvailableImageTypes(muacOnly);
+            setSelectedImagePaths(muacOnly.map(t => t.path));
         });
     }, [selectedOppIds.join(',')]);
 
@@ -342,6 +353,10 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
 
     const handleCreate = async () => {
         if (!isCriteriaValid() || isRunning || selectedOppIds.length === 0 || selectedFlwUserIds.length === 0) return;
+        if (selectedImagePaths.length === 0) {
+            setJobError('Select at least one MUAC image type — this workflow only audits MUAC images.');
+            return;
+        }
         const revErr = reviewerValidationError();
         if (revErr) { setJobError(revErr); return; }
         setIsRunning(true); setJobError(null); setStaleJob(false);
@@ -666,7 +681,10 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                 <h3 className="text-sm font-medium text-gray-700 mb-3">
                     <i className="fa-solid fa-circle-5 mr-2 text-gray-400"></i>Step 5 — Audit Field Configuration
                 </h3>
-                <p className="text-xs text-gray-500 mb-3">Leave all image types unchecked to audit every image.</p>
+                <p className="text-xs text-gray-500 mb-3">
+                    Only MUAC image types are shown and audited — this workflow never audits other image types.
+                    All discovered MUAC fields are selected by default; uncheck any you want to exclude.
+                </p>
                 <div className="space-y-3">
                     {availableImageTypes.map(t => (
                         <div key={t.path} className="border border-gray-200 rounded-lg p-3">
@@ -716,7 +734,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                             )}
                         </div>
                     ))}
-                    {availableImageTypes.length === 0 && <p className="text-xs text-gray-400 italic">No image types discovered yet for the selected opportunities.</p>}
+                    {availableImageTypes.length === 0 && <p className="text-xs text-gray-400 italic">No MUAC image types discovered yet for the selected opportunities.</p>}
                 </div>
 
                 <details className="mt-4">
@@ -774,7 +792,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                     </label>
 
                     <button onClick={handleCreate}
-                        disabled={!isCriteriaValid() || isRunning || selectedOppIds.length === 0 || selectedFlwUserIds.length === 0 || instance.status === 'completed'}
+                        disabled={!isCriteriaValid() || isRunning || selectedOppIds.length === 0 || selectedFlwUserIds.length === 0 || selectedImagePaths.length === 0 || instance.status === 'completed'}
                         className="inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 font-medium">
                         {isRunning
                             ? <span><i className="fa-solid fa-spinner fa-spin mr-2"></i>Creating…</span>
