@@ -248,6 +248,7 @@ class AnalysisPipeline:
         sample_percentage: int = 100,
         deliver_unit_types: list[str] | None = None,
         visit_statuses: list[str] | None = None,
+        days_of_week: list[int] | None = None,
         return_visit_data: bool = False,
     ) -> list[int] | tuple[list[int], list[dict]]:
         """
@@ -268,6 +269,8 @@ class AnalysisPipeline:
                 form.@name (None = all) — Connect never exposes a deliver-unit name,
                 only the numeric FK id, so the form's own display name is used instead.
             visit_statuses: Filter to specific visit status(es) (None = all)
+            days_of_week: Restrict to visits on these ISO weekdays (1=Monday..7=Sunday);
+                None/empty = all days. Only meaningful alongside a date_range filter.
             return_visit_data: If True, also return filtered visit dicts (slim, no form_json)
 
         Returns:
@@ -289,6 +292,7 @@ class AnalysisPipeline:
             sample_percentage=sample_percentage,
             deliver_unit_types=deliver_unit_types,
             visit_statuses=visit_statuses,
+            days_of_week=days_of_week,
             return_visit_data=return_visit_data,
         )
 

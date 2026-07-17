@@ -977,6 +977,7 @@ class SQLBackend:
         sample_percentage: int = 100,
         deliver_unit_types: list[str] | None = None,
         visit_statuses: list[str] | None = None,
+        days_of_week: list[int] | None = None,
         return_visit_data: bool = False,
     ) -> list[int] | tuple[list[int], list[dict]]:
         """
@@ -1017,6 +1018,7 @@ class SQLBackend:
                 sample_percentage=sample_percentage,
                 deliver_unit_types=deliver_unit_types,
                 visit_statuses=visit_statuses,
+                days_of_week=days_of_week,
             )
             visit_ids = [v["id"] for v in visits]
             logger.info(f"[SQL] Filtered to {len(visit_ids)} visits (with data)")
@@ -1032,6 +1034,7 @@ class SQLBackend:
                 sample_percentage=sample_percentage,
                 deliver_unit_types=deliver_unit_types,
                 visit_statuses=visit_statuses,
+                days_of_week=days_of_week,
             )
             logger.info(f"[SQL] Filtered to {len(visit_ids)} visit IDs")
             return visit_ids
