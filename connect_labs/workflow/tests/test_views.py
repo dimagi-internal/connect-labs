@@ -777,6 +777,71 @@ class TestPipelineDataProgramOwnedFallback:
         assert response.status_code == 400
 
 
+class TestWorkflowRunViewProgramScopedInstance:
+    """The JS `instance` prop must reflect the RUN RECORD's own ownership, not
+    the ambient request/session labs_context — which can carry a stale
+    `opportunity_id` (e.g. left over from the workflow list page's background
+    per-opp fetches) even while viewing a program-scoped run. Reproduced via a
+    real browser session: a program-owned Weekly Dual-Track Audit run's
+    "Create Audits" button read a stale non-null instance.opportunity_id,
+    sent it to startJob, and start_job_api's dispatch logic picked the
+    opp-scoped branch instead of program-scoped — 404ing on get_run() and
+    failing the whole batch with a generic "internal error"."""
+
+    def test_instance_opportunity_id_reflects_run_record_not_stale_session_context(
+        self, dimagi_user, rf: RequestFactory
+    ):
+        from connect_labs.workflow.views import WorkflowRunView
+
+        request = rf.get("/labs/workflow/6810/run/?run_id=6823&program_id=176")
+        request.user = dimagi_user
+        # Contaminated session context: program_id is correct, but a stale
+        # opportunity_id lingers from earlier browsing (e.g. the workflow list
+        # page's per-opp background fetches) — this must NOT leak into the
+        # run's own instance.opportunity_id.
+        request.labs_context = {"program_id": 176, "opportunity_id": 1976}
+        request.session = {"labs_oauth": {"access_token": "t"}}
+
+        mock_definition = MagicMock(
+            data={},
+            id=6810,
+            multi_opp=True,
+            opportunity_ids=[1973, 1976, 1978, 1982],
+            name="Weekly Dual-Track Image Audit",
+        )
+        mock_run = MagicMock(
+            id=6823,
+            status="in_progress",
+            state={},
+            period_start="2026-07-17",
+            period_end="2026-07-17",
+            completed_at=None,
+            snapshot=None,
+            opportunity_id=None,  # the record's own truth: program-owned, no opp
+            program_id=176,
+        )
+
+        with (
+            patch("connect_labs.workflow.views.WorkflowDataAccess") as MockWDA,
+            patch("connect_labs.workflow.views.get_org_data", return_value={}),
+        ):
+            mock_wda = MagicMock()
+            MockWDA.return_value = mock_wda
+            mock_wda.get_definition.return_value = mock_definition
+            mock_wda.get_render_code.return_value = None
+            mock_wda.get_run.return_value = mock_run
+            mock_wda.get_workers.return_value = []
+
+            view = WorkflowRunView()
+            view.request = request
+            view.kwargs = {"definition_id": 6810}
+            context = view.get_context_data()
+
+        instance = context["workflow_data"]["instance"]
+        assert instance["opportunity_id"] is None
+        assert instance["program_id"] == 176
+
+
 class TestResolvePipelineDefinitionCrossOpp:
     """A pipeline reused under a program-owned workflow (the recommended way
     to build one — see the program-owned workflow migration guide) is often
