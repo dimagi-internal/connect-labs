@@ -294,6 +294,17 @@ def _created_session_ids(info) -> list:
     return out
 
 
+def all_sessions_completed(sessions) -> bool:
+    """True iff there is at least one session and every one is completed.
+
+    Used to decide whether a workflow run backed by audit sessions is done —
+    an audit run can span multiple sessions, so the run completes only when
+    all of them are completed.
+    """
+    sessions = list(sessions)
+    return bool(sessions) and all(getattr(s, "status", None) == "completed" for s in sessions)
+
+
 def filter_out_prior_audited(all_visit_images: dict, prior_index: dict) -> tuple[dict, int]:
     """Drop images whose "<visit_id>:<blob_id>" is in prior_index.
 
