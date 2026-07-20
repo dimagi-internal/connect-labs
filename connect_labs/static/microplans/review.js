@@ -2210,12 +2210,39 @@
   // Parse a GeoJSON of ward/area polygons client-side into plan areas; each polygon
   // carries ward/LGA/state read from common property names. Shown as a map overlay.
   let uploadedAreas = [];
+  // Checks `keys` in PRIORITY order (not the feature's own property order —
+  // GeoJSON property order is arbitrary/export-dependent) and skips a key that's
+  // present but blank, falling through to the next candidate.
   function _firstProp(p, keys) {
-    for (const k of Object.keys(p || {})) {
-      if (keys.includes(k.toLowerCase())) return String(p[k] || '').trim();
+    const lower = {};
+    Object.keys(p || {}).forEach((k) => {
+      lower[k.toLowerCase()] = p[k];
+    });
+    for (const k of keys) {
+      const v = lower[k];
+      if (v != null && String(v).trim() !== '') return String(v).trim();
     }
     return '';
   }
+  // Common property-naming conventions across ward-boundary exports: GRID3's
+  // own format (wardname/lganame/statename), and the ADM1/2/3_EN convention
+  // used by geoBoundaries/HDX/OCHA COD-style files.
+  const WARD_KEYS = [
+    'wardname',
+    'ward',
+    'ward_name',
+    'adm3_en',
+    'adm3name',
+    'name',
+  ];
+  const LGA_KEYS = ['lganame', 'lga', 'lga_name', 'adm2_en', 'adm2name'];
+  const STATE_KEYS = [
+    'statename',
+    'state',
+    'state_name',
+    'adm1_en',
+    'adm1name',
+  ];
   function handleBoundaryUpload(file) {
     const st = $('area-upload-status');
     const reader = new FileReader();
@@ -2236,9 +2263,9 @@
           return {
             arm: 'intervention',
             geometry: f.geometry,
-            ward: _firstProp(p, ['wardname', 'ward', 'ward_name', 'name']),
-            lga: _firstProp(p, ['lganame', 'lga', 'lga_name']),
-            state: _firstProp(p, ['statename', 'state', 'state_name']),
+            ward: _firstProp(p, WARD_KEYS),
+            lga: _firstProp(p, LGA_KEYS),
+            state: _firstProp(p, STATE_KEYS),
             populations: null,
           };
         });
@@ -2263,7 +2290,9 @@
   // with no population rather than guessing) so the Population data source
   // dropdown and Avg U5/WA can populate for uploaded areas too.
   async function fillUploadedPopulations() {
+    const st = $('area-upload-status');
     if (!POPULATION_BY_NAME_URL || !uploadedAreas.length) return;
+    const missingNames = uploadedAreas.filter((a) => !a.ward).length;
     const wards = uploadedAreas.map((a) => ({
       ward: a.ward,
       lga: a.lga,
@@ -2272,17 +2301,41 @@
     try {
       const resp = await post(POPULATION_BY_NAME_URL, { wards });
       const data = await resp.json();
-      if (!resp.ok || data.status !== 'ok') return;
+      if (!resp.ok || data.status !== 'ok') {
+        if (st)
+          st.textContent = `${
+            uploadedAreas.length
+          } area(s) loaded, but the population lookup failed (${
+            (data && data.detail) || 'HTTP ' + resp.status
+          }).`;
+        return;
+      }
       const pops = data.populations || [];
       // Index-aligned with the request; guard against the set changing (a
       // second upload / clear) while this was in flight.
       if (pops.length !== uploadedAreas.length) return;
+      let matched = 0;
       uploadedAreas.forEach((a, i) => {
-        if (pops[i]) a.populations = pops[i];
+        if (pops[i]) {
+          a.populations = pops[i];
+          matched++;
+        }
       });
+      if (st) {
+        st.textContent = `${
+          uploadedAreas.length
+        } area(s) loaded — population matched for ${matched} of ${
+          uploadedAreas.length
+        }.${
+          missingNames
+            ? ` ${missingNames} area(s) had no ward name found in the file's properties.`
+            : ''
+        }`;
+      }
       if (typeof refreshAreaStats === 'function') refreshAreaStats();
     } catch (e) {
-      /* best-effort — leave populations null, table shows "—" as usual */
+      if (st)
+        st.textContent = `${uploadedAreas.length} area(s) loaded, but the population lookup failed: ${e}`;
     }
   }
   function drawUploadedOverlay() {
