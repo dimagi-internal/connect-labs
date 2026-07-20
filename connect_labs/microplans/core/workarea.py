@@ -31,6 +31,8 @@ Two output shapes:
 from __future__ import annotations
 
 import json
+import random
+import string
 from dataclasses import dataclass, field
 from typing import TypedDict
 
@@ -105,6 +107,26 @@ class WorkAreaPayload:
     case_properties: dict = field(default_factory=dict)
 
 
+_SLUG_ALPHABET = string.ascii_uppercase + string.digits
+
+
+def _new_slug(used: set[str]) -> str:
+    """Short Area Slug in Connect's own visual style (e.g. "DA490TL"): 2 random
+    letters + 5 random alphanumeric characters. Connect's importer only
+    requires the slug be non-empty and unique within the uploaded file/
+    opportunity (`CONNECT_IMPORT_CONTRACT.md`) — it does not enforce a
+    character format. A work-area file is uploaded exactly once, into an
+    opportunity that must be empty (no append/re-import), so uniqueness only
+    needs to hold within THIS generation batch — `used` is the caller's
+    in-memory set for that one call, nothing is persisted across plans or
+    uploads."""
+    while True:
+        slug = "".join(random.choices(string.ascii_uppercase, k=2)) + "".join(random.choices(_SLUG_ALPHABET, k=5))
+        if slug not in used:
+            used.add(slug)
+            return slug
+
+
 def _square_boundary_shape(lon: float, lat: float, half_m: float):
     """A small axis-aligned square (in meters) centered on the pin, as a WGS84 shapely Polygon."""
     epsg = utm_epsg_for(lon, lat)
@@ -161,6 +183,7 @@ def build_work_areas(
     """Convert a pins FeatureCollection (from sampling.frame) into WorkArea payloads."""
     ward_for_arm = ward_for_arm or {}
     out: list[WorkAreaPayload] = []
+    used_slugs: set[str] = set()
     for feat in pins_geojson.get("features", []):
         lon, lat = feat["geometry"]["coordinates"]
         props = feat.get("properties", {})
@@ -168,10 +191,9 @@ def build_work_areas(
         cluster = props.get("cluster", "C0")
         sample_type = props.get("sample_type", "primary")
         order = int(props.get("order_in_cluster", 0))
-        slug = f"{arm[:3]}-{cluster}-{sample_type[:4]}-{order}".lower()
         out.append(
             WorkAreaPayload(
-                slug=slug,
+                slug=_new_slug(used_slugs),
                 ward=ward_for_arm.get(arm, arm),
                 centroid_lon=lon,
                 centroid_lat=lat,
@@ -209,6 +231,7 @@ def build_coverage_work_areas(
     """
     ward_for_arm = ward_for_arm or {}
     out: list[WorkAreaPayload] = []
+    used_slugs: set[str] = set()
     for feat in area_features.get("features", []):
         geom = shape(feat["geometry"])
         centroid = geom.centroid
@@ -225,7 +248,7 @@ def build_coverage_work_areas(
         target_population = int(props["target_population"]) if props.get("target_population") is not None else 0
         out.append(
             WorkAreaPayload(
-                slug=f"{arm[:3]}-{cluster}".lower(),
+                slug=_new_slug(used_slugs),
                 ward=ward_for_arm.get(arm, arm),
                 centroid_lon=float(centroid.x),
                 centroid_lat=float(centroid.y),
