@@ -388,6 +388,33 @@ class TestResolvePopulationByName:
         )
         assert resolve_population_by_name("", "", "Sabon Gari") is None
 
+    def test_same_ward_loaded_from_both_providers_still_resolves(self):
+        # The common case: NGA wards are loaded from BOTH geopode and grid3 as
+        # separate overlapping AdminBoundary rows for the same real ward. Every
+        # tier's "exactly one candidate" check must collapse these first, or a
+        # ward present in both providers (the norm, not an edge case) would
+        # never resolve at all — this was a real bug (deployed 2026-07-20,
+        # reported as 0/10 uploaded wards matching despite correct names).
+        _make_boundary(
+            "Dandi",
+            3,
+            _SQUARE,
+            "ng-geopode",
+            source="geopode",
+            extra={"parent_names": {"state": "Jigawa", "lga": "Kazaure"}, "populations": {"worldpop_total": 19370.0}},
+        )
+        _make_boundary(
+            "Dandi",
+            3,
+            _INSIDE,
+            "ng-grid3",
+            source="grid3",
+            extra={"parent_names": {"state": "Jigawa", "lga": "Kazaure"}, "populations": {"worldpop_total": 19370.0}},
+        )
+        assert resolve_population_by_name("Jigawa", "Kazaure", "Dandi") == {"worldpop_total": 19370.0}
+        # Also resolves via the ward-only fallback (no state/lga given).
+        assert resolve_population_by_name("", "", "Dandi") == {"worldpop_total": 19370.0}
+
     def test_geopode_scalar_merged_into_bag(self):
         _make_boundary(
             "Sabon Gari",
