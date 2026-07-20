@@ -58,7 +58,7 @@ This step appears once you have selected your opportunities. It has two sections
     If a reviewer needs a setting and you leave it blank, the wizard will stop you before creating the session.
 - **Context fields** (collapsed by default) — optionally associate any supporting form fields (such as a recorded measurement value) with an image type so that human reviewers can see the relevant data alongside each photo. These associations have no effect on AI review.
 - **Exclude already-audited images** — a checkbox option that controls whether photos previously judged in a completed audit session are included in this new session. Leave it **unchecked** (the default) to include all matching images as normal. **Check it** and the new session will skip any photo that has already received a verdict in an earlier completed audit — so reviewers only assess images that have never been audited before. The number of images skipped is recorded in the creation log.
-- **Visit Clustering** — an optional filter available in the Weekly Dual-Track Image Audit workflow, shown alongside the existing Audit Window and Sampling rate settings. When enabled, it groups consecutive visits by the same field worker that are close together in time and/or GPS location. This is useful for spotting likely duplicate or re-photographed measurements. Visit Clustering never changes which images are included in the audit — it only adds a **N Duplicate Groupings** button next to each MUAC/Other row in the session. Clicking that button expands a list of CSV downloads, one per grouping, for further duplicate-detection analysis. If both Visit Clustering checkboxes are left unticked, nothing changes from the standard workflow.
+- **Visit Clustering** — an optional filter available in the Weekly Dual-Track Image Audit workflow, shown alongside the existing Audit Window and Sampling rate settings. When enabled, it groups consecutive visits by the same field worker that are close together in time and/or GPS location. This is useful for spotting likely duplicate or re-photographed measurements. Visit Clustering never changes which images are included in the audit — it only adds a **N Duplicate Groupings** button next to each row in the session. Clicking that button expands a full-width panel below the audit tile showing the list of images in each group, with a **Download CSV** link for each grouping. The exported CSV includes the **Visit ID** (the number shown on the bulk assessment page, such as #1677989) for each image — Beneficiary Name is not included. If both Visit Clustering checkboxes are left unticked, nothing changes from the standard workflow.
 
 **Pass Threshold:**
 
@@ -104,6 +104,14 @@ In addition to the standard audit creation page, Labs includes purpose-built gui
 ### Weekly Dual-Track Image Audit
 
 This workflow is available to programs that run parallel audit tracks across multiple opportunities. It covers opportunity selection, sampling, field configuration, and metadata in the same order as the standard wizard, and adds **Visit Clustering** (see Step 5 above) to help spot duplicate or re-photographed measurements.
+
+**Configuring tracks in the workflow:**
+
+Instead of tracks being set up in advance, you can now configure them directly in the workflow's own UI:
+
+- For each opportunity, tick checkboxes to select which CommCare image fields belong to that track — the same image-type picker used in the standard wizard.
+- Each track is labelled **Track A** and **Track B** by default. You can rename these to whatever is meaningful for your program — for example, **MUAC** and **Other** — and the labels will carry through to the session and any exported CSVs.
+- The **MUAC OverZoom** AI reviewer automatically follows whichever track contains an image path with "muac" in the name, regardless of how you have named the tracks or which track that path ends up in. You do not need to manually reassign it if you reorganise your tracks.
 
 !!! note "Program-owned runs"
     Program-owned instances of this workflow — those that span multiple opportunities under one program — work end-to-end. Earlier issues that caused a generic error or a "Failed to update state" error when clicking **Create Audits** have been resolved.
@@ -183,15 +191,4 @@ The bulk assessment page header identifies the field worker being reviewed. For 
     !!! tip "Not sure whether to pre-tag?"
     Start with the default flag-only setting. Review a session to see how well the AI's classifications match your program standards, then enable pre-tagging for the verdicts you consistently agree with.
 
-    **AI classification labels** appear at the bottom of each image tile (below the **Add Note** field) once the AI has reviewed the photo. The label shows the agent name and its classification for that image:
-
-    | Agent | Possible label |
-    | --- | --- |
-    | **MUAC OverZoom** | "MUAC OverZoom: Hyperzoomed: confidence 0.XXX" or "MUAC OverZoom: Not Hyperzoomed" |
-    | **Scale Image Validation** | "Scale Validation: Passed" or "Scale Validation: Failed" |
-
-    The confidence score shown in the MUAC OverZoom hyperzoomed label (for example, **Hyperzoomed: confidence 0.823**) is the AI's measure of how certain it was about that classification. A score closer to 1.0 means higher confidence. Use this to help decide whether to accept or override the AI's suggestion — a low confidence score may warrant a closer look at the image.
-
-    If the AI encountered a problem reviewing a specific image, the label turns red and shows the error message. Images that have not yet been reviewed by the AI show no label.
-
-    These labels let you see at
+    **AI classification labels** appear at the bottom of each image tile (below the **Add Note** field) once the AI has reviewed the photo. The label shows the
