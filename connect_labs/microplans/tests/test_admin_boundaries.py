@@ -357,6 +357,37 @@ class TestResolvePopulationByName:
     def test_no_match_returns_none(self):
         assert resolve_population_by_name("Kano", "Rano", "Nonexistent Ward") is None
 
+    def test_ward_only_unique_nationally_resolves_with_no_state_or_lga(self):
+        # Uploaded file with no admin-parent properties at all (state/lga blank)
+        # — a nationally-unique ward name should still resolve.
+        _make_boundary(
+            "Unguwar Arewa",
+            3,
+            _SQUARE,
+            "ng-a",
+            extra={"parent_names": {"state": "Kano", "lga": "Rano"}, "populations": {"worldpop_total": 3000.0}},
+        )
+        assert resolve_population_by_name("", "", "Unguwar Arewa") == {"worldpop_total": 3000.0}
+
+    def test_ward_only_fallback_refuses_when_name_repeats_nationally(self):
+        # Same ward name in two different states, no state/lga given — must not
+        # guess even though each individual candidate is otherwise well-formed.
+        _make_boundary(
+            "Sabon Gari",
+            3,
+            _SQUARE,
+            "ng-a",
+            extra={"parent_names": {"state": "Kano", "lga": "Rano"}, "populations": {"worldpop_total": 5000.0}},
+        )
+        _make_boundary(
+            "Sabon Gari",
+            3,
+            _INSIDE,
+            "ng-b",
+            extra={"parent_names": {"state": "Kaduna", "lga": "Zaria"}, "populations": {"worldpop_total": 7000.0}},
+        )
+        assert resolve_population_by_name("", "", "Sabon Gari") is None
+
     def test_geopode_scalar_merged_into_bag(self):
         _make_boundary(
             "Sabon Gari",

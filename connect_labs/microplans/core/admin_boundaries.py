@@ -229,13 +229,21 @@ def resolve_population_by_name(state: str, lga: str, ward: str, *, candidates=No
     so the geometry/id-based matching in ``LabsAdminBoundarySource`` doesn't
     apply).
 
-    Requires state+LGA+ward to all match (normalized); only falls back to
-    state+ward when that resolves to exactly one candidate — Nigerian ward
-    names repeat across LGAs within the same state, so a bare ward-name match
-    is never trusted alone. Returns the matched boundary's ``extra.populations``
-    bag (plus ``geopode_total`` from its scalar ``population`` field, the same
-    merge ``load_ward_populations`` performs), or ``None`` if nothing matches
-    confidently — never a guess.
+    Tries three tiers, most-specific first, each requiring the match to be
+    unambiguous before trusting it:
+      1. state+LGA+ward all match (normalized).
+      2. state+ward match resolving to exactly one candidate (LGA missing, or
+         its spelling didn't line up).
+      3. ward name alone resolving to exactly one candidate NATIONALLY (state
+         missing or unmatched too — e.g. an uploaded file with no admin-parent
+         properties at all). Safe because ~90% of Nigerian ward names are
+         globally unique once normalized (checked against the national fixture);
+         a ward name that repeats anywhere in the country never falls through
+         to this tier.
+    Returns the matched boundary's ``extra.populations`` bag (plus
+    ``geopode_total`` from its scalar ``population`` field, the same merge
+    ``load_ward_populations`` performs), or ``None`` if nothing matches
+    confidently at any tier — never a guess.
 
     ``candidates`` (optional): a prefetched list from ``ward_population_candidates()``,
     for reuse across a batch. Fetched fresh if omitted (fine for a one-off call,
@@ -266,6 +274,8 @@ def resolve_population_by_name(state: str, lga: str, ward: str, *, candidates=No
         by_state = [b for b in matches if _extra_names(b)[0] == n_state]
         if len(by_state) == 1:
             return _bag(by_state[0])
+    if len(matches) == 1:
+        return _bag(matches[0])
     return None
 
 
