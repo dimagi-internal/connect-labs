@@ -10,6 +10,7 @@ const {
   humanReviewedOf,
   duplicateFakeOf,
   clusterCountOf,
+  showAiStatsOf,
 } = LabsAudit;
 
 function session(over) {
@@ -168,5 +169,35 @@ describe('clusterCountOf', () => {
 
   it('defaults to 0 when visit_clusters is absent (sessions predating the field)', () => {
     expect(clusterCountOf(session({}))).toBe(0);
+  });
+});
+
+describe('showAiStatsOf', () => {
+  it('shows AI stats when has_ai_reviewer is set, regardless of tag/label', () => {
+    const s = session({
+      tag: 'rest',
+      has_ai_reviewer: true,
+      assessment_stats: { pass: 0, fail: 0, ai_match: 0, ai_no_match: 0 },
+    });
+    expect(showAiStatsOf(s)).toBe(true);
+  });
+
+  it('falls back to real AI stats for sessions predating has_ai_reviewer', () => {
+    const s = session({
+      assessment_stats: { pass: 0, fail: 0, ai_match: 3, ai_no_match: 1 },
+    });
+    expect(showAiStatsOf(s)).toBe(true);
+  });
+
+  it('is false when there is no reviewer flag and no recorded AI stats', () => {
+    const s = session({
+      tag: 'muac',
+      assessment_stats: { pass: 2, fail: 0, ai_match: 0, ai_no_match: 0 },
+    });
+    expect(showAiStatsOf(s)).toBe(false);
+  });
+
+  it('tolerates a null session', () => {
+    expect(showAiStatsOf(null)).toBe(false);
   });
 });

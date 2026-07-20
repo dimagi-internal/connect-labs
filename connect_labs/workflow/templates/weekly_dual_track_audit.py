@@ -13,13 +13,29 @@ docs/superpowers/specs/2026-06-30-audit-program-report-design.md.
 
 from connect_labs.audit.data_access import AuditDataAccess
 
+MUAC_AI_REVIEWER = {
+    "agent_id": "muac_overzoom",
+    "auto_apply_actions": ["fail_overzoomed"],
+}
 
-def _image_audits(paths, reviewer):
-    """One image_audits entry per pinned image path. The track's reviewer (or no
-    reviewer) is attached to each — the PR #771 per-image-type model. See
-    connect_labs/audit/ai_review_config.build_review_config."""
-    reviewers = [reviewer] if reviewer else []
-    return [{"image_path": p, "reviewers": list(reviewers)} for p in (paths or [])]
+
+def _reviewer_for_path(path):
+    """The muac_overzoom AI reviewer attaches to any image path whose name
+    contains 'muac' (case-insensitive) — independent of which track (A/B) the
+    path is pinned under, and independent of whatever display name the user
+    gives that track. Any other path gets no AI reviewer (human-only)."""
+    return MUAC_AI_REVIEWER if "muac" in (path or "").lower() else None
+
+
+def _image_audits(paths):
+    """One image_audits entry per pinned image path, each with its own
+    per-path reviewer (see _reviewer_for_path) — the PR #771 per-image-type
+    model. See connect_labs/audit/ai_review_config.build_review_config."""
+    result = []
+    for p in paths or []:
+        reviewer = _reviewer_for_path(p)
+        result.append({"image_path": p, "reviewers": [reviewer] if reviewer else []})
+    return result
 
 
 def build_track_audit_calls(
@@ -65,7 +81,7 @@ def build_track_audit_calls(
             (track_a, cfg.get("muac_image_paths")),
             (track_b, cfg.get("rest_image_paths")),
         ):
-            image_audits = _image_audits(paths, track.get("reviewer"))
+            image_audits = _image_audits(paths)
             if not image_audits:
                 continue
             criteria = {
@@ -184,16 +200,12 @@ DEFINITION = {
     ],
     "config": {
         "audit_batch": {
-            # PR #771 per-image-type model: each track's reviewer rides into image_audits.
-            "track_a": {
-                "tag": "muac",
-                "sample_percentage": 100,
-                "reviewer": {
-                    "agent_id": "muac_overzoom",
-                    "auto_apply_actions": ["fail_overzoomed"],
-                },
-            },
-            "track_b": {"tag": "rest", "sample_percentage": 10, "reviewer": None},
+            # PR #771 per-image-type model, extended: the muac_overzoom AI reviewer
+            # attaches per-PATH (any path containing "muac"), not per-track — see
+            # _reviewer_for_path. "name" is a purely cosmetic display label the user
+            # can rename; it has no effect on which images get AI-reviewed.
+            "track_a": {"tag": "muac", "sample_percentage": 100, "name": "MUAC"},
+            "track_b": {"tag": "rest", "sample_percentage": 10, "name": "Other"},
             "per_opp": {},  # { "<opp_id>": {"muac_image_paths": [...], "rest_image_paths": [...]} }
             "opp_names": {},  # { "<opp_id>": "Opp display name" }
             "visit_clustering": {
@@ -218,6 +230,97 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
     const oppIds = (instance.opportunity_ids && instance.opportunity_ids.length)
         ? instance.opportunity_ids
         : (instance.opportunity_id ? [instance.opportunity_id] : []);
+
+    function getCsrfToken() {
+        return document.getElementById('workflow-root')?.dataset?.csrfToken
+            || document.querySelector('[name=csrfmiddlewaretoken]')?.value
+            || '';
+    }
+
+    // ── Track names + per-opp image path selection (editable pinned config) ───
+    // "name" is a cosmetic display label only — it has no bearing on which
+    // images get AI-reviewed (see _reviewer_for_path: that's decided per-path,
+    // by whether "muac" appears in the path itself).
+    const [trackAName, setTrackAName] = React.useState(trackA.name || 'MUAC');
+    const [trackBName, setTrackBName] = React.useState(trackB.name || 'Other');
+
+    // Discovered image paths per opportunity (same discovery method as the
+    // Bulk Image Audit template's image-questions fetch), and the user's
+    // current checkbox selections per opp per track.
+    const [imageQuestionsByOpp, setImageQuestionsByOpp] = React.useState({});
+    const [selectedPathsByOpp, setSelectedPathsByOpp] = React.useState(() => {
+        const init = {};
+        oppIds.forEach(oid => {
+            const key = String(oid);
+            const cfg = perOpp[key] || {};
+            init[key] = { trackA: cfg.muac_image_paths || [], trackB: cfg.rest_image_paths || [] };
+        });
+        return init;
+    });
+
+    React.useEffect(() => {
+        oppIds.forEach(oid => {
+            const key = String(oid);
+            if (imageQuestionsByOpp[key]) return; // already loaded or loading
+            setImageQuestionsByOpp(prev => ({ ...prev, [key]: { loading: true, error: null, questions: [] } }));
+            fetch('/audit/api/opportunity/' + oid + '/image-questions/')
+                .then(async r => {
+                    if (!r.ok) {
+                        let msg = 'HTTP ' + r.status;
+                        try { const errData = await r.json(); if (errData.error) msg = errData.error; } catch (_) {}
+                        throw new Error(msg);
+                    }
+                    return r.json();
+                })
+                .then(data => {
+                    setImageQuestionsByOpp(prev => ({ ...prev, [key]: { loading: false, error: null, questions: data } }));
+                })
+                .catch(err => {
+                    setImageQuestionsByOpp(prev => ({
+                        ...prev,
+                        [key]: { loading: false, error: 'Failed to load image types: ' + err.message, questions: [] },
+                    }));
+                });
+        });
+    }, [oppIds.join(',')]);
+
+    const setTrackPaths = (oppKey, trackKey, updater) => {
+        setSelectedPathsByOpp(prev => {
+            const cur = prev[oppKey] || { trackA: [], trackB: [] };
+            return { ...prev, [oppKey]: { ...cur, [trackKey]: updater(cur[trackKey] || []) } };
+        });
+    };
+    const togglePath = (oppKey, trackKey, path) => setTrackPaths(oppKey, trackKey, list =>
+        list.includes(path) ? list.filter(p => p !== path) : [...list, path]);
+
+    const [savingConfig, setSavingConfig] = React.useState(false);
+    const [saveConfigError, setSaveConfigError] = React.useState(null);
+    const [saveConfigSuccess, setSaveConfigSuccess] = React.useState(false);
+
+    const handleSaveConfig = async () => {
+        setSavingConfig(true); setSaveConfigError(null); setSaveConfigSuccess(false);
+        const per_opp = {};
+        oppIds.forEach(oid => {
+            const key = String(oid);
+            const sel = selectedPathsByOpp[key] || { trackA: [], trackB: [] };
+            per_opp[key] = { muac_image_paths: sel.trackA, rest_image_paths: sel.trackB };
+        });
+        try {
+            const res = await fetch('/labs/workflow/api/' + instance.definition_id + '/audit-batch-config/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+                body: JSON.stringify({ track_a_name: trackAName, track_b_name: trackBName, per_opp: per_opp }),
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) throw new Error((data && data.error) || 'Failed to save');
+            setSaveConfigSuccess(true);
+            setTimeout(() => setSaveConfigSuccess(false), 2000);
+        } catch (e) {
+            setSaveConfigError('Failed to save: ' + (e.message || e));
+        } finally {
+            setSavingConfig(false);
+        }
+    };
 
     // ── Date-window picker (mirrors bulk_image_audit) ─────────────────────────
     // A completed run reads its frozen window from view.state; an in-progress
@@ -508,6 +611,147 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
             </div>
             )}
 
+            {/* ── Opportunities & image types (editable pinned config) ─────── */}
+            <div className="bg-white rounded-lg shadow-sm p-6">
+                <h3 className="text-sm font-medium text-gray-700 mb-3">
+                    <i className="fa-solid fa-layer-group mr-2 text-gray-400"></i>
+                    Opportunities &amp; image types ({oppIds.length})
+                </h3>
+                {viewOnly ? (
+                    <React.Fragment>
+                        <p className="text-xs text-gray-500 mb-4">
+                            {trackAName} audited at {muacSample}%. {trackBName} audited at {otherSample}%.
+                            Any path containing "muac" is AI-reviewed; every other path is human-reviewed.
+                        </p>
+                        <div className="space-y-3">
+                            {oppIds.map(oid => {
+                                const key = String(oid);
+                                const cfg = perOpp[key] || {};
+                                return (
+                                    <div key={key} className="border border-gray-200 rounded-lg p-4">
+                                        <div className="text-sm font-semibold text-gray-900 mb-2">
+                                            {oppNames[key] || ('Opportunity ' + key)}
+                                            <span className="ml-2 text-xs text-gray-400 font-mono">#{key}</span>
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                            <div>
+                                                <div className="text-xs font-medium text-gray-600 mb-1">{trackAName} paths (Track A)</div>
+                                                {pathPills(cfg.muac_image_paths, 'bg-purple-50 text-purple-700')}
+                                            </div>
+                                            <div>
+                                                <div className="text-xs font-medium text-gray-600 mb-1">{trackBName} paths (Track B)</div>
+                                                {pathPills(cfg.rest_image_paths, 'bg-gray-100 text-gray-700')}
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </React.Fragment>
+                ) : (
+                    <React.Fragment>
+                        <p className="text-xs text-gray-500 mb-4">
+                            Pick which image path(s) each track audits, per opportunity. Track A is
+                            required — at least one path must be selected for every opportunity below.
+                            Track B is optional; leave it empty to skip it for an opportunity. Any
+                            selected path containing "muac" is automatically reviewed by the MUAC
+                            overzoom AI agent, regardless of which track it's in.
+                        </p>
+                        <div className="flex gap-6 items-end flex-wrap mb-4">
+                            <div>
+                                <label className="block text-xs text-gray-500 mb-1">Track A name</label>
+                                <input type="text" value={trackAName}
+                                    onChange={e => setTrackAName(e.target.value)}
+                                    disabled={isRunning || instance.status === 'completed'}
+                                    className="border border-gray-300 rounded px-3 py-2 text-sm w-40" />
+                            </div>
+                            <div>
+                                <label className="block text-xs text-gray-500 mb-1">Track B name</label>
+                                <input type="text" value={trackBName}
+                                    onChange={e => setTrackBName(e.target.value)}
+                                    disabled={isRunning || instance.status === 'completed'}
+                                    className="border border-gray-300 rounded px-3 py-2 text-sm w-40" />
+                            </div>
+                        </div>
+                        <div className="space-y-3">
+                            {oppIds.map(oid => {
+                                const key = String(oid);
+                                const iq = imageQuestionsByOpp[key] || { loading: true, error: null, questions: [] };
+                                const sel = selectedPathsByOpp[key] || { trackA: [], trackB: [] };
+                                const renderColumn = (trackKey, label) => (
+                                    <div key={trackKey}>
+                                        <div className="flex items-center justify-between mb-1">
+                                            <div className="text-xs font-medium text-gray-600">{label} paths</div>
+                                            {iq.questions.length > 0 && (
+                                                <div className="flex gap-2">
+                                                    <button type="button"
+                                                        disabled={isRunning || instance.status === 'completed'}
+                                                        onClick={() => setTrackPaths(key, trackKey, () => iq.questions.map(q => q.path))}
+                                                        className="text-xs text-blue-600 hover:underline">Select All</button>
+                                                    <button type="button"
+                                                        disabled={isRunning || instance.status === 'completed'}
+                                                        onClick={() => setTrackPaths(key, trackKey, () => [])}
+                                                        className="text-xs text-blue-600 hover:underline">Deselect All</button>
+                                                </div>
+                                            )}
+                                        </div>
+                                        {iq.loading && <div className="text-xs text-gray-400">Loading image types…</div>}
+                                        {iq.error && <div className="text-xs text-red-500">{iq.error}</div>}
+                                        {!iq.loading && !iq.error && iq.questions.length === 0 && (
+                                            <div className="text-xs text-gray-400 italic">No image questions found.</div>
+                                        )}
+                                        {!iq.loading && !iq.error && iq.questions.length > 0 && (
+                                            <div className="space-y-1">
+                                                {iq.questions.map(q => (
+                                                    <label key={q.id} className="flex items-center gap-2 text-xs text-gray-700">
+                                                        <input type="checkbox"
+                                                            checked={sel[trackKey].includes(q.path)}
+                                                            onChange={() => togglePath(key, trackKey, q.path)}
+                                                            disabled={isRunning || instance.status === 'completed'}
+                                                            className="h-3.5 w-3.5" />
+                                                        <span className="font-mono">{q.path}</span>
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                                return (
+                                    <div key={key} className="border border-gray-200 rounded-lg p-4">
+                                        <div className="text-sm font-semibold text-gray-900 mb-2">
+                                            {oppNames[key] || ('Opportunity ' + key)}
+                                            <span className="ml-2 text-xs text-gray-400 font-mono">#{key}</span>
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                            {renderColumn('trackA', trackAName)}
+                                            {renderColumn('trackB', trackBName)}
+                                        </div>
+                                        {sel.trackA.length === 0 && (
+                                            <div className="mt-2 text-xs text-amber-600">
+                                                <i className="fa-solid fa-triangle-exclamation mr-1"></i>
+                                                {trackAName} requires at least one selected path for this opportunity.
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                        <div className="mt-4 flex items-center gap-3">
+                            <button onClick={handleSaveConfig}
+                                disabled={savingConfig || isRunning || instance.status === 'completed'
+                                    || oppIds.some(oid => !(selectedPathsByOpp[String(oid)] || {}).trackA || (selectedPathsByOpp[String(oid)] || {}).trackA.length === 0)}
+                                className="inline-flex items-center px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-900 disabled:bg-gray-400 text-sm font-medium">
+                                {savingConfig
+                                    ? <span><i className="fa-solid fa-spinner fa-spin mr-2"></i>Saving…</span>
+                                    : <span><i className="fa-solid fa-floppy-disk mr-2"></i>Save configuration</span>}
+                            </button>
+                            {saveConfigError && <span className="text-sm text-red-600">{saveConfigError}</span>}
+                            {saveConfigSuccess && <span className="text-sm text-green-600"><i className="fa-solid fa-circle-check mr-1"></i>Saved</span>}
+                        </div>
+                    </React.Fragment>
+                )}
+            </div>
+
             {/* ── Sampling rates (per-run, default from config) ───────────── */}
             {!viewOnly && (
             <div className="bg-white rounded-lg shadow-sm p-6">
@@ -520,17 +764,17 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                 </p>
                 <div className="flex gap-6 items-end flex-wrap">
                     <div>
-                        <label className="block text-xs text-gray-500 mb-1">MUAC (Track A)</label>
+                        <label className="block text-xs text-gray-500 mb-1">{trackAName} (Track A)</label>
                         <div className="flex items-center gap-2">
                             <input type="number" min="1" max="100" value={muacSample}
                                 onChange={e => setMuacSample(e.target.value)}
                                 disabled={isRunning || instance.status === 'completed'}
                                 className="border border-gray-300 rounded px-3 py-2 text-sm w-20" />
-                            <span className="text-xs text-gray-400">% of MUAC images</span>
+                            <span className="text-xs text-gray-400">% of {trackAName} images</span>
                         </div>
                     </div>
                     <div>
-                        <label className="block text-xs text-gray-500 mb-1">Other (Track B)</label>
+                        <label className="block text-xs text-gray-500 mb-1">{trackBName} (Track B)</label>
                         <div className="flex items-center gap-2">
                             <input type="number" min="1" max="100" value={otherSample}
                                 onChange={e => setOtherSample(e.target.value)}
@@ -581,44 +825,6 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                 </div>
             </div>
             )}
-
-            {/* ── Per-opp config preview (read-only) ──────────────────────── */}
-            <div className="bg-white rounded-lg shadow-sm p-6">
-                <h3 className="text-sm font-medium text-gray-700 mb-3">
-                    <i className="fa-solid fa-layer-group mr-2 text-gray-400"></i>
-                    Opportunities &amp; pinned image types ({oppIds.length})
-                </h3>
-                <p className="text-xs text-gray-500 mb-4">
-                    Track A audits the MUAC image type(s) at {muacSample}% with the
-                    {' '}{(trackA.reviewer && trackA.reviewer.agent_id) || 'no'} AI reviewer.
-                    Track B audits the remaining image type(s) at {otherSample}%
-                    {trackB.reviewer ? '' : ', human-reviewed'}.
-                </p>
-                <div className="space-y-3">
-                    {oppIds.map(oid => {
-                        const key = String(oid);
-                        const cfg = perOpp[key] || {};
-                        return (
-                            <div key={key} className="border border-gray-200 rounded-lg p-4">
-                                <div className="text-sm font-semibold text-gray-900 mb-2">
-                                    {oppNames[key] || ('Opportunity ' + key)}
-                                    <span className="ml-2 text-xs text-gray-400 font-mono">#{key}</span>
-                                </div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                    <div>
-                                        <div className="text-xs font-medium text-gray-600 mb-1">MUAC paths (Track A)</div>
-                                        {pathPills(cfg.muac_image_paths, 'bg-purple-50 text-purple-700')}
-                                    </div>
-                                    <div>
-                                        <div className="text-xs font-medium text-gray-600 mb-1">Other paths (Track B)</div>
-                                        {pathPills(cfg.rest_image_paths, 'bg-gray-100 text-gray-700')}
-                                    </div>
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            </div>
 
             {/* ── Create button + progress ────────────────────────────────── */}
             {!viewOnly && (
@@ -691,6 +897,8 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                         workflowRunId: instance.id,
                         loading: loadingSessions,
                         emptyText: 'No sessions yet — set a window and create audits.',
+                        trackALabel: trackAName,
+                        trackBLabel: trackBName,
                       })
                     : <div className="text-sm text-gray-500">Loading…</div>}
             </div>

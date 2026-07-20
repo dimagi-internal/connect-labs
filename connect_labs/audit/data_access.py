@@ -952,6 +952,7 @@ class AuditDataAccess(BaseDataAccess):
         workflow_run_id: int | None = None,  # Optional link to workflow run that created this session
         pass_threshold: int = 100,  # Min % of assessments that must pass for the audit to pass overall
         visit_clusters: list[dict] | None = None,  # Optional visit-clustering groupings (see visit_clustering.py)
+        has_ai_reviewer: bool = False,  # Whether any image in this session has an AI reviewer attached
     ) -> AuditSessionRecord:
         """
         Create an audit session with extracted image metadata.
@@ -974,6 +975,10 @@ class AuditDataAccess(BaseDataAccess):
             workflow_run_id: Optional workflow run ID if created from a workflow
             pass_threshold: Min % of assessments that must pass for the audit to pass overall (75-100)
             visit_clusters: Optional visit-clustering groupings; stored as-is, never computed here.
+            has_ai_reviewer: Whether this session's images were ever eligible for AI review (any
+                image_audits entry with a non-empty reviewers list). Used by the shared FLW
+                breakdown widget to decide whether to show AI stats, instead of guessing from the
+                track's display label.
         """
         opp_id = opportunity_id or self.opportunity_id
 
@@ -1036,6 +1041,7 @@ class AuditDataAccess(BaseDataAccess):
             "related_fields": related_fields or [],  # Store config for reference
             "criteria": criteria_dict,  # Store criteria for traceability
             "visit_clusters": visit_clusters or [],
+            "has_ai_reviewer": has_ai_reviewer,
         }
 
         record = self.labs_api.create_record(

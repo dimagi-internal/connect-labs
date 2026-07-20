@@ -4666,3 +4666,85 @@ class UpdateOpportunityIdsView(LoginRequiredMixin, View):
             return JsonResponse({"error": "An internal error occurred"}, status=500)
         finally:
             data_access.close()
+
+
+class UpdateAuditBatchConfigView(LoginRequiredMixin, View):
+    """API endpoint for a Weekly Dual-Track Audit workflow to self-service its
+    pinned per-opp image paths and track display names — the in-app
+    replacement for hand-editing config.audit_batch.per_opp via the
+    workflow_update_definition MCP tool.
+
+    POST JSON body: {"track_a_name": str, "track_b_name": str,
+    "per_opp": {"<opp_id>": {"muac_image_paths": [...], "rest_image_paths": [...]}}}
+    All keys are optional; only provided keys are updated. per_opp opp ids are
+    validated against the user's accessible opportunities.
+    """
+
+    def post(self, request, definition_id):
+        try:
+            body = json.loads(request.body or b"{}")
+        except json.JSONDecodeError:
+            return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+        per_opp = body.get("per_opp")
+        if per_opp is not None:
+            if not isinstance(per_opp, dict):
+                return JsonResponse({"error": "per_opp must be an object"}, status=400)
+            try:
+                opp_id_keys = [int(k) for k in per_opp]
+            except (TypeError, ValueError):
+                return JsonResponse({"error": "per_opp keys must be opportunity ids"}, status=400)
+            for key, cfg in per_opp.items():
+                if not isinstance(cfg, dict):
+                    return JsonResponse({"error": f"per_opp[{key}] must be an object"}, status=400)
+                for paths_key in ("muac_image_paths", "rest_image_paths"):
+                    if paths_key in cfg and not isinstance(cfg[paths_key], list):
+                        return JsonResponse({"error": f"per_opp[{key}].{paths_key} must be a list"}, status=400)
+
+            user_opp_ids = {
+                int(o["id"]) for o in (get_org_data(request) or {}).get("opportunities", []) if o.get("id") is not None
+            }
+            unauthorized = [oid for oid in opp_id_keys if oid not in user_opp_ids]
+            if unauthorized:
+                return JsonResponse(
+                    {"error": f"Not authorized for opportunities: {unauthorized}"},
+                    status=403,
+                )
+
+        data_access = WorkflowDataAccess(request=request)
+        try:
+            definition = data_access.get_definition(definition_id)
+            if not definition:
+                return JsonResponse({"error": "Workflow not found"}, status=404)
+
+            new_def_data = dict(definition.data)
+            new_config = dict(new_def_data.get("config") or {})
+            audit_batch = dict(new_config.get("audit_batch") or {})
+
+            if "track_a_name" in body:
+                track_a = dict(audit_batch.get("track_a") or {})
+                track_a["name"] = body["track_a_name"]
+                audit_batch["track_a"] = track_a
+            if "track_b_name" in body:
+                track_b = dict(audit_batch.get("track_b") or {})
+                track_b["name"] = body["track_b_name"]
+                audit_batch["track_b"] = track_b
+            if per_opp is not None:
+                existing_per_opp = dict(audit_batch.get("per_opp") or {})
+                existing_per_opp.update(per_opp)
+                audit_batch["per_opp"] = existing_per_opp
+
+            new_config["audit_batch"] = audit_batch
+            new_def_data["config"] = new_config
+
+            updated = data_access.update_definition(definition_id, new_def_data)
+            if not updated:
+                return JsonResponse({"error": "Workflow not found"}, status=404)
+            return JsonResponse(
+                {"success": True, "audit_batch": updated.data.get("config", {}).get("audit_batch", {})}
+            )
+        except Exception:
+            logger.exception("Failed to update audit_batch config for %s", definition_id)
+            return JsonResponse({"error": "An internal error occurred"}, status=500)
+        finally:
+            data_access.close()

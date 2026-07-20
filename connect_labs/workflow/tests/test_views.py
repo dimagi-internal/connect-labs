@@ -270,6 +270,147 @@ class TestUpdateOpportunityIdsView:
         assert response.status_code == 400
 
 
+class TestUpdateAuditBatchConfigView:
+    def _request(self, rf, dimagi_user, body):
+        import json
+
+        request = rf.post(
+            "/labs/workflow/api/1/audit-batch-config/",
+            data=json.dumps(body),
+            content_type="application/json",
+        )
+        request.user = dimagi_user
+        request.labs_context = {"opportunity_id": 700}
+        request.session = {
+            "labs_oauth": {
+                "access_token": "t",
+                "organization_data": {
+                    "opportunities": [
+                        {"id": 700, "name": "A"},
+                        {"id": 825, "name": "B"},
+                    ]
+                },
+            },
+        }
+        return request
+
+    def test_updates_track_names_and_per_opp(self, dimagi_user, rf: RequestFactory):
+        request = self._request(
+            rf,
+            dimagi_user,
+            {
+                "track_a_name": "MUAC",
+                "track_b_name": "Other",
+                "per_opp": {"700": {"muac_image_paths": ["a/muac_photo"], "rest_image_paths": ["a/other"]}},
+            },
+        )
+
+        with patch("connect_labs.workflow.views.WorkflowDataAccess") as MockWDA:
+            mock_wda = MagicMock()
+            MockWDA.return_value = mock_wda
+            mock_wda.get_definition.return_value = MagicMock(
+                data={"name": "T", "config": {"audit_batch": {"track_a": {"tag": "muac"}, "per_opp": {}}}}
+            )
+            mock_wda.update_definition.return_value = MagicMock(
+                data={
+                    "config": {
+                        "audit_batch": {
+                            "track_a": {"tag": "muac", "name": "MUAC"},
+                            "track_b": {"name": "Other"},
+                            "per_opp": {
+                                "700": {"muac_image_paths": ["a/muac_photo"], "rest_image_paths": ["a/other"]}
+                            },
+                        }
+                    }
+                }
+            )
+
+            from connect_labs.workflow.views import UpdateAuditBatchConfigView
+
+            response = UpdateAuditBatchConfigView.as_view()(request, definition_id=1)
+
+            assert response.status_code == 200
+            saved_data = mock_wda.update_definition.call_args[0][1]
+            audit_batch = saved_data["config"]["audit_batch"]
+            assert audit_batch["track_a"]["name"] == "MUAC"
+            assert audit_batch["track_a"]["tag"] == "muac"  # preserved, not clobbered
+            assert audit_batch["track_b"]["name"] == "Other"
+            assert audit_batch["per_opp"]["700"]["muac_image_paths"] == ["a/muac_photo"]
+
+    def test_merges_per_opp_without_wiping_other_opps(self, dimagi_user, rf: RequestFactory):
+        request = self._request(rf, dimagi_user, {"per_opp": {"700": {"muac_image_paths": ["a/new"]}}})
+
+        with patch("connect_labs.workflow.views.WorkflowDataAccess") as MockWDA:
+            mock_wda = MagicMock()
+            MockWDA.return_value = mock_wda
+            mock_wda.get_definition.return_value = MagicMock(
+                data={
+                    "config": {
+                        "audit_batch": {
+                            "per_opp": {
+                                "700": {"muac_image_paths": ["a/old"]},
+                                "825": {"muac_image_paths": ["b/old"]},
+                            }
+                        }
+                    }
+                }
+            )
+            mock_wda.update_definition.return_value = MagicMock(data={"config": {"audit_batch": {}}})
+
+            from connect_labs.workflow.views import UpdateAuditBatchConfigView
+
+            UpdateAuditBatchConfigView.as_view()(request, definition_id=1)
+
+            saved_data = mock_wda.update_definition.call_args[0][1]
+            per_opp = saved_data["config"]["audit_batch"]["per_opp"]
+            assert per_opp["700"]["muac_image_paths"] == ["a/new"]
+            assert per_opp["825"]["muac_image_paths"] == ["b/old"]  # untouched opp preserved
+
+    def test_rejects_unauthorized_opportunity_in_per_opp(self, dimagi_user, rf: RequestFactory):
+        request = self._request(rf, dimagi_user, {"per_opp": {"9999": {"muac_image_paths": ["x"]}}})
+
+        from connect_labs.workflow.views import UpdateAuditBatchConfigView
+
+        response = UpdateAuditBatchConfigView.as_view()(request, definition_id=1)
+        assert response.status_code == 403
+
+    def test_rejects_non_list_paths(self, dimagi_user, rf: RequestFactory):
+        request = self._request(rf, dimagi_user, {"per_opp": {"700": {"muac_image_paths": "not-a-list"}}})
+
+        from connect_labs.workflow.views import UpdateAuditBatchConfigView
+
+        response = UpdateAuditBatchConfigView.as_view()(request, definition_id=1)
+        assert response.status_code == 400
+
+    def test_rejects_invalid_json(self, dimagi_user, rf: RequestFactory):
+        request = rf.post(
+            "/labs/workflow/api/1/audit-batch-config/",
+            data="not-json",
+            content_type="application/json",
+        )
+        request.user = dimagi_user
+        request.labs_context = {"opportunity_id": 700}
+        request.session = {"labs_oauth": {"access_token": "t", "organization_data": {"opportunities": []}}}
+
+        from connect_labs.workflow.views import UpdateAuditBatchConfigView
+
+        response = UpdateAuditBatchConfigView.as_view()(request, definition_id=1)
+        assert response.status_code == 400
+
+    def test_returns_404_when_definition_missing(self, dimagi_user, rf: RequestFactory):
+        request = self._request(rf, dimagi_user, {"track_a_name": "MUAC"})
+
+        with patch("connect_labs.workflow.views.WorkflowDataAccess") as MockWDA:
+            mock_wda = MagicMock()
+            MockWDA.return_value = mock_wda
+            mock_wda.get_definition.return_value = None
+
+            from connect_labs.workflow.views import UpdateAuditBatchConfigView
+
+            response = UpdateAuditBatchConfigView.as_view()(request, definition_id=1)
+            assert response.status_code == 404
+
+
 class TestCompleteRunTemplateFallback:
     """complete_run_api recovers a missing config.templateType from the
     workflow name (same strict match template sync uses) and self-heals the

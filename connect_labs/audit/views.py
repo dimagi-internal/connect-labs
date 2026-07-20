@@ -950,72 +950,133 @@ class ExperimentBulkAssessmentExportCSVView(LoginRequiredMixin, View):
         return f"{hq_server_url.rstrip('/')}/a/{domain}/reports/form_data"
 
 
+def _resolve_visit_cluster_group(data_access, request, session_id, group_id):
+    """Shared lookup for the cluster CSV export and JSON images views: the
+    session, the requested group, and per-visit Connect link + GPS data.
+    Returns (error_response, context) — context is None when error_response is set."""
+    session = data_access.get_audit_session(session_id, try_multiple_opportunities=True)
+    if not session:
+        return JsonResponse({"error": "Session not found"}, status=404), None
+
+    group = next((g for g in session.data.get("visit_clusters", []) if g.get("group_id") == group_id), None)
+    if not group:
+        return JsonResponse({"error": "Grouping not found"}, status=404), None
+
+    opportunity_id = session.opportunity_id
+    visit_images = session.data.get("visit_images", {})
+
+    org_slug = ""
+    if opportunity_id:
+        org_data = get_org_data(request)
+        for opp in org_data.get("opportunities", []):
+            if opp.get("id") == opportunity_id:
+                org_slug = opp.get("organization", "")
+                break
+
+    connect_url = getattr(settings, "CONNECT_PRODUCTION_URL", "https://connect.dimagi.com").rstrip("/")
+
+    link_id_by_visit = {}
+    visit_location_by_id = {}
+    if opportunity_id:
+        try:
+            visits = data_access.get_visits_batch(group["visit_ids"], opportunity_id)
+            # RawVisitCache.visit_id is a CharField, so keys here are strings — normalize
+            # to str on both sides since visit_id (below) is stored as an int.
+            link_id_by_visit = {str(v["id"]): (v.get("user_id"), v.get("user_visit_id")) for v in visits}
+            visit_location_by_id = {str(v["id"]): v.get("location", "") for v in visits}
+        except Exception:
+            logger.exception(f"[Audit] Failed to fetch visit batch for opportunity {opportunity_id}")
+
+    return None, {
+        "group": group,
+        "opportunity_id": opportunity_id,
+        "visit_images": visit_images,
+        "org_slug": org_slug,
+        "connect_url": connect_url,
+        "link_id_by_visit": link_id_by_visit,
+        "visit_location_by_id": visit_location_by_id,
+    }
+
+
+def _visit_cluster_rows(ctx):
+    """Flatten a resolved visit-cluster group into per-image rows, shared by the
+    CSV export and JSON images views."""
+    rows = []
+    for visit_id in ctx["group"]["visit_ids"]:
+        images = ctx["visit_images"].get(str(visit_id), [])
+        user_id, user_visit_id = ctx["link_id_by_visit"].get(str(visit_id), (None, None))
+        location = ctx["visit_location_by_id"].get(str(visit_id), "")
+        visit_url = (
+            f'{ctx["connect_url"]}/a/{ctx["org_slug"]}/opportunity/{ctx["opportunity_id"]}/user_visits/'
+            f"?user={user_id}&visit_id={user_visit_id}"
+            if ctx["org_slug"] and user_id and user_visit_id
+            else ""
+        )
+        for image in images:
+            rows.append(
+                {
+                    "visit_id": visit_id,
+                    "name": image.get("name", ""),
+                    "blob_id": image.get("blob_id", ""),
+                    "visit_date": image.get("visit_date", ""),
+                    "location": location,
+                    "entity_name": image.get("entity_name", ""),
+                    "visit_url": visit_url,
+                }
+            )
+    return rows
+
+
 class VisitClusterExportCSVView(LoginRequiredMixin, View):
-    """Export one visit-clustering grouping's images as CSV: filename, visit date,
-    GPS location, beneficiary name, and a link to the visit in Connect."""
+    """Export one visit-clustering grouping's images as CSV: visit id, filename,
+    visit date, GPS location, and a link to the visit in Connect."""
 
     def get(self, request, session_id, group_id):
         data_access = AuditDataAccess(request=request)
         try:
-            session = data_access.get_audit_session(session_id, try_multiple_opportunities=True)
-            if not session:
-                return JsonResponse({"error": "Session not found"}, status=404)
-
-            group = next((g for g in session.data.get("visit_clusters", []) if g.get("group_id") == group_id), None)
-            if not group:
-                return JsonResponse({"error": "Grouping not found"}, status=404)
-
-            opportunity_id = session.opportunity_id
-            visit_images = session.data.get("visit_images", {})
-
-            org_slug = ""
-            if opportunity_id:
-                org_data = get_org_data(request)
-                for opp in org_data.get("opportunities", []):
-                    if opp.get("id") == opportunity_id:
-                        org_slug = opp.get("organization", "")
-                        break
-
-            connect_url = getattr(settings, "CONNECT_PRODUCTION_URL", "https://connect.dimagi.com").rstrip("/")
-
-            link_id_by_visit = {}
-            visit_location_by_id = {}
-            if opportunity_id:
-                try:
-                    visits = data_access.get_visits_batch(group["visit_ids"], opportunity_id)
-                    # RawVisitCache.visit_id is a CharField, so keys here are strings — normalize
-                    # to str on both sides since visit_id (below) is stored as an int.
-                    link_id_by_visit = {str(v["id"]): (v.get("user_id"), v.get("user_visit_id")) for v in visits}
-                    visit_location_by_id = {str(v["id"]): v.get("location", "") for v in visits}
-                except Exception:
-                    logger.exception(f"[Audit] Failed to fetch visit batch for opportunity {opportunity_id}")
+            error, ctx = _resolve_visit_cluster_group(data_access, request, session_id, group_id)
+            if error:
+                return error
 
             response = HttpResponse(content_type="text/csv")
             response["Content-Disposition"] = f'attachment; filename="visit_cluster_{group_id}.csv"'
             writer = csv.writer(response)
-            writer.writerow(["Filename", "Visit Date", "GPS Location", "Beneficiary Name", "Connect Visit URL"])
-
-            for visit_id in group["visit_ids"]:
-                images = visit_images.get(str(visit_id), [])
-                user_id, user_visit_id = link_id_by_visit.get(str(visit_id), (None, None))
-                location = visit_location_by_id.get(str(visit_id), "")
-                visit_url = (
-                    f"{connect_url}/a/{org_slug}/opportunity/{opportunity_id}/user_visits/"
-                    f"?user={user_id}&visit_id={user_visit_id}"
-                    if org_slug and user_id and user_visit_id
-                    else ""
-                )
-                for image in images:
-                    writer.writerow(
-                        [
-                            image.get("name", ""),
-                            image.get("visit_date", ""),
-                            location,
-                            image.get("entity_name", ""),
-                            visit_url,
-                        ]
-                    )
+            writer.writerow(["Visit ID", "Filename", "Visit Date", "GPS Location", "Connect Visit URL"])
+            for row in _visit_cluster_rows(ctx):
+                writer.writerow([row["visit_id"], row["name"], row["visit_date"], row["location"], row["visit_url"]])
             return response
+        finally:
+            data_access.close()
+
+
+class VisitClusterImagesAPIView(LoginRequiredMixin, View):
+    """JSON list of the images in one visit-clustering grouping, for the
+    "N Duplicate Groupings" expand panel in labs_audit_breakdown.js."""
+
+    def get(self, request, session_id, group_id):
+        data_access = AuditDataAccess(request=request)
+        try:
+            error, ctx = _resolve_visit_cluster_group(data_access, request, session_id, group_id)
+            if error:
+                return error
+
+            images = [
+                {
+                    "visit_id": row["visit_id"],
+                    "name": row["name"],
+                    "visit_date": row["visit_date"],
+                    "thumbnail_url": (
+                        reverse(
+                            "audit:audit_image_connect",
+                            kwargs={"opp_id": ctx["opportunity_id"], "blob_id": row["blob_id"]},
+                        )
+                        if row["blob_id"] and ctx["opportunity_id"]
+                        else ""
+                    ),
+                }
+                for row in _visit_cluster_rows(ctx)
+            ]
+            return JsonResponse({"success": True, "images": images})
         finally:
             data_access.close()
 

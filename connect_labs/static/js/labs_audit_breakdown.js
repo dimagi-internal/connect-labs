@@ -48,6 +48,14 @@
   function clusterCountOf(s) {
     return (s && s.visit_clusters && s.visit_clusters.length) || 0;
   }
+  // Whether to show AI stats for a session, instead of guessing from the
+  // track's display label (which the user can now rename freely — see
+  // weekly_dual_track_audit's _reviewer_for_path, which attaches the AI
+  // reviewer per image path rather than per track). Falls back to actual
+  // recorded AI stats for sessions created before has_ai_reviewer existed.
+  function showAiStatsOf(s) {
+    return !!(s && (s.has_ai_reviewer || aiReviewedOf(s) > 0));
+  }
 
   // Group sessions by opportunity → field worker → { muac, rest }.
   function groupByOppFlw(sessions) {
@@ -159,6 +167,52 @@
       var expanded = st[0];
       var setExpanded = st[1];
 
+      var imgSt = React.useState({});
+      var groupImages = imgSt[0];
+      var setGroupImages = imgSt[1];
+
+      var clustersForFetch = (s && s.visit_clusters) || [];
+
+      React.useEffect(
+        function () {
+          if (!expanded || !s) return;
+          clustersForFetch.forEach(function (c) {
+            if (groupImages[c.group_id]) return;
+            setGroupImages(function (prev) {
+              var next = Object.assign({}, prev);
+              next[c.group_id] = 'loading';
+              return next;
+            });
+            fetch(
+              '/audit/api/' +
+                s.id +
+                '/visit-clusters/' +
+                c.group_id +
+                '/images/',
+            )
+              .then(function (res) {
+                return res.json();
+              })
+              .then(function (data) {
+                setGroupImages(function (prev) {
+                  var next = Object.assign({}, prev);
+                  next[c.group_id] =
+                    data && data.success ? data.images : 'error';
+                  return next;
+                });
+              })
+              .catch(function () {
+                setGroupImages(function (prev) {
+                  var next = Object.assign({}, prev);
+                  next[c.group_id] = 'error';
+                  return next;
+                });
+              });
+          });
+        },
+        [expanded],
+      );
+
       if (!s)
         return h(
           'div',
@@ -185,7 +239,7 @@
         'div',
         {
           className:
-            'flex items-center gap-3 px-3 py-1.5 rounded bg-gray-50 border border-gray-200 text-xs',
+            'flex flex-wrap items-center gap-3 px-3 py-1.5 rounded bg-gray-50 border border-gray-200 text-xs',
         },
         h('span', { className: 'font-semibold text-gray-700 w-12' }, label),
         h(
@@ -217,7 +271,7 @@
           ' · ',
           h('span', { className: 'text-gray-500' }, pending + ' pending'),
         ),
-        label === 'MUAC'
+        showAiStatsOf(s)
           ? h(
               'span',
               {
@@ -264,17 +318,59 @@
               'div',
               {
                 className:
-                  'basis-full mt-1.5 pl-16 space-y-1 text-xs text-gray-700',
+                  'basis-full mt-1.5 pl-16 space-y-2 text-xs text-gray-700',
               },
               clusters.map(function (c, i) {
+                var imgs = groupImages[c.group_id];
                 return h(
                   'div',
-                  { key: c.group_id, className: 'flex items-center gap-2' },
+                  { key: c.group_id },
                   h(
                     'span',
-                    null,
+                    { className: 'font-medium text-gray-600' },
                     'Group ' + (i + 1) + ' — ' + c.image_count + ' images',
                   ),
+                  imgs === 'loading' || imgs === undefined
+                    ? h(
+                        'div',
+                        { className: 'pl-3 py-0.5 text-gray-400' },
+                        'Loading images…',
+                      )
+                    : imgs === 'error'
+                    ? h(
+                        'div',
+                        { className: 'pl-3 py-0.5 text-red-500' },
+                        'Failed to load images',
+                      )
+                    : h(
+                        'div',
+                        { className: 'pl-3 py-0.5 space-y-0.5' },
+                        imgs.map(function (img, idx) {
+                          return h(
+                            'div',
+                            { key: idx, className: 'flex items-center gap-2' },
+                            img.thumbnail_url
+                              ? h('img', {
+                                  src: img.thumbnail_url,
+                                  className: 'w-6 h-6 rounded object-cover',
+                                })
+                              : null,
+                            h(
+                              'span',
+                              { className: 'text-gray-600' },
+                              img.name || '(untitled)',
+                            ),
+                            h(
+                              'span',
+                              { className: 'text-gray-400' },
+                              h('i', {
+                                className: 'fa-solid fa-hashtag mr-0.5',
+                              }),
+                              img.visit_id,
+                            ),
+                          );
+                        }),
+                      ),
                   h(
                     'a',
                     {
@@ -284,7 +380,8 @@
                         '/visit-clusters/' +
                         c.group_id +
                         '/export.csv',
-                      className: 'text-blue-500 hover:underline',
+                      className:
+                        'text-blue-500 hover:underline inline-block mt-0.5',
                     },
                     h('i', { className: 'fa-solid fa-download mr-1' }),
                     'Download CSV',
@@ -315,6 +412,8 @@
           : props.title;
       var startCollapsed = !!props.startCollapsed;
       var emptyText = props.emptyText || 'No sessions yet.';
+      var trackALabel = props.trackALabel || 'MUAC';
+      var trackBLabel = props.trackBLabel || 'Other';
 
       var st = React.useState({});
       var collapsedOpps = st[0];
@@ -391,7 +490,9 @@
                   'div',
                   { className: 'text-xs text-gray-500 mt-1 pl-6' },
                   sum.flws + ' field worker' + (sum.flws === 1 ? '' : 's'),
-                  ' · MUAC ' +
+                  ' · ' +
+                    trackALabel +
+                    ' ' +
                     sum.muacImages +
                     ' imgs, ' +
                     sum.muacAiReviewed +
@@ -404,7 +505,9 @@
                     },
                     sum.muacFlagged + ' flagged',
                   ),
-                  ' · Other ' +
+                  ' · ' +
+                    trackBLabel +
+                    ' ' +
                     sum.restImages +
                     ' imgs, ' +
                     sum.restReviewed +
@@ -432,12 +535,12 @@
                           'div',
                           { className: 'space-y-1' },
                           h(AuditLine, {
-                            label: 'MUAC',
+                            label: trackALabel,
                             session: r.muac,
                             workflowRunId: workflowRunId,
                           }),
                           h(AuditLine, {
-                            label: 'Other',
+                            label: trackBLabel,
                             session: r.rest,
                             workflowRunId: workflowRunId,
                           }),
@@ -475,6 +578,7 @@
   LabsAudit.humanReviewedOf = humanReviewedOf;
   LabsAudit.duplicateFakeOf = duplicateFakeOf;
   LabsAudit.clusterCountOf = clusterCountOf;
+  LabsAudit.showAiStatsOf = showAiStatsOf;
 
   if (typeof window !== 'undefined') window.LabsAudit = LabsAudit;
   if (typeof module !== 'undefined' && module.exports)

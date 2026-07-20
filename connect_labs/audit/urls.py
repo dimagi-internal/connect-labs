@@ -110,6 +110,11 @@ urlpatterns = [
         name="visit_cluster_export_csv",
     ),
     path(
+        "api/<int:session_id>/visit-clusters/<str:group_id>/images/",
+        views.VisitClusterImagesAPIView.as_view(),
+        name="visit_cluster_images_json",
+    ),
+    path(
         "image/<int:opp_id>/<str:blob_id>/",
         views.ExperimentAuditImageConnectView.as_view(),
         name="audit_image_connect",
