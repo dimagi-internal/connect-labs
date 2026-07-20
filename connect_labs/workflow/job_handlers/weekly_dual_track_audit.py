@@ -5,6 +5,10 @@ actions.startJob(run_id, {job_type: "weekly_dual_track_audit_create", run_id,
 opportunity_id}). Loops the definition's opportunity_ids x 2 tracks and invokes
 run_audit_creation synchronously for each. Schedulable: a cron can call the same
 handler with the same job_config.
+
+Scope: opportunity_id for an opp-owned run, program_id for a program-owned run
+(run_workflow_job injects program_id into job_config — see tasks.py). Both must
+be threaded into WorkflowDataAccess or a program-owned run's get_run() 404s.
 """
 
 import logging
@@ -20,6 +24,7 @@ logger = logging.getLogger(__name__)
 def weekly_dual_track_audit_create(job_config: dict, access_token: str, progress_callback=None) -> dict:
     run_id = job_config.get("run_id")
     opportunity_id = job_config.get("opportunity_id")
+    program_id = job_config.get("program_id")
     if not run_id:
         raise ValueError("weekly_dual_track_audit_create requires run_id in job_config")
 
@@ -29,7 +34,7 @@ def weekly_dual_track_audit_create(job_config: dict, access_token: str, progress
         if progress_callback:
             progress_callback(msg, processed=processed, total=total)
 
-    wda = WorkflowDataAccess(access_token=access_token, opportunity_id=opportunity_id)
+    wda = WorkflowDataAccess(access_token=access_token, opportunity_id=opportunity_id, program_id=program_id)
     try:
         run = wda.get_run(run_id)
         if run is None:

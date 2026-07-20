@@ -101,14 +101,17 @@ def test_bulk_primary_flw_name_resolves_via_flw_names(labs_client, monkeypatch):
     assert data["bulk_primary_flw_name"] == "Jane Doe"
 
 
-def test_assessment_entity_id_passes_through_when_already_stored(labs_client, monkeypatch):
-    """New audit sessions store entity_id directly on each visit_images entry —
-    it should reach the assessment unchanged, no backfill needed."""
+def test_assessment_case_info_passes_through_when_already_stored(labs_client, monkeypatch):
+    """New audit sessions store child_name/childs_dob/household_name directly on
+    each visit_images entry — they should reach the assessment unchanged, no
+    backfill needed."""
     from connect_labs.audit import views
 
     username = "26a4b2fb1c4d2f260c5e"
     session = _make_session(username)
-    session.data["visit_images"]["111"][0]["entity_id"] = "ALIYU-20240610"
+    session.data["visit_images"]["111"][0]["child_name"] = "Aliyu Musa"
+    session.data["visit_images"]["111"][0]["childs_dob"] = "2024-06-10"
+    session.data["visit_images"]["111"][0]["household_name"] = "Musa Household"
 
     class FakeDataAccess:
         def __init__(self, *a, **k):
@@ -134,25 +137,42 @@ def test_assessment_entity_id_passes_through_when_already_stored(labs_client, mo
     response = labs_client.get(f"/audit/api/{session.id}/bulk-data/")
     data = response.json()
 
-    assert data["assessments"][0]["entity_id"] == "ALIYU-20240610"
+    assert data["assessments"][0]["child_name"] == "Aliyu Musa"
+    assert data["assessments"][0]["childs_dob"] == "2024-06-10"
+    assert data["assessments"][0]["household_name"] == "Musa Household"
     assert data["assessments"][0]["prior_audited"] is False
 
 
-def test_assessment_entity_id_backfills_for_legacy_sessions(labs_client, monkeypatch):
-    """Sessions created before entity_id was captured have none stored on
-    visit_images. The view should backfill it via a bulk visit fetch, matching
+def test_assessment_case_info_backfills_for_legacy_sessions(labs_client, monkeypatch):
+    """Sessions created before additional_case_info was captured have none
+    stored on visit_images. The view should backfill via a bulk visit fetch
+    that INCLUDES form_json (unlike entity_id's skip_form_json=True backfill --
+    these fields live inside the form, not a base RawVisitCache column), matching
     on visit_id even though the cache backend returns it as a string (CharField)
-    while the assessment's visit_id is an int — a mismatch that used to make the
-    backfill silently miss every time."""
+    while the assessment's visit_id is an int."""
     from connect_labs.audit import views
 
     username = "26a4b2fb1c4d2f260c5e"
-    session = _make_session(username)  # no entity_id on the stored image
+    session = _make_session(username)  # no case info on the stored image
 
     class FakePipeline:
-        def fetch_raw_visits(self, opportunity_id, skip_form_json, filter_visit_ids):
+        def fetch_raw_visits(self, opportunity_id, filter_visit_ids, skip_form_json=False):
             assert 111 in filter_visit_ids
-            return [{"id": "111", "entity_id": "ALIYU-20240610"}]  # string id, like RawVisitCache
+            assert skip_form_json is False
+            return [
+                {
+                    "id": "111",  # string id, like RawVisitCache
+                    "form_json": {
+                        "form": {
+                            "additional_case_info": {
+                                "child_name": "Aliyu Musa",
+                                "childs_dob": "2024-06-10",
+                                "household_name": "Musa Household",
+                            }
+                        }
+                    },
+                }
+            ]
 
     class FakeDataAccess:
         def __init__(self, *a, **k):
@@ -178,7 +198,9 @@ def test_assessment_entity_id_backfills_for_legacy_sessions(labs_client, monkeyp
     response = labs_client.get(f"/audit/api/{session.id}/bulk-data/")
     data = response.json()
 
-    assert data["assessments"][0]["entity_id"] == "ALIYU-20240610"
+    assert data["assessments"][0]["child_name"] == "Aliyu Musa"
+    assert data["assessments"][0]["childs_dob"] == "2024-06-10"
+    assert data["assessments"][0]["household_name"] == "Musa Household"
 
 
 def test_bulk_primary_flw_name_falls_back_to_username_when_unresolved(labs_client, monkeypatch):

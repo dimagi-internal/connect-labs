@@ -166,8 +166,25 @@
             <span class="text-red-600" x-text="loadError"></span>
           </template>
           <template x-if="!loading && !loadCancelled && !loadError">
-            <span>Showing <span class="font-semibold" x-text="assessments.length"></span> assessment(s)</span>
+            <span>Showing <span class="font-semibold" x-text="pageRangeStart"></span>–<span class="font-semibold" x-text="pageRangeEnd"></span> of <span class="font-semibold" x-text="assessments.length"></span> assessment(s)</span>
           </template>
+        </div>
+        <div class="flex items-center gap-2">
+          <label for="page-size" class="text-sm font-medium text-gray-700 whitespace-nowrap">Per page:</label>
+          <button @click="adjustPageSize(-5)"
+                  :disabled="pageSize <= 25"
+                  class="px-2 py-1 border border-gray-300 rounded text-sm hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">−</button>
+          <input type="number"
+                 id="page-size"
+                 x-model.number="pageSize"
+                 @change="updatePageSize()"
+                 min="25"
+                 max="100"
+                 step="5"
+                 class="w-16 border border-gray-300 rounded px-2 py-1 text-sm text-center">
+          <button @click="adjustPageSize(5)"
+                  :disabled="pageSize >= 100"
+                  class="px-2 py-1 border border-gray-300 rounded text-sm hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">+</button>
         </div>
         <div class="flex items-center gap-2">
           <label for="widget-size" class="text-sm font-medium text-gray-700 whitespace-nowrap">Size:</label>
@@ -271,7 +288,7 @@
           <p>No assessments match the current filters.</p>
         </div>
       </template>
-      <template x-for="assessment in assessments" :key="assessment.id">
+      <template x-for="assessment in pagedAssessments" :key="assessment.id">
         <div class="assessment-widget bg-white rounded-lg shadow-sm border-2 hover:shadow-md transition-shadow"
              :class="{
                'border-green-500': assessment.result === 'pass',
@@ -296,7 +313,10 @@
                get aiConfidence() { return typeof assessment.ai_confidence === 'number' ? assessment.ai_confidence : null; },
                get aiClassLabel() {
                  if (!this.aiResult) return '';
-                 if (this.aiResult === 'error') return this.aiNotes || 'Error';
+                 // Error notes are internal/config detail (e.g. a missing API key) --
+                 // not useful to an auditor per image, so show a generic label instead
+                 // of the raw exception text.
+                 if (this.aiResult === 'error') return 'Error';
                  return this.aiNotes || (this.aiResult === 'match' ? 'Passed' : 'Failed');
                },
                updateResult(newResult) {
@@ -409,11 +429,6 @@
           <div class="p-2">
             <!-- Metadata Section -->
             <div class="text-xs text-gray-500 flex flex-wrap gap-x-3 gap-y-0.5 mb-2">
-              <span x-show="assessment.flw_name || assessment.username"
-                    class="truncate max-w-[160px]"
-                    :title="assessment.flw_name || assessment.username">
-                <i class="fa-solid fa-user mr-1"></i><span x-text="assessment.flw_name || assessment.username"></span>
-              </span>
               <span><i class="fa-solid fa-calendar mr-1"></i><span x-text="assessment.visit_date"></span></span>
               <a :href="visitDetailUrl(assessment.user_id, assessment.user_visit_id, assessment.visit_id)"
                  target="_blank"
@@ -424,9 +439,16 @@
                 <i class="fa-solid fa-tag mr-0.5"></i><span x-text="assessment.question_id.split('/').pop()"></span>
               </span>
             </div>
-            <div class="text-[0.625rem] text-gray-500 flex flex-wrap gap-x-3 gap-y-0.5 mb-2" x-show="assessment.entity_id">
-              <span class="break-all" :title="assessment.entity_id">
-                <i class="fa-solid fa-child mr-1"></i><span x-text="assessment.entity_id"></span>
+            <div class="text-[0.625rem] text-gray-500 flex flex-wrap gap-x-3 gap-y-0.5 mb-2"
+                 x-show="assessment.child_name || assessment.childs_dob || assessment.household_name">
+              <span x-show="assessment.child_name" class="break-all" :title="assessment.child_name">
+                <i class="fa-solid fa-child mr-1"></i><span x-text="assessment.child_name"></span>
+              </span>
+              <span x-show="assessment.childs_dob" class="break-all" :title="assessment.childs_dob">
+                <i class="fa-solid fa-cake-candles mr-1"></i><span x-text="assessment.childs_dob"></span>
+              </span>
+              <span x-show="assessment.household_name" class="break-all" :title="assessment.household_name">
+                <i class="fa-solid fa-house mr-1"></i><span x-text="assessment.household_name"></span>
               </span>
             </div>
 
@@ -465,7 +487,6 @@
                         }"
                         x-text="aiResult === 'match' ? 'Match' : (aiResult === 'no_match' ? ((aiNotes || 'No Match') + (aiConfidence !== null ? ': confidence ' + aiConfidence.toFixed(3) : '')) : 'Error')"></span>
                 </div>
-                <div class="text-gray-600 mt-0.5 leading-tight" x-show="aiNotes && aiResult === 'error'" x-text="aiNotes"></div>
               </div>
             </template>
 
@@ -527,6 +548,23 @@
           </div>
         </div>
       </template>
+    </div>
+  </template>
+
+  <!-- Pagination -->
+  <template x-if="!loading && !loadCancelled && !loadError && assessments.length > 0">
+    <div class="flex items-center justify-center gap-3 mb-8 -mt-4">
+      <button @click="goToPage(currentPage - 1)"
+              :disabled="currentPage <= 1"
+              class="px-3 py-1.5 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">
+        <i class="fa-solid fa-chevron-left mr-1"></i>Prev
+      </button>
+      <span class="text-sm text-gray-600">Page <span class="font-semibold" x-text="currentPage"></span> of <span class="font-semibold" x-text="totalPages"></span></span>
+      <button @click="goToPage(currentPage + 1)"
+              :disabled="currentPage >= totalPages"
+              class="px-3 py-1.5 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">
+        Next<i class="fa-solid fa-chevron-right ml-1"></i>
+      </button>
     </div>
   </template>
 
@@ -816,7 +854,9 @@
             <span x-show="lightboxAssessment.visit_date"><i class="fa-solid fa-calendar mr-1 text-gray-400"></i><span x-text="lightboxAssessment.visit_date"></span></span>
             <span x-show="lightboxAssessment.visit_id"><i class="fa-solid fa-hashtag mr-0.5 text-gray-400"></i><span x-text="lightboxAssessment.visit_id"></span></span>
             <span x-show="lightboxAssessment.question_id" class="truncate max-w-[160px]"><i class="fa-solid fa-tag mr-0.5 text-gray-400"></i><span x-text="(lightboxAssessment.question_id || '').split('/').pop()"></span></span>
-            <span x-show="lightboxAssessment.entity_id" class="text-[0.625rem]"><i class="fa-solid fa-child mr-1 text-gray-400"></i><span x-text="lightboxAssessment.entity_id"></span></span>
+            <span x-show="lightboxAssessment.child_name" class="text-[0.625rem]"><i class="fa-solid fa-child mr-1 text-gray-400"></i><span x-text="lightboxAssessment.child_name"></span></span>
+            <span x-show="lightboxAssessment.childs_dob" class="text-[0.625rem]"><i class="fa-solid fa-cake-candles mr-1 text-gray-400"></i><span x-text="lightboxAssessment.childs_dob"></span></span>
+            <span x-show="lightboxAssessment.household_name" class="text-[0.625rem]"><i class="fa-solid fa-house mr-1 text-gray-400"></i><span x-text="lightboxAssessment.household_name"></span></span>
             <template x-if="lightboxAssessment.result">
               <span class="px-2 py-0.5 rounded text-xs font-bold"
                     :class="{ 'bg-green-600 text-white': lightboxAssessment.result === 'pass', 'bg-red-600 text-white': lightboxAssessment.result === 'fail', 'bg-orange-500 text-white': lightboxAssessment.result === 'duplicate_fake' }"
@@ -998,6 +1038,12 @@ function bulkAssessmentInterface() {
     flwTasks: {},
     allAssessments: [],
     assessments: [],
+    // Pagination over the (already filtered) `assessments` array -- bulk
+    // actions, AI counts, and the lightbox's own indexing all keep using the
+    // full `assessments`/`pagedAssessments` split below so "Pass All Pending"
+    // etc. still act on every filtered result, not just the visible page.
+    pageSize: 45,
+    currentPage: 1,
     questionIds: [],
     bulkPrimaryUsername: '',
     bulkPrimaryFlwName: '',
@@ -1011,6 +1057,13 @@ function bulkAssessmentInterface() {
         const parsed = parseInt(savedSize, 10);
         if (!Number.isNaN(parsed)) {
           this.widgetSize = parsed;
+        }
+      }
+      const savedPageSize = localStorage.getItem('bulkAssessmentPageSize');
+      if (savedPageSize) {
+        const parsed = parseInt(savedPageSize, 10);
+        if (!Number.isNaN(parsed)) {
+          this.pageSize = Math.min(100, Math.max(25, parsed));
         }
       }
       const tokenInput = document.querySelector('[name=csrfmiddlewaretoken]');
@@ -1173,18 +1226,46 @@ function bulkAssessmentInterface() {
         const flwMatch = !this.selectedFlw || assessment.username === this.selectedFlw;
         return questionMatch && statusMatch && flwMatch;
       });
+      this.currentPage = 1;
       this.recalculateStats();
     },
     updateWidgetSize() {
       localStorage.setItem('bulkAssessmentWidgetSize', this.widgetSize);
     },
+    // ── Pagination (over the filtered `assessments`; bulk actions/AI counts/
+    // lightbox indexing intentionally keep using the full `assessments`) ──
+    get totalPages() {
+      return Math.max(1, Math.ceil(this.assessments.length / this.pageSize));
+    },
+    get pagedAssessments() {
+      const start = (this.currentPage - 1) * this.pageSize;
+      return this.assessments.slice(start, start + this.pageSize);
+    },
+    get pageRangeStart() {
+      return this.assessments.length === 0 ? 0 : (this.currentPage - 1) * this.pageSize + 1;
+    },
+    get pageRangeEnd() {
+      return Math.min(this.currentPage * this.pageSize, this.assessments.length);
+    },
+    adjustPageSize(delta) {
+      this.pageSize = Math.min(100, Math.max(25, this.pageSize + delta));
+      this.updatePageSize();
+    },
+    updatePageSize() {
+      this.pageSize = Math.min(100, Math.max(25, parseInt(this.pageSize, 10) || 45));
+      localStorage.setItem('bulkAssessmentPageSize', this.pageSize);
+      this.currentPage = 1;
+    },
+    goToPage(page) {
+      this.currentPage = Math.min(this.totalPages, Math.max(1, page));
+    },
     // ── Image zoom lightbox ────────────────────────────────────────────────
     get lightboxAssessment() {
       const i = this.lightbox.index;
-      return (i >= 0 && i < this.assessments.length) ? this.assessments[i] : null;
+      return (i >= 0 && i < this.pagedAssessments.length) ? this.pagedAssessments[i] : null;
     },
     openLightbox(assessment) {
-      const idx = this.assessments.findIndex(a => a.id === assessment.id);
+      const idx = this.pagedAssessments.findIndex(a => a.id === assessment.id);
       if (idx === -1) return;
       this.lightbox.index = idx;
       this.lightboxReset();
@@ -1200,7 +1281,7 @@ function bulkAssessmentInterface() {
       this.lightbox.ty = 0;
     },
     lightboxStep(delta) {
-      const n = this.assessments.length;
+      const n = this.pagedAssessments.length;
       if (n === 0) return;
       this.lightbox.index = (this.lightbox.index + delta + n) % n;
       this.lightboxReset();

@@ -730,10 +730,21 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                 run_data = {
                     "id": run.id,
                     "definition_id": definition_id,
-                    "opportunity_id": opportunity_id,
+                    # Use the RUN RECORD's own ownership, not the ambient
+                    # request/session labs_context. A program-owned run's
+                    # opportunity_id is None on the record itself, but the
+                    # session's "current opportunity" can be non-None here —
+                    # e.g. left over from the workflow list page's background
+                    # per-opp fetches — even while viewing a program-scoped
+                    # page. Trusting that stale value made instance.opportunity_id
+                    # non-null for a program-owned run, so the "Create Audits"
+                    # button sent a real opportunity_id to startJob and
+                    # start_job_api dispatched opp-scoped instead of
+                    # program-scoped, 404ing on get_run() and failing the batch.
+                    "opportunity_id": run.opportunity_id,
                     # Program-owned runs have no owning opp; the render reads
                     # instance.program_id to dispatch program-scoped jobs.
-                    "program_id": program_id,
+                    "program_id": run.program_id,
                     "opportunity_ids": effective_opp_ids,
                     "opportunity_name": labs_context.get("opportunity", {}).get("name"),
                     # Canonical lifecycle: in_progress | completed. The proxy
@@ -846,6 +857,21 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
             # Pass empty data initially; frontend will connect to SSE stream
             pipeline_data = {}
 
+            # Stamp the run's own scope onto its API endpoints as an explicit URL
+            # query param. Without this, these fetches fall through to whatever
+            # request.labs_context/session happens to hold at click time — which
+            # unrelated same-page background requests (e.g. the per-opportunity
+            # sessions-list fetch) can clobber between page load and the actual
+            # click, especially for a program-owned run (session drifts to a
+            # stale member opp with program_id gone entirely). Reproduced live as
+            # a "Failed to update state" error on a program-owned run whose
+            # audit-creation job had otherwise completed successfully.
+            run_scope_qs = (
+                f"?opportunity_id={run_data['opportunity_id']}"
+                if run_data.get("opportunity_id")
+                else (f"?program_id={run_data['program_id']}" if run_data.get("program_id") else "")
+            )
+
             # Prepare data for React (pass as dict, json_script will handle encoding)
             context["workflow_data"] = {
                 "definition": definition.data,
@@ -873,7 +899,9 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                 },
                 "apiEndpoints": {
                     # In edit mode, state updates are local only
-                    "updateState": None if is_edit_mode else f"/labs/workflow/api/run/{run_data['id']}/state/",
+                    "updateState": (
+                        None if is_edit_mode else f"/labs/workflow/api/run/{run_data['id']}/state/{run_scope_qs}"
+                    ),
                     "getWorkers": "/labs/workflow/api/workers/",
                     "getPipelineData": f"/labs/workflow/api/{definition_id}/pipeline-data/",
                     # SSE stream for async pipeline data loading
@@ -881,13 +909,17 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                     # Framework: auth-status for declared auth_requires
                     "authStatus": "/labs/workflow/api/auth-status/",
                     # MBW monitoring actions
-                    "saveWorkerResult": f"/labs/workflow/api/run/{run_data['id']}/worker-result/",
+                    "saveWorkerResult": f"/labs/workflow/api/run/{run_data['id']}/worker-result/{run_scope_qs}",
                     # Single completion verb — handles snapshot build + status flip atomically.
-                    "completeRun": (None if is_edit_mode else f"/labs/workflow/api/run/{run_data['id']}/complete/"),
+                    "completeRun": (
+                        None if is_edit_mode else f"/labs/workflow/api/run/{run_data['id']}/complete/{run_scope_qs}"
+                    ),
                     "updateOpportunityIds": f"/labs/workflow/api/{definition_id}/opportunity-ids/",
                     # Read-only snapshot inspection (debug); render code reads
                     # instance.snapshot via the useRunView helper, not this URL.
-                    "getSnapshot": (None if is_edit_mode else f"/labs/workflow/api/run/{run_data['id']}/snapshot/"),
+                    "getSnapshot": (
+                        None if is_edit_mode else f"/labs/workflow/api/run/{run_data['id']}/snapshot/{run_scope_qs}"
+                    ),
                 },
             }
 
@@ -3274,11 +3306,24 @@ def start_job_api(request, run_id):
         # opp-owned run is dispatched opp-scoped. Read both signals from the
         # session context (with the render's job_config as a fallback source).
         labs_context = getattr(request, "labs_context", {}) or {}
-        program_id = labs_context.get("program_id") or (job_config or {}).get("program_id")
+        job_config_opportunity_id = (job_config or {}).get("opportunity_id")
+        job_config_program_id = (job_config or {}).get("program_id")
+        program_id = labs_context.get("program_id") or job_config_program_id
         candidates = []
-        for c in (labs_context.get("opportunity_id"), (job_config or {}).get("opportunity_id")):
-            if c and c not in candidates:
-                candidates.append(c)
+        # If the render explicitly declares this run program-owned (program_id
+        # set, no opportunity_id, in job_config — which WorkflowRunView builds
+        # from the RUN RECORD's own opportunity_id/program_id, not ambient
+        # context), trust that over labs_context.opportunity_id. Session-level
+        # labs_context is a page-wide side channel that unrelated same-page
+        # background fetches (e.g. a per-opportunity sessions-list call) can
+        # clobber between page load and this POST, long after the run's own
+        # true scope was already known — see the "Create Audits" 500 on a
+        # program-owned Weekly Dual-Track Audit run for the reproduction.
+        trust_program_scope = bool(job_config_program_id) and not job_config_opportunity_id
+        if not trust_program_scope:
+            for c in (labs_context.get("opportunity_id"), job_config_opportunity_id):
+                if c and c not in candidates:
+                    candidates.append(c)
 
         if program_id and not candidates:
             # Program dispatch: the run resolves by program_id alone. Confirm it

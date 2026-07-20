@@ -381,6 +381,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                 job_type: 'weekly_dual_track_audit_create',
                 run_id: instance.id,
                 opportunity_id: instance.opportunity_id,
+                program_id: instance.program_id,
                 window_start: startDate,
                 window_end: endDate,
                 muac_sample_percentage: Number(muacSample),

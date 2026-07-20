@@ -188,6 +188,34 @@ def test_handler_invokes_run_audit_creation_per_call_and_writes_summary():
     assert written["last_batch"]["calls"] == 4
 
 
+def test_handler_scopes_data_access_by_program_id_for_program_owned_runs():
+    """A program-owned run has no owning opportunity_id — job_config carries
+    program_id instead (injected by run_workflow_job). The handler must thread
+    it into WorkflowDataAccess, or get_run()/get_definition() 404 against the
+    Labs Record API and the batch dies with "run {run_id} not found"."""
+    from connect_labs.workflow.job_handlers import weekly_dual_track_audit as h
+
+    run = _fake_run({"window_start": "2026-06-22", "window_end": "2026-06-28"})
+    eager = mock.Mock()
+    eager.result = {"sessions": [1, 2, 3]}
+
+    with (
+        mock.patch.object(h, "WorkflowDataAccess") as WDA,
+        mock.patch.object(h, "run_audit_creation") as rac,
+    ):
+        wda = WDA.return_value
+        wda.get_run.return_value = run
+        wda.get_definition.return_value = _fake_definition()
+        rac.apply.return_value = eager
+
+        result = h.weekly_dual_track_audit_create(
+            {"run_id": 555, "opportunity_id": None, "program_id": 176}, access_token="tok"
+        )
+
+    WDA.assert_called_once_with(access_token="tok", opportunity_id=None, program_id=176)
+    assert result["successful"] == 4
+
+
 def test_handler_reads_window_from_job_payload_when_state_lacks_it():
     """The render passes the window in the job payload, so audit creation works
     even when the best-effort run-state write flaked (state has no window)."""
