@@ -185,7 +185,7 @@ def _run_ai_review_on_sessions(
     session_image_counts = {}
     for session_id in session_ids:
         try:
-            session = data_access.get_audit_session(session_id)
+            session = data_access.get_audit_session(session_id, try_multiple_opportunities=True)
             if session:
                 visit_images = session.data.get("visit_images", {})
                 reviewable_count = 0
@@ -219,7 +219,7 @@ def _run_ai_review_on_sessions(
     for session_id in session_ids:
         try:
             # Get session data
-            session = data_access.get_audit_session(session_id)
+            session = data_access.get_audit_session(session_id, try_multiple_opportunities=True)
             if not session:
                 logger.warning(f"[AIReview] Session {session_id} not found")
                 continue
@@ -438,6 +438,7 @@ def run_audit_creation(
     criteria: dict,
     visit_ids: list[int] | None = None,
     flw_visit_ids: dict | None = None,
+    flw_opportunity_ids: dict | None = None,
     template_overrides: dict | None = None,
     workflow_run_id: int | None = None,
     ai_agent_id: str | None = None,
@@ -465,6 +466,16 @@ def run_audit_creation(
         criteria: Audit criteria dict
         visit_ids: Pre-computed visit IDs (optional, skips fetch)
         flw_visit_ids: Pre-computed FLW->visit_ids mapping (optional)
+        flw_opportunity_ids: Pre-computed FLW->opportunity_id mapping (optional). A
+            program-owned, multi-opportunity per_flw run has FLWs that each belong
+            to exactly one of the selected opportunities -- without this, every
+            session in the batch was scoped/stored under `opportunities[0]` alone
+            (and image extraction for FLWs outside that one opportunity silently
+            came back empty), regardless of which opportunity a given FLW is
+            actually in. When provided, each FLW's session and image extraction is
+            scoped to ITS real opportunity instead. combined/per_opp granularity
+            and legacy callers with no flw_opportunity_ids keep the prior
+            single-opportunity behavior unchanged.
         template_overrides: Values to override in criteria (from workflow)
         workflow_run_id: Workflow run ID if triggered from workflow (sessions will link to it)
         ai_agent_id: Optional AI review agent to run after creation
@@ -551,6 +562,19 @@ def run_audit_creation(
         mock_request = create_mock_request(access_token, opp_id)
         data_access = AuditDataAccess(opportunity_id=opp_id, request=mock_request)
 
+        # Cache of per-opportunity AuditDataAccess instances. A multi-opportunity
+        # per_flw run needs each FLW's images/session scoped to ITS OWN opportunity
+        # (see flw_opportunity_ids in the docstring above) rather than reusing the
+        # single `data_access` above, which is pinned to opportunities[0].
+        _opp_data_access_cache: dict[int, AuditDataAccess] = {opp_id: data_access}
+
+        def _data_access_for_opp(oid: int) -> AuditDataAccess:
+            if oid not in _opp_data_access_cache:
+                _opp_data_access_cache[oid] = AuditDataAccess(
+                    opportunity_id=oid, request=create_mock_request(access_token, oid)
+                )
+            return _opp_data_access_cache[oid]
+
         # Update job to running status
         _update_job_progress(
             data_access,
@@ -620,6 +644,19 @@ def run_audit_creation(
             visit_ids = list(set(visit_ids))
             logger.info(f"[AuditCreation] Filtered to {len(visit_ids)} visits for selected FLWs")
 
+        # Group this run's visits by each FLW's REAL opportunity (only meaningful
+        # for is_per_flw with both flw_visit_ids and flw_opportunity_ids provided).
+        # Non-empty and containing more than just opp_id means this is a genuine
+        # multi-opportunity per_flw batch that needs per-opp extraction below,
+        # rather than the single opp_id-scoped call that silently drops every
+        # other opportunity's images.
+        visits_by_opp: dict[int, list[int]] = {}
+        if is_per_flw and flw_visit_ids and flw_opportunity_ids:
+            for flw_id in selected_flw_user_ids:
+                real_opp = flw_opportunity_ids.get(flw_id, opp_id)
+                visits_by_opp.setdefault(real_opp, []).extend(flw_visit_ids.get(flw_id, []))
+        is_multi_opp_per_flw = bool(visits_by_opp) and set(visits_by_opp) != {opp_id}
+
         # =========================================================================
         # STAGE 2: Extract images
         # =========================================================================
@@ -656,9 +693,21 @@ def run_audit_creation(
             # Relay to the program-creator row so it glides during extraction, too.
             _relay(processed, total, "Creating audits · extracting images")
 
-        all_visit_images = data_access.extract_images_for_visits(
-            visit_ids, opp_id, related_fields=related_fields, progress_callback=on_extraction_progress
-        )
+        if is_multi_opp_per_flw:
+            # Extract per real opportunity and merge -- a single opp_id-scoped call
+            # covering every FLW's visits would silently return no images for any
+            # visit outside opportunities[0] (extract_images_for_visits' CommCare
+            # fetch is scoped to exactly one opportunity).
+            all_visit_images = {}
+            for real_opp, opp_visit_ids in visits_by_opp.items():
+                opp_images = _data_access_for_opp(real_opp).extract_images_for_visits(
+                    opp_visit_ids, real_opp, related_fields=related_fields, progress_callback=on_extraction_progress
+                )
+                all_visit_images.update(opp_images)
+        else:
+            all_visit_images = data_access.extract_images_for_visits(
+                visit_ids, opp_id, related_fields=related_fields, progress_callback=on_extraction_progress
+            )
         image_count = sum(len(imgs) for imgs in all_visit_images.values())
         logger.info(f"[AuditCreation] Extracted {image_count} images from {len(visit_ids)} visits")
 
@@ -669,17 +718,29 @@ def run_audit_creation(
         visit_meta_by_id: dict[str, dict] = {}
         if clustering_enabled:
             try:
-                meta_visits = data_access.pipeline.fetch_raw_visits(
-                    opportunity_id=opp_id, skip_form_json=True, filter_visit_ids=set(visit_ids)
-                )
-                visit_meta_by_id = {str(v["id"]): v for v in meta_visits}
+                if is_multi_opp_per_flw:
+                    for real_opp, opp_visit_ids in visits_by_opp.items():
+                        meta_visits = _data_access_for_opp(real_opp).pipeline.fetch_raw_visits(
+                            opportunity_id=real_opp, skip_form_json=True, filter_visit_ids=set(opp_visit_ids)
+                        )
+                        visit_meta_by_id.update({str(v["id"]): v for v in meta_visits})
+                else:
+                    meta_visits = data_access.pipeline.fetch_raw_visits(
+                        opportunity_id=opp_id, skip_form_json=True, filter_visit_ids=set(visit_ids)
+                    )
+                    visit_meta_by_id = {str(v["id"]): v for v in meta_visits}
             except Exception:
                 logger.exception(f"[AuditCreation] Failed to fetch visit metadata for clustering, opp={opp_id}")
 
         if audit_criteria.exclude_prior_audited:
             from connect_labs.audit.data_access import filter_out_prior_audited
 
-            prior_index = data_access.get_prior_audited_images(opp_id)
+            if is_multi_opp_per_flw:
+                prior_index = {}
+                for real_opp in visits_by_opp:
+                    prior_index.update(_data_access_for_opp(real_opp).get_prior_audited_images(real_opp))
+            else:
+                prior_index = data_access.get_prior_audited_images(opp_id)
             all_visit_images, excluded_count = filter_out_prior_audited(all_visit_images, prior_index)
             image_count = sum(len(imgs) for imgs in all_visit_images.values())
             logger.info(f"[AuditCreation] Excluded {excluded_count} previously-audited images; {image_count} remain")
@@ -719,10 +780,16 @@ def run_audit_creation(
         # Fetch FLW display names for use in session titles
         flw_display_names = {}
         try:
-            flw_display_names = data_access.get_flw_names(opp_id)
+            name_opp_ids = set(visits_by_opp) if is_multi_opp_per_flw else {opp_id}
+            for name_opp_id in name_opp_ids:
+                flw_display_names.update(_data_access_for_opp(name_opp_id).get_flw_names(name_opp_id))
             logger.info(f"[AuditCreation] Loaded {len(flw_display_names)} FLW display names")
         except Exception as e:
             logger.warning(f"[AuditCreation] Failed to load FLW names, using usernames: {e}")
+
+        # id -> name lookup for opportunity_name when a session's real opportunity
+        # (flw_opportunity_ids) isn't opportunities[0].
+        opp_names_by_id = {o["id"]: o.get("name") for o in opportunities}
 
         if is_per_flw:
             # Create one session per FLW
@@ -770,14 +837,21 @@ def run_audit_creation(
                     else []
                 )
 
-                session = data_access.create_audit_session(
+                flw_opp_id = (
+                    flw_opportunity_ids.get(flw_id, opp_id)
+                    if (is_multi_opp_per_flw and flw_opportunity_ids)
+                    else opp_id
+                )
+                flw_data_access = _data_access_for_opp(flw_opp_id) if is_multi_opp_per_flw else data_access
+
+                session = flw_data_access.create_audit_session(
                     username=username,
                     visit_ids=flw_visit_list,
                     title=flw_title,
                     tag=session_tag,
-                    opportunity_id=opp_id,
+                    opportunity_id=flw_opp_id,
                     criteria=audit_criteria,
-                    opportunity_name=opportunities[0].get("name") if opportunities else None,
+                    opportunity_name=opp_names_by_id.get(flw_opp_id) if opportunities else None,
                     visit_images=flw_images,
                     related_fields=related_fields,
                     workflow_run_id=workflow_run_id,
@@ -945,7 +1019,8 @@ def run_audit_creation(
             result=result,
         )
 
-        data_access.close()
+        for cached_data_access in _opp_data_access_cache.values():
+            cached_data_access.close()
 
         logger.info(
             f"[AuditCreation] Complete: {len(sessions_created)} sessions, "
@@ -962,6 +1037,12 @@ def run_audit_creation(
             is_complete=True,
             error=str(e),
         )
+
+        for cached_data_access in locals().get("_opp_data_access_cache", {}).values():
+            try:
+                cached_data_access.close()
+            except Exception:
+                pass
 
         # Try to update job record to failed
         try:

@@ -20,7 +20,7 @@ class _FakeDataAccess:
     def __init__(self, session):
         self._session = session
 
-    def get_audit_session(self, session_id):
+    def get_audit_session(self, session_id, try_multiple_opportunities=False):
         return self._session
 
     def download_image_from_connect(self, blob_id, opp_id):
