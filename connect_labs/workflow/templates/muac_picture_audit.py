@@ -263,7 +263,11 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
     const getAgentById = (id) => availableAIAgents.find(a => a.agent_id === id);
     const getAgentActions = (id) => {
         const agent = getAgentById(id);
-        return (agent && agent.result_actions) || [];
+        // result_actions comes back from the API as a dict keyed by action key
+        // (e.g. {"fail_overzoomed": {ai_result, human_result, button_label}}),
+        // not an array -- convert before anything iterates/.map()s over it.
+        if (!agent || !agent.result_actions) return [];
+        return Object.entries(agent.result_actions).map(([key, a]) => ({ key, ...a }));
     };
     const setReviewerAgent = (path, agentId) => setImageReviewers(prev => ({
         ...prev, [path]: { agentId: agentId, config: {}, autoApplyActions: [] },
@@ -735,11 +739,11 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                                             ))}
                                             <div className="flex flex-wrap gap-2 mt-1">
                                                 {getAgentActions(imageReviewers[t.path].agentId).map(action => (
-                                                    <label key={action.key || action} className="flex items-center gap-1 text-xs text-gray-600">
+                                                    <label key={action.key} className="flex items-center gap-1 text-xs text-gray-600">
                                                         <input type="checkbox"
-                                                            checked={(imageReviewers[t.path].autoApplyActions || []).indexOf(action.key || action) !== -1}
-                                                            onChange={() => toggleReviewerAction(t.path, action.key || action)} className="w-3.5 h-3.5" />
-                                                        Automatically apply {action.label || action.key || action}
+                                                            checked={(imageReviewers[t.path].autoApplyActions || []).indexOf(action.key) !== -1}
+                                                            onChange={() => toggleReviewerAction(t.path, action.key)} className="w-3.5 h-3.5" />
+                                                        Automatically apply {action.button_label || action.key}
                                                     </label>
                                                 ))}
                                             </div>
