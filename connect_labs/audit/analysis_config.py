@@ -81,6 +81,27 @@ def extract_field_paths(form_json: dict | None) -> list[str]:
     return sorted(set(_collect_leaf_paths(form_data)))
 
 
+def extract_additional_case_info(form_data: dict) -> dict:
+    """Pull child_name / childs_dob / household_name off form.additional_case_info.
+
+    `form_data` is the already-unwrapped form (i.e. form_json.get("form", form_json),
+    same convention as the rest of this module). Shared by extraction at session
+    creation and by the backfill path in views.py, so both read this group the
+    same way. These are the same field names used for real submissions on the
+    Health Service Delivery form (form.additional_case_info.child_name /
+    .childs_dob / .household_name) -- confirmed against the app's actual form
+    JSON paths, not guessed.
+    """
+    case_info = form_data.get("additional_case_info") if isinstance(form_data, dict) else None
+    if not isinstance(case_info, dict):
+        case_info = {}
+    return {
+        "child_name": case_info.get("child_name") or "",
+        "childs_dob": case_info.get("childs_dob") or "",
+        "household_name": case_info.get("household_name") or "",
+    }
+
+
 def extract_images_with_question_ids(visit_data: dict) -> list[dict]:
     """
     Extract images with question IDs from a visit.
@@ -105,10 +126,10 @@ def extract_images_with_question_ids(visit_data: dict) -> list[dict]:
     # Extract visit-level metadata
     username = visit_data.get("username") or ""
     entity_name = visit_data.get("entity_name") or "No Entity"
-    entity_id = visit_data.get("entity_id") or ""
 
     # Build filename->path map in a SINGLE traversal (O(m) where m=tree size)
     form_data = form_json.get("form", form_json)
+    case_info = extract_additional_case_info(form_data)
 
     # Use form.meta.timeEnd for actual submission time; fall back to visit_date (date only)
     visit_date = form_data.get("meta", {}).get("timeEnd") or visit_data.get("visit_date") or ""
@@ -131,7 +152,7 @@ def extract_images_with_question_ids(visit_data: dict) -> list[dict]:
                 "username": username,
                 "visit_date": visit_date,
                 "entity_name": entity_name,
-                "entity_id": entity_id,
+                **case_info,
             }
         )
 

@@ -26,7 +26,7 @@ from django.utils.dateparse import parse_datetime
 from django.views.generic import DetailView, TemplateView, View
 from django_tables2 import SingleTableView
 
-from connect_labs.audit.analysis_config import extract_images_with_question_ids
+from connect_labs.audit.analysis_config import extract_additional_case_info, extract_images_with_question_ids
 from connect_labs.audit.data_access import AuditDataAccess
 from connect_labs.audit.models import AuditSessionRecord
 from connect_labs.audit.tables import AuditTable
@@ -554,9 +554,9 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
             all_assessments: list[dict] = []
             bulk_primary_username = ""
             assessment_counter = 0  # Counter to ensure unique IDs even for duplicate visits
-            # Sessions created before entity_id was captured in visit_images have none stored;
-            # collect those visit_ids so we can backfill with one lightweight bulk fetch below.
-            visits_missing_entity_id: set[int] = set()
+            # Sessions created before additional_case_info was captured in visit_images
+            # have none stored; collect those visit_ids so we can backfill below.
+            visits_missing_case_info: set[int] = set()
 
             # Build image filter from session's stored related_fields (for display-time filtering
             # of sessions created before storage-level filtering was applied)
@@ -628,9 +628,11 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
                         latest_visit = visit_date_local
 
                 entity_name = first_image.get("entity_name", "No Entity")
-                entity_id = first_image.get("entity_id", "")
-                if not entity_id:
-                    visits_missing_entity_id.add(visit_id)
+                child_name = first_image.get("child_name", "")
+                childs_dob = first_image.get("childs_dob", "")
+                household_name = first_image.get("household_name", "")
+                if not (child_name or childs_dob or household_name):
+                    visits_missing_case_info.add(visit_id)
 
                 # Convert to dict for easy lookup
                 blob_metadata = {
@@ -670,7 +672,9 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
                             "visit_date": visit_date_display,
                             "visit_date_sort": visit_date_sort,
                             "entity_name": entity_name,
-                            "entity_id": entity_id,
+                            "child_name": child_name,
+                            "childs_dob": childs_dob,
+                            "household_name": household_name,
                             "username": username,
                             "flw_name": flw_names.get(username, username),
                             "opportunity_id": opportunity_id,
@@ -708,7 +712,9 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
                             "visit_date": visit_date_display,
                             "visit_date_sort": visit_date_sort,
                             "entity_name": entity_name,
-                            "entity_id": entity_id,
+                            "child_name": child_name,
+                            "childs_dob": childs_dob,
+                            "household_name": household_name,
                             "username": username,
                             "flw_name": flw_names.get(username, username),
                             "opportunity_id": opportunity_id,
@@ -718,24 +724,35 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
                         }
                     )
 
-            # Backfill entity_id for audit sessions created before it was captured in
-            # visit_images, via one lightweight bulk fetch (skip_form_json) instead of
-            # re-running full image extraction.
-            if visits_missing_entity_id:
+            # Backfill child_name/childs_dob/household_name for audit sessions created
+            # before additional_case_info was captured in visit_images. Unlike entity_id
+            # (a base RawVisitCache column), these live inside form_json, so the backfill
+            # fetch needs the full form -- no skip_form_json=True shortcut here.
+            if visits_missing_case_info:
                 try:
                     backfill_visits = data_access.pipeline.fetch_raw_visits(
                         opportunity_id=opportunity_id,
-                        skip_form_json=True,
-                        filter_visit_ids=visits_missing_entity_id,
+                        filter_visit_ids=visits_missing_case_info,
                     )
                     # RawVisitCache.visit_id is a CharField, so keys here are strings — normalize
                     # to str on both sides since assessment["visit_id"] is stored as an int.
-                    entity_id_by_visit = {str(v["id"]): str(v.get("entity_id") or "") for v in backfill_visits}
+                    case_info_by_visit = {}
+                    for v in backfill_visits:
+                        form_json = v.get("form_json") or {}
+                        form_data = form_json.get("form", form_json) if isinstance(form_json, dict) else {}
+                        case_info_by_visit[str(v["id"])] = extract_additional_case_info(form_data)
                 except Exception:
-                    entity_id_by_visit = {}
+                    case_info_by_visit = {}
                 for assessment in all_assessments:
-                    if not assessment.get("entity_id"):
-                        assessment["entity_id"] = entity_id_by_visit.get(str(assessment["visit_id"]), "")
+                    if not (
+                        assessment.get("child_name")
+                        or assessment.get("childs_dob")
+                        or assessment.get("household_name")
+                    ):
+                        case_info = case_info_by_visit.get(str(assessment["visit_id"]), {})
+                        assessment["child_name"] = case_info.get("child_name", "")
+                        assessment["childs_dob"] = case_info.get("childs_dob", "")
+                        assessment["household_name"] = case_info.get("household_name", "")
 
             # Attach the Connect UUIDs needed to build a shareable visit link
             # (`user_visits_list?user=<user_id>&visit_id=<user_visit_id>`) — not

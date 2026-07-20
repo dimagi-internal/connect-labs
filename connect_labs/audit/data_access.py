@@ -585,7 +585,7 @@ class AuditDataAccess(BaseDataAccess):
         Normalizes to str for comparison since RawVisitCache.visit_id is a CharField
         (cache-hit visits return str ids) while callers pass int visit_ids (cache-miss
         visits return int ids from the raw API response) -- see the identical fix at
-        ExperimentBulkAssessmentDataView.get's entity_id backfill.
+        ExperimentBulkAssessmentDataView.get's additional_case_info backfill.
         """
         all_visits = self._fetch_visits_for_opportunity(opportunity_id)
         visit_id_strs = {str(vid) for vid in visit_ids}
