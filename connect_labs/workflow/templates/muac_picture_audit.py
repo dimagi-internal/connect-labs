@@ -151,6 +151,11 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
     const [previewResults, setPreviewResults] = React.useState([]);
     const [precomputedVisitIds, setPrecomputedVisitIds] = React.useState([]);
     const [precomputedFlwVisitIds, setPrecomputedFlwVisitIds] = React.useState({});
+    // FLW username -> the single opportunity that FLW's visits belong to. A program-owned
+    // run spans multiple opportunities, and each FLW belongs to exactly one of them — this
+    // lets audit creation scope each session to its FLW's real opportunity instead of
+    // defaulting every session in the batch to the run's first selected opportunity.
+    const [precomputedFlwOpportunityIds, setPrecomputedFlwOpportunityIds] = React.useState({});
     const [selectedFlwUserIds, setSelectedFlwUserIds] = React.useState([]);
 
     const getFlwId = (flw) => flw.connect_id || flw.username;
@@ -176,8 +181,13 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
             setPreviewResults(flws);
             setPrecomputedVisitIds((data.preview && data.preview.visit_ids) || []);
             const flwVisitIds = {};
-            flws.forEach(f => { flwVisitIds[f.username] = f.visit_ids || []; });
+            const flwOpportunityIds = {};
+            flws.forEach(f => {
+                flwVisitIds[f.username] = f.visit_ids || [];
+                flwOpportunityIds[f.username] = f.opportunity_id;
+            });
             setPrecomputedFlwVisitIds(flwVisitIds);
+            setPrecomputedFlwOpportunityIds(flwOpportunityIds);
             setSelectedFlwUserIds(flws.map(getFlwId));
         }).catch(e => { setPreviewLoading(false); setPreviewError('Preview failed: ' + (e.message || e)); });
     };
@@ -364,7 +374,11 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
 
         const selectedUsernames = previewResults.filter(isFlwSelected).map(f => f.username);
         const flwVisitIds = {};
-        selectedUsernames.forEach(u => { if (precomputedFlwVisitIds[u]) flwVisitIds[u] = precomputedFlwVisitIds[u]; });
+        const flwOpportunityIds = {};
+        selectedUsernames.forEach(u => {
+            if (precomputedFlwVisitIds[u]) flwVisitIds[u] = precomputedFlwVisitIds[u];
+            if (precomputedFlwOpportunityIds[u] != null) flwOpportunityIds[u] = precomputedFlwOpportunityIds[u];
+        });
 
         const criteria = {
             ...buildCriteriaForPreview(),
@@ -387,6 +401,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                 criteria: criteria,
                 visit_ids: precomputedVisitIds,
                 flw_visit_ids: flwVisitIds,
+                flw_opportunity_ids: flwOpportunityIds,
                 image_audits: buildImageAudits(),
                 context_fields: buildContextFieldsPayload(),
             });

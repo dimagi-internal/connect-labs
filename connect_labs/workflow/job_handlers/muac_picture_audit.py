@@ -3,12 +3,17 @@
 Triggered from the creator render code's "Create Audit" button via
 actions.startJob(run_id, {job_type: "muac_picture_audit_create", run_id,
 opportunity_id, program_id, opportunities, criteria, visit_ids,
-flw_visit_ids, image_audits, context_fields}). Invokes run_audit_creation
-directly, once, with the render-assembled payload spanning every selected
-opportunity -- mirroring the standalone /audit/create/ wizard's own
-single-call submission. Granularity (including per_opp's no-op behavior,
-faithfully replicated rather than fixed) is handled entirely inside
-run_audit_creation itself; nothing is looped per-opportunity here.
+flw_visit_ids, flw_opportunity_ids, image_audits, context_fields}). Invokes
+run_audit_creation directly, once, with the render-assembled payload spanning
+every selected opportunity -- mirroring the standalone /audit/create/
+wizard's own single-call submission. Granularity (including per_opp's no-op
+behavior, faithfully replicated rather than fixed) is handled entirely
+inside run_audit_creation itself; nothing is looped per-opportunity here.
+
+flw_opportunity_ids (username -> opportunity_id) lets run_audit_creation's
+per_flw path scope each FLW's session/images to that FLW's own opportunity
+instead of defaulting the whole multi-opp batch to the first selected
+opportunity -- see run_audit_creation's docstring for the bug this fixes.
 
 Scope: opportunity_id for an opp-owned run, program_id for a program-owned
 run (run_workflow_job injects program_id into job_config — see
@@ -62,6 +67,7 @@ def muac_picture_audit_create(job_config: dict, access_token: str, progress_call
                     "criteria": criteria,
                     "visit_ids": job_config.get("visit_ids") or None,
                     "flw_visit_ids": job_config.get("flw_visit_ids") or None,
+                    "flw_opportunity_ids": job_config.get("flw_opportunity_ids") or None,
                     "workflow_run_id": run_id,
                     "image_audits": job_config.get("image_audits") or None,
                     "context_fields": job_config.get("context_fields") or None,
