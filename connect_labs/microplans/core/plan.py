@@ -124,16 +124,19 @@ def _centroid(geometry: dict) -> list[float]:
         return [0.0, 0.0]
 
 
-def _wa_id(props: dict, index: int) -> str:
-    """Stable id for a work area across edits (mirrors the export slug)."""
-    arm = (props.get("arm") or "intervention")[:3]
-    cluster = props.get("cluster", f"c{index}")
-    sample_type = props.get("sample_type")
-    order = props.get("order_in_cluster")
-    parts = [arm, str(cluster)]
-    if sample_type is not None:
-        parts.append(f"{str(sample_type)[:4]}-{order}")
-    return "-".join(parts).lower()
+def _wa_id(used: set[str]) -> str:
+    """Stable id for a work area across edits — and, since ``to_workarea_payloads``
+    sets ``slug=w["id"]`` directly, ALSO the exported Connect Area Slug. Short
+    Connect-style code (see ``workarea._new_slug``: 2 letters + 5 alphanumeric,
+    e.g. "DA490TL"), unique only within this one plan-materialization call —
+    ``used`` is the caller's set for that call, nothing persisted across plans.
+    Every other reference to a work area's id (``find()``, grouping adjacency,
+    exclude/reassign actions) treats it as an opaque key, never parses
+    structure out of it, so the value only needs to be unique, not
+    descriptive."""
+    from connect_labs.microplans.core.workarea import _new_slug
+
+    return _new_slug(used)
 
 
 def materialize_work_areas(
@@ -163,7 +166,8 @@ def _coverage_work_areas(cells: dict, grouping: dict | None, barriers=None) -> l
     from connect_labs.microplans.core import grouping as grouping_lib
 
     out: list[dict] = []
-    for i, feat in enumerate(cells.get("features", [])):
+    used_ids: set[str] = set()
+    for feat in cells.get("features", []):
         props = feat.get("properties", {}) or {}
         # `or default` (not get's default) because population was moved out of
         # creation: the preview now sends expected_visit_count/target_population
@@ -172,7 +176,7 @@ def _coverage_work_areas(cells: dict, grouping: dict | None, barriers=None) -> l
         building_count = int(props.get("building_count") or 1)
         out.append(
             _make_work_area(
-                wa_id=_wa_id(props, i),
+                wa_id=_wa_id(used_ids),
                 geom=feat.get("geometry"),
                 building_count=building_count,
                 expected=int(props.get("expected_visit_count") or building_count),
@@ -198,7 +202,8 @@ def _sampling_work_areas(pins: dict) -> list[dict]:
 
     out: list[dict] = []
     psu_group: dict = {}
-    for i, feat in enumerate(pins.get("features", [])):
+    used_ids: set[str] = set()
+    for feat in pins.get("features", []):
         props = feat.get("properties", {}) or {}
         geom = feat.get("geometry")
         if geom and geom.get("type") == "Point":
@@ -210,7 +215,7 @@ def _sampling_work_areas(pins: dict) -> list[dict]:
             psu_group[key] = f"PSU {len(psu_group) + 1}"
         out.append(
             _make_work_area(
-                wa_id=_wa_id(props, i),
+                wa_id=_wa_id(used_ids),
                 geom=geom,
                 building_count=1,
                 expected=1,

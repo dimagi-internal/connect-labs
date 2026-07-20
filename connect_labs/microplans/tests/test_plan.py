@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from connect_labs.microplans.core import plan
+
+_SLUG_RE = re.compile(r"^[A-Z]{2}[A-Z0-9]{5}$")
 
 # a 2-cluster coverage frame (hulls)
 _HULLS = {
@@ -61,6 +65,27 @@ class TestMaterialize:
         assert w["audit"] == []
         assert 3.0 <= w["centroid"][0] <= 3.1  # centroid inside the polygon
         assert len({w["id"] for w in was}) == 2  # ids unique
+
+    def test_work_area_id_is_short_connect_style_and_becomes_the_export_slug(self):
+        # This id is what `to_workarea_payloads` sets as `slug=w["id"]` directly
+        # — i.e. it IS the Connect Area Slug, not just an internal reference. A
+        # real user-reported bug (2026-07-20) showed an export slug like
+        # "int-upload:0-c1002" because a DIFFERENT, unused generator
+        # (`workarea.build_coverage_work_areas`) had been fixed instead of this
+        # one, the one actually wired into plan materialization.
+        was = _materialize()
+        for w in was:
+            assert _SLUG_RE.match(w["id"]), w["id"]
+
+    def test_work_area_ids_unique_at_scale(self):
+        # A single plan can carry up to MAX_WORK_AREAS (20,000) cells — confirm
+        # the id generator (not the full materialize+grouping pipeline, which
+        # `_new_slug`'s own scale test in test_workarea.py already covers)
+        # avoids collisions at that count.
+        used: set[str] = set()
+        ids = [plan._wa_id(used) for _ in range(20000)]
+        assert len(set(ids)) == 20000
+        assert all(_SLUG_RE.match(i) for i in ids)
 
     def test_sampling_pin_defaults_one_visit(self):
         pins = {
