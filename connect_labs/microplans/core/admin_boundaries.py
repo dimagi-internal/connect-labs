@@ -266,6 +266,21 @@ def resolve_population_by_name(state: str, lga: str, ward: str, *, candidates=No
         b_state, b_lga = admin_names_from_extra(b.extra)
         return _norm_name(b_state), _norm_name(b_lga)
 
+    # NGA wards commonly exist as TWO overlapping AdminBoundary rows for the same
+    # real ward — one from geopode, one from grid3 (see LABS_PROVIDER_PREFERENCE
+    # above). Without collapsing those, every "exactly one candidate" check below
+    # would see 2 rows for almost any ward that loaded from both providers — i.e.
+    # the common case, not an edge case — and never resolve anything. Group by
+    # (ward, state, lga) so a genuinely different ward sharing just the NAME
+    # (different state/lga) is kept distinct; only true same-ward duplicates
+    # collapse, keeping the more-preferred provider (geopode over grid3).
+    deduped: dict[tuple, object] = {}
+    for b in matches:
+        key = (n_ward,) + _extra_names(b)
+        if key not in deduped or _provider_rank(b.source) < _provider_rank(deduped[key].source):
+            deduped[key] = b
+    matches = list(deduped.values())
+
     if n_state and n_lga:
         exact = [b for b in matches if _extra_names(b) == (n_state, n_lga)]
         if len(exact) == 1:
