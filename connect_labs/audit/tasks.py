@@ -872,6 +872,7 @@ def run_audit_creation(
                     workflow_run_id=workflow_run_id,
                     pass_threshold=session_pass_threshold,
                     visit_clusters=flw_clusters,
+                    has_ai_reviewer=has_ai_agent,
                 )
 
                 sessions_created.append(
@@ -912,6 +913,7 @@ def run_audit_creation(
                 related_fields=related_fields,
                 workflow_run_id=workflow_run_id,
                 pass_threshold=session_pass_threshold,
+                has_ai_reviewer=has_ai_agent,
             )
 
             sessions_created.append(

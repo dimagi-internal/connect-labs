@@ -99,14 +99,14 @@ def test_export_csv_returns_one_row_per_image_in_the_group(labs_client, monkeypa
     assert response["Content-Type"] == "text/csv"
 
     rows = list(csv.reader(io.StringIO(response.content.decode())))
-    assert rows[0] == ["Filename", "Visit Date", "GPS Location", "Beneficiary Name", "Connect Visit URL"]
+    assert rows[0] == ["Visit ID", "Filename", "Visit Date", "GPS Location", "Connect Visit URL"]
     assert len(rows) == 3  # header + 2 images
-    assert rows[1][0] == "img1.jpg"
-    assert rows[1][2] == "1.234 5.678 0 5"
-    assert rows[1][3] == "Child A"
-    assert rows[2][0] == "img2.jpg"
-    assert rows[2][2] == ""
-    assert rows[2][3] == "Child B"
+    assert rows[1][0] == "111"
+    assert rows[1][1] == "img1.jpg"
+    assert rows[1][3] == "1.234 5.678 0 5"
+    assert rows[2][0] == "112"
+    assert rows[2][1] == "img2.jpg"
+    assert rows[2][3] == ""
 
 
 def test_export_csv_returns_404_for_unknown_group(labs_client, monkeypatch):
@@ -166,11 +166,79 @@ def test_export_csv_degrades_gracefully_when_visit_batch_fetch_fails(labs_client
     assert response["Content-Type"] == "text/csv"
 
     rows = list(csv.reader(io.StringIO(response.content.decode())))
-    assert rows[0] == ["Filename", "Visit Date", "GPS Location", "Beneficiary Name", "Connect Visit URL"]
+    assert rows[0] == ["Visit ID", "Filename", "Visit Date", "GPS Location", "Connect Visit URL"]
     assert len(rows) == 3  # header + 2 images
-    assert rows[1][0] == "img1.jpg"
-    assert rows[1][2] == ""  # GPS Location blank
+    assert rows[1][0] == "111"
+    assert rows[1][1] == "img1.jpg"
+    assert rows[1][3] == ""  # GPS Location blank
     assert rows[1][4] == ""  # Connect Visit URL blank
-    assert rows[2][0] == "img2.jpg"
-    assert rows[2][2] == ""
+    assert rows[2][0] == "112"
+    assert rows[2][1] == "img2.jpg"
+    assert rows[2][3] == ""
     assert rows[2][4] == ""
+
+
+def test_images_json_returns_one_entry_per_image_with_thumbnail_url(labs_client, monkeypatch):
+    from connect_labs.audit import views
+
+    session = _make_session()
+
+    class FakeDataAccess:
+        def __init__(self, *a, **k):
+            pass
+
+        def get_audit_session(self, session_id, try_multiple_opportunities=False):
+            return session
+
+        def get_visits_batch(self, visit_ids, opportunity_id):
+            return [
+                {"id": "111", "user_id": "u-1", "user_visit_id": "uv-111", "location": "1.234 5.678 0 5"},
+                {"id": "112", "user_id": "u-1", "user_visit_id": "uv-112"},
+            ]
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(views, "AuditDataAccess", FakeDataAccess)
+    monkeypatch.setattr(
+        views,
+        "fetch_opportunity_metadata",
+        lambda access_token, opportunity_id: {
+            "cc_domain": "eha-clinics-reach",
+            "raw": {"deliver_app": {"hq_server": {"url": "https://www.commcarehq.org"}}},
+        },
+    )
+
+    response = labs_client.get("/audit/api/5456/visit-clusters/g1/images/")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    images = payload["images"]
+    assert len(images) == 2
+    assert images[0]["visit_id"] == 111
+    assert images[0]["name"] == "img1.jpg"
+    assert "entity_name" not in images[0]
+    assert images[0]["thumbnail_url"] == "/audit/image/1973/b1/"
+    assert images[1]["visit_id"] == 112
+    assert images[1]["thumbnail_url"] == "/audit/image/1973/b2/"
+
+
+def test_images_json_returns_404_for_unknown_group(labs_client, monkeypatch):
+    from connect_labs.audit import views
+
+    session = _make_session()
+
+    class FakeDataAccess:
+        def __init__(self, *a, **k):
+            pass
+
+        def get_audit_session(self, session_id, try_multiple_opportunities=False):
+            return session
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(views, "AuditDataAccess", FakeDataAccess)
+
+    response = labs_client.get("/audit/api/5456/visit-clusters/does-not-exist/images/")
+    assert response.status_code == 404

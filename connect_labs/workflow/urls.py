@@ -110,6 +110,11 @@ urlpatterns = [
         views.UpdateOpportunityIdsView.as_view(),
         name="api_update_opportunity_ids",
     ),
+    path(
+        "api/<int:definition_id>/audit-batch-config/",
+        views.UpdateAuditBatchConfigView.as_view(),
+        name="api_update_audit_batch_config",
+    ),
     # API endpoints - Pipeline management
     path("api/pipeline/<int:definition_id>/delete/", views.delete_pipeline_api, name="api_pipeline_delete"),
     # API endpoints - Workflow Jobs

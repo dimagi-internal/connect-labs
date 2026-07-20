@@ -99,7 +99,7 @@ New view, `connect_labs/audit/views.py`, mirroring the existing `ExperimentBulkA
 - Look up the group's `visit_ids` from `session.data["visit_clusters"]` (404 if session or group not found).
 - Expand to that group's images via the session's existing `visit_images` data (already stored — no new fetch for image-level fields).
 - For each image, resolve the Connect visit URL exactly as already built for the per-image "#" link (`user_id`/`user_visit_id` UUIDs → `{connect_url}/a/{org_slug}/opportunity/{opp_id}/user_visits/?user=...&visit_id=...`) — reuses the shareable-visit-link work already shipped this session, no new lookup logic.
-- CSV columns: **datetime of visit, GPS location (raw `location` string), beneficiary name (`entity_name`), filename, Connect visit URL**.
+- CSV columns: **Visit ID, Filename, Visit Date, GPS Location (raw `location` string), Connect Visit URL**. (Beneficiary name intentionally omitted from the export; it's still shown in the in-page expand list.)
 
 ## Explicitly out of scope
 

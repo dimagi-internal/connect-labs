@@ -629,3 +629,77 @@ def test_render_code_includes_visit_clustering_card():
     assert "Visit Clustering" in rc
     assert "enable_time_gap" in rc
     assert "enable_distance" in rc
+
+
+def test_definition_pins_track_names_not_reviewers():
+    """The reviewer used to be pinned per-track (track_a always got muac_overzoom);
+    it's now decided per-path (see _reviewer_for_path), so the DEFINITION carries a
+    cosmetic display "name" per track instead of a "reviewer" key."""
+    from connect_labs.workflow.templates.weekly_dual_track_audit import DEFINITION
+
+    batch = DEFINITION["config"]["audit_batch"]
+    assert batch["track_a"] == {"tag": "muac", "sample_percentage": 100, "name": "MUAC"}
+    assert batch["track_b"] == {"tag": "rest", "sample_percentage": 10, "name": "Other"}
+
+
+def test_render_code_includes_editable_image_type_checkboxes():
+    from connect_labs.workflow.templates import get_template
+
+    rc = get_template("weekly_dual_track_audit")["render_code"]
+    assert "Track A name" in rc
+    assert "Track B name" in rc
+    assert "Save configuration" in rc
+    assert "audit-batch-config" in rc
+    assert "image-questions" in rc
+
+
+class TestReviewerForPath:
+    def test_attaches_muac_reviewer_to_any_path_containing_muac_case_insensitive(self):
+        from connect_labs.workflow.templates.weekly_dual_track_audit import _reviewer_for_path
+
+        assert _reviewer_for_path("form.muac_photo") == {
+            "agent_id": "muac_overzoom",
+            "auto_apply_actions": ["fail_overzoomed"],
+        }
+        assert _reviewer_for_path("form.MUAC_photo") is not None
+        assert _reviewer_for_path("muac_group/muac_display_group_2/muac_photo") is not None
+
+    def test_no_reviewer_for_paths_without_muac(self):
+        from connect_labs.workflow.templates.weekly_dual_track_audit import _reviewer_for_path
+
+        assert _reviewer_for_path("form.house") is None
+        assert _reviewer_for_path("") is None
+        assert _reviewer_for_path(None) is None
+
+
+def test_reviewer_assignment_is_per_path_not_per_track():
+    """A muac-named path pinned to Track B still gets the AI reviewer; a
+    non-muac path pinned to Track A does not — the assignment is purely about
+    the path's own name, independent of which track slot it lives in."""
+    calls = build_track_audit_calls(
+        opportunity_ids=[101],
+        opp_names={"101": "Opp A"},
+        per_opp={
+            "101": {
+                "muac_image_paths": ["form.house"],
+                "rest_image_paths": ["form.muac_photo"],
+            }
+        },
+        track_a=TRACK_A,
+        track_b=TRACK_B,
+        window_start="2026-06-22",
+        window_end="2026-06-28",
+        username="nm1",
+        workflow_run_id=555,
+    )
+
+    a = next(c for c in calls if c["criteria"]["tag"] == "muac")
+    assert a["image_audits"] == [{"image_path": "form.house", "reviewers": []}]
+
+    b = next(c for c in calls if c["criteria"]["tag"] == "rest")
+    assert b["image_audits"] == [
+        {
+            "image_path": "form.muac_photo",
+            "reviewers": [{"agent_id": "muac_overzoom", "auto_apply_actions": ["fail_overzoomed"]}],
+        }
+    ]
