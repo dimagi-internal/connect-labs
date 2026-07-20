@@ -313,7 +313,10 @@
                get aiConfidence() { return typeof assessment.ai_confidence === 'number' ? assessment.ai_confidence : null; },
                get aiClassLabel() {
                  if (!this.aiResult) return '';
-                 if (this.aiResult === 'error') return this.aiNotes || 'Error';
+                 // Error notes are internal/config detail (e.g. a missing API key) --
+                 // not useful to an auditor per image, so show a generic label instead
+                 // of the raw exception text.
+                 if (this.aiResult === 'error') return 'Error';
                  return this.aiNotes || (this.aiResult === 'match' ? 'Passed' : 'Failed');
                },
                updateResult(newResult) {
@@ -484,7 +487,6 @@
                         }"
                         x-text="aiResult === 'match' ? 'Match' : (aiResult === 'no_match' ? ((aiNotes || 'No Match') + (aiConfidence !== null ? ': confidence ' + aiConfidence.toFixed(3) : '')) : 'Error')"></span>
                 </div>
-                <div class="text-gray-600 mt-0.5 leading-tight" x-show="aiNotes && aiResult === 'error'" x-text="aiNotes"></div>
               </div>
             </template>
 
