@@ -26,13 +26,13 @@ from connect_labs.microplans.core.filters import (
 )
 from connect_labs.microplans.core.footprints import fetch_buildings
 
-# Upper bound on work areas a single coverage plan may produce. Far above real
-# use (the largest live plan is ~1,100 areas) — this is a guardrail so a tiny
-# cell size on a huge area can't generate a 50k-cell, multi-MB plan that bloats
-# every plan response and is unreviewable anyway. Exceeding it is a user error
-# with an actionable fix (bigger cells / split the area), surfaced via the
-# preview's error envelope.
-MAX_WORK_AREAS = 8000
+# Upper bound on work areas a single coverage plan may produce. Far above typical
+# use (the largest live plan, program 176's Rurum Sabon Gari, has ~6,000 areas) —
+# this is a guardrail so a tiny cell size on a huge area can't generate a
+# 100k-cell, multi-MB plan that bloats every plan response and is unreviewable
+# anyway. Exceeding it is a user error with an actionable fix (bigger cells /
+# split the area), surfaced via the preview's error envelope.
+MAX_WORK_AREAS = 20000
 
 
 def _clamp(v, lo, hi):

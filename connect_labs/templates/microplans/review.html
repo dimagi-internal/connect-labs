@@ -621,10 +621,10 @@
       <div class="flex items-center gap-3 mb-1.5 flex-wrap">
         <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Per-area planning</h2>
         <button type="button" id="btn-setup-counts" class="button button-sm primary-dark">Update table</button>
-        <button type="button" id="btn-setup-save-targets" class="button button-sm primary-dark hidden">Save U5 targets</button>
+        <button type="button" id="btn-setup-save-targets" class="button button-sm primary-dark hidden">Update table</button>
         <span class="text-[11px] text-gray-500" id="setup-counts-status"></span>
       </div>
-      <p class="text-[11px] text-gray-500 mb-1.5 leading-snug">One row per area. <b>Total</b> &amp; <b>U5</b> come from the <b>Population data source</b> (left rail). Before the plan is created, <b>Update table</b> fetches <b>Buildings</b> for the ticked providers; once created, the table summarises the plan's work areas (<b># WAs</b>, <b>Avg U5/WA</b>) and <b>Save U5 targets</b> re-applies edited targets. Edit <b>U5 for calc</b> to set each area's expected-visit total.</p>
+      <p class="text-[11px] text-gray-500 mb-1.5 leading-snug">One row per area. <b>Total</b> &amp; <b>U5</b> come from the <b>Population data source</b> (left rail). Before the plan is created, <b>Update table</b> fetches <b>Buildings</b> for the ticked providers; once created, the table summarises the plan's work areas (<b># WAs</b>, <b>Avg U5/WA</b>), and editing <b>U5 for calc</b> brings back an <b>Update table</b> button to save the change.</p>
       <div class="overflow-x-auto">
         <table class="w-full text-[12px] tabular-nums" id="setup-table">
           <thead><tr class="text-left text-gray-400 border-b border-gray-100">
@@ -787,6 +787,7 @@
     derive_boundary_url: "{{ derive_boundary_url|default:''|escapejs }}",
     admin_areas_url: "{{ admin_areas_url|default:''|escapejs }}",
     admin_area_geometry_url: "{{ admin_area_geometry_url|default:''|escapejs }}",
+    population_by_name_url: "{{ population_by_name_url|default:''|escapejs }}",
     create_plan_url: "{{ create_plan_url|default:''|escapejs }}",
     program_url: "{{ program_url|default:''|escapejs }}",
     plan_id: "{{ plan_id|default:''|escapejs }}",

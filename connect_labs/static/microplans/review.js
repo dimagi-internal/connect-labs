@@ -39,6 +39,7 @@
   const DERIVE_BOUNDARY_URL = CFG.derive_boundary_url;
   const ADMIN_AREAS_URL = CFG.admin_areas_url;
   const ADMIN_AREA_GEOMETRY_URL = CFG.admin_area_geometry_url;
+  const POPULATION_BY_NAME_URL = CFG.population_by_name_url;
   const CREATE_PLAN_URL = CFG.create_plan_url;
   // When the editor is opened from a group page (?group=<id>), the created plan
   // files into that group — see ProgramCreatePlanView's group_id handling.
@@ -2218,7 +2219,7 @@
   function handleBoundaryUpload(file) {
     const st = $('area-upload-status');
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       let fc;
       try {
         fc = JSON.parse(reader.result);
@@ -2246,10 +2247,43 @@
           ? `${uploadedAreas.length} area(s) loaded — they'll be used when you Create work areas.`
           : 'No polygon features found in the file.';
       $('area-upload-clear')?.classList.toggle('hidden', !uploadedAreas.length);
+      if (adminBoundaries && adminBoundaries.setUploadIndicator)
+        adminBoundaries.setUploadIndicator(uploadedAreas.length > 0);
       drawUploadedOverlay();
       if (typeof refreshAreaStats === 'function') refreshAreaStats();
+      await fillUploadedPopulations();
     };
     reader.readAsText(file);
+  }
+  // The upload only carries ward/LGA/state NAMES, not an AdminBoundary id, so
+  // populations aren't attached at parse time (unlike a picked ward, which
+  // carries its source boundary's population bag). Best-effort resolve each
+  // by name (state+LGA+ward, or a uniquely-resolving state+ward — see
+  // resolve_population_by_name server-side; ambiguous/unmatched wards are left
+  // with no population rather than guessing) so the Population data source
+  // dropdown and Avg U5/WA can populate for uploaded areas too.
+  async function fillUploadedPopulations() {
+    if (!POPULATION_BY_NAME_URL || !uploadedAreas.length) return;
+    const wards = uploadedAreas.map((a) => ({
+      ward: a.ward,
+      lga: a.lga,
+      state: a.state,
+    }));
+    try {
+      const resp = await post(POPULATION_BY_NAME_URL, { wards });
+      const data = await resp.json();
+      if (!resp.ok || data.status !== 'ok') return;
+      const pops = data.populations || [];
+      // Index-aligned with the request; guard against the set changing (a
+      // second upload / clear) while this was in flight.
+      if (pops.length !== uploadedAreas.length) return;
+      uploadedAreas.forEach((a, i) => {
+        if (pops[i]) a.populations = pops[i];
+      });
+      if (typeof refreshAreaStats === 'function') refreshAreaStats();
+    } catch (e) {
+      /* best-effort — leave populations null, table shows "—" as usual */
+    }
   }
   function drawUploadedOverlay() {
     if (!map || !mapReady) return;
@@ -2277,6 +2311,8 @@
     uploadedAreas = [];
     $('area-upload-status') && ($('area-upload-status').textContent = '');
     $('area-upload-clear')?.classList.add('hidden');
+    if (adminBoundaries && adminBoundaries.setUploadIndicator)
+      adminBoundaries.setUploadIndicator(false);
     if (window.ConnectMap && window.ConnectMap.remove)
       window.ConnectMap.remove(map, ['uploaded-areas']);
     if (typeof refreshAreaStats === 'function') refreshAreaStats();
@@ -2799,10 +2835,13 @@
     updateSetupHeaders(rows);
     const empty = $('setup-empty');
     if (empty) empty.classList.toggle('hidden', rows.length > 0);
-    // Post-creation the ✕ (remove area) + "Update table" building-fetch don't apply
-    // (the plan's cells are the source of truth); swap in a "Save U5 targets" action.
+    // Post-creation the ✕ (remove area) + pre-creation "Update table" building-fetch
+    // don't apply (the plan's cells are the source of truth) — hide that button.
+    // The post-creation button reuses the same "Update table" label (no separate
+    // "Save U5 targets" wording) and only shows up once a U5-for-calc edit is
+    // pending — see updateSaveTargetsVisibility(), called after the table rebuilds
+    // below (its dirty check reads the freshly-rendered inputs).
     $('btn-setup-counts')?.classList.toggle('hidden', created);
-    $('btn-setup-save-targets')?.classList.toggle('hidden', !created);
     const fam = currentFamily();
     const num = (v) => (v == null ? '—' : Math.round(v).toLocaleString());
     tb.innerHTML = rows
@@ -2864,6 +2903,34 @@
         </tr>`;
       })
       .join('');
+    updateSaveTargetsVisibility();
+  }
+
+  // The post-creation "Update table" button (id btn-setup-save-targets, same
+  // label as the pre-creation one — no more "Save U5 targets" wording change)
+  // only appears once a "U5 for calc" cell differs from its last-saved target,
+  // so it reads as "you have an edit to save" rather than a permanent fixture.
+  // Compares the CURRENT rendered inputs against AREA_TARGETS (what the server
+  // actually has); blank vs. no-target and equal-after-rounding both count as
+  // not dirty (avoids float-rounding false positives).
+  function targetsDirty() {
+    let dirty = false;
+    document.querySelectorAll('#setup-tbody .setup-target').forEach((inp) => {
+      const raw = String(inp.value).trim();
+      const cur = raw === '' ? null : Math.round(parseFloat(raw));
+      const saved =
+        AREA_TARGETS[inp.dataset.key] != null
+          ? Math.round(AREA_TARGETS[inp.dataset.key])
+          : null;
+      if (cur !== saved) dirty = true;
+    });
+    return dirty;
+  }
+  function updateSaveTargetsVisibility() {
+    $('btn-setup-save-targets')?.classList.toggle(
+      'hidden',
+      !planExists() || !targetsDirty(),
+    );
   }
 
   // Remove every area under a display-name key (a MultiPolygon ward may span
@@ -2904,6 +2971,8 @@
         .forEach((i) => uploadedAreas.splice(i, 1));
       if (typeof drawUploadedOverlay === 'function') drawUploadedOverlay();
       $('area-upload-clear')?.classList.toggle('hidden', !uploadedAreas.length);
+      if (adminBoundaries && adminBoundaries.setUploadIndicator)
+        adminBoundaries.setUploadIndicator(uploadedAreas.length > 0);
     }
     delete manualTargets[key];
     // adminBoundaries.removeArea already triggers refreshAreaStats via onAreaRemove,
@@ -3036,6 +3105,9 @@
     const key = inp.dataset.key;
     if (String(inp.value).trim() === '') delete manualTargets[key];
     else manualTargets[key] = parseFloat(inp.value);
+    // Cheap visibility toggle only — NOT a full renderSetupTable(), which would
+    // rebuild every <input> and drop focus/cursor position mid-keystroke.
+    updateSaveTargetsVisibility();
   });
   // Per-row ✕ removes that area from the plan (delegated so it works after re-render).
   document.getElementById('setup-tbody')?.addEventListener('click', (e) => {
