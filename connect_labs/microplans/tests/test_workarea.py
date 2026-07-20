@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import re
+
 from shapely import wkt
 from shapely.geometry import shape
 
 from connect_labs.microplans.core.geo import project_to_meters
-from connect_labs.microplans.core.workarea import build_work_areas, to_api_payload, to_csv_rows
+from connect_labs.microplans.core.workarea import _new_slug, build_work_areas, to_api_payload, to_csv_rows
+
+_SLUG_RE = re.compile(r"^[A-Z]{2}[A-Z0-9]{5}$")
 
 PINS = {
     "type": "FeatureCollection",
@@ -143,3 +147,22 @@ def test_csv_rows_use_connect_column_labels():
     assert row["LGA"] == "Maiduguri"
     assert row["State"] == "Borno"
     assert "POLYGON" in row["Boundary"]
+
+
+def test_slug_matches_connect_style_short_format():
+    # Short, Connect-style Area Slug (e.g. "DA490TL") instead of the old
+    # "int-c3-prim-1" scheme — no admin-boundary/cluster info embedded, so no
+    # stray characters (e.g. a ":" from an area_id) that Connect's own slugs
+    # never carry.
+    was = build_work_areas(PINS)
+    for w in was:
+        assert _SLUG_RE.match(w.slug), w.slug
+
+
+def test_new_slug_unique_at_scale():
+    # A single work-area file can carry up to MAX_WORK_AREAS (20,000) rows —
+    # confirm collisions are actually avoided at that scale, not just for 2.
+    used = set()
+    slugs = [_new_slug(used) for _ in range(20000)]
+    assert len(set(slugs)) == 20000
+    assert all(_SLUG_RE.match(s) for s in slugs)
