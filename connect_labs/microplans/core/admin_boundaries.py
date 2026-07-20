@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 
 from django.conf import settings
@@ -197,6 +198,74 @@ def resolve_population(population, populations: dict | None):
                     return float(value)
                 except (TypeError, ValueError):
                     continue
+    return None
+
+
+def _norm_name(s: str | None) -> str:
+    """Loose key for name matching: lowercase, strip everything but a-z0-9, so
+    "Jama'a" == "Jama a" == "jamaa". Same normalization as
+    ``load_ward_populations._norm`` (kept local here to avoid importing a
+    management-command module into query logic)."""
+    return re.sub(r"[^a-z0-9]", "", (s or "").lower())
+
+
+def ward_population_candidates():
+    """Every NGA ward-level AdminBoundary row eligible for name-based population
+    matching (same base queryset ``load_ward_populations`` bulk-loads). Callers
+    resolving a whole batch of wards (e.g. one uploaded file) should fetch this
+    ONCE and pass it to every ``resolve_population_by_name`` call — the ward
+    name alone can't narrow this in SQL (punctuation drift defeats ``icontains``,
+    see below), so matching is done in Python over the full ~9,300-row set,
+    same as the bulk loader already does.
+    """
+    from connect_labs.labs.admin_boundaries.models import AdminBoundary
+
+    return list(AdminBoundary.objects.filter(iso_code="NGA", admin_level=3, source__in=["geopode", "grid3"]))
+
+
+def resolve_population_by_name(state: str, lga: str, ward: str, *, candidates=None) -> dict | None:
+    """Best-effort population lookup for a ward known only by name (e.g. parsed
+    from an uploaded GeoJSON boundary file, which carries no AdminBoundary id —
+    so the geometry/id-based matching in ``LabsAdminBoundarySource`` doesn't
+    apply).
+
+    Requires state+LGA+ward to all match (normalized); only falls back to
+    state+ward when that resolves to exactly one candidate — Nigerian ward
+    names repeat across LGAs within the same state, so a bare ward-name match
+    is never trusted alone. Returns the matched boundary's ``extra.populations``
+    bag (plus ``geopode_total`` from its scalar ``population`` field, the same
+    merge ``load_ward_populations`` performs), or ``None`` if nothing matches
+    confidently — never a guess.
+
+    ``candidates`` (optional): a prefetched list from ``ward_population_candidates()``,
+    for reuse across a batch. Fetched fresh if omitted (fine for a one-off call,
+    wasteful for a loop — pass it explicitly when resolving many wards).
+    """
+    n_state, n_lga, n_ward = _norm_name(state), _norm_name(lga), _norm_name(ward)
+    if not n_ward:
+        return None
+
+    rows = candidates if candidates is not None else ward_population_candidates()
+    matches = [b for b in rows if _norm_name(b.name) == n_ward]
+
+    def _bag(b) -> dict | None:
+        pops = dict((b.extra or {}).get("populations") or {})
+        if b.source == "geopode" and b.population is not None:
+            pops.setdefault("geopode_total", b.population)
+        return pops or None
+
+    def _extra_names(b) -> tuple[str, str]:
+        b_state, b_lga = admin_names_from_extra(b.extra)
+        return _norm_name(b_state), _norm_name(b_lga)
+
+    if n_state and n_lga:
+        exact = [b for b in matches if _extra_names(b) == (n_state, n_lga)]
+        if len(exact) == 1:
+            return _bag(exact[0])
+    if n_state:
+        by_state = [b for b in matches if _extra_names(b)[0] == n_state]
+        if len(by_state) == 1:
+            return _bag(by_state[0])
     return None
 
 

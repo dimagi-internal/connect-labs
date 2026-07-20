@@ -367,6 +367,39 @@ class AdminAreaGeometryView(LoginRequiredMixin, View):
         return JsonResponse({"status": "ok", "name": area.name, "geometry": geom})
 
 
+class PopulationByNameView(LoginRequiredMixin, View):
+    """Best-effort population lookup for wards known only by name.
+
+    Used by an uploaded boundary file (GeoJSON carrying wardname/lganame/
+    statename properties, e.g. GRID3-format) — it has no AdminBoundary id, so
+    the normal geometry/id-based boundary picking never attaches a population
+    bag to it. POST body: ``{"wards": [{"ward","lga","state"}, ...]}``.
+    Response mirrors the input order: ``{"populations": [dict|null, ...]}`` —
+    ``null`` where nothing matched confidently (see
+    ``resolve_population_by_name``); never a guess.
+    """
+
+    def post(self, request, opp_id):
+        from connect_labs.microplans.core.admin_boundaries import (
+            resolve_population_by_name,
+            ward_population_candidates,
+        )
+
+        try:
+            wards = json.loads(request.body)["wards"]
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
+
+        # Fetch the ~9,300-row NGA ward candidate set once for the whole batch
+        # rather than once per ward (matching is name-based, not narrowable in SQL).
+        candidates = ward_population_candidates()
+        populations = [
+            resolve_population_by_name(w.get("state", ""), w.get("lga", ""), w.get("ward", ""), candidates=candidates)
+            for w in wards
+        ]
+        return JsonResponse({"status": "ok", "populations": populations})
+
+
 class BoundaryViewportView(LoginRequiredMixin, View):
     """Admin boundaries intersecting the map viewport, for the 'Boundaries' layer.
 
@@ -1301,6 +1334,7 @@ class ProgramReviewView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView)
         context["compare_surrounding_url"] = reverse("microplans:compare_surrounding", args=[123])
         context["admin_areas_url"] = reverse("microplans:admin_areas", args=[123])
         context["admin_area_geometry_url"] = reverse("microplans:admin_area_geometry", args=[123])
+        context["population_by_name_url"] = reverse("microplans:population_by_name", args=[123])
         context["countries_url"] = reverse("microplans:countries")
         context["boundary_viewport_url"] = reverse("microplans:boundary_viewport")
         context["regenerate_url"] = reverse("microplans:program_plan_regenerate", args=[program_id, plan_id])
@@ -1673,6 +1707,7 @@ class ProgramSetupView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView):
         context["compare_surrounding_url"] = reverse("microplans:compare_surrounding", args=[123])
         context["admin_areas_url"] = reverse("microplans:admin_areas", args=[123])
         context["admin_area_geometry_url"] = reverse("microplans:admin_area_geometry", args=[123])
+        context["population_by_name_url"] = reverse("microplans:population_by_name", args=[123])
         context["countries_url"] = reverse("microplans:countries")
         context["boundary_viewport_url"] = reverse("microplans:boundary_viewport")
         # Review-only URLs that don't apply pre-create. JS will skip the

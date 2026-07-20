@@ -41,9 +41,10 @@ KNOWN_SOURCES = [SOURCE_GOOGLE, SOURCE_OSM, SOURCE_MICROSOFT]
 # null-confidence OSM/Microsoft footprints; the source filter now makes it explicit.)
 DEFAULT_SOURCES = [SOURCE_GOOGLE]
 # Reject absurdly large areas before they pull gigabytes from S3 and OOM the
-# worker. A survey area is a ward/LGA (Maiduguri LGA ≈ 107 km²); 2000 km² is a
-# generous ceiling that still blocks "the whole country" mistakes.
-MAX_AREA_KM2 = 2000.0
+# worker. A survey area is a ward/LGA (Maiduguri LGA ≈ 107 km²), but uploaded
+# boundary files can cover multiple LGAs at once; 20000 km² is a generous
+# ceiling that still blocks "the whole country" mistakes.
+MAX_AREA_KM2 = 20000.0
 
 # Result-row backstop on the Overture scan. The bbox MAX_AREA_KM2 guard + Overture's
 # hive partitioning already bound the *scan*; this caps *materialization* so a

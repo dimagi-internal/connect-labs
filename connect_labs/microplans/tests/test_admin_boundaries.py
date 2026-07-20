@@ -22,6 +22,7 @@ from connect_labs.microplans.core.admin_boundaries import (
     _dedupe_by_provider_preference,
     _provider_rank,
     resolve_population,
+    resolve_population_by_name,
 )
 
 
@@ -289,6 +290,87 @@ class TestLabsSource:
 
 
 @pytest.mark.django_db
+class TestResolvePopulationByName:
+    """Population lookup for a ward known only by name (e.g. parsed from an
+    uploaded GeoJSON boundary file) — must never guess across a same-named
+    ward in a different LGA."""
+
+    def test_matches_on_state_lga_ward_triple(self):
+        _make_boundary(
+            "Sabon Gari",
+            3,
+            _SQUARE,
+            "ng-a",
+            extra={"parent_names": {"state": "Kano", "lga": "Rano"}, "populations": {"worldpop_total": 5000.0}},
+        )
+        assert resolve_population_by_name("Kano", "Rano", "Sabon Gari") == {"worldpop_total": 5000.0}
+
+    def test_same_ward_name_different_lga_resolves_independently(self):
+        _make_boundary(
+            "Sabon Gari",
+            3,
+            _SQUARE,
+            "ng-a",
+            extra={"parent_names": {"state": "Kano", "lga": "Rano"}, "populations": {"worldpop_total": 5000.0}},
+        )
+        _make_boundary(
+            "Sabon Gari",
+            3,
+            _INSIDE,
+            "ng-b",
+            extra={"parent_names": {"state": "Kano", "lga": "Fagge"}, "populations": {"worldpop_total": 9000.0}},
+        )
+        assert resolve_population_by_name("Kano", "Rano", "Sabon Gari") == {"worldpop_total": 5000.0}
+        assert resolve_population_by_name("Kano", "Fagge", "Sabon Gari") == {"worldpop_total": 9000.0}
+
+    def test_ambiguous_lga_mismatch_returns_none_not_a_guess(self):
+        # Same state+ward, two different LGAs, and the caller's LGA doesn't
+        # match either one — must refuse rather than pick either candidate.
+        _make_boundary(
+            "Sabon Gari",
+            3,
+            _SQUARE,
+            "ng-a",
+            extra={"parent_names": {"state": "Kano", "lga": "Rano"}, "populations": {"worldpop_total": 5000.0}},
+        )
+        _make_boundary(
+            "Sabon Gari",
+            3,
+            _INSIDE,
+            "ng-b",
+            extra={"parent_names": {"state": "Kano", "lga": "Fagge"}, "populations": {"worldpop_total": 9000.0}},
+        )
+        assert resolve_population_by_name("Kano", "Nonexistent LGA", "Sabon Gari") is None
+
+    def test_lga_spelling_drift_falls_back_to_state_ward_when_unique(self):
+        _make_boundary(
+            "Jama'a",
+            3,
+            _SQUARE,
+            "ng-a",
+            extra={"parent_names": {"state": "Kaduna", "lga": "Jama'a"}, "populations": {"worldpop_total": 4000.0}},
+        )
+        # Caller's LGA name differs in punctuation from the stored one, but the
+        # (state, ward) pair is unique — should still resolve.
+        assert resolve_population_by_name("Kaduna", "Jamaa LGA", "Jama a") == {"worldpop_total": 4000.0}
+
+    def test_no_match_returns_none(self):
+        assert resolve_population_by_name("Kano", "Rano", "Nonexistent Ward") is None
+
+    def test_geopode_scalar_merged_into_bag(self):
+        _make_boundary(
+            "Sabon Gari",
+            3,
+            _SQUARE,
+            "ng-a",
+            source="geopode",
+            population=12345.0,
+            extra={"parent_names": {"state": "Kano", "lga": "Rano"}},
+        )
+        assert resolve_population_by_name("Kano", "Rano", "Sabon Gari") == {"geopode_total": 12345.0}
+
+
+@pytest.mark.django_db
 class TestAdjacentBoundariesPopulationFallback:
     """The compare-surrounding control finder (adjacent_boundaries) must surface a
     population for a neighbour that has no scalar population_1 but does carry a
@@ -522,6 +604,34 @@ class TestBoundaryEndpoints:
         data = resp.json()
         assert data["status"] == "ok"
         assert data["geometry"]["type"] in ("Polygon", "MultiPolygon")
+
+    def test_population_by_name_endpoint(self, client, django_user_model):
+        from django.urls import reverse
+
+        _make_boundary(
+            "Sabon Gari",
+            3,
+            _SQUARE,
+            "ng-a",
+            extra={"parent_names": {"state": "Kano", "lga": "Rano"}, "populations": {"worldpop_total": 5000.0}},
+        )
+        self._login(client, django_user_model)
+        resp = client.post(
+            reverse("microplans:population_by_name", args=[1]),
+            data=json.dumps(
+                {
+                    "wards": [
+                        {"state": "Kano", "lga": "Rano", "ward": "Sabon Gari"},
+                        {"state": "Kano", "lga": "Rano", "ward": "Nonexistent Ward"},
+                    ]
+                }
+            ),
+            content_type="application/json",
+        )
+        data = resp.json()
+        assert data["status"] == "ok"
+        # Order-aligned with the request; the unmatched ward is null, not omitted.
+        assert data["populations"] == [{"worldpop_total": 5000.0}, None]
 
 
 # ---- viewport (bbox) listing: the Boundaries map layer ----

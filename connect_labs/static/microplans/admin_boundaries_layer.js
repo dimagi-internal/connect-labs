@@ -1639,6 +1639,17 @@
       if (added) renderSummary();
     }
 
+    // The Layers/Inspector panel's "Boundaries" row shows the picker's Source
+    // dropdown (Enriched Boundaries / GRID3 / Overture / …) as its only source
+    // indicator — but that dropdown is inert once the plan's areas actually come
+    // from an uploaded boundary file (a separate "Upload" tab in the host). Left
+    // alone, the panel keeps implying the dropdown's source is what's active,
+    // which is confusing. This just annotates the row; it never touches `source`
+    // or triggers a fetch — the dropdown keeps working normally underneath.
+    function setUploadIndicator(active) {
+      layer.setMeta(active ? 'Using uploaded boundary file' : '');
+    }
+
     return {
       layer,
       refresh,
@@ -1649,6 +1660,9 @@
       renderSelected: renderSummary,
       // Repopulate the selected list from a saved plan's input_areas on load.
       restore,
+      // Flag/clear the "Using uploaded boundary file" note on the Boundaries
+      // layer row (host calls this as its uploadedAreas set changes).
+      setUploadIndicator,
       enable() {
         layer.setEnabled(true);
       },
