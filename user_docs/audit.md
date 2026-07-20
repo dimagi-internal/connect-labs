@@ -97,6 +97,28 @@ The default is **flag-only** (all checkboxes unticked), so nothing is pre-tagged
 
 ---
 
+## Guided Audit Workflows
+
+In addition to the standard audit creation page, Labs includes purpose-built guided workflows for common audit patterns. These workflows walk through the same steps as the standard page but pre-configure certain options and add extra filtering tools suited to specific program needs.
+
+### Weekly Dual-Track Image Audit
+
+This workflow is available to programs that run parallel audit tracks across multiple opportunities. It covers opportunity selection, sampling, field configuration, and metadata in the same order as the standard wizard, and adds **Visit Clustering** (see Step 5 above) to help spot duplicate or re-photographed measurements.
+
+!!! note "Program-owned runs"
+    Program-owned instances of this workflow — those that span multiple opportunities under one program — work end-to-end. Earlier issues that caused a generic error or a "Failed to update state" error when clicking **Create Audits** have been resolved.
+
+### Muac Picture Audit
+
+The **Muac Picture Audit** workflow is a full audit-creation tool scoped to the CHC PRE-RCT opportunities in program 176. It covers the same ground as the standard audit creation page — opportunity selection, granularity, criteria, FLW preview and selection, field configuration, and metadata — with two differences from the standard workflow:
+
+- **Date and day-of-week filter** — in the criteria step you can combine a date range with a specific day of the week. For example, you can target *every Friday in January 2026* rather than selecting a plain date range. This is useful when your program collects MUAC measurements on a fixed schedule.
+- **MUAC images only** — the workflow restricts image type selection to MUAC image types. No other photo types appear, matching the focused purpose of this audit.
+
+All other steps — AI reviewer selection, pass threshold, exclude already-audited images, and so on — work the same way as described in the sections above.
+
+---
+
 ## Reviewing Images
 
 Once a session is created, open it to start the bulk assessment.
@@ -172,29 +194,4 @@ The bulk assessment page header identifies the field worker being reviewed. For 
 
     If the AI encountered a problem reviewing a specific image, the label turns red and shows the error message. Images that have not yet been reviewed by the AI show no label.
 
-    These labels let you see at a glance what the AI classified every image as — not just the ones that were flagged — without relying solely on any pre-tag badge.
-
-    !!! tip "MUAC OverZoom pre-tagging"
-    When the MUAC OverZoom agent is used and the pre-tag checkbox for hyperzoomed images is ticked, images it identifies as hyperzoomed arrive in your review queue already marked **Fail** with a red **Hyperzoomed** badge showing the confidence score. If the checkbox is unticked, those images are still badged with the AI classification label but appear as normal pending photos for your human review. In both cases, you can confirm each result or override it if you disagree.
-
-### Bulk actions
-
-At the top of the bulk assessment page, several bulk action buttons let you apply results to multiple images at once:
-
-| Button | What it does |
-| --- | --- |
-| **Pass All Pending** | Marks every image that has not yet been assessed as Pass |
-| **Fail All Pending** | Marks every image that has not yet been assessed as Fail |
-| **Mark All Duplicate/Fake** | Marks **every currently-visible image** as Duplicate/Fake, including images that already have a Pass or Fail result |
-| **Clear All Assessments** | Removes all results from every image in the current view |
-
-!!! warning "Mark All Duplicate/Fake overrides existing results"
-    Unlike the Pass/Fail pending buttons, **Mark All Duplicate/Fake** replaces any existing assessment on an image. Use it when you have determined that an entire batch of images from a session is invalid.
-
-**Keyboard shortcuts** (work in both review modes):
-
-| Key | Action         |
-| --- | -------------- |
-| `P` | Mark Pass      |
-| `F` | Mark Fail      |
-| `→` |
+    These labels let you see at
