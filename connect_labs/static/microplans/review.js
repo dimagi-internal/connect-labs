@@ -2315,10 +2315,19 @@
       // second upload / clear) while this was in flight.
       if (pops.length !== uploadedAreas.length) return;
       let matched = 0;
+      const unmatchedSamples = [];
       uploadedAreas.forEach((a, i) => {
         if (pops[i]) {
           a.populations = pops[i];
           matched++;
+        } else if (unmatchedSamples.length < 3) {
+          unmatchedSamples.push(
+            `"${a.ward || '(no ward name found)'}"${
+              a.lga || a.state
+                ? ` [lga="${a.lga}", state="${a.state}"]`
+                : ' [no lga/state properties found]'
+            }`,
+          );
         }
       });
       if (st) {
@@ -2329,6 +2338,10 @@
         }.${
           missingNames
             ? ` ${missingNames} area(s) had no ward name found in the file's properties.`
+            : ''
+        }${
+          unmatchedSamples.length
+            ? ` Unmatched, e.g.: ${unmatchedSamples.join('; ')}`
             : ''
         }`;
       }
