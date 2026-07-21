@@ -429,6 +429,11 @@
           <div class="p-2">
             <!-- Metadata Section -->
             <div class="text-xs text-gray-500 flex flex-wrap gap-x-3 gap-y-0.5 mb-2">
+              <span x-show="assessment.flw_name || assessment.username"
+                    class="truncate max-w-[160px]"
+                    :title="assessment.flw_name || assessment.username">
+                <i class="fa-solid fa-user mr-1"></i><span x-text="assessment.flw_name || assessment.username"></span>
+              </span>
               <span><i class="fa-solid fa-calendar mr-1"></i><span x-text="assessment.visit_date"></span></span>
               <a :href="visitDetailUrl(assessment.user_id, assessment.user_visit_id, assessment.visit_id)"
                  target="_blank"
