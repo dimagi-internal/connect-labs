@@ -178,7 +178,10 @@ class LabsLocalRecord(models.Model):
     type = models.CharField(max_length=100, db_index=True)
     data = models.JSONField(default=dict)
     public = models.BooleanField(default=False)
-    opportunity_id = models.IntegerField(db_index=True)
+    # Nullable so PROGRAM-owned records (owned by a program, no owning opportunity —
+    # e.g. a cross-opp program_admin_report rollup) can be stored: they carry
+    # program_id and leave opportunity_id null, mirroring production LabsRecord.
+    opportunity_id = models.IntegerField(null=True, blank=True, db_index=True)
     organization_id = models.IntegerField(null=True, blank=True)
     program_id = models.IntegerField(null=True, blank=True, db_index=True)
     labs_record_id = models.IntegerField(null=True, blank=True, db_index=True)
