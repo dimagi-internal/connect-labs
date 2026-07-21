@@ -83,6 +83,11 @@ class RollupResource(BaseModel):
     kind: Literal["rollup"]
     opportunity_ids: list[PositiveInt]
     template: str
+    # When set, the cross-opp rollup is a PROGRAM-owned workflow (definition.program_id
+    # set, no owning opportunity — viewed via &program_id, listed in the program view).
+    # This is the correct ownership for a cross-opp rollup; omit only for the legacy
+    # opp-owned shape on the first opportunity. Use a labs-only program id (>= 10000).
+    program_id: PositiveInt | None = None
 
 
 class CampaignResource(BaseModel):

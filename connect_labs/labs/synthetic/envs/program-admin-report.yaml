@@ -58,6 +58,11 @@ resources:
     source: coaching_arcs
 
   # --- Cross-opp Program Admin Report rollup watching both opps' chc runs. ---
+  # PROGRAM-owned (program_id set) — the correct ownership for a cross-opp rollup:
+  # viewed via &program_id and listed in the program view (not scoped to a member
+  # opp, which 404s from any other opp context). Matches the demo_config.json
+  # program_id used by the scripts/walkthroughs path.
   - kind: rollup
     opportunity_ids: [10000, 10001]
+    program_id: 10100
     template: program_admin_report
