@@ -1,0 +1,69 @@
+# Nutrition Demo (OES/ECF) — composite environment manifest.
+#
+# THREE Network Managers = three opps (opps are 1:1 with NMs), all filed under
+# program 10110 so the cross-opp Program Admin Report rollup is PROGRAM-owned.
+# Story (per the OES/ECF brief): a program manager oversees three RUTF/MUAC
+# nutrition NMs and can see at a glance which is on top of things and which needs
+# attention, then drill NM -> FLW -> the flagged evidence.
+#
+#   - Northern (10010, amara_nm): all FLWs solid -> reads SOP MET.
+#   - Central  (10011, bakary_nm): two FLWs with bad MUAC distributions -> BELOW.
+#   - Eastern  (10012, chidi_nm): two FLWs with misleading MUAC photos the AI
+#     review flags -> BELOW; one of them (uche_e) is flagged on the CURRENT week
+#     so the live manager-flow can audit it on camera.
+#
+# Modeled on program-admin-report.yaml (the proven 2-opp PAR env). Same ensurer
+# chain (opp_data -> weekly_runs -> run_audits -> tasks -> rollup); the rollup is
+# program-owned via program_id (connect-labs #946/#948).
+
+env: nutrition-demo
+
+# Pinned to a fixed May 2026 story (Mondays May 4/11/18/25 + the current in-progress
+# week on Jun 1), matching each manifest's timeline.start_date. Pinning keeps the
+# env idempotent across re-seeds.
+timeline:
+  completed_weeks: 4
+  include_current_week: true
+  start_monday: 2026-05-04
+
+resources:
+  # --- Per-opp data: each NM's opp, filed under program 10110. ---
+  - kind: opp_data
+    opportunity_id: 10010
+    program_id: 10110
+    manifest: manifests/nutrition-northern.yaml
+  - kind: opp_data
+    opportunity_id: 10011
+    program_id: 10110
+    manifest: manifests/nutrition-central.yaml
+  - kind: opp_data
+    opportunity_id: 10012
+    program_id: 10110
+    manifest: manifests/nutrition-eastern.yaml
+
+  # --- Weekly chc_nutrition saved runs for all three opps. ---
+  - kind: weekly_runs
+    opportunity_ids: [10010, 10011, 10012]
+    template: chc_nutrition_analysis
+    missed_week_idxs:
+      10010: []
+      10011: []
+      10012: []
+    current_week:
+      reset: true
+
+  # --- Run-linked completable audits from each manifest's audited anomalies. ---
+  - kind: run_audits
+    source: anomalies
+
+  # --- Coaching tasks from each manifest's coaching_arcs. ---
+  - kind: tasks
+    source: coaching_arcs
+
+  # --- Cross-opp Program Admin Report rollup watching all three NMs' chc runs. ---
+  # PROGRAM-owned (program_id: 10110 — the program all three opps are filed under):
+  # viewed via &program_id, listed in the program view.
+  - kind: rollup
+    program_id: 10110
+    opportunity_ids: [10010, 10011, 10012]
+    template: program_admin_report
