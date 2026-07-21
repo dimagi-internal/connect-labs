@@ -75,21 +75,34 @@ def _display_name_for(persona) -> str:
 # ---------------------------------------------------------------------- #
 
 
-def _ensure_par_definition(wda, watched_sources: list[dict]):
-    """Return the primary opp's PAR definition, creating it if absent.
+def _ensure_par_definition(wda, watched_sources: list[dict], program_id: int | None = None):
+    """Return the PAR definition, creating it if absent.
+
+    Program-owned when ``program_id`` is set (definition.program_id, no owning opp —
+    the correct ownership for a cross-opp rollup; `wda` must already be program-scoped);
+    legacy opp-owned otherwise. Mirrors ``program_admin_demo._ensure`` (connect-labs #945)
+    and the canonical program-owned pattern in ``program_audit_creator.py``.
 
     Reuses an existing def across re-seeds (so ids don't churn), keeps its
     ``config.watched_sources`` in sync with the current watched set, and refreshes
     its render_code from the template source — the same upgrade-on-reseed behavior
     ``program_admin_demo`` has.
     """
+    from connect_labs.workflow.program_view import program_id_of
     from connect_labs.workflow.templates import create_workflow_from_template, get_template
 
-    existing = [
-        d
-        for d in wda.list_definitions()
-        if d.opportunity_id == wda.opportunity_id and d.template_type == _PAR_TEMPLATE_TYPE
-    ]
+    if program_id is not None:
+        existing = [
+            d
+            for d in wda.list_definitions()
+            if program_id_of(d) == program_id and d.template_type == _PAR_TEMPLATE_TYPE
+        ]
+    else:
+        existing = [
+            d
+            for d in wda.list_definitions()
+            if d.opportunity_id == wda.opportunity_id and d.template_type == _PAR_TEMPLATE_TYPE
+        ]
     if existing:
         definition = existing[0]
     else:
@@ -97,6 +110,7 @@ def _ensure_par_definition(wda, watched_sources: list[dict]):
             wda,
             template_key=_PAR_TEMPLATE_TYPE,
             opportunity_ids=[s["opportunity_id"] for s in watched_sources],
+            program_id=program_id,
         )
 
     # Keep config.watched_sources current (multi-opp PAR aggregates this set).
@@ -393,6 +407,10 @@ def ensure_rollup(resource, ctx) -> dict:
 
     primary_opp_id = resource.opportunity_ids[0]
     watched_opp_ids = [s["opportunity_id"] for s in watched_sources]
+    # A cross-opp rollup is PROGRAM-owned when the resource carries a program_id
+    # (definition + run own no opportunity; viewed via &program_id). Legacy
+    # opp-owned fallback on the first opp otherwise. See #945 / program_view.py.
+    program_id = getattr(resource, "program_id", None)
 
     # ---- window (same shaping program_admin_demo uses) ----
     window_start = weeks[0]
@@ -404,9 +422,12 @@ def ensure_rollup(resource, ctx) -> dict:
     else:
         par_completed_at = (monday_dt(weeks[-1]) + dt.timedelta(days=1)).isoformat()
 
-    wda = WorkflowDataAccess(opportunity_id=primary_opp_id, access_token=_LABS_ONLY_TOKEN)
+    if program_id is not None:
+        wda = WorkflowDataAccess(program_id=program_id, access_token=_LABS_ONLY_TOKEN)
+    else:
+        wda = WorkflowDataAccess(opportunity_id=primary_opp_id, access_token=_LABS_ONLY_TOKEN)
     try:
-        definition = _ensure_par_definition(wda, watched_sources)
+        definition = _ensure_par_definition(wda, watched_sources, program_id=program_id)
         par_def_id = definition.id
 
         snapshot = _build_snapshot(
@@ -421,7 +442,8 @@ def ensure_rollup(resource, ctx) -> dict:
 
         run_data = {
             "definition_id": par_def_id,
-            "opportunity_id": primary_opp_id,
+            # Program-owned run carries program_id (no owning opp); legacy → opp.
+            **({"program_id": program_id} if program_id is not None else {"opportunity_id": primary_opp_id}),
             "status": "completed",
             "completed_at": par_completed_at,
             "period_start": window_start,
@@ -458,7 +480,13 @@ def ensure_rollup(resource, ctx) -> dict:
     finally:
         wda.close()
 
-    par_url = _run_path(par_def_id, par_run_id, primary_opp_id)
+    # Program-owned rollups open via &program_id (not the primary opp, which would
+    # 404 "definition N not found" from any other opp context). Drill URLs below
+    # stay opp-scoped — the per-opp chc/audit/task workflows ARE opp-owned.
+    if program_id is not None:
+        par_url = f"/labs/workflow/{par_def_id}/run/?run_id={par_run_id}&program_id={program_id}"
+    else:
+        par_url = _run_path(par_def_id, par_run_id, primary_opp_id)
     realized.update(
         {
             "par_def_id": par_def_id,

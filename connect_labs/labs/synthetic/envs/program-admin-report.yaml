@@ -58,6 +58,11 @@ resources:
     source: coaching_arcs
 
   # --- Cross-opp Program Admin Report rollup watching both opps' chc runs. ---
+  # Cross-opp Program Admin Report rollup. NOTE: program-owned activation
+  # (program_id: <labs-only id>) is supported by the ensurer (RollupResource.program_id)
+  # but NOT enabled here yet — program-scoped labs-only reads don't route to the
+  # local-records backend today (they 401 against real Connect). Enable once that
+  # routing gap is fixed. See the tracking issue.
   - kind: rollup
     opportunity_ids: [10000, 10001]
     template: program_admin_report
