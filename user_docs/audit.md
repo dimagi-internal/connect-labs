@@ -58,7 +58,7 @@ This step appears once you have selected your opportunities. It has two sections
     If a reviewer needs a setting and you leave it blank, the wizard will stop you before creating the session.
 - **Context fields** (collapsed by default) — optionally associate any supporting form fields (such as a recorded measurement value) with an image type so that human reviewers can see the relevant data alongside each photo. These associations have no effect on AI review.
 - **Exclude already-audited images** — a checkbox option that controls whether photos previously judged in a completed audit session are included in this new session. Leave it **unchecked** (the default) to include all matching images as normal. **Check it** and the new session will skip any photo that has already received a verdict in an earlier completed audit — so reviewers only assess images that have never been audited before. The number of images skipped is recorded in the creation log.
-- **Visit Clustering** — an optional filter available in the Weekly Dual-Track Image Audit workflow, shown alongside the existing Audit Window and Sampling rate settings. When enabled, it groups consecutive visits by the same field worker that are close together in time and/or GPS location. This is useful for spotting likely duplicate or re-photographed measurements. Visit Clustering never changes which images are included in the audit — it only adds a **N Duplicate Groupings** button next to each row in the session. Clicking that button expands a full-width panel below the audit tile showing the list of images in each group, with a **Download CSV** link for each grouping. The exported CSV includes the **Visit ID** (the number shown on the bulk assessment page, such as #1677989) for each image — Beneficiary Name is not included. If both Visit Clustering checkboxes are left unticked, nothing changes from the standard workflow.
+- **Visit Clustering** — an optional filter available in the Weekly Dual-Track Image Audit workflow, shown alongside the existing Audit Window and Sampling rate settings. When enabled, it groups consecutive visits by the same field worker that are close together in time and/or GPS location. This is useful for spotting likely duplicate or re-photographed measurements. Visit Clustering never changes which images are included in the audit — it only adds a **N Duplicate Groupings** button next to each row in the session. Clicking that button expands a panel below the audit tile showing, on a single row, the group summary, a text list of image IDs in that group (for example, `[1667955, 1667962, ...]`), and a **Download CSV** link for each grouping. The exported CSV includes the **Visit ID** (the number shown on the bulk assessment page, such as #1677989) for each image — Beneficiary Name is not included. When the bulk assessment page opens, any image whose visit fell into a duplicate grouping has **Duplicate/Fake** pre-selected automatically, saving you a step. This pre-tagging never overrides an image that has already been reviewed by a human or AI — only images with no verdict yet are pre-tagged. If both Visit Clustering checkboxes are left unticked, nothing changes from the standard workflow.
 
 **Pass Threshold:**
 
@@ -147,6 +147,8 @@ The bulk assessment page header identifies the field worker being reviewed. For 
     - **Pass** and **Fail** appear side by side as before.
     - **Duplicate/Fake** appears as a full-width button below Pass and Fail (shown in orange with an exclamation icon). Use this when an image appears to be a duplicate submission or a fabricated photo rather than a genuine field visit. The image card border, corner badge, and lightbox all use the same orange treatment when this option is selected.
 
+    If an image's visit was flagged by Visit Clustering as part of a duplicate grouping, **Duplicate/Fake** is pre-selected automatically when the bulk assessment page opens. This only applies to images with no verdict yet — any image already reviewed by a human or AI keeps its existing verdict.
+
     If a photo was already given a verdict in an earlier completed audit session, it shows an **Audited** badge on the image tile — for example, **Audited: Passed**, **Audited: Failed**, or **Audited: Dup·Fake**. Hover over the badge to see the date of the earlier audit. This badge only reflects *other* completed audits, not the current session. You can still assess the image normally — the badge is informational only.
 
     Add optional notes to any image, then move to the next. Your progress saves automatically.
@@ -173,6 +175,8 @@ The bulk assessment page header identifies the field worker being reviewed. For 
     !!! tip "Older audit sessions"
         Entity IDs are shown for all sessions, including those created before this feature was introduced. The page fetches any missing IDs automatically the first time you open an older session.
 
+    If an image's visit was flagged by Visit Clustering as part of a duplicate grouping, **Duplicate/Fake** is pre-selected automatically when the bulk assessment page opens. This only applies to images with no verdict yet — any image already reviewed by a human or AI keeps its existing verdict.
+
     If a photo was already given a verdict in an earlier completed audit session, it shows an **Audited** badge on the image tile — for example, **Audited: Passed**, **Audited: Failed**, or **Audited: Dup·Fake**. Hover over the badge to see the date of the earlier audit. This badge only reflects *other* completed audits, not the current session. You can still assess the image normally — the badge is informational only.
 
     The **#** link on each image tile opens the original visit record directly in Connect. This link is correct for all sessions, including those created previously.
@@ -181,14 +185,4 @@ The bulk assessment page header identifies the field worker being reviewed. For 
 
     Next to each AI Review Agent dropdown (in Step 5 of the wizard), each possible AI verdict has a checkbox — for example, "Automatically pre-tag photos flagged as hyperzoomed as Fail" or "Automatically pre-tag readings that match the scale as Pass". You can tick any combination of these:
 
-    - **Ticked** — the AI pre-tags matching images with that result before you open the review queue.
-    - **Unticked** — the AI still badges every image with its classification, but leaves the Pass/Fail decision to you.
-
-    The default is **flag-only** (all checkboxes untinted), so nothing is pre-tagged unless you opt in. This means the AI's assessments are always visible, but automated pre-tagging only happens when you have explicitly chosen it.
-
-    Regardless of your checkbox settings, you can always bulk-apply any verdict with one click — for example, **Fail all Hyperzoomed (N)** — directly from the review queue.
-
-    !!! tip "Not sure whether to pre-tag?"
-    Start with the default flag-only setting. Review a session to see how well the AI's classifications match your program standards, then enable pre-tagging for the verdicts you consistently agree with.
-
-    **AI classification labels** appear at the bottom of each image tile (below the **Add Note** field) once the AI has reviewed the photo. The label shows the
+    - **Ticked** — the AI pre-tags matching images with that result before you
