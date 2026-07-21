@@ -1087,6 +1087,7 @@ class TestWorkflowRunViewProgramScopedInstance:
         assert endpoints["saveWorkerResult"] == "/labs/workflow/api/run/6823/worker-result/?program_id=176"
         assert endpoints["completeRun"] == "/labs/workflow/api/run/6823/complete/?program_id=176"
         assert endpoints["getSnapshot"] == "/labs/workflow/api/run/6823/snapshot/?program_id=176"
+        assert endpoints["renameRun"] == "/labs/workflow/api/run/6823/rename/?program_id=176"
 
 
 class TestResolvePipelineDefinitionCrossOpp:
