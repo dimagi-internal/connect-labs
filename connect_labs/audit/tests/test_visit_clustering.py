@@ -121,7 +121,20 @@ def test_build_flw_visit_clusters_fills_in_image_count_from_flw_images():
     clusters = build_flw_visit_clusters(
         [1, 2], visit_meta_by_id, flw_images, enable_time_gap=True, time_gap_minutes=10
     )
-    assert clusters == [{"group_id": "g1", "visit_ids": [1, 2], "image_count": 3}]
+    assert clusters == [{"group_id": "g1", "visit_ids": [1, 2], "image_count": 3, "image_ids": ["a", "b", "c"]}]
+
+
+def test_build_flw_visit_clusters_omits_images_with_no_blob_id():
+    visit_meta_by_id = {
+        "1": {"visit_date": "2026-06-22T10:00:00Z", "location": None},
+        "2": {"visit_date": "2026-06-22T10:05:00Z", "location": None},
+    }
+    flw_images = {"1": [{"blob_id": "a"}, {"name": "no-blob-id.jpg"}], "2": [{"blob_id": "c"}]}
+    clusters = build_flw_visit_clusters(
+        [1, 2], visit_meta_by_id, flw_images, enable_time_gap=True, time_gap_minutes=10
+    )
+    assert clusters[0]["image_ids"] == ["a", "c"]
+    assert clusters[0]["image_count"] == 3  # count includes the blob-id-less image
 
 
 def test_build_flw_visit_clusters_returns_empty_when_disabled():

@@ -1180,6 +1180,7 @@ function bulkAssessmentInterface() {
         this.questionIds = data.question_ids || [];
         this.visitResults = data.visit_results || {};
         this.allAssessments = data.assessments || [];
+        this.tagDuplicateGroupingAssessments(data.visit_clusters || []);
         // Apply filters client-side
         this.applyFiltersClientSide();
         this.recalculateStats();
@@ -1197,6 +1198,33 @@ function bulkAssessmentInterface() {
         this.loading = false;
         this.controller = null;
       }
+    },
+    // Pre-select "Duplicate/Fake" for any image whose visit fell into a
+    // visit-clustering grouping (see visit_clustering.py) -- saves the
+    // auditor from re-flagging what the time/GPS criteria already caught.
+    // Routed through updateAssessmentLocal (the same path a manual button
+    // click uses) so visitResults -- the structure autoSave actually
+    // persists -- stays in sync, not just the display-only allAssessments
+    // array. Only touches assessments with no existing result, so a re-load
+    // never clobbers a prior human (or AI) decision.
+    tagDuplicateGroupingAssessments(visitClusters) {
+      if (this.isReadOnly || !visitClusters || !visitClusters.length) return;
+      const duplicateVisitIds = new Set();
+      visitClusters.forEach((cluster) => (cluster.visit_ids || []).forEach((vid) => duplicateVisitIds.add(vid)));
+      if (!duplicateVisitIds.size) return;
+      this.allAssessments.forEach((assessment) => {
+        if (!assessment.result && duplicateVisitIds.has(assessment.visit_id)) {
+          this.updateAssessmentLocal(
+            assessment.visit_id,
+            assessment.blob_id,
+            assessment.question_id,
+            'duplicate_fake',
+            assessment.notes,
+            assessment.ai_result,
+            assessment.ai_notes
+          );
+        }
+      });
     },
     cancelLoading() {
       if (this.controller) {

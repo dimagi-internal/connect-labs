@@ -127,8 +127,8 @@ def build_flw_visit_clusters(
 ):
     """
     Compute visit clusters for one FLW's track session and fill in image_count
-    from that FLW's already-extracted image data (see compute_visit_clusters
-    for the grouping algorithm).
+    and image_ids from that FLW's already-extracted image data (see
+    compute_visit_clusters for the grouping algorithm).
 
     Args:
         flw_visit_ids: the FLW's final sampled visit_ids for this track.
@@ -137,7 +137,8 @@ def build_flw_visit_clusters(
         flw_images: {str(visit_id): list[image_dict]} for this FLW's track.
 
     Returns:
-        Same shape as compute_visit_clusters, plus "image_count" per group.
+        Same shape as compute_visit_clusters, plus "image_count" and
+        "image_ids" (blob_ids, for display without a follow-up fetch) per group.
     """
     if not enable_time_gap and not enable_distance:
         return []
@@ -158,5 +159,7 @@ def build_flw_visit_clusters(
         distance_meters=distance_meters,
     )
     for cluster in clusters:
-        cluster["image_count"] = sum(len(flw_images.get(str(vid), [])) for vid in cluster["visit_ids"])
+        images = [img for vid in cluster["visit_ids"] for img in flw_images.get(str(vid), [])]
+        cluster["image_count"] = len(images)
+        cluster["image_ids"] = [img.get("blob_id") for img in images if img.get("blob_id")]
     return clusters

@@ -887,6 +887,7 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
                 "bulk_start_date": start_date_display,
                 "bulk_end_date": end_date_display,
                 "visit_results": visit_result_map,
+                "visit_clusters": session.data.get("visit_clusters", []),
             }
 
             return JsonResponse(response_data)
@@ -999,8 +1000,7 @@ def _resolve_visit_cluster_group(data_access, request, session_id, group_id):
 
 
 def _visit_cluster_rows(ctx):
-    """Flatten a resolved visit-cluster group into per-image rows, shared by the
-    CSV export and JSON images views."""
+    """Flatten a resolved visit-cluster group into per-image rows for the CSV export."""
     rows = []
     for visit_id in ctx["group"]["visit_ids"]:
         images = ctx["visit_images"].get(str(visit_id), [])
@@ -1017,10 +1017,8 @@ def _visit_cluster_rows(ctx):
                 {
                     "visit_id": visit_id,
                     "name": image.get("name", ""),
-                    "blob_id": image.get("blob_id", ""),
                     "visit_date": image.get("visit_date", ""),
                     "location": location,
-                    "entity_name": image.get("entity_name", ""),
                     "visit_url": visit_url,
                 }
             )
@@ -1045,38 +1043,6 @@ class VisitClusterExportCSVView(LoginRequiredMixin, View):
             for row in _visit_cluster_rows(ctx):
                 writer.writerow([row["visit_id"], row["name"], row["visit_date"], row["location"], row["visit_url"]])
             return response
-        finally:
-            data_access.close()
-
-
-class VisitClusterImagesAPIView(LoginRequiredMixin, View):
-    """JSON list of the images in one visit-clustering grouping, for the
-    "N Duplicate Groupings" expand panel in labs_audit_breakdown.js."""
-
-    def get(self, request, session_id, group_id):
-        data_access = AuditDataAccess(request=request)
-        try:
-            error, ctx = _resolve_visit_cluster_group(data_access, request, session_id, group_id)
-            if error:
-                return error
-
-            images = [
-                {
-                    "visit_id": row["visit_id"],
-                    "name": row["name"],
-                    "visit_date": row["visit_date"],
-                    "thumbnail_url": (
-                        reverse(
-                            "audit:audit_image_connect",
-                            kwargs={"opp_id": ctx["opportunity_id"], "blob_id": row["blob_id"]},
-                        )
-                        if row["blob_id"] and ctx["opportunity_id"]
-                        else ""
-                    ),
-                }
-                for row in _visit_cluster_rows(ctx)
-            ]
-            return JsonResponse({"success": True, "images": images})
         finally:
             data_access.close()
 
