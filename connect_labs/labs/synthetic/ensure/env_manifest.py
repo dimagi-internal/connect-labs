@@ -59,6 +59,11 @@ class OppDataResource(BaseModel):
     kind: Literal["opp_data"]
     opportunity_id: PositiveInt
     manifest: str
+    # File this labs-only opp under a program (SyntheticOpportunity.program_id).
+    # Required so a PROGRAM-owned cross-opp rollup over these opps routes to the
+    # local-records backend — is_labs_only_program_id(program_id) is True only when
+    # a SyntheticOpportunity is filed under it. Omit → the opp is its own program.
+    program_id: PositiveInt | None = None
 
 
 class WeeklyRunsResource(BaseModel):
