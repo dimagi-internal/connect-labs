@@ -2774,6 +2774,41 @@ def rename_workflow_api(request, definition_id):
 
 @login_required
 @require_POST
+def rename_run_api(request, run_id):
+    """API endpoint to set a workflow run's display name.
+
+    Allowed regardless of run status -- unlike update_state_api, a name is a
+    label, not run business state, so there's no reason to block it once a
+    run completes.
+    """
+    try:
+        data = json.loads(request.body)
+        new_name = data.get("name", "").strip()
+
+        if not new_name:
+            return JsonResponse({"error": "name is required"}, status=400)
+
+        data_access = WorkflowDataAccess(request=request)
+        run = data_access.get_run(run_id)
+
+        if not run:
+            data_access.close()
+            return JsonResponse({"error": "Run not found"}, status=404)
+
+        data_access.rename_run(run_id, new_name, run=run)
+        data_access.close()
+
+        return JsonResponse({"success": True, "run_id": run_id, "name": new_name})
+
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+    except Exception:
+        logger.exception("Failed to rename run %s", run_id)
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
+
+
+@login_required
+@require_POST
 def delete_pipeline_api(request, definition_id):
     """API endpoint to delete a pipeline definition."""
     from connect_labs.workflow.data_access import PipelineDataAccess

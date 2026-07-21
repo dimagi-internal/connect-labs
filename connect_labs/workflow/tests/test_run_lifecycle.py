@@ -94,3 +94,14 @@ class TestCompletedProperties:
 
     def test_snapshot_is_none_when_unset(self):
         assert _make_record().snapshot is None
+
+
+class TestNameProxy:
+    """`.name` is a plain top-level label (never wiped by state.* merges,
+    never blocked by the completed-run write guard) -- see rename_run."""
+
+    def test_name_passes_through_when_set(self):
+        assert _make_record(name="Week 30 Audit").name == "Week 30 Audit"
+
+    def test_name_is_empty_string_when_unset(self):
+        assert _make_record().name == ""

@@ -980,6 +980,10 @@
                                 x-data="{
                                     deletingRun: false,
                                     showRunDeleteConfirm: false,
+                                    editingRunName: false,
+                                    savingRunName: false,
+                                    runName: '{{ run.name|escapejs }}',
+                                    originalRunName: '{{ run.name|escapejs }}',
                                     // Live job progress state
                                     jobStatus: '{{ run.state.active_job.status|default:'' }}',
                                     jobId: '{{ run.state.active_job.job_id|default:'' }}',
@@ -1084,10 +1088,63 @@
                                         }
                                         this.deletingRun = false;
                                         this.showRunDeleteConfirm = false;
+                                    },
+                                    async saveRunName() {
+                                        const trimmed = this.runName.trim();
+                                        if (trimmed === '' || trimmed === this.originalRunName) {
+                                            this.runName = this.originalRunName;
+                                            this.editingRunName = false;
+                                            return;
+                                        }
+                                        this.savingRunName = true;
+                                        try {
+                                            const response = await fetch('{% url 'labs:workflow:api_rename_run' run.id %}', {
+                                                method: 'POST',
+                                                headers: {
+                                                    'Content-Type': 'application/json',
+                                                    'X-CSRFToken': '{{ csrf_token }}'
+                                                },
+                                                body: JSON.stringify({ name: trimmed })
+                                            });
+                                            if (response.ok) {
+                                                this.originalRunName = trimmed;
+                                                this.runName = trimmed;
+                                                this.editingRunName = false;
+                                            } else {
+                                                const data = await response.json();
+                                                alert(data.error || 'Failed to save run name');
+                                                this.runName = this.originalRunName;
+                                            }
+                                        } catch (e) {
+                                            alert('Failed to save run name: ' + e.message);
+                                            this.runName = this.originalRunName;
+                                        }
+                                        this.savingRunName = false;
                                     }
                                 }">
                                 <td class="py-3">
-                                    <span class="text-sm font-medium text-gray-900">Run #{{ run.id }}</span>
+                                    <template x-if="!editingRunName">
+                                        <button type="button"
+                                            @click="editingRunName = true; $nextTick(() => $refs.runNameInput.focus())"
+                                            class="text-sm font-medium text-gray-900 cursor-pointer hover:text-blue-600 transition-colors text-left bg-transparent border-0 p-0"
+                                            title="Click to name this run"
+                                            x-text="runName || 'Run #{{ run.id }}'"></button>
+                                    </template>
+                                    <template x-if="editingRunName">
+                                        <div class="flex items-center gap-1.5">
+                                            <input type="text"
+                                                   x-ref="runNameInput"
+                                                   x-model="runName"
+                                                   @keydown.enter="saveRunName()"
+                                                   @keydown.escape="runName = originalRunName; editingRunName = false"
+                                                   @blur="saveRunName()"
+                                                   :disabled="savingRunName"
+                                                   placeholder="Run #{{ run.id }}"
+                                                   class="text-sm font-medium text-gray-900 border border-blue-400 rounded px-1.5 py-0.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                   style="min-width: 140px;">
+                                            <i x-show="savingRunName" class="fa-solid fa-spinner fa-spin text-blue-500 text-xs"></i>
+                                        </div>
+                                    </template>
                                     {% if workflow.template_type == "bulk_image_audit" and run.state.config %}
                                     {% with img_types=run.state.config.image_types %}
                                     {% if img_types %}
