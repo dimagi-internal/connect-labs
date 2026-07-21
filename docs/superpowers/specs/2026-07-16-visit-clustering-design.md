@@ -79,7 +79,7 @@ This file backs all 3 surfaces (opp run page, program-creator expandable rows, p
 
 **Structural change (needed regardless of clustering):** `auditLine`'s current markup is one big `<a href=bulkUrl(...)>` — the entire row navigates to the bulk-review page on any click. To let a "Duplicate Groupings" button live inside the row without triggering navigation, restructure the wrapper to a `<div>`, moving the "open in Connect" behavior to a small explicit icon-button at the end of the row (same arrow icon already there today) instead of making the whole row clickable. All existing row content (status, images, pass/fail/duplicates/pending, AI stats) is unchanged.
 
-**New element:** when `s.visit_clusters` is non-empty, render a button: **"N Duplicate Groupings"** (N = `s.visit_clusters.length`) next to the existing pass/fail/duplicates/pending line. Clicking toggles a local `expanded` boolean (component-local state, no new fetch — the data's already in `s.visit_clusters`). Expanded panel lists each group: `"Group 1 — 4 images"` with a download link.
+**New element:** when `s.visit_clusters` is non-empty, render a button: **"N Duplicate Groupings"** (N = `s.visit_clusters.length`) next to the existing pass/fail/duplicates/pending line. Clicking toggles a local `expanded` boolean (component-local state, no new fetch — the data's already in `s.visit_clusters`, including each group's `image_ids`, computed once at creation time — see `build_flw_visit_clusters`). Expanded panel lists each group on one row: `"Group 1 — 4 images"`, the image id list (`[1667955, 1667962, ...]`), and a download icon-link.
 
 ## Sessions API: expose `visit_clusters`
 
@@ -99,7 +99,11 @@ New view, `connect_labs/audit/views.py`, mirroring the existing `ExperimentBulkA
 - Look up the group's `visit_ids` from `session.data["visit_clusters"]` (404 if session or group not found).
 - Expand to that group's images via the session's existing `visit_images` data (already stored — no new fetch for image-level fields).
 - For each image, resolve the Connect visit URL exactly as already built for the per-image "#" link (`user_id`/`user_visit_id` UUIDs → `{connect_url}/a/{org_slug}/opportunity/{opp_id}/user_visits/?user=...&visit_id=...`) — reuses the shareable-visit-link work already shipped this session, no new lookup logic.
-- CSV columns: **Visit ID, Filename, Visit Date, GPS Location (raw `location` string), Connect Visit URL**. (Beneficiary name intentionally omitted from the export; it's still shown in the in-page expand list.)
+- CSV columns: **Visit ID, Filename, Visit Date, GPS Location (raw `location` string), Connect Visit URL**. (Beneficiary name intentionally omitted, both from the export and the in-page expand list — the expand list shows only image ids, per-group, on one row.)
+
+## Auto-tagging duplicate-grouped images on the bulk assessment page
+
+`ExperimentBulkAssessmentDataView`'s response includes `visit_clusters` alongside `assessments` (same frozen list from session creation). On load, `bulk_assessment.html` flattens every cluster's `visit_ids` into a set and, for any assessment whose `visit_id` is in that set **and has no existing result** (never overrides a prior human or AI decision), calls the same `updateAssessmentLocal` path a manual "Duplicate/Fake" button click uses — so it's indistinguishable from the auditor having clicked it themselves, including feeding the existing debounced auto-save. Applies once per fresh `fetchData()` call; re-loading a page an auditor has already reviewed is a no-op for anything already tagged.
 
 ## Explicitly out of scope
 

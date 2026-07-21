@@ -167,52 +167,6 @@
       var expanded = st[0];
       var setExpanded = st[1];
 
-      var imgSt = React.useState({});
-      var groupImages = imgSt[0];
-      var setGroupImages = imgSt[1];
-
-      var clustersForFetch = (s && s.visit_clusters) || [];
-
-      React.useEffect(
-        function () {
-          if (!expanded || !s) return;
-          clustersForFetch.forEach(function (c) {
-            if (groupImages[c.group_id]) return;
-            setGroupImages(function (prev) {
-              var next = Object.assign({}, prev);
-              next[c.group_id] = 'loading';
-              return next;
-            });
-            fetch(
-              '/audit/api/' +
-                s.id +
-                '/visit-clusters/' +
-                c.group_id +
-                '/images/',
-            )
-              .then(function (res) {
-                return res.json();
-              })
-              .then(function (data) {
-                setGroupImages(function (prev) {
-                  var next = Object.assign({}, prev);
-                  next[c.group_id] =
-                    data && data.success ? data.images : 'error';
-                  return next;
-                });
-              })
-              .catch(function () {
-                setGroupImages(function (prev) {
-                  var next = Object.assign({}, prev);
-                  next[c.group_id] = 'error';
-                  return next;
-                });
-              });
-          });
-        },
-        [expanded],
-      );
-
       if (!s)
         return h(
           'div',
@@ -318,59 +272,25 @@
               'div',
               {
                 className:
-                  'basis-full mt-1.5 pl-16 space-y-2 text-xs text-gray-700',
+                  'basis-full mt-1.5 pl-16 space-y-1 text-xs text-gray-700',
               },
               clusters.map(function (c, i) {
-                var imgs = groupImages[c.group_id];
+                var imageIds = c.image_ids || [];
                 return h(
                   'div',
-                  { key: c.group_id },
+                  { key: c.group_id, className: 'flex items-center gap-2' },
                   h(
                     'span',
-                    { className: 'font-medium text-gray-600' },
+                    {
+                      className: 'font-medium text-gray-600 whitespace-nowrap',
+                    },
                     'Group ' + (i + 1) + ' — ' + c.image_count + ' images',
                   ),
-                  imgs === 'loading' || imgs === undefined
-                    ? h(
-                        'div',
-                        { className: 'pl-3 py-0.5 text-gray-400' },
-                        'Loading images…',
-                      )
-                    : imgs === 'error'
-                    ? h(
-                        'div',
-                        { className: 'pl-3 py-0.5 text-red-500' },
-                        'Failed to load images',
-                      )
-                    : h(
-                        'div',
-                        { className: 'pl-3 py-0.5 space-y-0.5' },
-                        imgs.map(function (img, idx) {
-                          return h(
-                            'div',
-                            { key: idx, className: 'flex items-center gap-2' },
-                            img.thumbnail_url
-                              ? h('img', {
-                                  src: img.thumbnail_url,
-                                  className: 'w-6 h-6 rounded object-cover',
-                                })
-                              : null,
-                            h(
-                              'span',
-                              { className: 'text-gray-600' },
-                              img.name || '(untitled)',
-                            ),
-                            h(
-                              'span',
-                              { className: 'text-gray-400' },
-                              h('i', {
-                                className: 'fa-solid fa-hashtag mr-0.5',
-                              }),
-                              img.visit_id,
-                            ),
-                          );
-                        }),
-                      ),
+                  h(
+                    'span',
+                    { className: 'text-gray-500 font-mono truncate' },
+                    '[' + imageIds.join(', ') + ']',
+                  ),
                   h(
                     'a',
                     {
@@ -380,11 +300,11 @@
                         '/visit-clusters/' +
                         c.group_id +
                         '/export.csv',
+                      title: 'Download CSV',
                       className:
-                        'text-blue-500 hover:underline inline-block mt-0.5',
+                        'text-blue-500 hover:text-blue-700 whitespace-nowrap',
                     },
-                    h('i', { className: 'fa-solid fa-download mr-1' }),
-                    'Download CSV',
+                    h('i', { className: 'fa-solid fa-download' }),
                   ),
                 );
               }),
