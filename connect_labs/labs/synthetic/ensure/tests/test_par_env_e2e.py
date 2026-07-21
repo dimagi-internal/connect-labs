@@ -39,6 +39,7 @@ ENV_PATH = _PKG_DIR / "labs" / "synthetic" / "envs" / "program-admin-report.yaml
 
 GOOD_OPP = 10_000  # Northern — complete, both flagged FLWs coached to a close.
 INCOMPLETE_OPP = 10_001  # Southern — misses week 1; carries the open investigation.
+PROGRAM_ID = 10_100  # both opps are filed under this program; the PAR rollup is program-owned.
 COMPLETED_WEEKS = 4  # env timeline.completed_weeks
 SOUTHERN_MISSED = {1}  # env weekly_runs.missed_week_idxs[10001]
 
@@ -217,7 +218,10 @@ def test_par_env_end_to_end_and_idempotent(tmp_path):
     # ------------------------------------------------------------------ #
     par_def_id = realized["par_def_id"]
     par_run_id = realized["par_run_id"]
-    par_wda = WorkflowDataAccess(opportunity_id=GOOD_OPP, access_token=_LABS_ONLY_TOKEN)
+    # The PAR rollup is PROGRAM-owned (program_id=PROGRAM_ID, no owning opp) — look
+    # it up program-scoped, and its realized par_url is &program_id-scoped.
+    assert f"&program_id={PROGRAM_ID}" in realized["par_url"], realized["par_url"]
+    par_wda = WorkflowDataAccess(program_id=PROGRAM_ID, access_token=_LABS_ONLY_TOKEN)
     try:
         par_run = par_wda.get_run(par_run_id)
         assert par_run is not None
