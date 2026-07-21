@@ -60,6 +60,18 @@ from ..tool_registry import register
                     "week as index len(weeks)."
                 ),
             },
+            "program_id": {
+                "type": ["integer", "null"],
+                "default": None,
+                "description": (
+                    "When set, the Program Admin Report rollup is created as a "
+                    "PROGRAM-OWNED workflow (definition.program_id set, no owning "
+                    "opportunity) — the correct ownership for a cross-opp rollup: "
+                    "viewed via program_id and listed in the program view. Use a "
+                    "labs-only synthetic program id (reserved >= 10000). Omit only "
+                    "for the deprecated legacy opp-owned shape."
+                ),
+            },
             "opps": {
                 "type": "array",
                 "items": {
@@ -108,5 +120,13 @@ def program_admin_demo_seed(
     opps: list[dict],
     cleanup_first: bool = True,
     current_week: str | None = None,
+    program_id: int | None = None,
 ) -> dict[str, Any]:
-    return _seed(user=user, weeks=weeks, opps=opps, cleanup_first=cleanup_first, current_week=current_week)
+    return _seed(
+        user=user,
+        weeks=weeks,
+        opps=opps,
+        cleanup_first=cleanup_first,
+        current_week=current_week,
+        program_id=program_id,
+    )

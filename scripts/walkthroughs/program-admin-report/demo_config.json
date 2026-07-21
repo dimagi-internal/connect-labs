@@ -2,6 +2,7 @@
   "_comment": "Exact config passed to program_admin_demo_seed to reproduce the Program Admin Report walkthrough demo. The week window is computed dynamically by regenerate.py: completed_weeks trailing complete Mondays form the PAR window (all COMPLETED — Northern 4/4 reads SOP MET, Southern misses one + carries the open work and reads BELOW), plus the CURRENT week as an in-progress run OUTSIDE the PAR window for the manager-flow video. jumoke_n is the bad-MUAC FLW the manager audits + coaches live in that current week (flag_week 4 == len(weeks)). Southern is fully completed and used for the 9-scene drill-through.",
   "cleanup_first": true,
   "completed_weeks": 4,
+  "program_id": 10100,
   "opps": [
     {
       "opportunity_id": 10000,
