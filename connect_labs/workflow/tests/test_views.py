@@ -270,6 +270,94 @@ class TestUpdateOpportunityIdsView:
         assert response.status_code == 400
 
 
+class TestRenameRunView:
+    """rename_run_api sets a run's display name (data.name) -- allowed
+    regardless of run status, unlike the state-write path."""
+
+    def test_renames_run_on_valid_payload(self, dimagi_user, rf: RequestFactory):
+        import json
+
+        request = rf.post(
+            "/labs/workflow/api/run/9/rename/",
+            data=json.dumps({"name": "  Week 30 Audit  "}),
+            content_type="application/json",
+        )
+        request.user = dimagi_user
+
+        with patch("connect_labs.workflow.views.WorkflowDataAccess") as MockWDA:
+            mock_wda = MagicMock()
+            MockWDA.return_value = mock_wda
+            mock_run = MagicMock()
+            mock_wda.get_run.return_value = mock_run
+
+            from connect_labs.workflow.views import rename_run_api
+
+            response = rename_run_api(request, run_id=9)
+
+            assert response.status_code == 200
+            body = json.loads(response.content)
+            assert body["success"] is True
+            assert body["name"] == "Week 30 Audit"
+            # Whitespace is trimmed before it's persisted.
+            mock_wda.rename_run.assert_called_once_with(9, "Week 30 Audit", run=mock_run)
+
+    def test_rejects_empty_name(self, dimagi_user, rf: RequestFactory):
+        import json
+
+        request = rf.post(
+            "/labs/workflow/api/run/9/rename/",
+            data=json.dumps({"name": "   "}),
+            content_type="application/json",
+        )
+        request.user = dimagi_user
+
+        with patch("connect_labs.workflow.views.WorkflowDataAccess") as MockWDA:
+            mock_wda = MagicMock()
+            MockWDA.return_value = mock_wda
+
+            from connect_labs.workflow.views import rename_run_api
+
+            response = rename_run_api(request, run_id=9)
+
+            assert response.status_code == 400
+            mock_wda.rename_run.assert_not_called()
+
+    def test_returns_404_when_run_not_found(self, dimagi_user, rf: RequestFactory):
+        import json
+
+        request = rf.post(
+            "/labs/workflow/api/run/9/rename/",
+            data=json.dumps({"name": "New Name"}),
+            content_type="application/json",
+        )
+        request.user = dimagi_user
+
+        with patch("connect_labs.workflow.views.WorkflowDataAccess") as MockWDA:
+            mock_wda = MagicMock()
+            MockWDA.return_value = mock_wda
+            mock_wda.get_run.return_value = None
+
+            from connect_labs.workflow.views import rename_run_api
+
+            response = rename_run_api(request, run_id=9)
+
+            assert response.status_code == 404
+            mock_wda.rename_run.assert_not_called()
+
+    def test_rejects_invalid_json(self, dimagi_user, rf: RequestFactory):
+        request = rf.post(
+            "/labs/workflow/api/run/9/rename/",
+            data="not-json",
+            content_type="application/json",
+        )
+        request.user = dimagi_user
+
+        from connect_labs.workflow.views import rename_run_api
+
+        response = rename_run_api(request, run_id=9)
+        assert response.status_code == 400
+
+
 class TestCompleteRunTemplateFallback:
     """complete_run_api recovers a missing config.templateType from the
     workflow name (same strict match template sync uses) and self-heals the
