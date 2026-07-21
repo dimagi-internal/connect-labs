@@ -5,12 +5,14 @@ Maintained per canopy PM skill Lesson 21: re-reads of this doc are DELTA passes 
 diff (a) new strike-throughs/comments in the doc, (b) merges since `last_verified`, (c) dispositions
 whose "under discussion" status may have resolved. Update rows as they change; don't re-derive.
 
-Last full pass: 2026-07-16 (Hal), on ST re-scan request. `last_verified` = main as of 41f11e3.
-Prior pass: 2026-07-09 (Hal), 6cd125d3.
+Delta pass: 2026-07-21 (Hal). `last_verified` = main as of 545b9ef. GTH #1 auto-save shipped (ST,
+#932). Prior full pass: 2026-07-16 (Hal), 41f11e3, on ST re-scan request. Earlier: 2026-07-09 (Hal),
+6cd125d3.
 
-**Only open pickup as of this pass: Good-to-have #1 (auto-save the review screen).** Everything else
-is shipped, closed-by-direction, or blocked on a product/content decision (MH #8, GTH #5) or a repro
-(GTH #10).
+**No open pickups remain.** GTH #1 (auto-save) — the only item left open at the 2026-07-16 pass —
+shipped in #932 (Sarvesh, 2026-07-17). Everything else is shipped, closed-by-direction, or blocked on
+a product/content decision (MH #8 reason-dropdown, GTH #5 criteria content) or a repro (GTH #10). The
+doc is fully triaged; nothing here is a buildable clear win without a product/content input.
 
 ## Must-have
 
@@ -29,7 +31,7 @@ is shipped, closed-by-direction, or blocked on a product/content decision (MH #8
 
 | #   | Ask                                                                | Code verdict                                                                                                                                                                              | Alignment                                              | Disposition                                                                                                                    |
 | --- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
-| 1   | Auto-save audit progress                                           | MISSING — pass/fail/dup clicks mutate local Alpine state only (`bulk_assessment.html:1313` `updateAssessmentLocal`); persistence = manual "Save Progress"; `beforeunload` warns (`:1038`) | aligned (review-screen only)                           | **OPEN — the one recommended pickup (S): debounce save to existing `audit_save` endpoint. Proposed to ST 2026-07-16.**          |
+| 1   | Auto-save audit progress                                           | SHIPPED — #932 (ST, 2026-07-17): debounced auto-save persists pass/fail/dup + notes to the existing `audit_save` endpoint ~1s after tagging stops; status flips "Saving…" → "All changes saved"; keeps the `beforeunload` warning if a save can't get through | aligned (review-screen only)                           | **shipped — closes the "come back next day and lose work" loss (also MH #3/#7 recovery slice). Was proposed to ST 2026-07-16; ST picked it up and shipped it himself the next day.** |
 | 2   | Zoom on image                                                      | SHIPPED — #867 + #881 (Hal, 2026-07-08)                                                                                                                                                   | aligned                                                | shipped                                                                                                                        |
 | 3   | Reuse existing audit sessions                                      | WONT-DO (JJ: workflows make this a non-issue)                                                                                                                                             | —                                                      | closed                                                                                                                         |
 | 4   | Delete audit sessions                                              | SHIPPED — #858 (bulk delete) + #884 UX polish                                                                                                                                             | aligned                                                | shipped                                                                                                                        |
@@ -42,6 +44,13 @@ is shipped, closed-by-direction, or blocked on a product/content decision (MH #8
 
 ## Dedup log
 
+- 2026-07-21: delta pass (thread "Feature Requests" re-triggered). GTH #1 auto-save — the only open
+  pickup at the 07-16 pass — shipped by ST in #932 (07-17), so the map is now fully closed out; no
+  outbound owed (ST acted on the proposal himself). Audit merges since 41f11e3 (#931 visit-clustering
+  + dup/fake fix + shareable links, #933/#944 Muac Picture Audit workflow + multi-opp scoping, #934/#935
+  run/session lifecycle fixes, #942 visit-cluster CSV + dual-track paths, #943) are refinements to
+  already-shipped areas — none open a NEW feedback-doc item. Note #943 restored the FLW name on
+  bulk-assessment tiles after #931 regressed it (MH #1 still shipped, just briefly broken). main HEAD 545b9ef.
 - 2026-07-16: ST re-scan request (thread "Feature Requests"). Merges since 6cd125d3 closed MH #4 (#902),
   MH #5 (#927), MH #7 (#911/#909); GTH #8/#9 also shipped (#901/#909/#910). Only GTH #1 (auto-save) remains
   an open clear win — recommended to ST as the pickup. Checked recent merged titles + HEAD 41f11e3: no
