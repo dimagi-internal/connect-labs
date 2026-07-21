@@ -55,6 +55,44 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
         : (instance.opportunity_id ? [instance.opportunity_id] : []);
     const oppLabel = (oid) => oppNames[String(oid)] || ('Opportunity ' + oid);
 
+    // ── Run name (defaults to "Run #<id>" until renamed; not shown while
+    // still in edit/preview mode -- there's no real run yet to name) ────────
+    const [runName, setRunName] = React.useState(instance.name || '');
+    const [runNameDraft, setRunNameDraft] = React.useState(instance.name || '');
+    const [editingRunName, setEditingRunName] = React.useState(false);
+    const [savingRunName, setSavingRunName] = React.useState(false);
+    const saveRunName = async () => {
+        const trimmed = runNameDraft.trim();
+        if (trimmed === '' || trimmed === runName) {
+            setRunNameDraft(runName);
+            setEditingRunName(false);
+            return;
+        }
+        const renameUrl = window.WORKFLOW_API_ENDPOINTS && window.WORKFLOW_API_ENDPOINTS.renameRun;
+        if (!renameUrl) { setEditingRunName(false); return; }
+        setSavingRunName(true);
+        try {
+            const response = await fetch(renameUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+                body: JSON.stringify({ name: trimmed }),
+            });
+            if (response.ok) {
+                setRunName(trimmed);
+                setRunNameDraft(trimmed);
+                setEditingRunName(false);
+            } else {
+                const data = await response.json().catch(() => ({}));
+                alert(data.error || 'Failed to save run name');
+                setRunNameDraft(runName);
+            }
+        } catch (e) {
+            alert('Failed to save run name: ' + (e.message || e));
+            setRunNameDraft(runName);
+        }
+        setSavingRunName(false);
+    };
+
     // ── Step 1: Select Opportunities (subset of the fixed set for this run) ──
     const [selectedOppIds, setSelectedOppIds] = React.useState(allOppIds.slice());
     const toggleOpp = (oid) => setSelectedOppIds(prev =>
@@ -455,6 +493,33 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
             <div className="bg-white rounded-lg shadow-sm p-6">
                 <h1 className="text-2xl font-bold text-gray-900">{definition.name}</h1>
                 <p className="text-gray-600 mt-1">{definition.description}</p>
+                {!!instance.id && (
+                    !editingRunName ? (
+                        <button type="button"
+                                onClick={() => setEditingRunName(true)}
+                                title="Click to name this run"
+                                className="mt-2 inline-flex items-center text-sm text-gray-500 hover:text-blue-600 transition-colors bg-transparent border-0 p-0 cursor-pointer">
+                            <i className="fa-solid fa-pen mr-1.5 text-xs"></i>{runName || ('Run #' + instance.id)}
+                        </button>
+                    ) : (
+                        <div className="mt-2 flex items-center gap-2">
+                            <input type="text"
+                                   value={runNameDraft}
+                                   onChange={e => setRunNameDraft(e.target.value)}
+                                   onKeyDown={e => {
+                                       if (e.key === 'Enter') saveRunName();
+                                       if (e.key === 'Escape') { setRunNameDraft(runName); setEditingRunName(false); }
+                                   }}
+                                   onBlur={saveRunName}
+                                   disabled={savingRunName}
+                                   placeholder={'Run #' + instance.id}
+                                   autoFocus
+                                   className="text-sm border border-blue-400 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                   style={{ minWidth: '220px' }} />
+                            {savingRunName && <i className="fa-solid fa-spinner fa-spin text-blue-500 text-xs"></i>}
+                        </div>
+                    )
+                )}
             </div>
 
             {viewOnly && (

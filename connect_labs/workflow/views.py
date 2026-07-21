@@ -713,6 +713,8 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                     "program_id": program_id,
                     "opportunity_ids": effective_opp_ids,
                     "opportunity_name": labs_context.get("opportunity", {}).get("name"),
+                    # No real run to name yet in edit mode.
+                    "name": "",
                     # Edit mode is in_progress for render-code purposes; the FE
                     # sees `is_edit_mode: true` separately and disables persistence.
                     "status": "in_progress",
@@ -747,6 +749,10 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                     "program_id": run.program_id,
                     "opportunity_ids": effective_opp_ids,
                     "opportunity_name": labs_context.get("opportunity", {}).get("name"),
+                    # User-given display name ("" if never renamed -- render
+                    # code falls back to "Run #<id>"). Renaming is allowed
+                    # regardless of run status; see rename_run_api.
+                    "name": run.name,
                     # Canonical lifecycle: in_progress | completed. The proxy
                     # also maps any legacy `active`/`frozen` rows back to this
                     # vocabulary.
@@ -910,6 +916,13 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                     "authStatus": "/labs/workflow/api/auth-status/",
                     # MBW monitoring actions
                     "saveWorkerResult": f"/labs/workflow/api/run/{run_data['id']}/worker-result/{run_scope_qs}",
+                    # Renaming is allowed regardless of run status (unlike
+                    # updateState/completeRun above), but the URL still needs
+                    # the run's own scope stamped on -- same ambient-session-
+                    # drift risk as those other run-scoped endpoints.
+                    "renameRun": (
+                        None if is_edit_mode else f"/labs/workflow/api/run/{run_data['id']}/rename/{run_scope_qs}"
+                    ),
                     # Single completion verb — handles snapshot build + status flip atomically.
                     "completeRun": (
                         None if is_edit_mode else f"/labs/workflow/api/run/{run_data['id']}/complete/{run_scope_qs}"
