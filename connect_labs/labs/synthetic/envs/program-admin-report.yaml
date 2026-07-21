@@ -32,11 +32,17 @@ timeline:
 
 resources:
   # --- Per-opp data: parse + stash each opp's generator Manifest. ---
+  # Both opps are FILED UNDER program 10100 (program_id) so the cross-opp rollup
+  # can be PROGRAM-owned: is_labs_only_program_id(10100) is True only when a
+  # SyntheticOpportunity is filed under it — that's what routes program-scoped
+  # labs-only reads to the local-records backend (else they 401 against Connect).
   - kind: opp_data
     opportunity_id: 10000
+    program_id: 10100
     manifest: manifests/par-northern.yaml
   - kind: opp_data
     opportunity_id: 10001
+    program_id: 10100
     manifest: manifests/par-southern.yaml
 
   # --- Weekly chc_nutrition saved runs for both opps. ---
@@ -58,11 +64,10 @@ resources:
     source: coaching_arcs
 
   # --- Cross-opp Program Admin Report rollup watching both opps' chc runs. ---
-  # Cross-opp Program Admin Report rollup. NOTE: program-owned activation
-  # (program_id: <labs-only id>) is supported by the ensurer (RollupResource.program_id)
-  # but NOT enabled here yet — program-scoped labs-only reads don't route to the
-  # local-records backend today (they 401 against real Connect). Enable once that
-  # routing gap is fixed. See the tracking issue.
+  # PROGRAM-owned (program_id: 10100 — the program both opps are filed under):
+  # the correct ownership for a cross-opp rollup. Viewed via &program_id and
+  # listed in the program view; its realized par_url comes back &program_id-scoped.
   - kind: rollup
+    program_id: 10100
     opportunity_ids: [10000, 10001]
     template: program_admin_report

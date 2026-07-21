@@ -46,16 +46,23 @@ def ensure_opp_data(resource, ctx) -> dict:
     manifest_path = (Path(base) / resource.manifest).resolve()
     manifest = Manifest.from_yaml(manifest_path.read_text())
 
+    defaults = {
+        "labs_only": True,
+        "enabled": True,
+        "label": manifest.opportunity_name,
+        # No GDrive fixtures back a PAR opp (manifest-only); the column is
+        # NOT NULL, so default it empty rather than leaving it unset.
+        "gdrive_folder_id": "",
+    }
+    # File the opp under a program when the env declares one — this is what makes
+    # is_labs_only_program_id(program_id) True, so a PROGRAM-owned cross-opp rollup
+    # over these opps dispatches to the local-records backend instead of 401ing
+    # against real Connect. Omit → the opp stays its own program (program_id null).
+    if getattr(resource, "program_id", None) is not None:
+        defaults["program_id"] = resource.program_id
     SyntheticOpportunity.objects.update_or_create(
         opportunity_id=resource.opportunity_id,
-        defaults={
-            "labs_only": True,
-            "enabled": True,
-            "label": manifest.opportunity_name,
-            # No GDrive fixtures back a PAR opp (manifest-only); the column is
-            # NOT NULL, so default it empty rather than leaving it unset.
-            "gdrive_folder_id": "",
-        },
+        defaults=defaults,
     )
     invalidate_cache()
 
