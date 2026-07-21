@@ -187,6 +187,10 @@ def main() -> int:
                 "current_week": config["current_week"],
                 "opps": config["opps"],
                 "cleanup_first": bool(config.get("cleanup_first", True)),
+                # program_id makes the cross-opp rollup a PROGRAM-owned workflow
+                # (the correct ownership; viewed via program_id). Omit only for
+                # the deprecated legacy opp-owned shape.
+                "program_id": config.get("program_id"),
             },
         )
     if is_error or not isinstance(result, dict):
@@ -213,7 +217,14 @@ def main() -> int:
     workflow_def_id = int(primary["workflow_definition_id"])
     current_wk = next((w for w in primary["weeks"] if w.get("in_progress")), None)
 
-    par_url = _run_path(par_def_id, par_run_id, primary_opp_id)
+    # The PAR rollup is program-owned when a program_id is configured — view it
+    # via &program_id (not the primary opp). The per-opp drill URLs below stay
+    # opp-scoped because those chc_nutrition workflows ARE opp-owned.
+    program_id = config.get("program_id")
+    if program_id is not None:
+        par_url = f"/labs/workflow/{par_def_id}/run/?run_id={par_run_id}&program_id={int(program_id)}"
+    else:
+        par_url = _run_path(par_def_id, par_run_id, primary_opp_id)
     wk4_url = _run_path(workflow_def_id, int(current_wk["run_id"]), primary_opp_id) if current_wk else None
 
     client = _labs_http_client()

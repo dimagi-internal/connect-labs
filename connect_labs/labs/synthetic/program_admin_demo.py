@@ -495,6 +495,7 @@ def program_admin_demo_seed(
     opps: list[dict],
     cleanup_first: bool = True,
     current_week: str | None = None,
+    program_id: int | None = None,
 ) -> dict[str, Any]:
     """Seed the full PAR demo: per-opp chc_nutrition runs + a PAR rollup.
 
@@ -513,6 +514,13 @@ def program_admin_demo_seed(
           seeded audits/tasks (the manager-flow walkthrough creates those
           live). FLW ``flag_week`` indices may reference this week as
           index ``len(weeks)``.
+      ``program_id`` — when set, the Program Admin Report rollup is created
+          as a **program-owned** workflow (``definition.program_id`` set, no
+          owning opportunity) — the correct ownership for a cross-opp rollup
+          (viewed via ``program_id``, listed in the program view). A labs-only
+          synthetic program id (reserved ``>= 10_000`` range). When omitted the
+          rollup falls back to the legacy opp-owned shape on the first opp
+          (deprecated — predates program-owned workflows; pass ``program_id``).
     """
     # Defensive: some MCP clients double-encode list args as JSON strings
     # when their cached schema doesn't know the property is an array. Parse
@@ -724,14 +732,32 @@ def program_admin_demo_seed(
             ada.close()
 
     # ---------------- Program Admin Report rollup ----------------
+    # A cross-opp rollup is PROGRAM-owned: ``definition.program_id`` is set and
+    # it has no owning opportunity, so it is viewed via ``program_id`` and shows
+    # in the program view (see connect_labs/workflow/program_view.py). The
+    # ``opportunity_ids`` passed to the template is orthogonal — it is only the
+    # DATA field of which opps to roll up, not ownership. Legacy fallback (no
+    # ``program_id``) keeps the deprecated opp-owned shape on the first opp.
+    from connect_labs.workflow.program_view import program_id_of
+
     primary_opp_id = opps[0]["opportunity_id"]
-    par_wda = WorkflowDataAccess(opportunity_id=primary_opp_id, access_token=token)
+    if program_id is not None:
+        par_wda = WorkflowDataAccess(program_id=program_id, access_token=token)
+    else:
+        par_wda = WorkflowDataAccess(opportunity_id=primary_opp_id, access_token=token)
     try:
-        existing_par_defs = [
-            d
-            for d in par_wda.list_definitions()
-            if d.opportunity_id == primary_opp_id and d.template_type == "program_admin_report"
-        ]
+        if program_id is not None:
+            existing_par_defs = [
+                d
+                for d in par_wda.list_definitions()
+                if program_id_of(d) == program_id and d.template_type == "program_admin_report"
+            ]
+        else:
+            existing_par_defs = [
+                d
+                for d in par_wda.list_definitions()
+                if d.opportunity_id == primary_opp_id and d.template_type == "program_admin_report"
+            ]
         if existing_par_defs:
             par_def = existing_par_defs[0]
             updated = {**par_def.data}
@@ -744,6 +770,7 @@ def program_admin_demo_seed(
                 par_wda,
                 template_key="program_admin_report",
                 opportunity_ids=[s["opportunity_id"] for s in watched_sources],
+                program_id=program_id,
             )
             updated = {**par_def.data}
             updated.setdefault("config", {})
@@ -796,7 +823,6 @@ def program_admin_demo_seed(
 
         run_data = {
             "definition_id": par_def.id,
-            "opportunity_id": primary_opp_id,
             "status": "completed",
             "completed_at": par_completed_at,
             "period_start": window_start,
@@ -809,15 +835,30 @@ def program_admin_demo_seed(
             },
             "snapshot": snapshot,
         }
+        # Ownership of the run mirrors the definition: program-scoped when the
+        # rollup is program-owned, else the legacy primary-opp scope.
+        if program_id is not None:
+            run_data["program_id"] = program_id
+        else:
+            run_data["opportunity_id"] = primary_opp_id
         par_rec = par_wda.labs_api.create_record(
             experiment="workflow",
             type="workflow_run",
             data=run_data,
         )
 
+        # The report URL carries its OWNING scope so it opens without relying on
+        # the viewer's ambient opp: program-owned → &program_id, legacy opp-owned
+        # → &opportunity_id=<primary opp>. A bare run URL would inherit the
+        # viewer's current opp and 404 ("definition N not found").
+        if program_id is not None:
+            report_url = f"/labs/workflow/{par_def.id}/run/?run_id={par_rec.id}&program_id={program_id}"
+        else:
+            report_url = f"/labs/workflow/{par_def.id}/run/?run_id={par_rec.id}&opportunity_id={primary_opp_id}"
         summary["program_admin_report"] = {
             "definition_id": par_def.id,
             "run_id": par_rec.id,
+            "program_id": program_id,
             "window_start": window_start,
             "window_end": window_end,
             "watched_sources_count": len(watched_sources),
@@ -825,7 +866,7 @@ def program_admin_demo_seed(
             "snapshot_total_runs": sum(
                 len(src.get("runs", [])) for src in snapshot.get("state", {}).get("watched_summary", [])
             ),
-            "report_url": f"/labs/workflow/{par_def.id}/run/?run_id={par_rec.id}",
+            "report_url": report_url,
         }
     finally:
         par_wda.close()
