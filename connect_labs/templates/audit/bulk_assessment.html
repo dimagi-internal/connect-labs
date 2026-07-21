@@ -73,6 +73,26 @@
         <span>Failed</span>
       </div>
     </div>
+
+    <div class="w-full h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg">
+      <div class="flex justify-between items-center">
+        <div class="text-2xl font-medium" :class="loading ? 'text-white/70' : 'text-orange-300'" x-text="loading ? '…' : stats.duplicateFake"></div>
+        <div class="hidden lg:block"><i class="fa-solid fa-exclamation text-xl"></i></div>
+      </div>
+      <div class="pt-4 text-sm flex items-center justify-between">
+        <span>Duplicate/Fake</span>
+      </div>
+    </div>
+
+    <div class="w-full h-full bg-white/10 text-white relative flex flex-col justify-between p-4 rounded-lg">
+      <div class="flex justify-between items-center">
+        <div class="text-2xl font-medium" :class="loading ? 'text-white/70' : 'text-green-300'" x-text="loading ? '…' : (passPercentage === null ? '—' : passPercentage + '%')"></div>
+        <div class="hidden lg:block"><i class="fa-solid fa-percent text-xl"></i></div>
+      </div>
+      <div class="pt-4 text-sm flex items-center justify-between">
+        <span>Pass %</span>
+      </div>
+    </div>
   </div>
 
   <div class="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg flex items-center justify-between"
@@ -1387,6 +1407,14 @@ function bulkAssessmentInterface() {
       if (!this.aiAgentId) return null;
       const agent = this.availableAgents.find(a => a.agent_id === this.aiAgentId);
       return agent ? agent.name : this.aiAgentId;
+    },
+    // Pass rate among images actually assessed so far (excludes pending) -- same
+    // pass/(pass+fail+duplicateFake) definition already used when pushing
+    // avgPassed into workflow run state on completion. null (shown as "—")
+    // when nothing has been assessed yet, rather than a misleading 0%.
+    get passPercentage() {
+      const assessedCount = this.stats.pass + this.stats.fail + (this.stats.duplicateFake || 0);
+      return assessedCount > 0 ? Math.round((this.stats.pass / assessedCount) * 100) : null;
     },
     recalculateStats() {
       const total = this.allAssessments.length;
