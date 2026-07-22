@@ -22,10 +22,13 @@ def _arc(*, outcome_week, action=None):
     return SimpleNamespace(follow_up_outcome_week=outcome_week, follow_up_outcome_action=action)
 
 
-def _audit(status, *, pass_=0, fail=0, pending=0):
+def _audit(status, *, pass_=0, fail=0, pending=0, recipe_version="current"):
+    from connect_labs.labs.synthetic.archetypes import _AUDIT_RECIPE_VERSION
+
+    rv = _AUDIT_RECIPE_VERSION if recipe_version == "current" else recipe_version
     return SimpleNamespace(
         status=status,
-        data={"image_results": {"pass": pass_, "fail": fail, "pending": pending}},
+        data={"image_results": {"pass": pass_, "fail": fail, "pending": pending}, "recipe_version": rv},
     )
 
 
@@ -87,6 +90,14 @@ def test_fraud_audit_matches_fraud_target_and_not_resolved():
 def test_pass_clean_audit_matches_resolved_target():
     clean = _audit("completed", pass_=5, fail=0)
     assert _audit_matches_archetype(clean, "completed_pass_clean") is True
+
+
+def test_stale_recipe_version_forces_rebuild():
+    # An audit built by an older recipe (e.g. pre-category-accurate AI verdicts) must
+    # NOT match, so reconcile rebuilds it onto the current recipe even when its shape
+    # (pass/fail/pending) still looks right.
+    stale = _audit("completed", pass_=0, fail=5, recipe_version=1)
+    assert _audit_matches_archetype(stale, "completed_fail_framing") is False
 
 
 # ---------- manifest field ----------

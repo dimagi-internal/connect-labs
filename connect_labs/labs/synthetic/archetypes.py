@@ -103,6 +103,32 @@ def bad_muac_filenames_for_category(category: str) -> list[str]:
     )
 
 
+def category_for_filename(filename: str) -> str | None:
+    """The bad-MUAC category for a stock filename (``muac_bad_004.jpg`` -> ``framing``).
+
+    Returns ``None`` for good-pool photos or any filename not in the catalog. Used to
+    decide the per-photo AI-review verdict: only the ``framing`` (hyperzoomed / context-
+    lost) category is what the muac_overzoom agent actually flags.
+    """
+    meta = _MUAC_CATALOG.get(filename)
+    return meta.get("category") if isinstance(meta, dict) else None
+
+
+# The MUAC categories the AI image reviewer (muac_overzoom) actually flags: the image
+# is zoomed so tight the child's arm / context is lost. Other bad categories (tape
+# misuse, worn equipment, a visible tape-on-finger) are caught by a HUMAN reviewer, not
+# the overzoom agent — so their AI verdict is "match" (Not Hyperzoomed) even though the
+# human fails them.
+_AI_FLAGGED_CATEGORIES = frozenset({"framing"})
+
+# Bump when build_audit_data's OUTPUT changes in a way the reconcile matcher can't
+# otherwise detect from image_results counts alone (e.g. per-photo AI verdicts flip
+# while pass/fail/pending stay the same). Stamped into every audit's ``data`` and
+# checked by run_audits._audit_matches_archetype, which force-rebuilds any audit on an
+# older recipe. v2: category-accurate AI verdict (only ``framing`` → "Hyperzoomed").
+_AUDIT_RECIPE_VERSION = 2
+
+
 def blob_id_for_filename(filename: str) -> str:
     """Convert a MUAC stock filename to the blob_id pattern the image server uses.
 
@@ -294,7 +320,17 @@ def _pick_blob_ids(spec: AuditImageSpec, rng_seed: int) -> list[tuple[str, str |
 
     # Assessed photos
     chosen_good = _take(good_pool, spec.good_count)
-    chosen_bad = _take(bad_pool, spec.bad_count)
+    # Bad photos PRIMARY-FIRST: exhaust the requested ``bad_category`` before topping
+    # up from other categories. Without this, ``_take`` shuffles the whole pool and a
+    # ``framing`` audit (only 2 framing photos in the corpus) fills the other 3 slots
+    # with unrelated categories — which then get mislabeled by the category-accurate
+    # AI verdict. Primary-first keeps ``bad_category`` meaningful.
+    if spec.bad_category:
+        chosen_bad = _take(primary, spec.bad_count)
+        if len(chosen_bad) < spec.bad_count:
+            chosen_bad += _take(other, spec.bad_count - len(chosen_bad))
+    else:
+        chosen_bad = _take(bad_pool, spec.bad_count)
     out.extend((blob_id_for_filename(f), "pass") for f in chosen_good)
     out.extend((blob_id_for_filename(f), "fail") for f in chosen_bad)
 
@@ -459,15 +495,18 @@ def build_audit_data(
                 "ai_notes": "",
             }
             if archetype.ai_reviewed:
-                # The MUAC AI reviewer (muac_overzoom) ran on every photo. It flags
-                # a FRAMING/hyperzoomed (bad-pool) photo as no_match / "Hyperzoomed"
-                # (context lost) and clears a good photo as match / "Not Hyperzoomed"
-                # — matching the real agent's badge_label / pass_label + a confidence.
-                # (Only enabled on archetypes whose bad photos are the framing category
-                # the agent actually catches, so ai_result agrees with the image.)
-                is_bad = "-good-" not in blob_id
-                assessment["ai_result"] = "no_match" if is_bad else "match"
-                assessment["ai_notes"] = "Hyperzoomed" if is_bad else "Not Hyperzoomed"
+                # The MUAC AI reviewer (muac_overzoom) ran on every photo, but it only
+                # detects HYPERZOOM (context lost, arm not visible) — the ``framing``
+                # category. It flags THOSE as no_match / "Hyperzoomed"; every other photo
+                # (a good photo, OR a bad photo whose defect is tape misuse / worn
+                # equipment / a visible tape-on-finger) it clears as match / "Not
+                # Hyperzoomed" — those are caught by a HUMAN reviewer (result="fail"),
+                # not the overzoom agent. So the AI badge always agrees with the image.
+                # ``filename`` (computed above from the blob_id) is muac_good_NNN.jpg
+                # for good photos (category None) or muac_bad_NNN.jpg for bad ones.
+                ai_flagged = category_for_filename(filename) in _AI_FLAGGED_CATEGORIES
+                assessment["ai_result"] = "no_match" if ai_flagged else "match"
+                assessment["ai_notes"] = "Hyperzoomed" if ai_flagged else "Not Hyperzoomed"
                 assessment["ai_confidence"] = round(ai_rng.uniform(0.86, 0.98), 3)
             assessments[blob_id] = assessment
         visit_results[str(visit_id)] = {
@@ -515,6 +554,7 @@ def build_audit_data(
         "kpi_notes": "",
         "related_fields": [],
         "created_at": created_iso,
+        "recipe_version": _AUDIT_RECIPE_VERSION,
     }
     if archetype.ai_reviewed:
         # Session-level flag the audit UI reads to show the AI-reviewer chrome

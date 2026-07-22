@@ -133,7 +133,15 @@ def _audit_matches_archetype(audit, archetype: str) -> bool:
     - ``in_review_mixed``: in_progress with at least one decided AND one pending
       photo (the genuine mid-decision mix — distinct from the all-pending shape),
     - ``pending_all_clean``: in_progress with every photo still pending.
+
+    A recipe-version bump (build_audit_data changed its OUTPUT in a way the count
+    signals below can't see — e.g. per-photo AI verdicts flip while pass/fail counts
+    stay put) forces a one-time rebuild regardless of the shape checks.
     """
+    from connect_labs.labs.synthetic.archetypes import _AUDIT_RECIPE_VERSION
+
+    if audit.data.get("recipe_version") != _AUDIT_RECIPE_VERSION:
+        return False
     img = audit.data.get("image_results") or {}
     failed = img.get("fail") or 0
     decided = (img.get("pass") or 0) + failed
