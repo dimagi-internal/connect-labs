@@ -520,7 +520,8 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions }) {
         var agg = computeAggregate(source);
         var below = agg.runsActual < agg.runsExpected ||
                     (agg.audits.denom > 0 && agg.audits.num < agg.audits.denom) ||
-                    (agg.tasks.denom > 0 && agg.tasks.num < agg.tasks.denom);
+                    (agg.tasks.denom > 0 && agg.tasks.num < agg.tasks.denom) ||
+                    (agg.outcomes.suspended || 0) > 0;  // an AI-flagged fraud suspension breaches SOP
         var bg = below ? '#fffbeb' : '#f9fafb';
         var border = below ? '2px solid #f59e0b' : '1px solid #e5e7eb';
         // Surface the SOP threshold (runs done / runs expected) on the pill so
@@ -606,7 +607,10 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions }) {
             : React.createElement('span', {className: 'text-gray-400 text-xs'}, '—');
 
         var taskCells = (fr.tasks || []).map(function(t) {
-            var c = t.status === 'closed' ? 'green' : (t.status === 'review_needed' ? 'yellow' : 'gray');
+            // A suspension (AI-flagged photo fraud) is a closed task, but a distinct
+            // SOP-breaching fate — render it RED, not the green of a clean close.
+            var c = t.official_action === 'suspended' ? 'red'
+                : (t.status === 'closed' ? 'green' : (t.status === 'review_needed' ? 'yellow' : 'gray'));
             var actionLabel = t.official_action ? ' · ' + t.official_action : '';
             return React.createElement('div', {key: t.id, className: 'flex items-center gap-2'},
                 pill(t.status + actionLabel, c),

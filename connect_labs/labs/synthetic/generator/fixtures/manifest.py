@@ -302,6 +302,12 @@ class CoachingArc(BaseModel):
     target_behavior: str
     transcript: list[CoachingMessage]
     follow_up_outcome_week: PositiveInt | None = None
+    # How a CLOSED arc resolved. Defaults to a satisfactory close (the historical
+    # behavior). ``"suspended"`` marks an AI-flagged photo-fraud suspension — a
+    # distinct SOP-breaching fate that seeds a ``closed_suspended_fraud`` task + a
+    # ``completed_fail_misleading`` audit and reads BELOW on the PAR aggregate.
+    # Only meaningful when ``follow_up_outcome_week`` is set.
+    follow_up_outcome_action: Literal["satisfactory", "warned", "suspended"] | None = None
 
 
 # ---------- Tasks ----------
