@@ -86,13 +86,16 @@ _RESOLVED_AUDIT_ARCHETYPE = "completed_pass_clean"
 # mid-decision on a real finding.
 _IN_REVIEW_MIXED_ARCHETYPE = "in_review_mixed"
 
-# The SUSPENDED-FRAUD archetype: status completed, 5/5 FAIL, overall_result="fail"
-# (photos appear fraudulent — tape not on a child's arm). Used for a flw whose
-# coaching arc closed by suspension (``follow_up_outcome_action == "suspended"``) —
-# the AI image review caught misleading photos. The audit is completed (so the week
-# still reconciles as "All resolved"), but every photo FAILED, and the cluster reads
-# BELOW because the arc's task is a suspension outcome.
-_SUSPENDED_FRAUD_AUDIT_ARCHETYPE = "completed_fail_misleading"
+# The SUSPENDED-FRAUD archetype: status completed, 5/5 FAIL, overall_result="fail".
+# Used for a flw whose coaching arc closed by suspension
+# (``follow_up_outcome_action == "suspended"``). It uses the FRAMING (hyperzoomed)
+# bad-photo category because that is what the real MUAC AI reviewer (muac_overzoom)
+# actually flags — context lost, no arm visible — so the audit shows the AI badge
+# "Hyperzoomed" (ai_result=no_match) on every photo, the true tell of a concealed /
+# unverifiable measurement. The auditor then confirms and the coaching task is a
+# suspension. The audit is completed (so the week reconciles "All resolved"), but the
+# cluster reads BELOW because the arc's task is a suspension outcome.
+_SUSPENDED_FRAUD_AUDIT_ARCHETYPE = "completed_fail_framing"
 
 
 def _audit_archetype_for(
