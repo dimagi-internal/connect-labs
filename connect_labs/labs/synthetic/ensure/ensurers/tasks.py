@@ -72,6 +72,11 @@ _LABS_ONLY_TOKEN = "labs-only"  # noqa: S105 (not a secret)
 # the flag (the "good" closed-with-transcript task the PAR good_url scene reads);
 # one without is still mid-flight (the "incomplete" open task).
 _CLOSED_ARCHETYPE = "closed_satisfactory"
+# A closed arc that resolved by suspending the FLW for suspected photo fraud — the
+# AI-flagged-misleading-photo fate. A distinct, SOP-breaching close (not a clean
+# resolution): the task renders a red "closed · suspended" pill and the cluster
+# reads BELOW on the PAR aggregate.
+_SUSPENDED_ARCHETYPE = "closed_suspended_fraud"
 _OPEN_ARCHETYPE = "investigating"
 
 
@@ -104,8 +109,18 @@ def _creator_name_for(manifest, arc_flw_id: str) -> str:
 
 
 def _archetype_for_arc(arc) -> str:
-    """``closed_satisfactory`` when the arc's loop closed, else ``investigating``."""
-    return _CLOSED_ARCHETYPE if arc.follow_up_outcome_week is not None else _OPEN_ARCHETYPE
+    """The task archetype for a coaching arc.
+
+    - open arc (no ``follow_up_outcome_week``) -> ``investigating``,
+    - closed with ``follow_up_outcome_action == "suspended"`` -> ``closed_suspended_fraud``
+      (an AI-flagged photo-fraud suspension: a distinct SOP-breaching fate),
+    - closed otherwise -> ``closed_satisfactory``.
+    """
+    if arc.follow_up_outcome_week is None:
+        return _OPEN_ARCHETYPE
+    if getattr(arc, "follow_up_outcome_action", None) == "suspended":
+        return _SUSPENDED_ARCHETYPE
+    return _CLOSED_ARCHETYPE
 
 
 def _fill_flw_name(text: str, flw_name: str) -> str:

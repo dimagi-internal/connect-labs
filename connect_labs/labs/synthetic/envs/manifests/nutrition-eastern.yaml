@@ -150,6 +150,11 @@ coaching_arcs:
     persona: coaching_repeat_offense_fraud_suspension
     target_behavior: Misleading MUAC photos (suspected fraud)
     follow_up_outcome_week: 4
+    # AI-flagged photo fraud -> a SUSPENSION close (not a clean resolution): seeds a
+    # closed_suspended_fraud task (red "closed · suspended" pill) + a
+    # completed_fail_misleading audit (5/5 failed photos), and flips Eastern's PAR
+    # aggregate to BELOW even though every week ran.
+    follow_up_outcome_action: suspended
     transcript:
       - role: bot
         text: 'Hi {flw_name}. We need to discuss the audit findings on your recent visits. The reviewers flagged a serious concern.'

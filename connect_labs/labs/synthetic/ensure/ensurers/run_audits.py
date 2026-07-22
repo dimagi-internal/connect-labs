@@ -86,10 +86,21 @@ _RESOLVED_AUDIT_ARCHETYPE = "completed_pass_clean"
 # mid-decision on a real finding.
 _IN_REVIEW_MIXED_ARCHETYPE = "in_review_mixed"
 
+# The SUSPENDED-FRAUD archetype: status completed, 5/5 FAIL, overall_result="fail"
+# (photos appear fraudulent — tape not on a child's arm). Used for a flw whose
+# coaching arc closed by suspension (``follow_up_outcome_action == "suspended"``) —
+# the AI image review caught misleading photos. The audit is completed (so the week
+# still reconciles as "All resolved"), but every photo FAILED, and the cluster reads
+# BELOW because the arc's task is a suspension outcome.
+_SUSPENDED_FRAUD_AUDIT_ARCHETYPE = "completed_fail_misleading"
 
-def _audit_archetype_for(flw_id: str, resolved_flws: set, investigating_flws: set) -> str:
+
+def _audit_archetype_for(
+    flw_id: str, resolved_flws: set, investigating_flws: set, suspended_flws: set = frozenset()
+) -> str:
     """Pick the audit archetype for a flagged FLW from its coaching-arc state.
 
+    - suspended-for-fraud arc -> completed/all-FAIL (the AI-flagged misleading photos),
     - resolved arc (``follow_up_outcome_week`` set) -> completed/all-pass (the
       grid's "All resolved" week requires every audit completed),
     - still-open arc (an ``investigating`` arc) -> the decided/undecided MIX (the
@@ -97,6 +108,8 @@ def _audit_archetype_for(flw_id: str, resolved_flws: set, investigating_flws: se
     - no coaching arc -> the all-pending completable shape (the live-style audit
       a reviewer decides on camera).
     """
+    if flw_id in suspended_flws:
+        return _SUSPENDED_FRAUD_AUDIT_ARCHETYPE
     if flw_id in resolved_flws:
         return _RESOLVED_AUDIT_ARCHETYPE
     if flw_id in investigating_flws:
@@ -110,16 +123,22 @@ def _audit_matches_archetype(audit, archetype: str) -> bool:
     On reuse we only rebuild when the seeded audit is STALE for the arc's current
     state. We key off the cheap, stable signals the archetype lands:
 
-    - ``completed_pass_clean``: status ``completed`` (the resolved-week contract),
+    - ``completed_fail_misleading``: status ``completed`` with at least one FAILED
+      photo (the AI-flagged fraud shape — distinct from the all-pass resolved shape),
+    - ``completed_pass_clean``: status ``completed`` with NO failed photo (a clean
+      resolution — so a fail-completed audit is correctly rebuilt, not reused),
     - ``in_review_mixed``: in_progress with at least one decided AND one pending
       photo (the genuine mid-decision mix — distinct from the all-pending shape),
     - ``pending_all_clean``: in_progress with every photo still pending.
     """
     img = audit.data.get("image_results") or {}
-    decided = (img.get("pass") or 0) + (img.get("fail") or 0)
+    failed = img.get("fail") or 0
+    decided = (img.get("pass") or 0) + failed
     pending = img.get("pending") or 0
+    if archetype == _SUSPENDED_FRAUD_AUDIT_ARCHETYPE:
+        return audit.status == "completed" and failed > 0
     if archetype == _RESOLVED_AUDIT_ARCHETYPE:
-        return audit.status == "completed"
+        return audit.status == "completed" and failed == 0
     if archetype == _IN_REVIEW_MIXED_ARCHETYPE:
         return audit.status != "completed" and decided > 0 and pending > 0
     # pending_all_clean: still in review, nothing decided yet.
@@ -209,8 +228,21 @@ def ensure_run_audits(resource, ctx) -> dict:
         # FLWs whose coaching loop CLOSED (a follow-up outcome resolved the flag) —
         # their audit is COMPLETED (the grid's "All resolved" requires it), mirroring
         # how the tasks ensurer closes the same arc's task.
+        # FLWs suspended for photo fraud (a closed arc with a "suspended" outcome
+        # action) — their audit is COMPLETED but every photo FAILED (the AI-flagged
+        # misleading-photo shape). Checked first / excluded from resolved below.
+        suspended_flws = {
+            arc.flw_id
+            for arc in (manifest.coaching_arcs or [])
+            if arc.follow_up_outcome_week is not None and getattr(arc, "follow_up_outcome_action", None) == "suspended"
+        }
+        # FLWs whose coaching loop CLOSED satisfactorily (a follow-up outcome resolved
+        # the flag, NOT a suspension) — their audit is COMPLETED/all-pass (the grid's
+        # "All resolved" requires it), mirroring how the tasks ensurer closes the arc.
         resolved_flws = {
-            arc.flw_id for arc in (manifest.coaching_arcs or []) if arc.follow_up_outcome_week is not None
+            arc.flw_id
+            for arc in (manifest.coaching_arcs or [])
+            if arc.follow_up_outcome_week is not None and arc.flw_id not in suspended_flws
         }
         # FLWs whose coaching loop is still OPEN (an investigating arc) — their audit
         # is the scene-13 in-review MIX (decided + undecided photos), not the
@@ -246,7 +278,7 @@ def ensure_run_audits(resource, ctx) -> dict:
                             "(weekly_runs must run before run_audits)"
                         )
 
-                    archetype = _audit_archetype_for(flw_id, resolved_flws, investigating_flws)
+                    archetype = _audit_archetype_for(flw_id, resolved_flws, investigating_flws, suspended_flws)
                     visit_id = _seeded_visit_id_base(manifest.random_seed, run_id, flw_id)
 
                     existing = [
