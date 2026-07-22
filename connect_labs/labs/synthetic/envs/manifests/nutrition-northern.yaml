@@ -1,0 +1,121 @@
+# Nutrition Demo — Northern Cluster (opp 10010, NM Amara Nwosu)
+#
+# The "on top of things" NM: all ten FLWs screen cleanly, no flags → the PAR
+# aggregate reads SOP MET. Modeled on par-northern.yaml but with NO improver/
+# flagged FLWs (Jon's brief: NM1 looks good for all FLWs).
+
+opportunity_id: 10010
+opportunity_name: Northern Cluster
+random_seed: 100100
+
+timeline:
+  start_date: 2026-05-04
+  end_date: 2026-06-01
+  weeks: 4
+  visit_cadence_per_week_per_flw: { mean: 18, stddev: 3 }
+
+flw_personas:
+  # Network manager FIRST (flag/task attribution stand-in; not a field worker).
+  - id: amara_nm
+    display_name: Amara Nwosu
+    archetype: steady
+    accuracy_distribution: { mean: 0.97, stddev: 0.0 }
+    completeness_distribution: { mean: 0.99, stddev: 0.0 }
+    flag_rate: 0.0
+    notes: Northern Cluster network manager (first-persona stand-in for flag/task attribution).
+
+  # Ten solid FLWs — high accuracy, no flags.
+  - id: amina_n
+    display_name: Amina Bello
+    archetype: steady
+    accuracy_distribution: { mean: 0.94, stddev: 0.02 }
+    completeness_distribution: { mean: 0.96, stddev: 0.02 }
+    flag_rate: 0.0
+  - id: binta_n
+    display_name: Binta Sani
+    archetype: steady
+    accuracy_distribution: { mean: 0.93, stddev: 0.02 }
+    completeness_distribution: { mean: 0.95, stddev: 0.02 }
+    flag_rate: 0.0
+  - id: chioma_n
+    display_name: Chioma Okeke
+    archetype: rockstar
+    accuracy_distribution: { mean: 0.96, stddev: 0.02 }
+    completeness_distribution: { mean: 0.97, stddev: 0.02 }
+    flag_rate: 0.0
+  - id: dalia_n
+    display_name: Dalia Mensah
+    archetype: steady
+    accuracy_distribution: { mean: 0.92, stddev: 0.02 }
+    completeness_distribution: { mean: 0.94, stddev: 0.02 }
+    flag_rate: 0.0
+  - id: efua_n
+    display_name: Efua Owusu
+    archetype: steady
+    accuracy_distribution: { mean: 0.93, stddev: 0.02 }
+    completeness_distribution: { mean: 0.95, stddev: 0.02 }
+    flag_rate: 0.0
+  - id: farida_n
+    display_name: Farida Yusuf
+    archetype: steady
+    accuracy_distribution: { mean: 0.94, stddev: 0.02 }
+    completeness_distribution: { mean: 0.96, stddev: 0.02 }
+    flag_rate: 0.0
+  - id: grace_n
+    display_name: Grace Adeyemi
+    archetype: rockstar
+    accuracy_distribution: { mean: 0.95, stddev: 0.02 }
+    completeness_distribution: { mean: 0.97, stddev: 0.02 }
+    flag_rate: 0.0
+  - id: hadiza_n
+    display_name: Hadiza Diallo
+    archetype: steady
+    accuracy_distribution: { mean: 0.93, stddev: 0.02 }
+    completeness_distribution: { mean: 0.95, stddev: 0.02 }
+    flag_rate: 0.0
+  - id: imani_n
+    display_name: Imani Kamara
+    archetype: steady
+    accuracy_distribution: { mean: 0.94, stddev: 0.02 }
+    completeness_distribution: { mean: 0.96, stddev: 0.02 }
+    flag_rate: 0.0
+  - id: jamila_n
+    display_name: Jamila Balogun
+    archetype: rockstar
+    accuracy_distribution: { mean: 0.95, stddev: 0.02 }
+    completeness_distribution: { mean: 0.97, stddev: 0.02 }
+    flag_rate: 0.0
+
+beneficiary_cohorts:
+  - id: under5_screened
+    size: 220
+    field_distributions:
+      'form.service_delivery.muac_group.soliciter_muac':
+        { distribution: normal, mean: 13.4, stddev: 0.9 }
+      'form.additional_case_info.childs_gender':
+        { distribution: binary, rate: 0.5 }
+    progression: improvement_curve
+
+anomalies: []
+
+kpi_config:
+  - kpi: sam_rate
+    field_path: form.service_delivery.muac_group.soliciter_muac
+    aggregation: validated_rate
+    threshold_underperform: 0.01
+    threshold_target: 0.02
+  - kpi: gender_balance
+    field_path: form.additional_case_info.childs_gender
+    aggregation: non_null_rate
+    threshold_underperform: 0.40
+    threshold_target: 0.50
+
+coaching_arcs: []
+
+image_config:
+  question_path: form.service_delivery.muac_group.muac_display_group_1.muac_photo
+  good_image_count: 15
+  bad_image_count: 10
+  default_bad_rate: 0.0
+  probability: 0.9
+  flw_bad_rates: {}
