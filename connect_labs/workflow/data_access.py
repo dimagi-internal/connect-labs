@@ -793,13 +793,46 @@ class WorkflowDataAccess(BaseDataAccess):
         return records
 
     def get_run(self, run_id: int) -> WorkflowRunRecord | None:
-        """Get a workflow run by ID."""
-        return self.labs_api.get_record_by_id(
+        """Get a workflow run by ID.
+
+        Same bug class as ``list_runs``: when this DAO is program-scoped
+        (``program_id`` set, no owning ``opportunity_id`` of its own), a
+        direct lookup only sees runs tagged ``program_id=<X>`` — the
+        production API does an exact-match scope filter, not a hierarchy
+        resolution. A program-owned MULTI-OPP definition's per-report runs
+        are created opportunity_id-scoped, one per member opportunity (see
+        flw_weekly_audit_report's run_default), so those are invisible to a
+        program-scoped-only lookup. Confirmed live: opening a per-opportunity
+        run from the program-scoped workflow list page (e.g. run 6888 under
+        workflow 6621, owned by opportunity 1978) 404s with "not found" even
+        though the run genuinely exists and shows up in the equivalent
+        ``list_runs`` fan-out. If the direct lookup misses, fall back to
+        fanning out across every definition's own ``opportunity_ids`` and
+        return the first hit.
+        """
+        run = self.labs_api.get_record_by_id(
             record_id=run_id,
             experiment=self.EXPERIMENT,
             type="workflow_run",
             model_class=WorkflowRunRecord,
         )
+        if run is not None:
+            return run
+
+        if self.opportunity_id is None and self.program_id is not None:
+            member_opp_ids = {
+                opp_id for definition in self.list_definitions() for opp_id in definition.opportunity_ids
+            }
+            for opp_id in member_opp_ids:
+                opp_access = WorkflowDataAccess(access_token=self.access_token, opportunity_id=opp_id)
+                try:
+                    run = opp_access.get_run(run_id)
+                finally:
+                    opp_access.close()
+                if run is not None:
+                    return run
+
+        return None
 
     def create_run(
         self,
