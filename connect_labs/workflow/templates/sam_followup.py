@@ -13,23 +13,34 @@ Two pipelines:
 
 Identity / linking model — IMPORTANT when reusing this template
 ---------------------------------------------------------------
-This template overrides the framework default `linking_field` ("entity_id")
-with `child_case_id`. That is the USUAL, correct case for a **real** CommCare
-SAM opportunity: a follow-up form's Connect `entity_id` is not necessarily the
-child (it may be the household/registrant), so the child is identified by the
-`child_case_id` form field, and the render's timeline drill-down filters visits
-by `v.child_case_id`.
+There is NO canonical child-identity key. The correct `linking_field` is
+whatever uniquely and stably identifies the entity in a GIVEN opp's data —
+choose it per opp by looking at that opp's actual visits; don't assume any
+particular field.
 
-Caveat for a SYNTHETIC / mirror opp: a mirror of a real opp does NOT carry
-`child_case_id` (it's null) — the generator instead models each child AS an
-entity and stamps every visit with a stable, unique base `entity_id`
-(labs/synthetic/generator/fixtures/engine.py). Grouping by the null
-`child_case_id` there collapses all children into one row. For such a mirrored
-opp, override the INSTANCE (not this template) to link on `entity_id`:
-`linking_field: "entity_id"` on both pipelines, and change the render's visit
-filter to `v.entity_id === selectedChildId` (visit-level rows already carry the
-base `entity_id`). Leave this template on `child_case_id` so real opps keep
-working — there is no single key correct for both grains.
+This template overrides the framework default (`linking_field = "entity_id"`)
+with `child_case_id`. That is NOT a general rule for SAM/follow-up opps — it
+just reflects the one opportunity this template was originally authored against,
+where the child happened to be identified by the `child_case_id` form field.
+The render's timeline drill-down correspondingly filters visits by
+`v.child_case_id`. Treat both as artifacts of that original opp, not defaults.
+
+So when pointing this template at a different opp, verify what its data uses:
+
+- If the opp's `child_case_id` form field is populated per child, this template
+  works as-is.
+- If not (e.g. a SYNTHETIC / mirror opp: `child_case_id` is null there, and the
+  generator instead models each child AS an entity, stamping every visit with a
+  stable base `entity_id` — labs/synthetic/generator/fixtures/engine.py), then
+  grouping by the null `child_case_id` collapses all children into one row.
+  Override the INSTANCE (not this template) to link on whatever key that opp
+  does populate — for the mirror generator that is `entity_id`: set
+  `linking_field: "entity_id"` on both pipelines and change the render's visit
+  filter to `v.entity_id === selectedChildId` (visit-level rows already carry
+  the base `entity_id`).
+
+Keep this template on `child_case_id` only so the original opp keeps working;
+it is not a claim about what SAM opps in general should use.
 """
 
 DEFINITION = {
@@ -153,10 +164,11 @@ VISIT_FIELDS = [
 ]
 
 
-# NOTE: `linking_field: "child_case_id"` is the real-opp case (children keyed by
-# the form field, not the framework-default base `entity_id`). For a mirror/
-# synthetic opp, override the INSTANCE to `entity_id` instead — see the
-# "Identity / linking model" section in the module docstring above.
+# NOTE: `linking_field: "child_case_id"` is an artifact of the opp this template
+# was first authored against — NOT a general default. The right key is whatever
+# uniquely identifies a child in the target opp's data; verify per opp (e.g. a
+# mirror opp links on `entity_id`). See the "Identity / linking model" section
+# in the module docstring above.
 PIPELINE_SCHEMAS = [
     {
         "alias": "children",
@@ -166,7 +178,7 @@ PIPELINE_SCHEMAS = [
             "data_source": {"type": "connect_csv"},
             "grouping_key": "username",
             "terminal_stage": "entity",
-            "linking_field": "child_case_id",  # real-opp key; mirror opps → override instance to "entity_id"
+            "linking_field": "child_case_id",  # artifact of the original opp; verify per opp (mirror → "entity_id")
             "fields": ENTITY_FIELDS,
         },
     },
