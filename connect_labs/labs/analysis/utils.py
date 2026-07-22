@@ -36,9 +36,11 @@ def get_config_hash(config) -> str:
     # Build a string representation of the config
     parts = []
 
-    # Add field computations
+    # Add field computations. Use get_paths() (not the singular `path`) so a
+    # field defined only via `paths` — or one whose fallback path list changes —
+    # still perturbs the hash. Reading `field.path` alone missed both cases.
     for field in config.fields:
-        parts.append(f"field:{field.name}:{field.path}:{field.aggregation}")
+        parts.append(f"field:{field.name}:{','.join(field.get_paths())}:{field.aggregation}")
         # Include transform function bytecode if present (detects lambda changes)
         if field.transform:
             try:
@@ -46,9 +48,11 @@ def get_config_hash(config) -> str:
             except AttributeError:
                 parts.append(f"transform:{str(field.transform)}")
 
-    # Add histogram computations
+    # Add histogram computations (same path/paths reasoning as fields above)
     for hist in config.histograms:
-        parts.append(f"hist:{hist.name}:{hist.path}:{hist.lower_bound}:{hist.upper_bound}:{hist.num_bins}")
+        parts.append(
+            f"hist:{hist.name}:{','.join(hist.get_paths())}:{hist.lower_bound}:{hist.upper_bound}:{hist.num_bins}"
+        )
         if hist.transform:
             try:
                 parts.append(f"hist_transform:{hist.transform.__code__.co_code.hex()}")
@@ -60,6 +64,12 @@ def get_config_hash(config) -> str:
 
     # Add grouping key
     parts.append(f"grouping:{config.grouping_key}")
+
+    # Add the entity linking key. For terminal_stage=ENTITY this is the GROUP BY
+    # key, so changing it changes the grouping of the cached entity result — it
+    # MUST invalidate the cache. Omitting it let a linking_field edit silently
+    # keep serving the pre-edit grouping.
+    parts.append(f"linking_field:{getattr(config, 'linking_field', '')}")
 
     # Joins: changing the join graph or the joined fields must invalidate cache
     # because join inputs feed into per-row aggregations. We do NOT include
