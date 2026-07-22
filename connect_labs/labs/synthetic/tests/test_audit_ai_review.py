@@ -42,16 +42,38 @@ def test_suspended_fraud_uses_the_ai_flaggable_framing_archetype():
     assert _SUSPENDED_FRAUD_AUDIT_ARCHETYPE == "completed_fail_framing"
 
 
-def test_fraud_audit_carries_ai_no_match_hyperzoomed_on_every_photo():
+def test_fraud_audit_ai_flags_exactly_the_two_framing_photos():
+    # completed_fail_framing = 5 fail, but the corpus has only 2 framing photos.
+    # Primary-first selection puts BOTH framing photos in the audit; the AI flags
+    # exactly those two as "Hyperzoomed", and clears the 3 human-failed top-ups
+    # (tape/equipment/misleading) as "Not Hyperzoomed" — the badge matches the image.
     data = _build("completed_fail_framing")
     assert data["has_ai_reviewer"] is True
     assessments = _all_assessments(data)
     assert len(assessments) == 5
     for a in assessments.values():
-        assert a["result"] == "fail"  # human confirmed
-        assert a["ai_result"] == "no_match"  # AI flagged
-        assert a["ai_notes"] == "Hyperzoomed"
+        assert a["result"] == "fail"  # every photo human-failed
         assert 0.86 <= a["ai_confidence"] <= 0.98
+    flagged = [a for a in assessments.values() if a["ai_result"] == "no_match"]
+    cleared = [a for a in assessments.values() if a["ai_result"] == "match"]
+    assert len(flagged) == 2 and all(a["ai_notes"] == "Hyperzoomed" for a in flagged)
+    assert len(cleared) == 3 and all(a["ai_notes"] == "Not Hyperzoomed" for a in cleared)
+
+
+def test_recipe_version_stamped_on_audit():
+    from connect_labs.labs.synthetic.archetypes import _AUDIT_RECIPE_VERSION
+
+    assert _build("completed_fail_framing")["recipe_version"] == _AUDIT_RECIPE_VERSION
+
+
+def test_only_framing_is_an_ai_flagged_category():
+    # muac_overzoom detects hyperzoom/context-loss only → the framing category.
+    from connect_labs.labs.synthetic.archetypes import category_for_filename
+
+    assert category_for_filename("muac_bad_004.jpg") == "framing"  # AI-flaggable
+    assert category_for_filename("muac_bad_001.jpg") == "tape_usage"  # human-caught, AI clears
+    assert category_for_filename("muac_bad_011.jpg") == "misleading"  # human-caught, AI clears
+    assert category_for_filename("muac_good_003.jpg") is None  # good pool
 
 
 def test_pass_clean_audit_carries_ai_match_not_hyperzoomed():
