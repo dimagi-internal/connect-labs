@@ -146,6 +146,14 @@ class AuditArchetype:
     overall_result: str | None  # "pass" | "fail" | None
     image_spec: AuditImageSpec
     title_template: str = "MUAC audit — {flw_id}"
+    # Whether the MUAC AI reviewer (muac_overzoom) ran on this audit's photos.
+    # When True, build_audit_data stamps has_ai_reviewer + a per-photo ai_result
+    # ("match"/"no_match"), ai_notes ("Not Hyperzoomed"/"Hyperzoomed") and
+    # ai_confidence — matching a real AI-review pass. Only meaningful for archetypes
+    # whose bad photos are the FRAMING (hyperzoomed) category the agent actually
+    # flags; leave False for archetypes with non-framing bads (the AI would pass
+    # those, only a human fails them) or for the fresh live-review shape.
+    ai_reviewed: bool = False
 
 
 AUDIT_ARCHETYPES: dict[str, AuditArchetype] = {
@@ -155,6 +163,7 @@ AUDIT_ARCHETYPES: dict[str, AuditArchetype] = {
         status="completed",
         overall_result="pass",
         image_spec=AuditImageSpec(good_count=5, bad_count=0),
+        ai_reviewed=True,  # AI reviewed all 5 and cleared them (match / Not Hyperzoomed)
     ),
     "completed_fail_tape_usage": AuditArchetype(
         name="completed_fail_tape_usage",
@@ -169,6 +178,7 @@ AUDIT_ARCHETYPES: dict[str, AuditArchetype] = {
         status="completed",
         overall_result="fail",
         image_spec=AuditImageSpec(good_count=0, bad_count=5, bad_category="framing"),
+        ai_reviewed=True,  # the AI flagged every photo as Hyperzoomed (context lost) → no_match
     ),
     "completed_fail_misleading": AuditArchetype(
         name="completed_fail_misleading",
@@ -205,6 +215,7 @@ AUDIT_ARCHETYPES: dict[str, AuditArchetype] = {
         image_spec=AuditImageSpec(
             good_count=2, bad_count=1, bad_category="framing", pending_count=2, pending_good_ratio=0.5
         ),
+        ai_reviewed=True,  # AI reviewed the decided photos (framing bad → Hyperzoomed / no_match)
     ),
     # NOTE for maintainers (do NOT move this into ``description`` — that field
     # renders in the audit UI): this archetype backs the manager-flow demo.
@@ -397,6 +408,9 @@ def build_audit_data(
     rng_seed = rng_seed if rng_seed is not None else visit_id_base
     photos = _pick_blob_ids(archetype.image_spec, rng_seed)
     rng = random.Random(rng_seed ^ 0x5EED)
+    # Separate stream for AI-review confidences so adding them never shifts the
+    # visit-timing / household draws above (keeps existing audits byte-stable).
+    ai_rng = random.Random(rng_seed ^ 0xA17E)
 
     anchor = dt.datetime.fromisoformat(monday_iso).replace(hour=10, minute=0, tzinfo=dt.timezone.utc)
     created_iso = anchor.isoformat()
@@ -438,12 +452,24 @@ def build_audit_data(
         # result empty.
         assessments: dict[str, dict[str, Any]] = {}
         if result is not None:
-            assessments[blob_id] = {
+            assessment = {
                 "result": result,
                 "notes": "",
                 "ai_result": "",
                 "ai_notes": "",
             }
+            if archetype.ai_reviewed:
+                # The MUAC AI reviewer (muac_overzoom) ran on every photo. It flags
+                # a FRAMING/hyperzoomed (bad-pool) photo as no_match / "Hyperzoomed"
+                # (context lost) and clears a good photo as match / "Not Hyperzoomed"
+                # — matching the real agent's badge_label / pass_label + a confidence.
+                # (Only enabled on archetypes whose bad photos are the framing category
+                # the agent actually catches, so ai_result agrees with the image.)
+                is_bad = "-good-" not in blob_id
+                assessment["ai_result"] = "no_match" if is_bad else "match"
+                assessment["ai_notes"] = "Hyperzoomed" if is_bad else "Not Hyperzoomed"
+                assessment["ai_confidence"] = round(ai_rng.uniform(0.86, 0.98), 3)
+            assessments[blob_id] = assessment
         visit_results[str(visit_id)] = {
             "result": result or "",
             "notes": "",
@@ -490,6 +516,11 @@ def build_audit_data(
         "related_fields": [],
         "created_at": created_iso,
     }
+    if archetype.ai_reviewed:
+        # Session-level flag the audit UI reads to show the AI-reviewer chrome
+        # (robot badges, the AI result section). Real audits set this when the
+        # AI review has run over the session's photos.
+        data["has_ai_reviewer"] = True
     if archetype.status == "completed":
         # The reviewer finished the same day, a few hours after creation —
         # the audit page's "Completed on" line reads this field.

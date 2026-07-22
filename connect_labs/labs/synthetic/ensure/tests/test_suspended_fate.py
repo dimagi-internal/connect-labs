@@ -3,7 +3,7 @@
 A coaching arc that closes with ``follow_up_outcome_action: "suspended"`` is a
 distinct, SOP-breaching fate (the Eastern/Vida nutrition-demo case): the tasks
 ensurer seeds a ``closed_suspended_fraud`` task, the run-audits ensurer seeds a
-``completed_fail_misleading`` audit (5/5 failed photos), and — via the PAR render
+``completed_fail_framing`` audit (5/5 failed photos), and — via the PAR render
 code — the cluster reads BELOW even though every week ran. These unit tests pin
 the two pure selector functions + the reconcile matcher that drive that fate,
 plus the manifest field that expresses it.
@@ -52,13 +52,13 @@ def test_task_archetype_investigating_when_open_regardless_of_action():
 
 def test_audit_archetype_fraud_for_suspended_flw():
     got = _audit_archetype_for("vida_e", resolved_flws=set(), investigating_flws=set(), suspended_flws={"vida_e"})
-    assert got == "completed_fail_misleading"
+    assert got == "completed_fail_framing"
 
 
 def test_audit_archetype_suspended_takes_precedence_over_resolved():
     # Defensive: even if a flw appears in both sets, suspension wins.
     got = _audit_archetype_for("vida_e", resolved_flws={"vida_e"}, investigating_flws=set(), suspended_flws={"vida_e"})
-    assert got == "completed_fail_misleading"
+    assert got == "completed_fail_framing"
 
 
 def test_audit_archetype_resolved_and_investigating_unchanged():
@@ -74,12 +74,12 @@ def test_stale_pass_clean_audit_is_rebuilt_for_fraud_target():
     # A previously-seeded all-pass completed audit must NOT match the fraud target,
     # so reconcile rebuilds it with failed photos (the Eastern re-seed path).
     old = _audit("completed", pass_=5, fail=0)
-    assert _audit_matches_archetype(old, "completed_fail_misleading") is False
+    assert _audit_matches_archetype(old, "completed_fail_framing") is False
 
 
 def test_fraud_audit_matches_fraud_target_and_not_resolved():
     fraud = _audit("completed", pass_=0, fail=5)
-    assert _audit_matches_archetype(fraud, "completed_fail_misleading") is True
+    assert _audit_matches_archetype(fraud, "completed_fail_framing") is True
     # A fail-completed audit is NOT a clean resolution.
     assert _audit_matches_archetype(fraud, "completed_pass_clean") is False
 
