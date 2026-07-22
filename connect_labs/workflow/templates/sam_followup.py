@@ -10,6 +10,26 @@ Two pipelines:
     demographics, latest MUAC reading and color, count of follow-ups.
   - `visits` (terminal_stage=visit_level): per-follow-up rows used for the
     timeline drill-down.
+
+Identity / linking model — IMPORTANT when reusing this template
+---------------------------------------------------------------
+This template overrides the framework default `linking_field` ("entity_id")
+with `child_case_id`. That is the USUAL, correct case for a **real** CommCare
+SAM opportunity: a follow-up form's Connect `entity_id` is not necessarily the
+child (it may be the household/registrant), so the child is identified by the
+`child_case_id` form field, and the render's timeline drill-down filters visits
+by `v.child_case_id`.
+
+Caveat for a SYNTHETIC / mirror opp: a mirror of a real opp does NOT carry
+`child_case_id` (it's null) — the generator instead models each child AS an
+entity and stamps every visit with a stable, unique base `entity_id`
+(labs/synthetic/generator/fixtures/engine.py). Grouping by the null
+`child_case_id` there collapses all children into one row. For such a mirrored
+opp, override the INSTANCE (not this template) to link on `entity_id`:
+`linking_field: "entity_id"` on both pipelines, and change the render's visit
+filter to `v.entity_id === selectedChildId` (visit-level rows already carry the
+base `entity_id`). Leave this template on `child_case_id` so real opps keep
+working — there is no single key correct for both grains.
 """
 
 DEFINITION = {
@@ -133,6 +153,10 @@ VISIT_FIELDS = [
 ]
 
 
+# NOTE: `linking_field: "child_case_id"` is the real-opp case (children keyed by
+# the form field, not the framework-default base `entity_id`). For a mirror/
+# synthetic opp, override the INSTANCE to `entity_id` instead — see the
+# "Identity / linking model" section in the module docstring above.
 PIPELINE_SCHEMAS = [
     {
         "alias": "children",
@@ -142,7 +166,7 @@ PIPELINE_SCHEMAS = [
             "data_source": {"type": "connect_csv"},
             "grouping_key": "username",
             "terminal_stage": "entity",
-            "linking_field": "child_case_id",
+            "linking_field": "child_case_id",  # real-opp key; mirror opps → override instance to "entity_id"
             "fields": ENTITY_FIELDS,
         },
     },
@@ -154,7 +178,7 @@ PIPELINE_SCHEMAS = [
             "data_source": {"type": "connect_csv"},
             "grouping_key": "username",
             "terminal_stage": "visit_level",
-            "linking_field": "child_case_id",
+            "linking_field": "child_case_id",  # keep in sync with the children pipeline (see docstring)
             "fields": VISIT_FIELDS,
         },
     },
@@ -227,6 +251,8 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
 
     var visitsForSelected = React.useMemo(function() {
         if (!selectedChildId) return [];
+        // Timeline key: matches the children pipeline's linking_field (child_case_id).
+        // On a mirror/synthetic instance that links on entity_id, change this to v.entity_id.
         return visitsAll.filter(function(v) { return v.child_case_id === selectedChildId; })
             .sort(function(a, b) {
                 var da = visitDate(a) ? new Date(visitDate(a)) : new Date(0);
