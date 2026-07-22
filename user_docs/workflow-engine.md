@@ -206,6 +206,24 @@ Program managers can update a case's status directly from the workflow view. Sta
 
 ---
 
+## SAM Follow-up Timeline
+
+The **SAM Follow-up Timeline** dashboard displays a recovery picture for each SAM case — including the MUAC colour band, whether the child has recovered, and the date of the follow-up visit.
+
+### Colour, Recovered, and Date columns
+
+The dashboard populates these three columns using whichever data is available for the opportunity being viewed:
+
+- **If the opportunity's forms record a pre-computed MUAC colour band, a recovery yes/no flag, and a dedicated follow-up visit date field**, those values are used directly. This is the case for the primary SAM opportunity and is unaffected by this change.
+- **If the opportunity does not include those pre-baked fields** — for example, a mirrored or synthetic copy of a SAM opportunity that records MUAC as a raw measurement in centimetres and uses a general visit date — the dashboard derives the equivalent values automatically. It calculates the MUAC colour band from the centimetre reading, determines recovery status from that derived band, and uses the generic visit date in place of a dedicated follow-up date field.
+
+The end result is the same in both cases: the Colour, Recovered, and Date columns show meaningful data rather than appearing blank. You do not need to configure anything differently depending on which opportunity you are viewing.
+
+!!! note "Mirrored opportunities and derived values"
+    If your program uses a mirrored or synthetic copy of a SAM opportunity, the recovery data you see in the SAM Follow-up Timeline is derived from the raw MUAC measurement recorded in those forms. The derivation follows the same colour-band thresholds used elsewhere in the program, so the figures are directly comparable to those from the primary opportunity.
+
+---
+
 ## Program Audit Creator
 
 The **CHC PRE-RCT — Program Audit Creator** workflow lets you generate audits across all opportunities in the program in a single step. When you open the Generate screen, you will see an audit window date range followed by a **Filters** section, and then the **Generate** button.
@@ -237,26 +255,4 @@ Checkboxes for the visit's payment status. The available options are:
 
 Check one or more options to restrict the audits to visits with those statuses. If no boxes are checked, all visit types are included.
 
-These three filters work together: only visits that match every checked filter are included when audits are generated. Using the same filter settings across a weekly run ensures all four opportunities are audited consistently with a single Generate click.
-
-### Run list — audit window display
-
-On the workflow run list page, each Program Audit Creator run shows its audit window (for example, **2026-06-22 – 2026-06-28**) beneath the run number, once a window has been set for that run. This makes it easy to identify which week a run covers without opening it.
-
----
-
-## Bulk Image Audits
-
-### Session labels
-
-When a bulk image audit covers every field worker together, the run screen labels it **"All FLWs (N)"** — where N is the number of field workers included — so it is immediately clear the review spans the whole group. Sessions scoped to a single field worker continue to show that individual's name.
-
-### Previously-audited image badges
-
-When reviewing images in the bulk image audit grid, any photo that was already given a verdict in an earlier **completed** audit shows an **Audited** badge displaying that prior verdict — for example, **Audited: Passed**, **Audited: Failed**, or **Audited: Dup·Fake**. Hovering over the badge shows the date of the earlier audit.
-
-This lets reviewers see at a glance that a decision already exists for a photo before assigning a new one. A photo never shows a badge from the audit currently being reviewed — the badge only ever reflects *other* completed audits.
-
-### Excluding already-audited images from a new audit
-
-When creating a new bulk image audit — either from a workflow or from the standalone audit wizard — an optional checkbox is available: **Exclude images already audited
+These three filters work together: only
