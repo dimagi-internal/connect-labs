@@ -66,6 +66,23 @@ as WhyBrief gap G1 (CAPABILITY, claim_ref S4).
 
 ## Current phase
 
+CONVERGED (concept 4.0/5 pass, user-artifact 4.0/5 pass) — run
+`nutrition-demo-2026-07-22-003` (2026-07-22), FULL 12-scene spec incl. the NEW
+closing **scene 12 "Priya follows one child's recovery"** (SAM Follow-up Timeline,
+workflow 5017 / opp 10036). Scenes 1-11 render byte-identical to run 002's 5.0;
+scene 12 (the only new scene) drives the sub-5s (visual_polish 4, trust 4,
+claim_reality 4) — the per-child MUAC recovery reads as a clean color-coded list
+(red 11.0cm → green 13.5cm recovered) rather than a bespoke curve; children shown
+as privacy-anon "Beneficiary N" (real source child_name null). Narrative **v3**
+posted to canopy-web (review ff96b68a). Internal `/ddd` package published (--stuck):
+`https://labs.connect.dimagi.com/canopy/w/connect/ddd/nutrition-demo/nutrition-demo-2026-07-22-003`.
+Scene 12 required: (a) broadening opp 10036 allowed_domains to +@dimagi-ai.com via
+ECS (deployed labs :506 lacks the dimagi-internal is_accessible_to bypass), (b)
+pointing scene 12 at saved run_id=5019 (workflow 5017 executes live via "Create
+Run"), (c) fixing the drill to the row's Timeline button. External/public release
++ a narrated-VO hero (run 002-style) remain as gated operator finishing steps.
+
+### Prior phase
 CONVERGED at 5.0/5 (both judges) — run `nutrition-demo-2026-07-22-002` (2026-07-22).
 Up from the prior run's 4.0. Both prior gate root-causes fixed & verified: scene-3
 Actions-column clip (→ `video_viewport_width: 1600`, full table renders) and the

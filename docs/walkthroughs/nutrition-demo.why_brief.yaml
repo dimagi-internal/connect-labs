@@ -68,8 +68,8 @@ spine:
   evidence:
   - kind: implemented
     ref: 'nutrition-demo scene: the closed coaching transcript naming the recovered screening profile and referrals into treatment (task 5000)'
-  - kind: assumed
-    ref: 'a dedicated per-child MUAC-trajectory view (red -> yellow -> green over the review weeks) is not yet a built dashboard; the recovery is shown here via audit photos + the coaching outcome'
+  - kind: implemented
+    ref: 'nutrition-demo scene: the SAM Follow-up Timeline (workflow 5017 / opp 10036) drills to one child''s per-visit MUAC climbing red -> yellow -> green (recovered) across their follow-ups — synthetic data built from real opp 879 (PPFN SAM follow-ups) via a mirror profile of the real MUAC recovery distribution'
 gaps:
 - id: G1
   type: CAPABILITY
