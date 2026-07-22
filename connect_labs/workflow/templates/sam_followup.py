@@ -174,19 +174,45 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
     var [colorFilter, setColorFilter] = React.useState('all');
     var timelineRef = React.useRef(null);
 
+    // Fallbacks so a mirrored real opp (which records MUAC in cm but no pre-baked
+    // colour band or recovery boolean) still populates the colour + recovered
+    // columns. Real opps that DO ship these fields are unaffected — the raw field
+    // wins and derivation only fills the gap. Bands: <11.5 red / 11.5–12.5 yellow
+    // / >=12.5 green; recovered when latest MUAC >= 12.5.
+    function muacColorFromCm(cm) {
+        if (cm == null || cm === '' || isNaN(Number(cm))) return null;
+        var v = Number(cm);
+        if (v < 11.5) return 'red';
+        if (v < 12.5) return 'yellow';
+        return 'green';
+    }
+    function effColor(c) {
+        return c.latest_muac_color || muacColorFromCm(c.latest_muac_cm);
+    }
+    function isRecovered(c) {
+        if (c.latest_recovered != null && c.latest_recovered !== '') {
+            return c.latest_recovered === 'yes' || c.latest_recovered === true;
+        }
+        return c.latest_muac_cm != null && Number(c.latest_muac_cm) >= 12.5;
+    }
+    // A mirrored opp records a generic `visit_date` instead of `fu_visit_date`.
+    function visitDate(v) {
+        return v.fu_visit_date || v.visit_date || null;
+    }
+
     var kpis = React.useMemo(function() {
         var total = children.length;
-        var red = children.filter(function(c) { return c.latest_muac_color === 'red'; }).length;
-        var yellow = children.filter(function(c) { return c.latest_muac_color === 'yellow'; }).length;
-        var green = children.filter(function(c) { return c.latest_muac_color === 'green'; }).length;
-        var recovered = children.filter(function(c) { return c.latest_recovered === 'yes'; }).length;
+        var red = children.filter(function(c) { return effColor(c) === 'red'; }).length;
+        var yellow = children.filter(function(c) { return effColor(c) === 'yellow'; }).length;
+        var green = children.filter(function(c) { return effColor(c) === 'green'; }).length;
+        var recovered = children.filter(function(c) { return isRecovered(c); }).length;
         return { total: total, red: red, yellow: yellow, green: green, recovered: recovered };
     }, [children]);
 
     var displayChildren = React.useMemo(function() {
         var rows = children;
         if (colorFilter !== 'all') {
-            rows = rows.filter(function(c) { return c.latest_muac_color === colorFilter; });
+            rows = rows.filter(function(c) { return effColor(c) === colorFilter; });
         }
         if (search.trim()) {
             var q = search.toLowerCase();
@@ -203,8 +229,8 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
         if (!selectedChildId) return [];
         return visitsAll.filter(function(v) { return v.child_case_id === selectedChildId; })
             .sort(function(a, b) {
-                var da = a.fu_visit_date ? new Date(a.fu_visit_date) : new Date(0);
-                var db = b.fu_visit_date ? new Date(b.fu_visit_date) : new Date(0);
+                var da = visitDate(a) ? new Date(visitDate(a)) : new Date(0);
+                var db = visitDate(b) ? new Date(visitDate(b)) : new Date(0);
                 return da - db;
             });
     }, [visitsAll, selectedChildId]);
@@ -255,7 +281,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                                 {' '}HH: {selectedChild.household_name || '—'}
                                 {' '}({selectedChild.hh_village_name || '—'})
                                 {' '}· latest MUAC: {selectedChild.latest_muac_cm != null ? Number(selectedChild.latest_muac_cm).toFixed(1) + ' cm' : '—'}
-                                {' '}{colorChip(selectedChild.latest_muac_color)}
+                                {' '}{colorChip(effColor(selectedChild))}
                             </div>
                         </div>
                         <button
@@ -266,14 +292,14 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                     <div className="space-y-2 max-h-96 overflow-y-auto">
                         {visitsForSelected.map(function(v, i) {
                             return (
-                                <div key={v.id || (v.fu_visit_date + '-' + i)}
+                                <div key={v.id || (visitDate(v) + '-' + i)}
                                      className="border-l-4 border-blue-400 pl-3 py-2 text-sm bg-gray-50 rounded-r">
                                     <div className="flex items-center justify-between">
                                         <div className="font-medium">
-                                            {v.fu_visit_date || '—'}
+                                            {visitDate(v) || '—'}
                                             {v.followup_number && <span className="ml-2 text-xs text-gray-500">FU #{v.followup_number}</span>}
                                         </div>
-                                        {colorChip(v.muac_color)}
+                                        {colorChip(v.muac_color || muacColorFromCm(v.muac_cm))}
                                     </div>
                                     <div className="text-xs text-gray-600 mt-1">
                                         MUAC: {v.muac_cm != null ? v.muac_cm + ' cm' : '—'}
@@ -341,8 +367,8 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                                     <td className="px-4 py-2 text-sm text-right font-mono text-gray-900">
                                         {c.latest_muac_cm != null ? Number(c.latest_muac_cm).toFixed(1) : '—'}
                                     </td>
-                                    <td className="px-4 py-2">{colorChip(c.latest_muac_color)}</td>
-                                    <td className="px-4 py-2 text-sm text-gray-700">{c.latest_recovered || '—'}</td>
+                                    <td className="px-4 py-2">{colorChip(effColor(c))}</td>
+                                    <td className="px-4 py-2 text-sm text-gray-700">{isRecovered(c) ? 'yes' : (c.latest_recovered || '—')}</td>
                                     <td className="px-4 py-2 text-right">
                                         <button
                                             onClick={function() { openTimeline(c.entity_id); }}
