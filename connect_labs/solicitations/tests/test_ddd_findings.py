@@ -169,6 +169,7 @@ class TestOrgDisplayName:
         assert "Unknown Organization" not in content
         # Identity is hidden while scoring so the reviewer judges the application,
         # not the applicant. The name is revealed at award (see the award test below).
+        assert "Response #10" in content
         assert "Identity hidden for scoring" in content
         assert "Amina Okafor" not in content
 

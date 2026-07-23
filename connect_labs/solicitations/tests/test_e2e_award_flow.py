@@ -139,6 +139,8 @@ class TestStep1ResponsesList:
         response.render()
         content = response.content.decode()
         # Blind scoring: applicants appear by response id, never by firm name.
+        assert "Response #10" in content
+        assert "Response #11" in content
         assert "Identity hidden for scoring" in content
         assert "Health Org" not in content
         assert "Neonatal Care RFP" in content
@@ -299,6 +301,7 @@ class TestFullAwardFlow:
         content = response.content.decode()
         # Blind while scoring — the firm is identified by response id here; its name
         # is only revealed at the award step (asserted in step 3).
+        assert "Response #10" in content
         assert "Identity hidden for scoring" in content
         assert "Health Org" not in content
 
