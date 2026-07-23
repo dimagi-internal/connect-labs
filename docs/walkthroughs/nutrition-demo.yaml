@@ -772,24 +772,24 @@ scenes:
     in one frame, where a cohort table plus a drill-down click does not.
 
     '
-  show: 'A single child''s recovery on one screen: the left rail lists every follow-up visit
-    with its MUAC and colour band, the centre carries the MUAC progression chart with the
-    SAM / MAM / recovered zones shaded behind the line, and the right rail holds the case
-    details — Beneficiary 69 climbing 10.4cm (SAM, red) to 13.0cm (recovered, green) across
-    eight visits.
+  show: 'A single child''s recovery on one screen: the left rail carries that child''s MUAC
+    screening photo for every follow-up visit, colour-banded and expandable; the centre holds
+    the MUAC progression chart with the SAM / MAM / recovered zones shaded behind the line;
+    the right rail holds the case details — Beneficiary 69 climbing 10.4cm (SAM) to 13.0cm
+    (recovered) across eight visits.
 
     '
   features:
   - id: child-muac-recovery-timeline
-    description: 'The MUAC progression chart plots every follow-up visit''s MUAC against shaded
-      SAM (<11.5), MAM (11.5-12.5) and recovered (>=12.5) bands, with the visit rail listing
-      each visit''s value and band, so one child''s recovery is legible end to end in a single
-      frame.
+    description: 'Every follow-up visit shows its own MUAC screening photo in the left rail,
+      colour-banded by that visit''s reading and expandable to full size, beside a chart plotting
+      the same visits against shaded SAM (<11.5), MAM (11.5-12.5) and recovered (>=12.5) bands
+      — so the evidence and the trend read together in one frame.
 
       '
-    verify: 'Playwright: load the URL, assert the ''MUAC progression'' heading and a rendered
-      <canvas>, and assert the visit rail lists 8 visits whose MUAC values rise from a SAM-banded
-      first visit to a Recovered-banded last visit.
+    verify: 'Playwright: load the URL, assert 8 rail images matching img[alt*=''MUAC photo'']
+      each loaded (naturalWidth > 0), assert the ''MUAC progression'' heading and a rendered
+      <canvas>, then click the first rail image and assert the expanded overlay appears.
 
       '
   - id: recovery-status
@@ -813,18 +813,34 @@ scenes:
     target: css:canvas
     note: the chart canvas paints only after the visits pipeline resolves - gates on data,
       not the shell
+  - kind: wait_for
+    must_succeed: true
+    seconds: 15
+    target: css:img[alt*='MUAC photo']
+    note: the rail photos are served per visit off the image server - gates on a decoded image,
+      not the layout
   - kind: hold
     seconds: 5
-    note: the whole view in one frame - visit rail, MUAC chart with its bands, case rail
+    note: the whole view in one frame - photo rail, MUAC chart with its bands, case rail
+  - kind: click
+    must_succeed: true
+    target: css:img[alt='Visit 1 MUAC photo']
+    note: expand visit 1's screening photo - the evidence behind the first, lowest reading
+  - kind: hold
+    seconds: 4
+    note: the expanded MUAC photo for visit 1 (10.4cm, SAM)
+  - kind: click
+    must_succeed: false
+    target: css:.fixed.inset-0
+    note: dismiss the overlay
   - kind: scroll_to
     target: text:MUAC gain
   - kind: hold
     seconds: 4
-    note: the closing payoff - Beneficiary 69 climbing 10.4cm (SAM) to 13.0cm (recovered)
-      across eight visits, +2.6cm
-  narrative: 'And what it''s all for: one child''s MUAC climbing across eight visits — out
-    of red, through yellow, into green. Recovered. The same timeline catches a child starting
-    to relapse, before they fall back.
+    note: the closing payoff - +2.6cm across eight visits, recovered
+  narrative: 'And what it''s all for: one child. Every follow-up visit''s screening photo
+    down the left, the MUAC climbing beside it — out of red, through yellow, into green. Recovered.
+    The same view catches a child starting to relapse, before they fall back.
 
     '
 narrative_synced_version: 4
