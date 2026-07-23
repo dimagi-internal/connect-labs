@@ -59,7 +59,40 @@ When filling out a response to a solicitation, the **AI Application Coach** is a
 - Flag sections that may be incomplete or unclear
 - Offer guidance on how to address specific evaluation criteria
 
+For survey-firm solicitations specifically, the coach also pushes applicants to back up claims with **verifiable evidence** — real numbers, named prior projects, and back-check rates — rather than general assertions. This helps reviewers assess submissions fairly and consistently.
+
 See [Solicitations](solicitations.md) for the full process.
+
+---
+
+## Survey-Firm Selection Safeguards
+
+When running a survey procurement (an RF Survey solicitation), Connect Labs applies a set of built-in fairness controls to help you run a defensible, unbiased process.
+
+### Locked Rubric
+
+Before you publish the call, you review the AI-drafted weighted criteria and **lock the rubric**. Once the call is published:
+
+- The criteria and scoring weights are fixed for every applicant.
+- No changes can be made while the call is open.
+- A **"Rubric locked before publishing"** badge appears on the call and on the responses list, giving applicants and your team confidence that the rules didn't change mid-process.
+
+### Blind Scoring
+
+While you are scoring responses, firms are shown only as **"Response #\<number\>"** — never by name. The firm's identity is revealed only at the award step, after scores are recorded. This ensures reviewers are judging the application, not the applicant.
+
+### Anti-Anchoring on AI Scores
+
+For each scoring criterion, the AI provides a suggested score — but that suggestion is **hidden until after you record your own score** for that criterion. Once you submit your score, the AI's score is revealed so you can compare. This prevents the AI from anchoring your judgment before you've formed your own view.
+
+### Staged-Contract Award
+
+Rather than awarding the full survey contract immediately, you can issue a small **verification contract** first. This lets you confirm that the firm performs as expected on the ground before committing to the full scope. Staged contracting is how the platform handles performance risk: start small, verify, then scale.
+
+!!! info "Award to a Connect opportunity"
+    Connecting the awarded contract to a live Connect opportunity is not yet available. The award page notes this as a planned next step.
+
+See [Solicitations](solicitations.md) for the step-by-step procurement workflow.
 
 ---
 

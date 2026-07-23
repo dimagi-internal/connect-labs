@@ -8,11 +8,13 @@ The Solicitations module manages requests for proposals (RFPs) and expressions o
 
 ```mermaid
 flowchart TD
-    A[Program team\ncreates solicitation] --> B[Solicitation published\nto public list]
-    B --> C[Organizations\nsubmit responses]
-    C --> D[Reviewers score\neach response]
-    D --> E[Program team\nselects winner]
-    E --> F[Award issued\nand fund allocated]
+    A[Program team\ncreates solicitation] --> B[Program team locks\nrubric before publishing]
+    B --> C[Solicitation published\nto public list]
+    C --> D[Organizations\nsubmit responses]
+    D --> E[Reviewers score\neach response blind]
+    E --> F[Program team\nselects winner]
+    F --> G[Verification contract\nawarded first]
+    G --> H[Full award issued\nand fund allocated]
 ```
 
 ---
@@ -51,6 +53,23 @@ The published solicitation shows the number of questions in the response templat
 
 !!! info "Validation errors on the creation form"
 Labs now checks that all fields are in the correct format when a solicitation is saved. If something is wrong — for example, a deadline that isn't a valid date, an evaluation criterion missing a name, or a response question that references something that no longer exists — you will see an inline error message on the relevant field. Correct the flagged fields and save again. These checks prevent incomplete or misformatted solicitations from being stored silently.
+
+### Locking the Rubric Before Publishing
+
+For survey-firm procurements and any solicitation where a defensible, consistent scoring process matters, Labs lets you lock the evaluation rubric before the call goes public.
+
+**How it works:**
+
+1. Build and review your evaluation criteria — either manually or using **Generate Criteria**
+2. Click **Lock Rubric** once you are satisfied with the criteria and their weights
+3. Publish the solicitation
+
+Once locked, the criteria and their weights are fixed for the entire period the call is open. No reviewer or program manager can modify them while the solicitation is published. This ensures every applicant is scored against exactly the same standard.
+
+A **Rubric locked before publishing** badge is displayed on the solicitation page and on the responses list, so reviewers and program managers can see at a glance that the scoring framework was set before any applications came in.
+
+!!! warning "Locking is permanent while the solicitation is open"
+You cannot unlock or edit the rubric after locking without first returning the solicitation to Draft status. If you need to revise the criteria, set the solicitation back to Draft, make your changes, lock again, and republish. Do not republish until you are confident the criteria are final — applicants who submitted under the previous criteria will have answered questions calibrated to the original rubric.
 
 ### Creating a Solicitation from a Micro-Plan
 
@@ -107,14 +126,37 @@ The responses list displays the submitting firm's contact email address in place
 
 The **Actions** column (containing the Award control) is pinned to the right edge of the responses table. This means it stays visible and reachable even when the table is wide, without needing to scroll horizontally. The Score cell is no longer clipped by the pinned Actions column.
 
+#### Blind Scoring
+
+When a solicitation uses blind scoring, reviewers see each submission identified only as **Response #[number]** — the submitting firm's name is not shown anywhere on the scoring screen. This means reviewers judge the content of the application, not who submitted it.
+
+The firm's identity is revealed only at the award step, once all scoring is complete. At that point, the winner's name becomes visible on the award confirmation screen so you can verify and confirm the award.
+
+Blind scoring is enabled automatically for survey-firm solicitations. Where it is active, the **Rubric locked before publishing** badge on the responses list also confirms that scoring conditions were set before any applications were received.
+
 ### Awarding a Response
 
 When the team agrees on a winner:
 
 1. Open the winning response
 2. Click **Award Response**
-3. Confirm the award amount — this is displayed as a formatted currency value (for example, $25,000.00). The confirmation screen also shows the winning review's score so you can verify you are awarding the intended submission
+3. Confirm the award amount — this is displayed as a formatted currency value (for example, $25,000.00). The confirmation screen also shows the winning review's score and, if blind scoring was active, reveals the firm's name here for the first time so you can verify you are awarding the intended submission
 4. Optionally link the award to a fund to track disbursements over time
+
+#### Staged-Contract Award
+
+For survey-firm procurements, Labs supports a staged award process. Rather than committing the full contract value immediately, you can first issue a small **verification contract** to confirm the selected firm's performance on the ground, then scale to the full survey award once you are satisfied.
+
+This is the recommended approach for managing conflict-of-interest risk in independent survey procurement: start with a limited engagement, verify the firm performs as expected, then proceed with the full scope.
+
+To use staged contracting:
+
+1. At the award step, choose **Verification contract** instead of the full award
+2. Set the verification contract amount and scope
+3. After the verification period, return to the solicitation and issue the **Full award** to the same firm
+
+!!! info "Setting up the live Connect opportunity after award"
+Formally standing up the awarded survey firm's opportunity on the Connect marketplace is a next step that is not yet built into Labs. After completing the award, follow your programme's standard process for setting up the Connect opportunity.
 
 !!! info "Coverage area assignments after award"
 In the current version, the coverage areas selected by an applicant are captured for your review alongside the rest of their response. Formal area assignment to the awarded organization is handled outside Labs as part of your normal award process.
@@ -142,6 +184,8 @@ Published solicitations are visible on the Labs solicitations page without loggi
 
 Solicitations created for finished study programs clearly state their purpose — recruiting an independent survey firm to measure the program's outcomes — and display the number of coverage wards at a readable size.
 
+Where the rubric was locked before the call was published, a **Rubric locked before publishing** badge is shown on the solicitation page. This means the evaluation criteria were fixed before any applications came in and will not change during the open period.
+
 ### Submitting a Response
 
 1. Open a solicitation and read the full description and scope of work
@@ -149,7 +193,7 @@ Solicitations created for finished study programs clearly state their purpose �
 3. Click **Submit Response**
 4. Answer each question in the response template — where present, read the italicised framing above each question to understand what the program team is looking for. Each answer box sizes to fit your content as you type, so your full response is always visible without scrolling inside the box
 5. If the solicitation includes coverage areas, select the areas you can cover by clicking the ward boundaries directly on the map, or by checking the boxes in the checklist alongside it — both controls are kept in sync, so selecting an area in one automatically updates the other. Selected areas are highlighted on the map so you can clearly see which plans you have chosen. You must select at least one plan to submit
-6. If you use the **AI Application Coach** for feedback on your draft answers, the coach's suggestions are presented with clear headings so you can scan the structured advice at a glance
+6. If you use the **AI Application Coach** for feedback on your draft answers, the coach will prompt you to support your claims with verifiable evidence — for example, real numbers, named prior projects, back-check rates, or other concrete details. Suggestions are presented with clear headings so you can scan the structured advice at a glance. Responses backed by specific evidence score more strongly against the evaluation rubric
 7. Review your answers, then click **Submit**
 
 After you submit, the solicitation page updates to show a **Response submitted** confirmation state. The option to submit another response is no longer shown — this prevents accidental duplicate submissions.
@@ -195,35 +239,3 @@ This should no longer occur for solicitations edited through the standard Labs i
 
 **I'm seeing inline errors on fields I didn't change when editing an existing solicitation — why?**
 A small number of older solicitations were saved before Labs began enforcing field validation. When you open one of these records for editing, any fields that were stored in the wrong format will be flagged immediately so they can be corrected. Update the highlighted fields to the expected format and save. If you are unsure what a field requires, refer to the table in [Creating a Solicitation](#creating-a-solicitation) or contact your Labs administrator.
-
-**What is the Framing field on a response question?**
-Framing is an optional one-to-two sentence note you can attach to any question in your response template. It appears above the question prompt on the public solicitation page in italics, giving respondents context about why you're asking. It has no effect on scoring or submission — it is purely for the benefit of applicants reading the solicitation.
-
-**Can I create a solicitation from a micro-plan if the plans haven't been finalised yet?**
-You can, but the coverage areas are fixed as a snapshot at the moment you save the solicitation. If your plans change after that point, the published solicitation will not update automatically. Wait until your plans are stable before creating the solicitation, or be prepared to update the coverage areas manually if things change before the deadline.
-
-**Do applicants have to cover all the areas listed in a solicitation?**
-No — applicants select only the areas they can cover. They must select at least one plan to submit a response, but they do not need to take all areas on offer. Applicants can select areas by clicking the boundaries on the map or by using the checklist — both show the same options and stay in sync. Selected areas are highlighted on the map so applicants can see their choices at a glance. The program team can see each applicant's selected areas when reviewing responses.
-
-**What does it mean that a plan is selected "as a whole unit"?**
-If a micro-plan bundles multiple wards, or includes both intervention and control areas, an applicant who selects that plan is committing to all of it. Clicking any part of that plan's boundary on the map selects the entire plan — there is no option to select only part of it.
-
-**I clicked "Create solicitation" from a plan and got a "Failed to create solicitation" error — what should I do?**
-This error could previously occur on certain Labs-managed study programs. It has been fixed, so clicking **Create solicitation** from a plan on any program should now work. If you still see this error, try refreshing the page and attempting again. If the problem persists, contact your Labs administrator.
-
-**The responses page header still shows "Active" after I awarded a response — is something wrong?**
-This display issue has been fixed. Once you award a response, the responses page header updates immediately to show **Awarded**. If you are viewing a page that was loaded before the award was made, refresh your browser to see the updated status.
-
-**The awarded response shows "Awarded" in both the Status and Recommendation columns — is that correct?**
-No — this duplicate display has been fixed. **Awarded** now appears only in the Status column for an awarded response. The Recommendation column shows the reviewer recommendation as normal.
-
-**What do the colours on the coverage map mean?**
-Green areas are intervention areas and blue areas are comparison areas. A small legend on every coverage map explains this colour coding.
-
-**Where do I land after creating a solicitation?**
-After you save a new solicitation, Labs takes you directly to that solicitation's responses page. This means you can immediately see whether any responses have come in, without having to navigate back from the general solicitations list.
-
-**The "Generate Criteria" button or the AI Application Coach isn't working — what should I do?**
-Both AI features were temporarily returning errors for all users on Labs. This has been fixed and both tools should now work as expected. If you click **Generate Criteria** on the solicitation creation form or use the AI Application Coach on the response form and still see an error, try refreshing the page and attempting again. If the problem persists, contact your Labs administrator.
-
-**The Award action was cut off on the right side of the
