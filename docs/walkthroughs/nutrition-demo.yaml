@@ -759,82 +759,69 @@ scenes:
   persona: priya
   provenance: S4
   role: demo
-  url: https://labs.connect.dimagi.com/labs/workflow/5017/run/?run_id=5019&opportunity_id=10036
-  concept_claim: 'The SAM Follow-up Timeline tracks every flagged child''s MUAC across their
-    follow-up visits, so the program manager can watch one child climb from red (SAM) through
-    yellow (MAM) to green (recovered) over the review period — the oversight loop closing
-    on a child, not a metric.
+  url: https://labs.connect.dimagi.com/labs/workflow/5027/run/?run_id=5029&opportunity_id=10036
+  concept_claim: 'A dedicated single-client view puts one child''s whole follow-up history
+    on one screen — every visit''s MUAC against the SAM/MAM/recovered bands — so the program
+    manager watches a child climb out of red into green, the oversight loop closing on a child,
+    not a metric.
 
     '
   design_intent: 'The funder''s ultimate unit is a child getting better, so the demo ends
-    the program-to-child line on a real per-child MUAC recovery trajectory rather than a summary
-    number — the visible answer to what all the oversight is for.
+    the program-to-child line on one child''s actual MUAC trajectory rather than a summary
+    number. A purpose-built single-client view — visit rail, trend chart, case rail — reads
+    in one frame, where a cohort table plus a drill-down click does not.
 
     '
-  show: 'The SAM Follow-up Timeline: a Recovered KPI and a table of the program''s children
-    each with their latest MUAC and colour band, then one child''s drill-down timeline — the
-    per-visit MUAC climbing follow-up by follow-up out of red, through yellow, into green,
-    ending recovered.
+  show: 'A single child''s recovery on one screen: the left rail lists every follow-up visit
+    with its MUAC and colour band, the centre carries the MUAC progression chart with the
+    SAM / MAM / recovered zones shaded behind the line, and the right rail holds the case
+    details — Beneficiary 69 climbing 10.4cm (SAM, red) to 13.0cm (recovered, green) across
+    eight visits.
 
     '
   features:
   - id: child-muac-recovery-timeline
-    description: 'Per child, the follow-up visits list each visit''s MUAC in cm with its colour
-      band (red <11.5 / yellow <12.5 / green >=12.5), so one child''s recovery trajectory
-      across their follow-ups is legible end to end.
+    description: 'The MUAC progression chart plots every follow-up visit''s MUAC against shaded
+      SAM (<11.5), MAM (11.5-12.5) and recovered (>=12.5) bands, with the visit rail listing
+      each visit''s value and band, so one child''s recovery is legible end to end in a single
+      frame.
 
       '
-    verify: 'Playwright: load the URL, assert a ''Latest MUAC'' table column and a ''Recovered''
-      KPI; click a child row and assert the timeline panel lists multiple follow-up rows carrying
-      MUAC values.
+    verify: 'Playwright: load the URL, assert the ''MUAC progression'' heading and a rendered
+      <canvas>, and assert the visit rail lists 8 visits whose MUAC values rise from a SAM-banded
+      first visit to a Recovered-banded last visit.
 
       '
   - id: recovery-status
-    description: 'A child whose latest MUAC reaches >=12.5 cm is marked Recovered, distinguishing
-      children who have climbed out of severe acute malnutrition from those still in treatment.
+    description: 'The case rail states first MUAC, current MUAC and the net gain, and marks
+      the child Recovered once the latest MUAC reaches 12.5cm — separating children who have
+      climbed out of severe acute malnutrition from those still in treatment.
 
       '
-    verify: 'Playwright: assert the children table shows a ''Recovered'' column and at least
-      one child reading in the green band.
+    verify: 'Playwright: assert the case rail shows ''MUAC gain'' with a positive centimetre
+      value and a ''Recovered'' status pill.
 
       '
   actions:
   - kind: wait_for
     must_succeed: true
     seconds: 30
-    target: text:Latest MUAC
+    target: text:MUAC progression
   - kind: wait_for
     must_succeed: true
-    note: at least one child row decoded before the cohort frame (gates on data load, not
-      just the shell)
     seconds: 20
-    target: css:tbody tr td
-  - kind: scroll_to
-    target: text:Recovered
+    target: css:canvas
+    note: the chart canvas paints only after the visits pipeline resolves - gates on data,
+      not the shell
   - kind: hold
-    note: the cohort - the program's children with their latest MUAC colour and the Recovered
-      count
-    seconds: 2
-  - kind: click
-    must_succeed: true
-    note: open the timeline for Beneficiary 1 (row 1, latest MUAC 13.5cm green/recovered,
-      climbs from red 11.0cm across 8 follow-ups). The drill fires ONLY from the row's Timeline
-      button, not the name cell; scope the row by exact-id text so 'Beneficiary 1' does not
-      substring-match Beneficiary 10-19.
-    target: css:tr:has(div:text-is("Beneficiary 1")) button
-  - kind: wait_for
-    must_succeed: true
-    note: the follow-ups count renders only inside the open timeline panel - proves the drill
-      opened the timeline (vs the table header Latest MUAC that a substring wait would falsely
-      match)
-    seconds: 8
-    target: text:follow-ups
+    seconds: 5
+    note: the whole view in one frame - visit rail, MUAC chart with its bands, case rail
   - kind: scroll_to
-    target: text:follow-ups
+    target: text:MUAC gain
   - kind: hold
-    note: the closing payoff - Beneficiary 1's MUAC climbing across 8 follow-ups from red
-      (11.0cm) to green (13.5cm), recovered
     seconds: 4
+    note: the closing payoff - Beneficiary 69 climbing 10.4cm (SAM) to 13.0cm (recovered)
+      across eight visits, +2.6cm
   narrative: 'And what it''s all for: one child''s MUAC climbing across eight visits — out
     of red, through yellow, into green. Recovered. The same timeline catches a child starting
     to relapse, before they fall back.
