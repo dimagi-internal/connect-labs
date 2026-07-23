@@ -504,11 +504,30 @@ def build_state(cfg: dict, here: Path, rounds_plans: dict | None = None) -> tupl
         rounds.append(summary)
         all_records += recs
 
+    def _wald_ci(pct, n):
+        # 95% Wald CI half-width (percentage points) for a sample proportion.
+        # Each round's survey estimate comes from a household SAMPLE, so it
+        # carries sampling error; the program self-report is an admin census and
+        # gets no CI. Returns [lo, hi] clamped to [0, 100], or None if n missing.
+        if pct is None or not n:
+            return None
+        p = pct / 100.0
+        hw = 1.96 * ((p * (1 - p) / n) ** 0.5) * 100.0
+        return [round(max(0.0, pct - hw), 1), round(min(100.0, pct + hw), 1)]
+
     trend = {
         "rounds": [r["round"] for r in rounds],
         "intervention": [r["intervention_pct"] for r in rounds],
         "comparison": [r["comparison_pct"] for r in rounds],
         "self_report": [r["self_report_pct"] for r in rounds],
+        # Sample sizes + 95% CIs for the two independent-survey series (the
+        # self-report line is an admin census, so it carries neither). Surfaced
+        # on the trend chart so a round-to-round change reads as real signal
+        # rather than sampling noise.
+        "intervention_n": [r["intervention_n"] for r in rounds],
+        "comparison_n": [r["comparison_n"] for r in rounds],
+        "intervention_ci": [_wald_ci(r["intervention_pct"], r["intervention_n"]) for r in rounds],
+        "comparison_ci": [_wald_ci(r["comparison_pct"], r["comparison_n"]) for r in rounds],
     }
 
     state = {
