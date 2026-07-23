@@ -38,6 +38,17 @@
                     <dt class="text-gray-500">Awarded organization</dt>
                     <dd class="font-medium text-gray-900">{{ summary.org_display }}</dd>
                 </div>
+                <div>
+                    <dt class="text-gray-500">Contract stage</dt>
+                    <dd class="font-medium text-gray-900">
+                        {% if response.award_stage == 'full' %}
+                            <i class="fa-solid fa-layer-group text-indigo-500 mr-1"></i> Full survey
+                        {% else %}
+                            <i class="fa-solid fa-flag-checkered text-indigo-500 mr-1"></i> Verification contract
+                            <span class="block text-xs font-normal text-gray-500 mt-0.5">A small, confirmable first contract — the full survey follows once performance is confirmed.</span>
+                        {% endif %}
+                    </dd>
+                </div>
                 {% if summary.contact_name %}
                 <div>
                     <dt class="text-gray-500">Contact</dt>
@@ -180,6 +191,32 @@
 
         <form method="post" class="space-y-6">
             {% csrf_token %}
+
+            <!-- Staged contracting — how a firm proves performance, not just promises it -->
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Contract stage</label>
+                <p class="text-xs text-gray-500 mb-3">
+                    Connect lets you start the firm on a small, verifiable contract to confirm quality
+                    before scaling to the full survey — so the award is a first, confirmable step, and
+                    firms demonstrate full performance of the tasks, not just their written response.
+                </p>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <label class="relative flex cursor-pointer rounded-lg border border-indigo-300 bg-indigo-50/40 p-4 has-[:checked]:border-indigo-500 has-[:checked]:ring-2 has-[:checked]:ring-indigo-400">
+                        <input type="radio" name="award_stage" value="verification" checked class="mt-0.5 mr-3">
+                        <span>
+                            <span class="block text-sm font-semibold text-indigo-900">Start with a verification contract</span>
+                            <span class="block text-xs text-gray-600 mt-0.5">A small first slice to confirm quality on the ground. Recommended.</span>
+                        </span>
+                    </label>
+                    <label class="relative flex cursor-pointer rounded-lg border border-gray-300 bg-white p-4 has-[:checked]:border-indigo-500 has-[:checked]:ring-2 has-[:checked]:ring-indigo-400">
+                        <input type="radio" name="award_stage" value="full" class="mt-0.5 mr-3">
+                        <span>
+                            <span class="block text-sm font-semibold text-gray-900">Award the full survey</span>
+                            <span class="block text-xs text-gray-600 mt-0.5">Commit the whole engagement now.</span>
+                        </span>
+                    </label>
+                </div>
+            </div>
 
             <div>
                 <label for="reward_budget" class="block text-sm font-medium text-gray-700 mb-1">

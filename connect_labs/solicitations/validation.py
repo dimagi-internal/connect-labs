@@ -69,6 +69,10 @@ ALLOWED_FIELDS: frozenset[str] = frozenset(
         "source_program_id",
         "source_group_id",
         "source_plan_ids",
+        # Lock-before-publish: the rubric was reviewed and locked so the weighted
+        # criteria are fixed before any firm responds.
+        "criteria_locked",
+        "criteria_locked_at",
     }
 )
 
