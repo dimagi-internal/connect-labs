@@ -196,12 +196,16 @@ class MUACMatchAgent(BaseAIReviewAgent):
                 )
             else:
                 return ReviewResult.failure(
-                    # The detailed form reading lives here (not just "strict
-                    # tolerance") so the review UI's full AI-result section can
-                    # show it without a separate lookup; the tile's compact top
-                    # badge shows just the short "MUAC Mismatch" prefix instead
-                    # (see bulk_assessment.html's aiNotesShort).
-                    badge_label=f"MUAC Mismatch (form: {reading}, {tolerance})",
+                    # Deliberately classifier-level, not per-visit: this string
+                    # is both the assessment's ai_notes AND the key
+                    # AuditSessionRecord.get_assessment_stats() tallies
+                    # ai_flags_by_label by (see connect_labs/audit/models.py).
+                    # Embedding the per-visit reading here would make every
+                    # failing image's label unique, defeating that tally. The
+                    # actual reading is already visible in the review UI's
+                    # "MUAC Reading" related-fields box (see
+                    # weekly_dual_track_audit.py's MUAC_MATCH_REVIEWER config).
+                    badge_label=f"MUAC Mismatch ({tolerance} tolerance)",
                     reading=reading,
                     tolerance=tolerance,
                     processing_factor=processing_factor,

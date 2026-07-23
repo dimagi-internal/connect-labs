@@ -66,8 +66,19 @@
     var a = statsOf(s);
     var byLabel = a.ai_flags_by_label || {};
     var labels = Object.keys(byLabel);
-    if (labels.length <= 1) {
-      return (a.ai_no_match || 0) + ' flagged';
+    var totalFlagged = a.ai_no_match || 0;
+    var labeledTotal = labels.reduce(function (n, l) {
+      return n + byLabel[l];
+    }, 0);
+    // Fall back to the flat form whenever there's nothing to break down, OR
+    // the per-label tally doesn't reconcile with the true flagged count --
+    // e.g. a reviewer that sets no badge_label on failure (unlabeled) mixed
+    // into the same session as labeled ones would otherwise silently drop
+    // those images from the displayed breakdown while still counting them
+    // in ai_no_match. Reconciling here means the breakdown is only ever
+    // shown when it's provably complete.
+    if (labels.length <= 1 || labeledTotal !== totalFlagged) {
+      return totalFlagged + ' flagged';
     }
     return labels
       .map(function (label) {

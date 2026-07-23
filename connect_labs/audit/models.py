@@ -8,6 +8,14 @@ that deserializes production API responses - no database storage.
 
 from connect_labs.labs.models import LocalLabsRecord
 
+# Shared with connect_labs.audit.tasks._combine_reviewer_results, which joins
+# multiple independent AI reviewers' badge_labels into one ai_notes string
+# with this separator. get_assessment_stats() below splits on the SAME
+# constant to recover each reviewer's own label -- importing this one value
+# on both sides means a change to the separator fails loudly (an import
+# error or a single obvious edit site) instead of silently desyncing.
+AI_NOTES_JOIN_SEP = "; "
+
 
 class AuditSessionRecord(LocalLabsRecord):
     """Proxy model for AuditSession-type LocalLabsRecords with nested visit results."""

@@ -19,6 +19,7 @@ from connect_labs.audit.data_access import (
     create_mock_request,
     is_audit_creation_cancelled,
 )
+from connect_labs.audit.models import AI_NOTES_JOIN_SEP
 from connect_labs.audit.visit_clustering import build_flw_visit_clusters
 from connect_labs.utils.celery import set_task_progress
 from connect_labs.utils.progress_relays import _RELAYS as AUDIT_PROGRESS_RELAYS  # noqa: F401  (back-compat alias)
@@ -171,6 +172,13 @@ def _combine_reviewer_results(
     intact in the combined notes so failures remain distinguishable at a
     glance (e.g. "Hyperzoomed" vs "MUAC Mismatch (strict tolerance)").
 
+    The AI_NOTES_JOIN_SEP join below is load-bearing beyond this function:
+    AuditSessionRecord.get_assessment_stats() (connect_labs/audit/models.py)
+    splits ai_notes back apart on the SAME constant to tally each reviewer's
+    own flag count separately. A badge_label must stay classifier-level (no
+    per-visit data embedded) or that tally silently fragments into one bogus
+    entry per distinct value.
+
     human_result is derived from the SAME winning bucket that decided
     ai_result — never from an independent poll of all reviewers — so it can
     never contradict the displayed ai_result (e.g. persisting "pass" as the
@@ -200,7 +208,7 @@ def _combine_reviewer_results(
     else:
         ai_result, winning = "match", passes
 
-    ai_notes = "; ".join(v.ai_notes for v in winning if v.ai_notes) or None
+    ai_notes = AI_NOTES_JOIN_SEP.join(v.ai_notes for v in winning if v.ai_notes) or None
     confidences = [v.ai_confidence for v in winning if v.ai_confidence is not None]
     ai_confidence = confidences[0] if confidences else None
 
