@@ -36,6 +36,12 @@ def muac_picture_audit_create(job_config: dict, access_token: str, progress_call
     run_id = job_config.get("run_id")
     opportunity_id = job_config.get("opportunity_id")
     program_id = job_config.get("program_id")
+    # run_workflow_job's own (fresh, single-use) Celery task id -- see
+    # weekly_dual_track_audit.py's handler for why this, not run_id, is what
+    # cooperative cancellation must key off. This handler makes a single
+    # run_audit_creation call (no loop), so there's no between-call check to
+    # add here -- just thread the id through as cancel_key.
+    task_id = job_config.get("_task_id")
     if not run_id:
         raise ValueError("muac_picture_audit_create requires run_id in job_config")
 
@@ -71,6 +77,7 @@ def muac_picture_audit_create(job_config: dict, access_token: str, progress_call
                     "workflow_run_id": run_id,
                     "image_audits": job_config.get("image_audits") or None,
                     "context_fields": job_config.get("context_fields") or None,
+                    "cancel_key": task_id,
                 }
             )
         finally:

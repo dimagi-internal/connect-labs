@@ -546,9 +546,12 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
     const handleCancel = async () => {
         if (!taskId || isCancelling) return;
         setIsCancelling(true);
-        try {
-            await actions.cancelJob(taskId, instance.id);
-        } catch (e) { /* ignore */ }
+        const result = await actions.cancelJob(taskId, instance.id);
+        if (!result || !result.success) {
+            setIsCancelling(false);
+            setJobError((result && result.error) || 'Failed to stop — the job may still be running.');
+            return;
+        }
         setIsRunning(false);
         setIsCancelling(false);
         setProgress({ status: 'cancelled', message: 'Stopped — sessions created and images already reviewed are kept.' });

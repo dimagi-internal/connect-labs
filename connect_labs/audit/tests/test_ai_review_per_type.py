@@ -421,6 +421,72 @@ def test_cancel_key_stops_before_next_session(monkeypatch):
     assert result["total_reviewed"] == 1
 
 
+class _CancelOnFirstAgent:
+    """Sets the cancel flag from the FIRST review() call it sees, then keeps
+    reviewing (as any real agent would) -- exercises the mid-session path
+    where later, still-queued futures get .cancel()'d rather than run."""
+
+    agent_id = "agent_cancel_multi"
+    name = "Cancel On First Agent"
+    requires_reading = False
+    result_actions = {"ok": {"ai_result": "match", "human_result": "pass", "button_label": "OK"}}
+    seen = []
+    flagged = False
+
+    def review(self, ctx):
+        type(self).seen.append(ctx.metadata["blob_id"])
+        if not type(self).flagged:
+            type(self).flagged = True
+            from connect_labs.audit.data_access import mark_audit_creation_cancelled
+
+            mark_audit_creation_cancelled("test-cancel-key-multi")
+        return ReviewResult.success(match=True)
+
+
+@override_settings(CACHES=_LOCMEM)
+def test_cancel_key_drops_still_queued_futures_mid_session(monkeypatch):
+    """With more images than ThreadPoolExecutor's max_workers=5, some futures
+    are still queued (never started) when the flag flips -- those must be
+    .cancel()'d rather than run, so far fewer than all images get reviewed."""
+    from django.core.cache import cache
+
+    cache.clear()
+    _CancelOnFirstAgent.seen = []
+    _CancelOnFirstAgent.flagged = False
+    monkeypatch.setattr(
+        "connect_labs.labs.ai_review_agents.registry.get_agent",
+        lambda aid: {"agent_cancel_multi": _CancelOnFirstAgent()}[aid],
+    )
+
+    images = [{"blob_id": f"blob{i}", "question_id": "form/photo_a", "related_fields": []} for i in range(20)]
+    session = _FakeSession({"visit_images": {"1": images}})
+
+    class _SingleSessionDataAccess:
+        def get_audit_session(self, session_id, try_multiple_opportunities=False):
+            return session
+
+        def download_image_from_connect(self, blob_id, opp_id):
+            return b"\xff\xd8fakejpeg"
+
+        def save_audit_session(self, session):
+            pass
+
+    result = tasks._run_ai_review_on_sessions(
+        data_access=_SingleSessionDataAccess(),
+        session_ids=[10],
+        access_token="tok",
+        opp_id=42,
+        ai_reviewers={"form/photo_a": [{"agent_id": "agent_cancel_multi", "auto_apply_actions": ["ok"]}]},
+        cancel_key="test-cancel-key-multi",
+    )
+
+    assert result["cancelled"] is True
+    # Bounded, not exact: max_workers=5 means at most a handful were already
+    # running when the flag flipped; the rest of the 20 were still queued.
+    assert result["total_reviewed"] < 20
+    assert len(_CancelOnFirstAgent.seen) < 20
+
+
 def test_legacy_single_agent_still_runs_on_all(patched_registry):
     session = _session_with_two_image_types()
     data_access = _FakeDataAccess(session)

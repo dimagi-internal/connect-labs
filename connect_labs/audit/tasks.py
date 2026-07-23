@@ -637,6 +637,7 @@ def run_audit_creation(
     image_audits: list[dict] | None = None,
     context_fields: list[dict] | None = None,
     progress_callback=None,
+    cancel_key: str | None = None,
 ) -> dict:
     """
     Create audit session(s) asynchronously.
@@ -673,6 +674,15 @@ def run_audit_creation(
         ai_auto_apply_actions: Which AI verdicts the auditor chose to pre-tag as human
             results. None = legacy per-agent default; a list (possibly empty) selects
             exactly which action keys auto-apply. See ``_build_ai_to_human_result``.
+        cancel_key: Cooperative-cancellation identifier to poll (see
+            ``is_audit_creation_cancelled``). A direct/wizard call (apply_async)
+            omits this and falls back to this task's own ``self.request.id``,
+            which is exactly what the caller was handed back and can cancel.
+            A workflow job handler that invokes this via ``.apply()`` *inside*
+            another already-running task must pass its OWN outer task's id
+            explicitly -- ``self.request.id`` here would be a fresh id `.apply()`
+            generates for just this nested call, never known outside this
+            process, so nothing could ever target it for cancellation.
 
     Returns:
         Result dict with session_ids, etc.
@@ -684,16 +694,7 @@ def run_audit_creation(
     opportunity_ids = [o["id"] for o in opportunities]
     opp_id = opportunity_ids[0] if opportunity_ids else None
     task_id = self.request.id
-    # Workflow-triggered creation (weekly_dual_track_audit, muac_picture_audit)
-    # invokes this task via .apply() *inside* another task -- each such call
-    # gets its own freshly generated self.request.id that the caller (a web
-    # request, in a different process) never learns and so can never target
-    # with a cancel flag. workflow_run_id, by contrast, is known on both ends
-    # (it's the run the "Cancel" button already has), so cooperative
-    # cancellation keys off that instead whenever this is a workflow call.
-    # Direct/wizard calls (apply_async, no workflow_run_id) keep using task_id,
-    # which already matches what the caller was handed.
-    cancel_key = f"workflow_run:{workflow_run_id}" if workflow_run_id else task_id
+    cancel_key = cancel_key or task_id
 
     logger.info(
         f"[AuditCreation] Starting async audit creation: "

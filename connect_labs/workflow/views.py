@@ -3871,14 +3871,14 @@ def cancel_job_api(request, task_id):
             # that only takes effect on a real distributed worker.
             celery_app.control.revoke(task_id, terminate=True, signal="SIGTERM")
 
-            # Cooperative cancellation: job handlers that create audits
-            # (weekly_dual_track_audit, muac_picture_audit) invoke
-            # run_audit_creation via .apply() *inside* this task, so it gets its
-            # own celery task_id that this endpoint never sees. Those handlers
-            # key their cancel check off workflow_run_id instead, which is
-            # exactly this run_id -- see run_audit_creation's cancel_key.
-            if run_id:
-                mark_audit_creation_cancelled(f"workflow_run:{run_id}")
+            # Cooperative cancellation, keyed off THIS task_id -- the same
+            # fresh, single-use id run_workflow_job threads into job_config as
+            # "_task_id" (see connect_labs/workflow/tasks.py) for handlers that
+            # invoke run_audit_creation via .apply() *inside* this task. Using
+            # this task's own id (rather than the long-lived run_id) means a
+            # later retry on the same run always gets a brand-new key -- no
+            # stale flag can carry over and silently no-op it.
+            mark_audit_creation_cancelled(task_id)
 
             # Update job state in workflow run if run_id provided
             if run_id:

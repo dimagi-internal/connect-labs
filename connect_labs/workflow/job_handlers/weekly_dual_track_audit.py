@@ -26,6 +26,13 @@ def weekly_dual_track_audit_create(job_config: dict, access_token: str, progress
     run_id = job_config.get("run_id")
     opportunity_id = job_config.get("opportunity_id")
     program_id = job_config.get("program_id")
+    # run_workflow_job's own (fresh, single-use) Celery task id -- injected into
+    # job_config by run_workflow_job itself. This is exactly the id the browser
+    # already has (returned by start_job_api, passed to actions.cancelJob), so
+    # it's the identifier "Cancel" can actually target -- unlike run_id, which
+    # is a long-lived DB id that gets reused on every future run of this same
+    # workflow instance and would leave a stale cancel flag behind for retries.
+    task_id = job_config.get("_task_id")
     if not run_id:
         raise ValueError("weekly_dual_track_audit_create requires run_id in job_config")
 
@@ -100,14 +107,15 @@ def weekly_dual_track_audit_create(job_config: dict, access_token: str, progress
 
         successful, failed, sessions_created = 0, 0, 0
         for idx, call in enumerate(calls):
-            # Cooperative cancellation (the "Cancel" button on the run) -- keyed
-            # by run_id since run_audit_creation's own .apply()-generated
-            # task_id is never known outside this process. Checked between
-            # calls (not just inside AI review) so a cancel while call #1 is
-            # still reviewing skips starting #2, #3, ... entirely.
-            if is_audit_creation_cancelled(f"workflow_run:{run_id}"):
+            # Cooperative cancellation (the "Cancel" button on the run).
+            # Checked between calls (not just inside AI review) so a cancel
+            # while call #1 is still reviewing skips starting #2, #3, ... too.
+            if task_id and is_audit_creation_cancelled(task_id):
                 logger.info(
-                    "[WeeklyDualTrackAudit] run %s: cancelled, stopping before call %d/%d", run_id, idx, len(calls)
+                    "[WeeklyDualTrackAudit] run %s: cancelled, stopping before call %d/%d",
+                    run_id,
+                    idx + 1,
+                    len(calls),
                 )
                 break
             opp = call["opportunities"][0]
@@ -123,7 +131,7 @@ def weekly_dual_track_audit_create(job_config: dict, access_token: str, progress
 
             register_relay(run_id, _track_progress)
             try:
-                eager = run_audit_creation.apply(kwargs={"access_token": access_token, **call})
+                eager = run_audit_creation.apply(kwargs={"access_token": access_token, "cancel_key": task_id, **call})
                 res = eager.result if isinstance(eager.result, dict) else {}
                 # run_audit_creation returns created sessions under "sessions"
                 # (a list of {id, title, ...}); count those.

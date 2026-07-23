@@ -200,10 +200,12 @@ def test_handler_invokes_run_audit_creation_per_call_and_writes_summary():
 
 def test_handler_stops_between_calls_when_cancelled():
     """Cancelling (e.g. the user stops a review after selecting too large a
-    sample) is keyed by run_id -- run_audit_creation's own .apply()-generated
-    task_id is never known outside this process. Once flagged, the handler
-    must not start any further opp/track call, leaving whatever sessions
-    earlier calls already created untouched."""
+    sample) is keyed by run_workflow_job's own task id (job_config["_task_id"],
+    injected by run_workflow_job) -- the same fresh id the browser already has
+    and the one run_audit_creation's own .apply()-generated task_id can never
+    be, since that's a throwaway id nothing outside this process learns. Once
+    flagged, the handler must not start any further opp/track call, leaving
+    whatever sessions earlier calls already created untouched."""
     from connect_labs.workflow.job_handlers import weekly_dual_track_audit as h
 
     run = _fake_run({"window_start": "2026-06-22", "window_end": "2026-06-28"})
@@ -222,12 +224,16 @@ def test_handler_stops_between_calls_when_cancelled():
         # Not cancelled before call #1; cancelled by the time call #2 is checked.
         cancelled.side_effect = [False, True, True, True]
 
-        result = h.weekly_dual_track_audit_create({"run_id": 555, "opportunity_id": 101}, access_token="tok")
+        result = h.weekly_dual_track_audit_create(
+            {"run_id": 555, "opportunity_id": 101, "_task_id": "outer-task-abc"}, access_token="tok"
+        )
 
     assert rac.apply.call_count == 1
     assert result["successful"] == 1
     assert result["sessions_created"] == 3
-    cancelled.assert_called_with("workflow_run:555")
+    cancelled.assert_called_with("outer-task-abc")
+    rac.apply.assert_called_once()
+    assert rac.apply.call_args.kwargs["kwargs"]["cancel_key"] == "outer-task-abc"
 
 
 def test_handler_scopes_data_access_by_program_id_for_program_owned_runs():
