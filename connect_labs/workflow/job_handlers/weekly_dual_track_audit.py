@@ -13,6 +13,7 @@ be threaded into WorkflowDataAccess or a program-owned run's get_run() 404s.
 
 import logging
 
+from connect_labs.audit.data_access import is_audit_creation_cancelled
 from connect_labs.audit.tasks import run_audit_creation
 from connect_labs.workflow.data_access import WorkflowDataAccess
 from connect_labs.workflow.tasks import register_job_handler
@@ -99,6 +100,16 @@ def weekly_dual_track_audit_create(job_config: dict, access_token: str, progress
 
         successful, failed, sessions_created = 0, 0, 0
         for idx, call in enumerate(calls):
+            # Cooperative cancellation (the "Cancel" button on the run) -- keyed
+            # by run_id since run_audit_creation's own .apply()-generated
+            # task_id is never known outside this process. Checked between
+            # calls (not just inside AI review) so a cancel while call #1 is
+            # still reviewing skips starting #2, #3, ... entirely.
+            if is_audit_creation_cancelled(f"workflow_run:{run_id}"):
+                logger.info(
+                    "[WeeklyDualTrackAudit] run %s: cancelled, stopping before call %d/%d", run_id, idx, len(calls)
+                )
+                break
             opp = call["opportunities"][0]
             tag = call["criteria"]["tag"]
 

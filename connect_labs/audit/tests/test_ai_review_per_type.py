@@ -1,8 +1,11 @@
 """Tests for per-image-type agent resolution in _run_ai_review_on_sessions."""
 import pytest
+from django.test import override_settings
 
 from connect_labs.audit import tasks
 from connect_labs.labs.ai_review_agents.types import ReviewResult
+
+_LOCMEM = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
 
 
 class _FakeSession:
@@ -351,6 +354,71 @@ class TestCombineReviewerResults:
             "Hyperzoomed": 1,
             "MUAC Mismatch (strict tolerance)": 1,
         }
+
+
+class _CancelAfterReviewAgent:
+    """Stand-in agent that flags cancellation itself after reviewing one image
+    -- simulates the user clicking Stop while the first session is still
+    being reviewed, so the SECOND session's turn in the outer loop must never
+    start."""
+
+    agent_id = "agent_cancel_trigger"
+    name = "Cancel Trigger Agent"
+    requires_reading = False
+    result_actions = {"ok": {"ai_result": "match", "human_result": "pass", "button_label": "OK"}}
+    seen = []
+
+    def review(self, ctx):
+        from connect_labs.audit.data_access import mark_audit_creation_cancelled
+
+        type(self).seen.append(ctx.metadata["blob_id"])
+        mark_audit_creation_cancelled("test-cancel-key")
+        return ReviewResult.success(match=True)
+
+
+@override_settings(CACHES=_LOCMEM)
+def test_cancel_key_stops_before_next_session(monkeypatch):
+    from django.core.cache import cache
+
+    cache.clear()
+    _CancelAfterReviewAgent.seen = []
+    monkeypatch.setattr(
+        "connect_labs.labs.ai_review_agents.registry.get_agent",
+        lambda aid: {"agent_cancel_trigger": _CancelAfterReviewAgent()}[aid],
+    )
+
+    session_1 = _FakeSession(
+        {"visit_images": {"1": [{"blob_id": "blobA", "question_id": "form/photo_a", "related_fields": []}]}}
+    )
+    session_2 = _FakeSession(
+        {"visit_images": {"1": [{"blob_id": "blobB", "question_id": "form/photo_a", "related_fields": []}]}}
+    )
+    sessions_by_id = {10: session_1, 20: session_2}
+
+    class _MultiSessionDataAccess:
+        def get_audit_session(self, session_id, try_multiple_opportunities=False):
+            return sessions_by_id[session_id]
+
+        def download_image_from_connect(self, blob_id, opp_id):
+            return b"\xff\xd8fakejpeg"
+
+        def save_audit_session(self, session):
+            pass
+
+    result = tasks._run_ai_review_on_sessions(
+        data_access=_MultiSessionDataAccess(),
+        session_ids=[10, 20],
+        access_token="tok",
+        opp_id=42,
+        ai_reviewers={"form/photo_a": [{"agent_id": "agent_cancel_trigger", "auto_apply_actions": ["ok"]}]},
+        cancel_key="test-cancel-key",
+    )
+
+    # Session 1 was reviewed (the flag is only set from inside its own
+    # review call); session 2 must never have started.
+    assert _CancelAfterReviewAgent.seen == ["blobA"]
+    assert result["cancelled"] is True
+    assert result["total_reviewed"] == 1
 
 
 def test_legacy_single_agent_still_runs_on_all(patched_registry):

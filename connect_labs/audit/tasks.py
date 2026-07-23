@@ -250,6 +250,7 @@ def _run_ai_review_on_sessions(
     auto_apply_actions: list[str] | None = None,
     ai_reviewers: dict | None = None,
     progress_callback=None,
+    cancel_key: str | None = None,
 ) -> dict:
     """
     Run AI review agent on the specified audit sessions.
@@ -267,6 +268,10 @@ def _run_ai_review_on_sessions(
         auto_apply_actions: Which AI verdicts auto-apply as human results. None =
             legacy per-agent default; a list (possibly empty) selects exactly which
             action keys pre-tag. See ``_build_ai_to_human_result``.
+        cancel_key: If set, checked cooperatively between sessions (and between
+            images within a session) via ``is_audit_creation_cancelled`` so a
+            large review can be stopped mid-run. Sessions already created and
+            images already reviewed are left as-is -- only remaining work stops.
 
     Returns:
         Dict with review results summary
@@ -353,8 +358,13 @@ def _run_ai_review_on_sessions(
     total_errors = 0
     total_skipped = 0
     images_processed = 0
+    cancelled = False
 
     for session_id in session_ids:
+        if cancel_key and is_audit_creation_cancelled(cancel_key):
+            logger.info(f"[AIReview] Cancelled — stopping before session {session_id}")
+            cancelled = True
+            break
         try:
             # Get session data
             session = data_access.get_audit_session(session_id, try_multiple_opportunities=True)
@@ -548,6 +558,17 @@ def _run_ai_review_on_sessions(
                             f"({total_passed} passed, {total_failed} failed)",
                         )
 
+                    if cancel_key and is_audit_creation_cancelled(cancel_key):
+                        cancelled = True
+                        # This future's own outcome is already recorded above;
+                        # drop the rest of this session's not-yet-started work.
+                        # Already-running fetches finish but their results are
+                        # ignored (the pool still awaits them on __exit__).
+                        for pending_fut in fut_map:
+                            pending_fut.cancel()
+                        logger.info(f"[AIReview] Cancelled mid-session {session_id} — stopping remaining images")
+                        break
+
             # Save session if we made any updates
             if session_updated:
                 try:
@@ -568,9 +589,13 @@ def _run_ai_review_on_sessions(
         except Exception as e:
             logger.warning(f"[AIReview] Failed to process session {session_id}: {e}")
 
+        if cancelled:
+            break
+
     logger.info(
         f"[AIReview] Complete: reviewed={total_reviewed}, "
         f"passed={total_passed}, failed={total_failed}, errors={total_errors}, skipped={total_skipped}"
+        + (" (cancelled)" if cancelled else "")
     )
 
     if ai_reviewers is not None:
@@ -591,6 +616,7 @@ def _run_ai_review_on_sessions(
         "total_failed": total_failed,
         "total_errors": total_errors,
         "total_skipped": total_skipped,
+        "cancelled": cancelled,
     }
 
 
@@ -658,6 +684,16 @@ def run_audit_creation(
     opportunity_ids = [o["id"] for o in opportunities]
     opp_id = opportunity_ids[0] if opportunity_ids else None
     task_id = self.request.id
+    # Workflow-triggered creation (weekly_dual_track_audit, muac_picture_audit)
+    # invokes this task via .apply() *inside* another task -- each such call
+    # gets its own freshly generated self.request.id that the caller (a web
+    # request, in a different process) never learns and so can never target
+    # with a cancel flag. workflow_run_id, by contrast, is known on both ends
+    # (it's the run the "Cancel" button already has), so cooperative
+    # cancellation keys off that instead whenever this is a workflow call.
+    # Direct/wizard calls (apply_async, no workflow_run_id) keep using task_id,
+    # which already matches what the caller was handed.
+    cancel_key = f"workflow_run:{workflow_run_id}" if workflow_run_id else task_id
 
     logger.info(
         f"[AuditCreation] Starting async audit creation: "
@@ -922,7 +958,7 @@ def run_audit_creation(
         # Cooperative cancellation: if the user cancelled while we were fetching
         # visits / extracting images, abort BEFORE creating any session so a
         # reverted creation can't leave a stray session behind.
-        if is_audit_creation_cancelled(task_id):
+        if is_audit_creation_cancelled(cancel_key):
             logger.info(f"[AuditCreation] Task {task_id} cancelled before session creation — aborting")
             _update_job_progress(
                 data_access, task_id, username, status="cancelled", message="Cancelled before session creation"
@@ -1154,8 +1190,24 @@ def run_audit_creation(
                     auto_apply_actions=ai_auto_apply_actions,
                     ai_reviewers=ai_reviewers,
                     progress_callback=on_ai_review_progress,
+                    cancel_key=cancel_key,
                 )
                 logger.info(f"[AuditCreation] AI review complete: {ai_review_results}")
+                if ai_review_results.get("cancelled"):
+                    _update_job_progress(
+                        data_access,
+                        task_id,
+                        username,
+                        status="running",
+                        current_stage=current_stage,
+                        total_stages=total_stages,
+                        stage_name="AI Review",
+                        message=(
+                            f"AI review stopped by user after "
+                            f"{ai_review_results.get('total_reviewed', 0)} image(s) — "
+                            "sessions are still available for manual review."
+                        ),
+                    )
             except Exception as e:
                 logger.warning(f"[AuditCreation] AI review failed (non-fatal): {e}")
                 ai_review_results = {"error": str(e)}

@@ -392,6 +392,8 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
     const [isRunning, setIsRunning] = React.useState(false);
     const [progress, setProgress] = React.useState(null);
     const [jobError, setJobError] = React.useState(null);
+    const [taskId, setTaskId] = React.useState(null);
+    const [isCancelling, setIsCancelling] = React.useState(false);
     // A create job whose worker died mid-batch (e.g. a deploy cutover) never
     // writes a terminal status, so active_job stays 'running' forever. We detect
     // that on reconnect (see below) and surface it here instead of spinning.
@@ -399,12 +401,20 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
     // Per-run sampling rates — default to the pinned config, adjustable before create.
     const [muacSample, setMuacSample] = React.useState(trackA.sample_percentage != null ? trackA.sample_percentage : 100);
     const [otherSample, setOtherSample] = React.useState(trackB.sample_percentage != null ? trackB.sample_percentage : 10);
-    // Visit Clustering (optional 3rd filter) — defaults from pinned config, per-run adjustable.
+    // Visit Clustering (optional 3rd filter) — the job handler persists whatever
+    // was actually used onto run state (enable_time_gap, etc.), so a reopened
+    // run shows ITS OWN params, not the pinned template default.
     const clustering = batch.visit_clustering || {};
-    const [enableTimeGap, setEnableTimeGap] = React.useState(!!clustering.enable_time_gap);
-    const [timeGapMinutes, setTimeGapMinutes] = React.useState(clustering.time_gap_minutes != null ? clustering.time_gap_minutes : 10);
-    const [enableDistance, setEnableDistance] = React.useState(!!clustering.enable_distance);
-    const [distanceMeters, setDistanceMeters] = React.useState(clustering.distance_meters != null ? clustering.distance_meters : 10);
+    const [enableTimeGap, setEnableTimeGap] = React.useState(
+        runState.enable_time_gap != null ? !!runState.enable_time_gap : !!clustering.enable_time_gap);
+    const [timeGapMinutes, setTimeGapMinutes] = React.useState(
+        runState.time_gap_minutes != null ? runState.time_gap_minutes
+            : (clustering.time_gap_minutes != null ? clustering.time_gap_minutes : 10));
+    const [enableDistance, setEnableDistance] = React.useState(
+        runState.enable_distance != null ? !!runState.enable_distance : !!clustering.enable_distance);
+    const [distanceMeters, setDistanceMeters] = React.useState(
+        runState.distance_meters != null ? runState.distance_meters
+            : (clustering.distance_meters != null ? clustering.distance_meters : 10));
     const cleanupRef = React.useRef(null);
     React.useEffect(() => () => { if (cleanupRef.current) cleanupRef.current(); }, []);
 
@@ -448,7 +458,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                 setIsRunning(false); setJobError(err || 'Job failed'); setProgress(null);
                 onUpdateState({ active_job: { job_id: taskId, status: 'failed' } }).catch(() => {});
             },
-            () => { setIsRunning(false); setProgress({ status: 'cancelled' }); },
+            () => { setIsRunning(false); setIsCancelling(false); setProgress({ status: 'cancelled' }); },
             instance.id // run_id — lets the server unstick a reconnect to a dead job
         );
         cleanupRef.current = cleanup;
@@ -478,6 +488,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
             return;
         }
         setIsRunning(true);
+        setTaskId(active.job_id);
         setProgress({ status: 'running', message: 'Reconnecting to the running job…' });
         attachStream(active.job_id);
     }, []); // once on mount
@@ -523,8 +534,26 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
         // The server job records active_job (with progress) on the run itself,
         // so a page reload reconnects — no separate state write needed here
         // (a redundant one races the server's write and can flake a 404).
+        setTaskId(resp.task_id);
         setProgress({ status: 'running', message: 'Starting…' });
         attachStream(resp.task_id);
+    };
+
+    // ── Cancel handler ────────────────────────────────────────────────────────
+    // Sessions/images already created and reviewed are left as-is — cancelling
+    // only stops whatever work hasn't started yet (see run_audit_creation's
+    // cooperative cancel_key and the job handler's between-call check).
+    const handleCancel = async () => {
+        if (!taskId || isCancelling) return;
+        setIsCancelling(true);
+        try {
+            await actions.cancelJob(taskId, instance.id);
+        } catch (e) { /* ignore */ }
+        setIsRunning(false);
+        setIsCancelling(false);
+        setProgress({ status: 'cancelled', message: 'Stopped — sessions created and images already reviewed are kept.' });
+        if (cleanupRef.current) { cleanupRef.current(); cleanupRef.current = null; }
+        await refreshSessions();
     };
 
     const datePresets = [
@@ -592,6 +621,14 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                     </p>
                     <p className="text-xs text-gray-500 mt-1">
                         This run's audits have already been created — creation controls are hidden. Review the results below.
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                        Visit clustering: {(enableTimeGap || enableDistance)
+                            ? [
+                                enableTimeGap ? `within ${timeGapMinutes} min` : null,
+                                enableDistance ? `within ${distanceMeters}m` : null,
+                            ].filter(Boolean).join(' and ')
+                            : 'not applied'}.
                     </p>
                 </div>
             )}
@@ -861,11 +898,21 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                 </button>
                 {isRunning && progress && (
                     <div className="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
-                        <div className="flex items-center font-medium">
-                            <i className="fa-solid fa-spinner fa-spin mr-2"></i>
-                            {progress.message || progress.stage_name || 'Working…'}
-                            {progress.total > 0 && (
-                                <span className="ml-2 text-blue-600">({progress.processed || 0}/{progress.total})</span>
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center font-medium">
+                                <i className="fa-solid fa-spinner fa-spin mr-2"></i>
+                                {progress.message || progress.stage_name || 'Working…'}
+                                {progress.total > 0 && (
+                                    <span className="ml-2 text-blue-600">({progress.processed || 0}/{progress.total})</span>
+                                )}
+                            </div>
+                            {taskId && (
+                                <button onClick={handleCancel} disabled={isCancelling}
+                                    className={'px-3 py-1 text-sm text-red-600 hover:text-red-800 ' +
+                                        'hover:bg-red-100 rounded transition-colors disabled:opacity-50 whitespace-nowrap'}>
+                                    <i className="fa-solid fa-times mr-1"></i>
+                                    {isCancelling ? 'Stopping…' : 'Stop'}
+                                </button>
                             )}
                         </div>
                         {progress.total > 0 && (
@@ -898,6 +945,12 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                     <div className="mt-4 bg-green-50 border border-green-200 rounded-lg p-4 text-sm text-green-800">
                         <i className="fa-solid fa-circle-check mr-2"></i>
                         Done — {sessions.length} audit session(s) created across {oppIds.length} opportunit{oppIds.length === 1 ? 'y' : 'ies'} (one MUAC + one sampled audit per field worker per opp).
+                    </div>
+                )}
+                {progress && progress.status === 'cancelled' && !isRunning && (
+                    <div className="mt-4 bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-800">
+                        <i className="fa-solid fa-ban mr-2"></i>
+                        {progress.message || 'Stopped.'} {sessions.length} audit session(s) exist so far across {oppIds.length} opportunit{oppIds.length === 1 ? 'y' : 'ies'} — click <strong>Create audits</strong> to review the rest, or open a session below.
                     </div>
                 )}
             </div>

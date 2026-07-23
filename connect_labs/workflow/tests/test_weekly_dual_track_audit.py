@@ -198,6 +198,38 @@ def test_handler_invokes_run_audit_creation_per_call_and_writes_summary():
     assert written["last_batch"]["calls"] == 4
 
 
+def test_handler_stops_between_calls_when_cancelled():
+    """Cancelling (e.g. the user stops a review after selecting too large a
+    sample) is keyed by run_id -- run_audit_creation's own .apply()-generated
+    task_id is never known outside this process. Once flagged, the handler
+    must not start any further opp/track call, leaving whatever sessions
+    earlier calls already created untouched."""
+    from connect_labs.workflow.job_handlers import weekly_dual_track_audit as h
+
+    run = _fake_run({"window_start": "2026-06-22", "window_end": "2026-06-28"})
+    eager = mock.Mock()
+    eager.result = {"sessions": [1, 2, 3]}
+
+    with (
+        mock.patch.object(h, "WorkflowDataAccess") as WDA,
+        mock.patch.object(h, "run_audit_creation") as rac,
+        mock.patch.object(h, "is_audit_creation_cancelled") as cancelled,
+    ):
+        wda = WDA.return_value
+        wda.get_run.return_value = run
+        wda.get_definition.return_value = _fake_definition()
+        rac.apply.return_value = eager
+        # Not cancelled before call #1; cancelled by the time call #2 is checked.
+        cancelled.side_effect = [False, True, True, True]
+
+        result = h.weekly_dual_track_audit_create({"run_id": 555, "opportunity_id": 101}, access_token="tok")
+
+    assert rac.apply.call_count == 1
+    assert result["successful"] == 1
+    assert result["sessions_created"] == 3
+    cancelled.assert_called_with("workflow_run:555")
+
+
 def test_handler_scopes_data_access_by_program_id_for_program_owned_runs():
     """A program-owned run has no owning opportunity_id — job_config carries
     program_id instead (injected by run_workflow_job). The handler must thread
@@ -639,6 +671,37 @@ def test_render_code_includes_visit_clustering_card():
     assert "Visit Clustering" in rc
     assert "enable_time_gap" in rc
     assert "enable_distance" in rc
+
+
+def test_render_code_includes_cancel_button():
+    """A large sample's AI review can take a while -- the run needs a way to
+    stop it via the generic job-cancel action (cancelJob), not just createAudit's
+    audit-specific cancelAudit (which this template never calls)."""
+    from connect_labs.workflow.templates import get_template
+
+    rc = get_template("weekly_dual_track_audit")["render_code"]
+    assert "actions.cancelJob(taskId, instance.id)" in rc
+    assert "handleCancel" in rc
+
+
+def test_render_code_clustering_state_prefers_run_state_over_pinned_default():
+    """A reopened run must show the clustering params it actually used, not the
+    template's pinned default -- so the state init reads runState.enable_time_gap
+    etc. before falling back to the DEFINITION's visit_clustering."""
+    from connect_labs.workflow.templates import get_template
+
+    rc = get_template("weekly_dual_track_audit")["render_code"]
+    assert "runState.enable_time_gap" in rc
+    assert "runState.time_gap_minutes" in rc
+    assert "runState.enable_distance" in rc
+    assert "runState.distance_meters" in rc
+
+
+def test_render_code_view_only_card_shows_clustering_params_used():
+    from connect_labs.workflow.templates import get_template
+
+    rc = get_template("weekly_dual_track_audit")["render_code"]
+    assert "Visit clustering:" in rc
 
 
 def test_definition_pins_track_names_not_reviewers():
