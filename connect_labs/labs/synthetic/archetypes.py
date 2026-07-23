@@ -261,6 +261,26 @@ AUDIT_ARCHETYPES: dict[str, AuditArchetype] = {
         # so every pending photo is a clean one — passing them all is the honest call.
         image_spec=AuditImageSpec(good_count=0, bad_count=0, pending_count=5, pending_good_ratio=1.0),
     ),
+    # ── The AI-FIRST CENSUS archetype: ~100 photos, every one AI-screened on
+    # ingest; the bulk pass cleanly and a handful are AI-flagged (Hyperzoomed)
+    # for a human to adjudicate. This is the EFFICIENCY story (Echo P1): nobody
+    # staffs a person to eyeball every photo — the audit runs AI-first and a
+    # person only weighs in on the exceptions. good_count exceeds the 8-photo
+    # good stock, so build_audit_data's `_take` cycles the pool (repeats blob_ids
+    # — acceptable: the corpus is small by design; the story is AI verdict VOLUME,
+    # not photo variety). framing bads = what muac_overzoom genuinely flags. ──
+    "completed_ai_first_census": AuditArchetype(
+        name="completed_ai_first_census",
+        description=(
+            "~100 MUAC photos, every one AI-screened on ingest. The bulk pass "
+            "cleanly; a handful are AI-flagged (Hyperzoomed) and adjudicated by a "
+            "person. AI-first: nobody eyeballs every photo."
+        ),
+        status="completed",
+        overall_result="fail",  # any AI-flagged photo fails at a 100% pass threshold
+        image_spec=AuditImageSpec(good_count=94, bad_count=6, bad_category="framing"),
+        ai_reviewed=True,  # AI verdict on all: good → match, framing → Hyperzoomed/no_match
+    ),
 }
 
 
@@ -309,17 +329,33 @@ def _pick_blob_ids(spec: AuditImageSpec, rng_seed: int) -> list[tuple[str, str |
 
     # Sampling helper that keeps order-bias (primary category first) but
     # randomizes within each slice.
-    def _take(pool: list[str], n: int) -> list[str]:
+    def _take(pool: list[str], n: int, cycle: bool = False) -> list[str]:
         # Take up to n in pool order, breaking ties with rng to avoid always
         # picking the first NN entries when n < len(pool).
         shuffled = list(pool)
         # Stable random shuffle within first len(primary) so cross-call seed
         # produces consistent results, but adds variety per (seed, archetype).
         rng.shuffle(shuffled)
-        return shuffled[:n]
+        if not shuffled or n <= len(shuffled):
+            return shuffled[:n]
+        if not cycle:
+            # Default: cap at pool size (callers top up from other pools). This
+            # keeps bad-category PRIMARY-FIRST intact — a framing audit takes the
+            # 2 framing photos, then tops up from `other`; it must NOT cycle.
+            return shuffled[:n]
+        # cycle=True (good pool only): census-scale audits (good_count ~100)
+        # exceed the 8-photo good stock. Cycle the pool — reshuffling each lap —
+        # so blob_ids repeat rather than truncating. Repeats are acceptable: the
+        # corpus is small by design and the story is AI-verdict VOLUME.
+        out: list[str] = []
+        while len(out) < n:
+            lap = list(shuffled)
+            rng.shuffle(lap)
+            out.extend(lap)
+        return out[:n]
 
-    # Assessed photos
-    chosen_good = _take(good_pool, spec.good_count)
+    # Assessed photos — the good pool cycles for census-scale counts (>8).
+    chosen_good = _take(good_pool, spec.good_count, cycle=True)
     # Bad photos PRIMARY-FIRST: exhaust the requested ``bad_category`` before topping
     # up from other categories. Without this, ``_take`` shuffles the whole pool and a
     # ``framing`` audit (only 2 framing photos in the corpus) fills the other 3 slots
