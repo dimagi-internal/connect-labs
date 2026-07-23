@@ -77,6 +77,11 @@ class WeeklyRunsResource(BaseModel):
 class RunAuditsResource(BaseModel):
     kind: Literal["run_audits"]
     source: Literal["anomalies"] = "anomalies"
+    # Opt-in: also emit ONE ~100-photo AI-first CENSUS audit on this
+    # opportunity's last completed run — every photo AI-screened, ~6 flagged
+    # (Hyperzoomed), the rest cleared. None (default) = no census audit, so
+    # existing envs are unchanged.
+    census_audit_opp: int | None = None
 
 
 class TasksResource(BaseModel):

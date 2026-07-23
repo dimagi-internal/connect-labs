@@ -97,6 +97,15 @@ _IN_REVIEW_MIXED_ARCHETYPE = "in_review_mixed"
 # cluster reads BELOW because the arc's task is a suspension outcome.
 _SUSPENDED_FRAUD_AUDIT_ARCHETYPE = "completed_fail_framing"
 
+# The AI-FIRST CENSUS archetype: a completed ~100-photo audit — every photo
+# AI-screened on ingest (good → match, framing → Hyperzoomed/no_match), 94 pass
+# / 6 flagged. Emitted once per opp when the manifest sets ``census_audit_opp``,
+# under a synthetic ``census_ai_first`` username so it never collides with a
+# real flagged FLW's per-week audit. This is the EFFICIENCY headline: a person
+# adjudicates only the AI exceptions, not every photo.
+_CENSUS_AUDIT_ARCHETYPE = "completed_ai_first_census"
+_CENSUS_AUDIT_FLW_ID = "census_ai_first"
+
 
 def _audit_archetype_for(
     flw_id: str, resolved_flws: set, investigating_flws: set, suspended_flws: set = frozenset()
@@ -334,6 +343,40 @@ def ensure_run_audits(resource, ctx) -> dict:
                         audits_ensured += 1
 
                     ctx.ids[f"audit:{run_id}:{flw_id}"] = audit_id
+
+            # ── AI-first CENSUS audit (opt-in via census_audit_opp) ──────────
+            # One ~100-photo audit on this opp's LAST completed run: every photo
+            # AI-screened, ~6 flagged (Hyperzoomed), the rest cleared. Seeded
+            # under a synthetic username so it never collides with a per-FLW
+            # audit. Idempotent on (run_id, username); the audit is static and
+            # completed, so existence is a plain reuse (no reconcile).
+            if resource.census_audit_opp == opp_id:
+                census_week = next((w for w in reversed(weeks) if w != current_week), None)
+                c_run_id = ctx.ids.get(f"run:{opp_id}:{census_week}") if census_week else None
+                if c_run_id is not None:
+                    already = any(
+                        s.data.get("username") == _CENSUS_AUDIT_FLW_ID
+                        for s in ada.get_sessions_by_workflow_run(c_run_id)
+                    )
+                    if already:
+                        audits_reused += 1
+                    else:
+                        c_visit = _seeded_visit_id_base(
+                            manifest.random_seed, c_run_id, _CENSUS_AUDIT_FLW_ID
+                        )
+                        census_audit_id = generate_audit_from_archetype(
+                            ada=ada,
+                            opportunity_id=opp_id,
+                            opportunity_name=manifest.opportunity_name,
+                            workflow_run_id=c_run_id,
+                            flw_id=_CENSUS_AUDIT_FLW_ID,
+                            monday_iso=census_week,
+                            audit_archetype=_CENSUS_AUDIT_ARCHETYPE,
+                            visit_id=c_visit,
+                            flw_name="AI-First Image Census",
+                        )
+                        ctx.ids[f"census_audit:{opp_id}"] = census_audit_id
+                        audits_ensured += 1
         finally:
             ada.close()
 
