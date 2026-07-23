@@ -96,13 +96,16 @@ scenes:
     walkthrough.
 
     '
-  narrative: 'Connect lets one person oversee several programs at once and act on
-    all of them from a single place — confident that every service being paid for
-    has actually been verified. Here, one manager oversees three network managers
-    running RUTF distribution and weekly MUAC screening. From one screen she checks
-    each manager''s SOP compliance, opens a flagged worker''s audited photos and the
-    coaching that followed, and tracks an individual child''s recovery — every number
-    backed by the verified visit behind it.
+  narrative: 'Running a wasting program at scale means proving every paid service
+    actually happened — the digital-data-and-verification problem. Connect lets one
+    person oversee several programs at once and act on all of them from a single
+    place, confident that every service being paid for has actually been verified.
+    Here, one manager oversees three network managers running RUTF distribution and
+    weekly MUAC screening. Every screening photo is checked by AI automatically — the
+    audit runs AI-first, and a person only weighs in on the exceptions. From one
+    screen she checks each manager''s SOP compliance, opens a flagged worker''s
+    audited photos and the coaching that followed, and tracks an individual child''s
+    recovery — every number backed by the verified visit behind it.
 
     '
   show: 'Open on the Program Admin Report and state the goal: one person overseeing
@@ -678,6 +681,42 @@ scenes:
     not just a status label.
 
     '
+- title: The AI-first image census — every photo screened, a person handles the exceptions
+  persona: priya
+  provenance: S3
+  role: demo
+  concept_claim: 'Every MUAC photo is screened by the AI reviewer on ingest — this
+    audit shows a hundred at once, ninety-four cleared and six flagged "Hyperzoomed"
+    for a person to adjudicate, so nobody eyeballs every photo by hand.
+
+    '
+  design_intent: 'The efficiency case: verification at scale is only affordable if
+    the machine does the first pass. A person spends their judgement on the six
+    exceptions the AI surfaces, not the ninety-four it already cleared.
+
+    '
+  show: 'The bulk image-audit page: a hundred MUAC assessments, the summary reading
+    94 Passed / 6 Failed, the six AI-flagged cards carrying the Hyperzoomed badge —
+    every photo AI-screened, the human review scoped to the exceptions.
+
+    '
+  actions:
+  - kind: goto
+    note: the AI-first census audit — 100 photos screened at once
+    target: /audit/5026/bulk/?opportunity_id=10012
+  - kind: wait_for
+    must_succeed: true
+    note: the summary bar with the pass/fail split
+    seconds: 20
+    target: css:text=/Passed/
+  - kind: hold
+    seconds: 4
+  narrative: 'And this is what makes it affordable at scale. Every image is screened
+    by the AI on the way in — here, a hundred at once: ninety-four cleared, six
+    flagged Hyperzoomed for a person to weigh in on. Nobody staffs someone to eyeball
+    every photo; the AI runs first, and people adjudicate only the exceptions.
+
+    '
 - title: Priya returns to the aggregate and makes her call
   persona: priya
   provenance: S1
@@ -817,7 +856,9 @@ scenes:
     seconds: 4
   narrative: 'And to see what all that oversight is ultimately for, she follows one
     child. The SAM follow-up timeline drills to a single child''s MUAC climbing across
-    eight visits — out of red, through yellow, into green. Recovered.
+    eight visits — out of red, through yellow, into green. Recovered. And the same
+    timeline is how you catch a recovered child beginning to relapse — before they
+    fall back into treatment.
 
     '
 narrative_synced_version: 4
