@@ -1,10 +1,10 @@
 """Weekly Dual-Track Image Audit — multi-opp, action-shaped creator.
 
-Each weekly run creates, per FLW, two audits per opportunity:
-  - Track A ("muac"): census of the pinned MUAC image type(s), 100%, with the
-    muac_overzoom AI agent auto-tagging fails.
-  - Track B ("rest"): the remaining pinned image types, sampled (default 10%),
-    human-reviewed.
+Each weekly run creates, per FLW, two audits per opportunity — Track A and
+Track B, user-named slots each pinned to their own set of image paths (see
+_image_audits). Any path containing "muac" (in either track) gets both the
+muac_overzoom and muac_match AI agents attached, running independently of
+each other; any other path is human-reviewed only.
 
 The per-opp image paths and track config live on the workflow DEFINITION
 (instance config); the batch window lives in run state. See
@@ -13,29 +13,42 @@ docs/superpowers/specs/2026-06-30-audit-program-report-design.md.
 
 from connect_labs.audit.data_access import AuditDataAccess
 
-MUAC_AI_REVIEWER = {
+MUAC_OVERZOOM_REVIEWER = {
     "agent_id": "muac_overzoom",
     "auto_apply_actions": ["fail_overzoomed"],
 }
 
+# Manually-entered MUAC reading (cm) that accompanies the tape photo —
+# confirmed against the real CommCare form JSON. soliciter_muac (a
+# hidden DataBindOnly field elsewhere in the form) is just a calculated
+# alias of this same value.
+MUAC_READING_FIELD = "muac_group/muac_display_group_2/muac_colour_display/soliciter_muac_cm"
 
-def _reviewer_for_path(path):
-    """The muac_overzoom AI reviewer attaches to any image path whose name
-    contains 'muac' (case-insensitive) — independent of which track (A/B) the
-    path is pinned under, and independent of whatever display name the user
-    gives that track. Any other path gets no AI reviewer (human-only)."""
-    return MUAC_AI_REVIEWER if "muac" in (path or "").lower() else None
+MUAC_MATCH_REVIEWER = {
+    "agent_id": "muac_match",
+    "config": {"comparison_field": MUAC_READING_FIELD},
+    "auto_apply_actions": ["fail_unmatched"],
+}
+
+
+def _reviewers_for_path(path):
+    """Both MUAC AI reviewers attach to any image path whose name contains
+    'muac' (case-insensitive) — independent of which track (A/B) the path is
+    pinned under, and independent of whatever display name the user gives
+    that track. The two run independently of each other and are scored
+    independently (see connect_labs.audit.tasks._combine_reviewer_results):
+    MUAC OverZoom flags unusable framing, MUAC Match flags a reading that
+    doesn't match the photo. Any other path gets no AI reviewer (human-only)."""
+    if "muac" not in (path or "").lower():
+        return []
+    return [MUAC_OVERZOOM_REVIEWER, MUAC_MATCH_REVIEWER]
 
 
 def _image_audits(paths):
     """One image_audits entry per pinned image path, each with its own
-    per-path reviewer (see _reviewer_for_path) — the PR #771 per-image-type
+    per-path reviewer(s) (see _reviewers_for_path) — the PR #771 per-image-type
     model. See connect_labs/audit/ai_review_config.build_review_config."""
-    result = []
-    for p in paths or []:
-        reviewer = _reviewer_for_path(p)
-        result.append({"image_path": p, "reviewers": [reviewer] if reviewer else []})
-    return result
+    return [{"image_path": p, "reviewers": _reviewers_for_path(p)} for p in paths or []]
 
 
 def build_track_audit_calls(
@@ -200,10 +213,11 @@ DEFINITION = {
     ],
     "config": {
         "audit_batch": {
-            # PR #771 per-image-type model, extended: the muac_overzoom AI reviewer
-            # attaches per-PATH (any path containing "muac"), not per-track — see
-            # _reviewer_for_path. "name" is a purely cosmetic display label the user
-            # can rename; it has no effect on which images get AI-reviewed.
+            # PR #771 per-image-type model, extended: the muac_overzoom and
+            # muac_match AI reviewers attach per-PATH (any path containing
+            # "muac"), not per-track — see _reviewers_for_path. "name" is a
+            # purely cosmetic display label the user can rename; it has no
+            # effect on which images get AI-reviewed.
             "track_a": {"tag": "muac", "sample_percentage": 100, "name": "MUAC"},
             "track_b": {"tag": "rest", "sample_percentage": 10, "name": "Other"},
             "per_opp": {},  # { "<opp_id>": {"muac_image_paths": [...], "rest_image_paths": [...]} }
@@ -239,7 +253,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
 
     // ── Track names + per-opp image path selection (editable pinned config) ───
     // "name" is a cosmetic display label only — it has no bearing on which
-    // images get AI-reviewed (see _reviewer_for_path: that's decided per-path,
+    // images get AI-reviewed (see _reviewers_for_path: that's decided per-path,
     // by whether "muac" appears in the path itself).
     const [trackAName, setTrackAName] = React.useState(trackA.name || 'MUAC');
     const [trackBName, setTrackBName] = React.useState(trackB.name || 'Other');

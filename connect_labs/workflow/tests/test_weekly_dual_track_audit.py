@@ -50,7 +50,16 @@ def test_builds_two_calls_per_opp_with_tags_and_image_audits():
     assert a["image_audits"] == [
         {
             "image_path": "form.muac",
-            "reviewers": [{"agent_id": "muac_overzoom", "auto_apply_actions": ["fail_overzoomed"]}],
+            "reviewers": [
+                {"agent_id": "muac_overzoom", "auto_apply_actions": ["fail_overzoomed"]},
+                {
+                    "agent_id": "muac_match",
+                    "config": {
+                        "comparison_field": "muac_group/muac_display_group_2/muac_colour_display/soliciter_muac_cm"
+                    },
+                    "auto_apply_actions": ["fail_unmatched"],
+                },
+            ],
         }
     ]
     assert a["context_fields"] is None
@@ -633,7 +642,7 @@ def test_render_code_includes_visit_clustering_card():
 
 def test_definition_pins_track_names_not_reviewers():
     """The reviewer used to be pinned per-track (track_a always got muac_overzoom);
-    it's now decided per-path (see _reviewer_for_path), so the DEFINITION carries a
+    it's now decided per-path (see _reviewers_for_path), so the DEFINITION carries a
     cosmetic display "name" per track instead of a "reviewer" key."""
     from connect_labs.workflow.templates.weekly_dual_track_audit import DEFINITION
 
@@ -653,28 +662,31 @@ def test_render_code_includes_editable_image_type_checkboxes():
     assert "image-questions" in rc
 
 
-class TestReviewerForPath:
-    def test_attaches_muac_reviewer_to_any_path_containing_muac_case_insensitive(self):
-        from connect_labs.workflow.templates.weekly_dual_track_audit import _reviewer_for_path
+class TestReviewersForPath:
+    def test_attaches_both_muac_reviewers_to_any_path_containing_muac_case_insensitive(self):
+        from connect_labs.workflow.templates.weekly_dual_track_audit import (
+            MUAC_MATCH_REVIEWER,
+            MUAC_OVERZOOM_REVIEWER,
+            MUAC_READING_FIELD,
+            _reviewers_for_path,
+        )
 
-        assert _reviewer_for_path("form.muac_photo") == {
-            "agent_id": "muac_overzoom",
-            "auto_apply_actions": ["fail_overzoomed"],
-        }
-        assert _reviewer_for_path("form.MUAC_photo") is not None
-        assert _reviewer_for_path("muac_group/muac_display_group_2/muac_photo") is not None
+        assert _reviewers_for_path("form.muac_photo") == [MUAC_OVERZOOM_REVIEWER, MUAC_MATCH_REVIEWER]
+        assert MUAC_MATCH_REVIEWER["config"]["comparison_field"] == MUAC_READING_FIELD
+        assert _reviewers_for_path("form.MUAC_photo") != []
+        assert _reviewers_for_path("muac_group/muac_display_group_2/muac_photo") != []
 
-    def test_no_reviewer_for_paths_without_muac(self):
-        from connect_labs.workflow.templates.weekly_dual_track_audit import _reviewer_for_path
+    def test_no_reviewers_for_paths_without_muac(self):
+        from connect_labs.workflow.templates.weekly_dual_track_audit import _reviewers_for_path
 
-        assert _reviewer_for_path("form.house") is None
-        assert _reviewer_for_path("") is None
-        assert _reviewer_for_path(None) is None
+        assert _reviewers_for_path("form.house") == []
+        assert _reviewers_for_path("") == []
+        assert _reviewers_for_path(None) == []
 
 
 def test_reviewer_assignment_is_per_path_not_per_track():
-    """A muac-named path pinned to Track B still gets the AI reviewer; a
-    non-muac path pinned to Track A does not — the assignment is purely about
+    """A muac-named path pinned to Track B still gets both AI reviewers; a
+    non-muac path pinned to Track A gets none — the assignment is purely about
     the path's own name, independent of which track slot it lives in."""
     calls = build_track_audit_calls(
         opportunity_ids=[101],
@@ -700,6 +712,15 @@ def test_reviewer_assignment_is_per_path_not_per_track():
     assert b["image_audits"] == [
         {
             "image_path": "form.muac_photo",
-            "reviewers": [{"agent_id": "muac_overzoom", "auto_apply_actions": ["fail_overzoomed"]}],
+            "reviewers": [
+                {"agent_id": "muac_overzoom", "auto_apply_actions": ["fail_overzoomed"]},
+                {
+                    "agent_id": "muac_match",
+                    "config": {
+                        "comparison_field": "muac_group/muac_display_group_2/muac_colour_display/soliciter_muac_cm"
+                    },
+                    "auto_apply_actions": ["fail_unmatched"],
+                },
+            ],
         }
     ]

@@ -1,11 +1,15 @@
 """Translate the wizard's image_audits payload into the audit pipeline's
-internal related_fields rules plus a question_id -> reviewer map.
+internal related_fields rules plus a question_id -> reviewer list map.
 
 image_audits (from the creation wizard):
     [{"image_path": "form/scale_photo",
       "reviewers": [{"agent_id": "scale_validation",
                      "config": {"comparison_field": "form/child_weight"},
                      "auto_apply_actions": ["pass_matched", "fail_unmatched"]}]}]
+
+    An image path may carry more than one reviewer (e.g. MUAC OverZoom +
+    MUAC Match both reviewing the same photo, independently) — each entry in
+    "reviewers" becomes its own entry in the ai_reviewers list for that path.
 
 context_fields (slim agent-less display):
     [{"image_path": "form/scale_photo", "field_path": "form/child_id", "label": "Child ID"}]
@@ -14,7 +18,13 @@ related_fields rules consumed by AuditDataAccess:
     {image_path, field_path, label, filter_by_image, filter_by_field}
 
 ai_reviewers map consumed by tasks._run_ai_review_on_sessions:
-    {question_id: {"agent_id": str, "auto_apply_actions": list | None}}
+    {question_id: [{"agent_id": str, "auto_apply_actions": list | None,
+                     "comparison_field": str | None}, ...]}
+
+    comparison_field is carried through per-reviewer (not just used to build a
+    related_fields rule) so that when two reviewers share an image path, each
+    pulls its OWN reading from tasks._reading_for — rather than every reviewer
+    on that path sharing whichever related field happened to have a value first.
 """
 
 
@@ -41,10 +51,10 @@ def _value_rule(image_path: str, field_path: str, label: str = "") -> dict:
 def build_review_config(
     image_audits: list[dict] | None,
     context_fields: list[dict] | None = None,
-) -> tuple[list[dict], dict[str, dict]]:
+) -> tuple[list[dict], dict[str, list[dict]]]:
     """Return (related_fields, ai_reviewers) for the given wizard payload."""
     related_fields: list[dict] = []
-    ai_reviewers: dict[str, dict] = {}
+    ai_reviewers: dict[str, list[dict]] = {}
 
     for entry in image_audits or []:
         image_path = (entry or {}).get("image_path")
@@ -54,22 +64,28 @@ def build_review_config(
         # Selecting an image type scopes the audit to visits that have it.
         related_fields.append(_filter_rule(image_path))
 
-        reviewers = entry.get("reviewers") or []
-        reviewer = reviewers[0] if reviewers else None  # v1: one reviewer per type
-        if not reviewer or not reviewer.get("agent_id"):
-            continue
+        for reviewer in entry.get("reviewers") or []:
+            if not reviewer or not reviewer.get("agent_id"):
+                continue
 
-        ai_reviewers[image_path] = {
-            "agent_id": reviewer["agent_id"],
-            "auto_apply_actions": reviewer.get("auto_apply_actions"),
-        }
+            # A form_field config value (e.g. the scale agent's comparison_field) becomes
+            # the reading rule that supplies form_data["reading"] to the agent, AND is
+            # carried on the spec itself so this specific reviewer can find its own
+            # value later even when another reviewer on the same path has a different
+            # (or no) comparison_field — see the docstring above.
+            config = reviewer.get("config") or {}
+            comparison_field = config.get("comparison_field")
 
-        # A form_field config value (e.g. the scale agent's comparison_field) becomes
-        # the reading rule that supplies form_data["reading"] to the agent.
-        config = reviewer.get("config") or {}
-        comparison_field = config.get("comparison_field")
-        if comparison_field:
-            related_fields.append(_value_rule(image_path, comparison_field))
+            ai_reviewers.setdefault(image_path, []).append(
+                {
+                    "agent_id": reviewer["agent_id"],
+                    "auto_apply_actions": reviewer.get("auto_apply_actions"),
+                    "comparison_field": comparison_field,
+                }
+            )
+
+            if comparison_field:
+                related_fields.append(_value_rule(image_path, comparison_field))
 
     for cf in context_fields or []:
         image_path = (cf or {}).get("image_path")
