@@ -141,6 +141,15 @@ class WorkflowRunRecord(LocalLabsRecord):
         return self.data.get("definition_id")
 
     @property
+    def name(self) -> str:
+        """User-given display name, or "" if never renamed (callers fall back
+        to "Run #<id>"). Stored top-level (sibling to period_start/status),
+        not under `state` -- it's a label, not run state, so it isn't wiped
+        by state merges and isn't blocked by the completed-run write guard
+        that state.* is subject to."""
+        return self.data.get("name") or ""
+
+    @property
     def period_start(self):
         top = self.data.get("period_start")
         if top:
@@ -948,6 +957,39 @@ class WorkflowDataAccess(BaseDataAccess):
         current_state = run.data.get("state", {})
         merged_state = {**current_state, **sanitized}
         updated_data = {**run.data, "state": merged_state}
+
+        result = self.labs_api.update_record(
+            record_id=run_id,
+            experiment=self.EXPERIMENT,
+            type="workflow_run",
+            data=updated_data,
+            current_record=run,
+        )
+        if result:
+            return WorkflowRunRecord(
+                {
+                    "id": result.id,
+                    "experiment": result.experiment,
+                    "type": result.type,
+                    "data": result.data,
+                    "opportunity_id": result.opportunity_id,
+                }
+            )
+        return None
+
+    def rename_run(self, run_id: int, name: str, run: WorkflowRunRecord | None = None) -> WorkflowRunRecord | None:
+        """Set the run's display name (top-level `data.name`, not `state`).
+
+        Unlike update_run_state, this is allowed on completed runs too -- a
+        display label isn't run business state, so there's no reason renaming
+        should be blocked once a run finishes.
+        """
+        if run is None:
+            run = self.get_run(run_id)
+        if not run:
+            return None
+
+        updated_data = {**run.data, "name": name}
 
         result = self.labs_api.update_record(
             record_id=run_id,

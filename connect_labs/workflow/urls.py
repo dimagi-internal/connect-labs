@@ -131,6 +131,7 @@ urlpatterns = [
     path("api/job/<str:task_id>/status.json", views.JobStatusAPIView.as_view(), name="api_job_status_json"),
     path("api/job/<str:task_id>/cancel/", views.cancel_job_api, name="api_cancel_job"),
     path("api/run/<int:run_id>/delete/", views.delete_run_api, name="api_delete_run"),
+    path("api/run/<int:run_id>/rename/", views.rename_run_api, name="api_rename_run"),
     path("api/open-tasks/", views.open_tasks_api, name="api_open_tasks"),
     path("api/prev-categories/", views.prev_categories_api, name="api_prev_categories"),
     path("api/open-run-state/", views.open_run_state_api, name="api_open_run_state"),
