@@ -66,6 +66,29 @@ as WhyBrief gap G1 (CAPABILITY, claim_ref S4).
 
 ## Current phase
 
+UPLOADED — EXTERNALLY PUBLISHED. Run `nutrition-demo-2026-07-22-003` **iter1**
+(2026-07-22). Resumed run 003 to finish the two undone items: (1) NARRATED hero
+(prior 003 hero was silent) and (2) re-capture scene 12 after workflow 5017
+render-code v3 added the MUAC-recovery **SPARKLINE**. Re-rendered the FULL 12-scene
+spec (55/55 actions ok). **CONVERGED iter1: concept 5.0 (up from 4.0), user 4.0,
+stop_done.** The sparkline resolved scene-12's two prior sub-5 caps against their
+own pre-registered fix (visual_polish 4→5, claim_reality 4→5 — the arc red→green is
+now visible in one frame). user-artifact trust stays 4 (Beneficiary-N privacy
+anon, unaffected by the curve). Narrated hero: 110.5s, reused run002 s1-s11 VO +
+new s12 payoff line + child-landing outro; timing 4.44, video-judge 4.0, dead-air
+under threshold. Caught+fixed a video-render defect (s12 action-mark on a deep row
+in the tall page → page-fit zoom → 18% strip; re-mapped clip to the settled panel
+region + dropped the action-mark → full-width curve). **EXTERNAL-published via
+`ddd-upload --release-approved`** (external_release gate created+resolved+audited,
+phase→uploaded), narrative v3 (ff96b68a).
+- /ddd package: `https://labs.connect.dimagi.com/canopy/w/connect/ddd/nutrition-demo/nutrition-demo-2026-07-22-003`
+- Clean release page (public, anon-viewable): `https://labs.connect.dimagi.com/canopy/ddd-release/nutrition-demo/nutrition-demo-2026-07-22-003?t=sl5hVRMl16ePd_-wHXFFrvVhzYqr80TB`
+  (narrative already public → publishing auto-minted is_public+share_token; anon
+  access confirmed, scene-12 recovery curve renders).
+- Note: the WhyBrief "known gap G1" below is now BUILT (SAM Follow-up Timeline
+  wf 5017), so the per-child MUAC-trajectory dashboard exists as scene 12.
+
+### Prior phase
 CONVERGED (concept 4.0/5 pass, user-artifact 4.0/5 pass) — run
 `nutrition-demo-2026-07-22-003` (2026-07-22), FULL 12-scene spec incl. the NEW
 closing **scene 12 "Priya follows one child's recovery"** (SAM Follow-up Timeline,
