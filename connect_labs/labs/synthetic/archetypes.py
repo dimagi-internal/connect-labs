@@ -329,7 +329,7 @@ def _pick_blob_ids(spec: AuditImageSpec, rng_seed: int) -> list[tuple[str, str |
 
     # Sampling helper that keeps order-bias (primary category first) but
     # randomizes within each slice.
-    def _take(pool: list[str], n: int) -> list[str]:
+    def _take(pool: list[str], n: int, cycle: bool = False) -> list[str]:
         # Take up to n in pool order, breaking ties with rng to avoid always
         # picking the first NN entries when n < len(pool).
         shuffled = list(pool)
@@ -338,10 +338,15 @@ def _pick_blob_ids(spec: AuditImageSpec, rng_seed: int) -> list[tuple[str, str |
         rng.shuffle(shuffled)
         if not shuffled or n <= len(shuffled):
             return shuffled[:n]
-        # Census-scale audits (good_count ~100) exceed the small stock corpus
-        # (8 good / 13 bad). Cycle the pool — reshuffling each lap — so blob_ids
-        # repeat rather than truncating to the pool size. Repeats are acceptable:
-        # the corpus is small by design and the story is AI-verdict VOLUME.
+        if not cycle:
+            # Default: cap at pool size (callers top up from other pools). This
+            # keeps bad-category PRIMARY-FIRST intact — a framing audit takes the
+            # 2 framing photos, then tops up from `other`; it must NOT cycle.
+            return shuffled[:n]
+        # cycle=True (good pool only): census-scale audits (good_count ~100)
+        # exceed the 8-photo good stock. Cycle the pool — reshuffling each lap —
+        # so blob_ids repeat rather than truncating. Repeats are acceptable: the
+        # corpus is small by design and the story is AI-verdict VOLUME.
         out: list[str] = []
         while len(out) < n:
             lap = list(shuffled)
@@ -349,8 +354,8 @@ def _pick_blob_ids(spec: AuditImageSpec, rng_seed: int) -> list[tuple[str, str |
             out.extend(lap)
         return out[:n]
 
-    # Assessed photos
-    chosen_good = _take(good_pool, spec.good_count)
+    # Assessed photos — the good pool cycles for census-scale counts (>8).
+    chosen_good = _take(good_pool, spec.good_count, cycle=True)
     # Bad photos PRIMARY-FIRST: exhaust the requested ``bad_category`` before topping
     # up from other categories. Without this, ``_take`` shuffles the whole pool and a
     # ``framing`` audit (only 2 framing photos in the corpus) fills the other 3 slots
