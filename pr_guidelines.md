@@ -56,6 +56,7 @@ This document outlines best practices for creating and reviewing pull requests i
 
 - **Use AI reviews as a first pass**: Let automated tools catch basic issues first
 - **Respond to AI feedback**: Address AI review comments before requesting human review
+- **connect-labs has no CI-based review bot**: unlike some other Dimagi repos, nothing here comments on PRs automatically. The gap is covered by a pre-push check instead — before every `git push`, an independent multi-perspective review (the `code-review:*` subagent suite: design, quality, security, smells, maintainability) runs against the branch diff, and Critical/Important findings get fixed before the push goes out. This runs locally, not in CI, so it applies regardless of which repo you're pushing to.
 
 #### 8. Code Standards
 

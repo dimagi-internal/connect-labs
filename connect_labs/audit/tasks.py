@@ -10,6 +10,7 @@ Provides async audit creation with:
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import NamedTuple
 
 from config import celery_app
 from connect_labs.audit.data_access import (
@@ -119,6 +120,119 @@ def _build_ai_to_human_result(agent, auto_apply_actions: list[str] | None) -> di
     return mapping
 
 
+class ResolvedReviewer(NamedTuple):
+    """One reviewer resolved for an image path — see resolve() in
+    _run_ai_review_on_sessions. comparison_field is the related_fields path
+    (e.g. from the wizard's per-image-type config.comparison_field) THIS
+    reviewer's own reading should come from; None if this reviewer needs no
+    reading or has no field configured."""
+
+    agent: object
+    requires_reading: bool
+    ai_to_human_map: dict[str, str]
+    comparison_field: str | None
+
+
+class ReviewerVerdict(NamedTuple):
+    """One reviewer's outcome on one image — the input to _combine_reviewer_results."""
+
+    agent_id: str
+    ai_result: str
+    ai_notes: str | None
+    ai_confidence: float | None
+    ai_to_human_map: dict[str, str]
+
+
+class FetchReviewOutcome(NamedTuple):
+    """Return type of _fetch_and_review — replaces a 10-element positional
+    tuple that grew error-prone to keep in sync across three return sites."""
+
+    visit_id_str: str
+    blob_id: str
+    question_id: str
+    image_question_id: str
+    ai_result: str | None
+    ai_notes: str | None
+    ai_confidence: float | None
+    human_result: str | None
+    skipped: bool
+
+
+def _combine_reviewer_results(
+    per_agent_results: list[ReviewerVerdict],
+) -> tuple[str, str | None, float | None, str | None]:
+    """Combine independent per-reviewer verdicts on one image into the single
+    ai_result/ai_notes/ai_confidence/human_result an assessment stores.
+
+    Each reviewer runs and is scored independently (e.g. MUAC OverZoom and
+    MUAC Match both watching the same photo) — an error or failure from ANY
+    reviewer wins over a pass, so a flagged image is never silently hidden by
+    another reviewer's pass. Each reviewer's own badge_label/pass_label stays
+    intact in the combined notes so failures remain distinguishable at a
+    glance (e.g. "Hyperzoomed" vs "MUAC Mismatch (strict tolerance)").
+
+    human_result is derived from the SAME winning bucket that decided
+    ai_result — never from an independent poll of all reviewers — so it can
+    never contradict the displayed ai_result (e.g. persisting "pass" as the
+    human decision while the badge shows "no_match" because a different
+    reviewer, whose own auto_apply_actions doesn't cover its fail case,
+    failed independently).
+
+    Args:
+        per_agent_results: one ReviewerVerdict per reviewer that actually ran.
+            Must be non-empty — the caller is responsible for treating "no
+            reviewer ran" as skipped, not as calling this function.
+
+    Returns:
+        (ai_result, ai_notes, ai_confidence, human_result)
+    """
+    if not per_agent_results:
+        raise ValueError("_combine_reviewer_results requires at least one reviewer verdict")
+
+    errors = [v for v in per_agent_results if v.ai_result == "error"]
+    failures = [v for v in per_agent_results if v.ai_result == "no_match"]
+    passes = [v for v in per_agent_results if v.ai_result == "match"]
+
+    if errors:
+        ai_result, winning = "error", errors
+    elif failures:
+        ai_result, winning = "no_match", failures
+    else:
+        ai_result, winning = "match", passes
+
+    ai_notes = "; ".join(v.ai_notes for v in winning if v.ai_notes) or None
+    confidences = [v.ai_confidence for v in winning if v.ai_confidence is not None]
+    ai_confidence = confidences[0] if confidences else None
+
+    # Only the winning reviewers' own auto-apply mapping can set human_result —
+    # a reviewer outside the winning bucket never gets a vote (see docstring).
+    mapped_results = {v.ai_to_human_map.get(ai_result) for v in winning}
+    if "fail" in mapped_results:
+        human_result = "fail"
+    elif "pass" in mapped_results:
+        human_result = "pass"
+    else:
+        human_result = None
+
+    return ai_result, ai_notes, ai_confidence, human_result
+
+
+def _reading_for(comparison_field: str | None, reading_by_field: dict[str, str]) -> str | None:
+    """The reading value ONE specific reviewer should use, so that when several
+    independent reviewers watch the same image path (see ResolvedReviewer),
+    each pulls its own configured field instead of all of them sharing
+    whichever related field happened to have a value first.
+
+    comparison_field is that reviewer's own config.comparison_field (None if
+    it wasn't configured, e.g. muac_overzoom, or for the legacy single-agent
+    path, which predates per-reviewer field configuration) — falls back to
+    "any reading present" for that case, matching the original behavior.
+    """
+    if comparison_field:
+        return reading_by_field.get(comparison_field)
+    return next(iter(reading_by_field.values()), None)
+
+
 def _run_ai_review_on_sessions(
     data_access,
     session_ids: list[int],
@@ -151,34 +265,42 @@ def _run_ai_review_on_sessions(
     """
     from connect_labs.labs.ai_review_agents.registry import get_agent
 
-    # Resolve a reviewer for a given image question_id. Unifies two modes:
-    #   * per-type (ai_reviewers given): look up the agent by question_id
-    #   * legacy (ai_agent_id given): the same agent applies to every question_id
-    # Returns (agent, requires_reading, ai_to_human_map) or None when no reviewer applies.
+    # Resolve the reviewer(s) for a given image question_id. Unifies two modes:
+    #   * per-type (ai_reviewers given): look up the agent list by question_id.
+    #     An image path may have more than one independent reviewer (e.g. MUAC
+    #     OverZoom + MUAC Match both watching the same photo) — each runs and
+    #     is scored independently; see _combine_reviewer_results.
+    #   * legacy (ai_agent_id given): the same single agent applies to every question_id
+    # Returns a list of ResolvedReviewer — empty when no reviewer applies.
     _reviewer_cache: dict = {}
+
+    def _cache_reviewer(cache_key, agent_id, actions, comparison_field):
+        if cache_key not in _reviewer_cache:
+            ag = get_agent(agent_id)
+            _reviewer_cache[cache_key] = ResolvedReviewer(
+                agent=ag,
+                requires_reading=getattr(ag, "requires_reading", True),
+                ai_to_human_map=_build_ai_to_human_result(ag, actions),
+                comparison_field=comparison_field,
+            )
+        return _reviewer_cache[cache_key]
 
     def resolve(question_id):
         if ai_reviewers is not None:
-            spec = ai_reviewers.get(question_id)
-            if not spec or not spec.get("agent_id"):
-                return None
-            cache_key = ("qid", question_id)
-            agent_id_ = spec["agent_id"]
-            actions = spec.get("auto_apply_actions")
+            specs = [s for s in (ai_reviewers.get(question_id) or []) if s and s.get("agent_id")]
+            return [
+                _cache_reviewer(
+                    ("qid", question_id, spec["agent_id"]),
+                    spec["agent_id"],
+                    spec.get("auto_apply_actions"),
+                    spec.get("comparison_field"),
+                )
+                for spec in specs
+            ]
         else:
             if not ai_agent_id:
-                return None
-            cache_key = ("global",)
-            agent_id_ = ai_agent_id
-            actions = auto_apply_actions
-        if cache_key not in _reviewer_cache:
-            ag = get_agent(agent_id_)
-            _reviewer_cache[cache_key] = (
-                ag,
-                getattr(ag, "requires_reading", True),
-                _build_ai_to_human_result(ag, actions),
-            )
-        return _reviewer_cache[cache_key]
+                return []
+            return [_cache_reviewer(("global",), ai_agent_id, auto_apply_actions, None)]
 
     if ai_reviewers is not None:
         logger.info(f"[AIReview] Per-image-type review on {len(session_ids)} sessions: {ai_reviewers}")
@@ -201,10 +323,13 @@ def _run_ai_review_on_sessions(
                         resolved = resolve(image_data.get("question_id", ""))
                         if not resolved:
                             continue
-                        _agent, requires_reading, _map = resolved
                         related_fields = image_data.get("related_fields", [])
                         has_reading = any(rf.get("value") for rf in related_fields)
-                        if has_reading or not requires_reading:
+                        # Reviewable if AT LEAST ONE resolved reviewer can actually run.
+                        # (Coarse approximation for the progress-bar total — has_reading
+                        # is a loop invariant, hoisted out of the reviewer check. The
+                        # actual per-reviewer skip logic below is comparison_field-precise.)
+                        if has_reading or any(not r.requires_reading for r in resolved):
                             reviewable_count += 1
                 session_image_counts[session_id] = reviewable_count
                 total_images_to_review += reviewable_count
@@ -244,9 +369,13 @@ def _run_ai_review_on_sessions(
             session_updated = False
 
             # Phase 1: collect reviewable work items, skip the rest.
-            # Each item: (visit_id_str, blob_id, reading, question_id, image_qid)
-            #   image_qid -> the image's own question path, used to resolve its reviewer
-            #   question_id -> stored on the assessment (may be the reading field's path)
+            # Each item: (visit_id_str, blob_id, reading_by_field, question_id, image_qid)
+            #   image_qid -> the image's own question path, used to resolve its reviewer(s)
+            #   reading_by_field -> {field_path: value} from related_fields — each resolved
+            #     reviewer picks ITS OWN reading via its comparison_field (see _reading_for),
+            #     rather than every reviewer on this path sharing one scalar value.
+            #   question_id -> stored on the assessment (best-effort: the first related
+            #     field with a value, if any, else the image's own path)
             work_items = []
             for visit_id_str, images in visit_images.items():
                 logger.debug(f"[AIReview] Visit {visit_id_str}: {len(images)} images")
@@ -258,89 +387,112 @@ def _run_ai_review_on_sessions(
                     resolved = resolve(image_qid)
                     if not resolved:
                         continue  # no reviewer configured for this image type
-                    _agent, requires_reading, _map = resolved
                     related_fields = image_data.get("related_fields", [])
-                    reading = None
+                    reading_by_field = {
+                        rf["path"]: str(rf["value"]) for rf in related_fields if rf.get("path") and rf.get("value")
+                    }
                     question_id = image_qid
                     for rf in related_fields:
                         if rf.get("value"):
-                            reading = str(rf.get("value"))
                             question_id = rf.get("path") or question_id
                             break
-                    if not reading and requires_reading:
-                        logger.debug(f"[AIReview] Skipping blob={blob_id}: no reading and agent requires one")
+                    # Only skip the whole image if EVERY resolved reviewer needs a
+                    # reading and none can find ITS OWN configured field's value — a
+                    # reviewer that doesn't need one (e.g. muac_overzoom), or a
+                    # different reviewer whose own field IS present, still runs
+                    # individually in _fetch_and_review.
+                    if all(
+                        r.requires_reading and not _reading_for(r.comparison_field, reading_by_field) for r in resolved
+                    ):
+                        logger.debug(f"[AIReview] Skipping blob={blob_id}: no reviewer has a reading it can use")
                         total_skipped += 1
                         images_processed += 1
                         continue
-                    work_items.append((visit_id_str, blob_id, reading, question_id, image_qid))
+                    work_items.append((visit_id_str, blob_id, reading_by_field, question_id, image_qid))
 
             # Phase 2: fetch + AI-review all images in parallel.
             # Both the Connect image download and the ML classification call are HTTP-bound,
             # so concurrent workers cut wall-clock time roughly proportional to worker count.
             # httpx.Client (used by both data_access and the agent) is thread-safe.
             def _fetch_and_review(item):
-                v_id, b_id, rdg, q_id, img_qid = item
-                agent, _rr, _map = resolve(img_qid)
+                v_id, b_id, reading_by_field, q_id, img_qid = item
+                resolved_reviewers = resolve(img_qid)
                 try:
                     img_bytes = data_access.download_image_from_connect(b_id, opp_id)
                     if not img_bytes:
-                        return (v_id, b_id, q_id, rdg, img_qid, None, None, None, True)  # skipped
+                        return FetchReviewOutcome(v_id, b_id, q_id, img_qid, None, None, None, None, True)
                 except Exception as exc:
                     logger.warning(f"[AIReview] Failed to fetch image {b_id}: {exc}")
-                    return (v_id, b_id, q_id, rdg, img_qid, None, None, None, True)  # skipped
+                    return FetchReviewOutcome(v_id, b_id, q_id, img_qid, None, None, None, None, True)
 
                 from connect_labs.labs.ai_review_agents.types import ReviewContext
 
-                ctx = ReviewContext(
-                    images={"scale": img_bytes},
-                    form_data={"reading": rdg} if rdg else {},
-                    metadata={
-                        "visit_id": v_id,
-                        "blob_id": b_id,
-                        "opportunity_id": opp_id,
-                        "session_id": session_id,
-                    },
-                )
-                ai_n = None
-                ai_c = None
-                try:
-                    rv = agent.review(ctx)
-                    ai_c = rv.confidence
-                    if rv.passed:
-                        ai_r = "match"
-                        # pass_label provides a human-readable classification for the tile footer
-                        # (e.g. "Not Hyperzoomed" for muac_overzoom)
-                        ai_n = rv.details.get("pass_label")
-                    elif rv.failed:
-                        ai_r = "no_match"
-                        # badge_label is the display label for the top-left badge and tile footer
-                        # (e.g. "Hyperzoomed" instead of generic "No Match")
-                        ai_n = rv.details.get("badge_label")
-                    else:
+                # Each resolved reviewer runs independently on the same image, with
+                # its OWN reading (see _reading_for) — a reviewer that requires a
+                # reading and doesn't have one just skips itself rather than
+                # blocking the others (see the work_items filter above, which only
+                # drops the whole image when EVERY reviewer has nothing to work with).
+                per_agent_results: list[ReviewerVerdict] = []
+                for reviewer in resolved_reviewers:
+                    rdg = _reading_for(reviewer.comparison_field, reading_by_field)
+                    if reviewer.requires_reading and not rdg:
+                        continue
+                    ctx = ReviewContext(
+                        images={"scale": img_bytes},
+                        form_data={"reading": rdg} if rdg else {},
+                        metadata={
+                            "visit_id": v_id,
+                            "blob_id": b_id,
+                            "opportunity_id": opp_id,
+                            "session_id": session_id,
+                        },
+                    )
+                    ai_n = None
+                    ai_c = None
+                    try:
+                        rv = reviewer.agent.review(ctx)
+                        ai_c = rv.confidence
+                        if rv.passed:
+                            ai_r = "match"
+                            # pass_label provides a human-readable classification for the tile footer
+                            # (e.g. "Not Hyperzoomed" for muac_overzoom)
+                            ai_n = rv.details.get("pass_label")
+                        elif rv.failed:
+                            ai_r = "no_match"
+                            # badge_label is the display label for the top-left badge and tile footer
+                            # (e.g. "Hyperzoomed" instead of generic "No Match")
+                            ai_n = rv.details.get("badge_label")
+                        else:
+                            ai_r = "error"
+                            ai_n = "; ".join(rv.errors) if rv.errors else None
+                    except Exception as exc:
+                        logger.exception(f"[AIReview] Agent raised exception for blob={b_id}")
                         ai_r = "error"
-                        ai_n = "; ".join(rv.errors) if rv.errors else None
-                except Exception as exc:
-                    logger.exception(f"[AIReview] Agent raised exception for blob={b_id}")
-                    ai_r = "error"
-                    ai_n = str(exc)
+                        ai_n = str(exc)
+                    # Per-reviewer trace, logged BEFORE combination collapses the losing
+                    # verdicts away — otherwise "muac_overzoom passed but muac_match
+                    # failed" is unrecoverable after the fact (see review finding).
+                    logger.debug(
+                        f"[AIReview] {reviewer.agent.agent_id}: visit={v_id}, blob={b_id}, "
+                        f"reading={rdg}, result={ai_r}, notes={ai_n!r}"
+                    )
+                    per_agent_results.append(
+                        ReviewerVerdict(reviewer.agent.agent_id, ai_r, ai_n, ai_c, reviewer.ai_to_human_map)
+                    )
 
-                return (v_id, b_id, q_id, rdg, img_qid, ai_r, ai_n, ai_c, False)  # not skipped
+                if not per_agent_results:
+                    return FetchReviewOutcome(v_id, b_id, q_id, img_qid, None, None, None, None, True)
+
+                ai_result, ai_notes, ai_confidence, human_result = _combine_reviewer_results(per_agent_results)
+                return FetchReviewOutcome(
+                    v_id, b_id, q_id, img_qid, ai_result, ai_notes, ai_confidence, human_result, False
+                )
 
             with ThreadPoolExecutor(max_workers=5) as pool:
                 fut_map = {pool.submit(_fetch_and_review, item): item for item in work_items}
                 for fut in as_completed(fut_map):
                     try:
-                        (
-                            visit_id_str,
-                            blob_id,
-                            question_id,
-                            reading,
-                            img_qid,
-                            ai_result,
-                            ai_notes,
-                            ai_confidence,
-                            skipped,
-                        ) = fut.result()
+                        outcome = fut.result()
                     except Exception as exc:
                         failed_item = fut_map.get(fut)
                         blob_hint = failed_item[1] if failed_item else "unknown"
@@ -350,35 +502,33 @@ def _run_ai_review_on_sessions(
                         continue
 
                     images_processed += 1
-                    if skipped:
+                    if outcome.skipped:
                         total_skipped += 1
                     else:
                         total_reviewed += 1
-                        if ai_result == "match":
+                        if outcome.ai_result == "match":
                             total_passed += 1
-                            logger.debug(f"[AIReview] PASS: blob={blob_id}, reading={reading}")
-                        elif ai_result == "no_match":
+                            logger.debug(f"[AIReview] PASS: blob={outcome.blob_id}")
+                        elif outcome.ai_result == "no_match":
                             total_failed += 1
-                            logger.debug(f"[AIReview] FAIL: blob={blob_id}, reading={reading}")
+                            logger.debug(f"[AIReview] FAIL: blob={outcome.blob_id}")
                         else:
                             total_errors += 1
-                            logger.error(f"[AIReview] ERROR: blob={blob_id}, reason={ai_notes!r}")
+                            logger.error(f"[AIReview] ERROR: blob={outcome.blob_id}, reason={outcome.ai_notes!r}")
 
-                        # Persist AI result for all outcomes so the classification label
-                        # is always available to display in the tile footer. human_result is
-                        # None unless this verdict was opted into auto-apply for this image
-                        # type's reviewer.
-                        _agent, _rr, ai_to_human_result = resolve(img_qid)
-                        human_result = ai_to_human_result.get(ai_result)
+                        # Persist the combined AI result so the classification label is
+                        # always available to display in the tile footer. human_result is
+                        # None unless some resolved reviewer's verdict was opted into
+                        # auto-apply for this image type.
                         session.set_assessment(
-                            visit_id=int(visit_id_str),
-                            blob_id=blob_id,
-                            question_id=question_id,
-                            result=human_result,
+                            visit_id=int(outcome.visit_id_str),
+                            blob_id=outcome.blob_id,
+                            question_id=outcome.question_id,
+                            result=outcome.human_result,
                             notes="",
-                            ai_result=ai_result,
-                            ai_notes=ai_notes,
-                            ai_confidence=ai_confidence,
+                            ai_result=outcome.ai_result,
+                            ai_notes=outcome.ai_notes,
+                            ai_confidence=outcome.ai_confidence,
                         )
                         session_updated = True
 
@@ -416,7 +566,9 @@ def _run_ai_review_on_sessions(
     )
 
     if ai_reviewers is not None:
-        summary_agent_id = ",".join(sorted({s["agent_id"] for s in ai_reviewers.values() if s.get("agent_id")}))
+        summary_agent_id = ",".join(
+            sorted({spec["agent_id"] for specs in ai_reviewers.values() for spec in specs if spec.get("agent_id")})
+        )
         summary_agent_name = "per-image-type"
     else:
         summary_agent_id = ai_agent_id
