@@ -11,28 +11,12 @@ build_order:
 - maya-generates-the-two-arm-plan-in-place
 - maya-completes-the-study
 name: microplans-study-groups
-tagline: Design a matched two-arm study, right from the map
-narrative: Maya wants to start a brand-new two-arm study, so she creates a new study on her existing Kaura
-  programme. Maya clicks “+ Add a plan in the editor”, and in the plan UI she turns on the service-delivery
-  data for the opportunity she's building the study around — a child health campaign. The visits blanket
-  the whole of Attakar ward, showing where Connect has records of service delivery.  She decides she'll
-  use the administrative boundaries — wards — as the survey units. Maya clicks on Attakar to select it
-  and tags it as the intervention arm. Maya switches the plan to sampling mode and clicks "Compare surrounding
-  boundaries". The tool finds every ward that shares a border with Attakar, measures each one's local
-  building-density distribution, and ranks them by how closely that distribution overlaps Attakar's -
-  filling each candidate's boundary on the map in its own colour so she can see which ward is which. The
-  tightest match, Zankan, was the programme's ward last cycle — not a clean, un-treated match — so Maya
-  skips it for Gura, the next-closest neighbour the programme never touched. One click of "Add boundary"
-  on Gura's row adds it as the match arm; both wards now sit in one plan, each carrying its arm. She sets
-  the sampling methodology — size-balanced PSU bands and a building-footprint-size filter — and clicks
-  Generate plan. In one action the editor draws the sample for both arms and creates the plan. From the
-  program workspace Maya can then send the plan to an existing locally led organization to verify if they
-  are already under contact, or create a new solicitation from the plan for local organizations in the
-  Connect network to apply to.
+tagline: "Design a matched two-arm comparison study, right from the map"
+narrative: "Maya's goal is to measure differences in outcomes between her program's intervention areas and carefully matched non-intervention areas — a rigorous matched comparison, not a randomized trial. She wants to leverage the Connect network to carry it out, and the Connect platform to design it rigorously. And she wants this to be ongoing: continually monitoring the household-reported outcomes in her intervention areas against matched comparison areas. Maya starts a brand-new matched two-arm comparison study on her Kaura programme. In the plan editor she turns on the campaign's service-delivery data — the blue points are the campaign's individual service delivery locations (rooftops). The visits blanket Attakar — everywhere Connect logged delivery. She'll sample by ward. She tags Attakar as the intervention arm and runs Compare, and reads the Matched balance column — the predicted balance on the characteristics the match is built on, settlement density chief among them, with any remaining differences reported for adjustment at analysis. Sopp and Gura are the best-balanced matches, both scoring 0.02 — the aggregate standardized imbalance, where lower is closer. Zankan was the programme's own ward last cycle, so it's out; Gura shares more common support with Attakar, though as an adjacent ward it carries some spillover risk to weigh, so Maya makes it the comparison arm. She clicks Generate and the engine draws the sample in one pass, recording the seed, each site's selection probability, and survey weights so it is reproducible and auditable. The comparability check then reports the realized balance: settlement density comes back closely balanced and gates the verdict, while PSU size and building footprint are flagged to adjust for at analysis. She advances the plan to Approved — the Connect export carries no arm column, so surveyors stay blind, and the full sampling record travels with the study. It's ready for a survey firm."
 narrative_locked: false
 narrative_synced_at: '2026-06-18T23:29:08.885180+00:00'
-narrative_synced_hash: ced10a14633786f637b73c3ee756180666234d383115523d3f0328f1678c4164
-narrative_synced_version: 11
+narrative_synced_hash: 0d932c973d1de942a0e81858c45c07c818ccf9dc86dde730736ac01edd3bf312
+narrative_synced_version: 13
 personas:
   maya:
     color: '#7C3AED'
@@ -58,10 +42,7 @@ scenes:
   show: 'Open on Maya''s Kaura program workspace and state the goal: measure the program''s real effect
     against a matched comparison group — leveraging the Connect network to carry it out and the Connect
     platform to design a statistically sound, ongoing study.'
-  narrative: 'Maya''s goal is to measure her program''s real effect — against a matched comparison group.
-    She wants to leverage the Connect network to carry it out, and the Connect platform to design a statistically
-    sound approach. And she wants this to be ongoing: continually monitoring the household-reported outcomes
-    in her intervention areas against matched non-intervention areas.'
+  narrative: "Maya's goal is to measure differences in outcomes between her program's intervention areas and carefully matched non-intervention areas — a rigorous matched comparison, not a randomized trial. She wants to leverage the Connect network to carry it out, and the Connect platform to design it rigorously. And she wants this to be ongoing: continually monitoring the household-reported outcomes in her intervention areas against matched comparison areas."
   actions:
   - kind: wait_for
     target: Studies & plan groups
@@ -93,7 +74,7 @@ scenes:
     id: new-study-creates-an-empty-study-definin
     verify: 'Playwright: click ''+ New study''; assert URL is /program/10008/group/<id>/manage/ and the
       page shows ''No plans in this group yet'''
-  narrative: Maya starts a brand-new two-arm study on her Kaura programme.
+  narrative: "Maya starts a brand-new matched two-arm comparison study on her Kaura programme."
   persona: maya
   provenance: S12
   show: From the Vitamin-A Kaura programme portfolio — already holding earlier study rounds — Maya starts
@@ -148,7 +129,7 @@ scenes:
     id: editor-files-into-study
     verify: 'pytest: POST plan/create with group_id=<id> creates the plan and adds it to PlanGroupRecord.plan_ids'
   full_page: false
-  narrative: In the plan editor she turns on the campaign's service-delivery data.
+  narrative: "In the plan editor she turns on the campaign's service-delivery data — the blue points are the campaign's individual service delivery locations, rooftops."
   pace: flow
   persona: maya
   provenance: S13
@@ -313,13 +294,7 @@ scenes:
       table appears with an overlap percentage per neighbour and each candidate boundary is filled on
       the map in its row colour'
   full_page: false
-  narrative: 'She tags Attakar as the intervention arm and runs Compare. Every neighbouring ward is ranked
-    against it — but look at what the table shows. Match is how similar the two wards look overall. The
-    column that matters is Matched balance: if Maya picks this ward as her match and lets the engine match-sample
-    it, how balanced the two arms actually come out — the very number her study''s comparability check
-    will report. And Common support is how much of the settlement-density range the two wards share, because
-    matching only draws from that shared range. So a ward that''s only a partial overall match can still
-    deliver a perfectly balanced study.'
+  narrative: "She tags Attakar as the intervention arm and runs Compare. Every neighbouring ward is ranked against it. The column that matters is Matched balance: the predicted balance on the characteristics the match is built on, settlement density chief among them. And Common support is how much of the settlement-density range the two wards share, because matching only draws from that shared range. So a ward that's only a partial overall match can still be closely balanced on the matched characteristics — with any remaining differences reported for adjustment at analysis."
   persona: maya
   provenance: S13
   show: In sampling mode Maya clicks "Compare surrounding boundaries"; a ranked table fills in below the
@@ -379,9 +354,7 @@ scenes:
     verify: 'pytest: collectArmAreas tags Attakar=intervention, Gura=comparison on one plan; each work
       area stores its arm labs-side while case_properties (and the displayed CSV) carry no arm column'
   full_page: false
-  narrative: Sopp and Gura are the best-balanced matches, both at 0.02. Zankan was the programme's own
-    ward last cycle, so it's out. Of the two, Gura shares more common support with Attakar — so Maya makes
-    it the match arm.
+  narrative: "Sopp and Gura are the best-balanced matches — both scoring 0.02, the aggregate standardized imbalance across the matched characteristics, where lower is closer. Zankan was the programme's own ward last cycle, so it's out. Of the two, Gura shares more common support with Attakar — though as an adjacent ward it carries some spillover risk the design flags for Maya to weigh — so Maya makes it the comparison arm."
   persona: maya
   provenance: S13
   show: Maya reads the ranked table, skips the top row (Zankan - already the programme's ward) and clicks
@@ -473,10 +446,7 @@ scenes:
     id: sampling-methodology
     verify: 'pytest: the created plan''s sampling_config carries size_balance_bands>=2 and area_min_m2/area_max_m2,
       and per-arm sampling_stats are stored for both arms on the one plan'
-  narrative: She sets the sampling methodology and clicks Generate — the engine draws the sample in one
-    pass. The map shows it first; each pin is a sampled settlement, a PSU. And within each settlement,
-    the individual households to visit are drawn at random from the building footprints themselves — rooftops
-    from Overture's global open-buildings dataset, so this works anywhere on Earth.
+  narrative: "She sets the sampling methodology and clicks Generate — the engine draws the sample in one pass and records the draw: its random seed, each site's selection probability, and the survey weights, so the sample is reproducible and auditable. The map shows it first; each blue pin is a sampled settlement — a PSU, a primary sampling unit — inside its ward boundary. And within each settlement, the households are drawn at random from the building footprints — rooftops from Overture's global open-buildings dataset, so this works anywhere on Earth. Guardrailed: the first sample that meets the balance criteria wins, and every re-draw is logged. The comparability check then reports the realized balance — the actual post-draw differences, not the predicted 0.02: settlement density comes back closely balanced and gates the verdict, while PSU size and building footprint are flagged to adjust for at analysis."
   persona: maya
   provenance: S7
   show: In Sampling mode Maya clicks ‘Generate plan’; the editor samples both arms and creates the single
@@ -545,8 +515,7 @@ scenes:
     id: arm-carried-blind-to-field
     verify: 'pytest: each sampling WorkArea stores arm (intervention/comparison) labs-side; WorkAreaPayload.arm
       is NOT in case_properties and the Connect CSV headers carry no Arm column'
-  narrative: She advances the plan to Approved. Each area keeps its arm labs-side, but the Connect export
-    carries no arm column — so surveyors stay blind. The study's ready for a survey firm.
+  narrative: "She advances the plan to Approved. Each area keeps its arm labs-side, but the Connect export carries no arm column — so surveyors stay blind. The full sampling record — seeds, selection probabilities, weights — travels with the study. It's ready for a survey firm."
   persona: maya
   provenance: S14
   show: 'From the program workspace Maya advances the two-arm plan: Submit for review, then Approve, and
