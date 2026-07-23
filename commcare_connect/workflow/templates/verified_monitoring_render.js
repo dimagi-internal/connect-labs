@@ -10,7 +10,7 @@
 // scorecard row to switch) — one row per re-surveyed household, columns grouped
 // under Identity / Location / Outcome sections with info buttons (method +
 // source). Objective copy; the viewer draws the conclusion.
-// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V53
+// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V55
 function WorkflowUI(props) {
   var instance = props.instance || {};
   var data = instance.state || {};
@@ -146,7 +146,11 @@ function WorkflowUI(props) {
           try {
             map.setPaintProperty('vm-pins', 'circle-opacity', 0.95);
             map.setPaintProperty('vm-pins', 'circle-stroke-width', 1.2);
-            map.setPaintProperty('vm-pins', 'circle-stroke-color', 'rgba(255,255,255,0.95)');
+            map.setPaintProperty(
+              'vm-pins',
+              'circle-stroke-color',
+              'rgba(255,255,255,0.95)',
+            );
           } catch (e) {}
         }
         CM.fit(map, overlay.ward_boundaries, 64);
@@ -685,6 +689,7 @@ function WorkflowUI(props) {
     return (
       <div>
         <div
+          data-bcclose="1"
           onClick={function () {
             setBcInfo(null);
           }}
@@ -920,14 +925,78 @@ function WorkflowUI(props) {
         });
       });
     }
+    // 95% CI whiskers for a sampled survey series (the self-report admin line
+    // gets none). Subtle + always-on so "each round's confidence interval" is
+    // visible on the chart, not just in the hover tooltip.
+    function ciWhiskers(arr, ciArr, color) {
+      if (!ciArr) return null;
+      return arr.map(function (v, i) {
+        var ci = ciArr[i];
+        if (!ci) return null;
+        var x = X(i),
+          yl = Y(ci[0]),
+          yh = Y(ci[1]);
+        return (
+          <g key={'ci' + color + i} pointerEvents="none">
+            <line
+              x1={x}
+              y1={yh}
+              x2={x}
+              y2={yl}
+              stroke={color}
+              strokeWidth="1.4"
+              opacity="0.45"
+            />
+            <line
+              x1={x - 3}
+              y1={yh}
+              x2={x + 3}
+              y2={yh}
+              stroke={color}
+              strokeWidth="1.4"
+              opacity="0.45"
+            />
+            <line
+              x1={x - 3}
+              y1={yl}
+              x2={x + 3}
+              y2={yl}
+              stroke={color}
+              strokeWidth="1.4"
+              opacity="0.45"
+            />
+          </g>
+        );
+      });
+    }
     function tip() {
       if (!hoverPt) return null;
-      var label = hoverPt.label + ' · R' + hoverPt.r + ' · ' + pct(hoverPt.v);
+      var line1 = hoverPt.label + ' · R' + hoverPt.r + ' · ' + pct(hoverPt.v);
+      // Survey series carry a sample size + 95% CI; the program self-report is
+      // an admin census, so it shows neither.
+      var ciArr = null,
+        nArr = null;
+      if (hoverPt.label === 'intervention arm survey') {
+        ciArr = trend.intervention_ci;
+        nArr = trend.intervention_n;
+      } else if (hoverPt.label === 'control arm survey') {
+        ciArr = trend.comparison_ci;
+        nArr = trend.comparison_n;
+      }
+      var ci = ciArr && ciArr[hoverPt.i];
+      var nn = nArr && nArr[hoverPt.i];
+      var line2 =
+        nn != null && ci
+          ? 'n=' + nn + ' · 95% CI ' + pct(ci[0]) + '–' + pct(ci[1])
+          : null;
       var fs = 8.5,
-        th = 16,
+        lh = 11,
+        pad = 4,
         textX = 16; // left pad: dot + gap
-      // size the box to the text so white text never spills past the dark fill
-      var tw = textX + label.length * fs * 0.6 + 8;
+      // size the box to the longest line so white text never spills the fill
+      var longest = Math.max(line1.length, line2 ? line2.length : 0);
+      var tw = textX + longest * fs * 0.6 + 8;
+      var th = (line2 ? 2 * lh : lh) + 2 * pad;
       var tx = Math.max(2, Math.min(w - tw - 2, hoverPt.x - tw / 2));
       var ty = hoverPt.y - th - 8;
       if (ty < 2) ty = hoverPt.y + 10;
@@ -942,16 +1011,32 @@ function WorkflowUI(props) {
             fill="#0f172a"
             opacity="0.93"
           />
-          <circle cx={tx + 8} cy={ty + th / 2} r="2.8" fill={hoverPt.color} />
+          <circle
+            cx={tx + 8}
+            cy={ty + pad + lh / 2}
+            r="2.8"
+            fill={hoverPt.color}
+          />
           <text
             x={tx + textX}
-            y={ty + th / 2 + 3}
+            y={ty + pad + lh / 2 + 3}
             fill="#fff"
             fontSize={fs}
             fontFamily={mono}
           >
-            {label}
+            {line1}
           </text>
+          {line2 ? (
+            <text
+              x={tx + textX}
+              y={ty + pad + lh + lh / 2 + 3}
+              fill="#cbd5e1"
+              fontSize={fs}
+              fontFamily={mono}
+            >
+              {line2}
+            </text>
+          ) : null}
         </g>
       );
     }
@@ -1019,7 +1104,9 @@ function WorkflowUI(props) {
                 fontSize="8.5"
                 textAnchor="middle"
               >
-                {(rounds[i] || {}).label || (rounds[i] || {}).treatment_ward || ''}
+                {(rounds[i] || {}).label ||
+                  (rounds[i] || {}).treatment_ward ||
+                  ''}
               </text>
               <rect
                 x={X(i) - 26}
@@ -1037,6 +1124,8 @@ function WorkflowUI(props) {
             </g>
           );
         })}
+        {ciWhiskers(iv, trend.intervention_ci, INDIGO)}
+        {ciWhiskers(cp, trend.comparison_ci, COMP)}
         {markers()}
         {endLabel(srr, AMBER, 'service-delivery')}
         {endLabel(iv, INDIGO, 'intervention')}
@@ -1179,6 +1268,7 @@ function WorkflowUI(props) {
           }}
         >
           <td
+            data-surveyor={isAgg ? null : row.surveyor}
             onClick={
               isAgg
                 ? null
@@ -1477,10 +1567,10 @@ function WorkflowUI(props) {
         </div>
         <div style={{ color: MUT, fontSize: 11.5, marginBottom: 8 }}>
           Two rows per household — what the surveyor recorded vs the independent
-          re-survey. Back-checks are a stratified sample of this surveyor's
-          surveys in {tWard} this round (n={sb.n}); showing{' '}
-          {Math.min(rows.length, sb.n)}, mismatches first. Each section header
-          shows the share that agreed {'·'} tap{' '}
+          re-survey. A separate quality-control enumerator from the survey firm
+          re-visited a random subset of this surveyor's surveys in {tWard} this
+          round (n={sb.n}); showing {Math.min(rows.length, sb.n)}, mismatches
+          first. Each section header shows the share that agreed {'·'} tap{' '}
           <b style={{ fontFamily: mono }}>i</b> for what it means.
         </div>
         <div style={{ overflow: 'auto', maxHeight: 460 }}>
@@ -1733,8 +1823,8 @@ function WorkflowUI(props) {
             letterSpacing: '.05em',
           }}
         >
-          Service-delivery data vs independent survey — {(trend.rounds || []).length}{' '}
-          bi-monthly rounds over time
+          Service-delivery data vs independent survey —{' '}
+          {(trend.rounds || []).length} bi-monthly rounds over time
         </div>
         <div style={{ marginTop: 8 }}>{trendChart()}</div>
         <div
@@ -1748,11 +1838,12 @@ function WorkflowUI(props) {
           }}
         >
           <span>{sw(AMBER, true)}service-delivery data</span>
-          <span>{sw(INDIGO)}intervention arm survey</span>
+          <span>{sw(INDIGO)}intervention survey — estimated coverage</span>
           <span>{sw(COMP)}control arm survey</span>
           <span style={{ color: '#94a3b8' }}>
-            · amber band = service-delivery − survey gap · highlighted column =
-            selected cycle · click a cycle to open it
+            · amber band = service-delivery − survey gap · whisker = each
+            round's 95% CI · highlighted column = selected cycle · click a cycle
+            to open it
           </span>
         </div>
         <div
@@ -1765,9 +1856,21 @@ function WorkflowUI(props) {
           }}
         >
           {(trend.rounds || []).length} bi-monthly survey rounds over time —
-          earliest at left, most recent at right. The independent survey's coverage
-          tracked against the program's self-report at each round; every round
-          verifies a rotating ward against its adjacent control.
+          earliest at left, most recent at right. Each round independently
+          re-estimates coverage from a fresh representative sample of{' '}
+          {(function () {
+            var ns = trend.intervention_n || [];
+            if (!ns.length) return '~280';
+            return (
+              '~' +
+              Math.round(ns.reduce((a, b) => a + b, 0) / ns.length / 5) * 5
+            );
+          })()}{' '}
+          households in the same matched ward pair; the whisker is that round's
+          95% confidence interval (exact n + CI on hover), so a change reads as
+          real rather than sampling noise. The independent survey's estimated
+          coverage tracked against the program's self-report at each round;
+          every round verifies a rotating ward against its adjacent control.
         </div>
       </div>
 
@@ -1857,28 +1960,27 @@ function WorkflowUI(props) {
                 pointerEvents: 'none',
               }}
             >
-              <span
-                style={{ color: SUBINK, fontWeight: 700, marginBottom: 2 }}
-              >
+              <span style={{ color: SUBINK, fontWeight: 700, marginBottom: 2 }}>
                 Independent survey · both wards
               </span>
               <span style={{ color: SUBINK }}>
-                <span style={{ color: INDIGO }}>▰</span> {tWard} (intervention) —{' '}
-                <b style={{ color: INDIGO }}>{pct(ver)}</b> confirmed
+                <span style={{ color: INDIGO }}>▰</span> {tWard} (intervention)
+                — <b style={{ color: INDIGO }}>{pct(ver)}</b> survey-estimated
               </span>
               <span style={{ color: SUBINK }}>
                 <span style={{ color: COMP }}>▰</span> {cWard} (control) —{' '}
                 <b style={{ color: COMP }}>
                   {pct((trend.comparison || [])[sel])}
                 </b>{' '}
-                confirmed
+                survey-estimated
               </span>
               <span>
                 <span style={{ color: '#16a34a' }}>●</span> service delivery
                 (program)
               </span>
               <span>
-                <span style={{ color: INDIGO }}>●</span> survey confirmed &nbsp;
+                <span style={{ color: INDIGO }}>●</span> survey-estimated
+                reached &nbsp;
                 <span style={{ color: ROSE }}>●</span> surveyed · not reached
               </span>
             </div>
@@ -1929,14 +2031,30 @@ function WorkflowUI(props) {
             <span style={{ color: ROSE, fontWeight: 700 }}>rose</span> = below
             threshold
           </span>
-          <span>
-            quality columns + back-check = this round
-          </span>
+          <span>quality columns + back-check = this round</span>
           <span style={{ color: INDIGO }}>
             click a quality cell → detail · click a surveyor → back-check below
           </span>
         </div>
         {scorecardTable()}
+        <div
+          style={{
+            marginTop: 10,
+            padding: '8px 11px',
+            background: '#fff7ed',
+            border: '1px solid #fed7aa',
+            borderRadius: 8,
+            fontSize: 11.5,
+            color: '#9a3412',
+            lineHeight: 1.5,
+          }}
+        >
+          <b>What happens to a flagged surveyor.</b> A surveyor whose integrity
+          signals fall below threshold together is tagged <b>REVIEW</b>. Their
+          work is held for investigation and re-survey before it can count
+          toward the coverage estimate — so a single bad surveyor can't quietly
+          move the headline number. Flags trigger investigation, not a verdict.
+        </div>
       </div>
 
       {/* INDEPENDENT BACK-CHECK — household side-by-side, original vs re-survey */}
