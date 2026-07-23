@@ -830,9 +830,10 @@ scenes:
     seconds: 4
     note: the expanded MUAC photo for visit 1 (10.4cm, SAM)
   - kind: click
-    must_succeed: false
-    target: css:.fixed.inset-0
-    note: dismiss the overlay
+    must_succeed: true
+    target: css:button[aria-label='Close photo']
+    note: close the expanded photo via its own close control - clicking the backdrop hits
+      the card centre, whose stopPropagation swallows it
   - kind: scroll_to
     target: text:MUAC gain
   - kind: hold

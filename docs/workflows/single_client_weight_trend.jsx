@@ -68,6 +68,15 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
         ('/audit/image/' + oppId + '/synth-muac-good-' + CORPUS[i % CORPUS.length] + '/');
     const anyGps = visits.some((v) => v.gps);
 
+    // Esc closes the expanded photo. Click-outside alone left users (and the
+    // walkthrough recorder) with no reliable way out of the overlay.
+    React.useEffect(() => {
+        if (!openPhoto) return;
+        const onKey = (e) => { if (e.key === 'Escape') setOpenPhoto(null); };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [openPhoto]);
+
     // ---- MUAC progression chart, with the recovery bands drawn behind it ----
     React.useEffect(() => {
         if (!chartRef.current || !window.Chart || visits.length === 0) return;
@@ -243,7 +252,11 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
 
             {openPhoto && (
                 <div onClick={() => setOpenPhoto(null)} className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-6">
-                    <div className="bg-white rounded-lg p-3 max-w-lg" onClick={(e) => e.stopPropagation()}>
+                    <div className="bg-white rounded-lg p-3 max-w-lg relative" onClick={(e) => e.stopPropagation()}>
+                        <button aria-label="Close photo" onClick={() => setOpenPhoto(null)}
+                            className="absolute -top-3 -right-3 w-8 h-8 rounded-full bg-white shadow-md border border-gray-300 text-gray-600 text-lg leading-none flex items-center justify-center hover:bg-gray-50">
+                            ×
+                        </button>
                         <img src={openPhoto.src} className="w-full rounded" />
                         <div className="mt-2 text-sm text-gray-700">
                             Visit {openPhoto.i + 1} · {(openPhoto.v.visit_date || '').slice(0, 10)} · MUAC {openPhoto.v.muac_cm}cm
