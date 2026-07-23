@@ -26,7 +26,12 @@ MUAC_READING_FIELD = "muac_group/muac_display_group_2/muac_colour_display/solici
 
 MUAC_MATCH_REVIEWER = {
     "agent_id": "muac_match",
-    "config": {"comparison_field": MUAC_READING_FIELD},
+    # "label" names the related-fields display for this comparison_field —
+    # without it the box falls back to the raw field path (see
+    # ai_review_config.build_review_config / AuditDataAccess's related_fields
+    # rule builder), which is what the review UI's "MUAC Reading" box used to
+    # show verbatim.
+    "config": {"comparison_field": MUAC_READING_FIELD, "label": "MUAC Reading"},
     "auto_apply_actions": ["fail_unmatched"],
 }
 

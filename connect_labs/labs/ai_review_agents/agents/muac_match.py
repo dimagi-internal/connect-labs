@@ -196,6 +196,15 @@ class MUACMatchAgent(BaseAIReviewAgent):
                 )
             else:
                 return ReviewResult.failure(
+                    # Deliberately classifier-level, not per-visit: this string
+                    # is both the assessment's ai_notes AND the key
+                    # AuditSessionRecord.get_assessment_stats() tallies
+                    # ai_flags_by_label by (see connect_labs/audit/models.py).
+                    # Embedding the per-visit reading here would make every
+                    # failing image's label unique, defeating that tally. The
+                    # actual reading is already visible in the review UI's
+                    # "MUAC Reading" related-fields box (see
+                    # weekly_dual_track_audit.py's MUAC_MATCH_REVIEWER config).
                     badge_label=f"MUAC Mismatch ({tolerance} tolerance)",
                     reading=reading,
                     tolerance=tolerance,

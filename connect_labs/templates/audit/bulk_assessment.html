@@ -311,6 +311,11 @@
                get aiNotes() { return assessment.ai_notes || ''; },
                set aiNotes(v) { assessment.ai_notes = v; },
                get aiConfidence() { return typeof assessment.ai_confidence === 'number' ? assessment.ai_confidence : null; },
+               // Short form for the compact top badge -- strips a trailing
+               // "(...)" detail (e.g. "MUAC Mismatch (form: 21.5, strict)"
+               // -> "MUAC Mismatch"); the fuller AI Result section below
+               // shows the untouched aiNotes with that detail intact.
+               get aiNotesShort() { return (this.aiNotes || '').replace(/\s*\([^)]*\)\s*$/, ''); },
                get aiClassLabel() {
                  if (!this.aiResult) return '';
                  // Error notes are internal/config detail (e.g. a missing API key) --
@@ -396,7 +401,7 @@
                     }">
                 <i class="fa-solid fa-robot mr-1"></i>
                 <span x-show="aiResult === 'match'">Match</span>
-                <span x-show="aiResult === 'no_match'" x-text="aiNotes || 'No Match'"></span>
+                <span x-show="aiResult === 'no_match'" x-text="aiNotesShort || 'No Match'"></span>
                 <span x-show="aiResult === 'error'">Error</span>
               </span>
             </div>
@@ -1183,7 +1188,12 @@ function bulkAssessmentInterface() {
         this.questionIds = data.question_ids || [];
         this.visitResults = data.visit_results || {};
         this.allAssessments = data.assessments || [];
-        this.tagDuplicateGroupingAssessments(data.visit_clusters || []);
+        // Temporarily disabled: auto-pre-tagging images in a duplicate
+        // grouping as "Duplicate/Fake" pending improvements to the
+        // duplicate-grouping feature itself. Re-enable by restoring this
+        // call once that work lands -- tagDuplicateGroupingAssessments()
+        // itself is untouched below.
+        // this.tagDuplicateGroupingAssessments(data.visit_clusters || []);
         // Apply filters client-side
         this.applyFiltersClientSide();
         this.recalculateStats();

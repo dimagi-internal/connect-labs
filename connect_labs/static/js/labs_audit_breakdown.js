@@ -56,6 +56,40 @@
   function showAiStatsOf(s) {
     return !!(s && (s.has_ai_reviewer || aiReviewedOf(s) > 0));
   }
+  // Compact "AI: ..." flagged summary. When more than one classifier is
+  // active on a track (e.g. MUAC OverZoom + MUAC Match both watching the
+  // same photo), breaks the flagged count down by classifier so a reviewer
+  // can tell a hyperzoom failure from a MUAC-mismatch failure at a glance
+  // instead of one opaque total. Falls back to the flat "X flagged" form
+  // when zero or one classifier produced any flags (the common case).
+  function aiFlagsSummary(s) {
+    var a = statsOf(s);
+    var byLabel = a.ai_flags_by_label || {};
+    var labels = Object.keys(byLabel);
+    var totalFlagged = a.ai_no_match || 0;
+    var labeledTotal = labels.reduce(function (n, l) {
+      return n + byLabel[l];
+    }, 0);
+    // Fall back to the flat form whenever there's nothing to break down, OR
+    // the per-label tally doesn't reconcile with the true flagged count --
+    // e.g. a reviewer that sets no badge_label on failure (unlabeled) mixed
+    // into the same session as labeled ones would otherwise silently drop
+    // those images from the displayed breakdown while still counting them
+    // in ai_no_match. Reconciling here means the breakdown is only ever
+    // shown when it's provably complete.
+    if (labels.length <= 1 || labeledTotal !== totalFlagged) {
+      return totalFlagged + ' flagged';
+    }
+    return labels
+      .map(function (label) {
+        // Strip a trailing "(...)" qualifier (e.g. "(strict tolerance)") to
+        // keep this line compact -- the full label still shows on the
+        // image's own badge in the review UI.
+        var shortLabel = label.replace(/\s*\([^)]*\)\s*$/, '');
+        return byLabel[label] + ' ' + shortLabel;
+      })
+      .join(', ');
+  }
 
   // Group sessions by opportunity → field worker → { muac, rest }.
   function groupByOppFlw(sessions) {
@@ -235,8 +269,8 @@
                     : 'text-gray-500',
               },
               'AI: ' +
-                (a.ai_no_match || 0) +
-                ' flagged / ' +
+                aiFlagsSummary(s) +
+                ' / ' +
                 aiReviewedOf(s) +
                 ' reviewed',
             )
@@ -499,6 +533,7 @@
   LabsAudit.duplicateFakeOf = duplicateFakeOf;
   LabsAudit.clusterCountOf = clusterCountOf;
   LabsAudit.showAiStatsOf = showAiStatsOf;
+  LabsAudit.aiFlagsSummary = aiFlagsSummary;
 
   if (typeof window !== 'undefined') window.LabsAudit = LabsAudit;
   if (typeof module !== 'undefined' && module.exports)

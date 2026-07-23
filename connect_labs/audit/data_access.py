@@ -782,6 +782,10 @@ class AuditDataAccess(BaseDataAccess):
                             image_related_fields.append(
                                 {
                                     "path": field_path,
+                                    # Falls back to the raw field path when a
+                                    # reviewer's config omits "label" -- see
+                                    # connect_labs/audit/ai_review_config.py's
+                                    # module docstring for how to set one.
                                     "label": rule.get("label") or field_path,
                                     "value": value,
                                 }

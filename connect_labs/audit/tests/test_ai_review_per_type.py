@@ -309,6 +309,49 @@ class TestCombineReviewerResults:
         with pytest.raises(ValueError):
             tasks._combine_reviewer_results([])
 
+    def test_join_round_trips_through_get_assessment_stats(self):
+        """Regression for the aggregation-breaking bug the design review
+        caught: _combine_reviewer_results' real join output, fed straight
+        into get_assessment_stats(), must recover each reviewer's own label
+        with its own count -- proving the two functions' shared
+        AI_NOTES_JOIN_SEP contract actually holds end-to-end, not just via
+        hand-written fixtures on either side."""
+        from connect_labs.audit.models import AuditSessionRecord
+
+        results = [
+            tasks.ReviewerVerdict("muac_overzoom", "no_match", "Hyperzoomed", None, {}),
+            tasks.ReviewerVerdict("muac_match", "no_match", "MUAC Mismatch (strict tolerance)", None, {}),
+        ]
+        _ai_result, ai_notes, _ai_confidence, human_result = tasks._combine_reviewer_results(results)
+
+        session = AuditSessionRecord(
+            {
+                "id": 1,
+                "experiment": "audit",
+                "type": "AuditSession",
+                "data": {
+                    "visit_results": {
+                        "1": {
+                            "assessments": {
+                                "blobA": {
+                                    "result": human_result,
+                                    "question_id": "form/muac_photo",
+                                    "ai_result": "no_match",
+                                    "ai_notes": ai_notes,
+                                }
+                            }
+                        }
+                    }
+                },
+                "opportunity_id": 1973,
+            }
+        )
+        stats = session.get_assessment_stats()
+        assert stats["ai_flags_by_label"] == {
+            "Hyperzoomed": 1,
+            "MUAC Mismatch (strict tolerance)": 1,
+        }
+
 
 def test_legacy_single_agent_still_runs_on_all(patched_registry):
     session = _session_with_two_image_types()
