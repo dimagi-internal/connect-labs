@@ -18,22 +18,24 @@
     { "treatment": "Attakar", "comparison": "Gura" }
   ],
   "map_pin_cap": 150,
-  "_flagged_surveyor_comment": "One deliberately-degraded program-ward surveyor (T6): lower evidence-photo + GPS-within-15m, and — the catch — their originals agree LESS with the independent re-survey (back-check). Makes the per-surveyor scorecard surface a real outlier.",
+  "_flagged_surveyor_comment": "One deliberately-degraded program-ward surveyor (T6): lower evidence-photo + GPS-within-15m; the catch — their originals agree LESS with the independent re-survey (back-check); AND the distribution signals — a high rate of impossibly-fast interviews (short_rate) and roof-type answers collapsed onto one value (roof_collapse_value). Makes the per-surveyor scorecard surface a real outlier and the fabrication warning signs data-true.",
   "flagged_surveyor": {
     "arm": "treatment",
     "id": "T6",
     "evidence": 0.79,
     "gps_within_15m": 0.83,
     "backcheck_agreement": 0.78,
-    "backcheck_type1_agreement": 0.86
+    "backcheck_type1_agreement": 0.86,
+    "short_rate": 0.34,
+    "roof_collapse_value": "metal sheet"
   },
   "round0": "2025-02",
   "rounds": 6,
   "arms": {
     "treatment": {
       "coverage_start": 0.524,
-      "coverage_end": 0.681,
-      "coverage_noise": 0.014,
+      "coverage_end": 0.675,
+      "coverage_noise": 0.004,
       "n_per_round": 285,
       "n_jitter": 10,
       "enumerators": 6
@@ -47,11 +49,11 @@
       "enumerators": 5
     }
   },
-  "_self_report_comment": "Program self-report = verified coverage * inflation (the program over-reports), interpolated start->end across rounds, with +/- noise so the self-reported line jitters round-to-round and sits above the verified line. R6: ~0.681*1.29 -> ~88%.",
+  "_self_report_comment": "Program self-report = verified coverage * inflation (the program over-reports), interpolated start->end across rounds, with +/- noise so the self-reported line jitters round-to-round and sits above the verified line. R6 target: survey ~72.3% vs program ~89.7% (matches the locked V3 narration, 72.1 vs 89.7).",
   "self_report": {
     "inflation_start": 1.55,
-    "inflation_end": 1.29,
-    "noise": 0.04
+    "inflation_end": 1.254,
+    "noise": 0.008
   },
   "quality": {
     "gps_within_15m": 0.967,

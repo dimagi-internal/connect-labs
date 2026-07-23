@@ -113,11 +113,20 @@ def _gen_arm_round(rng, cfg, arm_key, arm_cfg, geom, round_idx, n_rounds, base_i
         age = rng.randint(elig.get("age_min_months", 6), elig.get("age_max_months", 59))
         eligible = present and (elig.get("age_min_months", 6) <= age <= elig.get("age_max_months", 59))
         received = bool(eligible and rng.random() < coverage)
-        # duration: occasional implausibly-short record
-        if rng.random() < dur.get("short_rate", 0.0):
+        # duration: occasional implausibly-short record. A flagged surveyor runs
+        # a much higher rate of impossibly-fast interviews (the "ran impossibly
+        # fast" fabrication signal), so their duration column reads as an outlier.
+        short_rate = flagged.get("short_rate", dur.get("short_rate", 0.0)) if bad else dur.get("short_rate", 0.0)
+        if rng.random() < short_rate:
             duration = round(rng.uniform(*dur.get("short_range", [1, 3])), 1)
         else:
             duration = round(max(dur.get("floor", 4), rng.gauss(dur["mean"], dur["sd"])), 1)
+        # roof type: a flagged surveyor's roof answers collapse onto one value
+        # (the "answers collapse onto one value" signal), vs the true weighted
+        # distribution everyone else records. Always draw (to keep the seeded
+        # RNG stream stable regardless of the flag), then override for a flag.
+        roof_draw = rng.choices(_ROOF_TYPES, weights=_ROOF_WEIGHTS, k=1)[0]
+        roof_val = (flagged.get("roof_collapse_value") if bad else None) or roof_draw
         rec = {
             "record_id": f"{base_id}-p{j}",
             "round": round_idx + 1,
@@ -139,7 +148,7 @@ def _gen_arm_round(rng, cfg, arm_key, arm_cfg, geom, round_idx, n_rounds, base_i
             "child_present": present,
             "child_sex": rng.choice(["M", "F"]),
             "child_age_months": age,
-            "roof_type": rng.choices(_ROOF_TYPES, weights=_ROOF_WEIGHTS, k=1)[0],
+            "roof_type": roof_val,
             "eligible": eligible,
             "vitamin_a_received": received,
             "dose_source": rng.choice(["campaign", "routine", "facility"]) if received else None,
@@ -510,11 +519,30 @@ def build_state(cfg: dict, here: Path) -> tuple:
         rounds.append(summary)
         all_records += recs
 
+    def _wald_ci(pct, n):
+        # 95% Wald CI half-width (percentage points) for a sample proportion.
+        # The independent survey is a household sample, so each round's estimate
+        # carries sampling error; the program self-report is an admin census and
+        # gets no CI. Returns [lo, hi] clamped to [0, 100], or None if n missing.
+        if pct is None or not n:
+            return None
+        p = pct / 100.0
+        hw = 1.96 * ((p * (1 - p) / n) ** 0.5) * 100.0
+        return [round(max(0.0, pct - hw), 1), round(min(100.0, pct + hw), 1)]
+
     trend = {
         "rounds": [r["round"] for r in rounds],
         "intervention": [r["intervention_pct"] for r in rounds],
         "comparison": [r["comparison_pct"] for r in rounds],
         "self_report": [r["self_report_pct"] for r in rounds],
+        # sample sizes + 95% CIs for the two independent-survey series (the
+        # self-report line is an admin census, so it carries neither). Surfaced
+        # on the trend chart so a round-to-round change reads as real signal
+        # rather than sampling noise.
+        "intervention_n": [r["intervention_n"] for r in rounds],
+        "comparison_n": [r["comparison_n"] for r in rounds],
+        "intervention_ci": [_wald_ci(r["intervention_pct"], r["intervention_n"]) for r in rounds],
+        "comparison_ci": [_wald_ci(r["comparison_pct"], r["comparison_n"]) for r in rounds],
     }
 
     state = {
