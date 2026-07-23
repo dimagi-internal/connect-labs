@@ -408,3 +408,5 @@ scripts/walkthroughs/**/scenes.json
 .canopy/ddd/runs/**/snapshots/*.png
 # self-contained decks embed their images — multi-MB, and the published copy lives on canopy-web
 .canopy/ddd/runs/**/*_deck.html
+# per-scene page dumps: machine-generated, 5-19MB each, superseded by the published run package
+.canopy/ddd/runs/**/walkthrough-run-data.json
