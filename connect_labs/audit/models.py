@@ -314,6 +314,7 @@ class AuditSessionRecord(LocalLabsRecord):
                 "ai_no_match": int,     # AI: no_match count
                 "ai_error": int,        # AI: error count
                 "ai_pending": int,      # AI: not yet reviewed
+                "ai_flags_by_label": dict[str, int],  # AI: no_match count per classifier label
             }
         """
         stats = {
@@ -326,6 +327,7 @@ class AuditSessionRecord(LocalLabsRecord):
             "ai_no_match": 0,
             "ai_error": 0,
             "ai_pending": 0,
+            "ai_flags_by_label": {},
         }
 
         for visit_result in self.data.get("visit_results", {}).values():
@@ -354,6 +356,17 @@ class AuditSessionRecord(LocalLabsRecord):
                     stats["ai_match"] += 1
                 elif ai_result == "no_match":
                     stats["ai_no_match"] += 1
+                    # Multiple independent reviewers on one image path (e.g.
+                    # MUAC OverZoom + MUAC Match) each contribute their own
+                    # badge_label; _combine_reviewer_results joins every
+                    # failing reviewer's label with "; " into ai_notes (see
+                    # connect_labs/audit/tasks.py). Splitting it back apart
+                    # here recovers which classifier(s) flagged this image --
+                    # one image can count toward more than one label.
+                    for label in (assessment.get("ai_notes") or "").split("; "):
+                        label = label.strip()
+                        if label:
+                            stats["ai_flags_by_label"][label] = stats["ai_flags_by_label"].get(label, 0) + 1
                 elif ai_result == "error":
                     stats["ai_error"] += 1
                 else:

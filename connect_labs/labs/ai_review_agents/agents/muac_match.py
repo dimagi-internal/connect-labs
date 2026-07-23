@@ -196,7 +196,12 @@ class MUACMatchAgent(BaseAIReviewAgent):
                 )
             else:
                 return ReviewResult.failure(
-                    badge_label=f"MUAC Mismatch ({tolerance} tolerance)",
+                    # The detailed form reading lives here (not just "strict
+                    # tolerance") so the review UI's full AI-result section can
+                    # show it without a separate lookup; the tile's compact top
+                    # badge shows just the short "MUAC Mismatch" prefix instead
+                    # (see bulk_assessment.html's aiNotesShort).
+                    badge_label=f"MUAC Mismatch (form: {reading}, {tolerance})",
                     reading=reading,
                     tolerance=tolerance,
                     processing_factor=processing_factor,

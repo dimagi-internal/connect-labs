@@ -4,12 +4,14 @@ internal related_fields rules plus a question_id -> reviewer list map.
 image_audits (from the creation wizard):
     [{"image_path": "form/scale_photo",
       "reviewers": [{"agent_id": "scale_validation",
-                     "config": {"comparison_field": "form/child_weight"},
+                     "config": {"comparison_field": "form/child_weight", "label": "Weight Reading"},
                      "auto_apply_actions": ["pass_matched", "fail_unmatched"]}]}]
 
     An image path may carry more than one reviewer (e.g. MUAC OverZoom +
     MUAC Match both reviewing the same photo, independently) — each entry in
     "reviewers" becomes its own entry in the ai_reviewers list for that path.
+    config.label names the review UI's related-fields display for
+    comparison_field; omitting it falls back to the raw field path.
 
 context_fields (slim agent-less display):
     [{"image_path": "form/scale_photo", "field_path": "form/child_id", "label": "Child ID"}]
@@ -85,7 +87,7 @@ def build_review_config(
             )
 
             if comparison_field:
-                related_fields.append(_value_rule(image_path, comparison_field))
+                related_fields.append(_value_rule(image_path, comparison_field, config.get("label", "")))
 
     for cf in context_fields or []:
         image_path = (cf or {}).get("image_path")

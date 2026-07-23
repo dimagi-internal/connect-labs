@@ -55,7 +55,8 @@ def test_builds_two_calls_per_opp_with_tags_and_image_audits():
                 {
                     "agent_id": "muac_match",
                     "config": {
-                        "comparison_field": "muac_group/muac_display_group_2/muac_colour_display/soliciter_muac_cm"
+                        "comparison_field": "muac_group/muac_display_group_2/muac_colour_display/soliciter_muac_cm",
+                        "label": "MUAC Reading",
                     },
                     "auto_apply_actions": ["fail_unmatched"],
                 },
@@ -717,7 +718,8 @@ def test_reviewer_assignment_is_per_path_not_per_track():
                 {
                     "agent_id": "muac_match",
                     "config": {
-                        "comparison_field": "muac_group/muac_display_group_2/muac_colour_display/soliciter_muac_cm"
+                        "comparison_field": "muac_group/muac_display_group_2/muac_colour_display/soliciter_muac_cm",
+                        "label": "MUAC Reading",
                     },
                     "auto_apply_actions": ["fail_unmatched"],
                 },
