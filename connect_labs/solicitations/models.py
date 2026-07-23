@@ -129,6 +129,26 @@ class SolicitationRecord(LocalLabsRecord):
     def source_plan_ids(self):
         return self.data.get("source_plan_ids", [])
 
+    @property
+    def criteria_locked(self):
+        """The evaluation rubric was reviewed and locked before publishing.
+
+        Once locked, the weighted criteria are fixed — they cannot change after a
+        firm has seen the call. This is what lets a firm trust that "how you'll be
+        scored" shown on the public call is exactly how scoring will run.
+        """
+        return bool(self.data.get("criteria_locked", False))
+
+    @property
+    def criteria_locked_at(self):
+        date_str = self.data.get("criteria_locked_at")
+        if date_str:
+            try:
+                return datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+            except (ValueError, TypeError):
+                return None
+        return None
+
     def can_accept_responses(self):
         return self.status == "active"
 
@@ -211,6 +231,36 @@ class ResponseRecord(LocalLabsRecord):
     @property
     def is_awarded(self):
         return self.status == "awarded"
+
+    @property
+    def blind_label(self):
+        """Identity-free label used everywhere scoring happens.
+
+        Firms are shown by response id, never by name, so the reviewer scores the
+        application on its merits and cannot be swayed by who submitted it. The
+        name is only revealed at the award step, after scoring is complete.
+        """
+        return f"Response #{self.pk}"
+
+    @property
+    def ai_proposed_scores(self):
+        """Per-criterion AI score suggestions, kept hidden until the reviewer records
+        their own score for that criterion (anti-anchoring).
+
+        Shape: {criterion_id: {"score": int(1-10), "rationale": str}}.
+        """
+        return self.data.get("ai_proposed_scores", {})
+
+    @property
+    def award_stage(self):
+        """Which contracting stage this award is: 'verification' (a small, first
+        contract to confirm performance) or 'full' (scale to the whole survey).
+
+        Defaults to 'verification' — Connect awards start a firm on a small,
+        verifiable contract before scaling, so performance is demonstrated, not
+        just promised on paper.
+        """
+        return self.data.get("award_stage", "verification")
 
 
 class ReviewRecord(LocalLabsRecord):

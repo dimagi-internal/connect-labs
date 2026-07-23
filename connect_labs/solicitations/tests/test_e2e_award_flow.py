@@ -138,7 +138,11 @@ class TestStep1ResponsesList:
         assert response.status_code == 200
         response.render()
         content = response.content.decode()
-        assert "Health Org" in content
+        # Blind scoring: applicants appear by response id, never by firm name.
+        assert "Response #10" in content
+        assert "Response #11" in content
+        assert "Identity hidden for scoring" in content
+        assert "Health Org" not in content
         assert "Neonatal Care RFP" in content
 
     @_CONTEXT_PATCH
@@ -262,7 +266,11 @@ class TestStep3AwardForm:
         # Confirmation names the awarded org and states it was notified.
         assert "Awarded to Health Org" in content
         assert "has been notified" in content
-        MockDA.return_value.award_response.assert_called_once_with(10, reward_budget=50000, org_id="org_77")
+        # Staged contracting: awards default to a small "verification" contract that
+        # confirms performance before scaling to the full survey.
+        MockDA.return_value.award_response.assert_called_once_with(
+            10, reward_budget=50000, org_id="org_77", award_stage="verification"
+        )
 
 
 # =========================================================================
@@ -291,7 +299,11 @@ class TestFullAwardFlow:
         assert response.status_code == 200
         response.render()
         content = response.content.decode()
-        assert "Health Org" in content
+        # Blind while scoring — the firm is identified by response id here; its name
+        # is only revealed at the award step (asserted in step 3).
+        assert "Response #10" in content
+        assert "Identity hidden for scoring" in content
+        assert "Health Org" not in content
 
         # -- Step 2: View response detail --
         MockDA.return_value.get_response_by_id.return_value = resp_submitted
@@ -316,7 +328,10 @@ class TestFullAwardFlow:
         response = AwardView.as_view()(request, pk=10)
         assert response.status_code == 200
         response.render()
-        assert "has been notified" in response.content.decode()
+        awarded_content = response.content.decode()
+        assert "has been notified" in awarded_content
+        # Identity IS revealed at award — blindness protects scoring, not the decision.
+        assert "Health Org" in awarded_content
 
         # -- Step 4: Verify awarded status on detail --
         MockDA.return_value.get_response_by_id.return_value = resp_awarded

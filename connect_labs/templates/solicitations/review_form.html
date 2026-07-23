@@ -13,9 +13,21 @@
         <span class="text-gray-700 font-medium">{% if is_update %}Update{% else %}Add{% endif %} Review</span>
     </nav>
 
-    <h1 class="text-2xl font-semibold text-brand-deep-purple mb-6">
+    <h1 class="text-2xl font-semibold text-brand-deep-purple mb-1">
         {% if is_update %}Update Review{% else %}Review Response{% endif %}
     </h1>
+
+    <!-- Blind + anti-anchoring banner -->
+    <div class="flex flex-col sm:flex-row sm:items-center gap-2 mb-6">
+        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+            <i class="fa-solid fa-user-secret text-slate-500"></i>
+            Scoring {{ blind_label|default:"this response" }} — applicant identity hidden
+        </span>
+        <span class="text-xs text-gray-500">
+            <i class="fa-solid fa-lock text-gray-400 mr-1"></i>
+            The AI's suggested score for each criterion stays hidden until you record your own, so it can't anchor you.
+        </span>
+    </div>
 
     {% if error %}
         <div class="bg-red-50 border-l-4 border-red-400 p-4 mb-6">
@@ -60,15 +72,29 @@
             {% if qa.criteria %}
             <div class="ml-10 mt-3 space-y-2">
                 {% for criterion in qa.criteria %}
-                <div class="flex items-center gap-4 p-3 bg-indigo-50/50 rounded-lg">
-                    <div class="flex-1">
-                        <p class="text-xs font-semibold text-brand-indigo">{{ criterion.name }} ({{ criterion.weight }}%)</p>
-                        {% if criterion.scoring_guide %}
-                        <p class="text-xs text-gray-500 mt-0.5">{{ criterion.scoring_guide }}</p>
-                        {% endif %}
+                <div class="p-3 bg-indigo-50/50 rounded-lg">
+                    <div class="flex items-center gap-4">
+                        <div class="flex-1">
+                            <p class="text-xs font-semibold text-brand-indigo">{{ criterion.name }} ({{ criterion.weight }}%)</p>
+                            {% if criterion.scoring_guide %}
+                            <p class="text-xs text-gray-500 mt-0.5">{{ criterion.scoring_guide }}</p>
+                            {% endif %}
+                        </div>
+                        <div class="w-20">
+                            {{ form|get_criteria_field:criterion.id }}
+                        </div>
                     </div>
-                    <div class="w-20">
-                        {{ form|get_criteria_field:criterion.id }}
+                    <div class="ai-suggest mt-2" data-criterion="{{ criterion.id }}">
+                        <span class="ai-locked inline-flex items-center gap-1.5 text-xs text-gray-400">
+                            <i class="fa-solid fa-lock"></i> AI suggestion hidden — enter your score to compare
+                        </span>
+                        <button type="button" class="ai-reveal-btn hidden items-center gap-1.5 px-2 py-1 text-xs font-medium rounded-md bg-indigo-100 text-indigo-700 hover:bg-indigo-200">
+                            <i class="fa-solid fa-wand-magic-sparkles"></i> Reveal AI suggestion
+                        </button>
+                        <span class="ai-revealed hidden items-center gap-1.5 text-xs">
+                            <span class="font-semibold text-indigo-700">AI proposed <span class="ai-score"></span>/10</span>
+                            <span class="text-gray-500 ai-rationale"></span>
+                        </span>
                     </div>
                 </div>
                 {% endfor %}
@@ -85,15 +111,29 @@
             </h2>
             <div class="space-y-2">
                 {% for criterion in unlinked_criteria %}
-                <div class="flex items-center gap-4 p-3 bg-indigo-50/50 rounded-lg">
-                    <div class="flex-1">
-                        <p class="text-xs font-semibold text-brand-indigo">{{ criterion.name }} ({{ criterion.weight }}%)</p>
-                        {% if criterion.scoring_guide %}
-                        <p class="text-xs text-gray-500 mt-0.5">{{ criterion.scoring_guide }}</p>
-                        {% endif %}
+                <div class="p-3 bg-indigo-50/50 rounded-lg">
+                    <div class="flex items-center gap-4">
+                        <div class="flex-1">
+                            <p class="text-xs font-semibold text-brand-indigo">{{ criterion.name }} ({{ criterion.weight }}%)</p>
+                            {% if criterion.scoring_guide %}
+                            <p class="text-xs text-gray-500 mt-0.5">{{ criterion.scoring_guide }}</p>
+                            {% endif %}
+                        </div>
+                        <div class="w-20">
+                            {{ form|get_criteria_field:criterion.id }}
+                        </div>
                     </div>
-                    <div class="w-20">
-                        {{ form|get_criteria_field:criterion.id }}
+                    <div class="ai-suggest mt-2" data-criterion="{{ criterion.id }}">
+                        <span class="ai-locked inline-flex items-center gap-1.5 text-xs text-gray-400">
+                            <i class="fa-solid fa-lock"></i> AI suggestion hidden — enter your score to compare
+                        </span>
+                        <button type="button" class="ai-reveal-btn hidden items-center gap-1.5 px-2 py-1 text-xs font-medium rounded-md bg-indigo-100 text-indigo-700 hover:bg-indigo-200">
+                            <i class="fa-solid fa-wand-magic-sparkles"></i> Reveal AI suggestion
+                        </button>
+                        <span class="ai-revealed hidden items-center gap-1.5 text-xs">
+                            <span class="font-semibold text-indigo-700">AI proposed <span class="ai-score"></span>/10</span>
+                            <span class="text-gray-500 ai-rationale"></span>
+                        </span>
                     </div>
                 </div>
                 {% endfor %}
@@ -141,11 +181,60 @@
         </div>
     </form>
 </div>
+{{ ai_proposed_scores|json_script:"ai-proposed-scores" }}
 {% endblock %}
 
 {% block inline_javascript %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    // --- Anti-anchoring: AI suggestion per criterion stays hidden until the
+    //     reviewer records their OWN score for that criterion. ---
+    var aiScores = {};
+    try {
+        var el = document.getElementById('ai-proposed-scores');
+        if (el) { aiScores = JSON.parse(el.textContent) || {}; }
+    } catch (e) { aiScores = {}; }
+
+    document.querySelectorAll('.ai-suggest').forEach(function(box) {
+        var critId = box.getAttribute('data-criterion');
+        var proposal = aiScores[critId];
+        var locked = box.querySelector('.ai-locked');
+        var revealBtn = box.querySelector('.ai-reveal-btn');
+        var revealed = box.querySelector('.ai-revealed');
+        var input = document.querySelector('input[name="criteria_score_' + critId + '"]');
+        if (!input) return;
+
+        // No AI proposal for this criterion → keep it quiet.
+        if (!proposal) { if (locked) locked.style.display = 'none'; return; }
+
+        function ownScoreEntered() {
+            var v = parseInt(input.value, 10);
+            return !isNaN(v) && v >= 1 && v <= 10;
+        }
+        function refreshGate() {
+            if (revealed && !revealed.classList.contains('hidden')) return; // already shown
+            if (ownScoreEntered()) {
+                if (locked) locked.style.display = 'none';
+                if (revealBtn) { revealBtn.classList.remove('hidden'); revealBtn.style.display = 'inline-flex'; }
+            } else {
+                if (locked) locked.style.display = 'inline-flex';
+                if (revealBtn) { revealBtn.classList.add('hidden'); revealBtn.style.display = 'none'; }
+            }
+        }
+        input.addEventListener('input', refreshGate);
+        input.addEventListener('change', refreshGate);
+        if (revealBtn) {
+            revealBtn.addEventListener('click', function() {
+                box.querySelector('.ai-score').textContent = proposal.score;
+                var rat = box.querySelector('.ai-rationale');
+                if (rat && proposal.rationale) rat.textContent = '— ' + proposal.rationale;
+                revealBtn.classList.add('hidden'); revealBtn.style.display = 'none';
+                if (revealed) { revealed.classList.remove('hidden'); revealed.style.display = 'inline-flex'; }
+            });
+        }
+        refreshGate();
+    });
+
     var criteriaWeights = {
         {% for criterion in solicitation.evaluation_criteria %}
         "{{ criterion.id }}": {{ criterion.weight }},
