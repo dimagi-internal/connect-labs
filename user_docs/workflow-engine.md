@@ -103,6 +103,23 @@ If you open a workflow run page without a specific run selected — for example,
 
 ---
 
+## Renaming a Run
+
+By default, every run is labelled with a generic identifier such as **Run #5110**. You can replace this with a meaningful name — for example, **Week 30 Audit** — so that runs are easier to identify in lists and on individual run pages such as the Muac Picture Audit.
+
+To rename a run:
+
+1. Open the run you want to rename.
+2. Click the **Rename** action (available in the run's action menu or alongside the run title).
+3. Type the new name and confirm.
+
+The custom name replaces the generic label everywhere the run appears: the workflow list page and any template that displays individual runs. Renaming is allowed regardless of whether the run is in progress or has already been completed.
+
+!!! note "Renaming does not affect the run's data or status"
+    Giving a run a custom name is purely a display change. The underlying data, audit records, and status of the run are not affected.
+
+---
+
 ## Reading a Workflow Dashboard
 
 A typical workflow dashboard shows a **table of field workers** with performance columns:
@@ -234,25 +251,4 @@ The Filters section contains three optional controls. Leaving any filter empty i
 
 **Pass Threshold**
 
-A slider ranging from 75% to 100% (default: 100%). This sets the minimum percentage of assessments that must pass for an audit to be marked "Pass" overall. Lowering the threshold means more audits will qualify as passing; keeping it at 100% requires every assessment to pass.
-
-**Deliver Unit Type**
-
-A set of checkboxes populated automatically from the visits recorded across the selected opportunities. Check one or more types to include only visits of those types in the generated audits. If no boxes are checked, all deliver unit types are included.
-
-**Visit Type**
-
-Checkboxes for the visit's payment status. The available options are:
-
-| Option | What it includes |
-|---|---|
-| Pending | Visits awaiting approval |
-| Approved | Visits that have been approved for payment |
-| Rejected | Visits that have been rejected |
-| Over Limit | Visits that exceed the payment cap |
-| Duplicate | Visits flagged as duplicates |
-| Trial | Trial or test visits |
-
-Check one or more options to restrict the audits to visits with those statuses. If no boxes are checked, all visit types are included.
-
-These three filters work together: only
+A slider ranging from 75% to 100% (default: 100%). This sets the minimum percentage of assessments that must pass for an audit to be marked "Pass" overall. Lowering the threshold means
