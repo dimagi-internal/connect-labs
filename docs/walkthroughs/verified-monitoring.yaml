@@ -12,7 +12,7 @@ name: verified-monitoring
 narrative: 'Since the independent survey is what verifies the program, Maya can also inspect the quality
   of the survey itself — the focus shifts from reviewing program performance to reviewing the surveyors.
   Maya opens the independent survey''s dashboard — the six-round trend. It confirms a real rise in independent
-  survey-estimated coverage — 72.1%, against the 89.7% her program''s own records report — with each round''s
+  survey-estimated coverage — 71.8%, against the 89.3% her program''s own records report — with each round''s
   confidence interval and sample size shown, so a change reads as real rather than sampling noise. Each
   round re-surveys a fresh representative household sample within the same matched ward pair, so the trend
   follows the same comparison over time. On the map, program delivery points fill only the intervention
@@ -90,7 +90,7 @@ scenes:
     seconds: 5.3
   pace: teach
   concept_claim: Across six bi-monthly rounds, the program's self-reported delivery stays above the independent
-    survey's estimated coverage each round — 72.1% survey-estimated against 89.7% self-reported at the
+    survey's estimated coverage each round — 71.8% survey-estimated against 89.3% self-reported at the
     latest round — while the match arm stays low; each round carries a 95% confidence interval and sample
     size, so the gap reads as real signal over time rather than sampling noise in a single snapshot.
   design_intent: Three labelled lines (service-delivery dashed amber, intervention survey indigo, match
@@ -111,7 +111,7 @@ scenes:
       vs ~90% self-reported; no interpretive verbs on screen.
   full_page: false
   narrative: Maya opens the independent survey's six-round trend. It confirms a real rise in independent
-    survey-estimated coverage — 72.1%, against the 89.7% her program's own records report — with each round's
+    survey-estimated coverage — 71.8%, against the 89.3% her program's own records report — with each round's
     confidence interval and sample size shown, so a change reads as real rather than sampling noise. Each
     round re-surveys a fresh representative household sample within the same matched ward pair, so the trend
     follows the same comparison over time.

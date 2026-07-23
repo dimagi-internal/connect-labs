@@ -10,7 +10,7 @@
 // scorecard row to switch) — one row per re-surveyed household, columns grouped
 // under Identity / Location / Outcome sections with info buttons (method +
 // source). Objective copy; the viewer draws the conclusion.
-// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V70
+// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V71
 function WorkflowUI(props) {
   var instance = props.instance || {};
   var data = instance.state || {};
@@ -3320,9 +3320,7 @@ function WorkflowUI(props) {
                 <td style={{ padding: '2px 12px 2px 0' }}>
                   <span style={{ color: AMBER }}>▰</span> {cWard}
                 </td>
-                <td style={{ padding: '2px 12px 2px 0', color: MUT }}>
-                  control
-                </td>
+                <td style={{ padding: '2px 12px 2px 0', color: MUT }}>match</td>
                 <td style={{ padding: '2px 0', color: SUBINK }}>
                   {pct((trend.comparison || [])[sel])} survey-estimated
                 </td>
