@@ -155,9 +155,10 @@ class TestSubmissionConfirmation:
 class TestOrgDisplayName:
     @_CONTEXT_PATCH
     @patch("connect_labs.solicitations.views.SolicitationsDataAccess")
-    def test_responses_list_falls_back_to_submitter_name(self, MockDA):
+    def test_responses_list_is_blind_by_response_id(self, MockDA):
         sol = _make_solicitation(pk=1)
-        # No llo_entity_name, no org_name — must NOT say "Unknown Organization".
+        # Blind scoring: the list identifies applicants by response id only. It must
+        # still never say "Unknown Organization" — it says "Response #<id>" instead.
         resp = _make_response(pk=10, llo_entity_name="", org_name="", submitted_by_name="Amina Okafor")
         MockDA.return_value.get_solicitation_by_id.return_value = sol
         MockDA.return_value.get_responses_for_solicitation.return_value = [resp]
@@ -166,7 +167,10 @@ class TestOrgDisplayName:
         content = _render(ResponsesListView, _make_request("/solicitations/1/responses/"), pk=1)
 
         assert "Unknown Organization" not in content
-        assert "Amina Okafor" in content
+        # Identity is hidden while scoring so the reviewer judges the application,
+        # not the applicant. The name is revealed at award (see the award test below).
+        assert "Response #10" in content
+        assert "Amina Okafor" not in content
 
     @_CONTEXT_PATCH
     @patch("connect_labs.solicitations.views.SolicitationsDataAccess")
