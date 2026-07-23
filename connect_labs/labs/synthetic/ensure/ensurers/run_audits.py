@@ -361,9 +361,7 @@ def ensure_run_audits(resource, ctx) -> dict:
                     if already:
                         audits_reused += 1
                     else:
-                        c_visit = _seeded_visit_id_base(
-                            manifest.random_seed, c_run_id, _CENSUS_AUDIT_FLW_ID
-                        )
+                        c_visit = _seeded_visit_id_base(manifest.random_seed, c_run_id, _CENSUS_AUDIT_FLW_ID)
                         census_audit_id = generate_audit_from_archetype(
                             ada=ada,
                             opportunity_id=opp_id,
