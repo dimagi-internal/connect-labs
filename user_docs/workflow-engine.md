@@ -241,14 +241,15 @@ The end result is the same in both cases: the Colour, Recovered, and Date column
 
 ---
 
-## Program Audit Creator
+## Weekly Dual-Track Image Audit
 
-The **CHC PRE-RCT — Program Audit Creator** workflow lets you generate audits across all opportunities in the program in a single step. When you open the Generate screen, you will see an audit window date range followed by a **Filters** section, and then the **Generate** button.
+The **Weekly Dual-Track Image Audit** workflow surfaces MUAC tape photos for human review. Each photo tile is analysed automatically by an AI reviewer before you see it, so the most likely problems are already flagged when you open the audit.
 
-### Generate screen filters
+### AI checks on MUAC images
 
-The Filters section contains three optional controls. Leaving any filter empty includes everything — the behaviour is identical to how the workflow worked before these filters were added.
+Two independent AI checks run on every MUAC tape photo:
 
-**Pass Threshold**
-
-A slider ranging from 75% to 100% (default: 100%). This sets the minimum percentage of assessments that must pass for an audit to be marked "Pass" overall. Lowering the threshold means
+| Check | Badge shown | What it means |
+|---|---|---|
+| **Framing check** | **Hyperzoomed** | The photo is framed too closely — the tape and surrounding tissue are not fully visible, making an accurate reading impossible |
+| **Reading-match check** | **MUAC Mismatch (strict

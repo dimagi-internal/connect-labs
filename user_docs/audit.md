@@ -54,6 +54,7 @@ This step appears once you have selected your opportunities. It has two sections
 - **AI reviewer per image type** — when you tick an image type, an AI reviewer dropdown appears directly beneath it. You can select a different reviewer for each image type, or leave the dropdown blank to skip AI review for that type. Each reviewer only appears for the image types it is designed for. This replaces the previous single-reviewer dropdown — each photo type now runs only the reviewer you choose for it.
 - **Reviewer settings** — some reviewers require one extra setting, which appears immediately under the reviewer dropdown when that reviewer is selected:
     - **Scale Image Validation** asks you to choose a **Manual Scale Value** field — a dropdown of your opportunity's form fields that tells the reviewer which recorded weight to compare against the scale photo.
+    - **MUAC Reading Match** asks you to choose a **Manual MUAC Value** field — a dropdown of your opportunity's form fields that tells the reviewer which recorded MUAC measurement (in cm) to compare against the tape photo.
     - **MUAC OverZoom** requires no extra settings.
     If a reviewer needs a setting and you leave it blank, the wizard will stop you before creating the session.
 - **Context fields** (collapsed by default) — optionally associate any supporting form fields (such as a recorded measurement value) with an image type so that human reviewers can see the relevant data alongside each photo. These associations have no effect on AI review.
@@ -112,6 +113,7 @@ Instead of tracks being set up in advance, you can now configure them directly i
 - For each opportunity, tick checkboxes to select which CommCare image fields belong to that track — the same image-type picker used in the standard wizard.
 - Each track is labelled **Track A** and **Track B** by default. You can rename these to whatever is meaningful for your program — for example, **MUAC** and **Other** — and the labels will carry through to the session and any exported CSVs.
 - The **MUAC OverZoom** AI reviewer automatically follows whichever track contains an image path with "muac" in the name, regardless of how you have named the tracks or which track that path ends up in. You do not need to manually reassign it if you reorganise your tracks.
+- The **MUAC Reading Match** AI reviewer is also available for MUAC tape photos in this workflow. It compares each photo against the manually-entered MUAC value (in cm) using the same ML vision service used for KMC scale readings. You can run both **MUAC OverZoom** and **MUAC Reading Match** on the same image type in the same session — each check produces its own distinct badge on the image tile ("Hyperzoomed" or "MUAC Mismatch (strict tolerance)"), so it is clear at a glance which check flagged an image. The manually-entered MUAC reading is shown on the tile the same way the KMC scale reading already is.
 
 !!! note "Program-owned runs"
     Program-owned instances of this workflow — those that span multiple opportunities under one program — work end-to-end. Earlier issues that caused a generic error or a "Failed to update state" error when clicking **Create Audits** have been resolved.
@@ -165,24 +167,12 @@ The bulk assessment page header identifies the field worker being reviewed. For 
     | --- | --- | --- |
     | **Scale Image Validation** | A weight-related image type is selected and this agent is chosen for it | Compares scale photos against the reading entered by the FLW and flags mismatches |
     | **MUAC OverZoom** | A MUAC image type is selected and this agent is chosen for it | Classifies photos for excessive zoom and flags images the agent identifies as hyperzoomed |
+    | **MUAC Reading Match** | A MUAC image type is selected and this agent is chosen for it | Compares the MUAC tape photo against the manually-entered MUAC value (in cm) and flags mismatches; the recorded reading is shown on the image tile alongside the photo |
 
     If no agent is selected for an image type, that type's photos are not pre-screened by AI — the workflow behaves exactly as standard review for those images.
 
-    AI results appear alongside each image as suggestions — you make the final Pass/Fail/Duplicate/Fake call. Images flagged by the AI are highlighted so you can prioritize reviewing them first.
+    AI results appear alongside each image as suggestions — you make the final Pass/Fail/Duplicate/Fake call. Images flagged by the AI are highlighted so you can prioritize reviewing them first. When both **MUAC OverZoom** and **MUAC Reading Match** are run on the same image type, each check produces its own distinct badge — **Hyperzoomed** or **MUAC Mismatch (strict tolerance)** — so it is immediately clear which check flagged an image.
 
     Each image tile also shows the **entity ID** for the visit — for example, the specific child a home visit was recorded for. This appears below the question tag on the tile, marked with a child icon. The same information is shown next to the question tag when you open an image in the full-screen lightbox view. The entity ID is displayed in full (it wraps to a second line rather than being cut off with "..."), so you always see the complete identifier.
 
-    !!! tip "Older audit sessions"
-        Entity IDs are shown for all sessions, including those created before this feature was introduced. The page fetches any missing IDs automatically the first time you open an older session.
-
-    If an image's visit was flagged by Visit Clustering as part of a duplicate grouping, **Duplicate/Fake** is pre-selected automatically when the bulk assessment page opens. This only applies to images with no verdict yet — any image already reviewed by a human or AI keeps its existing verdict.
-
-    If a photo was already given a verdict in an earlier completed audit session, it shows an **Audited** badge on the image tile — for example, **Audited: Passed**, **Audited: Failed**, or **Audited: Dup·Fake**. Hover over the badge to see the date of the earlier audit. This badge only reflects *other* completed audits, not the current session. You can still assess the image normally — the badge is informational only.
-
-    The **#** link on each image tile opens the original visit record directly in Connect. This link is correct for all sessions, including those created previously.
-
-    ### Choosing how the AI applies its verdicts
-
-    Next to each AI Review Agent dropdown (in Step 5 of the wizard), each possible AI verdict has a checkbox — for example, "Automatically pre-tag photos flagged as hyperzoomed as Fail" or "Automatically pre-tag readings that match the scale as Pass". You can tick any combination of these:
-
-    - **Ticked** — the AI pre-tags matching images with that result before you
+    !!! tip "Older audit sessions
