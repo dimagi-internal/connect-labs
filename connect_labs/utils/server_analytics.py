@@ -16,8 +16,13 @@ from config import celery_app
 
 logger = logging.getLogger(__name__)
 
-# Umami rejects requests without a User-Agent.
-SERVER_USER_AGENT = "connect-labs-server/1.0"
+# Umami silently drops events whose User-Agent trips its isbot check (it
+# answers {"beep":"boop"} and stores nothing) — even a custom suffix appended
+# to a browser UA gets flagged, so this must be a plain browser UA. Server
+# events are identifiable by their "/server/..." url instead.
+SERVER_USER_AGENT = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36"
+)
 
 
 def send_event(name: str, data: dict | None = None, url: str = "/server") -> None:
