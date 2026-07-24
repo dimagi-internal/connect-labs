@@ -192,6 +192,66 @@ def test_two_independent_reviewers_on_one_path_both_run_and_fail_wins(patched_re
     assert result == "fail"
 
 
+def test_two_reviewers_on_one_image_run_concurrently_not_sequentially(patched_registry, monkeypatch):
+    """Regression for the perf fix: two independent reviewers on the same
+    image (e.g. MUAC OverZoom + MUAC Match) must run concurrently -- each
+    one's blocking HTTP call shouldn't double that image's AI-review latency
+    the way sequential per-reviewer calls would."""
+    import time
+
+    SLEEP = 0.2
+
+    class _SlowAgentA(_MatchAgent):
+        agent_id = "agent_a"
+        seen = []
+
+        def review(self, ctx):
+            time.sleep(SLEEP)
+            return super().review(ctx)
+
+    class _SlowAgentB(_FailAgent):
+        agent_id = "agent_fail"
+        seen = []
+
+        def review(self, ctx):
+            time.sleep(SLEEP)
+            return super().review(ctx)
+
+    agents = {"agent_a": _SlowAgentA(), "agent_fail": _SlowAgentB()}
+    from connect_labs.labs.ai_review_agents import registry
+
+    monkeypatch.setattr(registry, "get_agent", lambda aid: agents[aid])
+    _SlowAgentA.seen = []
+    _SlowAgentB.seen = []
+
+    session = _FakeSession(
+        {"visit_images": {"1": [{"blob_id": "blobA", "question_id": "form/photo_a", "related_fields": []}]}}
+    )
+    data_access = _FakeDataAccess(session)
+    ai_reviewers = {
+        "form/photo_a": [
+            {"agent_id": "agent_a", "auto_apply_actions": ["ok"]},
+            {"agent_id": "agent_fail", "auto_apply_actions": ["nope"]},
+        ],
+    }
+
+    start = time.monotonic()
+    tasks._run_ai_review_on_sessions(
+        data_access=data_access,
+        session_ids=[10],
+        access_token="tok",
+        opp_id=42,
+        ai_reviewers=ai_reviewers,
+    )
+    elapsed = time.monotonic() - start
+
+    assert _SlowAgentA.seen == ["blobA"]
+    assert _SlowAgentB.seen == ["blobA"]
+    # Sequential would take >= 2*SLEEP; concurrent should take roughly 1*SLEEP.
+    # Generous upper bound to avoid CI timing flakiness.
+    assert elapsed < SLEEP * 1.8, f"expected concurrent reviewer calls, took {elapsed:.3f}s for 2x{SLEEP}s calls"
+
+
 def test_reading_required_reviewer_skips_itself_when_its_field_is_absent(patched_registry):
     """The actual production pairing being wired up (muac_overzoom, requires_reading=
     False, + muac_match, requires_reading=True) on the same path: if no related
