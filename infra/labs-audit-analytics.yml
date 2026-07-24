@@ -1,0 +1,282 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+# Labs audit-trail + first-party analytics infrastructure — second IaC slice
+# (see infra/README.md and labs-monitoring.yml for the pattern: standalone
+# stack that owns the NEW layer and references — does not own — the core
+# infra created out-of-band).
+#
+# This stack owns:
+#   - the self-hosted Umami analytics service (log group, target group, ALB
+#     path rule /umami/*, task definition, ECS service)
+#   - the CodeBuild project (+ its role) that builds the custom Umami image
+#     (BASE_PATH=/umami must be baked at build time — Next.js basePath)
+#   - the IAM inline policies that grant the existing ECS task role write
+#     access to the audit-archive bucket and the existing execution role read
+#     access to the Umami secrets
+#
+# Referenced, NOT owned (stateful / created out-of-band — creation commands
+# documented in infra/README.md):
+#   - s3://labs-jj-audit-archive — Object Lock COMPLIANCE mode (6y) bucket;
+#     deliberately not in CF: objects are legally undeletable, so stack
+#     deletion must never be able to touch it
+#   - Secrets Manager: labs-jj-umami-database-url, labs-jj-umami-app-secret
+#   - ECR repo labs-jj-umami (holds the built image)
+#   - ALB listener, ECS cluster, subnets, security groups, IAM roles
+#
+# Umami DATABASE_URL note: RDS forces TLS but presents the RDS CA. Two
+# different clients inside Umami parse the URL (node-pg's check-db and
+# Prisma's engine), so the secret carries BOTH dialects' opt-outs:
+#   ?sslmode=no-verify&sslaccept=accept_invalid_certs
+# (encrypted, CA verification skipped — in-VPC traffic; same posture as the
+# Django app's own RDS connection).
+Description: >-
+  Labs audit-trail + analytics layer: self-hosted Umami on ECS Fargate behind
+  the existing ALB at /umami/*, the CodeBuild image pipeline for it, and IAM
+  policies for the audit-archive S3 bucket. References (does not own) the
+  Object-Locked archive bucket, secrets, ECR repo, and core cluster/ALB/roles.
+
+Parameters:
+  ClusterName:
+    Type: String
+    Default: labs-jj-cluster
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Default: vpc-024df4c7bcc30cb01
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Default: subnet-06646effb09be2f42,subnet-08a18eb47b48aff54
+  ServiceSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Default: sg-0666a5ed512c97d9d
+    Description: >-
+      Existing ECS task security group (already allows 3000 from the ALB SG).
+  HttpsListenerArn:
+    Type: String
+    Default: >-
+      arn:aws:elasticloadbalancing:us-east-1:858923557655:listener/app/labs-jj-alb/824625237/None
+    Description: >-
+      Overridden at deploy time (see infra/README.md) — the 443 listener of
+      labs-jj-alb.
+  ListenerRulePriority:
+    Type: Number
+    Default: 40
+  UmamiImageUri:
+    Type: String
+    Default: 858923557655.dkr.ecr.us-east-1.amazonaws.com/labs-jj-umami:latest
+  UmamiDatabaseUrlSecretArn:
+    Type: String
+    Default: >-
+      arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-umami-database-url-ryVTel
+  UmamiAppSecretArn:
+    Type: String
+    Default: >-
+      arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-umami-app-secret-ZOj9HE
+  TaskRoleName:
+    Type: String
+    Default: labs-jj-ecs-task-role
+    Description: Existing ECS task role (app runtime permissions).
+  ExecutionRoleName:
+    Type: String
+    Default: labs-jj-ecs-task-execution-role
+    Description: Existing ECS execution role (image pull + secrets injection).
+  AuditArchiveBucketName:
+    Type: String
+    Default: labs-jj-audit-archive
+    Description: Existing Object-Locked audit archive bucket (referenced only).
+
+Resources:
+  # ── IAM: audit-archive access for the app (web + worker tasks) ────────
+  # The nightly archive task PUTs JSONL+digest objects and HEADs them before
+  # pruning hot rows. Deliberately NO s3:DeleteObject — Object Lock blocks it
+  # anyway; least privilege keeps the intent visible.
+  TaskRoleAuditArchivePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: labs-audit-archive
+      Roles: [!Ref TaskRoleName]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: ['s3:PutObject', 's3:GetObject']
+            Resource: !Sub 'arn:aws:s3:::${AuditArchiveBucketName}/audit-events/*'
+          - Effect: Allow
+            Action: ['s3:ListBucket']
+            Resource: !Sub 'arn:aws:s3:::${AuditArchiveBucketName}'
+
+  # ── IAM: umami secret injection for the execution role ────────────────
+  ExecutionRoleUmamiSecretsPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: umami-secrets
+      Roles: [!Ref ExecutionRoleName]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: ['secretsmanager:GetSecretValue']
+            Resource:
+              - !Ref UmamiDatabaseUrlSecretArn
+              - !Ref UmamiAppSecretArn
+
+  # ── Umami: logs ───────────────────────────────────────────────────────
+  UmamiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /ecs/labs-jj-umami
+      RetentionInDays: 30
+
+  # ── Umami: load balancing ─────────────────────────────────────────────
+  UmamiTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: labs-jj-umami-tg
+      Protocol: HTTP
+      Port: 3000
+      VpcId: !Ref VpcId
+      TargetType: ip
+      HealthCheckPath: /umami/api/heartbeat
+      HealthCheckIntervalSeconds: 30
+      HealthyThresholdCount: 2
+
+  UmamiListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !Ref HttpsListenerArn
+      Priority: !Ref ListenerRulePriority
+      Conditions:
+        - Field: path-pattern
+          Values: ['/umami', '/umami/*']
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref UmamiTargetGroup
+
+  # ── Umami: ECS ────────────────────────────────────────────────────────
+  UmamiTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: labs-jj-umami
+      NetworkMode: awsvpc
+      RequiresCompatibilities: [FARGATE]
+      Cpu: '256'
+      Memory: '512'
+      ExecutionRoleArn: !Sub 'arn:aws:iam::${AWS::AccountId}:role/${ExecutionRoleName}'
+      ContainerDefinitions:
+        - Name: umami
+          Image: !Ref UmamiImageUri
+          Essential: true
+          PortMappings:
+            - ContainerPort: 3000
+              HostPort: 3000
+              Protocol: tcp
+          Environment:
+            - Name: DATABASE_TYPE
+              Value: postgresql
+            - Name: DISABLE_TELEMETRY
+              Value: '1'
+          Secrets:
+            - Name: DATABASE_URL
+              ValueFrom: !Ref UmamiDatabaseUrlSecretArn
+            - Name: APP_SECRET
+              ValueFrom: !Ref UmamiAppSecretArn
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref UmamiLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: umami
+
+  UmamiService:
+    Type: AWS::ECS::Service
+    DependsOn: UmamiListenerRule
+    Properties:
+      ServiceName: labs-jj-umami
+      Cluster: !Ref ClusterName
+      TaskDefinition: !Ref UmamiTaskDefinition
+      DesiredCount: 1
+      LaunchType: FARGATE
+      HealthCheckGracePeriodSeconds: 120
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets: !Ref SubnetIds
+          SecurityGroups: [!Ref ServiceSecurityGroupId]
+          AssignPublicIp: ENABLED
+      LoadBalancers:
+        - TargetGroupArn: !Ref UmamiTargetGroup
+          ContainerName: umami
+          ContainerPort: 3000
+
+  # ── Umami image build (rerun on upgrades) ─────────────────────────────
+  # BASE_PATH is a Next.js build-time value, so the stock ghcr image cannot
+  # serve under /umami — this project clones upstream and bakes it in.
+  # Rebuild + force-new-deployment on the service to upgrade Umami.
+  UmamiBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: labs-jj-codebuild-umami
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: codebuild.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: umami-build
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ['ecr:GetAuthorizationToken']
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:PutImage
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+                  - ecr:CompleteLayerUpload
+                  - ecr:BatchGetImage
+                  - ecr:GetDownloadUrlForLayer
+                Resource: !Sub 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/labs-jj-umami'
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/labs-jj-umami-build*'
+
+  UmamiBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: labs-jj-umami-build
+      ServiceRole: !GetAtt UmamiBuildRole.Arn
+      TimeoutInMinutes: 45
+      Artifacts: {Type: NO_ARTIFACTS}
+      Environment:
+        Type: LINUX_CONTAINER
+        Image: aws/codebuild/standard:7.0
+        ComputeType: BUILD_GENERAL1_LARGE
+        PrivilegedMode: true
+      Source:
+        Type: NO_SOURCE
+        BuildSpec: !Sub |
+          version: 0.2
+          phases:
+            pre_build:
+              commands:
+                - aws ecr get-login-password --region ${AWS::Region} | docker login --username AWS --password-stdin ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com
+                - git clone --depth 1 https://github.com/umami-software/umami.git /tmp/umami
+            build:
+              commands:
+                - cd /tmp/umami
+                - docker build --build-arg BASE_PATH=/umami -t ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/labs-jj-umami:latest .
+            post_build:
+              commands:
+                - docker push ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/labs-jj-umami:latest
+
+Outputs:
+  UmamiUrl:
+    Value: https://labs.connect.dimagi.com/umami
+    Description: Umami dashboard (login is local to Umami; rotate admin pw).
+  UmamiTargetGroupArn:
+    Value: !Ref UmamiTargetGroup

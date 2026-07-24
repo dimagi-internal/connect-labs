@@ -59,3 +59,12 @@ SUPERSET_PASSWORD={{ op://Employee/Connect Labs .env/SUPERSET_PASSWORD }}
 # file path. Also mirrored in AWS Secrets Manager (labs-jj-synthetic-gdrive-sa-key) for the
 # deployed labs environment.
 LABS_SYNTHETIC_GDRIVE_SA_KEY={{ op://AI-Agents/swvkqixqoyprbtleply2p4hnta/LABS_SYNTHETIC_GDRIVE_SA_KEY }}
+
+# Audit trail (HIPAA-bar logging — docs/AUDIT_LOGGING.md). Optional locally:
+# unset AUDIT_TRAIL_ARCHIVE_BUCKET disables the nightly S3 archive task.
+# AUDIT_TRAIL_ARCHIVE_BUCKET=labs-jj-audit-archive
+
+# Self-hosted Umami analytics (first-party; empty = tracking disabled).
+# Prod values live in the ECS task definitions, not 1Password.
+# UMAMI_HOST_URL=https://labs.connect.dimagi.com/umami
+# UMAMI_WEBSITE_ID=

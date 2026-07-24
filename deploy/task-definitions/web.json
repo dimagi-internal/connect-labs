@@ -23,6 +23,14 @@
           "value": "labs-jj-audit-archive"
         },
         {
+          "name": "UMAMI_HOST_URL",
+          "value": "https://labs.connect.dimagi.com/umami"
+        },
+        {
+          "name": "UMAMI_WEBSITE_ID",
+          "value": "327e7dde-331a-41e7-be13-a69ac622679c"
+        },
+        {
           "name": "CELERY_BROKER_URL",
           "value": "redis://labs-jj-redis.aceivh.0001.use1.cache.amazonaws.com:6379/0"
         },
