@@ -48,6 +48,22 @@
   function clusterCountOf(s) {
     return (s && s.visit_clusters && s.visit_clusters.length) || 0;
   }
+  // Short "(within 10 min, 10m)"-style description of the visit-clustering
+  // filter actually used for this session -- shown next to the "N Duplicate
+  // Grouping(s)" badge so a reviewer knows what time/distance thresholds
+  // produced the groupings, without going to look up the run's config.
+  // Empty string when neither criterion was enabled for this session.
+  function visitClusteringSummary(s) {
+    var vc = (s && s.visit_clustering) || {};
+    var parts = [];
+    if (vc.enable_time_gap && vc.time_gap_minutes != null) {
+      parts.push(vc.time_gap_minutes + ' min');
+    }
+    if (vc.enable_distance && vc.distance_meters != null) {
+      parts.push(vc.distance_meters + 'm');
+    }
+    return parts.length ? 'within ' + parts.join(' or ') : '';
+  }
   // Whether to show AI stats for a session, instead of guessing from the
   // track's display label (which the user can now rename freely — see
   // weekly_dual_track_audit's _reviewer_for_path, which attaches the AI
@@ -318,10 +334,18 @@
                   'basis-full mt-1.5 pl-16 space-y-1 text-xs text-gray-700',
               },
               clusters.map(function (c, i) {
-                var imageIds = c.image_ids || [];
+                // visit_ids (numeric UserVisit IDs), not image_ids (blob_id
+                // UUIDs) -- this is the same number shown on each image's own
+                // "#" hashtag in the review UI (bulk_assessment.html), so a
+                // reviewer can actually cross-reference a grouping against
+                // the tiles they're looking at.
+                var visitIds = c.visit_ids || [];
                 return h(
                   'div',
-                  { key: c.group_id, className: 'flex items-center gap-2' },
+                  {
+                    key: c.group_id,
+                    className: 'flex flex-wrap items-center gap-x-2 gap-y-1',
+                  },
                   h(
                     'span',
                     {
@@ -331,8 +355,8 @@
                   ),
                   h(
                     'span',
-                    { className: 'text-gray-500 font-mono truncate' },
-                    '[' + imageIds.join(', ') + ']',
+                    { className: 'text-gray-500 font-mono break-words' },
+                    '[' + visitIds.join(', ') + ']',
                   ),
                   h(
                     'a',
