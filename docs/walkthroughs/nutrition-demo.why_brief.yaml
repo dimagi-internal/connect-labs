@@ -1,0 +1,86 @@
+narrative_slug: nutrition-demo
+schema_version: 1
+problem: >
+  A nutrition program funded to deliver RUTF and run MUAC screening across several
+  network managers has no single place to answer the one question that decides where
+  its money and attention go: which network manager is running the weekly review SOP
+  and coaching flagged workers, and which is quietly falling behind. Today the program
+  manager would open a separate weekly review for every network manager, cross-reference
+  audits and coaching tasks by hand, and still not be able to see a single flagged
+  child's evidence without leaving the report. The demo shows the program manager
+  reading three network managers across four weekly reviews on one grid, and drilling
+  from any at-a-glance cell down to the network manager's own review table, the flagged
+  worker's audited MUAC photos, and the AI coaching conversation that resolved it.
+spine:
+- id: S1
+  claim: >
+    A program manager overseeing three network managers can read every opportunity's
+    weekly-review compliance as one grid — cluster rows, week columns, and a pinned
+    aggregate that calls SOP MET versus BELOW per network manager — without opening a
+    single individual review.
+  rationale: >
+    People need the WHY before the how: the program manager's job is triage across
+    managers, so the report opens on the whole program at a glance and the aggregate
+    tells her where to look before she reads a number.
+  evidence:
+  - kind: implemented
+    ref: 'nutrition-demo scene: the program manager sees all three network managers on one grid (program-owned PAR run 5005, program_id 10110)'
+  status: grounded
+- id: S2
+  claim: >
+    Every week cell drills in place to the network manager's own weekly review table,
+    the flagged worker's audited MUAC photos, and the coaching task and transcript that
+    resolved the flag — so the rollup is verifiable against primary records, not merely
+    summarized.
+  rationale: >
+    A summary a funder cannot check is a claim, not evidence; the bet is that trust in
+    the report is earned by letting the program manager see the same photos the auditor
+    passed and read the same coaching the worker received.
+  evidence:
+  - kind: implemented
+    ref: 'nutrition-demo scenes: drill the resolved cell to Kadi Fofana''s audit photos (audit 4996) and closed coaching task (task 5000)'
+  status: grounded
+- id: S3
+  claim: >
+    The report distinguishes a resolved week from a week with open work and from a
+    suspected-fraud case the AI image review caught — a coached-to-close flag, an
+    investigation still open, and a worker suspended for misleading MUAC photos each
+    read differently on the grid and in the drill panel.
+  rationale: >
+    The report earns its keep on the hard cells: the program manager needs to tell
+    "the manager is handling it" from "this one worker is still pending" from "the AI
+    caught a fabricated measurement", because each demands a different response.
+  evidence:
+  - kind: implemented
+    ref: 'nutrition-demo scenes: Central''s open investigation (lola_c, audit 4997 / task 5001) and Eastern''s AI-flagged suspended worker (vida_c fraud case)'
+  status: grounded
+- id: S4
+  claim: >
+    Drilling to a flagged worker ends on an individual child's MUAC evidence — the
+    assessment photos the auditor reviewed — and the closed coaching conversation shows
+    that same worker's screening profile recovering week over week after the network
+    manager intervened.
+  rationale: >
+    The funder's ultimate unit is a child getting measured and treated; the demo lands
+    the program-to-child line by ending each drill on real per-child MUAC photos and a
+    coaching outcome that names the recovery, so the oversight loop visibly closes on a
+    child rather than on a metric.
+  evidence:
+  - kind: implemented
+    ref: 'nutrition-demo scene: the closed coaching transcript naming the recovered screening profile and referrals into treatment (task 5000)'
+  - kind: implemented
+    ref: 'nutrition-demo scene: the SAM Follow-up Timeline (workflow 5017 / opp 10036) drills to one child''s per-visit MUAC climbing red -> yellow -> green (recovered) across their follow-ups — synthetic data built from real opp 879 (PPFN SAM follow-ups) via a mirror profile of the real MUAC recovery distribution'
+gaps:
+- id: G1
+  type: CAPABILITY
+  claim_ref: S4
+  detail: >
+    The child's recovery over the review weeks is currently readable only indirectly —
+    through the audited MUAC photos and the coaching task's outcome text — not as a
+    dedicated longitudinal per-child MUAC-trajectory dashboard (red -> yellow -> green
+    across weeks) with the child's weight/MUAC gain plotted.
+  proposed_action: >
+    Build a child-recovery rollup template (one row per screened child, MUAC over the
+    review weeks with a recovery band) filed under the same program 10110, and add a
+    child_recovery drill var to the realized map so a future scene can end on the child's
+    own trajectory rather than on the FLW's audit photos.

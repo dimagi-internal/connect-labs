@@ -1,38 +1,120 @@
-# DDD Context — Campaign Utility Tool
+# DDD Context — Nutrition Demo (OES/ECF Program Admin Report)
 
 ## Project
 
-Standalone Django app at `/campaign/` on labs.connect.dimagi.com (CommCare Connect Labs). A "single pane of glass" for running a national measles–rubella vaccination campaign — replacing a fragmented stack (CommCare HQ + an external KYC provider + payment platforms + GIS/spreadsheets) with one tool.
+A funder-facing (OES/ECF) demo of the labs **Program Admin Report** for a child-nutrition
+program: a program manager overseeing three RUTF/MUAC **network managers** reads all three
+managers' weekly reviews as one grid and drills program → network manager → frontline worker →
+individual child's MUAC evidence. Rendered against the live labs dashboard on
+`labs.connect.dimagi.com`.
 
 ## base_url
 
-https://labs.connect.dimagi.com/campaign/ (view the national campaign at /campaign/?campaign=MR-NAT-2026)
-Auth: CommCare HQ OAuth (separate from the labs session). Recording needs a CommCare-authed browser session (Playwright + ACE_HQ creds, or /ace:labs-login establishes the CCHQ session the campaign OAuth reuses).
+https://labs.connect.dimagi.com
+Auth: labs browser session at `~/.ace/labs-session.json` (seeded out-of-band via
+`bin/ace-labs-walkthrough-login` / `/ace:labs-login`). The spec carries NO `auth` block —
+cookies are seeded before the render; `record_video` gets `--storage-state ~/.ace/labs-session.json`.
 
-## What the tool does (the workflows)
+## The narrative (already authored + validated + locked)
 
-- **Overview** — real-time KPIs (funding, enrolment/attendance/verification/payments progress, workforce distribution, KYC + payment donuts, fraud/verification alerts), filterable.
-- **Workers › Payments** — review/validate/approve worker payments with daily-level approval; fraud guard blocks payments for duplicate/failed-KYC/flagged workers.
-- **Workers › KYC** — verification status, documents, duplicate/shared-identifier fraud detection, investigations.
-- **Activity › Details + Microplanning & Budget** — activities, per-LGA microplans (workforce planned vs actual, budget vs spent, vaccine doses, coverage targets).
-- **Reporting & Monitoring** — enrolment/attendance/payment trends, household coverage, CSV export, custom-report builder, geographic coverage MAP (region choropleth + worker GPS).
-- **System Administration** — RBAC user management, connection settings, training hub.
+- Spec: `docs/walkthroughs/nutrition-demo.yaml` (UnifiedSpec, `narrative_locked: true`).
+- WhyBrief: `docs/walkthroughs/nutrition-demo.why_brief.yaml`.
+- Both pass `scripts.ddd.validate` and `scripts.ddd.spec_qa` (2026-07-21).
+- Setup: `scripts/walkthroughs/nutrition-demo/ensure_env.py` → `realized.json` (`rerun: once`;
+  the env is pinned + already deployed, so the checked-in `realized.json` is authoritative).
 
-## Data fidelity (the differentiator)
+The story is approved by the operator (Jon) — this run should skip re-authoring, hydrate the
+locked narrative, and go straight to render → dual-judge → route findings → converge → Video
+phase → upload.
 
-Workers are synthetic CommCare **cases** on **real Nigeria geography** (37 states / 774 LGAs / ~9,300 wards from labs AdminBoundary), served via a synthetic CommCare project space through the **Case API** — the exact path real data takes. The tool is the primary store only for things with no CommCare/Connect parallel (payment-approval workflow, activities, microplans, reporting, audit). National scale (up to 50k workers) is usable via a paginated bootstrap.
+## The data (live + deployed on labs)
+
+Env `nutrition-demo` (`connect_labs/labs/synthetic/envs/nutrition-demo.yaml`): three opps filed
+under **PROGRAM 10110**, so the cross-opp Program Admin Report rollup is **program-owned**
+(viewed via `&program_id=10110`; program-owned workflow support = connect-labs #945/#946/#948).
+
+- **Northern** (10010, Amara Nwosu): 10 solid FLWs, no flags → aggregate reads **SOP MET**.
+- **Central** (10011, Bakary Diallo): two bad MUAC distributions → **BELOW**. Drill targets:
+  `kadi_c` (Kadi Fofana) flagged wk1/May 11, coached-to-close (audit 4996 / task 5000 closed);
+  `lola_c` (Lola Kargbo) flagged wk2/May 18, investigation still open (audit 4997 / task 5001).
+- **Eastern** (10012, Chidi Eze): two misleading-MUAC-photo FLWs the AI image review flags →
+  **BELOW**. Drill target: `vida_c` (Vida Kargbo) suspended for misleading photos (wk2/May 18).
+
+Realized PAR: program-owned def 5003, run 5005, `program_id=10110`
+(`/labs/workflow/5003/run/?run_id=5005&program_id=10110`).
 
 ## Requirements (evidence)
 
-- Spec: "Spec: Campaign Management Utility" (Google Doc, drive folder 1cNpjEn_Smy6mHx5rWzflp20hbx65dlbG)
-- Data Model PDF: "Campaign Utility Tool_Data Model.pdf" (12 datasets / 6 domains / 2 owners: CommCare HQ vs the Utility)
-- Design doc: docs/superpowers/specs/2026-06-18-campaign-utility-tool-design.md
-- Shipped PRs this session: #676,#677,#687,#690,#692,#693,#694,#695,#696
+- Operator brief: OES/ECF nutrition program-management demo; arc program manager → network
+  manager → FLW → individual child (MUAC recovery over the review weeks + the audit photos).
+- Env + program-owned workflow support shipped: connect-labs PRs #945 #946 #948 #949.
+- Modeled on the proven 2-opp walkthrough `docs/walkthroughs/program-admin-report.yaml`.
 
 ## Narrative direction
 
-The most compelling overall narrative: a campaign administrator running a national vaccination campaign sees and acts on the whole thing in one place — catch a fraudulent payment before it goes out, validate KYC, watch coverage fill in on the map, export a donor report — instead of stitching together CommCare exports, KYC emails, payment spreadsheets, and GIS tools. Want SETS of videos covering the compelling workflows.
+Program manager Priya reads three network managers on one grid, sees which met the SOP and which
+fell below, and drills from any cell down to the network manager's own review, the flagged
+worker's audited child-MUAC photos, and the AI coaching transcript that resolved (or is still
+resolving, or suspended) each case. Closing frame: the SOP MET vs BELOW contrast across the three
+managers — the sixty-second call on where her attention goes this week.
+
+## Known gap (honesty)
+
+A dedicated per-child MUAC-trajectory dashboard (red→yellow→green over the weeks) is NOT built;
+the child's recovery is shown via the audited MUAC photos + the closed coaching outcome. Tracked
+as WhyBrief gap G1 (CAPABILITY, claim_ref S4).
 
 ## Current phase
 
-First DDD run. Tool is built + deployed. National synthetic data exists as a build path (campaign_build_national MCP tool) but may need standing up in labs before rendering for the map/scale scenes.
+UPLOADED — EXTERNALLY PUBLISHED. Run `nutrition-demo-2026-07-22-003` **iter1**
+(2026-07-22). Resumed run 003 to finish the two undone items: (1) NARRATED hero
+(prior 003 hero was silent) and (2) re-capture scene 12 after workflow 5017
+render-code v3 added the MUAC-recovery **SPARKLINE**. Re-rendered the FULL 12-scene
+spec (55/55 actions ok). **CONVERGED iter1: concept 5.0 (up from 4.0), user 4.0,
+stop_done.** The sparkline resolved scene-12's two prior sub-5 caps against their
+own pre-registered fix (visual_polish 4→5, claim_reality 4→5 — the arc red→green is
+now visible in one frame). user-artifact trust stays 4 (Beneficiary-N privacy
+anon, unaffected by the curve). Narrated hero: 110.5s, reused run002 s1-s11 VO +
+new s12 payoff line + child-landing outro; timing 4.44, video-judge 4.0, dead-air
+under threshold. Caught+fixed a video-render defect (s12 action-mark on a deep row
+in the tall page → page-fit zoom → 18% strip; re-mapped clip to the settled panel
+region + dropped the action-mark → full-width curve). **EXTERNAL-published via
+`ddd-upload --release-approved`** (external_release gate created+resolved+audited,
+phase→uploaded), narrative v3 (ff96b68a).
+- /ddd package: `https://labs.connect.dimagi.com/canopy/w/connect/ddd/nutrition-demo/nutrition-demo-2026-07-22-003`
+- Clean release page (public, anon-viewable): `https://labs.connect.dimagi.com/canopy/ddd-release/nutrition-demo/nutrition-demo-2026-07-22-003?t=sl5hVRMl16ePd_-wHXFFrvVhzYqr80TB`
+  (narrative already public → publishing auto-minted is_public+share_token; anon
+  access confirmed, scene-12 recovery curve renders).
+- Note: the WhyBrief "known gap G1" below is now BUILT (SAM Follow-up Timeline
+  wf 5017), so the per-child MUAC-trajectory dashboard exists as scene 12.
+
+### Prior phase
+CONVERGED (concept 4.0/5 pass, user-artifact 4.0/5 pass) — run
+`nutrition-demo-2026-07-22-003` (2026-07-22), FULL 12-scene spec incl. the NEW
+closing **scene 12 "Priya follows one child's recovery"** (SAM Follow-up Timeline,
+workflow 5017 / opp 10036). Scenes 1-11 render byte-identical to run 002's 5.0;
+scene 12 (the only new scene) drives the sub-5s (visual_polish 4, trust 4,
+claim_reality 4) — the per-child MUAC recovery reads as a clean color-coded list
+(red 11.0cm → green 13.5cm recovered) rather than a bespoke curve; children shown
+as privacy-anon "Beneficiary N" (real source child_name null). Narrative **v3**
+posted to canopy-web (review ff96b68a). Internal `/ddd` package published (--stuck):
+`https://labs.connect.dimagi.com/canopy/w/connect/ddd/nutrition-demo/nutrition-demo-2026-07-22-003`.
+Scene 12 required: (a) broadening opp 10036 allowed_domains to +@dimagi-ai.com via
+ECS (deployed labs :506 lacks the dimagi-internal is_accessible_to bypass), (b)
+pointing scene 12 at saved run_id=5019 (workflow 5017 executes live via "Create
+Run"), (c) fixing the drill to the row's Timeline button. External/public release
++ a narrated-VO hero (run 002-style) remain as gated operator finishing steps.
+
+### Prior phase
+CONVERGED at 5.0/5 (both judges) — run `nutrition-demo-2026-07-22-002` (2026-07-22).
+Up from the prior run's 4.0. Both prior gate root-causes fixed & verified: scene-3
+Actions-column clip (→ `video_viewport_width: 1600`, full table renders) and the
+claim_reality badge over-application (→ connect-labs #954: exactly 2 Hyperzoomed
+badges live). One mechanical render-recipe fix this run: scene-10 `text:Hyperzoomed`
+→ `css:text=/^Hyperzoomed$/` (the substring selector grabbed a hidden `Not
+Hyperzoomed` span as `.first` after the data fix). Narrated hero re-rendered fresh
+with corrected s10 VO; timing 4.44, video-judge 4.0. Internal `/ddd` package
+published (`--stuck`, OAuth-gated) under narrative v2:
+`https://labs.connect.dimagi.com/canopy/w/connect/ddd/nutrition-demo/nutrition-demo-2026-07-22-002`.
+External stakeholder publish remains a gated operator action (`ddd-upload` WITHOUT
+`--stuck`). Run stays iterable.
