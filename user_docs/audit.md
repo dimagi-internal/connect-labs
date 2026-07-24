@@ -115,6 +115,14 @@ Instead of tracks being set up in advance, you can now configure them directly i
 - The **MUAC OverZoom** AI reviewer automatically follows whichever track contains an image path with "muac" in the name, regardless of how you have named the tracks or which track that path ends up in. You do not need to manually reassign it if you reorganise your tracks.
 - The **MUAC Reading Match** AI reviewer is also available for MUAC tape photos in this workflow. It compares each photo against the manually-entered MUAC value (in cm) using the same ML vision service used for KMC scale readings. You can run both **MUAC OverZoom** and **MUAC Reading Match** on the same image type in the same session — each check produces its own distinct badge on the image tile ("Hyperzoomed" or "MUAC Mismatch (strict tolerance)"), so it is clear at a glance which check flagged an image. The manually-entered MUAC reading is shown on the tile the same way the KMC scale reading already is.
 
+**Stopping a run in progress:**
+
+While audit creation or AI review is running, a **Stop** button appears on the run screen. Clicking it halts the remaining work immediately. Any sessions that have already been created and any images that have already been reviewed are kept — only the work that had not yet started is cancelled. This is useful if you realise you have selected a sample that is larger than intended and want to stop before it completes.
+
+**Viewing clustering parameters for a saved run:**
+
+When you reopen a run that used Visit Clustering, the run screen now shows the exact time-gap and distance-grouping values that were used when that run was created. This reflects the settings that were actually applied, rather than the current template defaults, so you have an accurate record of how visits were grouped.
+
 !!! note "Program-owned runs"
     Program-owned instances of this workflow — those that span multiple opportunities under one program — work end-to-end. Earlier issues that caused a generic error or a "Failed to update state" error when clicking **Create Audits** have been resolved.
 
@@ -171,8 +179,4 @@ The bulk assessment page header identifies the field worker being reviewed. For 
 
     If no agent is selected for an image type, that type's photos are not pre-screened by AI — the workflow behaves exactly as standard review for those images.
 
-    AI results appear alongside each image as suggestions — you make the final Pass/Fail/Duplicate/Fake call. Images flagged by the AI are highlighted so you can prioritize reviewing them first. When both **MUAC OverZoom** and **MUAC Reading Match** are run on the same image type, each check produces its own distinct badge — **Hyperzoomed** or **MUAC Mismatch (strict tolerance)** — so it is immediately clear which check flagged an image.
-
-    Each image tile also shows the **entity ID** for the visit — for example, the specific child a home visit was recorded for. This appears below the question tag on the tile, marked with a child icon. The same information is shown next to the question tag when you open an image in the full-screen lightbox view. The entity ID is displayed in full (it wraps to a second line rather than being cut off with "..."), so you always see the complete identifier.
-
-    !!! tip "Older audit sessions
+    AI results appear alongside each image as suggestions — you make the final Pass/Fail/Duplicate/Fake call. Images flagged by the AI are highlighted so you can prioritize reviewing them first. When both **MUAC
