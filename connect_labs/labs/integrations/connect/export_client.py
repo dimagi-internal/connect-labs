@@ -14,10 +14,38 @@ Usage:
         rows = client.fetch_all("/export/opportunity/42/user_data/")
 """
 import logging
+import re
 
 import httpx
 
 logger = logging.getLogger(__name__)
+
+_OPP_ID_RE = re.compile(r"/opportunity/(\d+)/")
+
+
+def _record_export_audit(endpoint: str, row_count: int, error: str | None) -> None:
+    """Audit one bulk PHI fetch (visit/user exports). Best-effort, lazy import
+    so this module stays importable outside a configured Django context."""
+    try:
+        from connect_labs.audit_trail import service
+        from connect_labs.audit_trail.models import Action, Outcome
+
+        opp_match = _OPP_ID_RE.search(endpoint)
+        resource_type = endpoint.split("?")[0].rstrip("/").rsplit("/", 1)[-1] or "export"
+        metadata = {"endpoint": endpoint.split("?")[0][:200]}
+        if error:
+            metadata["error"] = error
+        service.record(
+            Action.EXPORT,
+            resource_type=resource_type,
+            record_count=row_count,
+            opportunity_id=int(opp_match.group(1)) if opp_match else None,
+            outcome=Outcome.FAILURE if error else Outcome.SUCCESS,
+            metadata=metadata,
+        )
+    except Exception:  # pragma: no cover - audit must never break exports
+        logger.exception("Export audit recording failed (non-fatal)")
+
 
 VERSION_HEADER = "application/json; version=2.0"
 DEFAULT_TIMEOUT = 60.0
@@ -77,6 +105,25 @@ class ExportAPIClient:
         return f"{self.base_url}{endpoint}"
 
     def paginate(self, endpoint: str, params: dict | None = None):
+        """Audited wrapper around :meth:`_paginate`.
+
+        Counts rows as pages stream through and records one EXPORT audit
+        event when the generator finishes, errors, or is abandoned — this is
+        the bulk-PHI choke point (visit form JSON, FLW identities).
+        """
+        rows = 0
+        error: str | None = None
+        try:
+            for page in self._paginate(endpoint, params=params):
+                rows += len(page)
+                yield page
+        except BaseException as exc:
+            error = type(exc).__name__
+            raise
+        finally:
+            _record_export_audit(endpoint, rows, error)
+
+    def _paginate(self, endpoint: str, params: dict | None = None):
         """
         Yield each page's `results` list until the server's `next` is null.
 

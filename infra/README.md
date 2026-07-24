@@ -28,9 +28,10 @@ Bringing the core resources under CloudFormation (importing the existing RDS,
 ECS, etc.) is a deliberate later step — "the rest, as needed" — and only worth
 doing if labs proves long-lived enough to justify the import work.
 
-| Template              | Owns                                                                         | References (does not own)    |
-| --------------------- | ---------------------------------------------------------------------------- | ---------------------------- |
-| `labs-monitoring.yml` | SNS alert topic, RDS-connection + slot-exhaustion alarms, log metric filters | RDS instance, ECS log groups |
+| Template                   | Owns                                                                                                                                                                      | References (does not own)                                                     |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `labs-monitoring.yml`      | SNS alert topic, RDS-connection + slot-exhaustion alarms, log metric filters                                                                                              | RDS instance, ECS log groups                                                  |
+| `labs-audit-analytics.yml` | Umami service (log group, target group, `/umami/*` ALB rule, task def, ECS service), Umami CodeBuild image pipeline + its role, audit-archive/secrets IAM inline policies | Object-Locked audit S3 bucket, Umami secrets, ECR repo, ALB/cluster/roles/VPC |
 
 ## Deploy
 
@@ -48,6 +49,51 @@ aws cloudformation deploy \
 - After the first deploy with an email, **confirm the subscription** via the
   email AWS sends, or alarms won't reach your inbox.
 - Re-run the same command to apply template changes (idempotent).
+
+### Deploy: audit + analytics stack
+
+```bash
+LISTENER_ARN=$(aws elbv2 describe-listeners --profile labs --region us-east-1 \
+  --load-balancer-arn "$(aws elbv2 describe-load-balancers --names labs-jj-alb \
+    --profile labs --region us-east-1 --query 'LoadBalancers[0].LoadBalancerArn' --output text)" \
+  --query 'Listeners[?Port==`443`].ListenerArn' --output text)
+
+aws cloudformation deploy \
+  --region us-east-1 --profile labs \
+  --stack-name labs-jj-audit-analytics \
+  --template-file infra/labs-audit-analytics.yml \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --parameter-overrides HttpsListenerArn=$LISTENER_ARN
+```
+
+To upgrade Umami: `aws codebuild start-build --project-name labs-jj-umami-build`
+(rebuilds `latest` from upstream with `BASE_PATH=/umami` baked in), then
+`aws ecs update-service --cluster labs-jj-cluster --service labs-jj-umami
+--force-new-deployment`.
+
+## Referenced resources created out-of-band (2026-07-24)
+
+These are stateful and deliberately kept out of CloudFormation so stack
+operations can never touch them. Recorded here for reproducibility:
+
+- **`s3://labs-jj-audit-archive`** — audit-event archive
+  (`docs/AUDIT_LOGGING.md`). Created with `--object-lock-enabled-for-bucket`,
+  default retention **COMPLIANCE mode, 6 years** (objects are undeletable by
+  anyone until their retention lapses — that is the point), Block Public
+  Access on, lifecycle `audit-events/` → Glacier at 90d → Deep Archive at
+  365d.
+- **Secrets Manager** — `labs-jj-umami-database-url` (postgres URL for the
+  `umami` DB on labs-jj-postgres; carries
+  `?sslmode=no-verify&sslaccept=accept_invalid_certs` because node-pg and
+  Prisma parse SSL opts differently and RDS presents the RDS CA) and
+  `labs-jj-umami-app-secret` (random hex for Umami session signing).
+- **ECR `labs-jj-umami`** — holds the custom-built image (BASE_PATH baked).
+- **`umami` database + role on labs-jj-postgres** — created via ECS exec
+  (`CREATE ROLE umami LOGIN PASSWORD ...; CREATE DATABASE umami OWNER umami`).
+- **CloudWatch retention on `/ecs/labs-jj-web` + `/ecs/labs-jj-worker`** — set
+  to **731 days** via `aws logs put-retention-policy` (groups are owned by the
+  ECS deploy layer, not CF; they previously had NO retention policy). The
+  6-year audit copy lives in the S3 archive, not CloudWatch.
 
 ## Future slices (not yet implemented)
 

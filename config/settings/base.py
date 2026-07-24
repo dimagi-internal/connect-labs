@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 import environ
+from celery.schedules import crontab
 
 BASE_DIR = Path(__file__).resolve(strict=True).parent.parent.parent
 
@@ -146,6 +147,7 @@ LOCAL_APPS = [
     "connect_labs.ai",
     "connect_labs.tasks",
     "connect_labs.audit",
+    "connect_labs.audit_trail",
     "connect_labs.workflow",
     "connect_labs.coverage",
     "connect_labs.flags",
@@ -212,6 +214,10 @@ MIDDLEWARE = [
     "connect_labs.utils.middleware.CustomErrorHandlingMiddleware",
     "connect_labs.utils.middleware.CurrentVersionMiddleware",
     "connect_labs.utils.middleware.CustomPGHistoryMiddleware",
+    # HIPAA-bar audit context: buffers data-access events per request and
+    # flushes them after the response (outside ATOMIC_REQUESTS). Must run
+    # after AuthenticationMiddleware.
+    "connect_labs.audit_trail.middleware.AuditTrailMiddleware",
 ]
 
 # STATIC
@@ -250,7 +256,7 @@ TEMPLATES = [
                 "django.contrib.messages.context_processors.messages",
                 "connect_labs.labs.context.labs_org_data_context",
                 "connect_labs.web.context_processors.page_settings",
-                "connect_labs.web.context_processors.gtm_context",
+                "connect_labs.web.context_processors.analytics_context",
                 "connect_labs.web.context_processors.chat_widget_context",
             ],
         },
@@ -309,6 +315,9 @@ LOGGING = {
         "verbose": {
             "format": "%(levelname)s %(asctime)s %(name)s %(message)s",
         },
+        "json_message": {
+            "format": "%(message)s",
+        },
     },
     "handlers": {
         "console": {
@@ -316,17 +325,31 @@ LOGGING = {
             "class": "logging.StreamHandler",
             "formatter": "verbose",
         },
+        # Message-only formatter: each audit line is pure JSON so CloudWatch
+        # metric filters / Logs Insights can parse it.
+        "audit_stream": {
+            "level": "INFO",
+            "class": "logging.StreamHandler",
+            "formatter": "json_message",
+        },
         "null": {
             "class": "logging.NullHandler",
         },
     },
     "root": {"level": "INFO", "handlers": ["console"]},
-    "django.template": {
-        "handlers": ["console"],
-        "level": env("DJANGO_TEMPLATE_LOG_LEVEL", default="WARN"),
-        "propagate": False,
-    },
     "loggers": {
+        "django.template": {
+            "handlers": ["console"],
+            "level": env("DJANGO_TEMPLATE_LOG_LEVEL", default="WARN"),
+            "propagate": False,
+        },
+        # Structured audit-event stream (see connect_labs/audit_trail/service.py).
+        # Kept out of Sentry breadcrumbs and the human-readable root handler.
+        "connect_labs.audit_trail.stream": {
+            "handlers": ["audit_stream"],
+            "level": "INFO",
+            "propagate": False,
+        },
         "django.security.DisallowedHost": {
             "handlers": ["null"],
             "propagate": False,
@@ -504,9 +527,11 @@ WAFFLE_CREATE_MISSING_FLAGS = True
 
 WAFFLE_CREATE_MISSING_SWITCHES = True
 
-GTM_ID = env("GTM_ID", default="")
-GA_MEASUREMENT_ID = env("GA_MEASUREMENT_ID", default="")
-GA_API_SECRET = env("GA_API_SECRET", default="")
+# Self-hosted Umami analytics (first-party — no third-party trackers; GA4 was
+# rejected: Google signs no BAA and OCR's authenticated-page tracking guidance
+# applies to the whole app). Empty values disable tracking.
+UMAMI_HOST_URL = env("UMAMI_HOST_URL", default="")
+UMAMI_WEBSITE_ID = env("UMAMI_WEBSITE_ID", default="")
 
 # OCS (Open Chat Studio) API Configuration
 # ------------------------------------------------------------------------------
@@ -527,4 +552,26 @@ CHATBOT_EMBED_KEY = env("CHATBOT_EMBED_KEY", default="")
 
 # Labs MCP rate limits (per-user, per-time-window)
 MCP_WRITE_RATE_LIMIT = env("MCP_WRITE_RATE_LIMIT", default="30/m")
+
+# Audit trail (HIPAA-bar access/change logging — see docs/AUDIT_LOGGING.md)
+# ------------------------------------------------------------------------------
+# S3 bucket for the immutable long-term archive (Object Lock, 6-year
+# retention). When None, the nightly archive task is a no-op.
+AUDIT_TRAIL_ARCHIVE_BUCKET = env("AUDIT_TRAIL_ARCHIVE_BUCKET", default=None)
+# Days audit events stay hot in Postgres before the prune task removes rows
+# whose day has a verified S3 archive object.
+AUDIT_TRAIL_HOT_RETENTION_DAYS = env.int("AUDIT_TRAIL_HOT_RETENTION_DAYS", default=400)
+
+# Periodic audit-pipeline jobs. django_celery_beat's DatabaseScheduler syncs
+# these entries into its DB-backed schedule at beat startup.
+CELERY_BEAT_SCHEDULE = {
+    "audit-trail-archive": {
+        "task": "connect_labs.audit_trail.tasks.archive_audit_events",
+        "schedule": crontab(hour=2, minute=15),
+    },
+    "audit-trail-canary": {
+        "task": "connect_labs.audit_trail.tasks.emit_canary_event",
+        "schedule": crontab(minute="*/30"),
+    },
+}
 # "30/m" → 30 writes per minute per user. Reads uncapped.

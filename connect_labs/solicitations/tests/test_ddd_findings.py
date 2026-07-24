@@ -23,7 +23,7 @@ from connect_labs.solicitations.views import AwardView, PublicSolicitationDetail
 
 _CONTEXT_PATCH = patch.multiple(
     "connect_labs.web.context_processors",
-    gtm_context=lambda request: {"GTM_VARS_JSON": {}},
+    analytics_context=lambda request: {"ANALYTICS_VARS_JSON": {}},
     chat_widget_context=lambda request: {
         "chat_widget_enabled": False,
         "chatbot_id": "",

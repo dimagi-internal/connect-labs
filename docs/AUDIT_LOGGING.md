@@ -1,0 +1,88 @@
+# Audit Logging (HIPAA-bar)
+
+Labs is not formally a HIPAA-covered system, but it displays health-program
+data and we hold it to the HIPAA bar. This document is both the technical
+reference for the `audit_trail` app and the written policy that
+§164.308(a)(1)(ii)(D) (information system activity review) expects.
+
+## What gets logged
+
+Every event carries the ASTM E2147 / NIST SP 800-66 field set: **who** (user
+FK + username/email snapshot), **what** (action + resource type + opaque
+resource id + row count), **when** (UTC), **where from** (IP, user agent,
+request id, path), **scope** (opportunity/program/organization ids), and
+**outcome** (success/failure + HTTP status).
+
+| Event | Trigger point |
+| --- | --- |
+| `list` / `read` / `create` / `update` / `delete` | The five `LabsRecordAPIClient` methods — covers every LabsRecord touch, production HTTP and labs-only synthetic alike (synthetic tagged `labs_only=true`) |
+| `export` | `ExportAPIClient.paginate` — the bulk PHI path (visit form JSON, worker identities); one event per crawl with total row count |
+| `login` / `logout` / `login_failed` | Django auth signals (OAuth callback calls `auth.login`) |
+| `access_denied` | Any 403 response (middleware) — repeated 403s against one scope are the classic snooping signature |
+| `review` | The "Mark reviewed" action on the dashboard — reviews are themselves audit events |
+| `canary` | Every 30 min from Celery beat — proves the pipeline is alive |
+
+MCP tool calls are additionally logged to `MCPAuditLog` (tool-level); their
+data touches flow through the same client choke points and land here too,
+attributed via the PAT user with `source="mcp"`.
+
+**Never log PHI content.** Events carry opaque identifiers only — no names,
+form answers, or free text. This applies to `metadata` too. The audit log
+itself is PHI-adjacent (it reveals who was served where), so it gets the same
+protection as data: Dimagi-staff-only UI, read-only admin.
+
+## Storage architecture
+
+1. **Hot — Postgres `labs_audit_event`.** Append-only at the DB level: a
+   `pgtrigger.Protect` trigger rejects UPDATE/DELETE. Serves the dashboard
+   and "who touched X" queries.
+2. **Warm — CloudWatch.** Each event is also emitted as a pure-JSON line on
+   the `connect_labs.audit_trail.stream` logger → container stdout →
+   `/ecs/labs-jj-web` / `/ecs/labs-jj-worker`. Independent copy (survives DB
+   write failures) and the substrate for metric-filter alarms.
+3. **Cold — S3 archive, 6-year retention.** Nightly Celery task
+   (`archive_audit_events`) writes the previous UTC day as
+   `audit-events/YYYY/MM/DD.jsonl.gz` plus a `.sha256` digest to the
+   `AUDIT_TRAIL_ARCHIVE_BUCKET` bucket, which has **Object Lock (compliance
+   mode, 6 years)** — nobody, including root, can delete or rewrite an
+   archived day before 2032+. The digest is the batch tamper-evidence seal
+   (we deliberately skip per-row hash chains — the Object-Locked digest gives
+   equivalent evidence without serializing writes).
+
+Retention: hot rows are pruneable after `AUDIT_TRAIL_HOT_RETENTION_DAYS`
+(default 400) **only** for days whose archive object is verified present in
+S3 (`prune_archived_events`, dry-run by default, uses `pgtrigger.ignore` —
+the single sanctioned bypass of the append-only trigger).
+
+## Review process (the part auditors actually ask about)
+
+- **Cadence:** monthly, or after any security-relevant incident.
+- **Reviewer:** a labs admin (Dimagi staff) — currently Jonathan Jackson.
+- **Where:** `/labs/audit-trail/` — anomaly cards surface the exception
+  reports: failed-login bursts, access-denied counts, data-op failures,
+  export volume vs. 7-day baseline, off-hours activity (00–06 UTC), canary
+  freshness, most-active users.
+- **What to do:** scan the cards; drill into anything red/amber via filters;
+  then click **Mark reviewed** with a note ("all clear" or findings). That
+  records a `review` event — the review trail is itself append-only evidence
+  the process runs.
+- **Escalation:** a suspicious pattern (unexplained export spike, repeated
+  `access_denied` from one user, off-hours bulk reads) goes to the labs owner
+  and, if real-data exposure is possible, to Dimagi security.
+- **Pipeline health is verified, not assumed:** the canary task alarms (ERROR
+  log → Sentry) if no canary landed for 2 hours.
+
+## Operational notes
+
+- `record()` and the middleware flush are best-effort by contract — a broken
+  audit pipeline never blocks a user-facing action. DB insert failures still
+  emit the CloudWatch JSON line.
+- The middleware flushes **after** the view's `ATOMIC_REQUESTS` transaction,
+  so events survive rolled-back requests and carry the final status code.
+- Celery tasks get `source="celery"` context automatically (task_prerun
+  signal); tasks that know the acting user should wrap work in
+  `audit_context(user=...)` for full attribution.
+- Settings: `AUDIT_TRAIL_ARCHIVE_BUCKET` (unset ⇒ archive task no-ops),
+  `AUDIT_TRAIL_HOT_RETENTION_DAYS` (default 400).
+- Hygiene: never put identifiers in logged URLs or exception messages; Sentry
+  receives INFO-level breadcrumbs, so app log lines must stay PHI-free too.
