@@ -10314,6 +10314,8 @@ a.explore-card:hover {
 .os-press-link:hover .os-press-cta {
   color: var(--indigo-deep);
 }
+/* Temporary launch marker for the two press tiles added 2026-07 (EA Forum,
+   Dimagi KMC blog). Remove the `is-new` class from both once they've aged out. */
 .os-press-card.is-new::after {
   content: 'NEW';
   position: absolute;
@@ -10379,8 +10381,7 @@ a.explore-card:hover {
 }
 
 /* KMC portfolio page: "closing the post-discharge gap" further-reading band.
-   Reuses the .os-press-card component full-size (one card, not the compact
-   3-up layout on the origins section), so its type scale is restored here. */
+   Reuses the .os-press-card component at its default (full) size. */
 .section.kmc-press-band {
   background: var(--paper-warm);
 }
@@ -10405,24 +10406,6 @@ a.explore-card:hover {
   font-weight: 300;
   max-width: 54ch;
   margin: 0;
-}
-.kmc-press-band .os-press-link {
-  padding: 30px 32px;
-}
-.kmc-press-band .os-press-source {
-  font-size: 30px;
-}
-.kmc-press-band .os-press-headline {
-  margin-top: 16px;
-  font-size: 19px;
-}
-.kmc-press-band .os-press-meta {
-  margin-top: 14px;
-  font-size: 13px;
-}
-.kmc-press-band .os-press-cta {
-  margin-top: 18px;
-  font-size: 14px;
 }
 
 @media (max-width: 860px) {
