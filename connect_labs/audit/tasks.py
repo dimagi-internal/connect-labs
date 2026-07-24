@@ -745,7 +745,13 @@ def run_audit_creation(
         f"opportunities={opportunity_ids}, user={username}, task_id={task_id}"
     )
 
-    # Parse criteria
+    # Parse criteria. AuditCriteria.from_dict picks up enable_time_gap/
+    # time_gap_minutes/enable_distance/distance_meters too -- create_audit_session
+    # persists them from THIS object (not the raw dict below) onto the session,
+    # which is what AuditSessionRecord.to_summary_dict()'s visit_clustering_used
+    # later reads back for display. The raw `criteria` dict below is still what
+    # build_flw_visit_clusters actually filters visits with -- keep both in sync
+    # if these keys are ever renamed.
     audit_criteria = AuditCriteria.from_dict(criteria)
     granularity = criteria.get("granularity", "combined")
     audit_type = audit_criteria.audit_type

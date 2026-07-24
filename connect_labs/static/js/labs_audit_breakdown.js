@@ -54,7 +54,7 @@
   // produced the groupings, without going to look up the run's config.
   // Empty string when neither criterion was enabled for this session.
   function visitClusteringSummary(s) {
-    var vc = (s && s.visit_clustering) || {};
+    var vc = (s && s.visit_clustering_used) || {};
     var parts = [];
     if (vc.enable_time_gap && vc.time_gap_minutes != null) {
       parts.push(vc.time_gap_minutes + ' min');
@@ -62,7 +62,10 @@
     if (vc.enable_distance && vc.distance_meters != null) {
       parts.push(vc.distance_meters + 'm');
     }
-    return parts.length ? 'within ' + parts.join(' or ') : '';
+    // "and", not "or" -- _pair_qualifies (connect_labs/audit/visit_clustering.py)
+    // requires BOTH enabled criteria to hold for a pair to cluster together,
+    // so when both are on, the true threshold is their conjunction.
+    return parts.length ? 'within ' + parts.join(' and ') : '';
   }
   // Whether to show AI stats for a session, instead of guessing from the
   // track's display label (which the user can now rename freely — see
@@ -313,6 +316,13 @@
               clusters.length +
                 ' Duplicate Grouping' +
                 (clusters.length === 1 ? '' : 's'),
+            )
+          : null,
+        clusters.length > 0 && visitClusteringSummary(s)
+          ? h(
+              'span',
+              { className: 'text-gray-400 whitespace-nowrap' },
+              '(' + visitClusteringSummary(s) + ')',
             )
           : null,
         h(
