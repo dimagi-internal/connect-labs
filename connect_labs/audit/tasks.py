@@ -241,6 +241,15 @@ def _reading_for(comparison_field: str | None, reading_by_field: dict[str, str])
     return next(iter(reading_by_field.values()), None)
 
 
+# Caps the per-image inner reviewer pool (see _run_ai_review_on_sessions).
+# len(runnable) comes from admin-configured reviewer specs, not a validated
+# count -- this bounds worst-case concurrent threads/gateway connections per
+# image regardless of how many reviewer entries a payload attaches to one
+# image path. Current production usage is 2 (MUAC OverZoom + MUAC Match);
+# this leaves headroom without being unbounded.
+_MAX_REVIEWERS_PER_IMAGE = 4
+
+
 def _run_ai_review_on_sessions(
     data_access,
     session_ids: list[int],
@@ -432,6 +441,10 @@ def _run_ai_review_on_sessions(
             # Both the Connect image download and the ML classification call are HTTP-bound,
             # so concurrent workers cut wall-clock time roughly proportional to worker count.
             # httpx.Client (used by both data_access and the agent) is thread-safe.
+            # Two levels of concurrency: this outer pool fans out across images;
+            # within a single image, independent reviewers (e.g. MUAC OverZoom +
+            # MUAC Match) are further parallelized in their own small pool -- see
+            # the note below _run_one.
             def _fetch_and_review(item):
                 v_id, b_id, reading_by_field, q_id, img_qid = item
                 resolved_reviewers = resolve(img_qid)
@@ -511,10 +524,25 @@ def _run_ai_review_on_sessions(
                 # case, where it would just add thread-creation overhead for no
                 # benefit. _run_one already catches its own exceptions, so map()
                 # never raises here.
+                #
+                # Safety: this creates a brand-new, independent pool per call --
+                # never resubmit work to the OUTER `pool` (below) from in here or
+                # from anything _run_one calls. Submitting back to the same
+                # bounded pool a task is already running in is the classic
+                # nested-executor deadlock (outer workers all blocked waiting on
+                # the outer pool itself, with no worker left to service them).
+                #
+                # `runnable`'s length comes from admin-configured reviewer specs
+                # (ai_reviewers[question_id] in the wizard payload), not a
+                # bounded/validated count -- cap max_workers so a misconfigured
+                # or oversized reviewer list can't spin up unbounded OS threads
+                # (and unbounded concurrent connections to the ML gateway) on
+                # top of the outer pool's own 5 workers.
                 if len(runnable) == 1:
                     per_agent_results = [_run_one(runnable[0])]
                 else:
-                    with ThreadPoolExecutor(max_workers=len(runnable)) as inner_pool:
+                    inner_workers = min(len(runnable), _MAX_REVIEWERS_PER_IMAGE)
+                    with ThreadPoolExecutor(max_workers=inner_workers) as inner_pool:
                         per_agent_results = list(inner_pool.map(_run_one, runnable))
 
                 ai_result, ai_notes, ai_confidence, human_result = _combine_reviewer_results(per_agent_results)
