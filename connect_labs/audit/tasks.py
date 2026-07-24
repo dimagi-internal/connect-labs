@@ -450,11 +450,15 @@ def _run_ai_review_on_sessions(
                 # reading and doesn't have one just skips itself rather than
                 # blocking the others (see the work_items filter above, which only
                 # drops the whole image when EVERY reviewer has nothing to work with).
-                per_agent_results: list[ReviewerVerdict] = []
+                runnable = []
                 for reviewer in resolved_reviewers:
                     rdg = _reading_for(reviewer.comparison_field, reading_by_field)
                     if reviewer.requires_reading and not rdg:
                         continue
+                    runnable.append((reviewer, rdg))
+
+                def _run_one(reviewer_rdg):
+                    reviewer, rdg = reviewer_rdg
                     ctx = ReviewContext(
                         images={"scale": img_bytes},
                         form_data={"reading": rdg} if rdg else {},
@@ -494,12 +498,24 @@ def _run_ai_review_on_sessions(
                         f"[AIReview] {reviewer.agent.agent_id}: visit={v_id}, blob={b_id}, "
                         f"reading={rdg}, result={ai_r}, notes={ai_n!r}"
                     )
-                    per_agent_results.append(
-                        ReviewerVerdict(reviewer.agent.agent_id, ai_r, ai_n, ai_c, reviewer.ai_to_human_map)
-                    )
+                    return ReviewerVerdict(reviewer.agent.agent_id, ai_r, ai_n, ai_c, reviewer.ai_to_human_map)
 
-                if not per_agent_results:
+                if not runnable:
                     return FetchReviewOutcome(v_id, b_id, q_id, img_qid, None, None, None, None, True)
+
+                # Independent reviewers on the same image (e.g. MUAC OverZoom +
+                # MUAC Match) each make their own blocking HTTP call. Running them
+                # one after another would double this image's AI-review latency
+                # for every extra reviewer on its path — run them concurrently
+                # instead. Skip the nested pool for the (common) single-reviewer
+                # case, where it would just add thread-creation overhead for no
+                # benefit. _run_one already catches its own exceptions, so map()
+                # never raises here.
+                if len(runnable) == 1:
+                    per_agent_results = [_run_one(runnable[0])]
+                else:
+                    with ThreadPoolExecutor(max_workers=len(runnable)) as inner_pool:
+                        per_agent_results = list(inner_pool.map(_run_one, runnable))
 
                 ai_result, ai_notes, ai_confidence, human_result = _combine_reviewer_results(per_agent_results)
                 return FetchReviewOutcome(
