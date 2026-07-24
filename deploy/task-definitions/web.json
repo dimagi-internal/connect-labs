@@ -19,6 +19,10 @@
           "value": "labs-jj-exports-dev-858923557655-us-east-1-an"
         },
         {
+          "name": "AUDIT_TRAIL_ARCHIVE_BUCKET",
+          "value": "labs-jj-audit-archive"
+        },
+        {
           "name": "CELERY_BROKER_URL",
           "value": "redis://labs-jj-redis.aceivh.0001.use1.cache.amazonaws.com:6379/0"
         },

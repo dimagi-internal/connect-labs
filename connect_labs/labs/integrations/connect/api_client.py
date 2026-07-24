@@ -9,11 +9,16 @@ flow into the local ``LabsLocalRecord`` table via the
 callers: every method returns the same ``LocalLabsRecord`` wrapper either way.
 """
 
+import functools
+import inspect
 import logging
 
 import httpx
 from django.conf import settings
 
+from connect_labs.audit_trail import service as _audit_service
+from connect_labs.audit_trail.models import Action as _AuditAction
+from connect_labs.audit_trail.models import Outcome as _AuditOutcome
 from connect_labs.labs.models import LocalLabsRecord
 from connect_labs.labs.synthetic import local_records_backend as _local_backend
 
@@ -21,6 +26,74 @@ logger = logging.getLogger(__name__)
 
 
 _BODY_TRUNCATION = 2000
+
+
+def _audited(action):
+    """Record an audit event for a client method call (HIPAA access logging).
+
+    Wraps both the production-HTTP and local-synthetic dispatch paths in one
+    seam. Events are best-effort — a broken audit pipeline never blocks the
+    data operation itself.
+    """
+
+    def decorator(fn):
+        sig = inspect.signature(fn)
+
+        @functools.wraps(fn)
+        def wrapper(self, *args, **kwargs):
+            def emit(result=None, outcome=_AuditOutcome.SUCCESS, error: str | None = None):
+                try:
+                    try:
+                        bound = sig.bind(self, *args, **kwargs)
+                        params = bound.arguments
+                    except TypeError:
+                        params = {}
+                    record_ids = params.get("record_ids")
+                    if isinstance(result, list):
+                        count = len(result)
+                    elif record_ids:
+                        count = len(record_ids)
+                    elif fn.__name__ == "get_record_by_id":
+                        count = 1 if result is not None else 0
+                    else:
+                        count = None
+                    resource_id = params.get("record_id")
+                    if resource_id is None and result is not None and not isinstance(result, list):
+                        resource_id = getattr(result, "id", None)
+                    metadata = {"method": fn.__name__}
+                    if params.get("experiment"):
+                        metadata["experiment"] = str(params["experiment"])
+                    if record_ids:
+                        metadata["record_ids"] = list(record_ids)[:100]
+                    if error:
+                        metadata["error"] = error
+                    program_id = params.get("program_id") or self.program_id
+                    _audit_service.record(
+                        action,
+                        resource_type=params.get("type") or "labs_record",
+                        resource_id=resource_id,
+                        record_count=count,
+                        opportunity_id=self.opportunity_id,
+                        program_id=program_id,
+                        organization_id=self.organization_id if isinstance(self.organization_id, int) else None,
+                        labs_only=self._is_labs_only(),
+                        outcome=outcome,
+                        metadata=metadata,
+                    )
+                except Exception:  # pragma: no cover - audit must never break data access
+                    logger.exception("Audit recording failed for %s (non-fatal)", fn.__name__)
+
+            try:
+                result = fn(self, *args, **kwargs)
+            except Exception as exc:
+                emit(outcome=_AuditOutcome.FAILURE, error=type(exc).__name__)
+                raise
+            emit(result=result)
+            return result
+
+        return wrapper
+
+    return decorator
 
 
 class LabsAPIError(Exception):
@@ -106,6 +179,7 @@ class LabsRecordAPIClient:
         """Context manager exit - close client."""
         self.close()
 
+    @_audited(_AuditAction.LIST)
     def get_records(
         self,
         experiment: str | None = None,
@@ -208,6 +282,7 @@ class LabsRecordAPIClient:
             logger.error(f"Failed to fetch records: {e}", exc_info=True)
             raise _wrap_http_error(f"Failed to fetch records from production API: {e}", e) from e
 
+    @_audited(_AuditAction.READ)
     def get_record_by_id(
         self,
         record_id: int,
@@ -266,6 +341,7 @@ class LabsRecordAPIClient:
             logger.error(f"Failed to fetch record {record_id}: {e}", exc_info=True)
             raise _wrap_http_error(f"Failed to fetch record {record_id}: {e}", e) from e
 
+    @_audited(_AuditAction.CREATE)
     def create_record(
         self,
         experiment: str,
@@ -345,6 +421,7 @@ class LabsRecordAPIClient:
             logger.error(f"Failed to create record: {e}", exc_info=True)
             raise _wrap_http_error(f"Failed to create record in production API: {e}", e) from e
 
+    @_audited(_AuditAction.UPDATE)
     def update_record(
         self,
         record_id: int,
@@ -468,6 +545,7 @@ class LabsRecordAPIClient:
         """
         self.delete_records([record_id])
 
+    @_audited(_AuditAction.DELETE)
     def delete_records(self, record_ids: list[int]) -> None:
         """Delete multiple records.
 

@@ -9,15 +9,20 @@ def page_settings(request):
     return {"PAGE_SIZE_OPTIONS": PAGE_SIZE_OPTIONS, "DEFAULT_PAGE_SIZE": DEFAULT_PAGE_SIZE}
 
 
-def gtm_context(request):
-    """Provide Google Tag Manager context variables to templates."""
-    is_dimagi = is_dimagi_user(request.user) if request.user.is_authenticated else False
-    user_id = request.user.id if request.user.is_authenticated else None
+def analytics_context(request):
+    """Provide self-hosted Umami analytics config to templates.
+
+    First-party analytics only (HIPAA bar: no third-party trackers, no BAA
+    needed). Empty websiteId/hostUrl disables the tracker entirely —
+    labs-analytics.js then leaves window.labsTrack as a no-op queue.
+    """
+    authenticated = request.user.is_authenticated
     return {
-        "GTM_VARS_JSON": {
-            "isDimagi": is_dimagi,
-            "gtmID": settings.GTM_ID,
-            "userId": user_id,
+        "ANALYTICS_VARS_JSON": {
+            "hostUrl": settings.UMAMI_HOST_URL,
+            "websiteId": settings.UMAMI_WEBSITE_ID,
+            "username": request.user.username if authenticated else None,
+            "isDimagi": is_dimagi_user(request.user) if authenticated else False,
         }
     }
 

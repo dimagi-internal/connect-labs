@@ -49,6 +49,7 @@ from fastmcp.server.auth import AccessToken, TokenVerifier
 from fastmcp.server.dependencies import get_access_token
 from fastmcp.tools.tool import Tool, ToolResult
 
+from connect_labs.audit_trail.context import audit_context
 from connect_labs.labs.integrations.connect.api_client import LabsAPIError
 
 from .models import MCPAccessToken, MCPAuditLog
@@ -268,7 +269,11 @@ def _run_registry_tool(spec: RegistryToolSpec, arguments: dict) -> ToolResult:
             raise ToolError(e.message) from e
 
     try:
-        result = spec.handler(user=user, **arguments)
+        # MCP traffic bypasses Django middleware (FastMCP mounts outside the
+        # ASGIHandler), so open the audit context here — data-access calls
+        # inside handlers are then attributed to the PAT's user.
+        with audit_context(user=user, source="mcp", request_id=f"mcp:{spec.name}:{uuid.uuid4().hex[:8]}"):
+            result = spec.handler(user=user, **arguments)
     except MCPToolError as e:
         _write_audit(user, spec.name, arguments, success=False, error_code=e.code, is_write=spec.is_write)
         raise ToolError(e.message) from e

@@ -17,6 +17,10 @@
           "value": "labs-jj-exports-dev-858923557655-us-east-1-an"
         },
         {
+          "name": "AUDIT_TRAIL_ARCHIVE_BUCKET",
+          "value": "labs-jj-audit-archive"
+        },
+        {
           "name": "DJANGO_SETTINGS_MODULE",
           "value": "config.settings.labs_aws"
         },
