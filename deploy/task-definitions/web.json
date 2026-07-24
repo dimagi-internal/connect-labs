@@ -91,6 +91,10 @@
           "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-django-secret-key-iB1rtG"
         },
         {
+          "name": "UMAMI_ADMIN_PASSWORD",
+          "valueFrom": "labs-jj-umami-admin-password"
+        },
+        {
           "name": "DATABASE_URL",
           "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-database-url-adP4GQ"
         },

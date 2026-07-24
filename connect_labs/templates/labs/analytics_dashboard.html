@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8 max-w-7xl">
+  <div class="mb-8 flex items-start justify-between">
+    <div>
+      <h1 class="text-3xl font-bold text-gray-900 mb-2">
+        <i class="fa-solid fa-chart-line text-blue-600 mr-3"></i>
+        Labs Analytics
+      </h1>
+      <p class="text-gray-600">
+        First-party usage analytics (self-hosted Umami — no data leaves our infrastructure).
+      </p>
+    </div>
+    <a href="{{ umami_url }}" target="_blank" rel="noopener"
+       class="px-4 py-2 bg-white border border-gray-300 rounded-md text-sm font-semibold text-gray-700 hover:bg-gray-50 whitespace-nowrap">
+      Open Umami <i class="fa-solid fa-arrow-up-right-from-square ml-1 text-xs"></i>
+    </a>
+  </div>
+
+  {% if analytics_error %}
+    <div class="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-4">
+      <i class="fa-solid fa-triangle-exclamation mr-2"></i>{{ analytics_error }}
+    </div>
+  {% else %}
+
+  {# ── Stat cards ─────────────────────────────────────────────────────── #}
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+    <div class="bg-white rounded-lg shadow-sm p-4 border-l-4 border-green-500">
+      <div class="text-2xl font-bold text-gray-900">{{ active_now }}</div>
+      <div class="text-xs text-gray-500 mt-1">Active right now</div>
+    </div>
+    {% for label, s in stats.items %}
+    <div class="bg-white rounded-lg shadow-sm p-4 border-l-4 border-gray-200">
+      <div class="text-2xl font-bold text-gray-900">{{ s.pageviews }}</div>
+      <div class="text-xs text-gray-500 mt-1">Views ({{ label }}) · {{ s.visitors }} visitor{{ s.visitors|pluralize }} · {{ s.visits }} visit{{ s.visits|pluralize }}</div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {# ── Traffic chart ──────────────────────────────────────────────────── #}
+  <div class="bg-white rounded-lg shadow-sm p-6 mb-8">
+    <div class="text-sm font-semibold text-gray-700 mb-4">Page views — last 30 days</div>
+    <div style="height: 260px"><canvas id="traffic-chart"></canvas></div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    {# ── Top pages ────────────────────────────────────────────────────── #}
+    <div class="bg-white rounded-lg shadow-sm p-6 lg:col-span-2">
+      <div class="text-sm font-semibold text-gray-700 mb-3">Top pages (7d)</div>
+      <table class="min-w-full text-sm">
+        <tbody class="divide-y divide-gray-100">
+          {% for row in top_pages %}
+          <tr>
+            <td class="py-1.5 pr-4 text-gray-700 font-mono text-xs truncate" style="max-width: 420px">{{ row.x }}</td>
+            <td class="py-1.5 text-right text-gray-900 font-semibold">{{ row.y }}</td>
+          </tr>
+          {% empty %}
+          <tr><td class="py-4 text-gray-400">No page views recorded yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="space-y-6">
+      {# ── Top events ─────────────────────────────────────────────────── #}
+      <div class="bg-white rounded-lg shadow-sm p-6">
+        <div class="text-sm font-semibold text-gray-700 mb-3">Feature events (7d)</div>
+        <table class="min-w-full text-sm">
+          <tbody class="divide-y divide-gray-100">
+            {% for row in top_events %}
+            <tr>
+              <td class="py-1.5 pr-4 text-gray-700">{{ row.x }}</td>
+              <td class="py-1.5 text-right text-gray-900 font-semibold">{{ row.y }}</td>
+            </tr>
+            {% empty %}
+            <tr><td class="py-4 text-gray-400 text-xs">No custom events yet — data writes and exports will appear here.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      {# ── Browsers ───────────────────────────────────────────────────── #}
+      <div class="bg-white rounded-lg shadow-sm p-6">
+        <div class="text-sm font-semibold text-gray-700 mb-3">Browsers (7d)</div>
+        <table class="min-w-full text-sm">
+          <tbody class="divide-y divide-gray-100">
+            {% for row in top_browsers %}
+            <tr>
+              <td class="py-1.5 pr-4 text-gray-700">{{ row.x }}</td>
+              <td class="py-1.5 text-right text-gray-900 font-semibold">{{ row.y }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  {{ series_pageviews|json_script:"series-pageviews" }}
+  {{ series_sessions|json_script:"series-sessions" }}
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block inline_javascript %}
+{% if not analytics_error %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+  window.addEventListener('DOMContentLoaded', () => {
+    const pageviews = JSON.parse(document.getElementById('series-pageviews').textContent);
+    const sessions = JSON.parse(document.getElementById('series-sessions').textContent);
+    const labels = pageviews.map(p => (p.x || '').slice(0, 10));
+    new Chart(document.getElementById('traffic-chart'), {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Page views', data: pageviews.map(p => p.y), backgroundColor: 'rgba(59, 130, 246, 0.7)' },
+          { label: 'Visits', data: sessions.map(s => s.y), backgroundColor: 'rgba(16, 185, 129, 0.5)' },
+        ],
+      },
+      options: {
+        maintainAspectRatio: false,
+        scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+        plugins: { legend: { position: 'bottom' } },
+      },
+    });
+  });
+</script>
+{% endif %}
+{% endblock %}

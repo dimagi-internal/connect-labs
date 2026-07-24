@@ -118,6 +118,9 @@ Resources:
             Resource:
               - !Ref UmamiDatabaseUrlSecretArn
               - !Ref UmamiAppSecretArn
+              # Admin password, injected into the labs web task so
+              # /labs/analytics/ can read the Umami REST API server-side.
+              - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:labs-jj-umami-admin-password-*'
 
   # ── Umami: logs ───────────────────────────────────────────────────────
   UmamiLogGroup:
