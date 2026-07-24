@@ -218,7 +218,7 @@ Resources:
         Version: '2012-10-17'
         Statement:
           - Effect: Allow
-            Principal: {Service: codebuild.amazonaws.com}
+            Principal: { Service: codebuild.amazonaws.com }
             Action: sts:AssumeRole
       Policies:
         - PolicyName: umami-build
@@ -251,7 +251,7 @@ Resources:
       Name: labs-jj-umami-build
       ServiceRole: !GetAtt UmamiBuildRole.Arn
       TimeoutInMinutes: 45
-      Artifacts: {Type: NO_ARTIFACTS}
+      Artifacts: { Type: NO_ARTIFACTS }
       Environment:
         Type: LINUX_CONTAINER
         Image: aws/codebuild/standard:7.0

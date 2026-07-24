@@ -28,9 +28,9 @@ Bringing the core resources under CloudFormation (importing the existing RDS,
 ECS, etc.) is a deliberate later step — "the rest, as needed" — and only worth
 doing if labs proves long-lived enough to justify the import work.
 
-| Template                  | Owns                                                                                                                             | References (does not own)                                                       |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `labs-monitoring.yml`     | SNS alert topic, RDS-connection + slot-exhaustion alarms, log metric filters                                                     | RDS instance, ECS log groups                                                    |
+| Template                   | Owns                                                                                                                                                                      | References (does not own)                                                     |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `labs-monitoring.yml`      | SNS alert topic, RDS-connection + slot-exhaustion alarms, log metric filters                                                                                              | RDS instance, ECS log groups                                                  |
 | `labs-audit-analytics.yml` | Umami service (log group, target group, `/umami/*` ALB rule, task def, ECS service), Umami CodeBuild image pipeline + its role, audit-archive/secrets IAM inline policies | Object-Locked audit S3 bucket, Umami secrets, ECR repo, ALB/cluster/roles/VPC |
 
 ## Deploy
