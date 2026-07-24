@@ -95,7 +95,7 @@ def pageviews_series(start_ms: int, end_ms: int, unit: str = "day") -> dict:
 
 
 def metrics(metric_type: str, start_ms: int, end_ms: int, limit: int = 10) -> list:
-    """Top-N breakdown; metric_type is one of url, event, browser, os, device, country."""
+    """Top-N breakdown; metric_type is one of path, event, browser, os, device, country (Umami v3 names)."""
     return _get(
         _website_path("/metrics"),
         {"startAt": start_ms, "endAt": end_ms, "type": metric_type, "limit": limit},

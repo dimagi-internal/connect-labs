@@ -46,7 +46,8 @@ class AnalyticsDashboardView(AdminRequiredMixin, TemplateView):
             series = umami_api.pageviews_series(windows["30d"], now_ms, unit="day")
             context["series_pageviews"] = series.get("pageviews", [])
             context["series_sessions"] = series.get("sessions", [])
-            context["top_pages"] = umami_api.metrics("url", windows["7d"], now_ms, limit=12)
+            # Umami v3 renamed the "url" metric type to "path"
+            context["top_pages"] = umami_api.metrics("path", windows["7d"], now_ms, limit=12)
             context["top_events"] = umami_api.metrics("event", windows["7d"], now_ms, limit=12)
             context["top_browsers"] = umami_api.metrics("browser", windows["7d"], now_ms, limit=6)
         except umami_api.UmamiAPIError as e:
