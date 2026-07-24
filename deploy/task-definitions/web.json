@@ -92,7 +92,7 @@
         },
         {
           "name": "UMAMI_ADMIN_PASSWORD",
-          "valueFrom": "labs-jj-umami-admin-password"
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-umami-admin-password-Jvdu8y"
         },
         {
           "name": "DATABASE_URL",
