@@ -103,6 +103,27 @@ def flush_buffer(ctx, status_code: int | None = None) -> None:
         logger.exception("Failed to flush audit events (non-fatal)")
 
 
+# Data writes and exports double as product-analytics feature events — one
+# choke point feeds both systems. Reads/lists are excluded (page views cover
+# them); payload is resource_type + labs_only only, never identifiers.
+_ANALYTICS_ACTIONS = {"create", "update", "delete", "export"}
+
+
+def _emit_analytics(rows) -> None:
+    try:
+        from connect_labs.utils import server_analytics
+
+        for row in rows:
+            if row.action in _ANALYTICS_ACTIONS and row.outcome == Outcome.SUCCESS:
+                server_analytics.send_event(
+                    f"data_{row.action}",
+                    {"resource_type": row.resource_type, "labs_only": row.labs_only},
+                    url="/server/data",
+                )
+    except Exception:  # pragma: no cover - analytics must never break auditing
+        logger.exception("Audit→analytics emit failed (non-fatal)")
+
+
 def _resolve_context_user(ctx) -> None:
     """Fill ctx user fields from the request's (lazy) user, once available."""
     request = getattr(ctx, "request", None)
@@ -146,6 +167,8 @@ def _write_events(events: list[dict], ctx) -> None:
             AuditEvent.objects.bulk_create(rows)
     except Exception:
         logger.exception("Audit DB write failed; events preserved in log stream only")
+
+    _emit_analytics(rows)
 
     for row in rows:
         try:

@@ -532,6 +532,11 @@ WAFFLE_CREATE_MISSING_SWITCHES = True
 # applies to the whole app). Empty values disable tracking.
 UMAMI_HOST_URL = env("UMAMI_HOST_URL", default="")
 UMAMI_WEBSITE_ID = env("UMAMI_WEBSITE_ID", default="")
+# Umami admin credentials for the labs-embedded analytics dashboard
+# (/labs/analytics/ reads the Umami REST API server-side so viewers ride labs
+# OAuth). Password injected from Secrets Manager in the deployed environment.
+UMAMI_ADMIN_USERNAME = env("UMAMI_ADMIN_USERNAME", default="admin")
+UMAMI_ADMIN_PASSWORD = env("UMAMI_ADMIN_PASSWORD", default="")
 
 # OCS (Open Chat Studio) API Configuration
 # ------------------------------------------------------------------------------
