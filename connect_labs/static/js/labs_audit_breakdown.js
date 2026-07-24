@@ -67,28 +67,32 @@
     var byLabel = a.ai_flags_by_label || {};
     var labels = Object.keys(byLabel);
     var totalFlagged = a.ai_no_match || 0;
+    // No classifier could be recovered from ANY flagged image (e.g. every
+    // flag predates this feature, or came from a reviewer that never sets a
+    // badge_label) -- nothing to name, fall back to the plain count.
+    if (labels.length === 0) {
+      return totalFlagged + ' flagged';
+    }
+    var parts = labels.map(function (label) {
+      // Strip a trailing "(...)" qualifier (e.g. "(strict tolerance)") to
+      // keep this line compact -- the full label still shows on the
+      // image's own badge in the review UI.
+      var shortLabel = label.replace(/\s*\([^)]*\)\s*$/, '');
+      return byLabel[label] + ' ' + shortLabel;
+    });
+    // Some flagged images may not carry a recoverable label (older data
+    // reviewed before a given classifier set badge_label, or a reviewer
+    // that never sets one) -- name what's known and bucket the rest as
+    // "other" rather than silently dropping them from the total or hiding
+    // the whole breakdown because it isn't 100% labeled.
     var labeledTotal = labels.reduce(function (n, l) {
       return n + byLabel[l];
     }, 0);
-    // Fall back to the flat form whenever there's nothing to break down, OR
-    // the per-label tally doesn't reconcile with the true flagged count --
-    // e.g. a reviewer that sets no badge_label on failure (unlabeled) mixed
-    // into the same session as labeled ones would otherwise silently drop
-    // those images from the displayed breakdown while still counting them
-    // in ai_no_match. Reconciling here means the breakdown is only ever
-    // shown when it's provably complete.
-    if (labels.length <= 1 || labeledTotal !== totalFlagged) {
-      return totalFlagged + ' flagged';
+    var unlabeled = totalFlagged - labeledTotal;
+    if (unlabeled > 0) {
+      parts.push(unlabeled + ' other');
     }
-    return labels
-      .map(function (label) {
-        // Strip a trailing "(...)" qualifier (e.g. "(strict tolerance)") to
-        // keep this line compact -- the full label still shows on the
-        // image's own badge in the review UI.
-        var shortLabel = label.replace(/\s*\([^)]*\)\s*$/, '');
-        return byLabel[label] + ' ' + shortLabel;
-      })
-      .join(', ');
+    return parts.join(', ');
   }
 
   // Group sessions by opportunity → field worker → { muac, rest }.

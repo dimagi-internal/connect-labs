@@ -211,7 +211,7 @@ describe('aiFlagsSummary', () => {
     expect(aiFlagsSummary(s)).toBe('3 flagged');
   });
 
-  it('falls back to flat form when exactly one distinct label produced all flags', () => {
+  it('names the classifier even when it is the only one that produced flags', () => {
     const s = session({
       assessment_stats: {
         pass: 0,
@@ -221,7 +221,7 @@ describe('aiFlagsSummary', () => {
         ai_flags_by_label: { Hyperzoomed: 2 },
       },
     });
-    expect(aiFlagsSummary(s)).toBe('2 flagged');
+    expect(aiFlagsSummary(s)).toBe('2 Hyperzoomed');
   });
 
   it('breaks down by classifier when more than one label is present, stripping "(...)"', () => {
@@ -240,11 +240,13 @@ describe('aiFlagsSummary', () => {
     expect(aiFlagsSummary(s)).toBe('7 Hyperzoomed, 2 MUAC Mismatch');
   });
 
-  it('falls back to flat form when an unlabeled reviewer flag would otherwise vanish from the breakdown', () => {
-    // ai_no_match (5) doesn't reconcile with the labeled total (7+2=9) here
-    // on purpose -- simulates a session where some no_match assessments came
-    // from a reviewer that sets no badge_label, so they're absent from
-    // ai_flags_by_label but still counted in ai_no_match.
+  it('buckets flags with no recoverable label as "other" instead of hiding the whole breakdown', () => {
+    // ai_no_match (12) doesn't reconcile with the labeled total (7+2=9) on
+    // purpose -- simulates a session with some older/unlabeled no_match
+    // assessments mixed in with labeled ones (e.g. reviewed before this
+    // classifier started setting badge_label, or by a reviewer that never
+    // sets one). Known classifiers must still be named; the remainder is
+    // named "other" rather than silently dropped or used to hide everything.
     const s = session({
       assessment_stats: {
         pass: 0,
@@ -257,6 +259,19 @@ describe('aiFlagsSummary', () => {
         },
       },
     });
-    expect(aiFlagsSummary(s)).toBe('12 flagged');
+    expect(aiFlagsSummary(s)).toBe('7 Hyperzoomed, 2 MUAC Mismatch, 3 other');
+  });
+
+  it('falls back to flat form when no flagged image has a recoverable label at all', () => {
+    const s = session({
+      assessment_stats: {
+        pass: 0,
+        fail: 0,
+        ai_match: 0,
+        ai_no_match: 5,
+        ai_flags_by_label: {},
+      },
+    });
+    expect(aiFlagsSummary(s)).toBe('5 flagged');
   });
 });
