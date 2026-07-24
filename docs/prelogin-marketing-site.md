@@ -61,27 +61,50 @@ across the copy.
 
 Trigger: **"create a PR to push the prelogin changes to connect prod."**
 
-The site payload is exactly three directories:
+The site payload is exactly three directories, and the path prefix changes
+between repos (labs' `connect_labs/` → prod's `commcare_connect/`) — everything
+after that prefix is identical:
 
-- `connect_labs/prelogin/` (app: `urls.py`, `views.py`, `tests/`)
-- `connect_labs/templates/prelogin/` (`home.html`, `robots.txt`, `sitemap.xml`)
-- `connect_labs/static/prelogin/` (css, js, images)
+- `connect_labs/prelogin/` → `commcare_connect/prelogin/` (app: `urls.py`, `views.py`, `tests/`)
+- `connect_labs/templates/prelogin/` → `commcare_connect/templates/prelogin/` (`home.html`, `robots.txt`, `sitemap.xml`)
+- `connect_labs/static/prelogin/` → `commcare_connect/static/prelogin/` (css, js, images)
+
+Local clone: use the existing checkout at
+`C:\Users\Mathew Theis\Documents\Connect\commcare-connect` (not a fresh clone
+elsewhere) — it already has `origin` (`dimagi/commcare-connect`) and a personal
+`fork` remote configured.
+
+**Check for backlog divergence before copying anything.** Promotions don't
+necessarily happen every time labs changes — `diff -rq` the three labs
+directories against their prod counterparts first. If files *other than* the
+ones you're promoting already differ (this has happened: `contact.html`,
+`app.js`, `contact-form.js`, `views.py` etc. were all ahead of prod from
+earlier unpromoted labs work), a blanket directory copy will silently bundle
+that unrelated backlog into your PR. In that case, don't copy the directories
+wholesale — instead:
+
+```
+git diff <base>..origin/main -- connect_labs/templates/prelogin/home.html connect_labs/static/prelogin/styles.css > /tmp/promo.patch
+sed 's#connect_labs/#commcare_connect/#g' /tmp/promo.patch > /tmp/promo-prod.patch
+git apply /tmp/promo-prod.patch   # run inside the commcare-connect checkout
+```
+scoped to just the files your change actually touched, so the PR stays a clean
+diff of only what you meant to promote. Full directory copy is fine only when
+`diff -rq` confirms nothing else has diverged.
 
 Procedure:
 
-1. Make sure the labs changes are committed (this repo is the source).
-2. Clone / update `dimagi/commcare-connect`. (Direct push to that repo may be
-   denied; push the branch to the `jjackson/commcare-connect` fork and open a
-   cross-repo PR.)
-3. Branch off prod `main`.
-4. Copy the three directories above from labs into the prod checkout. **Do not
-   touch** `config/urls.py`, `config/views.py`, settings, or any non-`prelogin`
-   file — those carry the prod-only robots/sitemap wiring and indexing policy.
-5. Run `pre-commit` / prettier (a no-op if labs is already formatted) and the
+1. Make sure the labs changes are committed and merged (this repo is the source).
+2. Update the local `commcare-connect` checkout (`git fetch origin && git checkout main && git reset --hard origin/main`), and branch off from there.
+3. Apply the change — full directory copy or scoped patch per the divergence check above. **Do not touch** `config/urls.py`, `config/views.py`, settings, or any non-`prelogin` file — those carry the prod-only robots/sitemap wiring and indexing policy.
+4. Run `pre-commit` / prettier (a no-op if labs is already formatted) and the
    `prelogin` tests.
-6. Commit, push to the fork, open a PR to `dimagi/commcare-connect:main`
-   following its PR template (the `## Product Description` drives changelog
-   automation).
+5. Commit, push to your `fork` remote, open a cross-repo PR to
+   `dimagi/commcare-connect:main` following its PR template (the
+   `## Product Description` drives changelog automation).
+6. To ping a reviewer: `gh pr create --reviewer <handle>` fails on fork-based
+   cross-repo PRs ("does not have the correct permissions to execute
+   RequestReviews") — `@mention` them in a follow-up `gh pr comment` instead.
 
 The Connect team reviews and merges; deploy follows their normal process. After
 merge, verify on `connect.dimagi.com` (home, a deep `/portfolio/<program>` route,
