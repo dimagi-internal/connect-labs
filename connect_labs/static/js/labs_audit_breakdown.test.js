@@ -10,6 +10,7 @@ const {
   humanReviewedOf,
   duplicateFakeOf,
   clusterCountOf,
+  visitClusteringSummary,
   showAiStatsOf,
   aiFlagsSummary,
 } = LabsAudit;
@@ -170,6 +171,48 @@ describe('clusterCountOf', () => {
 
   it('defaults to 0 when visit_clusters is absent (sessions predating the field)', () => {
     expect(clusterCountOf(session({}))).toBe(0);
+  });
+});
+
+describe('visitClusteringSummary', () => {
+  it('describes both criteria when both are enabled', () => {
+    const s = session({
+      visit_clustering: {
+        enable_time_gap: true,
+        time_gap_minutes: 10,
+        enable_distance: true,
+        distance_meters: 15,
+      },
+    });
+    expect(visitClusteringSummary(s)).toBe('within 10 min or 15m');
+  });
+
+  it('describes only the enabled criterion when just one is on', () => {
+    const s = session({
+      visit_clustering: {
+        enable_time_gap: true,
+        time_gap_minutes: 10,
+        enable_distance: false,
+        distance_meters: 15,
+      },
+    });
+    expect(visitClusteringSummary(s)).toBe('within 10 min');
+  });
+
+  it('returns an empty string when neither criterion is enabled', () => {
+    const s = session({
+      visit_clustering: {
+        enable_time_gap: false,
+        time_gap_minutes: null,
+        enable_distance: false,
+        distance_meters: null,
+      },
+    });
+    expect(visitClusteringSummary(s)).toBe('');
+  });
+
+  it('returns an empty string when visit_clustering is absent (sessions predating the field)', () => {
+    expect(visitClusteringSummary(session({}))).toBe('');
   });
 });
 

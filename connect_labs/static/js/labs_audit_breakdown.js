@@ -565,6 +565,7 @@
   LabsAudit.humanReviewedOf = humanReviewedOf;
   LabsAudit.duplicateFakeOf = duplicateFakeOf;
   LabsAudit.clusterCountOf = clusterCountOf;
+  LabsAudit.visitClusteringSummary = visitClusteringSummary;
   LabsAudit.showAiStatsOf = showAiStatsOf;
   LabsAudit.aiFlagsSummary = aiFlagsSummary;
 

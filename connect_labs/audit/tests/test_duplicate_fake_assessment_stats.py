@@ -179,6 +179,61 @@ class TestGetAssessmentStatsByQuestion:
         assert pass_rate == 1 / 3
 
 
+class TestToSummaryDictVisitClustering:
+    """to_summary_dict()'s visit_clustering field lets the FLW breakdown show
+    which time/distance thresholds actually produced this session's
+    Duplicate Groupings, read from the session's own stored criteria (set at
+    creation time -- see run_audit_creation), not the template's current
+    pinned default."""
+
+    def _session_with_criteria(self, criteria):
+        return AuditSessionRecord(
+            {
+                "id": 1,
+                "experiment": "audit",
+                "type": "AuditSession",
+                "data": {"visit_results": {}, "criteria": criteria},
+                "opportunity_id": 1973,
+            }
+        )
+
+    def test_exposes_enabled_clustering_params(self):
+        session = self._session_with_criteria(
+            {"enable_time_gap": True, "time_gap_minutes": 10, "enable_distance": True, "distance_meters": 15}
+        )
+        summary = session.to_summary_dict()
+        assert summary["visit_clustering"] == {
+            "enable_time_gap": True,
+            "time_gap_minutes": 10,
+            "enable_distance": True,
+            "distance_meters": 15,
+        }
+
+    def test_defaults_to_disabled_when_criteria_omits_clustering(self):
+        session = self._session_with_criteria({"audit_type": "date_range"})
+        summary = session.to_summary_dict()
+        assert summary["visit_clustering"] == {
+            "enable_time_gap": False,
+            "time_gap_minutes": None,
+            "enable_distance": False,
+            "distance_meters": None,
+        }
+
+    def test_defaults_to_disabled_when_session_has_no_criteria_at_all(self):
+        session = AuditSessionRecord(
+            {
+                "id": 1,
+                "experiment": "audit",
+                "type": "AuditSession",
+                "data": {"visit_results": {}},
+                "opportunity_id": 1973,
+            }
+        )
+        summary = session.to_summary_dict()
+        assert summary["visit_clustering"]["enable_time_gap"] is False
+        assert summary["visit_clustering"]["enable_distance"] is False
+
+
 class TestToQuestionSummaryDict:
     def test_includes_pass_threshold(self):
         session = _make_session({}, pass_threshold=85)
