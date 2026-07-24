@@ -249,6 +249,103 @@ class TestAuthStatusCCHQProbe:
         assert body["commcare_hq"]["active"] is True
 
 
+class TestAuthStatusRequiresGate:
+    """`requires` lets a workflow skip probes for providers it doesn't gate on.
+
+    The opp-metadata fetch + CCHQ ping exist ONLY to answer the `commcare_hq`
+    question. A connect-only workflow (the common case) shouldn't pay that
+    round-trip — it's wasted work, and during a Connect blip the metadata fetch
+    is exactly what makes the "Checking authorization…" spinner hang.
+    """
+
+    def test_requires_without_commcare_hq_skips_metadata_and_probe(self, dimagi_user, rf):
+        """?requires=connect + an opportunity_id -> no opp-metadata fetch, no CCHQ ping."""
+        session = {
+            "labs_oauth": {"access_token": "lt", "expires_at": 1e12},
+            "commcare_oauth": {"access_token": "ct", "expires_at": 1e12},
+            "ocs_oauth": {"access_token": "ot", "expires_at": 1e12},
+        }
+        request = _make_request(rf, dimagi_user, "?opportunity_id=765&requires=connect", session)
+
+        with patch(
+            "connect_labs.labs.analysis.data_access.fetch_opportunity_metadata",
+        ) as mock_meta, patch("connect_labs.labs.integrations.commcare.api_client.CommCareDataAccess") as MockCDA:
+            mock_client = MagicMock()
+            mock_client.verify_token_alive.return_value = True
+            MockCDA.return_value = mock_client
+
+            from connect_labs.workflow.views import workflow_auth_status_api
+
+            response = workflow_auth_status_api(request)
+
+            # commcare_hq not required -> the Connect metadata round-trip and the
+            # per-domain form ping are both skipped entirely.
+            mock_meta.assert_not_called()
+            mock_client.verify_token_alive.assert_not_called()
+            mock_client.verify_hq_access.assert_not_called()
+
+        import json
+
+        body = json.loads(response.content)
+        # Connect (the one it DOES require) is reported from the timestamp check.
+        assert body["connect"]["active"] is True
+
+    def test_requires_with_commcare_hq_still_probes(self, dimagi_user, rf):
+        """?requires=connect,commcare_hq -> metadata fetch + probe run as before."""
+        session = {
+            "labs_oauth": {"access_token": "lt", "expires_at": 1e12},
+            "commcare_oauth": {"access_token": "ct", "expires_at": 1e12},
+            "ocs_oauth": {"access_token": "ot", "expires_at": 1e12},
+        }
+        request = _make_request(rf, dimagi_user, "?opportunity_id=765&requires=connect,commcare_hq", session)
+
+        with patch(
+            "connect_labs.labs.analysis.data_access.fetch_opportunity_metadata",
+            return_value={"cc_domain": "ccc-mbw-production"},
+        ) as mock_meta, patch("connect_labs.labs.integrations.commcare.api_client.CommCareDataAccess") as MockCDA:
+            mock_client = MagicMock()
+            mock_client.verify_token_alive.return_value = True
+            mock_client.verify_hq_access.return_value = True
+            MockCDA.return_value = mock_client
+
+            from connect_labs.workflow.views import workflow_auth_status_api
+
+            response = workflow_auth_status_api(request)
+
+            mock_meta.assert_called_once()
+            mock_client.verify_hq_access.assert_called_once()
+
+        import json
+
+        body = json.loads(response.content)
+        assert body["commcare_hq"]["active"] is True
+
+    def test_absent_requires_preserves_probe_backcompat(self, dimagi_user, rf):
+        """No `requires` param (older runner bundle) -> probe exactly as before."""
+        session = {
+            "labs_oauth": {"access_token": "lt", "expires_at": 1e12},
+            "commcare_oauth": {"access_token": "ct", "expires_at": 1e12},
+            "ocs_oauth": {"access_token": "ot", "expires_at": 1e12},
+        }
+        request = _make_request(rf, dimagi_user, "?opportunity_id=765", session)
+
+        with patch(
+            "connect_labs.labs.analysis.data_access.fetch_opportunity_metadata",
+            return_value={"cc_domain": "ccc-mbw-production"},
+        ) as mock_meta, patch("connect_labs.labs.integrations.commcare.api_client.CommCareDataAccess") as MockCDA:
+            mock_client = MagicMock()
+            mock_client.verify_token_alive.return_value = True
+            mock_client.verify_hq_access.return_value = True
+            MockCDA.return_value = mock_client
+
+            from connect_labs.workflow.views import workflow_auth_status_api
+
+            workflow_auth_status_api(request)
+
+            mock_meta.assert_called_once()
+            mock_client.verify_hq_access.assert_called_once()
+
+
 class TestAuthStatusProgramScope:
     """Program-owned workflows drive auth-status by ?program_id= (no owning
     opportunity_id). There is no single CCHQ domain to probe at program scope,

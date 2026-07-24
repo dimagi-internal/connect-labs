@@ -755,6 +755,10 @@ function WorkflowRunner({
   // FLW table has rendered and they've clicked Launch.
   const authRequires: string[] = (initialData.definition?.config
     ?.auth_requires as string[]) || ['connect'];
+  // Stable primitive for the auth-check URL + effect deps. The BE uses this to
+  // skip probes for providers this workflow doesn't require (e.g. a
+  // connect-only workflow skips the CommCare metadata round-trip).
+  const authRequiresParam = authRequires.join(',');
   const [authStatus, setAuthStatus] = useState<Record<
     string,
     {
@@ -793,19 +797,33 @@ function WorkflowRunner({
     // sent no scope at all and the CCHQ provider could never clear, wedging the
     // pipeline stream behind the missingAuth gate.
     applyScopeParams(url.searchParams);
-    fetch(url.toString())
+    // Tell the BE which providers we actually gate on so it can skip probes
+    // this workflow doesn't need.
+    url.searchParams.set('requires', authRequiresParam);
+    // Fail-open timeout: the gate already treats a fetch error as "let the
+    // template try" (the pipeline stream re-surfaces any real auth problem),
+    // so if the BE probe hangs on a slow/blipping Connect we abort rather than
+    // leave the user staring at the "Checking authorization…" spinner.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    fetch(url.toString(), { signal: controller.signal })
       .then((r) => r.json())
       .then((data) => {
         setAuthStatus(data);
         setAuthChecking(false);
       })
       .catch(() => {
-        // Network error — let the template try; pipeline-stream errors
-        // will surface anything the runner-level gate would have caught.
+        // Network error, abort/timeout — let the template try; pipeline-stream
+        // errors will surface anything the runner-level gate would have caught.
         setAuthStatus(null);
         setAuthChecking(false);
-      });
-  }, [initialData.apiEndpoints?.authStatus, applyScopeParams]);
+      })
+      .finally(() => clearTimeout(timeoutId));
+  }, [
+    initialData.apiEndpoints?.authStatus,
+    applyScopeParams,
+    authRequiresParam,
+  ]);
 
   useEffect(() => {
     refreshAuthStatus();
