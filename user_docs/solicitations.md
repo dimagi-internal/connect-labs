@@ -174,6 +174,19 @@ Standard (non-labs-only) solicitations on Connect are not affected by this — a
 
 If you believe you should have access to a labs-only solicitation but cannot see it, contact your Labs administrator to confirm your email domain has been added to the allowed domains list for that solicitation.
 
+### Audit Trail
+
+Labs keeps a complete, tamper-evident record of activity across all program data — including solicitations, responses, and awards. Every time a record is viewed, edited, or deleted, a visit export is run, a login succeeds or fails, or access is denied, the event is logged automatically with who performed it, what they did, when, where they connected from, and whether the action succeeded.
+
+Labs administrators can review this log on the **Audit Trail** page, linked from **Labs Admin**. The page includes:
+
+- **Anomaly cards** that surface patterns worth investigating — for example, a burst of failed login attempts, an unusual spike in bulk data exports, or activity at unexpected hours
+- **Filters** to narrow the log by user, action type, date range, or outcome
+- A **Mark reviewed** button on each anomaly that records the fact that a compliance review was carried out, creating a clear audit record of your oversight work
+
+!!! info "Who can access the Audit Trail"
+The Audit Trail page is available to Labs administrators only. If you need to review a specific event and do not have administrator access, contact your Labs administrator.
+
 ---
 
 ## For Implementing Organizations (Submitting)
@@ -230,12 +243,3 @@ Yes — each solicitation is independent.
 
 **What is a "fund" in the context of an award?**
 Funds are optional tracking records in Labs that let program teams monitor disbursements after an award is made. They are not required to complete an award.
-
-**How do I remove a solicitation from the public listing?**
-Edit the solicitation and uncheck the **Publicly Listed** checkbox. Saving the form immediately removes it from the public marketplace.
-
-**My solicitation shows as published but isn't appearing on the public listing — what's wrong?**
-This should no longer occur for solicitations edited through the standard Labs interface — unchecking **Publicly Listed** and saving is all that is needed. If you are working with a solicitation that was last edited before this fix was in place and it still appears incorrectly, contact your Labs administrator to have the visibility settings corrected.
-
-**I'm seeing inline errors on fields I didn't change when editing an existing solicitation — why?**
-A small number of older solicitations were saved before Labs began enforcing field validation. When you open one of these records for editing, any fields that were stored in the wrong format will be flagged immediately so they can be corrected. Update the highlighted fields to the expected format and save. If you are unsure what a field requires, refer to the table in [Creating a Solicitation](#creating-a-solicitation) or contact your Labs administrator.
