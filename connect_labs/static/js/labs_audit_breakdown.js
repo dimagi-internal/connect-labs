@@ -61,34 +61,43 @@
   // same photo), breaks the flagged count down by classifier so a reviewer
   // can tell a hyperzoom failure from a MUAC-mismatch failure at a glance
   // instead of one opaque total. Falls back to the flat "X flagged" form
-  // when zero or one classifier produced any flags (the common case).
+  // only when NO flagged image has any recoverable label at all.
+  //
+  // IMPORTANT: ai_flags_by_label's values can sum to MORE than ai_no_match
+  // -- one image failing two independent reviewers (e.g. both MUAC OverZoom
+  // AND MUAC Match) counts toward BOTH labels while still being a single
+  // no_match assessment (see AuditSessionRecord.get_assessment_stats() in
+  // connect_labs/audit/models.py). Do NOT gate this function on
+  // `sum(ai_flags_by_label) === ai_no_match` -- an earlier version required
+  // exact reconciliation before showing any breakdown, and that silently
+  // disabled the whole feature in production, since real audits routinely
+  // mix labeled and unlabeled data. ai_flags_unlabeled is computed
+  // server-side as its own counter for exactly this reason -- never infer
+  // it here by subtracting one total from another.
   function aiFlagsSummary(s) {
     var a = statsOf(s);
     var byLabel = a.ai_flags_by_label || {};
     var labels = Object.keys(byLabel);
-    var totalFlagged = a.ai_no_match || 0;
-    var labeledTotal = labels.reduce(function (n, l) {
-      return n + byLabel[l];
-    }, 0);
-    // Fall back to the flat form whenever there's nothing to break down, OR
-    // the per-label tally doesn't reconcile with the true flagged count --
-    // e.g. a reviewer that sets no badge_label on failure (unlabeled) mixed
-    // into the same session as labeled ones would otherwise silently drop
-    // those images from the displayed breakdown while still counting them
-    // in ai_no_match. Reconciling here means the breakdown is only ever
-    // shown when it's provably complete.
-    if (labels.length <= 1 || labeledTotal !== totalFlagged) {
-      return totalFlagged + ' flagged';
+    // No classifier could be recovered from ANY flagged image (e.g. every
+    // flag predates this feature, or came from a reviewer that never sets a
+    // badge_label) -- nothing to name, fall back to the plain count.
+    if (labels.length === 0) {
+      return (a.ai_no_match || 0) + ' flagged';
     }
-    return labels
-      .map(function (label) {
-        // Strip a trailing "(...)" qualifier (e.g. "(strict tolerance)") to
-        // keep this line compact -- the full label still shows on the
-        // image's own badge in the review UI.
-        var shortLabel = label.replace(/\s*\([^)]*\)\s*$/, '');
-        return byLabel[label] + ' ' + shortLabel;
-      })
-      .join(', ');
+    var parts = labels.map(function (label) {
+      // Strip a trailing "(...)" qualifier (e.g. "(strict tolerance)") to
+      // keep this line compact -- the full label still shows on the
+      // image's own badge in the review UI. Falls back to the untrimmed
+      // label if stripping would leave nothing (e.g. a label that's
+      // entirely a parenthetical).
+      var shortLabel = label.replace(/\s*\([^)]*\)\s*$/, '').trim() || label;
+      return byLabel[label] + ' ' + shortLabel;
+    });
+    var unlabeled = a.ai_flags_unlabeled || 0;
+    if (unlabeled > 0) {
+      parts.push(unlabeled + ' other');
+    }
+    return parts.join(', ');
   }
 
   // Group sessions by opportunity → field worker → { muac, rest }.

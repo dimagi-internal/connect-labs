@@ -204,14 +204,27 @@ describe('showAiStatsOf', () => {
 });
 
 describe('aiFlagsSummary', () => {
-  it('falls back to the flat "N flagged" form with no per-label breakdown', () => {
+  it('falls back to the flat "N flagged" form when nothing carries a recoverable label', () => {
     const s = session({
       assessment_stats: { pass: 0, fail: 0, ai_match: 0, ai_no_match: 3 },
     });
     expect(aiFlagsSummary(s)).toBe('3 flagged');
   });
 
-  it('falls back to flat form when exactly one distinct label produced all flags', () => {
+  it('treats an explicit empty ai_flags_by_label the same as a missing one', () => {
+    const s = session({
+      assessment_stats: {
+        pass: 0,
+        fail: 0,
+        ai_match: 0,
+        ai_no_match: 5,
+        ai_flags_by_label: {},
+      },
+    });
+    expect(aiFlagsSummary(s)).toBe('5 flagged');
+  });
+
+  it('names the classifier even when it is the only one that produced flags', () => {
     const s = session({
       assessment_stats: {
         pass: 0,
@@ -221,7 +234,7 @@ describe('aiFlagsSummary', () => {
         ai_flags_by_label: { Hyperzoomed: 2 },
       },
     });
-    expect(aiFlagsSummary(s)).toBe('2 flagged');
+    expect(aiFlagsSummary(s)).toBe('2 Hyperzoomed');
   });
 
   it('breaks down by classifier when more than one label is present, stripping "(...)"', () => {
@@ -240,11 +253,13 @@ describe('aiFlagsSummary', () => {
     expect(aiFlagsSummary(s)).toBe('7 Hyperzoomed, 2 MUAC Mismatch');
   });
 
-  it('falls back to flat form when an unlabeled reviewer flag would otherwise vanish from the breakdown', () => {
-    // ai_no_match (5) doesn't reconcile with the labeled total (7+2=9) here
-    // on purpose -- simulates a session where some no_match assessments came
-    // from a reviewer that sets no badge_label, so they're absent from
-    // ai_flags_by_label but still counted in ai_no_match.
+  it('buckets ai_flags_unlabeled as "other" instead of hiding the whole breakdown', () => {
+    // Simulates a session with some older/unlabeled no_match assessments
+    // mixed in with labeled ones (e.g. reviewed before this classifier
+    // started setting badge_label, or by a reviewer that never sets one).
+    // ai_flags_unlabeled is a separate server-computed counter, not inferred
+    // from ai_no_match minus the labeled sum (see the function's own
+    // comment for why that inference is unsound).
     const s = session({
       assessment_stats: {
         pass: 0,
@@ -255,8 +270,45 @@ describe('aiFlagsSummary', () => {
           Hyperzoomed: 7,
           'MUAC Mismatch (strict tolerance)': 2,
         },
+        ai_flags_unlabeled: 3,
       },
     });
-    expect(aiFlagsSummary(s)).toBe('12 flagged');
+    expect(aiFlagsSummary(s)).toBe('7 Hyperzoomed, 2 MUAC Mismatch, 3 other');
+  });
+
+  it('does not fabricate an "other" bucket when one image co-fails two reviewers', () => {
+    // Regression: an image failing BOTH MUAC OverZoom and MUAC Match counts
+    // toward BOTH labels while being a single no_match assessment, so
+    // sum(ai_flags_by_label) can legitimately exceed ai_no_match. This must
+    // never subtract one from the other to derive "unlabeled" -- only the
+    // explicit ai_flags_unlabeled counter (0 here) controls the "other"
+    // bucket.
+    const s = session({
+      assessment_stats: {
+        pass: 0,
+        fail: 0,
+        ai_match: 0,
+        ai_no_match: 6,
+        ai_flags_by_label: {
+          Hyperzoomed: 6,
+          'MUAC Mismatch (strict tolerance)': 1,
+        },
+        ai_flags_unlabeled: 0,
+      },
+    });
+    expect(aiFlagsSummary(s)).toBe('6 Hyperzoomed, 1 MUAC Mismatch');
+  });
+
+  it('falls back to the untrimmed label when stripping "(...)" would leave nothing', () => {
+    const s = session({
+      assessment_stats: {
+        pass: 0,
+        fail: 0,
+        ai_match: 0,
+        ai_no_match: 4,
+        ai_flags_by_label: { '(Unclassified)': 4 },
+      },
+    });
+    expect(aiFlagsSummary(s)).toBe('4 (Unclassified)');
   });
 });

@@ -323,7 +323,15 @@ class AuditSessionRecord(LocalLabsRecord):
                 "ai_error": int,        # AI: error count
                 "ai_pending": int,      # AI: not yet reviewed
                 "ai_flags_by_label": dict[str, int],  # AI: no_match count per classifier label
+                "ai_flags_unlabeled": int,  # AI: no_match count with no recoverable label
             }
+
+            Note: ai_flags_by_label's values can sum to MORE than ai_no_match
+            -- an image with two independent reviewers both failing (e.g.
+            MUAC OverZoom + MUAC Match) counts toward BOTH labels while still
+            being a single no_match assessment. Don't infer ai_flags_unlabeled
+            by subtracting one from the other; it's tracked as its own
+            counter for exactly this reason.
         """
         stats = {
             "total": 0,
@@ -336,6 +344,7 @@ class AuditSessionRecord(LocalLabsRecord):
             "ai_error": 0,
             "ai_pending": 0,
             "ai_flags_by_label": {},
+            "ai_flags_unlabeled": 0,
         }
 
         for visit_result in self.data.get("visit_results", {}).values():
@@ -369,14 +378,22 @@ class AuditSessionRecord(LocalLabsRecord):
                     # Multiple independent reviewers on one image path (e.g.
                     # MUAC OverZoom + MUAC Match) each contribute their own
                     # badge_label; _combine_reviewer_results joins every
-                    # failing reviewer's label with "; " into ai_notes (see
-                    # connect_labs/audit/tasks.py). Splitting it back apart
-                    # here recovers which classifier(s) flagged this image --
-                    # one image can count toward more than one label.
-                    for label in (assessment.get("ai_notes") or "").split("; "):
+                    # failing reviewer's label with AI_NOTES_JOIN_SEP into
+                    # ai_notes (see connect_labs/audit/tasks.py). Splitting it
+                    # back apart here recovers which classifier(s) flagged
+                    # this image -- one image can count toward MORE THAN ONE
+                    # label, so ai_flags_by_label's values can sum to more
+                    # than ai_no_match. ai_flags_unlabeled is tracked as its
+                    # own counter (not inferred by subtracting one from the
+                    # other) for exactly that reason.
+                    found_label = False
+                    for label in (assessment.get("ai_notes") or "").split(AI_NOTES_JOIN_SEP):
                         label = label.strip()
                         if label:
                             stats["ai_flags_by_label"][label] = stats["ai_flags_by_label"].get(label, 0) + 1
+                            found_label = True
+                    if not found_label:
+                        stats["ai_flags_unlabeled"] += 1
                 elif ai_result == "error":
                     stats["ai_error"] += 1
                 else:
