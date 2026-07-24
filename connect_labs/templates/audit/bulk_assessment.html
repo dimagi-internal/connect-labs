@@ -126,7 +126,15 @@
             <option value="pending">Pending</option>
             <option value="pass">Passed</option>
             <option value="fail">Failed</option>
-            <option value="duplicate_fake">Duplicate/Fake</option>
+            <template x-if="!isMuacPictureAuditWorkflow">
+              <option value="duplicate_fake">Duplicate/Fake</option>
+            </template>
+            <template x-if="isMuacPictureAuditWorkflow">
+              <option value="duplicate">Duplicate</option>
+            </template>
+            <template x-if="isMuacPictureAuditWorkflow">
+              <option value="fake">Fake</option>
+            </template>
           </select>
         </div>
         <div x-show="flwSummaries.length > 1">
@@ -218,11 +226,27 @@
                 class="px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium disabled:opacity-50">
           <i class="fa-solid fa-times mr-1"></i>Fail All Pending
         </button>
-        <button @click="markAllDuplicateFake()"
-                :disabled="isReadOnly || loading || bulkProcessing"
-                class="px-3 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors text-sm font-medium disabled:opacity-50">
-          <i class="fa-solid fa-exclamation mr-1"></i>Mark All Duplicate/Fake
-        </button>
+        <template x-if="!isMuacPictureAuditWorkflow">
+          <button @click="markAllDuplicateFake()"
+                  :disabled="isReadOnly || loading || bulkProcessing"
+                  class="px-3 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors text-sm font-medium disabled:opacity-50">
+            <i class="fa-solid fa-exclamation mr-1"></i>Mark All Duplicate/Fake
+          </button>
+        </template>
+        <template x-if="isMuacPictureAuditWorkflow">
+          <button @click="markAllResult('duplicate')"
+                  :disabled="isReadOnly || loading || bulkProcessing"
+                  class="px-3 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors text-sm font-medium disabled:opacity-50">
+            <i class="fa-solid fa-exclamation mr-1"></i>Mark All Duplicate
+          </button>
+        </template>
+        <template x-if="isMuacPictureAuditWorkflow">
+          <button @click="markAllResult('fake')"
+                  :disabled="isReadOnly || loading || bulkProcessing"
+                  class="px-3 py-2 bg-orange-700 text-white rounded-lg hover:bg-orange-800 transition-colors text-sm font-medium disabled:opacity-50">
+            <i class="fa-solid fa-exclamation mr-1"></i>Mark All Fake
+          </button>
+        </template>
         <button @click="clearAllAssessments()"
                 :disabled="isReadOnly || loading || bulkProcessing"
                 class="px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium disabled:opacity-50">
@@ -293,7 +317,7 @@
              :class="{
                'border-green-500': assessment.result === 'pass',
                'border-red-500': assessment.result === 'fail',
-               'border-orange-500': assessment.result === 'duplicate_fake',
+               'border-orange-500': ['duplicate_fake', 'duplicate', 'fake'].includes(assessment.result),
                'border-gray-200': !assessment.result
              }"
              x-data="{
@@ -311,10 +335,8 @@
                get aiNotes() { return assessment.ai_notes || ''; },
                set aiNotes(v) { assessment.ai_notes = v; },
                get aiConfidence() { return typeof assessment.ai_confidence === 'number' ? assessment.ai_confidence : null; },
-               // Short form for the compact top badge -- strips a trailing
-               // "(...)" detail (e.g. "MUAC Mismatch (form: 21.5, strict)"
-               // -> "MUAC Mismatch"); the fuller AI Result section below
-               // shows the untouched aiNotes with that detail intact.
+               // Short form for the compact top badge -- strips a trailing '(...)' detail so the
+               // fuller AI Result section below is the only place that shows it.
                get aiNotesShort() { return (this.aiNotes || '').replace(/\s*\([^)]*\)\s*$/, ''); },
                get aiClassLabel() {
                  if (!this.aiResult) return '';
@@ -413,11 +435,13 @@
                     :class="{
                       'bg-green-600': result === 'pass',
                       'bg-red-600': result === 'fail',
-                      'bg-orange-500': result === 'duplicate_fake'
+                      'bg-orange-500': ['duplicate_fake', 'duplicate', 'fake'].includes(result)
                     }">
                 <span x-show="result === 'pass'"><i class="fa-solid fa-check mr-1"></i>PASS</span>
                 <span x-show="result === 'fail'"><i class="fa-solid fa-times mr-1"></i>FAIL</span>
                 <span x-show="result === 'duplicate_fake'"><i class="fa-solid fa-exclamation mr-1"></i>DUPLICATE/FAKE</span>
+                <span x-show="result === 'duplicate'"><i class="fa-solid fa-exclamation mr-1"></i>DUPLICATE</span>
+                <span x-show="result === 'fake'"><i class="fa-solid fa-exclamation mr-1"></i>FAKE</span>
               </span>
             </div>
             <!-- Previously-audited badge - Bottom Left (top corners are used by the AI/human result badges) -->
@@ -428,6 +452,8 @@
                 x-text="assessment.prior_result === 'pass' ? 'Audited: Passed'
                       : assessment.prior_result === 'fail' ? 'Audited: Failed'
                       : assessment.prior_result === 'duplicate_fake' ? 'Audited: Dup/Fake'
+                      : assessment.prior_result === 'duplicate' ? 'Audited: Duplicate'
+                      : assessment.prior_result === 'fake' ? 'Audited: Fake'
                       : 'Audited'"></span>
             </div>
           </div>
@@ -521,17 +547,41 @@
                 <i class="fa-solid fa-times mr-1"></i>Fail
               </button>
             </div>
-            <div class="mb-1.5">
-              <button @click="updateResult(result === 'duplicate_fake' ? '' : 'duplicate_fake')"
-                      :disabled="saving"
-                      :class="{
-                        'bg-orange-500 text-white shadow-sm': result === 'duplicate_fake',
-                        'bg-gray-100 text-gray-600 hover:bg-orange-50 hover:text-orange-700': result !== 'duplicate_fake'
-                      }"
-                      class="w-full py-1.5 px-2 rounded text-xs font-medium transition-colors disabled:opacity-50">
-                <i class="fa-solid fa-exclamation mr-1"></i>Duplicate/Fake
-              </button>
-            </div>
+            <template x-if="!isMuacPictureAuditWorkflow">
+              <div class="mb-1.5">
+                <button @click="updateResult(result === 'duplicate_fake' ? '' : 'duplicate_fake')"
+                        :disabled="saving"
+                        :class="{
+                          'bg-orange-500 text-white shadow-sm': result === 'duplicate_fake',
+                          'bg-gray-100 text-gray-600 hover:bg-orange-50 hover:text-orange-700': result !== 'duplicate_fake'
+                        }"
+                        class="w-full py-1.5 px-2 rounded text-xs font-medium transition-colors disabled:opacity-50">
+                  <i class="fa-solid fa-exclamation mr-1"></i>Duplicate/Fake
+                </button>
+              </div>
+            </template>
+            <template x-if="isMuacPictureAuditWorkflow">
+              <div class="flex gap-1.5 mb-1.5">
+                <button @click="updateResult(result === 'duplicate' ? '' : 'duplicate')"
+                        :disabled="saving"
+                        :class="{
+                          'bg-orange-500 text-white shadow-sm': result === 'duplicate',
+                          'bg-gray-100 text-gray-600 hover:bg-orange-50 hover:text-orange-700': result !== 'duplicate'
+                        }"
+                        class="flex-1 py-1.5 px-2 rounded text-xs font-medium transition-colors disabled:opacity-50">
+                  <i class="fa-solid fa-clone mr-1"></i>Duplicate
+                </button>
+                <button @click="updateResult(result === 'fake' ? '' : 'fake')"
+                        :disabled="saving"
+                        :class="{
+                          'bg-orange-700 text-white shadow-sm': result === 'fake',
+                          'bg-gray-100 text-gray-600 hover:bg-orange-50 hover:text-orange-700': result !== 'fake'
+                        }"
+                        class="flex-1 py-1.5 px-2 rounded text-xs font-medium transition-colors disabled:opacity-50">
+                  <i class="fa-solid fa-exclamation mr-1"></i>Fake
+                </button>
+              </div>
+            </template>
             <div x-data="{ showNotes: notes ? true : false }">
               <button @click="showNotes = !showNotes"
                       class="text-xs text-gray-500 hover:text-brand-indigo">
@@ -698,7 +748,7 @@
         Complete Image Review
       </h2>
 
-      {% if session.status == 'completed' %}
+      {% if session.status == 'completed' and not is_muac_picture_audit_workflow %}
       <div class="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
         <div class="flex items-center justify-between gap-4">
           <div>
@@ -721,6 +771,18 @@
             Reopen Audit
           </button>
         </div>
+      </div>
+      {% elif session.status == 'completed' and is_muac_picture_audit_workflow %}
+      <div class="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
+        <div class="flex items-center gap-2">
+          <i class="fa-solid fa-check-circle text-green-600"></i>
+          <span class="text-sm text-green-700">
+            Completed on {{ session.completed_at|date:"M d, Y \\a\\t H:i" }}
+          </span>
+        </div>
+        <p class="text-xs text-green-600 mt-1 ml-6">
+          You can still change Pass/Fail/Duplicate/Fake on any image below and save — this will update the completed report.
+        </p>
       </div>
       {% endif %}
 
@@ -872,7 +934,7 @@
             <span x-show="lightboxAssessment.household_name" class="text-[0.625rem]"><i class="fa-solid fa-house mr-1 text-gray-400"></i><span x-text="lightboxAssessment.household_name"></span></span>
             <template x-if="lightboxAssessment.result">
               <span class="px-2 py-0.5 rounded text-xs font-bold"
-                    :class="{ 'bg-green-600 text-white': lightboxAssessment.result === 'pass', 'bg-red-600 text-white': lightboxAssessment.result === 'fail', 'bg-orange-500 text-white': lightboxAssessment.result === 'duplicate_fake' }"
+                    :class="{ 'bg-green-600 text-white': lightboxAssessment.result === 'pass', 'bg-red-600 text-white': lightboxAssessment.result === 'fail', 'bg-orange-500 text-white': ['duplicate_fake', 'duplicate', 'fake'].includes(lightboxAssessment.result) }"
                     x-text="lightboxAssessment.result === 'duplicate_fake' ? 'DUPLICATE/FAKE' : lightboxAssessment.result.toUpperCase()"></span>
             </template>
             <span x-show="lightboxAssessment.prior_audited"
@@ -881,6 +943,8 @@
                   x-text="lightboxAssessment.prior_result === 'pass' ? 'Audited: Passed'
                         : lightboxAssessment.prior_result === 'fail' ? 'Audited: Failed'
                         : lightboxAssessment.prior_result === 'duplicate_fake' ? 'Audited: Dup/Fake'
+                        : lightboxAssessment.prior_result === 'duplicate' ? 'Audited: Duplicate'
+                        : lightboxAssessment.prior_result === 'fake' ? 'Audited: Fake'
                         : 'Audited'"></span>
           </div>
           <div class="flex items-center gap-2 flex-shrink-0">
@@ -924,6 +988,10 @@ const opportunityId = {{ opportunity_id|default:"null" }};
 const connectUrl = '{{ connect_url|default:"https://connect.dimagi.com" }}';
 const orgSlug = '{{ org_slug|default:"" }}';
 const workflowRunId = {{ workflow_run_id|default:"null" }};
+// Scoped to workflow 6840 ("Muac Picture Audit") only -- see
+// _is_muac_picture_audit_session in views.py. Drives the Duplicate/Fake ->
+// Duplicate + Fake button split and always-editable (even completed) review.
+const isMuacPictureAuditWorkflow = {{ is_muac_picture_audit_workflow|yesno:"true,false" }};
 const passThreshold = parseInt('{{ pass_threshold|default:"80" }}') || 80;
 // Audit-level pass % threshold configured at creation time (75-100, default 100) — determines
 // whether the whole audit is marked pass/fail on completion. Distinct from `passThreshold`
@@ -1043,7 +1111,11 @@ function bulkAssessmentInterface() {
     completionNotes: '{{ session.notes|default:""|escapejs }}',
     kpiNotes: '{{ session.kpi_notes|default:""|escapejs }}',
     submittingCompletion: false,
-    isReadOnly: '{{ session.status }}' === 'completed',
+    isMuacPictureAuditWorkflow: isMuacPictureAuditWorkflow,
+    // Every other workflow's completed reports stay locked until reopened.
+    // Workflow 6840's own reports never lock -- pass/fail/duplicate/fake stay
+    // editable, and saving updates the completed report in place.
+    isReadOnly: '{{ session.status }}' === 'completed' && !isMuacPictureAuditWorkflow,
     taskModal: { open: false, flw: null, title: '', description: '', saving: false, error: null },
     // Full-screen image zoom lightbox (indexes into the currently-filtered `assessments`)
     lightbox: { open: false, index: -1, scale: 1, tx: 0, ty: 0, dragging: false, startX: 0, startY: 0 },
@@ -1418,7 +1490,7 @@ function bulkAssessmentInterface() {
         flwMap[key].total++;
         if (a.result === 'pass') flwMap[key].passed++;
         else if (a.result === 'fail') flwMap[key].failed++;
-        else if (a.result === 'duplicate_fake') flwMap[key].duplicateFake++;
+        else if (['duplicate_fake', 'duplicate', 'fake'].includes(a.result)) flwMap[key].duplicateFake++;
         else flwMap[key].pending++;
       });
       return Object.values(flwMap).sort((a, b) => a.username.localeCompare(b.username));
@@ -1438,7 +1510,7 @@ function bulkAssessmentInterface() {
       const total = this.allAssessments.length;
       const passCount = this.allAssessments.filter((a) => a.result === 'pass').length;
       const failCount = this.allAssessments.filter((a) => a.result === 'fail').length;
-      const duplicateFakeCount = this.allAssessments.filter((a) => a.result === 'duplicate_fake').length;
+      const duplicateFakeCount = this.allAssessments.filter((a) => ['duplicate_fake', 'duplicate', 'fake'].includes(a.result)).length;
       const pendingCount = total - passCount - failCount - duplicateFakeCount;
       this.stats = {
         total,
@@ -1643,22 +1715,26 @@ function bulkAssessmentInterface() {
       this.recalculateStats();
     },
     markAllDuplicateFake() {
+      this.markAllResult('duplicate_fake');
+    },
+    // Shared by "Mark All Duplicate/Fake" (non-scoped workflows) and the
+    // "Mark All Duplicate" / "Mark All Fake" split (workflow 6840 only).
+    // Unlike Pass/Fail All Pending, this overrides every currently-visible
+    // image regardless of its existing result.
+    markAllResult(value) {
       if (this.loading || this.bulkProcessing) {
         return;
       }
       if (this.assessments.length === 0) {
         return;
       }
-      // Unlike Pass/Fail All Pending, this overrides every currently-visible
-      // image regardless of its existing result — the whole batch is being
-      // flagged as duplicate/fake.
       this.bulkProcessing = true;
       for (const assessment of this.assessments) {
         this.updateAssessmentLocal(
           assessment.visit_id,
           assessment.blob_id,
           assessment.question_id,
-          'duplicate_fake',
+          value,
           assessment.notes,
         );
       }
