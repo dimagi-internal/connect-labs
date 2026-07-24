@@ -819,7 +819,11 @@ function WorkflowRunner({
         setAuthChecking(false);
       })
       .finally(() => clearTimeout(timeoutId));
-  }, [initialData.apiEndpoints?.authStatus, applyScopeParams, authRequiresParam]);
+  }, [
+    initialData.apiEndpoints?.authStatus,
+    applyScopeParams,
+    authRequiresParam,
+  ]);
 
   useEffect(() => {
     refreshAuthStatus();

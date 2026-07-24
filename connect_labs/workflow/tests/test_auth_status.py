@@ -297,16 +297,12 @@ class TestAuthStatusRequiresGate:
             "commcare_oauth": {"access_token": "ct", "expires_at": 1e12},
             "ocs_oauth": {"access_token": "ot", "expires_at": 1e12},
         }
-        request = _make_request(
-            rf, dimagi_user, "?opportunity_id=765&requires=connect,commcare_hq", session
-        )
+        request = _make_request(rf, dimagi_user, "?opportunity_id=765&requires=connect,commcare_hq", session)
 
         with patch(
             "connect_labs.labs.analysis.data_access.fetch_opportunity_metadata",
             return_value={"cc_domain": "ccc-mbw-production"},
-        ) as mock_meta, patch(
-            "connect_labs.labs.integrations.commcare.api_client.CommCareDataAccess"
-        ) as MockCDA:
+        ) as mock_meta, patch("connect_labs.labs.integrations.commcare.api_client.CommCareDataAccess") as MockCDA:
             mock_client = MagicMock()
             mock_client.verify_token_alive.return_value = True
             mock_client.verify_hq_access.return_value = True
@@ -336,9 +332,7 @@ class TestAuthStatusRequiresGate:
         with patch(
             "connect_labs.labs.analysis.data_access.fetch_opportunity_metadata",
             return_value={"cc_domain": "ccc-mbw-production"},
-        ) as mock_meta, patch(
-            "connect_labs.labs.integrations.commcare.api_client.CommCareDataAccess"
-        ) as MockCDA:
+        ) as mock_meta, patch("connect_labs.labs.integrations.commcare.api_client.CommCareDataAccess") as MockCDA:
             mock_client = MagicMock()
             mock_client.verify_token_alive.return_value = True
             mock_client.verify_hq_access.return_value = True

@@ -1325,9 +1325,7 @@ def workflow_auth_status_api(request):
                 # Short timeout: a user is watching a spinner on this, and the
                 # probe fails open (except below), so favour failing fast over
                 # hanging when Connect is slow/blipping.
-                metadata = fetch_opportunity_metadata(
-                    access_token, int(opportunity_id_param), timeout=8.0
-                )
+                metadata = fetch_opportunity_metadata(access_token, int(opportunity_id_param), timeout=8.0)
                 cchq_domain_for_probe = metadata.get("cc_domain") or None
         except Exception:
             logger.exception("Failed to look up cc_domain for auth-status probe")
