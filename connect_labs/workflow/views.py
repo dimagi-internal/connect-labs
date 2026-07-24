@@ -3857,6 +3857,7 @@ def cancel_job_api(request, task_id):
     from celery.result import AsyncResult
 
     from config import celery_app
+    from connect_labs.audit.data_access import mark_audit_creation_cancelled
 
     try:
         data = json.loads(request.body) if request.body else {}
@@ -3866,8 +3867,18 @@ def cancel_job_api(request, task_id):
 
         # Check if task is still running
         if task.state in ("PENDING", "STARTED", "PROGRESS", "RETRY"):
-            # Revoke the task (terminate if running)
+            # Revoke the task (terminate if running) -- a best-effort hard-kill
+            # that only takes effect on a real distributed worker.
             celery_app.control.revoke(task_id, terminate=True, signal="SIGTERM")
+
+            # Cooperative cancellation, keyed off THIS task_id -- the same
+            # fresh, single-use id run_workflow_job threads into job_config as
+            # "_task_id" (see connect_labs/workflow/tasks.py) for handlers that
+            # invoke run_audit_creation via .apply() *inside* this task. Using
+            # this task's own id (rather than the long-lived run_id) means a
+            # later retry on the same run always gets a brand-new key -- no
+            # stale flag can carry over and silently no-op it.
+            mark_audit_creation_cancelled(task_id)
 
             # Update job state in workflow run if run_id provided
             if run_id:

@@ -411,6 +411,13 @@ def run_workflow_job(
         job_config["records"] = records
         job_config["opportunity_id"] = opportunity_id
         job_config["program_id"] = program_id
+        # This task's own fresh, single-use id -- the same one start_job_api
+        # returned to the browser and cancel_job_api's URL targets. Handlers
+        # that invoke another task via .apply() *inside* this one (e.g.
+        # weekly_dual_track_audit_create -> run_audit_creation) need it for
+        # cooperative cancellation, since the nested .apply() call gets its
+        # own throwaway id that nothing outside this process ever learns.
+        job_config["_task_id"] = self.request.id
         results = handler(job_config, access_token, progress_callback)
 
         # Mark complete
