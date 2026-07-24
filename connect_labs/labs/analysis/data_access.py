@@ -145,7 +145,7 @@ def get_flw_names_for_opportunity(request: HttpRequest) -> dict[str, str]:
     return fetch_flw_names(access_token, opportunity_id)
 
 
-def fetch_opportunity_detail(access_token: str, opportunity_id: int) -> dict:
+def fetch_opportunity_detail(access_token: str, opportunity_id: int, timeout: float = 30.0) -> dict:
     """
     Fetch the raw opportunity record from Connect's export API.
 
@@ -153,6 +153,11 @@ def fetch_opportunity_detail(access_token: str, opportunity_id: int) -> dict:
     ``learn_app`` / ``deliver_app`` sub-objects). Single owner of this call so
     callers (cc_domain resolution, the labs admin app-downloader) don't each
     re-implement it.
+
+    ``timeout`` defaults to 30s for batch/pipeline callers; latency-sensitive
+    callers (e.g. the auth-status gate that a user is watching a spinner on)
+    pass a smaller value so a slow/blipping Connect fails fast instead of
+    hanging the request. This call already fails open at the auth-status layer.
 
     Raises:
         ValueError: on HTTP error or timeout.
@@ -163,7 +168,7 @@ def fetch_opportunity_detail(access_token: str, opportunity_id: int) -> dict:
     logger.info(f"Fetching opportunity detail from {url}")
 
     try:
-        response = httpx.get(url, headers=headers, timeout=30.0)
+        response = httpx.get(url, headers=headers, timeout=timeout)
         response.raise_for_status()
     except httpx.HTTPStatusError as e:
         logger.error(f"Failed to fetch opportunity detail: {e}")
@@ -175,7 +180,7 @@ def fetch_opportunity_detail(access_token: str, opportunity_id: int) -> dict:
     return response.json()
 
 
-def fetch_opportunity_metadata(access_token: str, opportunity_id: int) -> dict:
+def fetch_opportunity_metadata(access_token: str, opportunity_id: int, timeout: float = 30.0) -> dict:
     """
     Fetch opportunity metadata from Connect API and resolve its CommCare domain.
 
@@ -199,7 +204,7 @@ def fetch_opportunity_metadata(access_token: str, opportunity_id: int) -> dict:
         logger.debug(f"Opportunity metadata cache hit for {opportunity_id}")
         return cached
 
-    data = fetch_opportunity_detail(access_token, opportunity_id)
+    data = fetch_opportunity_detail(access_token, opportunity_id, timeout=timeout)
 
     # Extract cc_domain from deliver_app or learn_app
     deliver_app = data.get("deliver_app") or {}

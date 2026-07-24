@@ -1209,6 +1209,13 @@ def workflow_auth_status_api(request):
         opportunity_id (optional): If supplied, enable the real CCHQ ping for
             that opportunity's domain. Without this we can only do timestamp +
             refresh checks for CCHQ.
+        requires (optional): Comma-separated provider keys the runner actually
+            gates on (from `definition.config.auth_requires`). When present and
+            it does NOT include `commcare_hq`, we skip the CommCare/Connect
+            metadata round-trip entirely — a connect-only workflow shouldn't
+            pay (or hang on) a probe whose only purpose is the CCHQ
+            domain-access check. Absent => probe as before (back-compat with
+            older runner bundles that don't send this param).
     """
     from django.urls import reverse
     from django.utils import timezone
@@ -1228,6 +1235,16 @@ def workflow_auth_status_api(request):
     # program-owned workflow (its initialData carries no opportunity_id).
     if opportunity_id_param in (None, "", "undefined", "null"):
         opportunity_id_param = None
+
+    # Which providers does this workflow actually gate on? The CommCare probes
+    # below (opp-metadata fetch + token/domain ping) exist ONLY to answer the
+    # `commcare_hq` question, so a connect-only workflow shouldn't run them —
+    # they're wasted work, and during a Connect blip the metadata fetch is what
+    # makes the "Checking authorization…" spinner hang. `requires` absent =>
+    # probe as before (older runner bundles don't send it).
+    requires_param = request.GET.get("requires")
+    requires = {r.strip() for r in requires_param.split(",") if r.strip()} if requires_param else None
+    probe_cchq = (requires is None) or ("commcare_hq" in requires)
 
     # Program scope: a program-owned workflow's runner sends ?program_id=
     # (and NO opportunity_id) because the record has program_id set and
@@ -1299,18 +1316,23 @@ def workflow_auth_status_api(request):
     cchq_reason: str | None = None
     cchq_domain_for_probe: str | None = None
 
-    if opportunity_id_param:
+    if opportunity_id_param and probe_cchq:
         try:
             from connect_labs.labs.analysis.data_access import fetch_opportunity_metadata
 
             access_token = (request.session.get("labs_oauth") or {}).get("access_token", "")
             if access_token:
-                metadata = fetch_opportunity_metadata(access_token, int(opportunity_id_param))
+                # Short timeout: a user is watching a spinner on this, and the
+                # probe fails open (except below), so favour failing fast over
+                # hanging when Connect is slow/blipping.
+                metadata = fetch_opportunity_metadata(
+                    access_token, int(opportunity_id_param), timeout=8.0
+                )
                 cchq_domain_for_probe = metadata.get("cc_domain") or None
         except Exception:
             logger.exception("Failed to look up cc_domain for auth-status probe")
 
-    if cchq_active:
+    if cchq_active and probe_cchq:
         # NOTE: this supersedes PR #104's "skip the probe when timestamp
         # is active" approach. PR #104 was solving the right problem
         # (false-negative loop for users without domain membership) but
