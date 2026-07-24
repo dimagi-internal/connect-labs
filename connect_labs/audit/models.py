@@ -8,6 +8,14 @@ that deserializes production API responses - no database storage.
 
 from connect_labs.labs.models import LocalLabsRecord
 
+# Shared with connect_labs.audit.tasks._combine_reviewer_results, which joins
+# multiple independent AI reviewers' badge_labels into one ai_notes string
+# with this separator. get_assessment_stats() below splits on the SAME
+# constant to recover each reviewer's own label -- importing this one value
+# on both sides means a change to the separator fails loudly (an import
+# error or a single obvious edit site) instead of silently desyncing.
+AI_NOTES_JOIN_SEP = "; "
+
 
 class AuditSessionRecord(LocalLabsRecord):
     """Proxy model for AuditSession-type LocalLabsRecords with nested visit results."""
@@ -314,6 +322,7 @@ class AuditSessionRecord(LocalLabsRecord):
                 "ai_no_match": int,     # AI: no_match count
                 "ai_error": int,        # AI: error count
                 "ai_pending": int,      # AI: not yet reviewed
+                "ai_flags_by_label": dict[str, int],  # AI: no_match count per classifier label
             }
         """
         stats = {
@@ -326,6 +335,7 @@ class AuditSessionRecord(LocalLabsRecord):
             "ai_no_match": 0,
             "ai_error": 0,
             "ai_pending": 0,
+            "ai_flags_by_label": {},
         }
 
         for visit_result in self.data.get("visit_results", {}).values():
@@ -337,13 +347,15 @@ class AuditSessionRecord(LocalLabsRecord):
                 # image was reviewed and flagged), not an unreviewed one. It
                 # already counts against the pass rate the same way fail
                 # does, since neither is counted in "pass" and pass rate is
-                # computed as pass/total.
+                # computed as pass/total. "duplicate" and "fake" are the same
+                # bucket split into two distinct results -- only ever written
+                # by the muac_picture_audit workflow's review screen.
                 result = assessment.get("result")
                 if result == "pass":
                     stats["pass"] += 1
                 elif result == "fail":
                     stats["fail"] += 1
-                elif result == "duplicate_fake":
+                elif result in ("duplicate_fake", "duplicate", "fake"):
                     stats["duplicate_fake"] += 1
                 else:
                     stats["pending"] += 1
@@ -354,6 +366,17 @@ class AuditSessionRecord(LocalLabsRecord):
                     stats["ai_match"] += 1
                 elif ai_result == "no_match":
                     stats["ai_no_match"] += 1
+                    # Multiple independent reviewers on one image path (e.g.
+                    # MUAC OverZoom + MUAC Match) each contribute their own
+                    # badge_label; _combine_reviewer_results joins every
+                    # failing reviewer's label with "; " into ai_notes (see
+                    # connect_labs/audit/tasks.py). Splitting it back apart
+                    # here recovers which classifier(s) flagged this image --
+                    # one image can count toward more than one label.
+                    for label in (assessment.get("ai_notes") or "").split("; "):
+                        label = label.strip()
+                        if label:
+                            stats["ai_flags_by_label"][label] = stats["ai_flags_by_label"].get(label, 0) + 1
                 elif ai_result == "error":
                     stats["ai_error"] += 1
                 else:
@@ -439,7 +462,7 @@ class AuditSessionRecord(LocalLabsRecord):
                     bucket["pass"] += 1
                 elif result == "fail":
                     bucket["fail"] += 1
-                elif result == "duplicate_fake":
+                elif result in ("duplicate_fake", "duplicate", "fake"):
                     bucket["duplicate_fake"] += 1
                 else:
                     bucket["pending"] += 1

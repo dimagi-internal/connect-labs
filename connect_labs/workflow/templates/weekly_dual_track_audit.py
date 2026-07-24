@@ -1,10 +1,10 @@
 """Weekly Dual-Track Image Audit — multi-opp, action-shaped creator.
 
-Each weekly run creates, per FLW, two audits per opportunity:
-  - Track A ("muac"): census of the pinned MUAC image type(s), 100%, with the
-    muac_overzoom AI agent auto-tagging fails.
-  - Track B ("rest"): the remaining pinned image types, sampled (default 10%),
-    human-reviewed.
+Each weekly run creates, per FLW, two audits per opportunity — Track A and
+Track B, user-named slots each pinned to their own set of image paths (see
+_image_audits). Any path containing "muac" (in either track) gets both the
+muac_overzoom and muac_match AI agents attached, running independently of
+each other; any other path is human-reviewed only.
 
 The per-opp image paths and track config live on the workflow DEFINITION
 (instance config); the batch window lives in run state. See
@@ -13,29 +13,47 @@ docs/superpowers/specs/2026-06-30-audit-program-report-design.md.
 
 from connect_labs.audit.data_access import AuditDataAccess
 
-MUAC_AI_REVIEWER = {
+MUAC_OVERZOOM_REVIEWER = {
     "agent_id": "muac_overzoom",
     "auto_apply_actions": ["fail_overzoomed"],
 }
 
+# Manually-entered MUAC reading (cm) that accompanies the tape photo —
+# confirmed against the real CommCare form JSON. soliciter_muac (a
+# hidden DataBindOnly field elsewhere in the form) is just a calculated
+# alias of this same value.
+MUAC_READING_FIELD = "muac_group/muac_display_group_2/muac_colour_display/soliciter_muac_cm"
 
-def _reviewer_for_path(path):
-    """The muac_overzoom AI reviewer attaches to any image path whose name
-    contains 'muac' (case-insensitive) — independent of which track (A/B) the
-    path is pinned under, and independent of whatever display name the user
-    gives that track. Any other path gets no AI reviewer (human-only)."""
-    return MUAC_AI_REVIEWER if "muac" in (path or "").lower() else None
+MUAC_MATCH_REVIEWER = {
+    "agent_id": "muac_match",
+    # "label" names the related-fields display for this comparison_field —
+    # without it the box falls back to the raw field path (see
+    # ai_review_config.build_review_config / AuditDataAccess's related_fields
+    # rule builder), which is what the review UI's "MUAC Reading" box used to
+    # show verbatim.
+    "config": {"comparison_field": MUAC_READING_FIELD, "label": "MUAC Reading"},
+    "auto_apply_actions": ["fail_unmatched"],
+}
+
+
+def _reviewers_for_path(path):
+    """Both MUAC AI reviewers attach to any image path whose name contains
+    'muac' (case-insensitive) — independent of which track (A/B) the path is
+    pinned under, and independent of whatever display name the user gives
+    that track. The two run independently of each other and are scored
+    independently (see connect_labs.audit.tasks._combine_reviewer_results):
+    MUAC OverZoom flags unusable framing, MUAC Match flags a reading that
+    doesn't match the photo. Any other path gets no AI reviewer (human-only)."""
+    if "muac" not in (path or "").lower():
+        return []
+    return [MUAC_OVERZOOM_REVIEWER, MUAC_MATCH_REVIEWER]
 
 
 def _image_audits(paths):
     """One image_audits entry per pinned image path, each with its own
-    per-path reviewer (see _reviewer_for_path) — the PR #771 per-image-type
+    per-path reviewer(s) (see _reviewers_for_path) — the PR #771 per-image-type
     model. See connect_labs/audit/ai_review_config.build_review_config."""
-    result = []
-    for p in paths or []:
-        reviewer = _reviewer_for_path(p)
-        result.append({"image_path": p, "reviewers": [reviewer] if reviewer else []})
-    return result
+    return [{"image_path": p, "reviewers": _reviewers_for_path(p)} for p in paths or []]
 
 
 def build_track_audit_calls(
@@ -200,10 +218,11 @@ DEFINITION = {
     ],
     "config": {
         "audit_batch": {
-            # PR #771 per-image-type model, extended: the muac_overzoom AI reviewer
-            # attaches per-PATH (any path containing "muac"), not per-track — see
-            # _reviewer_for_path. "name" is a purely cosmetic display label the user
-            # can rename; it has no effect on which images get AI-reviewed.
+            # PR #771 per-image-type model, extended: the muac_overzoom and
+            # muac_match AI reviewers attach per-PATH (any path containing
+            # "muac"), not per-track — see _reviewers_for_path. "name" is a
+            # purely cosmetic display label the user can rename; it has no
+            # effect on which images get AI-reviewed.
             "track_a": {"tag": "muac", "sample_percentage": 100, "name": "MUAC"},
             "track_b": {"tag": "rest", "sample_percentage": 10, "name": "Other"},
             "per_opp": {},  # { "<opp_id>": {"muac_image_paths": [...], "rest_image_paths": [...]} }
@@ -239,7 +258,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
 
     // ── Track names + per-opp image path selection (editable pinned config) ───
     // "name" is a cosmetic display label only — it has no bearing on which
-    // images get AI-reviewed (see _reviewer_for_path: that's decided per-path,
+    // images get AI-reviewed (see _reviewers_for_path: that's decided per-path,
     // by whether "muac" appears in the path itself).
     const [trackAName, setTrackAName] = React.useState(trackA.name || 'MUAC');
     const [trackBName, setTrackBName] = React.useState(trackB.name || 'Other');
@@ -373,6 +392,8 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
     const [isRunning, setIsRunning] = React.useState(false);
     const [progress, setProgress] = React.useState(null);
     const [jobError, setJobError] = React.useState(null);
+    const [taskId, setTaskId] = React.useState(null);
+    const [isCancelling, setIsCancelling] = React.useState(false);
     // A create job whose worker died mid-batch (e.g. a deploy cutover) never
     // writes a terminal status, so active_job stays 'running' forever. We detect
     // that on reconnect (see below) and surface it here instead of spinning.
@@ -380,12 +401,20 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
     // Per-run sampling rates — default to the pinned config, adjustable before create.
     const [muacSample, setMuacSample] = React.useState(trackA.sample_percentage != null ? trackA.sample_percentage : 100);
     const [otherSample, setOtherSample] = React.useState(trackB.sample_percentage != null ? trackB.sample_percentage : 10);
-    // Visit Clustering (optional 3rd filter) — defaults from pinned config, per-run adjustable.
+    // Visit Clustering (optional 3rd filter) — the job handler persists whatever
+    // was actually used onto run state (enable_time_gap, etc.), so a reopened
+    // run shows ITS OWN params, not the pinned template default.
     const clustering = batch.visit_clustering || {};
-    const [enableTimeGap, setEnableTimeGap] = React.useState(!!clustering.enable_time_gap);
-    const [timeGapMinutes, setTimeGapMinutes] = React.useState(clustering.time_gap_minutes != null ? clustering.time_gap_minutes : 10);
-    const [enableDistance, setEnableDistance] = React.useState(!!clustering.enable_distance);
-    const [distanceMeters, setDistanceMeters] = React.useState(clustering.distance_meters != null ? clustering.distance_meters : 10);
+    const [enableTimeGap, setEnableTimeGap] = React.useState(
+        runState.enable_time_gap != null ? !!runState.enable_time_gap : !!clustering.enable_time_gap);
+    const [timeGapMinutes, setTimeGapMinutes] = React.useState(
+        runState.time_gap_minutes != null ? runState.time_gap_minutes
+            : (clustering.time_gap_minutes != null ? clustering.time_gap_minutes : 10));
+    const [enableDistance, setEnableDistance] = React.useState(
+        runState.enable_distance != null ? !!runState.enable_distance : !!clustering.enable_distance);
+    const [distanceMeters, setDistanceMeters] = React.useState(
+        runState.distance_meters != null ? runState.distance_meters
+            : (clustering.distance_meters != null ? clustering.distance_meters : 10));
     const cleanupRef = React.useRef(null);
     React.useEffect(() => () => { if (cleanupRef.current) cleanupRef.current(); }, []);
 
@@ -429,7 +458,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                 setIsRunning(false); setJobError(err || 'Job failed'); setProgress(null);
                 onUpdateState({ active_job: { job_id: taskId, status: 'failed' } }).catch(() => {});
             },
-            () => { setIsRunning(false); setProgress({ status: 'cancelled' }); },
+            () => { setIsRunning(false); setIsCancelling(false); setProgress({ status: 'cancelled' }); },
             instance.id // run_id — lets the server unstick a reconnect to a dead job
         );
         cleanupRef.current = cleanup;
@@ -459,6 +488,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
             return;
         }
         setIsRunning(true);
+        setTaskId(active.job_id);
         setProgress({ status: 'running', message: 'Reconnecting to the running job…' });
         attachStream(active.job_id);
     }, []); // once on mount
@@ -504,8 +534,29 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
         // The server job records active_job (with progress) on the run itself,
         // so a page reload reconnects — no separate state write needed here
         // (a redundant one races the server's write and can flake a 404).
+        setTaskId(resp.task_id);
         setProgress({ status: 'running', message: 'Starting…' });
         attachStream(resp.task_id);
+    };
+
+    // ── Cancel handler ────────────────────────────────────────────────────────
+    // Sessions/images already created and reviewed are left as-is — cancelling
+    // only stops whatever work hasn't started yet (see run_audit_creation's
+    // cooperative cancel_key and the job handler's between-call check).
+    const handleCancel = async () => {
+        if (!taskId || isCancelling) return;
+        setIsCancelling(true);
+        const result = await actions.cancelJob(taskId, instance.id);
+        if (!result || !result.success) {
+            setIsCancelling(false);
+            setJobError((result && result.error) || 'Failed to stop — the job may still be running.');
+            return;
+        }
+        setIsRunning(false);
+        setIsCancelling(false);
+        setProgress({ status: 'cancelled', message: 'Stopped — sessions created and images already reviewed are kept.' });
+        if (cleanupRef.current) { cleanupRef.current(); cleanupRef.current = null; }
+        await refreshSessions();
     };
 
     const datePresets = [
@@ -573,6 +624,14 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                     </p>
                     <p className="text-xs text-gray-500 mt-1">
                         This run's audits have already been created — creation controls are hidden. Review the results below.
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                        Visit clustering: {(enableTimeGap || enableDistance)
+                            ? [
+                                enableTimeGap ? `within ${timeGapMinutes} min` : null,
+                                enableDistance ? `within ${distanceMeters}m` : null,
+                            ].filter(Boolean).join(' and ')
+                            : 'not applied'}.
                     </p>
                 </div>
             )}
@@ -842,11 +901,21 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                 </button>
                 {isRunning && progress && (
                     <div className="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
-                        <div className="flex items-center font-medium">
-                            <i className="fa-solid fa-spinner fa-spin mr-2"></i>
-                            {progress.message || progress.stage_name || 'Working…'}
-                            {progress.total > 0 && (
-                                <span className="ml-2 text-blue-600">({progress.processed || 0}/{progress.total})</span>
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center font-medium">
+                                <i className="fa-solid fa-spinner fa-spin mr-2"></i>
+                                {progress.message || progress.stage_name || 'Working…'}
+                                {progress.total > 0 && (
+                                    <span className="ml-2 text-blue-600">({progress.processed || 0}/{progress.total})</span>
+                                )}
+                            </div>
+                            {taskId && (
+                                <button onClick={handleCancel} disabled={isCancelling}
+                                    className={'px-3 py-1 text-sm text-red-600 hover:text-red-800 ' +
+                                        'hover:bg-red-100 rounded transition-colors disabled:opacity-50 whitespace-nowrap'}>
+                                    <i className="fa-solid fa-times mr-1"></i>
+                                    {isCancelling ? 'Stopping…' : 'Stop'}
+                                </button>
                             )}
                         </div>
                         {progress.total > 0 && (
@@ -879,6 +948,12 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                     <div className="mt-4 bg-green-50 border border-green-200 rounded-lg p-4 text-sm text-green-800">
                         <i className="fa-solid fa-circle-check mr-2"></i>
                         Done — {sessions.length} audit session(s) created across {oppIds.length} opportunit{oppIds.length === 1 ? 'y' : 'ies'} (one MUAC + one sampled audit per field worker per opp).
+                    </div>
+                )}
+                {progress && progress.status === 'cancelled' && !isRunning && (
+                    <div className="mt-4 bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-800">
+                        <i className="fa-solid fa-ban mr-2"></i>
+                        {progress.message || 'Stopped.'} {sessions.length} audit session(s) exist so far across {oppIds.length} opportunit{oppIds.length === 1 ? 'y' : 'ies'} — click <strong>Create audits</strong> to review the rest, or open a session below.
                     </div>
                 )}
             </div>

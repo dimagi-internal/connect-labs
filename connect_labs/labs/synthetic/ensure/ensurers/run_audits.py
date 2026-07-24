@@ -86,10 +86,33 @@ _RESOLVED_AUDIT_ARCHETYPE = "completed_pass_clean"
 # mid-decision on a real finding.
 _IN_REVIEW_MIXED_ARCHETYPE = "in_review_mixed"
 
+# The SUSPENDED-FRAUD archetype: status completed, 5/5 FAIL, overall_result="fail".
+# Used for a flw whose coaching arc closed by suspension
+# (``follow_up_outcome_action == "suspended"``). It uses the FRAMING (hyperzoomed)
+# bad-photo category because that is what the real MUAC AI reviewer (muac_overzoom)
+# actually flags — context lost, no arm visible — so the audit shows the AI badge
+# "Hyperzoomed" (ai_result=no_match) on every photo, the true tell of a concealed /
+# unverifiable measurement. The auditor then confirms and the coaching task is a
+# suspension. The audit is completed (so the week reconciles "All resolved"), but the
+# cluster reads BELOW because the arc's task is a suspension outcome.
+_SUSPENDED_FRAUD_AUDIT_ARCHETYPE = "completed_fail_framing"
 
-def _audit_archetype_for(flw_id: str, resolved_flws: set, investigating_flws: set) -> str:
+# The AI-FIRST CENSUS archetype: a completed ~100-photo audit — every photo
+# AI-screened on ingest (good → match, framing → Hyperzoomed/no_match), 94 pass
+# / 6 flagged. Emitted once per opp when the manifest sets ``census_audit_opp``,
+# under a synthetic ``census_ai_first`` username so it never collides with a
+# real flagged FLW's per-week audit. This is the EFFICIENCY headline: a person
+# adjudicates only the AI exceptions, not every photo.
+_CENSUS_AUDIT_ARCHETYPE = "completed_ai_first_census"
+_CENSUS_AUDIT_FLW_ID = "census_ai_first"
+
+
+def _audit_archetype_for(
+    flw_id: str, resolved_flws: set, investigating_flws: set, suspended_flws: set = frozenset()
+) -> str:
     """Pick the audit archetype for a flagged FLW from its coaching-arc state.
 
+    - suspended-for-fraud arc -> completed/all-FAIL (the AI-flagged misleading photos),
     - resolved arc (``follow_up_outcome_week`` set) -> completed/all-pass (the
       grid's "All resolved" week requires every audit completed),
     - still-open arc (an ``investigating`` arc) -> the decided/undecided MIX (the
@@ -97,6 +120,8 @@ def _audit_archetype_for(flw_id: str, resolved_flws: set, investigating_flws: se
     - no coaching arc -> the all-pending completable shape (the live-style audit
       a reviewer decides on camera).
     """
+    if flw_id in suspended_flws:
+        return _SUSPENDED_FRAUD_AUDIT_ARCHETYPE
     if flw_id in resolved_flws:
         return _RESOLVED_AUDIT_ARCHETYPE
     if flw_id in investigating_flws:
@@ -110,16 +135,30 @@ def _audit_matches_archetype(audit, archetype: str) -> bool:
     On reuse we only rebuild when the seeded audit is STALE for the arc's current
     state. We key off the cheap, stable signals the archetype lands:
 
-    - ``completed_pass_clean``: status ``completed`` (the resolved-week contract),
+    - ``completed_fail_misleading``: status ``completed`` with at least one FAILED
+      photo (the AI-flagged fraud shape — distinct from the all-pass resolved shape),
+    - ``completed_pass_clean``: status ``completed`` with NO failed photo (a clean
+      resolution — so a fail-completed audit is correctly rebuilt, not reused),
     - ``in_review_mixed``: in_progress with at least one decided AND one pending
       photo (the genuine mid-decision mix — distinct from the all-pending shape),
     - ``pending_all_clean``: in_progress with every photo still pending.
+
+    A recipe-version bump (build_audit_data changed its OUTPUT in a way the count
+    signals below can't see — e.g. per-photo AI verdicts flip while pass/fail counts
+    stay put) forces a one-time rebuild regardless of the shape checks.
     """
+    from connect_labs.labs.synthetic.archetypes import _AUDIT_RECIPE_VERSION
+
+    if audit.data.get("recipe_version") != _AUDIT_RECIPE_VERSION:
+        return False
     img = audit.data.get("image_results") or {}
-    decided = (img.get("pass") or 0) + (img.get("fail") or 0)
+    failed = img.get("fail") or 0
+    decided = (img.get("pass") or 0) + failed
     pending = img.get("pending") or 0
+    if archetype == _SUSPENDED_FRAUD_AUDIT_ARCHETYPE:
+        return audit.status == "completed" and failed > 0
     if archetype == _RESOLVED_AUDIT_ARCHETYPE:
-        return audit.status == "completed"
+        return audit.status == "completed" and failed == 0
     if archetype == _IN_REVIEW_MIXED_ARCHETYPE:
         return audit.status != "completed" and decided > 0 and pending > 0
     # pending_all_clean: still in review, nothing decided yet.
@@ -209,8 +248,21 @@ def ensure_run_audits(resource, ctx) -> dict:
         # FLWs whose coaching loop CLOSED (a follow-up outcome resolved the flag) —
         # their audit is COMPLETED (the grid's "All resolved" requires it), mirroring
         # how the tasks ensurer closes the same arc's task.
+        # FLWs suspended for photo fraud (a closed arc with a "suspended" outcome
+        # action) — their audit is COMPLETED but every photo FAILED (the AI-flagged
+        # misleading-photo shape). Checked first / excluded from resolved below.
+        suspended_flws = {
+            arc.flw_id
+            for arc in (manifest.coaching_arcs or [])
+            if arc.follow_up_outcome_week is not None and getattr(arc, "follow_up_outcome_action", None) == "suspended"
+        }
+        # FLWs whose coaching loop CLOSED satisfactorily (a follow-up outcome resolved
+        # the flag, NOT a suspension) — their audit is COMPLETED/all-pass (the grid's
+        # "All resolved" requires it), mirroring how the tasks ensurer closes the arc.
         resolved_flws = {
-            arc.flw_id for arc in (manifest.coaching_arcs or []) if arc.follow_up_outcome_week is not None
+            arc.flw_id
+            for arc in (manifest.coaching_arcs or [])
+            if arc.follow_up_outcome_week is not None and arc.flw_id not in suspended_flws
         }
         # FLWs whose coaching loop is still OPEN (an investigating arc) — their audit
         # is the scene-13 in-review MIX (decided + undecided photos), not the
@@ -246,7 +298,7 @@ def ensure_run_audits(resource, ctx) -> dict:
                             "(weekly_runs must run before run_audits)"
                         )
 
-                    archetype = _audit_archetype_for(flw_id, resolved_flws, investigating_flws)
+                    archetype = _audit_archetype_for(flw_id, resolved_flws, investigating_flws, suspended_flws)
                     visit_id = _seeded_visit_id_base(manifest.random_seed, run_id, flw_id)
 
                     existing = [
@@ -291,6 +343,38 @@ def ensure_run_audits(resource, ctx) -> dict:
                         audits_ensured += 1
 
                     ctx.ids[f"audit:{run_id}:{flw_id}"] = audit_id
+
+            # ── AI-first CENSUS audit (opt-in via census_audit_opp) ──────────
+            # One ~100-photo audit on this opp's LAST completed run: every photo
+            # AI-screened, ~6 flagged (Hyperzoomed), the rest cleared. Seeded
+            # under a synthetic username so it never collides with a per-FLW
+            # audit. Idempotent on (run_id, username); the audit is static and
+            # completed, so existence is a plain reuse (no reconcile).
+            if resource.census_audit_opp == opp_id:
+                census_week = next((w for w in reversed(weeks) if w != current_week), None)
+                c_run_id = ctx.ids.get(f"run:{opp_id}:{census_week}") if census_week else None
+                if c_run_id is not None:
+                    already = any(
+                        s.data.get("username") == _CENSUS_AUDIT_FLW_ID
+                        for s in ada.get_sessions_by_workflow_run(c_run_id)
+                    )
+                    if already:
+                        audits_reused += 1
+                    else:
+                        c_visit = _seeded_visit_id_base(manifest.random_seed, c_run_id, _CENSUS_AUDIT_FLW_ID)
+                        census_audit_id = generate_audit_from_archetype(
+                            ada=ada,
+                            opportunity_id=opp_id,
+                            opportunity_name=manifest.opportunity_name,
+                            workflow_run_id=c_run_id,
+                            flw_id=_CENSUS_AUDIT_FLW_ID,
+                            monday_iso=census_week,
+                            audit_archetype=_CENSUS_AUDIT_ARCHETYPE,
+                            visit_id=c_visit,
+                            flw_name="AI-First Image Census",
+                        )
+                        ctx.ids[f"census_audit:{opp_id}"] = census_audit_id
+                        audits_ensured += 1
         finally:
             ada.close()
 

@@ -34,10 +34,13 @@ def test_scale_reviewer_produces_filter_rule_reading_rule_and_map():
     } in related_fields
 
     assert ai_reviewers == {
-        "form/scale_photo": {
-            "agent_id": "scale_validation",
-            "auto_apply_actions": ["pass_matched", "fail_unmatched"],
-        }
+        "form/scale_photo": [
+            {
+                "agent_id": "scale_validation",
+                "auto_apply_actions": ["pass_matched", "fail_unmatched"],
+                "comparison_field": "form/child_weight",
+            }
+        ]
     }
 
 
@@ -59,7 +62,45 @@ def test_image_only_agent_has_no_reading_rule():
             "filter_by_field": False,
         }
     ]
-    assert ai_reviewers["form/muac_photo"]["agent_id"] == "muac_overzoom"
+    assert ai_reviewers["form/muac_photo"][0]["agent_id"] == "muac_overzoom"
+    assert ai_reviewers["form/muac_photo"][0]["comparison_field"] is None
+
+
+def test_multiple_reviewers_on_one_image_path_each_get_their_own_entry():
+    """Two independent reviewers (e.g. MUAC OverZoom + MUAC Match) can both
+    watch the same image path — each keeps its own auto_apply_actions and,
+    if configured, its own reading rule."""
+    image_audits = [
+        {
+            "image_path": "form/muac_photo",
+            "reviewers": [
+                {"agent_id": "muac_overzoom", "config": {}, "auto_apply_actions": ["fail_overzoomed"]},
+                {
+                    "agent_id": "muac_match",
+                    "config": {"comparison_field": "form/muac_reading"},
+                    "auto_apply_actions": ["fail_unmatched"],
+                },
+            ],
+        }
+    ]
+    related_fields, ai_reviewers = build_review_config(image_audits)
+
+    assert ai_reviewers["form/muac_photo"] == [
+        {"agent_id": "muac_overzoom", "auto_apply_actions": ["fail_overzoomed"], "comparison_field": None},
+        {
+            "agent_id": "muac_match",
+            "auto_apply_actions": ["fail_unmatched"],
+            "comparison_field": "form/muac_reading",
+        },
+    ]
+    # Only muac_match has a comparison_field, so only one reading rule is added
+    assert {
+        "image_path": "form/muac_photo",
+        "field_path": "form/muac_reading",
+        "label": "",
+        "filter_by_image": False,
+        "filter_by_field": False,
+    } in related_fields
 
 
 def test_type_with_no_reviewer_filters_but_no_map_entry():

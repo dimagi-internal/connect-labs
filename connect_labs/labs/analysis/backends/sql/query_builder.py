@@ -346,6 +346,15 @@ def _get_transform_pattern(field: FieldComputation | HistogramComputation) -> st
         elif "float(x)" in source:
             return "validated_float"
 
+    # Integerize a decimal string. These MUST be checked before `simple_float`
+    # below, because their source contains `float(x)` and would otherwise be
+    # misclassified as a float cast (the #958 bug: `transform: "int"` silently
+    # emitted ::FLOAT). `int(...)` truncates; `round(...)` rounds to nearest.
+    if "int(float(x))" in source and "if x else None" in source:
+        return "int_trunc"
+    if "round(float(x))" in source and "if x else None" in source:
+        return "round_int"
+
     # Simple numeric conversions
     if "float(x)" in source and "if x else None" in source:
         return "simple_float"
@@ -408,6 +417,22 @@ def _transform_to_sql(field: FieldComputation | HistogramComputation, value_expr
     elif transform_src == "simple_int":
         # Simple int(x) if x else None - tries conversion, NULL on error
         return f"""CASE WHEN {value_expr} ~ '^-?[0-9]+$' THEN ({value_expr})::INTEGER ELSE NULL END"""
+
+    elif transform_src == "int_trunc":
+        # int(float(x)) — integerize a DECIMAL string by truncation toward zero
+        # (matches Python int()). Accepts decimals; simple_int's integer-only
+        # regex would reject "2.897" and yield NULL.
+        return (
+            f"""CASE WHEN {value_expr} ~ '^-?[0-9]*\\.?[0-9]+$' """
+            f"""THEN TRUNC(({value_expr})::NUMERIC)::INTEGER ELSE NULL END"""
+        )
+
+    elif transform_src == "round_int":
+        # round(float(x)) — integerize a decimal string by rounding to nearest.
+        return (
+            f"""CASE WHEN {value_expr} ~ '^-?[0-9]*\\.?[0-9]+$' """
+            f"""THEN ROUND(({value_expr})::NUMERIC)::INTEGER ELSE NULL END"""
+        )
 
     elif transform_src == "gender_male":
         return f"""CASE WHEN LOWER({value_expr}) IN ('male', 'm', 'boy', 'male_child') THEN 1 ELSE NULL END"""

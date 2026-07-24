@@ -229,9 +229,15 @@
         <div class="bg-white rounded-xl shadow-sm p-8">
             <h2 class="text-lg font-semibold text-brand-deep-purple mb-2 pb-3 border-b border-gray-100">
                 <i class="fa-solid fa-scale-balanced mr-2 text-brand-cornflower-blue"></i>Evaluation Criteria
+                {% if solicitation.criteria_locked %}
+                <span class="ml-2 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-200 align-middle">
+                    <i class="fa-solid fa-lock text-indigo-500"></i> Locked before publishing
+                </span>
+                {% endif %}
             </h2>
             <p class="text-sm text-gray-500 mb-6">
                 Responses will be scored across {{ solicitation.evaluation_criteria|length }} criteria. Weights reflect the relative importance of each area.
+                {% if solicitation.criteria_locked %}<span class="text-gray-600">These criteria were locked before the call was published — they are fixed for every applicant and cannot change mid-window.</span>{% endif %}
             </p>
 
             {# Build a lookup dict: question id → question text for linked question tags #}

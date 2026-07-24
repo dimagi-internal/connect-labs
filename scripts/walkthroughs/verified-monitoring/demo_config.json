@@ -50,7 +50,7 @@
   "arms": {
     "treatment": {
       "coverage_start": 0.524,
-      "coverage_end": 0.681,
+      "coverage_end": 0.72,
       "coverage_noise": 0.014,
       "n_per_round": 285,
       "n_jitter": 10,
@@ -65,7 +65,7 @@
       "enumerators": 5
     }
   },
-  "_self_report_comment": "Program self-report = verified coverage * inflation (the program over-reports), interpolated start->end across rounds, with +/- noise so the self-reported line jitters round-to-round and sits above the verified line. R6: ~0.681*1.29 -> ~88%.",
+  "_self_report_comment": "Program self-report = verified coverage * inflation (the program over-reports), interpolated start->end across rounds, with +/- noise so the self-reported line jitters round-to-round and sits above the verified line. R6 lands survey 71.8% vs program 89.3% (the two figures the V3 narration names). Tuned against the GROUNDED path (regenerate.py passes live microplan work-areas as rounds_plans), which samples differently from an ungrounded build_state call.",
   "self_report": {
     "inflation_start": 1.55,
     "inflation_end": 1.29,

@@ -101,6 +101,73 @@ def test_bulk_primary_flw_name_resolves_via_flw_names(labs_client, monkeypatch):
     assert data["bulk_primary_flw_name"] == "Jane Doe"
 
 
+def test_response_includes_visit_clusters_for_client_side_duplicate_tagging(labs_client, monkeypatch):
+    """The bulk assessment page pre-tags images in a duplicate grouping as
+    'Duplicate/Fake' on load (client-side) -- it needs visit_clusters in the
+    same response as the assessments to do that without a second fetch."""
+    from connect_labs.audit import views
+
+    username = "flw1"
+    session = _make_session(username)
+    session.data["visit_clusters"] = [{"group_id": "g1", "visit_ids": [111, 112], "image_count": 2}]
+
+    class FakeDataAccess:
+        def __init__(self, *a, **k):
+            pass
+
+        def get_audit_session(self, session_id, try_multiple_opportunities=False):
+            return session
+
+        def get_opportunity_details(self, opportunity_id):
+            return {"name": "EHA-PRE-RCT Connect-CHC 2026"}
+
+        def get_flw_names(self, opportunity_id):
+            return {}
+
+        def get_prior_audited_images(self, opportunity_id, exclude_session_id=None):
+            return {}
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(views, "AuditDataAccess", FakeDataAccess)
+
+    response = labs_client.get(f"/audit/api/{session.id}/bulk-data/")
+    data = response.json()
+
+    assert data["visit_clusters"] == [{"group_id": "g1", "visit_ids": [111, 112], "image_count": 2}]
+
+
+def test_response_defaults_visit_clusters_to_empty_list_when_absent(labs_client, monkeypatch):
+    from connect_labs.audit import views
+
+    session = _make_session("flw1")
+
+    class FakeDataAccess:
+        def __init__(self, *a, **k):
+            pass
+
+        def get_audit_session(self, session_id, try_multiple_opportunities=False):
+            return session
+
+        def get_opportunity_details(self, opportunity_id):
+            return {"name": "EHA-PRE-RCT Connect-CHC 2026"}
+
+        def get_flw_names(self, opportunity_id):
+            return {}
+
+        def get_prior_audited_images(self, opportunity_id, exclude_session_id=None):
+            return {}
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(views, "AuditDataAccess", FakeDataAccess)
+
+    response = labs_client.get(f"/audit/api/{session.id}/bulk-data/")
+    assert response.json()["visit_clusters"] == []
+
+
 def test_assessment_case_info_passes_through_when_already_stored(labs_client, monkeypatch):
     """New audit sessions store child_name/childs_dob/household_name directly on
     each visit_images entry — they should reach the assessment unchanged, no

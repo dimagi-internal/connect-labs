@@ -103,6 +103,23 @@ If you open a workflow run page without a specific run selected — for example,
 
 ---
 
+## Renaming a Run
+
+By default, every run is labelled with a generic identifier such as **Run #5110**. You can replace this with a meaningful name — for example, **Week 30 Audit** — so that runs are easier to identify in lists and on individual run pages such as the Muac Picture Audit.
+
+To rename a run:
+
+1. Open the run you want to rename.
+2. Click the **Rename** action (available in the run's action menu or alongside the run title).
+3. Type the new name and confirm.
+
+The custom name replaces the generic label everywhere the run appears: the workflow list page and any template that displays individual runs. Renaming is allowed regardless of whether the run is in progress or has already been completed.
+
+!!! note "Renaming does not affect the run's data or status"
+    Giving a run a custom name is purely a display change. The underlying data, audit records, and status of the run are not affected.
+
+---
+
 ## Reading a Workflow Dashboard
 
 A typical workflow dashboard shows a **table of field workers** with performance columns:
@@ -206,57 +223,33 @@ Program managers can update a case's status directly from the workflow view. Sta
 
 ---
 
-## Program Audit Creator
+## SAM Follow-up Timeline
 
-The **CHC PRE-RCT — Program Audit Creator** workflow lets you generate audits across all opportunities in the program in a single step. When you open the Generate screen, you will see an audit window date range followed by a **Filters** section, and then the **Generate** button.
+The **SAM Follow-up Timeline** dashboard displays a recovery picture for each SAM case — including the MUAC colour band, whether the child has recovered, and the date of the follow-up visit.
 
-### Generate screen filters
+### Colour, Recovered, and Date columns
 
-The Filters section contains three optional controls. Leaving any filter empty includes everything — the behaviour is identical to how the workflow worked before these filters were added.
+The dashboard populates these three columns using whichever data is available for the opportunity being viewed:
 
-**Pass Threshold**
+- **If the opportunity's forms record a pre-computed MUAC colour band, a recovery yes/no flag, and a dedicated follow-up visit date field**, those values are used directly. This is the case for the primary SAM opportunity and is unaffected by this change.
+- **If the opportunity does not include those pre-baked fields** — for example, a mirrored or synthetic copy of a SAM opportunity that records MUAC as a raw measurement in centimetres and uses a general visit date — the dashboard derives the equivalent values automatically. It calculates the MUAC colour band from the centimetre reading, determines recovery status from that derived band, and uses the generic visit date in place of a dedicated follow-up date field.
 
-A slider ranging from 75% to 100% (default: 100%). This sets the minimum percentage of assessments that must pass for an audit to be marked "Pass" overall. Lowering the threshold means more audits will qualify as passing; keeping it at 100% requires every assessment to pass.
+The end result is the same in both cases: the Colour, Recovered, and Date columns show meaningful data rather than appearing blank. You do not need to configure anything differently depending on which opportunity you are viewing.
 
-**Deliver Unit Type**
-
-A set of checkboxes populated automatically from the visits recorded across the selected opportunities. Check one or more types to include only visits of those types in the generated audits. If no boxes are checked, all deliver unit types are included.
-
-**Visit Type**
-
-Checkboxes for the visit's payment status. The available options are:
-
-| Option | What it includes |
-|---|---|
-| Pending | Visits awaiting approval |
-| Approved | Visits that have been approved for payment |
-| Rejected | Visits that have been rejected |
-| Over Limit | Visits that exceed the payment cap |
-| Duplicate | Visits flagged as duplicates |
-| Trial | Trial or test visits |
-
-Check one or more options to restrict the audits to visits with those statuses. If no boxes are checked, all visit types are included.
-
-These three filters work together: only visits that match every checked filter are included when audits are generated. Using the same filter settings across a weekly run ensures all four opportunities are audited consistently with a single Generate click.
-
-### Run list — audit window display
-
-On the workflow run list page, each Program Audit Creator run shows its audit window (for example, **2026-06-22 – 2026-06-28**) beneath the run number, once a window has been set for that run. This makes it easy to identify which week a run covers without opening it.
+!!! note "Mirrored opportunities and derived values"
+    If your program uses a mirrored or synthetic copy of a SAM opportunity, the recovery data you see in the SAM Follow-up Timeline is derived from the raw MUAC measurement recorded in those forms. The derivation follows the same colour-band thresholds used elsewhere in the program, so the figures are directly comparable to those from the primary opportunity.
 
 ---
 
-## Bulk Image Audits
+## Weekly Dual-Track Image Audit
 
-### Session labels
+The **Weekly Dual-Track Image Audit** workflow surfaces MUAC tape photos for human review. Each photo tile is analysed automatically by an AI reviewer before you see it, so the most likely problems are already flagged when you open the audit.
 
-When a bulk image audit covers every field worker together, the run screen labels it **"All FLWs (N)"** — where N is the number of field workers included — so it is immediately clear the review spans the whole group. Sessions scoped to a single field worker continue to show that individual's name.
+### AI checks on MUAC images
 
-### Previously-audited image badges
+Two independent AI checks run on every MUAC tape photo:
 
-When reviewing images in the bulk image audit grid, any photo that was already given a verdict in an earlier **completed** audit shows an **Audited** badge displaying that prior verdict — for example, **Audited: Passed**, **Audited: Failed**, or **Audited: Dup·Fake**. Hovering over the badge shows the date of the earlier audit.
-
-This lets reviewers see at a glance that a decision already exists for a photo before assigning a new one. A photo never shows a badge from the audit currently being reviewed — the badge only ever reflects *other* completed audits.
-
-### Excluding already-audited images from a new audit
-
-When creating a new bulk image audit — either from a workflow or from the standalone audit wizard — an optional checkbox is available: **Exclude images already audited
+| Check | Badge shown | What it means |
+|---|---|---|
+| **Framing check** | **Hyperzoomed** | The photo is framed too closely — the tape and surrounding tissue are not fully visible, making an accurate reading impossible |
+| **Reading-match check** | **MUAC Mismatch (strict

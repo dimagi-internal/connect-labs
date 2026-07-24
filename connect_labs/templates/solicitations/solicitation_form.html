@@ -391,6 +391,25 @@
             <input type="hidden" name="evaluation_criteria_json" x-ref="criteriaJson">
         </div>
 
+        <!-- Lock-before-publish -->
+        <div class="bg-indigo-50/50 border border-indigo-200 rounded-xl p-5">
+            <label class="flex items-start gap-3 cursor-pointer">
+                <input type="checkbox" name="criteria_locked" value="1" checked
+                       class="mt-1 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                <span>
+                    <span class="flex items-center gap-2 text-sm font-semibold text-indigo-900">
+                        <i class="fa-solid fa-lock text-indigo-500"></i>
+                        Lock the rubric before publishing
+                    </span>
+                    <span class="block text-xs text-gray-600 mt-1">
+                        Review the weighted criteria above, then lock them. Once published, the criteria are
+                        fixed for every applicant and cannot change while the call is open — so every firm is
+                        scored on exactly the criteria it saw.
+                    </span>
+                </span>
+            </label>
+        </div>
+
         <!-- Form Actions -->
         <div class="flex justify-end gap-4 pt-2 pb-8">
             <a href="{% url 'solicitations:manage_list' %}"

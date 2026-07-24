@@ -103,6 +103,32 @@ def bad_muac_filenames_for_category(category: str) -> list[str]:
     )
 
 
+def category_for_filename(filename: str) -> str | None:
+    """The bad-MUAC category for a stock filename (``muac_bad_004.jpg`` -> ``framing``).
+
+    Returns ``None`` for good-pool photos or any filename not in the catalog. Used to
+    decide the per-photo AI-review verdict: only the ``framing`` (hyperzoomed / context-
+    lost) category is what the muac_overzoom agent actually flags.
+    """
+    meta = _MUAC_CATALOG.get(filename)
+    return meta.get("category") if isinstance(meta, dict) else None
+
+
+# The MUAC categories the AI image reviewer (muac_overzoom) actually flags: the image
+# is zoomed so tight the child's arm / context is lost. Other bad categories (tape
+# misuse, worn equipment, a visible tape-on-finger) are caught by a HUMAN reviewer, not
+# the overzoom agent — so their AI verdict is "match" (Not Hyperzoomed) even though the
+# human fails them.
+_AI_FLAGGED_CATEGORIES = frozenset({"framing"})
+
+# Bump when build_audit_data's OUTPUT changes in a way the reconcile matcher can't
+# otherwise detect from image_results counts alone (e.g. per-photo AI verdicts flip
+# while pass/fail/pending stay the same). Stamped into every audit's ``data`` and
+# checked by run_audits._audit_matches_archetype, which force-rebuilds any audit on an
+# older recipe. v2: category-accurate AI verdict (only ``framing`` → "Hyperzoomed").
+_AUDIT_RECIPE_VERSION = 2
+
+
 def blob_id_for_filename(filename: str) -> str:
     """Convert a MUAC stock filename to the blob_id pattern the image server uses.
 
@@ -146,6 +172,14 @@ class AuditArchetype:
     overall_result: str | None  # "pass" | "fail" | None
     image_spec: AuditImageSpec
     title_template: str = "MUAC audit — {flw_id}"
+    # Whether the MUAC AI reviewer (muac_overzoom) ran on this audit's photos.
+    # When True, build_audit_data stamps has_ai_reviewer + a per-photo ai_result
+    # ("match"/"no_match"), ai_notes ("Not Hyperzoomed"/"Hyperzoomed") and
+    # ai_confidence — matching a real AI-review pass. Only meaningful for archetypes
+    # whose bad photos are the FRAMING (hyperzoomed) category the agent actually
+    # flags; leave False for archetypes with non-framing bads (the AI would pass
+    # those, only a human fails them) or for the fresh live-review shape.
+    ai_reviewed: bool = False
 
 
 AUDIT_ARCHETYPES: dict[str, AuditArchetype] = {
@@ -155,6 +189,7 @@ AUDIT_ARCHETYPES: dict[str, AuditArchetype] = {
         status="completed",
         overall_result="pass",
         image_spec=AuditImageSpec(good_count=5, bad_count=0),
+        ai_reviewed=True,  # AI reviewed all 5 and cleared them (match / Not Hyperzoomed)
     ),
     "completed_fail_tape_usage": AuditArchetype(
         name="completed_fail_tape_usage",
@@ -169,6 +204,7 @@ AUDIT_ARCHETYPES: dict[str, AuditArchetype] = {
         status="completed",
         overall_result="fail",
         image_spec=AuditImageSpec(good_count=0, bad_count=5, bad_category="framing"),
+        ai_reviewed=True,  # the AI flagged every photo as Hyperzoomed (context lost) → no_match
     ),
     "completed_fail_misleading": AuditArchetype(
         name="completed_fail_misleading",
@@ -205,6 +241,7 @@ AUDIT_ARCHETYPES: dict[str, AuditArchetype] = {
         image_spec=AuditImageSpec(
             good_count=2, bad_count=1, bad_category="framing", pending_count=2, pending_good_ratio=0.5
         ),
+        ai_reviewed=True,  # AI reviewed the decided photos (framing bad → Hyperzoomed / no_match)
     ),
     # NOTE for maintainers (do NOT move this into ``description`` — that field
     # renders in the audit UI): this archetype backs the manager-flow demo.
@@ -223,6 +260,26 @@ AUDIT_ARCHETYPES: dict[str, AuditArchetype] = {
         # All 5 from the good pool, all pending (no result yet). pending_good_ratio=1.0
         # so every pending photo is a clean one — passing them all is the honest call.
         image_spec=AuditImageSpec(good_count=0, bad_count=0, pending_count=5, pending_good_ratio=1.0),
+    ),
+    # ── The AI-FIRST CENSUS archetype: ~100 photos, every one AI-screened on
+    # ingest; the bulk pass cleanly and a handful are AI-flagged (Hyperzoomed)
+    # for a human to adjudicate. This is the EFFICIENCY story (Echo P1): nobody
+    # staffs a person to eyeball every photo — the audit runs AI-first and a
+    # person only weighs in on the exceptions. good_count exceeds the 8-photo
+    # good stock, so build_audit_data's `_take` cycles the pool (repeats blob_ids
+    # — acceptable: the corpus is small by design; the story is AI verdict VOLUME,
+    # not photo variety). framing bads = what muac_overzoom genuinely flags. ──
+    "completed_ai_first_census": AuditArchetype(
+        name="completed_ai_first_census",
+        description=(
+            "~100 MUAC photos, every one AI-screened on ingest. The bulk pass "
+            "cleanly; a handful are AI-flagged (Hyperzoomed) and adjudicated by a "
+            "person. AI-first: nobody eyeballs every photo."
+        ),
+        status="completed",
+        overall_result="fail",  # any AI-flagged photo fails at a 100% pass threshold
+        image_spec=AuditImageSpec(good_count=94, bad_count=6, bad_category="framing"),
+        ai_reviewed=True,  # AI verdict on all: good → match, framing → Hyperzoomed/no_match
     ),
 }
 
@@ -272,18 +329,44 @@ def _pick_blob_ids(spec: AuditImageSpec, rng_seed: int) -> list[tuple[str, str |
 
     # Sampling helper that keeps order-bias (primary category first) but
     # randomizes within each slice.
-    def _take(pool: list[str], n: int) -> list[str]:
+    def _take(pool: list[str], n: int, cycle: bool = False) -> list[str]:
         # Take up to n in pool order, breaking ties with rng to avoid always
         # picking the first NN entries when n < len(pool).
         shuffled = list(pool)
         # Stable random shuffle within first len(primary) so cross-call seed
         # produces consistent results, but adds variety per (seed, archetype).
         rng.shuffle(shuffled)
-        return shuffled[:n]
+        if not shuffled or n <= len(shuffled):
+            return shuffled[:n]
+        if not cycle:
+            # Default: cap at pool size (callers top up from other pools). This
+            # keeps bad-category PRIMARY-FIRST intact — a framing audit takes the
+            # 2 framing photos, then tops up from `other`; it must NOT cycle.
+            return shuffled[:n]
+        # cycle=True (good pool only): census-scale audits (good_count ~100)
+        # exceed the 8-photo good stock. Cycle the pool — reshuffling each lap —
+        # so blob_ids repeat rather than truncating. Repeats are acceptable: the
+        # corpus is small by design and the story is AI-verdict VOLUME.
+        out: list[str] = []
+        while len(out) < n:
+            lap = list(shuffled)
+            rng.shuffle(lap)
+            out.extend(lap)
+        return out[:n]
 
-    # Assessed photos
-    chosen_good = _take(good_pool, spec.good_count)
-    chosen_bad = _take(bad_pool, spec.bad_count)
+    # Assessed photos — the good pool cycles for census-scale counts (>8).
+    chosen_good = _take(good_pool, spec.good_count, cycle=True)
+    # Bad photos PRIMARY-FIRST: exhaust the requested ``bad_category`` before topping
+    # up from other categories. Without this, ``_take`` shuffles the whole pool and a
+    # ``framing`` audit (only 2 framing photos in the corpus) fills the other 3 slots
+    # with unrelated categories — which then get mislabeled by the category-accurate
+    # AI verdict. Primary-first keeps ``bad_category`` meaningful.
+    if spec.bad_category:
+        chosen_bad = _take(primary, spec.bad_count)
+        if len(chosen_bad) < spec.bad_count:
+            chosen_bad += _take(other, spec.bad_count - len(chosen_bad))
+    else:
+        chosen_bad = _take(bad_pool, spec.bad_count)
     out.extend((blob_id_for_filename(f), "pass") for f in chosen_good)
     out.extend((blob_id_for_filename(f), "fail") for f in chosen_bad)
 
@@ -397,6 +480,9 @@ def build_audit_data(
     rng_seed = rng_seed if rng_seed is not None else visit_id_base
     photos = _pick_blob_ids(archetype.image_spec, rng_seed)
     rng = random.Random(rng_seed ^ 0x5EED)
+    # Separate stream for AI-review confidences so adding them never shifts the
+    # visit-timing / household draws above (keeps existing audits byte-stable).
+    ai_rng = random.Random(rng_seed ^ 0xA17E)
 
     anchor = dt.datetime.fromisoformat(monday_iso).replace(hour=10, minute=0, tzinfo=dt.timezone.utc)
     created_iso = anchor.isoformat()
@@ -438,12 +524,27 @@ def build_audit_data(
         # result empty.
         assessments: dict[str, dict[str, Any]] = {}
         if result is not None:
-            assessments[blob_id] = {
+            assessment = {
                 "result": result,
                 "notes": "",
                 "ai_result": "",
                 "ai_notes": "",
             }
+            if archetype.ai_reviewed:
+                # The MUAC AI reviewer (muac_overzoom) ran on every photo, but it only
+                # detects HYPERZOOM (context lost, arm not visible) — the ``framing``
+                # category. It flags THOSE as no_match / "Hyperzoomed"; every other photo
+                # (a good photo, OR a bad photo whose defect is tape misuse / worn
+                # equipment / a visible tape-on-finger) it clears as match / "Not
+                # Hyperzoomed" — those are caught by a HUMAN reviewer (result="fail"),
+                # not the overzoom agent. So the AI badge always agrees with the image.
+                # ``filename`` (computed above from the blob_id) is muac_good_NNN.jpg
+                # for good photos (category None) or muac_bad_NNN.jpg for bad ones.
+                ai_flagged = category_for_filename(filename) in _AI_FLAGGED_CATEGORIES
+                assessment["ai_result"] = "no_match" if ai_flagged else "match"
+                assessment["ai_notes"] = "Hyperzoomed" if ai_flagged else "Not Hyperzoomed"
+                assessment["ai_confidence"] = round(ai_rng.uniform(0.86, 0.98), 3)
+            assessments[blob_id] = assessment
         visit_results[str(visit_id)] = {
             "result": result or "",
             "notes": "",
@@ -489,7 +590,13 @@ def build_audit_data(
         "kpi_notes": "",
         "related_fields": [],
         "created_at": created_iso,
+        "recipe_version": _AUDIT_RECIPE_VERSION,
     }
+    if archetype.ai_reviewed:
+        # Session-level flag the audit UI reads to show the AI-reviewer chrome
+        # (robot badges, the AI result section). Real audits set this when the
+        # AI review has run over the session's photos.
+        data["has_ai_reviewer"] = True
     if archetype.status == "completed":
         # The reviewer finished the same day, a few hours after creation —
         # the audit page's "Completed on" line reads this field.

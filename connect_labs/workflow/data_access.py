@@ -141,6 +141,15 @@ class WorkflowRunRecord(LocalLabsRecord):
         return self.data.get("definition_id")
 
     @property
+    def name(self) -> str:
+        """User-given display name, or "" if never renamed (callers fall back
+        to "Run #<id>"). Stored top-level (sibling to period_start/status),
+        not under `state` -- it's a label, not run state, so it isn't wiped
+        by state merges and isn't blocked by the completed-run write guard
+        that state.* is subject to."""
+        return self.data.get("name") or ""
+
+    @property
     def period_start(self):
         top = self.data.get("period_start")
         if top:
@@ -948,6 +957,39 @@ class WorkflowDataAccess(BaseDataAccess):
         current_state = run.data.get("state", {})
         merged_state = {**current_state, **sanitized}
         updated_data = {**run.data, "state": merged_state}
+
+        result = self.labs_api.update_record(
+            record_id=run_id,
+            experiment=self.EXPERIMENT,
+            type="workflow_run",
+            data=updated_data,
+            current_record=run,
+        )
+        if result:
+            return WorkflowRunRecord(
+                {
+                    "id": result.id,
+                    "experiment": result.experiment,
+                    "type": result.type,
+                    "data": result.data,
+                    "opportunity_id": result.opportunity_id,
+                }
+            )
+        return None
+
+    def rename_run(self, run_id: int, name: str, run: WorkflowRunRecord | None = None) -> WorkflowRunRecord | None:
+        """Set the run's display name (top-level `data.name`, not `state`).
+
+        Unlike update_run_state, this is allowed on completed runs too -- a
+        display label isn't run business state, so there's no reason renaming
+        should be blocked once a run finishes.
+        """
+        if run is None:
+            run = self.get_run(run_id)
+        if not run:
+            return None
+
+        updated_data = {**run.data, "name": name}
 
         result = self.labs_api.update_record(
             record_id=run_id,
@@ -2293,6 +2335,11 @@ class PipelineDataAccess(BaseDataAccess):
             ),
             "float": lambda x: float(x) if x else None,
             "int": lambda x: int(float(x)) if x else None,
+            # Integerize a decimal string by rounding to nearest (vs `int`, which
+            # truncates). Use for jitter-noised ordinals, e.g. followup_number
+            # 2.897 -> 3. `round_int` is an explicit alias of `round`.
+            "round": lambda x: round(float(x)) if x else None,
+            "round_int": lambda x: round(float(x)) if x else None,
             "date": None,
             "string": lambda x: str(x) if x else None,
             # GPS-string parsing for "lat lon altitude accuracy" packed format.
@@ -2305,7 +2352,17 @@ class PipelineDataAccess(BaseDataAccess):
         def get_transform(name):
             if not name:
                 return None
-            return transform_registry.get(name)
+            # Fail loud on an unknown transform name rather than silently treating
+            # it as a no-op (the old `.get()` returned None for typos, so a
+            # mis-named transform passed values through untransformed — exactly
+            # how a jittered ordinal reached render code un-integerized, #958).
+            # `date` is a registered no-op (value None), so a KeyError here means
+            # a genuinely unknown name.
+            if name not in transform_registry:
+                raise ValueError(
+                    f"Unknown pipeline transform {name!r}. Known transforms: {sorted(transform_registry)}"
+                )
+            return transform_registry[name]
 
         # Extractor registry — multi-path / multi-input field computations
         # that the path/transform machinery can't express. Schemas reference

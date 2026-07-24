@@ -36,8 +36,41 @@ from connect_labs.labs.analysis.sse_streaming import CeleryTaskStreamView
 from connect_labs.labs.context import get_org_data
 from connect_labs.opportunity.models import VisitValidationStatus
 from connect_labs.utils.tables import get_validated_page_size
+from connect_labs.workflow.data_access import WorkflowDataAccess
 
 logger = logging.getLogger(__name__)
+
+# The "Muac Picture Audit" workflow (definition id 6840, owned by program 176,
+# CHC PRE-RCT Nigeria) gets two review-screen behaviors no other workflow's
+# audit sessions get: a Duplicate/Fake split into two distinct per-image
+# results, and editable pass/fail/duplicate/fake results even after the report
+# is marked completed. Scoped to this one workflow instance by explicit
+# product decision, rather than changing the shared bulk_assessment.html
+# review screen for every audit workflow in the system.
+MUAC_PICTURE_AUDIT_WORKFLOW_DEFINITION_ID = 6840
+MUAC_PICTURE_AUDIT_PROGRAM_ID = 176
+
+
+def _is_muac_picture_audit_session(session, request) -> bool:
+    """Resolve whether `session` was created by workflow 6840, via its
+    workflow_run_id -> WorkflowRunRecord.definition_id. Scoped to program_id
+    (not opportunity_id) since 6840 is program-owned -- mixing in an
+    opportunity_id would AND-filter it out server-side (production API scope
+    params are all-or-nothing). Fails closed (False) on any lookup error so a
+    transient API issue never blocks the normal review screen.
+    """
+    run_id = session.workflow_run_id
+    if not run_id:
+        return False
+    wda = WorkflowDataAccess(request=request, program_id=MUAC_PICTURE_AUDIT_PROGRAM_ID)
+    try:
+        run = wda.get_run(run_id)
+    except Exception:
+        logger.exception("Failed to resolve workflow run %s while scoping muac_picture_audit review UI", run_id)
+        return False
+    finally:
+        wda.close()
+    return bool(run and run.definition_id == MUAC_PICTURE_AUDIT_WORKFLOW_DEFINITION_ID)
 
 
 class ExperimentAuditCreateView(LoginRequiredMixin, TemplateView):
@@ -298,6 +331,7 @@ class ExperimentBulkAssessmentView(LoginRequiredMixin, DetailView):
                 "connect_url": settings.CONNECT_PRODUCTION_URL,
                 "workflow_run_id": session.workflow_run_id,
                 "pass_threshold": self.request.GET.get("threshold", "80"),
+                "is_muac_picture_audit_workflow": _is_muac_picture_audit_session(session, self.request),
             }
         )
 
@@ -687,7 +721,11 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
                     question_ids.add(question_id)
                     assessment_data = assessments_map.get(blob_id, {})
                     result_value = assessment_data.get("result") or ""
-                    status_value = result_value if result_value in {"pass", "fail", "duplicate_fake"} else "pending"
+                    status_value = (
+                        result_value
+                        if result_value in {"pass", "fail", "duplicate_fake", "duplicate", "fake"}
+                        else "pending"
+                    )
 
                     # Use counter to ensure unique IDs even if same visit appears multiple times
                     assessment_counter += 1
@@ -727,7 +765,11 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
                     question_id = assessment_data.get("question_id") or ""
                     question_ids.add(question_id)
                     result_value = assessment_data.get("result") or ""
-                    status_value = result_value if result_value in {"pass", "fail", "duplicate_fake"} else "pending"
+                    status_value = (
+                        result_value
+                        if result_value in {"pass", "fail", "duplicate_fake", "duplicate", "fake"}
+                        else "pending"
+                    )
 
                     # Use counter to ensure unique IDs
                     assessment_counter += 1
@@ -887,6 +929,7 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
                 "bulk_start_date": start_date_display,
                 "bulk_end_date": end_date_display,
                 "visit_results": visit_result_map,
+                "visit_clusters": session.data.get("visit_clusters", []),
             }
 
             return JsonResponse(response_data)
@@ -999,8 +1042,7 @@ def _resolve_visit_cluster_group(data_access, request, session_id, group_id):
 
 
 def _visit_cluster_rows(ctx):
-    """Flatten a resolved visit-cluster group into per-image rows, shared by the
-    CSV export and JSON images views."""
+    """Flatten a resolved visit-cluster group into per-image rows for the CSV export."""
     rows = []
     for visit_id in ctx["group"]["visit_ids"]:
         images = ctx["visit_images"].get(str(visit_id), [])
@@ -1017,10 +1059,8 @@ def _visit_cluster_rows(ctx):
                 {
                     "visit_id": visit_id,
                     "name": image.get("name", ""),
-                    "blob_id": image.get("blob_id", ""),
                     "visit_date": image.get("visit_date", ""),
                     "location": location,
-                    "entity_name": image.get("entity_name", ""),
                     "visit_url": visit_url,
                 }
             )
@@ -1045,38 +1085,6 @@ class VisitClusterExportCSVView(LoginRequiredMixin, View):
             for row in _visit_cluster_rows(ctx):
                 writer.writerow([row["visit_id"], row["name"], row["visit_date"], row["location"], row["visit_url"]])
             return response
-        finally:
-            data_access.close()
-
-
-class VisitClusterImagesAPIView(LoginRequiredMixin, View):
-    """JSON list of the images in one visit-clustering grouping, for the
-    "N Duplicate Groupings" expand panel in labs_audit_breakdown.js."""
-
-    def get(self, request, session_id, group_id):
-        data_access = AuditDataAccess(request=request)
-        try:
-            error, ctx = _resolve_visit_cluster_group(data_access, request, session_id, group_id)
-            if error:
-                return error
-
-            images = [
-                {
-                    "visit_id": row["visit_id"],
-                    "name": row["name"],
-                    "visit_date": row["visit_date"],
-                    "thumbnail_url": (
-                        reverse(
-                            "audit:audit_image_connect",
-                            kwargs={"opp_id": ctx["opportunity_id"], "blob_id": row["blob_id"]},
-                        )
-                        if row["blob_id"] and ctx["opportunity_id"]
-                        else ""
-                    ),
-                }
-                for row in _visit_cluster_rows(ctx)
-            ]
-            return JsonResponse({"success": True, "images": images})
         finally:
             data_access.close()
 

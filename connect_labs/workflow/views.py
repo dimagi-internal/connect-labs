@@ -713,6 +713,8 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                     "program_id": program_id,
                     "opportunity_ids": effective_opp_ids,
                     "opportunity_name": labs_context.get("opportunity", {}).get("name"),
+                    # No real run to name yet in edit mode.
+                    "name": "",
                     # Edit mode is in_progress for render-code purposes; the FE
                     # sees `is_edit_mode: true` separately and disables persistence.
                     "status": "in_progress",
@@ -747,6 +749,10 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                     "program_id": run.program_id,
                     "opportunity_ids": effective_opp_ids,
                     "opportunity_name": labs_context.get("opportunity", {}).get("name"),
+                    # User-given display name ("" if never renamed -- render
+                    # code falls back to "Run #<id>"). Renaming is allowed
+                    # regardless of run status; see rename_run_api.
+                    "name": run.name,
                     # Canonical lifecycle: in_progress | completed. The proxy
                     # also maps any legacy `active`/`frozen` rows back to this
                     # vocabulary.
@@ -910,6 +916,13 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                     "authStatus": "/labs/workflow/api/auth-status/",
                     # MBW monitoring actions
                     "saveWorkerResult": f"/labs/workflow/api/run/{run_data['id']}/worker-result/{run_scope_qs}",
+                    # Renaming is allowed regardless of run status (unlike
+                    # updateState/completeRun above), but the URL still needs
+                    # the run's own scope stamped on -- same ambient-session-
+                    # drift risk as those other run-scoped endpoints.
+                    "renameRun": (
+                        None if is_edit_mode else f"/labs/workflow/api/run/{run_data['id']}/rename/{run_scope_qs}"
+                    ),
                     # Single completion verb — handles snapshot build + status flip atomically.
                     "completeRun": (
                         None if is_edit_mode else f"/labs/workflow/api/run/{run_data['id']}/complete/{run_scope_qs}"
@@ -2774,6 +2787,41 @@ def rename_workflow_api(request, definition_id):
 
 @login_required
 @require_POST
+def rename_run_api(request, run_id):
+    """API endpoint to set a workflow run's display name.
+
+    Allowed regardless of run status -- unlike update_state_api, a name is a
+    label, not run business state, so there's no reason to block it once a
+    run completes.
+    """
+    try:
+        data = json.loads(request.body)
+        new_name = data.get("name", "").strip()
+
+        if not new_name:
+            return JsonResponse({"error": "name is required"}, status=400)
+
+        data_access = WorkflowDataAccess(request=request)
+        run = data_access.get_run(run_id)
+
+        if not run:
+            data_access.close()
+            return JsonResponse({"error": "Run not found"}, status=404)
+
+        data_access.rename_run(run_id, new_name, run=run)
+        data_access.close()
+
+        return JsonResponse({"success": True, "run_id": run_id, "name": new_name})
+
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+    except Exception:
+        logger.exception("Failed to rename run %s", run_id)
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
+
+
+@login_required
+@require_POST
 def delete_pipeline_api(request, definition_id):
     """API endpoint to delete a pipeline definition."""
     from connect_labs.workflow.data_access import PipelineDataAccess
@@ -3809,6 +3857,7 @@ def cancel_job_api(request, task_id):
     from celery.result import AsyncResult
 
     from config import celery_app
+    from connect_labs.audit.data_access import mark_audit_creation_cancelled
 
     try:
         data = json.loads(request.body) if request.body else {}
@@ -3818,8 +3867,18 @@ def cancel_job_api(request, task_id):
 
         # Check if task is still running
         if task.state in ("PENDING", "STARTED", "PROGRESS", "RETRY"):
-            # Revoke the task (terminate if running)
+            # Revoke the task (terminate if running) -- a best-effort hard-kill
+            # that only takes effect on a real distributed worker.
             celery_app.control.revoke(task_id, terminate=True, signal="SIGTERM")
+
+            # Cooperative cancellation, keyed off THIS task_id -- the same
+            # fresh, single-use id run_workflow_job threads into job_config as
+            # "_task_id" (see connect_labs/workflow/tasks.py) for handlers that
+            # invoke run_audit_creation via .apply() *inside* this task. Using
+            # this task's own id (rather than the long-lived run_id) means a
+            # later retry on the same run always gets a brand-new key -- no
+            # stale flag can carry over and silently no-op it.
+            mark_audit_creation_cancelled(task_id)
 
             # Update job state in workflow run if run_id provided
             if run_id:

@@ -56,6 +56,40 @@
   function showAiStatsOf(s) {
     return !!(s && (s.has_ai_reviewer || aiReviewedOf(s) > 0));
   }
+  // Compact "AI: ..." flagged summary. When more than one classifier is
+  // active on a track (e.g. MUAC OverZoom + MUAC Match both watching the
+  // same photo), breaks the flagged count down by classifier so a reviewer
+  // can tell a hyperzoom failure from a MUAC-mismatch failure at a glance
+  // instead of one opaque total. Falls back to the flat "X flagged" form
+  // when zero or one classifier produced any flags (the common case).
+  function aiFlagsSummary(s) {
+    var a = statsOf(s);
+    var byLabel = a.ai_flags_by_label || {};
+    var labels = Object.keys(byLabel);
+    var totalFlagged = a.ai_no_match || 0;
+    var labeledTotal = labels.reduce(function (n, l) {
+      return n + byLabel[l];
+    }, 0);
+    // Fall back to the flat form whenever there's nothing to break down, OR
+    // the per-label tally doesn't reconcile with the true flagged count --
+    // e.g. a reviewer that sets no badge_label on failure (unlabeled) mixed
+    // into the same session as labeled ones would otherwise silently drop
+    // those images from the displayed breakdown while still counting them
+    // in ai_no_match. Reconciling here means the breakdown is only ever
+    // shown when it's provably complete.
+    if (labels.length <= 1 || labeledTotal !== totalFlagged) {
+      return totalFlagged + ' flagged';
+    }
+    return labels
+      .map(function (label) {
+        // Strip a trailing "(...)" qualifier (e.g. "(strict tolerance)") to
+        // keep this line compact -- the full label still shows on the
+        // image's own badge in the review UI.
+        var shortLabel = label.replace(/\s*\([^)]*\)\s*$/, '');
+        return byLabel[label] + ' ' + shortLabel;
+      })
+      .join(', ');
+  }
 
   // Group sessions by opportunity → field worker → { muac, rest }.
   function groupByOppFlw(sessions) {
@@ -167,52 +201,6 @@
       var expanded = st[0];
       var setExpanded = st[1];
 
-      var imgSt = React.useState({});
-      var groupImages = imgSt[0];
-      var setGroupImages = imgSt[1];
-
-      var clustersForFetch = (s && s.visit_clusters) || [];
-
-      React.useEffect(
-        function () {
-          if (!expanded || !s) return;
-          clustersForFetch.forEach(function (c) {
-            if (groupImages[c.group_id]) return;
-            setGroupImages(function (prev) {
-              var next = Object.assign({}, prev);
-              next[c.group_id] = 'loading';
-              return next;
-            });
-            fetch(
-              '/audit/api/' +
-                s.id +
-                '/visit-clusters/' +
-                c.group_id +
-                '/images/',
-            )
-              .then(function (res) {
-                return res.json();
-              })
-              .then(function (data) {
-                setGroupImages(function (prev) {
-                  var next = Object.assign({}, prev);
-                  next[c.group_id] =
-                    data && data.success ? data.images : 'error';
-                  return next;
-                });
-              })
-              .catch(function () {
-                setGroupImages(function (prev) {
-                  var next = Object.assign({}, prev);
-                  next[c.group_id] = 'error';
-                  return next;
-                });
-              });
-          });
-        },
-        [expanded],
-      );
-
       if (!s)
         return h(
           'div',
@@ -281,8 +269,8 @@
                     : 'text-gray-500',
               },
               'AI: ' +
-                (a.ai_no_match || 0) +
-                ' flagged / ' +
+                aiFlagsSummary(s) +
+                ' / ' +
                 aiReviewedOf(s) +
                 ' reviewed',
             )
@@ -318,59 +306,25 @@
               'div',
               {
                 className:
-                  'basis-full mt-1.5 pl-16 space-y-2 text-xs text-gray-700',
+                  'basis-full mt-1.5 pl-16 space-y-1 text-xs text-gray-700',
               },
               clusters.map(function (c, i) {
-                var imgs = groupImages[c.group_id];
+                var imageIds = c.image_ids || [];
                 return h(
                   'div',
-                  { key: c.group_id },
+                  { key: c.group_id, className: 'flex items-center gap-2' },
                   h(
                     'span',
-                    { className: 'font-medium text-gray-600' },
+                    {
+                      className: 'font-medium text-gray-600 whitespace-nowrap',
+                    },
                     'Group ' + (i + 1) + ' — ' + c.image_count + ' images',
                   ),
-                  imgs === 'loading' || imgs === undefined
-                    ? h(
-                        'div',
-                        { className: 'pl-3 py-0.5 text-gray-400' },
-                        'Loading images…',
-                      )
-                    : imgs === 'error'
-                    ? h(
-                        'div',
-                        { className: 'pl-3 py-0.5 text-red-500' },
-                        'Failed to load images',
-                      )
-                    : h(
-                        'div',
-                        { className: 'pl-3 py-0.5 space-y-0.5' },
-                        imgs.map(function (img, idx) {
-                          return h(
-                            'div',
-                            { key: idx, className: 'flex items-center gap-2' },
-                            img.thumbnail_url
-                              ? h('img', {
-                                  src: img.thumbnail_url,
-                                  className: 'w-6 h-6 rounded object-cover',
-                                })
-                              : null,
-                            h(
-                              'span',
-                              { className: 'text-gray-600' },
-                              img.name || '(untitled)',
-                            ),
-                            h(
-                              'span',
-                              { className: 'text-gray-400' },
-                              h('i', {
-                                className: 'fa-solid fa-hashtag mr-0.5',
-                              }),
-                              img.visit_id,
-                            ),
-                          );
-                        }),
-                      ),
+                  h(
+                    'span',
+                    { className: 'text-gray-500 font-mono truncate' },
+                    '[' + imageIds.join(', ') + ']',
+                  ),
                   h(
                     'a',
                     {
@@ -380,11 +334,11 @@
                         '/visit-clusters/' +
                         c.group_id +
                         '/export.csv',
+                      title: 'Download CSV',
                       className:
-                        'text-blue-500 hover:underline inline-block mt-0.5',
+                        'text-blue-500 hover:text-blue-700 whitespace-nowrap',
                     },
-                    h('i', { className: 'fa-solid fa-download mr-1' }),
-                    'Download CSV',
+                    h('i', { className: 'fa-solid fa-download' }),
                   ),
                 );
               }),
@@ -579,6 +533,7 @@
   LabsAudit.duplicateFakeOf = duplicateFakeOf;
   LabsAudit.clusterCountOf = clusterCountOf;
   LabsAudit.showAiStatsOf = showAiStatsOf;
+  LabsAudit.aiFlagsSummary = aiFlagsSummary;
 
   if (typeof window !== 'undefined') window.LabsAudit = LabsAudit;
   if (typeof module !== 'undefined' && module.exports)

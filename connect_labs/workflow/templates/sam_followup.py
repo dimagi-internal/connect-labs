@@ -10,6 +10,37 @@ Two pipelines:
     demographics, latest MUAC reading and color, count of follow-ups.
   - `visits` (terminal_stage=visit_level): per-follow-up rows used for the
     timeline drill-down.
+
+Identity / linking model — IMPORTANT when reusing this template
+---------------------------------------------------------------
+There is NO canonical child-identity key. The correct `linking_field` is
+whatever uniquely and stably identifies the entity in a GIVEN opp's data —
+choose it per opp by looking at that opp's actual visits; don't assume any
+particular field.
+
+This template overrides the framework default (`linking_field = "entity_id"`)
+with `child_case_id`. That is NOT a general rule for SAM/follow-up opps — it
+just reflects the one opportunity this template was originally authored against,
+where the child happened to be identified by the `child_case_id` form field.
+The render's timeline drill-down correspondingly filters visits by
+`v.child_case_id`. Treat both as artifacts of that original opp, not defaults.
+
+So when pointing this template at a different opp, verify what its data uses:
+
+- If the opp's `child_case_id` form field is populated per child, this template
+  works as-is.
+- If not (e.g. a SYNTHETIC / mirror opp: `child_case_id` is null there, and the
+  generator instead models each child AS an entity, stamping every visit with a
+  stable base `entity_id` — labs/synthetic/generator/fixtures/engine.py), then
+  grouping by the null `child_case_id` collapses all children into one row.
+  Override the INSTANCE (not this template) to link on whatever key that opp
+  does populate — for the mirror generator that is `entity_id`: set
+  `linking_field: "entity_id"` on both pipelines and change the render's visit
+  filter to `v.entity_id === selectedChildId` (visit-level rows already carry
+  the base `entity_id`).
+
+Keep this template on `child_case_id` only so the original opp keeps working;
+it is not a claim about what SAM opps in general should use.
 """
 
 DEFINITION = {
@@ -133,6 +164,11 @@ VISIT_FIELDS = [
 ]
 
 
+# NOTE: `linking_field: "child_case_id"` is an artifact of the opp this template
+# was first authored against — NOT a general default. The right key is whatever
+# uniquely identifies a child in the target opp's data; verify per opp (e.g. a
+# mirror opp links on `entity_id`). See the "Identity / linking model" section
+# in the module docstring above.
 PIPELINE_SCHEMAS = [
     {
         "alias": "children",
@@ -142,7 +178,7 @@ PIPELINE_SCHEMAS = [
             "data_source": {"type": "connect_csv"},
             "grouping_key": "username",
             "terminal_stage": "entity",
-            "linking_field": "child_case_id",
+            "linking_field": "child_case_id",  # artifact of the original opp; verify per opp (mirror → "entity_id")
             "fields": ENTITY_FIELDS,
         },
     },
@@ -154,7 +190,7 @@ PIPELINE_SCHEMAS = [
             "data_source": {"type": "connect_csv"},
             "grouping_key": "username",
             "terminal_stage": "visit_level",
-            "linking_field": "child_case_id",
+            "linking_field": "child_case_id",  # keep in sync with the children pipeline (see docstring)
             "fields": VISIT_FIELDS,
         },
     },
@@ -174,19 +210,45 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
     var [colorFilter, setColorFilter] = React.useState('all');
     var timelineRef = React.useRef(null);
 
+    // Fallbacks so a mirrored real opp (which records MUAC in cm but no pre-baked
+    // colour band or recovery boolean) still populates the colour + recovered
+    // columns. Real opps that DO ship these fields are unaffected — the raw field
+    // wins and derivation only fills the gap. Bands: <11.5 red / 11.5–12.5 yellow
+    // / >=12.5 green; recovered when latest MUAC >= 12.5.
+    function muacColorFromCm(cm) {
+        if (cm == null || cm === '' || isNaN(Number(cm))) return null;
+        var v = Number(cm);
+        if (v < 11.5) return 'red';
+        if (v < 12.5) return 'yellow';
+        return 'green';
+    }
+    function effColor(c) {
+        return c.latest_muac_color || muacColorFromCm(c.latest_muac_cm);
+    }
+    function isRecovered(c) {
+        if (c.latest_recovered != null && c.latest_recovered !== '') {
+            return c.latest_recovered === 'yes' || c.latest_recovered === true;
+        }
+        return c.latest_muac_cm != null && Number(c.latest_muac_cm) >= 12.5;
+    }
+    // A mirrored opp records a generic `visit_date` instead of `fu_visit_date`.
+    function visitDate(v) {
+        return v.fu_visit_date || v.visit_date || null;
+    }
+
     var kpis = React.useMemo(function() {
         var total = children.length;
-        var red = children.filter(function(c) { return c.latest_muac_color === 'red'; }).length;
-        var yellow = children.filter(function(c) { return c.latest_muac_color === 'yellow'; }).length;
-        var green = children.filter(function(c) { return c.latest_muac_color === 'green'; }).length;
-        var recovered = children.filter(function(c) { return c.latest_recovered === 'yes'; }).length;
+        var red = children.filter(function(c) { return effColor(c) === 'red'; }).length;
+        var yellow = children.filter(function(c) { return effColor(c) === 'yellow'; }).length;
+        var green = children.filter(function(c) { return effColor(c) === 'green'; }).length;
+        var recovered = children.filter(function(c) { return isRecovered(c); }).length;
         return { total: total, red: red, yellow: yellow, green: green, recovered: recovered };
     }, [children]);
 
     var displayChildren = React.useMemo(function() {
         var rows = children;
         if (colorFilter !== 'all') {
-            rows = rows.filter(function(c) { return c.latest_muac_color === colorFilter; });
+            rows = rows.filter(function(c) { return effColor(c) === colorFilter; });
         }
         if (search.trim()) {
             var q = search.toLowerCase();
@@ -201,10 +263,12 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
 
     var visitsForSelected = React.useMemo(function() {
         if (!selectedChildId) return [];
+        // Timeline key: matches the children pipeline's linking_field (child_case_id).
+        // On a mirror/synthetic instance that links on entity_id, change this to v.entity_id.
         return visitsAll.filter(function(v) { return v.child_case_id === selectedChildId; })
             .sort(function(a, b) {
-                var da = a.fu_visit_date ? new Date(a.fu_visit_date) : new Date(0);
-                var db = b.fu_visit_date ? new Date(b.fu_visit_date) : new Date(0);
+                var da = visitDate(a) ? new Date(visitDate(a)) : new Date(0);
+                var db = visitDate(b) ? new Date(visitDate(b)) : new Date(0);
                 return da - db;
             });
     }, [visitsAll, selectedChildId]);
@@ -255,7 +319,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                                 {' '}HH: {selectedChild.household_name || '—'}
                                 {' '}({selectedChild.hh_village_name || '—'})
                                 {' '}· latest MUAC: {selectedChild.latest_muac_cm != null ? Number(selectedChild.latest_muac_cm).toFixed(1) + ' cm' : '—'}
-                                {' '}{colorChip(selectedChild.latest_muac_color)}
+                                {' '}{colorChip(effColor(selectedChild))}
                             </div>
                         </div>
                         <button
@@ -266,14 +330,14 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                     <div className="space-y-2 max-h-96 overflow-y-auto">
                         {visitsForSelected.map(function(v, i) {
                             return (
-                                <div key={v.id || (v.fu_visit_date + '-' + i)}
+                                <div key={v.id || (visitDate(v) + '-' + i)}
                                      className="border-l-4 border-blue-400 pl-3 py-2 text-sm bg-gray-50 rounded-r">
                                     <div className="flex items-center justify-between">
                                         <div className="font-medium">
-                                            {v.fu_visit_date || '—'}
+                                            {visitDate(v) || '—'}
                                             {v.followup_number && <span className="ml-2 text-xs text-gray-500">FU #{v.followup_number}</span>}
                                         </div>
-                                        {colorChip(v.muac_color)}
+                                        {colorChip(v.muac_color || muacColorFromCm(v.muac_cm))}
                                     </div>
                                     <div className="text-xs text-gray-600 mt-1">
                                         MUAC: {v.muac_cm != null ? v.muac_cm + ' cm' : '—'}
@@ -341,8 +405,8 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                                     <td className="px-4 py-2 text-sm text-right font-mono text-gray-900">
                                         {c.latest_muac_cm != null ? Number(c.latest_muac_cm).toFixed(1) : '—'}
                                     </td>
-                                    <td className="px-4 py-2">{colorChip(c.latest_muac_color)}</td>
-                                    <td className="px-4 py-2 text-sm text-gray-700">{c.latest_recovered || '—'}</td>
+                                    <td className="px-4 py-2">{colorChip(effColor(c))}</td>
+                                    <td className="px-4 py-2 text-sm text-gray-700">{isRecovered(c) ? 'yes' : (c.latest_recovered || '—')}</td>
                                     <td className="px-4 py-2 text-right">
                                         <button
                                             onClick={function() { openTimeline(c.entity_id); }}

@@ -11,6 +11,7 @@ const {
   duplicateFakeOf,
   clusterCountOf,
   showAiStatsOf,
+  aiFlagsSummary,
 } = LabsAudit;
 
 function session(over) {
@@ -199,5 +200,63 @@ describe('showAiStatsOf', () => {
 
   it('tolerates a null session', () => {
     expect(showAiStatsOf(null)).toBe(false);
+  });
+});
+
+describe('aiFlagsSummary', () => {
+  it('falls back to the flat "N flagged" form with no per-label breakdown', () => {
+    const s = session({
+      assessment_stats: { pass: 0, fail: 0, ai_match: 0, ai_no_match: 3 },
+    });
+    expect(aiFlagsSummary(s)).toBe('3 flagged');
+  });
+
+  it('falls back to flat form when exactly one distinct label produced all flags', () => {
+    const s = session({
+      assessment_stats: {
+        pass: 0,
+        fail: 0,
+        ai_match: 0,
+        ai_no_match: 2,
+        ai_flags_by_label: { Hyperzoomed: 2 },
+      },
+    });
+    expect(aiFlagsSummary(s)).toBe('2 flagged');
+  });
+
+  it('breaks down by classifier when more than one label is present, stripping "(...)"', () => {
+    const s = session({
+      assessment_stats: {
+        pass: 0,
+        fail: 0,
+        ai_match: 0,
+        ai_no_match: 9,
+        ai_flags_by_label: {
+          Hyperzoomed: 7,
+          'MUAC Mismatch (strict tolerance)': 2,
+        },
+      },
+    });
+    expect(aiFlagsSummary(s)).toBe('7 Hyperzoomed, 2 MUAC Mismatch');
+  });
+
+  it('falls back to flat form when an unlabeled reviewer flag would otherwise vanish from the breakdown', () => {
+    // ai_no_match (5) doesn't reconcile with the labeled total (7+2=9) here
+    // on purpose -- simulates a session where some no_match assessments came
+    // from a reviewer that sets no badge_label, so they're absent from
+    // ai_flags_by_label but still counted in ai_no_match.
+    const s = session({
+      assessment_stats: {
+        pass: 0,
+        fail: 0,
+        ai_match: 0,
+        ai_no_match: 12,
+        ai_flags_by_label: {
+          Hyperzoomed: 7,
+          'MUAC Mismatch (strict tolerance)': 2,
+        },
+      },
+    });
+    expect(aiFlagsSummary(s)).toBe('12 flagged');
   });
 });

@@ -507,6 +507,15 @@ class SolicitationCreateView(ManagerRequiredMixin, TemplateView):
             data["created_by"] = request.user.username
             labs_context = getattr(request, "labs_context", {})
             data["program_name"] = labs_context.get("program_name", "")
+            # Lock-before-publish: when the owner has reviewed and locked the AI
+            # rubric, stamp it so the weighted criteria are fixed before any firm
+            # responds. The public call then advertises "here is exactly how you'll
+            # be scored" and that promise cannot change mid-window.
+            if request.POST.get("criteria_locked") in ("1", "true", "on", "True"):
+                from django.utils import timezone
+
+                data["criteria_locked"] = True
+                data["criteria_locked_at"] = timezone.now().isoformat()
             try:
                 da = _get_data_access(request)
                 created = da.create_solicitation(data)
@@ -927,7 +936,8 @@ class AwardView(ManagerRequiredMixin, TemplateView):
             da = _get_data_access(request)
             reward_budget = int(request.POST.get("reward_budget") or 0)
             org_id = request.POST.get("org_id", "")
-            da.award_response(pk, reward_budget=reward_budget, org_id=org_id)
+            award_stage = request.POST.get("award_stage", "verification")
+            da.award_response(pk, reward_budget=reward_budget, org_id=org_id, award_stage=award_stage)
         except Exception:
             logger.exception("Failed to award response %s", pk)
             ctx = self.get_context_data(**kwargs)
@@ -962,6 +972,12 @@ class ReviewView(ManagerRequiredMixin, TemplateView):
             # Load parent solicitation
             solicitation = da.get_solicitation_by_id(response.solicitation_id)
             ctx["solicitation"] = solicitation
+
+            # Blind scoring: the reviewer scores by response id, never by firm name.
+            ctx["blind_label"] = response.blind_label
+            # AI-proposed per-criterion scores, revealed only after the reviewer
+            # records their own score for that criterion (anti-anchoring).
+            ctx["ai_proposed_scores"] = response.ai_proposed_scores
 
             # Build criteria-by-question lookup
             criteria_by_question = {}

@@ -32,6 +32,10 @@ def _assessment(result, question_id="group/muac_photo"):
     return {"result": result, "question_id": question_id}
 
 
+def _ai_assessment(ai_result, ai_notes=None, question_id="group/muac_photo"):
+    return {"result": None, "question_id": question_id, "ai_result": ai_result, "ai_notes": ai_notes}
+
+
 class TestGetAssessmentStats:
     def test_duplicate_fake_is_its_own_bucket_not_pending(self):
         session = _make_session(
@@ -46,6 +50,68 @@ class TestGetAssessmentStats:
         assert stats["fail"] == 1
         assert stats["duplicate_fake"] == 1
         assert stats["pending"] == 1  # only the never-assessed one
+
+
+class TestAiFlagsByLabel:
+    """MUAC images can carry two independent AI reviewers (MUAC OverZoom +
+    MUAC Match) watching the same photo -- _combine_reviewer_results joins
+    every failing reviewer's own badge_label into ai_notes with "; ". This
+    breaks that back apart so the FLW breakdown can show which classifier
+    flagged each image, not just one opaque "N flagged" total."""
+
+    def test_single_reviewer_label_tallied(self):
+        session = _make_session(
+            {
+                "v1": {
+                    "assessments": {
+                        "a": _ai_assessment("no_match", "Hyperzoomed"),
+                        "b": _ai_assessment("no_match", "Hyperzoomed"),
+                        "c": _ai_assessment("match", "Not Hyperzoomed"),
+                    }
+                },
+            }
+        )
+        stats = session.get_assessment_stats()
+        assert stats["ai_no_match"] == 2
+        assert stats["ai_flags_by_label"] == {"Hyperzoomed": 2}
+
+    def test_two_independent_reviewers_each_get_their_own_bucket(self):
+        session = _make_session(
+            {
+                "v1": {
+                    "assessments": {
+                        # Both reviewers failed on this image -- joined by "; ".
+                        "a": _ai_assessment("no_match", "Hyperzoomed; MUAC Mismatch (strict tolerance)"),
+                        # Only MUAC Match failed on this one.
+                        "b": _ai_assessment("no_match", "MUAC Mismatch (strict tolerance)"),
+                        # Only MUAC OverZoom failed on this one.
+                        "c": _ai_assessment("no_match", "Hyperzoomed"),
+                    }
+                },
+            }
+        )
+        stats = session.get_assessment_stats()
+        # 3 assessments failed; image "a" counts toward BOTH labels.
+        assert stats["ai_no_match"] == 3
+        assert stats["ai_flags_by_label"] == {
+            "Hyperzoomed": 2,
+            "MUAC Mismatch (strict tolerance)": 2,
+        }
+
+    def test_no_flags_yields_empty_dict(self):
+        session = _make_session(
+            {"v1": {"assessments": {"a": _ai_assessment("match", "Not Hyperzoomed")}}},
+        )
+        stats = session.get_assessment_stats()
+        assert stats["ai_flags_by_label"] == {}
+
+    def test_missing_ai_notes_on_a_flagged_image_is_safely_skipped(self):
+        session = _make_session(
+            {"v1": {"assessments": {"a": _ai_assessment("no_match", ai_notes=None)}}},
+        )
+        stats = session.get_assessment_stats()
+        assert stats["ai_no_match"] == 1
+        assert stats["ai_flags_by_label"] == {}
 
 
 class TestGetAssessmentStatsByQuestion:

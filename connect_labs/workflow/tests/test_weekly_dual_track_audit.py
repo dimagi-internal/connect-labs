@@ -50,7 +50,17 @@ def test_builds_two_calls_per_opp_with_tags_and_image_audits():
     assert a["image_audits"] == [
         {
             "image_path": "form.muac",
-            "reviewers": [{"agent_id": "muac_overzoom", "auto_apply_actions": ["fail_overzoomed"]}],
+            "reviewers": [
+                {"agent_id": "muac_overzoom", "auto_apply_actions": ["fail_overzoomed"]},
+                {
+                    "agent_id": "muac_match",
+                    "config": {
+                        "comparison_field": "muac_group/muac_display_group_2/muac_colour_display/soliciter_muac_cm",
+                        "label": "MUAC Reading",
+                    },
+                    "auto_apply_actions": ["fail_unmatched"],
+                },
+            ],
         }
     ]
     assert a["context_fields"] is None
@@ -186,6 +196,44 @@ def test_handler_invokes_run_audit_creation_per_call_and_writes_summary():
     assert written["window_start"] == "2026-06-22"  # window persisted onto the run for the PAR + reload
     assert written["last_batch"]["window_start"] == "2026-06-22"
     assert written["last_batch"]["calls"] == 4
+
+
+def test_handler_stops_between_calls_when_cancelled():
+    """Cancelling (e.g. the user stops a review after selecting too large a
+    sample) is keyed by run_workflow_job's own task id (job_config["_task_id"],
+    injected by run_workflow_job) -- the same fresh id the browser already has
+    and the one run_audit_creation's own .apply()-generated task_id can never
+    be, since that's a throwaway id nothing outside this process learns. Once
+    flagged, the handler must not start any further opp/track call, leaving
+    whatever sessions earlier calls already created untouched."""
+    from connect_labs.workflow.job_handlers import weekly_dual_track_audit as h
+
+    run = _fake_run({"window_start": "2026-06-22", "window_end": "2026-06-28"})
+    eager = mock.Mock()
+    eager.result = {"sessions": [1, 2, 3]}
+
+    with (
+        mock.patch.object(h, "WorkflowDataAccess") as WDA,
+        mock.patch.object(h, "run_audit_creation") as rac,
+        mock.patch.object(h, "is_audit_creation_cancelled") as cancelled,
+    ):
+        wda = WDA.return_value
+        wda.get_run.return_value = run
+        wda.get_definition.return_value = _fake_definition()
+        rac.apply.return_value = eager
+        # Not cancelled before call #1; cancelled by the time call #2 is checked.
+        cancelled.side_effect = [False, True, True, True]
+
+        result = h.weekly_dual_track_audit_create(
+            {"run_id": 555, "opportunity_id": 101, "_task_id": "outer-task-abc"}, access_token="tok"
+        )
+
+    assert rac.apply.call_count == 1
+    assert result["successful"] == 1
+    assert result["sessions_created"] == 3
+    cancelled.assert_called_with("outer-task-abc")
+    rac.apply.assert_called_once()
+    assert rac.apply.call_args.kwargs["kwargs"]["cancel_key"] == "outer-task-abc"
 
 
 def test_handler_scopes_data_access_by_program_id_for_program_owned_runs():
@@ -631,9 +679,40 @@ def test_render_code_includes_visit_clustering_card():
     assert "enable_distance" in rc
 
 
+def test_render_code_includes_cancel_button():
+    """A large sample's AI review can take a while -- the run needs a way to
+    stop it via the generic job-cancel action (cancelJob), not just createAudit's
+    audit-specific cancelAudit (which this template never calls)."""
+    from connect_labs.workflow.templates import get_template
+
+    rc = get_template("weekly_dual_track_audit")["render_code"]
+    assert "actions.cancelJob(taskId, instance.id)" in rc
+    assert "handleCancel" in rc
+
+
+def test_render_code_clustering_state_prefers_run_state_over_pinned_default():
+    """A reopened run must show the clustering params it actually used, not the
+    template's pinned default -- so the state init reads runState.enable_time_gap
+    etc. before falling back to the DEFINITION's visit_clustering."""
+    from connect_labs.workflow.templates import get_template
+
+    rc = get_template("weekly_dual_track_audit")["render_code"]
+    assert "runState.enable_time_gap" in rc
+    assert "runState.time_gap_minutes" in rc
+    assert "runState.enable_distance" in rc
+    assert "runState.distance_meters" in rc
+
+
+def test_render_code_view_only_card_shows_clustering_params_used():
+    from connect_labs.workflow.templates import get_template
+
+    rc = get_template("weekly_dual_track_audit")["render_code"]
+    assert "Visit clustering:" in rc
+
+
 def test_definition_pins_track_names_not_reviewers():
     """The reviewer used to be pinned per-track (track_a always got muac_overzoom);
-    it's now decided per-path (see _reviewer_for_path), so the DEFINITION carries a
+    it's now decided per-path (see _reviewers_for_path), so the DEFINITION carries a
     cosmetic display "name" per track instead of a "reviewer" key."""
     from connect_labs.workflow.templates.weekly_dual_track_audit import DEFINITION
 
@@ -653,28 +732,31 @@ def test_render_code_includes_editable_image_type_checkboxes():
     assert "image-questions" in rc
 
 
-class TestReviewerForPath:
-    def test_attaches_muac_reviewer_to_any_path_containing_muac_case_insensitive(self):
-        from connect_labs.workflow.templates.weekly_dual_track_audit import _reviewer_for_path
+class TestReviewersForPath:
+    def test_attaches_both_muac_reviewers_to_any_path_containing_muac_case_insensitive(self):
+        from connect_labs.workflow.templates.weekly_dual_track_audit import (
+            MUAC_MATCH_REVIEWER,
+            MUAC_OVERZOOM_REVIEWER,
+            MUAC_READING_FIELD,
+            _reviewers_for_path,
+        )
 
-        assert _reviewer_for_path("form.muac_photo") == {
-            "agent_id": "muac_overzoom",
-            "auto_apply_actions": ["fail_overzoomed"],
-        }
-        assert _reviewer_for_path("form.MUAC_photo") is not None
-        assert _reviewer_for_path("muac_group/muac_display_group_2/muac_photo") is not None
+        assert _reviewers_for_path("form.muac_photo") == [MUAC_OVERZOOM_REVIEWER, MUAC_MATCH_REVIEWER]
+        assert MUAC_MATCH_REVIEWER["config"]["comparison_field"] == MUAC_READING_FIELD
+        assert _reviewers_for_path("form.MUAC_photo") != []
+        assert _reviewers_for_path("muac_group/muac_display_group_2/muac_photo") != []
 
-    def test_no_reviewer_for_paths_without_muac(self):
-        from connect_labs.workflow.templates.weekly_dual_track_audit import _reviewer_for_path
+    def test_no_reviewers_for_paths_without_muac(self):
+        from connect_labs.workflow.templates.weekly_dual_track_audit import _reviewers_for_path
 
-        assert _reviewer_for_path("form.house") is None
-        assert _reviewer_for_path("") is None
-        assert _reviewer_for_path(None) is None
+        assert _reviewers_for_path("form.house") == []
+        assert _reviewers_for_path("") == []
+        assert _reviewers_for_path(None) == []
 
 
 def test_reviewer_assignment_is_per_path_not_per_track():
-    """A muac-named path pinned to Track B still gets the AI reviewer; a
-    non-muac path pinned to Track A does not — the assignment is purely about
+    """A muac-named path pinned to Track B still gets both AI reviewers; a
+    non-muac path pinned to Track A gets none — the assignment is purely about
     the path's own name, independent of which track slot it lives in."""
     calls = build_track_audit_calls(
         opportunity_ids=[101],
@@ -700,6 +782,16 @@ def test_reviewer_assignment_is_per_path_not_per_track():
     assert b["image_audits"] == [
         {
             "image_path": "form.muac_photo",
-            "reviewers": [{"agent_id": "muac_overzoom", "auto_apply_actions": ["fail_overzoomed"]}],
+            "reviewers": [
+                {"agent_id": "muac_overzoom", "auto_apply_actions": ["fail_overzoomed"]},
+                {
+                    "agent_id": "muac_match",
+                    "config": {
+                        "comparison_field": "muac_group/muac_display_group_2/muac_colour_display/soliciter_muac_cm",
+                        "label": "MUAC Reading",
+                    },
+                    "auto_apply_actions": ["fail_unmatched"],
+                },
+            ],
         }
     ]

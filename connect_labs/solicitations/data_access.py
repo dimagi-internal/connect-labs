@@ -335,8 +335,15 @@ class SolicitationsDataAccess:
         )
         return ResponseRecord(record.to_api_dict())
 
-    def award_response(self, response_id: int, reward_budget: int, org_id: str) -> ResponseRecord:
+    def award_response(
+        self, response_id: int, reward_budget: int, org_id: str, award_stage: str = "verification"
+    ) -> ResponseRecord:
         """Mark a response as awarded with budget and org_id.
+
+        award_stage records whether this is a first, small ``verification`` contract
+        (start the firm on a confirmable slice before scaling) or the ``full`` survey.
+        Staged contracting is how Connect lets a funder confirm performance on a
+        small contract before committing the whole engagement.
 
         If the parent solicitation has a fund_id, auto-creates a fund allocation.
         """
@@ -350,6 +357,7 @@ class SolicitationsDataAccess:
         data["status"] = "awarded"
         data["reward_budget"] = reward_budget
         data["org_id"] = org_id
+        data["award_stage"] = award_stage if award_stage in ("verification", "full") else "verification"
         # Stamp the award + record that the awardee was notified. The award itself is
         # the shipped end-state: it records the decision and confirms notification.
         # (Standing up a live Connect opportunity from the award is a separate,

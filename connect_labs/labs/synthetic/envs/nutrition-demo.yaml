@@ -53,8 +53,11 @@ resources:
       reset: true
 
   # --- Run-linked completable audits from each manifest's audited anomalies. ---
+  # Plus one ~100-photo AI-first CENSUS audit on Eastern (10012) — every photo
+  # AI-screened, a handful flagged (Hyperzoomed): the efficiency headline (Echo P1).
   - kind: run_audits
     source: anomalies
+    census_audit_opp: 10012
 
   # --- Coaching tasks from each manifest's coaching_arcs. ---
   - kind: tasks

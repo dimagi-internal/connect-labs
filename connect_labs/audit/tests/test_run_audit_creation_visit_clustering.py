@@ -68,7 +68,7 @@ def test_run_audit_creation_computes_and_stores_visit_clusters(monkeypatch):
     assert result["success"] is True
     assert len(created_sessions) == 1
     clusters = created_sessions[0]["visit_clusters"]
-    assert clusters == [{"group_id": "g1", "visit_ids": [111, 112], "image_count": 2}]
+    assert clusters == [{"group_id": "g1", "visit_ids": [111, 112], "image_count": 2, "image_ids": ["a", "b"]}]
 
 
 def test_run_audit_creation_skips_clustering_fetch_when_disabled(monkeypatch):

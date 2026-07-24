@@ -239,7 +239,7 @@ def filter_visits_for_audit(
     return df["id"].dropna().astype(int).unique().tolist()
 
 
-_AUDIT_VERDICTS = {"pass", "fail", "duplicate_fake"}
+_AUDIT_VERDICTS = {"pass", "fail", "duplicate_fake", "duplicate", "fake"}
 
 
 def build_prior_audit_index(sessions, exclude_session_id=None) -> dict:
@@ -782,6 +782,10 @@ class AuditDataAccess(BaseDataAccess):
                             image_related_fields.append(
                                 {
                                     "path": field_path,
+                                    # Falls back to the raw field path when a
+                                    # reviewer's config omits "label" -- see
+                                    # connect_labs/audit/ai_review_config.py's
+                                    # module docstring for how to set one.
                                     "label": rule.get("label") or field_path,
                                     "value": value,
                                 }
