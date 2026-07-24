@@ -423,6 +423,7 @@ class AuditSessionRecord(LocalLabsRecord):
         Includes core fields and computed statistics for display.
         """
         stats = self.get_assessment_stats()
+        criteria = self.criteria or {}
         return {
             "id": self.id,
             "title": self.title,
@@ -440,6 +441,20 @@ class AuditSessionRecord(LocalLabsRecord):
             "flw_count": self.get_flw_count(),
             "visit_clusters": self.data.get("visit_clusters", []),
             "has_ai_reviewer": self.data.get("has_ai_reviewer", False),
+            # The clustering filter actually used to create THIS session (its
+            # own stored criteria), not the template's current/pinned default
+            # -- lets the duplicate-grouping UI tell a reviewer what params to
+            # expect without them having to go re-check the run's config.
+            # Named "_used" (not "visit_clustering", which the workflow
+            # template's DEFINITION.config.audit_batch already uses for its
+            # pinned, not-yet-run default) to avoid two same-named, different-
+            # meaning structures in this codebase's audit-clustering feature.
+            "visit_clustering_used": {
+                "enable_time_gap": bool(criteria.get("enable_time_gap")),
+                "time_gap_minutes": criteria.get("time_gap_minutes"),
+                "enable_distance": bool(criteria.get("enable_distance")),
+                "distance_meters": criteria.get("distance_meters"),
+            },
         }
 
     def get_assessment_stats_by_question(self) -> dict:

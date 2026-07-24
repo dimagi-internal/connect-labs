@@ -98,6 +98,15 @@ class AuditCriteria:
     # Restrict date_range audits to visits falling on these ISO weekdays (1=Monday..7=Sunday).
     # None/empty = no restriction (all days). Only meaningful when audit_type == "date_range".
     days_of_week: list[int] | None = None
+    # Visit-clustering (duplicate-grouping) filter -- see connect_labs/audit/visit_clustering.py
+    # for how these are actually applied. Read back later by
+    # AuditSessionRecord.to_summary_dict()'s visit_clustering_used field, so the FLW breakdown
+    # UI can show a reviewer what thresholds produced THIS session's groupings -- keep both
+    # readers in sync if these field names ever change.
+    enable_time_gap: bool = False
+    time_gap_minutes: int | None = None
+    enable_distance: bool = False
+    distance_meters: int | None = None
 
     @classmethod
     def from_dict(cls, data: dict) -> "AuditCriteria":
@@ -142,6 +151,10 @@ class AuditCriteria:
             related_fields=related_fields or None,
             exclude_prior_audited=bool(data.get("exclude_prior_audited") or data.get("excludePriorAudited") or False),
             days_of_week=days_of_week,
+            enable_time_gap=bool(data.get("enable_time_gap") or data.get("enableTimeGap") or False),
+            time_gap_minutes=data.get("time_gap_minutes") or data.get("timeGapMinutes"),
+            enable_distance=bool(data.get("enable_distance") or data.get("enableDistance") or False),
+            distance_meters=data.get("distance_meters") or data.get("distanceMeters"),
         )
 
 
@@ -1015,6 +1028,16 @@ class AuditDataAccess(BaseDataAccess):
                     "count_across_all": criteria_obj.count_across_all,
                     "sample_percentage": criteria_obj.sample_percentage,
                     "related_fields": criteria_obj.related_fields,
+                    # Without these, AuditSessionRecord.to_summary_dict()'s
+                    # visit_clustering_used always reads as "disabled" even
+                    # when clustering genuinely produced this session's
+                    # visit_clusters -- run_audit_creation (tasks.py) always
+                    # passes an AuditCriteria object here, never a raw dict,
+                    # so this branch is the one that actually runs in production.
+                    "enable_time_gap": criteria_obj.enable_time_gap,
+                    "time_gap_minutes": criteria_obj.time_gap_minutes,
+                    "enable_distance": criteria_obj.enable_distance,
+                    "distance_meters": criteria_obj.distance_meters,
                 }
             description = generate_audit_description(criteria_obj)
             # Use related_fields from criteria if not passed directly
