@@ -347,13 +347,15 @@ class AuditSessionRecord(LocalLabsRecord):
                 # image was reviewed and flagged), not an unreviewed one. It
                 # already counts against the pass rate the same way fail
                 # does, since neither is counted in "pass" and pass rate is
-                # computed as pass/total.
+                # computed as pass/total. "duplicate" and "fake" are the same
+                # bucket split into two distinct results -- only ever written
+                # by the muac_picture_audit workflow's review screen.
                 result = assessment.get("result")
                 if result == "pass":
                     stats["pass"] += 1
                 elif result == "fail":
                     stats["fail"] += 1
-                elif result == "duplicate_fake":
+                elif result in ("duplicate_fake", "duplicate", "fake"):
                     stats["duplicate_fake"] += 1
                 else:
                     stats["pending"] += 1
@@ -460,7 +462,7 @@ class AuditSessionRecord(LocalLabsRecord):
                     bucket["pass"] += 1
                 elif result == "fail":
                     bucket["fail"] += 1
-                elif result == "duplicate_fake":
+                elif result in ("duplicate_fake", "duplicate", "fake"):
                     bucket["duplicate_fake"] += 1
                 else:
                     bucket["pending"] += 1

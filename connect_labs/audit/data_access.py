@@ -239,7 +239,7 @@ def filter_visits_for_audit(
     return df["id"].dropna().astype(int).unique().tolist()
 
 
-_AUDIT_VERDICTS = {"pass", "fail", "duplicate_fake"}
+_AUDIT_VERDICTS = {"pass", "fail", "duplicate_fake", "duplicate", "fake"}
 
 
 def build_prior_audit_index(sessions, exclude_session_id=None) -> dict:
