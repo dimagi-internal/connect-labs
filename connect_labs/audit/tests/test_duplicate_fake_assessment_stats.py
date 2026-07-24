@@ -91,12 +91,16 @@ class TestAiFlagsByLabel:
             }
         )
         stats = session.get_assessment_stats()
-        # 3 assessments failed; image "a" counts toward BOTH labels.
+        # 3 assessments failed; image "a" counts toward BOTH labels, so the
+        # by-label sum (4) legitimately exceeds ai_no_match (3) -- a display
+        # layer must never infer ai_flags_unlabeled by subtracting one from
+        # the other (see labs_audit_breakdown.js's aiFlagsSummary).
         assert stats["ai_no_match"] == 3
         assert stats["ai_flags_by_label"] == {
             "Hyperzoomed": 2,
             "MUAC Mismatch (strict tolerance)": 2,
         }
+        assert stats["ai_flags_unlabeled"] == 0
 
     def test_no_flags_yields_empty_dict(self):
         session = _make_session(
@@ -104,6 +108,7 @@ class TestAiFlagsByLabel:
         )
         stats = session.get_assessment_stats()
         assert stats["ai_flags_by_label"] == {}
+        assert stats["ai_flags_unlabeled"] == 0
 
     def test_missing_ai_notes_on_a_flagged_image_is_safely_skipped(self):
         session = _make_session(
@@ -112,6 +117,24 @@ class TestAiFlagsByLabel:
         stats = session.get_assessment_stats()
         assert stats["ai_no_match"] == 1
         assert stats["ai_flags_by_label"] == {}
+        assert stats["ai_flags_unlabeled"] == 1
+
+    def test_unlabeled_flags_are_counted_separately_from_labeled_ones(self):
+        session = _make_session(
+            {
+                "v1": {
+                    "assessments": {
+                        "a": _ai_assessment("no_match", "Hyperzoomed"),
+                        "b": _ai_assessment("no_match", ai_notes=None),
+                        "c": _ai_assessment("no_match", ai_notes=""),
+                    }
+                },
+            }
+        )
+        stats = session.get_assessment_stats()
+        assert stats["ai_no_match"] == 3
+        assert stats["ai_flags_by_label"] == {"Hyperzoomed": 1}
+        assert stats["ai_flags_unlabeled"] == 2
 
 
 class TestGetAssessmentStatsByQuestion:
