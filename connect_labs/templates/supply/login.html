@@ -1,0 +1,51 @@
+{% load static %}<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sign in — OES Supply</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="{% static 'supply/supply.css' %}" />
+  </head>
+  <body>
+    <div class="auth-wrap">
+      <div class="auth-card">
+        <div class="brand">
+          <span class="brand-mark">Operation End Starvation</span>
+        </div>
+        <div class="brand-sub">Supply &amp; Procurement Portal</div>
+
+        <h1>Sign in</h1>
+        <p class="lede">Suppliers and programme staff.</p>
+
+        {% if error %}<div class="form-error">{{ error }}</div>{% endif %}
+
+        <form method="post" action="/supply/login/">
+          {% csrf_token %}
+          <div class="field">
+            <label for="id_email">Email address</label>
+            <input type="email" name="email" id="id_email" required autofocus />
+          </div>
+          <div class="field">
+            <label for="id_password">Password</label>
+            <input type="password" name="password" id="id_password" required />
+          </div>
+          <button type="submit" class="btn btn-block">Sign in</button>
+        </form>
+
+        <div class="auth-alt">
+          New supplier? <a href="/supply/signup/">Register your organisation</a>
+        </div>
+
+        <div class="demo-note">
+          Demonstration environment. All organisations, solicitations and shipment
+          data shown in this system are synthetic.
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
