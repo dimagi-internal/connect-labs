@@ -103,6 +103,28 @@ def flush_buffer(ctx, status_code: int | None = None) -> None:
         logger.exception("Failed to flush audit events (non-fatal)")
 
 
+# Query-string parameters whose values are free text a human typed (search
+# boxes, notes) — those can contain PHI content (e.g. a typed patient name),
+# unlike identifier params (?username=, ?entity_id=, ?status=), which are the
+# point of capturing the query string for session reconstruction.
+FREE_TEXT_PARAMS = {"q", "query", "search", "term", "notes", "note", "text", "message", "comment", "title"}
+_QUERY_MAX_LENGTH = 500
+
+
+def redact_query_string(query_string: str) -> str:
+    """Redact free-text parameter values, keep identifier parameters verbatim."""
+    if not query_string:
+        return ""
+    try:
+        from urllib.parse import parse_qsl, urlencode
+
+        pairs = parse_qsl(query_string, keep_blank_values=True)
+        redacted = [(k, "[redacted]" if k.lower() in FREE_TEXT_PARAMS else v) for k, v in pairs]
+        return urlencode(redacted)[:_QUERY_MAX_LENGTH]
+    except Exception:  # pragma: no cover - malformed input: drop rather than risk content
+        return ""
+
+
 # Data writes and exports double as product-analytics feature events — one
 # choke point feeds both systems. Reads/lists are excluded (page views cover
 # them); payload is resource_type + labs_only only, never identifiers.
@@ -153,6 +175,7 @@ def _write_events(events: list[dict], ctx) -> None:
         "user_agent": (ctx.user_agent if ctx else "")[:300],
         "request_id": ctx.request_id if ctx else "",
         "path": (ctx.path if ctx else "")[:300],
+        "query_string": (ctx.query_string if ctx else "")[:500],
     }
     rows = []
     for event_kwargs in events:

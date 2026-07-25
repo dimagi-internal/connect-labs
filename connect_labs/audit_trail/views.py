@@ -48,6 +48,10 @@ class AuditTrailDashboardView(AdminRequiredMixin, TemplateView):
             qs = qs.filter(labs_only=False)
         if params.get("include_canary") != "1":
             qs = qs.exclude(action=Action.CANARY)
+        # Page views are the high-volume navigation record — hidden by default,
+        # surfaced when reconstructing a specific user's session.
+        if params.get("include_page_views") != "1" and params.get("action") != Action.PAGE_VIEW:
+            qs = qs.exclude(action=Action.PAGE_VIEW)
         return qs
 
     def get_anomaly_stats(self):

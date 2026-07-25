@@ -17,7 +17,7 @@ def test_view_events_flushed_with_envelope_and_status(rf, user):
     response = AuditTrailMiddleware(view)(request)
     assert response.status_code == 200
 
-    event = AuditEvent.objects.get()
+    event = AuditEvent.objects.get(action=Action.LIST)
     assert event.action == Action.LIST
     assert event.user_id == user.pk
     assert event.username == user.username

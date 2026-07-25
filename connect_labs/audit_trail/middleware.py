@@ -35,6 +35,7 @@ class AuditTrailMiddleware:
             user_agent=(request.headers.get("user-agent") or "")[:300],
             request_id=str(uuid.uuid4()),
             path=request.path[:300],
+            query_string=service.redact_query_string(request.META.get("QUERY_STRING", "")),
             buffer=[],
             request=request,
         )
@@ -55,7 +56,24 @@ class AuditTrailMiddleware:
                     outcome=Outcome.FAILURE,
                     status_code=403,
                 )
+            if self._is_page_view(request, response):
+                service.record(Action.PAGE_VIEW, resource_type="page", status_code=response.status_code)
             service.flush_buffer(ctx, status_code=response.status_code)
         finally:
             reset_audit_context(token)
         return response
+
+    @staticmethod
+    def _is_page_view(request, response) -> bool:
+        """Authenticated HTML GET renders — the navigation record that makes a
+        user's session reconstructable even for pages that touch no data.
+        htmx partial refreshes are excluded (sub-page churn, not navigation)."""
+        if request.method != "GET" or response.status_code != 200:
+            return False
+        user = getattr(request, "user", None)
+        if user is None or not getattr(user, "is_authenticated", False):
+            return False
+        if request.headers.get("HX-Request"):
+            return False
+        content_type = response.headers.get("Content-Type", "") if hasattr(response, "headers") else ""
+        return content_type.startswith("text/html")
