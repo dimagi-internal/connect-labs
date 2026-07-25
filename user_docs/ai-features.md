@@ -111,7 +111,7 @@ See [Solicitations](solicitations.md) for the step-by-step procurement workflow.
 
 ## Data Privacy
 
-AI features in Labs route through a **governed endpoint** — content that passes through AI processing is handled under Dimagi's Zero Data Retention (ZDR) agreement with Anthropic. This means prompt content is not stored by the AI provider after processing.
+AI features in Connect Labs route through a **governed endpoint** — content that passes through AI processing is handled under Dimagi's Zero Data Retention (ZDR) agreement with Anthropic. This means prompt content is not stored by the AI provider after processing.
 
 !!! info "Safe Mode for sensitive workflows"
 If you're working with programs that have stricter data handling requirements, use [Connect MCP & Safe Mode](connect-mcp-safe-mode.md) — a locked-down AI editing environment with additional safeguards.
@@ -127,4 +127,4 @@ Yes. In the workflow editor, use the **Undo** button or ask the AI to revert its
 The AI used for workflow and pipeline editing does not have access to individual patient records. For audit image review, images are sent to the AI for analysis but processed under ZDR terms — they are not retained by the AI provider.
 
 **Which AI is being used?**
-Labs uses Claude (made by Anthropic) as the AI for workflow editing, pipeline assistance, solicitation criteria generation, and the Application Coach. Audit image review also uses Claude's vision capability.
+Connect Labs uses Claude (made by Anthropic) as the AI for workflow editing, pipeline assistance, solicitation criteria generation, and the Application Coach. Audit image review also uses Claude's vision capability.

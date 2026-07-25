@@ -14,7 +14,7 @@ Dashboards for programs supporting premature and low-birth-weight newborns.
 
 ```mermaid
 flowchart LR
-    CC[CommCare KMC\nForm Submissions] --> L[Labs]
+    CC[Connect Labs KMC\nForm Submissions] --> L[Labs]
     L --> C[Child Timeline\nDashboard]
     L --> F[FLW Metrics\nDashboard]
     C --> D[Drill-down:\nIndividual Child]
@@ -59,7 +59,7 @@ Monitoring dashboard for maternal and newborn health programs.
 
 - FLW-level summary of visit frequency and case outcomes
 - Flag workers or cases that need supervisory follow-up
-- Data streams in progressively from CommCare as the page loads
+- Data streams in progressively from Connect Labs as the page loads
 
 ---
 
@@ -92,7 +92,7 @@ Shows summary statistics on audit session quality across all programs:
 All custom analysis dashboards share these patterns:
 
 **Progressive data loading:**
-Data streams in from CommCare rather than loading all at once. A progress bar shows how much has loaded. For large programs, this may take 30–60 seconds.
+Data streams in from Connect Labs rather than loading all at once. A progress bar shows how much has loaded. For large programs, this may take 30–60 seconds.
 
 **Filtering:**
 Most dashboards let you filter by:
@@ -116,7 +116,7 @@ Some dashboards have an **Export** button to download the current view as a CSV.
 Custom dashboards are built for specific programs and require development work. Reach out in **#connect-labs** on Slack to discuss what your program needs.
 
 **The numbers look different from CommCare's built-in reports — why?**
-Labs dashboards may apply additional filters or use different date logic than CommCare's standard reports. Check the date range filter and confirm which visits are included.
+Connect Labs dashboards may apply additional filters or use different date logic than CommCare's standard reports. Check the date range filter and confirm which visits are included.
 
 **Data is loading slowly — is something wrong?**
 Large programs with many visits take longer to load. If the progress bar hasn't moved in 5+ minutes, try refreshing the page. If the problem persists, post in **#connect-labs**.

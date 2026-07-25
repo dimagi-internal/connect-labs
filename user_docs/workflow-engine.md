@@ -37,7 +37,7 @@ If someone shares a direct link to a specific workflow card — for example, a U
 
 ### Program-level vs. opportunity-level workflows
 
-Workflows in Labs are owned by either a **program** or a specific **opportunity**:
+Workflows in Connect Labs are owned by either a **program** or a specific **opportunity**:
 
 - **Program-owned workflows** are scoped directly to the program — they have no owning opportunity at all. They appear in the program view only, cover the program as a whole — for example, the Program Audit Creator and Program Audit Report — and do not appear under any individual opportunity. All operations on these workflows (opening them, creating a run, viewing a run page) work entirely within the program context; no opportunity is needed. When you open a program-owned workflow, it verifies your access at the program level and loads its pipeline data across all the opportunities the workflow spans — you do not need to select an individual opportunity first.
 - **Opportunity-owned workflows** appear under their specific opportunity only. They will not appear in the program-level workflow list.
@@ -69,9 +69,9 @@ Once saved, the workflow card shows a badge such as **⏱ Weekly** so you can se
 
 Scheduled runs use the same default run the workflow already supports, so nothing new needs to be configured on the workflow itself.
 
-### Managing all schedules (Labs Admin)
+### Managing all schedules (Connect Labs Admin)
 
-A dedicated **Scheduled Workflows** page in **Labs Admin** lists every schedule across all users. For each entry you can see:
+A dedicated **Scheduled Workflows** page in **Connect Labs Admin** lists every schedule across all users. For each entry you can see:
 
 | Column | What it shows |
 |---|---|
@@ -219,7 +219,7 @@ stateDiagram-v2
     Active --> Closed: Graduated
 ```
 
-Program managers can update a case's status directly from the workflow view. Status changes are stored in Labs and visible to all team members with access to the program.
+Program managers can update a case's status directly from the workflow view. Status changes are stored in Connect Labs and visible to all team members with access to the program.
 
 ---
 
@@ -252,4 +252,4 @@ Two independent AI checks run on every MUAC tape photo:
 | Check | Badge shown | What it means |
 |---|---|---|
 | **Framing check** | **Hyperzoomed** | The photo is framed too closely — the tape and surrounding tissue are not fully visible, making an accurate reading impossible |
-| **Reading-match check** | **MUAC Mismatch (strict
+| **Reading-match check** | **MUAC M
