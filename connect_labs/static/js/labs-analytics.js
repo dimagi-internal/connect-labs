@@ -83,8 +83,9 @@
   script.setAttribute('data-before-send', 'labsAnalyticsBeforeSend');
   script.setAttribute('data-exclude-hash', 'true');
   // Web Vitals (LCP/INP/CLS/FCP/TTFB) feed Umami's Performance view —
-  // timing numbers only, no page content.
-  script.setAttribute('data-web-vitals', 'true');
+  // timing numbers only, no page content. (Attribute name verified against
+  // the Umami tracker source: `config('performance')`.)
+  script.setAttribute('data-performance', 'true');
   script.onload = function () {
     if (!window.umami) return;
     if (cfg.username && typeof window.umami.identify === 'function') {
