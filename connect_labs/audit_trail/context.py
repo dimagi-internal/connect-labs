@@ -36,6 +36,7 @@ class AuditContext:
     user_agent: str = ""
     request_id: str = ""
     path: str = ""
+    query_string: str = ""
     # When not None, record() appends pending event kwargs here instead of
     # writing immediately; the middleware flushes at response time.
     buffer: list[dict] | None = None

@@ -27,6 +27,9 @@ class Action(models.TextChoices):
     CREATE = "create", "Create record"
     UPDATE = "update", "Update record"
     DELETE = "delete", "Delete record"
+    # Navigation (authenticated HTML page renders — makes the trail a complete
+    # per-user click-path even for pages that touch no data)
+    PAGE_VIEW = "page_view", "Page view"
     # Authentication / authorization
     LOGIN = "login", "Login"
     LOGIN_FAILED = "login_failed", "Login failed"
@@ -88,6 +91,10 @@ class AuditEvent(models.Model):
     user_agent = models.CharField(max_length=300, blank=True, default="")
     request_id = models.CharField(max_length=36, blank=True, default="")
     path = models.CharField(max_length=300, blank=True, default="")
+    # Query string with free-text parameter values redacted (see
+    # service.redact_query_string) — identifiers like ?username=/entity_id=
+    # are kept for forensic session reconstruction; typed content is not.
+    query_string = models.CharField(max_length=500, blank=True, default="")
 
     # Outcome
     outcome = models.CharField(max_length=10, choices=Outcome.choices, default=Outcome.SUCCESS)
@@ -135,6 +142,7 @@ class AuditEvent(models.Model):
             "user_agent": self.user_agent,
             "request_id": self.request_id,
             "path": self.path,
+            "query_string": self.query_string,
             "outcome": self.outcome,
             "status_code": self.status_code,
             "metadata": self.metadata,

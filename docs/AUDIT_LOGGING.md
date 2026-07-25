@@ -17,6 +17,7 @@ request id, path), **scope** (opportunity/program/organization ids), and
 | --- | --- |
 | `list` / `read` / `create` / `update` / `delete` | The five `LabsRecordAPIClient` methods — covers every LabsRecord touch, production HTTP and labs-only synthetic alike (synthetic tagged `labs_only=true`) |
 | `export` | `ExportAPIClient.paginate` — the bulk PHI path (visit form JSON, worker identities); one event per crawl with total row count |
+| `page_view` | Every authenticated HTML page render (middleware; htmx partials excluded) — makes a user's session fully reconstructable, including pages that touch no data. Hidden by default on the dashboard |
 | `login` / `logout` / `login_failed` | Django auth signals (OAuth callback calls `auth.login`) |
 | `access_denied` | Any 403 response (middleware) — repeated 403s against one scope are the classic snooping signature |
 | `review` | The "Mark reviewed" action on the dashboard — reviews are themselves audit events |
@@ -25,6 +26,16 @@ request id, path), **scope** (opportunity/program/organization ids), and
 MCP tool calls are additionally logged to `MCPAuditLog` (tool-level); their
 data touches flow through the same client choke points and land here too,
 attributed via the PAT user with `source="mcp"`.
+
+**Session reconstruction.** Every event carries the request's `path` and its
+`query_string` — with **free-text parameter values redacted**
+(`service.FREE_TEXT_PARAMS`: `q`, `search`, `notes`, ... — a search box may
+contain typed PHI content, whereas `?username=`/`?entity_id=`/`?status=` are
+identifiers and are kept verbatim). Filter the dashboard by username with
+"Include page views" checked to replay a user's exact click-path — full URLs
+interleaved with what each page actually read, exported, or changed. This
+forensic detail lives here, NOT in analytics: Umami receives no query strings
+at all (`data-exclude-search`).
 
 **Never log PHI content.** Events carry opaque identifiers only — no names,
 form answers, or free text. This applies to `metadata` too. The audit log

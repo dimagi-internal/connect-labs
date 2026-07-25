@@ -114,6 +114,9 @@
       <label class="inline-flex items-center text-xs text-gray-500">
         <input type="checkbox" name="include_canary" value="1" {% if request.GET.include_canary == "1" %}checked{% endif %} class="mr-1.5 rounded border-gray-300"> Include canaries
       </label>
+      <label class="inline-flex items-center text-xs text-gray-500">
+        <input type="checkbox" name="include_page_views" value="1" {% if request.GET.include_page_views == "1" %}checked{% endif %} class="mr-1.5 rounded border-gray-300"> Include page views (session reconstruction)
+      </label>
     </div>
   </form>
 
@@ -184,8 +187,8 @@
                 <span class="text-green-600 text-xs">{{ event.status_code|default:"ok" }}</span>
               {% endif %}
             </td>
-            <td class="px-4 py-2 text-gray-400 text-xs whitespace-nowrap" title="{{ event.path }} {{ event.user_agent }}">
-              {{ event.ip_address|default:"" }} {{ event.path|truncatechars:40 }}
+            <td class="px-4 py-2 text-gray-400 text-xs whitespace-nowrap" title="{{ event.path }}{% if event.query_string %}?{{ event.query_string }}{% endif %} {{ event.user_agent }}">
+              {{ event.ip_address|default:"" }} {{ event.path|truncatechars:40 }}{% if event.query_string %}<span class="text-gray-300">?{{ event.query_string|truncatechars:30 }}</span>{% endif %}
             </td>
           </tr>
           {% empty %}
