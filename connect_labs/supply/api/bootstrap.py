@@ -3,13 +3,15 @@
 The SPA holds no client-side store: after any mutation it re-fetches this
 endpoint. Server state is the only state.
 """
+from django.db import models
 from django.http import JsonResponse
 
 from ..decorators import current_actor
-from ..models import RFP, Bid, Contract, Discrepancy, EOIRound, EOISubmission, SupplyNode
+from ..models import RFP, Appropriation, Bid, Contract, Discrepancy, EOIRound, EOISubmission, SupplyNode
 from ..rbac import ROLE_PERMS
 from ..serializers import (
     api_token_dict,
+    appropriation_dict,
     bid_dict,
     contract_dict,
     discrepancy_dict,
@@ -81,7 +83,36 @@ def _staff_world(actor):
         world["rounds"] = [round_dict(r) for r in EOIRound.objects.all().order_by("-created_at")]
     if "rfps" in ROLE_PERMS.get(role, {}):
         world["rfps"] = [rfp_dict(r) for r in RFP.objects.prefetch_related("lots").all().order_by("-created_at")]
+    if "execution" in ROLE_PERMS.get(role, {}):
+        contracts = Contract.objects.select_related("award__lot", "org").prefetch_related(
+            "shipments__origin", "shipments__destination", "shipments__milestones__node"
+        )
+        gov_country = _gov_country(actor)
+        if gov_country:
+            # Country scoping happens here, not in the browser: an observer's
+            # payload must never contain another country's consignments.
+            contracts = contracts.filter(
+                models.Q(shipments__origin__country=gov_country)
+                | models.Q(shipments__destination__country=gov_country)
+            ).distinct()
+        world["contracts"] = [contract_dict(c, include_shipments=True) for c in contracts]
+        world["discrepancies"] = [discrepancy_dict(d) for d in Discrepancy.objects.select_related("shipment").all()]
+        nodes = SupplyNode.objects.all()
+        world["nodes"] = [node_dict(n) for n in nodes]
+    if role == "funder":
+        world["appropriations"] = [appropriation_dict(a) for a in Appropriation.objects.all()]
+    gov_country = _gov_country(actor)
+    if gov_country:
+        world["scope_country"] = gov_country
     return world
+
+
+def _gov_country(actor):
+    """The country a government observer is scoped to, or None for other roles."""
+    if actor.role != "gov_observer":
+        return None
+    staff = getattr(actor.user, "supply_staff_role", None)
+    return (staff.country or None) if staff else None
 
 
 def build_bootstrap(request):

@@ -1,0 +1,17 @@
+{
+  "colours": {
+    "1": "#CDFACD",
+    "2": "#FAE61E",
+    "3": "#E67800",
+    "4": "#C80000",
+    "5": "#640000"
+  },
+  "labels": {
+    "1": "Minimal",
+    "2": "Stressed",
+    "3": "Crisis",
+    "4": "Emergency",
+    "5": "Catastrophe / Famine"
+  },
+  "source": "Phase assignments are synthetic, shaped after published IPC analyses."
+}

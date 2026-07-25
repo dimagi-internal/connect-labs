@@ -26,6 +26,7 @@ const FILES = [
   'perms.js',
   'primitives.jsx',
   'data-api.js',
+  'flowmap.jsx',
   'tab_supplier_home.jsx',
   'tab_org.jsx',
   'tab_eoi.jsx',
@@ -36,6 +37,9 @@ const FILES = [
   'tab_rounds.jsx',
   'tab_registry.jsx',
   'tab_rfps.jsx',
+  'tab_command.jsx',
+  'tab_gov.jsx',
+  'tab_funder.jsx',
   'app.jsx',
 ];
 

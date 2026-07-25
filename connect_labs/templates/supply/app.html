@@ -17,6 +17,16 @@
 
     {{ bootstrap|json_script:"supply-bootstrap" }}
 
+    <script>
+      window.SUPPLY_MAPBOX_TOKEN = "{{ mapbox_token|escapejs }}";
+    </script>
+
+    <link
+      href="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.css"
+      rel="stylesheet"
+    />
+    <script src="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.js"></script>
+    <script src="https://unpkg.com/deck.gl@9.3.7/dist.min.js"></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script
       crossorigin

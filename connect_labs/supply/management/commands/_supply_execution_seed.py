@@ -12,7 +12,7 @@ from datetime import timedelta
 from django.contrib.gis.geos import LineString, Point
 from django.utils import timezone
 
-from connect_labs.supply import gs1
+from connect_labs.supply import gs1, routes
 from connect_labs.supply.models import (
     Appropriation,
     Award,
@@ -230,14 +230,9 @@ def _seed_contracts(orgs, appropriations):
 
 
 def _route(origin, destination, waypoint_nodes):
-    """A LineString through the leg's nodes.
-
-    Real corridor and sea-lane geometry is Phase 3 work; a node-to-node line is
-    the honest placeholder until then.
-    """
-    points = [origin.location] + [n.location for n in waypoint_nodes] + [destination.location]
-    coords = [(p.x, p.y) for p in points if p]
-    if len(coords) < 2:
+    """A LineString following the digitised corridor for each hop."""
+    coords = routes.build_route(origin, destination, waypoint_nodes)
+    if not coords:
         return None
     return LineString(coords, srid=4326)
 
