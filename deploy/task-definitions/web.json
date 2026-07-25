@@ -145,6 +145,10 @@
         {
           "name": "MAPBOX_TOKEN",
           "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-mapbox-token-36222B"
+        },
+        {
+          "name": "SUPPLY_DEMO_PASSWORD",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-supply-demo-password-6QXk52"
         }
       ],
       "logConfiguration": {

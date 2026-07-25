@@ -60,6 +60,7 @@ INSTALLED_APPS = INSTALLED_APPS + [  # noqa: F405
     "connect_labs.labs",
     "connect_labs.custom_analysis.chc_nutrition",
     "connect_labs.campaign",
+    "connect_labs.supply",
 ]
 
 # Add labs context middleware after auth

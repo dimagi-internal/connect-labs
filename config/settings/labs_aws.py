@@ -101,6 +101,7 @@ PRELOGIN_APP_LOGIN_URL = "/labs/overview/"
 INSTALLED_APPS.append("connect_labs.labs")
 INSTALLED_APPS.append("connect_labs.custom_analysis.chc_nutrition")
 INSTALLED_APPS.append("connect_labs.campaign")
+INSTALLED_APPS.append("connect_labs.supply")
 
 # Add labs middlewares after auth.
 MIDDLEWARE = list(MIDDLEWARE)
