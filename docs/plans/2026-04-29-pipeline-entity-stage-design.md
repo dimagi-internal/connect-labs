@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-29
 **Status:** Draft
-**Prerequisite for:** [Workflow Runs & Snapshots](2026-04-29-workflow-run-snapshots-design.md)
+**Prerequisite for:** the runs/snapshots framework — canonical design: [Run State (final)](2026-05-04-run-state-final.md)
 
 ## Problem
 

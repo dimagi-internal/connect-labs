@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-04
 **Status:** Implemented
-**Supersedes:** `2026-04-29-workflow-run-snapshots-design.md`, `2026-04-30-run-lifecycle.md`
+**Supersedes:** `2026-04-29-workflow-run-snapshots-design.md`, `2026-04-30-run-lifecycle.md` (both since deleted — see git history)
 
 ## Summary
 
