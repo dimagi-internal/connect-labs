@@ -66,11 +66,13 @@
     ]
   },
   "scripts": {
-    "build": "NODE_ENV=production webpack --mode production --config webpack/prod.config.js && npm run build:campaign",
+    "build": "NODE_ENV=production webpack --mode production --config webpack/prod.config.js && npm run build:campaign && npm run build:supply",
     "build:campaign": "node webpack/build-campaign.js",
     "watch:campaign": "node webpack/build-campaign.js --watch",
-    "dev": "webpack --mode development --config webpack/base.config.js && npm run build:campaign",
-    "dev-watch": "concurrently -k -n webpack,campaign \"webpack --mode development --config webpack/base.config.js --watch\" \"npm run watch:campaign\"",
+    "build:supply": "node webpack/build-supply.js",
+    "watch:supply": "node webpack/build-supply.js --watch",
+    "dev": "webpack --mode development --config webpack/base.config.js && npm run build:campaign && npm run build:supply",
+    "dev-watch": "concurrently -k -n webpack,campaign,supply \"webpack --mode development --config webpack/base.config.js --watch\" \"npm run watch:campaign\" \"npm run watch:supply\"",
     "test": "vitest run && npm run test:units",
     "test:units": "node connect_labs/static/labs/context_picker.test.mjs && node connect_labs/static/microplans/shared.test.mjs",
     "test:watch": "vitest"

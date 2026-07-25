@@ -1,0 +1,216 @@
+/* Shared UI primitives — globals consumed by every tab_*.jsx file.
+   KeyFigures is the OCHA-style stat row that also carries the Phase-3
+   dashboards, so it lives here rather than in any one tab. */
+
+const { useState, useEffect, useMemo, useCallback } = React;
+
+function Page({ title, lede, actions, children }) {
+  return (
+    <div className="page">
+      <div className="page-head">
+        <div>
+          <h1>{title}</h1>
+          {lede ? <p className="page-lede">{lede}</p> : null}
+        </div>
+        {actions ? <div className="page-actions">{actions}</div> : null}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function Card({ title, subtitle, actions, children, className }) {
+  return (
+    <section className={`card ${className || ""}`}>
+      {title || actions ? (
+        <header className="card-head">
+          <div>
+            <h2>{title}</h2>
+            {subtitle ? <div className="card-sub">{subtitle}</div> : null}
+          </div>
+          {actions ? <div className="card-actions">{actions}</div> : null}
+        </header>
+      ) : null}
+      <div className="card-body">{children}</div>
+    </section>
+  );
+}
+
+function KeyFigures({ figures }) {
+  return (
+    <div className="keyfigures">
+      {figures.map((fig) => (
+        <div className="keyfigure" key={fig.label}>
+          <div className="keyfigure-value">{fig.value}</div>
+          <div className="keyfigure-label">{fig.label}</div>
+          {fig.hint ? <div className="keyfigure-hint">{fig.hint}</div> : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const STATUS_TONES = {
+  draft: "neutral",
+  open: "good",
+  closed: "neutral",
+  submitted: "info",
+  qualified: "good",
+  rejected: "bad",
+  active: "good",
+  expired: "bad",
+  revoked: "bad",
+  published: "good",
+  awarded: "accent",
+};
+
+function StatusChip({ status, label }) {
+  const tone = STATUS_TONES[status] || "neutral";
+  return <span className={`chip chip-${tone}`}>{label || status}</span>;
+}
+
+function Badge({ children, tone }) {
+  return <span className={`chip chip-${tone || "neutral"}`}>{children}</span>;
+}
+
+function EmptyState({ title, hint }) {
+  return (
+    <div className="empty">
+      <div className="empty-title">{title}</div>
+      {hint ? <div className="empty-hint">{hint}</div> : null}
+    </div>
+  );
+}
+
+function DataTable({ columns, rows, empty, rowKey, onRowClick }) {
+  const [sort, setSort] = useState({ key: null, dir: 1 });
+
+  const sorted = useMemo(() => {
+    if (!sort.key) return rows;
+    const col = columns.find((c) => c.key === sort.key);
+    if (!col) return rows;
+    const value = col.sortValue || col.value;
+    return [...rows].sort((a, b) => {
+      const av = value(a);
+      const bv = value(b);
+      if (av === bv) return 0;
+      if (av === null || av === undefined) return 1;
+      if (bv === null || bv === undefined) return -1;
+      return (av > bv ? 1 : -1) * sort.dir;
+    });
+  }, [rows, sort, columns]);
+
+  if (!rows.length) {
+    return <EmptyState title={empty || "Nothing to show yet."} />;
+  }
+
+  return (
+    <div className="table-wrap">
+      <table className="data-table">
+        <thead>
+          <tr>
+            {columns.map((col) => (
+              <th
+                key={col.key}
+                className={col.sortable === false ? "" : "sortable"}
+                onClick={() =>
+                  col.sortable === false
+                    ? null
+                    : setSort((s) => ({ key: col.key, dir: s.key === col.key ? -s.dir : 1 }))
+                }
+              >
+                {col.label}
+                {sort.key === col.key ? <span className="sort-caret">{sort.dir > 0 ? " ▲" : " ▼"}</span> : null}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map((row, i) => (
+            <tr
+              key={rowKey ? rowKey(row) : i}
+              onClick={onRowClick ? () => onRowClick(row) : undefined}
+              className={onRowClick ? "clickable" : ""}
+            >
+              {columns.map((col) => (
+                <td key={col.key}>{col.render ? col.render(row) : col.value(row)}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function Modal({ title, children, onClose, footer, wide }) {
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className={`modal ${wide ? "modal-wide" : ""}`} onClick={(e) => e.stopPropagation()}>
+        <header className="modal-head">
+          <h2>{title}</h2>
+          <button type="button" className="modal-close" onClick={onClose} aria-label="Close">
+            ×
+          </button>
+        </header>
+        <div className="modal-body">{children}</div>
+        {footer ? <footer className="modal-foot">{footer}</footer> : null}
+      </div>
+    </div>
+  );
+}
+
+function FormRow({ label, hint, error, children }) {
+  return (
+    <div className="field">
+      <label>{label}</label>
+      {children}
+      {hint ? <div className="field-hint">{hint}</div> : null}
+      {error ? <div className="field-error">{error}</div> : null}
+    </div>
+  );
+}
+
+function Toast({ toast, onDismiss }) {
+  useEffect(() => {
+    if (!toast) return undefined;
+    const t = setTimeout(onDismiss, 4500);
+    return () => clearTimeout(t);
+  }, [toast, onDismiss]);
+
+  if (!toast) return null;
+  return (
+    <div className={`toast toast-${toast.tone || "info"}`} onClick={onDismiss}>
+      {toast.message}
+    </div>
+  );
+}
+
+function CategoryPills({ categories }) {
+  if (!categories || !categories.length) return <span className="muted">—</span>;
+  return (
+    <span className="pill-row">
+      {categories.map((c) => (
+        <span className="pill" key={c}>
+          {categoryLabel(c)}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function ExpiryChip({ iso }) {
+  const days = daysUntil(iso);
+  if (days === null) return <span className="muted">—</span>;
+  if (days < 0) return <Badge tone="bad">Expired</Badge>;
+  if (days <= 60) return <Badge tone="warn">{days}d left</Badge>;
+  return <span>{formatDate(iso)}</span>;
+}

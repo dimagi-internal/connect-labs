@@ -14,6 +14,7 @@ on:
       - 'connect_labs/static/js/**'
       - 'connect_labs/static/css/**'
       - 'connect_labs/static/campaign/**'
+      - 'connect_labs/static/supply/**'
       - 'connect_labs/templates/**'
       - 'Dockerfile.node'
 
@@ -51,6 +52,7 @@ jobs:
         run: |
           HASH=$(find package.json package-lock.json webpack/ components/ lib/ tailwind/ tsconfig.json \
             connect_labs/static/js/ connect_labs/static/css/ connect_labs/templates/ \
+            connect_labs/static/campaign/ connect_labs/static/supply/ \
             -type f 2>/dev/null | sort | xargs cat | sha256sum | cut -c1-12)
           echo "hash=$HASH" >> "$GITHUB_OUTPUT"
 
