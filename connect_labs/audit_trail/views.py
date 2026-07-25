@@ -9,13 +9,14 @@ from datetime import timedelta
 
 from django.contrib import messages
 from django.core.paginator import Paginator
-from django.db.models import Count, Sum
+from django.db.models import Count, Max, Sum
 from django.shortcuts import redirect
 from django.utils import timezone
 from django.views.generic import TemplateView
 
 from connect_labs.audit_trail import service
 from connect_labs.audit_trail.models import Action, AuditEvent, Outcome
+from connect_labs.audit_trail.timeline import build_session_timeline
 from connect_labs.labs.view_mixins import AdminRequiredMixin
 
 PAGE_SIZE = 50
@@ -129,3 +130,62 @@ class AuditTrailDashboardView(AdminRequiredMixin, TemplateView):
         )
         messages.success(request, "Review recorded in the audit trail.")
         return redirect(request.get_full_path())
+
+
+class SessionTimelineView(AdminRequiredMixin, TemplateView):
+    """ "What exactly did this user do" — per-user session reconstruction.
+
+    Groups a user's audit events into sessions (30-min idle gaps) and renders
+    each as a timeline: page navigations (full URL, redacted query) with the
+    data effects of that request nested underneath. Investigating a user is
+    itself PHI-adjacent surveillance, so opening this view records an audit
+    event naming who looked at whom.
+    """
+
+    template_name = "audit_trail/session_timeline.html"
+    MAX_EVENTS = 5000
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        username = (self.request.GET.get("username") or "").strip()
+        try:
+            days = min(int(self.request.GET.get("days") or 7), 90)
+        except ValueError:
+            days = 7
+        include_labs_only = self.request.GET.get("include_labs_only") == "1"
+        since = timezone.now() - timedelta(days=days)
+
+        context.update({"username": username, "days": days, "include_labs_only": include_labs_only})
+
+        recent = (
+            AuditEvent.objects.filter(occurred_at__gte=since)
+            .exclude(username="")
+            .exclude(action=Action.CANARY)
+            .values("username")
+            .annotate(n=Count("id"), last=Max("occurred_at"))
+            .order_by("-last")[:30]
+        )
+        context["recent_users"] = recent
+        if not username:
+            return context
+
+        service.record(
+            Action.READ,
+            resource_type="session_timeline",
+            metadata={"viewed_username": username, "days": days},
+        )
+
+        qs = AuditEvent.objects.filter(username=username, occurred_at__gte=since).exclude(action=Action.CANARY)
+        if not include_labs_only:
+            qs = qs.filter(labs_only=False)
+        events = list(qs.order_by("occurred_at")[: self.MAX_EVENTS])
+        sessions = build_session_timeline(events)
+        sessions.reverse()  # newest session first
+        context.update(
+            {
+                "sessions": sessions,
+                "event_count": len(events),
+                "truncated": len(events) == self.MAX_EVENTS,
+            }
+        )
+        return context
