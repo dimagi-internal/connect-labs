@@ -130,9 +130,7 @@ def review_submission(reviewer, sub, decisions, notes=""):
 def live_qualifications(category=None, country=None, expiring_within_days=None):
     """The registry query — only live qualifications ever count."""
     today = date.today()
-    qs = Qualification.objects.select_related("org").filter(
-        status=Qualification.Status.ACTIVE, expires_at__gte=today
-    )
+    qs = Qualification.objects.select_related("org").filter(status=Qualification.Status.ACTIVE, expires_at__gte=today)
     if category:
         qs = qs.filter(category=category)
     if country:

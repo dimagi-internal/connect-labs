@@ -10,7 +10,7 @@ from datetime import date
 from django.db import transaction
 from django.utils import timezone
 
-from ..models import Award, Bid, BidScore, Category, Lot, LotBid, Qualification, RFP
+from ..models import RFP, Award, Bid, BidScore, Category, Lot, LotBid, Qualification
 from .org_actions import ActionError
 
 VALID_CATEGORIES = {c.value for c in Category}
@@ -26,9 +26,9 @@ RFP_TRANSITIONS = {
 def live_qualification_categories(org):
     today = date.today()
     return set(
-        Qualification.objects.filter(
-            org=org, status=Qualification.Status.ACTIVE, expires_at__gte=today
-        ).values_list("category", flat=True)
+        Qualification.objects.filter(org=org, status=Qualification.Status.ACTIVE, expires_at__gte=today).values_list(
+            "category", flat=True
+        )
     )
 
 
@@ -41,11 +41,7 @@ def eligible_rfps(org):
     categories = live_qualification_categories(org)
     if not categories:
         return RFP.objects.none()
-    ids = [
-        r.id
-        for r in RFP.objects.filter(status=RFP.Status.PUBLISHED)
-        if set(r.categories) & categories
-    ]
+    ids = [r.id for r in RFP.objects.filter(status=RFP.Status.PUBLISHED) if set(r.categories) & categories]
     return RFP.objects.filter(id__in=ids).order_by("-created_at")
 
 

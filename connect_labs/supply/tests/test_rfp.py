@@ -3,7 +3,7 @@ from datetime import date, timedelta
 
 import pytest
 
-from connect_labs.supply.models import Award, Bid, LotBid, RFP
+from connect_labs.supply.models import RFP, Award, Bid
 
 from . import factories as f
 
@@ -96,11 +96,21 @@ def test_cannot_bid_after_deadline_or_when_closed(supplier_client):
     _qualify(member.org)
     past = f.RFPFactory(categories=["rutf"], status=RFP.Status.PUBLISHED, bid_deadline=TODAY - timedelta(days=1))
     lot = f.LotFactory(rfp=past)
-    assert _post(client, f"/supply/api/rfps/{past.id}/bid/", {"lot_bids": [{"lot_id": lot.id, "unit_price": 40}]}).status_code == 400
+    assert (
+        _post(
+            client, f"/supply/api/rfps/{past.id}/bid/", {"lot_bids": [{"lot_id": lot.id, "unit_price": 40}]}
+        ).status_code
+        == 400
+    )
 
     closed = f.RFPFactory(categories=["rutf"], status=RFP.Status.CLOSED)
     closed_lot = f.LotFactory(rfp=closed)
-    assert _post(client, f"/supply/api/rfps/{closed.id}/bid/", {"lot_bids": [{"lot_id": closed_lot.id, "unit_price": 40}]}).status_code == 400
+    assert (
+        _post(
+            client, f"/supply/api/rfps/{closed.id}/bid/", {"lot_bids": [{"lot_id": closed_lot.id, "unit_price": 40}]}
+        ).status_code
+        == 400
+    )
 
 
 def test_cannot_edit_bid_after_submitting(supplier_client):
@@ -175,7 +185,10 @@ def test_scoring_and_comparison_ranked_by_price(admin_client):
         unit_price=1,
     )
 
-    assert _post(client, f"/supply/api/lot-bids/{cheap.id}/score/", {"technical_score": 80, "notes": "ok"}).status_code == 200
+    assert (
+        _post(client, f"/supply/api/lot-bids/{cheap.id}/score/", {"technical_score": 80, "notes": "ok"}).status_code
+        == 200
+    )
     # re-scoring by the same reviewer updates rather than duplicating
     _post(client, f"/supply/api/lot-bids/{cheap.id}/score/", {"technical_score": 90})
     _post(client, f"/supply/api/lot-bids/{dear.id}/score/", {"technical_score": 70})

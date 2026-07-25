@@ -3,14 +3,17 @@
 
 function supplyCsrfToken() {
   const meta = document.querySelector('meta[name="csrf-token"]');
-  return meta ? meta.getAttribute("content") : "";
+  return meta ? meta.getAttribute('content') : '';
 }
 
 async function supplyRequest(url, options) {
-  const opts = Object.assign({ credentials: "same-origin", headers: {} }, options || {});
+  const opts = Object.assign(
+    { credentials: 'same-origin', headers: {} },
+    options || {},
+  );
   opts.headers = Object.assign(
-    { "Content-Type": "application/json", "X-CSRFToken": supplyCsrfToken() },
-    opts.headers
+    { 'Content-Type': 'application/json', 'X-CSRFToken': supplyCsrfToken() },
+    opts.headers,
   );
   const resp = await fetch(url, opts);
   let body = null;
@@ -29,19 +32,22 @@ async function supplyRequest(url, options) {
 }
 
 function supplyGet(url) {
-  return supplyRequest(url, { method: "GET" });
+  return supplyRequest(url, { method: 'GET' });
 }
 
 function supplyPost(url, payload) {
-  return supplyRequest(url, { method: "POST", body: JSON.stringify(payload || {}) });
+  return supplyRequest(url, {
+    method: 'POST',
+    body: JSON.stringify(payload || {}),
+  });
 }
 
 /* Category vocabulary, shared by every tab. */
 const SUPPLY_CATEGORIES = [
-  { key: "rutf", label: "RUTF" },
-  { key: "therapeutic_milk", label: "Therapeutic milk" },
-  { key: "transport", label: "Road transport" },
-  { key: "warehousing", label: "Warehousing" },
+  { key: 'rutf', label: 'RUTF' },
+  { key: 'therapeutic_milk', label: 'Therapeutic milk' },
+  { key: 'transport', label: 'Road transport' },
+  { key: 'warehousing', label: 'Warehousing' },
 ];
 
 function categoryLabel(key) {
@@ -50,40 +56,44 @@ function categoryLabel(key) {
 }
 
 const COUNTRY_NAMES = {
-  NG: "Nigeria",
-  SD: "Sudan",
-  ET: "Ethiopia",
-  BF: "Burkina Faso",
-  KE: "Kenya",
-  DJ: "Djibouti",
-  TG: "Togo",
-  GH: "Ghana",
-  FR: "France",
-  IN: "India",
+  NG: 'Nigeria',
+  SD: 'Sudan',
+  ET: 'Ethiopia',
+  BF: 'Burkina Faso',
+  KE: 'Kenya',
+  DJ: 'Djibouti',
+  TG: 'Togo',
+  GH: 'Ghana',
+  FR: 'France',
+  IN: 'India',
 };
 
 function countryLabel(code) {
-  if (!code) return "—";
+  if (!code) return '—';
   return COUNTRY_NAMES[code] || code;
 }
 
 function formatDate(iso) {
-  if (!iso) return "—";
+  if (!iso) return '—';
   const d = new Date(iso);
   if (isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  return d.toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
 }
 
 function formatMoney(value, currency) {
-  if (value === null || value === undefined) return "—";
-  return `${currency || "USD"} ${Number(value).toLocaleString(undefined, {
+  if (value === null || value === undefined) return '—';
+  return `${currency || 'USD'} ${Number(value).toLocaleString(undefined, {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
 }
 
 function formatNumber(value) {
-  if (value === null || value === undefined) return "—";
+  if (value === null || value === undefined) return '—';
   return Number(value).toLocaleString();
 }
 

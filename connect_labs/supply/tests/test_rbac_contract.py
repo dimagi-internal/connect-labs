@@ -20,14 +20,32 @@ from . import factories as f
 PERMS_JS = Path(__file__).resolve().parents[2] / "static" / "supply" / "perms.js"
 
 
-def test_perms_js_matches_rbac_py():
-    src = PERMS_JS.read_text()
+def _parse_perms_literal(src):
+    """Turn the SUPPLY_PERMS JS object literal into Python data.
+
+    Tolerant of the formatting prettier applies (single quotes, multi-line
+    objects, trailing commas) so the contract only fails on real drift.
+    """
     match = re.search(r"const SUPPLY_PERMS = (\{.*?\});", src, re.DOTALL)
     assert match, "SUPPLY_PERMS literal not found in perms.js"
     js = match.group(1)
+    js = js.replace("'", '"')  # single- → double-quoted strings
     js = re.sub(r"(\w+):", r'"\1":', js)  # quote bare keys
     js = re.sub(r",(\s*[}\]])", r"\1", js)  # strip trailing commas
-    assert json.loads(js) == ROLE_PERMS
+    return json.loads(js)
+
+
+def test_perms_js_matches_rbac_py():
+    assert _parse_perms_literal(PERMS_JS.read_text()) == ROLE_PERMS
+
+
+def test_contract_parser_detects_drift():
+    # Guard the guard: a parser that silently accepted anything would make the
+    # contract test worthless.
+    src = PERMS_JS.read_text()
+    drifted = re.sub(r"""(['"])award\1""", r"\g<0>, \1sneak\1", src, count=1)
+    assert drifted != src, "expected to find an 'award' verb to perturb"
+    assert _parse_perms_literal(drifted) != ROLE_PERMS
 
 
 def test_can_matrix_basics():

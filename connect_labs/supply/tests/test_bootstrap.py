@@ -4,7 +4,7 @@ from datetime import date, timedelta
 import pytest
 from django.test import Client
 
-from connect_labs.supply.models import Bid, EOIRound, EOISubmission, RFP
+from connect_labs.supply.models import RFP, Bid, EOIRound, EOISubmission
 
 from . import factories as f
 
@@ -25,9 +25,7 @@ def test_bootstrap_401_for_user_without_supply_role(db):
 
 def test_supplier_bootstrap_shape(supplier_client):
     client, member = supplier_client
-    f.QualificationFactory(
-        org=member.org, category="rutf", granted_at=TODAY, expires_at=TODAY + timedelta(days=300)
-    )
+    f.QualificationFactory(org=member.org, category="rutf", granted_at=TODAY, expires_at=TODAY + timedelta(days=300))
     rnd = f.EOIRoundFactory(status=EOIRound.Status.OPEN, categories=["rutf"])
     f.EOISubmissionFactory(org=member.org, round=rnd)
     rfp = f.RFPFactory(categories=["rutf"], status=RFP.Status.PUBLISHED)
@@ -49,9 +47,7 @@ def test_supplier_bootstrap_shape(supplier_client):
 
 def test_supplier_bootstrap_embeds_own_bid(supplier_client):
     client, member = supplier_client
-    f.QualificationFactory(
-        org=member.org, category="rutf", granted_at=TODAY, expires_at=TODAY + timedelta(days=300)
-    )
+    f.QualificationFactory(org=member.org, category="rutf", granted_at=TODAY, expires_at=TODAY + timedelta(days=300))
     rfp = f.RFPFactory(categories=["rutf"], status=RFP.Status.PUBLISHED)
     lot = f.LotFactory(rfp=rfp)
     client.post(

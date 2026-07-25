@@ -21,7 +21,7 @@ function Page({ title, lede, actions, children }) {
 
 function Card({ title, subtitle, actions, children, className }) {
   return (
-    <section className={`card ${className || ""}`}>
+    <section className={`card ${className || ''}`}>
       {title || actions ? (
         <header className="card-head">
           <div>
@@ -51,26 +51,26 @@ function KeyFigures({ figures }) {
 }
 
 const STATUS_TONES = {
-  draft: "neutral",
-  open: "good",
-  closed: "neutral",
-  submitted: "info",
-  qualified: "good",
-  rejected: "bad",
-  active: "good",
-  expired: "bad",
-  revoked: "bad",
-  published: "good",
-  awarded: "accent",
+  draft: 'neutral',
+  open: 'good',
+  closed: 'neutral',
+  submitted: 'info',
+  qualified: 'good',
+  rejected: 'bad',
+  active: 'good',
+  expired: 'bad',
+  revoked: 'bad',
+  published: 'good',
+  awarded: 'accent',
 };
 
 function StatusChip({ status, label }) {
-  const tone = STATUS_TONES[status] || "neutral";
+  const tone = STATUS_TONES[status] || 'neutral';
   return <span className={`chip chip-${tone}`}>{label || status}</span>;
 }
 
 function Badge({ children, tone }) {
-  return <span className={`chip chip-${tone || "neutral"}`}>{children}</span>;
+  return <span className={`chip chip-${tone || 'neutral'}`}>{children}</span>;
 }
 
 function EmptyState({ title, hint }) {
@@ -101,7 +101,7 @@ function DataTable({ columns, rows, empty, rowKey, onRowClick }) {
   }, [rows, sort, columns]);
 
   if (!rows.length) {
-    return <EmptyState title={empty || "Nothing to show yet."} />;
+    return <EmptyState title={empty || 'Nothing to show yet.'} />;
   }
 
   return (
@@ -112,15 +112,22 @@ function DataTable({ columns, rows, empty, rowKey, onRowClick }) {
             {columns.map((col) => (
               <th
                 key={col.key}
-                className={col.sortable === false ? "" : "sortable"}
+                className={col.sortable === false ? '' : 'sortable'}
                 onClick={() =>
                   col.sortable === false
                     ? null
-                    : setSort((s) => ({ key: col.key, dir: s.key === col.key ? -s.dir : 1 }))
+                    : setSort((s) => ({
+                        key: col.key,
+                        dir: s.key === col.key ? -s.dir : 1,
+                      }))
                 }
               >
                 {col.label}
-                {sort.key === col.key ? <span className="sort-caret">{sort.dir > 0 ? " ▲" : " ▼"}</span> : null}
+                {sort.key === col.key ? (
+                  <span className="sort-caret">
+                    {sort.dir > 0 ? ' ▲' : ' ▼'}
+                  </span>
+                ) : null}
               </th>
             ))}
           </tr>
@@ -130,10 +137,12 @@ function DataTable({ columns, rows, empty, rowKey, onRowClick }) {
             <tr
               key={rowKey ? rowKey(row) : i}
               onClick={onRowClick ? () => onRowClick(row) : undefined}
-              className={onRowClick ? "clickable" : ""}
+              className={onRowClick ? 'clickable' : ''}
             >
               {columns.map((col) => (
-                <td key={col.key}>{col.render ? col.render(row) : col.value(row)}</td>
+                <td key={col.key}>
+                  {col.render ? col.render(row) : col.value(row)}
+                </td>
               ))}
             </tr>
           ))}
@@ -146,18 +155,26 @@ function DataTable({ columns, rows, empty, rowKey, onRowClick }) {
 function Modal({ title, children, onClose, footer, wide }) {
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === 'Escape') onClose();
     };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className={`modal ${wide ? "modal-wide" : ""}`} onClick={(e) => e.stopPropagation()}>
+      <div
+        className={`modal ${wide ? 'modal-wide' : ''}`}
+        onClick={(e) => e.stopPropagation()}
+      >
         <header className="modal-head">
           <h2>{title}</h2>
-          <button type="button" className="modal-close" onClick={onClose} aria-label="Close">
+          <button
+            type="button"
+            className="modal-close"
+            onClick={onClose}
+            aria-label="Close"
+          >
             ×
           </button>
         </header>
@@ -188,14 +205,15 @@ function Toast({ toast, onDismiss }) {
 
   if (!toast) return null;
   return (
-    <div className={`toast toast-${toast.tone || "info"}`} onClick={onDismiss}>
+    <div className={`toast toast-${toast.tone || 'info'}`} onClick={onDismiss}>
       {toast.message}
     </div>
   );
 }
 
 function CategoryPills({ categories }) {
-  if (!categories || !categories.length) return <span className="muted">—</span>;
+  if (!categories || !categories.length)
+    return <span className="muted">—</span>;
   return (
     <span className="pill-row">
       {categories.map((c) => (

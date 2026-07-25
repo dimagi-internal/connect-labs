@@ -2,7 +2,7 @@ from django.http import JsonResponse
 
 from .. import audit
 from ..decorators import current_actor, require_perm
-from ..models import Bid, Lot, LotBid, RFP
+from ..models import RFP, Bid, Lot, LotBid
 from ..serializers import bid_dict, lot_bid_dict, lot_dict, rfp_dict
 from ..services import rfp_actions
 from ..services.org_actions import ActionError

@@ -1,7 +1,7 @@
 function RFPsTab({ ctx }) {
   const { world, act } = ctx;
-  const canManage = supplyCan(world.role, "rfps", "manage");
-  const canAward = supplyCan(world.role, "rfps", "award");
+  const canManage = supplyCan(world.role, 'rfps', 'manage');
+  const canAward = supplyCan(world.role, 'rfps', 'award');
   const [creating, setCreating] = useState(false);
   const [openRfp, setOpenRfp] = useState(null);
   const rfps = world.rfps || [];
@@ -12,7 +12,11 @@ function RFPsTab({ ctx }) {
       lede="Publish lots to the qualified registry, compare bids and award."
       actions={
         canManage ? (
-          <button type="button" className="btn" onClick={() => setCreating(true)}>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => setCreating(true)}
+          >
             New solicitation
           </button>
         ) : null
@@ -24,47 +28,62 @@ function RFPsTab({ ctx }) {
           rowKey={(r) => r.id}
           empty="No solicitations yet."
           columns={[
-            { key: "title", label: "Solicitation", value: (r) => r.title },
+            { key: 'title', label: 'Solicitation', value: (r) => r.title },
             {
-              key: "cats",
-              label: "Categories",
+              key: 'cats',
+              label: 'Categories',
               sortable: false,
-              value: () => "",
+              value: () => '',
               render: (r) => <CategoryPills categories={r.categories} />,
             },
             {
-              key: "countries",
-              label: "Countries",
+              key: 'countries',
+              label: 'Countries',
               sortable: false,
-              value: () => "",
-              render: (r) => r.countries.map(countryLabel).join(", ") || "—",
+              value: () => '',
+              render: (r) => r.countries.map(countryLabel).join(', ') || '—',
             },
-            { key: "lots", label: "Lots", value: (r) => r.lots.length },
+            { key: 'lots', label: 'Lots', value: (r) => r.lots.length },
             {
-              key: "awarded",
-              label: "Awarded",
+              key: 'awarded',
+              label: 'Awarded',
               value: (r) => r.lots.filter((l) => l.awarded_org).length,
-              render: (r) => `${r.lots.filter((l) => l.awarded_org).length} / ${r.lots.length}`,
+              render: (r) =>
+                `${r.lots.filter((l) => l.awarded_org).length} / ${
+                  r.lots.length
+                }`,
             },
-            { key: "status", label: "Status", value: (r) => r.status, render: (r) => <StatusChip status={r.status} /> },
             {
-              key: "act",
-              label: "",
+              key: 'status',
+              label: 'Status',
+              value: (r) => r.status,
+              render: (r) => <StatusChip status={r.status} />,
+            },
+            {
+              key: 'act',
+              label: '',
               sortable: false,
-              value: () => "",
+              value: () => '',
               render: (r) => (
                 <div className="row-actions">
-                  <button type="button" className="btn btn-sm" onClick={() => setOpenRfp(r)}>
-                    {r.status === "draft" ? "Edit lots" : "Compare bids"}
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={() => setOpenRfp(r)}
+                  >
+                    {r.status === 'draft' ? 'Edit lots' : 'Compare bids'}
                   </button>
-                  {canManage && r.status === "draft" ? (
+                  {canManage && r.status === 'draft' ? (
                     <button
                       type="button"
                       className="btn btn-secondary btn-sm"
                       onClick={() =>
                         act(
-                          () => supplyPost(`/supply/api/rfps/${r.id}/transition/`, { status: "published" }),
-                          "Solicitation published to the registry."
+                          () =>
+                            supplyPost(`/supply/api/rfps/${r.id}/transition/`, {
+                              status: 'published',
+                            }),
+                          'Solicitation published to the registry.',
                         )
                       }
                     >
@@ -78,7 +97,9 @@ function RFPsTab({ ctx }) {
         />
       </Card>
 
-      {creating ? <NewRFPModal ctx={ctx} onClose={() => setCreating(false)} /> : null}
+      {creating ? (
+        <NewRFPModal ctx={ctx} onClose={() => setCreating(false)} />
+      ) : null}
       {openRfp ? (
         <RFPDetailModal
           ctx={ctx}
@@ -93,7 +114,13 @@ function RFPsTab({ ctx }) {
 }
 
 function NewRFPModal({ ctx, onClose }) {
-  const [form, setForm] = useState({ title: "", brief: "", categories: [], countries: "", bid_deadline: "" });
+  const [form, setForm] = useState({
+    title: '',
+    brief: '',
+    categories: [],
+    countries: '',
+    bid_deadline: '',
+  });
   const set = (key) => (e) => setForm({ ...form, [key]: e.target.value });
   const toggle = (key) =>
     setForm((cur) => ({
@@ -106,17 +133,17 @@ function NewRFPModal({ ctx, onClose }) {
   const submit = async () => {
     const ok = await ctx.act(
       () =>
-        supplyPost("/supply/api/rfps/", {
+        supplyPost('/supply/api/rfps/', {
           title: form.title,
           brief: form.brief,
           categories: form.categories,
           countries: form.countries
-            .split(",")
+            .split(',')
             .map((c) => c.trim())
             .filter(Boolean),
           bid_deadline: form.bid_deadline || null,
         }),
-      "Solicitation created as a draft — add lots, then publish."
+      'Solicitation created as a draft — add lots, then publish.',
     );
     if (ok) onClose();
   };
@@ -142,25 +169,48 @@ function NewRFPModal({ ctx, onClose }) {
       }
     >
       <FormRow label="Title">
-        <input type="text" value={form.title} onChange={set("title")} autoFocus />
+        <input
+          type="text"
+          value={form.title}
+          onChange={set('title')}
+          autoFocus
+        />
       </FormRow>
       <FormRow label="Brief">
-        <textarea rows="3" value={form.brief} onChange={set("brief")} />
+        <textarea rows="3" value={form.brief} onChange={set('brief')} />
       </FormRow>
-      <FormRow label="Categories" hint="Only suppliers qualified in these categories will see it.">
+      <FormRow
+        label="Categories"
+        hint="Only suppliers qualified in these categories will see it."
+      >
         {SUPPLY_CATEGORIES.map((c) => (
           <label className="check-row" key={c.key}>
-            <input type="checkbox" checked={form.categories.includes(c.key)} onChange={() => toggle(c.key)} />
+            <input
+              type="checkbox"
+              checked={form.categories.includes(c.key)}
+              onChange={() => toggle(c.key)}
+            />
             <span>{c.label}</span>
           </label>
         ))}
       </FormRow>
       <div className="field-row-2">
-        <FormRow label="Countries" hint="Comma-separated ISO codes, e.g. NG, SD">
-          <input type="text" value={form.countries} onChange={set("countries")} />
+        <FormRow
+          label="Countries"
+          hint="Comma-separated ISO codes, e.g. NG, SD"
+        >
+          <input
+            type="text"
+            value={form.countries}
+            onChange={set('countries')}
+          />
         </FormRow>
         <FormRow label="Bid deadline">
-          <input type="date" value={form.bid_deadline} onChange={set("bid_deadline")} />
+          <input
+            type="date"
+            value={form.bid_deadline}
+            onChange={set('bid_deadline')}
+          />
         </FormRow>
       </div>
     </Modal>
@@ -168,7 +218,7 @@ function NewRFPModal({ ctx, onClose }) {
 }
 
 function RFPDetailModal({ ctx, rfp, canAward, canManage, onClose }) {
-  const isDraft = rfp.status === "draft";
+  const isDraft = rfp.status === 'draft';
   const [comparison, setComparison] = useState(null);
   const [addingLot, setAddingLot] = useState(false);
   const [scoring, setScoring] = useState(null);
@@ -185,7 +235,9 @@ function RFPDetailModal({ ctx, rfp, canAward, canManage, onClose }) {
 
   const award = (lot, lotBid) =>
     ctx.act(async () => {
-      const result = await supplyPost(`/supply/api/lots/${lot.id}/award/`, { lot_bid_id: lotBid.id });
+      const result = await supplyPost(`/supply/api/lots/${lot.id}/award/`, {
+        lot_bid_id: lotBid.id,
+      });
       await loadComparison();
       return result;
     }, `Lot awarded to ${lotBid.org_name}.`);
@@ -196,7 +248,8 @@ function RFPDetailModal({ ctx, rfp, canAward, canManage, onClose }) {
         <StatusChip status={rfp.status} />
         <CategoryPills categories={rfp.categories} />
         <span className="muted">
-          {rfp.countries.map(countryLabel).join(", ")} · bids due {formatDate(rfp.bid_deadline)}
+          {rfp.countries.map(countryLabel).join(', ')} · bids due{' '}
+          {formatDate(rfp.bid_deadline)}
         </span>
       </div>
       {rfp.brief ? <p className="modal-lede">{rfp.brief}</p> : null}
@@ -207,7 +260,11 @@ function RFPDetailModal({ ctx, rfp, canAward, canManage, onClose }) {
           subtitle="Add every lot before publishing — lots cannot be added once published."
           actions={
             canManage ? (
-              <button type="button" className="btn btn-sm" onClick={() => setAddingLot(true)}>
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() => setAddingLot(true)}
+              >
                 Add lot
               </button>
             ) : null
@@ -218,21 +275,31 @@ function RFPDetailModal({ ctx, rfp, canAward, canManage, onClose }) {
             rowKey={(l) => l.id}
             empty="No lots yet."
             columns={[
-              { key: "desc", label: "Lot", value: (l) => l.description },
-              { key: "cat", label: "Category", value: (l) => categoryLabel(l.category) },
+              { key: 'desc', label: 'Lot', value: (l) => l.description },
               {
-                key: "qty",
-                label: "Quantity",
+                key: 'cat',
+                label: 'Category',
+                value: (l) => categoryLabel(l.category),
+              },
+              {
+                key: 'qty',
+                label: 'Quantity',
                 value: (l) => l.quantity,
                 render: (l) => `${formatNumber(l.quantity)} ${l.unit}`,
               },
               {
-                key: "dest",
-                label: "Destination",
+                key: 'dest',
+                label: 'Destination',
                 value: (l) => l.delivery_place,
-                render: (l) => `${l.delivery_place}, ${countryLabel(l.delivery_country)}`,
+                render: (l) =>
+                  `${l.delivery_place}, ${countryLabel(l.delivery_country)}`,
               },
-              { key: "due", label: "Delivery by", value: (l) => l.delivery_deadline, render: (l) => formatDate(l.delivery_deadline) },
+              {
+                key: 'due',
+                label: 'Delivery by',
+                value: (l) => l.delivery_deadline,
+                render: (l) => formatDate(l.delivery_deadline),
+              },
             ]}
           />
         </Card>
@@ -243,11 +310,15 @@ function RFPDetailModal({ ctx, rfp, canAward, canManage, onClose }) {
             <Card
               key={entry.lot.id}
               title={entry.lot.description}
-              subtitle={`${formatNumber(entry.lot.quantity)} ${entry.lot.unit} → ${entry.lot.delivery_place}, ${countryLabel(
-                entry.lot.delivery_country
+              subtitle={`${formatNumber(entry.lot.quantity)} ${
+                entry.lot.unit
+              } → ${entry.lot.delivery_place}, ${countryLabel(
+                entry.lot.delivery_country,
               )} · due ${formatDate(entry.lot.delivery_deadline)}`}
               actions={
-                entry.lot.awarded_org ? <Badge tone="accent">Awarded — {entry.lot.awarded_org}</Badge> : null
+                entry.lot.awarded_org ? (
+                  <Badge tone="accent">Awarded — {entry.lot.awarded_org}</Badge>
+                ) : null
               }
             >
               <DataTable
@@ -255,28 +326,42 @@ function RFPDetailModal({ ctx, rfp, canAward, canManage, onClose }) {
                 rowKey={(b) => b.id}
                 empty="No submitted bids on this lot."
                 columns={[
-                  { key: "rank", label: "#", value: (b) => b.price_rank },
-                  { key: "org", label: "Supplier", value: (b) => b.org_name },
+                  { key: 'rank', label: '#', value: (b) => b.price_rank },
+                  { key: 'org', label: 'Supplier', value: (b) => b.org_name },
                   {
-                    key: "price",
-                    label: "Unit price",
+                    key: 'price',
+                    label: 'Unit price',
                     value: (b) => b.unit_price,
                     render: (b) => formatMoney(b.unit_price, b.currency),
                   },
                   {
-                    key: "total",
-                    label: "Lot value",
+                    key: 'total',
+                    label: 'Lot value',
                     value: (b) => b.unit_price * entry.lot.quantity,
-                    render: (b) => formatMoney(b.unit_price * entry.lot.quantity, b.currency),
+                    render: (b) =>
+                      formatMoney(
+                        b.unit_price * entry.lot.quantity,
+                        b.currency,
+                      ),
                   },
-                  { key: "lead", label: "Lead time", value: (b) => b.lead_time_days, render: (b) => (b.lead_time_days ? `${b.lead_time_days}d` : "—") },
                   {
-                    key: "tech",
-                    label: "Technical",
+                    key: 'lead',
+                    label: 'Lead time',
+                    value: (b) => b.lead_time_days,
+                    render: (b) =>
+                      b.lead_time_days ? `${b.lead_time_days}d` : '—',
+                  },
+                  {
+                    key: 'tech',
+                    label: 'Technical',
                     value: (b) => b.avg_technical_score,
                     render: (b) =>
                       b.avg_technical_score === null ? (
-                        <button type="button" className="btn-link" onClick={() => setScoring(b)}>
+                        <button
+                          type="button"
+                          className="btn-link"
+                          onClick={() => setScoring(b)}
+                        >
                           Score
                         </button>
                       ) : (
@@ -286,13 +371,17 @@ function RFPDetailModal({ ctx, rfp, canAward, canManage, onClose }) {
                       ),
                   },
                   {
-                    key: "act",
-                    label: "",
+                    key: 'act',
+                    label: '',
                     sortable: false,
-                    value: () => "",
+                    value: () => '',
                     render: (b) =>
                       canAward && !entry.lot.awarded_org ? (
-                        <button type="button" className="btn btn-sm" onClick={() => award(entry.lot, b)}>
+                        <button
+                          type="button"
+                          className="btn btn-sm"
+                          onClick={() => award(entry.lot, b)}
+                        >
                           Award
                         </button>
                       ) : null,
@@ -320,20 +409,24 @@ function RFPDetailModal({ ctx, rfp, canAward, canManage, onClose }) {
 
 function AddLotModal({ ctx, rfp, onClose }) {
   const [form, setForm] = useState({
-    category: rfp.categories[0] || "rutf",
-    description: "",
-    quantity: "",
-    unit: "cartons",
-    delivery_country: rfp.countries[0] || "",
-    delivery_place: "",
-    delivery_deadline: "",
+    category: rfp.categories[0] || 'rutf',
+    description: '',
+    quantity: '',
+    unit: 'cartons',
+    delivery_country: rfp.countries[0] || '',
+    delivery_place: '',
+    delivery_deadline: '',
   });
   const set = (key) => (e) => setForm({ ...form, [key]: e.target.value });
 
   const submit = async () => {
     const ok = await ctx.act(
-      () => supplyPost(`/supply/api/rfps/${rfp.id}/lots/`, { ...form, delivery_deadline: form.delivery_deadline || null }),
-      "Lot added."
+      () =>
+        supplyPost(`/supply/api/rfps/${rfp.id}/lots/`, {
+          ...form,
+          delivery_deadline: form.delivery_deadline || null,
+        }),
+      'Lot added.',
     );
     if (ok) onClose();
   };
@@ -347,14 +440,19 @@ function AddLotModal({ ctx, rfp, onClose }) {
           <button type="button" className="btn btn-secondary" onClick={onClose}>
             Cancel
           </button>
-          <button type="button" className="btn" onClick={submit} disabled={ctx.busy || !form.description || !form.quantity}>
+          <button
+            type="button"
+            className="btn"
+            onClick={submit}
+            disabled={ctx.busy || !form.description || !form.quantity}
+          >
             Add lot
           </button>
         </React.Fragment>
       }
     >
       <FormRow label="Category">
-        <select value={form.category} onChange={set("category")}>
+        <select value={form.category} onChange={set('category')}>
           {rfp.categories.map((c) => (
             <option key={c} value={c}>
               {categoryLabel(c)}
@@ -362,48 +460,73 @@ function AddLotModal({ ctx, rfp, onClose }) {
           ))}
         </select>
       </FormRow>
-      <FormRow label="Description" hint="e.g. 60,000 cartons RUTF delivered to Maiduguri">
-        <input type="text" value={form.description} onChange={set("description")} autoFocus />
+      <FormRow
+        label="Description"
+        hint="e.g. 60,000 cartons RUTF delivered to Maiduguri"
+      >
+        <input
+          type="text"
+          value={form.description}
+          onChange={set('description')}
+          autoFocus
+        />
       </FormRow>
       <div className="field-row-2">
         <FormRow label="Quantity">
-          <input type="number" value={form.quantity} onChange={set("quantity")} />
+          <input
+            type="number"
+            value={form.quantity}
+            onChange={set('quantity')}
+          />
         </FormRow>
         <FormRow label="Unit">
-          <input type="text" value={form.unit} onChange={set("unit")} />
+          <input type="text" value={form.unit} onChange={set('unit')} />
         </FormRow>
       </div>
       <div className="field-row-2">
         <FormRow label="Delivery country">
-          <input type="text" maxLength="2" value={form.delivery_country} onChange={set("delivery_country")} />
+          <input
+            type="text"
+            maxLength="2"
+            value={form.delivery_country}
+            onChange={set('delivery_country')}
+          />
         </FormRow>
         <FormRow label="Delivery place">
-          <input type="text" value={form.delivery_place} onChange={set("delivery_place")} />
+          <input
+            type="text"
+            value={form.delivery_place}
+            onChange={set('delivery_place')}
+          />
         </FormRow>
       </div>
       <FormRow label="Delivery deadline">
-        <input type="date" value={form.delivery_deadline} onChange={set("delivery_deadline")} />
+        <input
+          type="date"
+          value={form.delivery_deadline}
+          onChange={set('delivery_deadline')}
+        />
       </FormRow>
     </Modal>
   );
 }
 
 function ScoreModal({ ctx, lotBid, onClose, onScored }) {
-  const [score, setScore] = useState("");
-  const [notes, setNotes] = useState("");
+  const [score, setScore] = useState('');
+  const [notes, setNotes] = useState('');
 
   const submit = async () => {
-    const ok = await ctx.act(
-      async () => {
-        const result = await supplyPost(`/supply/api/lot-bids/${lotBid.id}/score/`, {
+    const ok = await ctx.act(async () => {
+      const result = await supplyPost(
+        `/supply/api/lot-bids/${lotBid.id}/score/`,
+        {
           technical_score: score,
           notes,
-        });
-        await onScored();
-        return result;
-      },
-      "Technical score recorded."
-    );
+        },
+      );
+      await onScored();
+      return result;
+    }, 'Technical score recorded.');
     if (ok) onClose();
   };
 
@@ -416,7 +539,12 @@ function ScoreModal({ ctx, lotBid, onClose, onScored }) {
           <button type="button" className="btn btn-secondary" onClick={onClose}>
             Cancel
           </button>
-          <button type="button" className="btn" onClick={submit} disabled={ctx.busy || score === ""}>
+          <button
+            type="button"
+            className="btn"
+            onClick={submit}
+            disabled={ctx.busy || score === ''}
+          >
             Save score
           </button>
         </React.Fragment>
@@ -427,17 +555,31 @@ function ScoreModal({ ctx, lotBid, onClose, onScored }) {
           <h4>Scores already recorded</h4>
           {lotBid.scores.map((s, i) => (
             <div key={i} className="muted small">
-              {s.reviewer || "Reviewer"}: {s.technical_score}
-              {s.notes ? ` — ${s.notes}` : ""}
+              {s.reviewer || 'Reviewer'}: {s.technical_score}
+              {s.notes ? ` — ${s.notes}` : ''}
             </div>
           ))}
         </div>
       ) : null}
-      <FormRow label="Technical score (0–100)" hint="Financial rank is derived from price automatically.">
-        <input type="number" min="0" max="100" value={score} onChange={(e) => setScore(e.target.value)} autoFocus />
+      <FormRow
+        label="Technical score (0–100)"
+        hint="Financial rank is derived from price automatically."
+      >
+        <input
+          type="number"
+          min="0"
+          max="100"
+          value={score}
+          onChange={(e) => setScore(e.target.value)}
+          autoFocus
+        />
       </FormRow>
       <FormRow label="Notes">
-        <textarea rows="4" value={notes} onChange={(e) => setNotes(e.target.value)} />
+        <textarea
+          rows="4"
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+        />
       </FormRow>
     </Modal>
   );

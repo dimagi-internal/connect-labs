@@ -83,9 +83,7 @@ def login_view(request):
     if request.method == "POST":
         form = LoginForm(request.POST)
         if form.is_valid():
-            user = authenticate(
-                request, username=form.cleaned_data["email"], password=form.cleaned_data["password"]
-            )
+            user = authenticate(request, username=form.cleaned_data["email"], password=form.cleaned_data["password"])
             if user is not None:
                 auth_login(request, user, backend="django.contrib.auth.backends.ModelBackend")
                 return redirect("/supply/")

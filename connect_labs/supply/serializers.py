@@ -41,9 +41,7 @@ def org_dict(org, include_qualifications=True):
         "certifications": [certification_dict(c) for c in org.certifications.all().order_by("cert_type")],
     }
     if include_qualifications:
-        data["qualifications"] = [
-            qualification_dict(q) for q in org.qualifications.all().order_by("category")
-        ]
+        data["qualifications"] = [qualification_dict(q) for q in org.qualifications.all().order_by("category")]
     return data
 
 
@@ -122,8 +120,11 @@ def lot_bid_dict(lot_bid, include_scores=False):
     if include_scores:
         scores = list(lot_bid.scores.all())
         data["scores"] = [
-            {"reviewer": s.reviewer.get_display_name() if s.reviewer else None,
-             "technical_score": s.technical_score, "notes": s.notes}
+            {
+                "reviewer": s.reviewer.get_display_name() if s.reviewer else None,
+                "technical_score": s.technical_score,
+                "notes": s.notes,
+            }
             for s in scores
         ]
         data["avg_technical_score"] = (

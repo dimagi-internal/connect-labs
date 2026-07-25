@@ -107,9 +107,7 @@ def test_review_qualify_creates_qualifications(admin_client):
 def test_review_partial_qualify(admin_client):
     client, _user = admin_client
     org = f.SupplierOrgFactory()
-    sub = f.EOISubmissionFactory(
-        org=org, categories=["rutf", "transport"], status=EOISubmission.Status.SUBMITTED
-    )
+    sub = f.EOISubmissionFactory(org=org, categories=["rutf", "transport"], status=EOISubmission.Status.SUBMITTED)
     _post(
         client,
         f"/supply/api/eoi/submissions/{sub.id}/review/",
@@ -161,9 +159,7 @@ def test_supplier_cannot_reach_review_queue(supplier_client):
 
 def test_admin_creates_and_transitions_round(admin_client):
     client, _user = admin_client
-    resp = _post(
-        client, "/supply/api/eoi/rounds/", {"title": "OES Supply Base 2026-B", "categories": ["rutf"]}
-    )
+    resp = _post(client, "/supply/api/eoi/rounds/", {"title": "OES Supply Base 2026-B", "categories": ["rutf"]})
     assert resp.status_code == 200
     rid = resp.json()["round"]["id"]
     assert EOIRound.objects.get(id=rid).status == EOIRound.Status.DRAFT
@@ -191,7 +187,9 @@ def test_registry_filters(admin_client):
     f.QualificationFactory(org=ng, category="transport", granted_at=today, expires_at=today + timedelta(days=20))
     f.QualificationFactory(org=et, category="rutf", granted_at=today, expires_at=today + timedelta(days=400))
     # expired qualification must never appear
-    f.QualificationFactory(org=et, category="warehousing", granted_at=today - timedelta(days=600), expires_at=today - timedelta(days=1))
+    f.QualificationFactory(
+        org=et, category="warehousing", granted_at=today - timedelta(days=600), expires_at=today - timedelta(days=1)
+    )
 
     all_rows = client.get("/supply/api/registry/").json()["registry"]
     cats = {r["org"]["legal_name"]: sorted(q["category"] for q in r["qualifications"]) for r in all_rows}

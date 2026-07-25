@@ -104,9 +104,7 @@ def review_submission(request, submission_id):
         return JsonResponse({"error": "not found"}, status=404)
     body = json_body(request)
     eoi_actions.review_submission(request.user, sub, body.get("decisions") or {}, body.get("notes", ""))
-    audit.log_action(
-        request, "eoi.submission.review", "EOISubmission", sub.id, {"decisions": body.get("decisions")}
-    )
+    audit.log_action(request, "eoi.submission.review", "EOISubmission", sub.id, {"decisions": body.get("decisions")})
     return JsonResponse({"submission": submission_dict(sub)})
 
 

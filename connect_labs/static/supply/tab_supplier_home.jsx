@@ -1,12 +1,14 @@
 function SupplierHome({ ctx }) {
   const { world } = ctx;
   const quals = (world.org && world.org.qualifications) || [];
-  const live = quals.filter((q) => q.status === "active" && daysUntil(q.expires_at) >= 0);
+  const live = quals.filter(
+    (q) => q.status === 'active' && daysUntil(q.expires_at) >= 0,
+  );
   const expiringSoon = live.filter((q) => daysUntil(q.expires_at) <= 60);
   const openRounds = world.open_rounds || [];
   const notApplied = openRounds.filter((r) => !r.applied);
   const rfps = world.eligible_rfps || [];
-  const unbid = rfps.filter((r) => !r.my_bid || r.my_bid.status === "draft");
+  const unbid = rfps.filter((r) => !r.my_bid || r.my_bid.status === 'draft');
 
   const deadlines = rfps
     .map((r) => r.bid_deadline)
@@ -20,23 +22,61 @@ function SupplierHome({ ctx }) {
     >
       <KeyFigures
         figures={[
-          { label: "Live qualifications", value: live.length, hint: expiringSoon.length ? `${expiringSoon.length} expiring within 60 days` : null },
-          { label: "Open EOI rounds", value: openRounds.length, hint: notApplied.length ? `${notApplied.length} not yet applied to` : "all applied to" },
-          { label: "Solicitations open to you", value: rfps.length, hint: unbid.length ? `${unbid.length} without a submitted bid` : null },
-          { label: "Next bid deadline", value: deadlines.length ? formatDate(deadlines[0]) : "—" },
+          {
+            label: 'Live qualifications',
+            value: live.length,
+            hint: expiringSoon.length
+              ? `${expiringSoon.length} expiring within 60 days`
+              : null,
+          },
+          {
+            label: 'Open EOI rounds',
+            value: openRounds.length,
+            hint: notApplied.length
+              ? `${notApplied.length} not yet applied to`
+              : 'all applied to',
+          },
+          {
+            label: 'Solicitations open to you',
+            value: rfps.length,
+            hint: unbid.length
+              ? `${unbid.length} without a submitted bid`
+              : null,
+          },
+          {
+            label: 'Next bid deadline',
+            value: deadlines.length ? formatDate(deadlines[0]) : '—',
+          },
         ]}
       />
 
       <div className="grid-2">
-        <Card title="Your qualifications" subtitle="Granted through EOI review; solicitations are gated on these.">
+        <Card
+          title="Your qualifications"
+          subtitle="Granted through EOI review; solicitations are gated on these."
+        >
           {live.length ? (
             <DataTable
               rows={live}
               rowKey={(q) => q.id}
               columns={[
-                { key: "category", label: "Category", value: (q) => categoryLabel(q.category) },
-                { key: "granted", label: "Granted", value: (q) => q.granted_at, render: (q) => formatDate(q.granted_at) },
-                { key: "expires", label: "Expires", value: (q) => q.expires_at, render: (q) => <ExpiryChip iso={q.expires_at} /> },
+                {
+                  key: 'category',
+                  label: 'Category',
+                  value: (q) => categoryLabel(q.category),
+                },
+                {
+                  key: 'granted',
+                  label: 'Granted',
+                  value: (q) => q.granted_at,
+                  render: (q) => formatDate(q.granted_at),
+                },
+                {
+                  key: 'expires',
+                  label: 'Expires',
+                  value: (q) => q.expires_at,
+                  render: (q) => <ExpiryChip iso={q.expires_at} />,
+                },
               ]}
             />
           ) : (
@@ -53,14 +93,30 @@ function SupplierHome({ ctx }) {
               rows={openRounds}
               rowKey={(r) => r.id}
               columns={[
-                { key: "title", label: "Round", value: (r) => r.title },
-                { key: "cats", label: "Categories", sortable: false, value: (r) => "", render: (r) => <CategoryPills categories={r.categories} /> },
-                { key: "closes", label: "Closes", value: (r) => r.closes_at, render: (r) => formatDate(r.closes_at) },
+                { key: 'title', label: 'Round', value: (r) => r.title },
                 {
-                  key: "applied",
-                  label: "Status",
+                  key: 'cats',
+                  label: 'Categories',
+                  sortable: false,
+                  value: (r) => '',
+                  render: (r) => <CategoryPills categories={r.categories} />,
+                },
+                {
+                  key: 'closes',
+                  label: 'Closes',
+                  value: (r) => r.closes_at,
+                  render: (r) => formatDate(r.closes_at),
+                },
+                {
+                  key: 'applied',
+                  label: 'Status',
                   value: (r) => (r.applied ? 1 : 0),
-                  render: (r) => (r.applied ? <Badge tone="good">Applied</Badge> : <Badge tone="warn">Not applied</Badge>),
+                  render: (r) =>
+                    r.applied ? (
+                      <Badge tone="good">Applied</Badge>
+                    ) : (
+                      <Badge tone="warn">Not applied</Badge>
+                    ),
                 },
               ]}
             />
@@ -76,16 +132,31 @@ function SupplierHome({ ctx }) {
             rows={rfps}
             rowKey={(r) => r.id}
             columns={[
-              { key: "title", label: "Solicitation", value: (r) => r.title },
-              { key: "lots", label: "Lots", value: (r) => r.lots.length },
-              { key: "countries", label: "Countries", sortable: false, value: () => "", render: (r) => r.countries.map(countryLabel).join(", ") },
-              { key: "deadline", label: "Bid deadline", value: (r) => r.bid_deadline, render: (r) => formatDate(r.bid_deadline) },
+              { key: 'title', label: 'Solicitation', value: (r) => r.title },
+              { key: 'lots', label: 'Lots', value: (r) => r.lots.length },
               {
-                key: "bid",
-                label: "Your bid",
-                value: (r) => (r.my_bid ? r.my_bid.status : ""),
+                key: 'countries',
+                label: 'Countries',
+                sortable: false,
+                value: () => '',
+                render: (r) => r.countries.map(countryLabel).join(', '),
+              },
+              {
+                key: 'deadline',
+                label: 'Bid deadline',
+                value: (r) => r.bid_deadline,
+                render: (r) => formatDate(r.bid_deadline),
+              },
+              {
+                key: 'bid',
+                label: 'Your bid',
+                value: (r) => (r.my_bid ? r.my_bid.status : ''),
                 render: (r) =>
-                  r.my_bid ? <StatusChip status={r.my_bid.status} /> : <Badge tone="warn">No bid</Badge>,
+                  r.my_bid ? (
+                    <StatusChip status={r.my_bid.status} />
+                  ) : (
+                    <Badge tone="warn">No bid</Badge>
+                  ),
               },
             ]}
           />
