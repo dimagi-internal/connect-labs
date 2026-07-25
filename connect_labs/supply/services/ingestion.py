@@ -28,9 +28,12 @@ from .org_actions import ActionError
 BIZ_STEPS = {step.value for step in SupplyEvent.BizStep}
 
 # Which bizStep advances a shipment to which status.
+# Arriving implies in-transit too: goods cannot arrive somewhere without
+# having left, and out-of-order feeds are normal.
 STATUS_BY_STEP = {
-    SupplyEvent.BizStep.DEPARTING: Shipment.Status.IN_TRANSIT,
     SupplyEvent.BizStep.LOADING: Shipment.Status.IN_TRANSIT,
+    SupplyEvent.BizStep.DEPARTING: Shipment.Status.IN_TRANSIT,
+    SupplyEvent.BizStep.ARRIVING: Shipment.Status.IN_TRANSIT,
     SupplyEvent.BizStep.RECEIVING: Shipment.Status.DELIVERED,
 }
 

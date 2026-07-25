@@ -51,6 +51,10 @@ function KeyFigures({ figures }) {
 }
 
 const STATUS_TONES = {
+  in_transit: 'info',
+  planned: 'neutral',
+  delivered: 'good',
+  confirmed: 'accent',
   draft: 'neutral',
   open: 'good',
   closed: 'neutral',
@@ -64,9 +68,31 @@ const STATUS_TONES = {
   awarded: 'accent',
 };
 
+const STATUS_LABELS = {
+  draft: 'Draft',
+  open: 'Open',
+  closed: 'Closed',
+  submitted: 'Submitted',
+  qualified: 'Qualified',
+  rejected: 'Rejected',
+  active: 'Active',
+  expired: 'Expired',
+  revoked: 'Revoked',
+  published: 'Published',
+  awarded: 'Awarded',
+  planned: 'Planned',
+  in_transit: 'In transit',
+  delivered: 'Delivered',
+  confirmed: 'Confirmed',
+};
+
 function StatusChip({ status, label }) {
   const tone = STATUS_TONES[status] || 'neutral';
-  return <span className={`chip chip-${tone}`}>{label || status}</span>;
+  return (
+    <span className={`chip chip-${tone}`}>
+      {label || STATUS_LABELS[status] || status}
+    </span>
+  );
 }
 
 function Badge({ children, tone }) {

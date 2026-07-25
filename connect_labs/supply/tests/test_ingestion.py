@@ -429,3 +429,20 @@ def test_unit_ladder_conversions():
     # 150 sachets x 92 g per carton
     assert gs1.cartons_to_mt(1000) == pytest.approx(13.8)
     assert gs1.cartons_to_children(60000) == 60000
+
+
+def test_arriving_implies_in_transit(feed):
+    """Goods cannot arrive without having left; feeds arrive out of order."""
+    _api(feed["client"], "/supply/api/v1/shipments/", _asn_payload(feed), feed["token"])
+    shipment = Shipment.objects.get()
+    shipment.status = Shipment.Status.PLANNED
+    shipment.save(update_fields=["status"])
+
+    _api(
+        feed["client"],
+        "/supply/api/v1/epcis/capture/",
+        _epcis_doc(feed, biz_step="arriving", event_id="evt-arr-only"),
+        feed["token"],
+    )
+    shipment.refresh_from_db()
+    assert shipment.status == Shipment.Status.IN_TRANSIT
