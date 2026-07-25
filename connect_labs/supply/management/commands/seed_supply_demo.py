@@ -170,6 +170,7 @@ class Command(BaseCommand):
         self._seed_corridor_awards(orgs, staff)
         seed_execution(rng, orgs, staff)
 
+        shown_password = "<from SUPPLY_DEMO_PASSWORD>" if os.environ.get("SUPPLY_DEMO_PASSWORD") else DEMO_PASSWORD
         self.stdout.write(
             self.style.SUCCESS(
                 f"Seeded OES demo world: {SupplierOrg.objects.count()} suppliers, "
@@ -177,7 +178,7 @@ class Command(BaseCommand):
                 f"{RFP.objects.count()} solicitations, {Award.objects.count()} awards; "
                 f"{execution_summary()}. "
                 f"Logins: {SUPPLIER_LOGIN[0]} / {', '.join(s[0] for s in STAFF)} "
-                f"(password: {'<from SUPPLY_DEMO_PASSWORD>' if os.environ.get('SUPPLY_DEMO_PASSWORD') else DEMO_PASSWORD})"
+                f"(password: {shown_password})"
             )
         )
         assert closed_round  # closed round anchors the registry; keep the reference explicit
