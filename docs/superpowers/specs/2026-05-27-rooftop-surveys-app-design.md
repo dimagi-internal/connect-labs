@@ -325,7 +325,7 @@ Flow:
 
 ### 10.4 `qc/audio_audit.py` — audio audit queue
 
-Per the concept note, "audio audits of recorded interviews." Audio attachments are accessible via the CommCare Connect API as part of the form submission. v1:
+Per the concept note, "audio audits of recorded interviews." Audio attachments are accessible via the Connect API as part of the form submission. v1:
 
 1. Random sample (configurable rate) of completed visits gets enqueued for audio review.
 2. A reviewer UI plays the audio side-by-side with the form responses and assigns one of: `confirmed`, `flagged_quality`, `flagged_protocol`, `inconclusive`.

@@ -6,7 +6,7 @@
 ## Goal
 
 Expose authenticated **HTTP** endpoints on connect-labs that serve **synthetic**
-opportunity data in the exact JSON shape of CommCare Connect's real `/export/...`
+opportunity data in the exact JSON shape of Connect's real `/export/...`
 API, so an external consumer (the Scout data-agent platform) can pull synthetic
 data over the network as a new data source — identically to how it pulls from
 real Connect.

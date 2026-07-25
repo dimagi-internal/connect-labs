@@ -1,6 +1,6 @@
 # Workflow Engine Reference
 
-This is the single source of truth for building workflow templates in CommCare Connect Labs. It is consumed by Claude Code (via the workflow-templates skill), the in-product AI agent (loaded at module init), and developers reading documentation. A workflow template is a self-contained Python file that declares a data pipeline schema, a workflow definition, and a React render function. The pipeline engine extracts, transforms, and aggregates data from CommCare form submissions. The render code receives that data as props and displays it using React with Tailwind CSS.
+This is the single source of truth for building workflow templates in Connect Labs. It is consumed by Claude Code (via the workflow-templates skill), the in-product AI agent (loaded at module init), and developers reading documentation. A workflow template is a self-contained Python file that declares a data pipeline schema, a workflow definition, and a React render function. The pipeline engine extracts, transforms, and aggregates data from CommCare form submissions. The render code receives that data as props and displays it using React with Tailwind CSS.
 
 ---
 

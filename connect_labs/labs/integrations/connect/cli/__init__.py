@@ -1,5 +1,5 @@
 """
-CLI OAuth tools for CommCare Connect.
+CLI OAuth tools for Connect.
 
 Provides browser-based OAuth flow for command-line scripts.
 Tokens are stored in the user's home directory (~/.commcare-connect/token.json).

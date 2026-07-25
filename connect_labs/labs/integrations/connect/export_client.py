@@ -1,5 +1,5 @@
 """
-Paginated JSON export API client for CommCare Connect.
+Paginated JSON export API client for Connect.
 
 Wraps the `/export/...` v2 endpoints (Accept: application/json; version=2.0).
 Handles keyset pagination by following `next` URLs until null.

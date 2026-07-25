@@ -15,7 +15,7 @@ from connect_labs.solicitations.data_access import SolicitationsDataAccess
 logger = logging.getLogger(__name__)
 
 INSTRUCTIONS = """
-You are a solicitations assistant for CommCare Connect. You help users create,
+You are a solicitations assistant for Connect. You help users create,
 manage, and review solicitations (RFPs and EOIs) for community health programs.
 
 You can:

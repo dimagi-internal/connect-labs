@@ -7,7 +7,7 @@
 
 ## Overview
 
-Add a new workflow template called **"Bulk Image Audit"** to the CommCare Connect Labs workflow engine. This template lets a reviewer select one or more opportunities, choose a specific image type (Scale, ORS, or MUAC), configure visit selection and sampling, set a passing threshold, and then review all matching photos inline — without leaving the workflow run page.
+Add a new workflow template called **"Bulk Image Audit"** to the Connect Labs workflow engine. This template lets a reviewer select one or more opportunities, choose a specific image type (Scale, ORS, or MUAC), configure visit selection and sampling, set a passing threshold, and then review all matching photos inline — without leaving the workflow run page.
 
 Also rename the existing "Weekly Audit with AI Review" template to **"Weekly KMC Audit with AI Review"** (one-line change).
 

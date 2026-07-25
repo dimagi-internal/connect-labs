@@ -1,5 +1,5 @@
 """
-CommCare Connect OAuth Helper Functions.
+Connect OAuth Helper Functions.
 
 Shared OAuth utilities for both web and CLI authentication flows.
 """

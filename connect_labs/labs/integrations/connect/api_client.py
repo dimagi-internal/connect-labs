@@ -1,5 +1,5 @@
 """
-CommCare Connect LabsRecord API Client.
+Connect LabsRecord API Client.
 
 Hybrid client. Real Connect opportunities flow over HTTP to production's
 ``/export/labs_record/`` endpoint. Labs-only synthetic opportunities (opp_ids

@@ -292,12 +292,12 @@ EMAIL_BACKEND = env(
 EMAIL_TIMEOUT = 5
 DEFAULT_FROM_EMAIL = env(
     "DJANGO_DEFAULT_FROM_EMAIL",
-    default="CommCare Connect <noreply@commcare-connect.org>",
+    default="Connect <noreply@commcare-connect.org>",
 )
 SERVER_EMAIL = env("DJANGO_SERVER_EMAIL", default=DEFAULT_FROM_EMAIL)
 EMAIL_SUBJECT_PREFIX = env(
     "DJANGO_EMAIL_SUBJECT_PREFIX",
-    default="[CommCare Connect]",
+    default="[Connect]",
 )
 
 # ADMIN
@@ -405,8 +405,8 @@ REST_FRAMEWORK = {
 CORS_URLS_REGEX = r"^/api/.*$"
 
 SPECTACULAR_SETTINGS = {
-    "TITLE": "CommCare Connect API",
-    "DESCRIPTION": "Documentation of API endpoints of CommCare Connect",
+    "TITLE": "Connect API",
+    "DESCRIPTION": "Documentation of API endpoints of Connect",
     "VERSION": "1.0.0",
     "SERVE_PERMISSIONS": ["rest_framework.permissions.IsAdminUser"],
 }
@@ -434,7 +434,7 @@ DJANGO_TABLES2_TABLE_ATTRS = {
 }
 
 # ------------------------------------------------------------------------------
-# CommCare Connect Settings...
+# Connect Settings...
 # ------------------------------------------------------------------------------
 # HQ integration settings
 COMMCARE_HQ_URL = env("COMMCARE_HQ_URL", default="https://staging.commcarehq.org")

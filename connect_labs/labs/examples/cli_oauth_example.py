@@ -3,7 +3,7 @@
 Example script demonstrating OAuth CLI authentication.
 
 This shows how to use the labs OAuth CLI library to authenticate
-and make API calls to production CommCare Connect.
+and make API calls to production Connect.
 
 Usage:
     python cli_oauth_example.py
@@ -27,7 +27,7 @@ def main():
     PRODUCTION_URL = os.getenv("CONNECT_PRODUCTION_URL", "https://connect.dimagi.com")
 
     print("=" * 70)
-    print("CommCare Connect CLI OAuth Example")
+    print("Connect CLI OAuth Example")
     print("=" * 70)
 
     # Use TokenManager for token storage

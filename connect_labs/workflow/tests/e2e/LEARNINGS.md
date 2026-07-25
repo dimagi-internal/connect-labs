@@ -1,6 +1,6 @@
 # E2E Testing Learnings for Workflow Templates
 
-Hard-won lessons from building the first Playwright E2E test suite for CommCare Connect Labs workflow templates.
+Hard-won lessons from building the first Playwright E2E test suite for Connect Labs workflow templates.
 
 ## Running the Tests
 

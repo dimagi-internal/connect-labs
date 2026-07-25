@@ -1182,7 +1182,7 @@ class AppDownloaderView(AdminRequiredMixin, TemplateView):
 
         if not has_token:
             context["opportunities"] = []
-            context["error"] = "Please connect to CommCare Connect to view opportunities."
+            context["error"] = "Please connect to Connect to view opportunities."
             return context
 
         # Fetch active opportunities from API
