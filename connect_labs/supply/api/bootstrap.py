@@ -6,9 +6,20 @@ endpoint. Server state is the only state.
 from django.http import JsonResponse
 
 from ..decorators import current_actor
-from ..models import RFP, Bid, EOIRound, EOISubmission
+from ..models import RFP, Bid, Contract, Discrepancy, EOIRound, EOISubmission, SupplyNode
 from ..rbac import ROLE_PERMS
-from ..serializers import bid_dict, org_dict, qualification_dict, rfp_dict, round_dict, submission_dict
+from ..serializers import (
+    api_token_dict,
+    bid_dict,
+    contract_dict,
+    discrepancy_dict,
+    node_dict,
+    org_dict,
+    qualification_dict,
+    rfp_dict,
+    round_dict,
+    submission_dict,
+)
 from ..services import eoi_actions, rfp_actions
 
 
@@ -27,8 +38,20 @@ def _supplier_world(actor):
         data["my_bid"] = bid_dict(bid) if bid else None
         rfps.append(data)
 
+    contracts = (
+        Contract.objects.filter(org=org)
+        .select_related("award__lot", "org")
+        .prefetch_related("shipments__origin", "shipments__destination", "shipments__milestones__node")
+    )
     return {
         "org": org_dict(org),
+        "contracts": [contract_dict(c, include_shipments=True) for c in contracts],
+        "discrepancies": [
+            discrepancy_dict(d)
+            for d in Discrepancy.objects.filter(shipment__contract__org=org).select_related("shipment")
+        ],
+        "nodes": [node_dict(n) for n in SupplyNode.objects.all()],
+        "api_tokens": [api_token_dict(t) for t in org.api_tokens.all()],
         "open_rounds": [{**round_dict(r), "applied": r.id in submitted_round_ids} for r in open_rounds],
         "my_submissions": [submission_dict(s) for s in my_subs],
         "eligible_rfps": rfps,

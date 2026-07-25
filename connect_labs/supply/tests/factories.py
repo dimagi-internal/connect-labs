@@ -112,3 +112,52 @@ class LotBidFactory(factory.django.DjangoModelFactory):
     bid = factory.SubFactory(BidFactory)
     lot = factory.SubFactory(LotFactory)
     unit_price = 42
+
+
+class SupplyNodeFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = m.SupplyNode
+
+    name = factory.Sequence(lambda n: f"Node {n}")
+    kind = "warehouse"
+    country = "NG"
+    gln = factory.Sequence(lambda n: f"629123450{n:04d}")
+
+
+class AwardFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = m.Award
+
+    lot = factory.SubFactory(LotFactory)
+    lot_bid = factory.SubFactory(LotBidFactory)
+
+
+class AppropriationFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = m.Appropriation
+
+    funder_name = "US Government"
+    title = factory.Sequence(lambda n: f"Appropriation {n}")
+    amount = 10_000_000
+
+
+class ContractFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = m.Contract
+
+    award = factory.SubFactory(AwardFactory)
+    org = factory.SubFactory(SupplierOrgFactory)
+    reference = factory.Sequence(lambda n: f"OES-C-{n:04d}")
+    total_quantity = 60000
+    unit_price = 42
+
+
+class ShipmentFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = m.Shipment
+
+    contract = factory.SubFactory(ContractFactory)
+    reference = factory.Sequence(lambda n: f"SHP-{n:04d}")
+    origin = factory.SubFactory(SupplyNodeFactory)
+    destination = factory.SubFactory(SupplyNodeFactory)
+    quantity = 60000

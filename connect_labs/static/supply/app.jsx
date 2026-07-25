@@ -32,6 +32,18 @@ const TABS = [
     component: () => BidsTab,
     roles: ['supplier'],
   },
+  {
+    key: 'ops',
+    label: 'Operations',
+    component: () => OpsTab,
+    roles: ['supplier'],
+  },
+  {
+    key: 'integration',
+    label: 'Integration',
+    component: () => IntegrationTab,
+    roles: ['supplier'],
+  },
   // staff
   {
     key: 'console',

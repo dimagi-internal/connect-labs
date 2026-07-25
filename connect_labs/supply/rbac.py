@@ -13,11 +13,14 @@ ROLE_PERMS = {
         "org": ["view", "edit"],
         "eoi": ["view", "submit"],
         "bids": ["view", "submit"],
+        "execution": ["view", "report"],
+        "tokens": ["manage"],
     },
     "reviewer": {
         "eoi_review": ["view", "decide"],
         "registry": ["view"],
         "scoring": ["view", "score"],
+        "execution": ["view"],
     },
     "procurement_admin": {
         "eoi_review": ["view", "decide"],
@@ -25,10 +28,11 @@ ROLE_PERMS = {
         "scoring": ["view", "score"],
         "rounds": ["view", "manage"],
         "rfps": ["view", "manage", "award"],
+        "execution": ["view", "resolve"],
         "audit": ["view"],
     },
-    "gov_observer": {},
-    "funder": {},
+    "gov_observer": {"execution": ["view"]},
+    "funder": {"execution": ["view"]},
 }
 
 

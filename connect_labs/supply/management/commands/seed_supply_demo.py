@@ -33,6 +33,8 @@ from connect_labs.supply.models import (
     SupplierOrg,
 )
 
+from ._supply_execution_seed import execution_summary, reset_execution, seed_execution
+
 User = get_user_model()
 
 SEED = 20260725
@@ -101,6 +103,39 @@ OPEN_ROUND = "OES Supply Base 2026-B"
 LIVE_RFP = "RUTF Northeast Nigeria Q3 2026"
 AWARDED_RFP = "RUTF Ethiopia Q2 2026"
 
+# Additional fully-awarded solicitations, one per corridor, so post-award
+# execution has a contract per country rather than everything hanging off one.
+# (winner org, RFP title, brief, country, lot description, cartons, unit price)
+CORRIDOR_AWARDS = [
+    (
+        "Savanna Nutrients Ltd",
+        "RUTF Northeast Nigeria Q2 2026",
+        "Supply of RUTF to the north-east Nigeria response for the Q2 caseload.",
+        "NG",
+        "45,000 cartons RUTF delivered to Maiduguri",
+        45000,
+        42.10,
+    ),
+    (
+        "Faso NutriWorks SA",
+        "RUTF Sahel Q2 2026",
+        "Supply of RUTF to the Burkina Faso Sahel region for the Q2 caseload.",
+        "BF",
+        "20,000 cartons RUTF delivered to Djibo",
+        20000,
+        43.60,
+    ),
+    (
+        "Blue Nile Freight Co",
+        "Sudan Corridor Logistics 2026",
+        "Inland haulage and warehousing for imported RUTF through Port Sudan.",
+        "SD",
+        "Port Sudan inland corridor haulage, 6 months",
+        6,
+        41500.00,
+    ),
+]
+
 
 class Command(BaseCommand):
     help = "Seed the Operation End Starvation demo world (idempotent, deterministic)."
@@ -126,12 +161,15 @@ class Command(BaseCommand):
         self._seed_open_round(rng, orgs)
         self._seed_live_rfp(rng, orgs, staff)
         self._seed_awarded_rfp(rng, orgs, staff)
+        self._seed_corridor_awards(orgs, staff)
+        seed_execution(rng, orgs, staff)
 
         self.stdout.write(
             self.style.SUCCESS(
                 f"Seeded OES demo world: {SupplierOrg.objects.count()} suppliers, "
                 f"{Qualification.objects.count()} qualifications, "
-                f"{RFP.objects.count()} solicitations, {Award.objects.count()} awards. "
+                f"{RFP.objects.count()} solicitations, {Award.objects.count()} awards; "
+                f"{execution_summary()}. "
                 f"Logins: {SUPPLIER_LOGIN[0]} / {', '.join(s[0] for s in STAFF)} "
                 f"(password: {DEMO_PASSWORD})"
             )
@@ -139,6 +177,7 @@ class Command(BaseCommand):
         assert closed_round  # closed round anchors the registry; keep the reference explicit
 
     def _reset(self):
+        reset_execution()
         Award.objects.all().delete()
         BidScore.objects.all().delete()
         LotBid.objects.all().delete()
@@ -383,6 +422,50 @@ class Command(BaseCommand):
                         else "Insufficient certification evidence for this round."
                     ),
                 )
+
+    def _seed_corridor_awards(self, orgs, staff):
+        """One fully-awarded solicitation per corridor, feeding the contracts."""
+        for org_name, title, brief, country, lot_desc, cartons, price in CORRIDOR_AWARDS:
+            rfp, _ = RFP.objects.update_or_create(
+                title=title,
+                defaults={
+                    "brief": brief,
+                    "categories": ["transport"] if country == "SD" else ["rutf"],
+                    "countries": [country],
+                    "bid_deadline": TODAY - timedelta(days=55),
+                    "status": RFP.Status.PUBLISHED,
+                    "created_by": staff[StaffRole.Role.PROCUREMENT_ADMIN],
+                },
+            )
+            lot, _ = Lot.objects.update_or_create(
+                rfp=rfp,
+                description=lot_desc,
+                defaults={
+                    "category": rfp.categories[0],
+                    "quantity": cartons,
+                    "unit": "truck-months" if country == "SD" else "cartons",
+                    "delivery_country": country,
+                    "delivery_place": lot_desc.split(" to ")[-1] if " to " in lot_desc else "Port Sudan",
+                    "delivery_deadline": TODAY + timedelta(days=90),
+                },
+            )
+            bid, _ = Bid.objects.update_or_create(
+                org=orgs[org_name],
+                rfp=rfp,
+                defaults={
+                    "status": Bid.Status.SUBMITTED,
+                    "submitted_at": timezone.now() - timedelta(days=60),
+                },
+            )
+            lot_bid, _ = LotBid.objects.update_or_create(
+                bid=bid, lot=lot, defaults={"unit_price": price, "currency": "USD", "lead_time_days": 21}
+            )
+            if not hasattr(lot, "award"):
+                Award.objects.create(lot=lot, lot_bid=lot_bid, awarded_by=staff[StaffRole.Role.PROCUREMENT_ADMIN])
+            rfp.refresh_from_db()
+            if not rfp.lots.filter(award__isnull=True).exists() and rfp.status != RFP.Status.AWARDED:
+                rfp.status = RFP.Status.AWARDED
+                rfp.save(update_fields=["status"])
 
     # ---------- solicitations ----------
 

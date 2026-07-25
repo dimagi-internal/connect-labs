@@ -100,3 +100,61 @@ def test_seeded_supplier_sees_eligible_solicitations(client):
     assert body["org"]["legal_name"] == "Savanna Nutrients Ltd"
     assert any(q["category"] == "rutf" for q in body["org"]["qualifications"])
     assert any(r["title"] == "RUTF Northeast Nigeria Q3 2026" for r in body["eligible_rfps"])
+
+
+def test_seed_execution_world():
+    call_command("seed_supply_demo")
+    from connect_labs.supply.models import Contract, Discrepancy, Shipment, SupplyEvent, SupplyNode
+
+    assert SupplyNode.objects.count() == 28
+    assert Contract.objects.count() == 4
+    assert Shipment.objects.count() == 14
+
+    # every ingestion tier is represented, so the demo shows the real gradient
+    tiers = set(SupplyEvent.objects.values_list("source_tier", flat=True))
+    assert tiers == {"epcis", "asn", "checkin", "portal"}
+
+    # every shipment status appears
+    assert set(Shipment.objects.values_list("status", flat=True)) == {
+        "planned",
+        "in_transit",
+        "delivered",
+        "confirmed",
+    }
+
+    # at least one receipt fails to reconcile, feeding the exception surface
+    assert Discrepancy.objects.filter(status="open").exists()
+
+
+def test_seeded_shipments_belong_to_a_contract_in_their_own_country():
+    """A Nigerian leg must not hang off an Ethiopian contract."""
+    call_command("seed_supply_demo")
+    from connect_labs.supply.models import Shipment
+
+    for shipment in Shipment.objects.select_related("contract__org", "origin", "destination"):
+        countries = {shipment.origin.country, shipment.destination.country}
+        contract_country = shipment.contract.award.lot.delivery_country
+        assert (
+            contract_country in countries
+        ), f"{shipment.reference} runs {countries} but belongs to a {contract_country} contract"
+
+
+def test_seeded_nodes_have_valid_gs1_locations():
+    call_command("seed_supply_demo")
+    from connect_labs.supply import gs1
+    from connect_labs.supply.models import SupplyNode
+
+    for node in SupplyNode.objects.all():
+        assert gs1.is_valid(node.gln), f"{node.name} has an invalid GLN"
+        assert node.location is not None
+
+
+def test_seeded_contracts_report_three_distinct_money_stages():
+    call_command("seed_supply_demo")
+    from connect_labs.supply.models import Contract
+
+    contract = Contract.objects.get(reference="OES-C-2026-ET1")
+    assert contract.obligated_value > 0
+    # delivered is what arrived; disbursed is only what was CONFIRMED — the
+    # funder view depends on these never collapsing into one number
+    assert contract.delivered_quantity >= contract.disbursed_value / contract.unit_price

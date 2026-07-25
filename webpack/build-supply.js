@@ -30,6 +30,8 @@ const FILES = [
   'tab_org.jsx',
   'tab_eoi.jsx',
   'tab_bids.jsx',
+  'tab_ops.jsx',
+  'tab_integration.jsx',
   'tab_console_home.jsx',
   'tab_rounds.jsx',
   'tab_registry.jsx',
