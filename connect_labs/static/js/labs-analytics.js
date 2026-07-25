@@ -82,6 +82,9 @@
   // values replaced). Same identifiers-not-content standard as the audit trail.
   script.setAttribute('data-before-send', 'labsAnalyticsBeforeSend');
   script.setAttribute('data-exclude-hash', 'true');
+  // Web Vitals (LCP/INP/CLS/FCP/TTFB) feed Umami's Performance view —
+  // timing numbers only, no page content.
+  script.setAttribute('data-web-vitals', 'true');
   script.onload = function () {
     if (!window.umami) return;
     if (cfg.username && typeof window.umami.identify === 'function') {
