@@ -1,5 +1,7 @@
 # Funder MCP Interface Design
 
+> **Status (2026-07-25 doc-regen):** SUPERSEDED — fund tools now live in `connect_labs/mcp/tools/funds.py`, not `tools/commcare_mcp/`.
+
 ## Summary
 
 Extend the existing Connect Labs MCP server (`tools/commcare_mcp/server.py`) with fund management, review/scoring, award, and Google Sheets tools. These tools serve both local Claude Code sessions and in-app AI agents on the server, using the same code paths and prompts.

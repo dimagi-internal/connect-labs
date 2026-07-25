@@ -93,13 +93,19 @@ Each item in the list can include `program_id`, `opportunity_id`, or `organizati
 | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
 | `labs/`            | Core infrastructure: OAuth, API client, middleware, analysis pipeline                                                                                                                                                                  | `integrations/connect/api_client.py`, `models.py`, `context.py`                     |
 | `audit_trail/`     | HIPAA-bar access/change logging: append-only `AuditEvent`, choke-point instrumentation, review UI at `/labs/audit-trail/`, S3 Object-Lock archive. See `docs/AUDIT_LOGGING.md`                                                         | `service.py`, `middleware.py`, `tasks.py`, `views.py`                               |
-| `audit/`           | Quality assurance review of FLW visits, HQ image questions                                                                                                                                                                             | `data_access.py`, `ai_review.py`, `tasks.py`, `hq_app_utils.py`, `views.py`         |
+| `audit/`           | Quality assurance review of FLW visits, HQ image questions, AI reviewers, visit clustering                                                                                                                                             | `data_access.py`, `ai_review.py`, `ai_review_config.py`, `visit_clustering.py`, `tasks.py`, `views.py` |
 | `tasks/`           | Task management for FLW follow-ups                                                                                                                                                                                                     | `data_access.py` (simplest example of the pattern)                                  |
 | `workflow/`        | Configurable workflow engine with React UIs and pipelines                                                                                                                                                                              | `data_access.py` (most complex), `templates/`                                       |
 | `ai/`              | AI agent integration via pydantic-ai, SSE streaming                                                                                                                                                                                    | `agents/`, `views.py` (AIStreamView)                                                |
 | `solicitations/`   | Solicitations with API views, forms, and MCP tools                                                                                                                                                                                     | `data_access.py`, `api_views.py`, `mcp_tools.py`, `forms.py`                        |
 | `coverage/`        | Delivery unit mapping from CommCare HQ (separate OAuth)                                                                                                                                                                                | `data_access.py`, `data_loader.py`                                                  |
-| `custom_analysis/` | Program-specific analysis dashboards (audit_of_audits, chc_nutrition, kmc, mbw, rutf)                                                                                                                                                  | Each sub-app has `data_access.py`, `views.py`, `urls.py`                            |
+| `custom_analysis/` | Program-specific analysis dashboards (audit_of_audits, chc_nutrition, exports, kmc, rutf)                                                                                                                                              | Each sub-app has `data_access.py`, `views.py`, `urls.py`                            |
+| `microplans/`      | Microplanning at `/microplans/`: sampling + coverage planning on admin boundaries/work areas, program-scoped plans, study groups, KPIs, Connect work-area export. See `docs/microplans-design.md` (historical north-star)              | `core/`, `sampling/`, `coverage/`, `monitoring/`, `qc/`, `models.py`, `views.py`    |
+| `funder_dashboard/`| Funder-facing dashboard at `/funder/`: funds, allocations, charts/KPIs, AI fund-report agents                                                                                                                                          | `data_access.py`, `views.py`, `api_views.py`, `mcp_tools.py`                        |
+| `campaign/`        | Standalone Campaign Utility Tool at `/campaign/` — has its **own CommCare OAuth** (session key `campaign_oauth`), not the labs session                                                                                                 | `api/`, `services/`, `auth/`, `middleware.py`                                       |
+| `pages/`           | Composable card landing-page "surfaces" at `/labs/p/<slug>`, authored via the `pages_*` MCP tools                                                                                                                                      | `data_access.py`, `providers/`, `views.py`                                          |
+| `flags/`           | Flag-type `LocalLabsRecord`s — findings observed on FLWs during workflow runs; API mounted at `/labs/workflow/api/run/<id>/flags/`                                                                                                     | `models.py`, `data_access.py`                                                       |
+| `mcp/`             | The labs remote MCP server (see [MCP Servers](#mcp-servers)): PAT auth, FastMCP ASGI app at `/mcp/`, tool registry + audit log                                                                                                          | `server.py`, `tool_registry.py`, `tools/`, `auth.py`                                |
 | `labs/synthetic/`  | Registry of "synthetic" opportunities that serve fixture JSON from GDrive instead of prod exports. CRUD UI at `/labs/synthetic/`, SSE-streamed dump flow, strict access scoping by `user_opportunities`. See `docs/SYNTHETIC_OPPS.md`. | `models.py`, `registry.py`, `fixture_store.py`, `gdrive.py`, `dump.py`, `client.py` |
 
 ### Retained Non-Labs Apps (Models + Migrations Only)
@@ -112,7 +118,7 @@ Each item in the list can include `program_id`, `opportunity_id`, or `organizati
 | `program/`      | Program model definitions and migrations                                               |
 | `commcarehq/`   | Minimal — just `HQServer` model + migrations (needed by FKs)                           |
 
-**Cross-app connections:** Workflow can create audits and tasks. AI agents modify workflows and solicitations. `custom_analysis/audit_of_audits` reads audit and organization data. Coverage is standalone.
+**Cross-app connections:** Workflow can create audits and tasks; flags hang off workflow runs. AI agents modify workflows and solicitations; funder-dashboard AI agents live in `ai/agents/`. `custom_analysis/audit_of_audits` reads audit and organization data. Coverage, microplans, and campaign are standalone.
 
 ## Prelogin marketing site
 
@@ -128,7 +134,7 @@ Templates can set `multi_opp: True` on their `TEMPLATE` dict to opt into multi-o
 
 Templates that produce a periodic review with a definite "moment of completion" can set `supports_saved_runs: True` to opt into the **in_progress | completed** run lifecycle. They declare what the snapshot captures via `snapshot_inputs` (a manifest of pipelines/workers/state_keys), render code reads run data via the `view` helper (`view.workers`, `view.pipelines.<alias>`, `view.state.<key>`, `view.isCompleted`, `view.asOf`), and triggers completion via `view.complete({confirm})`. The framework atomically builds the snapshot, flips status, stamps `completed_at`, and write-protects the run. Reference: `connect_labs/workflow/templates/performance_review.py`. Full contract: [WORKFLOW_REFERENCE.md §9](connect_labs/workflow/WORKFLOW_REFERENCE.md#9-saved-runs-templates).
 
-**Existing templates:** `audit_with_ai_review`, `bulk_image_audit`, `chc_nutrition_analysis`, `interviews_reporting_v2`, `kmc_flw_flags`, `kmc_longitudinal`, `kmc_project_metrics`, `llo_weekly_review`, `mbw_auditing_v5`, `ocs_outreach`, `performance_review` (multi-opp), `program_admin_report` (multi-opp), `sam_followup`, `verified_monitoring`
+**Existing templates** (`*` = multi-opp): `audit_par`\*, `audit_with_ai_review`, `bulk_image_audit`, `chc_audit_history`\*, `chc_nutrition_analysis`, `flw_audit_trend_dashboard`\*, `flw_weekly_audit_report`\*, `interviews_reporting_v2`, `jakusko_chlorine_dispenser`, `kmc_flw_flags`, `kmc_longitudinal`, `kmc_project_metrics`, `llo_weekly_review`, `mbw_auditing_v5`, `muac_picture_audit`\*, `ocs_outreach`, `performance_review`\*, `program_admin_report`\*, `program_audit_creator`\*, `sam_followup`, `verified_monitoring`, `weekly_dual_track_audit`\*
 
 **Legacy — do NOT use as patterns:** the `mbw_monitoring` package (MBW v1: Python job handler + SSE + in-template React) is **deprecated** and retained only to keep a few pre-existing prod instances renderable. It's flagged `TEMPLATE["deprecated"] = True`, so it's hidden from `list_templates()` / the create menu and can't be instantiated anew (see its `DEPRECATED.md`). The v2/v3 monitoring and v4 auditing templates were already removed. For any MBW or dashboard work, copy from **`mbw_auditing_v5`** (SQL-native, pipeline-pure, saved-runs) — never from `mbw_monitoring`.
 
@@ -241,31 +247,43 @@ Connect OAuth token (`~/.commcare-connect/token.json`).
 ### `connect_labs` (remote HTTP)
 
 A remote MCP server hosted inside the labs Django app (`connect_labs/mcp/`)
-at `https://labs.connect.dimagi.com/mcp/`. Plan 1 (this PR) ships the server
-with authentication and an empty tools catalog. Plans 2 and 3 add workflow,
-pipeline, and migrated solicitation/review/fund tools.
+at `https://labs.connect.dimagi.com/mcp/`. The protocol endpoint is a
+FastMCP 3.x Streamable-HTTP ASGI app mounted in `config/asgi.py`; the catalog
+registers **86 tools** (write tools are rate-limited and fully argument-logged
+to `MCPAuditLog`).
 
-**Auth:** Personal Access Tokens (PAT) in Plan 1; OAuth 2.1 bridged to Connect
-in a later phase.
+**Auth:** Personal Access Tokens (PAT) — a deliberate permanent design, not a
+placeholder. Labs is a PAT-only resource server, **not** an OAuth authorization
+server: `config/asgi.py` actively suppresses OAuth discovery so clients never
+attempt that flow. Mint/rotate tokens self-service at `/labs/mcp/tokens/`
+(the `labs-token-setup` skill automates this).
 
-**Setup:** see `docs/MCP_SETUP.md`.
+**Setup:** see `docs/MCP_SETUP.md` (note: parts of that doc predate the
+current catalog and the self-service token UI).
 
 ### MCP-powered skills
 
-Four skills help Claude iterate on labs workflows and pipelines, and set up the MCP connection itself:
+Seven repo skills (`.claude/skills/`) help Claude iterate on labs and operate the deployment:
 
-- **`workflow-author`** (`.claude/skills/workflow-author/SKILL.md`) — edit a live workflow instance via the `connect_labs` MCP (pull → edit JSX → push). **Use this for the common case.**
-- **`pipeline-author`** (`.claude/skills/pipeline-author/SKILL.md`) — edit a pipeline schema via the `connect_labs` MCP with preview-then-save.
-- **`workflow-templates`** (`.claude/skills/workflow-templates/SKILL.md`) — author new SEED templates in the repo. Only for the rare "ship a new starter in labs" case, not for editing existing workflows.
-- **`labs-token-setup`** (`.claude/skills/labs-token-setup/SKILL.md`) — generate an MCP PAT and wire it into `~/.claude/mcp.json` seamlessly. Opens labs in the browser, user approves, Claude Code picks up the token automatically.
+- **`workflow-author`** — edit a live workflow instance via the `connect_labs` MCP (pull → edit JSX → push). **Use this for the common case.**
+- **`pipeline-author`** — edit a pipeline schema via the `connect_labs` MCP with preview-then-save.
+- **`workflow-templates`** — author new SEED templates in the repo. Only for the rare "ship a new starter in labs" case, not for editing existing workflows.
+- **`pages-author`** — compose card landing-page surfaces at `/labs/p/<slug>` via the `pages_*` MCP tools.
+- **`labs-token-setup`** — generate an MCP PAT and wire it into `~/.claude/mcp.json` seamlessly. Opens labs in the browser, user approves, Claude Code picks up the token automatically.
+- **`deploy-labs`** — trigger the AWS deploy via GitHub Actions.
+- **`aws-env-update`** — add/update env vars and secrets in the ECS task definitions.
 
-The `connect_labs` remote MCP ships a full iteration surface: workflows (list, get, update_render_code, update_definition, clone, create_from_template, set_template_flag), pipelines (list, get, update_schema, preview, sql), plus migrated solicitation (list, get, create, update, list_responses, get_response, award_response), review (list, get, create, update), fund (list, get, create, update, add_allocation, remove_allocation), and get_sample_ids tools.
+The `connect_labs` remote MCP tool families: **workflows** (list/get/create/create_from_template/clone/update render code & definition/patch/add_pipeline_source/update_opportunity_ids/set_template_flag/sync_from_template_file/create_run/save_snapshot/delete), **pipelines** (list/get/update_schema/preview/sql/delete), **synthetic data** (`synthetic_*` — envs, profile/generate, clone-from-prod, repoint, fidelity reports, local-record dump/count, image server), **microplans** (`microplans_*` — plans, transitions, work areas, bulk create, study ensure/reset), **pages** (`pages_*`), **solicitations/responses** (incl. `award_response`), **reviews**, **funds** (incl. allocations), plus `campaign_build_national`, `custom_analysis_run`, `labs_context`, `program_admin_demo_seed`, `task_create_synthetic`, `get_sample_ids`, `get_opportunity_apps`, `list_templates`, and `workflow_authoring_guide`.
 
 ## Deeper Documentation
 
 - **[LABS_GUIDE.md](connect_labs/labs/LABS_GUIDE.md)** — Detailed development patterns: OAuth setup, API client usage, proxy models, CLI scripts
 - **[CONTRIBUTING.md](CONTRIBUTING.md)** — Code style, testing conventions, PR process, step-by-step guide for adding new features
 - **[.claude/AGENTS.md](.claude/AGENTS.md)** — Full architecture reference: per-app details, API endpoints, data access patterns, common mistakes
-- **[docs/LABS_ARCHITECTURE.md](docs/LABS_ARCHITECTURE.md)** — Architecture diagrams, data flow, cross-app dependency matrix, decision tree
+- **[docs/LABS_ARCHITECTURE.md](docs/LABS_ARCHITECTURE.md)** — Architecture diagrams, data flow, cross-app dependency matrix. Caution: its "7 labs apps" count and "labs never writes domain data locally" claim predate the current app set and the labs-only synthetic backend
+- **[docs/SAFE_MODE.md](docs/SAFE_MODE.md)** — `inv safe-claude`: locked-down Claude Code config for working near PII
+- **[docs/WORKFLOW_EDITOR_QUICKSTART.md](docs/WORKFLOW_EDITOR_QUICKSTART.md)** — non-developer onboarding: mint a PAT, run safe-claude
+- **[docs/DOCS_AUTOMATION.md](docs/DOCS_AUTOMATION.md)** — the automation that consumes PR `## Product Description` sections (mkdocs site, Confluence updater, weekly changelog)
+- **[docs/synthetic-kmc-clone-runbook.md](docs/synthetic-kmc-clone-runbook.md)** — two-phase profile→generate runbook for cloning prod opps into labs-only synthetics
 - **[pr_guidelines.md](pr_guidelines.md)** — Pull request best practices
-- **[docs/plans/](docs/plans/)** — Design documents and implementation plans for features built in this environment
+- **[docs/plans/](docs/plans/)**, **[docs/superpowers/specs/](docs/superpowers/specs/)**, **[docs/designs/](docs/designs/)** — Design documents and implementation plans for features built in this environment (most are point-in-time records; check each doc's status banner before treating it as current)

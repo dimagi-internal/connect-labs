@@ -1,5 +1,7 @@
 # Audit Export to S3 — Implementation Plan
 
+> **Status (2026-07-25 doc-regen):** shipped — see `connect_labs/labs/s3_export.py`; the unchecked boxes below were completed but never ticked. Historical record.
+
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Export WorkflowRunRecord and AuditSessionRecord data to S3 as durable CSV backups, triggered at run create/complete and session create/complete, with a Dimagi-only Labs download page.

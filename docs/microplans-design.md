@@ -1,5 +1,7 @@
 # Microplans — design north-star (agent reference)
 
+> **Status (2026-07-25 doc-regen):** executed — the app shipped as `connect_labs/microplans/` and `rooftop_surveys/` is gone (URLs redirect). The 'Plan only — nothing renamed/built yet' line below is outdated; boundary code landed in `core/admin_boundaries.py` rather than the predicted `core/boundaries.py`. Historical north-star, not current-state.
+
 > Self-note, not a review artifact. Captures the agreed direction for evolving
 > the current `rooftop_surveys` app into a general **microplan generator**.
 > jjackson's calls (2026-05-28): rename to `microplans`; shared core + thin

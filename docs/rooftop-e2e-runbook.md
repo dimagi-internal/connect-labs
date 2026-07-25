@@ -1,5 +1,7 @@
 # Rooftop Surveys — end-to-end runbook ("FLW sees pins on phone")
 
+> **Status (2026-07-25 doc-regen):** paths SUPERSEDED — `rooftop_surveys/` was renamed to `microplans/`; every `/rooftop-surveys/` URL now redirects to `/microplans/` and module paths moved (`sampling/frame.py` → `microplans/sampling/`, `workarea.py` → `microplans/core/workarea.py`).
+
 The goal of Stage A is one outcome: **an FLW opens the Connect app and sees their
 assigned rooftop pins, ready to navigate and survey.** This runbook walks the full
 path. Steps marked **[automated]** are done by the labs app; **[gated]** steps need

@@ -1,5 +1,7 @@
 # Per-Image-Type AI Reviewer Selection — Implementation Plan
 
+> **Status (2026-07-25 doc-regen):** shipped (PR #771) — the unchecked boxes below were completed but never ticked. Historical record.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Let an auditor pair an AI reviewer (and its required settings) with each image type during audit creation, so each image type runs only its chosen reviewer.

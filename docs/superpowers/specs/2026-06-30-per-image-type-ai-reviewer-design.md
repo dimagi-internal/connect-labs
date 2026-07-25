@@ -1,5 +1,7 @@
 # Per-Image-Type AI Reviewer Selection — Design
 
+> **Status (2026-07-25 doc-regen):** shipped (PR #771) — see `audit/ai_review_config.py`. Historical design record, not current-state.
+
 **Date:** 2026-06-30
 **App:** `audit/`
 **Status:** Approved design, pending implementation plan

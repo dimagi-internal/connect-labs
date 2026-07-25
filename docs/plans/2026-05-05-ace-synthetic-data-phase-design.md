@@ -1,5 +1,7 @@
 # ACE Phase 6 — Synthetic Data and Workflows
 
+> **Status (2026-07-25 doc-regen):** shipped — `labs/synthetic/` engine + `synthetic_*` MCP tools exist. Historical design record, not current-state.
+
 **Status:** Design — pending implementation plan
 **Date:** 2026-05-05
 **Touches:** ACE plugin (new phase + 7 skills + 4 evals), connect-labs (synthetic generator engine, two new SEED templates, 5 new MCP tools), persona catalog

@@ -1,5 +1,7 @@
 # Labs Architecture
 
+> **Status (2026-07-25 doc-regen):** partially outdated — the '7 labs apps' count predates microplans/campaign/pages/funder_dashboard/mcp etc., and 'labs never writes domain data to the local database' is no longer true for labs-only synthetic opps (`labs/synthetic/local_records_backend.py`). Diagrams and CRUD flow remain useful.
+
 Most production apps have been removed from this codebase. Only the 7 labs apps plus minimal retained apps (for models/migrations) remain. See [CLAUDE.md](../CLAUDE.md) for the full app map.
 
 ## System Overview

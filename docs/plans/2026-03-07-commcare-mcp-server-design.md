@@ -1,5 +1,7 @@
 # CommCare HQ MCP Server — Design
 
+> **Status (2026-07-25 doc-regen):** SUPERSEDED — the labs MCP server lives at `connect_labs/mcp/` (the `tools/commcare_mcp/` location described here never became the home; HQ app tools live in `tools/commcare_hq_mcp/`).
+
 **Date:** 2026-03-07
 **Status:** Approved
 

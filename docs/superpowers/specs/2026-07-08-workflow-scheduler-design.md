@@ -1,5 +1,7 @@
 # Lightweight Workflow Scheduler — Design
 
+> **Status (2026-07-25 doc-regen):** shipped — `WorkflowSchedule` + tick task live in `workflow/tasks.py`/`views.py`. Historical design record, not current-state.
+
 **Date:** 2026-07-08
 **Status:** Approved design (pre-implementation)
 

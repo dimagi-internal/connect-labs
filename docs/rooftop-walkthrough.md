@@ -1,5 +1,7 @@
 # Rooftop Surveys — walkthrough
 
+> **Status (2026-07-25 doc-regen):** paths SUPERSEDED — `rooftop_surveys/` was renamed to `microplans/`; the 'Run it yourself' commands and module paths below no longer exist as written.
+
 Companion narration for the screen recording (`rooftop-walkthrough.mp4`). The
 video shows the one part with a UI today (the sampling setup flow); the rest of
 the system — the sampling math, the monitoring analytics, the QC cascade — runs

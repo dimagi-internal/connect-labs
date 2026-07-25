@@ -1,5 +1,7 @@
 # Codebase Improvement Burndown
 
+> **Status (2026-07-25 doc-regen):** stale tracker (last real update March 2026) — line-number references have rotted and several unchecked items have since shipped (e.g. shared `BaseDataAccess` exists in `workflow/data_access.py`; deprecated analysis-pipeline callers are gone; `get_or_create_run` no longer exists). Do not use as a work queue without re-verifying each item.
+
 ## Critical — Runtime Crashes
 
 - [x] **Fix `update_record` wrong positional args** — `tasks/data_access.py:279,294,310,334,359`. *(Fixed: switched to keyword args. 10 unit tests added.)*

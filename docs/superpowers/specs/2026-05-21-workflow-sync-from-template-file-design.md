@@ -1,5 +1,7 @@
 # workflow_sync_from_template_file — design
 
+> **Status (2026-07-25 doc-regen):** shipped — the `workflow_sync_from_template_file` MCP tool is live. Historical design record.
+
 **Date:** 2026-05-21
 **Status:** Draft, pre-implementation
 
