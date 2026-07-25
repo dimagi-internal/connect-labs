@@ -11,6 +11,8 @@ from datetime import timedelta
 from django.utils import timezone
 from django.views.generic import TemplateView
 
+from connect_labs.audit_trail import service as audit_service
+from connect_labs.audit_trail.models import Action as AuditAction
 from connect_labs.labs.view_mixins import AdminRequiredMixin
 from connect_labs.utils import umami_api
 
@@ -26,6 +28,9 @@ class AnalyticsDashboardView(AdminRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        # The analytics store is PHI-adjacent usage metadata (who used which
+        # feature, opaque scopes) — viewing it is itself an audited access.
+        audit_service.record(AuditAction.READ, resource_type="analytics_dashboard")
         context["umami_url"] = "/umami"
         if not umami_api.is_configured():
             context[

@@ -37,6 +37,11 @@
   script.defer = true;
   script.src = cfg.hostUrl.replace(/\/+$/, '') + '/script.js';
   script.setAttribute('data-website-id', cfg.websiteId);
+  // HIPAA-bar: labs query strings carry expressive workflow params (usernames,
+  // entity ids, scope filters). Strip them client-side so analytics only ever
+  // receives paths — same identifiers-not-content standard as the audit trail.
+  script.setAttribute('data-exclude-search', 'true');
+  script.setAttribute('data-exclude-hash', 'true');
   script.onload = function () {
     if (!window.umami) return;
     if (cfg.username && typeof window.umami.identify === 'function') {

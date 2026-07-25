@@ -72,6 +72,25 @@ the single sanctioned bypass of the append-only trigger).
 - **Pipeline health is verified, not assumed:** the canary task alarms (ERROR
   log → Sentry) if no canary landed for 2 hours.
 
+## Analytics store classification
+
+The self-hosted Umami analytics DB holds the **same data class as the audit
+log**: PHI-adjacent usage metadata — staff usernames (via `identify`), page
+*paths* with opaque record ids, and feature-event names with resource types.
+Two rules keep it that way:
+
+- The tracker is loaded with `data-exclude-search` / `data-exclude-hash`, so
+  **query strings never leave the browser** — labs' expressive workflow URL
+  params (usernames, entity ids, scope filters) are stripped client-side.
+  The audit trail likewise records `request.path` only, never query strings.
+- Server-side events carry `resource_type` + `labs_only` only.
+
+Consequently, viewing analytics is viewing usage metadata, not PHI content —
+but the store still gets audit-log-grade protection: first-party only, Umami
+admin login (Secrets Manager) plus the Dimagi-admin-gated
+`/labs/admin/analytics/` page, and opening that page is itself recorded as an
+audit event (`read analytics_dashboard`).
+
 ## Operational notes
 
 - `record()` and the middleware flush are best-effort by contract — a broken
