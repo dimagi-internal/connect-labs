@@ -1,0 +1,106 @@
+/* Post-award surfaces: contract progress, milestone rails, integration. */
+
+/* ---------- execution: progress, milestone rail, integration ---------- */
+
+.progress {
+  position: relative;
+  height: 10px;
+  background: var(--oes-bg);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: 14px;
+}
+.progress-shipped {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: rgba(13, 122, 95, 0.28);
+}
+.progress-delivered {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--oes-accent);
+}
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.rail-step {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 6px 0;
+  position: relative;
+}
+.rail-step:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 22px;
+  bottom: -6px;
+  width: 2px;
+  background: var(--oes-line);
+}
+.rail-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  margin-top: 4px;
+  flex: 0 0 12px;
+  background: #fff;
+  border: 2px solid var(--oes-line);
+}
+.rail-step.done .rail-dot {
+  background: var(--oes-accent);
+  border-color: var(--oes-accent);
+}
+.rail-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.endpoint {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--oes-bg);
+}
+.endpoint:last-of-type {
+  border-bottom: 0;
+}
+.endpoint h4 {
+  margin: 0 0 4px;
+  font-size: 13px;
+}
+.endpoint p {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+.endpoint-url {
+  display: inline-block;
+  background: var(--oes-ink);
+  color: #d7f5ea;
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.secret-notice {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.secret {
+  display: block;
+  background: var(--oes-ink);
+  color: #d7f5ea;
+  padding: 9px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  word-break: break-all;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.filter-row input[type='text'] {
+  width: 240px;
+  font-size: 13px;
+  padding: 6px 9px;
+}

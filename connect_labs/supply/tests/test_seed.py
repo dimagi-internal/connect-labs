@@ -182,19 +182,10 @@ def test_reseeding_preserves_shipment_lifecycle_state():
 def test_demo_password_can_be_overridden_by_environment(monkeypatch):
     """A deployed instance must not use the password published in the repo."""
     monkeypatch.setenv("SUPPLY_DEMO_PASSWORD", "not-the-repo-default")
-    import importlib
-
-    from connect_labs.supply.management.commands import seed_supply_demo as mod
-
-    importlib.reload(mod)
-    try:
-        call_command(mod.Command(), "--reset")
-        user = User.objects.get(username="oes-lead@oes.example")
-        assert user.check_password("not-the-repo-default")
-        assert not user.check_password("oes-demo-2026")
-    finally:
-        monkeypatch.delenv("SUPPLY_DEMO_PASSWORD", raising=False)
-        importlib.reload(mod)
+    call_command("seed_supply_demo", "--reset")
+    user = User.objects.get(username="oes-lead@oes.example")
+    assert user.check_password("not-the-repo-default")
+    assert not user.check_password("oes-demo-2026")
 
 
 def test_seeded_routes_follow_corridors_not_straight_lines():

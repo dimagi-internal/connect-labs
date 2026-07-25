@@ -1,0 +1,220 @@
+/* The application frame: top bar, side navigation, page and card layout,
+   and the key-figures row that heads every surface. */
+
+/* ---------- app shell ---------- */
+
+.shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  background: var(--oes-panel);
+  border-bottom: 1px solid var(--oes-line);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+.topbar-brand {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.topbar-user {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+}
+.topbar-user form {
+  margin: 0;
+}
+.role-chip {
+  background: var(--oes-accent);
+  color: #fff;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.user-name {
+  color: var(--oes-ink-soft);
+}
+
+.body {
+  display: flex;
+  flex: 1;
+  align-items: stretch;
+}
+
+.sidenav {
+  width: 232px;
+  flex: 0 0 232px;
+  background: var(--oes-panel);
+  border-right: 1px solid var(--oes-line);
+  padding: 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.navitem {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 9px 12px;
+  border: 0;
+  background: transparent;
+  border-radius: 8px;
+  font: inherit;
+  color: var(--oes-ink-soft);
+  cursor: pointer;
+}
+.navitem:hover {
+  background: var(--oes-bg);
+  color: var(--oes-ink);
+}
+.navitem.active {
+  background: rgba(13, 122, 95, 0.1);
+  color: var(--oes-accent-dark);
+  font-weight: 600;
+}
+.sidenav-foot {
+  margin-top: auto;
+  padding: 12px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--oes-ink-soft);
+  border-top: 1px solid var(--oes-line);
+}
+
+.content {
+  flex: 1;
+  padding: 24px 28px 60px;
+  max-width: 1400px;
+  position: relative;
+}
+.busy-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--oes-accent),
+    transparent
+  );
+  animation: busy 1.1s linear infinite;
+}
+@keyframes busy {
+  0% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.35;
+  }
+}
+
+/* ---------- page & card ---------- */
+
+.page-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  gap: 16px;
+}
+.page-head h1 {
+  font-size: 22px;
+  margin: 0 0 4px;
+  letter-spacing: -0.01em;
+}
+.page-lede {
+  margin: 0;
+  color: var(--oes-ink-soft);
+  font-size: 14px;
+}
+.page-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.card {
+  background: var(--oes-panel);
+  border: 1px solid var(--oes-line);
+  border-radius: var(--oes-radius);
+  margin-bottom: 18px;
+  overflow: hidden;
+}
+.card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--oes-line);
+}
+.card-head h2 {
+  font-size: 15px;
+  margin: 0;
+}
+.card-sub {
+  font-size: 12px;
+  color: var(--oes-ink-soft);
+  margin-top: 3px;
+}
+.card-body {
+  padding: 14px 16px;
+}
+.card-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  gap: 18px;
+}
+
+/* ---------- key figures ---------- */
+
+.keyfigures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+.keyfigure {
+  background: var(--oes-panel);
+  border: 1px solid var(--oes-line);
+  border-radius: var(--oes-radius);
+  padding: 16px;
+}
+.keyfigure-value {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+.keyfigure-label {
+  font-size: 13px;
+  color: var(--oes-ink-soft);
+  margin-top: 4px;
+}
+.keyfigure-hint {
+  font-size: 11px;
+  color: var(--oes-ink-soft);
+  margin-top: 6px;
+  opacity: 0.85;
+}

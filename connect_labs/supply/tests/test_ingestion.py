@@ -446,3 +446,34 @@ def test_arriving_implies_in_transit(feed):
     )
     shipment.refresh_from_db()
     assert shipment.status == Shipment.Status.IN_TRANSIT
+
+
+def test_blank_gln_does_not_bind_an_arbitrary_node(feed):
+    """A despatch with empty locations must be rejected, not silently bound.
+
+    Regression: the lookup used to be a raw ``filter(gln=...)``, so a blank
+    GLN matched the first node with an empty one and attached the consignment
+    to whatever that happened to be.
+    """
+    from connect_labs.supply.models import SupplyNode
+
+    # a node with no GLN, exactly what a raw blank-string filter would match
+    SupplyNode.objects.create(name="Unregistered Depot", kind="warehouse", country="NG", gln="")
+
+    payload = _asn_payload(feed, asn="ASN-BLANK")
+    payload["ship_from_gln"] = ""
+    payload["ship_to_gln"] = ""
+    resp = _api(feed["client"], "/supply/api/v1/shipments/", payload, feed["token"])
+    assert resp.status_code == 400
+    assert "resolve to known locations" in resp.json()["error"]
+    assert not Shipment.objects.filter(asn_reference="ASN-BLANK").exists()
+
+
+def test_blank_gln_lookup_helper_returns_nothing(db):
+    from connect_labs.supply.models import SupplyNode
+    from connect_labs.supply.services.ingestion import node_by_gln
+
+    SupplyNode.objects.create(name="No GLN", kind="warehouse", country="NG", gln="")
+    assert node_by_gln("") is None
+    assert node_by_gln(None) is None
+    assert node_by_gln("   ") is None
