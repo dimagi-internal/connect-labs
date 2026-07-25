@@ -4,7 +4,7 @@ URL routing for Labs Explorer
 
 from django.urls import include, path
 
-from connect_labs.labs.analytics_views import AnalyticsDashboardView
+from connect_labs.labs.analytics_views import AnalyticsDashboardView, UmamiSSOView
 
 from . import views
 
@@ -15,6 +15,7 @@ urlpatterns = [
     path("", views.AdminIndexView.as_view(), name="index"),
     # Usage analytics (self-hosted Umami surfaced behind labs OAuth)
     path("analytics/", AnalyticsDashboardView.as_view(), name="analytics_dashboard"),
+    path("analytics/umami/", UmamiSSOView.as_view(), name="umami_sso"),
     # Labs Record
     path("records/", views.RecordListView.as_view(), name="list"),
     path("records/<int:pk>/edit/", views.RecordEditView.as_view(), name="edit"),

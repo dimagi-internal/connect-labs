@@ -57,6 +57,45 @@ def test_analytics_dashboard_forbidden_for_external(client, django_user_model):
 
 
 @pytest.mark.django_db
+def test_dashboard_aggregates_full_urls_from_page_views(client, admin_user, settings):
+    settings.UMAMI_HOST_URL = ""
+    from connect_labs.audit_trail.models import Action, AuditEvent
+
+    for _ in range(3):
+        AuditEvent.objects.create(action=Action.PAGE_VIEW, path="/tasks/", query_string="status=open")
+    AuditEvent.objects.create(action=Action.PAGE_VIEW, path="/tasks/", query_string="status=done")
+    client.force_login(admin_user)
+    response = client.get(reverse("labs_admin:analytics_dashboard"))
+    urls = {(r["path"], r["query_string"]): r["n"] for r in response.context["top_full_urls"]}
+    assert urls[("/tasks/", "status=open")] == 3
+    assert urls[("/tasks/", "status=done")] == 1
+
+
+@pytest.mark.django_db
+def test_umami_sso_bridge(client, admin_user, settings):
+    settings.UMAMI_HOST_URL = "https://labs.example.com/umami"
+    settings.UMAMI_WEBSITE_ID = "site-123"
+    settings.UMAMI_ADMIN_PASSWORD = "pw"
+    from connect_labs.audit_trail.models import Action, AuditEvent
+
+    client.force_login(admin_user)
+    with patch("connect_labs.utils.umami_api.get_admin_token", return_value="jwt-token-abc"):
+        response = client.get(reverse("labs_admin:umami_sso"))
+    assert response.status_code == 200
+    content = response.content.decode()
+    assert "jwt-token-abc" in content
+    assert "umami.auth" in content
+    assert AuditEvent.objects.filter(action=Action.READ, resource_type="umami_dashboard").exists()
+
+
+@pytest.mark.django_db
+def test_umami_sso_forbidden_for_external(client, django_user_model):
+    external = django_user_model.objects.create(username="partner", email="p@example.org")
+    client.force_login(external)
+    assert client.get(reverse("labs_admin:umami_sso")).status_code == 403
+
+
+@pytest.mark.django_db
 def test_audit_bridge_sends_analytics_events(settings):
     """Successful writes/exports become Umami feature events; reads do not."""
     settings.UMAMI_HOST_URL = "https://labs.example.com/umami"

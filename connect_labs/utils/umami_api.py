@@ -77,6 +77,13 @@ def _get(path: str, params: dict | None = None) -> dict | list:
     raise UmamiAPIError("unreachable")  # pragma: no cover
 
 
+def get_admin_token() -> str:
+    """Cached admin JWT — used for API reads and the labs→Umami SSO bridge."""
+    if not is_configured():
+        raise UmamiAPIError("Umami analytics is not configured")
+    return cache.get(TOKEN_CACHE_KEY) or _login()
+
+
 def _website_path(suffix: str) -> str:
     return f"/api/websites/{settings.UMAMI_WEBSITE_ID}{suffix}"
 

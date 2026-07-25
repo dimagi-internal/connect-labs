@@ -13,8 +13,9 @@
         First-party usage analytics (self-hosted Umami — no data leaves our infrastructure).
       </p>
     </div>
-    <a href="{{ umami_url }}" target="_blank" rel="noopener"
-       class="px-4 py-2 bg-white border border-gray-300 rounded-md text-sm font-semibold text-gray-700 hover:bg-gray-50 whitespace-nowrap">
+    <a href="{% url 'labs_admin:umami_sso' %}" target="_blank" rel="noopener"
+       class="px-4 py-2 bg-white border border-gray-300 rounded-md text-sm font-semibold text-gray-700 hover:bg-gray-50 whitespace-nowrap"
+       title="Full Umami UI (journeys, funnels, retention, sessions) — signed in via your labs login">
       Open Umami <i class="fa-solid fa-arrow-up-right-from-square ml-1 text-xs"></i>
     </a>
   </div>
@@ -46,18 +47,21 @@
   </div>
 
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-    {# ── Top pages ────────────────────────────────────────────────────── #}
+    {# ── Top pages by full URL (audit page_views — params are meaning) ── #}
     <div class="bg-white rounded-lg shadow-sm p-6 lg:col-span-2">
-      <div class="text-sm font-semibold text-gray-700 mb-3">Top pages (7d)</div>
+      <div class="text-sm font-semibold text-gray-700 mb-1">Top pages (7d, full URL incl. parameters)</div>
+      <div class="text-xs text-gray-400 mb-3">Distinct parameter sets count separately; free-text search values are redacted. Click to reconstruct sessions in the audit trail.</div>
       <table class="min-w-full text-sm">
         <tbody class="divide-y divide-gray-100">
-          {% for row in top_pages %}
+          {% for row in top_full_urls %}
           <tr>
-            <td class="py-1.5 pr-4 text-gray-700 font-mono text-xs truncate" style="max-width: 420px">{{ row.x }}</td>
-            <td class="py-1.5 text-right text-gray-900 font-semibold">{{ row.y }}</td>
+            <td class="py-1.5 pr-4 text-gray-700 font-mono text-xs truncate" style="max-width: 420px" title="{{ row.path }}{% if row.query_string %}?{{ row.query_string }}{% endif %}">
+              {{ row.path }}{% if row.query_string %}<span class="text-gray-400">?{{ row.query_string }}</span>{% endif %}
+            </td>
+            <td class="py-1.5 text-right text-gray-900 font-semibold">{{ row.n }}</td>
           </tr>
           {% empty %}
-          <tr><td class="py-4 text-gray-400">No page views recorded yet.</td></tr>
+          <tr><td class="py-4 text-gray-400">No page views recorded yet (populates from the audit trail's page_view events).</td></tr>
           {% endfor %}
         </tbody>
       </table>
