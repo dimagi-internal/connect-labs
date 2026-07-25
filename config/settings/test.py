@@ -33,7 +33,7 @@ STORAGES["staticfiles"]["BACKEND"] = "django.contrib.staticfiles.storage.StaticF
 # get migrations applied to the test database. Mirrors the registration in
 # local.py and labs_aws.py — base.py does not include it because those two
 # files already opt in and double-registration raises ImproperlyConfigured.
-INSTALLED_APPS = INSTALLED_APPS + ["connect_labs.labs", "connect_labs.campaign"]  # noqa: F405
+INSTALLED_APPS = INSTALLED_APPS + ["connect_labs.labs", "connect_labs.campaign", "connect_labs.supply"]  # noqa: F405
 
 # Install the campaign OAuth-session middleware under test settings so its
 # behavior is exercised here (local.py/labs_aws.py add it for runtime; base/test
