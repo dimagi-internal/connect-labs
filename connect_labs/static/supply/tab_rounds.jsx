@@ -316,10 +316,7 @@ function ReviewModal({ ctx, submission, onClose }) {
             <dt>GLN</dt>
             <dd>{snap.gln || '—'}</dd>
             <dt>Contact</dt>
-            <dd>
-              {snap.contact_name || '—'}
-              {snap.contact_email ? ` · ${snap.contact_email}` : ''}
-            </dd>
+            <dd>{contactLine(snap)}</dd>
           </dl>
           <p>
             {snap.description || (

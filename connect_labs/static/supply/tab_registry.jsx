@@ -127,10 +127,7 @@ function RegistryDetailModal({ row, onClose }) {
         <dt>GLN</dt>
         <dd>{row.org.gln || '—'}</dd>
         <dt>Contact</dt>
-        <dd>
-          {row.org.contact_name || '—'}
-          {row.org.contact_email ? ` · ${row.org.contact_email}` : ''}
-        </dd>
+        <dd>{contactLine(row.org)}</dd>
       </dl>
       {row.org.description ? <p>{row.org.description}</p> : null}
 

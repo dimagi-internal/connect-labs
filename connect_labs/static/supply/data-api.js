@@ -103,3 +103,9 @@ function daysUntil(iso) {
   if (isNaN(then.getTime())) return null;
   return Math.ceil((then - new Date()) / (1000 * 60 * 60 * 24));
 }
+
+/* "Name · email", collapsing gracefully when either is missing. */
+function contactLine(org) {
+  const parts = [org.contact_name, org.contact_email].filter(Boolean);
+  return parts.length ? parts.join(' · ') : '—';
+}

@@ -60,6 +60,26 @@ ORGS = [
     ("Addis Central Depot PLC", "ET", "Addis Ababa", ["warehousing"], "strong"),
 ]
 
+# Tender contacts, indexed positionally against ORGS so the mapping is stable.
+CONTACT_NAMES = [
+    "Amina Bello",
+    "Ibrahim Sanusi",
+    "Folake Adeyemi",
+    "Salif Ouédraogo",
+    "Meseret Tadesse",
+    "Yohannes Kebede",
+    "Aïcha Traoré",
+    "Grace Okonkwo",
+    "Osman El-Tayeb",
+    "Hanna Girma",
+    "Fatouma Ahmed",
+    "Boukary Zongo",
+    "Nasir Danjuma",
+    "Zainab Musa",
+    "Awad Hassan",
+    "Selam Bekele",
+]
+
 CERT_TYPES = {
     "rutf": ["ISO 22000", "GMP", "UNICEF RUTF approval"],
     "therapeutic_milk": ["ISO 22000", "GMP"],
@@ -146,7 +166,7 @@ class Command(BaseCommand):
                     "hq_city": city,
                     "registration_number": f"{country}-{2015 + (index % 9)}-{4100 + index * 7}",
                     "description": self._describe(name, categories, city, country),
-                    "contact_name": "",
+                    "contact_name": CONTACT_NAMES[index % len(CONTACT_NAMES)],
                     "contact_email": f"tenders@{self._domain(name)}",
                     "gln": f"62912345{index:04d}"[:13].ljust(13, "0"),
                     "gs1_company_prefix": f"629123{index:02d}",

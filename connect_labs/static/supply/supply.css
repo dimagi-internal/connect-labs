@@ -817,3 +817,12 @@ textarea:focus {
     grid-template-columns: 1fr;
   }
 }
+
+input:disabled,
+select:disabled,
+textarea:disabled {
+  background: var(--oes-bg);
+  color: var(--oes-ink-soft);
+  cursor: not-allowed;
+  border-style: dashed;
+}
