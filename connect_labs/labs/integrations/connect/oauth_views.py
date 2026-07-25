@@ -1,5 +1,5 @@
 """
-CommCare Connect OAuth Views.
+Connect OAuth Views.
 
 Session-based OAuth implementation for labs environment.
 Stores tokens in session instead of database.

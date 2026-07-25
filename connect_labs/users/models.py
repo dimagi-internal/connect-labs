@@ -19,7 +19,7 @@ from connect_labs.utils.permission_const import (
 
 class User(AbstractUser):
     """
-    Default custom user model for CommCare Connect.
+    Default custom user model for Connect.
     If adding fields that need to be filled at user signup,
     check forms.SignupForm and forms.SocialSignupForms accordingly.
     """

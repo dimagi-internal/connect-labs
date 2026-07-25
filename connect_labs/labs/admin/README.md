@@ -17,7 +17,7 @@ read-only boundary APIs consumed by microplans (`countries_api`, `coverage_api`,
 
 ## Labs Record
 
-A table-based UI for exploring, filtering, editing, and managing LabsRecord data in CommCare Connect Labs.
+A table-based UI for exploring, filtering, editing, and managing LabsRecord data in Connect Labs.
 
 ## Features
 

@@ -1,6 +1,6 @@
-# CommCare Connect Labs
+# Connect Labs
 
-A rapid prototyping environment for CommCare Connect experiments. Labs operates entirely via API against production CommCare Connect — there is no direct database access to production data.
+A rapid prototyping environment for Connect experiments. Labs operates entirely via API against production Connect — there is no direct database access to production data.
 
 **AI agents:** Start with [CLAUDE.md](CLAUDE.md) — it's auto-loaded in Claude Code and provides the full architecture overview, app map, and links to deeper docs.
 
@@ -69,7 +69,7 @@ pre-commit run --all-files          # Linters/formatters
 
 ### Labs OAuth (for web UI)
 
-Access labs features at `http://localhost:8000/labs/login/` — this initiates OAuth against production CommCare Connect.
+Access labs features at `http://localhost:8000/labs/login/` — this initiates OAuth against production Connect.
 
 ### CLI OAuth (for scripts)
 

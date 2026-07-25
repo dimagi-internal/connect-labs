@@ -43,7 +43,7 @@ All 8 metrics are computed server-side (no client-side metric assembly). The ren
 
 | Alias | Source | Purpose |
 |---|---|---|
-| `visits` | CommCare Connect CSV | Per-visit data: GPS, breastfeeding status, case linking |
+| `visits` | Connect CSV | Per-visit data: GPS, breastfeeding status, case linking |
 | `registrations` | CCHQ `Register Mother` forms | Mother metadata: expected visits, names, connect user ID |
 | `gs_forms` | CCHQ `Gold Standard Visit Checklist` forms | GS scores: assessor name, date, score per mother case |
 

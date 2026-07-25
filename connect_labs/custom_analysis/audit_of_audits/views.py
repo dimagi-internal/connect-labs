@@ -56,7 +56,7 @@ class DimagiUserRequiredMixin(AccessMixin):
     """
     Restricts view access to users with a @dimagi.com email or username.
 
-    Checks both .email and .username because CommCare Connect OAuth profiles
+    Checks both .email and .username because Connect OAuth profiles
     store the email address in the username field (e.g. mtheis@dimagi.com)
     while the .email field may be blank in the OAuth user_profile payload.
 

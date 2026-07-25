@@ -1,4 +1,4 @@
-# Upstream CommCare Connect Reference
+# Upstream Connect Reference
 
 This labs repo was forked from [dimagi/commcare-connect](https://github.com/dimagi/commcare-connect). Several production apps were removed during the March 2026 simplification. Here's where to find the original code if you need it for reference.
 
@@ -26,7 +26,7 @@ This labs repo was forked from [dimagi/commcare-connect](https://github.com/dima
 
 Labs does **not** run data_export locally. Instead:
 
-1. `LabsRecordAPIClient` (in `commcare_connect/labs/integrations/connect/api_client.py`) makes HTTP calls to the **production** CommCare Connect server at `https://commcare-connect.org/export/labs_record/`.
+1. `LabsRecordAPIClient` (in `commcare_connect/labs/integrations/connect/api_client.py`) makes HTTP calls to the **production** Connect server at `https://commcare-connect.org/export/labs_record/`.
 2. The production server runs the upstream `data_export` app which queries the `LabsRecord` model.
 3. Labs receives JSON responses and wraps them in `LocalLabsRecord` proxy objects.
 

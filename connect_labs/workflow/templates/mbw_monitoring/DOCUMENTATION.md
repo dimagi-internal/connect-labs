@@ -27,7 +27,7 @@
 
 ## Overview
 
-The MBW (Mother Baby Wellness) Monitoring Dashboard is a real-time performance monitoring tool for frontline health workers (FLWs) operating within the CommCare Connect ecosystem. It provides supervisors with a unified view of FLW performance across three dimensions:
+The MBW (Mother Baby Wellness) Monitoring Dashboard is a real-time performance monitoring tool for frontline health workers (FLWs) operating within the Connect ecosystem. It provides supervisors with a unified view of FLW performance across three dimensions:
 
 - **Overview**: High-level per-FLW summary combining cases registered, follow-up rate, GS score, GPS metrics, and quality/fraud indicators
 - **GPS Analysis**: Distance-based anomaly detection using Haversine calculations to flag suspicious travel patterns

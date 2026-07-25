@@ -1,6 +1,6 @@
-# CommCare Connect Labs
+# Connect Labs
 
-This is a **labs/rapid prototyping environment** for CommCare Connect. It operates entirely via API against the production CommCare Connect instance — there is no direct database access to production data.
+This is a **labs/rapid prototyping environment** for Connect. It operates entirely via API against the production Connect instance — there is no direct database access to production data.
 
 ## Always check freshness before starting non-trivial work
 

@@ -2,11 +2,11 @@
 
 ## Overview
 
-Labs is a rapid prototyping environment for CommCare Connect experiments. It uses OAuth authentication (no local database users) and reads/writes data to production via APIs.
+Labs is a rapid prototyping environment for Connect experiments. It uses OAuth authentication (no local database users) and reads/writes data to production via APIs.
 
 ## Local Setup
 
-Follow the standard CommCare Connect setup in the main [README.md](../../README.md), then:
+Follow the standard Connect setup in the main [README.md](../../README.md), then:
 
 1.  **Run with local settings** (NOT labs settings):
 

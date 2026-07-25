@@ -2,7 +2,7 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Remove ~36K LOC of inherited production CommCare Connect code to simplify the repo for labs-only development.
+**Goal:** Remove ~36K LOC of inherited production Connect code to simplify the repo for labs-only development.
 
 **Architecture:** Surgical removal of 9 unused Django apps, gutting the opportunity app to keep only its models + migrations, removing production deploy infrastructure, and cleaning up all config references. Each task is one logical commit.
 
@@ -211,7 +211,7 @@ Remove from config/settings/base.py:
 Create `docs/upstream-reference.md`:
 
 ```markdown
-# Upstream CommCare Connect Reference
+# Upstream Connect Reference
 
 This labs repo was forked from [dimagi/commcare-connect](https://github.com/dimagi/commcare-connect). Several production apps were removed during the March 2026 simplification. Here's where to find the original code if you need it for reference.
 
@@ -239,7 +239,7 @@ This labs repo was forked from [dimagi/commcare-connect](https://github.com/dima
 
 Labs does **not** run data_export locally. Instead:
 
-1. `LabsRecordAPIClient` (in `commcare_connect/labs/integrations/connect/api_client.py`) makes HTTP calls to the **production** CommCare Connect server at `https://commcare-connect.org/export/labs_record/`.
+1. `LabsRecordAPIClient` (in `commcare_connect/labs/integrations/connect/api_client.py`) makes HTTP calls to the **production** Connect server at `https://commcare-connect.org/export/labs_record/`.
 2. The production server runs the upstream `data_export` app which queries the `LabsRecord` model.
 3. Labs receives JSON responses and wraps them in `LocalLabsRecord` proxy objects.
 

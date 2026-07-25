@@ -1,5 +1,5 @@
 """
-ASGI config for CommCare Connect.
+ASGI config for Connect.
 
 Exposes the ASGI callable as a module-level variable named ``application``.
 

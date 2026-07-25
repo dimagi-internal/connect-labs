@@ -1,7 +1,7 @@
 """
-CommCare Connect Integration.
+Connect Integration.
 
-Provides OAuth authentication and API access to CommCare Connect production.
+Provides OAuth authentication and API access to Connect production.
 """
 
 from connect_labs.labs.integrations.connect.api_client import LabsAPIError, LabsRecordAPIClient

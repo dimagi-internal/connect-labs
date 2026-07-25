@@ -60,7 +60,7 @@ from .tool_registry import Tool as RegistryToolSpec
 logger = logging.getLogger(__name__)
 
 SERVER_INSTRUCTIONS = (
-    "CommCare Connect Labs MCP server. Tools run as the authenticated user " "(per-user Personal Access Token)."
+    "Connect Labs MCP server. Tools run as the authenticated user " "(per-user Personal Access Token)."
 )
 
 

@@ -2,11 +2,11 @@
 
 **Date:** 2026-03-11
 **Branch:** jj/refactor
-**Goal:** Remove all production CommCare Connect code not used by labs to simplify the codebase for labs-only development.
+**Goal:** Remove all production Connect code not used by labs to simplify the codebase for labs-only development.
 
 ## Context
 
-This repo was forked from CommCare Connect with the original intent of merging back. That's no longer a goal. Multiple people now vibe-code on labs, and the inherited production code (~36K LOC across 15 apps) creates confusion, slows navigation, and bloats the project.
+This repo was forked from Connect with the original intent of merging back. That's no longer a goal. Multiple people now vibe-code on labs, and the inherited production code (~36K LOC across 15 apps) creates confusion, slows navigation, and bloats the project.
 
 ## Approach: Surgical App Removal
 
@@ -63,7 +63,7 @@ Incremental removal of dead apps, one commit per logical step, tests verified be
 
 ## What Gets Created
 
-- `docs/upstream-reference.md` — Guide to finding original CommCare Connect code on GitHub (data_export, opportunity views, form_receiver, etc.) with exact URLs and commit SHAs
+- `docs/upstream-reference.md` — Guide to finding original Connect code on GitHub (data_export, opportunity views, form_receiver, etc.) with exact URLs and commit SHAs
 
 ## What Stays Untouched
 

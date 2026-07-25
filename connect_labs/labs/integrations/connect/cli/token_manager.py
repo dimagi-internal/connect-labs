@@ -1,5 +1,5 @@
 """
-Token Manager for CommCare Connect OAuth CLI tokens.
+Token Manager for Connect OAuth CLI tokens.
 
 Handles secure storage, loading, and validation of OAuth tokens for CLI usage.
 Supports multiple named profiles with an active profile concept.

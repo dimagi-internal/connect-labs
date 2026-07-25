@@ -1,5 +1,5 @@
 """
-OAuth CLI Client for CommCare Connect.
+OAuth CLI Client for Connect.
 
 Implements the OAuth Authorization Code flow with PKCE for CLI tools.
 This allows scripts to authenticate users via browser and obtain access tokens.
