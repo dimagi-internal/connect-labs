@@ -103,7 +103,9 @@ def logout_view(request):
 
 
 def app_view(request):
-    """The SPA shell. Task 7 attaches the bootstrap payload."""
+    """The SPA shell: renders the role-scoped bootstrap payload inline."""
     if resolve_role(request.user) is None:
         return redirect("/supply/login/")
-    return render(request, "supply/app.html", {})
+    from .api.bootstrap import build_bootstrap
+
+    return render(request, "supply/app.html", {"bootstrap": build_bootstrap(request)})

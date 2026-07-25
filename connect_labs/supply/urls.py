@@ -1,6 +1,7 @@
 from django.urls import path
 
 from . import views
+from .api import bootstrap as bootstrap_api
 from .api import eoi as eoi_api
 from .api import orgs as orgs_api
 from .api import rfp as rfp_api
@@ -12,6 +13,7 @@ urlpatterns = [
     path("login/", views.login_view, name="login"),
     path("signup/", views.signup_view, name="signup"),
     path("logout/", views.logout_view, name="logout"),
+    path("api/bootstrap/", bootstrap_api.bootstrap, name="api_bootstrap"),
     # --- org profile ---
     path("api/org/profile/", orgs_api.profile, name="api_org_profile"),
     path("api/org/certifications/", orgs_api.certifications, name="api_org_certifications"),
