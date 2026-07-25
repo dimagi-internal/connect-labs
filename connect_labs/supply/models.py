@@ -332,29 +332,38 @@ class Contract(models.Model):
     def obligated_value(self):
         return self.total_quantity * self.unit_price
 
-    @property
-    def delivered_quantity(self):
+    def _quantity_in_contract_unit(self, **filters):
+        """Sum shipment quantities, counting only shipments denominated in this
+        contract's own unit.
+
+        Mixing units here is how a carton count gets multiplied by a
+        per-truck-month rate and reports a nine-figure disbursement against a
+        six-figure obligation.
+        """
         from django.db.models import Sum
 
-        total = self.shipments.filter(status__in=[Shipment.Status.DELIVERED, Shipment.Status.CONFIRMED]).aggregate(
-            n=Sum("quantity")
-        )["n"]
+        total = self.shipments.filter(unit=self.unit, **filters).aggregate(n=Sum("quantity"))["n"]
         return total or 0
+
+    @property
+    def delivered_quantity(self):
+        return self._quantity_in_contract_unit(status__in=[Shipment.Status.DELIVERED, Shipment.Status.CONFIRMED])
 
     @property
     def shipped_quantity(self):
         from django.db.models import Sum
 
-        total = self.shipments.exclude(status=Shipment.Status.PLANNED).aggregate(n=Sum("quantity"))["n"]
+        total = (
+            self.shipments.filter(unit=self.unit)
+            .exclude(status=Shipment.Status.PLANNED)
+            .aggregate(n=Sum("quantity"))["n"]
+        )
         return total or 0
 
     @property
     def disbursed_value(self):
         """Only confirmed deliveries are paid for."""
-        from django.db.models import Sum
-
-        total = self.shipments.filter(status=Shipment.Status.CONFIRMED).aggregate(n=Sum("quantity"))["n"]
-        return (total or 0) * self.unit_price
+        return self._quantity_in_contract_unit(status=Shipment.Status.CONFIRMED) * self.unit_price
 
 
 class Shipment(models.Model):

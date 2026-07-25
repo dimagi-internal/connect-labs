@@ -12,7 +12,7 @@ from datetime import timedelta
 from django.contrib.gis.geos import LineString, Point
 from django.utils import timezone
 
-from connect_labs.supply import gs1
+from connect_labs.supply import gs1, routes
 from connect_labs.supply.models import (
     Appropriation,
     Award,
@@ -88,7 +88,7 @@ CONTRACTS = [
     ("OES-C-2026-ET1", "Rift Valley Therapeutics PLC", "48,000 cartons RUTF delivered to Gode", 48000, 41.80),
     ("OES-C-2026-NG1", "Savanna Nutrients Ltd", "45,000 cartons RUTF delivered to Maiduguri", 45000, 42.10),
     ("OES-C-2026-BF1", "Faso NutriWorks SA", "20,000 cartons RUTF delivered to Djibo", 20000, 43.60),
-    ("OES-C-2026-SD1", "Blue Nile Freight Co", "Port Sudan inland corridor haulage, 6 months", 6, 41500.00),
+    ("OES-C-2026-SD1", "Blue Nile Freight Co", "Inland haulage of 40,000 cartons from Port Sudan", 40000, 3.20),
 ]
 
 # Which contract each shipment belongs to, by reference prefix.
@@ -230,14 +230,9 @@ def _seed_contracts(orgs, appropriations):
 
 
 def _route(origin, destination, waypoint_nodes):
-    """A LineString through the leg's nodes.
-
-    Real corridor and sea-lane geometry is Phase 3 work; a node-to-node line is
-    the honest placeholder until then.
-    """
-    points = [origin.location] + [n.location for n in waypoint_nodes] + [destination.location]
-    coords = [(p.x, p.y) for p in points if p]
-    if len(coords) < 2:
+    """A LineString following the digitised corridor for each hop."""
+    coords = routes.build_route(origin, destination, waypoint_nodes)
+    if not coords:
         return None
     return LineString(coords, srid=4326)
 

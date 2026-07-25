@@ -104,6 +104,15 @@ def app_view(request):
     """The SPA shell: renders the role-scoped bootstrap payload inline."""
     if resolve_role(request.user) is None:
         return redirect("/supply/login/")
+    from django.conf import settings
+
     from .api.bootstrap import build_bootstrap
 
-    return render(request, "supply/app.html", {"bootstrap": build_bootstrap(request)})
+    return render(
+        request,
+        "supply/app.html",
+        {
+            "bootstrap": build_bootstrap(request),
+            "mapbox_token": getattr(settings, "MAPBOX_TOKEN", None) or "",
+        },
+    )

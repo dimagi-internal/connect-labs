@@ -208,6 +208,8 @@ def shipment_dict(shipment, include_detail=False):
         "eta": shipment.eta.isoformat() if shipment.eta else None,
         "delivered_at": shipment.delivered_at.isoformat() if shipment.delivered_at else None,
         "open_discrepancies": shipment.discrepancies.filter(status="open").count(),
+        # [[lon, lat], ...] along the digitised corridor — what the flow map animates.
+        "route": [list(pt) for pt in shipment.route.coords] if shipment.route else None,
     }
     milestones = list(shipment.milestones.select_related("node").all())
     data["milestones"] = [milestone_dict(m) for m in milestones]
@@ -282,6 +284,18 @@ def contract_dict(contract, include_shipments=False):
     if include_shipments:
         data["shipments"] = [shipment_dict(s) for s in contract.shipments.all()]
     return data
+
+
+def appropriation_dict(appropriation):
+    return {
+        "id": appropriation.id,
+        "funder_name": appropriation.funder_name,
+        "title": appropriation.title,
+        "fiscal_year": appropriation.fiscal_year,
+        "amount": float(appropriation.amount),
+        "currency": appropriation.currency,
+        "iati_activity_id": appropriation.iati_activity_id,
+    }
 
 
 def api_token_dict(token):

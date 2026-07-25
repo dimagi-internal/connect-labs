@@ -161,3 +161,21 @@ class ShipmentFactory(factory.django.DjangoModelFactory):
     origin = factory.SubFactory(SupplyNodeFactory)
     destination = factory.SubFactory(SupplyNodeFactory)
     quantity = 60000
+
+
+class MilestoneFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = m.Milestone
+
+    shipment = factory.SubFactory(ShipmentFactory)
+    node = factory.SubFactory(SupplyNodeFactory)
+    kind = "arrive"
+
+
+class DiscrepancyFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = m.Discrepancy
+
+    shipment = factory.SubFactory(ShipmentFactory)
+    expected_quantity = 1000
+    received_quantity = 900

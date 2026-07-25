@@ -69,6 +69,25 @@ const TABS = [
     component: () => RFPsTab,
     roles: ['procurement_admin', 'reviewer'],
   },
+  {
+    key: 'command',
+    label: 'Command centre',
+    component: () => CommandTab,
+    roles: ['procurement_admin', 'reviewer'],
+  },
+  // read-only stakeholder surfaces
+  {
+    key: 'gov',
+    label: 'Country overview',
+    component: () => GovTab,
+    roles: ['gov_observer'],
+  },
+  {
+    key: 'funder',
+    label: 'Funding & delivery',
+    component: () => FunderTab,
+    roles: ['funder'],
+  },
 ];
 
 function visibleTabs(role) {

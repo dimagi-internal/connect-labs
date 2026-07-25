@@ -195,3 +195,36 @@ def test_demo_password_can_be_overridden_by_environment(monkeypatch):
     finally:
         monkeypatch.delenv("SUPPLY_DEMO_PASSWORD", raising=False)
         importlib.reload(mod)
+
+
+def test_seeded_routes_follow_corridors_not_straight_lines():
+    """A rendered flow must trace the road/sea corridor, not cut across terrain."""
+    call_command("seed_supply_demo")
+    from connect_labs.supply.models import Shipment
+
+    routed = Shipment.objects.exclude(route=None)
+    assert routed.exists()
+
+    # the long Sudan haul is digitised, so it must carry interior waypoints
+    darfur = Shipment.objects.get(reference="SHP-2026-0202")
+    assert darfur.route is not None
+    assert len(darfur.route.coords) > 3, "expected a multi-point corridor, got a straight line"
+
+    # every routed shipment starts at its origin and ends at its destination
+    for shipment in routed.select_related("origin", "destination"):
+        first, last = shipment.route.coords[0], shipment.route.coords[-1]
+        assert first == pytest.approx((shipment.origin.location.x, shipment.origin.location.y))
+        assert last == pytest.approx((shipment.destination.location.x, shipment.destination.location.y))
+
+
+def test_sea_lane_avoids_cutting_across_land():
+    """Lagos to Port Sudan must round the Cape and transit Bab-el-Mandeb."""
+    from connect_labs.supply import routes
+
+    lane = routes.waypoints_for("Port of Lagos (Apapa)", "Port Sudan")
+    assert lane is not None
+    lats = [lat for _lon, lat in lane]
+    # it dips deep into the southern hemisphere rather than crossing the Sahara
+    assert min(lats) < -20
+    # and passes through the Bab-el-Mandeb strait
+    assert any(abs(lon - 43.4) < 1.5 and abs(lat - 12.6) < 1.5 for lon, lat in lane)

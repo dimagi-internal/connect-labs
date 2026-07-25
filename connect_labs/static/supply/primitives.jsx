@@ -2,7 +2,7 @@
    KeyFigures is the OCHA-style stat row that also carries the Phase-3
    dashboards, so it lives here rather than in any one tab. */
 
-const { useState, useEffect, useMemo, useCallback } = React;
+const { useState, useEffect, useMemo, useCallback, useRef } = React;
 
 function Page({ title, lede, actions, children }) {
   return (
