@@ -1,5 +1,7 @@
 # MBW Auditing V4 — Design Document
 
+> **Status (2026-07-25 doc-regen):** SUPERSEDED — the v4 template and job handler were later removed from the repo. Use `mbw_auditing_v5` as the pattern; do not build from this doc.
+
 > Status: Implementation complete (Goal 1). Server-side pipeline architecture implemented.
 
 ---

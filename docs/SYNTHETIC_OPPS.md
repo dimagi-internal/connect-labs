@@ -1,5 +1,7 @@
 # Synthetic Opportunities — Operator Guide
 
+> **Status (2026-07-25 doc-regen):** covers the GDrive-fixture *read* path only. The 'no writes are intercepted' claim predates labs-only opps (id ≥ 10,000), whose LabsRecord reads AND writes are served locally by `labs/synthetic/local_records_backend.py` — see CLAUDE.md § Synthetic / labs-only opportunities.
+
 Labs can serve fake `/export/opportunity/<id>/...` data for opportunities
 registered as "synthetic". Use this for demos, grant prototyping, and
 visualization iteration before real FLW data is collected.

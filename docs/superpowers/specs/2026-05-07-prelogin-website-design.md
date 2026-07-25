@@ -1,5 +1,7 @@
 # Pre-login Marketing Website (`prelogin_website` app)
 
+> **Status (2026-07-25 doc-regen):** shipped as `connect_labs/prelogin/` (app name drifted from the `prelogin_website` proposed here). Historical design record.
+
 **Status:** Design approved 2026-05-07
 **Author:** jjackson + Claude
 **Target:** Labs first; portable to `dimagi/commcare-connect` (prod) by manual code copy.

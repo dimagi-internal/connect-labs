@@ -1,5 +1,7 @@
 # Proposed: write API for WorkAreas on production Connect
 
+> **Status (2026-07-25 doc-regen):** still a draft proposal for `dimagi/commcare-connect` (no evidence it landed upstream). Labs-side paths drifted: the code described as `connect_labs/rooftop_surveys/` now lives under `connect_labs/microplans/core/workarea.py`.
+
 **Status:** Draft for human review. This change lands in `dimagi/commcare-connect`
 (the production platform), NOT in labs — so it is intentionally *not* auto-merged
 or auto-deployed by the agent. Apply + review there.

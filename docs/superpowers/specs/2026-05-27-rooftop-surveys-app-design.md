@@ -1,5 +1,7 @@
 # Rooftop Surveys — New Labs App Design
 
+> **Status (2026-07-25 doc-regen):** SUPERSEDED — no `rooftop_surveys` app was created; this work shipped inside `connect_labs/microplans/` (study groups, sampling).
+
 **Status:** Proposal — no code yet. This document captures the full picture; implementation will land in staged PRs.
 **Author:** Claude (with jjackson)
 **Why connect-labs and not ACE:** The work currently happens in two places — a hand-run R pipeline that produces sampling and daily monitoring CSVs, and an ACE-side opportunity (`rooftop-surveys`) that wants to turn that into a turnkey Connect offering. jjackson's direction (2026-05-27): "we want to build this all into the product as a new app in connect-labs." So instead of growing ACE skills or `connect-labs` MCP atoms in isolation, we land a first-class Labs app — `rooftop_surveys/` — that owns the data model, the UI, the workflow templates, and the MCP tool surface. ACE consumes it just like any other Labs capability.

@@ -1,5 +1,7 @@
 # Campaign Utility Tool — Design
 
+> **Status (2026-07-25 doc-regen):** shipped — `connect_labs/campaign/` exists with api/, auth/, e2e tests. Historical design record, not current-state.
+
 **Status:** Draft for review
 **Date:** 2026-06-18
 **Source artifacts:** [Spec doc](https://drive.google.com/drive/folders/1cNpjEn_Smy6mHx5rWzflp20hbx65dlbG) (Spec: Campaign Management Utility), Data Model PDF (12 datasets / 6 domains / 2 owners), and the standalone HTML prototype (`Campaign Utility Tool (standalone).html`).

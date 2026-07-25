@@ -1,5 +1,7 @@
 # Connect Labs Documentation Automation
 
+> **Status (2026-07-25 doc-regen):** file map drifted — `automation/regenerate_confluence.py` + `.github/workflows/regenerate-confluence.yml` exist but are not listed, and `user_docs/` now has two pages (`connect-mcp.md`, `connect-safe-mode.md`) where this doc describes one.
+
 Automated system that keeps user-facing documentation current without manual effort. Every merged PR can update the help site and Confluence; every Monday a changelog summary goes to Confluence and Slack.
 
 ## Overview

@@ -1,5 +1,7 @@
 # Labs MCP Setup
 
+> **Status (2026-07-25 doc-regen):** partially outdated — the catalog now registers 86 tools (not 'empty, Plan 1'), tokens are minted self-service at `/labs/mcp/tokens/` (create/revoke/rotate; no shell access needed), and the endpoint is a FastMCP Streamable-HTTP ASGI app. The `.claude/mcp.json` snippet and troubleshooting steps below still work.
+
 This guide gets Claude Code connected to the labs MCP server so you can iterate
 on workflows and pipelines without copy-pasting through the web UI.
 

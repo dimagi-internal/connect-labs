@@ -1,5 +1,7 @@
 # Regranting Platform Design
 
+> **Status (2026-07-25 doc-regen):** shipped as `connect_labs/funder_dashboard/`. The 'Draft — for review' banner below is stale. Historical design record.
+
 **Date:** 2026-03-12
 **Status:** Draft — for review
 

@@ -1,5 +1,7 @@
 # Rooftop Surveys — R-pipeline parity / completeness
 
+> **Status (2026-07-25 doc-regen):** point-in-time record; paths SUPERSEDED — every 'Where' cell is relative to `rooftop_surveys/`, now `microplans/` (`cluster.py` → `core/clustering.py`).
+
 Answers "did we recreate everything from the original R code, on the labs side?"
 Maps each capability of the original R pipeline (Clustering+Randomizing, Daily
 Monitoring, Analysis) to its status in the labs `rooftop_surveys` app.

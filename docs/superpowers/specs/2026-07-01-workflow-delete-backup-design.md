@@ -1,5 +1,7 @@
 # Workflow-delete backup (labs DB)
 
+> **Status (2026-07-25 doc-regen):** shipped — see `labs/migrations/0014_deletedworkflowbackup.py`. Historical design record, not current-state.
+
 **Date:** 2026-07-01
 **Status:** Approved design — ready for implementation planning
 **Author:** jjackson (with Claude)

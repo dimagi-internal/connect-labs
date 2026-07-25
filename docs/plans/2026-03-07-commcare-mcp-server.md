@@ -1,5 +1,7 @@
 # CommCare HQ MCP Server — Implementation Plan
 
+> **Status (2026-07-25 doc-regen):** SUPERSEDED — the labs MCP server lives at `connect_labs/mcp/` (the `tools/commcare_mcp/` location described here never became the home; HQ app tools live in `tools/commcare_hq_mcp/`).
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Build an always-on MCP server that gives Claude Code access to CommCare application structure (form questions, case types, JSON paths) for building and debugging workflow pipeline schemas.

@@ -1,5 +1,7 @@
 # Upstream Connect Reference
 
+> **Status (2026-07-25 doc-regen):** CONTRADICTED in places — `connect_labs/flags/` and `connect_labs/commcarehq/` DO exist locally despite being listed as removed; the local package is `connect_labs` (not `commcare_connect`); the prod API host is `https://connect.dimagi.com` (not commcare-connect.org). Verify against the repo before trusting any row.
+
 This labs repo was forked from [dimagi/commcare-connect](https://github.com/dimagi/commcare-connect). Several production apps were removed during the March 2026 simplification. Here's where to find the original code if you need it for reference.
 
 ## Removed Apps

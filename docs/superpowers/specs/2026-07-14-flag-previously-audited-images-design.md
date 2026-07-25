@@ -1,5 +1,7 @@
 # Flag & optionally exclude previously-audited images
 
+> **Status (2026-07-25 doc-regen):** shipped — covered by `audit/tests/test_filter_out_prior_audited.py` and `test_exclude_prior_audited_criteria.py`. Historical design record.
+
 **Status:** Approved design (2026-07-14)
 **Area:** `connect_labs/audit/` (bulk image audit)
 **Feedback item:** "Labs Bulk Image Audit Feedback" → Must-have #5.
