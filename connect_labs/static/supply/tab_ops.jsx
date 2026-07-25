@@ -40,7 +40,11 @@ function OpsTab({ ctx }) {
   );
   const inTransit = shipments.filter((s) => s.status === 'in_transit');
   const late = shipments.filter(
-    (s) => (s.eta_delta_days || 0) > 0 && s.status !== 'confirmed',
+    (s) =>
+      s.eta_delta_days !== null &&
+      s.eta_delta_days !== undefined &&
+      s.eta_delta_days > 0 &&
+      s.status !== 'confirmed',
   );
   const deliveredCartons = contracts.reduce(
     (n, c) => n + c.delivered_quantity,

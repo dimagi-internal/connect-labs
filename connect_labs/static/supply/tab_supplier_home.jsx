@@ -1,10 +1,14 @@
 function SupplierHome({ ctx }) {
   const { world } = ctx;
   const quals = (world.org && world.org.qualifications) || [];
-  const live = quals.filter(
-    (q) => q.status === 'active' && daysUntil(q.expires_at) >= 0,
-  );
-  const expiringSoon = live.filter((q) => daysUntil(q.expires_at) <= 60);
+  const live = quals.filter((q) => {
+    const d = daysUntil(q.expires_at);
+    return q.status === 'active' && d !== null && d >= 0;
+  });
+  const expiringSoon = live.filter((q) => {
+    const d = daysUntil(q.expires_at);
+    return d !== null && d <= 60;
+  });
   const openRounds = world.open_rounds || [];
   const notApplied = openRounds.filter((r) => !r.applied);
   const rfps = world.eligible_rfps || [];

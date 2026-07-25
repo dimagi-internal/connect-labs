@@ -97,6 +97,9 @@ function formatNumber(value) {
   return Number(value).toLocaleString();
 }
 
+// Returns null for a missing/invalid date. Callers MUST null-check before
+// comparing: `null <= 60` is true in JS, so an unguarded comparison silently
+// treats "no expiry" as "expiring soon".
 function daysUntil(iso) {
   if (!iso) return null;
   const then = new Date(iso);

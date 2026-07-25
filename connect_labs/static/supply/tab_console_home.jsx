@@ -15,7 +15,10 @@ function ConsoleHome({ ctx }) {
   const expiringSoon = registry.reduce(
     (n, row) =>
       n +
-      row.qualifications.filter((q) => daysUntil(q.expires_at) <= 60).length,
+      row.qualifications.filter((q) => {
+        const d = daysUntil(q.expires_at);
+        return d !== null && d <= 60;
+      }).length,
     0,
   );
   const openRounds = rounds.filter((r) => r.status === 'open');

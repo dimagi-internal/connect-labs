@@ -270,7 +270,10 @@ def _seed_shipments(rng, nodes, contracts):
         slip_days = rng.choice([0, 0, 0, 1, 2, 4])
         actual_arrival = planned_arrival + timedelta(days=slip_days)
 
-        shipment, _ = Shipment.objects.update_or_create(
+        # Descriptive fields are refreshed on every run; LIFECYCLE state is not.
+        # Events are idempotent, so re-running would not replay them — resetting
+        # status here would strand every shipment in "planned".
+        shipment, _created = Shipment.objects.update_or_create(
             reference=reference,
             defaults={
                 "contract": contract,
@@ -281,10 +284,7 @@ def _seed_shipments(rng, nodes, contracts):
                 "route": _route(origin, destination, waypoint_nodes),
                 "quantity": cartons,
                 "unit": "cartons",
-                "status": Shipment.Status.PLANNED,
-                "departed_at": None,
                 "eta": planned_arrival,
-                "delivered_at": None,
             },
         )
 

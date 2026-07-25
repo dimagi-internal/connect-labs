@@ -158,3 +158,40 @@ def test_seeded_contracts_report_three_distinct_money_stages():
     # delivered is what arrived; disbursed is only what was CONFIRMED — the
     # funder view depends on these never collapsing into one number
     assert contract.delivered_quantity >= contract.disbursed_value / contract.unit_price
+
+
+def test_reseeding_preserves_shipment_lifecycle_state():
+    """Re-running without --reset must not strand shipments in 'planned'.
+
+    Events are idempotent, so they are not replayed on a second run — if the
+    seed reset lifecycle fields, every shipment would lose its status.
+    """
+    from collections import Counter
+
+    from connect_labs.supply.models import Shipment
+
+    call_command("seed_supply_demo")
+    before = Counter(Shipment.objects.values_list("status", flat=True))
+    assert before["planned"] < Shipment.objects.count(), "fixture should not be all-planned"
+
+    call_command("seed_supply_demo")
+    after = Counter(Shipment.objects.values_list("status", flat=True))
+    assert after == before
+
+
+def test_demo_password_can_be_overridden_by_environment(monkeypatch):
+    """A deployed instance must not use the password published in the repo."""
+    monkeypatch.setenv("SUPPLY_DEMO_PASSWORD", "not-the-repo-default")
+    import importlib
+
+    from connect_labs.supply.management.commands import seed_supply_demo as mod
+
+    importlib.reload(mod)
+    try:
+        call_command(mod.Command(), "--reset")
+        user = User.objects.get(username="oes-lead@oes.example")
+        assert user.check_password("not-the-repo-default")
+        assert not user.check_password("oes-demo-2026")
+    finally:
+        monkeypatch.delenv("SUPPLY_DEMO_PASSWORD", raising=False)
+        importlib.reload(mod)

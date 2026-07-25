@@ -103,8 +103,10 @@ def save_bid(request, rfp_id):
     if rfp is None:
         return JsonResponse({"error": "not found"}, status=404)
     org = request.supply_actor.org
-    if not rfp_actions.org_can_bid(org, rfp):
-        return JsonResponse({"error": "your organisation is not qualified for this solicitation"}, status=403)
+    if not rfp_actions.org_can_bid(org, rfp) or rfp.status == RFP.Status.DRAFT:
+        # Mirror the detail endpoint: a solicitation the org cannot see is
+        # reported as absent, so responses do not disclose that it exists.
+        return JsonResponse({"error": "not found"}, status=404)
     bid = rfp_actions.save_bid(org, rfp, json_body(request).get("lot_bids"))
     audit.log_action(request, "bid.save", "Bid", bid.id, {"rfp": rfp.id})
     return JsonResponse({"bid": bid_dict(bid)})

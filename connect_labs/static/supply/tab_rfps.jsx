@@ -139,7 +139,7 @@ function NewRFPModal({ ctx, onClose }) {
           categories: form.categories,
           countries: form.countries
             .split(',')
-            .map((c) => c.trim())
+            .map((c) => c.trim().toUpperCase())
             .filter(Boolean),
           bid_deadline: form.bid_deadline || null,
         }),
@@ -489,7 +489,12 @@ function AddLotModal({ ctx, rfp, onClose }) {
             type="text"
             maxLength="2"
             value={form.delivery_country}
-            onChange={set('delivery_country')}
+            onChange={(e) =>
+              setForm({
+                ...form,
+                delivery_country: e.target.value.toUpperCase(),
+              })
+            }
           />
         </FormRow>
         <FormRow label="Delivery place">

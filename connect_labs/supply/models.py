@@ -123,6 +123,10 @@ class Qualification(models.Model):
 
     class Meta:
         db_table = "supply_qualification"
+        # review_submission upserts on (org, category); without this the DB
+        # allows duplicates that permanently break the upsert and inflate the
+        # registry.
+        constraints = [models.UniqueConstraint(fields=["org", "category"], name="uniq_qualification_per_org_category")]
 
 
 class RFP(models.Model):

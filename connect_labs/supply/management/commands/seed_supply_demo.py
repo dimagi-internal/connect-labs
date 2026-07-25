@@ -8,6 +8,7 @@ Supplier geography mirrors the real RUTF producer landscape — plants in Kano,
 Lagos, Ouagadougou and Addis Ababa, none in Sudan (which is supplied through
 Port Sudan). Names are fictional.
 """
+import os
 import random
 from datetime import date, timedelta
 
@@ -38,7 +39,12 @@ from ._supply_execution_seed import execution_summary, reset_execution, seed_exe
 User = get_user_model()
 
 SEED = 20260725
-DEMO_PASSWORD = "oes-demo-2026"
+
+# Demo-persona password. The repo default is fine locally, but any deployed
+# instance is publicly reachable and this seeds a procurement_admin — set
+# SUPPLY_DEMO_PASSWORD in the environment there so the credential is not
+# discoverable from the source.
+DEMO_PASSWORD = os.environ.get("SUPPLY_DEMO_PASSWORD", "oes-demo-2026")
 TODAY = date.today()
 
 # (legal_name, country, city, categories, cert_profile, gln_suffix)
@@ -171,7 +177,7 @@ class Command(BaseCommand):
                 f"{RFP.objects.count()} solicitations, {Award.objects.count()} awards; "
                 f"{execution_summary()}. "
                 f"Logins: {SUPPLIER_LOGIN[0]} / {', '.join(s[0] for s in STAFF)} "
-                f"(password: {DEMO_PASSWORD})"
+                f"(password: {'<from SUPPLY_DEMO_PASSWORD>' if os.environ.get('SUPPLY_DEMO_PASSWORD') else DEMO_PASSWORD})"
             )
         )
         assert closed_round  # closed round anchors the registry; keep the reference explicit

@@ -17,7 +17,7 @@ idempotent on ``external_id`` because delivery is at-least-once.
 from datetime import datetime
 from datetime import timezone as dt_timezone
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from .. import gs1
@@ -63,8 +63,8 @@ def parse_event_time(value):
     text = str(value).replace("Z", "+00:00")
     try:
         parsed = datetime.fromisoformat(text)
-    except ValueError:
-        raise ActionError(f"unparseable eventTime: {value}")
+    except ValueError as exc:
+        raise ActionError(f"unparseable eventTime: {value}") from exc
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=dt_timezone.utc)
     return parsed
@@ -77,9 +77,16 @@ def resolve_node(reference):
     if isinstance(reference, dict):
         reference = reference.get("id")
     _ai, key = gs1.parse_digital_link(reference)
-    if not key:
+    return node_by_gln(key)
+
+
+def node_by_gln(gln):
+    """Look up a node by GLN. A blank GLN matches nothing — never the first
+    node that happens to have an empty one."""
+    gln = (gln or "").strip()
+    if not gln:
         return None
-    return SupplyNode.objects.filter(gln=key[:13]).first()
+    return SupplyNode.objects.filter(gln=gln[:13]).first()
 
 
 def _shipment_from_transactions(org, biz_transactions, epc_list):
@@ -172,21 +179,30 @@ def capture_event(
     if shipment is None:
         shipment = _shipment_from_transactions(org, biz_transactions, epc_list)
 
-    event = SupplyEvent.objects.create(
-        org=org,
-        shipment=shipment,
-        event_type=event_type,
-        biz_step=biz_step,
-        disposition=disposition,
-        event_time=event_time,
-        read_point=read_point,
-        epc_list=epc_list,
-        quantity_list=quantities,
-        biz_transactions=biz_transactions,
-        source_tier=source_tier,
-        external_id=external_id or "",
-        raw=raw or {},
-    )
+    try:
+        with transaction.atomic():
+            event = SupplyEvent.objects.create(
+                org=org,
+                shipment=shipment,
+                event_type=event_type,
+                biz_step=biz_step,
+                disposition=disposition,
+                event_time=event_time,
+                read_point=read_point,
+                epc_list=epc_list,
+                quantity_list=quantities,
+                biz_transactions=biz_transactions,
+                source_tier=source_tier,
+                external_id=external_id or "",
+                raw=raw or {},
+            )
+    except IntegrityError:
+        # A concurrent retry won the race on the (org, external_id) constraint.
+        # At-least-once delivery means this is normal, not an error.
+        existing = SupplyEvent.objects.filter(org=org, external_id=external_id).first()
+        if existing:
+            return existing, False
+        raise
 
     if shipment:
         _apply_to_shipment(event, shipment)
@@ -453,9 +469,7 @@ def capture_checkin(org, payload):
         raise ActionError("shipment_reference does not match a shipment for your organisation")
 
     biz_step = normalise_biz_step(payload.get("status") or payload.get("biz_step") or "arriving")
-    node = None
-    if payload.get("location_gln"):
-        node = SupplyNode.objects.filter(gln=str(payload["location_gln"])).first()
+    node = node_by_gln(payload.get("location_gln"))
     if node is None and payload.get("place"):
         node = SupplyNode.objects.filter(name__iexact=str(payload["place"]).strip()).first()
 
@@ -491,8 +505,8 @@ def record_manual_event(org, shipment, payload):
     node = None
     if payload.get("node_id"):
         node = SupplyNode.objects.filter(id=payload["node_id"]).first()
-    elif payload.get("location_gln"):
-        node = SupplyNode.objects.filter(gln=str(payload["location_gln"])).first()
+    else:
+        node = node_by_gln(payload.get("location_gln"))
 
     quantity_list = []
     if payload.get("quantity"):

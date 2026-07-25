@@ -8,15 +8,25 @@ function RegistryTab({ ctx }) {
   const [rows, setRows] = useState(world.registry || []);
   const [detail, setDetail] = useState(null);
 
-  const apply = useCallback(async (next) => {
-    const params = new URLSearchParams();
-    if (next.category) params.set('category', next.category);
-    if (next.country) params.set('country', next.country);
-    if (next.expiring) params.set('expiring_within_days', next.expiring);
-    const qs = params.toString();
-    const body = await supplyGet(`/supply/api/registry/${qs ? `?${qs}` : ''}`);
-    setRows(body.registry);
-  }, []);
+  const apply = useCallback(
+    async (next) => {
+      const params = new URLSearchParams();
+      if (next.category) params.set('category', next.category);
+      if (next.country) params.set('country', next.country);
+      if (next.expiring) params.set('expiring_within_days', next.expiring);
+      const qs = params.toString();
+      try {
+        const body = await supplyGet(
+          `/supply/api/registry/${qs ? `?${qs}` : ''}`,
+        );
+        // Never blank the table on a malformed response.
+        setRows(body && body.registry ? body.registry : []);
+      } catch (err) {
+        ctx.setToast({ message: err.message, tone: 'bad' });
+      }
+    },
+    [ctx],
+  );
 
   const change = (key) => (e) => {
     const next = { ...filters, [key]: e.target.value };

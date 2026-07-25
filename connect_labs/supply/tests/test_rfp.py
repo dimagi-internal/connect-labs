@@ -29,7 +29,9 @@ def test_unqualified_org_cannot_see_or_bid(supplier_client):
 
     assert client.get("/supply/api/rfps/").json()["rfps"] == []
     resp = _post(client, f"/supply/api/rfps/{rfp.id}/bid/", {"lot_bids": [{"lot_id": lot.id, "unit_price": 40}]})
-    assert resp.status_code == 403
+    # 404 rather than 403: a solicitation the org cannot see is reported as
+    # absent, so the response does not disclose that it exists.
+    assert resp.status_code == 404
     assert Bid.objects.count() == 0
 
 
