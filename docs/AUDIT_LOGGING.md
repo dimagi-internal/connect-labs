@@ -34,8 +34,8 @@ contain typed PHI content, whereas `?username=`/`?entity_id=`/`?status=` are
 identifiers and are kept verbatim). Filter the dashboard by username with
 "Include page views" checked to replay a user's exact click-path — full URLs
 interleaved with what each page actually read, exported, or changed. This
-forensic detail lives here, NOT in analytics: Umami receives no query strings
-at all (`data-exclude-search`).
+same redaction applies to what the Umami tracker sends (`beforeSend` hook),
+so both stores hold the identical identifiers-not-content data class.
 
 **Never log PHI content.** Events carry opaque identifiers only — no names,
 form answers, or free text. This applies to `metadata` too. The audit log
@@ -90,17 +90,21 @@ log**: PHI-adjacent usage metadata — staff usernames (via `identify`), page
 *paths* with opaque record ids, and feature-event names with resource types.
 Two rules keep it that way:
 
-- The tracker is loaded with `data-exclude-search` / `data-exclude-hash`, so
-  **query strings never leave the browser** — labs' expressive workflow URL
-  params (usernames, entity ids, scope filters) are stripped client-side.
-  The audit trail likewise records `request.path` only, never query strings.
+- The tracker runs every URL through a `beforeSend` redaction hook
+  (`labsAnalyticsBeforeSend`, mirroring `service.FREE_TEXT_PARAMS`):
+  identifier params (`username`, `entity_id`, `status`, scope ids) pass
+  through — they are the meaning of labs URLs — while typed free-text values
+  (`q`, `search`, `notes`, ...) are replaced with `[redacted]` before
+  anything leaves the browser.
 - Server-side events carry `resource_type` + `labs_only` only.
 
 Consequently, viewing analytics is viewing usage metadata, not PHI content —
 but the store still gets audit-log-grade protection: first-party only, Umami
 admin login (Secrets Manager) plus the Dimagi-admin-gated
-`/labs/admin/analytics/` page, and opening that page is itself recorded as an
-audit event (`read analytics_dashboard`).
+`/labs/admin/analytics/` page. Staff reach the full Umami UI via the SSO
+bridge (`/labs/admin/analytics/umami/`) — labs mints the admin JWT into
+same-origin localStorage, so access rides labs OAuth, and both the summary
+page and the bridge record `read` audit events on open.
 
 ## Operational notes
 
