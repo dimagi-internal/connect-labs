@@ -88,7 +88,7 @@ CONTRACTS = [
     ("OES-C-2026-ET1", "Rift Valley Therapeutics PLC", "48,000 cartons RUTF delivered to Gode", 48000, 41.80),
     ("OES-C-2026-NG1", "Savanna Nutrients Ltd", "45,000 cartons RUTF delivered to Maiduguri", 45000, 42.10),
     ("OES-C-2026-BF1", "Faso NutriWorks SA", "20,000 cartons RUTF delivered to Djibo", 20000, 43.60),
-    ("OES-C-2026-SD1", "Blue Nile Freight Co", "Port Sudan inland corridor haulage, 6 months", 6, 41500.00),
+    ("OES-C-2026-SD1", "Blue Nile Freight Co", "Inland haulage of 40,000 cartons from Port Sudan", 40000, 3.20),
 ]
 
 # Which contract each shipment belongs to, by reference prefix.

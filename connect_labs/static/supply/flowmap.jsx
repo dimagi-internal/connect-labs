@@ -2,8 +2,8 @@
    famine-phase choropleth.
 
    Deliberate choices, from the visualisation research:
-   - Mapbox owns the camera; deck.gl rides along via MapboxOverlay in
-     INTERLEAVED mode so place labels stay readable above the flows.
+   - Mapbox owns the camera; deck.gl rides along via MapboxOverlay in overlay
+     mode (see the note at the overlay construction for why not interleaved).
    - The IPC layer is a Mapbox fill layer, not a deck GeoJsonLayer, so the
      interleaved flows naturally sit above it. Its colours are the official
      IPC phase palette and are used for nothing else on the page.
@@ -50,7 +50,9 @@ function useFlowMap({ containerRef, nodes, shipments, showIpc, focusCountry }) {
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return undefined;
-    if (!window.mapboxgl || !window.deck) return undefined;
+    // Without the libraries or a token there is nothing to initialise. Bailing
+    // out here keeps a missing map from taking the whole page down with it.
+    if (!window.mapboxgl || !window.deck || !mapAvailable()) return undefined;
 
     window.mapboxgl.accessToken = window.SUPPLY_MAPBOX_TOKEN;
     const map = new window.mapboxgl.Map({
@@ -102,12 +104,20 @@ function useFlowMap({ containerRef, nodes, shipments, showIpc, focusCountry }) {
         },
       });
 
+      // Overlay mode (deck draws into its own canvas above the map) rather
+      // than interleaved. Interleaved would let Mapbox labels sit above the
+      // flows, but it renders nothing under software WebGL, which is what
+      // headless verification runs on — a prettier map that cannot be checked
+      // is the worse trade.
       const overlay = new window.deck.MapboxOverlay({
-        interleaved: true,
+        interleaved: false,
         layers: [],
       });
       map.addControl(overlay);
       overlayRef.current = overlay;
+      // The card may still have been laying out when the map initialised, in
+      // which case the canvas is stuck at Mapbox's default size.
+      map.resize();
       setReady(true);
     });
 
@@ -145,6 +155,20 @@ function useFlowMap({ containerRef, nodes, shipments, showIpc, focusCountry }) {
     if (!overlay || !ready) return;
     overlay.setProps({
       layers: [
+        // Every corridor, drawn faintly and always present: without this the
+        // network only exists wherever a comet happens to be at that instant,
+        // and the map reads as scattered dots rather than a supply chain.
+        new window.deck.PathLayer({
+          id: 'corridors',
+          data: trips,
+          getPath: (d) => d.path,
+          getColor: [255, 255, 255, 55],
+          getWidth: 2,
+          widthUnits: 'pixels',
+          widthMinPixels: 1.5,
+          capRounded: true,
+          jointRounded: true,
+        }),
         new window.deck.ScatterplotLayer({
           id: 'nodes',
           data: nodes,
@@ -163,10 +187,11 @@ function useFlowMap({ containerRef, nodes, shipments, showIpc, focusCountry }) {
           getPath: (d) => d.path,
           getTimestamps: (d) => d.timestamps,
           getColor: (d) => STATUS_COLOUR[d.status] || [200, 200, 200],
-          widthMinPixels: 3,
+          widthMinPixels: 5,
           capRounded: true,
           jointRounded: true,
-          trailLength: 320,
+          // Long enough that a corridor reads as a moving line rather than a dot.
+          trailLength: 600,
           currentTime: time,
         }),
       ],
@@ -184,7 +209,7 @@ function buildTrips(shipments) {
     .filter((s) => s.route && s.route.length > 1 && s.status !== 'planned')
     .map((s) => {
       const n = s.route.length;
-      const span = 1400;
+      const span = 1200;
       const offset = (s.id * 137) % 400; // stagger departures so they don't pulse in unison
       return {
         id: s.id,
@@ -230,6 +255,32 @@ const IPC_PHASE_LABELS = {
   5: 'Catastrophe / Famine',
 };
 
+/* The map needs a Mapbox token, which only a configured environment has.
+   Without one we render an explanation — a missing map must not take the
+   whole page down with it. */
+function mapAvailable() {
+  return (
+    Boolean(window.SUPPLY_MAPBOX_TOKEN) &&
+    Boolean(window.mapboxgl) &&
+    Boolean(window.deck)
+  );
+}
+
+function MapUnavailable({ shipments, height }) {
+  const routed = (shipments || []).filter((s) => s.route && s.route.length > 1);
+  return (
+    <div className="map-unavailable" style={{ height: height || 520 }}>
+      <div className="map-unavailable-title">Map unavailable</div>
+      <div className="map-unavailable-body">
+        This environment has no Mapbox access token configured, so the network
+        map cannot be drawn. Everything it visualises is still in the tables
+        below — {routed.length} consignment
+        {routed.length === 1 ? '' : 's'} with routed corridors.
+      </div>
+    </div>
+  );
+}
+
 function FlowMap({ nodes, shipments, focusCountry, height }) {
   const containerRef = useRef(null);
   const [showIpc, setShowIpc] = useState(true);
@@ -240,6 +291,10 @@ function FlowMap({ nodes, shipments, focusCountry, height }) {
     showIpc,
     focusCountry,
   });
+
+  if (!mapAvailable()) {
+    return <MapUnavailable shipments={shipments} height={height} />;
+  }
 
   return (
     <div className="flowmap-wrap" style={{ height: height || 520 }}>

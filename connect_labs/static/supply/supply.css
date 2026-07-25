@@ -939,7 +939,10 @@ textarea:disabled {
   border-radius: 8px;
   overflow: hidden;
 }
-.flowmap {
+/* Mapbox adds .mapboxgl-map to this element and sets position:relative on it,
+   which collapses the container to zero height. The descendant selector
+   outranks that regardless of which stylesheet loads last. */
+.flowmap-wrap > .flowmap {
   position: absolute;
   inset: 0;
 }
@@ -1143,4 +1146,24 @@ textarea:disabled {
   .command-split {
     grid-template-columns: 1fr;
   }
+}
+
+.map-unavailable {
+  display: grid;
+  place-content: center;
+  text-align: center;
+  gap: 6px;
+  background: var(--oes-bg);
+  border: 1px dashed var(--oes-line);
+  border-radius: 8px;
+  padding: 24px;
+}
+.map-unavailable-title {
+  font-weight: 600;
+  color: var(--oes-ink-soft);
+}
+.map-unavailable-body {
+  font-size: 13px;
+  color: var(--oes-ink-soft);
+  max-width: 460px;
 }

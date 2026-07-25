@@ -10,6 +10,11 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
+    <!-- Mapbox first: its .mapboxgl-map rules must not override ours. -->
+    <link
+      href="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.css"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="{% static 'supply/supply.css' %}" />
   </head>
   <body>
@@ -21,10 +26,6 @@
       window.SUPPLY_MAPBOX_TOKEN = "{{ mapbox_token|escapejs }}";
     </script>
 
-    <link
-      href="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.css"
-      rel="stylesheet"
-    />
     <script src="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.js"></script>
     <script src="https://unpkg.com/deck.gl@9.3.7/dist.min.js"></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>

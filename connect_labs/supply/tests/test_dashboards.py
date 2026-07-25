@@ -203,3 +203,36 @@ def test_eta_delta_surfaces_lateness(admin_client, network):
     )
     body = client.get(f"/supply/api/shipments/{ship.id}/").json()["shipment"]
     assert body["eta_delta_days"] == pytest.approx(3.0, abs=0.1)
+
+
+def test_disbursement_never_exceeds_obligation(admin_client):
+    """A funder view that shows more paid than committed is not credible.
+
+    Regression guard: the Sudan corridor contract was once priced per
+    truck-month while its shipments were counted in cartons, which reported a
+    nine-figure disbursement against a six-figure obligation.
+    """
+    from django.core.management import call_command
+
+    from connect_labs.supply.models import Contract
+
+    call_command("seed_supply_demo", "--reset")
+    for contract in Contract.objects.all():
+        assert contract.disbursed_value <= contract.obligated_value, (
+            f"{contract.reference} disbursed {contract.disbursed_value} against "
+            f"obligated {contract.obligated_value}"
+        )
+        assert (
+            contract.delivered_quantity <= contract.total_quantity
+        ), f"{contract.reference} delivered more than it contracted for"
+
+
+def test_shipments_in_a_foreign_unit_are_excluded_from_money(db):
+    """Only shipments denominated in the contract's unit can move money."""
+    contract = f.ContractFactory(total_quantity=100, unit="truck-months", unit_price=1000)
+    f.ShipmentFactory(contract=contract, quantity=5, unit="truck-months", status=Shipment.Status.CONFIRMED)
+    # a carton-denominated shipment on a truck-month contract must not count
+    f.ShipmentFactory(contract=contract, quantity=20000, unit="cartons", status=Shipment.Status.CONFIRMED)
+
+    assert contract.delivered_quantity == 5
+    assert contract.disbursed_value == 5000

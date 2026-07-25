@@ -136,9 +136,9 @@ CORRIDOR_AWARDS = [
         "Sudan Corridor Logistics 2026",
         "Inland haulage and warehousing for imported RUTF through Port Sudan.",
         "SD",
-        "Port Sudan inland corridor haulage, 6 months",
-        6,
-        41500.00,
+        "Inland haulage of 40,000 cartons from Port Sudan",
+        40000,
+        3.20,
     ),
 ]
 
