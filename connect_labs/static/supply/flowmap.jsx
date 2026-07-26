@@ -27,6 +27,21 @@ const STATUS_COLOUR = {
   confirmed: [100, 116, 139],
 };
 
+const TOOLTIP_STYLE = {
+  fontSize: '12px',
+  padding: '6px 8px',
+  borderRadius: '6px',
+  whiteSpace: 'pre-line',
+};
+
+const NODE_KIND_LABELS = {
+  factory: 'Factory',
+  port: 'Port',
+  warehouse: 'Warehouse',
+  distribution_hub: 'Distribution hub',
+  delivery_point: 'Delivery point',
+};
+
 const NODE_COLOUR = {
   factory: [13, 122, 95],
   port: [30, 64, 175],
@@ -112,6 +127,30 @@ function useFlowMap({ containerRef, nodes, shipments, showIpc, focusCountry }) {
       const overlay = new window.deck.MapboxOverlay({
         interleaved: false,
         layers: [],
+        // pickable layers were doing nothing without this: the pick result has
+        // to be turned into content or hovering a node reports silence.
+        // `text`, not `html`: deck.gl sets textContent for text tooltips, so
+        // a node or organisation name can never inject markup here.
+        getTooltip: ({ object, layer }) => {
+          if (!object) return null;
+          if (layer && layer.id === 'nodes') {
+            const parts = [
+              object.name,
+              `${NODE_KIND_LABELS[object.kind] || object.kind} · ${countryLabel(
+                object.country,
+              )}`,
+            ];
+            if (object.gln) parts.push(`GLN ${object.gln}`);
+            return { text: parts.join('\n'), style: TOOLTIP_STYLE };
+          }
+          if (object.reference) {
+            return {
+              text: `${object.reference}\n${object.statusLabel}`,
+              style: TOOLTIP_STYLE,
+            };
+          }
+          return null;
+        },
       });
       map.addControl(overlay);
       overlayRef.current = overlay;
@@ -162,12 +201,13 @@ function useFlowMap({ containerRef, nodes, shipments, showIpc, focusCountry }) {
           id: 'corridors',
           data: trips,
           getPath: (d) => d.path,
-          getColor: [255, 255, 255, 55],
+          getColor: [255, 255, 255, 70],
           getWidth: 2,
           widthUnits: 'pixels',
           widthMinPixels: 1.5,
           capRounded: true,
           jointRounded: true,
+          pickable: true,
         }),
         new window.deck.ScatterplotLayer({
           id: 'nodes',
@@ -187,7 +227,7 @@ function useFlowMap({ containerRef, nodes, shipments, showIpc, focusCountry }) {
           getPath: (d) => d.path,
           getTimestamps: (d) => d.timestamps,
           getColor: (d) => STATUS_COLOUR[d.status] || [200, 200, 200],
-          widthMinPixels: 5,
+          widthMinPixels: 6,
           capRounded: true,
           jointRounded: true,
           // Long enough that a corridor reads as a moving line rather than a dot.
@@ -214,6 +254,10 @@ function buildTrips(shipments) {
       return {
         id: s.id,
         status: s.status,
+        reference: s.reference,
+        statusLabel: `${STATUS_LABELS[s.status] || s.status} · ${formatNumber(
+          s.quantity,
+        )} ${s.unit}`,
         path: s.route,
         timestamps: s.route.map((_p, i) => offset + (i / (n - 1)) * span),
       };
