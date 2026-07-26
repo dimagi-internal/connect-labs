@@ -173,7 +173,7 @@ def _write_events(events: list[dict], ctx) -> None:
         "source": (ctx.source if ctx else Source.SYSTEM) or Source.SYSTEM,
         "ip_address": ctx.ip_address if ctx else "",
         "user_agent": (ctx.user_agent if ctx else "")[:300],
-        "request_id": ctx.request_id if ctx else "",
+        "request_id": (ctx.request_id if ctx else "")[:64],
         "path": (ctx.path if ctx else "")[:300],
         "query_string": (ctx.query_string if ctx else "")[:500],
     }

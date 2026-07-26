@@ -89,7 +89,9 @@ class AuditEvent(models.Model):
     source = models.CharField(max_length=10, choices=Source.choices, default=Source.SYSTEM)
     ip_address = models.CharField(max_length=45, blank=True, default="")
     user_agent = models.CharField(max_length=300, blank=True, default="")
-    request_id = models.CharField(max_length=36, blank=True, default="")
+    # Not always a bare UUID: MCP stamps "mcp:<tool_name>:<8 hex>" and Celery
+    # stamps "celery:<task_id>", so this is sized well past 36.
+    request_id = models.CharField(max_length=64, blank=True, default="")
     path = models.CharField(max_length=300, blank=True, default="")
     # Query string with free-text parameter values redacted (see
     # service.redact_query_string) — identifiers like ?username=/entity_id=

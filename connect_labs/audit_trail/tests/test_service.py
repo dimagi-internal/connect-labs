@@ -57,6 +57,24 @@ def test_explicit_user_wins_over_context(user, django_user_model):
 
 
 @pytest.mark.django_db
+def test_mcp_shaped_request_id_persists_intact(user):
+    """MCP stamps "mcp:<tool_name>:<8 hex>" — the longest tool names blow past 36 chars."""
+    request_id = "mcp:workflow_sync_from_template_file:34f6c02c"
+    with audit_context(user=user, source="mcp", request_id=request_id):
+        service.record(Action.UPDATE, resource_type="workflow_render_code", resource_id="3963")
+    assert AuditEvent.objects.get().request_id == request_id
+
+
+@pytest.mark.django_db
+def test_overlong_request_id_is_truncated_not_dropped(user):
+    """A too-long correlation id must never cost us the audit row itself."""
+    with audit_context(user=user, source="mcp", request_id="x" * 200):
+        service.record(Action.UPDATE, resource_type="thing")
+    event = AuditEvent.objects.get()
+    assert event.request_id == "x" * 64
+
+
+@pytest.mark.django_db
 def test_record_never_raises_and_preserves_open_transaction(user, monkeypatch):
     """A failing DB insert must neither raise nor poison the caller's transaction."""
 
