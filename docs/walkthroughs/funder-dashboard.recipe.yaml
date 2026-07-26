@@ -1,9 +1,9 @@
 base_url: http://localhost:8000
 auth:
   type: command
-  check: cd /Users/jjackson/emdash-projects/connect-labs && source .venv/bin/activate
+  check: cd ~/emdash-projects/connect-labs && source .venv/bin/activate
     && python manage.py get_cli_token --list-profiles 2>&1 | grep -E 'main.*no'
-  login: cd /Users/jjackson/emdash-projects/connect-labs && source .venv/bin/activate
+  login: cd ~/emdash-projects/connect-labs && source .venv/bin/activate
     && python manage.py get_cli_token --profile main
   inject_url: /labs/test-auth/?profile=main
 scenes:
