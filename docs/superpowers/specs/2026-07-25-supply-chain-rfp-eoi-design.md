@@ -1,6 +1,12 @@
 # Supply Chain RFP/EOI System — Operation End Starvation
 
-**Status:** approved design — pre-implementation (2026-07-25, rev 2 after standards + viz research)
+**Status:** SHIPPED — all three phases built, merged and deployed to labs (2026-07-25).
+This is a historical design record, not current-state documentation. It captures
+what was decided and why, including the standards and visualisation research the
+design rests on. For how the app actually works today, read
+[connect_labs/supply/README.md](../../../connect_labs/supply/README.md), which is
+maintained alongside the code.
+
 **Pattern:** second "satellite site" exemplar, following the campaign utility tool playbook
 
 ## 1. Context & Goals
