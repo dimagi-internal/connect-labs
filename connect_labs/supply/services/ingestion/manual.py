@@ -12,6 +12,7 @@ from ...models import Shipment, SupplyEvent, SupplyNode
 from ..org_actions import ActionError
 from ._core import capture_event, node_by_gln, normalise_biz_step, parse_event_time
 
+
 def capture_checkin(org, payload):
     """A phone-app confirmation: consignment reference, place, what happened.
 

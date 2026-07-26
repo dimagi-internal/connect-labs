@@ -9,6 +9,7 @@ from ...models import SupplyEvent
 from ..org_actions import ActionError
 from ._core import capture_event, normalise_biz_step, parse_event_time, resolve_node
 
+
 def capture_epcis_document(org, document):
     """Capture an EPCIS 2.0 ``EPCISDocument`` (or a bare event list).
 

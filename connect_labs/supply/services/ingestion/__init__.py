@@ -13,13 +13,7 @@ chain rather than assuming everyone has telemetry:
 All three converge on :func:`~._core.capture_event`, which owns the derived
 state. Callers import from this package, not from the submodules.
 """
-from ._core import (
-    capture_event,
-    node_by_gln,
-    normalise_biz_step,
-    parse_event_time,
-    resolve_node,
-)
+from ._core import capture_event, node_by_gln, normalise_biz_step, parse_event_time, resolve_node
 from .asn import capture_despatch_advice
 from .epcis import capture_epcis_document
 from .manual import capture_checkin, confirm_delivery, record_manual_event

@@ -27,6 +27,14 @@ const STATUS_COLOUR = {
   confirmed: [100, 116, 139],
 };
 
+const NODE_KIND_LABELS = {
+  factory: 'Factory',
+  port: 'Port',
+  warehouse: 'Warehouse',
+  distribution_hub: 'Distribution hub',
+  delivery_point: 'Delivery point',
+};
+
 const NODE_COLOUR = {
   factory: [13, 122, 95],
   port: [30, 64, 175],
@@ -112,6 +120,37 @@ function useFlowMap({ containerRef, nodes, shipments, showIpc, focusCountry }) {
       const overlay = new window.deck.MapboxOverlay({
         interleaved: false,
         layers: [],
+        // pickable layers were doing nothing without this: the pick result has
+        // to be turned into content or hovering a node reports silence.
+        getTooltip: ({ object, layer }) => {
+          if (!object) return null;
+          if (layer && layer.id === 'nodes') {
+            return {
+              html: `<strong>${object.name}</strong><br/>${
+                NODE_KIND_LABELS[object.kind] || object.kind
+              }
+                     &middot; ${object.country}${
+                       object.gln ? `<br/>GLN ${object.gln}` : ''
+                     }`,
+              style: {
+                fontSize: '12px',
+                padding: '6px 8px',
+                borderRadius: '6px',
+              },
+            };
+          }
+          if (object.reference) {
+            return {
+              html: `<strong>${object.reference}</strong><br/>${object.statusLabel}`,
+              style: {
+                fontSize: '12px',
+                padding: '6px 8px',
+                borderRadius: '6px',
+              },
+            };
+          }
+          return null;
+        },
       });
       map.addControl(overlay);
       overlayRef.current = overlay;
@@ -162,12 +201,13 @@ function useFlowMap({ containerRef, nodes, shipments, showIpc, focusCountry }) {
           id: 'corridors',
           data: trips,
           getPath: (d) => d.path,
-          getColor: [255, 255, 255, 55],
+          getColor: [255, 255, 255, 70],
           getWidth: 2,
           widthUnits: 'pixels',
           widthMinPixels: 1.5,
           capRounded: true,
           jointRounded: true,
+          pickable: true,
         }),
         new window.deck.ScatterplotLayer({
           id: 'nodes',
@@ -187,7 +227,7 @@ function useFlowMap({ containerRef, nodes, shipments, showIpc, focusCountry }) {
           getPath: (d) => d.path,
           getTimestamps: (d) => d.timestamps,
           getColor: (d) => STATUS_COLOUR[d.status] || [200, 200, 200],
-          widthMinPixels: 5,
+          widthMinPixels: 6,
           capRounded: true,
           jointRounded: true,
           // Long enough that a corridor reads as a moving line rather than a dot.
@@ -214,6 +254,10 @@ function buildTrips(shipments) {
       return {
         id: s.id,
         status: s.status,
+        reference: s.reference,
+        statusLabel: `${STATUS_LABELS[s.status] || s.status} · ${formatNumber(
+          s.quantity,
+        )} ${s.unit}`,
         path: s.route,
         timestamps: s.route.map((_p, i) => offset + (i / (n - 1)) * span),
       };

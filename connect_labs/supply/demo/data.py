@@ -16,6 +16,7 @@ from ..models import StaffRole
 
 TODAY = date.today()
 
+
 SEED = 20260725
 
 # Demo-persona password. The repo default is fine locally, but any deployed
@@ -33,6 +34,7 @@ def demo_password():
     up the environment they are actually running in without reimporting.
     """
     return os.environ.get("SUPPLY_DEMO_PASSWORD", REPO_DEMO_PASSWORD)
+
 
 # (legal_name, country, city, categories, cert_profile, gln_suffix)
 # cert_profile: "strong" | "expiring" | "thin"

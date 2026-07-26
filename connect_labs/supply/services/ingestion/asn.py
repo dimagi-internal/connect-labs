@@ -13,6 +13,7 @@ from ...models import Contract, Milestone, Shipment, ShipmentLine, SupplyEvent
 from ..org_actions import ActionError
 from ._core import capture_event, node_by_gln, parse_event_time, resolve_node
 
+
 @transaction.atomic
 def capture_despatch_advice(org, payload, source_tier=SupplyEvent.SourceTier.ASN):
     """Materialise a shipment from an ASN-shaped document.

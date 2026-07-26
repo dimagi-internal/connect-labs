@@ -17,6 +17,7 @@ from django.utils import timezone
 from ... import gs1
 from ...models import Discrepancy, Milestone, Shipment, ShipmentLine, SupplyEvent, SupplyNode
 from ..org_actions import ActionError
+
 # EPCIS bizStep -> our vocabulary. Accepts bare steps and CBV URNs.
 BIZ_STEPS = {step.value for step in SupplyEvent.BizStep}
 
