@@ -107,9 +107,10 @@ def test_events_recorded_inside_the_task_carry_the_actor(user):
 
 @pytest.mark.django_db
 def test_full_length_celery_request_id_is_stored():
-    """A celery task id is a 36-char uuid; "celery:" + that is 43. At the old
-    max_length=36 Postgres rejected the whole insert and the writer — which
-    swallows its own errors — dropped the batch silently."""
+    """The correlation id is built by this signal, so assert it here: a celery
+    task id is a 36-char uuid and "celery:" + that is 43, which used to be
+    clipped to 28 — cutting the tail off the very UUID it exists to correlate.
+    (That the column now *accepts* 43 is covered in test_service.)"""
     task_id = "b6b1a3f2-6d1c-4a52-9d2e-3f0a7c8e1d55"
     task = _FakeTask()
     on_task_prerun(task_id=task_id, task=task)
@@ -119,11 +120,3 @@ def test_full_length_celery_request_id_is_stored():
         reset_audit_context(task.request.audit_trail_token)
 
     assert AuditEvent.objects.get().request_id == f"celery:{task_id}"
-
-
-@pytest.mark.django_db
-def test_overlong_request_id_is_truncated_rather_than_dropping_the_batch():
-    with audit_context(source=Source.SCRIPT, request_id="x" * 200):
-        service.record(Action.READ, resource_type="thing")
-
-    assert AuditEvent.objects.get().request_id == "x" * 64
