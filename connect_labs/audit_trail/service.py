@@ -14,10 +14,11 @@ Do not put PHI in ``metadata`` — identifiers only.
 """
 from __future__ import annotations
 
+import functools
 import json
 import logging
 
-from django.db import transaction
+from django.db import models, transaction
 
 from connect_labs.audit_trail.context import get_audit_context
 from connect_labs.audit_trail.models import AuditEvent, Outcome, Source
@@ -29,6 +30,31 @@ logger = logging.getLogger(__name__)
 # (CloudWatch metric filters require it); propagate=False keeps it out of the
 # human-readable root handler.
 stream_logger = logging.getLogger("connect_labs.audit_trail.stream")
+
+
+@functools.lru_cache(maxsize=1)
+def _char_limits() -> dict[str, int]:
+    """Column width of every AuditEvent CharField, read off the model itself."""
+    return {
+        field.name: field.max_length
+        for field in AuditEvent._meta.get_fields()
+        if isinstance(field, models.CharField) and field.max_length
+    }
+
+
+def _clamp(kwargs: dict) -> dict:
+    """Trim string values to their column width.
+
+    Callers must never hand-copy a max_length: an over-long value has to cost
+    us that value's tail, never the whole row. A dropped row is a hole in the
+    compliance record, and because the insert failure is swallowed (see
+    ``_write_events``) it is a silent one.
+    """
+    limits = _char_limits()
+    return {
+        key: value[: limits[key]] if isinstance(value, str) and key in limits else value
+        for key, value in kwargs.items()
+    }
 
 
 def record(
@@ -63,8 +89,8 @@ def record(
     try:
         event_kwargs = {
             "action": action,
-            "resource_type": (resource_type or "")[:100],
-            "resource_id": str(resource_id)[:100] if resource_id is not None else "",
+            "resource_type": resource_type or "",
+            "resource_id": str(resource_id) if resource_id is not None else "",
             "record_count": record_count,
             "opportunity_id": opportunity_id,
             "program_id": program_id,
@@ -108,11 +134,15 @@ def flush_buffer(ctx, status_code: int | None = None) -> None:
 # unlike identifier params (?username=, ?entity_id=, ?status=), which are the
 # point of capturing the query string for session reconstruction.
 FREE_TEXT_PARAMS = {"q", "query", "search", "term", "notes", "note", "text", "message", "comment", "title"}
-_QUERY_MAX_LENGTH = 500
 
 
 def redact_query_string(query_string: str) -> str:
-    """Redact free-text parameter values, keep identifier parameters verbatim."""
+    """Redact free-text parameter values, keep identifier parameters verbatim.
+
+    Bounded output is part of this helper's contract (callers stash the result
+    on a context long before it reaches a row), so it clamps here too — to the
+    same column width ``_clamp`` would apply.
+    """
     if not query_string:
         return ""
     try:
@@ -120,7 +150,7 @@ def redact_query_string(query_string: str) -> str:
 
         pairs = parse_qsl(query_string, keep_blank_values=True)
         redacted = [(k, "[redacted]" if k.lower() in FREE_TEXT_PARAMS else v) for k, v in pairs]
-        return urlencode(redacted)[:_QUERY_MAX_LENGTH]
+        return urlencode(redacted)[: _char_limits()["query_string"]]
     except Exception:  # pragma: no cover - malformed input: drop rather than risk content
         return ""
 
@@ -172,16 +202,16 @@ def _write_events(events: list[dict], ctx) -> None:
         "user_email": ctx.user_email if ctx else "",
         "source": (ctx.source if ctx else Source.SYSTEM) or Source.SYSTEM,
         "ip_address": ctx.ip_address if ctx else "",
-        "user_agent": (ctx.user_agent if ctx else "")[:300],
-        "request_id": (ctx.request_id if ctx else "")[:64],
-        "path": (ctx.path if ctx else "")[:300],
-        "query_string": (ctx.query_string if ctx else "")[:500],
+        "user_agent": ctx.user_agent if ctx else "",
+        "request_id": ctx.request_id if ctx else "",
+        "path": ctx.path if ctx else "",
+        "query_string": ctx.query_string if ctx else "",
     }
     rows = []
     for event_kwargs in events:
         kwargs = {**envelope, **{k: v for k, v in event_kwargs.items() if v is not None or k == "record_count"}}
         # Explicit user on the event wins over the context envelope.
-        rows.append(AuditEvent(**kwargs))
+        rows.append(AuditEvent(**_clamp(kwargs)))
 
     try:
         # Savepoint-wrap so a failed insert can't poison a caller's open

@@ -32,9 +32,9 @@ class AuditTrailMiddleware:
         ctx = AuditContext(
             source=Source.WEB,
             ip_address=_client_ip(request),
-            user_agent=(request.headers.get("user-agent") or "")[:300],
+            user_agent=request.headers.get("user-agent") or "",
             request_id=str(uuid.uuid4()),
-            path=request.path[:300],
+            path=request.path,
             query_string=service.redact_query_string(request.META.get("QUERY_STRING", "")),
             buffer=[],
             request=request,

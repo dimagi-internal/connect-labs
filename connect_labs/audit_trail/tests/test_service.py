@@ -65,13 +65,37 @@ def test_mcp_shaped_request_id_persists_intact(user):
     assert AuditEvent.objects.get().request_id == request_id
 
 
+def test_clamp_covers_every_char_field():
+    """Widths come off the model, so a newly added field is covered for free."""
+    limits = service._char_limits()
+    assert set(limits) >= {"username", "user_email", "user_agent", "request_id", "path", "query_string"}
+
+    clamped = service._clamp({name: "x" * 2000 for name in limits} | {"record_count": 5, "metadata": {}})
+    for name, limit in limits.items():
+        assert len(clamped[name]) == limit, f"{name} not clamped to its column width"
+    # Non-string values pass through untouched.
+    assert clamped["record_count"] == 5
+    assert clamped["metadata"] == {}
+
+
 @pytest.mark.django_db
-def test_overlong_request_id_is_truncated_not_dropped(user):
-    """A too-long correlation id must never cost us the audit row itself."""
-    with audit_context(user=user, source="mcp", request_id="x" * 200):
-        service.record(Action.UPDATE, resource_type="thing")
+def test_overlong_context_values_still_produce_a_row(user):
+    """An over-long value must cost us that value's tail, never the whole row."""
+    overflow = "x" * 2000
+    ctx = AuditContext(
+        source=Source.MCP, user_agent=overflow, request_id=overflow, path=overflow, query_string=overflow
+    )
+    token = set_audit_context(ctx)
+    try:
+        service.record(Action.UPDATE, resource_type=overflow, resource_id=overflow, user=user)
+    finally:
+        reset_audit_context(token)
+
     event = AuditEvent.objects.get()
-    assert event.request_id == "x" * 64
+    limits = service._char_limits()
+    assert len(event.request_id) == limits["request_id"]
+    assert len(event.resource_type) == limits["resource_type"]
+    assert len(event.query_string) == limits["query_string"]
 
 
 @pytest.mark.django_db
