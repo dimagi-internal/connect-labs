@@ -82,6 +82,7 @@ def _seed_certs(org, categories, profile, rng):
             },
         )
 
+
 # ---------- users ----------
 
 
@@ -106,5 +107,6 @@ def _seed_supplier_login(orgs):
     email, name, org_name = SUPPLIER_LOGIN
     user = _user(email, name)
     SupplierMember.objects.update_or_create(user=user, defaults={"org": orgs[org_name]})
+
 
 # ---------- EOI rounds ----------

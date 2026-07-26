@@ -208,6 +208,7 @@ def _seed_corridor_awards(orgs, staff):
             rfp.status = RFP.Status.AWARDED
             rfp.save(update_fields=["status"])
 
+
 # ---------- solicitations ----------
 
 
