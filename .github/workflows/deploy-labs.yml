@@ -194,6 +194,7 @@ jobs:
           build-args: |
             BASE_IMAGE=${{ steps.base-check.outputs.base_image }}
             NODE_IMAGE=${{ steps.node-check.outputs.node_image }}
+            APP_RELEASE=${{ github.sha }}
           cache-from: type=registry,ref=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:buildcache
           cache-to: type=registry,ref=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:buildcache,mode=max
 

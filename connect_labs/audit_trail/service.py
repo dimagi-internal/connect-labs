@@ -181,8 +181,13 @@ def _emit_analytics(rows) -> None:
         logger.exception("Audit→analytics emit failed (non-fatal)")
 
 
-def _resolve_context_user(ctx) -> None:
-    """Fill ctx user fields from the request's (lazy) user, once available."""
+def resolve_context_user(ctx) -> None:
+    """Fill ctx user fields from the request's (lazy) user, once available.
+
+    Public because Sentry attribution (``connect_labs.utils.sentry``) resolves
+    the same identity from the same context — one definition of "who is acting"
+    for both sinks.
+    """
     request = getattr(ctx, "request", None)
     if request is None or ctx.user_id is not None:
         return
@@ -200,7 +205,7 @@ def _write_events(events: list[dict], ctx) -> None:
     always has a copy.
     """
     if ctx is not None:
-        _resolve_context_user(ctx)
+        resolve_context_user(ctx)
     envelope = {
         "user_id": ctx.user_id if ctx else None,
         "username": ctx.username if ctx else "",
