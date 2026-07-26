@@ -1,0 +1,70 @@
+{
+  "build_order": [],
+  "fetched_at": "2026-07-26T20:11:03.128223+00:00",
+  "name": "Solicitations Walkthrough",
+  "narrative": "End-to-end solicitation lifecycle — create, respond, review, award",
+  "personas": {
+    "amina": {
+      "color": "#059669",
+      "intro": "Amina leads a community health org. She browses public solicitations and submits responses.",
+      "name": "Amina Okafor",
+      "role": "Program Director, Health Bridge Nigeria"
+    },
+    "james": {
+      "color": "#d97706",
+      "intro": "James evaluates responses with structured scoring and recommends awards.",
+      "name": "James Mwangi",
+      "role": "Technical Advisor, Dimagi"
+    },
+    "sarah": {
+      "color": "#2563eb",
+      "intro": "Sarah manages programs and sources implementing partners. She creates solicitations and reviews responses.",
+      "name": "Sarah Chen",
+      "role": "Senior Program Manager, Dimagi"
+    }
+  },
+  "scenes": [
+    {
+      "id": "browse-public-solicitations",
+      "persona": "amina",
+      "title": "Browse public solicitations"
+    },
+    {
+      "id": "read-solicitation-details",
+      "persona": "amina",
+      "title": "Read solicitation details"
+    },
+    {
+      "id": "manager-dashboard",
+      "persona": "sarah",
+      "title": "Manager dashboard"
+    },
+    {
+      "id": "create-a-solicitation",
+      "persona": "sarah",
+      "title": "Create a solicitation"
+    },
+    {
+      "id": "submit-a-response",
+      "persona": "amina",
+      "title": "Submit a response"
+    },
+    {
+      "id": "review-all-responses",
+      "persona": "sarah",
+      "title": "Review all responses"
+    },
+    {
+      "id": "score-a-response",
+      "persona": "james",
+      "title": "Score a response"
+    },
+    {
+      "id": "award-a-grantee",
+      "persona": "james",
+      "title": "Award a grantee"
+    }
+  ],
+  "slug": "solicitations",
+  "version": 0
+}

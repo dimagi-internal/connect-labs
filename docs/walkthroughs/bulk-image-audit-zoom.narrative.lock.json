@@ -1,0 +1,28 @@
+{
+  "build_order": [],
+  "fetched_at": "2026-07-26T20:11:01.885054+00:00",
+  "name": "Bulk Image Audit — review-screen UI",
+  "narrative": "An NM reviewing FLW MUAC photos can now zoom into any image to read the tape before passing or failing it",
+  "personas": {
+    "nadia": {
+      "color": "#2563eb",
+      "intro": "Nadia reviews the MUAC photos her field workers submit and marks each pass or fail. To judge a borderline reading she needs to see the tape clearly.",
+      "name": "Nadia Bello",
+      "role": "Network Manager"
+    }
+  },
+  "scenes": [
+    {
+      "id": "the-photo-review-grid",
+      "persona": "nadia",
+      "title": "The photo review grid"
+    },
+    {
+      "id": "zoom-into-one-photo-to-read-the-tape",
+      "persona": "nadia",
+      "title": "Zoom into one photo to read the tape"
+    }
+  ],
+  "slug": "bulk-image-audit-zoom",
+  "version": 0
+}

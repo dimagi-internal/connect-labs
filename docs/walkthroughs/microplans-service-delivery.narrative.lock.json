@@ -1,0 +1,63 @@
+{
+  "build_order": [],
+  "fetched_at": "2026-07-26T20:11:02.603150+00:00",
+  "name": "Microplans — Service Delivery Overlay",
+  "narrative": "A planner uses real service-delivery GPS to decide where to plan: overlay an opportunity's visits on the map, then turn the delivery footprint itself into a planning area",
+  "personas": {
+    "maya": {
+      "color": "#2563eb",
+      "intro": "Maya is deciding how to plan field coverage for a region. Before she draws a single boundary, she wants to see where service delivery has actually happened — and ideally let that real footprint do the work of defining the area.",
+      "name": "Maya Okonkwo",
+      "role": "Senior Program Manager, Dimagi"
+    }
+  },
+  "scenes": [
+    {
+      "id": "the-setup-map-with-a-new-way-in",
+      "persona": "maya",
+      "title": "The setup map, with a new way in"
+    },
+    {
+      "id": "find-an-opportunity-by-name-not-by-scrolling",
+      "persona": "maya",
+      "title": "Find an opportunity by name, not by scrolling"
+    },
+    {
+      "id": "where-delivery-actually-happened",
+      "persona": "maya",
+      "title": "Where delivery actually happened"
+    },
+    {
+      "id": "let-the-data-draw-the-boundary",
+      "persona": "maya",
+      "title": "Let the data draw the boundary"
+    },
+    {
+      "id": "straight-into-planning",
+      "persona": "maya",
+      "title": "Straight into planning"
+    },
+    {
+      "id": "official-boundaries-every-level-at-once",
+      "persona": "maya",
+      "title": "Official boundaries, every level at once"
+    },
+    {
+      "id": "hover-the-smallest-thing-under-your-cursor",
+      "persona": "maya",
+      "title": "Hover the smallest thing under your cursor"
+    },
+    {
+      "id": "build-the-area-from-boundaries-or-just-type-a-name",
+      "persona": "maya",
+      "title": "Build the area from boundaries — or just type a name"
+    },
+    {
+      "id": "switch-the-boundary-source-same-gestures",
+      "persona": "maya",
+      "title": "Switch the boundary source, same gestures"
+    }
+  ],
+  "slug": "microplans-service-delivery",
+  "version": 0
+}

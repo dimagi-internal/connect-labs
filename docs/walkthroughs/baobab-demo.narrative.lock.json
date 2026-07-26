@@ -1,0 +1,70 @@
+{
+  "build_order": [],
+  "fetched_at": "2026-07-26T20:11:01.650397+00:00",
+  "name": "Baobab Regranting Platform Demo",
+  "narrative": "Connect serves both sides — funders get an AI analyst, applicants get an AI coach",
+  "personas": {
+    "amina": {
+      "color": "#059669",
+      "intro": "Amina leads a community health org in Nigeria. She responds to funding opportunities and needs clarity on expectations.",
+      "name": "Amina Okafor",
+      "role": "Program Director, Health Bridge Nigeria"
+    },
+    "james": {
+      "color": "#d97706",
+      "intro": "James evaluates responses and manages selected LLOs post-award. He needs structured scoring and comparison.",
+      "name": "James Mwangi",
+      "role": "Technical Advisor, Dimagi"
+    },
+    "sarah": {
+      "color": "#2563eb",
+      "intro": "Sarah manages programs and sources implementing partners. She wants to create a professional solicitation quickly.",
+      "name": "Sarah Chen",
+      "role": "Senior Program Manager, Dimagi"
+    }
+  },
+  "scenes": [
+    {
+      "id": "here-s-your-fund",
+      "persona": "sarah",
+      "title": "Here's your fund"
+    },
+    {
+      "id": "post-a-solicitation-with-ai-criteria",
+      "persona": "sarah",
+      "title": "Post a solicitation with AI criteria"
+    },
+    {
+      "id": "ai-helps-applicants-write-stronger-responses",
+      "persona": "amina",
+      "title": "AI helps applicants write stronger responses"
+    },
+    {
+      "id": "ai-reviews-all-responses",
+      "persona": "james",
+      "title": "AI reviews all responses"
+    },
+    {
+      "id": "select-your-grantees",
+      "persona": "james",
+      "title": "Select your grantees"
+    },
+    {
+      "id": "monitor-delivery",
+      "persona": "sarah",
+      "title": "Monitor delivery"
+    },
+    {
+      "id": "forecast-your-impact",
+      "persona": "sarah",
+      "title": "Forecast your impact"
+    },
+    {
+      "id": "report-to-bloomberg",
+      "persona": "sarah",
+      "title": "Report to Bloomberg"
+    }
+  ],
+  "slug": "baobab-demo",
+  "version": 0
+}

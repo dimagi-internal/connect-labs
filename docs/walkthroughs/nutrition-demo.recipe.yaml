@@ -1,0 +1,571 @@
+base_url: https://labs.connect.dimagi.com
+tagline: One manager overseeing three nutrition programs — confident every paid visit
+  was verified.
+why_summary: 'A program manager overseeing three RUTF/MUAC network managers shouldn''t
+  have to open a dozen separate weekly reviews and cross-reference audits and coaching
+  tasks by hand to know whether the screening SOP is being run and flagged workers
+  are being coached. The Program Admin Report rolls all three managers'' four weeks
+  into one grid, and because every cell links to the primary records — the manager''s
+  review, the audited MUAC photos, the coaching transcript — the rollup is verifiable,
+  not just summarized. The demo walks from the whole program at a glance down to one
+  flagged child''s MUAC evidence.
+
+  '
+why_brief: nutrition-demo.why_brief.yaml
+review_mode: autonomous
+record_video: true
+prewarm: true
+narrative_locked: true
+video_pace: medium
+video_viewport_width: 1600
+video_viewport_height: 900
+capabilities:
+- See every network manager's weekly MUAC-review compliance as one grid — cluster
+  rows, week columns, and a pinned aggregate that calls out SOP MET vs BELOW per manager.
+- Click any week cell to see who was flagged that week and what was done about it,
+  in an inline panel with no page navigation.
+- Drill from a flagged cell to the network manager's underlying weekly review, the
+  audited MUAC photo session, the follow-up coaching task, and the full AI coaching
+  transcript.
+- Distinguish a coached-to-close flag from a still-open investigation from an AI-caught
+  misleading-photo suspension at a glance via the cell status pills and panel record
+  pills.
+- Follow a single flagged child's MUAC recovery across their SAM follow-up visits
+  — red (SAM) through yellow (MAM) to green (recovered) — on a per-child follow-up
+  timeline.
+getting_started:
+- Open your program's Program Admin Report run from the workflow list at /labs/workflow/.
+- Read the aggregate column to see which network managers met the SOP and which fell
+  below.
+- Click any week cell to inspect that week's flags, audits, and coaching tasks; use
+  'Open the run' to reach the network manager's underlying weekly review.
+setup:
+  command: python scripts/walkthroughs/nutrition-demo/ensure_env.py
+  outputs: scripts/walkthroughs/nutrition-demo/realized.json
+  rerun: once
+  timeout_seconds: 1800
+scenes:
+- id: the-goal-one-manager-three-programs-every-paid-visit-verified
+  role: overview
+  pace: teach
+  url: ${par_url}
+  concept_claim: 'One program manager can oversee three network managers running RUTF
+    and MUAC screening from a single Program Admin Report, and reach the primary record
+    behind any number she is paying for.
+
+    '
+  design_intent: 'Open on the value: one person, several programs, acting from one
+    place, confident every paid service was verified — establish the why before the
+    walkthrough.
+
+    '
+  show: 'Open on the Program Admin Report and state the goal: one person overseeing
+    three programs, acting from one screen, confident every paid service was verified
+    — down to a single child''s recovery.
+
+    '
+  actions:
+  - kind: goto
+    must_succeed: true
+    target: ${par_url}
+  - kind: wait_for
+    must_succeed: true
+    seconds: 60
+    target: Window aggregate
+  - kind: hold
+    note: hold on the whole program while the overview VO plays
+    seconds: 6
+- id: priya-sees-the-whole-program-at-a-glance
+  role: demo
+  url: ${par_url}
+  concept_claim: 'The Program Admin Report renders all three network managers'' weekly
+    reviews as one grid of week cells with a pinned per-manager aggregate, so the
+    program manager reads the whole program''s SOP compliance before opening any individual
+    review.
+
+    '
+  design_intent: 'Oversight across managers is a triage question, so the report opens
+    on the whole program and the aggregate says where to look before Priya reads a
+    single number.
+
+    '
+  show: 'The completed Program Admin Report: three cluster rows (Northern, Central,
+    Eastern) by four week columns, plus the Window aggregate column on the right.
+    Each ran week is a card with a status pill and Flagged/Audits/Tasks counts; the
+    aggregate carries each manager''s SOP MET or BELOW verdict.
+
+    '
+  actions:
+  - kind: wait_for
+    must_succeed: true
+    note: PAR content marker - the page background-polls its snapshot, never networkidle
+    seconds: 60
+    target: Window aggregate
+  - kind: hover
+    note: park the cursor on the top-strip window summary, off the grid cells
+    target: text:opportunities watched
+  - kind: hold
+    note: let the viewer read all three rows and the aggregate
+    seconds: 4
+  - kind: scroll_to
+    target: css:body
+  - kind: hold
+    seconds: 8
+- id: priya-clicks-into-a-resolved-week-in-central-s-row
+  role: demo
+  concept_claim: 'Clicking a resolved week cell opens an inline detail panel under
+    that cluster''s row that names each flagged worker and links their audit and coaching
+    task, without navigating away from the report.
+
+    '
+  design_intent: 'Drill-down keeps the program manager''s context — the grid stays
+    on screen while the panel answers who was flagged and what was done, and navigation
+    is reserved for the primary records themselves.
+
+    '
+  show: 'Clicking the ''All resolved'' week cell in the Central Cluster row opens
+    the inline run-detail panel beneath the row: the flagged worker Kadi Fofana sorted
+    first, with her flag label and links to the exact audit and coaching task, each
+    showing its resolved outcome.
+
+    '
+  actions:
+  - kind: click
+    must_succeed: true
+    note: the resolved-week card in Central's row, targeted by its printed date
+    target: 'css:div[style*="grid-template-columns"]:has-text("${good_opp_label}")
+      div[style*="cursor: pointer"]:has-text("${good_week_label}")'
+  - kind: wait_for
+    must_succeed: true
+    note: panel header proves the cell opened its detail panel
+    seconds: 12
+    target: text:Run detail
+  - kind: scroll_to
+    note: bring the flagged worker's panel row (with its audit + task links) into
+      frame
+    target: text:${good_flw_name}
+  - kind: hold
+    seconds: 3
+- id: priya-opens-the-run-behind-the-cell
+  role: demo
+  concept_claim: 'The detail panel''s ''Open the run'' link lands on the network manager''s
+    underlying weekly review, whose action buttons are state-aware — rows with an
+    existing audit or task show View buttons instead of Create menus.
+
+    '
+  design_intent: 'One artifact serves both roles: the network manager''s working surface
+    is also the program manager''s evidence page, with button state encoding what
+    already happened so nobody re-opens a record just to learn the outcome.
+
+    '
+  show: 'Bakary''s underlying weekly nutrition review: the per-worker table with MUAC
+    distribution, SAM/MAM rates and gender split, flag pills on Kadi''s row, and a
+    state-aware Actions column where her buttons read ''View Audit'' and ''View Task''
+    because those records now exist.
+
+    '
+  actions:
+  - kind: click
+    must_succeed: true
+    target: Open the run
+  - kind: wait_for
+    must_succeed: true
+    seconds: 30
+    target: FLW-Level Analysis
+  - kind: wait_for
+    seconds: 12
+    target: css:tbody tr
+  - kind: scroll_to
+    note: the flagged row - its buttons flipped to View because the records exist
+    target: css:tr:has-text("View Audit")
+  - kind: hold
+    seconds: 2.5
+- id: priya-checks-the-child-s-muac-photos-the-auditor-saw
+  role: demo
+  concept_claim: 'The View Audit drill lands on the completed audit session where
+    each screened child''s MUAC photo and its per-photo pass or fail decision are
+    visible on one page.
+
+    '
+  design_intent: 'Verifiability is the product — the program manager sees the same
+    child MUAC photos the auditor judged, so trust in the rollup is earned by inspection
+    rather than asserted.
+
+    '
+  show: 'The audit page for the flagged worker: the assessment-count header and the
+    MUAC photo thumbnails, each labeled with its per-photo decision, with the audit''s
+    overall verdict — the individual children''s evidence behind the flag.
+
+    '
+  actions:
+  - kind: click
+    must_succeed: true
+    target: View Audit
+  - kind: wait_for
+    note: assessment count header
+    seconds: 20
+    target: Total Assessments
+  - kind: wait_for
+    note: GDrive cold fetch - generous budget for the first decoded photo
+    seconds: 25
+    target: css:img[src*="/audit/image/"]
+  - kind: hold
+    seconds: 4
+- id: priya-reads-the-coaching-that-turned-the-numbers-around
+  role: demo
+  concept_claim: 'A closed coaching task retains its full AI coaching transcript on
+    the task page, and that transcript shows the flagged worker''s screening profile
+    recovering week over week after the network manager intervened.
+
+    '
+  design_intent: '''A task was created'' is not accountability — the transcript surviving
+    on the closed task is what lets the program manager read the recovery itself,
+    not trust a checkbox.
+
+    '
+  show: 'The closed coaching task for Kadi Fofana: the Closed status with its outcome,
+    and below it the Coaching Conversation panel with the full bot/worker exchange
+    — the manager''s route-plan coaching, then the follow-up week where the screening
+    profile came back to the area''s expected picture with referrals into treatment.
+
+    '
+  actions:
+  - kind: goto
+    note: direct drill - same record the panel's Task
+    target: ${task_good_url}
+  - kind: wait_for
+    must_succeed: true
+    seconds: 15
+    target: Closed
+  - kind: scroll_to
+    must_succeed: true
+    target: Coaching Conversation
+  - kind: hold
+    seconds: 5
+  - kind: scroll
+    note: reveal the recovery turn later in the transcript
+    value: '350'
+  - kind: hold
+    seconds: 3
+- id: now-the-harder-case-central-s-still-open-week
+  role: demo
+  url: ${par_url}
+  concept_claim: 'An open-work cell''s detail panel distinguishes flagged workers
+    whose cases are closed from those still under investigation, naming the specific
+    open audit and task records.
+
+    '
+  design_intent: 'The amber path is where the report earns its keep — surfacing ''the
+    manager is doing the right things but this one worker is still pending'' without
+    Priya reading a single weekly review.
+
+    '
+  show: 'Back on the report, the open-work cell in Central''s row. Clicking it opens
+    the detail panel naming Lola Kargbo with an in-review audit and a still-open coaching
+    task, distinct from the resolved case Priya just closed out.
+
+    '
+  actions:
+  - kind: wait_for
+    must_succeed: true
+    seconds: 60
+    target: Window aggregate
+  - kind: click
+    must_succeed: true
+    note: the open-work week's cell in Central's row, targeted by its printed date
+    target: 'css:div[style*="grid-template-columns"]:has-text("${incomplete_opp_label}")
+      div[style*="cursor: pointer"]:has-text("${incomplete_week_label}")'
+  - kind: wait_for
+    must_succeed: true
+    seconds: 12
+    target: text:Run detail
+  - kind: scroll_to
+    target: text:${incomplete_flw_name}
+  - kind: hold
+    seconds: 3
+- id: priya-inspects-the-audit-still-in-review
+  role: demo
+  concept_claim: 'An in-review audit page shows per-photo progress and offers ''Save
+    Progress'' instead of ''Complete Image Review'' until every child''s MUAC photo
+    has a decision.
+
+    '
+  design_intent: 'No ambiguity between ''no decision yet'' and ''decision in progress''
+    — the same per-photo model that drives the manager''s review tells the program
+    manager exactly how much is left.
+
+    '
+  show: 'The in-review audit page for Lola Kargbo: MUAC photo cards in mixed states
+    — decided ones carrying their badges, the rest undecided — and the action button
+    reading ''Save Progress'' because the review is not finished.
+
+    '
+  actions:
+  - kind: goto
+    note: direct drill - same record the panel's Audit
+    target: ${audit_incomplete_url}
+  - kind: wait_for
+    must_succeed: true
+    note: the in-review marker (vs Complete Image Review)
+    seconds: 20
+    target: Save Progress
+  - kind: wait_for
+    must_succeed: true
+    note: first decoded thumbnail before the read hold
+    seconds: 30
+    target: css:img[src*="/audit/image/"]
+  - kind: hold
+    seconds: 4
+- id: priya-checks-on-the-coaching-mid-conversation
+  role: demo
+  concept_claim: 'An open coaching task shows its in-progress conversation transcript
+    and keeps its Close Task action available, so the state of an unresolved case
+    is readable directly from the task page.
+
+    '
+  design_intent: 'Mid-flight visibility — the program manager can distinguish ''coaching
+    is happening'' from ''coaching stalled'' by reading the actual exchange, which
+    is the difference between waiting and intervening.
+
+    '
+  show: 'The investigating task page for Lola Kargbo: the task still open with its
+    Close Task action available, and the Coaching Conversation panel showing the opening
+    messages of an unfinished exchange about reaching the far compounds.
+
+    '
+  actions:
+  - kind: goto
+    note: direct drill - same record the panel's Task
+    target: ${task_incomplete_url}
+  - kind: wait_for
+    must_succeed: true
+    seconds: 15
+    target: Close Task
+  - kind: scroll_to
+    must_succeed: true
+    target: Coaching Conversation
+  - kind: hold
+    seconds: 5
+  - kind: scroll_to
+    target: css:body
+  - kind: hold
+    seconds: 6
+- id: the-ai-first-image-census-every-photo-screened-a-person-handles-the-exceptions
+  role: demo
+  concept_claim: 'Every MUAC photo is screened by the AI reviewer on ingest — this
+    audit shows a hundred at once, ninety-four cleared and six flagged "Hyperzoomed"
+    for a person to adjudicate, so nobody eyeballs every photo by hand.
+
+    '
+  design_intent: 'The efficiency case: verification at scale is only affordable if
+    the machine does the first pass. A person spends their judgement on the six exceptions
+    the AI surfaces, not the ninety-four it already cleared.
+
+    '
+  show: 'The bulk image-audit page: a hundred MUAC assessments, the summary reading
+    94 Passed / 6 Failed, the six AI-flagged cards carrying the Hyperzoomed badge
+    — every photo AI-screened, the human review scoped to the exceptions.
+
+    '
+  actions:
+  - kind: goto
+    note: the AI-first census audit — 100 photos screened at once
+    target: /audit/5026/bulk/?opportunity_id=10012
+  - kind: wait_for
+    must_succeed: true
+    note: the summary bar with the pass/fail split
+    seconds: 20
+    target: css:text=/Passed/
+  - kind: hold
+    seconds: 4
+  - kind: scroll_to
+    target: css:body
+  - kind: hold
+    seconds: 8
+- id: the-third-manager-an-ai-caught-misleading-photo-case
+  role: demo
+  url: ${par_url}
+  concept_claim: 'Clicking Eastern''s flagged cell surfaces a worker the AI image
+    review caught submitting misleading MUAC photos and whose coaching task closed
+    as a suspension, a different fate from a coached-to-close or a still-open case.
+
+    '
+  design_intent: 'The report has to name the fraud path distinctly — an AI-caught
+    misleading measurement that ended in suspension is neither ''resolved and fine''
+    nor ''still pending'', and the program manager must be able to tell it apart on
+    the same grid.
+
+    '
+  show: 'Eastern Cluster''s flagged week cell. Clicking it opens the detail panel
+    naming Vida Kargbo with a suspended-outcome coaching task, the case the AI image
+    review flagged for misleading MUAC photos — visibly distinct from Central''s resolved
+    and open cases.
+
+    '
+  actions:
+  - kind: wait_for
+    must_succeed: true
+    seconds: 60
+    target: Window aggregate
+  - kind: click
+    must_succeed: true
+    note: Eastern's flagged week cell, targeted by its printed date
+    target: 'css:div[style*="grid-template-columns"]:has-text("${images_opp_label}")
+      div[style*="cursor: pointer"]:has-text("${images_week_label}")'
+  - kind: wait_for
+    must_succeed: true
+    seconds: 12
+    target: text:Run detail
+  - kind: scroll_to
+    target: text:${images_flw_name}
+  - kind: hold
+    seconds: 3
+- id: priya-opens-the-audit-and-sees-what-the-ai-flagged
+  role: demo
+  concept_claim: 'The audit behind Vida''s suspension shows the MUAC AI reviewer''s
+    own per-photo verdict — a "Hyperzoomed" badge on the flagged photos where the
+    child''s arm is not visible — so the program manager verifies the machine''s finding
+    against the images, not just a status label.
+
+    '
+  design_intent: 'A suspension is only trustworthy if the AI''s finding is inspectable
+    — the audit page carries the same Hyperzoomed verdicts the review produced, so
+    the manager reads the automated evidence that drove the case rather than taking
+    the rollup''s word for it.
+
+    '
+  show: 'Vida Kargbo''s audit page: the reviewed MUAC photos, each flagged photo carrying
+    the AI reviewer''s "Hyperzoomed" badge, and the overall Fail verdict — the AI-review
+    evidence the auditor confirmed before the coaching task closed as a suspension.
+
+    '
+  actions:
+  - kind: goto
+    note: drill straight to the AI-reviewed audit the panel's Audit
+    target: ${images_audit_url}
+  - kind: wait_for
+    must_succeed: true
+    note: an audit photo decoded (GDrive cold-fetch — generous budget)
+    seconds: 30
+    target: css:img[src*="/audit/image/"]
+  - kind: wait_for
+    must_succeed: true
+    note: the AI badge itself — proves the AI-review verdict rendered, not just photos.
+      Exact-match regex so we bind the VISIBLE "Hyperzoomed" (no_match) badge, not
+      the hidden "Not Hyperzoomed" x-show spans that substring-match and sort first
+      in the DOM.
+    seconds: 20
+    target: css:text=/^Hyperzoomed$/
+  - kind: scroll_to
+    target: css:text=/^Hyperzoomed$/
+  - kind: hold
+    seconds: 4
+  - kind: scroll_to
+    target: css:body
+  - kind: hold
+    seconds: 7
+- id: priya-returns-to-the-aggregate-and-makes-her-call
+  role: demo
+  url: ${par_url}
+  concept_claim: 'The aggregate column summarizes each network manager''s window with
+    an SOP MET or BELOW verdict plus run, flag, and outcome counts, making the three
+    managers'' health directly comparable on one screen.
+
+    '
+  design_intent: 'The weekly ritual is the design target — sixty seconds on this screen
+    tells the program manager whether her managers are doing the work and where to
+    intervene, and every claim on it has a drill path behind it.
+
+    '
+  show: 'The Program Admin Report with the Window aggregate column in frame: Northern
+    carrying its SOP MET pill, Central and Eastern their BELOW pills, each with runs
+    completed, flag totals, and outcome counts side by side — the contrast that decides
+    where Priya spends her week.
+
+    '
+  actions:
+  - kind: wait_for
+    must_succeed: true
+    seconds: 60
+    target: Window aggregate
+  - kind: scroll_to
+    target: Window aggregate
+  - kind: hover
+    note: Northern's aggregate card - the healthy side of the contrast (SOP MET)
+    seconds: 2
+    target: text:SOP MET
+  - kind: hold
+    seconds: 1.5
+  - kind: hover
+    note: a BELOW manager's aggregate card - the side that needs Priya
+    seconds: 2
+    target: text:BELOW
+  - kind: hold
+    note: the SOP MET vs BELOW contrast across three managers - the triage close
+    seconds: 3
+  - kind: scroll_to
+    target: css:body
+  - kind: hold
+    seconds: 6
+- id: priya-follows-one-child-s-recovery
+  role: demo
+  url: https://labs.connect.dimagi.com/labs/workflow/5027/run/?run_id=5029&opportunity_id=10036
+  concept_claim: 'A dedicated single-client view puts one child''s whole follow-up
+    history on one screen — every visit''s MUAC against the SAM/MAM/recovered bands
+    — so the program manager watches a child climb out of red into green, the oversight
+    loop closing on a child, not a metric.
+
+    '
+  design_intent: 'The funder''s ultimate unit is a child getting better, so the demo
+    ends the program-to-child line on one child''s actual MUAC trajectory rather than
+    a summary number. A purpose-built single-client view — visit rail, trend chart,
+    case rail — reads in one frame, where a cohort table plus a drill-down click does
+    not.
+
+    '
+  show: 'A single child''s recovery on one screen: the left rail carries that child''s
+    MUAC screening photo for every follow-up visit, colour-banded and expandable;
+    the centre holds the MUAC progression chart with the SAM / MAM / recovered zones
+    shaded behind the line; the right rail holds the case details — Beneficiary 69
+    climbing 10.4cm (SAM) to 13.0cm (recovered) across eight visits.
+
+    '
+  actions:
+  - kind: wait_for
+    must_succeed: true
+    seconds: 30
+    target: text:MUAC progression
+  - kind: wait_for
+    must_succeed: true
+    seconds: 20
+    target: css:canvas
+    note: the chart canvas paints only after the visits pipeline resolves - gates
+      on data, not the shell
+  - kind: wait_for
+    must_succeed: true
+    seconds: 15
+    target: css:img[alt*='MUAC photo']
+    note: the rail photos are served per visit off the image server - gates on a decoded
+      image, not the layout
+  - kind: hold
+    seconds: 5
+    note: the whole view in one frame - photo rail, MUAC chart with its bands, case
+      rail
+  - kind: click
+    must_succeed: true
+    target: css:img[alt='Visit 1 MUAC photo']
+    note: expand visit 1's screening photo - the evidence behind the first, lowest
+      reading
+  - kind: hold
+    seconds: 4
+    note: the expanded MUAC photo for visit 1 (10.4cm, SAM)
+  - kind: click
+    must_succeed: true
+    target: css:button[aria-label='Close photo']
+    note: close the expanded photo via its own close control - clicking the backdrop
+      hits the card centre, whose stopPropagation swallows it
+  - kind: scroll_to
+    target: text:MUAC gain
+  - kind: hold
+    seconds: 4
+    note: the closing payoff - +2.6cm across eight visits, recovered

@@ -1,0 +1,28 @@
+{
+  "build_order": [],
+  "fetched_at": "2026-07-26T20:11:01.765319+00:00",
+  "name": "Bulk Image Audit — reopen a completed audit",
+  "narrative": "An NM can return to a completed audit, reopen it, and modify results before resubmitting — the audit is no longer locked forever at completion",
+  "personas": {
+    "nadia": {
+      "color": "#2563eb",
+      "intro": "Nadia completed this MUAC photo audit two months ago. New context on one visit means she needs to go back in and revise a result — which used to be impossible once an audit was completed.",
+      "name": "Nadia Bello",
+      "role": "Network Manager"
+    }
+  },
+  "scenes": [
+    {
+      "id": "a-completed-audit-is-locked",
+      "persona": "nadia",
+      "title": "A completed audit is locked"
+    },
+    {
+      "id": "reopen-modify-resubmit",
+      "persona": "nadia",
+      "title": "Reopen, modify, resubmit"
+    }
+  ],
+  "slug": "bulk-image-audit-reopen",
+  "version": 0
+}

@@ -1,0 +1,33 @@
+base_url: https://labs.connect.dimagi.com
+prewarm: true
+scenes:
+- id: the-photo-review-grid
+  url: /audit/4525/bulk/?opportunity_id=10000
+  show: The Bulk Image Audit review screen — a grid of hawa_n's five MUAC photos,
+    each a tile with the child's arm and tape, a Pass/Fail/Incomplete control, and
+    a per-FLW summary. A global Size slider resizes every tile at once.
+  impressive_because: The whole week of a worker's photos is reviewable on one screen
+    with one-tap pass/fail and a running % passed
+  actions:
+  - kind: wait_for
+    target: Showing
+  - kind: hold
+    seconds: 2
+- id: zoom-into-one-photo-to-read-the-tape
+  show: 'Clicking any photo opens a full-screen zoom lightbox that fills the viewport:
+    the MUAC tape reading is legible, with a header showing the FLW, date, visit id
+    and current Pass result, plus zoom +/- and reset controls and left/right arrows
+    to move between photos.'
+  impressive_because: This is the moment-of-truth for a pass/fail call — the global
+    size slider could never make a single tape reading legible; click-to-zoom opens
+    the photo filling the screen, without leaving the review flow
+  ai_quality: The zoomed image fills the viewport and the MUAC tape numbers are readable;
+    the header keeps the FLW/visit context visible while zoomed
+  actions:
+  - kind: click
+    target: .assessment-widget img
+    note: open the zoom lightbox
+  - kind: wait_for
+    target: Scroll to zoom
+  - kind: hold
+    seconds: 3
