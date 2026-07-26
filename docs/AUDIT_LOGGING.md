@@ -114,8 +114,21 @@ page and the bridge record `read` audit events on open.
 - The middleware flushes **after** the view's `ATOMIC_REQUESTS` transaction,
   so events survive rolled-back requests and carry the final status code.
 - Celery tasks get `source="celery"` context automatically (task_prerun
-  signal); tasks that know the acting user should wrap work in
-  `audit_context(user=...)` for full attribution.
+  signal), attributed to whoever enqueued them: `before_task_publish` stamps
+  the acting user's id and username onto the message (`labs_actor_*` headers,
+  never the email — Redis is not a place to persist personal data) and
+  `task_prerun` reads them back. Beat- and script-published tasks have no
+  publisher and stay unattributed; a task that knows better can still wrap
+  work in `audit_context(user=...)`.
+- The same context feeds **Sentry attribution**
+  (`connect_labs/utils/sentry.py`, wired as `before_send`). Sentry's Django
+  integration only attaches `request.user` under `send_default_pii=True`,
+  which also ships cookies, bodies and client IPs — not acceptable this close
+  to PHI — so labs attaches just the identity, from this contextvar. One
+  definition of "who is acting" for both sinks: they cannot disagree.
+  Errors also carry `labs.source` / `labs.request_id` / `labs.path` tags, and
+  `labs.opportunity_id` / `labs.program_id` where scoped, so a Sentry issue
+  and the audit rows for the same action share a correlation id.
 - Settings: `AUDIT_TRAIL_ARCHIVE_BUCKET` (unset ⇒ archive task no-ops),
   `AUDIT_TRAIL_HOT_RETENTION_DAYS` (default 400).
 - Hygiene: never put identifiers in logged URLs or exception messages; Sentry

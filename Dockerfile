@@ -39,14 +39,16 @@ COPY --from=build-node /app/connect_labs/static/bundles /app/connect_labs/static
 
 WORKDIR /app
 
-ARG APP_RELEASE="dev"
-ENV APP_RELEASE=${APP_RELEASE}
-
 # Copy application code
 COPY --chown=django:django . /app
 
 RUN python /app/manage.py collectstatic --noinput
 RUN chown django:django -R staticfiles
+
+# Sentry release marker (the deploy passes the commit SHA). Declared last so a
+# changed value can't invalidate the collectstatic layer above it.
+ARG APP_RELEASE="dev"
+ENV APP_RELEASE=${APP_RELEASE}
 
 USER django
 

@@ -49,7 +49,7 @@ from fastmcp.server.auth import AccessToken, TokenVerifier
 from fastmcp.server.dependencies import get_access_token
 from fastmcp.tools.tool import Tool, ToolResult
 
-from connect_labs.audit_trail.context import audit_context
+from connect_labs.audit_trail.context import audit_context, get_audit_context
 from connect_labs.labs.integrations.connect.api_client import LabsAPIError
 
 from .models import MCPAccessToken, MCPAuditLog
@@ -244,7 +244,23 @@ def _run_registry_tool(spec: RegistryToolSpec, arguments: dict) -> ToolResult:
     ``ToolResult`` instead of a JSON-RPC envelope (FastMCP builds the envelope).
     """
     user = current_user()
+    # MCP traffic bypasses Django middleware (FastMCP mounts outside the
+    # ASGIHandler), so open the audit context here — data-access calls inside
+    # handlers are then attributed to the PAT's user, and so is anything the
+    # error paths below report to Sentry. It wraps the WHOLE call, not just the
+    # handler, because the most valuable events to attribute are the ones the
+    # except-branches log.
+    with audit_context(
+        user=user,
+        source="mcp",
+        request_id=f"mcp:{uuid.uuid4().hex}",
+        path=f"mcp:{spec.name}",
+    ):
+        return _run_registry_tool_inner(spec, arguments, user)
 
+
+def _run_registry_tool_inner(spec: RegistryToolSpec, arguments: dict, user) -> ToolResult:
+    """The gate → run → audit body of a tool call, inside an open audit context."""
     # Central labs-only access gate. Any tool scoped to a labs-only opp/program
     # routes to the local backend with no downstream Connect membership check, so
     # enforce the synthetic access model here — one place every tool passes through,
@@ -269,19 +285,19 @@ def _run_registry_tool(spec: RegistryToolSpec, arguments: dict) -> ToolResult:
             raise ToolError(e.message) from e
 
     try:
-        # MCP traffic bypasses Django middleware (FastMCP mounts outside the
-        # ASGIHandler), so open the audit context here — data-access calls
-        # inside handlers are then attributed to the PAT's user.
-        with audit_context(user=user, source="mcp", request_id=f"mcp:{spec.name}:{uuid.uuid4().hex[:8]}"):
-            result = spec.handler(user=user, **arguments)
+        result = spec.handler(user=user, **arguments)
     except MCPToolError as e:
         _write_audit(user, spec.name, arguments, success=False, error_code=e.code, is_write=spec.is_write)
         raise ToolError(e.message) from e
     except Exception as e:  # noqa: BLE001
         _write_audit(user, spec.name, arguments, success=False, error_code="UPSTREAM_ERROR", is_write=spec.is_write)
         # Surface the full traceback inline — same diagnostic choice the old
-        # transport made; faster to debug than digging through CloudWatch.
-        request_id = uuid.uuid4().hex[:8]
+        # transport made; faster to debug than digging through CloudWatch. The
+        # request id is the audit context's, so this log line, the audit rows
+        # this call wrote, and the Sentry event all carry the same correlation
+        # id (Sentry surfaces it as the `labs.request_id` tag).
+        ctx = get_audit_context()
+        request_id = ctx.request_id if ctx is not None else ""
         logger.exception("MCP tool error [tool=%s request_id=%s]", spec.name, request_id)
         detail = f"{type(e).__name__}: {e}"
         if isinstance(e, LabsAPIError):

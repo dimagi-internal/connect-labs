@@ -72,6 +72,8 @@ if SENTRY_DSN:
     from sentry_sdk.integrations.logging import LoggingIntegration, ignore_logger
     from sentry_sdk.integrations.redis import RedisIntegration
 
+    from connect_labs.utils.sentry import before_send as sentry_before_send
+
     ignore_logger("django.security.DisallowedHost")
     sentry_logging = LoggingIntegration(level=logging.INFO, event_level=logging.ERROR)
     sentry_sdk.init(
@@ -80,6 +82,14 @@ if SENTRY_DSN:
         environment=env("DEPLOY_ENVIRONMENT", default="labs"),
         release=APP_RELEASE,
         traces_sample_rate=env.float("SENTRY_TRACES_SAMPLE_RATE", default=0.0),
+        # send_default_pii stays OFF: labs runs next to PHI and that switch also
+        # ships cookies, request bodies and client IPs. It is also the reason the
+        # Django integration never attached a user (its _set_user_info is gated on
+        # it), so every issue read "Users: 0". `before_send` attaches just the
+        # acting identity instead — see connect_labs/utils/sentry.py.
+        send_default_pii=False,
+        max_request_body_size="never",
+        before_send=sentry_before_send,
     )
 
 # CSRF
