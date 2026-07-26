@@ -477,3 +477,44 @@ def test_blank_gln_lookup_helper_returns_nothing(db):
     assert node_by_gln("") is None
     assert node_by_gln(None) is None
     assert node_by_gln("   ") is None
+
+
+def test_blank_contract_reference_is_rejected(feed):
+    """Same bug class as the blank GLN: an empty value must match nothing."""
+    from connect_labs.supply.models import Contract
+
+    # a contract whose reference is blank, which a naive lookup would match
+    Contract.objects.create(
+        award=f.AwardFactory(),
+        org=feed["org"],
+        reference="",
+        total_quantity=1,
+        unit_price=1,
+    )
+    payload = _asn_payload(feed, asn="ASN-NOCONTRACT")
+    payload["contract_reference"] = ""
+    resp = _api(feed["client"], "/supply/api/v1/shipments/", payload, feed["token"])
+    assert resp.status_code == 400
+    assert "contract_reference is required" in resp.json()["error"]
+
+
+def test_integrity_error_without_an_idempotency_key_is_not_swallowed(feed):
+    """Only a duplicate external_id is recoverable; other failures must surface."""
+    from unittest import mock
+
+    from django.db import IntegrityError
+
+    from connect_labs.supply.services import ingestion
+
+    with mock.patch(
+        "connect_labs.supply.services.ingestion._core.SupplyEvent.objects.create",
+        side_effect=IntegrityError("something else entirely"),
+    ):
+        with pytest.raises(IntegrityError):
+            ingestion.capture_event(
+                feed["org"],
+                biz_step="departing",
+                event_time=ingestion.parse_event_time("2026-07-20T09:00:00Z"),
+                source_tier="portal",
+                external_id="",
+            )

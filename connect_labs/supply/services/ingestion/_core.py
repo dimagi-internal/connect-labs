@@ -193,11 +193,13 @@ def capture_event(
                 raw=raw or {},
             )
     except IntegrityError:
-        # A concurrent retry won the race on the (org, external_id) constraint.
-        # At-least-once delivery means this is normal, not an error.
-        existing = SupplyEvent.objects.filter(org=org, external_id=external_id).first()
-        if existing:
-            return existing, False
+        # Only the (org, external_id) constraint is recoverable, and only when
+        # an external_id was supplied — without one, filtering on the empty
+        # string would return an unrelated event and swallow a real error.
+        if external_id:
+            existing = SupplyEvent.objects.filter(org=org, external_id=external_id).first()
+            if existing:
+                return existing, False
         raise
 
     if shipment:

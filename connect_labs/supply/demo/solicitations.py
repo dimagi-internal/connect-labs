@@ -25,6 +25,9 @@ from ..models import (
 from ..serializers import org_dict
 from .data import AWARDED_RFP, CLOSED_ROUND, CORRIDOR_AWARDS, LIVE_RFP, OPEN_ROUND, TODAY
 
+# Seed timestamps hang off a single reference point so a rerun reproduces the
+# same world rather than drifting with the clock.
+
 
 def _commitments(categories, rng):
     regions = {"NG": "NG, SD", "ET": "ET, DJ", "BF": "BF, ML", "SD": "SD", "DJ": "DJ, ET"}

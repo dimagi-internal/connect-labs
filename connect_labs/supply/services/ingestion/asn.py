@@ -31,6 +31,8 @@ def capture_despatch_advice(org, payload, source_tier=SupplyEvent.SourceTier.ASN
         raise ActionError("asn_reference is required")
 
     contract_ref = (payload.get("contract_reference") or "").strip()
+    if not contract_ref:
+        raise ActionError("contract_reference is required")
     contract = Contract.objects.filter(reference=contract_ref, org=org).first()
     if contract is None:
         raise ActionError("contract_reference does not match a contract for your organisation")

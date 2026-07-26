@@ -219,3 +219,16 @@ def test_sea_lane_avoids_cutting_across_land():
     assert min(lats) < -20
     # and passes through the Bab-el-Mandeb strait
     assert any(abs(lon - 43.4) < 1.5 and abs(lat - 12.6) < 1.5 for lon, lat in lane)
+
+
+def test_reseeding_rotates_demo_passwords(monkeypatch):
+    """Rotating the secret must take effect, not leave the old one working."""
+    call_command("seed_supply_demo", "--reset")
+    user = User.objects.get(username="oes-lead@oes.example")
+    assert user.check_password("oes-demo-2026")
+
+    monkeypatch.setenv("SUPPLY_DEMO_PASSWORD", "rotated-secret-1")
+    call_command("seed_supply_demo")  # no --reset: users already exist
+    user.refresh_from_db()
+    assert user.check_password("rotated-secret-1")
+    assert not user.check_password("oes-demo-2026")

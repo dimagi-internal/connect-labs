@@ -87,10 +87,15 @@ def _seed_certs(org, categories, profile, rng):
 
 
 def _user(email, name):
-    user, created = User.objects.update_or_create(username=email, defaults={"email": email, "name": name})
-    if created or not user.has_usable_password():
-        user.set_password(demo_password())
-        user.save(update_fields=["password"])
+    """Create or refresh a demo persona.
+
+    The password is set on every run, not just on creation: these are demo
+    logins, and rotating SUPPLY_DEMO_PASSWORD has to take effect on the next
+    seed or the old credential keeps working on a deployed instance.
+    """
+    user, _created = User.objects.update_or_create(username=email, defaults={"email": email, "name": name})
+    user.set_password(demo_password())
+    user.save(update_fields=["password"])
     return user
 
 

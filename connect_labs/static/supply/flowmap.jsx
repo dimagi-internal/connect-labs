@@ -27,6 +27,13 @@ const STATUS_COLOUR = {
   confirmed: [100, 116, 139],
 };
 
+const TOOLTIP_STYLE = {
+  fontSize: '12px',
+  padding: '6px 8px',
+  borderRadius: '6px',
+  whiteSpace: 'pre-line',
+};
+
 const NODE_KIND_LABELS = {
   factory: 'Factory',
   port: 'Port',
@@ -122,31 +129,24 @@ function useFlowMap({ containerRef, nodes, shipments, showIpc, focusCountry }) {
         layers: [],
         // pickable layers were doing nothing without this: the pick result has
         // to be turned into content or hovering a node reports silence.
+        // `text`, not `html`: deck.gl sets textContent for text tooltips, so
+        // a node or organisation name can never inject markup here.
         getTooltip: ({ object, layer }) => {
           if (!object) return null;
           if (layer && layer.id === 'nodes') {
-            return {
-              html: `<strong>${object.name}</strong><br/>${
-                NODE_KIND_LABELS[object.kind] || object.kind
-              }
-                     &middot; ${object.country}${
-                       object.gln ? `<br/>GLN ${object.gln}` : ''
-                     }`,
-              style: {
-                fontSize: '12px',
-                padding: '6px 8px',
-                borderRadius: '6px',
-              },
-            };
+            const parts = [
+              object.name,
+              `${NODE_KIND_LABELS[object.kind] || object.kind} · ${countryLabel(
+                object.country,
+              )}`,
+            ];
+            if (object.gln) parts.push(`GLN ${object.gln}`);
+            return { text: parts.join('\n'), style: TOOLTIP_STYLE };
           }
           if (object.reference) {
             return {
-              html: `<strong>${object.reference}</strong><br/>${object.statusLabel}`,
-              style: {
-                fontSize: '12px',
-                padding: '6px 8px',
-                borderRadius: '6px',
-              },
+              text: `${object.reference}\n${object.statusLabel}`,
+              style: TOOLTIP_STYLE,
             };
           }
           return null;

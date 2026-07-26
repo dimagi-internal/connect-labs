@@ -145,7 +145,8 @@ function RFPDetailModal({ ctx, rfp, canAward, canManage, onClose }) {
                     label: 'Technical',
                     value: (b) => b.avg_technical_score,
                     render: (b) =>
-                      b.avg_technical_score === null ? (
+                      b.avg_technical_score === null ||
+                      b.avg_technical_score === undefined ? (
                         <button
                           type="button"
                           className="btn-link"
@@ -154,9 +155,13 @@ function RFPDetailModal({ ctx, rfp, canAward, canManage, onClose }) {
                           Score
                         </button>
                       ) : (
-                        <span className="score" onClick={() => setScoring(b)}>
+                        <button
+                          type="button"
+                          className="btn-link score"
+                          onClick={() => setScoring(b)}
+                        >
                           {b.avg_technical_score}
-                        </span>
+                        </button>
                       ),
                   },
                   {
@@ -310,11 +315,21 @@ function ScoreModal({ ctx, lotBid, onClose, onScored }) {
   const [notes, setNotes] = useState('');
 
   const submit = async () => {
+    // The input yields a string, and an out-of-range value should be caught
+    // here rather than making a round trip only to be rejected.
+    const value = Number(score);
+    if (!Number.isInteger(value) || value < 0 || value > 100) {
+      ctx.setToast({
+        message: 'Score must be a whole number between 0 and 100.',
+        tone: 'bad',
+      });
+      return;
+    }
     const ok = await ctx.act(async () => {
       const result = await supplyPost(
         `/supply/api/lot-bids/${lotBid.id}/score/`,
         {
-          technical_score: score,
+          technical_score: value,
           notes,
         },
       );
