@@ -1,0 +1,222 @@
+auth:
+  type: session
+base_url: https://labs.connect.dimagi.com
+narrative_locked: false
+prewarm: true
+setup:
+  command: python scripts/walkthroughs/verified-monitoring/regenerate.py
+  outputs: scripts/walkthroughs/verified-monitoring/.run_ids.json
+  rerun: per_render
+tagline: A demo of continuous independent monitoring on Connect
+video_viewport_height: 1000
+video_viewport_width: 1280
+why_brief: verified-monitoring.why_brief.yaml
+scenes:
+- id: the-goal-independent-drillable-proof-the-program-works
+  role: overview
+  pace: teach
+  concept_claim: Maya's logged-visit coverage looks high, but she wants independent,
+    drillable proof outcomes actually changed; and because the independent survey
+    is what verifies the program, her goal extends to inspecting the quality of the
+    survey itself — the focus shifts from reviewing program performance to reviewing
+    the surveyors.
+  design_intent: 'Bet: state WHY logged visits aren''t proof, what Maya actually wants
+    — drillable independent verification — and that the same dashboard turns inward
+    on the survey''s own quality, so the trend, per-surveyor QA, and back-check read
+    as answering a real question.'
+  show: 'Open on the independent survey''s dashboard and state the goal: independent,
+    drillable proof the program is changing outcomes — and, since the survey is what
+    verifies the program, proof the survey itself can be trusted.'
+  actions:
+  - kind: goto
+    target: ${runner_path}
+  - kind: wait_for
+    target: service-delivery data
+  - kind: hold
+    seconds: 6
+- id: six-bi-monthly-rounds-over-time-the-gap-holds
+  actions:
+  - kind: goto
+    target: ${runner_path}
+  - kind: wait_for
+    target: service-delivery data
+  - kind: hold
+    seconds: 1
+  - kind: click
+    target: role:button:R3
+  - kind: hold
+    seconds: 1
+  - kind: click
+    target: role:button:R6
+  - kind: hold
+    seconds: 5.3
+  pace: teach
+  concept_claim: Across six bi-monthly rounds, the program's self-reported delivery
+    stays above the independent survey's estimated coverage each round — 71.8% survey-estimated
+    against 89.3% self-reported at the latest round — while the match arm stays low;
+    each round carries a 95% confidence interval and sample size, so the gap reads
+    as real signal over time rather than sampling noise in a single snapshot.
+  design_intent: Three labelled lines (service-delivery dashed amber, intervention
+    survey indigo, match survey slate) plotted across six bi-monthly rounds left-to-right
+    as a time axis (earliest at left, most recent at right, each round date-stamped),
+    with a shaded service-delivery-minus-survey gap band, always-on 95% CI whiskers
+    on the two sampled survey series, and per-point hover tooltips carrying the sample
+    size + CI, so the gap's persistence over time — and its statistical weight — reads
+    from the chart without a sentence.
+  full_page: false
+  show: 'The six-round trend over time: the program''s service-delivery line above
+    the independent intervention-arm survey at every bi-monthly round, the match-arm
+    survey far below — earliest round at left, most recent at right.'
+- id: where-delivery-happened-vs-where-the-survey-checked-the-map-moves
+  actions:
+  - kind: scroll
+    value: '600'
+  - kind: scroll_to
+    note: frame the two-ward map region (not the chart above) before the layer comparison
+    target: text:MAP · ATTAKAR
+  - kind: hold
+    seconds: 4
+  - kind: click
+    target: css:[aria-label="toggle Plan · sampled PSUs"]
+  - kind: hold
+    seconds: 1.3
+  - kind: click
+    target: css:[aria-label="toggle Plan · sampled PSUs"]
+  - kind: hold
+    seconds: 0.6
+  - kind: click
+    target: css:[aria-label="toggle Independent survey"]
+  - kind: hold
+    seconds: 0.4
+  - kind: click
+    target: css:[aria-label="toggle Plan · sampled PSUs"]
+  - kind: hold
+    seconds: 0.4
+  - kind: scroll_to
+    note: hold the framing on the two-ward map with service delivery isolated
+    target: text:MAP · ATTAKAR
+  - kind: hold
+    seconds: 4
+  pace: teach
+  concept_claim: Program delivery is concentrated in the intervention ward and absent
+    in the adjacent match ward, while the independent survey covered both — so the
+    coverage gap tracks where the program went, not where the survey looked.
+  design_intent: Real labelled admin boundaries (intervention indigo / match slate)
+    on a light Mapbox basemap via the shared ConnectMap module, with the SAME docked
+    Layers panel the plan editor uses — toggles for service delivery, the independent
+    survey, the designed Plan (arm-coloured selected-PSU hulls), the sampled Work
+    areas, and all Building footprints — drawn through the shared PlanLayers component
+    so the monitoring map and the plan editor render the plan identically. Every survey
+    draws (no per-ward cap), each on the real sampled footprint and within the 15
+    m GPS gate, distinguishing the unit the surveyor was assigned to try first (primary
+    — larger solid dot) from a substituted backup (alternate — smaller hollow ring).
+    The map re-fits on each cycle but NOT on a layer toggle, so toggling keeps the
+    planner's pan/zoom.
+  full_page: false
+  show: The full-width map — program service-delivery filling the intervention ward,
+    every independent survey pin in both wards, the designed plan's arm-coloured PSU
+    clusters toggled on from the shared Layers panel — flying to each cycle's two
+    real wards.
+- id: the-per-surveyor-quality-scorecard-catches-a-surveyor
+  actions:
+  - kind: scroll_to
+    target: Survey-quality scorecard
+  - kind: hold
+    seconds: 2
+  - kind: click
+    target: css:[data-cell="T6:evidence"]
+  - kind: wait_for
+    target: Survey-quality detail
+  - kind: hold
+    seconds: 1
+  - kind: scroll_to
+    target: Survey-quality detail
+  - kind: hold
+    seconds: 4
+  pace: teach
+  concept_claim: 'Quality is computed per surveyor from each surveyor''s own records,
+    so one under-performing surveyor is visible rather than averaged away — flagged
+    on the signals GPS gating can''t fake: evidence, on-primary fidelity, and back-check
+    agreement.'
+  design_intent: A dense scorecard, one row per surveyor, green within threshold /
+    rose below, with a REVIEW tag where a surveyor's integrity signals fail together;
+    the back-check column is cumulative across cycles. The GPS-within-15m column reads
+    ~100% for every surveyor — the app blocks any submission beyond 15 m, so it is
+    a passing trust signal, not the discriminator. An On-primary column shows the
+    share of each surveyor's surveys that landed on the assigned first-choice household
+    (vs a substituted alternate) — a sampling-fidelity signal where heavy substitution
+    reads rose. The back-check column is a random subset of each surveyor's households
+    re-visited by a separate quality-control enumerator, and a consequence note under
+    the table states what a REVIEW flag means — the work is held for investigation
+    and re-survey before it can count toward the coverage estimate, so a flag starts
+    an investigation rather than settling it.
+  full_page: false
+  show: The per-surveyor quality scorecard — evidence, a ~100% GPS-within-15m column
+    (app-gated), completeness, duration, consistency, duplicates, on-primary, and
+    back-check, each computed from that surveyor's own records — with one surveyor
+    flagged REVIEW on the non-GPS signals.
+- id: the-independent-back-check-confirms-it
+  actions:
+  - kind: click
+    target: css:[data-cell="T6:backcheck"]
+  - kind: wait_for
+    target: Identity match
+  - kind: hold
+    seconds: 1
+  - kind: scroll_to
+    target: INDEPENDENT BACK-CHECK
+  - kind: hold
+    seconds: 4
+  pace: teach
+  concept_claim: An independent re-survey by a different enumerator disagrees with
+    this surveyor's records on identity, location, and outcome — the strongest evidence
+    their data needs review.
+  design_intent: Descriptive section headers (Identity / Location / Outcome, with
+    the J-PAL "Type 1/2/3" jargon behind an info popup), two rows per household (Original
+    / Backcheck) with discordances in rose; a stratified sample (back-checking is
+    a sampling method) while the agreement %s are computed over all of the surveyor's
+    back-checks.
+  full_page: false
+  show: The independent back-check for the flagged surveyor — Identity (incl. roof)
+    / Location / Outcome, original over re-survey, the method behind an info button.
+- id: gps-is-clean-the-distributions-screen-catches-the-fabrication
+  actions:
+  - kind: scroll_to
+    target: text:Distributions ·
+  - kind: hold
+    seconds: 2
+  - kind: click
+    must_succeed: false
+    note: highlight the flagged surveyor's distributions row (last table scopes to
+      the Distributions card, not the earlier scorecard/map "Surveyor T6")
+    target: css:table:has-text("Dose yes-rate") td:has-text("Surveyor T6")
+  - kind: scroll_to
+    note: settle on the flagged T6 row so its RED composite + red speed/uniformity
+      cells are in frame for the narration (not back up to the all-green peer rows
+      under the header)
+    target: css:table:has-text("Dose yes-rate") td:has-text("Surveyor T6")
+  - kind: hold
+    seconds: 3.7
+  pace: teach
+  concept_claim: Someone who passes the GPS gate still can't easily fake the shape
+    of their data — the Distributions screen scores each surveyor against their peers
+    on interview speed and answer uniformity, and the flagged surveyor reads red on
+    both. These are warning signs of possible fabrication that trigger further investigation,
+    not a verdict; the flagged work is held for investigation and re-survey before
+    it can count toward the coverage estimate.
+  design_intent: The Layer-3 Distributions card — one row per surveyor, robust median/MAD
+    z-scores vs peers on three signals (dose yes-rate, interview speed, and answer
+    uniformity — the Herfindahl concentration of roof-type answers), each rendered
+    as a compact raw-units lens (a centre line at the team-typical value, a dark notch
+    at this surveyor's actual value, and a coloured bar whose width is |z|), plus
+    a composite band pill. The flagged surveyor reads RED on speed (curbstoned ~9-min
+    interviews) and uniformity (answers collapsed onto one roof type); honest surveyors
+    vary naturally and read green — so the warning signs surface from the data's shape,
+    no re-visit required, and the card says plainly that they trigger investigation
+    rather than settle it.
+  full_page: false
+  show: The Distributions screen — per-surveyor z-scores on dose yes-rate, interview
+    speed, and answer uniformity, the flagged surveyor red on speed + uniformity and
+    a red composite band, every other surveyor green — warning signs surfaced from
+    the data's shape with no re-visit, and the flagged work held for investigation
+    before it can count.

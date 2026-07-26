@@ -1,0 +1,32 @@
+base_url: https://labs.connect.dimagi.com
+prewarm: true
+scenes:
+- id: a-completed-audit-is-locked
+  url: /audit/4525/bulk/?opportunity_id=10000
+  show: The completed audit's review screen — the green completion banner states when
+    it was completed and that pass/fail is read-only, and now carries a Reopen Audit
+    button on its right edge.
+  impressive_because: The escape hatch is exactly where the lock is announced — the
+    banner that tells you it's read-only is the same place you unlock it
+  actions:
+  - kind: wait_for
+    target: Completed on
+  - kind: hold
+    seconds: 2.5
+- id: reopen-modify-resubmit
+  show: 'Clicking Reopen Audit returns the audit to in-progress: the completion banner
+    is gone and the pass/fail controls are live again, ready for Nadia to revise the
+    result and complete the review a second time.'
+  impressive_because: This finishes the return-to-a-saved-audit loop from the feedback
+    doc — reopen, modify, resubmit, without admin surgery on the session record
+  ai_quality: After the reload the green completed banner is absent and the review
+    controls (pass/fail, Complete Image Review button) render in their editable state
+  actions:
+  - kind: click
+    target: text:Reopen Audit
+    note: confirm dialog is auto-accepted; page reloads
+    must_succeed: true
+  - kind: wait_for
+    target: Complete Image Review
+  - kind: hold
+    seconds: 3

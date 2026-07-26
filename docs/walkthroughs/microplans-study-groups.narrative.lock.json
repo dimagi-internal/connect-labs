@@ -1,0 +1,162 @@
+{
+  "build_order": [
+    "the-goal-measure-the-program-s-real-effect",
+    "maya-starts-a-study-from-scratch",
+    "maya-opens-the-plan-editor-on-the-empty-study",
+    "maya-sees-the-programme-covered-all-of-attakar",
+    "maya-compares-the-surrounding-wards-to-find-a-match",
+    "maya-rejects-the-closest-match-and-adds-the-right-match",
+    "maya-generates-the-two-arm-plan-in-place",
+    "maya-completes-the-study"
+  ],
+  "fetched_at": "2026-07-26T20:11:02.724875+00:00",
+  "name": "microplans-study-groups",
+  "narrative": "Maya's goal is to measure differences in outcomes between her program's intervention areas and carefully matched non-intervention areas — a rigorous matched comparison, not a randomized trial. She wants to leverage the Connect network to carry it out, and the Connect platform to design it rigorously. And she wants this to be ongoing: continually monitoring the household-reported outcomes in her intervention areas against matched comparison areas. Maya starts a brand-new matched two-arm comparison study on her Kaura programme. In the plan editor she turns on the campaign's service-delivery data — the blue points are the campaign's individual service delivery locations (rooftops). The visits blanket Attakar — everywhere Connect logged delivery. She'll sample by ward. She tags Attakar as the intervention arm and runs Compare, and reads the Matched balance column — the predicted balance on the characteristics the match is built on, settlement density chief among them, with any remaining differences reported for adjustment at analysis. Sopp and Gura are the best-balanced matches, both scoring 0.02 — the aggregate standardized imbalance, where lower is closer. Zankan was the programme's own ward last cycle, so it's out; Gura shares more common support with Attakar, though as an adjacent ward it carries some spillover risk to weigh, so Maya makes it the comparison arm. She clicks Generate and the engine draws the sample in one pass, recording the seed, each site's selection probability, and survey weights so it is reproducible and auditable. The comparability check then reports the realized balance: settlement density, the axis the match balances and the one we can't fix later, comes back within tolerance and gates the verdict; PSU size and building footprint are covariates we flag to adjust for at analysis. She advances the plan to Approved — the Connect export carries no arm column, so surveyors stay blind, and the full sampling record travels with the study. It's ready for a survey firm.",
+  "personas": {
+    "maya": {
+      "color": "#7C3AED",
+      "intro": "Maya designs a controlled rooftop-survey impact study for the Kaura Vitamin-A programme and needs two comparable arms that field surveyors execute completely blind.",
+      "name": "Maya",
+      "role": "Program study planner"
+    }
+  },
+  "scenes": [
+    {
+      "id": "the-goal-measure-the-program-s-real-effect",
+      "narrative": "Maya's goal is to measure differences in outcomes between her program's intervention areas and carefully matched non-intervention areas — a rigorous matched comparison, not a randomized trial. She wants to leverage the Connect network to carry it out, and the Connect platform to design it rigorously. And she wants this to be ongoing: continually monitoring the household-reported outcomes in her intervention areas against matched comparison areas.",
+      "persona": "maya",
+      "provenance": "S0",
+      "title": "The goal — measure the program's real effect"
+    },
+    {
+      "features": [
+        {
+          "description": "'+ New study' creates an empty study (DEFINING, 0 plans) on program 10008 and routes to its manage page",
+          "id": "new-study-creates-an-empty-study-definin",
+          "verify": "Playwright: click '+ New study'; assert URL is /program/10008/group/<id>/manage/ and the page shows 'No plans in this group yet'"
+        }
+      ],
+      "id": "maya-starts-a-study-from-scratch",
+      "narrative": "Maya starts a brand-new matched two-arm comparison study on her Kaura programme.",
+      "persona": "maya",
+      "provenance": "S12",
+      "title": "Maya starts a study from scratch"
+    },
+    {
+      "features": [
+        {
+          "description": "“+ Add a plan in the editor” on a study opens the polished single-plan editor (review.html) scoped to that study via ?group=<id>",
+          "id": "editor-from-study",
+          "verify": "Playwright: from /group/<id>/manage/ click '+ Add a plan in the editor'; assert URL is /program/10008/new/?group=<id> and the 'Define boundaries' section renders open"
+        },
+        {
+          "description": "A plan created in the study-scoped editor is filed into the study automatically (group_id sent on create)",
+          "id": "editor-files-into-study",
+          "verify": "pytest: POST plan/create with group_id=<id> creates the plan and adds it to PlanGroupRecord.plan_ids"
+        }
+      ],
+      "id": "maya-opens-the-plan-editor-on-the-empty-study",
+      "narrative": "In the plan editor she turns on the campaign's service-delivery data — the blue points are the campaign's individual service delivery locations, rooftops.",
+      "persona": "maya",
+      "provenance": "S13",
+      "title": "Maya opens the plan editor on the empty study"
+    },
+    {
+      "features": [
+        {
+          "description": "The single-plan editor's map exposes a Service-delivery layer that renders a chosen opportunity's delivery visits",
+          "id": "service-delivery-layer-in-editor",
+          "verify": "Playwright: in /new/ open LAYERS, toggle 'Service delivery', pick the Kaura CHC opp, click 'Show service delivery points'; assert delivery points render on the map"
+        },
+        {
+          "description": "The Kaura CHC opp (10010, same programme) renders delivery visits that cover the whole Attakar ward",
+          "id": "service-delivery-ward-wide",
+          "verify": "pytest/HTTP: POST preview_service_delivery {opp_ids:[10010]} returns status ok with ~435 points whose bbox falls inside the Attakar polygon"
+        }
+      ],
+      "id": "maya-sees-the-programme-covered-all-of-attakar",
+      "narrative": "The visits blanket Attakar — everywhere Connect logged delivery. She'll sample by ward.",
+      "persona": "maya",
+      "provenance": "S13",
+      "title": "Maya sees the programme covered all of Attakar"
+    },
+    {
+      "features": [
+        {
+          "description": "In sampling mode, with an intervention ward selected, \"Compare surrounding boundaries\" ranks every same-level ward that borders it by the overlap of their per-building (k-NN) density distributions, streaming a best-match-first table below the map and colour-filling each candidate's boundary to match its row",
+          "id": "compare-surrounding-boundaries",
+          "verify": "Playwright: in /new/ sampling mode select Attakar then click .mp-ab-compare; assert a ranked table appears with an overlap percentage per neighbour and each candidate boundary is filled on the map in its row colour"
+        }
+      ],
+      "id": "maya-compares-the-surrounding-wards-to-find-a-match",
+      "narrative": "She tags Attakar as the intervention arm and runs Compare. Every neighbouring ward is ranked against it. The column that matters is Matched balance: the predicted balance on the characteristics the match is built on, settlement density chief among them. And Common support is how much of the settlement-density range the two wards share, because matching only draws from that shared range. So a ward that's only a partial overall match can still be closely balanced on the matched characteristics — with any remaining differences reported for adjustment at analysis.",
+      "persona": "maya",
+      "provenance": "S13",
+      "title": "Maya compares the surrounding wards to find a match"
+    },
+    {
+      "features": [
+        {
+          "description": "Each row in the surrounding-ward comparison has an \"Add boundary\" button that adds that ward to the plan as the control (comparison) arm, reflecting the live selection (it shows \"added\" only while the ward is actually in the plan)",
+          "id": "add-control-from-comparison",
+          "verify": "Playwright: click .mp-ab-addbnd for Gura in the comparison table; assert Gura appears in the left-rail selected list tagged comparison and its row flips to the \"added\" state"
+        },
+        {
+          "description": "Boundaries mode lets the planner hold multiple admin boundaries in ONE plan and tag each with its study arm via an Interv / Control pill in the left rail",
+          "id": "two-arm-boundaries-one-plan",
+          "verify": "Playwright: in /new/ with Attakar (intervention) and Gura (control) selected, assert both appear in the left-rail selected list each with an Interv/Control arm pill and #stat-areas-drawn reads 2"
+        },
+        {
+          "description": "Each selected boundary carries its own arm (intervention/comparison) set in the left rail; the arm flows onto that ward's work areas labs-side so future analysis can tell the arms apart, but is kept out of the FLW-facing case properties so the LLO/field never see it",
+          "id": "arm-tag-per-boundary",
+          "verify": "pytest: collectArmAreas tags Attakar=intervention, Gura=comparison on one plan; each work area stores its arm labs-side while case_properties (and the displayed CSV) carry no arm column"
+        }
+      ],
+      "id": "maya-rejects-the-closest-match-and-adds-the-right-match",
+      "narrative": "Sopp and Gura are the best-balanced matches — both scoring 0.02, the aggregate standardized imbalance across the matched characteristics, where lower is closer. Zankan was the programme's own ward last cycle, so it's out. Of the two, Gura shares more common support with Attakar — though as an adjacent ward it carries some spillover risk the design flags for Maya to weigh — so Maya makes it the comparison arm.",
+      "persona": "maya",
+      "provenance": "S13",
+      "title": "Maya rejects the closest match and adds the right match"
+    },
+    {
+      "features": [
+        {
+          "description": "'Generate plan' samples both arms and creates the single plan via POST /plan/create/ with group_id, hydrating the plan's review page in place (create-in-place, no reload)",
+          "id": "generate-plan-in-place",
+          "verify": "Playwright: click '#btn-generate-sample'; assert one plan is created with both arms, the URL becomes /plan/<id>/review/, work areas render, and the button flips to 'Regenerate plan'"
+        },
+        {
+          "description": "Both arms sample from one methodology — size-balance bands + a building-footprint-size (area_min_m2/area_max_m2) filter — applied in the same Generate",
+          "id": "sampling-methodology",
+          "verify": "pytest: the created plan's sampling_config carries size_balance_bands>=2 and area_min_m2/area_max_m2, and per-arm sampling_stats are stored for both arms on the one plan"
+        }
+      ],
+      "id": "maya-generates-the-two-arm-plan-in-place",
+      "narrative": "She sets the sampling methodology and clicks Generate — the engine draws the sample in one pass and records the draw: its random seed, each site's selection probability, and the survey weights, so the sample is reproducible and auditable. The map shows it first; each blue pin is a sampled settlement — a PSU, a primary sampling unit — inside its ward boundary. And within each settlement, the households are drawn at random from the building footprints — rooftops from Overture's global open-buildings dataset, so this works anywhere on Earth. Guardrailed: the first sample that meets the balance criteria wins, and every re-draw is logged. The comparability check then reports the realized balance — the actual post-draw differences, not the predicted 0.02: settlement density, the axis the match balances and the one we can't fix later, comes back within tolerance and gates the verdict; PSU size and building footprint are covariates we flag to adjust for at analysis.",
+      "persona": "maya",
+      "provenance": "S7",
+      "title": "Maya generates the two-arm plan in place"
+    },
+    {
+      "features": [
+        {
+          "description": "From the program workspace the planner advances the two-arm plan draft → in_review ('Submit for review') → approved ('Approve')",
+          "id": "plan-lifecycle-complete",
+          "verify": "pytest: program_plan_transition moves the plan draft -> in_review -> approved; the workspace reflects the approved state"
+        },
+        {
+          "description": "Each work area stores its study arm labs-side (WorkAreaPayload.arm) so future analysis can tell intervention from control; the arm is deliberately kept out of the FLW-facing case_properties and the displayed export, so the LLO/field never see it",
+          "id": "arm-carried-blind-to-field",
+          "verify": "pytest: each sampling WorkArea stores arm (intervention/comparison) labs-side; WorkAreaPayload.arm is NOT in case_properties and the Connect CSV headers carry no Arm column"
+        }
+      ],
+      "id": "maya-completes-the-study",
+      "narrative": "She advances the plan to Approved. Each area keeps its arm labs-side, but the Connect export carries no arm column — so surveyors stay blind. The full sampling record — seeds, selection probabilities, weights — travels with the study. It's ready for a survey firm.",
+      "persona": "maya",
+      "provenance": "S14",
+      "title": "Maya completes the study"
+    }
+  ],
+  "slug": "microplans-study-groups",
+  "version": 0
+}

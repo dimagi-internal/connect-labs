@@ -1,0 +1,144 @@
+{
+  "build_order": [],
+  "fetched_at": "2026-07-26T20:11:02.007378+00:00",
+  "name": "campaign-utility-tool",
+  "narrative": "Amara opens her campaign and the whole picture is already here — funding, enrolment, attendance, verification and payment status, in one read. She moves to release pay, and the tool blocks a worker whose ID check was rejected — the bad payment never leaves. And it's the whole nation: five thousand workers across all 37 states, paged through without a stutter. His KYC shows why — a duplicate national-ID flag — so she holds him instead of paying. Before releasing more funds she checks the microplans: planned budget and workforce against what's actually been spent. The worker she's been acting on is a real CommCare case on a real ward — name, role, NIN, location. Not a mock. In System Administration the audit log holds every payment hold and decision she just made, against her name. She ends on the reporting board — per-state coverage across all 37 states — and exports the week's numbers for the donor. And the coverage map: every state shaded by reach, every worker's location on top — where the country still needs her.",
+  "personas": {
+    "amara": {
+      "color": "#3843D0",
+      "intro": "Amara manages Nigeria's national measles–rubella vaccination campaign and needs to see its real-time state and act on payments, verification, planning and coverage from one place.",
+      "name": "Amara",
+      "role": "National Campaign Manager"
+    }
+  },
+  "scenes": [
+    {
+      "features": [
+        {
+          "description": "Overview renders server-side KPIs (funding, progress, workforce, KYC/payment donuts) over all workers",
+          "id": "overview-realtime-kpis",
+          "verify": "Playwright: load /campaign/?campaign=MR-NAT-2026; assert the Overview KPI cards and the KYC/payment donuts render with non-zero values."
+        }
+      ],
+      "id": "the-campaign-at-a-glance",
+      "narrative": "Amara opens her campaign and the whole picture is already here — funding, enrolment, attendance, verification and payment status, in one read.",
+      "persona": "amara",
+      "provenance": "S1",
+      "title": "The campaign at a glance"
+    },
+    {
+      "features": [
+        {
+          "description": "Payment approval is refused for workers with rejected KYC or fraud flags (server-enforced)",
+          "id": "payment-fraud-guard",
+          "verify": "Playwright: in Workers -> Payments, a worker with rejected KYC shows a non-approvable/Rejected payment status."
+        }
+      ],
+      "id": "the-tool-stops-an-ineligible-payment",
+      "narrative": "She moves to release pay, and the tool blocks a worker whose ID check was rejected — the bad payment never leaves.",
+      "persona": "amara",
+      "provenance": "S2",
+      "title": "The tool stops an ineligible payment"
+    },
+    {
+      "features": [
+        {
+          "description": "The worker roster is paginated server-side so a national-scale campaign stays usable",
+          "id": "paginated-national-roster",
+          "verify": "Playwright: in Workers -> Worker Payments, assert a national worker count, a 37-state filter, and pagination controls are shown."
+        }
+      ],
+      "id": "the-whole-country-and-it-stays-fast",
+      "narrative": "And it's the whole nation: five thousand workers across all 37 states, paged through without a stutter.",
+      "persona": "amara",
+      "provenance": "S8",
+      "title": "The whole country, and it stays fast"
+    },
+    {
+      "features": [
+        {
+          "description": "KYC view surfaces status, documents, and shared-identifier duplicate detection",
+          "id": "kyc-duplicate-detection",
+          "verify": "Playwright: in Workers -> Worker KYC, assert verification status, documents, and duplicate/shared-identifier flags are shown."
+        }
+      ],
+      "id": "verification-with-the-fraud-signal-attached",
+      "narrative": "His KYC shows why — a duplicate national-ID flag — so she holds him instead of paying.",
+      "persona": "amara",
+      "provenance": "S3",
+      "title": "Verification, with the fraud signal attached"
+    },
+    {
+      "features": [
+        {
+          "description": "Per-area microplans track planned vs actual workforce, budget vs spent, doses and coverage targets",
+          "id": "microplan-plan-vs-actual",
+          "verify": "Playwright: in Activity -> Microplanning & Budget, assert a per-area row shows planned vs actual workforce and budget vs spent."
+        }
+      ],
+      "id": "planned-versus-actual-per-area",
+      "narrative": "Before releasing more funds she checks the microplans: planned budget and workforce against what's actually been spent.",
+      "persona": "amara",
+      "provenance": "S4",
+      "title": "Planned versus actual, per area"
+    },
+    {
+      "features": [
+        {
+          "description": "Workers are CommCare cases on real AdminBoundary geography, read through the Case API",
+          "id": "worker-is-commcare-case",
+          "verify": "Playwright: in Workers -> Worker Profiles, assert CommCare-case fields (name, role, NIN) and a real ward/LGA/state placement are shown."
+        }
+      ],
+      "id": "a-worker-is-a-real-commcare-case",
+      "narrative": "The worker she's been acting on is a real CommCare case on a real ward — name, role, NIN, location. Not a mock.",
+      "persona": "amara",
+      "provenance": "S6",
+      "title": "A worker is a real CommCare case"
+    },
+    {
+      "features": [
+        {
+          "description": "Privileged actions are recorded to an audit log; access is role-controlled (RBAC)",
+          "id": "audit-log-rbac",
+          "verify": "Playwright: in System Administration -> User Management, assert the audit log lists actions with actor, action, module and timestamp."
+        }
+      ],
+      "id": "every-decision-on-the-record",
+      "narrative": "In System Administration the audit log holds every payment hold and decision she just made, against her name.",
+      "persona": "amara",
+      "provenance": "S7",
+      "title": "Every decision, on the record"
+    },
+    {
+      "features": [
+        {
+          "description": "Reporting produces real CSV exports and a custom-report builder",
+          "id": "reporting-csv-export",
+          "verify": "Playwright: in Reporting click 'Export data'; assert a CSV download is triggered."
+        }
+      ],
+      "id": "the-donor-s-numbers-exported",
+      "narrative": "She ends on the reporting board — per-state coverage across all 37 states — and exports the week's numbers for the donor.",
+      "persona": "amara",
+      "provenance": "S5",
+      "title": "The donor's numbers, exported"
+    },
+    {
+      "features": [
+        {
+          "description": "Coverage map renders a Nigeria choropleth (shaded by worker count) plus worker GPS points",
+          "id": "coverage-map",
+          "verify": "Playwright: in Reporting click 'View map'; assert a Mapbox canvas paints with shaded states and worker points."
+        }
+      ],
+      "id": "coverage-read-off-the-map",
+      "narrative": "And the coverage map: every state shaded by reach, every worker's location on top — where the country still needs her.",
+      "persona": "amara",
+      "provenance": "S5",
+      "title": "Coverage, read off the map"
+    }
+  ],
+  "slug": "campaign-utility-tool",
+  "version": 0
+}

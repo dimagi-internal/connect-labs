@@ -1,0 +1,226 @@
+{
+  "build_order": [],
+  "fetched_at": "2026-07-26T20:11:02.853123+00:00",
+  "name": "nutrition-demo",
+  "narrative": "Priya runs a child-nutrition program funded to deliver RUTF and screen for malnutrition through three network managers — Amara in the Northern Cluster, Bakary in Central, and Chidi in the Eastern. Monday morning she opens the Program Admin Report and reads all three managers' last four weekly reviews as one grid: Northern is meeting the SOP across the board, while Central and Eastern both read below it. She clicks a resolved week in Central's row and an inline panel names the worker who was flagged and links the audit and coaching task that dealt with it. She opens the run behind the cell and reads the same per-worker review Bakary worked from, its buttons now reporting what was done, then opens the flagged worker's audit and sees the child's MUAC photos the auditor passed with her own eyes. She reads the closed coaching conversation and watches that worker's screening numbers recover week over week. Then she turns to the harder cells — Central's still-open investigation, where the coaching is paused mid-exchange, and Eastern's case where the AI image review caught misleading MUAC photos and the worker was suspended. She lands back on the aggregate column and decides for herself which network manager needs her this week. And to see what all that oversight is ultimately for, she opens one flagged child's follow-up timeline and watches the child's MUAC climb visit by visit — from a severe-acute red reading up through yellow into green, recovered — the program-to-child line closing on a child getting better.\n",
+  "personas": {
+    "priya": {
+      "color": "#4f46e5",
+      "intro": "Priya runs a child-nutrition program through three network managers and their frontline teams across the Northern, Central, and Eastern clusters. She needs to know — without reading a dozen separate weekly reviews — which network manager is on top of the MUAC screening SOP and which flagged workers still need attention.\n",
+      "name": "Priya Sharma",
+      "org": "Continuum Nutrition",
+      "role": "Program Manager, Continuum Nutrition"
+    }
+  },
+  "scenes": [
+    {
+      "id": "the-goal-one-manager-three-programs-every-paid-visit-verified",
+      "narrative": "Running a wasting program at scale means proving every paid service actually happened. Connect lets one manager oversee three programs from a single screen — with every screening photo checked by AI on the way in, so a person only judges the exceptions. It's the same verification engine we ran for KMC in Nigeria, now on child wasting.\n",
+      "persona": "priya",
+      "provenance": "S1",
+      "title": "The goal — one manager, three programs, every paid visit verified"
+    },
+    {
+      "features": [
+        {
+          "description": "Grid layout of a label column plus one cell per expected week per watched opportunity and a pinned aggregate column, computed from the program-owned PAR run's rollup snapshot (program_id 10110, three opportunities).\n",
+          "id": "par-grid",
+          "verify": "Playwright: load ${par_url}, assert a 'Window aggregate' header and one row per configured cluster label (Northern / Central / Eastern).\n"
+        },
+        {
+          "description": "Each ran week's card derives a completion pill — 'Clean run', 'All resolved', or 'N open' — from its audits and tasks, so resolved and unresolved weeks are visually distinct at a glance.\n",
+          "id": "cell-status-pills",
+          "verify": "Playwright: assert at least one 'All resolved' pill and one open-count pill render for the seeded three-cluster config.\n"
+        }
+      ],
+      "id": "priya-sees-the-whole-program-at-a-glance",
+      "narrative": "Three network managers, four weeks each. Priya checks the same three things: were the photos verified, is the flag gating payment, and is each manager running the SOP.\n",
+      "persona": "priya",
+      "provenance": "S1",
+      "title": "Priya sees the whole program at a glance"
+    },
+    {
+      "features": [
+        {
+          "description": "A cell click sets the selected cell and renders a detail table (worker / flags / audits / tasks) under the owning cluster row, flagged workers sorted first, without leaving the page.\n",
+          "id": "inline-detail-panel",
+          "verify": "Playwright: click a ran week cell in Central's row, assert a 'Run detail' header appears below the row and the panel names the flagged worker.\n"
+        },
+        {
+          "description": "Each flagged worker row in the panel links its audit ('Audit #<id>') and task ('Task #<id>') with status and outcome pills.\n",
+          "id": "panel-record-links",
+          "verify": "Playwright: in the open panel assert links matching 'Audit #' and 'Task #' are present for the flagged worker.\n"
+        }
+      ],
+      "id": "priya-clicks-into-a-resolved-week-in-central-s-row",
+      "narrative": "She opens a resolved week in Central. The panel names the flagged worker and links straight to the audit that settled it.\n",
+      "persona": "priya",
+      "provenance": "S2",
+      "title": "Priya clicks into a resolved week in Central's row"
+    },
+    {
+      "features": [
+        {
+          "description": "The detail panel header renders an 'Open the run' link to the underlying weekly-review run for that cluster and week.\n",
+          "id": "open-the-run-link",
+          "verify": "Playwright: click 'Open the run', assert the weekly review page renders the 'FLW-Level Analysis' header.\n"
+        },
+        {
+          "description": "A worker row's action cell flips from Create Audit / Create Task menus to View Audit / View Task buttons once those records exist for the row.\n",
+          "id": "state-aware-actions",
+          "verify": "Playwright: assert the flagged row contains buttons 'View Audit' and 'View Task' on the drilled run.\n"
+        }
+      ],
+      "id": "priya-opens-the-run-behind-the-cell",
+      "narrative": "Behind the cell is Bakary's own weekly review — the per-worker table, the MUAC distribution, the SAM and MAM rates.\n",
+      "persona": "priya",
+      "provenance": "S2",
+      "title": "Priya opens the run behind the cell"
+    },
+    {
+      "features": [
+        {
+          "description": "The audit page renders each reviewed child's MUAC assessment photo with its decision badge and the session's assessment-count header.\n",
+          "id": "audit-drill-photos",
+          "verify": "Playwright: assert text matching 'assessment' count header and at least three decoded img[src*='/audit/image/'] thumbnails.\n"
+        }
+      ],
+      "id": "priya-checks-the-child-s-muac-photos-the-auditor-saw",
+      "narrative": "She opens the audit and sees the child's MUAC photos herself — each one with the auditor's pass-or-fail decision, on a single page.\n",
+      "persona": "priya",
+      "provenance": "S4",
+      "title": "Priya checks the child's MUAC photos the auditor saw"
+    },
+    {
+      "features": [
+        {
+          "description": "The task detail page renders the persisted AI coaching conversation as a Coaching Conversation panel, including after the task is closed.\n",
+          "id": "task-transcript-panel",
+          "verify": "Playwright: load ${task_good_url}, assert 'Closed' status text and a 'Coaching Conversation' heading with at least four message bubbles.\n"
+        }
+      ],
+      "id": "priya-reads-the-coaching-that-turned-the-numbers-around",
+      "narrative": "She reads the closed coaching conversation, and watches that worker's screening numbers recover week over week after the manager stepped in.\n",
+      "persona": "priya",
+      "provenance": "S4",
+      "title": "Priya reads the coaching that turned the numbers around"
+    },
+    {
+      "features": [
+        {
+          "description": "Cells with open audits or tasks render an open-count pill with amber styling so unresolved weeks are visually distinct from resolved ones.\n",
+          "id": "open-work-cell",
+          "verify": "Playwright: assert the seeded incomplete week's cell in Central's row shows a pill matching 'open' with the amber background.\n"
+        },
+        {
+          "description": "The detail panel rows carry per-record status pills (in review, investigating, closed) so open and closed cases are distinguishable per worker.\n",
+          "id": "mixed-fate-panel",
+          "verify": "Playwright: in the open panel assert an in-review or investigating record pill is present for the flagged worker.\n"
+        }
+      ],
+      "id": "now-the-harder-case-central-s-still-open-week",
+      "narrative": "Then the harder cell — a worker still under investigation, with the open audit and task named.\n",
+      "persona": "priya",
+      "provenance": "S3",
+      "title": "Now the harder case — Central's still-open week"
+    },
+    {
+      "features": [
+        {
+          "description": "The audit page for a partially reviewed session renders decided and undecided photo cards and the 'Save Progress' action label.\n",
+          "id": "in-review-audit-state",
+          "verify": "Playwright: load ${audit_incomplete_url}, assert 'Save Progress' text present and at least two decoded audit images.\n"
+        }
+      ],
+      "id": "priya-inspects-the-audit-still-in-review",
+      "narrative": "The in-review audit: photo cards in mixed states, still waiting on a decision for every child.\n",
+      "persona": "priya",
+      "provenance": "S3",
+      "title": "Priya inspects the audit still in review"
+    },
+    {
+      "features": [
+        {
+          "description": "An open (investigating) task renders its partial AI conversation and keeps the Close Task action available.\n",
+          "id": "open-task-transcript",
+          "verify": "Playwright: load ${task_incomplete_url}, assert a 'Close Task' button present and a 'Coaching Conversation' heading with a partial exchange.\n"
+        }
+      ],
+      "id": "priya-checks-on-the-coaching-mid-conversation",
+      "narrative": "The coaching task is still open, its conversation in progress — an unresolved case, readable at a glance.\n",
+      "persona": "priya",
+      "provenance": "S3",
+      "title": "Priya checks on the coaching mid-conversation"
+    },
+    {
+      "id": "the-ai-first-image-census-every-photo-screened-a-person-handles-the-exceptions",
+      "narrative": "And this is what makes it affordable. Every image is AI-screened on the way in — a hundred here: ninety-four cleared, six flagged for a person. Nobody eyeballs them all.\n",
+      "persona": "priya",
+      "provenance": "S3",
+      "title": "The AI-first image census — every photo screened, a person handles the exceptions"
+    },
+    {
+      "features": [
+        {
+          "description": "The detail panel renders a suspended/closed-fraud outcome pill for a worker whose audited MUAC photos were flagged by the image review, distinguishing it from resolved and investigating pills.\n",
+          "id": "suspension-fate-panel",
+          "verify": "Playwright: click Eastern's flagged cell, assert the panel names the flagged worker with a closed/suspended outcome pill.\n"
+        }
+      ],
+      "id": "the-third-manager-an-ai-caught-misleading-photo-case",
+      "narrative": "Which is how this surfaced. Eastern's flagged cell is a worker the AI caught submitting misleading photos — and the outcome was suspension.\n",
+      "persona": "priya",
+      "provenance": "S3",
+      "title": "The third manager — an AI-caught misleading-photo case"
+    },
+    {
+      "features": [
+        {
+          "description": "The audit page renders each photo's AI-review verdict from the session's ai_result / ai_notes / ai_confidence — a \"Hyperzoomed\" badge on the AI-flagged photos — because the session carries has_ai_reviewer.\n",
+          "id": "ai-review-verdict-on-audit",
+          "verify": "Playwright: load ${images_audit_url}, assert a \"Hyperzoomed\" AI label is present alongside decoded audit images and the audit's Fail verdict.\n"
+        }
+      ],
+      "id": "priya-opens-the-audit-and-sees-what-the-ai-flagged",
+      "narrative": "She opens that audit and sees what the AI flagged — a Hyperzoomed badge on every photo where the child's arm isn't visible.\n",
+      "persona": "priya",
+      "provenance": "S3",
+      "title": "Priya opens the audit and sees what the AI flagged"
+    },
+    {
+      "features": [
+        {
+          "description": "Each aggregate card derives an SOP MET / BELOW verdict from runs completed versus expected weeks and the flag/outcome counts, per network manager.\n",
+          "id": "aggregate-sop-verdict",
+          "verify": "Playwright: assert one aggregate card shows 'SOP MET' and at least one other shows 'BELOW' for the seeded three-cluster config.\n"
+        }
+      ],
+      "id": "priya-returns-to-the-aggregate-and-makes-her-call",
+      "narrative": "Back on the aggregate: Northern meeting the SOP, Central and Eastern below — the contrast that decides her week.\n",
+      "persona": "priya",
+      "provenance": "S1",
+      "title": "Priya returns to the aggregate and makes her call"
+    },
+    {
+      "features": [
+        {
+          "description": "Every follow-up visit shows its own MUAC screening photo in the left rail, colour-banded by that visit's reading and expandable to full size, beside a chart plotting the same visits against shaded SAM (<11.5), MAM (11.5-12.5) and recovered (>=12.5) bands — so the evidence and the trend read together in one frame.\n",
+          "id": "child-muac-recovery-timeline",
+          "verify": "Playwright: load the URL, assert 8 rail images matching img[alt*='MUAC photo'] each loaded (naturalWidth > 0), assert the 'MUAC progression' heading and a rendered <canvas>, then click the first rail image and assert the expanded overlay appears.\n"
+        },
+        {
+          "description": "The case rail states first MUAC, current MUAC and the net gain, and marks the child Recovered once the latest MUAC reaches 12.5cm — separating children who have climbed out of severe acute malnutrition from those still in treatment.\n",
+          "id": "recovery-status",
+          "verify": "Playwright: assert the case rail shows 'MUAC gain' with a positive centimetre value and a 'Recovered' status pill.\n"
+        }
+      ],
+      "id": "priya-follows-one-child-s-recovery",
+      "narrative": "And what it's all for: one child. Every follow-up visit's screening photo down the left, the MUAC climbing beside it — out of red, through yellow, into green. Recovered. The same view catches a child starting to relapse, before they fall back.\n",
+      "persona": "priya",
+      "provenance": "S4",
+      "title": "Priya follows one child's recovery"
+    }
+  ],
+  "slug": "nutrition-demo",
+  "version": 0
+}

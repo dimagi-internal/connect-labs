@@ -1,0 +1,44 @@
+base_url: http://localhost:8000
+auth:
+  type: command
+  check: cd /Users/jjackson/emdash-projects/connect-labs && source .venv/bin/activate
+    && python manage.py get_cli_token --list-profiles 2>&1 | grep -E 'ace.*no'
+  login: cd /Users/jjackson/emdash-projects/connect-labs && source .venv/bin/activate
+    && python manage.py get_cli_token --profile ace
+  inject_url: /labs/test-auth/?profile=ace
+scenes:
+- id: browse-public-solicitations
+  show: Public solicitation listing page with active solicitations visible
+  impressive_because: Clean card grid with type badges, deadlines, and scale — easy
+    to scan for relevant opportunities
+- id: read-solicitation-details
+  show: Public detail page for an active solicitation with description, questions,
+    and evaluation criteria
+  impressive_because: Criteria shown upfront so applicants know exactly how they'll
+    be scored before writing a word
+- id: manager-dashboard
+  show: Manage solicitations list showing solicitations with response counts
+  impressive_because: At-a-glance view of all solicitations with status, deadline,
+    and how many responses each has
+- id: create-a-solicitation
+  show: Solicitation create form with title, description, questions, and evaluation
+    criteria filled in
+  impressive_because: Dynamic question builder and AI-generated evaluation criteria
+    make RFP creation fast
+- id: submit-a-response
+  show: Response form with questions and evaluation criteria displayed inline
+  impressive_because: Criteria shown alongside each question so respondents know what
+    reviewers are looking for
+- id: review-all-responses
+  show: Responses list for a solicitation showing submitted responses with review
+    status
+  impressive_because: All responses in one view with latest review scores — easy to
+    compare applicants
+- id: score-a-response
+  show: Review form with Q&A pairs and per-criterion scoring fields
+  impressive_because: Structured scoring against defined criteria eliminates subjective
+    bias
+- id: award-a-grantee
+  show: Award page for a top-scoring response
+  impressive_because: One click from review to award — budget allocated and org assigned
+    automatically

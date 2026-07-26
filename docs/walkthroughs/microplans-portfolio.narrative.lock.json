@@ -1,0 +1,38 @@
+{
+  "build_order": [],
+  "fetched_at": "2026-07-26T20:11:02.494268+00:00",
+  "name": "Microplans Program Portfolio",
+  "narrative": "Plan microplans before any opportunity exists — a program owns a portfolio of candidate plans, scored and shareable with an LLO",
+  "personas": {
+    "maya": {
+      "color": "#059669",
+      "intro": "Maya designs microplans for a program months before any Connect opportunity is provisioned. She manages a portfolio of candidate regions, tunes each plan with the partner, and decides which to offer.",
+      "name": "Maya Okonkwo",
+      "role": "Senior Program Manager, Dimagi"
+    }
+  },
+  "scenes": [
+    {
+      "id": "program-portfolio",
+      "persona": "maya",
+      "title": "Program portfolio"
+    },
+    {
+      "id": "review-and-tune-a-plan",
+      "persona": "maya",
+      "title": "Review and tune a plan"
+    },
+    {
+      "id": "compare-candidate-plans",
+      "persona": "maya",
+      "title": "Compare candidate plans"
+    },
+    {
+      "id": "share-a-proposal-with-the-llo",
+      "persona": "maya",
+      "title": "Share a proposal with the LLO"
+    }
+  ],
+  "slug": "microplans-portfolio",
+  "version": 0
+}

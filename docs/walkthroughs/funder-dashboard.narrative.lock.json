@@ -1,0 +1,58 @@
+{
+  "build_order": [],
+  "fetched_at": "2026-07-26T20:11:02.267079+00:00",
+  "name": "Funder Dashboard Walkthrough",
+  "narrative": "Funders manage their full grantee portfolio — KPIs, delivery pace, maps, and AI-generated reports",
+  "personas": {
+    "sarah": {
+      "color": "#2563eb",
+      "intro": "Sarah oversees multiple funder relationships and needs real-time visibility into delivery across every grantee.",
+      "name": "Sarah Chen",
+      "role": "Senior Program Manager, Dimagi"
+    }
+  },
+  "scenes": [
+    {
+      "id": "portfolio-dashboard",
+      "persona": "sarah",
+      "title": "Portfolio dashboard"
+    },
+    {
+      "id": "fund-detail-kpis",
+      "persona": "sarah",
+      "title": "Fund detail — KPIs"
+    },
+    {
+      "id": "performance-table",
+      "persona": "sarah",
+      "title": "Performance table"
+    },
+    {
+      "id": "activity-payments-charts",
+      "persona": "sarah",
+      "title": "Activity + Payments charts"
+    },
+    {
+      "id": "delivery-map",
+      "persona": "sarah",
+      "title": "Delivery map"
+    },
+    {
+      "id": "delivery-pace-forecast",
+      "persona": "sarah",
+      "title": "Delivery pace forecast"
+    },
+    {
+      "id": "ai-impact-report",
+      "persona": "sarah",
+      "title": "AI impact report"
+    },
+    {
+      "id": "export-pdf",
+      "persona": "sarah",
+      "title": "Export PDF"
+    }
+  ],
+  "slug": "funder-dashboard",
+  "version": 0
+}

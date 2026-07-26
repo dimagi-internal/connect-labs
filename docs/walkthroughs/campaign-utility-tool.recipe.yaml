@@ -1,0 +1,182 @@
+auth:
+  type: session
+base_url: https://labs.connect.dimagi.com
+narrative_locked: true
+narrative_locked_at: '2026-06-21T20:12:06.616066+00:00'
+tagline: Run a national vaccination campaign from one command center
+scenes:
+- id: the-campaign-at-a-glance
+  actions:
+  - kind: wait_for
+    must_succeed: true
+    target: Overview
+  - kind: hold
+    seconds: 4
+  concept_claim: 'The Overview is a real-time command center: server-computed KPIs
+    over every worker (funding, enrolment/attendance/verification/payment progress,
+    KYC + payment donuts).'
+  design_intent: Land on a dense-but-legible dashboard; the numbers are real aggregates
+    over the national roster, conveying "the whole campaign, live, on one screen".
+  show: The national campaign Overview with its KPI cards, progress, and KYC/payment
+    donuts loaded
+  url: /campaign/?campaign=MR-NAT-2026
+- id: the-tool-stops-an-ineligible-payment
+  actions:
+  - kind: click
+    must_succeed: true
+    target: Workers
+  - kind: wait_for
+    target: Worker Payments
+  - kind: click
+    target: Worker Payments
+  - kind: hold
+    seconds: 4
+  concept_claim: Approving a worker's payment is blocked server-side when the worker
+    has rejected KYC or open fraud flags.
+  design_intent: Show the payments queue with its rejected/blocked rows and the fraud
+    filter — the guard couples KYC status to payability.
+  full_page: false
+  show: Amara opens Workers → Worker Payments where flagged/rejected-KYC workers cannot
+    be approved
+- id: the-whole-country-and-it-stays-fast
+  actions:
+  - kind: scroll_to
+    target: Next
+  - kind: click
+    target: Next
+  - kind: hold
+    seconds: 3
+  concept_claim: The tool holds a national-scale campaign (thousands of workers across
+    all 37 states) and stays responsive via a paginated worker list.
+  design_intent: Show the worker roster's scale — the worker count, the 37-state filter,
+    and the pager — proving the single pane of glass holds the real campaign.
+  full_page: false
+  show: Amara pages through the national worker roster - 5,000 workers across 37 states
+    - on the Payments view
+- id: verification-with-the-fraud-signal-attached
+  actions:
+  - kind: click
+    must_succeed: true
+    target: Workers
+  - kind: wait_for
+    must_succeed: true
+    target: Worker KYC
+  - kind: click
+    target: Worker KYC
+  - kind: hold
+    seconds: 4
+  concept_claim: KYC review shows verification status, submitted documents, and shared-identifier
+    duplicate detection in one view.
+  design_intent: Open the Worker KYC sub-tab; the verification status, documents,
+    and the duplicate/shared-ID flags are visible together.
+  full_page: false
+  show: Amara opens Workers → Worker KYC and reviews verification, documents, and
+    duplicate flags
+- id: planned-versus-actual-per-area
+  actions:
+  - kind: click
+    must_succeed: true
+    target: Activity
+  - kind: wait_for
+    must_succeed: true
+    target: Microplanning & Budget
+  - kind: click
+    target: Microplanning & Budget
+  - kind: hold
+    seconds: 4
+  concept_claim: Microplanning & Budget shows per-area planned-vs-actual workforce,
+    budget vs spent, doses and coverage targets.
+  design_intent: Open the Activity → Microplanning & Budget sub-tab with its per-area
+    plan/actual rows, so the steer-the-campaign decision is grounded in numbers.
+  full_page: false
+  show: Amara opens Activity → Microplanning & Budget and reads planned-vs-actual
+    workforce and budget
+- id: a-worker-is-a-real-commcare-case
+  actions:
+  - kind: click
+    must_succeed: true
+    target: Workers
+  - kind: wait_for
+    must_succeed: true
+    target: Worker Profiles
+  - kind: click
+    target: Worker Profiles
+  - kind: hold
+    seconds: 4
+  concept_claim: Each worker is a real CommCare case (read via the Case API) carrying
+    its full Worker + KYC field set, placed on real Nigeria geography.
+  design_intent: Open the Worker Profiles sub-tab showing the case-shaped fields +
+    the real ward/LGA/state, conveying the demo == the production read.
+  show: Amara opens Workers → Worker Profiles showing the real CommCare-case fields
+    and Nigeria placement
+- id: every-decision-on-the-record
+  actions:
+  - kind: click
+    must_succeed: true
+    target: System Administration
+  - kind: wait_for
+    must_succeed: true
+    target: User Management
+  - kind: click
+    target: User Management
+  - kind: wait_for
+    must_succeed: true
+    target: Activity log
+  - kind: click
+    target: Activity log
+  - kind: scroll_to
+    target: Activity & audit log
+  - kind: hold
+    seconds: 3
+  concept_claim: Every privileged action (payment, KYC, user change) is written to
+    an audit log under role-controlled access.
+  design_intent: Open System Administration → User Management and scroll to the Activity
+    & audit log, conveying the tool is an accountable admin surface, not a dashboard.
+  full_page: false
+  show: Amara opens System Administration → User Management and reviews the Activity
+    & audit log
+- id: the-donor-s-numbers-exported
+  actions:
+  - kind: click
+    must_succeed: true
+    target: Reporting & Monitoring
+  - kind: wait_for
+    must_succeed: true
+    target: Export data
+  - kind: click
+    target: Export data
+  - kind: scroll_to
+    target: Geographic coverage
+  - kind: hold
+    seconds: 3
+  concept_claim: Reporting exports real CSV reports (and a custom-report builder)
+    for donors.
+  design_intent: Open Reporting and trigger the export — the report is a real download,
+    the funder-facing payoff.
+  full_page: false
+  show: Amara reviews per-state coverage on the Reporting board and exports a CSV
+    report
+- id: coverage-read-off-the-map
+  actions:
+  - kind: click
+    must_succeed: true
+    target: Reporting & Monitoring
+  - kind: wait_for
+    must_succeed: true
+    target: View map
+  - kind: click
+    target: View map
+  - kind: wait_for
+    must_succeed: true
+    seconds: 20
+    target: css:[data-testid="coverage-map-svg"]
+  - kind: hold
+    seconds: 3
+  concept_claim: 'Reporting includes a geographic coverage map: a Nigeria choropleth
+    shaded by reach with worker GPS points.'
+  design_intent: Open the coverage map; the shaded states + worker points answer 'are
+    we reaching everyone' at a glance. Give the map time to paint.
+  full_page: false
+  show: Amara opens the geographic coverage map of Nigeria (choropleth shaded by reach
+    + worker GPS points)
+  url: /campaign/?campaign=MR-NAT-2026

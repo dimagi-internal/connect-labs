@@ -1,0 +1,279 @@
+{
+  "build_order": [],
+  "fetched_at": "2026-07-26T20:11:03.005504+00:00",
+  "name": "program-admin-report",
+  "narrative": "Amani runs the Northern Cluster's frontline team, and Monday morning he opens this week's nutrition review to find the table has already flagged the one worker whose MUAC numbers look too clean to be true. Amani sends that worker's last seven days of photos to audit straight from the flagged row. Amani works through the audit photo by photo, passing each one and completing the image review. Back in the review, Amani turns the flag into a coaching task built from the exact rule the worker tripped. Amani hands the coaching to an AI assistant, tweaking its instructions before sending it off, and watches the coaching conversation open. Days later Priya, who administers the whole program, opens the Program Admin Report and reads both clusters' four weeks in one grid of cells. Priya clicks a week where everything got resolved and an inline panel names who was flagged and links the audit and task that dealt with it. Priya opens the run behind the cell and reads the same per-worker table Amani worked from, its action buttons now reporting what was done. Priya opens the audit to see the photos the auditor passed with her own eyes. Priya opens the closed task and reads the full coaching conversation that settled it. Then Priya turns to the harder cell — the amber week where work is still open — and the panel shows her exactly which workers are still being investigated. Priya opens the in-review audit and sees how far the auditor has gotten. Priya opens the still-open task and reads the coaching conversation paused mid-exchange. Priya lands back on the aggregate column and decides for herself which network manager needs her this week.",
+  "personas": {
+    "amani": {
+      "color": "#0e9f6e",
+      "intro": "Amani manages ten frontline workers in the Northern Cluster and runs the weekly nutrition review SOP: check the numbers, audit anyone the data flags, and coach them back on track.",
+      "name": "Amani Okafor",
+      "role": "Network Manager, Northern Cluster"
+    },
+    "priya": {
+      "color": "#4f46e5",
+      "intro": "Priya runs a child-nutrition program through two network managers and ~20 frontline workers. She needs to know — without reading eight separate weekly reviews — which network manager is on top of things and which workers need attention.",
+      "name": "Priya Sharma",
+      "role": "Program Admin, Continuum Health"
+    }
+  },
+  "scenes": [
+    {
+      "features": [
+        {
+          "description": "chc_nutrition render code calls view.ensureAutoFlags on mount, POSTs computed flags to /flags/, and merges created flags into local state so pills render on first mount without a reload",
+          "id": "auto-flags-on-mount",
+          "verify": "Playwright: load ${wk4_url} on a fresh generation, assert a flag-label pill (text matching 'rate <' or 'Gender split') appears within 45s with no clicks"
+        },
+        {
+          "description": "Flag catalog evaluates per-FLW pipeline aggregates (SAM rate < 1%, MAM rate < 3%, gender split outside 40-60%) and emits one flag record per tripped rule",
+          "id": "flag-catalog-rules",
+          "verify": "pytest connect_labs/custom_analysis: flagged MUAC archetype distributions trip at least one catalog rule (test_flagged_muac_archetypes_actually_trip_a_flag)"
+        }
+      ],
+      "id": "amani-opens-the-week-s-review-the-flags-surface-themselves",
+      "narrative": "Amani opens this week's in-progress nutrition review and, while he reads the per-worker table, the review computes its own quality checks and raises a flag pill on the one worker whose screening numbers tripped a rule — before Amani has clicked anything.",
+      "persona": "amani",
+      "provenance": "S3",
+      "title": "Amani opens the week's review — the flags surface themselves"
+    },
+    {
+      "features": [
+        {
+          "description": "Each FLW row's Actions cell renders a Create Audit MenuButton with 'New Audit' and 'Audit Last 7 days' items; menu opens above the trigger when near the viewport bottom",
+          "id": "row-scoped-audit-menu",
+          "verify": "Playwright: click button:has-text('Create Audit') in the flagged row, assert a menu item 'Audit Last 7 days' is visible in div.absolute.z-20"
+        },
+        {
+          "description": "'Audit Last 7 days' creates an audit over the worker's last 7 days of visits and redirects to the audit page",
+          "id": "audit-last-7-days",
+          "verify": "Playwright: after the menu click, assert navigation to a /audit/ URL whose page shows the 'Total Assessments' header"
+        }
+      ],
+      "id": "amani-sends-the-flagged-worker-s-photos-to-audit",
+      "narrative": "Amani doesn't argue with the flag — he checks the evidence. From the flagged worker's row he opens the Create Audit menu and picks \"Audit Last 7 days\", and the system assembles that worker's recent assessment photos into a review session and takes him there.",
+      "persona": "amani",
+      "provenance": "S3",
+      "title": "Amani sends the flagged worker's photos to audit"
+    },
+    {
+      "features": [
+        {
+          "description": "Each .assessment-widget renders the photo with Pass/Fail buttons and a per-photo decision badge",
+          "id": "per-photo-pass-fail",
+          "verify": "Playwright: click Pass on each .assessment-widget in DOM order, assert each widget shows the passed badge (.bg-green-600)"
+        },
+        {
+          "description": "The audit page's primary button reads 'Save Progress' until all photos are decided, then 'Complete Image Review' which finalizes the image review",
+          "id": "complete-image-review",
+          "verify": "Playwright: after passing all photos, assert button text 'Complete Image Review' is present and clicking it persists the completed state"
+        }
+      ],
+      "id": "amani-reviews-the-evidence-photo-by-photo",
+      "narrative": "Amani scrolls through the audit one assessment at a time, looks at each MUAC photo as it loads, and passes each one — by the last photo every assessment carries a green Pass badge and the \"Complete Image Review\" button has lit up, ready for his verdict.",
+      "persona": "amani",
+      "provenance": "S3",
+      "title": "Amani reviews the evidence photo by photo"
+    },
+    {
+      "features": [
+        {
+          "description": "Clicking 'Complete Image Review' finalizes the audit and redirects to the workflow list",
+          "id": "complete-redirects-to-workflow",
+          "verify": "Playwright: click the Complete Image Review button, assert navigation to /labs/workflow/ and the audit persists as completed"
+        }
+      ],
+      "id": "amani-records-his-verdict-and-closes-out-the-review",
+      "narrative": "Amani clicks \"Complete Image Review\" to record his verdict; the audit finalizes and he lands back on the workflow list, the flagged week now closed out.",
+      "persona": "amani",
+      "provenance": "S3",
+      "title": "Amani records his verdict and closes out the review"
+    },
+    {
+      "features": [
+        {
+          "description": "Create Task menu conditionally renders 'Coach on Flag implications' only when the row has >= 1 flag",
+          "id": "flag-aware-task-menu",
+          "verify": "Playwright: on the flagged row assert the menu item is present; on an unflagged row assert it is absent"
+        },
+        {
+          "description": "The coach task's onClick composes {description, coaching_prompt} from the row's flag_label values and creates the task via the tasks API",
+          "id": "coaching-prompt-composition",
+          "verify": "API: GET the created task, assert task.data.coaching_prompt contains the tripped flag's label text"
+        }
+      ],
+      "id": "amani-turns-the-flag-into-a-coaching-task",
+      "narrative": "Back in the weekly review, Amani returns to the flagged row and opens the Create Task menu — and because the row carries a flag, it offers \"Coach on Flag implications\", a task pre-composed from the exact rule the worker tripped. Amani picks it and lands on the new task.",
+      "persona": "amani",
+      "provenance": "S3",
+      "title": "Amani turns the flag into a coaching task"
+    },
+    {
+      "features": [
+        {
+          "description": "The Initiate AI Assistant modal pre-fills its instruction textarea from task.data.coaching_prompt and populates the bot select from /tasks/api/ocs/bots/",
+          "id": "prefilled-ai-modal",
+          "verify": "Playwright: open the modal, assert textarea[placeholder='Instructions for the bot...'] value length > 50 and the select has a coaching-bot option"
+        },
+        {
+          "description": "Confirming 'Initiate AI' starts the OCS conversation and renders a Coaching Conversation panel on the task page",
+          "id": "conversation-on-task",
+          "verify": "Playwright: after clicking Initiate AI, assert text 'Coaching Conversation' appears on the task page (survives the post-initiate reload)"
+        }
+      ],
+      "id": "amani-hands-the-coaching-to-the-ai-assistant",
+      "narrative": "On the task page Amani opens the AI assistant, finds the coaching instructions already written from the flag, picks the coaching bot, adds one personal line of guidance, and initiates the conversation — and the coaching chat opens on the task for anyone to read later.",
+      "persona": "amani",
+      "provenance": "S3",
+      "title": "Amani hands the coaching to the AI assistant"
+    },
+    {
+      "features": [
+        {
+          "description": "Grid layout of label column + one cell per expected week per watched opp + pinned aggregate column, computed from the PAR run's rollup snapshot",
+          "id": "par-grid",
+          "verify": "Playwright: load ${par_url}, assert 'Window aggregate' header and one row per configured opportunity label"
+        },
+        {
+          "description": "runCellCard derives a completion pill: 'Clean run' (no actions spawned), 'All resolved' (all audits+tasks closed), or 'N open'; missed weeks render a NO RUN card",
+          "id": "cell-status-pills",
+          "verify": "Playwright: assert at least one 'NO RUN' card and one open-count pill render for the seeded config (Southern missed week + in-progress drill week)"
+        }
+      ],
+      "id": "priya-sees-the-whole-program-at-a-glance",
+      "narrative": "Days later, Priya opens the Program Admin Report and reads her whole program in one screen: each cluster is a row, each week a cell, with a pinned aggregate on the right — and she can tell which weeks ran clean, which left work open, and which never ran at all before reading a single number.",
+      "persona": "priya",
+      "provenance": "S1",
+      "title": "Priya sees the whole program at a glance"
+    },
+    {
+      "features": [
+        {
+          "description": "Cell click sets selectedCell and renders a detail table (FLW / Flags / Audits / Tasks) under the owning row, flagged rows sorted first",
+          "id": "inline-detail-panel",
+          "verify": "Playwright: click a ran week cell, assert a 'Run detail' header appears below the row and the cell shows its SELECTED badge"
+        },
+        {
+          "description": "Each flagged FLW row links its audit ('Audit #<id>') and task ('Task #<id>') with status+outcome pills",
+          "id": "panel-record-links",
+          "verify": "Playwright: in the open panel assert links matching 'Audit #' and 'Task #' are present for the flagged FLW"
+        }
+      ],
+      "id": "priya-clicks-into-a-resolved-week",
+      "narrative": "Priya clicks a green \"All resolved\" cell and an inline panel slides out under the row, naming the worker who was flagged that week and linking the audit and the task that dealt with it — no page load, no breadcrumb trail.",
+      "persona": "priya",
+      "provenance": "S2",
+      "title": "Priya clicks into a resolved week"
+    },
+    {
+      "features": [
+        {
+          "description": "Detail panel header renders an 'Open the run' link to /labs/workflow/<def>/run/?run_id=<id>&opportunity_id=<opp>",
+          "id": "open-the-run-link",
+          "verify": "Playwright: click 'Open the run', assert the weekly review page renders the 'FLW-Level Analysis' header"
+        },
+        {
+          "description": "FLW row action cells flip from Create Audit/Create Task menus to View Audit/View Task buttons when those records exist for the row",
+          "id": "state-aware-actions",
+          "verify": "Playwright: assert the flagged row contains buttons 'View Audit' and 'View Task' (title-case) on the drilled run"
+        }
+      ],
+      "id": "priya-opens-the-run-behind-the-cell",
+      "narrative": "Priya clicks \"Open the run\" and lands on the very weekly review the network manager worked from — the same per-worker table, except its action buttons now report what was done, so she reads outcomes where the manager saw to-dos.",
+      "persona": "priya",
+      "provenance": "S2",
+      "title": "Priya opens the run behind the cell"
+    },
+    {
+      "features": [
+        {
+          "description": "Audit page renders each reviewed assessment photo with its decision badge and the session's assessment count header",
+          "id": "audit-drill-photos",
+          "verify": "Playwright: assert text matching 'Showing 5 assessment' and >= 3 decoded img[src*='/audit/image/'] thumbnails"
+        }
+      ],
+      "id": "priya-checks-the-photos-the-auditor-saw",
+      "narrative": "Priya clicks View Audit and the worker's assessment photos are right there, each carrying the auditor's pass or fail call — she can verify the audit's verdict against the evidence in seconds instead of taking the rollup's word for it.",
+      "persona": "priya",
+      "provenance": "S2",
+      "title": "Priya checks the photos the auditor saw"
+    },
+    {
+      "features": [
+        {
+          "description": "Task detail page renders the persisted OCS conversation as a Coaching Conversation panel including after the task is closed",
+          "id": "task-transcript-panel",
+          "verify": "Playwright: load ${task_good_url}, assert 'Closed' status text and a 'Coaching Conversation' heading with >= 4 message bubbles"
+        }
+      ],
+      "id": "priya-reads-the-coaching-conversation-that-closed-the-loop",
+      "narrative": "Priya opens the worker's follow-up task and scrolls into the coaching conversation itself — what the AI coach said, what the worker answered — and confirms the \"resolved\" she saw in the grid stands on a real exchange, not a checkbox.",
+      "persona": "priya",
+      "provenance": "S2",
+      "title": "Priya reads the coaching conversation that closed the loop"
+    },
+    {
+      "features": [
+        {
+          "description": "Cells with open audits/tasks render the open-count pill with amber styling so unresolved weeks are visually distinct from resolved ones",
+          "id": "open-work-cell",
+          "verify": "Playwright: assert the seeded incomplete week's cell shows a pill matching 'open' with the amber background"
+        },
+        {
+          "description": "The detail panel rows carry per-record status pills (e.g. in review, investigating, closed) so closed and open cases are distinguishable per worker",
+          "id": "mixed-fate-panel",
+          "verify": "Playwright: in the open panel assert both a closed/resolved record pill and an in-review or investigating record pill are present"
+        }
+      ],
+      "id": "now-the-harder-case-the-week-with-open-work",
+      "narrative": "Priya returns to the grid and clicks the amber cell — the week whose work is still open — and the panel shows her the other cluster's flagged workers: some already suspended after repeat offenses, and one still mid-investigation. Now she knows exactly where the unfinished work lives.",
+      "persona": "priya",
+      "provenance": "S2",
+      "title": "Now the harder case — the week with open work"
+    },
+    {
+      "features": [
+        {
+          "description": "Audit page for a partially reviewed session renders decided and undecided photo cards and the 'Save Progress' action label",
+          "id": "in-review-audit-state",
+          "verify": "Playwright: load the in-review audit, assert 'Save Progress' text present and >= 2 decoded audit images"
+        }
+      ],
+      "id": "priya-inspects-the-audit-still-in-review",
+      "narrative": "Priya opens the still-open audit straight from the panel and sees how far the auditor has gotten — some photos already judged, the rest still waiting — so \"in review\" means something she can see, not a vague pending state.",
+      "persona": "priya",
+      "provenance": "S2",
+      "title": "Priya inspects the audit still in review"
+    },
+    {
+      "features": [
+        {
+          "description": "An open (investigating) task renders its partial OCS conversation and keeps the Close Task action available",
+          "id": "open-task-transcript",
+          "verify": "Playwright: load ${task_incomplete_url}, assert 'Close Task' button present and a 'Coaching Conversation' heading with a partial exchange"
+        }
+      ],
+      "id": "priya-checks-on-the-coaching-mid-conversation",
+      "narrative": "Priya opens the worker's still-open task and reads the coaching conversation paused mid-exchange — the bot has opened the conversation and the loop hasn't closed — so she can judge whether to nudge the coach or let it run.",
+      "persona": "priya",
+      "provenance": "S2",
+      "title": "Priya checks on the coaching mid-conversation"
+    },
+    {
+      "features": [
+        {
+          "description": "aggregateCard derives an SOP MET / BELOW pill from runs completed vs expected weeks, plus flagged-FLW and closed/open outcome counts",
+          "id": "aggregate-sop-verdict",
+          "verify": "Playwright: assert one aggregate card shows 'SOP MET' and the other 'BELOW' for the seeded config (one full cluster, one with a missed week)"
+        }
+      ],
+      "id": "priya-returns-to-the-aggregate-and-makes-her-call",
+      "narrative": "Priya lands back on the report and reads the aggregate column: one cluster met the SOP across the window, the other sits below it with its missed week and open work — and she decides for herself which network manager gets her attention this week.",
+      "persona": "priya",
+      "provenance": "S1",
+      "title": "Priya returns to the aggregate and makes her call"
+    }
+  ],
+  "slug": "program-admin-report",
+  "version": 0
+}
