@@ -30,6 +30,20 @@ def test_view_events_flushed_with_envelope_and_status(rf, user):
 
 
 @pytest.mark.django_db
+def test_long_path_and_user_agent_reach_the_row_at_full_width(rf, user):
+    """End-to-end through the real middleware: the producer hands over raw
+    values and the row-boundary clamp is what bounds them."""
+    limits = service._char_limits()
+    request = rf.get("/labs/" + "a" * 500, HTTP_USER_AGENT="u" * 500)
+    request.user = user
+    AuditTrailMiddleware(lambda r: HttpResponse("ok"))(request)
+
+    event = AuditEvent.objects.get(action=Action.PAGE_VIEW)
+    assert len(event.path) == limits["path"]
+    assert len(event.user_agent) == limits["user_agent"]
+
+
+@pytest.mark.django_db
 def test_403_records_access_denied(rf, user):
     def view(request):
         return HttpResponseForbidden("no")

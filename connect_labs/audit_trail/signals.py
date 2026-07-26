@@ -48,9 +48,9 @@ def on_task_prerun(sender=None, task_id=None, task=None, **kwargs):
     at least attributed to the task (tasks that know the acting user can open
     a nested audit_context(user=...) for full attribution)."""
     try:
-        ctx = AuditContext(source=Source.CELERY, request_id=f"celery:{(task_id or '')[:28]}")
+        ctx = AuditContext(source=Source.CELERY, request_id=f"celery:{task_id or ''}")
         if task is not None:
-            ctx.path = getattr(task, "name", "")[:300]
+            ctx.path = getattr(task, "name", "")
         task.request.audit_trail_token = set_audit_context(ctx)
     except Exception:  # pragma: no cover - never break task startup
         pass
