@@ -87,19 +87,24 @@ def record(
             audit context's user.
     """
     try:
-        event_kwargs = {
-            "action": action,
-            "resource_type": resource_type or "",
-            "resource_id": str(resource_id) if resource_id is not None else "",
-            "record_count": record_count,
-            "opportunity_id": opportunity_id,
-            "program_id": program_id,
-            "organization_id": organization_id,
-            "labs_only": labs_only,
-            "outcome": outcome,
-            "status_code": status_code,
-            "metadata": metadata or {},
-        }
+        # Clamped here, not just at the row boundary: in a buffered (web)
+        # context these kwargs are retained until the response flushes, so an
+        # over-long value would otherwise be held for the whole request.
+        event_kwargs = _clamp(
+            {
+                "action": action,
+                "resource_type": resource_type or "",
+                "resource_id": str(resource_id) if resource_id is not None else "",
+                "record_count": record_count,
+                "opportunity_id": opportunity_id,
+                "program_id": program_id,
+                "organization_id": organization_id,
+                "labs_only": labs_only,
+                "outcome": outcome,
+                "status_code": status_code,
+                "metadata": metadata or {},
+            }
+        )
         if user is not None and getattr(user, "pk", None):
             event_kwargs["user_id"] = user.pk
             event_kwargs["username"] = user.username

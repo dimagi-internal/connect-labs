@@ -47,6 +47,18 @@ def test_buffered_context_defers_until_flush(user):
 
 
 @pytest.mark.django_db
+def test_buffered_events_are_clamped_before_being_held(user):
+    """Buffered kwargs live until the response flushes — don't retain the raw value."""
+    ctx = AuditContext(source=Source.WEB, buffer=[])
+    token = set_audit_context(ctx)
+    try:
+        service.record(Action.LIST, resource_type="task", resource_id="x" * 2000)
+    finally:
+        reset_audit_context(token)
+    assert len(ctx.buffer[0]["resource_id"]) == service._char_limits()["resource_id"]
+
+
+@pytest.mark.django_db
 def test_explicit_user_wins_over_context(user, django_user_model):
     other = django_user_model.objects.create(username="other-user", email="other@example.com")
     with audit_context(user=user, source="celery"):
