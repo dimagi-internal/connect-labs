@@ -68,7 +68,10 @@ def test_user_and_scope_tags_from_audit_context(user):
     with audit_context(user=user, source=Source.MCP, request_id="mcp:abc", path="mcp:workflow_get"):
         event = before_send(_exception_event("RuntimeError", "x"), {})
 
-    assert event["user"] == {"id": str(user.pk), "username": user.username, "email": user.email}
+    # Id and username only — the email is deliberately withheld (see module
+    # docstring). An exact-equality assert is the point here: it fails if
+    # anyone widens the payload.
+    assert event["user"] == {"id": str(user.pk), "username": user.username}
     assert event["tags"]["labs.source"] == Source.MCP
     assert event["tags"]["labs.request_id"] == "mcp:abc"
     assert event["tags"]["labs.path"] == "mcp:workflow_get"
@@ -192,4 +195,22 @@ def test_pii_scrubber_does_not_strip_the_explicit_user(captured_events, user):
 
     (event,) = captured_events
     assert event["user"]["id"] == str(user.pk)
-    assert event["user"]["email"] == user.email
+    assert event["user"]["username"] == user.username
+
+
+@pytest.mark.django_db
+def test_no_email_reaches_sentry(captured_events, user):
+    """The email is known to the audit context and must not leave with the
+    event — asserted on the serialized envelope, not just before_send."""
+    import json
+
+    import sentry_sdk
+
+    assert user.email, "fixture must have an email for this to prove anything"
+
+    with audit_context(user=user, source=Source.WEB):
+        sentry_sdk.capture_message("hello")
+
+    (event,) = captured_events
+    assert "email" not in event["user"]
+    assert user.email not in json.dumps(event, default=str)

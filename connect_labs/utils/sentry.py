@@ -16,7 +16,14 @@ from the audit-trail contextvar the codebase already opens at every edge:
 Reusing that single source means Sentry and the HIPAA audit trail can never
 disagree about who did something. Explicitly-set ``user`` fields survive
 ``send_default_pii=False``: the SDK's ``EventScrubber`` denylists
-``ip_address``/``remote_addr`` but not ``id``/``username``/``email``.
+``ip_address``/``remote_addr``, not ``id``/``username``.
+
+**Id and username only — deliberately no email.** Sentry keys its "Users"
+count and per-user filtering off ``user.id`` alone, so the email adds nothing
+to what the tool can do; it only saves a lookup, at the cost of putting staff
+contact details in Sentry's store and in every export of it. To go from an id
+to a person, use the labs admin, or pivot on the ``labs.request_id`` tag into
+the audit trail — which records the same identity for the same action.
 
 **Noise.** Two high-volume issue classes were drowning real errors: internet
 scanners opening websockets against the ALB, and FastMCP's own ``ERROR`` log
@@ -107,8 +114,6 @@ def _attribute(event, ctx) -> None:
         user.setdefault("id", str(ctx.user_id))
         if ctx.username:
             user.setdefault("username", ctx.username)
-        if ctx.user_email:
-            user.setdefault("email", ctx.user_email)
 
     tags = event.setdefault("tags", {})
     if ctx.source:
