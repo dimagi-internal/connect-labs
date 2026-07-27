@@ -27,9 +27,53 @@ from connect_labs.labs.analysis.computations import compute_visit_fields
 from connect_labs.labs.analysis.models import LocalUserVisit
 from connect_labs.labs.analysis.pipeline import AnalysisPipeline
 from connect_labs.labs.integrations.connect.api_client import LabsRecordAPIClient
+from connect_labs.labs.models import LocalLabsRecord
 from connect_labs.workflow.data_access import BaseDataAccess
 
 logger = logging.getLogger(__name__)
+
+
+def _coerce_int(value) -> int | None:
+    """Best-effort int coercion for scope ids, which reach us as int or str."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _storage_record(session: AuditSessionRecord) -> LocalLabsRecord:
+    """Plain LocalLabsRecord view of an audit session's STORAGE metadata.
+
+    ``AuditSessionRecord`` overrides ``opportunity_id`` with a property over
+    ``data["opportunity_id"]`` — the opportunity being *audited* — which
+    shadows the LabsRecord's own storage scope (the field the production API
+    filters and writes by). The class's setter stashes the real value in
+    ``_opportunity_id_from_api``, and until now nothing read it back.
+
+    Handing the raw proxy to ``update_record`` would therefore be wrong twice
+    over: it reads ``current.opportunity_id`` both to decide scope and to
+    build the write payload, so a session whose audit target differs from its
+    storage opportunity would get silently *moved* to the target opp. Build a
+    storage-truth record instead.
+    """
+    storage_opp_id = getattr(session, "_opportunity_id_from_api", None)
+    if storage_opp_id is None:
+        # Older/local records may only carry the data-level value.
+        storage_opp_id = session.opportunity_id
+
+    return LocalLabsRecord(
+        {
+            "id": session.id,
+            "experiment": session.experiment,
+            "type": session.type,
+            "data": session.data,
+            "username": session.username,
+            "opportunity_id": storage_opp_id,
+            "organization_id": session.organization_id,
+            "program_id": session.program_id,
+            "labs_record_id": session.labs_record_id,
+        }
+    )
 
 
 # =============================================================================
@@ -1261,13 +1305,62 @@ class AuditDataAccess(BaseDataAccess):
         return [s for s in all_sessions if s.labs_record_id == workflow_run_id]
 
     def save_audit_session(self, session: AuditSessionRecord) -> AuditSessionRecord:
-        updated = self.labs_api.update_record(
-            record_id=session.id,
-            experiment="audit",
-            type="AuditSession",
-            data=session.data,
-            username=session.username,
-        )
+        """Persist an audit session, scoped to the session's OWN opportunity.
+
+        Two things here defend against a cross-opportunity save silently
+        failing (symptom: "Complete Review" doesn't stick):
+
+        1. ``current_record=session`` — we already hold the fully-fetched
+           record, so skip ``update_record``'s internal re-fetch. That
+           re-fetch is scoped by the client's *ambient* opportunity_id —
+           whatever the user's Django session last selected — not necessarily
+           the opportunity that owns this session. When they differ the
+           lookup returns nothing and update_record raises
+           "Record {id} not found", aborting the whole save.
+        2. A client scoped to the session's own STORAGE opportunity when that
+           differs from the ambient scope. ``get_audit_session(
+           try_multiple_opportunities=True)`` deliberately loads sessions from
+           other opportunities, so the read side already crosses that boundary
+           and the write side has to follow it — otherwise the labs-only/
+           synthetic backend dispatch (``_is_labs_only()``, keyed on the
+           client's opportunity_id) also routes to the wrong target.
+
+        Note the storage/target distinction: ``AuditSessionRecord`` overrides
+        ``opportunity_id`` with a property over ``data["opportunity_id"]`` —
+        the opportunity being AUDITED — which shadows the LabsRecord's real
+        storage scope. See ``_storage_record``.
+
+        Same root cause as the workflow-side scope fix in #933; that one
+        never reached the audit app.
+        """
+        current = _storage_record(session)
+        session_opp_id = _coerce_int(current.opportunity_id)
+        ambient_opp_id = _coerce_int(self.opportunity_id)
+
+        labs_api = self.labs_api
+        scoped_api = None
+        if session_opp_id is not None and session_opp_id != ambient_opp_id:
+            logger.info(
+                "[Audit] Saving session %s under its own opportunity %s (ambient scope is %s)",
+                session.id,
+                session_opp_id,
+                ambient_opp_id,
+            )
+            scoped_api = LabsRecordAPIClient(self.access_token, session_opp_id)
+            labs_api = scoped_api
+
+        try:
+            updated = labs_api.update_record(
+                record_id=session.id,
+                experiment="audit",
+                type="AuditSession",
+                data=session.data,
+                username=session.username,
+                current_record=current,
+            )
+        finally:
+            if scoped_api is not None:
+                scoped_api.close()
 
         return AuditSessionRecord(
             {
