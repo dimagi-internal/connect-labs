@@ -2391,31 +2391,28 @@
   // boundaryId -> { name, pops: {source -> number} }. `pops` merges the boundary's
   // per-source bag (extra.populations) with its GeoPoDe under-5 (the population field).
   const pickedWardPops = new Map();
-  // The GeoPoDe (WHO) figure is TOTAL population, not under-5 — so it's labelled +
-  // grouped under Total. The canonical key is "geopode_total"; "geopode_u5" is a
-  // legacy alias kept for bags written before load_ward_populations was re-run (both
-  // carry the same GeoPoDe total).
+  // geopode_total/geopode_u5 are GeoPoDe's own ready-made ward-level population
+  // table (WorldPop-sourced, tabulated under GeoPoDe's own admin taxonomy) — a real
+  // total/under-5 pair, since 2026-07 (load_ward_populations).
   const POP_SOURCE_LABELS = {
     worldpop_u5: 'WorldPop',
     meta_u5: 'Meta',
+    grid3_v3_u5: 'GRID3 v3',
+    geopode_u5: 'GeoPoDe',
     worldpop_total: 'WorldPop',
     meta_total: 'Meta',
     grid3_v3_total: 'GRID3 v3',
     geopode_total: 'GeoPoDe',
-    geopode_u5: 'GeoPoDe',
   };
   // Grouped into Under-5 vs Total for the dropdown.
   const POP_SOURCE_GROUPS = [
-    { label: 'Under-5', keys: ['worldpop_u5', 'meta_u5'] },
+    {
+      label: 'Under-5',
+      keys: ['worldpop_u5', 'meta_u5', 'grid3_v3_u5', 'geopode_u5'],
+    },
     {
       label: 'Total population',
-      keys: [
-        'worldpop_total',
-        'meta_total',
-        'grid3_v3_total',
-        'geopode_total',
-        'geopode_u5',
-      ],
+      keys: ['worldpop_total', 'meta_total', 'grid3_v3_total', 'geopode_total'],
     },
   ];
   const POP_SOURCE_ORDER = POP_SOURCE_GROUPS.flatMap((g) => g.keys);
@@ -2423,8 +2420,9 @@
   function recordWardPopulation(boundaryId, feature) {
     const f = feature || {};
     const pops = Object.assign({}, f.populations || {});
-    // Attach the boundary's scalar GeoPoDe figure under geopode_total only if the bag
-    // doesn't already carry it (under either the canonical or the legacy key).
+    // Last-resort fallback for a boundary whose populations bag is empty (e.g. a
+    // ward load_ward_populations couldn't match): use its own scalar population
+    // field as a rough total.
     if (
       pops.geopode_total == null &&
       pops.geopode_u5 == null &&
@@ -2595,13 +2593,17 @@
       u5: 'worldpop_u5',
     },
     { key: 'meta', label: 'Meta', total: 'meta_total', u5: 'meta_u5' },
-    { key: 'grid3', label: 'GRID3 v3', total: 'grid3_v3_total', u5: null },
+    {
+      key: 'grid3',
+      label: 'GRID3 v3',
+      total: 'grid3_v3_total',
+      u5: 'grid3_v3_u5',
+    },
     {
       key: 'geopode',
       label: 'GeoPoDe',
       total: 'geopode_total',
-      altTotal: 'geopode_u5',
-      u5: null,
+      u5: 'geopode_u5',
     },
   ];
   // Per-area building counts by provider, keyed to the LAST fetch's area set;
@@ -2665,9 +2667,7 @@
 
   function famTotal(pops, fam) {
     if (!pops) return null;
-    if (pops[fam.total] != null) return pops[fam.total];
-    if (fam.altTotal && pops[fam.altTotal] != null) return pops[fam.altTotal];
-    return null;
+    return pops[fam.total] != null ? pops[fam.total] : null;
   }
   function famU5(pops, fam) {
     if (!pops || !fam.u5) return null;
@@ -2816,10 +2816,7 @@
       Object.keys(r.pops || {}).forEach((k) => seen.add(k));
     });
     return PROVIDER_FAMILIES.filter(
-      (f) =>
-        seen.has(f.total) ||
-        (f.altTotal && seen.has(f.altTotal)) ||
-        (f.u5 && seen.has(f.u5)),
+      (f) => seen.has(f.total) || (f.u5 && seen.has(f.u5)),
     );
   }
 
