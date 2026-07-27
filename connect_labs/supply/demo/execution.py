@@ -25,7 +25,7 @@ from ..models import (
     SupplyEvent,
     SupplyNode,
 )
-from .data import APPROPRIATIONS, CONTRACT_BY_PREFIX, CONTRACTS, NODES, SHIPMENTS, STATUS_STEPS
+from .data import APPROPRIATIONS, CONTRACT_BY_PREFIX, CONTRACTS, NODE_DISTRICTS, NODES, SHIPMENTS, STATUS_STEPS
 
 
 def seed_execution(rng, orgs, staff):
@@ -47,6 +47,7 @@ def _seed_nodes(orgs):
             defaults={
                 "kind": kind,
                 "country": country,
+                "adm1_code": NODE_DISTRICTS.get(name, ""),
                 "gln": gs1.make_gln("629123", 100 + index),
                 "location": Point(lon, lat, srid=4326),
                 "owner": owner,

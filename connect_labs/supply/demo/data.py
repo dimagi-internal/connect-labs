@@ -170,6 +170,84 @@ NODES = [
     ("Sebba Nutrition Site", "delivery_point", "BF", 0.5150, 13.4370, None),
 ]
 
+# Komadugu Health Initiative's own feeding sites — the implementing partner's
+# eleven sites across Borno. They are ordinary delivery_point nodes owned by a
+# partner org, not a parallel structure: a site is a site whoever runs it.
+PARTNER_SITES = [
+    ("Monguno Nutrition Centre", "NG", 13.6100, 12.6750),
+    ("Kukawa Nutrition Centre", "NG", 13.5500, 12.9200),
+    ("Dikwa Nutrition Centre", "NG", 13.9170, 12.0400),
+    ("Gwoza Nutrition Centre", "NG", 13.6940, 11.0850),
+    ("Ngala Nutrition Centre", "NG", 14.1890, 12.3540),
+    ("Damboa Nutrition Centre", "NG", 12.7550, 11.1550),
+    ("Konduga Nutrition Centre", "NG", 13.4180, 11.6540),
+    ("Magumeri Nutrition Centre", "NG", 12.8320, 12.0910),
+    ("Mafa Nutrition Centre", "NG", 13.6000, 11.9230),
+    ("Askira Nutrition Centre", "NG", 13.3300, 10.4500),
+    ("Biu Nutrition Centre", "NG", 12.1950, 10.6120),
+]
+
+# The implementing partner. Not a supplier — they never bid; they receive at
+# their own sites, report what arrived, and treat the children.
+PARTNER_ORG = (
+    "Komadugu Health Initiative",
+    "NG",
+    "Maiduguri",
+    "Zara Bukar",
+    "zara@komadugu.example",
+)
+
+# adm1_code -> (name, country, IPC phase, under-5 population)
+#
+# Under-5 populations are SYNTHETIC, sized to be plausible for each district
+# against its real population. The SAM caseload is derived from them rather
+# than typed, so the method is one line of code instead of a spreadsheet
+# nobody can find:
+#
+#     monthly SAM caseload
+#       = under-5 population
+#       x SAM prevalence for the district's IPC phase
+#       x 2.6   (the standard incidence correction factor, converting a
+#                point prevalence into an annual burden)
+#       / 12
+#
+# Every seeded CaseloadEstimate carries that sentence in its own source_note,
+# because a caseload figure with no stated method is the easiest number in a
+# funding meeting to wave away.
+DISTRICTS = {
+    "NGA-2839": ("Borno", "NG", 5, 1_113_000),
+    "NGA-2873": ("Yobe", "NG", 4, 625_000),
+    "SDN-881": ("North Darfur", "SD", 5, 338_000),
+    "SDN-5856": ("Southern Darfur", "SD", 2, 654_000),
+    "SDN-884": ("Kassala", "SD", 3, 405_000),
+    "ETH-3134": ("Somali", "ET", 4, 975_000),
+    "BFA-2806": ("Soum", "BF", 5, 95_000),
+    "BFA-2876": ("Séno", "BF", 2, 76_000),
+    "BFA-2877": ("Yagha", "BF", 4, 29_000),
+}
+
+# Which district each node is answerable for. A node absent from this map
+# serves no caseload — a port or a national warehouse sits on the route without
+# being answerable for children, and a cover figure there would be meaningless.
+NODE_DISTRICTS = {
+    "Maiduguri Distribution Hub": "NGA-2839",
+    "Bama Health Post": "NGA-2839",
+    "Monguno Health Post": "NGA-2839",
+    "Damaturu Distribution Hub": "NGA-2873",
+    "El Fasher Distribution Hub": "SDN-881",
+    "Tawila Nutrition Site": "SDN-881",
+    "Kebkabiya Nutrition Site": "SDN-881",
+    "Nyala Distribution Hub": "SDN-5856",
+    "Kassala Forward Store": "SDN-884",
+    "Gode Distribution Hub": "ETH-3134",
+    "Jijiga Distribution Hub": "ETH-3134",
+    "Kelafo Nutrition Site": "ETH-3134",
+    "Djibo Distribution Hub": "BFA-2806",
+    "Dori Distribution Hub": "BFA-2876",
+    "Sebba Nutrition Site": "BFA-2877",
+    **{name: "NGA-2839" for name, _c, _lon, _lat in PARTNER_SITES},
+}
+
 APPROPRIATIONS = [
     (
         "US Government",

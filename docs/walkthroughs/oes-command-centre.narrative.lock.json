@@ -1,0 +1,160 @@
+{
+  "build_order": [
+    "which-children-are-about-to-go-without",
+    "three-ways-the-data-arrives-and-the-honest-one",
+    "late-is-a-measurement-not-an-argument",
+    "nobody-can-clear-a-red-row-by-editing-a-field",
+    "the-caseload-underneath-the-map",
+    "twelve-thousand-children-by-the-ninth-of-september",
+    "the-signal-came-from-the-ground",
+    "ada-reallocates-and-the-numbers-move"
+  ],
+  "fetched_at": "2026-07-28T01:37:38.145070+00:00",
+  "name": "oes-command-centre",
+  "narrative": "Once contracts are running, Ada's question is not where the shipments are — it is which children are about to go without, and what can still be done about it. The command centre opens by admitting the uncomfortable part: the Kano plant sends clean structured events, a despatch from Lagos arrives as a standard advice document, and the Port Sudan to El Fasher corridor — which serves the worst famine phases — arrives as a driver's phone check-in, hand-keyed and labelled as such. So the picture is brightest exactly where access is easiest. Because every milestone keeps planned, estimated and actual as three separate timestamps, lateness is a measurement rather than an argument; and because status is derived from an append-only event log, nobody can clear a red row by editing a field. Onto that Ada adds the demand side: a caseload per district, so a nine-day delay is reported as twelve thousand children missing a full course by a named date rather than as tonnage at risk. They see the shortfall a partner in Borno raised from their own screen, reallocate from a surplus warehouse in Kassala, and watch the cover, the pipeline gap and the map recompute against the decision they just recorded.",
+  "personas": {
+    "ada": {
+      "color": "#0D7A5F",
+      "intro": "Ada is responsible for four corridors across Nigeria, Sudan, Ethiopia and Burkina Faso. Today they find out a consignment is late from a phone call, work out what to do about it in a messaging group, and record the decision nowhere. They want the exceptions ranked by the children behind them, and the response recorded against the evidence that prompted it.",
+      "name": "Ada Nwosu",
+      "org": "OES",
+      "role": "Procurement and supply lead, Operation End Starvation"
+    }
+  },
+  "scenes": [
+    {
+      "features": [
+        {
+          "description": "The command centre at /supply/command-centre/ — a severity-ranked exception queue beside the live corridor map, each row carrying status, cause and a recommended action.",
+          "id": "exception-first-command-centre",
+          "verify": "GET /supply/command-centre/ returns 200 for procurement_admin and renders exception rows ordered by severity; asserted in test_dashboards.py."
+        }
+      ],
+      "id": "which-children-are-about-to-go-without",
+      "narrative": "Once the contracts are running, the question stops being procurement and becomes operational. A status board can tell you a consignment is nine days late. What a program director needs to know is which children go without because of it, where, and by when — and what can still be done in the time remaining. That is the difference between a screen you look at and a screen you act on, and it is what this one is built around.",
+      "persona": "ada",
+      "provenance": "S0",
+      "title": "Which children are about to go without"
+    },
+    {
+      "features": [
+        {
+          "description": "Every SupplyEvent carries its source_tier, and every surface renders hand-keyed data with an explicit \"Entered by hand\" marker.",
+          "id": "three-tier-ingestion-provenance",
+          "verify": "pytest connect_labs/supply/tests/test_ingestion.py covers capture at all three tiers; test_execution.py asserts the webform and API doors produce field-for-field identical records."
+        }
+      ],
+      "id": "three-ways-the-data-arrives-and-the-honest-one",
+      "narrative": "The data arrives three different ways, because that is the real capability gradient of this supply chain. The Kano plant emits structured visibility events to the international standard — machine to machine, no typing. The Lagos despatch arrives as an advice document, the same shipment-to-package-to-item tree the commodity trade has used for fifty years. And the Port Sudan to El Fasher leg arrives as a driver's phone check-in: a consignment number, a place, what happened. Sudan has no domestic producer and that corridor runs on paper waybills, so the lowest tier is not a fallback — it is the honest case, and it is the one serving the worst famine phases. Anything hand-keyed says so, everywhere it appears.",
+      "persona": "ada",
+      "provenance": "S1",
+      "title": "Three ways the data arrives, and the honest one"
+    },
+    {
+      "features": [
+        {
+          "description": "Milestone with separate planned, estimated and actual timestamps per node and kind, rendered as a rail with the resulting delta per leg.",
+          "id": "milestone-pln-est-act",
+          "verify": "pytest connect_labs/supply/tests/test_ingestion.py asserts events stamp actuals without overwriting planned, and the delta derives from planned versus actual."
+        }
+      ],
+      "id": "late-is-a-measurement-not-an-argument",
+      "narrative": "Every milestone on every leg keeps three separate times: what was planned, what is now estimated, and what actually happened. That sounds like bookkeeping and it is the reason a delay can be discussed at all — if the plan is overwritten each time the estimate moves, then nothing is ever late and any number can be argued away. Keeping all three means this consignment is nine days behind the plan it was awarded against, and that figure survives the conversation.",
+      "persona": "ada",
+      "provenance": "S2",
+      "title": "Late is a measurement, not an argument"
+    },
+    {
+      "features": [
+        {
+          "description": "Status and milestone actuals computed from the SupplyEvent log, with no write path that sets them directly and idempotent capture on external id.",
+          "id": "derived-status-invariant",
+          "verify": "pytest connect_labs/supply/tests/test_ingestion.py asserts status advances monotonically from events, capture is idempotent on external_id, and a short receipt raises a Discrepancy."
+        }
+      ],
+      "id": "nobody-can-clear-a-red-row-by-editing-a-field",
+      "narrative": "The status you are looking at is not a field anybody types into. It is derived from an append-only log of what was reported, and the same is true of every actual time on every milestone. There is no cell to change before a Monday meeting. That single constraint is what makes the queue beside it worth trusting: a red row goes away when the situation changes, not when someone decides it looks bad.",
+      "persona": "ada",
+      "provenance": "S3",
+      "title": "Nobody can clear a red row by editing a field"
+    },
+    {
+      "features": [
+        {
+          "description": "A CaseloadEstimate per country, admin-1 district and month, joined to the existing admin1_ipc geojson by adm1_code, with a source note per figure.",
+          "id": "caseload-estimate",
+          "verify": "A caseload row exists for every district carrying a famine phase; the district panel renders caseload, delivered, coverage percent and uncovered children, asserted in test_dashboards.py."
+        },
+        {
+          "description": "The pipeline-by-corridor card gains a requirement-from-caseload column and a gap-to-need column beside the existing gap-to-contract.",
+          "id": "requirement-against-need",
+          "verify": "The pipeline card's requirement equals caseload times the treatment factor, not contract quantity; asserted against a seeded district."
+        }
+      ],
+      "id": "the-caseload-underneath-the-map",
+      "narrative": "Until now the famine-phase colouring under the map has been context. Ada adds the caseload behind it — how many severely malnourished children each district is expected to have this month, and where that estimate comes from. With a denominator, delivery stops being tonnage and becomes coverage: this district is at ninety-one percent of need, this one at thirty-four, and here are the children with no carton assigned to them. Volume delivered could never distinguish a large delivery into a small caseload from a small delivery into a huge one.",
+      "persona": "ada",
+      "provenance": "S4",
+      "title": "The caseload underneath the map"
+    },
+    {
+      "features": [
+        {
+          "description": "Per-node stock on hand derived from receiving events, a weekly burn rate from the caseload the node serves, and from those a weeks-of-cover figure and a projected stockout date.",
+          "id": "cover-and-stockout-projection",
+          "verify": "Stock on hand equals receipts minus dispatches per node; weeks of cover equals stock divided by weekly burn; the projected date matches a hand-computed fixture."
+        },
+        {
+          "description": "Exception severity ranked by children at risk by date rather than tonnage times lateness, with the derivation shown on the expanded row.",
+          "id": "children-at-risk-severity",
+          "verify": "Two exceptions with equal tonnage but different caseloads rank by the larger children-at-risk figure."
+        },
+        {
+          "description": "An exception class raised from ShipmentLine expiry dates when stock at a node will expire before the caseload it serves can consume it.",
+          "id": "expiry-risk-exception",
+          "verify": "A seeded batch expiring inside the cover window appears in the queue with the carton count at risk."
+        }
+      ],
+      "id": "twelve-thousand-children-by-the-ninth-of-september",
+      "narrative": "Now the queue can rank by what actually matters. The top row is not nine days late — it is twelve thousand children losing a full course of treatment in El Fasher by the ninth of September. Behind that figure is what physically arrived, the rate the site is consuming it, and the date the store runs dry. Below it sits a different kind of risk: three thousand two hundred cartons in Kassala that expire before the caseload can consume them, which is a loss nobody is currently looking for.",
+      "persona": "ada",
+      "provenance": "S4",
+      "title": "Twelve thousand children, by the ninth of September"
+    },
+    {
+      "features": [
+        {
+          "description": "ShortfallSignal rows raised by an implementing partner surface in the command-centre queue with a partner-raised origin marker, naming the organisation, site and report date.",
+          "id": "partner-raised-exceptions",
+          "verify": "A signal created by a partner org appears in the procurement_admin queue with origin partner and the partner org name; a centrally-derived exception does not carry the marker."
+        }
+      ],
+      "id": "the-signal-came-from-the-ground",
+      "narrative": "This exception was not something the system worked out on its own. It was raised by the organisation running the feeding sites in Borno, from their own screen, four days ago — and it says so. That distinction matters more than it looks. A centre that invents its own alerts is running a monitoring product. A centre responding to what the people holding the cartons reported is running a coordination product, and that is the actual shape of the relationship between OES and its partners.",
+      "persona": "ada",
+      "provenance": "S6",
+      "title": "The signal came from the ground"
+    },
+    {
+      "features": [
+        {
+          "description": "An append-only SupplyAction (expedite, reallocate, split lot, raise mini tender) with actor, rationale and effect, written through the existing audit log.",
+          "id": "supply-action-model",
+          "verify": "Every action is audited with actor and rationale; actions cannot be edited or deleted once recorded."
+        },
+        {
+          "description": "A reallocation creates a real Shipment from the surplus node with planned milestones and stored route geometry, so downstream figures recompute from it rather than being adjusted.",
+          "id": "reallocation-creates-a-shipment",
+          "verify": "After a reallocation the destination's weeks of cover, the corridor pipeline gap and the flow map all reflect the new shipment; the resolved exception references the action id."
+        }
+      ],
+      "id": "ada-reallocates-and-the-numbers-move",
+      "narrative": "Ada reallocates: cartons from the Kassala warehouse, which is holding more than its own caseload needs, to El Fasher, with the reason recorded. A consignment appears on the map with planned milestones, El Fasher's weeks of cover moves out of the red, the pipeline gap for that corridor closes, and the exception resolves against the action that resolved it. The decision and the evidence that prompted it are now the same record — which is the thing a messaging group can never give you afterwards.",
+      "persona": "ada",
+      "provenance": "S5",
+      "title": "Ada reallocates, and the numbers move"
+    }
+  ],
+  "slug": "oes-command-centre",
+  "version": 1
+}

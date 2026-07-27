@@ -9,6 +9,14 @@ const SUPPLY_PERMS = {
     execution: ['view', 'report'],
     tokens: ['manage'],
   },
+  partner: {
+    org: ['view', 'edit'],
+    execution: ['view', 'report'],
+    distribution: ['view', 'manage'],
+    signals: ['view', 'raise'],
+    outcomes: ['view'],
+    tokens: ['manage'],
+  },
   reviewer: {
     eoi_review: ['view', 'decide'],
     registry: ['view'],
@@ -22,10 +30,13 @@ const SUPPLY_PERMS = {
     rounds: ['view', 'manage'],
     rfps: ['view', 'manage', 'award'],
     execution: ['view', 'resolve'],
+    signals: ['view', 'resolve'],
+    actions: ['view', 'create'],
+    outcomes: ['view'],
     audit: ['view'],
   },
   gov_observer: { execution: ['view'] },
-  funder: { execution: ['view'] },
+  funder: { execution: ['view'], outcomes: ['view'] },
 };
 
 function supplyCan(role, module, verb) {

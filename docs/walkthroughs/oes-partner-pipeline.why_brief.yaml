@@ -1,0 +1,147 @@
+gaps:
+- id: G1
+  type: CAPABILITY
+  detail: There is no implementing-partner role or org type. roles.py has supplier,
+    reviewer, procurement_admin, gov_observer and funder; a partner is neither a supplier
+    (they do not bid) nor an observer (they act). Nothing in the app can express "this
+    org receives at these nodes and serves this caseload".
+  claim_ref: S0
+  proposed_action: Add a kind discriminator to the existing org model (supplier |
+    implementing_partner) rather than a parallel PartnerOrg, so membership, auth and
+    tokens stay single-path. Add the partner role to roles.py and rbac.py, mirror
+    it in perms.js, and let the existing contract test hold the two together. Give
+    partner orgs ownership of distribution_hub and delivery_point nodes and a link
+    to their caseload.
+- id: G2
+  type: CAPABILITY
+  detail: There is no distribution calendar and no partner surface to render it on.
+    Inbound supply can only be listed as shipments.
+  claim_ref: S1
+  proposed_action: Add a DistributionPlan (site node, date, expected children, cartons
+    required) and a partner surface that renders inbound consignments joined to it,
+    so each planned distribution reads as covered, at risk, or uncovered.
+- id: G3
+  type: CAPABILITY
+  detail: A partner has no way to signal upstream, and the command centre has no notion
+    of an externally-raised exception.
+  claim_ref: S4
+  proposed_action: Add a ShortfallSignal raised from the partner surface (site, date,
+    children affected, cartons short, note) which appears in the command-centre exception
+    queue with a partner-raised origin marker, and which a SupplyAction can resolve.
+- id: G4
+  type: DECISION
+  detail: The last-mile join crosses the app's deliberate boundary. The README's proudest
+    property is zero cross-app imports — supply reaches the shared user table through
+    get_user_model() and touches labs in three enumerated places — so importing Connect
+    service-delivery data would end the split-out property the app was designed for.
+  claim_ref: S5
+  proposed_action: 'Resolved by the operator on 2026-07-26: synthesise the last mile
+    inside supply. Add DistributionRecord (node, partner org, date, cartons dispensed,
+    children served, batch_lot traced to a ShipmentLine) and ChildOutcome (anonymised
+    id, admission MUAC, per-visit MUAC series, discharge status, linked by batch_lot),
+    shaped to mirror Connect service-delivery data and labelled synthetic on screen.
+    The live bridge is the right build once someone buys it; it must not be the thing
+    that blocks the demo.'
+spine:
+- id: S0
+  claim: The partner is the only actor that touches both the carton and the child,
+    so their view is where a supply chain stops being logistics and becomes treatment.
+  status: grounded
+  evidence:
+  - ref: connect_labs/supply/README.md — SupplyNode kinds run factory / port / warehouse
+      / distribution_hub / delivery_point, so the receiving end is already modelled
+    kind: documented
+  - ref: 'connect_labs/labs/synthetic/envs/nutrition-demo.yaml — the Connect-side
+      half already exists: FLWs distributing RUTF and screening MUAC under three network
+      managers'
+    kind: implemented
+  rationale: This reframes the whole product. OES sees consignments, the funder sees
+    dollars, the government sees tonnage crossing a border — only the partner receives
+    a physical batch and then puts sachets into the hands of a named child's carer.
+    Any claim about children treated has to pass through them, which makes their surface
+    the natural home of the last-mile join rather than an afterthought bolted onto
+    the funder view.
+- id: S1
+  claim: The partner sees inbound consignments against their own distribution calendar,
+    not as a shipment list — the question is whether next Tuesday's distribution is
+    covered.
+  status: gap
+  evidence: []
+  rationale: A shipment table sorted by ETA is a supplier's view of the world. The
+    partner's unit of planning is a distribution day at a named site with a known
+    number of children expected. Presenting inbound supply in that frame is the difference
+    between information and usable information, and it is the beat that makes this
+    surface obviously not a recoloured copy of the command centre.
+- id: S2
+  claim: The partner can see their own weeks of cover and a projected stockout date
+    per site, derived from what has physically arrived and the caseload they are admitting.
+  status: gap
+  evidence: []
+  rationale: 'This is the number that changes a partner''s behaviour: at four weeks
+    of cover you plan, at one week you triage admissions. It is computable from data
+    the system already has on both sides — receiving events on one side, admissions
+    on the other — and no partner in this sector currently gets it as a live figure.'
+- id: S3
+  claim: The partner confirms receipt themselves, and a short count becomes a discrepancy
+    raised by the person holding the cartons rather than an argument between head
+    offices.
+  status: grounded
+  evidence:
+  - ref: connect_labs/supply/models/execution.py — Discrepancy raised when a receiving
+      event fails to reconcile against the ASN/shipment lines
+    kind: implemented
+  - ref: connect_labs/supply/services/ingestion/manual.py — the check-in tier, and
+      its webform equivalent in the portal
+    kind: implemented
+  - ref: connect_labs/supply/README.md — "A receipt that does not reconcile raises
+      a Discrepancy"; hand-keyed data is labelled "Entered by hand" wherever it appears
+    kind: documented
+  rationale: Reconciliation already exists in the app, but its credibility depends
+    on who raises it. A discrepancy asserted centrally is a dispute; the same discrepancy
+    recorded at the loading bay by the receiving partner, against the despatch advice,
+    is evidence. This is also the honest place for the low-tech tier — a partner storekeeper
+    with a phone is the realistic capture device.
+- id: S4
+  claim: When the partner is going to run short, they raise a shortfall signal from
+    this screen, and it lands in the OES command centre as the exception the central
+    team acts on.
+  status: gap
+  evidence: []
+  rationale: 'This closes the loop that currently runs through WhatsApp, and it inverts
+    the usual direction of a monitoring product: the ground reports upward into a
+    system that can respond, rather than the centre reporting downward about the ground.
+    It is also what makes the command-centre narrative''s action beat honest — the
+    central team is responding to a real signal, not to an alert it invented about
+    itself.'
+- id: S5
+  claim: From a received batch the partner can follow the actual treatment outcome
+    — the children admitted on that batch and one child's MUAC recovering week by
+    week.
+  status: gap
+  evidence:
+  - ref: connect_labs/supply/models/execution.py — ShipmentLine carries GTIN, batch/lot
+      code and expiry, so the batch identity needed for the join is already captured
+    kind: implemented
+  - ref: .canopy/ddd/context.md — the Connect-side MUAC recovery view exists and was
+      shown to this audience on 23 Jul (per-visit photo rail, red-to-green recovery
+      curve)
+    kind: documented
+  rationale: 'This is the chain IATI describes and the sector does not achieve: appropriation
+    to contract to carton to batch to a named child''s arm circumference climbing
+    out of the red. Dimagi is unusual in already owning both ends of it. Showing it
+    whole — even with the last mile synthesised — is the single most compelling thing
+    this product can do, because it converts "children treated" from a division sum
+    into an observation.'
+problem: The organisation that actually feeds the children can see the least. A local
+  implementing partner running therapeutic feeding sites in Borno knows its own caseload
+  precisely — it admits the children — and knows almost nothing about the supply it
+  depends on. It learns a consignment is late when the truck fails to arrive, finds
+  out what was really in it by counting cartons on a loading bay, and reports a shortfall
+  by phoning someone in Abuja who phones someone else. So the partner plans distributions
+  against a supply picture it cannot see, and OES learns about a stockout after it
+  has already happened. Meanwhile the partner is the only actor in the entire chain
+  that touches both the carton and the child, which means the one organisation positioned
+  to prove the supply chain worked is the one organisation with no instrument to do
+  it.
+narrative_slug: oes-partner-pipeline
+schema_version: 1

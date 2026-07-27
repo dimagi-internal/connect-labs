@@ -6,6 +6,11 @@ equality, so the two can never drift.
 
 Phase 3 adds the visualization modules (``command``, ``gov``, ``funder``) to
 the gov_observer / funder rows.
+
+The ``partner`` row is the implementing partner — the organisation running the
+feeding sites. They are neither a supplier (they never bid, so no ``eoi`` or
+``bids``) nor an observer (they act: they receive stock, raise shortfalls and
+record what they distributed).
 """
 
 ROLE_PERMS = {
@@ -14,6 +19,14 @@ ROLE_PERMS = {
         "eoi": ["view", "submit"],
         "bids": ["view", "submit"],
         "execution": ["view", "report"],
+        "tokens": ["manage"],
+    },
+    "partner": {
+        "org": ["view", "edit"],
+        "execution": ["view", "report"],
+        "distribution": ["view", "manage"],
+        "signals": ["view", "raise"],
+        "outcomes": ["view"],
         "tokens": ["manage"],
     },
     "reviewer": {
@@ -29,10 +42,13 @@ ROLE_PERMS = {
         "rounds": ["view", "manage"],
         "rfps": ["view", "manage", "award"],
         "execution": ["view", "resolve"],
+        "signals": ["view", "resolve"],
+        "actions": ["view", "create"],
+        "outcomes": ["view"],
         "audit": ["view"],
     },
     "gov_observer": {"execution": ["view"]},
-    "funder": {"execution": ["view"]},
+    "funder": {"execution": ["view"], "outcomes": ["view"]},
 }
 
 

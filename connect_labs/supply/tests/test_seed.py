@@ -58,7 +58,11 @@ def test_seed_demo_logins_can_sign_in(client):
 
 def test_seed_world_shape():
     call_command("seed_supply_demo")
-    assert SupplierOrg.objects.count() == 16
+    # 16 suppliers plus Komadugu, the implementing partner — which is an org of
+    # a different kind, not a seventeenth supplier.
+    assert SupplierOrg.objects.count() == 17
+    assert SupplierOrg.objects.filter(kind=SupplierOrg.Kind.SUPPLIER).count() == 16
+    assert SupplierOrg.objects.filter(kind=SupplierOrg.Kind.IMPLEMENTING_PARTNER).count() == 1
     # no RUTF manufacturer in Sudan — it is supplied through Port Sudan
     sudan = SupplierOrg.objects.filter(country="SD")
     assert sudan.exists()
@@ -106,7 +110,8 @@ def test_seed_execution_world():
     call_command("seed_supply_demo")
     from connect_labs.supply.models import Contract, Discrepancy, Shipment, SupplyEvent, SupplyNode
 
-    assert SupplyNode.objects.count() == 28
+    # 28 OES-network nodes plus Komadugu's 11 Borno feeding sites
+    assert SupplyNode.objects.count() == 39
     assert Contract.objects.count() == 4
     assert Shipment.objects.count() == 14
 

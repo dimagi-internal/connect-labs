@@ -23,6 +23,10 @@ class SupplyNode(models.Model):
     name = models.CharField(max_length=160)
     kind = models.CharField(max_length=32, choices=Kind.choices)
     country = models.CharField(max_length=2)  # transit nodes may sit outside member countries
+    # The admin-1 district this facility serves, matching admin1_ipc.geojson's
+    # adm1_code. Blank for transit nodes (a port serves no caseload), which is
+    # what separates a node with demand behind it from one merely on the route.
+    adm1_code = models.CharField(max_length=16, blank=True)
     gln = models.CharField(max_length=13, blank=True)
     location = gis_models.PointField(geography=True, null=True, blank=True)
     # null owner means an OES-network facility rather than a supplier's own

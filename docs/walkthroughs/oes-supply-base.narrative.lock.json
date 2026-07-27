@@ -1,0 +1,174 @@
+{
+  "build_order": [
+    "the-supply-base-before-the-emergency",
+    "ada-opens-a-round-and-names-the-categories",
+    "amina-applies-and-the-profile-is-frozen",
+    "tomas-qualifies-the-supplier-per-category-and-with-an-expiry",
+    "the-registry-answers-who-can-supply-today",
+    "a-solicitation-reaches-only-qualified-suppliers",
+    "bids-priced-and-scored-lot-by-lot",
+    "two-suppliers-two-corridors-one-tender",
+    "the-award-becomes-the-contract"
+  ],
+  "fetched_at": "2026-07-28T01:37:31.705912+00:00",
+  "name": "oes-supply-base",
+  "narrative": "Ada runs procurement for Operation End Starvation. Before the lean season they have to turn a folder of emailed spreadsheets and PDF certificates into something they can query: a standing set of suppliers known to be able to deliver, per commodity and per corridor. They open an expression-of-interest round; Amina at Savanna Nutrients in Kano applies, and at the moment of submission the profile Amina is judged on is frozen — so the decision stays reconstructable even after Savanna edits its paperwork. Tomas reviews that frozen snapshot and qualifies Savanna per category, with an expiry, and those live qualifications become the registry itself. When Ada publishes a solicitation, only suppliers holding a live qualification in a matching category can see or bid on it — enforced on the server, not by hiding a button. Bids are priced and scored lot by lot, so Ada awards Maiduguri and Djibo to different suppliers on purpose, splitting the corridor risk rather than handing a four-country response to the single cheapest bidder. The award is not the finish line: it becomes the contract the rest of the system tracks physically.",
+  "personas": {
+    "ada": {
+      "color": "#0D7A5F",
+      "intro": "Ada is accountable for whether therapeutic food exists to buy when a famine declaration lands. Today their supplier knowledge is a shared drive: certificates as PDF attachments, capacity claims in email threads, and no way to answer \"who is qualified to supply RUTF to north-east Nigeria today\" without reading. They want a supply base they can query, and decisions an auditor could reconstruct.",
+      "name": "Ada Nwosu",
+      "org": "OES",
+      "role": "Procurement lead, Operation End Starvation"
+    },
+    "amina": {
+      "color": "#B45309",
+      "intro": "Amina sells RUTF from a plant in Kano. They have answered the same pre-qualification questions for four different buyers this year, each in a different format, and have never known whether a submitted document was actually read.",
+      "name": "Amina Bello",
+      "org": "Savanna Nutrients",
+      "role": "Tender contact, Savanna Nutrients Ltd (Kano)"
+    },
+    "tomas": {
+      "color": "#4F46E5",
+      "intro": "Tomas assesses whether a supplier can actually make what they say they can. What they need is confidence that the profile in front of them is the profile as it stood at submission, not one edited since.",
+      "name": "Tomas Berhane",
+      "org": "OES",
+      "role": "Technical reviewer, Operation End Starvation"
+    }
+  },
+  "scenes": [
+    {
+      "features": [
+        {
+          "description": "The staff console landing surface at /supply/console/, showing open rounds, live solicitations and the review queue for the acting role.",
+          "id": "procurement-console",
+          "verify": "GET /supply/console/ returns 200 for procurement_admin and renders the open-round and review-queue counts from the bootstrap payload."
+        }
+      ],
+      "id": "the-supply-base-before-the-emergency",
+      "narrative": "Operation End Starvation has to be able to buy therapeutic food across four countries before the lean season. Today that knowledge lives in email threads and attached PDFs, so the simplest question — who is qualified to supply RUTF to north-east Nigeria today — cannot be answered without opening a folder and reading. This is how that becomes a standing supply base: two stages, expression of interest into a registry, then tenders drawn from it. It is how UNICEF and WFP actually buy this commodity, and it exists because tendering from cold takes longer than a famine gives you.",
+      "persona": "ada",
+      "provenance": "S0",
+      "title": "The supply base, before the emergency"
+    },
+    {
+      "features": [
+        {
+          "description": "EOIRound with a draft to open to closed lifecycle, declared open categories, and open/close dates, managed from /supply/eoi-rounds/.",
+          "id": "eoi-round-lifecycle",
+          "verify": "pytest connect_labs/supply/tests/test_eoi.py covers the round transitions; POST /supply/api/eoi/rounds/<id>/transition/ moves draft to open."
+        }
+      ],
+      "id": "ada-opens-a-round-and-names-the-categories",
+      "narrative": "Ada opens a round and names what they are collecting interest in: ready-to-use therapeutic food, therapeutic milk, road transport, and warehousing. Because the categories are declared up front, every application arrives in the same shape and answers the same questions — which is the difference between a roster they can compare and a folder they have to read.",
+      "persona": "ada",
+      "provenance": "S0",
+      "title": "Ada opens a round and names the categories"
+    },
+    {
+      "features": [
+        {
+          "description": "EOISubmission.profile_snapshot, frozen at submit and rendered beside the live profile so a reviewer can see they are assessing the snapshot.",
+          "id": "eoi-submission-snapshot",
+          "verify": "pytest connect_labs/supply/tests/test_eoi.py asserts the snapshot is immutable after submit and does not follow later profile edits."
+        }
+      ],
+      "id": "amina-applies-and-the-profile-is-frozen",
+      "narrative": "Amina applies for Savanna Nutrients, declaring capacity, the regions they can reach, and lead times per category. The moment they submit, what they are judged on is frozen onto the submission. If Savanna updates a certificate next week, the live profile changes and the snapshot does not — so the decision Tomas is about to make stays reconstructable a year from now. That is the difference between a procurement system and a shared drive, and it is the property an inspector general asks about first.",
+      "persona": "amina",
+      "provenance": "S1",
+      "title": "Amina applies, and the profile is frozen"
+    },
+    {
+      "features": [
+        {
+          "description": "EOIReview capturing a per-category decision and notes, which on pass creates Qualification rows on the org with granted and expiry dates.",
+          "id": "eoi-review-decisions",
+          "verify": "pytest connect_labs/supply/tests/test_eoi.py asserts a per-category pass creates a live Qualification and a decline creates none."
+        }
+      ],
+      "id": "tomas-qualifies-the-supplier-per-category-and-with-an-expiry",
+      "narrative": "Tomas reads the frozen snapshot and decides per category. Savanna passes on ready-to-use therapeutic food and is declined on therapeutic milk, where the evidence is thin — one supplier, two different answers, which is how this actually works. A pass stamps a qualification onto the organisation with an expiry date, because certificates lapse and a roster that never expires quietly becomes a list of former suppliers.",
+      "persona": "tomas",
+      "provenance": "S2",
+      "title": "Tomas qualifies the supplier, per category and with an expiry"
+    },
+    {
+      "features": [
+        {
+          "description": "The registry surface at /supply/registry/, listing orgs by live qualification with category, country and expiry filters, excluding expired qualifications.",
+          "id": "registry-browser",
+          "verify": "GET /supply/api/registry/ returns only orgs holding a live qualification; pytest asserts an expired qualification is excluded from the payload."
+        }
+      ],
+      "id": "the-registry-answers-who-can-supply-today",
+      "narrative": "The registry is not a separate list somebody maintains — it is the set of live qualifications, so it is current by construction. Ada filters by commodity and country and gets an answer they can act on: these suppliers can make RUTF, these can move it, and this one has dropped out because its certification lapsed last month. Nobody had to remember to remove them.",
+      "persona": "ada",
+      "provenance": "S2",
+      "title": "The registry answers who can supply today"
+    },
+    {
+      "features": [
+        {
+          "description": "rfp_actions.org_can_bid as the single source of eligibility, applied when building the supplier bootstrap payload so ineligible solicitations are absent rather than hidden.",
+          "id": "eligibility-gated-solicitations",
+          "verify": "pytest connect_labs/supply/tests/test_rfp.py asserts bidding without a live matching qualification is rejected and the solicitation is absent from the payload."
+        }
+      ],
+      "id": "a-solicitation-reaches-only-qualified-suppliers",
+      "narrative": "Ada publishes a solicitation carrying concrete lots — sixty thousand cartons of RUTF into Maiduguri by the fifteenth of September. It is visible only to suppliers holding a live qualification in a matching category, and that is decided on the server: an unqualified supplier's page never receives the solicitation at all, rather than being shown it with the button hidden. It prevents the ordinary embarrassment of an ineligible bid that has to be excluded by hand after the fact.",
+      "persona": "ada",
+      "provenance": "S3",
+      "title": "A solicitation reaches only qualified suppliers"
+    },
+    {
+      "features": [
+        {
+          "description": "The per-lot comparison surface — LotBid rows price-ranked with BidScore technical scores inline, at /supply/solicitations/<id>/.",
+          "id": "per-lot-bid-comparison",
+          "verify": "GET /supply/api/rfps/<id>/comparison/ returns per-lot rows ordered by unit price with technical scores attached."
+        }
+      ],
+      "id": "bids-priced-and-scored-lot-by-lot",
+      "narrative": "Suppliers price each lot separately, and Ada compares them the same way: rows ranked by price with the reviewer's technical score beside each one. The leader on the Maiduguri lot is not the leader on Djibo, which is exactly the information a per-tender comparison would have hidden.",
+      "persona": "ada",
+      "provenance": "S4",
+      "title": "Bids priced and scored lot by lot"
+    },
+    {
+      "features": [
+        {
+          "description": "Award as an immutable per-lot record naming the winning LotBid, allowing different winners across lots of one solicitation.",
+          "id": "per-lot-award",
+          "verify": "pytest connect_labs/supply/tests/test_rfp.py asserts a lot cannot be awarded twice and an unsubmitted bid cannot be awarded."
+        },
+        {
+          "description": "Seeded demo state in which one solicitation's lots are awarded to two different qualified suppliers, so the split is visible rather than asserted.",
+          "id": "split-award-demo-state",
+          "verify": "After seed_supply_demo, at least one RFP has lots with two distinct awarded_org values; asserted in test_seed.py."
+        }
+      ],
+      "id": "two-suppliers-two-corridors-one-tender",
+      "narrative": "Ada awards Maiduguri to one supplier and Djibo to another. This is the decision the lot structure exists to make possible: concentrating a four-country response on the cheapest single bidder is the classic humanitarian supply failure, because when that plant or that corridor goes down, every district goes down at the same moment. Splitting costs a little more per carton and buys the thing money cannot buy later.",
+      "persona": "ada",
+      "provenance": "S4",
+      "title": "Two suppliers, two corridors, one tender"
+    },
+    {
+      "features": [
+        {
+          "description": "Contract created from an Award, drawing against an Appropriation and carrying the IATI activity identifier plus the delivery schedule.",
+          "id": "award-to-contract",
+          "verify": "pytest connect_labs/supply/tests/test_dashboards.py asserts the award-contract-appropriation linkage and that disbursement never exceeds obligation."
+        }
+      ],
+      "id": "the-award-becomes-the-contract",
+      "narrative": "The award is immutable — it is the decision. What carries it out is a contract, drawing against a specific funding envelope and carrying the delivery schedule into execution. Almost every procurement system stops here, which is why nobody can trace a dollar to a carton. This is the midpoint: from here the same record is what the supply chain moves against.",
+      "persona": "ada",
+      "provenance": "S5",
+      "title": "The award becomes the contract"
+    }
+  ],
+  "slug": "oes-supply-base",
+  "version": 1
+}
