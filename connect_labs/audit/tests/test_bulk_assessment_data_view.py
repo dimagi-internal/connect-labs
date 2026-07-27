@@ -399,3 +399,120 @@ def test_csv_export_resolves_xform_id_when_visit_batch_returns_string_ids(labs_c
     assert rows[0] == ["Filename", "Visit Date", "#", "CommCareHQ Form URL"]
     assert rows[1][0] == "img1.jpg"
     assert rows[1][3] == "https://www.commcarehq.org/a/eha-clinics-reach/reports/form_data/xform-abc-123/"
+
+
+def test_visit_results_returns_complete_stored_structure_not_a_flattened_view(labs_client, monkeypatch):
+    """Regression: prior per-image assessments must survive the next save.
+
+    The page hydrates its `visitResults` from this key and POSTs that object
+    straight back, and both save endpoints assign it over
+    session.data["visit_results"] wholesale. So whatever is omitted here is
+    destroyed on the next Save Progress / Complete Review.
+
+    This used to send {visit_id: "<visit-level result>"}, which is both the
+    wrong shape (the page reads .result / .assessments off each entry) and
+    empty in practice for image audits — per-image saves never set a
+    visit-level result. Every save therefore started from {} and wiped every
+    previously assessed image on the session.
+    """
+    from connect_labs.audit import views
+
+    username = "flw1"
+    session = _make_session(username)
+    # Two images already assessed in an earlier sitting, one with notes.
+    stored = {
+        "111": {
+            "assessments": {
+                "b1": {
+                    "question_id": "form/photo",
+                    "result": "pass",
+                    "notes": "looks fine",
+                    "ai_result": "",
+                    "ai_notes": "",
+                },
+                "b2": {
+                    "question_id": "form/photo2",
+                    "result": "fail",
+                    "notes": "",
+                    "ai_result": "",
+                    "ai_notes": "",
+                },
+            }
+        }
+    }
+    session.data["visit_results"] = stored
+
+    class FakeDataAccess:
+        def __init__(self, *a, **k):
+            pass
+
+        def get_audit_session(self, session_id, try_multiple_opportunities=False):
+            return session
+
+        def get_opportunity_details(self, opportunity_id):
+            return {"name": "EHA-PRE-RCT Connect-CHC 2026"}
+
+        def get_flw_names(self, opportunity_id):
+            return {}
+
+        def get_prior_audited_images(self, opportunity_id, exclude_session_id=None):
+            return {}
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(views, "AuditDataAccess", FakeDataAccess)
+
+    data = labs_client.get(f"/audit/api/{session.id}/bulk-data/").json()
+
+    # Round-trip safe: what the page will POST back still contains every
+    # prior assessment, including ones whose image is not currently displayed.
+    assert data["visit_results"] == stored
+
+    entry = data["visit_results"]["111"]
+    assert entry["assessments"]["b1"]["result"] == "pass"
+    assert entry["assessments"]["b1"]["notes"] == "looks fine"
+    assert entry["assessments"]["b2"]["result"] == "fail"
+
+
+def test_visit_results_preserves_visit_level_result_alongside_assessments(labs_client, monkeypatch):
+    """The page reads `visitResults[id]?.result` for the visit-level verdict,
+    so that must survive as a field on the entry — not replace the entry."""
+    from connect_labs.audit import views
+
+    session = _make_session("flw1")
+    session.data["visit_results"] = {
+        "111": {
+            "xform_id": "xform-abc-123",
+            "result": "pass",
+            "notes": "visit level note",
+            "assessments": {"b1": {"question_id": "form/photo", "result": "pass", "notes": ""}},
+        }
+    }
+
+    class FakeDataAccess:
+        def __init__(self, *a, **k):
+            pass
+
+        def get_audit_session(self, session_id, try_multiple_opportunities=False):
+            return session
+
+        def get_opportunity_details(self, opportunity_id):
+            return {"name": "EHA"}
+
+        def get_flw_names(self, opportunity_id):
+            return {}
+
+        def get_prior_audited_images(self, opportunity_id, exclude_session_id=None):
+            return {}
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(views, "AuditDataAccess", FakeDataAccess)
+
+    entry = labs_client.get(f"/audit/api/{session.id}/bulk-data/").json()["visit_results"]["111"]
+
+    assert entry["result"] == "pass"
+    assert entry["xform_id"] == "xform-abc-123"
+    assert entry["assessments"]["b1"]["result"] == "pass"
