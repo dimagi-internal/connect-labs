@@ -163,6 +163,9 @@ The bulk assessment page header identifies the field worker being reviewed. For 
 
     Add optional notes to any image, then move to the next. Your progress saves automatically.
 
+    !!! warning "Resuming a session across multiple sittings"
+        It is safe to review images, save, and come back later to continue. Assessments and notes made in an earlier sitting are preserved when you save again — nothing is overwritten. If you encounter a session where earlier verdicts appear to have reverted to Pending, those images will need to be re-reviewed, as the data from the affected saves cannot be recovered.
+
     The **#** link on each image tile opens the original visit record directly in Connect. This link is correct for all sessions, including those created previously.
 
 === "AI-Assisted Review"
@@ -175,8 +178,4 @@ The bulk assessment page header identifies the field worker being reviewed. For 
     | --- | --- | --- |
     | **Scale Image Validation** | A weight-related image type is selected and this agent is chosen for it | Compares scale photos against the reading entered by the FLW and flags mismatches |
     | **MUAC OverZoom** | A MUAC image type is selected and this agent is chosen for it | Classifies photos for excessive zoom and flags images the agent identifies as hyperzoomed |
-    | **MUAC Reading Match** | A MUAC image type is selected and this agent is chosen for it | Compares the MUAC tape photo against the manually-entered MUAC value (in cm) and flags mismatches; the recorded reading is shown on the image tile alongside the photo |
-
-    If no agent is selected for an image type, that type's photos are not pre-screened by AI — the workflow behaves exactly as standard review for those images.
-
-    AI results appear alongside each image as suggestions — you make the final Pass/Fail/Duplicate/Fake call. Images flagged by the AI are highlighted so you can prioritize reviewing them first. When both **MUAC
+    | **MUAC Reading Match** | A MUAC image type is selected and this agent is chosen for it | Compares the MUAC tape photo against the manually-entered MUAC value (in cm) and flags mismatches; the recorded reading is shown
