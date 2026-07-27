@@ -800,6 +800,7 @@
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-2">Notes</label>
           <textarea x-model="completionNotes"
+                    @input="hasUnsavedChanges = true; scheduleAutoSave()"
                     placeholder="Enter any notes about this review..."
                     :disabled="isReadOnly"
                     class="w-full p-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-brand-indigo focus:border-transparent"
@@ -1959,13 +1960,24 @@ function bulkAssessmentInterface() {
         this.applyingResults = false;
       }
     },
+    // Single source of truth for what a save carries. The session-level Notes
+    // box lives on this page, but saveAudit/autoSave/"Save Progress" all used
+    // to post visit_results only -- so a note edit was silently dropped unless
+    // you completed the audit. Build the payload here so no save path can
+    // forget a field again.
+    buildSavePayload() {
+      const formData = new FormData();
+      formData.append('visit_results', JSON.stringify(this.visitResults));
+      formData.append('notes', this.completionNotes);
+      formData.append('kpi_notes', this.kpiNotes);
+      formData.append('csrfmiddlewaretoken', this.csrfToken);
+      return formData;
+    },
     async saveAudit() {
       if (this.saving) return;
       this.saving = true;
       try {
-        const formData = new FormData();
-        formData.append('visit_results', JSON.stringify(this.visitResults));
-        formData.append('csrfmiddlewaretoken', this.csrfToken);
+        const formData = this.buildSavePayload();
         const response = await fetch(this.saveUrl, {
           method: 'POST',
           body: formData,
@@ -2000,9 +2012,7 @@ function bulkAssessmentInterface() {
       this.saving = true;
       this.autoSaveStatus = 'saving';
       try {
-        const formData = new FormData();
-        formData.append('visit_results', JSON.stringify(this.visitResults));
-        formData.append('csrfmiddlewaretoken', this.csrfToken);
+        const formData = this.buildSavePayload();
         const response = await fetch(this.saveUrl, { method: 'POST', body: formData });
         const data = await response.json();
         if (!response.ok || !data.success) {
@@ -2024,12 +2034,8 @@ function bulkAssessmentInterface() {
       if (!this.overallResult || this.submittingCompletion) return;
       this.submittingCompletion = true;
       try {
-        const formData = new FormData();
-        formData.append('visit_results', JSON.stringify(this.visitResults));
+        const formData = this.buildSavePayload();
         formData.append('overall_result', this.overallResult);
-        formData.append('notes', this.completionNotes);
-        formData.append('kpi_notes', this.kpiNotes);
-        formData.append('csrfmiddlewaretoken', this.csrfToken);
         const response = await fetch(this.completeUrl, {
           method: 'POST',
           body: formData,
@@ -2054,9 +2060,7 @@ function bulkAssessmentInterface() {
       this.submittingCompletion = true;
       try {
         const hasPending = this.stats.pending > 0;
-        const formData = new FormData();
-        formData.append('visit_results', JSON.stringify(this.visitResults));
-        formData.append('csrfmiddlewaretoken', this.csrfToken);
+        const formData = this.buildSavePayload();
 
         if (hasPending) {
           // Save progress only - keep in_progress status
@@ -2076,9 +2080,10 @@ function bulkAssessmentInterface() {
         } else {
           // Complete the session — pass if the overall pass % meets the audit's configured threshold
           const overallResult = this.auditPassPercentage >= this.auditPassThreshold ? 'pass' : 'fail';
+          // notes/kpi_notes already carried by buildSavePayload(). Don't re-append:
+          // duplicate keys make Django read the LAST one, and this path used to
+          // hardcode kpi_notes to '' — which silently wiped it on completion.
           formData.append('overall_result', overallResult);
-          formData.append('notes', this.completionNotes);
-          formData.append('kpi_notes', '');
           const response = await fetch(this.completeUrl, {
             method: 'POST',
             body: formData,

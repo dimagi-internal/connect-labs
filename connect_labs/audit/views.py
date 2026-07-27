@@ -361,6 +361,16 @@ class ExperimentSaveAuditView(LoginRequiredMixin, View):
                     except json.JSONDecodeError as e:
                         return JsonResponse({"error": f"Invalid JSON: {e}"}, status=400)
 
+                # Session-level notes live on the same page as the image grid, so a
+                # progress save has to persist them too. They used to be read only by
+                # the completion endpoint, which meant editing the Notes box and
+                # hitting Save Progress silently discarded the change until the audit
+                # was completed. Keyed on presence rather than truthiness, so a caller
+                # that doesn't manage notes can't blank them, and clearing a note works.
+                for field in ("notes", "kpi_notes"):
+                    if field in request.POST:
+                        session.data[field] = request.POST.get(field, "")
+
                 # Save session (keeps status as in_progress)
                 session = data_access.save_audit_session(session)
 
@@ -619,7 +629,6 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
                     pass
 
             question_ids = set()
-            visit_result_map: dict[str, str] = {}
             all_assessments: list[dict] = []
             bulk_primary_username = ""
             assessment_counter = 0  # Counter to ensure unique IDs even for duplicate visits
@@ -658,11 +667,6 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
 
             # Use stored visit_images data - no need to fetch visits again!
             for visit_id in visit_ids:
-                visit_result_entry = session.get_visit_result(visit_id) or {}
-                visit_result_value = visit_result_entry.get("result")
-                if visit_result_value:
-                    visit_result_map[str(visit_id)] = visit_result_value
-
                 assessments_map = session.get_assessments(visit_id)
                 seen_blob_ids = set()
 
@@ -928,7 +932,19 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
                 "bulk_opportunity_name": primary_opportunity,
                 "bulk_start_date": start_date_display,
                 "bulk_end_date": end_date_display,
-                "visit_results": visit_result_map,
+                # The COMPLETE stored structure, not a flattened view of it.
+                # The page hydrates its `visitResults` from this key and then
+                # POSTs that object back, and both save endpoints assign it
+                # over session.data["visit_results"] wholesale. So anything
+                # missing here is silently destroyed on the next save.
+                #
+                # This used to send {visit_id: "<visit-level result>"}, which
+                # (a) is the wrong shape — the page reads .result/.assessments
+                # off each entry — and (b) is empty in practice for image
+                # audits, because per-image assessment saves never set a
+                # visit-level result. Net effect: every save started from {}
+                # and wiped every previously assessed image on the session.
+                "visit_results": session.data.get("visit_results", {}),
                 "visit_clusters": session.data.get("visit_clusters", []),
             }
 
