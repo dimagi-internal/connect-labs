@@ -5,10 +5,11 @@ Workflow 2 of a two-workflow pair (see flw_daily_indicator_report.py,
 WorkflowRun per opportunity per day) via a dedicated read-only API endpoint
 (api/flw-daily-indicator-history/) and displays them as a 14-day grid: one
 row per FLW, one column per day, a single 0/1 "investigate today" flag per
-cell. Clicking an FLW's name expands inline sub-rows -- one per day -- showing
-every one of the 10 raw indicator values alongside its threshold, with
-over-threshold values highlighted, so it's immediately clear WHICH
-indicator(s) tripped the flag.
+cell. Clicking an FLW's name expands an inline detail table -- same day
+columns as the row above it, one row per indicator -- showing every one of
+the 10 raw indicator values alongside its threshold, with over-threshold
+values highlighted, so it's immediately clear WHICH indicator(s) tripped the
+flag on which day.
 
 All 9 evaluated indicators' thresholds live in the THRESHOLDS constant below
 (indicator #1, total forms, is informational only and never trips the flag)
@@ -373,42 +374,52 @@ function formatShortDate(isoDate) {
 }
 
 function ExpandedFlwDetail({ row, dayColumns, thresholds }) {
+    // Transposed from the main grid's own orientation: here, days are the
+    // COLUMNS (matching the day columns directly above this expanded row) and
+    // indicators are the ROWS -- one row per indicator, its threshold shown
+    // alongside its label, so scanning down a column reads as "this FLW's day",
+    // same as scanning down the main table.
+    var detailsByDay = {};
+    dayColumns.forEach(function (d) {
+        var flw = row.byDate[d];
+        detailsByDay[d] = flw ? indicatorDetailsForDay(flw, thresholds) : null;
+    });
+
     return (
         <div className="overflow-x-auto">
             <table className="min-w-full text-xs border-collapse bg-white rounded border">
                 <thead>
                     <tr>
-                        <th className="text-left px-2 py-1.5 border-b font-medium text-gray-600">Day</th>
-                        {INDICATOR_DEFS.map(function (def) {
+                        <th className="sticky left-0 bg-white text-left px-2 py-1.5 border-b font-medium text-gray-600 whitespace-nowrap">Indicator</th>
+                        {dayColumns.map(function (d) {
                             return (
-                                <th key={def.key} className="text-center px-2 py-1.5 border-b font-medium text-gray-600 whitespace-nowrap">
-                                    {def.label}
+                                <th key={d} className="text-center px-2 py-1.5 border-b font-medium text-gray-600 whitespace-nowrap">
+                                    {formatShortDate(d)}
                                 </th>
                             );
                         })}
                     </tr>
                 </thead>
                 <tbody className="divide-y">
-                    {dayColumns.map(function (d) {
-                        var flw = row.byDate[d];
-                        if (!flw) {
-                            return (
-                                <tr key={d}>
-                                    <td className="px-2 py-1.5 font-medium text-gray-700 whitespace-nowrap">{formatShortDate(d)}</td>
-                                    <td colSpan={INDICATOR_DEFS.length} className="px-2 py-1.5 text-center text-gray-300">no report</td>
-                                </tr>
-                            );
-                        }
-                        var details = indicatorDetailsForDay(flw, thresholds);
+                    {INDICATOR_DEFS.map(function (def) {
                         return (
-                            <tr key={d}>
-                                <td className="px-2 py-1.5 font-medium text-gray-700 whitespace-nowrap">{formatShortDate(d)}</td>
-                                {details.map(function (det) {
+                            <tr key={def.key}>
+                                <td className="sticky left-0 bg-white px-2 py-1.5 font-medium text-gray-700 whitespace-nowrap">
+                                    {def.label}
+                                    {def.thresholdKey && (
+                                        <span className="text-gray-400 font-normal"> (thr: {thresholds[def.thresholdKey]})</span>
+                                    )}
+                                </td>
+                                {dayColumns.map(function (d) {
+                                    var dayDetails = detailsByDay[d];
+                                    if (!dayDetails) {
+                                        return <td key={d} className="px-2 py-1.5 text-center text-gray-300">—</td>;
+                                    }
+                                    var det = dayDetails.filter(function (x) { return x.key === def.key; })[0];
                                     var display = det.value == null ? "n/a" : det.value;
                                     var cellCls = det.tripped ? "bg-red-50 text-red-700 font-semibold" : "text-gray-700";
-                                    var title = det.threshold != null ? "threshold: " + det.threshold : "";
                                     return (
-                                        <td key={det.key} className={"px-2 py-1.5 text-center whitespace-nowrap " + cellCls} title={title}>
+                                        <td key={d} className={"px-2 py-1.5 text-center whitespace-nowrap " + cellCls}>
                                             {display}
                                         </td>
                                     );
