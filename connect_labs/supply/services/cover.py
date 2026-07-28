@@ -218,6 +218,39 @@ def cover_by_node(nodes=None, as_of=None, month=None):
     return sorted(rows, key=lambda r: r["weeks_of_cover"])
 
 
+def nodes_holding_surplus(as_of=None, month=None, min_weeks=6.0):
+    """Nodes carrying more cover than their own caseload can use.
+
+    The exception queue's advice is "reallocate from a node holding surplus",
+    which is only actionable if the screen can say WHICH. Answering it needs
+    the same cover derivation the queue already ranks on, so it lives here
+    beside it rather than being recomputed in a view.
+
+    Ordered by the most surplus first, and reported with the cartons that could
+    move without taking the source below the threshold — because a reallocation
+    that solves one stockout by causing another is not a decision anybody would
+    defend afterwards.
+    """
+    rows = []
+    for row in cover_by_node(as_of=as_of, month=month):
+        if row["weeks_of_cover"] < min_weeks or row["stock_on_hand"] <= 0:
+            continue
+        keep = row["weekly_burn"] * min_weeks
+        spare = int(row["stock_on_hand"] - keep)
+        if spare <= 0:
+            continue
+        rows.append(
+            {
+                "node_id": row["node_id"],
+                "node_name": row["node_name"],
+                "stock_on_hand": row["stock_on_hand"],
+                "weeks_of_cover": row["weeks_of_cover"],
+                "spare_cartons": spare,
+            }
+        )
+    return sorted(rows, key=lambda r: -r["spare_cartons"])
+
+
 def children_at_risk(node, delay_days, as_of=None, month=None):
     """Children who miss a full course because supply is ``delay_days`` late.
 

@@ -28,6 +28,7 @@ function CommandTab({ ctx }) {
   const coverage = world.coverage || [];
   const [selected, setSelected] = useState(null);
   const [openContract, setOpenContract] = useState(null);
+  const [reallocatingFor, setReallocatingFor] = useState(null);
 
   const inTransit = shipments.filter((s) => s.status === 'in_transit');
   const deliveredCartons = contracts.reduce(
@@ -113,6 +114,23 @@ function CommandTab({ ctx }) {
                     </div>
                   ) : null}
                   <div className="exception-action">→ {e.action}</div>
+                  {/* The queue has always ADVISED a reallocation and never
+                      offered one, so the single sentence that tells the reader
+                      what to do about a row was the only thing on the card
+                      they could not act on. */}
+                  {e.node_id &&
+                  /reallocate/i.test(e.action || '') &&
+                  supplyCan(world.role, 'actions', 'create') ? (
+                    <span
+                      className="btn btn-sm"
+                      onClick={(ev) => {
+                        ev.stopPropagation();
+                        setReallocatingFor(e);
+                      }}
+                    >
+                      Reallocate to {e.node_name}
+                    </span>
+                  ) : null}
                   {e.discrepancy_id &&
                   supplyCan(world.role, 'execution', 'resolve') ? (
                     <span
@@ -360,6 +378,15 @@ function CommandTab({ ctx }) {
         </p>
       </Card>
 
+      {reallocatingFor ? (
+        <ReallocateModal
+          ctx={ctx}
+          exception={reallocatingFor}
+          surplus={world.surplus_nodes || []}
+          onClose={() => setReallocatingFor(null)}
+        />
+      ) : null}
+
       {openContract ? (
         <ContractDetailModal
           contract={openContract}
@@ -499,6 +526,135 @@ function ContractDetailModal({ contract, onClose }) {
           Status and quantities are derived from the event log, not entered.
         </p>
       </Card>
+    </Modal>
+  );
+}
+
+/* Moving surplus is a decision, so it records one.
+
+   `services/actions.reallocate` and `POST api/actions/reallocate/` have existed
+   since the demand stage landed; what did not exist was any way to reach them.
+   The exception queue advised "reallocate from a node holding surplus" on every
+   late consignment and every partner shortfall, and that advice was the one
+   thing on the card a reader could not act on.
+
+   The source list is not a node picker over the whole network. It is the nodes
+   that genuinely hold more than their own caseload can consume, each showing
+   what it could spare without dropping below its own threshold — because a
+   reallocation that solves one stockout by causing another is not a decision
+   anybody would defend afterwards. */
+function ReallocateModal({ ctx, exception, surplus, onClose }) {
+  const candidates = surplus.filter((n) => n.node_id !== exception.node_id);
+  const [sourceId, setSourceId] = useState(
+    candidates.length ? String(candidates[0].node_id) : '',
+  );
+  const suggested = Math.max(exception.children_at_risk || 0, 0);
+  const [quantity, setQuantity] = useState(String(suggested || 100));
+  const [rationale, setRationale] = useState('');
+
+  const source = candidates.find((n) => String(n.node_id) === sourceId);
+  const overdrawn = source && Number(quantity) > source.spare_cartons;
+
+  const submit = async () => {
+    const ok = await ctx.act(
+      () =>
+        supplyPost('/supply/api/actions/reallocate/', {
+          source_node_id: Number(sourceId),
+          target_node_id: exception.node_id,
+          quantity: Number(quantity),
+          rationale,
+          signal_id: exception.signal_id || null,
+        }),
+      'Reallocated — a consignment is on the map with planned milestones.',
+    );
+    if (ok) onClose();
+  };
+
+  return (
+    <Modal
+      title={`Reallocate to ${exception.node_name}`}
+      onClose={onClose}
+      footer={
+        <React.Fragment>
+          <button type="button" className="btn btn-secondary" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="btn"
+            onClick={submit}
+            disabled={
+              ctx.busy ||
+              !sourceId ||
+              !rationale.trim() ||
+              overdrawn ||
+              Number(quantity) <= 0
+            }
+          >
+            Reallocate
+          </button>
+        </React.Fragment>
+      }
+    >
+      <p className="modal-lede">{exception.why}</p>
+      {candidates.length ? (
+        <React.Fragment>
+          <FormRow
+            label="Move from"
+            hint="Only nodes holding more than their own caseload can consume."
+          >
+            <select
+              value={sourceId}
+              onChange={(e) => setSourceId(e.target.value)}
+            >
+              {candidates.map((n) => (
+                <option key={n.node_id} value={n.node_id}>
+                  {n.node_name} — {formatNumber(n.spare_cartons)} cartons spare
+                  ({n.weeks_of_cover} wk cover)
+                </option>
+              ))}
+            </select>
+          </FormRow>
+          <FormRow
+            label="Cartons"
+            hint={
+              source
+                ? `${formatNumber(
+                    source.spare_cartons,
+                  )} can move without taking ${
+                    source.node_name
+                  } below six weeks.`
+                : ''
+            }
+          >
+            <input
+              type="number"
+              value={quantity}
+              onChange={(e) => setQuantity(e.target.value)}
+            />
+          </FormRow>
+          {overdrawn ? (
+            <div className="form-error">
+              That would take {source.node_name} below its own threshold.
+            </div>
+          ) : null}
+          <FormRow
+            label="Why"
+            hint="Recorded against the action, and against the signal it answers."
+          >
+            <textarea
+              rows="3"
+              value={rationale}
+              onChange={(e) => setRationale(e.target.value)}
+            />
+          </FormRow>
+        </React.Fragment>
+      ) : (
+        <EmptyState
+          title="No node is holding surplus."
+          hint="Nothing can be moved without causing a stockout somewhere else."
+        />
+      )}
     </Modal>
   );
 }

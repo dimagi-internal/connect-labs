@@ -333,6 +333,29 @@ def test_the_spoken_maiduguri_deadline_is_the_fifteenth_of_september():
     assert (lot.delivery_deadline.month, lot.delivery_deadline.day) == (9, 15)
 
 
+def test_a_node_can_only_spare_what_it_does_not_need():
+    """The queue advises reallocating from surplus; this is what surplus means.
+
+    A reallocation that solves one stockout by causing another is not a
+    decision anybody would defend afterwards, so a node offers only the cartons
+    it can lose while staying above its own threshold.
+    """
+    call_command("seed_supply_demo")
+    rows = cover.nodes_holding_surplus(min_weeks=6.0)
+    assert rows, "the demo world needs somewhere to reallocate from"
+
+    by_node = {r["node_name"]: r for r in cover.cover_by_node()}
+    for row in rows:
+        full = by_node[row["node_name"]]
+        assert full["weeks_of_cover"] >= 6.0, "a node below the threshold has nothing spare"
+        # What is left behind still covers the threshold.
+        remaining = full["stock_on_hand"] - row["spare_cartons"]
+        assert remaining >= full["weekly_burn"] * 6.0 - 1
+
+    # Most spare first: the reader is choosing a source, not reading a list.
+    assert [r["spare_cartons"] for r in rows] == sorted((r["spare_cartons"] for r in rows), reverse=True)
+
+
 def test_a_site_awaiting_its_first_delivery_is_not_reported_as_running_dry():
     """Zero cartons is two different facts and they need opposite actions.
 
