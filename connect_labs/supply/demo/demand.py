@@ -99,6 +99,12 @@ def seed_demand(rng, orgs, nodes):
 # the road to it would make the shortfall the partner raises redundant.
 INBOUND_SITES = ["Biu Nutrition Centre", "Askira Nutrition Centre"]
 
+# The site whose consignment arrives short, and by how much. Monguno and the
+# 900/840 split are what the partner narrative's receipt scene actually says.
+SHORT_RECEIPT_SITE = "Monguno Nutrition Centre"
+SHORT_RECEIPT_DESPATCHED = 900
+SHORT_RECEIPT_RECEIVED = 840
+
 SITE_COVER_WEEKS = {
     "Monguno Nutrition Centre": 6.0,
     "Dikwa Nutrition Centre": 5.5,
@@ -200,6 +206,17 @@ def seed_partner_stock(rng, nodes, sites):
             },
         )
         Shipment.objects.filter(pk=shipment.pk).update(status=Shipment.Status.DELIVERED, delivered_at=arrived)
+
+        # One consignment arrives short, at the site the narration names, with
+        # the figures the narration speaks. The partner narrative's scene 4 is
+        # about a storekeeper counting 840 cartons off a truck whose advice
+        # said 900 — and until a deterministic check compared the narration to
+        # the captured page text, no discrepancy existed anywhere on the
+        # partner's surface at all. Four LLM judges and three iterations had
+        # not caught it, because none of them was looking at that scene.
+        if name == SHORT_RECEIPT_SITE:
+            _short_receipt(shipment, site, contract, arrived)
+
         written.append(shipment)
 
     # And a few consignments still on the road. The partner surface's own
@@ -335,6 +352,43 @@ def _seed_partner_user(partner, email):
     user.save(update_fields=["password"])
     SupplierMember.objects.update_or_create(user=user, defaults={"org": partner})
     return user
+
+
+def _short_receipt(shipment, site, contract, arrived):
+    """A receipt that does not reconcile, raised by the receiving partner.
+
+    The count is what the storekeeper recorded; the difference against the
+    despatch advice becomes the Discrepancy. Written through the same shapes
+    the ingestion tiers use, so it is the app's own reconciliation rather than
+    a fixture bolted beside it.
+    """
+    from ..models import Discrepancy, SupplyEvent
+
+    event, _ = SupplyEvent.objects.update_or_create(
+        org=contract.org,
+        external_id=f"{shipment.reference}-short",
+        defaults={
+            "shipment": shipment,
+            "biz_step": SupplyEvent.BizStep.RECEIVING,
+            "event_time": arrived,
+            "read_point": site,
+            "quantity_list": [{"gtin": "", "quantity": SHORT_RECEIPT_RECEIVED, "uom": "cartons"}],
+            "source_tier": SupplyEvent.SourceTier.CHECKIN,
+        },
+    )
+    Discrepancy.objects.update_or_create(
+        shipment=shipment,
+        defaults={
+            "event": event,
+            "expected_quantity": Decimal(SHORT_RECEIPT_DESPATCHED),
+            "received_quantity": Decimal(SHORT_RECEIPT_RECEIVED),
+            "note": (
+                "Counted off the truck at the loading bay against the despatch "
+                "advice. Recorded from a phone by the receiving storekeeper."
+            ),
+            "status": Discrepancy.Status.OPEN,
+        },
+    )
 
 
 def seed_distribution_plans(rng, partner, sites):
