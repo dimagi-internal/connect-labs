@@ -59,6 +59,49 @@ def test_403_records_access_denied(rf, user):
 
 
 @pytest.mark.django_db
+def test_403_from_anonymous_is_not_recorded(rf):
+    """Scanner traffic must not land in the access-denied record.
+
+    §164.308(a)(1)(ii)(D) is about a known workforce member being refused; an
+    anonymous 403 is a stranger. In prod every recorded denial over the first
+    four days was unauthenticated — bare `/` hits and /admin/*.php probes —
+    which is exactly the noise that makes the card unreadable.
+    """
+    from django.contrib.auth.models import AnonymousUser
+
+    def view(request):
+        return HttpResponseForbidden("no")
+
+    request = rf.get("/admin/index.php")
+    request.user = AnonymousUser()
+    AuditTrailMiddleware(view)(request)
+
+    assert not AuditEvent.objects.filter(action=Action.ACCESS_DENIED).exists()
+
+
+@pytest.mark.django_db
+def test_buffered_events_keep_their_own_timestamps(rf, user):
+    """occurred_at is the time of the ACCESS, not of the flush.
+
+    Under auto_now_add, bulk_create stamped every event in a request identically,
+    so a request making hundreds of sequential API calls recorded them all as one
+    instant and intra-request ordering was lost.
+    """
+    def view(request):
+        service.record(Action.READ, resource_type="first")
+        service.record(Action.READ, resource_type="second")
+        return HttpResponse("ok")
+
+    request = rf.get("/labs/thing/")
+    request.user = user
+    AuditTrailMiddleware(view)(request)
+
+    first = AuditEvent.objects.get(resource_type="first")
+    second = AuditEvent.objects.get(resource_type="second")
+    assert first.occurred_at < second.occurred_at
+
+
+@pytest.mark.django_db
 def test_exception_still_flushes_buffer(rf, user):
     def view(request):
         service.record(Action.READ, resource_type="task", resource_id=7)

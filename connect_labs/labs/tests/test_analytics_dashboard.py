@@ -97,15 +97,38 @@ def test_umami_sso_forbidden_for_external(client, django_user_model):
 
 @pytest.mark.django_db
 def test_audit_bridge_sends_analytics_events(settings):
-    """Successful writes/exports become Umami feature events; reads do not."""
+    """Successful HUMAN writes/exports become Umami feature events; reads do not.
+
+    Two dimensions gate the mirror: the action must be a write, and the source
+    must be a person (web/mcp). Source.SYSTEM — the default when record() runs
+    with no audit context at all — is deliberately NOT mirrored: every such write
+    in prod was an unattributed machine export. A human-driven write always
+    carries a context (the web middleware or the MCP seam sets one), so a write
+    reaching here as SYSTEM means no request drove it.
+    """
+    settings.UMAMI_HOST_URL = "https://labs.example.com/umami"
+    settings.UMAMI_WEBSITE_ID = "site-123"
+    from connect_labs.audit_trail import service
+    from connect_labs.audit_trail.context import audit_context
+    from connect_labs.audit_trail.models import Action, Source
+
+    with patch("connect_labs.utils.server_analytics.send_event_task") as task:
+        with audit_context(source=Source.WEB, request_id="req-1"):
+            service.record(Action.CREATE, resource_type="workflow_run", labs_only=False)
+            service.record(Action.READ, resource_type="workflow_run")
+    names = [c.args[0] for c in task.delay.call_args_list]
+    assert names == ["data_create"]
+    assert task.delay.call_args_list[0].args[1] == {"resource_type": "workflow_run", "labs_only": False}
+
+
+@pytest.mark.django_db
+def test_audit_bridge_ignores_contextless_writes(settings):
+    """A write with no audit context (Source.SYSTEM) is audited but not mirrored."""
     settings.UMAMI_HOST_URL = "https://labs.example.com/umami"
     settings.UMAMI_WEBSITE_ID = "site-123"
     from connect_labs.audit_trail import service
     from connect_labs.audit_trail.models import Action
 
     with patch("connect_labs.utils.server_analytics.send_event_task") as task:
-        service.record(Action.CREATE, resource_type="workflow_run", labs_only=False)
-        service.record(Action.READ, resource_type="workflow_run")
-    names = [c.args[0] for c in task.delay.call_args_list]
-    assert names == ["data_create"]
-    assert task.delay.call_args_list[0].args[1] == {"resource_type": "workflow_run", "labs_only": False}
+        service.record(Action.EXPORT, resource_type="user_visits", record_count=250)
+    assert task.delay.call_args_list == []

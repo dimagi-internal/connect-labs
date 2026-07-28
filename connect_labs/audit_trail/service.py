@@ -19,6 +19,7 @@ import json
 import logging
 
 from django.db import models, transaction
+from django.utils import timezone
 
 from connect_labs.audit_trail.context import get_audit_context
 from connect_labs.audit_trail.models import AuditEvent, Outcome, Source
@@ -92,6 +93,11 @@ def record(
         # over-long value would otherwise be held for the whole request.
         event_kwargs = _clamp(
             {
+                # Stamped HERE, at the moment of the access — not at flush. In a
+                # buffered web context these kwargs sit in the request's buffer
+                # until the response, so letting the DB fill it would collapse
+                # every event in the request onto one timestamp.
+                "occurred_at": timezone.now(),
                 "action": action,
                 "resource_type": resource_type or "",
                 "resource_id": str(resource_id) if resource_id is not None else "",
@@ -165,13 +171,27 @@ def redact_query_string(query_string: str) -> str:
 # them); payload is resource_type + labs_only only, never identifiers.
 _ANALYTICS_ACTIONS = {"create", "update", "delete", "export"}
 
+# ...but only when a HUMAN drove the write. The same choke points serve Celery,
+# and background churn dwarfs real usage: over 2026-07-24..28 only 13% of
+# mirrored writes came from a person (3,199 of 3,838 were Celery, almost all
+# workflow_run status churn, 3,101 with no user attached at all). Mirroring
+# those made `data_update` — the flagship product-analytics event — read ~15x
+# real engagement and turned "who uses labs" into a measure of the polling loop.
+# WEB is a person in a browser; MCP is a person driving tools through an agent.
+# CELERY/SCRIPT/SYSTEM are machines and never belong in product analytics.
+_ANALYTICS_SOURCES = {Source.WEB, Source.MCP}
+
 
 def _emit_analytics(rows) -> None:
     try:
         from connect_labs.utils import server_analytics
 
         for row in rows:
-            if row.action in _ANALYTICS_ACTIONS and row.outcome == Outcome.SUCCESS:
+            if (
+                row.action in _ANALYTICS_ACTIONS
+                and row.outcome == Outcome.SUCCESS
+                and row.source in _ANALYTICS_SOURCES
+            ):
                 server_analytics.send_event(
                     f"data_{row.action}",
                     {"resource_type": row.resource_type, "labs_only": row.labs_only},
@@ -236,12 +256,9 @@ def _write_events(events: list[dict], ctx) -> None:
     for row in rows:
         try:
             payload = row.to_log_dict()
-            if payload.get("occurred_at") is None:
-                # bulk_create with auto_now_add fills occurred_at on the DB
-                # side only after a successful insert; stamp a wall-clock
-                # fallback for the stream line.
-                from django.utils import timezone
-
+            if payload.get("occurred_at") is None:  # pragma: no cover - defensive
+                # record() always stamps occurred_at, and the model default
+                # covers rows built elsewhere; this only catches an explicit None.
                 payload["occurred_at"] = timezone.now().isoformat()
             stream_logger.info(json.dumps(payload, default=str))
         except Exception:  # pragma: no cover - defensive
