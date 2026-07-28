@@ -418,3 +418,78 @@ writing a coverage number. Two knock-on checks: the command-centre "Pipeline by
 corridor" gap column and `test_the_demo_world_*` in `tests/test_demand.py`.
 
 One fix, and both remaining narratives get a scene 5 that is true.
+
+## K. Two product bugs the concept judge found, verified 2026-07-28
+
+Neither is a demo defect. Both are wrong in the app, and both are on camera.
+
+### K1. `Contract.shipped_quantity` counts the same cartons on every leg
+
+`models/execution.py` sums **every** non-planned shipment on the contract:
+
+```python
+self.shipments.filter(unit=self.unit).exclude(status=PLANNED).aggregate(Sum("quantity"))
+```
+
+A consignment moves in hops, and each hop is its own `Shipment`, so a carton is
+counted once per leg it travels. Verified on `OES-C-2026-NG1`, whose contracted
+requirement is **45,000 cartons**:
+
+| legs | quantity |
+| --- | ---: |
+| Kano Plant → Kano Central | 20,000 |
+| Kano Central → Maiduguri | 15,000 |
+| Kano Central → Damaturu | 10,000 |
+| Maiduguri hub → 11 nutrition centres (last mile) | 9,910 |
+| **`shipped_quantity`** | **54,910** |
+
+54,910 shipped against a 45,000 requirement — 122% — rendered straight into the
+command centre's "Pipeline by corridor" table. `delivered_quantity` (44,675) has
+the same structure. In a product whose entire pitch is carton-level
+traceability, the headline movement figure double-counts.
+
+**This needs a domain decision, not a patch.** The contract promises 45,000
+cartons *delivered to Maiduguri*; the hub→centre legs are last-mile distribution
+*past* that delivery point. Counting only terminal legs, or only legs arriving at
+the contract's own `delivery_place`, both give defensible answers — and they give
+*different* answers (15,000 vs 44,675), which changes headline numbers in three
+narratives. Deliberately not decided here.
+
+### K2. The command centre's "Weeks of cover" table is empty where it matters
+
+All 12 nodes read 0 on hand / 0 weeks / runs dry today, and every node that
+actually received the 9,910 delivered cartons is **missing from the table
+entirely**. That reads as a broken join rather than an operational finding, and
+it sits on camera behind `oes-supply-base` scene 9's modal. It is also the table
+`oes-command-centre` scene 6 and `oes-partner-pipeline` scene 3 are built on, so
+it blocks both.
+
+## L. The one narration change the set needs
+
+`oes-supply-base` scene 8 says *"Splitting costs a little more per carton and
+buys the thing money cannot buy later."* Two independent judges computed the
+same refutation. Every alternative, against the seeded bid book:
+
+| award | total | blended | vs split |
+| --- | ---: | ---: | ---: |
+| **split as awarded** | **3,374,400** | **42.1800** | — |
+| Savanna both | 3,455,400 | 43.1925 | +81,000 |
+| Kano both | 3,554,600 | 44.4325 | +180,200 |
+| Lagos both | 3,693,600 | 46.1700 | +319,200 |
+| Faso both | 3,755,400 | 46.9425 | +381,000 |
+
+Each lot went to its own cheapest bidder, so the split is the **global cost
+minimum** — $1.01/carton *cheaper* than the best consolidation, not dearer. The
+demo shows a free lunch while narrating a sacrifice, and a supply officer does
+that subtraction in three seconds from the table the previous scene made them
+read.
+
+This cannot be fixed in data without breaking scene 7. Scene 7 requires a
+*different price leader per corridor*; if each lot then goes to its own leader,
+the split is necessarily cheapest. The two beats are mutually exclusive over one
+bid book.
+
+The honest sentence is also the stronger one, and this fixture already supports
+it: **each corridor's own cheapest bidder is a different plant, so the split is
+simultaneously the resilient award and the lowest-cost one.** That is a narration
+change to a locked narrative — a `concept_change` gate, and an operator decision.

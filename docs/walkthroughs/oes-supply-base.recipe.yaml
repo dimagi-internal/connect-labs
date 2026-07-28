@@ -131,7 +131,21 @@ scenes:
   - kind: wait_for
     target: css:.data-table
   - kind: hold
-    seconds: 2.4
+    seconds: 1.6
+    note: the registry unfiltered — every organisation holding a live qualification
+  - kind: select
+    target: css:.filter-row select:nth-of-type(1)
+    value: rutf
+    note: Ada filters by commodity, as the narration says she does
+  - kind: hold
+    seconds: 1.2
+  - kind: select
+    target: css:.filter-row select:nth-of-type(2)
+    value: NG
+    note: and by country — who can make RUTF for Nigeria today
+  - kind: hold
+    seconds: 2.6
+    note: the count in the card title moves with the filters; this is the answer Ada acts on
   impressive_because: The registry is not a list somebody maintains — it is the set of live qualifications,
     so it is current by construction. A lapsed certification drops a supplier out without anyone remembering
     to remove them.
