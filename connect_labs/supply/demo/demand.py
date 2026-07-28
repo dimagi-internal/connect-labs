@@ -13,6 +13,7 @@ from datetime import timedelta
 from decimal import Decimal
 
 from django.contrib.gis.geos import Point
+from django.utils import timezone
 
 from .. import gs1
 from ..models import (
@@ -73,11 +74,122 @@ def seed_demand(rng, orgs, nodes):
     """Write caseloads, the partner org and its sites, plans, and outcomes."""
     seed_caseloads()
     partner, partner_sites = seed_partner(orgs, nodes)
+    seed_partner_stock(rng, nodes, partner_sites)
     plans = seed_distribution_plans(rng, partner, partner_sites)
     seed_shortfall_signal(partner, partner_sites)
     records = seed_distribution_records(rng, partner, partner_sites, plans)
     seed_child_outcomes(rng, partner, records)
     return partner, partner_sites
+
+
+# How many weeks of cover each partner site is holding. The spread is the whole
+# point of the surface: a site at six weeks is planning, one at one and a half
+# is about to start triaging admissions, and one at zero has nothing booked
+# against its next distribution at all. Seeding every site the same — or, as
+# the first cut did, seeding none of them — makes the three states the calendar
+# renders indistinguishable and the "at four weeks you plan, at one you triage"
+# beat unreadable.
+#
+# Kukawa is deliberately the thin one: it is the site that raises the shortfall,
+# so its cover has to justify the signal rather than merely accompany it.
+SITE_COVER_WEEKS = {
+    "Monguno Nutrition Centre": 6.0,
+    "Dikwa Nutrition Centre": 5.5,
+    "Gwoza Nutrition Centre": 4.5,
+    "Ngala Nutrition Centre": 4.0,
+    "Damboa Nutrition Centre": 3.5,
+    "Konduga Nutrition Centre": 3.0,
+    "Magumeri Nutrition Centre": 2.5,
+    "Mafa Nutrition Centre": 2.0,
+    "Kukawa Nutrition Centre": 1.4,
+    "Askira Nutrition Centre": 0.6,
+    "Biu Nutrition Centre": 0.0,
+}
+
+
+def seed_partner_stock(rng, nodes, sites):
+    """Deliver real consignments into the partner's sites.
+
+    Stock on hand is derived from the event log and from nothing else, so a
+    site with no receiving event holds nothing — which is correct, and is why
+    the first render showed eleven sites at zero cover and every distribution
+    uncovered. The fix is not to fake a balance; it is to actually move goods
+    to them, the same way everything else in this app moves.
+    """
+    from ..models import Contract, Milestone, Shipment, ShipmentLine, SupplyEvent
+    from ..services import cover as cover_service
+
+    hub = nodes.get("Maiduguri Distribution Hub")
+    contract = Contract.objects.filter(shipments__destination=hub).first() or Contract.objects.first()
+    if hub is None or contract is None:
+        return []
+
+    now = timezone.now()
+    written = []
+    for index, (name, weeks) in enumerate(sorted(SITE_COVER_WEEKS.items())):
+        site = sites.get(name)
+        if site is None or weeks <= 0:
+            continue
+        weekly = float(cover_service.weekly_burn(site))
+        cartons = int(round(weekly * weeks))
+        if cartons <= 0:
+            continue
+
+        reference = f"SHP-2026-09{index:02d}"
+        departed = now - timedelta(days=9 + index)
+        arrived = departed + timedelta(days=2)
+        shipment, _ = Shipment.objects.update_or_create(
+            reference=reference,
+            defaults={
+                "contract": contract,
+                "origin": hub,
+                "destination": site,
+                "quantity": cartons,
+                "unit": "cartons",
+                "departed_at": departed,
+                "eta": arrived,
+            },
+        )
+        ShipmentLine.objects.update_or_create(
+            shipment=shipment,
+            batch_lot=f"LOT26{index:02d}B",
+            defaults={
+                "gtin": gs1.make_gtin("629123", 200 + index),
+                "quantity": cartons,
+                "unit": "cartons",
+                "expiry_date": (now + timedelta(days=240 + index * 5)).date(),
+            },
+        )
+        for kind, node, when in (
+            (Milestone.Kind.DEPART, hub, departed),
+            (Milestone.Kind.ARRIVE, site, arrived),
+        ):
+            Milestone.objects.update_or_create(
+                shipment=shipment,
+                node=node,
+                kind=kind,
+                sequence=0 if kind == Milestone.Kind.DEPART else 1,
+                defaults={"planned_at": when, "estimated_at": when, "actual_at": when},
+            )
+
+        # The receiving event is what actually creates the stock — a check-in
+        # from the storekeeper's phone, which is the honest tier for a Borno
+        # feeding site.
+        SupplyEvent.objects.update_or_create(
+            org=contract.org,
+            external_id=f"{reference}-recv",
+            defaults={
+                "shipment": shipment,
+                "biz_step": SupplyEvent.BizStep.RECEIVING,
+                "event_time": arrived,
+                "read_point": site,
+                "quantity_list": [{"gtin": "", "quantity": cartons, "uom": "cartons"}],
+                "source_tier": SupplyEvent.SourceTier.CHECKIN,
+            },
+        )
+        Shipment.objects.filter(pk=shipment.pk).update(status=Shipment.Status.DELIVERED, delivered_at=arrived)
+        written.append(shipment)
+    return written
 
 
 def seed_caseloads():
