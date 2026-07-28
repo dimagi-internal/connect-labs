@@ -40,6 +40,10 @@ _SKIP_PATH_PREFIXES = (
     "/labs/ocs/",
     "/campaign/",
     "/supply/",
+    # Public, unauthenticated Pulse links. A funder opening a shared display
+    # must never trigger the logout path, and a signed-in staffer opening one
+    # shouldn't be logged out by viewing a page that doesn't need their token.
+    "/labs/pulse/p/",
     "/mcp/",
     "/admin/",
     "/o/",

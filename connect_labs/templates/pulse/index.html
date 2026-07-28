@@ -1,0 +1,96 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+<div class="container py-4" style="max-width: 960px;">
+
+  <h1 class="h4 mb-1">Connect Pulse</h1>
+  <p class="text-muted mb-4">Funder-facing service-delivery telemetry.</p>
+
+  {# Ingest health first, because every number below is worthless if it's stale. #}
+  <div class="card mb-4 border-{% if ingest.live_ok %}success{% else %}warning{% endif %}">
+    <div class="card-body">
+      <h2 class="h6 text-uppercase text-muted mb-2" style="letter-spacing:.08em;">Ingest</h2>
+      {% if ingest.live_ok %}
+        <p class="mb-2"><span class="badge bg-success">Healthy</span>
+          Last success {{ ingest.last_success_at|default:"—" }}.</p>
+      {% else %}
+        <p class="mb-2"><span class="badge bg-warning text-dark">Not live</span> {{ ingest.message }}</p>
+        <p class="small text-muted mb-2">
+          Pulse polls as a designated Connect user. Refresh tokens expire — if that
+          user hasn't signed into labs for a while, ingest stops and displays fall
+          back to stored data rather than pretending to be live.
+        </p>
+      {% endif %}
+      <table class="table table-sm mb-0">
+        <thead><tr><th>Tier</th><th>State</th><th>Last success</th><th>Failures</th><th>Last error</th></tr></thead>
+        <tbody>
+        {% for t in ingest.tiers %}
+          <tr>
+            <td><code>{{ t.tier }}</code></td>
+            <td>{% if t.healthy %}<span class="text-success">ok</span>{% else %}<span class="text-danger">stale</span>{% endif %}</td>
+            <td class="small">{{ t.last_success_at|default:"never" }}</td>
+            <td>{{ t.consecutive_failures }}</td>
+            <td class="small text-muted">{{ t.last_error|truncatechars:70 }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5" class="text-muted small">Ingest has never run.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card mb-4">
+    <div class="card-body">
+      <h2 class="h6 text-uppercase text-muted mb-3" style="letter-spacing:.08em;">Scope</h2>
+      <div class="row text-center">
+        <div class="col"><div class="h4 mb-0">{{ scope.opportunities|default:"—" }}</div><div class="small text-muted">Opportunities</div></div>
+        <div class="col"><div class="h4 mb-0">{{ scope.programs|default:"—" }}</div><div class="small text-muted">Programmes</div></div>
+        <div class="col"><div class="h4 mb-0">{{ scope.orgs|default:"—" }}</div><div class="small text-muted">Organisations</div></div>
+        <div class="col"><div class="h4 mb-0">{{ scope.lifetime_visits|default:"—" }}</div><div class="small text-muted">Lifetime services</div></div>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="h6 text-uppercase text-muted mb-3" style="letter-spacing:.08em;">Layouts</h2>
+  <div class="row g-3 mb-4">
+    {% for slug, meta in layouts.items %}
+    <div class="col-md-4">
+      <div class="card h-100">
+        <div class="card-body d-flex flex-column">
+          <h3 class="h6">{{ meta.label }}</h3>
+          <p class="small text-muted flex-grow-1">{{ meta.blurb }}</p>
+          <a class="btn btn-sm btn-primary" href="{% url 'pulse:display' slug %}">Open</a>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <h2 class="h6 text-uppercase text-muted mb-3" style="letter-spacing:.08em;">Public links</h2>
+  <p class="small text-muted">
+    Each link is separately revocable, so one handed to a funder can be killed
+    without breaking the others. Public links show no beneficiary or worker
+    identities, but they do show partner organisation names alongside their
+    delivery volumes and per-service rates.
+  </p>
+  <table class="table table-sm">
+    <thead><tr><th>Label</th><th>Layout</th><th>Partner names</th><th>Views</th><th>Link</th></tr></thead>
+    <tbody>
+      {% for t in tokens %}
+      <tr>
+        <td>{{ t.label|default:"—" }}</td>
+        <td><code>{{ t.layout_slug }}</code></td>
+        <td>{% if t.show_partner_names %}shown{% else %}anonymised{% endif %}</td>
+        <td>{{ t.view_count }}</td>
+        <td class="small"><a href="{% url 'pulse:public' t.token %}">{% url 'pulse:public' t.token %}</a></td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="5" class="text-muted small">No public links yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+</div>
+{% endblock %}

@@ -162,6 +162,7 @@ LOCAL_APPS = [
     "connect_labs.program",
     "connect_labs.microplans",
     "connect_labs.pages",
+    "connect_labs.pulse",
     "connect_labs.solicitations",
     "connect_labs.users",
     "connect_labs.web",
@@ -578,5 +579,23 @@ CELERY_BEAT_SCHEDULE = {
         "task": "connect_labs.audit_trail.tasks.emit_canary_event",
         "schedule": crontab(minute="*/30"),
     },
+    # Pulse ingest. Two speeds because user_visits costs 16KB/row on the wire
+    # (99% discarded form_json) while the metadata endpoints cost ~560B/row —
+    # see connect_labs/pulse/ingest.py. Backfill is deliberately NOT on beat:
+    # it is a slow manual one-shot that must never stall the live tail.
+    "pulse-cheap-tier": {
+        "task": "connect_labs.pulse.tasks.poll_cheap_tier",
+        "schedule": crontab(minute="*/5"),
+    },
+    "pulse-visit-tail": {
+        "task": "connect_labs.pulse.tasks.poll_visit_tail",
+        "schedule": crontab(minute="*"),
+    },
 }
+
+# The Connect user Pulse polls as; their org membership defines what the
+# dashboard can see. Must have logged into labs in a browser at least once so a
+# refresh token exists. Refresh tokens have an absolute lifetime — if this user
+# stops logging in, ingest stops, and PulseIngestHealth surfaces it.
+PULSE_POLLER_USERNAME = env("PULSE_POLLER_USERNAME", default="")
 # "30/m" → 30 writes per minute per user. Reads uncapped.
