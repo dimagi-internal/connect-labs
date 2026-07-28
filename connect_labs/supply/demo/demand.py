@@ -152,6 +152,13 @@ def seed_partner_stock(rng, nodes, sites):
         cartons = int(round(weekly * weeks))
         if cartons <= 0:
             continue
+        # The consignment the narration speaks about is the size the narration
+        # says it is. Sizing it from the burn rate like every other site left
+        # the advice reading 3,192 cartons twelve rows above a discrepancy
+        # panel reading 900 — the one screen whose subject is reconciliation,
+        # unable to reconcile itself.
+        if name == SHORT_RECEIPT_SITE:
+            cartons = SHORT_RECEIPT_DESPATCHED
 
         reference = f"SHP-2026-09{index:02d}"
         departed = now - timedelta(days=9 + index)
@@ -201,7 +208,19 @@ def seed_partner_stock(rng, nodes, sites):
                 "biz_step": SupplyEvent.BizStep.RECEIVING,
                 "event_time": arrived,
                 "read_point": site,
-                "quantity_list": [{"gtin": "", "quantity": cartons, "uom": "cartons"}],
+                # What the storekeeper COUNTED, which at the short-receipt site
+                # is not what the advice said. Recording the advised quantity
+                # here and then recording the counted one again as the short
+                # receipt banked both: Monguno held 4,032 cartons against a
+                # 3,192-carton consignment, and its weeks of cover were derived
+                # from the sum.
+                "quantity_list": [
+                    {
+                        "gtin": "",
+                        "quantity": (SHORT_RECEIPT_RECEIVED if name == SHORT_RECEIPT_SITE else cartons),
+                        "uom": "cartons",
+                    }
+                ],
                 "source_tier": SupplyEvent.SourceTier.CHECKIN,
             },
         )
@@ -364,18 +383,12 @@ def _short_receipt(shipment, site, contract, arrived):
     """
     from ..models import Discrepancy, SupplyEvent
 
-    event, _ = SupplyEvent.objects.update_or_create(
-        org=contract.org,
-        external_id=f"{shipment.reference}-short",
-        defaults={
-            "shipment": shipment,
-            "biz_step": SupplyEvent.BizStep.RECEIVING,
-            "event_time": arrived,
-            "read_point": site,
-            "quantity_list": [{"gtin": "", "quantity": SHORT_RECEIPT_RECEIVED, "uom": "cartons"}],
-            "source_tier": SupplyEvent.SourceTier.CHECKIN,
-        },
-    )
+    # The receipt itself was already written by the caller, recording the
+    # counted quantity. Writing a second inbound event here banked the cartons
+    # twice. This only raises the discrepancy against that receipt.
+    event = SupplyEvent.objects.filter(
+        shipment=shipment, biz_step=SupplyEvent.BizStep.RECEIVING, read_point=site
+    ).first()
     Discrepancy.objects.update_or_create(
         shipment=shipment,
         defaults={

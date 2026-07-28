@@ -357,10 +357,12 @@ def test_a_site_awaiting_its_first_delivery_is_not_reported_as_running_dry():
     for row in burning_down:
         assert row["stockout_on"] is not None
 
-    # The ranking answers "whose cover is running out", so the sites that have
-    # no cover to run out of sort last however many of them there are.
-    first_unserved = next(i for i, r in enumerate(rows) if r["awaiting_first_delivery"])
-    assert all(r["awaiting_first_delivery"] for r in rows[first_unserved:])
+    # Urgency is the ranking, and never-served is the most urgent state there
+    # is: every node here has a caseload behind it, so zero cover means children
+    # going without today. Sorting these last put a site with four hundred
+    # children a month and nothing on hand below one holding seven weeks.
+    assert [r["weeks_of_cover"] for r in rows] == sorted(r["weeks_of_cover"] for r in rows)
+    assert rows[0]["weeks_of_cover"] == 0, "a site with nothing on hand has to lead the queue"
 
 
 def test_seeded_caseloads_cover_every_famine_district_with_a_node():

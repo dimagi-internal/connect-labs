@@ -196,19 +196,26 @@ def cover_for_node(node, as_of=None, month=None):
 
 
 def cover_by_node(nodes=None, as_of=None, month=None):
-    """Cover for every demand-serving node, worst first.
+    """Cover for every demand-serving node, worst first. Strictly.
 
-    Sites awaiting a first delivery sort AFTER the burn-down, despite holding
-    zero cartons. They are not a cover ranking — nothing has arrived, so there
-    is no rate to be worse than — and leading with a dozen of them buries the
-    sites whose cover is genuinely running out, which is the question this
-    table exists to answer.
+    An earlier attempt sorted sites awaiting a first delivery to the BOTTOM, on
+    the reasoning that a site with no receipts has no burn-down to rank. That is
+    true of the projection and false of the operational fact, and it put Biu —
+    zero cartons on hand against four hundred children a month — below a site
+    holding seven weeks of cover. A supply lead reading that table triages the
+    site at 0.6 weeks and misses the one that is already empty, which is the
+    exact failure the table exists to prevent.
+
+    Every node here has a caseload behind it (``cover_for_node`` returns None
+    otherwise), so zero cover always means children going without. It sorts
+    first. What "awaiting first delivery" changes is the projected stockout
+    DATE — there is no burn-down to project one from — not the urgency.
     """
     if nodes is None:
         nodes = demand_serving_nodes()
     rows = [cover_for_node(n, as_of=as_of, month=month) for n in nodes]
     rows = [r for r in rows if r is not None]
-    return sorted(rows, key=lambda r: (r["awaiting_first_delivery"], r["weeks_of_cover"]))
+    return sorted(rows, key=lambda r: r["weeks_of_cover"])
 
 
 def children_at_risk(node, delay_days, as_of=None, month=None):

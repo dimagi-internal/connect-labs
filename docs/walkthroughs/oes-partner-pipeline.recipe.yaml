@@ -57,8 +57,8 @@ scenes:
     and the admission rate, with the method stated on screen.
   url: /supply/
   show: The Weeks of cover card — every site with its stock on hand, the children it serves a month, its
-    weeks of cover and the date it runs dry, ranked worst first. Biu at zero, Askira at 0.6, Kukawa at
-    1.4, Monguno comfortable at 6.
+    weeks of cover and the date it runs dry, ranked worst first. Biu at zero and awaiting its first
+    consignment, Askira at 0.6, Kukawa at 1.6 and eleven days out, Dikwa comfortable at 5.5.
   actions:
   - kind: scroll_to
     target: css:.card:has-text('Weeks of cover by site')
