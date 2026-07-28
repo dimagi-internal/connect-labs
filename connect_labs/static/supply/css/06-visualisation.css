@@ -405,3 +405,22 @@
 .outcome-row.focused .muac-spark {
   height: 96px;
 }
+
+/* The route from the gap to the children behind it. Deliberately a link rather
+   than a button: the finding is the two numbers disagreeing, and the drill is
+   the answer to "so who are they" — an invitation, not the primary action. */
+.figure-drill {
+  margin: 10px 0 4px;
+}
+
+/* A row somebody has already acted on. Deliberately not the same treatment as
+   the "→ do this" line it replaces: the reader's question changes from what
+   should be done to what was done and by whom. */
+.exception-answered {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.exception-answered .muted {
+  margin-top: 2px;
+}

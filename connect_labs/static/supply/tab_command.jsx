@@ -50,14 +50,23 @@ function CommandTab({ ctx }) {
         figures={[
           {
             label: 'Children at risk',
+            // Children behind rows nobody has acted on. A row with cartons
+            // already on the road is still outstanding, but counting it here
+            // meant the figure could not move when Ada did something — the
+            // headline was identical before and after a reallocation.
             value: formatNumber(
-              exceptions.reduce((n, e) => n + (e.children_at_risk || 0), 0),
+              exceptions
+                .filter((e) => !e.answered_by)
+                .reduce((n, e) => n + (e.children_at_risk || 0), 0),
             ),
-            hint: exceptions.length
-              ? `across ${exceptions.length} exception${
-                  exceptions.length === 1 ? '' : 's'
-                }`
-              : 'nothing outstanding',
+            hint: (() => {
+              const open = exceptions.filter((e) => !e.answered_by).length;
+              const answered = exceptions.length - open;
+              if (!exceptions.length) return 'nothing outstanding';
+              return `across ${open} unanswered exception${
+                open === 1 ? '' : 's'
+              }${answered ? ` · ${answered} answered` : ''}`;
+            })(),
           },
           {
             label: 'In transit',
@@ -114,7 +123,16 @@ function CommandTab({ ctx }) {
                       How this was ranked: {e.derivation}
                     </div>
                   ) : null}
-                  <div className="exception-action">→ {e.action}</div>
+                  {e.answered_by ? (
+                    <div className="exception-answered">
+                      <Badge tone="good">Answered</Badge> {e.answered_by.effect}
+                      <div className="muted small">
+                        {e.answered_by.rationale}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="exception-action">→ {e.action}</div>
+                  )}
                   {/* A late row names a consignment and could not open it.
                       The milestone rail (planned / estimated / actual kept
                       apart) and the append-only event log behind that status
@@ -137,6 +155,7 @@ function CommandTab({ ctx }) {
                       what to do about a row was the only thing on the card
                       they could not act on. */}
                   {e.node_id &&
+                  !e.answered_by &&
                   /reallocate/i.test(e.action || '') &&
                   supplyCan(world.role, 'actions', 'create') ? (
                     <span
@@ -409,6 +428,7 @@ function CommandTab({ ctx }) {
           ctx={ctx}
           exception={reallocatingFor}
           surplus={world.surplus_nodes || []}
+          nodes={nodes}
           onClose={() => setReallocatingFor(null)}
         />
       ) : null}
@@ -579,8 +599,31 @@ function ContractDetailModal({ contract, onClose }) {
    what it could spare without dropping below its own threshold — because a
    reallocation that solves one stockout by causing another is not a decision
    anybody would defend afterwards. */
-function ReallocateModal({ ctx, exception, surplus, onClose }) {
-  const candidates = surplus.filter((n) => n.node_id !== exception.node_id);
+function ReallocateModal({ ctx, exception, surplus, onClose, nodes }) {
+  // Nearest usable surplus first, not largest. Ranking purely by what a node
+  // can spare offered a Burkina Faso hub as the default source for a Sudanese
+  // one — a correct answer to "who has the most" and an absurd answer to
+  // "where should this come from". A corridor within the same country moves in
+  // days; the same cartons across two borders do not arrive in time to matter.
+  const byId = {};
+  (nodes || []).forEach((n) => {
+    byId[n.id] = n;
+  });
+  const targetCountry = (byId[exception.node_id] || {}).country;
+  const candidates = surplus
+    .filter((n) => n.node_id !== exception.node_id)
+    .map((n) => ({
+      ...n,
+      sameCountry:
+        !!targetCountry && (byId[n.node_id] || {}).country === targetCountry,
+    }))
+    .sort((a, b) =>
+      a.sameCountry === b.sameCountry
+        ? b.spare_cartons - a.spare_cartons
+        : a.sameCountry
+        ? -1
+        : 1,
+    );
   const [sourceId, setSourceId] = useState(
     candidates.length ? String(candidates[0].node_id) : '',
   );
@@ -647,6 +690,7 @@ function ReallocateModal({ ctx, exception, surplus, onClose }) {
                 <option key={n.node_id} value={n.node_id}>
                   {n.node_name} — {formatNumber(n.spare_cartons)} cartons spare
                   ({n.weeks_of_cover} wk cover)
+                  {n.sameCountry ? ' · same corridor' : ' · cross-border'}
                 </option>
               ))}
             </select>

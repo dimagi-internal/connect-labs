@@ -152,7 +152,10 @@ function FunderTab({ ctx }) {
         </p>
       </Card>
 
-      <TwoFiguresAndTheGap outcomes={outcomes} />
+      <TwoFiguresAndTheGap
+        outcomes={outcomes}
+        records={world.distribution_records || []}
+      />
 
       <Card
         title="Coverage against need, by country"
@@ -231,8 +234,24 @@ function FunderTab({ ctx }) {
    That gap is the most useful thing on this page. It is the difference between
    what was shipped and what is known to have worked, and reporting one without
    the other is how a funder ends up defending a number nobody measured. */
-function TwoFiguresAndTheGap({ outcomes }) {
+function TwoFiguresAndTheGap({ outcomes, records }) {
+  const [openBatch, setOpenBatch] = useState(null);
   if (!outcomes) return null;
+
+  // The batch drill has existed as a tested endpoint and a built component
+  // since the demand stage, reachable only from the implementing partner's own
+  // page. The funder narrative's closing beat is Dale following a delivered
+  // batch forward to one child's arm circumference — the single human image in
+  // a narrative otherwise made of arithmetic — and there was no route to it
+  // from his surface. Same component, same records, one route.
+  const batches = [];
+  const seen = new Set();
+  (records || []).forEach((r) => {
+    if (!r.batch_lot || seen.has(r.batch_lot)) return;
+    if (!(r.outcomes || []).length) return;
+    seen.add(r.batch_lot);
+    batches.push(r);
+  });
   const breakdown = outcomes.discharge_breakdown || {};
   const labels = {
     recovered: 'Recovered',
@@ -281,6 +300,27 @@ function TwoFiguresAndTheGap({ outcomes }) {
           <p className="muted small">{outcomes.gap_note}</p>
         </div>
       </div>
+      {batches.length ? (
+        <div className="figure-drill">
+          <span className="muted small">
+            The gap is the finding, and it is followable:{' '}
+          </span>
+          <button
+            type="button"
+            className="btn-link"
+            onClick={() => setOpenBatch(batches[0])}
+          >
+            follow batch {batches[0].batch_lot} to the children it treated
+          </button>
+        </div>
+      ) : null}
+      {openBatch ? (
+        <BatchDrill
+          record={openBatch}
+          allRecords={records}
+          onClose={() => setOpenBatch(null)}
+        />
+      ) : null}
       {rows.length ? (
         <DataTable
           rows={rows}

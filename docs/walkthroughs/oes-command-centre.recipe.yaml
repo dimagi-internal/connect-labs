@@ -51,10 +51,7 @@ scenes:
     seconds: 3.0
     note: every consignment carries how it is known — EPCIS from the plant, a despatch advice,
       a driver's phone check-in — and the lowest tier is the one serving the worst famine phase
-  - kind: click
-    target: css:.modal-close
-    note: close it. Every scene from here acts on the exception queue, and an open backdrop
-      swallows all six of those clicks.
+
   impressive_because: The picture is brightest exactly where access is easiest. Sudan has no domestic
     producer and its corridor runs on paper waybills, so the lowest tier is not a fallback — it is the
     honest case, and it serves the worst famine phases.
@@ -67,6 +64,11 @@ scenes:
   show: A late consignment opened to its milestone rail — planned, estimated and actual kept as three
     separate timestamps per leg, with the resulting delta.
   actions:
+  - kind: click
+    target: css:.modal-close
+    note: close scene 2's contract. Closing it at the END of scene 2 meant that scene
+      captured after its own source badges were dismissed — the three-tier claim was
+      argued over a frame that no longer contained it.
   - kind: scroll_to
     target: css:.exception-list
   - kind: click
@@ -204,8 +206,14 @@ scenes:
   - kind: wait_for
     target: css:.toast
   - kind: hold
-    seconds: 2.6
-    note: the decision and the evidence that prompted it are now the same record
+    seconds: 1.6
+  - kind: scroll_to
+    target: css:.exception-list
+  - kind: hold
+    seconds: 3.0
+    note: the row is marked answered with the effect and the reason on it, the headline
+      counts only what nobody has acted on, and it has stopped leading a queue that asks
+      what is still outstanding
   impressive_because: The decision and the evidence that prompted it are now the same record — the thing
     a messaging group can never give you afterwards. And the numbers moved because a consignment moved,
     not because a status was edited.

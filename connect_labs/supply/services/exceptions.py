@@ -19,7 +19,7 @@ reconstruct is a severity ranking nobody will act against.
 from datetime import date
 
 from .. import gs1
-from ..models import Discrepancy, Shipment, ShortfallSignal
+from ..models import Discrepancy, Shipment, ShortfallSignal, SupplyAction
 from . import cover
 
 
@@ -182,8 +182,41 @@ def partner_signal_exceptions(as_of=None):
     return rows
 
 
+def _answered_nodes():
+    """Nodes with cartons already on the way from a decision somebody took.
+
+    A reallocation creates a real consignment with planned milestones, and
+    until it arrives the node's stock — and therefore its cover, and therefore
+    its children at risk — is unchanged. Which is correct: the cartons are not
+    there yet. But it left the command centre unable to show its own central
+    claim, that an exception is answered by the action that answers it. The row
+    sat in the queue identical to before, and the only trace of a decision that
+    had actually been taken was a toast that had already faded.
+
+    So an exception whose node has an undelivered inbound reallocation is
+    ANSWERED, not resolved. It stays in the queue because the children are
+    still at risk until the truck arrives; it stops competing for attention
+    with the ones nobody has done anything about yet.
+    """
+    answered = {}
+    actions = SupplyAction.objects.filter(kind=SupplyAction.Kind.REALLOCATE, target_node__isnull=False).select_related(
+        "target_node", "shipment"
+    )
+    for action in actions:
+        shipment = action.shipment
+        if shipment is not None and shipment.status == Shipment.Status.CONFIRMED:
+            continue  # landed and counted; the node's own stock now carries it
+        answered.setdefault(action.target_node_id, action)
+    return answered
+
+
 def build_queue(contracts=None, as_of=None):
-    """Every exception, ranked by children at risk, worst first."""
+    """Every exception, ranked by children at risk, worst first.
+
+    Rows already answered by a reallocation sort last whatever their figure,
+    because the question this queue answers is "what has nobody done anything
+    about", and a row with cartons on the road is not that.
+    """
     as_of = as_of or date.today()
     rows = (
         late_exceptions(contracts=contracts, as_of=as_of)
@@ -191,4 +224,20 @@ def build_queue(contracts=None, as_of=None):
         + expiry_exceptions(as_of=as_of)
         + partner_signal_exceptions(as_of=as_of)
     )
-    return sorted(rows, key=lambda r: (-(r["children_at_risk"] or 0), r["key"]))
+    answered = _answered_nodes()
+    for row in rows:
+        action = answered.get(row.get("node_id"))
+        row["answered_by"] = (
+            {
+                "action_id": action.id,
+                "effect": action.effect,
+                "actor": action.actor,
+                "rationale": action.rationale,
+            }
+            if action
+            else None
+        )
+    return sorted(
+        rows,
+        key=lambda r: (r["answered_by"] is not None, -(r["children_at_risk"] or 0), r["key"]),
+    )
