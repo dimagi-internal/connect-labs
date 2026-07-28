@@ -7,7 +7,7 @@ review_mode: autonomous
 why_brief: oes-supply-base.why_brief.yaml
 tagline: Turn a folder of emailed PDFs into a supply base you can query
 setup:
-  command: python manage.py seed_supply_demo --reset
+  command: python scripts/walkthroughs/oes/ensure_demo.py
   rerun: per_render
   timeout_seconds: 600
 scenes:
@@ -21,7 +21,7 @@ scenes:
     is answerable here in one look.
   actions:
   - kind: wait_for
-    target: css:.key-figures
+    target: css:.keyfigures
   - kind: hold
     seconds: 2.0
   impressive_because: Two stages — expression of interest into a registry, then tenders drawn from it
@@ -170,7 +170,7 @@ scenes:
   - kind: click
     target: css:.navitem:has-text('Command centre')
   - kind: scroll_to
-    target: text:Pipeline by corridor
+    target: css:.card:has-text('Pipeline by corridor')
   - kind: hold
     seconds: 2.2
   impressive_because: 'Almost every procurement system stops at the award, which is why nobody can trace

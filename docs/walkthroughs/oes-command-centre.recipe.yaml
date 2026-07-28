@@ -7,7 +7,7 @@ review_mode: autonomous
 why_brief: oes-command-centre.why_brief.yaml
 tagline: Which children are about to go without, and what can still be done about it
 setup:
-  command: python manage.py seed_supply_demo --reset
+  command: python scripts/walkthroughs/oes/ensure_demo.py
   rerun: per_render
   timeout_seconds: 600
 scenes:
@@ -86,7 +86,7 @@ scenes:
     Darfur at IPC 5 sits at 0% with everything still in transit; Borno at 31% with 33,232 children uncovered.
   actions:
   - kind: scroll_to
-    target: text:Requirement from caseload
+    target: css:.card:has-text('Requirement from caseload')
   - kind: hold
     seconds: 2.6
   - kind: hover
@@ -116,7 +116,7 @@ scenes:
     seconds: 2.4
     note: how this row was ranked
   - kind: scroll_to
-    target: text:Weeks of cover
+    target: css:.card:has-text('Weeks of cover')
   - kind: hold
     seconds: 1.8
   impressive_because: A late truck, a short receipt, an expiring batch and a partner's shortfall are not
