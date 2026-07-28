@@ -542,3 +542,91 @@ roughly a third of that, and all three turn the pipeline gap from a rounding
 error into a real operational story. That is probably an improvement to the
 demo, but it changes headline figures in three narratives, so it is an operator
 call rather than a cleanup.
+
+---
+
+# Addendum 2 — 2026-07-28 evening: all four judged
+
+Every narrative in the set has now been rendered and judged by both lenses.
+Renders are clean (`oes-supply-base` 65/65, `oes-partner-pipeline` 40/40,
+`oes-command-centre` 43/43, `oes-money-to-child` 28/28) and all four
+deterministic lenses pass on every one. Every narrative still scores 2/5.
+
+That combination is the finding. The renders are clean because the *recipes*
+are right; the scores are 2 because in several places the **product does not
+render its own best evidence**, and in a few the **narration asserts past what
+the model will do**.
+
+## N. The recurring shape: built, tested, unreachable
+
+Three separate capabilities were fully implemented, permission-checked and
+covered by tests, with no caller anywhere in the frontend:
+
+| capability | state found | where it was needed |
+| --- | --- | --- |
+| `actions.reallocate` + `POST api/actions/reallocate/` | service, endpoint, audit log, signal resolution — no UI at all | the command-centre's payoff scene, and the advice on every exception row |
+| `ShipmentDetail` (milestone rail + append-only event log) | built, reachable only from the supplier's own page | command-centre scenes 3 and 4, which narrate both |
+| `BatchDrill` + `api/batches/<lot>/` | built and tested (`test_demand.py` asserts MUAC crossing recovery), reachable only from the partner's page | the funder narrative's closing beat, its only human image |
+
+All three are now routed. The pattern is worth naming because it is invisible to
+every gate the repo has: pytest passes (the service works), preflight passes (no
+selector is wrong), and the narration describes the capability accurately —
+because the capability *exists*. Only a judge looking at a rendered frame and
+asking "where is it, though" catches it.
+
+## O. K1 is now visible on a single screen
+
+The contract double-count (§K1) stopped being an abstract measurement argument.
+On the funder page, in **one frame**:
+
+* the unit ladder reads **115,170 children**, method stated as one carton per
+  child's full course;
+* the outcome card 180px below reads **48,787 courses delivered**, method stated
+  identically.
+
+**2.36× apart, same stated method, same screen.** The ladder sums every hop;
+`coverage._delivered_cartons_by_district` counts only boundary-crossing legs
+(the fix in §K's first half). Cost per child is therefore either $21.27 or about
+$49–50 depending on which denominator the reader picks — on a card whose whole
+pitch is "stated as a chain, so every step can be checked".
+
+A judge did exactly what the card invites and broke it in under a minute. This
+is the strongest possible argument for resolving K1, and it now has a reproducer.
+
+## P. Scene 5 of `oes-money-to-child` cannot say what it says
+
+Corrected here because I got it wrong earlier in the day. The Borno/Kassala
+coverage pair (§J) was seeded and verified — **on the funder's view**. Scene 5
+is **Hauwa's** view, which is scoped to Nigeria on the server, and Kassala is in
+Sudan. On her page the table is Borno 34% and Yobe 0%.
+
+So the narration's contrast — "ninety-one percent … and this one, which received
+MORE cartons, sits at thirty-four" — is unavailable there twice over: 91% is not
+in scope, and of the two rows that ARE in scope the 34% district is the one with
+more cartons, with its comparator at zero. Tonnage would rank them identically,
+which is precisely what the scene exists to disprove.
+
+Making it true needs a **third Nigerian district with a small caseload and good
+coverage** — Borno keeps the volume and loses on coverage, the new district wins
+on coverage with fewer cartons. Yobe cannot play the part: 91% of its 18,960
+caseload is 17,254 courses, more than Borno's 16,399, so it would break the
+"more cartons" half.
+
+## Q. Two narration claims the model correctly refuses
+
+Both are `concept_change` calls, and in both the product is right and the
+narration is wrong:
+
+1. **`oes-command-centre` scene 8** narrates cover moving, the pipeline gap
+   closing and the exception resolving. The reallocation creates a `PLANNED`
+   consignment, so stock — and therefore cover, and therefore children at risk —
+   is deliberately unchanged until it lands. That invariant is the app's whole
+   credibility argument. The honest beat is the one now built: the exception is
+   **answered, not resolved**, carrying the actor, effect and recorded reason,
+   and the headline counts only what nobody has acted on (1,521 → 434 on camera).
+   A judge suggests an alternative worth considering: re-target the scene at the
+   Komadugu partner shortfall, which IS a `ShortfallSignal` and therefore does
+   genuinely resolve — welding scenes 7 and 8 into one loop.
+
+2. **`oes-supply-base` scene 8** ("splitting costs a little more per carton") —
+   unchanged from §L. Still the cost minimum.

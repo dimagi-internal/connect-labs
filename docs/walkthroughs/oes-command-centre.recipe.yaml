@@ -33,17 +33,25 @@ scenes:
   concept_claim: Every event carries its ingestion tier and hand-keyed data is marked wherever it appears,
     so the picture is honest about being brightest where access is easiest.
   url: /supply/
-  show: The corridor map and the consignments on it, with the ingestion tier visible per leg — EPCIS from
-    the Kano plant, a despatch advice from Lagos, and the Port Sudan to El Fasher corridor arriving as
-    hand-keyed phone check-ins, marked as such.
+  show: The Sudan corridor's contract opened to its delivery schedule, every consignment carrying how it
+    is known — EPCIS from a plant, a despatch advice, or a driver's phone check-in — so the picture says
+    where it is bright and where it is thin. (The network map is the natural home for this and renders
+    blank without a Mapbox token, so the tier is shown where it is legible instead.)
   actions:
   - kind: scroll_to
-    target: css:.map-panel
+    target: css:.card:has-text('Pipeline by corridor')
+  - kind: click
+    target: css:.card:has-text('Pipeline by corridor') tr:has-text('OES-C-2026-SD1')
+    note: the Sudan corridor — no domestic producer, so it runs on paper waybills
   - kind: wait_for
-    target: css:.flowmap canvas
-    note: deck.gl paints the flows
+    target: css:.modal
+  - kind: scroll_to
+    target: css:.modal .card:has-text('Delivery schedule')
   - kind: hold
-    seconds: 2.4
+    seconds: 3.0
+    note: every consignment carries how it is known — EPCIS from the plant, a despatch advice,
+      a driver's phone check-in — and the lowest tier is the one serving the worst famine phase
+
   impressive_because: The picture is brightest exactly where access is easiest. Sudan has no domestic
     producer and its corridor runs on paper waybills, so the lowest tier is not a fallback — it is the
     honest case, and it serves the worst famine phases.
@@ -56,12 +64,29 @@ scenes:
   show: A late consignment opened to its milestone rail — planned, estimated and actual kept as three
     separate timestamps per leg, with the resulting delta.
   actions:
+  - kind: click
+    target: css:.modal-close
+    note: close scene 2's contract. Closing it at the END of scene 2 meant that scene
+      captured after its own source badges were dismissed — the three-tier claim was
+      argued over a frame that no longer contained it.
   - kind: scroll_to
     target: css:.exception-list
   - kind: click
-    target: css:.exception:has-text('behind plan')
+    target: css:.exception:has-text('El Fasher Distribution Hub')
+    note: expand the row it ranks first
   - kind: hold
-    seconds: 2.0
+    seconds: 1.4
+  - kind: click
+    target: css:.exception:has-text('El Fasher Distribution Hub') span:has-text('Open SHP')
+    note: the consignment itself — the queue named it and could not open it until now
+  - kind: wait_for
+    target: css:.modal
+  - kind: scroll_to
+    target: css:.modal .card:has-text('Milestones')
+  - kind: hold
+    seconds: 3.0
+    note: planned, estimated and actual kept as three separate timestamps per leg — the
+      estimate is what has moved, which is why this is nine days late while still on the road
   impressive_because: If the plan is overwritten each time the estimate moves then nothing is ever late
     and any number can be argued away. Keeping all three means the figure survives the conversation.
   ai_quality: Three distinct timestamps are visible, not one field relabelled.
@@ -69,11 +94,15 @@ scenes:
   concept_claim: Shipment status and milestone actuals are derived from an append-only event log with
     no write path that sets them directly.
   url: /supply/
-  show: The same consignment's event history — the append-only log the status is derived from, with no
-    field anywhere on the page that sets it directly.
+  show: The same consignment's event log — append-only, each entry carrying how it reached us, and no
+    field anywhere on the page that sets the status directly.
   actions:
+  - kind: scroll_to
+    target: css:.modal .card:has-text('Event log')
   - kind: hold
-    seconds: 1.8
+    seconds: 3.0
+    note: append-only, with the provenance of every entry beside it. Nothing here is a status
+      field; the status is what this log adds up to.
   impressive_because: A red row goes away when the situation changes, not when somebody decides it looks
     bad before a Monday meeting. That single constraint is what makes the queue beside it worth trusting.
   ai_quality: Status is presented as derived; no edit control for it exists on the page.
@@ -85,13 +114,18 @@ scenes:
     treatment across the response window, the courses actually delivered into it, and coverage. North
     Darfur at IPC 5 sits at 0% with everything still in transit; Borno at 31% with 33,232 children uncovered.
   actions:
+  - kind: click
+    target: css:.modal-close
+    note: close the consignment — scene 4 ends inside it
   - kind: scroll_to
     target: css:.card:has-text('Requirement from caseload')
   - kind: hold
     seconds: 2.6
-  - kind: hover
-    target: css:tr:has-text('North Darfur') span[title]
-    note: the caseload's own method, on hover
+  - kind: scroll_to
+    target: css:tr:has-text('Kassala')
+    note: the contrast the scene exists for — Kassala at 91% of a small caseload beside Borno at 34% of
+      one seven times larger, on more than twice the cartons. A hover on a native title tooltip used to
+      sit here; it renders nothing in a headless capture.
   - kind: hold
     seconds: 1.6
   impressive_because: With a denominator, delivery stops being tonnage and becomes coverage. Volume alone
@@ -146,18 +180,40 @@ scenes:
     gap and the map recompute from it rather than being adjusted.
   url: /supply/
   show: Ada reallocates cartons from the Kassala forward store — which holds more than its own caseload
-    needs — to the site that raised the shortfall, with the reason recorded, and the consignment appears
-    on the map with planned milestones while the exception resolves against the action that resolved it.
+    needs — to El Fasher, on camera. The source list offers only nodes genuinely holding surplus and what
+    each could spare without dropping below its own threshold; the reason is required; and the exception
+    the reallocation answers leaves the queue when it lands.
   actions:
   - kind: scroll_to
     target: css:.exception-list
   - kind: click
-    target: css:.exception:has-text('Komadugu')
-  - kind: hold
-    seconds: 1.6
+    target: css:.exception:has-text('El Fasher') span.btn:has-text('Reallocate to')
+    note: the row's own advice, now something that can be done
+  - kind: wait_for
+    target: css:.modal
   - kind: hold
     seconds: 2.4
-    note: the cover, the pipeline gap and the map recompute from the new shipment
+    note: only nodes holding surplus, each with what it can spare without causing the next stockout
+  - kind: fill
+    target: css:.modal textarea
+    value: Khartoum leg nine days behind and El Fasher has nothing on hand. Kassala is carrying fifteen
+      weeks against its own caseload.
+  - kind: hold
+    seconds: 1.4
+  - kind: click
+    target: css:.modal button:has-text('Reallocate')
+    note: a real consignment, with planned milestones, against a named contract
+  - kind: wait_for
+    target: css:.toast
+  - kind: hold
+    seconds: 1.6
+  - kind: scroll_to
+    target: css:.exception-list
+  - kind: hold
+    seconds: 3.0
+    note: the row is marked answered with the effect and the reason on it, the headline
+      counts only what nobody has acted on, and it has stopped leading a queue that asks
+      what is still outstanding
   impressive_because: The decision and the evidence that prompted it are now the same record — the thing
     a messaging group can never give you afterwards. And the numbers moved because a consignment moved,
     not because a status was edited.

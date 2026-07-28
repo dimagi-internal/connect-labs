@@ -29,6 +29,7 @@ function CommandTab({ ctx }) {
   const [selected, setSelected] = useState(null);
   const [openContract, setOpenContract] = useState(null);
   const [reallocatingFor, setReallocatingFor] = useState(null);
+  const [openShipmentId, setOpenShipmentId] = useState(null);
 
   const inTransit = shipments.filter((s) => s.status === 'in_transit');
   const deliveredCartons = contracts.reduce(
@@ -49,14 +50,23 @@ function CommandTab({ ctx }) {
         figures={[
           {
             label: 'Children at risk',
+            // Children behind rows nobody has acted on. A row with cartons
+            // already on the road is still outstanding, but counting it here
+            // meant the figure could not move when Ada did something — the
+            // headline was identical before and after a reallocation.
             value: formatNumber(
-              exceptions.reduce((n, e) => n + (e.children_at_risk || 0), 0),
+              exceptions
+                .filter((e) => !e.answered_by)
+                .reduce((n, e) => n + (e.children_at_risk || 0), 0),
             ),
-            hint: exceptions.length
-              ? `across ${exceptions.length} exception${
-                  exceptions.length === 1 ? '' : 's'
-                }`
-              : 'nothing outstanding',
+            hint: (() => {
+              const open = exceptions.filter((e) => !e.answered_by).length;
+              const answered = exceptions.length - open;
+              if (!exceptions.length) return 'nothing outstanding';
+              return `across ${open} unanswered exception${
+                open === 1 ? '' : 's'
+              }${answered ? ` · ${answered} answered` : ''}`;
+            })(),
           },
           {
             label: 'In transit',
@@ -113,12 +123,39 @@ function CommandTab({ ctx }) {
                       How this was ranked: {e.derivation}
                     </div>
                   ) : null}
-                  <div className="exception-action">→ {e.action}</div>
+                  {e.answered_by ? (
+                    <div className="exception-answered">
+                      <Badge tone="good">Answered</Badge> {e.answered_by.effect}
+                      <div className="muted small">
+                        {e.answered_by.rationale}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="exception-action">→ {e.action}</div>
+                  )}
+                  {/* A late row names a consignment and could not open it.
+                      The milestone rail (planned / estimated / actual kept
+                      apart) and the append-only event log behind that status
+                      are the two things that make this queue trustworthy, and
+                      both were one component away with no route to them from
+                      the surface that depends on them. */}
+                  {e.shipment_id ? (
+                    <span
+                      className="btn btn-sm btn-secondary"
+                      onClick={(ev) => {
+                        ev.stopPropagation();
+                        setOpenShipmentId(e.shipment_id);
+                      }}
+                    >
+                      Open {e.shipment_reference}
+                    </span>
+                  ) : null}
                   {/* The queue has always ADVISED a reallocation and never
                       offered one, so the single sentence that tells the reader
                       what to do about a row was the only thing on the card
                       they could not act on. */}
                   {e.node_id &&
+                  !e.answered_by &&
                   /reallocate/i.test(e.action || '') &&
                   supplyCan(world.role, 'actions', 'create') ? (
                     <span
@@ -378,11 +415,20 @@ function CommandTab({ ctx }) {
         </p>
       </Card>
 
+      {openShipmentId ? (
+        <ShipmentDetail
+          ctx={ctx}
+          shipmentId={openShipmentId}
+          onClose={() => setOpenShipmentId(null)}
+        />
+      ) : null}
+
       {reallocatingFor ? (
         <ReallocateModal
           ctx={ctx}
           exception={reallocatingFor}
           surplus={world.surplus_nodes || []}
+          nodes={nodes}
           onClose={() => setReallocatingFor(null)}
         />
       ) : null}
@@ -512,6 +558,16 @@ function ContractDetailModal({ contract, onClose }) {
               render: (s) => formatDate(s.eta),
             },
             {
+              key: 'tier',
+              label: 'Reported by',
+              sortable: false,
+              value: () => '',
+              // The picture is brightest where access is easiest, and saying so
+              // on the same row as the delivery is the difference between an
+              // honest map and a confident one.
+              render: (s) => <TierBadge tier={s.source_tier} />,
+            },
+            {
               key: 'status',
               label: 'Status',
               value: (s) => s.status,
@@ -543,8 +599,31 @@ function ContractDetailModal({ contract, onClose }) {
    what it could spare without dropping below its own threshold — because a
    reallocation that solves one stockout by causing another is not a decision
    anybody would defend afterwards. */
-function ReallocateModal({ ctx, exception, surplus, onClose }) {
-  const candidates = surplus.filter((n) => n.node_id !== exception.node_id);
+function ReallocateModal({ ctx, exception, surplus, onClose, nodes }) {
+  // Nearest usable surplus first, not largest. Ranking purely by what a node
+  // can spare offered a Burkina Faso hub as the default source for a Sudanese
+  // one — a correct answer to "who has the most" and an absurd answer to
+  // "where should this come from". A corridor within the same country moves in
+  // days; the same cartons across two borders do not arrive in time to matter.
+  const byId = {};
+  (nodes || []).forEach((n) => {
+    byId[n.id] = n;
+  });
+  const targetCountry = (byId[exception.node_id] || {}).country;
+  const candidates = surplus
+    .filter((n) => n.node_id !== exception.node_id)
+    .map((n) => ({
+      ...n,
+      sameCountry:
+        !!targetCountry && (byId[n.node_id] || {}).country === targetCountry,
+    }))
+    .sort((a, b) =>
+      a.sameCountry === b.sameCountry
+        ? b.spare_cartons - a.spare_cartons
+        : a.sameCountry
+        ? -1
+        : 1,
+    );
   const [sourceId, setSourceId] = useState(
     candidates.length ? String(candidates[0].node_id) : '',
   );
@@ -611,6 +690,7 @@ function ReallocateModal({ ctx, exception, surplus, onClose }) {
                 <option key={n.node_id} value={n.node_id}>
                   {n.node_name} — {formatNumber(n.spare_cartons)} cartons spare
                   ({n.weeks_of_cover} wk cover)
+                  {n.sameCountry ? ' · same corridor' : ' · cross-border'}
                 </option>
               ))}
             </select>
@@ -657,4 +737,25 @@ function ReallocateModal({ ctx, exception, surplus, onClose }) {
       )}
     </Modal>
   );
+}
+
+/* How a consignment is known.
+
+   Four tiers, weakest to strongest: a hand-keyed portal entry, a driver's phone
+   check-in, a despatch advice, a machine-to-machine EPCIS feed. A consignment
+   reported at more than one is labelled with its WEAKEST, because that is what
+   the confidence in it actually rests on.
+
+   Naming the tier is the point rather than a caveat: Sudan has no domestic
+   producer and its corridor runs on paper waybills, so the lowest tier is not a
+   fallback, it is the honest case — and it is the one serving the worst famine
+   phases. A picture that hid that would be more confident and less true. */
+/* TIER_LABELS is declared once, in tab_ops.jsx. The supply bundle concatenates
+   every file into ONE scope, so a second top-level const with the same name is
+   not shadowing — it is a SyntaxError that blanks the entire app at parse time.
+   Preflight reported it as four unresolved selectors; the page was simply dead. */
+function TierBadge({ tier }) {
+  const label = TIER_LABELS[tier] || 'Unreported';
+  const tone = tier === 'epcis' ? 'good' : tier === 'asn' ? 'info' : 'warn';
+  return <Badge tone={tone}>{label}</Badge>;
 }

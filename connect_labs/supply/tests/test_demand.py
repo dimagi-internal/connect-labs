@@ -333,6 +333,48 @@ def test_the_spoken_maiduguri_deadline_is_the_fifteenth_of_september():
     assert (lot.delivery_deadline.month, lot.delivery_deadline.day) == (9, 15)
 
 
+def test_a_reallocation_answers_the_exception_it_was_made_against():
+    """The queue's central claim, and it was not true.
+
+    A reallocation creates a real consignment with planned milestones, and
+    until it arrives the target's stock is unchanged — correctly, the cartons
+    are not there yet. But that left the row identical to before, so the demo's
+    climax was a toast: nothing on the screen moved, and the only record that a
+    decision had been taken was one that had already faded.
+
+    An answered row stays in the queue, because the children are still at risk
+    until the truck arrives. It stops competing with the rows nobody has done
+    anything about.
+    """
+    call_command("seed_supply_demo")
+    from connect_labs.supply.models import SupplyNode
+    from connect_labs.supply.services import actions
+
+    before = exceptions.build_queue()
+    target_row = next(r for r in before if r["kind"] == "Late" and r["children_at_risk"] > 0)
+    assert target_row["answered_by"] is None, "nothing has been done about it yet"
+
+    source = cover.nodes_holding_surplus()[0]
+    actions.reallocate(
+        actor="test@oes.example",
+        source_node=SupplyNode.objects.get(id=source["node_id"]),
+        target_node=SupplyNode.objects.get(id=target_row["node_id"]),
+        quantity=500,
+        rationale="Answering the worst gap in the queue.",
+    )
+
+    after = {r["key"]: r for r in exceptions.build_queue()}
+    answered = after[target_row["key"]]
+    assert answered["answered_by"] is not None
+    assert "cartons" in answered["answered_by"]["effect"]
+    assert answered["answered_by"]["rationale"] == "Answering the worst gap in the queue."
+
+    # And it stops leading a queue that asks "what has nobody acted on".
+    ordered = exceptions.build_queue()
+    first_answered = next(i for i, r in enumerate(ordered) if r["answered_by"])
+    assert all(r["answered_by"] for r in ordered[first_answered:])
+
+
 def test_a_consignment_still_on_the_road_can_be_late():
     """The delay you can still act on is the one worth surfacing.
 

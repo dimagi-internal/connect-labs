@@ -24,7 +24,9 @@ scenes:
   - kind: hold
     seconds: 2.2
   - kind: scroll_to
-    target: css:.card:has-text('Obligated → disbursed → delivered')
+    target: css:.keyfigures
+    note: the three figures this scene exists to keep apart — obligated, disbursed and
+      delivered. It used to scroll past them onto the next scene's diagram.
   - kind: hold
     seconds: 2.0
   impressive_because: Money can be committed against a contract, paid to a supplier, and still not be
@@ -61,7 +63,10 @@ scenes:
   - kind: hold
     seconds: 2.0
   - kind: scroll_to
-    target: css:.method-note
+    target: css:.card:has-text('What a dollar bought') .method-note
+    note: this card's OWN method note. A bare .method-note matched a later card and
+      scrolled the frame onto the closing scene's payoff, so the finale's reveal was
+      already on screen three scenes early.
   - kind: hold
     seconds: 2.4
     note: the method, in the same frame as the number
@@ -133,7 +138,18 @@ scenes:
   - kind: scroll_to
     target: css:.two-figures
   - kind: hold
-    seconds: 2.0
+    seconds: 1.8
+  - kind: click
+    target: css:.figure-drill button
+    note: follow the batch to the children behind the gap. The endpoint and the chart both
+      existed and were reachable only from the implementing partner's page, so the one
+      human image in this narrative had no route to the funder who narrates it.
+  - kind: wait_for
+    target: css:.modal
+  - kind: hold
+    seconds: 3.2
+    note: one child's arm circumference climbing out of the red, with the sample size stated
+      beside it rather than a rate implied from it
   impressive_because: '"Children treated" is almost always cartons divided by a treatment factor — arithmetic
     presented as an outcome. The gap between that and a measured recovery is the most useful thing on
     the screen, and a funder who can see it is being told the truth.'

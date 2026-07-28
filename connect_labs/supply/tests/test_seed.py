@@ -118,7 +118,7 @@ def test_seed_execution_world():
     # 14 corridor consignments, 10 delivered into Komadugu's sites (a partner
     # site holds stock only if something actually delivered to it), and 2 still
     # on the road so the calendar's inbound column is exercised.
-    assert Shipment.objects.count() == 27
+    assert Shipment.objects.count() == 28
 
     # every ingestion tier is represented, so the demo shows the real gradient
     tiers = set(SupplyEvent.objects.values_list("source_tier", flat=True))
