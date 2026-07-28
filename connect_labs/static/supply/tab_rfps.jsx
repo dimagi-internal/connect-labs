@@ -43,7 +43,28 @@ function RFPsTab({ ctx }) {
               value: () => '',
               render: (r) => r.countries.map(countryLabel).join(', ') || '—',
             },
-            { key: 'lots', label: 'Lots', value: (r) => r.lots.length },
+            {
+              key: 'lots',
+              label: 'Lots',
+              value: (r) => r.lots.length,
+              // A solicitation IS its lots. Listing only how many there are
+              // makes the one question a supplier or a funder actually asks —
+              // what is being bought, and where — require opening every row,
+              // and puts the quantities two clicks from the page that exists to
+              // publish them.
+              render: (r) =>
+                r.lots.length ? (
+                  <div className="lot-summary">
+                    {r.lots.map((l) => (
+                      <div key={l.id}>
+                        {formatNumber(l.quantity)} {l.unit} → {l.delivery_place}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  '—'
+                ),
+            },
             {
               key: 'awarded',
               label: 'Awarded',

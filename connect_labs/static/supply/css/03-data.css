@@ -191,3 +191,14 @@
 .check-row input {
   width: auto;
 }
+
+/* Concrete lots inside a solicitations row: one line per lot, tight enough
+   that four of them do not turn a table row into a paragraph. */
+.lot-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+  line-height: 1.35;
+  white-space: nowrap;
+}

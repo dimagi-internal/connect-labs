@@ -382,7 +382,16 @@ function ContractDetailModal({ contract, onClose }) {
           {countryLabel(contract.destination_country)}
         </span>
       </div>
-      <p className="modal-lede">{contract.lot_description}</p>
+      <p className="modal-lede">
+        {contract.lot_description}
+        {contract.source_solicitation ? (
+          <span className="muted">
+            {' '}
+            · awarded under {contract.source_solicitation}
+            {contract.awarded_at ? `, ${formatDate(contract.awarded_at)}` : ''}
+          </span>
+        ) : null}
+      </p>
 
       <Card
         title="Drawn against"
