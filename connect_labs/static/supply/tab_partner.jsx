@@ -198,8 +198,12 @@ function PartnerTab({ ctx }) {
                 label: 'Runs dry',
                 value: (c) => c.stockout_on,
                 render: (c) => {
+                  // Through the shared parser, so this day-count and every
+                  // rendered date in the app agree about what day it is.
                   const days = Math.round(
-                    (new Date(c.stockout_on) - new Date(c.as_of)) / 86400000,
+                    (parseSupplyDate(c.stockout_on) -
+                      parseSupplyDate(c.as_of)) /
+                      86400000,
                   );
                   return (
                     <span>
