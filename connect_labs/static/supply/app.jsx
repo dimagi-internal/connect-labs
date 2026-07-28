@@ -86,7 +86,11 @@ const TABS = [
   {
     key: 'partner_ops',
     label: 'Receiving',
-    component: () => OpsTab,
+    // NOT OpsTab. That is the supplier's despatch surface, and pointing a
+    // partner at it showed them "Declare a despatch", contracts they do not
+    // hold, and plant-to-warehouse legs they have no part in — on the one
+    // screen where this product's whole inversion has to become physical.
+    component: () => PartnerReceivingTab,
     roles: ['partner'],
   },
   {

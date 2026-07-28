@@ -5,7 +5,7 @@ one closed, one live and mid-flight, and one fully awarded per corridor.
 The mix is deliberate: every status a reviewer or bidder can encounter appears
 somewhere in the seeded world.
 """
-from datetime import timedelta
+from datetime import date, timedelta
 
 from django.utils import timezone
 
@@ -36,6 +36,70 @@ from .data import (
 
 # Seed timestamps hang off a single reference point so a rerun reproduces the
 # same world rather than drifting with the clock.
+
+# What each RUTF supplier bids into each corridor of the live tender.
+#
+# A plant is cheapest into its own corridor and dearer across a border, because
+# on a $44 carton the freight is most of the delta. That single fact is what
+# makes the price leader on Maiduguri a different organisation from the price
+# leader on Djibo — which is the whole reason a tender carries lots at all.
+#
+# It has to be true in the DATA, not just in the caption. A global price ladder
+# (bidder 0 cheapest everywhere) ranks the same four organisations the same way
+# on every lot, and then splitting the award reads as a whim rather than as
+# buying each corridor from whoever is actually cheapest into it.
+LIVE_RFP_RUTF_PRICES = {
+    "Maiduguri": {
+        "Savanna Nutrients Ltd": 42.29,
+        "Kano Therapeutic Foods PLC": 43.77,
+        "Lagos NutriWorks Ltd": 45.79,
+        "Faso NutriWorks SA": 48.64,
+    },
+    "Djibo": {
+        "Faso NutriWorks SA": 41.85,
+        "Savanna Nutrients Ltd": 45.90,
+        "Kano Therapeutic Foods PLC": 46.42,
+        "Lagos NutriWorks Ltd": 47.31,
+    },
+    "Damaturu": {
+        "Savanna Nutrients Ltd": 41.83,
+        "Kano Therapeutic Foods PLC": 43.13,
+        "Lagos NutriWorks Ltd": 46.00,
+        "Faso NutriWorks SA": 49.15,
+    },
+}
+
+# Technical scores on the two corridors the award decision actually turns on.
+# The Damaturu and haulage lots are deliberately left unscored — reviewers work
+# through a tender lot by lot, and a comparison screen with every cell filled in
+# on the day bidding closes is the tell of a fixture rather than a tender.
+LIVE_RFP_TECHNICAL_SCORES = {
+    "Maiduguri": {
+        "Savanna Nutrients Ltd": 91,
+        "Kano Therapeutic Foods PLC": 60,
+        "Lagos NutriWorks Ltd": 83,
+        "Faso NutriWorks SA": 82,
+    },
+    "Djibo": {
+        "Faso NutriWorks SA": 88,
+        "Savanna Nutrients Ltd": 79,
+        "Kano Therapeutic Foods PLC": 61,
+        "Lagos NutriWorks Ltd": 74,
+    },
+}
+
+
+def _next_15_september(today=None):
+    """The date the narration speaks aloud for the Maiduguri lot.
+
+    Every other deadline in this world is an offset from today, which is right
+    for a demo that must stay plausible whenever it is seeded. This one is
+    said out loud — "sixty thousand cartons into Maiduguri by the fifteenth of
+    September" — so it is pinned to that date instead, and rolls to next year
+    once it is past rather than drifting a day at a time out of the narration.
+    """
+    today = today or TODAY
+    return date(today.year if today <= date(today.year, 9, 15) else today.year + 1, 9, 15)
 
 
 def _commitments(categories, rng):
@@ -132,20 +196,29 @@ def _seed_open_round(rng, orgs):
     )
 
     names = list(orgs.keys())
-    # 2 drafts, 3 awaiting review, 1 qualified, 1 rejected — every status on screen.
+    # 2 drafts, 4 awaiting review, 1 qualified, 1 rejected — every status on screen.
+    #
+    # Savanna heads the queue and applies for TWO categories, which is what lets
+    # the fourth scene of oes-supply-base happen at all: Tomas deciding per
+    # category on camera, qualifying the ready-to-use therapeutic food and
+    # declining the therapeutic milk, where Savanna has no plant and the
+    # evidence is thin. One supplier, two different answers is the whole claim,
+    # and a submission that only ever asked for one thing cannot carry it.
+    # (winner org, status, categories — None means the org's own categories)
     plan = [
-        (names[14], EOISubmission.Status.DRAFT),
-        (names[15], EOISubmission.Status.DRAFT),
-        (names[1], EOISubmission.Status.SUBMITTED),
-        (names[6], EOISubmission.Status.SUBMITTED),
-        (names[11], EOISubmission.Status.SUBMITTED),
-        (names[3], EOISubmission.Status.QUALIFIED),
-        (names[12], EOISubmission.Status.REJECTED),
+        (names[0], EOISubmission.Status.SUBMITTED, ["rutf", "therapeutic_milk"]),
+        (names[14], EOISubmission.Status.DRAFT, None),
+        (names[15], EOISubmission.Status.DRAFT, None),
+        (names[1], EOISubmission.Status.SUBMITTED, None),
+        (names[6], EOISubmission.Status.SUBMITTED, None),
+        (names[11], EOISubmission.Status.SUBMITTED, None),
+        (names[3], EOISubmission.Status.QUALIFIED, None),
+        (names[12], EOISubmission.Status.REJECTED, None),
     ]
 
-    for name, status in plan:
+    for name, status, category_override in plan:
         org = orgs[name]
-        categories = org.categories_hint
+        categories = category_override or org.categories_hint
         submitted_at = (
             None if status == EOISubmission.Status.DRAFT else timezone.now() - timedelta(days=rng.randint(2, 16))
         )
@@ -175,17 +248,44 @@ def _seed_open_round(rng, orgs):
                 ),
             )
 
+    _diverge_live_profile_from_its_snapshots(orgs)
+
+
+def _diverge_live_profile_from_its_snapshots(orgs):
+    """Renew a certificate AFTER the applications that froze a copy of it.
+
+    The frozen snapshot is the property the narrative claims an inspector
+    general asks about first, and on a world where nothing has changed since
+    submission it is unfalsifiable: a reader cannot tell a frozen copy from a
+    second render of the live record. So the demo world contains one supplier
+    whose live profile has genuinely moved on — Savanna renewed its UNICEF RUTF
+    approval after applying — and the two columns visibly disagree.
+
+    Runs LAST, after every snapshot in both rounds is taken, so it is the live
+    row that moves and the frozen ones that do not. That ordering is the whole
+    point and is why this is a function rather than four lines up there.
+    """
+    savanna = orgs.get("Savanna Nutrients Ltd")
+    if savanna is None:
+        return
+    cert = savanna.certifications.filter(cert_type="UNICEF RUTF approval").first()
+    if cert is None:
+        return
+    cert.expiry_date = TODAY + timedelta(days=730)
+    cert.issuer = "UNICEF Supply Division (renewed)"
+    cert.save(update_fields=["expiry_date", "issuer"])
+
 
 def _seed_corridor_awards(orgs, staff):
     """One fully-awarded solicitation per corridor, feeding the contracts."""
-    for org_name, title, brief, country, lot_desc, cartons, price in CORRIDOR_AWARDS:
+    for org_name, title, brief, country, closed_days_ago, due_in_days, lot_desc, cartons, price in CORRIDOR_AWARDS:
         rfp, _ = RFP.objects.update_or_create(
             title=title,
             defaults={
                 "brief": brief,
                 "categories": ["transport"] if country == "SD" else ["rutf"],
                 "countries": [country],
-                "bid_deadline": TODAY - timedelta(days=55),
+                "bid_deadline": TODAY - timedelta(days=closed_days_ago),
                 "status": RFP.Status.PUBLISHED,
                 "created_by": staff[StaffRole.Role.PROCUREMENT_ADMIN],
             },
@@ -199,7 +299,7 @@ def _seed_corridor_awards(orgs, staff):
                 "unit": "truck-months" if country == "SD" else "cartons",
                 "delivery_country": country,
                 "delivery_place": lot_desc.split(" to ")[-1] if " to " in lot_desc else "Port Sudan",
-                "delivery_deadline": TODAY + timedelta(days=90),
+                "delivery_deadline": TODAY + timedelta(days=due_in_days),
             },
         )
         bid, _ = Bid.objects.update_or_create(
@@ -207,7 +307,7 @@ def _seed_corridor_awards(orgs, staff):
             rfp=rfp,
             defaults={
                 "status": Bid.Status.SUBMITTED,
-                "submitted_at": timezone.now() - timedelta(days=60),
+                "submitted_at": timezone.now() - timedelta(days=closed_days_ago + 5),
             },
         )
         lot_bid, _ = LotBid.objects.update_or_create(
@@ -248,13 +348,45 @@ def _seed_live_rfp(rng, orgs, staff):
     # showing a split that happened off screen. A tender confined to one
     # country cannot demonstrate splitting corridor risk.
     lots_spec = [
-        ("rutf", "60,000 cartons RUTF delivered to Maiduguri", 60000, "cartons", "NG", "Maiduguri", 75),
-        ("rutf", "20,000 cartons RUTF delivered to Djibo", 20000, "cartons", "BF", "Djibo", 80),
-        ("rutf", "35,000 cartons RUTF delivered to Damaturu", 35000, "cartons", "NG", "Damaturu", 90),
-        ("transport", "Kano–Maiduguri haulage, 6 months", 6, "truck-months", "NG", "Maiduguri", 60),
+        (
+            "rutf",
+            "60,000 cartons RUTF delivered to Maiduguri",
+            60000,
+            "cartons",
+            "NG",
+            "Maiduguri",
+            _next_15_september(),
+        ),
+        (
+            "rutf",
+            "20,000 cartons RUTF delivered to Djibo",
+            20000,
+            "cartons",
+            "BF",
+            "Djibo",
+            TODAY + timedelta(days=80),
+        ),
+        (
+            "rutf",
+            "35,000 cartons RUTF delivered to Damaturu",
+            35000,
+            "cartons",
+            "NG",
+            "Damaturu",
+            TODAY + timedelta(days=90),
+        ),
+        (
+            "transport",
+            "Kano–Maiduguri haulage, 6 months",
+            6,
+            "truck-months",
+            "NG",
+            "Maiduguri",
+            TODAY + timedelta(days=60),
+        ),
     ]
     lots = []
-    for category, desc, qty, unit, country, place, due_in in lots_spec:
+    for category, desc, qty, unit, country, place, deadline in lots_spec:
         lot, _ = Lot.objects.update_or_create(
             rfp=rfp,
             description=desc,
@@ -264,7 +396,7 @@ def _seed_live_rfp(rng, orgs, staff):
                 "unit": unit,
                 "delivery_country": country,
                 "delivery_place": place,
-                "delivery_deadline": TODAY + timedelta(days=due_in),
+                "delivery_deadline": deadline,
             },
         )
         lots.append(lot)
@@ -290,29 +422,42 @@ def _seed_live_rfp(rng, orgs, staff):
                     "submitted_at": timezone.now() - timedelta(days=rng.randint(1, 9)),
                 },
             )
-            base = 44.0 if lot.category == "rutf" else 8200.0
-            price = round(base * (0.92 + 0.05 * i + rng.random() * 0.06), 2)
+            if lot.category == "rutf":
+                price = LIVE_RFP_RUTF_PRICES[lot.delivery_place][name]
+                # A plant trucking into its own country quotes a shorter lead
+                # time than one clearing a border with the same pallets.
+                lead_time = 21 if org.country == lot.delivery_country else 35
+            else:
+                price = round(8200.0 * (0.97 + 0.05 * i + rng.random() * 0.03), 2)
+                lead_time = rng.choice([21, 28, 35])
             LotBid.objects.update_or_create(
                 bid=bid,
                 lot=lot,
                 defaults={
                     "unit_price": price,
                     "currency": "USD",
-                    "lead_time_days": rng.choice([14, 21, 28, 35]),
+                    "lead_time_days": lead_time,
                     "notes": "FCA plant, GS1-labelled pallets." if lot.category == "rutf" else "",
                 },
             )
 
-    # Partially scored: the first lot is fully scored, the rest awaits reviewers.
-    for lot_bid in LotBid.objects.filter(lot=lots[0]):
-        BidScore.objects.update_or_create(
-            lot_bid=lot_bid,
-            reviewer=reviewer,
-            defaults={
-                "technical_score": rng.randint(58, 94),
-                "notes": "Assessed on capacity evidence and past on-time performance.",
-            },
-        )
+    # Scored on the two corridors the award turns on; the rest awaits reviewers.
+    for lot in lots:
+        scores = LIVE_RFP_TECHNICAL_SCORES.get(lot.delivery_place)
+        if not scores or lot.category != "rutf":
+            continue
+        for lot_bid in LotBid.objects.filter(lot=lot).select_related("bid__org"):
+            score = scores.get(lot_bid.bid.org.legal_name)
+            if score is None:
+                continue
+            BidScore.objects.update_or_create(
+                lot_bid=lot_bid,
+                reviewer=reviewer,
+                defaults={
+                    "technical_score": score,
+                    "notes": "Assessed on capacity evidence and past on-time performance.",
+                },
+            )
 
 
 def _seed_awarded_rfp(rng, orgs, staff):

@@ -48,7 +48,9 @@ function PartnerTab({ ctx }) {
             label: 'Thinnest cover',
             value: worst ? `${worst.weeks_of_cover} wk` : '—',
             hint: worst
-              ? `${worst.node_name} runs dry ${formatDate(worst.stockout_on)}`
+              ? worst.stockout_on
+                ? `${worst.node_name} runs dry ${formatDate(worst.stockout_on)}`
+                : `${worst.node_name} is awaiting its first consignment`
               : '',
           },
           {
@@ -66,89 +68,14 @@ function PartnerTab({ ctx }) {
 
       <Card
         title="Distribution calendar"
-        subtitle="The frame you actually plan in: a day, a site, and the children booked in for it. Stock on the day includes consignments scheduled to land by then — the cover table below counts only what has physically arrived, which is why a site can run dry there and still be covered here."
+        subtitle="The frame you actually plan in: a week, a site, and the children booked in for each day. Stock on the day includes consignments scheduled to land by then — the cover table below counts only what has physically arrived, which is why a site can run dry there and still be covered here."
       >
         {plans.length ? (
-          <DataTable
-            rows={plans}
-            rowKey={(p) => p.id}
-            columns={[
-              {
-                key: 'when',
-                label: 'Distribution day',
-                value: (p) => p.scheduled_for,
-                render: (p) => formatDate(p.scheduled_for),
-              },
-              { key: 'site', label: 'Site', value: (p) => p.site_name },
-              {
-                key: 'children',
-                label: 'Children expected',
-                value: (p) => p.expected_children,
-                render: (p) => formatNumber(p.expected_children),
-              },
-              {
-                key: 'required',
-                label: 'Cartons required',
-                value: (p) => p.cartons_required,
-                render: (p) => formatNumber(p.cartons_required),
-              },
-              {
-                // Projected, not current: the running balance on that day, after
-                // every consignment that lands by then and every distribution
-                // before it. Labelling it 'on hand' invited the reading that it
-                // was today's stock, which then looked like it disagreed with
-                // the cover table below.
-                key: 'available',
-                label: 'Stock on the day',
-                value: (p) => p.cartons_on_hand,
-                render: (p) => (
-                  <span
-                    title={
-                      p.cartons_inbound
-                        ? `${formatNumber(
-                            p.cartons_inbound,
-                          )} more cartons are on the road, arriving after this date`
-                        : 'Projected from receipts, arrivals and earlier distributions'
-                    }
-                  >
-                    {formatNumber(p.cartons_on_hand)}
-                    {p.cartons_inbound ? (
-                      <span className="muted small">
-                        {' '}
-                        (+{formatNumber(p.cartons_inbound)} later)
-                      </span>
-                    ) : null}
-                  </span>
-                ),
-              },
-              {
-                key: 'state',
-                label: 'Cover',
-                value: (p) => p.state,
-                render: (p) => (
-                  <Badge
-                    tone={
-                      p.state === 'covered'
-                        ? 'good'
-                        : p.state === 'at_risk'
-                        ? 'warn'
-                        : 'bad'
-                    }
-                  >
-                    {p.state === 'at_risk'
-                      ? 'at risk'
-                      : p.state === 'uncovered'
-                      ? 'uncovered'
-                      : 'covered'}
-                  </Badge>
-                ),
-              },
-            ]}
-          />
+          <DistributionWeekGrid plans={plans} />
         ) : (
           <EmptyState
             title="No distributions planned."
-            hint="Plan a distribution day to see whether inbound supply covers it."
+            hint="Plan a distribution day to see inbound supply against it."
           />
         )}
       </Card>
@@ -198,8 +125,17 @@ function PartnerTab({ ctx }) {
                 label: 'Runs dry',
                 value: (c) => c.stockout_on,
                 render: (c) => {
+                  // Nothing has arrived, so there is no burn-down to date.
+                  if (!c.stockout_on)
+                    return (
+                      <span className="muted">awaiting first consignment</span>
+                    );
+                  // Through the shared parser, so this day-count and every
+                  // rendered date in the app agree about what day it is.
                   const days = Math.round(
-                    (new Date(c.stockout_on) - new Date(c.as_of)) / 86400000,
+                    (parseSupplyDate(c.stockout_on) -
+                      parseSupplyDate(c.as_of)) /
+                      86400000,
                   );
                   return (
                     <span>
@@ -385,7 +321,7 @@ function RaiseShortfall({ node, onClose, onSubmit }) {
   );
   const [children, setChildren] = useState(String(shortfall || 100));
   const [cartons, setCartons] = useState(String(shortfall || 100));
-  const [neededBy, setNeededBy] = useState(node.stockout_on);
+  const [neededBy, setNeededBy] = useState(node.stockout_on || '');
   const [note, setNote] = useState('');
 
   return (
@@ -436,9 +372,13 @@ function RaiseShortfall({ node, onClose, onSubmit }) {
       </FormRow>
       <FormRow
         label="Needed by"
-        hint={`${node.node_name} is projected to run dry on ${formatDate(
-          node.stockout_on,
-        )}.`}
+        hint={
+          node.stockout_on
+            ? `${node.node_name} is projected to run dry on ${formatDate(
+                node.stockout_on,
+              )}.`
+            : `${node.node_name} has not received a consignment yet, so there is no projected stockout date.`
+        }
       >
         <input
           type="date"
@@ -658,6 +598,95 @@ function MuacSeries({ child, focused, onFocus }) {
           </div>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+/* A week, not a list sorted by date.
+
+   The narration this card exists to carry says it out loud: "a shipment table
+   sorted by arrival date is a supplier's view of the world; a partner's unit of
+   planning is a distribution day, at a named site, with a known number of
+   children expected." It was rendered as a table sorted by arrival date — the
+   exact artifact the sentence disowns, so the contrast was asserted over its
+   own counterexample and a viewer had to take it on trust.
+
+   A site per row and a day per column is the shape a distribution plan is
+   actually held in. It also makes the thing worth seeing visible without
+   reading: an uncovered cell is a hole in a grid, and the eye finds it before
+   the number in it. */
+function DistributionWeekGrid({ plans }) {
+  // A week. The narration calls this "the frame you actually plan in: a week, a
+  // site, and the children booked in for each day", and a fortnight of columns
+  // both contradicts that and overflows the content area — which scrolled the
+  // whole page sideways and took the nav rail off the left edge.
+  const days = Array.from(new Set(plans.map((p) => p.scheduled_for)))
+    .sort()
+    .slice(0, 7);
+  const daySet = new Set(days);
+  plans = plans.filter((p) => daySet.has(p.scheduled_for));
+  const sites = Array.from(new Set(plans.map((p) => p.site_name))).sort();
+  const byKey = {};
+  plans.forEach((p) => {
+    byKey[`${p.site_name}|${p.scheduled_for}`] = p;
+  });
+
+  const dayLabel = (iso) => {
+    const d = parseSupplyDate(iso);
+    if (!d) return iso;
+    return d.toLocaleDateString(undefined, {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+    });
+  };
+
+  return (
+    <div className="week-grid-wrap">
+      <table className="week-grid">
+        <thead>
+          <tr>
+            <th className="week-grid-site">Site</th>
+            {days.map((d) => (
+              <th key={d}>{dayLabel(d)}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {sites.map((site) => (
+            <tr key={site}>
+              <th className="week-grid-site">{site}</th>
+              {days.map((d) => {
+                const plan = byKey[`${site}|${d}`];
+                if (!plan) return <td key={d} className="week-cell empty" />;
+                return (
+                  <td key={d} className={`week-cell ${plan.state}`}>
+                    <div className="week-cell-children">
+                      {formatNumber(plan.expected_children)}
+                    </div>
+                    <div className="week-cell-stock">
+                      {formatNumber(plan.cartons_on_hand)} on hand
+                      {plan.cartons_inbound ? (
+                        <span className="muted">
+                          {' '}
+                          +{formatNumber(plan.cartons_inbound)}
+                        </span>
+                      ) : null}
+                    </div>
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="muted small method-note">
+        Each cell is the children booked in that day and the cartons projected
+        to be on hand for them. One carton is one child's full course, so a cell
+        is short exactly when the second number is below the first. Green is
+        covered, amber at risk, red uncovered; an empty cell is a day with no
+        distribution planned.
+      </p>
     </div>
   );
 }

@@ -18,7 +18,7 @@ from connect_labs.supply.models import (
     SupplyEvent,
     SupplyNode,
 )
-from connect_labs.supply.services import coverage, exceptions
+from connect_labs.supply.services import cover, coverage, exceptions
 
 from .factories import (
     CaseloadEstimateFactory,
@@ -294,6 +294,126 @@ def test_the_price_leader_differs_by_lot():
         ranked = rfp_actions.lot_comparison(lot)
         leaders.append(ranked[0].bid.org.legal_name)
     assert len(set(leaders)) == 2, f"expected two different price leaders, got {leaders}"
+
+
+def test_the_live_tender_is_won_by_a_different_supplier_on_each_corridor():
+    """Scenes 7 and 8 of oes-supply-base are awarded live, on this tender.
+
+    The pre-awarded split tender above proves the property in seeded history.
+    This is the one Ada actually awards on camera, and the narration says the
+    leader on Maiduguri is not the leader on Djibo — so if this tender ranks
+    the same organisation first on both lots, awarding Djibo to anyone else
+    looks arbitrary on screen. It did, once: a single global price ladder made
+    the first-listed bidder cheapest on every lot.
+    """
+    call_command("seed_supply_demo")
+    from connect_labs.supply.models import RFP
+    from connect_labs.supply.services import rfp_actions
+
+    rfp = RFP.objects.get(title="RUTF Northeast Nigeria Q3 2026")
+    leaders = {}
+    for lot in rfp.lots.filter(delivery_place__in=("Maiduguri", "Djibo"), category="rutf"):
+        ranked = rfp_actions.lot_comparison(lot)
+        leaders[lot.delivery_place] = ranked[0].bid.org.legal_name
+        # Every bid on the two compared corridors carries a technical score,
+        # because the narration reads them off the screen beside the price.
+        assert all(
+            b.scores.exists() for b in ranked
+        ), f"unscored bid on the {lot.delivery_place} lot, which scene 7 narrates as scored"
+
+    assert leaders["Maiduguri"] != leaders["Djibo"], f"one leader on both corridors: {leaders}"
+
+
+def test_the_spoken_maiduguri_deadline_is_the_fifteenth_of_september():
+    """oes-supply-base scene 6 says the date out loud, so it cannot drift."""
+    call_command("seed_supply_demo")
+    from connect_labs.supply.models import Lot
+
+    lot = Lot.objects.get(rfp__title="RUTF Northeast Nigeria Q3 2026", delivery_place="Maiduguri", category="rutf")
+    assert (lot.delivery_deadline.month, lot.delivery_deadline.day) == (9, 15)
+
+
+def test_a_consignment_still_on_the_road_can_be_late():
+    """The delay you can still act on is the one worth surfacing.
+
+    Milestones were seeded with estimated_at == planned_at, so a leg could only
+    ever report a delay once it had ARRIVED and carried an actual_at. A
+    consignment already nine days overdue and still in transit reported zero
+    and never entered the queue — exactly backwards, and it left the product's
+    three-timestamp claim undemonstrated, since the middle timestamp never
+    moved.
+    """
+    call_command("seed_supply_demo")
+    from connect_labs.supply.models import Shipment
+
+    late = [e for e in exceptions.build_queue() if e["kind"] == "Late"]
+    in_transit_refs = set(
+        Shipment.objects.filter(status=Shipment.Status.IN_TRANSIT).values_list("reference", flat=True)
+    )
+    from_the_road = [e for e in late if e.get("shipment_reference") in in_transit_refs]
+    assert from_the_road, "a consignment still in transit must be able to be late"
+
+    # And the estimate is what makes it late, not an actual arrival.
+    worst = from_the_road[0]
+    shipment = Shipment.objects.get(reference=worst["shipment_reference"])
+    arrival = shipment.milestones.order_by("-sequence").first()
+    assert arrival.actual_at is None, "still on the road"
+    assert arrival.estimated_at > arrival.planned_at, "the estimate is what moved"
+
+
+def test_a_node_can_only_spare_what_it_does_not_need():
+    """The queue advises reallocating from surplus; this is what surplus means.
+
+    A reallocation that solves one stockout by causing another is not a
+    decision anybody would defend afterwards, so a node offers only the cartons
+    it can lose while staying above its own threshold.
+    """
+    call_command("seed_supply_demo")
+    rows = cover.nodes_holding_surplus(min_weeks=6.0)
+    assert rows, "the demo world needs somewhere to reallocate from"
+
+    by_node = {r["node_name"]: r for r in cover.cover_by_node()}
+    for row in rows:
+        full = by_node[row["node_name"]]
+        assert full["weeks_of_cover"] >= 6.0, "a node below the threshold has nothing spare"
+        # What is left behind still covers the threshold.
+        remaining = full["stock_on_hand"] - row["spare_cartons"]
+        assert remaining >= full["weekly_burn"] * 6.0 - 1
+
+    # Most spare first: the reader is choosing a source, not reading a list.
+    assert [r["spare_cartons"] for r in rows] == sorted((r["spare_cartons"] for r in rows), reverse=True)
+
+
+def test_a_site_awaiting_its_first_delivery_is_not_reported_as_running_dry():
+    """Zero cartons is two different facts and they need opposite actions.
+
+    A dozen sites that had never been served rendered identically to a site two
+    days from stocking out — 0 on hand, 0 weeks, "runs dry today" — and, sorted
+    worst-first, they filled the top of the queue and pushed every real cover
+    figure below the fold. A judge reading that frame concluded the join was
+    broken. It was not; the two states were simply indistinguishable.
+    """
+    call_command("seed_supply_demo")
+    rows = cover.cover_by_node()
+
+    never_served = [r for r in rows if r["awaiting_first_delivery"]]
+    burning_down = [r for r in rows if not r["awaiting_first_delivery"]]
+    assert never_served, "the demo world needs at least one unserved site for this to mean anything"
+    assert burning_down, "and at least one with real cover"
+
+    # A projected stockout date has to come from an actual burn-down.
+    for row in never_served:
+        assert row["stock_on_hand"] == 0
+        assert row["stockout_on"] is None
+    for row in burning_down:
+        assert row["stockout_on"] is not None
+
+    # Urgency is the ranking, and never-served is the most urgent state there
+    # is: every node here has a caseload behind it, so zero cover means children
+    # going without today. Sorting these last put a site with four hundred
+    # children a month and nothing on hand below one holding seven weeks.
+    assert [r["weeks_of_cover"] for r in rows] == sorted(r["weeks_of_cover"] for r in rows)
+    assert rows[0]["weeks_of_cover"] == 0, "a site with nothing on hand has to lead the queue"
 
 
 def test_seeded_caseloads_cover_every_famine_district_with_a_node():

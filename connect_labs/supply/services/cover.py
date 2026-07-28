@@ -92,6 +92,16 @@ def stock_on_hand(node):
     return received - despatched
 
 
+def has_received_any(node):
+    """Has anything ever arrived here, on the event log's account?
+
+    Distinguishes a site that has burned through its stock (zero on hand, a
+    real burn-down behind it) from one that has never been served at all. Both
+    hold zero cartons and they are not the same operational fact.
+    """
+    return SupplyEvent.objects.filter(read_point=node, biz_step__in=_INBOUND_STEPS).exists()
+
+
 def caseload_for_district(adm1_code, month=None):
     """The most recent caseload estimate for a district at or before ``month``."""
     if not adm1_code:
@@ -156,6 +166,14 @@ def cover_for_node(node, as_of=None, month=None):
         return None
     stock = stock_on_hand(node)
     weeks = float(stock / burn)
+    # A site awaiting its first consignment is not a site that has burned
+    # through its stock, and reporting both as "runs dry today" makes the two
+    # indistinguishable at exactly the moment they call for opposite actions —
+    # one needs the pipeline unblocked, the other needs a resupply against a
+    # known consumption rate. It also fills the top of a queue sorted by
+    # urgency with a dozen identical rows, which reads as a broken join rather
+    # than as twelve sites that have never been served.
+    awaiting_first_delivery = stock <= 0 and not has_received_any(node)
     return {
         "node_id": node.id,
         "node_name": node.name,
@@ -164,7 +182,10 @@ def cover_for_node(node, as_of=None, month=None):
         "served_children": round(served_children(node, month=month)),
         "weekly_burn": round(float(burn), 1),
         "weeks_of_cover": round(weeks, 1),
-        "stockout_on": (as_of + timedelta(days=int(weeks * 7))).isoformat(),
+        "awaiting_first_delivery": awaiting_first_delivery,
+        # Null rather than today's date when nothing has ever arrived: there is
+        # no burn-down to project from, and a date here would be a fabrication.
+        "stockout_on": (None if awaiting_first_delivery else (as_of + timedelta(days=int(weeks * 7))).isoformat()),
         "as_of": as_of.isoformat(),
         "method": (
             "Stock on hand is receipts minus despatches from the event log. "
@@ -175,12 +196,59 @@ def cover_for_node(node, as_of=None, month=None):
 
 
 def cover_by_node(nodes=None, as_of=None, month=None):
-    """Cover for every demand-serving node, worst first."""
+    """Cover for every demand-serving node, worst first. Strictly.
+
+    An earlier attempt sorted sites awaiting a first delivery to the BOTTOM, on
+    the reasoning that a site with no receipts has no burn-down to rank. That is
+    true of the projection and false of the operational fact, and it put Biu —
+    zero cartons on hand against four hundred children a month — below a site
+    holding seven weeks of cover. A supply lead reading that table triages the
+    site at 0.6 weeks and misses the one that is already empty, which is the
+    exact failure the table exists to prevent.
+
+    Every node here has a caseload behind it (``cover_for_node`` returns None
+    otherwise), so zero cover always means children going without. It sorts
+    first. What "awaiting first delivery" changes is the projected stockout
+    DATE — there is no burn-down to project one from — not the urgency.
+    """
     if nodes is None:
         nodes = demand_serving_nodes()
     rows = [cover_for_node(n, as_of=as_of, month=month) for n in nodes]
     rows = [r for r in rows if r is not None]
     return sorted(rows, key=lambda r: r["weeks_of_cover"])
+
+
+def nodes_holding_surplus(as_of=None, month=None, min_weeks=6.0):
+    """Nodes carrying more cover than their own caseload can use.
+
+    The exception queue's advice is "reallocate from a node holding surplus",
+    which is only actionable if the screen can say WHICH. Answering it needs
+    the same cover derivation the queue already ranks on, so it lives here
+    beside it rather than being recomputed in a view.
+
+    Ordered by the most surplus first, and reported with the cartons that could
+    move without taking the source below the threshold — because a reallocation
+    that solves one stockout by causing another is not a decision anybody would
+    defend afterwards.
+    """
+    rows = []
+    for row in cover_by_node(as_of=as_of, month=month):
+        if row["weeks_of_cover"] < min_weeks or row["stock_on_hand"] <= 0:
+            continue
+        keep = row["weekly_burn"] * min_weeks
+        spare = int(row["stock_on_hand"] - keep)
+        if spare <= 0:
+            continue
+        rows.append(
+            {
+                "node_id": row["node_id"],
+                "node_name": row["node_name"],
+                "stock_on_hand": row["stock_on_hand"],
+                "weeks_of_cover": row["weeks_of_cover"],
+                "spare_cartons": spare,
+            }
+        )
+    return sorted(rows, key=lambda r: -r["spare_cartons"])
 
 
 def children_at_risk(node, delay_days, as_of=None, month=None):

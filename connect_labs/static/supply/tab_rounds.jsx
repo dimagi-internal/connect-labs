@@ -254,6 +254,17 @@ function NewRoundModal({ ctx, onClose }) {
   );
 }
 
+/* Mirrors QUALIFICATION_TERM_DAYS in services/eoi_actions.py. Shown, not
+   enforced — the server stamps the real date; this is what the reviewer is
+   told they are about to grant. */
+const QUALIFICATION_TERM_DAYS = 540;
+
+function qualificationExpiry() {
+  const d = new Date();
+  d.setDate(d.getDate() + QUALIFICATION_TERM_DAYS);
+  return d.toISOString().slice(0, 10);
+}
+
 function ReviewModal({ ctx, submission, onClose }) {
   const [decisions, setDecisions] = useState({});
   const [notes, setNotes] = useState('');
@@ -366,7 +377,21 @@ function ReviewModal({ ctx, submission, onClose }) {
           </div>
           {submission.categories.map((cat) => (
             <div className="decision-row" key={cat}>
-              <div className="decision-cat">{categoryLabel(cat)}</div>
+              <div className="decision-cat">
+                {categoryLabel(cat)}
+                {/* The date the reviewer is actually granting, not the term it
+                    is derived from. "18 months" is a rule; a roster is only
+                    current if somebody can see when this particular supplier
+                    falls off it, and that is a date. */}
+                {decisions[cat] === 'qualify' ? (
+                  <div className="muted small">
+                    qualified until {formatDate(qualificationExpiry())}
+                  </div>
+                ) : null}
+                {decisions[cat] === 'reject' ? (
+                  <div className="muted small">no qualification granted</div>
+                ) : null}
+              </div>
               <div className="decision-buttons">
                 <button
                   type="button"

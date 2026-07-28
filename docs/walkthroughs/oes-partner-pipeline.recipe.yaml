@@ -25,13 +25,10 @@ scenes:
     target: css:.keyfigures
     note: role-scoped payload lands
   - kind: hold
-    seconds: 1.6
-    note: read the four figures
-  - kind: scroll_to
-    target: css:.card:has-text('From a batch to the children it treated')
-    note: the panel that carries this scene's own claim — carton AND child
-  - kind: hold
-    seconds: 1.8
+    seconds: 3.4
+    note: the four figures ARE this scene's evidence — eleven sites, distributions not
+      covered, the thinnest cover in the network, the shortfall already raised. It used
+      to scroll away from them onto the batch card, which is scene 6's subject.
   impressive_because: Every other screen in this product looks outward from the centre. This one belongs
     to the organisation actually admitting the children, and it opens with what they can now see rather
     than what they are being asked to report.
@@ -46,10 +43,14 @@ scenes:
     assigned to it at all.'
   actions:
   - kind: scroll_to
-    target: css:.card:has-text('Distribution calendar')
+    target: css:.card:has-text('Distribution calendar') .method-note
+    note: the legend BELOW the grid. Targeting the card title scrolled zero pixels — it
+      was already on screen at scroll 0 — so this scene captured the same frame as scene
+      1 twice running. A scroll_to an element already in the viewport is a silent no-op.
   - kind: hold
-    seconds: 2.0
-    note: the covered / at risk / uncovered spread
+    seconds: 2.4
+    note: title, the sentence reconciling this card with the cover table, the column
+      headers, and the covered / at risk / uncovered spread
   impressive_because: A shipment table sorted by arrival date is the supplier's view of the world. This
     is the frame a partner actually plans in, and the cover state is resolved on the server so it cannot
     disagree with the projection below it.
@@ -60,8 +61,8 @@ scenes:
     and the admission rate, with the method stated on screen.
   url: /supply/
   show: The Weeks of cover card — every site with its stock on hand, the children it serves a month, its
-    weeks of cover and the date it runs dry, ranked worst first. Biu at zero, Askira at 0.6, Kukawa at
-    1.4, Monguno comfortable at 6.
+    weeks of cover and the date it runs dry, ranked worst first. Biu at zero and awaiting its first
+    consignment, Askira at 0.6, Kukawa at 1.6 and eleven days out, Dikwa comfortable at 5.5.
   actions:
   - kind: scroll_to
     target: css:.card:has-text('Weeks of cover by site')
@@ -82,15 +83,25 @@ scenes:
   concept_claim: A receipt recorded at the loading bay against the despatch advice raises the discrepancy
     as evidence from the person holding the cartons, labelled hand-keyed.
   url: /supply/
-  show: The Receiving tab — the partner's own capture surface, where a storekeeper records what actually
-    came off the truck against what the despatch advice said, from a phone, labelled as hand-keyed.
+  show: 'The Receiving tab — the partner''s own capture surface: the consignments arriving at their eleven
+    sites, each marked with how it was reported, the ones still awaiting a count, and the short count
+    already raised — 900 advised against 840 counted, and the 60 children behind the difference.'
   actions:
   - kind: click
     target: css:.navitem:has-text('Receiving')
   - kind: wait_for
-    target: css:.page
+    target: css:.keyfigures
   - kind: hold
-    seconds: 1.8
+    seconds: 1.6
+    note: what is inbound to their own sites, and how each was reported
+  - kind: scroll_to
+    target: css:.card:has-text('Short counts you have raised')
+  - kind: hold
+    seconds: 3.0
+    note: the REPORTED BY column and the short count in one frame — three consignments
+      arrived on a despatch advice and the rest as a phone call, and the one that came up
+      60 short says which it was. Opening the consignment modal here covered the column
+      that carries the whole claim, so it does not.
   impressive_because: A shortfall asserted from a capital city is a dispute. The same shortfall recorded
     at the loading bay against the despatch advice is evidence — and it is labelled hand-keyed, because
     it was.
@@ -134,8 +145,15 @@ scenes:
     seconds: 2.0
     note: it is now in the command centre queue
   - kind: scroll_to
-    target: css:.card:has-text('Shortfalls you have raised')
-    note: watch it land, rather than being told it did
+    target: css:.card:has-text('Weeks of cover by site')
+    note: the row that changed — Kukawa's button is now a dated stamp, so a duplicate
+      raise is structurally impossible
+  - kind: hold
+    seconds: 1.8
+  - kind: scroll_to
+    target: css:.card:has-text('Shortfalls you have raised') tr:last-child
+    note: the LAST row of the card, so the batch card below it stays under the fold —
+      it is scene 6's reveal and targeting the heading left it filling the bottom third
   - kind: hold
     seconds: 2.2
   impressive_because: 'This inverts the direction a monitoring product runs in: the ground reports upward

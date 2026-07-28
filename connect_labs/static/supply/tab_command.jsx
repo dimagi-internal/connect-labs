@@ -27,6 +27,8 @@ function CommandTab({ ctx }) {
   const cover = world.cover || [];
   const coverage = world.coverage || [];
   const [selected, setSelected] = useState(null);
+  const [openContract, setOpenContract] = useState(null);
+  const [reallocatingFor, setReallocatingFor] = useState(null);
 
   const inTransit = shipments.filter((s) => s.status === 'in_transit');
   const deliveredCartons = contracts.reduce(
@@ -112,6 +114,23 @@ function CommandTab({ ctx }) {
                     </div>
                   ) : null}
                   <div className="exception-action">→ {e.action}</div>
+                  {/* The queue has always ADVISED a reallocation and never
+                      offered one, so the single sentence that tells the reader
+                      what to do about a row was the only thing on the card
+                      they could not act on. */}
+                  {e.node_id &&
+                  /reallocate/i.test(e.action || '') &&
+                  supplyCan(world.role, 'actions', 'create') ? (
+                    <span
+                      className="btn btn-sm"
+                      onClick={(ev) => {
+                        ev.stopPropagation();
+                        setReallocatingFor(e);
+                      }}
+                    >
+                      Reallocate to {e.node_name}
+                    </span>
+                  ) : null}
                   {e.discrepancy_id &&
                   supplyCan(world.role, 'execution', 'resolve') ? (
                     <span
@@ -158,6 +177,7 @@ function CommandTab({ ctx }) {
         <DataTable
           rows={contracts}
           rowKey={(c) => c.id}
+          onRowClick={(c) => setOpenContract(c)}
           columns={[
             { key: 'ref', label: 'Contract', value: (c) => c.reference },
             { key: 'org', label: 'Supplier', value: (c) => c.org_name },
@@ -313,25 +333,37 @@ function CommandTab({ ctx }) {
                 key: 'weeks',
                 label: 'Weeks of cover',
                 value: (r) => r.weeks_of_cover,
-                render: (r) => (
-                  <Badge
-                    tone={
-                      r.weeks_of_cover < 2
-                        ? 'bad'
-                        : r.weeks_of_cover < 4
-                        ? 'warn'
-                        : 'good'
-                    }
-                  >
-                    {r.weeks_of_cover}
-                  </Badge>
-                ),
+                // A site awaiting its first delivery has no cover figure to
+                // colour. Showing it as a red 0 puts it in the same visual
+                // language as a site two days from running dry, and the two
+                // need opposite responses.
+                render: (r) =>
+                  r.awaiting_first_delivery ? (
+                    <Badge tone="info">Not yet served</Badge>
+                  ) : (
+                    <Badge
+                      tone={
+                        r.weeks_of_cover < 2
+                          ? 'bad'
+                          : r.weeks_of_cover < 4
+                          ? 'warn'
+                          : 'good'
+                      }
+                    >
+                      {r.weeks_of_cover}
+                    </Badge>
+                  ),
               },
               {
                 key: 'dry',
                 label: 'Runs dry',
-                value: (r) => r.stockout_on,
-                render: (r) => formatDate(r.stockout_on),
+                value: (r) => r.stockout_on || '',
+                render: (r) =>
+                  r.stockout_on ? (
+                    formatDate(r.stockout_on)
+                  ) : (
+                    <span className="muted">awaiting first consignment</span>
+                  ),
               },
             ]}
           />
@@ -345,6 +377,284 @@ function CommandTab({ ctx }) {
           {cover.length ? cover[0].method : ''}
         </p>
       </Card>
+
+      {reallocatingFor ? (
+        <ReallocateModal
+          ctx={ctx}
+          exception={reallocatingFor}
+          surplus={world.surplus_nodes || []}
+          onClose={() => setReallocatingFor(null)}
+        />
+      ) : null}
+
+      {openContract ? (
+        <ContractDetailModal
+          contract={openContract}
+          onClose={() => setOpenContract(null)}
+        />
+      ) : null}
     </Page>
+  );
+}
+
+/* What the award became.
+
+   The award is the immutable decision; this is the instrument that carries it
+   out. Until this existed the pipeline table was the end of the road — four
+   reference strings in a column — and the claim that a dollar can be traced to
+   a carton had nowhere on screen to be true. The three things that make the
+   trace possible are the three things this shows: the funding envelope the
+   money is drawn from, the IATI activity identifier that makes it reconcilable
+   against a published aid dataset, and the consignments the quantity is
+   actually moving on. */
+function ContractDetailModal({ contract, onClose }) {
+  const appropriation = contract.appropriation;
+  const shipments = contract.shipments || [];
+  const gap = contract.total_quantity - contract.delivered_quantity;
+
+  return (
+    <Modal wide title={contract.reference} onClose={onClose}>
+      <div className="detail-head">
+        <StatusChip status={contract.status} />
+        <span className="muted">
+          {contract.org_name} · {contract.destination},{' '}
+          {countryLabel(contract.destination_country)}
+        </span>
+      </div>
+      <p className="modal-lede">
+        {contract.lot_description}
+        {contract.source_solicitation ? (
+          <span className="muted">
+            {' '}
+            · awarded under {contract.source_solicitation}
+            {contract.awarded_at ? `, ${formatDate(contract.awarded_at)}` : ''}
+          </span>
+        ) : null}
+      </p>
+
+      <Card
+        title="Drawn against"
+        subtitle="The appropriation this contract obligates money from."
+      >
+        {appropriation ? (
+          <div className="kv-grid">
+            <div>
+              <span className="muted small">Funder</span>
+              <div>{appropriation.funder_name}</div>
+            </div>
+            <div>
+              <span className="muted small">Appropriation</span>
+              <div>
+                {appropriation.title} · {appropriation.fiscal_year}
+              </div>
+            </div>
+            <div>
+              <span className="muted small">IATI activity</span>
+              <div>
+                {contract.iati_activity_id ||
+                  appropriation.iati_activity_id ||
+                  '—'}
+              </div>
+            </div>
+            <div>
+              <span className="muted small">Obligated</span>
+              <div>
+                {formatMoney(contract.obligated_value, contract.currency)}
+              </div>
+            </div>
+            <div>
+              <span className="muted small">Disbursed</span>
+              <div>
+                {formatMoney(contract.disbursed_value, contract.currency)}
+                <span className="muted small">
+                  {' '}
+                  · against confirmed delivery only
+                </span>
+              </div>
+            </div>
+            <div>
+              <span className="muted small">Unit price</span>
+              <div>{formatMoney(contract.unit_price, contract.currency)}</div>
+            </div>
+          </div>
+        ) : (
+          <EmptyState title="No appropriation linked." />
+        )}
+      </Card>
+
+      <Card
+        title="Delivery schedule"
+        subtitle="The consignments this contract is moving on, and where each one has reached."
+      >
+        <DataTable
+          rows={shipments}
+          rowKey={(s) => s.id}
+          empty="No consignments raised against this contract yet."
+          columns={[
+            { key: 'ref', label: 'Consignment', value: (s) => s.reference },
+            {
+              key: 'route',
+              label: 'Route',
+              sortable: false,
+              value: () => '',
+              render: (s) => `${s.origin.name} → ${s.destination.name}`,
+            },
+            {
+              key: 'qty',
+              label: 'Quantity',
+              value: (s) => s.quantity,
+              render: (s) => `${formatNumber(s.quantity)} ${s.unit}`,
+            },
+            {
+              key: 'eta',
+              label: 'Due',
+              value: (s) => s.eta,
+              render: (s) => formatDate(s.eta),
+            },
+            {
+              key: 'status',
+              label: 'Status',
+              value: (s) => s.status,
+              render: (s) => <StatusChip status={s.status} />,
+            },
+          ]}
+        />
+        <p className="muted small method-note">
+          {formatNumber(contract.total_quantity)} {contract.unit} contracted ·{' '}
+          {formatNumber(contract.delivered_quantity)} confirmed at destination ·{' '}
+          {gap > 0 ? `${formatNumber(gap)} outstanding` : 'requirement met'}.
+          Status and quantities are derived from the event log, not entered.
+        </p>
+      </Card>
+    </Modal>
+  );
+}
+
+/* Moving surplus is a decision, so it records one.
+
+   `services/actions.reallocate` and `POST api/actions/reallocate/` have existed
+   since the demand stage landed; what did not exist was any way to reach them.
+   The exception queue advised "reallocate from a node holding surplus" on every
+   late consignment and every partner shortfall, and that advice was the one
+   thing on the card a reader could not act on.
+
+   The source list is not a node picker over the whole network. It is the nodes
+   that genuinely hold more than their own caseload can consume, each showing
+   what it could spare without dropping below its own threshold — because a
+   reallocation that solves one stockout by causing another is not a decision
+   anybody would defend afterwards. */
+function ReallocateModal({ ctx, exception, surplus, onClose }) {
+  const candidates = surplus.filter((n) => n.node_id !== exception.node_id);
+  const [sourceId, setSourceId] = useState(
+    candidates.length ? String(candidates[0].node_id) : '',
+  );
+  const suggested = Math.max(exception.children_at_risk || 0, 0);
+  const [quantity, setQuantity] = useState(String(suggested || 100));
+  const [rationale, setRationale] = useState('');
+
+  const source = candidates.find((n) => String(n.node_id) === sourceId);
+  const overdrawn = source && Number(quantity) > source.spare_cartons;
+
+  const submit = async () => {
+    const ok = await ctx.act(
+      () =>
+        supplyPost('/supply/api/actions/reallocate/', {
+          source_node_id: Number(sourceId),
+          target_node_id: exception.node_id,
+          quantity: Number(quantity),
+          rationale,
+          signal_id: exception.signal_id || null,
+        }),
+      'Reallocated — a consignment is on the map with planned milestones.',
+    );
+    if (ok) onClose();
+  };
+
+  return (
+    <Modal
+      title={`Reallocate to ${exception.node_name}`}
+      onClose={onClose}
+      footer={
+        <React.Fragment>
+          <button type="button" className="btn btn-secondary" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="btn"
+            onClick={submit}
+            disabled={
+              ctx.busy ||
+              !sourceId ||
+              !rationale.trim() ||
+              overdrawn ||
+              Number(quantity) <= 0
+            }
+          >
+            Reallocate
+          </button>
+        </React.Fragment>
+      }
+    >
+      <p className="modal-lede">{exception.why}</p>
+      {candidates.length ? (
+        <React.Fragment>
+          <FormRow
+            label="Move from"
+            hint="Only nodes holding more than their own caseload can consume."
+          >
+            <select
+              value={sourceId}
+              onChange={(e) => setSourceId(e.target.value)}
+            >
+              {candidates.map((n) => (
+                <option key={n.node_id} value={n.node_id}>
+                  {n.node_name} — {formatNumber(n.spare_cartons)} cartons spare
+                  ({n.weeks_of_cover} wk cover)
+                </option>
+              ))}
+            </select>
+          </FormRow>
+          <FormRow
+            label="Cartons"
+            hint={
+              source
+                ? `${formatNumber(
+                    source.spare_cartons,
+                  )} can move without taking ${
+                    source.node_name
+                  } below six weeks.`
+                : ''
+            }
+          >
+            <input
+              type="number"
+              value={quantity}
+              onChange={(e) => setQuantity(e.target.value)}
+            />
+          </FormRow>
+          {overdrawn ? (
+            <div className="form-error">
+              That would take {source.node_name} below its own threshold.
+            </div>
+          ) : null}
+          <FormRow
+            label="Why"
+            hint="Recorded against the action, and against the signal it answers."
+          >
+            <textarea
+              rows="3"
+              value={rationale}
+              onChange={(e) => setRationale(e.target.value)}
+            />
+          </FormRow>
+        </React.Fragment>
+      ) : (
+        <EmptyState
+          title="No node is holding surplus."
+          hint="Nothing can be moved without causing a stockout somewhere else."
+        />
+      )}
+    </Modal>
   );
 }

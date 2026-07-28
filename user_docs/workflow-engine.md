@@ -246,8 +246,5 @@ The ten indicators are:
 | **Straight-lining on yes/no questions** | Whether a FLW answered two specific yes/no questions identically across every visit on a given day |
 | **MUAC value repetition** | Whether the same MUAC measurement was recorded across multiple children in a pattern unlikely to occur naturally |
 
-### Drilling into a day
-
-Clicking any row in the 14-day summary table expands it to show the full detail view for that FLW. For every indicator and every day in the window you can see the actual value recorded and the threshold it is compared against, so it is immediately clear which indicator or combination of indicators triggered the flag.
-
-### Adjusting
+!!! note "Form volume vs. building count requires a CommCare connection"
+    The **Form volume vs. work-area building count** indicator compares each FLW's daily form submissions against the number of buildings in their assigned area. This figure is pulled directly from CommCare, so it only populates when the report runs with a valid CommCare connection

@@ -121,6 +121,12 @@ def contract_dict(contract, include_shipments=False):
         "org_id": contract.org_id,
         "org_name": contract.org.legal_name,
         "lot_description": contract.award.lot.description,
+        # Which award this came from, by name. A contract detail that shows a
+        # quantity but not its source reads as a contradiction the moment the
+        # viewer has just watched a DIFFERENT lot on the same corridor be
+        # awarded — they compare the two numbers and conclude the app lost one.
+        "source_solicitation": contract.award.lot.rfp.title,
+        "awarded_at": (contract.award.awarded_at.isoformat() if contract.award.awarded_at else None),
         "destination": contract.award.lot.delivery_place,
         "destination_country": contract.award.lot.delivery_country,
         "category": contract.award.lot.category,
@@ -131,6 +137,20 @@ def contract_dict(contract, include_shipments=False):
         "status": contract.status,
         "iati_activity_id": contract.iati_activity_id,
         "appropriation_id": contract.appropriation_id,
+        # The funding envelope this contract draws against, nested rather than
+        # left as a bare id. "Which money is this?" is the first question asked
+        # of any award, and answering it should not require a second request or
+        # a payload only the funder role receives.
+        "appropriation": (
+            {
+                "funder_name": contract.appropriation.funder_name,
+                "title": contract.appropriation.title,
+                "fiscal_year": contract.appropriation.fiscal_year,
+                "iati_activity_id": contract.appropriation.iati_activity_id,
+            }
+            if contract.appropriation_id
+            else None
+        ),
         "obligated_value": float(contract.obligated_value),
         "disbursed_value": float(contract.disbursed_value),
         "shipped_quantity": float(contract.shipped_quantity),

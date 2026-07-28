@@ -2358,7 +2358,10 @@ class OpportunityImageTypesAPIView(LoginRequiredMixin, View):
                 access_token=access_token,
                 timeout=60.0,
             ) as client:
-                for page in client.paginate(endpoint, params=params):
+                # partial_ok: this is a sampler — it stops as soon as the set of
+                # question ids goes stable. Without the flag the resulting
+                # GeneratorExit is audited as a failed bulk-PHI export.
+                for page in client.paginate(endpoint, params=params, partial_ok=True):
                     for record in page:
                         rows_processed += 1
                         if rows_processed > self.MAX_ROWS:
@@ -2435,7 +2438,8 @@ class OpportunityFieldQuestionsAPIView(LoginRequiredMixin, View):
 
         try:
             with get_export_client(opportunity_id=opp_id, access_token=access_token, timeout=60.0) as client:
-                for page in client.paginate(endpoint, params=params):
+                # partial_ok: sampler, same as OpportunityImageTypesAPIView.
+                for page in client.paginate(endpoint, params=params, partial_ok=True):
                     for record in page:
                         rows_processed += 1
                         if rows_processed > self.MAX_ROWS:

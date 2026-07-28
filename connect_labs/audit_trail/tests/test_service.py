@@ -149,3 +149,54 @@ def test_stream_line_emitted():
     payload = json.loads(records[0])
     assert payload["action"] == Action.CANARY
     assert payload["event_uuid"]
+
+
+@pytest.mark.django_db
+def test_analytics_mirror_skips_machine_sources(monkeypatch):
+    """Celery/system writes are auditable but are NOT product analytics.
+
+    The same choke points serve background tasks, and that churn dwarfs real
+    usage (87% of mirrored writes over 2026-07-24..28 were Celery workflow_run
+    status updates). Mirroring them made `data_update` measure the polling loop
+    rather than human engagement.
+    """
+    sent = []
+    monkeypatch.setattr(
+        "connect_labs.utils.server_analytics.send_event",
+        lambda name, data=None, url="/server": sent.append((name, url)),
+    )
+
+    with audit_context(source=Source.CELERY, request_id="celery:abc"):
+        service.record(Action.UPDATE, resource_type="workflow_run")
+    assert sent == []
+
+    with audit_context(source=Source.WEB, request_id="req-1"):
+        service.record(Action.UPDATE, resource_type="AuditSession")
+    assert [name for name, _ in sent] == ["data_update"]
+
+
+@pytest.mark.django_db
+def test_analytics_mirror_includes_mcp(monkeypatch):
+    """MCP is a person driving tools through an agent — still human usage."""
+    sent = []
+    monkeypatch.setattr(
+        "connect_labs.utils.server_analytics.send_event",
+        lambda name, data=None, url="/server": sent.append(name),
+    )
+    with audit_context(source=Source.MCP, request_id="mcp:create_fund:abc12345"):
+        service.record(Action.CREATE, resource_type="fund")
+    assert sent == ["data_create"]
+
+
+@pytest.mark.django_db
+def test_occurred_at_is_event_time_not_write_time():
+    """Two events recorded apart must not collapse onto one timestamp."""
+    import time as _time
+
+    service.record(Action.READ, resource_type="alpha")
+    _time.sleep(0.01)
+    service.record(Action.READ, resource_type="beta")
+
+    alpha = AuditEvent.objects.get(resource_type="alpha")
+    beta = AuditEvent.objects.get(resource_type="beta")
+    assert alpha.occurred_at < beta.occurred_at

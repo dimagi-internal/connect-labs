@@ -12,18 +12,35 @@ coverage for the same geography.
 """
 from datetime import date
 
-from django.db.models import Sum
+from django.db.models import F, Sum
 
 from .. import gs1
 from ..models import CaseloadEstimate, ChildOutcome, DistributionRecord, Shipment
 
 
 def _delivered_cartons_by_district(country=None):
-    """Cartons confirmed delivered into each district."""
-    qs = Shipment.objects.filter(
-        status__in=[Shipment.Status.DELIVERED, Shipment.Status.CONFIRMED],
-        unit="cartons",
-    ).exclude(destination__adm1_code="")
+    """Cartons confirmed delivered INTO each district, from outside it.
+
+    A consignment moves in hops, and each hop is its own Shipment. Summing
+    every arrival in a district therefore counts the same cartons twice: once
+    when they reach the district hub from the plant, and again when the hub
+    despatches them onward to the feeding sites it serves. Borno read 24,675
+    against 15,000 that ever crossed its boundary, because 9,675 of onward
+    distribution *within* Borno was added to the cartons that arrived.
+
+    Redistribution inside a district is not new supply reaching it. So a leg
+    counts only when it crosses a district boundary, which is what "delivered
+    into this district" means and is the only reading that lets coverage be
+    compared between districts at all.
+    """
+    qs = (
+        Shipment.objects.filter(
+            status__in=[Shipment.Status.DELIVERED, Shipment.Status.CONFIRMED],
+            unit="cartons",
+        )
+        .exclude(destination__adm1_code="")
+        .exclude(origin__adm1_code=F("destination__adm1_code"))
+    )
     if country:
         qs = qs.filter(destination__country=country)
     rows = qs.values("destination__adm1_code").annotate(cartons=Sum("quantity"))

@@ -23,9 +23,20 @@ logger = logging.getLogger(__name__)
 _OPP_ID_RE = re.compile(r"/opportunity/(\d+)/")
 
 
-def _record_export_audit(endpoint: str, row_count: int, error: str | None) -> None:
+def _record_export_audit(
+    endpoint: str,
+    row_count: int,
+    error: str | None,
+    terminated_early: bool = False,
+) -> None:
     """Audit one bulk PHI fetch (visit/user exports). Best-effort, lazy import
-    so this module stays importable outside a configured Django context."""
+    so this module stays importable outside a configured Django context.
+
+    ``terminated_early`` marks a read the caller deliberately cut short (see
+    ``paginate(partial_ok=True)``). That is a *successful* partial export, not
+    a failure — but the compliance record still needs to show the read stopped
+    short of the full dataset, so it is kept in metadata.
+    """
     try:
         from connect_labs.audit_trail import service
         from connect_labs.audit_trail.models import Action, Outcome
@@ -35,6 +46,8 @@ def _record_export_audit(endpoint: str, row_count: int, error: str | None) -> No
         metadata = {"endpoint": endpoint.split("?")[0][:200]}
         if error:
             metadata["error"] = error
+        if terminated_early:
+            metadata["terminated"] = "early"
         service.record(
             Action.EXPORT,
             resource_type=resource_type,
@@ -104,24 +117,48 @@ class ExportAPIClient:
             endpoint = "/" + endpoint
         return f"{self.base_url}{endpoint}"
 
-    def paginate(self, endpoint: str, params: dict | None = None):
+    def paginate(self, endpoint: str, params: dict | None = None, *, partial_ok: bool = False):
         """Audited wrapper around :meth:`_paginate`.
 
         Counts rows as pages stream through and records one EXPORT audit
         event when the generator finishes, errors, or is abandoned — this is
         the bulk-PHI choke point (visit form JSON, FLW identities).
+
+        Args:
+            partial_ok: Declare that this caller may stop consuming before the
+                stream is exhausted — it is *sampling*, not exporting the whole
+                dataset. Abandoning a generator makes Python throw
+                ``GeneratorExit`` into it at the ``yield``, which is
+                indistinguishable from a request being torn down mid-download
+                (client closed the tab, gateway timed out). Only the caller
+                knows which of the two it is, so only the caller can say:
+
+                - ``partial_ok=True``  → early stop is a *successful* partial
+                  export, tagged ``metadata["terminated"] == "early"``.
+                - ``partial_ok=False`` (default) → an unrequested teardown, and
+                  still recorded as a failure.
         """
         rows = 0
         error: str | None = None
+        terminated_early = False
         try:
             for page in self._paginate(endpoint, params=params):
                 rows += len(page)
                 yield page
+        except GeneratorExit:
+            # Consumer stopped early (`break`/`return`) *or* the request died
+            # mid-stream. Python cannot tell these apart — `partial_ok` is the
+            # caller's declaration of which one this is.
+            if partial_ok:
+                terminated_early = True
+            else:
+                error = "GeneratorExit"
+            raise
         except BaseException as exc:
             error = type(exc).__name__
             raise
         finally:
-            _record_export_audit(endpoint, rows, error)
+            _record_export_audit(endpoint, rows, error, terminated_early=terminated_early)
 
     def _paginate(self, endpoint: str, params: dict | None = None):
         """

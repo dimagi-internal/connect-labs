@@ -119,6 +119,7 @@ function EOITab({ ctx }) {
       {detail ? (
         <SubmissionDetailModal
           submission={detail}
+          live={world.org}
           onClose={() => setDetail(null)}
         />
       ) : null}
@@ -330,7 +331,7 @@ function EOIWizard({ ctx, round, existing, onClose }) {
   );
 }
 
-function SubmissionDetailModal({ submission, onClose }) {
+function SubmissionDetailModal({ submission, live, onClose }) {
   const snap = submission.profile_snapshot;
   return (
     <Modal
@@ -363,33 +364,100 @@ function SubmissionDetailModal({ submission, onClose }) {
           <EmptyState title="No commitments recorded." />
         )}
       </Card>
-      {snap ? (
-        <Card
-          title="Profile as submitted"
-          subtitle="Frozen at submission — later edits do not affect it."
-        >
-          <div className="muted">{snap.description || 'No description.'}</div>
-          <DataTable
-            rows={snap.certifications || []}
-            rowKey={(c) => c.id}
-            empty="No certifications were on file."
-            columns={[
-              {
-                key: 'type',
-                label: 'Certification',
-                value: (c) => c.cert_type,
-              },
-              { key: 'issuer', label: 'Issuer', value: (c) => c.issuer || '—' },
-              {
-                key: 'expiry',
-                label: 'Expires',
-                value: (c) => c.expiry_date,
-                render: (c) => formatDate(c.expiry_date),
-              },
-            ]}
-          />
-        </Card>
-      ) : null}
+      {snap ? <ProfileSnapshotComparison snap={snap} live={live} /> : null}
     </Modal>
+  );
+}
+
+/* The frozen submission beside the profile that has moved on since.
+
+   The snapshot on its own is only a claim: a reader has no way to tell a frozen
+   copy from a second render of the same live record, which is exactly the doubt
+   the mechanism exists to remove. Shown side by side, with the rows that differ
+   marked, the property is visible rather than asserted — and if nothing has
+   changed yet the panel says so plainly instead of implying it has. */
+function ProfileSnapshotComparison({ snap, live }) {
+  const snapCerts = snap.certifications || [];
+  const liveCerts = (live && live.certifications) || [];
+  const byType = (list) =>
+    list.reduce((acc, c) => Object.assign(acc, { [c.cert_type]: c }), {});
+  const snapByType = byType(snapCerts);
+  const liveByType = byType(liveCerts);
+  const types = Array.from(
+    new Set([...Object.keys(snapByType), ...Object.keys(liveByType)]),
+  ).sort();
+
+  const changed = types.filter((t) => {
+    const a = snapByType[t];
+    const b = liveByType[t];
+    if (!a || !b) return true;
+    return a.expiry_date !== b.expiry_date || a.issuer !== b.issuer;
+  });
+
+  const certRow = (c) =>
+    c
+      ? `${c.issuer || '—'} · expires ${formatDate(c.expiry_date)}`
+      : 'Not held';
+
+  return (
+    <Card
+      title="What the reviewer is assessing"
+      subtitle="The profile frozen at submission, beside the live profile as it stands today."
+    >
+      <div className="review-split">
+        <div>
+          <div className="muted small">Frozen at submission</div>
+          <p className="muted">{snap.description || 'No description.'}</p>
+        </div>
+        <div>
+          <div className="muted small">Live profile today</div>
+          <p className="muted">
+            {(live && live.description) || 'No description.'}
+          </p>
+        </div>
+      </div>
+      <DataTable
+        rows={types.map((t) => ({
+          id: t,
+          cert_type: t,
+          frozen: snapByType[t],
+          current: liveByType[t],
+          differs: changed.includes(t),
+        }))}
+        rowKey={(r) => r.id}
+        empty="No certifications were on file."
+        columns={[
+          { key: 'type', label: 'Certification', value: (r) => r.cert_type },
+          {
+            key: 'frozen',
+            label: 'As submitted',
+            sortable: false,
+            value: () => '',
+            render: (r) => certRow(r.frozen),
+          },
+          {
+            key: 'current',
+            label: 'Live today',
+            sortable: false,
+            value: () => '',
+            render: (r) =>
+              r.differs ? (
+                <span>
+                  {certRow(r.current)} <Badge tone="warn">changed since</Badge>
+                </span>
+              ) : (
+                certRow(r.current)
+              ),
+          },
+        ]}
+      />
+      <p className="muted small method-note">
+        {changed.length
+          ? `${changed.length} certification${
+              changed.length === 1 ? ' has' : 's have'
+            } changed since this application was submitted. The reviewer's decision was made against the left-hand column, and editing the profile cannot reach it.`
+          : 'Nothing has changed since submission. If it does, only the right-hand column moves.'}
+      </p>
+    </Card>
   );
 }

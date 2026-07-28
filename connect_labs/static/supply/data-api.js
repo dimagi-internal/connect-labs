@@ -73,10 +73,35 @@ function countryLabel(code) {
   return COUNTRY_NAMES[code] || code;
 }
 
+/* A date-only ISO string is a CALENDAR date, not an instant.
+
+   `new Date('2026-09-15')` parses it as midnight UTC, and every render of it
+   then goes through the viewer's timezone — so anywhere west of Greenwich the
+   whole app read a day early. A delivery deadline stored as the 15th of
+   September appeared on screen as Sep 14, and a lot due in 11 days counted 10.
+   That is invisible in a UTC-hosted test and wrong on the machine of everyone
+   watching a demo from the Americas.
+
+   Date-only strings are therefore built in LOCAL time, so the calendar date
+   that comes out is the one that went in. Strings carrying a time (a `T`) name
+   a real instant and are left alone — converting those to local IS correct. */
+function parseSupplyDate(iso) {
+  if (!iso) return null;
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso));
+  const d = dateOnly
+    ? new Date(
+        Number(dateOnly[1]),
+        Number(dateOnly[2]) - 1,
+        Number(dateOnly[3]),
+      )
+    : new Date(iso);
+  return isNaN(d.getTime()) ? null : d;
+}
+
 function formatDate(iso) {
   if (!iso) return '—';
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return iso;
+  const d = parseSupplyDate(iso);
+  if (!d) return iso;
   return d.toLocaleDateString(undefined, {
     year: 'numeric',
     month: 'short',
@@ -100,11 +125,17 @@ function formatNumber(value) {
 // Returns null for a missing/invalid date. Callers MUST null-check before
 // comparing: `null <= 60` is true in JS, so an unguarded comparison silently
 // treats "no expiry" as "expiring soon".
+//
+// Counted midnight to midnight in LOCAL time, so this is a difference in
+// calendar days — the thing a reader means by "eleven days out". Subtracting
+// two instants and rounding instead makes the answer depend on what time of
+// day the page happened to be loaded.
 function daysUntil(iso) {
-  if (!iso) return null;
-  const then = new Date(iso);
-  if (isNaN(then.getTime())) return null;
-  return Math.ceil((then - new Date()) / (1000 * 60 * 60 * 24));
+  const then = parseSupplyDate(iso);
+  if (!then) return null;
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.round((then - today) / (1000 * 60 * 60 * 24));
 }
 
 /* "Name · email", collapsing gracefully when either is missing. */

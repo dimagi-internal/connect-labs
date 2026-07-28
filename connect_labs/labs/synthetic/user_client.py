@@ -20,7 +20,11 @@ class UserSyntheticExportClient:
     def __init__(self, dataset: UserSyntheticDataset):
         self._fixtures = dataset.fixtures
 
-    def paginate(self, endpoint: str, params: dict | None = None) -> Generator[list[dict[str, Any]], None, None]:
+    def paginate(
+        self, endpoint: str, params: dict | None = None, *, partial_ok: bool = False
+    ) -> Generator[list[dict[str, Any]], None, None]:
+        # `partial_ok` accepted for signature parity with ExportAPIClient — see
+        # SyntheticExportClient.paginate.
         key = SyntheticExportClient._endpoint_key(endpoint)
         data = self._fixtures.get(key, [])
         if isinstance(data, list):
