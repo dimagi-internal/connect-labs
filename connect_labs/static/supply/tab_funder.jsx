@@ -406,21 +406,63 @@ function StageBars({ contract }) {
    moved than was appropriated. */
 function Sankey({ appropriations, contracts }) {
   const width = 900;
-  const height = Math.max(220, contracts.length * 54 + 60);
+  const height = Math.max(240, contracts.length * 62 + 80);
   const colWidth = 150;
   const gap = 10;
+  // The gaps between stacked bands have to come OUT of the height the bands
+  // are scaled into, not be added on top of it. Scaling the bands to fill the
+  // whole box and then inserting a gap between each pair pushed the last band
+  // past the bottom edge, which clipped the smallest contract in the diagram —
+  // and the smallest contract is the one most likely to be the interesting one.
+  const bandCount = Math.max(
+    appropriations.length,
+    new Set(contracts.map((c) => c.org_name)).size,
+    new Set(contracts.map((c) => c.destination_country)).size,
+    1,
+  );
+  const drawable = height - 60 - (bandCount - 1) * gap;
 
-  const total = appropriations.reduce((n, a) => n + a.amount, 0) || 1;
-  const scale = (v) => (v / total) * (height - 60);
+  const appropriated = appropriations.reduce((n, a) => n + a.amount, 0) || 1;
+
+  // What each envelope has actually committed. The diagram traces OBLIGATED
+  // dollars through partner to country, so the first column has to be drawn in
+  // the same currency as the other two: it was drawn in appropriated dollars
+  // while they were drawn in obligated ones, and about 93% of the height
+  // evaporated between the first column and the second on a card whose caption
+  // promises the flow conserves.
+  //
+  // The unobligated balance is REPORTED below rather than drawn. Drawn to
+  // scale it is 93% of the diagram and every contract band collapses — Blue
+  // Nile's $128k is 0.18% of the appropriation and cannot be a visible band on
+  // any linear scale that also contains the balance. A number in the caption
+  // can be read; a band under a pixel cannot.
+  const obligatedByAppropriation = {};
+  contracts.forEach((c) => {
+    const key = `a${c.appropriation_id}`;
+    obligatedByAppropriation[key] =
+      (obligatedByAppropriation[key] || 0) + c.obligated_value;
+  });
+  const total = contracts.reduce((n, c) => n + c.obligated_value, 0) || 1;
+  const scale = (v) => (v / total) * drawable;
 
   // column 1: appropriations, column 2: partners, column 3: countries
   let y1 = 20;
   const approvals = appropriations.map((a) => {
-    const h = Math.max(6, scale(a.amount));
-    const node = { id: `a${a.id}`, label: a.title, value: a.amount, y: y1, h };
+    const committed = obligatedByAppropriation[`a${a.id}`] || 0;
+    const h = Math.max(6, scale(committed));
+    const node = {
+      id: `a${a.id}`,
+      label: a.title,
+      value: committed,
+      envelope: a.amount,
+      y: y1,
+      h,
+    };
     y1 += h + gap;
     return node;
   });
+
+  const residualTotal = Math.max(0, appropriated - total);
 
   const byPartner = {};
   contracts.forEach((c) => {
@@ -502,31 +544,96 @@ function Sankey({ appropriations, contracts }) {
           );
         })}
         {[approvals, partners, countries].map((col, ci) =>
-          col.map((n) => (
-            <g key={n.id}>
-              <rect
-                x={colX[ci]}
-                y={n.y}
-                width={colWidth}
-                height={n.h}
-                rx="3"
-                fill="#0d7a5f"
-              />
-              <text
-                x={colX[ci] + 4}
-                y={n.y + n.h / 2 + 4}
-                className="sankey-label"
-              >
-                {n.label.length > 26 ? `${n.label.slice(0, 25)}…` : n.label}
-              </text>
-            </g>
-          )),
+          col.map((n) => {
+            // A funding diagram with no figures on it cannot be checked, which
+            // is the one thing this card exists to allow. Every band carries
+            // its own amount: on its own line where the band is tall enough to
+            // hold two, appended to the label where it is not.
+            //
+            // A band too thin to contain 10px text puts its label OUTSIDE, in
+            // dark ink beside the bar, rather than spilling white letters over
+            // a 6px sliver and the background behind it. The smallest band is
+            // the one a reader is most likely to be hunting for — Blue Nile's
+            // $128k is 2.6% of the diagram — so it is the last label that
+            // should be the hardest to read.
+            const label =
+              n.label.length > 24 ? `${n.label.slice(0, 23)}…` : n.label;
+            const roomy = n.h >= 30;
+            const thin = n.h < 14;
+            if (thin) {
+              const last = ci === 2;
+              return (
+                <g key={n.id}>
+                  <rect
+                    x={colX[ci]}
+                    y={n.y}
+                    width={colWidth}
+                    height={n.h}
+                    rx="3"
+                    fill="#0d7a5f"
+                  />
+                  <text
+                    x={last ? colX[ci] - 8 : colX[ci] + colWidth + 8}
+                    y={n.y + n.h / 2 + 3.5}
+                    className="sankey-label sankey-label-outside"
+                    textAnchor={last ? 'end' : 'start'}
+                  >
+                    {label} · {shortMoney(n.value)}
+                  </text>
+                </g>
+              );
+            }
+            return (
+              <g key={n.id}>
+                <rect
+                  x={colX[ci]}
+                  y={n.y}
+                  width={colWidth}
+                  height={n.h}
+                  rx="3"
+                  fill="#0d7a5f"
+                />
+                {roomy ? (
+                  <React.Fragment>
+                    <text
+                      x={colX[ci] + 6}
+                      y={n.y + n.h / 2 - 2}
+                      className="sankey-label"
+                    >
+                      {label}
+                    </text>
+                    <text
+                      x={colX[ci] + 6}
+                      y={n.y + n.h / 2 + 13}
+                      className="sankey-label sankey-value"
+                    >
+                      {shortMoney(n.value)}
+                    </text>
+                  </React.Fragment>
+                ) : (
+                  <text
+                    x={colX[ci] + 6}
+                    y={n.y + n.h / 2 + 4}
+                    className="sankey-label"
+                  >
+                    {label} · {shortMoney(n.value)}
+                  </text>
+                )}
+              </g>
+            );
+          }),
         )}
       </svg>
       <div className="muted small">
-        Widths are proportional to obligated value. Every partner's inflow
-        equals the sum of its contracts, and every country's inflow equals the
-        sum of the contracts delivering there.
+        Widths are proportional to obligated dollars, on one scale across all
+        three columns, so each column sums to the same total —{' '}
+        {shortMoney(total)}. Every partner's inflow equals the sum of its
+        contracts, and every country's inflow equals the sum of the contracts
+        delivering there. The first column shows what each envelope has
+        committed, not its size: <strong>{shortMoney(residualTotal)}</strong> of
+        the {shortMoney(appropriated)} appropriated is not yet under contract,
+        and is reported here rather than drawn — at true scale it is most of the
+        diagram and every contract band collapses below a pixel.
         {unattributed.length
           ? ` ${unattributed.length} contract${
               unattributed.length === 1 ? '' : 's'

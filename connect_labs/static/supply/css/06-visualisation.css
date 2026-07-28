@@ -181,9 +181,21 @@
   height: auto;
 }
 .sankey-label {
-  font-size: 9px;
+  font-size: 10px;
   fill: #fff;
   font-weight: 600;
+}
+/* The amount on the band. A funding diagram with no figures on it cannot be
+   checked, which is the one thing this card exists to allow. */
+.sankey-value {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.92;
+}
+/* A band too thin to hold its own text labels itself from outside, in ink
+   rather than in white, so the smallest flow stays the most legible one. */
+.sankey-label-outside {
+  fill: var(--oes-ink-soft);
 }
 
 .ladder {
