@@ -194,9 +194,12 @@ def _fetch_real_form_jsons(opportunity_id: int, access_token: str, max_samples: 
     """
     try:
         with ExportAPIClient(settings.CONNECT_PRODUCTION_URL, access_token, timeout=30.0) as client:
+            # partial_ok: returns out of the loop after the first page — a
+            # deliberate sample, not an abandoned export.
             for page in client.paginate(
                 f"/export/opportunity/{opportunity_id}/user_visits/",
                 params={"page_size": max_samples},
+                partial_ok=True,
             ):
                 result = [v["form_json"] for v in page if isinstance(v.get("form_json"), dict)]
                 return result[:max_samples]

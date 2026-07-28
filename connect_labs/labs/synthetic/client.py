@@ -18,7 +18,10 @@ class SyntheticExportClient:
         self.opp_id = opp_id
         self.store = fixture_store
 
-    def paginate(self, endpoint: str, params: dict | None = None):
+    def paginate(self, endpoint: str, params: dict | None = None, *, partial_ok: bool = False):
+        # `partial_ok` is accepted for signature parity with ExportAPIClient
+        # (samplers pass it). Nothing to do here: fixtures aren't audited as
+        # bulk PHI exports, and there is only ever one page to abandon.
         if params:
             logger.debug("synthetic: ignoring params %r for %s", params, endpoint)
         rows = self.store.load_endpoint(self.opp_id, self._endpoint_key(endpoint))
