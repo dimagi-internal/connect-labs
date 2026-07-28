@@ -16,7 +16,7 @@ request id, path), **scope** (opportunity/program/organization ids), and
 | Event | Trigger point |
 | --- | --- |
 | `list` / `read` / `create` / `update` / `delete` | The five `LabsRecordAPIClient` methods — covers every LabsRecord touch, production HTTP and labs-only synthetic alike (synthetic tagged `labs_only=true`) |
-| `export` | `ExportAPIClient.paginate` — the bulk PHI path (visit form JSON, worker identities); one event per crawl with total row count. A caller that samples rather than exports everything passes `partial_ok=True`, and its early stop is recorded as a **success** tagged `metadata.terminated = "early"`; an undeclared mid-stream teardown (client disconnect, timeout) stays a failure. See below. |
+| `export` | `ExportAPIClient.paginate` — the bulk PHI path (visit form JSON, worker identities); one event per crawl, counting rows actually **transferred** (not the size of the dataset available — a partial read counts only what it received). A caller that samples rather than exports everything passes `partial_ok=True`, and its early stop is recorded as a **success** tagged `metadata.terminated = "early"`; an undeclared mid-stream teardown (client disconnect, timeout) stays a failure. See below. |
 | `page_view` | Every authenticated HTML page render (middleware; htmx partials excluded) — makes a user's session fully reconstructable, including pages that touch no data. Hidden by default on the dashboard |
 | `login` / `logout` / `login_failed` | Django auth signals (OAuth callback calls `auth.login`) |
 | `access_denied` | Any 403 response (middleware) — repeated 403s against one scope are the classic snooping signature |
