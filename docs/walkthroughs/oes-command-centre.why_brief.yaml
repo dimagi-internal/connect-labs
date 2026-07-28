@@ -1,0 +1,156 @@
+gaps:
+- id: G1
+  type: CAPABILITY
+  detail: There is no demand side in the app. The command centre's "Pipeline by corridor"
+    card computes requirement from contract.total_quantity, so its gap column can
+    only ever mean "contracted but not yet delivered" — it can never say how many
+    children have no carton assigned to them. The IPC famine-phase choropleth is rendered
+    from admin1_ipc.geojson, which carries a phase integer and no caseload figure,
+    so the demand layer connects to no number anywhere in the product.
+  claim_ref: S4
+  proposed_action: Add a CaseloadEstimate model (country, adm1_code joining the existing
+    geojson, month, SAM caseload, source note) and derive requirement, coverage percentage
+    and uncovered children from it. Re-point the pipeline card's requirement column
+    at caseload rather than contracted quantity, and add a gap-to-need column beside
+    the existing gap-to-contract.
+- id: G2
+  type: CAPABILITY
+  detail: Nothing in the app projects forward. Lateness is measured against plan but
+    never turned into a consequence with a date, so the queue cannot say when a receiving
+    node runs dry.
+  claim_ref: S4
+  proposed_action: Derive per-node stock on hand from receiving events, a weekly burn
+    rate from the caseload the node serves, and from those a weeks-of-cover figure
+    and a projected stockout date. Express every exception as children-at-risk by
+    a date. Add expiry risk from the ShipmentLine expiry data already captured.
+- id: G3
+  type: CAPABILITY
+  detail: The exception queue prints a recommended action as a string and offers no
+    way to take it. There is no action model, so a decision taken on this evidence
+    is invisible to the system that produced the evidence.
+  claim_ref: S5
+  proposed_action: Add an append-only SupplyAction model (expedite, reallocate, split
+    lot, raise mini tender) with actor, rationale and effect, audited through the
+    existing audit.py. Reallocate creates a real Shipment with planned milestones
+    from a surplus node, so stock cover, the pipeline gap and the flow map all recompute
+    from it.
+- id: G4
+  type: CAPABILITY
+  detail: There is no implementing-partner role, so no shortfall signal can originate
+    on the ground. Every exception in the queue is centrally inferred.
+  claim_ref: S6
+  proposed_action: Build the partner role and its shortfall signal (see the oes-partner-pipeline
+    narrative), and render partner-raised signals in the command-centre queue with
+    a distinct origin marker so the loop is visible from both ends.
+spine:
+- id: S0
+  claim: The central team's question is not "where are my shipments" but "which children
+    are about to go without, and what can I still do about it".
+  status: grounded
+  evidence:
+  - ref: connect_labs/supply/README.md — the command centre is "exception-first",
+      each row "status → why → recommended action, sorted by severity × tonnage"
+    kind: documented
+  - ref: connect_labs/static/supply/tab_command.jsx — buildExceptions ranks by tonnage
+      at risk × lateness
+    kind: implemented
+  rationale: Framing matters more than any chart here. A logistics status board answers
+    the first question and is unremarkable; answering the second is what a program
+    director would pay for. Every scene in this narrative has to be legible as an
+    answer to the second question or it is decoration.
+- id: S1
+  claim: 'Visibility has to be honest about its own capability gradient: clean event
+    feeds from the most digital suppliers, and a driver''s phone check-in on the hardest
+    corridor, each labelled for what it is.'
+  status: grounded
+  evidence:
+  - ref: connect_labs/supply/README.md — three tiers "exist because that is the real
+      capability gradient of a humanitarian supply chain"; "Sudan has no domestic
+      producer and its corridor runs on paper waybills, so tier 3 is not a fallback,
+      it is the honest case"
+    kind: documented
+  - ref: connect_labs/supply/services/ingestion/ — epcis.py, asn.py, manual.py behind
+      a shared _core.py
+    kind: implemented
+  - ref: connect_labs/supply/tests/test_execution.py — asserts the webform and API
+      doors produce field-for-field identical records
+    kind: implemented
+  rationale: This is the credibility beat of the whole product. A demo that shows
+    uniform real-time telemetry across four famine-response corridors is not believable
+    to anyone who has worked in Sudan, and a program director will discount everything
+    else on the screen once they notice. Showing the paper corridor as a first-class
+    tier — and labelling hand-keyed data as hand-keyed — buys the trust that the rest
+    of the narrative spends.
+- id: S2
+  claim: Lateness is a measurement, not a vibe, because every milestone carries planned,
+    estimated and actual as three separate timestamps.
+  status: grounded
+  evidence:
+  - ref: connect_labs/supply/models/execution.py — Milestone keeps planned/estimated/actual
+      separately
+    kind: implemented
+  - ref: connect_labs/supply/README.md — "so 'late' is a real measurement rather than
+      a vibe"
+    kind: documented
+  rationale: 'DCSA''s PLN/EST/ACT distinction is what makes an ETA delta defensible:
+    without it, "late" is computed against a moving target and any figure can be argued
+    away. It is also the precondition for a forecast — you cannot project a stockout
+    from a data model that overwrites its own plan.'
+- id: S3
+  claim: Shipment status and milestone actuals are derived from an append-only event
+    log and never set by hand, so the picture cannot be talked into looking better
+    than it is.
+  status: grounded
+  evidence:
+  - ref: connect_labs/supply/README.md — "Shipment status and milestone actuals are
+      DERIVED from the append-only SupplyEvent log and never set by hand. That is
+      the load-bearing invariant of this app."
+    kind: documented
+  - ref: connect_labs/supply/tests/test_ingestion.py — monotonic status, idempotency
+      on external_id, discrepancy on short receipt
+    kind: implemented
+  rationale: 'The load-bearing invariant of the app. It is why the exception queue
+    can be trusted at all: nobody can clear a red row by editing a status field. Worth
+    stating out loud to an audience whose current system is a spreadsheet where exactly
+    that happens.'
+- id: S4
+  claim: A late consignment is reported in children, not days — the queue says how
+    many children lose a full course of treatment and when.
+  status: gap
+  evidence: []
+  rationale: 'This is the conversion that turns a logistics tool into a program tool,
+    and it is the one number an ECF program director will repeat back. It requires
+    a demand side: a caseload the corridor is meant to cover, and a burn rate at the
+    receiving node. Without it the queue can only rank by tonnage, which is a proxy
+    for importance rather than importance itself.'
+- id: S5
+  claim: The team can act inside the system — expedite, or reallocate stock from a
+    surplus node — and the map, the pipeline gap and the forecast all move in response.
+  status: gap
+  evidence: []
+  rationale: Read-only dashboards lose to WhatsApp because WhatsApp is where the decision
+    gets made. Putting the decision in the same surface as the evidence is what makes
+    the system the record of what happened rather than a report about it. It is also
+    the only way a three-minute demo can have a payoff instead of a tour.
+- id: S6
+  claim: The exception the team acts on was raised by the partner on the ground, not
+    inferred centrally — the two surfaces are one loop.
+  status: gap
+  evidence: []
+  rationale: A central team inventing its own alerts is a monitoring product. A central
+    team responding to a signal the receiving partner raised is a coordination product,
+    and it is the shape of the actual institutional relationship between OES and its
+    local implementing partners. This is the seam that connects this narrative to
+    the partner one.
+problem: 'Once OES has awarded contracts, its central team has to know where the therapeutic
+  food actually is — and the honest answer today is that they know best where they
+  need it least. The most digital suppliers send clean data; the Port Sudan to El
+  Fasher corridor, which serves the worst famine phases, moves on paper waybills and
+  phone calls. So the team''s picture is brightest exactly where access is easiest.
+  Worse, the picture that does exist is a status board, not a decision instrument:
+  it can say a consignment is nine days late, but not that nine days late means twelve
+  thousand children in El Fasher miss a full course of treatment. And when the team
+  works out what to do about it, they do it in WhatsApp — so the reallocation that
+  saved the month leaves no trace in the system that reported the problem.'
+narrative_slug: oes-command-centre
+schema_version: 1

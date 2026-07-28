@@ -14,6 +14,8 @@ function FunderTab({ ctx }) {
   const contracts = world.contracts || [];
 
   const appropriated = appropriations.reduce((n, a) => n + a.amount, 0);
+  const outcomes = world.outcomes;
+  const coverageByCountry = world.coverage_by_country || [];
   const obligated = contracts.reduce((n, c) => n + c.obligated_value, 0);
   const disbursed = contracts.reduce((n, c) => n + c.disbursed_value, 0);
   const deliveredCartons = contracts.reduce(
@@ -149,7 +151,166 @@ function FunderTab({ ctx }) {
           are synthetic.
         </p>
       </Card>
+
+      <TwoFiguresAndTheGap outcomes={outcomes} />
+
+      <Card
+        title="Coverage against need, by country"
+        subtitle="Tonnage cannot distinguish a large delivery into a large caseload from a small one into a small caseload. Coverage can."
+      >
+        {coverageByCountry.length ? (
+          <DataTable
+            rows={coverageByCountry}
+            rowKey={(r) => r.country}
+            columns={[
+              {
+                key: 'country',
+                label: 'Country',
+                value: (r) => r.country,
+                render: (r) => countryLabel(r.country),
+              },
+              {
+                key: 'caseload',
+                label: 'Caseload (children)',
+                value: (r) => r.caseload,
+                render: (r) => formatNumber(r.caseload),
+              },
+              {
+                key: 'delivered',
+                label: 'Courses delivered',
+                value: (r) => r.courses_delivered,
+                render: (r) => formatNumber(r.courses_delivered),
+              },
+              {
+                key: 'coverage',
+                label: 'Coverage',
+                value: (r) => r.coverage_percent || 0,
+                render: (r) =>
+                  r.coverage_percent === null ? (
+                    <Badge tone="muted">no data</Badge>
+                  ) : (
+                    <Badge
+                      tone={
+                        r.coverage_percent >= 80
+                          ? 'good'
+                          : r.coverage_percent >= 50
+                          ? 'warn'
+                          : 'bad'
+                      }
+                    >
+                      {r.coverage_percent}%
+                    </Badge>
+                  ),
+              },
+              {
+                key: 'uncovered',
+                label: 'Still uncovered',
+                value: (r) => r.uncovered_children,
+                render: (r) => formatNumber(r.uncovered_children),
+              },
+            ]}
+          />
+        ) : (
+          <EmptyState
+            title="No caseload estimates loaded."
+            hint="Coverage cannot be reported without a denominator."
+          />
+        )}
+      </Card>
     </Page>
+  );
+}
+
+/* The number every report leads with, and how it is almost always made.
+
+   "Children treated" is cartons divided by a treatment factor — arithmetic
+   presented as an outcome. Beside it sits a different figure, built from
+   measurements taken at the point of treatment. They do not agree, because not
+   every child admitted on a batch completes treatment.
+
+   That gap is the most useful thing on this page. It is the difference between
+   what was shipped and what is known to have worked, and reporting one without
+   the other is how a funder ends up defending a number nobody measured. */
+function TwoFiguresAndTheGap({ outcomes }) {
+  if (!outcomes) return null;
+  const breakdown = outcomes.discharge_breakdown || {};
+  const labels = {
+    recovered: 'Recovered',
+    defaulted: 'Defaulted',
+    transferred: 'Transferred to inpatient care',
+    non_response: 'Non-response',
+    in_treatment: 'Still in treatment',
+  };
+  const rows = Object.entries(breakdown)
+    .filter(([, n]) => n > 0)
+    .map(([status, n]) => ({ status, label: labels[status] || status, n }));
+
+  return (
+    <Card
+      title="Children treated — the figure, and the measurement"
+      subtitle="Two numbers, two methods, reported side by side and never reconciled into one."
+    >
+      <div className="two-figures">
+        <div className="figure-block">
+          <div className="figure-value">
+            {formatNumber(outcomes.courses_delivered)}
+          </div>
+          <div className="figure-label">Courses delivered</div>
+          <p className="muted small">{outcomes.courses_method}</p>
+        </div>
+        <div className="figure-block">
+          <div className="figure-value">
+            {formatNumber(outcomes.children_recovered)}
+            <span className="figure-of">
+              {' '}
+              / {formatNumber(outcomes.children_observed)}
+            </span>
+          </div>
+          <div className="figure-label">
+            Recorded recoveries, in the observed sample
+          </div>
+          <p className="muted small">{outcomes.recovery_method}</p>
+        </div>
+        <div className="figure-block figure-gap">
+          <div className="figure-value">
+            {outcomes.observed_recovery_rate === null
+              ? '—'
+              : `${outcomes.observed_recovery_rate}%`}
+          </div>
+          <div className="figure-label">Observed recovery rate</div>
+          <p className="muted small">{outcomes.gap_note}</p>
+        </div>
+      </div>
+      {rows.length ? (
+        <DataTable
+          rows={rows}
+          rowKey={(r) => r.status}
+          columns={[
+            { key: 'label', label: 'Discharge outcome', value: (r) => r.label },
+            {
+              key: 'n',
+              label: 'Children',
+              value: (r) => r.n,
+              render: (r) => formatNumber(r.n),
+            },
+            {
+              key: 'pct',
+              label: 'Share',
+              value: (r) => r.n,
+              render: (r) =>
+                outcomes.children_observed
+                  ? `${((r.n / outcomes.children_observed) * 100).toFixed(1)}%`
+                  : '—',
+            },
+          ]}
+        />
+      ) : null}
+      <p className="muted small method-note">
+        Treatment outcomes in this environment are synthetic, seeded against the
+        Sphere performance thresholds for severe acute malnutrition programmes
+        (recovery above 75%, defaulting below 15%).
+      </p>
+    </Card>
   );
 }
 

@@ -1,0 +1,122 @@
+{
+  "build_order": [
+    "what-the-money-bought-without-the-collapse",
+    "the-diagram-conserves-or-it-is-a-graphic",
+    "cost-per-child-with-its-method-on-screen",
+    "nigerias-own-view-scoped-on-the-server",
+    "coverage-by-district-not-tonnage-delivered",
+    "the-number-everyone-quotes-tested"
+  ],
+  "fetched_at": "2026-07-28T02:11:26.638487+00:00",
+  "name": "oes-money-to-child",
+  "narrative": "Dale signs the appropriations that pay for this response and has to defend what they bought. The funder view refuses the collapse that makes most dashboards untrustworthy: obligated, disbursed and delivered stay three separate numbers per contract, because money can be committed, paid, and still not be food in a warehouse — and the gaps are where the programmatic risk lives. The funding diagram conserves, every dollar tracing to its own envelope, and anything unattributable is reported rather than quietly dropped. The unit ladder carries its method on screen, so cost per child treated is a figure that can be challenged instead of asserted. Then delivery is measured against caseload rather than counted, which is what a host government needs: Hauwa sees only Nigeria's flows, scoped on the server, and reads coverage by district — where the response reached, and where the state still has to fill the gap itself. Finally the number everyone quotes gets tested. \"Children treated\" is almost always cartons divided by a treatment factor; here a delivered batch is followed to the distributions it fed and to a measured recovery, and the two figures disagree. That gap is the finding.",
+  "personas": {
+    "dale": {
+      "color": "#1D4ED8",
+      "intro": "Dale approves the envelopes and answers for them afterwards. Today they receive a narrative report and a burn rate, and cannot tell obligated from disbursed from delivered — so the three collapse into whichever figure flatters the quarter. They want the stages kept apart and the method for every derived number written down.",
+      "name": "Dale Whitmore",
+      "org": "US Government",
+      "role": "Program officer, United States Government"
+    },
+    "hauwa": {
+      "color": "#0D7A5F",
+      "intro": "Hauwa coordinates the national response and is told about tonnage entering the country. What they need is which districts it actually reached and what share of their own caseload is covered, because that is the only version of the information they can act on with state resources.",
+      "name": "Hauwa Ibrahim",
+      "org": "Government of Nigeria",
+      "role": "Nutrition coordinator, Federal Ministry of Health, Nigeria"
+    }
+  },
+  "scenes": [
+    {
+      "features": [
+        {
+          "description": "Obligated, disbursed and delivered rendered as three separate bars per contract on the funder tab, never summed into a single completion figure.",
+          "id": "three-stage-money-bars",
+          "verify": "pytest connect_labs/supply/tests/test_dashboards.py asserts disbursement never exceeds obligation and the three stages are reported separately per contract."
+        }
+      ],
+      "id": "what-the-money-bought-without-the-collapse",
+      "narrative": "The people who pay for famine response usually cannot see what their money bought. A report arrives with a burn rate, and obligated, disbursed and delivered have been folded into one figure — whichever one looks best. Those are three different things. Money can be committed against a contract, paid to a supplier, and still not be food in a warehouse, and the distance between those stages is exactly where the programmatic risk sits. So this view keeps them apart, per contract, and never collapses them.",
+      "persona": "dale",
+      "provenance": "S0",
+      "title": "What the money bought, without the collapse"
+    },
+    {
+      "features": [
+        {
+          "description": "A Sankey where each contract links to its own Appropriation, with an explicit labelled band for value not attributable to any envelope.",
+          "id": "conserving-funding-flow",
+          "verify": "Sum of flows out of each appropriation equals its obligated total; an unattributable contract produces a visible residual band rather than being omitted."
+        }
+      ],
+      "id": "the-diagram-conserves-or-it-is-a-graphic",
+      "narrative": "The flow runs appropriation to contract to country to commodity, and the totals reconcile at every stage. That sounds like the minimum and it is routinely got wrong: attribute every contract to the first envelope and the diagram stops conserving the moment there is more than one, which is the specific failure that makes a funding chart decorative. Each contract here draws on its own envelope. And where value cannot be attributed to one, it is shown as its own band rather than quietly left out.",
+      "persona": "dale",
+      "provenance": "S1",
+      "title": "The diagram conserves, or it is a graphic"
+    },
+    {
+      "features": [
+        {
+          "description": "The dollars to tonnes to cartons to children ladder tile with its conversion method and the derived cost per child treated in the same frame. Already shipped in Phase 3 — the ladder, the 150 x 92 g method note and the cost-per-child figure all render today; this scene demonstrates it rather than adding it.",
+          "id": "unit-ladder-with-method",
+          "verify": "The rendered cost per child equals delivered value divided by delivered cartons within rounding, and the method note is present in the same card."
+        }
+      ],
+      "id": "cost-per-child-with-its-method-on-screen",
+      "narrative": "Dale needs one number for a briefing and needs it to survive being questioned. The ladder runs dollars to metric tonnes to cartons to children, and the conversion is written next to it: one carton is a hundred and fifty sachets, which is one child's full course of treatment. Cost per child is computed from disbursements against confirmed deliveries only — consignments in transit are excluded, and it says so. A reader who can see that can see exactly what the figure claims and what it does not. That is what makes it a number you can argue with, rather than one you either accept or discard. It is also the same conversion the command centre's requirement-from-caseload column uses, from one constant in gs1.py, so the two screens cannot quietly disagree.",
+      "persona": "dale",
+      "provenance": "S2",
+      "title": "Cost per child, with its method on screen"
+    },
+    {
+      "features": [
+        {
+          "description": "The gov_observer's country filter applied in build_bootstrap, so out-of-country consignments are absent from the payload, plus surface-level route authorization.",
+          "id": "server-side-country-scoping",
+          "verify": "pytest connect_labs/supply/tests/test_dashboards.py asserts gov country scoping; test_surfaces.py asserts a gov observer cannot open another role's surface by URL."
+        }
+      ],
+      "id": "nigerias-own-view-scoped-on-the-server",
+      "narrative": "Hauwa coordinates Nigeria's response and gets a version of this scoped to Nigeria — the flows entering and moving within the country, and nothing else. That filter is applied when the payload is built, on the server, so another country's consignments never reach the page at all. It matters because the first question a government counterpart asks about a shared dashboard is what else it can see, and \"the browser hides it\" is not an answer that survives contact.",
+      "persona": "hauwa",
+      "provenance": "S3",
+      "title": "Nigeria's own view, scoped on the server"
+    },
+    {
+      "features": [
+        {
+          "description": "Coverage percent and uncovered children per admin-1 district on the government view and per country on the funder view, consuming the CaseloadEstimate model, shown beside the existing volume figures.",
+          "id": "coverage-by-district",
+          "verify": "pytest connect_labs/supply/tests/test_demand.py::test_coverage_is_delivery_against_need_not_volume and test_country_scoping_excludes_other_districts."
+        }
+      ],
+      "id": "coverage-by-district-not-tonnage-delivered",
+      "narrative": "Volume delivered cannot answer the question Hauwa has. A large delivery into a large caseload and a small delivery into a small one look identical in tonnes. With the caseload as the denominator, this district is covered to ninety-one percent of need and this one — which received more cartons — sits at thirty-four, with thirty-one thousand children still uncovered. That is where the state puts its own resources, and it is the same figure that justifies the next appropriation.",
+      "persona": "hauwa",
+      "provenance": "S4",
+      "title": "Coverage by district, not tonnage delivered"
+    },
+    {
+      "features": [
+        {
+          "description": "Courses delivered and children with a recorded recovery reported side by side in one row with the difference labelled and both methods stated, replacing the single carton-derived children figure as the headline. Outcomes are observed on a SAMPLE of the children each batch fed, so the two are reported with their methods rather than subtracted — the honest framing of a gap between differently-sized things.",
+          "id": "two-figures-and-the-gap",
+          "verify": "pytest connect_labs/supply/tests/test_demand.py::test_the_two_headline_figures_are_reported_separately — both figures render with distinct labels and methods, and the observed recovery rate is stated."
+        },
+        {
+          "description": "The delivered-batch drill from the funder ladder through DistributionRecord to a ChildOutcome measurement series, labelled synthetic on screen.",
+          "id": "batch-to-outcome-drill",
+          "verify": "pytest connect_labs/supply/tests/test_demand.py::test_a_delivered_batch_drills_to_a_child_who_recovered — the synthetic label rides in the payload itself, so no consumer can drop it."
+        }
+      ],
+      "id": "the-number-everyone-quotes-tested",
+      "narrative": "Here is the number every report leads with, and how it is almost always made: cartons delivered, divided by a treatment factor. It is arithmetic presented as an outcome. Beside it now sits a different figure — children with a recorded recovery, built from measurements taken at the point of treatment — and Dale can follow a single delivered batch through the distributions it fed to one child's arm circumference climbing out of the red. The two do not agree, and the reason is stated rather than left hanging: outcomes are observed on a sample, and of the children who are observed, not all complete treatment. This cohort recovers at a rate inside the Sphere performance band the sector grades itself against, with the defaulters and inpatient transfers shown alongside. That gap is the most useful thing on the screen. It is the difference between what was shipped and what is known to have worked, and a funder who can see it is being told the truth.",
+      "persona": "dale",
+      "provenance": "S5",
+      "title": "The number everyone quotes, tested"
+    }
+  ],
+  "slug": "oes-money-to-child",
+  "version": 2
+}

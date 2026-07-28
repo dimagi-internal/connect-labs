@@ -179,3 +179,72 @@ class DiscrepancyFactory(factory.django.DjangoModelFactory):
     shipment = factory.SubFactory(ShipmentFactory)
     expected_quantity = 1000
     received_quantity = 900
+
+
+class CaseloadEstimateFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = m.CaseloadEstimate
+
+    country = "NG"
+    adm1_code = "NGA-2839"
+    adm1_name = "Borno"
+    month = factory.LazyFunction(lambda: __import__("datetime").date.today().replace(day=1))
+    ipc_phase = 5
+    under5_population = 1_000_000
+    children_sam = 4330
+    source_note = "test fixture"
+
+
+class PartnerOrgFactory(SupplierOrgFactory):
+    legal_name = factory.Sequence(lambda n: f"Partner {n}")
+    kind = m.SupplierOrg.Kind.IMPLEMENTING_PARTNER
+
+
+class DistributionPlanFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = m.DistributionPlan
+
+    site = factory.SubFactory(SupplyNodeFactory, kind="delivery_point", adm1_code="NGA-2839")
+    org = factory.SubFactory(PartnerOrgFactory)
+    scheduled_for = factory.LazyFunction(lambda: __import__("datetime").date.today())
+    expected_children = 800
+    cartons_required = 800
+
+
+class ShortfallSignalFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = m.ShortfallSignal
+
+    site = factory.SubFactory(SupplyNodeFactory, kind="delivery_point", adm1_code="NGA-2839")
+    org = factory.SubFactory(PartnerOrgFactory)
+    raised_on = factory.LazyFunction(lambda: __import__("datetime").date.today())
+    needed_by = factory.LazyFunction(
+        lambda: __import__("datetime").date.today() + __import__("datetime").timedelta(days=7)
+    )
+    children_affected = 780
+    cartons_short = 780
+
+
+class DistributionRecordFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = m.DistributionRecord
+
+    site = factory.SubFactory(SupplyNodeFactory, kind="delivery_point", adm1_code="NGA-2839")
+    org = factory.SubFactory(PartnerOrgFactory)
+    distributed_on = factory.LazyFunction(lambda: __import__("datetime").date.today())
+    cartons_dispensed = 200
+    children_served = 200
+    batch_lot = "LOT-TEST"
+
+
+class ChildOutcomeFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = m.ChildOutcome
+
+    anon_id = factory.Sequence(lambda n: f"CHILD-{n:04d}")
+    site = factory.SubFactory(SupplyNodeFactory, kind="delivery_point", adm1_code="NGA-2839")
+    org = factory.SubFactory(PartnerOrgFactory)
+    batch_lot = "LOT-TEST"
+    admitted_on = factory.LazyFunction(lambda: __import__("datetime").date.today())
+    admission_muac_mm = 108
+    measurements = factory.LazyFunction(lambda: [{"date": "2026-06-01", "muac_mm": 108}])

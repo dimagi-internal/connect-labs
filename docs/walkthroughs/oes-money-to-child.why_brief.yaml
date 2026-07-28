@@ -1,0 +1,131 @@
+gaps:
+- id: G1
+  type: CAPABILITY
+  detail: Neither surface has a denominator. The gov view's "Children covered" column
+    (tab_gov.jsx) renders shipment quantity, and the funder view's "Children treated"
+    tile renders delivered cartons — both are the same number relabelled, and neither
+    is divided by a caseload. Coverage percentage does not exist anywhere in the app.
+  claim_ref: S4
+  proposed_action: Consume the CaseloadEstimate model added for the command-centre
+    narrative. Add coverage percentage and uncovered children to the gov view by district
+    and to the funder view by country, and keep the existing volume figures beside
+    them rather than replacing them.
+- id: G2
+  type: CAPABILITY
+  detail: Delivered cartons cannot be followed anywhere. The batch/lot identity exists
+    on ShipmentLine but nothing consumes it downstream, so the funder view's terminal
+    number is the end of the chain rather than a link in it.
+  claim_ref: S5
+  proposed_action: 'Consume the DistributionRecord and ChildOutcome models added for
+    the partner narrative. Make the funder ladder''s children figure a drill target:
+    batch → the distributions it fed → one child''s MUAC series. Label the last mile
+    synthetic on screen and keep the method note visible in the same frame as the
+    number.'
+- id: G3
+  type: DECISION
+  detail: Once a measured-recovery figure exists alongside the carton-derived one,
+    the two will disagree — a batch feeds distributions whose children do not all
+    complete treatment. The narrative has to decide which number is the headline.
+  claim_ref: S2
+  proposed_action: Show both, with the carton-derived figure labelled as courses delivered
+    and the outcome-derived figure as children with a recorded recovery, and treat
+    the gap between them as the interesting finding rather than an error to hide.
+    Confirm this framing at the narrative-agreement gate — it is the sort of choice
+    a program director will have a strong opinion about.
+spine:
+- id: S0
+  claim: Obligated, disbursed and delivered are three different numbers and a funder
+    view that collapses them is worse than no view at all.
+  status: grounded
+  evidence:
+  - ref: connect_labs/static/supply/tab_funder.jsx — StageBars renders obligated /
+      disbursed / delivered per contract, never collapsed
+    kind: implemented
+  - ref: connect_labs/supply/tests/test_dashboards.py — asserts disbursement never
+      exceeds obligation
+    kind: implemented
+  - ref: connect_labs/supply/README.md — the funder view once reported $583M disbursed
+      against $4.9M obligated, caught only by driving the browser
+    kind: documented
+  rationale: This is the specific dishonesty that makes funders distrust dashboards.
+    Money can be obligated against a contract, paid to a supplier, and still not have
+    become food in a warehouse — and the gaps between those stages are where the actual
+    programmatic risk sits. Showing them as three separate bars per contract is a
+    small design decision that buys most of the credibility of this surface.
+- id: S1
+  claim: The funding diagram conserves — every dollar in a Sankey traces to its own
+    appropriation, and anything unattributable is reported rather than quietly dropped.
+  status: grounded
+  evidence:
+  - ref: connect_labs/static/supply/tab_funder.jsx — "Each contract is linked to ITS
+      OWN appropriation… the exact failure that makes a funding Sankey untrustworthy";
+      unattributable value is reported, not dropped
+    kind: implemented
+  rationale: 'A funding Sankey that does not conserve is the single fastest way to
+    lose a finance audience, and the usual cause is attributing all contracts to the
+    first envelope. Getting this right is unglamorous and load-bearing: it is the
+    difference between a diagram used in a briefing and a diagram used as a graphic.'
+- id: S2
+  claim: The unit ladder is shown with its method on screen — dollars to metric tonnes
+    to cartons to children — so cost per child treated is a figure that can be challenged
+    rather than asserted.
+  status: grounded
+  evidence:
+  - ref: connect_labs/static/supply/tab_funder.jsx — the ladder tile plus its method
+      note, "one carton contains 150 × 92 g sachets, which is one child's full course"
+    kind: implemented
+  rationale: 'A stated method is what makes a number usable in an argument. It also
+    pre-empts the obvious objection: a reader who can see that one carton is being
+    counted as one full course knows exactly what the figure does and does not claim.'
+- id: S3
+  claim: A host government sees only its own country's flows, enforced server-side
+    in the bootstrap payload — another country's consignments never reach the page.
+  status: grounded
+  evidence:
+  - ref: connect_labs/supply/README.md — "The government observer's country filter
+      is applied in the bootstrap payload, not the browser"
+    kind: documented
+  - ref: connect_labs/supply/tests/test_dashboards.py — gov country scoping
+    kind: implemented
+  rationale: Data-sharing between a response and a sovereign government is politically
+    loaded, and "we filter it in the browser" is not an answer anyone in that conversation
+    accepts. Doing the scoping server-side is both the correct engineering and the
+    credible answer to the question a government counterpart will actually ask.
+- id: S4
+  claim: Both audiences see delivery against caseload, not just delivery — coverage
+    by district, and how many children are still uncovered.
+  status: gap
+  evidence: []
+  rationale: 'For a government this is the actionable number: it tells them where
+    to put their own resources. For a funder it is the number that justifies the next
+    appropriation. Volume delivered answers neither question, because a large delivery
+    into a small caseload and a small delivery into a huge one look identical in tonnes.'
+- id: S5
+  claim: 'Children treated stops being a division sum: a delivered batch can be followed
+    to the distributions it fed and to one child''s MUAC climbing out of the red.'
+  status: gap
+  evidence:
+  - ref: docs/superpowers/specs/2026-07-25-supply-chain-rfp-eoi-design.md §4 — IATI
+      2.03 framed as "the linkage IATI specifies but the sector rarely achieves"
+    kind: documented
+  - ref: connect_labs/supply/models/execution.py — Contract and Award carry IATI activity
+      IDs; ShipmentLine carries batch/lot
+    kind: implemented
+  rationale: This is the payoff of the whole product and the reason to build the supply
+    app inside Dimagi rather than anywhere else. IATI specifies traceability from
+    funding to result; the sector achieves it as far as the contract and then stops.
+    Following a batch to a measured recovery — labelled synthetic, with the method
+    visible — is a demonstration nobody else in this market can stage.
+problem: The people who pay for famine response cannot see what their money bought,
+  and the people whose country receives it cannot see what landed. A funder gets a
+  narrative report and a burn rate; they cannot tell obligated from disbursed from
+  delivered, so the three get collapsed into one figure that flatters whichever stage
+  looks best. Cost per child treated is quoted without a stated method, which means
+  it cannot be compared between partners or challenged. And the headline number —
+  children treated — is almost always cartons shipped divided by a treatment factor,
+  an arithmetic conversion presented as an outcome. A host government, meanwhile,
+  is told about tonnage entering the country but not which districts it reached or
+  what share of their own caseload is covered, which is exactly the information they
+  need to fill the gap with their own resources.
+narrative_slug: oes-money-to-child
+schema_version: 1

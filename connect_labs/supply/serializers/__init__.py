@@ -1,10 +1,18 @@
 """Wire shapes, split to mirror :mod:`connect_labs.supply.models`.
 
 Same organising principle as the models: procurement up to the award decision,
-execution afterwards. Everything is re-exported, so callers keep importing
-``from connect_labs.supply.serializers import x`` without caring which half x
-belongs to.
+execution afterwards, demand underneath both. Everything is re-exported, so
+callers keep importing ``from connect_labs.supply.serializers import x``
+without caring which third x belongs to.
 """
+from .demand import (
+    caseload_dict,
+    child_outcome_dict,
+    distribution_plan_dict,
+    distribution_record_dict,
+    shortfall_signal_dict,
+    supply_action_dict,
+)
 from .execution import (
     api_token_dict,
     appropriation_dict,
@@ -49,4 +57,11 @@ __all__ = [
     "contract_dict",
     "appropriation_dict",
     "api_token_dict",
+    # demand
+    "caseload_dict",
+    "distribution_plan_dict",
+    "shortfall_signal_dict",
+    "supply_action_dict",
+    "distribution_record_dict",
+    "child_outcome_dict",
 ]

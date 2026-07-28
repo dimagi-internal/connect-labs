@@ -75,6 +75,32 @@ const TABS = [
     component: () => CommandTab,
     roles: ['procurement_admin', 'reviewer'],
   },
+  // implementing partner — the one surface that looks up the chain rather
+  // than down it
+  {
+    key: 'partner',
+    label: 'Sites & distributions',
+    component: () => PartnerTab,
+    roles: ['partner'],
+  },
+  {
+    key: 'partner_ops',
+    label: 'Receiving',
+    component: () => OpsTab,
+    roles: ['partner'],
+  },
+  {
+    key: 'partner_org',
+    label: 'Organisation',
+    component: () => OrgTab,
+    roles: ['partner'],
+  },
+  {
+    key: 'partner_integration',
+    label: 'Integration',
+    component: () => IntegrationTab,
+    roles: ['partner'],
+  },
   // read-only stakeholder surfaces
   {
     key: 'gov',

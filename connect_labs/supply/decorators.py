@@ -11,7 +11,10 @@ Actor = namedtuple("Actor", "user role org")
 def current_actor(request):
     role = roles.resolve_role(request.user)
     org = None
-    if role == roles.SUPPLIER:
+    # Both org-backed roles resolve through the same membership. A partner is a
+    # different kind of organisation, not a different way of belonging to one —
+    # which is the point of the discriminator living on the org.
+    if role in (roles.SUPPLIER, roles.PARTNER):
         org = request.user.supply_membership.org
     return Actor(request.user, role, org)
 

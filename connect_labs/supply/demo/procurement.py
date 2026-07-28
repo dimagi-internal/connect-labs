@@ -22,6 +22,7 @@ from ..models import (
     SupplierMember,
     SupplierOrg,
 )
+from .demand import demand_summary, reset_demand, seed_demand
 from .execution import execution_summary, reset_execution, seed_execution
 from .organisations import _seed_orgs, _seed_staff, _seed_supplier_login
 from .solicitations import (
@@ -30,6 +31,7 @@ from .solicitations import (
     _seed_corridor_awards,
     _seed_live_rfp,
     _seed_open_round,
+    _seed_split_award_rfp,
 )
 
 
@@ -56,9 +58,14 @@ class ProcurementSeeder:
         _seed_open_round(rng, orgs)
         _seed_live_rfp(rng, orgs, staff)
         _seed_awarded_rfp(rng, orgs, staff)
+        _seed_split_award_rfp(rng, orgs, staff)
         _seed_corridor_awards(orgs, staff)
 
-        seed_execution(rng, orgs, staff)
+        nodes, _contracts = seed_execution(rng, orgs, staff)
+
+        # Demand last: the caseload rows key off the nodes execution just
+        # wrote, and the outcome cohorts hang off real delivered batches.
+        seed_demand(rng, orgs, nodes)
 
         return {
             "suppliers": SupplierOrg.objects.count(),
@@ -66,10 +73,12 @@ class ProcurementSeeder:
             "solicitations": RFP.objects.count(),
             "awards": Award.objects.count(),
             "execution": execution_summary(),
+            "demand": demand_summary(),
         }
 
     def _reset(self):
-        """Delete the demo world, execution first so foreign keys unwind."""
+        """Delete the demo world, demand and execution first so FKs unwind."""
+        reset_demand()
         reset_execution()
         Award.objects.all().delete()
         BidScore.objects.all().delete()

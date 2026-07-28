@@ -235,3 +235,117 @@
   color: var(--oes-ink-soft);
   max-width: 460px;
 }
+
+/* --- Demand side: children at risk, and the MUAC series ------------------ */
+
+/* The figure the queue is ranked on, given its own line. Severity that a
+   reader cannot see is severity they cannot check. */
+.exception-risk {
+  font-size: 12px;
+  color: var(--oes-ink);
+  margin-bottom: 5px;
+}
+.exception-risk strong {
+  font-size: 14px;
+  color: var(--oes-danger, #b42318);
+}
+
+/* Shown on the selected row only: how the ranking was arrived at. A severity
+   order nobody can reconstruct is one nobody will act against. */
+.exception-derivation {
+  font-size: 11px;
+  color: var(--oes-ink-soft);
+  border-left: 2px solid var(--oes-line, #e4e7ec);
+  padding-left: 8px;
+  margin: 0 0 6px;
+  font-style: italic;
+}
+
+.outcome-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 420px;
+  overflow-y: auto;
+}
+.outcome-row {
+  display: grid;
+  grid-template-columns: 200px 1fr 110px;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 8px;
+  border: 1px solid var(--oes-line, #e4e7ec);
+  border-radius: 6px;
+  background: #fff;
+}
+.outcome-id {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.outcome-figures {
+  font-size: 12px;
+  color: var(--oes-ink-soft);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The WHO bands a MUAC reading is judged against: below 115 mm is severe,
+   115-124 moderate, 125 and above is discharge-as-recovered. Drawing them
+   behind the line is what makes "climbing out of the red" literal. */
+.muac-spark {
+  width: 100%;
+  height: 56px;
+}
+.muac-band.sam {
+  fill: #fee4e2;
+}
+.muac-band.mam {
+  fill: #fef0c7;
+}
+.muac-band.ok {
+  fill: #d1fadf;
+}
+.muac-line {
+  fill: none;
+  stroke: var(--oes-ink, #101828);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+/* Two figures, side by side, never summed. The layout is the argument: put
+   them in one row and the reader compares them; stack them and they read as
+   a headline with a footnote. */
+.two-figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-bottom: 14px;
+}
+.figure-block {
+  padding: 12px 14px;
+  border: 1px solid var(--oes-line, #e4e7ec);
+  border-radius: 8px;
+  background: #fff;
+}
+.figure-block.figure-gap {
+  border-color: var(--oes-accent-dark, #175cd3);
+  background: #f5f8ff;
+}
+.figure-value {
+  font-size: 26px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+.figure-of {
+  font-size: 16px;
+  font-weight: 400;
+  color: var(--oes-ink-soft);
+}
+.figure-label {
+  font-size: 12px;
+  font-weight: 600;
+  margin: 4px 0 6px;
+}

@@ -47,6 +47,7 @@ const FILES = [
   'tab_rfps.jsx',
   'rfp_detail.jsx',
   'tab_command.jsx',
+  'tab_partner.jsx',
   'tab_gov.jsx',
   'tab_funder.jsx',
   'app.jsx',

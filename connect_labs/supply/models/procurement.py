@@ -16,7 +16,20 @@ class Category(models.TextChoices):
 
 
 class SupplierOrg(models.Model):
+    """An organisation in the network — one that bids, or one that distributes.
+
+    A ``kind`` discriminator rather than a parallel PartnerOrg model, so
+    membership, authentication and API tokens stay single-path. An implementing
+    partner is neither a supplier (they do not bid) nor an observer (they act),
+    but everything about *being an organisation here* is identical.
+    """
+
+    class Kind(models.TextChoices):
+        SUPPLIER = "supplier"
+        IMPLEMENTING_PARTNER = "implementing_partner", "Implementing partner"
+
     legal_name = models.CharField(max_length=255, unique=True)
+    kind = models.CharField(max_length=24, choices=Kind.choices, default=Kind.SUPPLIER)
     registration_number = models.CharField(max_length=64, blank=True)
     country = models.CharField(max_length=2)  # ISO-3166 alpha-2
     hq_city = models.CharField(max_length=128, blank=True)

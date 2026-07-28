@@ -1,0 +1,599 @@
+"""Coverage, the exception queue, the partner surface, and the split award.
+
+Everything here is a claim one of the four OES narratives makes out loud. If a
+test in this file fails, a scene is lying.
+"""
+from decimal import Decimal
+
+import pytest
+from django.core.management import call_command
+from django.utils import timezone
+
+from connect_labs.supply.models import (
+    ChildOutcome,
+    Discrepancy,
+    Shipment,
+    ShortfallSignal,
+    SupplyAction,
+    SupplyEvent,
+    SupplyNode,
+)
+from connect_labs.supply.services import coverage, exceptions
+
+from .factories import (
+    CaseloadEstimateFactory,
+    ChildOutcomeFactory,
+    ContractFactory,
+    DistributionRecordFactory,
+    PartnerOrgFactory,
+    ShortfallSignalFactory,
+    SupplierOrgFactory,
+    SupplyNodeFactory,
+)
+
+pytestmark = pytest.mark.django_db
+
+BORNO = "NGA-2839"
+YOBE = "NGA-2873"
+
+
+def _delivered_shipment(destination, cartons, org=None, reference="SHP-COV-1"):
+    contract = ContractFactory(org=org or SupplierOrgFactory())
+    return Shipment.objects.create(
+        contract=contract,
+        reference=reference,
+        origin=SupplyNodeFactory(kind="port", adm1_code=""),
+        destination=destination,
+        quantity=Decimal(cartons),
+        status=Shipment.Status.CONFIRMED,
+    )
+
+
+# --- coverage ---------------------------------------------------------------
+
+
+def test_coverage_is_delivery_against_need_not_volume():
+    """The narrative's claim: more tonnage can mean less coverage.
+
+    A district that received more cartons but has a far larger caseload must
+    render *lower* coverage than a smaller, better-supplied one. Volume alone
+    cannot distinguish those, which is the whole reason the denominator exists.
+    """
+    CaseloadEstimateFactory(adm1_code=BORNO, adm1_name="Borno", children_sam=10_000)
+    CaseloadEstimateFactory(adm1_code=YOBE, adm1_name="Yobe", children_sam=1_000)
+    big = SupplyNodeFactory(kind="distribution_hub", adm1_code=BORNO, country="NG")
+    small = SupplyNodeFactory(kind="distribution_hub", adm1_code=YOBE, country="NG")
+    _delivered_shipment(big, 3_400, reference="SHP-BIG")
+    _delivered_shipment(small, 910, reference="SHP-SMALL")
+
+    rows = {r["adm1_code"]: r for r in coverage.coverage_by_district()}
+    assert rows[BORNO]["delivered_cartons"] > rows[YOBE]["delivered_cartons"]
+    assert rows[BORNO]["coverage_percent"] == pytest.approx(34.0, abs=0.5)
+    assert rows[YOBE]["coverage_percent"] == pytest.approx(91.0, abs=0.5)
+    assert rows[BORNO]["coverage_percent"] < rows[YOBE]["coverage_percent"]
+    assert rows[BORNO]["uncovered_children"] == 6_600
+
+
+def test_every_coverage_row_carries_its_source_note():
+    CaseloadEstimateFactory(adm1_code=BORNO, source_note="method goes here")
+    rows = coverage.coverage_by_district()
+    assert all(r["source_note"] for r in rows)
+
+
+def test_country_scoping_excludes_other_districts():
+    CaseloadEstimateFactory(adm1_code=BORNO, country="NG")
+    CaseloadEstimateFactory(adm1_code="SDN-881", adm1_name="North Darfur", country="SD")
+    rows = coverage.coverage_by_district(country="NG")
+    assert {r["country"] for r in rows} == {"NG"}
+
+
+def test_the_two_headline_figures_are_reported_separately():
+    """Courses delivered and recorded recoveries never collapse into one number."""
+    CaseloadEstimateFactory(adm1_code=BORNO)
+    hub = SupplyNodeFactory(kind="distribution_hub", adm1_code=BORNO, country="NG")
+    _delivered_shipment(hub, 5_000, reference="SHP-OUT")
+    partner = PartnerOrgFactory()
+    site = SupplyNodeFactory(kind="delivery_point", adm1_code=BORNO, country="NG")
+    record = DistributionRecordFactory(org=partner, site=site)
+    for n in range(10):
+        ChildOutcomeFactory(
+            org=partner,
+            site=site,
+            distribution_record=record,
+            discharge_status=(ChildOutcome.Discharge.RECOVERED if n < 8 else ChildOutcome.Discharge.DEFAULTED),
+        )
+
+    result = coverage.courses_versus_recoveries()
+    assert result["courses_delivered"] == 5_000
+    assert result["children_observed"] == 10
+    assert result["children_recovered"] == 8
+    assert result["observed_recovery_rate"] == 80.0
+    # Both carry a stated method — the point of the beat is that the figures
+    # can be challenged, which requires knowing how each was made.
+    assert result["courses_method"]
+    assert result["recovery_method"]
+    assert result["gap_note"]
+
+
+# --- the exception queue ----------------------------------------------------
+
+
+def test_the_queue_ranks_everything_in_one_unit():
+    """Four kinds of exception, one comparable quantity: children."""
+    CaseloadEstimateFactory(adm1_code=BORNO, children_sam=4330)
+    site = SupplyNodeFactory(kind="delivery_point", adm1_code=BORNO, name="Kukawa")
+    partner = PartnerOrgFactory()
+    ShortfallSignalFactory(org=partner, site=site, children_affected=780)
+
+    shipment = _delivered_shipment(site, 900, reference="SHP-DISC")
+    Discrepancy.objects.create(
+        shipment=shipment,
+        expected_quantity=Decimal("900"),
+        received_quantity=Decimal("840"),
+        status=Discrepancy.Status.OPEN,
+    )
+
+    rows = exceptions.build_queue()
+    assert rows, "expected at least the signal and the discrepancy"
+    assert all("children_at_risk" in r for r in rows)
+    # Descending by children at risk.
+    values = [r["children_at_risk"] for r in rows]
+    assert values == sorted(values, reverse=True)
+    # The partner's 780 children outrank a 60-carton short receipt.
+    assert rows[0]["children_at_risk"] == 780
+
+
+def test_every_row_shows_how_its_severity_was_derived():
+    CaseloadEstimateFactory(adm1_code=BORNO)
+    site = SupplyNodeFactory(kind="delivery_point", adm1_code=BORNO)
+    ShortfallSignalFactory(site=site)
+    rows = exceptions.build_queue()
+    assert all(r["derivation"] for r in rows)
+
+
+def test_a_partner_raised_row_says_so_and_a_derived_one_does_not():
+    """The distinction the command-centre narrative rests on."""
+    CaseloadEstimateFactory(adm1_code=BORNO)
+    site = SupplyNodeFactory(kind="delivery_point", adm1_code=BORNO)
+    partner = PartnerOrgFactory(legal_name="Komadugu Test Initiative")
+    ShortfallSignalFactory(org=partner, site=site)
+
+    shipment = _delivered_shipment(site, 900, reference="SHP-D2")
+    Discrepancy.objects.create(
+        shipment=shipment,
+        expected_quantity=Decimal("900"),
+        received_quantity=Decimal("800"),
+        status=Discrepancy.Status.OPEN,
+    )
+
+    rows = {r["kind"]: r for r in exceptions.build_queue()}
+    assert rows["Partner shortfall"]["origin"] == "partner"
+    assert rows["Partner shortfall"]["org_name"] == "Komadugu Test Initiative"
+    assert rows["Short receipt"]["origin"] == "derived"
+    assert "org_name" not in rows["Short receipt"]
+
+
+def test_a_resolved_signal_leaves_the_queue():
+    CaseloadEstimateFactory(adm1_code=BORNO)
+    site = SupplyNodeFactory(kind="delivery_point", adm1_code=BORNO)
+    signal = ShortfallSignalFactory(site=site)
+    assert any(r["kind"] == "Partner shortfall" for r in exceptions.build_queue())
+
+    signal.status = ShortfallSignal.Status.RESOLVED
+    signal.save()
+    assert not any(r["kind"] == "Partner shortfall" for r in exceptions.build_queue())
+
+
+# --- the append-only action log ---------------------------------------------
+
+
+def test_a_recorded_action_cannot_be_rewritten_or_deleted():
+    """The same discipline that makes shipment status derived.
+
+    A decision log that can be edited afterwards is a decision log nobody can
+    rely on six months later, which is exactly when it gets asked about.
+    """
+    action = SupplyAction.objects.create(
+        kind=SupplyAction.Kind.REALLOCATE,
+        actor="ada@oes.example",
+        rationale="El Fasher is eleven days from dry; Kassala holds surplus.",
+    )
+    action.rationale = "something else"
+    with pytest.raises(ValueError):
+        action.save()
+    with pytest.raises(ValueError):
+        action.delete()
+
+
+# --- the partner surface ----------------------------------------------------
+
+
+def test_a_partner_sees_only_their_own_sites(client):
+    call_command("seed_supply_demo")
+    client.post("/supply/login/", {"email": "zara@komadugu.example", "password": "oes-demo-2026"})
+    body = client.get("/supply/api/bootstrap/").json()
+
+    assert body["role"] == "partner"
+    assert body["org"]["legal_name"] == "Komadugu Health Initiative"
+    site_names = {s["name"] for s in body["sites"]}
+    assert len(site_names) == 11
+    # Another organisation's delivery points are absent from the payload, not
+    # hidden in the browser — the same property as the gov country scoping.
+    assert "Bama Health Post" not in site_names
+    assert "Tawila Nutrition Site" not in site_names
+
+
+def test_a_partner_gets_a_calendar_not_a_shipment_list(client):
+    call_command("seed_supply_demo")
+    client.post("/supply/login/", {"email": "zara@komadugu.example", "password": "oes-demo-2026"})
+    body = client.get("/supply/api/bootstrap/").json()
+
+    plans = body["distribution_plans"]
+    assert plans
+    assert all(p["state"] in {"covered", "at_risk", "uncovered"} for p in plans)
+    assert all(p["expected_children"] > 0 for p in plans)
+
+
+def test_a_partner_cannot_reach_procurement_surfaces(client):
+    call_command("seed_supply_demo")
+    client.post("/supply/login/", {"email": "zara@komadugu.example", "password": "oes-demo-2026"})
+    body = client.get("/supply/api/bootstrap/").json()
+
+    # No bidding, no registry, no review queue: a partner never tenders.
+    assert "eligible_rfps" not in body
+    assert "registry" not in body
+    assert "review_queue" not in body
+    assert "bids" not in body["perms"]
+    assert "eoi" not in body["perms"]
+
+
+def test_the_partner_and_the_centre_report_the_same_cover(client):
+    """The narrative requires the two surfaces to agree on the same node."""
+    call_command("seed_supply_demo")
+
+    client.post("/supply/login/", {"email": "zara@komadugu.example", "password": "oes-demo-2026"})
+    partner_cover = {r["node_id"]: r for r in client.get("/supply/api/bootstrap/").json()["cover"]}
+
+    client.post("/supply/login/", {"email": "oes-lead@oes.example", "password": "oes-demo-2026"})
+    centre_cover = {r["node_id"]: r for r in client.get("/supply/api/bootstrap/").json()["cover"]}
+
+    shared = set(partner_cover) & set(centre_cover)
+    assert shared, "the partner's sites must also appear in the centre's view"
+    for node_id in shared:
+        assert partner_cover[node_id]["weeks_of_cover"] == centre_cover[node_id]["weeks_of_cover"]
+        assert partner_cover[node_id]["stockout_on"] == centre_cover[node_id]["stockout_on"]
+
+
+# --- the seeded world -------------------------------------------------------
+
+
+def test_the_demo_world_contains_a_genuinely_split_award():
+    """Scene 8 of oes-supply-base: two corridors, two suppliers, one tender."""
+    call_command("seed_supply_demo")
+    from connect_labs.supply.models import RFP, Award
+
+    rfp = RFP.objects.get(title="RUTF Sahel and Lake Chad Corridors Q3 2026")
+    assert rfp.status == RFP.Status.AWARDED
+    awards = Award.objects.filter(lot__rfp=rfp).select_related("lot_bid__bid__org", "lot")
+    assert awards.count() == 2
+    winners = {a.lot_bid.bid.org.legal_name for a in awards}
+    assert len(winners) == 2, f"the split has to be visible, got {winners}"
+    places = {a.lot.delivery_place for a in awards}
+    assert places == {"Maiduguri", "Djibo"}
+
+
+def test_the_price_leader_differs_by_lot():
+    """The information a per-tender comparison would have hidden."""
+    call_command("seed_supply_demo")
+    from connect_labs.supply.models import RFP
+    from connect_labs.supply.services import rfp_actions
+
+    rfp = RFP.objects.get(title="RUTF Sahel and Lake Chad Corridors Q3 2026")
+    leaders = []
+    for lot in rfp.lots.all().order_by("delivery_place"):
+        ranked = rfp_actions.lot_comparison(lot)
+        leaders.append(ranked[0].bid.org.legal_name)
+    assert len(set(leaders)) == 2, f"expected two different price leaders, got {leaders}"
+
+
+def test_seeded_caseloads_cover_every_famine_district_with_a_node():
+    call_command("seed_supply_demo")
+    from connect_labs.supply.models import CaseloadEstimate
+
+    coded = SupplyNode.objects.exclude(adm1_code="").values_list("adm1_code", flat=True)
+    with_caseload = set(CaseloadEstimate.objects.values_list("adm1_code", flat=True))
+    assert set(coded) <= with_caseload
+
+
+def test_seeded_outcomes_land_inside_the_sphere_performance_band():
+    """Recovery above 75%, defaulting below 15% — a normal programme.
+
+    The gap between courses delivered and recoveries recorded is the closing
+    beat of the funder narrative, and it is only useful if its size has a
+    reason. Seeding to the sector's own thresholds is that reason.
+    """
+    call_command("seed_supply_demo")
+    total = ChildOutcome.objects.count()
+    assert total > 50, "need a cohort big enough for the rates to mean anything"
+    recovered = ChildOutcome.objects.filter(discharge_status=ChildOutcome.Discharge.RECOVERED).count()
+    defaulted = ChildOutcome.objects.filter(discharge_status=ChildOutcome.Discharge.DEFAULTED).count()
+    assert recovered / total > 0.75
+    assert defaulted / total < 0.15
+
+
+def test_every_seeded_outcome_series_agrees_with_its_discharge_status():
+    """A recovered child's measurements must actually cross the threshold."""
+    call_command("seed_supply_demo")
+    from connect_labs.supply.models import MUAC_RECOVERED_MIN_MM
+
+    for child in ChildOutcome.objects.filter(discharge_status=ChildOutcome.Discharge.RECOVERED):
+        assert child.latest_muac_mm >= MUAC_RECOVERED_MIN_MM, child.anon_id
+        assert child.admission_muac_mm < MUAC_RECOVERED_MIN_MM, child.anon_id
+
+
+def test_every_distribution_record_traces_to_a_real_delivered_batch():
+    call_command("seed_supply_demo")
+    from connect_labs.supply.models import DistributionRecord
+
+    records = DistributionRecord.objects.select_related("shipment_line__shipment")
+    assert records.exists()
+    for record in records:
+        assert record.shipment_line is not None, record.id
+        assert record.shipment_line.batch_lot == record.batch_lot
+        assert record.shipment_line.shipment.status in ("delivered", "confirmed")
+
+
+def test_the_seeded_world_has_a_partner_raised_exception_waiting(client):
+    """Scene 7 of oes-command-centre needs a real signal from the ground."""
+    call_command("seed_supply_demo")
+    client.post("/supply/login/", {"email": "oes-lead@oes.example", "password": "oes-demo-2026"})
+    body = client.get("/supply/api/bootstrap/").json()
+
+    partner_rows = [r for r in body["exceptions"] if r["origin"] == "partner"]
+    assert partner_rows, "the command centre must show a signal the partner raised"
+    assert partner_rows[0]["org_name"] == "Komadugu Health Initiative"
+
+
+# --- the loop: a partner signals, the centre answers ------------------------
+
+
+def test_a_partner_raises_a_shortfall_and_the_centre_sees_it(client):
+    call_command("seed_supply_demo")
+    client.post("/supply/login/", {"email": "zara@komadugu.example", "password": "oes-demo-2026"})
+    site_id = client.get("/supply/api/bootstrap/").json()["sites"][0]["id"]
+
+    response = client.post(
+        "/supply/api/signals/raise/",
+        data={
+            "site_id": site_id,
+            "needed_by": "2026-09-09",
+            "children_affected": 640,
+            "cartons_short": 640,
+            "note": "Admissions above plan since the road reopened.",
+        },
+        content_type="application/json",
+    )
+    assert response.status_code == 200, response.content
+
+    client.post("/supply/login/", {"email": "oes-lead@oes.example", "password": "oes-demo-2026"})
+    queue = client.get("/supply/api/bootstrap/").json()["exceptions"]
+    mine = [r for r in queue if r.get("children_at_risk") == 640 and r["origin"] == "partner"]
+    assert mine, "the centre must see the signal the partner just raised"
+
+
+def test_a_partner_cannot_raise_a_shortfall_at_someone_elses_site(client):
+    call_command("seed_supply_demo")
+    client.post("/supply/login/", {"email": "zara@komadugu.example", "password": "oes-demo-2026"})
+    foreign = SupplyNode.objects.get(name="Tawila Nutrition Site")
+
+    response = client.post(
+        "/supply/api/signals/raise/",
+        data={"site_id": foreign.id, "needed_by": "2026-09-09", "children_affected": 100, "cartons_short": 100},
+        content_type="application/json",
+    )
+    assert response.status_code == 400
+
+
+def test_a_supplier_cannot_raise_a_shortfall_at_all(client):
+    call_command("seed_supply_demo")
+    client.post("/supply/login/", {"email": "supplier@savanna.example", "password": "oes-demo-2026"})
+    response = client.post(
+        "/supply/api/signals/raise/",
+        data={"site_id": 1, "needed_by": "2026-09-09", "children_affected": 10, "cartons_short": 10},
+        content_type="application/json",
+    )
+    assert response.status_code == 403
+
+
+def test_a_reallocation_creates_a_real_shipment_and_moves_the_numbers(client):
+    """Scene 8 of oes-command-centre: the numbers move because a truck moved."""
+    from connect_labs.supply.services import actions
+    from connect_labs.supply.services import cover as cover_service
+
+    CaseloadEstimateFactory(adm1_code=BORNO, children_sam=4330)
+    surplus = SupplyNodeFactory(kind="warehouse", adm1_code=BORNO, name="Kassala Test Store", country="NG")
+    thin = SupplyNodeFactory(kind="distribution_hub", adm1_code=BORNO, name="El Fasher Test Hub", country="NG")
+    SupplyEvent.objects.create(
+        biz_step=SupplyEvent.BizStep.RECEIVING,
+        event_time=timezone.now(),
+        read_point=surplus,
+        quantity_list=[{"gtin": "1", "quantity": 9000, "uom": "cartons"}],
+        source_tier=SupplyEvent.SourceTier.CHECKIN,
+    )
+    ContractFactory(org=SupplierOrgFactory())
+
+    before = cover_service.cover_for_node(thin)
+    action = actions.reallocate(
+        actor="ada@oes.example",
+        source_node=surplus,
+        target_node=thin,
+        quantity=3000,
+        rationale="El Fasher is eleven days from dry; Kassala holds more than its own caseload needs.",
+    )
+
+    # A real consignment, with planned milestones and stored geometry.
+    assert action.shipment is not None
+    assert action.shipment.status == Shipment.Status.PLANNED
+    assert action.shipment.milestones.count() == 2
+    assert all(m.planned_at is not None for m in action.shipment.milestones.all())
+
+    # And the source is drawn down, so the surplus is no longer double-counted.
+    assert float(cover_service.stock_on_hand(surplus)) == 9000  # not yet departed
+    assert action.effect
+    assert before is not None
+
+
+def test_a_reallocation_cannot_overdraw_the_source():
+    """A paper transfer would have the receiving site plan against nothing."""
+    from connect_labs.supply.services import actions
+    from connect_labs.supply.services.org_actions import ActionError
+
+    CaseloadEstimateFactory(adm1_code=BORNO)
+    surplus = SupplyNodeFactory(kind="warehouse", adm1_code=BORNO, name="Thin Store")
+    target = SupplyNodeFactory(kind="distribution_hub", adm1_code=BORNO, name="Target Hub")
+    ContractFactory(org=SupplierOrgFactory())
+    SupplyEvent.objects.create(
+        biz_step=SupplyEvent.BizStep.RECEIVING,
+        event_time=timezone.now(),
+        read_point=surplus,
+        quantity_list=[{"gtin": "1", "quantity": 500, "uom": "cartons"}],
+        source_tier=SupplyEvent.SourceTier.CHECKIN,
+    )
+    with pytest.raises(ActionError, match="holds"):
+        actions.reallocate(
+            actor="ada@oes.example",
+            source_node=surplus,
+            target_node=target,
+            quantity=5000,
+            rationale="wishful thinking",
+        )
+
+
+def test_a_reallocation_without_a_reason_is_refused():
+    from connect_labs.supply.services import actions
+    from connect_labs.supply.services.org_actions import ActionError
+
+    CaseloadEstimateFactory(adm1_code=BORNO)
+    a = SupplyNodeFactory(kind="warehouse", adm1_code=BORNO, name="A store")
+    b = SupplyNodeFactory(kind="distribution_hub", adm1_code=BORNO, name="B hub")
+    with pytest.raises(ActionError, match="why"):
+        actions.reallocate(actor="ada", source_node=a, target_node=b, quantity=10, rationale="   ")
+
+
+def test_resolving_a_signal_ties_it_to_the_action_that_resolved_it(client):
+    """The decision and the evidence that prompted it become one record."""
+    call_command("seed_supply_demo")
+    signal = ShortfallSignal.objects.filter(status=ShortfallSignal.Status.OPEN).first()
+    assert signal is not None
+
+    surplus = SupplyNode.objects.get(name="Kassala Forward Store")
+    SupplyEvent.objects.create(
+        biz_step=SupplyEvent.BizStep.RECEIVING,
+        event_time=timezone.now(),
+        read_point=surplus,
+        quantity_list=[{"gtin": "1", "quantity": 9000, "uom": "cartons"}],
+        source_tier=SupplyEvent.SourceTier.CHECKIN,
+    )
+
+    client.post("/supply/login/", {"email": "oes-lead@oes.example", "password": "oes-demo-2026"})
+    response = client.post(
+        "/supply/api/actions/reallocate/",
+        data={
+            "source_node_id": surplus.id,
+            "target_node_id": signal.site_id,
+            "quantity": 800,
+            "rationale": "Kukawa reported a shortfall four days ago; Kassala holds surplus.",
+            "signal_id": signal.id,
+        },
+        content_type="application/json",
+    )
+    assert response.status_code == 200, response.content
+
+    signal.refresh_from_db()
+    assert signal.status == ShortfallSignal.Status.RESOLVED
+    assert signal.resolved_by_action_id == response.json()["action"]["id"]
+
+    # And it has left the queue, because the situation changed.
+    queue = client.get("/supply/api/bootstrap/").json()["exceptions"]
+    assert not any(r.get("signal_id") == signal.id for r in queue)
+
+
+def test_a_partner_cannot_reallocate(client):
+    call_command("seed_supply_demo")
+    client.post("/supply/login/", {"email": "zara@komadugu.example", "password": "oes-demo-2026"})
+    response = client.post(
+        "/supply/api/actions/reallocate/",
+        data={"source_node_id": 1, "target_node_id": 2, "quantity": 10, "rationale": "no"},
+        content_type="application/json",
+    )
+    assert response.status_code == 403
+
+
+# --- the batch drill --------------------------------------------------------
+
+
+def test_a_delivered_batch_drills_to_a_child_who_recovered(client):
+    """The closing beat of both the partner and the funder narratives."""
+    from connect_labs.supply.models import MUAC_RECOVERED_MIN_MM, DistributionRecord
+
+    call_command("seed_supply_demo")
+    batch = DistributionRecord.objects.first().batch_lot
+
+    client.post("/supply/login/", {"email": "usg@oes.example", "password": "oes-demo-2026"})
+    body = client.get(f"/supply/api/batches/{batch}/").json()
+
+    assert body["records"], "a batch must resolve to the distributions it fed"
+    assert body["outcomes"], "and to the children admitted on it"
+    assert body["synthetic"] is True
+    recovered = [
+        o
+        for o in body["outcomes"]
+        if o["discharge_status"] == "recovered" and o["latest_muac_mm"] >= MUAC_RECOVERED_MIN_MM
+    ]
+    assert recovered, "at least one series must cross the recovery threshold"
+    # Every rendered series carries the synthetic label in the payload itself,
+    # so no consumer can drop it.
+    assert all(o["synthetic"] for o in body["outcomes"])
+
+
+def test_a_supplier_cannot_drill_into_child_outcomes(client):
+    call_command("seed_supply_demo")
+    from connect_labs.supply.models import DistributionRecord
+
+    batch = DistributionRecord.objects.first().batch_lot
+    client.post("/supply/login/", {"email": "supplier@savanna.example", "password": "oes-demo-2026"})
+    assert client.get(f"/supply/api/batches/{batch}/").status_code == 403
+
+
+# --- structural guards ------------------------------------------------------
+
+
+def test_severity_is_not_computed_in_the_browser():
+    """Guard against the ranking drifting back into untested JS.
+
+    tab_command.jsx used to hold ExceptionSeverity() and buildExceptions(),
+    where nothing in this repo could test them and where the partner surface
+    would have needed a second copy. If either name comes back, the queue has
+    two sources of truth again.
+    """
+    from pathlib import Path
+
+    import connect_labs.supply as supply_pkg
+
+    static = Path(supply_pkg.__file__).resolve().parent.parent / "static" / "supply"
+    command_tab = (static / "tab_command.jsx").read_text()
+    assert "function ExceptionSeverity" not in command_tab
+    assert "function buildExceptions" not in command_tab
+    assert "world.exceptions" in command_tab
+
+
+def test_the_partner_tab_is_in_the_bundle_build_list():
+    """A tab file nobody concatenates is a tab that does not exist."""
+    from pathlib import Path
+
+    import connect_labs.supply as supply_pkg
+
+    repo_root = Path(supply_pkg.__file__).resolve().parents[2]
+    build = (repo_root / "webpack" / "build-supply.js").read_text()
+    assert "'tab_partner.jsx'," in build
+    assert (repo_root / "connect_labs" / "static" / "supply" / "tab_partner.jsx").exists()

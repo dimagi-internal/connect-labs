@@ -1,0 +1,130 @@
+gaps:
+- id: G1
+  type: CAPABILITY
+  detail: The registry browser can filter by category, country and expiry, but it
+    cannot yet answer the corridor-shaped question a program director actually asks
+    — "who can deliver RUTF into Borno by mid-September" — because nothing in procurement
+    knows about lead time to a named delivery point.
+  claim_ref: S0
+  proposed_action: Add a corridor/lead-time facet to the registry browser, sourced
+    from the per-category commitments already captured on the EOI submission (capacity,
+    regions served, lead time). No new data collection required.
+- id: G2
+  type: DECISION
+  detail: The narrative wants to show a deliberate split award (two suppliers, two
+    corridors) as the resilience beat. The seeded demo world awards one winner per
+    corridor RFP, which reads as a single-source decision.
+  claim_ref: S4
+  proposed_action: Seed one RFP where a single lot's demand is split across two qualified
+    suppliers, or award two lots of the same RFP to different suppliers, so the split
+    is visible on screen rather than only asserted in narration.
+spine:
+- id: S0
+  claim: A program director's first job is not a tender, it is a supply base — a standing,
+    queryable set of suppliers who are known to be able to deliver, per commodity
+    and per corridor, before the emergency needs them.
+  status: grounded
+  evidence:
+  - ref: 'docs/superpowers/specs/2026-07-25-supply-chain-rfp-eoi-design.md §1 — ''Registry
+      model for qualification (WFP/UNICEF-style supplier roster): passing EOI review
+      stamps per-category qualifications onto the org, with expiry.'''
+    kind: documented
+  - ref: connect_labs/supply/README.md — "The set of live qualifications **is** the
+      supplier registry."
+    kind: documented
+  rationale: Two-stage procurement (expression of interest into a roster, then competitive
+    tenders drawn from the roster) is how UNICEF and WFP actually buy therapeutic
+    food. It exists because tendering from cold each time is too slow for a famine
+    timeline. Framing the demo this way puts the audience in their own workflow rather
+    than in a generic procurement tool.
+- id: S1
+  claim: What a reviewer judged is frozen at submit, so the decision stays reconstructable
+    even after the supplier edits their profile.
+  status: grounded
+  evidence:
+  - ref: connect_labs/supply/models/procurement.py — EOISubmission.profile_snapshot,
+      frozen on submit
+    kind: implemented
+  - ref: connect_labs/supply/tests/test_eoi.py — asserts snapshot immutability after
+      submit
+    kind: implemented
+  rationale: This is the difference between a procurement system and a shared drive.
+    If the profile a reviewer assessed is mutable, then every past qualification decision
+    is unauditable in principle, which is exactly the finding an inspector general
+    writes up. Freezing a snapshot on submit is cheap to build and is the single most
+    defensible property of the procurement half.
+- id: S2
+  claim: Qualification is per-commodity and expires, so the registry answers "who
+    can supply RUTF to this corridor today" rather than "who once passed a review".
+  status: grounded
+  evidence:
+  - ref: connect_labs/supply/models/procurement.py — Qualification(org, category,
+      granted, expires, status)
+    kind: implemented
+  - ref: connect_labs/supply/services/rfp_actions.py — org_can_bid is the single source
+      of truth for eligibility
+    kind: implemented
+  rationale: Certificates lapse — ISO 22000, GMP, UNICEF RUTF approval all have expiry
+    dates, and a roster that does not expire silently rots into a list of former suppliers.
+    Making expiry a first-class property of a Qualification is what lets the registry
+    be trusted as a live answer.
+- id: S3
+  claim: A supplier can only see and bid on a tender while holding a live qualification
+    in one of its categories — eligibility is enforced server-side, not by hiding
+    a button.
+  status: grounded
+  evidence:
+  - ref: connect_labs/supply/rbac.py — server-side role × module × verb matrix
+    kind: implemented
+  - ref: connect_labs/supply/tests/test_rbac_contract.py — perms.js ↔ rbac.py equality,
+      plus a guard proving the parser detects drift
+    kind: implemented
+  - ref: connect_labs/supply/tests/test_rfp.py — no bidding without a live qualification
+    kind: implemented
+  rationale: Access control that lives in the frontend is a demo, not a procurement
+    system. The claim is worth making explicitly to this audience because the failure
+    mode it prevents — an unqualified supplier submitting a bid that then has to be
+    excluded by hand — is a real and embarrassing one.
+- id: S4
+  claim: Award is per-lot, so one tender can be split across suppliers and corridors
+    on purpose rather than by accident.
+  status: grounded
+  evidence:
+  - ref: connect_labs/supply/models/procurement.py — Lot, LotBid, BidScore, Award(lot
+      → winning LotBid)
+    kind: implemented
+  - ref: connect_labs/supply/tests/test_rfp.py — cannot award an unsubmitted bid,
+      cannot award a lot twice
+    kind: implemented
+  rationale: 'Concentrating a four-country response on the cheapest single bidder
+    is the classic humanitarian supply failure: when that supplier''s plant or corridor
+    goes down, every district goes down together. Per-lot award is how a program director
+    buys resilience, and it is only possible if the data model makes the lot, not
+    the tender, the unit of decision.'
+- id: S5
+  claim: The award is not the finish line — it is the handover point where the same
+    record becomes a contract that the rest of the system tracks physically.
+  status: grounded
+  evidence:
+  - ref: docs/superpowers/specs/2026-07-25-supply-chain-rfp-eoi-design.md §1 — "Award
+      is the midpoint, not the end."
+    kind: documented
+  - ref: connect_labs/supply/models/execution.py — Contract created from an Award,
+      drawing against an Appropriation
+    kind: implemented
+  rationale: Almost every procurement product stops at award, which is why nobody
+    can trace a dollar to a carton. Ending this narrative on the handover is what
+    makes the other three narratives land as one system instead of four dashboards.
+problem: Operation End Starvation has to stand up a therapeutic-food supply base across
+  Nigeria, Sudan, Ethiopia and Burkina Faso before the lean season, and today that
+  work runs on email threads, attached spreadsheets and PDF certificates. Three things
+  break as a result. Qualification is not auditable — a supplier can revise the capacity
+  claim a reviewer judged them on, and nobody can reconstruct what was in front of
+  the reviewer. There is no registry, so every new tender re-asks the same questions
+  of the same suppliers and the answers arrive in a different shape each time. And
+  awards are decided per-tender rather than per-lot, so a strong bidder on Maiduguri
+  wins the Djibo lot too, and the corridor risk that should have been split sits with
+  one company. A program director cannot answer "who is qualified to supply RUTF to
+  north-east Nigeria today" without opening a folder and reading.
+narrative_slug: oes-supply-base
+schema_version: 1

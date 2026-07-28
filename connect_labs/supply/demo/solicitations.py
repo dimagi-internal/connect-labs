@@ -23,7 +23,16 @@ from ..models import (
     StaffRole,
 )
 from ..serializers import org_dict
-from .data import AWARDED_RFP, CLOSED_ROUND, CORRIDOR_AWARDS, LIVE_RFP, OPEN_ROUND, TODAY
+from .data import (
+    AWARDED_RFP,
+    CLOSED_ROUND,
+    CORRIDOR_AWARDS,
+    LIVE_RFP,
+    OPEN_ROUND,
+    SPLIT_AWARD_LOTS,
+    SPLIT_AWARD_RFP,
+    TODAY,
+)
 
 # Seed timestamps hang off a single reference point so a rerun reproduces the
 # same world rather than drifting with the clock.
@@ -355,3 +364,94 @@ def _seed_awarded_rfp(rng, orgs, staff):
     if not rfp.lots.filter(award__isnull=True).exists() and rfp.status != RFP.Status.AWARDED:
         rfp.status = RFP.Status.AWARDED
         rfp.save(update_fields=["status"])
+
+
+def _seed_split_award_rfp(rng, orgs, staff):
+    """One solicitation whose lots go to two different suppliers.
+
+    Both bid on both lots, and neither wins both — the leader on Maiduguri is
+    not the leader on Djibo. That is the whole argument for pricing and
+    awarding lot by lot, and it is only convincing if the comparison screen
+    actually shows two different price leaders.
+    """
+    rfp, _ = RFP.objects.update_or_create(
+        title=SPLIT_AWARD_RFP,
+        defaults={
+            "brief": (
+                "RUTF into the Lake Chad basin and the Burkinabé Sahel. Bid lot by lot: "
+                "OES intends to award corridors separately to avoid concentrating the "
+                "response on a single plant."
+            ),
+            "categories": ["rutf"],
+            "countries": ["NG", "BF"],
+            "bid_deadline": TODAY - timedelta(days=21),
+            "status": RFP.Status.PUBLISHED,
+            "created_by": staff[StaffRole.Role.PROCUREMENT_ADMIN],
+        },
+    )
+
+    bidders = [orgs[name] for _d, _c, _q, _dc, _dp, name in SPLIT_AWARD_LOTS]
+    bids = {}
+    for index, org in enumerate(bidders):
+        bid, _ = Bid.objects.update_or_create(
+            org=org,
+            rfp=rfp,
+            defaults={
+                "status": Bid.Status.SUBMITTED,
+                "submitted_at": timezone.now() - timedelta(days=25 + index),
+            },
+        )
+        bids[org.id] = bid
+
+    for description, category, quantity, country, place, winner_name in SPLIT_AWARD_LOTS:
+        winner = orgs[winner_name]
+        lot, _ = Lot.objects.update_or_create(
+            rfp=rfp,
+            description=description,
+            defaults={
+                "category": category,
+                "quantity": quantity,
+                "unit": "cartons",
+                "delivery_country": country,
+                "delivery_place": place,
+                "delivery_deadline": TODAY + timedelta(days=55),
+            },
+        )
+        winning_lot_bid = None
+        for org in bidders:
+            # The local supplier is cheaper on its own corridor and dearer on
+            # the other one — freight, not favouritism.
+            local = org is winner
+            lot_bid, _ = LotBid.objects.update_or_create(
+                bid=bids[org.id],
+                lot=lot,
+                defaults={
+                    "unit_price": 42.10 if local else 46.90,
+                    "currency": "USD",
+                    "lead_time_days": 18 if local else 34,
+                    "notes": "",
+                },
+            )
+            BidScore.objects.update_or_create(
+                lot_bid=lot_bid,
+                reviewer=staff[StaffRole.Role.REVIEWER],
+                defaults={
+                    "technical_score": 82 if local else 74,
+                    "notes": "Capacity and corridor experience assessed against the frozen EOI snapshot.",
+                },
+            )
+            if local:
+                winning_lot_bid = lot_bid
+
+        if not hasattr(lot, "award"):
+            Award.objects.create(
+                lot=lot,
+                lot_bid=winning_lot_bid,
+                awarded_by=staff[StaffRole.Role.PROCUREMENT_ADMIN],
+            )
+
+    rfp.refresh_from_db()
+    if not rfp.lots.filter(award__isnull=True).exists() and rfp.status != RFP.Status.AWARDED:
+        rfp.status = RFP.Status.AWARDED
+        rfp.save(update_fields=["status"])
+    return rfp
