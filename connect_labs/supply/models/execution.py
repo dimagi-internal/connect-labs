@@ -27,6 +27,11 @@ class SupplyNode(models.Model):
     # adm1_code. Blank for transit nodes (a port serves no caseload), which is
     # what separates a node with demand behind it from one merely on the route.
     adm1_code = models.CharField(max_length=16, blank=True)
+    # Relative share of the district's caseload this facility serves. Sites are
+    # not the same size — a town hosting displaced families admits several times
+    # what a rural post does — and an even split renders every row of a
+    # partner's calendar with identical figures.
+    catchment_weight = models.FloatField(default=1.0)
     gln = models.CharField(max_length=13, blank=True)
     location = gis_models.PointField(geography=True, null=True, blank=True)
     # null owner means an OES-network facility rather than a supplier's own

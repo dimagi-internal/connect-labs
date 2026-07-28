@@ -1,0 +1,144 @@
+auth:
+  type: url
+  url: /supply/dev-login/?persona=zara
+base_url: http://localhost:8009
+narrative_locked: true
+review_mode: autonomous
+why_brief: oes-partner-pipeline.why_brief.yaml
+tagline: The organisation that feeds the children finally sees the supply it depends on
+setup:
+  command: python manage.py seed_supply_demo --reset
+  rerun: per_render
+  timeout_seconds: 600
+scenes:
+- id: the-organisation-that-feeds-the-children-sees-the-least
+  concept_claim: The organisation admitting the children is the only actor touching both the carton and
+    the child, and it is the one with no instrument to see its own supply.
+  role: overview
+  url: /supply/
+  show: 'Komadugu Health Initiative''s own surface at /supply/ — the key figures row showing eleven feeding
+    sites, the distributions not covered, the thinnest cover in the network and the shortfall already
+    raised. This is the whole argument in four numbers: they know their caseload exactly and, until now,
+    nothing about the supply behind it.'
+  actions:
+  - kind: wait_for
+    target: css:.key-figures
+    note: role-scoped payload lands
+  - kind: hold
+    seconds: 1.6
+    note: read the four figures
+  impressive_because: Every other screen in this product looks outward from the centre. This one belongs
+    to the organisation actually admitting the children, and it opens with what they can now see rather
+    than what they are being asked to report.
+  ai_quality: Site count, cover and shortfall are real derived figures, not placeholders; the org name
+    is the partner's own.
+- id: inbound-supply-in-the-calendar-they-plan-in
+  concept_claim: Inbound supply rendered against planned distribution days reads as covered, at risk or
+    uncovered per site and date — the frame a partner actually plans in.
+  url: /supply/
+  show: 'The Distribution calendar card — a day, a site, the children booked in for it, and whether inbound
+    supply covers it. Three states are visible at once: covered rows, Askira at risk, and Biu with nothing
+    assigned to it at all.'
+  actions:
+  - kind: scroll_to
+    target: text:Distribution calendar
+  - kind: hold
+    seconds: 2.0
+    note: the covered / at risk / uncovered spread
+  impressive_because: A shipment table sorted by arrival date is the supplier's view of the world. This
+    is the frame a partner actually plans in, and the cover state is resolved on the server so it cannot
+    disagree with the projection below it.
+  ai_quality: All three cover states appear; children expected and cartons required are consistent with
+    the site's own burn rate.
+- id: weeks-of-cover-and-the-date-it-runs-dry
+  concept_claim: Weeks of cover and a projected stockout date are derived per site from receiving events
+    and the admission rate, with the method stated on screen.
+  url: /supply/
+  show: The Weeks of cover card — every site with its stock on hand, the children it serves a month, its
+    weeks of cover and the date it runs dry, ranked worst first. Biu at zero, Askira at 0.6, Kukawa at
+    1.4, Monguno comfortable at 6.
+  actions:
+  - kind: scroll_to
+    target: text:Weeks of cover by site
+  - kind: hold
+    seconds: 2.2
+    note: the spread from empty to comfortable
+  - kind: scroll_to
+    target: text:Stock on hand is receipts minus despatches
+    note: the method, on screen
+  - kind: hold
+    seconds: 1.4
+  impressive_because: At four weeks you plan; at one you start triaging admissions. Knowing that three
+    weeks early is the entire point, and the method is printed under the table so the number can be argued
+    with.
+  ai_quality: Weeks of cover is consistent with stock divided by the stated weekly burn; the method note
+    names the derivation rather than gesturing at it.
+- id: the-storekeeper-counts-it-and-the-short-count-is-evidence
+  concept_claim: A receipt recorded at the loading bay against the despatch advice raises the discrepancy
+    as evidence from the person holding the cartons, labelled hand-keyed.
+  url: /supply/
+  show: The Receiving tab — the partner's own capture surface, where a storekeeper records what actually
+    came off the truck against what the despatch advice said, from a phone, labelled as hand-keyed.
+  actions:
+  - kind: click
+    target: css:.navitem:has-text('Receiving')
+  - kind: wait_for
+    target: css:.page
+  - kind: hold
+    seconds: 1.8
+  impressive_because: A shortfall asserted from a capital city is a dispute. The same shortfall recorded
+    at the loading bay against the despatch advice is evidence — and it is labelled hand-keyed, because
+    it was.
+  ai_quality: The provenance marker is visible; the form posts the same payload as the machine-to-machine
+    tier rather than a parallel shape.
+- id: zara-raises-a-shortfall-and-the-centre-answers
+  concept_claim: A partner raises a shortfall from their own screen and it enters the central queue ranked
+    by the children behind it, marked as partner-raised.
+  url: /supply/
+  show: Zara raises a shortfall on Kukawa from the cover table — the site, the children affected, the
+    cartons short and the date it is needed by — and it lands in the OES command centre ranked by the
+    children behind it.
+  actions:
+  - kind: scroll_to
+    target: text:Weeks of cover by site
+  - kind: click
+    target: css:tr:has-text('Kukawa Nutrition Centre') button:has-text('Raise a shortfall')
+  - kind: wait_for
+    target: css:.modal
+  - kind: hold
+    seconds: 2.0
+    note: the form is pre-filled from the site's own projection
+  - kind: fill
+    target: css:textarea
+    value: Admissions above plan for three weeks since the Baga road reopened. Stock will not reach Thursday's
+      distribution.
+  - kind: hold
+    seconds: 1.2
+  impressive_because: 'This inverts the direction a monitoring product runs in: the ground reports upward
+    into a system that can respond, rather than the centre reporting downward about the ground.'
+  ai_quality: The form is pre-filled from the site's real cover projection rather than blank, so the numbers
+    are the ones the screen already computed.
+- id: from-a-batch-to-the-child-who-recovered
+  concept_claim: A received batch resolves forward to the distributions it fed and to a child's MUAC series
+    crossing the recovery threshold, labelled synthetic.
+  url: /supply/
+  show: 'The batch table at the bottom of the partner surface, and one batch opened: the consignment it
+    arrived on, the distribution it fed, and the children admitted on it — each with a MUAC series drawn
+    against the WHO red, amber and green bands, climbing out of the red.'
+  actions:
+  - kind: scroll_to
+    target: text:From a batch to the children it treated
+  - kind: hold
+    seconds: 1.6
+  - kind: click
+    target: css:tr:has-text('Monguno Nutrition Centre')
+  - kind: wait_for
+    target: css:.outcome-list
+  - kind: hold
+    seconds: 2.6
+    note: the recovery curves, and the synthetic label above them
+  impressive_because: This is the chain the funding standards describe and the sector achieves as far
+    as the contract and then abandons — appropriation to carton to batch to a named child's arm circumference.
+    Both ends already exist; nothing currently holds them as one record.
+  ai_quality: The synthetic label is present in the same frame as the series; at least one curve crosses
+    the 125 mm discharge threshold; the batch resolves to a real consignment reference.

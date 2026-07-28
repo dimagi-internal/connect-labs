@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import views
+from . import views, views_dev_auth
 from .api import bootstrap as bootstrap_api
 from .api import demand as demand_api
 from .api import eoi as eoi_api
@@ -16,6 +16,8 @@ urlpatterns = [
     path("login/", views.login_view, name="login"),
     path("signup/", views.signup_view, name="signup"),
     path("logout/", views.logout_view, name="logout"),
+    # DEBUG-only persona switch for walkthrough capture; 403 otherwise.
+    path("dev-login/", views_dev_auth.dev_login, name="dev_login"),
     path("api/bootstrap/", bootstrap_api.bootstrap, name="api_bootstrap"),
     # --- org profile ---
     path("api/org/profile/", orgs_api.profile, name="api_org_profile"),

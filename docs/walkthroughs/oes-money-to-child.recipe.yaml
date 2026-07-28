@@ -1,0 +1,141 @@
+auth:
+  type: url
+  url: /supply/dev-login/?persona=dale
+base_url: http://localhost:8009
+narrative_locked: true
+review_mode: autonomous
+why_brief: oes-money-to-child.why_brief.yaml
+tagline: What the money bought, without the collapse that makes most dashboards untrustworthy
+setup:
+  command: python manage.py seed_supply_demo --reset
+  rerun: per_render
+  timeout_seconds: 600
+scenes:
+- id: what-the-money-bought-without-the-collapse
+  concept_claim: Obligated, disbursed and delivered stay three separate figures per contract and are never
+    summed into one completion number.
+  role: overview
+  url: /supply/
+  show: Dale's funder view — obligated, disbursed and delivered as three separate figures in the key row
+    and three separate bars per contract in the table, never summed into a single completion percentage.
+  actions:
+  - kind: wait_for
+    target: css:.key-figures
+  - kind: hold
+    seconds: 2.2
+  - kind: scroll_to
+    target: text:Obligated → disbursed → delivered
+  - kind: hold
+    seconds: 2.0
+  impressive_because: Money can be committed against a contract, paid to a supplier, and still not be
+    food in a warehouse. The distance between those stages is exactly where the programmatic risk sits,
+    and most reports fold them into whichever number looks best.
+  ai_quality: Three stages are separately rendered per contract; disbursed never exceeds obligated.
+- id: the-diagram-conserves-or-it-is-a-graphic
+  concept_claim: Each contract links to its own appropriation so the funding flow conserves, and unattributable
+    value is shown as its own band rather than dropped.
+  url: /supply/
+  show: The funding flow — appropriation to partner to country — where each contract links to its own
+    envelope and the totals reconcile at every stage, with any unattributable value shown as its own labelled
+    band.
+  actions:
+  - kind: scroll_to
+    target: css:.sankey
+  - kind: wait_for
+    target: css:.sankey
+  - kind: hold
+    seconds: 2.6
+  impressive_because: Attribute every contract to the first envelope and the diagram stops conserving
+    the moment there is more than one — the specific failure that makes a funding chart decorative rather
+    than checkable.
+  ai_quality: Flows out of each appropriation sum to its obligated total; nothing is silently dropped.
+- id: cost-per-child-with-its-method-on-screen
+  concept_claim: The unit ladder carries its conversion and its exclusions in the same frame as the cost-per-child
+    figure, so the number can be challenged.
+  url: /supply/
+  show: The unit ladder — dollars to metric tonnes to cartons to children — with the conversion and the
+    cost per child treated written directly underneath it, including what it excludes.
+  actions:
+  - kind: scroll_to
+    target: text:What a dollar bought
+  - kind: hold
+    seconds: 2.0
+  - kind: scroll_to
+    target: css:.method-note
+  - kind: hold
+    seconds: 2.4
+    note: the method, in the same frame as the number
+  impressive_because: A reader who can see the conversion can see exactly what the figure claims and what
+    it does not. That is what makes it a number you can argue with rather than one you either accept or
+    discard.
+  ai_quality: The stated method matches the rendered arithmetic, and names the exclusion (consignments
+    in transit) rather than glossing it.
+- id: nigerias-own-view-scoped-on-the-server
+  concept_claim: A government observer's country filter is applied when the payload is built, so another
+    country's consignments never reach the page.
+  url: /supply/dev-login/?persona=hauwa
+  show: Hauwa's country view — the flows entering and moving within Nigeria, and nothing else. Another
+    country's consignments are not hidden on this page; they were never in the payload.
+  actions:
+  - kind: wait_for
+    target: css:.page
+  - kind: hold
+    seconds: 1.8
+  - kind: click
+    target: css:.navitem:has-text('Country overview')
+    note: Hauwa opens her own country view
+  - kind: wait_for
+    target: css:.data-table
+  - kind: hold
+    seconds: 2.2
+    note: Nigeria only — the rest was never in the payload
+  impressive_because: The first question a government counterpart asks about a shared dashboard is what
+    else it can see, and "the browser hides it" is not an answer that survives contact.
+  ai_quality: Only Nigerian nodes and consignments appear; the scoping is evidently server-side rather
+    than a filter control.
+- id: coverage-by-district-not-tonnage-delivered
+  concept_claim: Coverage measured against caseload distinguishes a large delivery into a large caseload
+    from a small one into a small caseload, which tonnage cannot.
+  url: /supply/
+  show: The Coverage by district card on the government view — Borno at IPC 5 with its caseload, the courses
+    actually delivered, the coverage percent and the children still uncovered, beside Yobe which has received
+    nothing at all.
+  actions:
+  - kind: scroll_to
+    target: text:Coverage by district
+  - kind: hold
+    seconds: 2.6
+  - kind: hover
+    target: css:tr:has-text('Borno') span[title]
+    note: how this caseload was estimated
+  - kind: hold
+    seconds: 1.6
+  impressive_because: A large delivery into a large caseload and a small delivery into a small one look
+    identical in tonnes. With the caseload as the denominator they do not, and that difference is where
+    the state puts its own resources.
+  ai_quality: Coverage is computed over a stated window; every district carries the source note for its
+    caseload.
+- id: the-number-everyone-quotes-tested
+  concept_claim: Courses delivered and recorded recoveries are reported side by side with their methods
+    and never reconciled, so the gap between shipped and known-to-have-worked is visible.
+  url: /supply/dev-login/?persona=dale&next=/supply/
+  show: Back on the funder view — courses delivered and recorded recoveries side by side with their methods,
+    the observed recovery rate and the discharge breakdown beneath, and one delivered batch followed through
+    to a child's MUAC series climbing out of the red.
+  actions:
+  - kind: wait_for
+    target: css:.page
+  - kind: scroll_to
+    target: text:Children treated
+  - kind: hold
+    seconds: 2.8
+    note: two figures, two methods, never reconciled into one
+  - kind: scroll_to
+    target: css:.two-figures
+  - kind: hold
+    seconds: 2.0
+  impressive_because: '"Children treated" is almost always cartons divided by a treatment factor — arithmetic
+    presented as an outcome. The gap between that and a measured recovery is the most useful thing on
+    the screen, and a funder who can see it is being told the truth.'
+  ai_quality: Both figures carry distinct labels and methods; the discharge breakdown sums to the observed
+    cohort; the synthetic label is present in the same frame.

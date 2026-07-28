@@ -217,3 +217,34 @@ def test_no_expiry_risk_when_the_caseload_can_work_through_it():
         quantity=Decimal("2000"),
     )
     assert cover.expiry_risk(node) is None
+
+
+def test_a_district_splits_between_sites_by_catchment_not_evenly():
+    """Identical figures down a page are the signature of a generated world.
+
+    An even split gave all eleven of Komadugu's sites the same 214 children and
+    214 cartons on every row of the distribution calendar. Sites are not the
+    same size — a town hosting displaced families admits several times what a
+    rural post does — so the district divides by catchment weight.
+    """
+    _caseload(children=4330)
+    big = SupplyNodeFactory(
+        name="Big town", kind=SupplyNode.Kind.DELIVERY_POINT, adm1_code=BORNO, catchment_weight=3.0
+    )
+    small = SupplyNodeFactory(
+        name="Rural post", kind=SupplyNode.Kind.DELIVERY_POINT, adm1_code=BORNO, catchment_weight=1.0
+    )
+
+    assert cover.served_children(big) == pytest.approx(4330 * 0.75)
+    assert cover.served_children(small) == pytest.approx(4330 * 0.25)
+    # The district total is still conserved — weighting redistributes, it does
+    # not invent or lose children.
+    assert cover.served_children(big) + cover.served_children(small) == pytest.approx(4330)
+
+
+def test_zero_weights_fall_back_to_an_even_split():
+    """A district whose sites carry no weights must not divide by zero."""
+    _caseload(children=1000)
+    a = SupplyNodeFactory(name="A", kind=SupplyNode.Kind.DELIVERY_POINT, adm1_code=BORNO, catchment_weight=0)
+    SupplyNodeFactory(name="B", kind=SupplyNode.Kind.DELIVERY_POINT, adm1_code=BORNO, catchment_weight=0)
+    assert cover.served_children(a) == 500
