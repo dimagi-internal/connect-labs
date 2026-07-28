@@ -161,8 +161,8 @@ scenes:
   concept_claim: A partner-raised exception is marked as such and names the organisation, distinguishing
     a coordination product from a monitoring one.
   url: /supply/
-  show: The top row of the queue — the Kukawa shortfall, marked as raised by Komadugu Health Initiative
-    four days ago, sitting above every exception the system derived for itself.
+  show: The Askira shortfall, marked as raised by Komadugu Health Initiative four days ago, sitting in
+    a queue otherwise made of exceptions the system derived for itself.
   actions:
   - kind: scroll_to
     target: css:.exception-list
@@ -175,19 +175,21 @@ scenes:
     actual shape of the relationship.
   ai_quality: The partner-raised marker names the organisation and the report date; a centrally-derived
     row does not carry it.
-- id: ada-reallocates-and-the-numbers-move
-  concept_claim: A reallocation creates a real consignment with planned milestones, so cover, the pipeline
-    gap and the map recompute from it rather than being adjusted.
+- id: ada-closes-the-signal-the-partner-raised
+  concept_claim: The partner-raised shortfall is closed by the reallocation made against it, carrying
+    the actor and the recorded reason, while the destination's cover deliberately does not move until
+    the cartons land.
   url: /supply/
-  show: Ada reallocates cartons from the Kassala forward store — which holds more than its own caseload
-    needs — to El Fasher, on camera. The source list offers only nodes genuinely holding surplus and what
-    each could spare without dropping below its own threshold; the reason is required; and the exception
-    the reallocation answers leaves the queue when it lands.
+  show: Ada acts on the same Askira shortfall the previous scene showed being raised. The source list
+    offers only nodes genuinely holding surplus, each with what it could spare without dropping below
+    its own threshold, and Gombe is offered first because it is in the same country rather than merely
+    the largest. The reason is required. The row then returns to the queue marked Closed, carrying who
+    decided and why, and the headline stops counting its eighty-seven children.
   actions:
   - kind: scroll_to
     target: css:.exception-list
   - kind: click
-    target: css:.exception:has-text('El Fasher') span.btn:has-text('Reallocate to')
+    target: css:.exception:has-text('Komadugu') span.btn:has-text('Reallocate to')
     note: the row's own advice, now something that can be done
   - kind: wait_for
     target: css:.modal
@@ -196,8 +198,8 @@ scenes:
     note: only nodes holding surplus, each with what it can spare without causing the next stockout
   - kind: fill
     target: css:.modal textarea
-    value: Khartoum leg nine days behind and El Fasher has nothing on hand. Kassala is carrying fifteen
-      weeks against its own caseload.
+    value: Askira is down to half a week of cover and Komadugu raised it four days ago. Gombe is holding
+      well above its own caseload and is a day's run away.
   - kind: hold
     seconds: 1.4
   - kind: click
@@ -210,12 +212,15 @@ scenes:
   - kind: scroll_to
     target: css:.exception-list
   - kind: hold
-    seconds: 3.0
-    note: the row is marked answered with the effect and the reason on it, the headline
-      counts only what nobody has acted on, and it has stopped leading a queue that asks
-      what is still outstanding
-  impressive_because: The decision and the evidence that prompted it are now the same record — the thing
-    a messaging group can never give you afterwards. And the numbers moved because a consignment moved,
-    not because a status was edited.
-  ai_quality: A real shipment with planned milestones appears; the resolved exception references the action
-    id rather than simply disappearing.
+    seconds: 3.2
+    note: the signal is marked Closed with the actor, the effect and the recorded reason on the row,
+      it has sunk to the bottom of a queue that asks what nobody has acted on, and the headline has
+      dropped by its eighty-seven children
+  impressive_because: This is the only exception in the product that genuinely closes, and it closes
+    against the report that opened it — the loop the previous scene started, completed on camera. A
+    derived row can only be ANSWERED, because cartons on the road are not cartons on a shelf; the
+    centre keeps that distinction rather than claiming the stronger word. The decision and the evidence
+    that prompted it are now one record, which is the thing a messaging group can never give you
+    afterwards.
+  ai_quality: The closed row names the actor, the effect and the reason, and the shortfall it closes is
+    the same one the previous scene showed being raised.

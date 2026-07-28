@@ -239,7 +239,8 @@ scenes:
     note: two corridors, two suppliers, one tender — awarded on camera
   impressive_because: 'Concentrating a four-country response on the cheapest single bidder is the classic
     humanitarian supply failure: when that plant or that corridor goes down, every district goes down
-    at the same moment. Splitting costs a little more per carton and buys the thing money cannot buy later.'
+    at the same moment. Here the split costs nothing to make: each corridor''s cheapest bidder is a
+    different plant, so the resilient award is also the lowest-cost one.'
   ai_quality: Two different awarded organisations across one solicitation's lots.
 - id: the-award-becomes-the-contract
   concept_claim: The award is immutable and the contract carries it out against a named appropriation,

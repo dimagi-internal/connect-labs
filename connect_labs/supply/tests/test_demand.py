@@ -675,9 +675,15 @@ def test_resolving_a_signal_ties_it_to_the_action_that_resolved_it(client):
     assert signal.status == ShortfallSignal.Status.RESOLVED
     assert signal.resolved_by_action_id == response.json()["action"]["id"]
 
-    # And it has left the queue, because the situation changed.
+    # And it is still ON the queue, marked closed and carrying the decision.
+    # It used to be dropped the moment it resolved, which meant the one loop in
+    # the product that actually completes completed by a row ceasing to exist.
     queue = client.get("/supply/api/bootstrap/").json()["exceptions"]
-    assert not any(r.get("signal_id") == signal.id for r in queue)
+    closed = next((r for r in queue if r.get("signal_id") == signal.id), None)
+    assert closed is not None
+    assert closed["tone"] == "good"
+    assert closed["resolved_by"]["action_id"] == response.json()["action"]["id"]
+    assert closed["resolved_by"]["rationale"].startswith("Kukawa reported a shortfall")
 
 
 def test_a_partner_cannot_reallocate(client):
@@ -914,3 +920,59 @@ def test_the_site_that_raised_the_shortfall_is_actually_short():
     site_cover = cover_service.cover_for_node(signal.site)
     assert site_cover is not None
     assert site_cover["weeks_of_cover"] < 2, "a site with weeks of cover would not be raising a shortfall"
+
+
+def test_a_resolved_signal_closes_on_the_queue_rather_than_vanishing():
+    """The one exception that genuinely closes must close ON CAMERA.
+
+    A ShortfallSignal was dropped from the queue the instant it resolved, so
+    the only loop in the product that completes did so by the row ceasing to
+    exist. A reader looking at the screen after the decision saw an absence,
+    which is the weakest possible evidence for the claim the screen makes. It
+    now stays for a week carrying the actor, the effect and the reason, sorted
+    below everything still waiting on somebody, and out of the headline.
+    """
+    from connect_labs.supply.services import actions
+
+    site = SupplyNodeFactory(kind="delivery_point", adm1_code=BORNO, country="NG", name="Askira Test Site")
+    source = SupplyNodeFactory(kind="distribution_hub", adm1_code=YOBE, country="NG", name="Surplus Test Hub")
+    SupplyEvent.objects.create(
+        biz_step=SupplyEvent.BizStep.RECEIVING,
+        event_time=timezone.now(),
+        read_point=source,
+        quantity_list=[{"gtin": "1", "quantity": 5000, "uom": "cartons"}],
+        source_tier=SupplyEvent.SourceTier.CHECKIN,
+    )
+    ContractFactory(org=SupplierOrgFactory())
+    signal = ShortfallSignalFactory(site=site, children_affected=87, cartons_short=87)
+
+    before = {r["key"]: r for r in exceptions.build_queue()}
+    row = before[f"signal-{signal.id}"]
+    assert row["resolved_by"] is None and row["tone"] == "bad"
+
+    action = actions.reallocate(
+        actor="ada@oes.example",
+        source_node=source,
+        target_node=site,
+        quantity=87,
+        rationale="Komadugu raised it four days ago.",
+        signal=signal,
+    )
+
+    rows = exceptions.build_queue()
+    after = {r["key"]: r for r in rows}
+    closed = after.get(f"signal-{signal.id}")
+    assert closed is not None, "the signal vanished instead of closing on camera"
+    assert closed["tone"] == "good"
+    assert closed["resolved_by"]["action_id"] == action.id
+    assert closed["resolved_by"]["actor"] == "ada@oes.example"
+    assert closed["resolved_by"]["rationale"] == "Komadugu raised it four days ago."
+    # sunk below anything still waiting on somebody
+    assert rows[-1]["key"] == closed["key"]
+    # and out of the headline, which counts what nobody has acted on
+    headline = sum(r["children_at_risk"] or 0 for r in rows if not r["answered_by"] and not r["resolved_by"])
+    assert (
+        headline
+        == sum(r["children_at_risk"] or 0 for r in before.values() if not r["answered_by"] and not r["resolved_by"])
+        - 87
+    )

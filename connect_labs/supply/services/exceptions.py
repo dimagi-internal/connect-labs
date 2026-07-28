@@ -22,6 +22,11 @@ from .. import gs1
 from ..models import Discrepancy, Shipment, ShortfallSignal, SupplyAction
 from . import cover
 
+# How long a resolved partner signal stays on the queue carrying its resolution.
+# Long enough that the close is visible to anyone who looks at the screen after
+# the decision, short enough that the queue does not become a history.
+RESOLVED_SIGNAL_VISIBLE_DAYS = 7
+
 
 def _late_shipments(contracts=None):
     qs = Shipment.objects.exclude(status=Shipment.Status.CONFIRMED).select_related("destination", "contract__org")
@@ -150,17 +155,46 @@ def partner_signal_exceptions(as_of=None):
     difference is the point. A centre that only shows alerts it derived is
     running a monitoring product; one that shows what the people holding the
     cartons reported is running a coordination product.
+
+    A signal the centre has answered stays on the queue for a week, marked
+    resolved and carrying the action that resolved it. Dropping it the instant
+    it resolved meant the one exception in the product that genuinely CLOSES
+    closed off camera: the row simply stopped existing, and a reader looking at
+    the queue afterwards saw an absence rather than a decision. Absence is the
+    weakest possible evidence for the claim this screen is making.
     """
+    as_of = as_of or date.today()
     rows = []
-    signals = ShortfallSignal.objects.exclude(status=ShortfallSignal.Status.RESOLVED).select_related("site", "org")
+    signals = ShortfallSignal.objects.select_related("site", "org", "resolved_by_action").exclude(
+        status=ShortfallSignal.Status.RESOLVED,
+        resolved_by_action__isnull=True,
+    )
     for signal in signals:
+        action = signal.resolved_by_action if signal.status == ShortfallSignal.Status.RESOLVED else None
+        if action is not None and (as_of - action.created_at.date()).days > RESOLVED_SIGNAL_VISIBLE_DAYS:
+            continue
         rows.append(
             {
                 "key": f"signal-{signal.id}",
                 "kind": "Partner shortfall",
                 "origin": "partner",
-                "tone": "bad",
+                "tone": "good" if action else "bad",
                 "signal_id": signal.id,
+                # The close, on the row, with who made it and why. This is the
+                # one exception kind that genuinely resolves — a derived row can
+                # only be ANSWERED until the cartons land — so it is the only
+                # place the queue can show a loop completing.
+                "resolved_by": (
+                    {
+                        "action_id": action.id,
+                        "actor": action.actor,
+                        "effect": action.effect,
+                        "rationale": action.rationale,
+                        "resolved_on": action.created_at.date().isoformat(),
+                    }
+                    if action
+                    else None
+                ),
                 "node_id": signal.site_id,
                 "node_name": signal.site.name,
                 "org_name": signal.org.legal_name,
@@ -172,7 +206,11 @@ def partner_signal_exceptions(as_of=None):
                 ),
                 "why": signal.note
                 or f"{signal.org.legal_name} reported a shortfall of {int(signal.cartons_short):,} cartons.",
-                "action": "Reallocate from a node holding surplus, or expedite the next consignment.",
+                "action": (
+                    "Closed by the reallocation that answered it."
+                    if action
+                    else "Reallocate from a node holding surplus, or expedite the next consignment."
+                ),
                 "derivation": (
                     f"Reported by {signal.org.legal_name} on {signal.raised_on:%-d %B} "
                     f"from their own distribution calendar."
@@ -239,5 +277,13 @@ def build_queue(contracts=None, as_of=None):
         )
     return sorted(
         rows,
-        key=lambda r: (r["answered_by"] is not None, -(r["children_at_risk"] or 0), r["key"]),
+        key=lambda r: (
+            # closed rows sink below answered ones, and answered below
+            # everything still waiting on somebody. The queue's question is
+            # "what has nobody done anything about", and neither is that.
+            r.get("resolved_by") is not None,
+            r["answered_by"] is not None,
+            -(r["children_at_risk"] or 0),
+            r["key"],
+        ),
     )

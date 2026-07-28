@@ -56,16 +56,21 @@ function CommandTab({ ctx }) {
             // headline was identical before and after a reallocation.
             value: formatNumber(
               exceptions
-                .filter((e) => !e.answered_by)
+                .filter((e) => !e.answered_by && !e.resolved_by)
                 .reduce((n, e) => n + (e.children_at_risk || 0), 0),
             ),
             hint: (() => {
-              const open = exceptions.filter((e) => !e.answered_by).length;
-              const answered = exceptions.length - open;
+              const open = exceptions.filter(
+                (e) => !e.answered_by && !e.resolved_by,
+              ).length;
+              const closed = exceptions.filter((e) => e.resolved_by).length;
+              const answered = exceptions.length - open - closed;
               if (!exceptions.length) return 'nothing outstanding';
               return `across ${open} unanswered exception${
                 open === 1 ? '' : 's'
-              }${answered ? ` · ${answered} answered` : ''}`;
+              }${answered ? ` · ${answered} answered` : ''}${
+                closed ? ` · ${closed} closed` : ''
+              }`;
             })(),
           },
           {
@@ -123,7 +128,26 @@ function CommandTab({ ctx }) {
                       How this was ranked: {e.derivation}
                     </div>
                   ) : null}
-                  {e.answered_by ? (
+                  {/* Closed and answered are different states and the
+                      difference is the product's own argument. A partner
+                      signal RESOLVES: the thing that was reported is no longer
+                      true. A derived row can only be ANSWERED — cartons are on
+                      the road, and until they land the children behind it are
+                      still at risk. Rendering both as "done" would claim the
+                      invariant the rest of this screen exists to keep. */}
+                  {e.resolved_by ? (
+                    <div className="exception-answered">
+                      <Badge tone="good">Closed</Badge> {e.resolved_by.effect}
+                      <div className="muted small">
+                        {e.resolved_by.rationale}
+                      </div>
+                      <div className="muted small">
+                        Closed by {e.resolved_by.actor} on{' '}
+                        {formatDate(e.resolved_by.resolved_on)}, against the
+                        reallocation that answered it.
+                      </div>
+                    </div>
+                  ) : e.answered_by ? (
                     <div className="exception-answered">
                       <Badge tone="good">Answered</Badge> {e.answered_by.effect}
                       <div className="muted small">
