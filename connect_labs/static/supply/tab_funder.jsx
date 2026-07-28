@@ -25,11 +25,17 @@ function FunderTab({ ctx }) {
   const goods = contracts.filter((c) => c.buys_goods);
   const goodsDisbursed = goods.reduce((n, c) => n + c.disbursed_value, 0);
   const deliveredCartons = goods.reduce((n, c) => n + c.delivered_quantity, 0);
+  // ONE basis for the whole ladder, end to end: money paid against confirmed
+  // delivery, and the cartons that same confirmation covers.
+  //
+  // The rungs used to mix. Rung 1 was confirmed money and rungs 2-4 were every
+  // delivered carton, so the chain's own endpoints divided to $15.21 while the
+  // note three lines below asserted $41.80 — on a card captioned "stated as a
+  // chain, so every step can be checked". The first thing a reader checks is
+  // the first and last rung against each other, and it did not hold.
   const confirmedCartons = goods.reduce((n, c) => n + c.confirmed_quantity, 0);
+  const confirmedMt = Math.round((confirmedCartons * 150 * 92) / 1000000);
   const deliveredMt = Math.round((deliveredCartons * 150 * 92) / 1000000);
-  // Confirmed over confirmed. The narration promises this figure excludes
-  // consignments in transit; dividing confirmed-only money by every delivered
-  // carton quietly broke that promise in the denominator.
   const costPerChild = confirmedCartons
     ? goodsDisbursed / confirmedCartons
     : null;
@@ -60,10 +66,16 @@ function FunderTab({ ctx }) {
             value: shortMoney(disbursed),
             hint: 'paid against confirmed delivery only',
           },
+          // Courses, not children. Every one of these tiles used to say
+          // "children treated" over a carton count, which is the exact
+          // conflation the card further down this page exists to attack — and
+          // it made the same phrase name three different numbers across the
+          // demo. A carton delivered is a course delivered; whether a child
+          // completed it is what the measured recoveries below are for.
           {
-            label: 'Children treated',
+            label: 'Courses delivered under contract',
             value: formatNumber(deliveredCartons),
-            hint: `${formatNumber(deliveredMt)} MT delivered`,
+            hint: `${formatNumber(deliveredMt)} MT · treatment outcomes below`,
           },
         ]}
       />
@@ -135,19 +147,21 @@ function FunderTab({ ctx }) {
           </div>
           <div className="ladder-arrow">→</div>
           <div className="ladder-step">
-            <div className="ladder-value">{formatNumber(deliveredMt)} MT</div>
-            <div className="ladder-label">therapeutic food delivered</div>
+            <div className="ladder-value">{formatNumber(confirmedMt)} MT</div>
+            <div className="ladder-label">
+              therapeutic food confirmed received
+            </div>
           </div>
           <div className="ladder-arrow">→</div>
           <div className="ladder-step">
-            <div className="ladder-value">{formatNumber(deliveredCartons)}</div>
+            <div className="ladder-value">{formatNumber(confirmedCartons)}</div>
             <div className="ladder-label">cartons (150 sachets each)</div>
           </div>
           <div className="ladder-arrow">→</div>
           <div className="ladder-step">
-            <div className="ladder-value">{formatNumber(deliveredCartons)}</div>
+            <div className="ladder-value">{formatNumber(confirmedCartons)}</div>
             <div className="ladder-label">
-              children given a full course, under OES supply contracts
+              children given a full course, paid for and confirmed
             </div>
           </div>
         </div>

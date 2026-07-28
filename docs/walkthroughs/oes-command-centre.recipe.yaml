@@ -119,15 +119,12 @@ scenes:
     note: close the consignment — scene 4 ends inside it
   - kind: scroll_to
     target: css:.card:has-text('Requirement from caseload')
+    note: the card, ONCE. A second scroll to a row inside it undid this one and pushed the card
+      title and all four column headers off the top, so the payoff column — children with no
+      carton assigned — rendered as an unlabelled integer column and 660 requirement was
+      indistinguishable from 660 gap. The whole card fits in one viewport.
   - kind: hold
-    seconds: 2.6
-  - kind: scroll_to
-    target: css:tr:has-text('Kassala')
-    note: the contrast the scene exists for — Kassala at 91% of a small caseload beside Borno at 34% of
-      one seven times larger, on more than twice the cartons. A hover on a native title tooltip used to
-      sit here; it renders nothing in a headless capture.
-  - kind: hold
-    seconds: 1.6
+    seconds: 4.2
   impressive_because: With a denominator, delivery stops being tonnage and becomes coverage. Volume alone
     could never distinguish a large delivery into a small caseload from a small delivery into a huge one.
   ai_quality: Every district carries a source note for its caseload; coverage is bounded by a stated window

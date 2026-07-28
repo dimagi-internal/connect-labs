@@ -530,7 +530,19 @@ function MuacLegend() {
 function MuacSeries({ child, focused, onFocus }) {
   const series = child.measurements || [];
   if (!series.length) return null;
-  const width = 220;
+  // A viewBox wide enough to match the box it is drawn into.
+  //
+  // The SVG is `width: 100%; height: 56px` in a column several hundred pixels
+  // wide, and the default preserveAspectRatio (xMidYMid meet) scales to
+  // whichever axis binds — with a 220-wide viewBox against a 56px height, that
+  // is the height, so it rendered at 1:1 and letterboxed the rest. The
+  // narrative's closing payoff, a child's arm circumference climbing out of the
+  // red, drew at roughly a third of its own width with 7px labels.
+  //
+  // Widening the viewBox fixes the ratio rather than stretching it with
+  // `preserveAspectRatio="none"`, which would horizontally distort the two WHO
+  // threshold labels drawn inside it.
+  const width = 560;
   const height = focused ? 96 : 56;
   const lo = 95;
   const hi = 135;

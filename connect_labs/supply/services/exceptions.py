@@ -148,6 +148,14 @@ def expiry_exceptions(as_of=None):
                 "tone": "warn",
                 "node_id": node.id,
                 "node_name": node.name,
+                # This row's node is the SOURCE of the move it advises, not the
+                # destination. Every other exception names a node that needs
+                # cartons; this one names a node holding more than it can use
+                # before they expire. The queue offered "Reallocate to Djibo" on
+                # the row saying Djibo has 25 weeks of cover — following the
+                # product's own advice would have moved stock INTO the node that
+                # already cannot consume what it has.
+                "reallocation_role": "source",
                 "children_at_risk": risk["children_equivalent"],
                 "by_date": risk["expires_on"],
                 "what": f"{risk['cartons_at_risk']:,} cartons at {node.name} expire before they can be used",
@@ -280,6 +288,9 @@ def build_queue(contracts=None, as_of=None):
     )
     answered = _answered_nodes()
     for row in rows:
+        # Everything that is not an expiry row names the node that NEEDS
+        # cartons, so a reallocation raised from it moves stock toward it.
+        row.setdefault("reallocation_role", "target")
         action = answered.get(row.get("node_id"))
         row["answered_by"] = (
             {

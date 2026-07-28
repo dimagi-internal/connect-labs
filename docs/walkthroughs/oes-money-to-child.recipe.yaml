@@ -91,8 +91,13 @@ scenes:
     note: Hauwa opens her own country view
   - kind: wait_for
     target: css:.data-table
+  - kind: scroll_to
+    target: css:.data-table
+    note: waiting for the table is not framing it. The consignment list IS the proof of
+      server-side scoping, and it sat entirely below the fold while half the frame was the
+      empty map panel.
   - kind: hold
-    seconds: 2.2
+    seconds: 2.6
     note: Nigeria only — the rest was never in the payload
   impressive_because: The first question a government counterpart asks about a shared dashboard is what
     else it can see, and "the browser hides it" is not an answer that survives contact.

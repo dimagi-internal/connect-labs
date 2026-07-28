@@ -81,9 +81,15 @@ function CommandTab({ ctx }) {
           {
             label: 'Delivered to date',
             value: formatNumber(deliveredCartons),
+            // Courses, not children — and it says which contracts it counts.
+            // "N children treated" over a carton count is the conflation the
+            // funder page's own card exists to attack, and this tile was a
+            // third number wearing that same label.
             hint: `${Math.round(
               (deliveredCartons * 150 * 92) / 1000000,
-            )} MT · ${formatNumber(deliveredCartons)} children treated`,
+            )} MT · ${formatNumber(
+              deliveredCartons,
+            )} courses, at contracted delivery points`,
           },
           { label: 'Active contracts', value: contracts.length },
         ]}
@@ -189,7 +195,9 @@ function CommandTab({ ctx }) {
                         setReallocatingFor(e);
                       }}
                     >
-                      Reallocate to {e.node_name}
+                      {e.reallocation_role === 'source'
+                        ? `Reallocate from ${e.node_name}`
+                        : `Reallocate to ${e.node_name}`}
                     </span>
                   ) : null}
                   {e.discrepancy_id &&
@@ -452,6 +460,7 @@ function CommandTab({ ctx }) {
           ctx={ctx}
           exception={reallocatingFor}
           surplus={world.surplus_nodes || []}
+          cover={world.cover || []}
           nodes={nodes}
           onClose={() => setReallocatingFor(null)}
         />
@@ -623,47 +632,84 @@ function ContractDetailModal({ contract, onClose }) {
    what it could spare without dropping below its own threshold — because a
    reallocation that solves one stockout by causing another is not a decision
    anybody would defend afterwards. */
-function ReallocateModal({ ctx, exception, surplus, onClose, nodes }) {
-  // Nearest usable surplus first, not largest. Ranking purely by what a node
-  // can spare offered a Burkina Faso hub as the default source for a Sudanese
-  // one — a correct answer to "who has the most" and an absurd answer to
-  // "where should this come from". A corridor within the same country moves in
-  // days; the same cartons across two borders do not arrive in time to matter.
+function ReallocateModal({ ctx, exception, surplus, cover, onClose, nodes }) {
+  // An expiry row names the node the cartons must leave, not the node they
+  // must reach — it is the one exception kind whose subject is holding TOO
+  // MUCH. Treating its node as the destination made the queue advise moving
+  // stock into the node that already cannot consume what it has, which is the
+  // opposite of the row's own sentence. So the fixed end of the move depends
+  // on which kind of row opened this.
+  const fixedIsSource = exception.reallocation_role === 'source';
+
+  // Nearest usable counterpart first, not largest. Ranking purely by size
+  // offered a Burkina Faso hub as the counterpart for a Sudanese one — a
+  // correct answer to "who has the most" and an absurd answer to "where should
+  // this come from". A corridor within the same country moves in days; the
+  // same cartons across two borders do not arrive in time to matter.
   const byId = {};
   (nodes || []).forEach((n) => {
     byId[n.id] = n;
   });
-  const targetCountry = (byId[exception.node_id] || {}).country;
-  const candidates = surplus
-    .filter((n) => n.node_id !== exception.node_id)
-    .map((n) => ({
-      ...n,
-      sameCountry:
-        !!targetCountry && (byId[n.node_id] || {}).country === targetCountry,
-    }))
-    .sort((a, b) =>
-      a.sameCountry === b.sameCountry
-        ? b.spare_cartons - a.spare_cartons
-        : a.sameCountry
-        ? -1
-        : 1,
-    );
-  const [sourceId, setSourceId] = useState(
-    candidates.length ? String(candidates[0].node_id) : '',
+  const fixedCountry = (byId[exception.node_id] || {}).country;
+  const near = (list) =>
+    list
+      .filter((n) => n.node_id !== exception.node_id)
+      .map((n) => ({
+        ...n,
+        sameCountry:
+          !!fixedCountry && (byId[n.node_id] || {}).country === fixedCountry,
+      }))
+      .sort((a, b) =>
+        a.sameCountry === b.sameCountry
+          ? (b.rank || 0) - (a.rank || 0)
+          : a.sameCountry
+          ? -1
+          : 1,
+      );
+
+  // Sources are nodes holding more than their own caseload can consume.
+  // Destinations are nodes running below plan — the row's advice is
+  // "reallocate the surplus to a node with cover below plan", so the picker
+  // has to be able to offer exactly those.
+  const sourceOptions = near(
+    surplus.map((n) => ({ ...n, rank: n.spare_cartons })),
   );
+  const destOptions = near(
+    (cover || [])
+      .filter((n) => (n.weeks_of_cover ?? 99) < 4)
+      .map((n) => ({
+        node_id: n.node_id,
+        node_name: n.node_name,
+        weeks_of_cover: n.weeks_of_cover,
+        rank: -(n.weeks_of_cover ?? 0),
+      })),
+  );
+
+  const spareAtFixed = (
+    surplus.find((n) => n.node_id === exception.node_id) || {}
+  ).spare_cartons;
+  const [counterpartId, setCounterpartId] = useState(() => {
+    const options = fixedIsSource ? destOptions : sourceOptions;
+    return options.length ? String(options[0].node_id) : '';
+  });
   const suggested = Math.max(exception.children_at_risk || 0, 0);
   const [quantity, setQuantity] = useState(String(suggested || 100));
   const [rationale, setRationale] = useState('');
 
-  const source = candidates.find((n) => String(n.node_id) === sourceId);
-  const overdrawn = source && Number(quantity) > source.spare_cartons;
+  const sourceId = fixedIsSource ? exception.node_id : Number(counterpartId);
+  const targetId = fixedIsSource ? Number(counterpartId) : exception.node_id;
+  const spare = fixedIsSource
+    ? spareAtFixed
+    : (sourceOptions.find((n) => String(n.node_id) === counterpartId) || {})
+        .spare_cartons;
+  const overdrawn = spare !== undefined && Number(quantity) > spare;
 
   const submit = async () => {
     const ok = await ctx.act(
       () =>
         supplyPost('/supply/api/actions/reallocate/', {
-          source_node_id: Number(sourceId),
-          target_node_id: exception.node_id,
+          source_node_id: sourceId,
+          target_node_id: targetId,
           quantity: Number(quantity),
           rationale,
           signal_id: exception.signal_id || null,
@@ -673,9 +719,19 @@ function ReallocateModal({ ctx, exception, surplus, onClose, nodes }) {
     if (ok) onClose();
   };
 
+  const options = fixedIsSource ? destOptions : sourceOptions;
+  const sourceName = fixedIsSource
+    ? exception.node_name
+    : (sourceOptions.find((n) => String(n.node_id) === counterpartId) || {})
+        .node_name;
+
   return (
     <Modal
-      title={`Reallocate to ${exception.node_name}`}
+      title={
+        fixedIsSource
+          ? `Reallocate from ${exception.node_name}`
+          : `Reallocate to ${exception.node_name}`
+      }
       onClose={onClose}
       footer={
         <React.Fragment>
@@ -688,7 +744,7 @@ function ReallocateModal({ ctx, exception, surplus, onClose, nodes }) {
             onClick={submit}
             disabled={
               ctx.busy ||
-              !sourceId ||
+              !counterpartId ||
               !rationale.trim() ||
               overdrawn ||
               Number(quantity) <= 0
@@ -700,20 +756,28 @@ function ReallocateModal({ ctx, exception, surplus, onClose, nodes }) {
       }
     >
       <p className="modal-lede">{exception.why}</p>
-      {candidates.length ? (
+      {options.length ? (
         <React.Fragment>
           <FormRow
-            label="Move from"
-            hint="Only nodes holding more than their own caseload can consume."
+            label={fixedIsSource ? 'Move to' : 'Move from'}
+            hint={
+              fixedIsSource
+                ? 'Only nodes running below four weeks of cover — the surplus should go where it will be used.'
+                : 'Only nodes holding more than their own caseload can consume.'
+            }
           >
             <select
-              value={sourceId}
-              onChange={(e) => setSourceId(e.target.value)}
+              value={counterpartId}
+              onChange={(e) => setCounterpartId(e.target.value)}
             >
-              {candidates.map((n) => (
+              {options.map((n) => (
                 <option key={n.node_id} value={n.node_id}>
-                  {n.node_name} — {formatNumber(n.spare_cartons)} cartons spare
-                  ({n.weeks_of_cover} wk cover)
+                  {n.node_name} —{' '}
+                  {fixedIsSource
+                    ? `${n.weeks_of_cover} wk cover`
+                    : `${formatNumber(n.spare_cartons)} cartons spare (${
+                        n.weeks_of_cover
+                      } wk cover)`}
                   {n.sameCountry ? ' · same corridor' : ' · cross-border'}
                 </option>
               ))}
@@ -722,12 +786,10 @@ function ReallocateModal({ ctx, exception, surplus, onClose, nodes }) {
           <FormRow
             label="Cartons"
             hint={
-              source
+              spare !== undefined
                 ? `${formatNumber(
-                    source.spare_cartons,
-                  )} can move without taking ${
-                    source.node_name
-                  } below six weeks.`
+                    spare,
+                  )} can move without taking ${sourceName} below six weeks.`
                 : ''
             }
           >
@@ -739,7 +801,7 @@ function ReallocateModal({ ctx, exception, surplus, onClose, nodes }) {
           </FormRow>
           {overdrawn ? (
             <div className="form-error">
-              That would take {source.node_name} below its own threshold.
+              That would take {sourceName} below its own threshold.
             </div>
           ) : null}
           <FormRow
@@ -755,8 +817,16 @@ function ReallocateModal({ ctx, exception, surplus, onClose, nodes }) {
         </React.Fragment>
       ) : (
         <EmptyState
-          title="No node is holding surplus."
-          hint="Nothing can be moved without causing a stockout somewhere else."
+          title={
+            fixedIsSource
+              ? 'No node is running below plan.'
+              : 'No node is holding surplus.'
+          }
+          hint={
+            fixedIsSource
+              ? 'There is nowhere the surplus would be used sooner than it expires here.'
+              : 'Nothing can be moved without causing a stockout somewhere else.'
+          }
         />
       )}
     </Modal>

@@ -976,3 +976,31 @@ def test_a_resolved_signal_closes_on_the_queue_rather_than_vanishing():
         == sum(r["children_at_risk"] or 0 for r in before.values() if not r["answered_by"] and not r["resolved_by"])
         - 87
     )
+
+
+def test_an_expiry_row_names_the_node_the_cartons_must_LEAVE():
+    """The one exception kind whose subject is holding too much, not too little.
+
+    Every other row names a node that needs cartons, so the queue's reallocate
+    control moved stock toward it. An expiry row names a node holding more than
+    it can consume before the batch expires — and the control sent cartons INTO
+    it, which is the opposite of the row's own advice and would deepen exactly
+    the problem the row exists to report.
+
+    This was unreachable until expiry risk could fire at all: every seeded lot
+    expired eighteen months out, so no expiry row was ever rendered and nothing
+    ever pressed the button.
+    """
+    from connect_labs.supply.services import exceptions
+
+    call_command("seed_supply_demo", "--reset")
+    rows = {r["kind"]: r for r in exceptions.build_queue()}
+
+    expiry = rows.get("Expiry risk")
+    assert expiry is not None, "the demo needs an expiry-risk row for this to be checkable"
+    assert expiry["reallocation_role"] == "source"
+    assert "surplus" in expiry["action"].lower()
+
+    for kind, row in rows.items():
+        if kind != "Expiry risk":
+            assert row["reallocation_role"] == "target", f"{kind} should pull cartons toward its node"

@@ -26,9 +26,19 @@ function GovTab({ ctx }) {
       );
     });
 
-  const delivered = shipments
-    .filter((s) => s.status === 'delivered' || s.status === 'confirmed')
-    .reduce((n, s) => n + s.quantity, 0);
+  // Read off the same rows as the coverage table further down this page, which
+  // counts a leg only where it CROSSES INTO a district.
+  //
+  // Summing every delivered leg touching the country counted a carton once per
+  // hop it made: this tile read 53,246 while the coverage table 800px below
+  // totalled 25,863 on the identical one-carton-one-course conversion — 2.06x
+  // apart, on one screen, in a demo whose thesis is that a number cannot mean
+  // two things. It also credited a warehouse-to-warehouse transfer at Kano as
+  // 20,000 children covered, and counted consignments still on the road.
+  const delivered = coverage.reduce(
+    (n, r) => n + (r.courses_delivered || 0),
+    0,
+  );
   const inbound = shipments.filter((s) => s.status === 'in_transit');
   const warehouses = nodes.filter(
     (n) => n.kind === 'warehouse' || n.kind === 'distribution_hub',
@@ -42,16 +52,16 @@ function GovTab({ ctx }) {
       <KeyFigures
         figures={[
           {
-            label: 'Cartons delivered',
+            label: 'Cartons delivered into districts',
             value: formatNumber(delivered),
             hint: `${Math.round(
               (delivered * 150 * 92) / 1000000,
-            )} MT of therapeutic food`,
+            )} MT · counted once, where each crossed a district boundary`,
           },
           {
-            label: 'Children treated',
+            label: 'Courses delivered',
             value: formatNumber(delivered),
-            hint: 'one carton ≈ one full course',
+            hint: 'one carton is one full course',
           },
           { label: 'Consignments inbound', value: inbound.length },
           {
@@ -213,10 +223,23 @@ function GovTab({ ctx }) {
             hint="Coverage cannot be reported without a denominator."
           />
         )}
+        {/* The window, stated. This note said "monthly SAM caseload" while the
+            denominator is the caseload summed over the response window — four
+            months — so the stated method was about 4x off in the one card whose
+            whole claim is that its method can be challenged. The window is
+            already on every row; it was simply never rendered. */}
         <p className="muted small method-note">
-          Coverage is courses delivered divided by the district's monthly SAM
-          caseload. Hover a district name for how its caseload was estimated.
-          All figures in this environment are synthetic.
+          Coverage is courses delivered divided by the district's SAM caseload
+          summed over the{' '}
+          {coverage[0] && coverage[0].window_months
+            ? `${
+                coverage[0].window_months
+              }-month response window from ${formatDate(
+                coverage[0].window_from,
+              )}`
+            : 'response window'}
+          , not against a single month. Hover a district name for how its
+          caseload was estimated. All figures in this environment are synthetic.
         </p>
       </Card>
     </Page>
