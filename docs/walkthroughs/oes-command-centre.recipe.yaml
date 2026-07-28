@@ -210,7 +210,10 @@ scenes:
   - kind: hold
     seconds: 1.6
   - kind: scroll_to
-    target: css:.exception-list
+    target: css:.exception:has-text('Komadugu')
+    note: the closed row itself, not the top of the list. Closing it sinks it to the BOTTOM
+      of a queue that ranks by what nobody has acted on, so scrolling to the container
+      framed the rows this scene is not about and left its own payoff below the fold.
   - kind: hold
     seconds: 3.2
     note: the signal is marked Closed with the actor, the effect and the recorded reason on the row,

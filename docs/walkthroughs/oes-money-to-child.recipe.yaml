@@ -16,8 +16,8 @@ scenes:
     summed into one completion number.
   role: overview
   url: /supply/
-  show: Dale's funder view — obligated, disbursed and delivered as three separate figures in the key row
-    and three separate bars per contract in the table, never summed into a single completion percentage.
+  show: Dale's funder view — obligated, disbursed and delivered as separate figures in the key row and
+    as their own bars per contract in the table, never summed into a single completion percentage.
   actions:
   - kind: wait_for
     target: css:.keyfigures
