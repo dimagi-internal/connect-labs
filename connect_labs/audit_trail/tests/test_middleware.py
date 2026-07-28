@@ -87,6 +87,7 @@ def test_buffered_events_keep_their_own_timestamps(rf, user):
     so a request making hundreds of sequential API calls recorded them all as one
     instant and intra-request ordering was lost.
     """
+
     def view(request):
         service.record(Action.READ, resource_type="first")
         service.record(Action.READ, resource_type="second")
