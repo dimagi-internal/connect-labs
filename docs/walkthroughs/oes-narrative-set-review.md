@@ -270,3 +270,97 @@ and the why-brief but not a recipe, and reports success, so a narrative authored
 elsewhere lands in a state where it cannot be rendered and nothing says so.
 
 Filed against canopy rather than fixed here.
+
+---
+
+# Addendum — 2026-07-28: what judging actually found
+
+The review above was written before any narrative had been judged. Two of the
+four now have been, and the findings are a different shape from the ones a
+reading produced. Recorded here because the *pattern* generalises to the two
+narratives still unrendered.
+
+## G. The recurring defect: a scene that narrates and does not demonstrate
+
+`ddd-arc-eval` ran for the first time (on `oes-supply-base`) and returned
+**fail, 2/5 on all five dimensions**. Its most valuable finding is invisible to
+every per-scene lens, because a per-scene judge sees one frame and cannot
+compare two:
+
+> Scenes 3 and 4 carry the demo's two most differentiating claims — a submission
+> snapshot frozen at the moment of submission, and a qualification decided per
+> category with an expiry — and **neither claim was on screen**. Both scenes'
+> action lists ended at a nav click.
+
+And, separately:
+
+> Scene 4 is scene 2 with a card **deleted**. Same route, same queue, same three
+> rows. It shows strictly less than the scene two before it, and its removal
+> would not be noticed.
+
+Both are the same underlying failure: **the recipe stopped at the surface that
+contains the thing, instead of opening the thing.** A nav click is enough to
+frame a claim and never enough to demonstrate one.
+
+This is worth checking in every recipe in the set before rendering it, because
+it is cheap to check by reading and expensive to find by judging.
+
+## H. `oes-command-centre` — blockers found by reading, before spending a render
+
+Verified against the seeded world on 2026-07-28. All four remain open.
+
+1. **The payoff scene does not perform its action.** Scene 8's narration is
+   "Ada reallocates: cartons from the Kassala warehouse … to El Fasher … a
+   consignment appears on the map with planned milestones … and the exception
+   resolves against the action that resolved it." Its recipe actions are a
+   scroll, a click that expands an exception row, and two holds. Nothing is
+   reallocated. This is the scene the whole narrative builds toward, and it is
+   currently scene 6 with a row expanded — the same defect as G above, in the
+   worst possible place.
+
+2. **Scene 8's `show` and its narration disagree about the destination.** The
+   `show` says "to the site that raised the shortfall" — that is Askira
+   Nutrition Centre, in Nigeria. The narration says El Fasher, in Sudan. Kassala
+   → El Fasher is coherent (one corridor); Kassala → Askira is not.
+
+3. **"Nine days" does not exist.** Scenes 1 and 3 both narrate a consignment
+   nine days late; scene 3 asserts it of the specific consignment on screen.
+   No leg is nine days late — the authored slip table tops out at six.
+   `narrated_numbers` will fail on this. *Suggested fix, which also strengthens
+   the arc:* make `SHP-2026-0202` (Khartoum → El Fasher, check-in tier) the
+   nine-day one. That single change ties scene 2 (the Sudan corridor arrives as
+   phone check-ins), scene 3 (nine days behind plan), and scene 8 (Kassala → El
+   Fasher, because El Fasher is short *because* that leg is late) into one
+   causal chain instead of three unrelated corridors.
+
+4. **Scene 5's coverage figures are not in the data.** The narration says "this
+   district is at ninety-one percent of need, this one at thirty-four."
+   Actual `coverage_by_district()` on the seeded world:
+
+   | district | IPC | coverage |
+   | --- | --- | --- |
+   | Séno, Yagha, Yobe, Southern Darfur, North Darfur, Kassala | 2–5 | **0%** |
+   | Borno | 5 | 51.2% |
+   | Somali | 4 | 67.6% |
+   | Soum | 5 | **145.8%** |
+
+   Neither 91 nor 34 appears, so `narrated_numbers` fails. Worse for the demo:
+   six of nine rows read 0%, which `data_fidelity` flags as an identical column
+   and which makes a coverage table a poor advertisement for coverage. The
+   scene's own `show` is stale too — it claims "Borno at 31% with 33,232
+   children uncovered" against an actual 51.2% / 23,557.
+
+   The fix is deliveries seeded into more districts, not a narration edit.
+
+5. **Two smaller ones.** Scene 5 hovers a `span[title]` to reveal the caseload's
+   method — a native browser tooltip, which does not render in a headless
+   screenshot, so the beat captures nothing. Scene 4 has no actions at all
+   beyond a hold, and sits on the same frame as scene 3.
+
+## I. Known environment limitation
+
+The network map renders as an empty white panel in every local render: this
+environment has no `MAPBOX_TOKEN`. The arc judge routed it PRODUCT and it is the
+run's only non-tabular surface, so it costs `visual_variety` in every narrative
+that shows the command centre. It is a config gap, not a build defect, and it
+cannot be fixed from inside a recipe.
