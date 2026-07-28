@@ -364,3 +364,57 @@ environment has no `MAPBOX_TOKEN`. The arc judge routed it PRODUCT and it is the
 run's only non-tabular surface, so it costs `visual_variety` in every narrative
 that shows the command centre. It is a config gap, not a build defect, and it
 cannot be fixed from inside a recipe.
+
+## J. `oes-money-to-child` — read the same way, before rendering
+
+Same exercise, same date. Two findings, one of which is shared with
+`oes-command-centre` and is the single highest-leverage fix left in the set.
+
+1. **Scene 6 narrates a drill it never performs.** "Dale can follow a single
+   delivered batch through the distributions it fed to one child's arm
+   circumference over time" — the actions are two scrolls and two holds. The
+   drill-in modal exists (the partner narrative opens it); this scene just never
+   clicks. Finding G again.
+
+2. **Scene 5 narrates the same coverage figures as `oes-command-centre` scene 5,
+   and they are absent from the data in exactly the same way.** Both say
+   "ninety-one percent" and "thirty-four". `narrated_numbers` will fail on both.
+
+### The coverage seed, specified
+
+The narration is unusually precise, which means the target state can be derived
+rather than guessed. `oes-money-to-child` scene 5:
+
+> "this district is covered to ninety-one percent of need and this one — **which
+> received more cartons** — sits at thirty-four, with thirty-one thousand
+> children still uncovered."
+
+Solve it against the seeded caseloads and it lands on two specific districts:
+
+| district | caseload | target coverage | courses delivered | uncovered |
+| --- | ---: | ---: | ---: | ---: |
+| **Borno** | 48,232 | **34%** | ~16,399 | **~31,833** ✓ "thirty-one thousand" |
+| **Kassala** | 7,020 | **91%** | ~6,388 | ~632 |
+
+That pairing satisfies the hard part of the sentence — Borno receives **more
+cartons** (16,399 vs 6,388) and still sits far lower, because its caseload is
+seven times larger. That contrast *is* the scene's whole argument, and it is
+currently unavailable at any pair of districts in the seeded world.
+
+Current state, for comparison — six of nine districts at 0%, one above 100%:
+
+| district | IPC | coverage |
+| --- | --- | --- |
+| Séno, Yagha, Yobe, S. Darfur, N. Darfur, Kassala | 2–5 | 0% |
+| Borno | 5 | 51.2% |
+| Somali | 4 | 67.6% |
+| Soum | 5 | 145.8% |
+
+So the work is: deliver into Kassala (currently nothing lands there), reduce
+Borno's delivered volume to ~16,399, and give the remaining districts a
+non-degenerate spread. Delivered volume is derived from the append-only event
+log via `services/coverage.py`, so this is seeding shipments and receipts — not
+writing a coverage number. Two knock-on checks: the command-centre "Pipeline by
+corridor" gap column and `test_the_demo_world_*` in `tests/test_demand.py`.
+
+One fix, and both remaining narratives get a scene 5 that is true.

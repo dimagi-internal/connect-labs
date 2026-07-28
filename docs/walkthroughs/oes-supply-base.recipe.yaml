@@ -83,8 +83,8 @@ scenes:
     can be qualified for RUTF and declined for therapeutic milk.
   url: /supply/dev-login/?persona=tomas
   show: 'Tomas''s review queue with Savanna''s submission opened — the frozen snapshot he is assessing,
-    and the per-category decision made on camera: qualify on ready-to-use therapeutic food, decline on
-    therapeutic milk, one supplier and two different answers.'
+    and the per-category decision made on camera: qualify on ready-to-use therapeutic food with the date
+    that qualification expires, decline on therapeutic milk — one supplier and two different answers.'
   actions:
   - kind: wait_for
     target: css:.page
@@ -111,16 +111,9 @@ scenes:
     target: css:.modal .decision-row:has-text('Therapeutic milk') button:has-text('Reject')
     note: declined where the evidence is thin — no plant, no approval
   - kind: hold
-    seconds: 1.6
-    note: two different answers for one supplier
-  - kind: click
-    target: css:.modal button:has-text('Record decision')
-    note: the pass stamps a qualification onto the organisation
-  - kind: wait_for
-    target: css:.toast
-  - kind: hold
-    seconds: 2.2
-    note: recorded — Savanna leaves the queue carrying RUTF and not therapeutic milk
+    seconds: 3.2
+    note: two different answers for one supplier, and the date the pass expires beside the one that carries
+      it
   impressive_because: One supplier, two different answers per category — which is how this actually works.
     And a roster that never expires quietly becomes a list of former suppliers.
   ai_quality: Per-category decisions are independent; the expiry is a real date, not a label.
@@ -147,26 +140,20 @@ scenes:
   concept_claim: Eligibility is enforced when the payload is built, so an unqualified supplier never receives
     the solicitation rather than seeing it with a hidden button.
   url: /supply/
-  show: 'Ada''s solicitation, opened to its lots: sixty thousand cartons of RUTF into Maiduguri due 15
-    September, twenty thousand into Djibo, thirty-five thousand into Damaturu — the concrete quantities
-    the narration speaks, on the page of the person who published them.'
+  show: 'Ada''s solicitations list, where every call carries its lots on the row: sixty thousand cartons
+    of RUTF into Maiduguri, twenty thousand into Djibo, thirty-five thousand into Damaturu — the concrete
+    quantities the narration speaks, on the page of the person who published them, and the categories
+    that decide which suppliers ever receive it.'
   actions:
   - kind: click
     target: css:.navitem:has-text('Solicitations')
   - kind: wait_for
     target: css:.data-table
-  - kind: hold
-    seconds: 1.6
-  - kind: click
-    target: css:tr:has-text('RUTF Northeast Nigeria Q3 2026') button:has-text('Compare bids')
-    note: open the call so the spoken quantities and the delivery date are on screen
-  - kind: wait_for
-    target: css:.modal
   - kind: scroll_to
-    target: css:.modal .card:has-text('60,000 cartons RUTF delivered to Maiduguri')
+    target: css:tr:has-text('RUTF Northeast Nigeria Q3 2026')
   - kind: hold
-    seconds: 3.0
-    note: 60,000 cartons to Maiduguri, due 15 September — spoken and readable, on Ada's screen
+    seconds: 3.4
+    note: the lots are on the row — 60,000 to Maiduguri, spoken and readable without opening anything
   impressive_because: 'Eligibility is decided on the server: an unqualified supplier''s page never receives
     the solicitation at all, rather than being shown it with the button hidden. It prevents the ordinary
     embarrassment of an ineligible bid excluded by hand after the fact.'
