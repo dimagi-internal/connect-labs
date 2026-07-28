@@ -230,19 +230,26 @@ def _seed_live_rfp(rng, orgs, staff):
         defaults={
             "brief": (
                 "Supply of ready-to-use therapeutic food and inland transport for the "
-                "north-east Nigeria response, delivered to Maiduguri and Damaturu ahead of "
-                "the lean season."
+                "north-east Nigeria and Burkinabé Sahel response, delivered to Maiduguri, "
+                "Djibo and Damaturu ahead of the lean season. Bid lot by lot — OES "
+                "intends to award corridors separately."
             ),
             "categories": ["rutf", "transport"],
-            "countries": ["NG"],
+            "countries": ["NG", "BF"],
             "bid_deadline": TODAY + timedelta(days=12),
             "status": RFP.Status.PUBLISHED,
             "created_by": staff[StaffRole.Role.PROCUREMENT_ADMIN],
         },
     )
 
+    # Four lots across TWO corridors. The Djibo lot exists so the live tender
+    # can carry the beat the narrative actually describes — Ada awarding
+    # Maiduguri to one supplier and Djibo to another, on camera, rather than
+    # showing a split that happened off screen. A tender confined to one
+    # country cannot demonstrate splitting corridor risk.
     lots_spec = [
         ("rutf", "60,000 cartons RUTF delivered to Maiduguri", 60000, "cartons", "NG", "Maiduguri", 75),
+        ("rutf", "20,000 cartons RUTF delivered to Djibo", 20000, "cartons", "BF", "Djibo", 80),
         ("rutf", "35,000 cartons RUTF delivered to Damaturu", 35000, "cartons", "NG", "Damaturu", 90),
         ("transport", "Kano–Maiduguri haulage, 6 months", 6, "truck-months", "NG", "Maiduguri", 60),
     ]

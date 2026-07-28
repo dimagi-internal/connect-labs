@@ -78,7 +78,9 @@ def test_seed_world_shape():
     # a live solicitation mid-flight, and one fully awarded
     live = RFP.objects.get(title="RUTF Northeast Nigeria Q3 2026")
     assert live.status == RFP.Status.PUBLISHED
-    assert live.lots.count() == 3
+    # 4 lots across two corridors — the Djibo lot is what lets the live tender
+    # demonstrate awarding corridors separately rather than showing a past split.
+    assert live.lots.count() == 4
     assert all(lot.lot_bids.count() >= 3 for lot in live.lots.all())
 
     awarded = RFP.objects.get(title="RUTF Ethiopia Q2 2026")
