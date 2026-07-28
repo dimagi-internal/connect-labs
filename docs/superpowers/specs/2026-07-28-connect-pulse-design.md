@@ -13,7 +13,8 @@ Three delivery modes off one build:
 
 - **Kiosk** — always-on wall display, auto-cycling, nobody driving it.
 - **Presenter** — you open it in a meeting and steer it.
-- **Link** — a URL a funder opens alone, at any hour, with no narration.
+- **Link** — a public, unauthenticated URL a funder opens alone, at any hour, with no
+  narration. See [Public access](#public-access).
 
 Connect prod has no push feed. "Live" is achieved by polling the export API on an
 `id` cursor and streaming the results to open viewers, plus a labelled replay mode
@@ -199,7 +200,9 @@ Learned from prototype defects; these are requirements, not style notes.
 5. **No prose numbers.** Any figure in copy must be read from the same data the chart
    draws. The prototype briefly claimed "$0.39" beside a chart showing $0.41.
 6. **Never plot below town scale.** Household GPS is real. Zoom is capped; the ambient
-   layer is quantised to ~110m.
+   layer is quantised to ~110m. This matters more given the link mode is public.
+7. **Org and programme names render through one helper.** So the public-link
+   anonymisation option stays a one-line change if a partner ever objects.
 
 ## Testing
 
@@ -223,9 +226,28 @@ Sequenced so there is something judgeable on screen before the long tail of card
 6. Mission control + financial view.
 7. Iterate cards and layouts.
 
-## Open questions
+## Public access
 
-- Public link auth: unauthenticated token URL, or Dimagi SSO? Affects whether a funder
-  can open it cold.
-- Does "programmes" (108) or "opportunities" (494) read better to a funder as the unit
-  of scale?
+**Decided: the link mode is unauthenticated**, so a funder can open it cold with no
+login.
+
+- URL carries an unguessable token: `/labs/pulse/p/<token>/`. Tokens are revocable and
+  individually scoped, so a link handed to one funder can be killed without affecting
+  others.
+- Labs already serves `Disallow: /`; the public view additionally sets `noindex`.
+- Read-only. No Connect credentials reachable from it, no drill-through to raw records.
+
+**Recorded consideration.** The PII strip protects beneficiaries and workers, but a
+public link still exposes *partner* information: org and programme names (Solina, EHA
+Clinics, CWINS, ZEGCAWIS…) alongside their delivery volumes and per-service payment
+rates. That is partner commercial information, not personal data. Flagged and accepted
+2026-07-28. If a partner objects later, the cheap mitigation is a per-token display
+option that replaces org names with descriptors ("a partner in northern Nigeria") —
+worth building the name rendering behind a single helper so that switch stays a
+one-line change.
+
+## Scale unit
+
+**Decided: lead with opportunities (494), not programmes (108).** Both are true;
+"opportunities" reads as the count of distinct delivery efforts and is the larger,
+more concrete number. Programmes remain on screen as secondary context.
