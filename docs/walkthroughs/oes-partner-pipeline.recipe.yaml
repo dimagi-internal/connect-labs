@@ -93,8 +93,19 @@ scenes:
   - kind: scroll_to
     target: css:.card:has-text('Short counts you have raised')
   - kind: hold
-    seconds: 2.6
+    seconds: 2.0
     note: 900 advised, 840 counted, 60 children short — counted beside the pallets
+  - kind: scroll_to
+    target: css:.card:has-text('Arriving at your sites')
+  - kind: click
+    target: css:tr:has-text('SHP-2026-0909') button:has-text('Record the count')
+    note: open the consignment the count was taken against
+  - kind: wait_for
+    target: css:.modal
+  - kind: hold
+    seconds: 2.8
+    note: the milestone rail — planned, estimated and actual kept apart — and the receipt
+      that was keyed against this consignment
   impressive_because: A shortfall asserted from a capital city is a dispute. The same shortfall recorded
     at the loading bay against the despatch advice is evidence — and it is labelled hand-keyed, because
     it was.
@@ -108,6 +119,10 @@ scenes:
     cartons short and the date it is needed by — and it lands in the OES command centre ranked by the
     children behind it.
   actions:
+  - kind: click
+    target: css:.modal-close
+    note: close the consignment — scene 4 ends with it open, and its backdrop otherwise
+      intercepts the nav for the rest of the run
   - kind: click
     target: css:.navitem:has-text('Sites & distributions')
     note: back to the partner surface — scene 4 left the SPA on another tab

@@ -102,6 +102,12 @@ INBOUND_SITES = ["Biu Nutrition Centre", "Askira Nutrition Centre"]
 # The site whose consignment arrives short, and by how much. Monguno and the
 # 900/840 split are what the partner narrative's receipt scene actually says.
 SHORT_RECEIPT_SITE = "Monguno Nutrition Centre"
+
+# Last-mile legs that leave the hub with a despatch advice rather than a phone
+# check-in. Without any, every row on the partner's receiving surface reads
+# "Entered by hand" and the badge stops meaning anything — the narration's whole
+# point is that hand-keyed data SAYS so, which needs something that does not.
+ADVISED_PARTNER_LEGS = {3, 4, 10}
 SHORT_RECEIPT_DESPATCHED = 900
 SHORT_RECEIPT_RECEIVED = 840
 
@@ -163,6 +169,12 @@ def seed_partner_stock(rng, nodes, sites):
         reference = f"SHP-2026-09{index:02d}"
         departed = now - timedelta(days=9 + index)
         arrived = departed + timedelta(days=2)
+        # Not every last-mile leg arrives the same way, and the narration's
+        # point about hand-keyed data only lands against something that is not.
+        # The three largest runs leave the hub with a despatch advice; the
+        # remote sites are a driver's phone call, which is the honest tier for
+        # a Borno feeding site and the one serving the worst access.
+        by_advice = index in ADVISED_PARTNER_LEGS
         shipment, _ = Shipment.objects.update_or_create(
             reference=reference,
             defaults={
@@ -173,6 +185,7 @@ def seed_partner_stock(rng, nodes, sites):
                 "unit": "cartons",
                 "departed_at": departed,
                 "eta": arrived,
+                "asn_reference": f"ASN-{reference[-8:]}" if by_advice else "",
             },
         )
         ShipmentLine.objects.update_or_create(
@@ -221,7 +234,7 @@ def seed_partner_stock(rng, nodes, sites):
                         "uom": "cartons",
                     }
                 ],
-                "source_tier": SupplyEvent.SourceTier.CHECKIN,
+                "source_tier": (SupplyEvent.SourceTier.ASN if by_advice else SupplyEvent.SourceTier.CHECKIN),
             },
         )
         Shipment.objects.filter(pk=shipment.pk).update(status=Shipment.Status.DELIVERED, delivered_at=arrived)
