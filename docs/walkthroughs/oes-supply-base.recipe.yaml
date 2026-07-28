@@ -1,0 +1,180 @@
+auth:
+  type: url
+  url: /supply/dev-login/?persona=ada
+base_url: http://localhost:8009
+narrative_locked: true
+review_mode: autonomous
+why_brief: oes-supply-base.why_brief.yaml
+tagline: Turn a folder of emailed PDFs into a supply base you can query
+setup:
+  command: python manage.py seed_supply_demo --reset
+  rerun: per_render
+  timeout_seconds: 600
+scenes:
+- id: the-supply-base-before-the-emergency
+  concept_claim: A standing supplier registry answers 'who can supply RUTF to north-east Nigeria today'
+    from one screen, without opening a folder of emailed PDFs.
+  role: overview
+  url: /supply/
+  show: Ada's console at /supply/ — registry coverage by category, the applications awaiting review, and
+    the live solicitations. The question "who is qualified to supply RUTF to north-east Nigeria today"
+    is answerable here in one look.
+  actions:
+  - kind: wait_for
+    target: css:.key-figures
+  - kind: hold
+    seconds: 2.0
+  impressive_because: Two stages — expression of interest into a registry, then tenders drawn from it
+    — is how UNICEF and WFP actually buy this commodity, and it exists because tendering from cold takes
+    longer than a famine gives you.
+  ai_quality: Counts are derived from the seeded registry rather than typed; categories match the declared
+    round.
+- id: ada-opens-a-round-and-names-the-categories
+  concept_claim: Declaring the categories up front makes every application arrive in the same comparable
+    shape rather than as free-form attachments.
+  url: /supply/
+  show: The EOI rounds tab — the open round with its declared categories (RUTF, therapeutic milk, road
+    transport, warehousing) and its open and close dates.
+  actions:
+  - kind: click
+    target: css:.navitem:has-text('EOI rounds')
+  - kind: wait_for
+    target: css:.data-table
+  - kind: hold
+    seconds: 2.0
+  impressive_because: Because the categories are declared up front, every application arrives in the same
+    shape — the difference between a roster you can compare and a folder you have to read.
+  ai_quality: The round's lifecycle state is real; categories are the ones submissions are actually filed
+    against.
+- id: amina-applies-and-the-profile-is-frozen
+  concept_claim: The profile a supplier is judged on is frozen at submission, so a later edit to their
+    live paperwork cannot change what the reviewer assessed.
+  url: /supply/dev-login/?persona=amina
+  show: Amina's side at Savanna Nutrients — the expression of interest she submitted, with the profile
+    snapshot frozen onto it at the moment of submission, shown beside the live profile that has moved
+    on since.
+  actions:
+  - kind: wait_for
+    target: css:.page
+  - kind: click
+    target: css:.navitem:has-text('Expressions of interest')
+  - kind: hold
+    seconds: 2.4
+  impressive_because: If Savanna updates a certificate next week the live profile changes and the snapshot
+    does not, so the decision stays reconstructable a year from now. That is the property an inspector
+    general asks about first.
+  ai_quality: The snapshot is visibly distinct from the live profile rather than a second render of the
+    same data.
+- id: tomas-qualifies-the-supplier-per-category-and-with-an-expiry
+  concept_claim: A reviewer decides per category and each pass carries an expiry date, so one supplier
+    can be qualified for RUTF and declined for therapeutic milk.
+  url: /supply/dev-login/?persona=tomas
+  show: Tomas's review queue — one submission opened, decided per category, with the resulting qualification
+    carrying a granted date and an expiry.
+  actions:
+  - kind: wait_for
+    target: css:.page
+  - kind: click
+    target: css:.navitem:has-text('EOI rounds')
+  - kind: hold
+    seconds: 2.2
+  impressive_because: One supplier, two different answers per category — which is how this actually works.
+    And a roster that never expires quietly becomes a list of former suppliers.
+  ai_quality: Per-category decisions are independent; the expiry is a real date, not a label.
+- id: the-registry-answers-who-can-supply-today
+  concept_claim: The registry IS the set of live qualifications, so a lapsed certification removes a supplier
+    without anyone maintaining a list.
+  url: /supply/dev-login/?persona=ada&next=/supply/
+  show: The Supplier registry tab — organisations listed by live qualification, with category, country
+    and expiry filters, and the expiring-soon count called out.
+  actions:
+  - kind: wait_for
+    target: css:.page
+  - kind: click
+    target: css:.navitem:has-text('Supplier registry')
+  - kind: wait_for
+    target: css:.data-table
+  - kind: hold
+    seconds: 2.4
+  impressive_because: The registry is not a list somebody maintains — it is the set of live qualifications,
+    so it is current by construction. A lapsed certification drops a supplier out without anyone remembering
+    to remove them.
+  ai_quality: Expired qualifications are genuinely absent rather than greyed out.
+- id: a-solicitation-reaches-only-qualified-suppliers
+  concept_claim: Eligibility is enforced when the payload is built, so an unqualified supplier never receives
+    the solicitation rather than seeing it with a hidden button.
+  url: /supply/
+  show: The Solicitations tab with the live RUTF Northeast Nigeria Q3 2026 call and its three lots — visible
+    to a supplier only while they hold a live qualification in a matching category.
+  actions:
+  - kind: click
+    target: css:.navitem:has-text('Solicitations')
+  - kind: wait_for
+    target: css:.data-table
+  - kind: hold
+    seconds: 2.2
+  impressive_because: 'Eligibility is decided on the server: an unqualified supplier''s page never receives
+    the solicitation at all, rather than being shown it with the button hidden. It prevents the ordinary
+    embarrassment of an ineligible bid excluded by hand after the fact.'
+  ai_quality: Lot quantities and delivery places are concrete; the eligibility rule is enforced in the
+    payload, not the styling.
+- id: bids-priced-and-scored-lot-by-lot
+  concept_claim: Pricing per lot surfaces a different leader on each corridor — information a per-tender
+    comparison cannot show.
+  url: /supply/
+  show: 'The split tender — RUTF Sahel and Lake Chad Corridors Q3 2026 — opened to its per-lot comparison:
+    rows ranked by unit price with each reviewer''s technical score inline, and a different leader on
+    the Maiduguri lot than on Djibo.'
+  actions:
+  - kind: click
+    target: css:.navitem:has-text('Solicitations')
+  - kind: click
+    target: css:tr:has-text('RUTF Sahel and Lake Chad Corridors Q3 2026')
+  - kind: wait_for
+    target: css:.data-table
+  - kind: hold
+    seconds: 2.8
+    note: two lots, two different price leaders
+  impressive_because: The leader on the Maiduguri lot is not the leader on Djibo, which is exactly the
+    information a per-tender comparison would have hidden.
+  ai_quality: Two distinct price leaders are actually visible in the data, not asserted in a caption.
+- id: two-suppliers-two-corridors-one-tender
+  concept_claim: One solicitation's lots can be awarded to two different suppliers, so a single plant
+    or corridor failing does not take every district down at once.
+  url: /supply/
+  show: The same solicitation showing both lots awarded — Maiduguri to one supplier, Djibo to another,
+    on purpose.
+  actions:
+  - kind: click
+    target: css:tr:has-text('60,000 cartons RUTF delivered to Maiduguri')
+    note: open the Maiduguri lot and its award
+  - kind: hold
+    seconds: 2.0
+  - kind: click
+    target: css:tr:has-text('20,000 cartons RUTF delivered to Djibo')
+    note: and the Djibo lot — a different winner
+  - kind: hold
+    seconds: 2.4
+    note: two corridors, two suppliers, one tender
+  impressive_because: 'Concentrating a four-country response on the cheapest single bidder is the classic
+    humanitarian supply failure: when that plant or that corridor goes down, every district goes down
+    at the same moment. Splitting costs a little more per carton and buys the thing money cannot buy later.'
+  ai_quality: Two different awarded organisations across one solicitation's lots.
+- id: the-award-becomes-the-contract
+  concept_claim: The award is immutable and the contract carries it out against a named appropriation,
+    so the same record the tender produced is what the supply chain moves against.
+  url: /supply/
+  show: The contract created from the award — drawing against a named appropriation, carrying the IATI
+    activity identifier and the delivery schedule the supply chain will now move against.
+  actions:
+  - kind: click
+    target: css:.navitem:has-text('Command centre')
+  - kind: scroll_to
+    target: text:Pipeline by corridor
+  - kind: hold
+    seconds: 2.2
+  impressive_because: 'Almost every procurement system stops at the award, which is why nobody can trace
+    a dollar to a carton. This is the midpoint: from here the same record is what the supply chain moves
+    against.'
+  ai_quality: The contract links to a real appropriation and a real award, and disbursed never exceeds
+    obligated.
