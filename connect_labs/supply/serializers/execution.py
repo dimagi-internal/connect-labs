@@ -131,6 +131,20 @@ def contract_dict(contract, include_shipments=False):
         "status": contract.status,
         "iati_activity_id": contract.iati_activity_id,
         "appropriation_id": contract.appropriation_id,
+        # The funding envelope this contract draws against, nested rather than
+        # left as a bare id. "Which money is this?" is the first question asked
+        # of any award, and answering it should not require a second request or
+        # a payload only the funder role receives.
+        "appropriation": (
+            {
+                "funder_name": contract.appropriation.funder_name,
+                "title": contract.appropriation.title,
+                "fiscal_year": contract.appropriation.fiscal_year,
+                "iati_activity_id": contract.appropriation.iati_activity_id,
+            }
+            if contract.appropriation_id
+            else None
+        ),
         "obligated_value": float(contract.obligated_value),
         "disbursed_value": float(contract.disbursed_value),
         "shipped_quantity": float(contract.shipped_quantity),

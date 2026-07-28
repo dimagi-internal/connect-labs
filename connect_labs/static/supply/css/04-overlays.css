@@ -222,3 +222,25 @@ textarea:disabled {
   cursor: not-allowed;
   border-style: dashed;
 }
+
+/* ---------- key/value grid ---------- */
+
+/* Facts about one record, inside its detail modal: label above value, wrapping
+   into as many columns as fit. A two-column DataTable would say the same thing
+   in a shape that reads as data to be scanned; these are attributes of a single
+   thing, and the difference matters on a screen that already carries a table
+   below it. */
+.kv-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px 20px;
+}
+.kv-grid > div {
+  min-width: 0;
+}
+.kv-grid .muted.small {
+  display: block;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 2px;
+}

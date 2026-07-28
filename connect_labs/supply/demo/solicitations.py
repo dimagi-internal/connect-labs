@@ -196,20 +196,29 @@ def _seed_open_round(rng, orgs):
     )
 
     names = list(orgs.keys())
-    # 2 drafts, 3 awaiting review, 1 qualified, 1 rejected — every status on screen.
+    # 2 drafts, 4 awaiting review, 1 qualified, 1 rejected — every status on screen.
+    #
+    # Savanna heads the queue and applies for TWO categories, which is what lets
+    # the fourth scene of oes-supply-base happen at all: Tomas deciding per
+    # category on camera, qualifying the ready-to-use therapeutic food and
+    # declining the therapeutic milk, where Savanna has no plant and the
+    # evidence is thin. One supplier, two different answers is the whole claim,
+    # and a submission that only ever asked for one thing cannot carry it.
+    # (winner org, status, categories — None means the org's own categories)
     plan = [
-        (names[14], EOISubmission.Status.DRAFT),
-        (names[15], EOISubmission.Status.DRAFT),
-        (names[1], EOISubmission.Status.SUBMITTED),
-        (names[6], EOISubmission.Status.SUBMITTED),
-        (names[11], EOISubmission.Status.SUBMITTED),
-        (names[3], EOISubmission.Status.QUALIFIED),
-        (names[12], EOISubmission.Status.REJECTED),
+        (names[0], EOISubmission.Status.SUBMITTED, ["rutf", "therapeutic_milk"]),
+        (names[14], EOISubmission.Status.DRAFT, None),
+        (names[15], EOISubmission.Status.DRAFT, None),
+        (names[1], EOISubmission.Status.SUBMITTED, None),
+        (names[6], EOISubmission.Status.SUBMITTED, None),
+        (names[11], EOISubmission.Status.SUBMITTED, None),
+        (names[3], EOISubmission.Status.QUALIFIED, None),
+        (names[12], EOISubmission.Status.REJECTED, None),
     ]
 
-    for name, status in plan:
+    for name, status, category_override in plan:
         org = orgs[name]
-        categories = org.categories_hint
+        categories = category_override or org.categories_hint
         submitted_at = (
             None if status == EOISubmission.Status.DRAFT else timezone.now() - timedelta(days=rng.randint(2, 16))
         )
@@ -238,6 +247,33 @@ def _seed_open_round(rng, orgs):
                     else "Insufficient certification evidence for this round."
                 ),
             )
+
+    _diverge_live_profile_from_its_snapshots(orgs)
+
+
+def _diverge_live_profile_from_its_snapshots(orgs):
+    """Renew a certificate AFTER the applications that froze a copy of it.
+
+    The frozen snapshot is the property the narrative claims an inspector
+    general asks about first, and on a world where nothing has changed since
+    submission it is unfalsifiable: a reader cannot tell a frozen copy from a
+    second render of the live record. So the demo world contains one supplier
+    whose live profile has genuinely moved on — Savanna renewed its UNICEF RUTF
+    approval after applying — and the two columns visibly disagree.
+
+    Runs LAST, after every snapshot in both rounds is taken, so it is the live
+    row that moves and the frozen ones that do not. That ordering is the whole
+    point and is why this is a function rather than four lines up there.
+    """
+    savanna = orgs.get("Savanna Nutrients Ltd")
+    if savanna is None:
+        return
+    cert = savanna.certifications.filter(cert_type="UNICEF RUTF approval").first()
+    if cert is None:
+        return
+    cert.expiry_date = TODAY + timedelta(days=730)
+    cert.issuer = "UNICEF Supply Division (renewed)"
+    cert.save(update_fields=["expiry_date", "issuer"])
 
 
 def _seed_corridor_awards(orgs, staff):
