@@ -98,6 +98,34 @@ OPEN_ROUND = "OES Supply Base 2026-B"
 LIVE_RFP = "RUTF Northeast Nigeria Q3 2026"
 AWARDED_RFP = "RUTF Ethiopia Q2 2026"
 
+# The deliberately split tender. Two lots on two corridors, awarded to two
+# different suppliers on purpose — the decision the lot structure exists to
+# make possible. Concentrating a four-country response on the cheapest single
+# bidder is the classic humanitarian supply failure: when that plant or that
+# corridor goes down, every district goes down at the same moment. The split
+# has to be visible in the seeded world rather than asserted in a caption.
+SPLIT_AWARD_RFP = "RUTF Sahel and Lake Chad Corridors Q3 2026"
+
+# lot description, category, quantity, delivery country, delivery place, winner
+SPLIT_AWARD_LOTS = [
+    (
+        "60,000 cartons RUTF delivered to Maiduguri",
+        "rutf",
+        60000,
+        "NG",
+        "Maiduguri",
+        "Savanna Nutrients Ltd",
+    ),
+    (
+        "20,000 cartons RUTF delivered to Djibo",
+        "rutf",
+        20000,
+        "BF",
+        "Djibo",
+        "Faso NutriWorks SA",
+    ),
+]
+
 # Additional fully-awarded solicitations, one per corridor, so post-award
 # execution has a contract per country rather than everything hanging off one.
 # (winner org, RFP title, brief, country, lot description, cartons, unit price)

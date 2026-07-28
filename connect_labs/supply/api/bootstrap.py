@@ -7,22 +7,42 @@ from django.db import models
 from django.http import JsonResponse
 
 from ..decorators import current_actor
-from ..models import RFP, Appropriation, Bid, Contract, Discrepancy, EOIRound, EOISubmission, SupplyNode
+from ..models import (
+    RFP,
+    Appropriation,
+    Bid,
+    CaseloadEstimate,
+    Contract,
+    Discrepancy,
+    DistributionPlan,
+    DistributionRecord,
+    EOIRound,
+    EOISubmission,
+    Shipment,
+    ShortfallSignal,
+    SupplyAction,
+    SupplyNode,
+)
 from ..rbac import ROLE_PERMS
 from ..serializers import (
     api_token_dict,
     appropriation_dict,
     bid_dict,
+    caseload_dict,
     contract_dict,
     discrepancy_dict,
+    distribution_plan_dict,
+    distribution_record_dict,
     node_dict,
     org_dict,
     qualification_dict,
     rfp_dict,
     round_dict,
+    shortfall_signal_dict,
     submission_dict,
+    supply_action_dict,
 )
-from ..services import eoi_actions, rfp_actions
+from ..services import cover, coverage, eoi_actions, exceptions, rfp_actions
 
 
 def _supplier_world(actor):
@@ -60,9 +80,82 @@ def _supplier_world(actor):
     }
 
 
+def _inbound_cartons(site, on_or_before):
+    """Cartons on the road to ``site`` that could land by a given date."""
+    total = Shipment.objects.filter(
+        destination=site,
+        unit="cartons",
+        status__in=[Shipment.Status.PLANNED, Shipment.Status.IN_TRANSIT],
+    )
+    return float(sum(float(s.quantity) for s in total))
+
+
+def _partner_world(actor):
+    """Komadugu's view: their own sites, their own calendar, their own children.
+
+    Scoped on the server exactly the way the government observer's country
+    filter is. Another partner's sites are absent from the payload rather than
+    hidden in the browser — the property that survives being asked "what else
+    can this page see?".
+    """
+    org = actor.org
+    sites = SupplyNode.objects.filter(owner=org).order_by("name")
+    site_ids = list(sites.values_list("id", flat=True))
+
+    plans = (
+        DistributionPlan.objects.filter(org=org, site_id__in=site_ids)
+        .select_related("site")
+        .order_by("scheduled_for", "site__name")
+    )
+    plan_rows = []
+    for plan in plans:
+        plan_rows.append(
+            distribution_plan_dict(
+                plan,
+                inbound_cartons=_inbound_cartons(plan.site, plan.scheduled_for),
+                on_hand=cover.stock_on_hand(plan.site),
+            )
+        )
+
+    contracts = (
+        Contract.objects.filter(shipments__destination_id__in=site_ids)
+        .distinct()
+        .select_related("award__lot", "org")
+        .prefetch_related("shipments__origin", "shipments__destination", "shipments__milestones__node")
+    )
+
+    records = (
+        DistributionRecord.objects.filter(org=org)
+        .select_related("site", "org", "shipment_line__shipment")
+        .prefetch_related("child_outcomes__site")
+    )
+
+    return {
+        "org": org_dict(org),
+        "nodes": [node_dict(n) for n in SupplyNode.objects.all()],
+        "sites": [node_dict(n) for n in sites],
+        "contracts": [contract_dict(c, include_shipments=True) for c in contracts],
+        "discrepancies": [
+            discrepancy_dict(d)
+            for d in Discrepancy.objects.filter(shipment__destination_id__in=site_ids).select_related("shipment")
+        ],
+        "distribution_plans": plan_rows,
+        "cover": cover.cover_by_node(nodes=sites),
+        "shortfall_signals": [
+            shortfall_signal_dict(s) for s in ShortfallSignal.objects.filter(org=org).select_related("site", "org")
+        ],
+        "distribution_records": [distribution_record_dict(r, include_outcomes=True) for r in records],
+        "api_tokens": [api_token_dict(t) for t in org.api_tokens.all()],
+    }
+
+
 def _staff_world(actor):
     world = {}
     role = actor.role
+    # Resolved once, up front: every block below that emits geography has to
+    # apply the same scope, and reading it per-block is how one of them ends up
+    # not applying it.
+    gov_country = _gov_country(actor)
     if "eoi_review" in ROLE_PERMS.get(role, {}):
         queue = (
             EOISubmission.objects.filter(status=EOISubmission.Status.SUBMITTED)
@@ -87,7 +180,6 @@ def _staff_world(actor):
         contracts = Contract.objects.select_related("award__lot", "org").prefetch_related(
             "shipments__origin", "shipments__destination", "shipments__milestones__node"
         )
-        gov_country = _gov_country(actor)
         if gov_country:
             # Country scoping happens here, not in the browser: an observer's
             # payload must never contain another country's consignments.
@@ -99,9 +191,44 @@ def _staff_world(actor):
         world["discrepancies"] = [discrepancy_dict(d) for d in Discrepancy.objects.select_related("shipment").all()]
         nodes = SupplyNode.objects.all()
         world["nodes"] = [node_dict(n) for n in nodes]
+
+        # The demand side. Caseload is what turns delivery from a count into
+        # coverage, and it is scoped with everything else — a government
+        # observer reads their own districts, not the region's.
+        caseloads = CaseloadEstimate.objects.all()
+        if gov_country:
+            caseloads = caseloads.filter(country=gov_country)
+        world["caseloads"] = [caseload_dict(c) for c in caseloads]
+        world["coverage"] = coverage.coverage_by_district(country=gov_country)
+        world["cover"] = cover.cover_by_node()
+
+    if "signals" in ROLE_PERMS.get(role, {}):
+        world["shortfall_signals"] = [
+            shortfall_signal_dict(s)
+            for s in ShortfallSignal.objects.select_related("site", "org").exclude(
+                status=ShortfallSignal.Status.RESOLVED
+            )
+        ]
+        # Severity lives on the server so the ranking is testable and so the
+        # partner surface and this queue cannot disagree about the same node.
+        world["exceptions"] = exceptions.build_queue()
+    if "actions" in ROLE_PERMS.get(role, {}):
+        world["actions"] = [
+            supply_action_dict(a)
+            for a in SupplyAction.objects.select_related("source_node", "target_node", "shipment")[:50]
+        ]
     if role == "funder":
         world["appropriations"] = [appropriation_dict(a) for a in Appropriation.objects.all()]
-    gov_country = _gov_country(actor)
+        world["coverage_by_country"] = coverage.coverage_by_country()
+    if "outcomes" in ROLE_PERMS.get(role, {}):
+        # The number everyone quotes, beside the one that was measured.
+        world["outcomes"] = coverage.courses_versus_recoveries(country=gov_country)
+        world["distribution_records"] = [
+            distribution_record_dict(r, include_outcomes=True)
+            for r in DistributionRecord.objects.select_related(
+                "site", "org", "shipment_line__shipment"
+            ).prefetch_related("child_outcomes__site")
+        ]
     if gov_country:
         world["scope_country"] = gov_country
     return world
@@ -131,6 +258,8 @@ def build_bootstrap(request):
     }
     if actor.role == "supplier":
         data.update(_supplier_world(actor))
+    elif actor.role == "partner":
+        data.update(_partner_world(actor))
     else:
         data.update(_staff_world(actor))
     return data

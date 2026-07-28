@@ -292,16 +292,39 @@ def _muac_series(rng, admitted_on, outcome):
     return series, admitted_on + timedelta(days=7 * weeks)
 
 
+def _discharge_deck(rng):
+    """A shuffled deck of 100 outcomes matching DISCHARGE_MIX exactly.
+
+    Dealt from cyclically rather than sampled per child. Sampling a 2% category
+    across cohorts of a dozen produces a cohort-wide rate that wanders several
+    points either side of the intended mix — and the whole reason the mix is
+    pinned to the Sphere band is so the gap in the funder view has a defensible
+    size. A deck gives the stated proportions, not a draw from them.
+    """
+    deck = []
+    for status, weight in DISCHARGE_MIX:
+        deck.extend([status] * int(round(weight * 100)))
+    # Largest category absorbs any rounding residue so the deck is exactly 100.
+    while len(deck) < 100:
+        deck.append(DISCHARGE_MIX[0][0])
+    del deck[100:]
+    rng.shuffle(deck)
+    return deck
+
+
 def seed_child_outcomes(rng, partner, records):
     """A cohort per distribution record, discharged against the Sphere mix."""
     outcomes = []
+    deck = _discharge_deck(rng)
+    dealt = 0
     for record in records:
         # A sample of the children on this batch, not all of them — the demo
         # needs a series to drill into, not a synthetic patient register.
         cohort = max(6, min(14, record.children_served // 24))
         for n in range(cohort):
             anon_id = f"{record.site.name[:3].upper()}-{record.distributed_on:%y%m}-{n:03d}"
-            outcome = _weighted_choice(rng, DISCHARGE_MIX)
+            outcome = deck[dealt % len(deck)]
+            dealt += 1
             admitted_on = record.distributed_on + timedelta(days=rng.randint(0, 5))
             series, discharged_on = _muac_series(rng, admitted_on, outcome)
             child, _ = ChildOutcome.objects.update_or_create(
@@ -320,16 +343,6 @@ def seed_child_outcomes(rng, partner, records):
             )
             outcomes.append(child)
     return outcomes
-
-
-def _weighted_choice(rng, weighted):
-    roll = rng.random()
-    cumulative = 0.0
-    for value, weight in weighted:
-        cumulative += weight
-        if roll <= cumulative:
-            return value
-    return weighted[-1][0]
 
 
 def demand_summary():

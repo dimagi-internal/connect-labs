@@ -15,6 +15,7 @@ def node_dict(node):
         "name": node.name,
         "kind": node.kind,
         "country": node.country,
+        "adm1_code": node.adm1_code,
         "gln": node.gln,
         "owner_id": node.owner_id,
         "lon": node.location.x if node.location else None,

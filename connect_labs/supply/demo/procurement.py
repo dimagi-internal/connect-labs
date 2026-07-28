@@ -31,6 +31,7 @@ from .solicitations import (
     _seed_corridor_awards,
     _seed_live_rfp,
     _seed_open_round,
+    _seed_split_award_rfp,
 )
 
 
@@ -57,6 +58,7 @@ class ProcurementSeeder:
         _seed_open_round(rng, orgs)
         _seed_live_rfp(rng, orgs, staff)
         _seed_awarded_rfp(rng, orgs, staff)
+        _seed_split_award_rfp(rng, orgs, staff)
         _seed_corridor_awards(orgs, staff)
 
         nodes, _contracts = seed_execution(rng, orgs, staff)
