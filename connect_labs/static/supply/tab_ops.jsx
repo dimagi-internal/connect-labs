@@ -17,7 +17,7 @@ const BIZ_STEPS = [
 const TIER_LABELS = {
   epcis: 'EPCIS feed',
   asn: 'Despatch advice',
-  checkin: 'Check-in',
+  checkin: 'Phone check-in',
   portal: 'Entered by hand',
 };
 

@@ -49,6 +49,22 @@ def shipment_line_dict(line):
     }
 
 
+# Ordered weakest-to-strongest. A consignment reported at more than one tier is
+# only as good as its weakest link, so that is what it is labelled with.
+_TIER_ORDER = ("portal", "checkin", "asn", "epcis")
+
+
+def _dominant_tier(shipment):
+    """The weakest tier any of this consignment's events arrived on."""
+    tiers = {e.source_tier for e in shipment.events.all() if e.source_tier}
+    if not tiers:
+        return "asn" if shipment.asn_reference else "portal"
+    for tier in _TIER_ORDER:
+        if tier in tiers:
+            return tier
+    return sorted(tiers)[0]
+
+
 def shipment_dict(shipment, include_detail=False):
     quantity = float(shipment.quantity)
     data = {
@@ -67,6 +83,13 @@ def shipment_dict(shipment, include_detail=False):
         "eta": shipment.eta.isoformat() if shipment.eta else None,
         "delivered_at": shipment.delivered_at.isoformat() if shipment.delivered_at else None,
         "open_discrepancies": shipment.discrepancies.filter(status="open").count(),
+        # HOW this consignment is known, not just what is known about it. The
+        # tier is the honest part of the picture — a Kano plant posts EPCIS, a
+        # despatch posts an advice, and the Port Sudan corridor is a driver on
+        # the phone — and it was only ever visible on the supplier's own pages,
+        # so the surface that argues the picture is brightest where access is
+        # easiest could not show it.
+        "source_tier": _dominant_tier(shipment),
         # [[lon, lat], ...] along the digitised corridor — what the flow map animates.
         "route": [list(pt) for pt in shipment.route.coords] if shipment.route else None,
     }

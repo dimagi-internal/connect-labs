@@ -29,6 +29,7 @@ function CommandTab({ ctx }) {
   const [selected, setSelected] = useState(null);
   const [openContract, setOpenContract] = useState(null);
   const [reallocatingFor, setReallocatingFor] = useState(null);
+  const [openShipmentId, setOpenShipmentId] = useState(null);
 
   const inTransit = shipments.filter((s) => s.status === 'in_transit');
   const deliveredCartons = contracts.reduce(
@@ -114,6 +115,23 @@ function CommandTab({ ctx }) {
                     </div>
                   ) : null}
                   <div className="exception-action">→ {e.action}</div>
+                  {/* A late row names a consignment and could not open it.
+                      The milestone rail (planned / estimated / actual kept
+                      apart) and the append-only event log behind that status
+                      are the two things that make this queue trustworthy, and
+                      both were one component away with no route to them from
+                      the surface that depends on them. */}
+                  {e.shipment_id ? (
+                    <span
+                      className="btn btn-sm btn-secondary"
+                      onClick={(ev) => {
+                        ev.stopPropagation();
+                        setOpenShipmentId(e.shipment_id);
+                      }}
+                    >
+                      Open {e.shipment_reference}
+                    </span>
+                  ) : null}
                   {/* The queue has always ADVISED a reallocation and never
                       offered one, so the single sentence that tells the reader
                       what to do about a row was the only thing on the card
@@ -378,6 +396,14 @@ function CommandTab({ ctx }) {
         </p>
       </Card>
 
+      {openShipmentId ? (
+        <ShipmentDetail
+          ctx={ctx}
+          shipmentId={openShipmentId}
+          onClose={() => setOpenShipmentId(null)}
+        />
+      ) : null}
+
       {reallocatingFor ? (
         <ReallocateModal
           ctx={ctx}
@@ -510,6 +536,16 @@ function ContractDetailModal({ contract, onClose }) {
               label: 'Due',
               value: (s) => s.eta,
               render: (s) => formatDate(s.eta),
+            },
+            {
+              key: 'tier',
+              label: 'Reported by',
+              sortable: false,
+              value: () => '',
+              // The picture is brightest where access is easiest, and saying so
+              // on the same row as the delivery is the difference between an
+              // honest map and a confident one.
+              render: (s) => <TierBadge tier={s.source_tier} />,
             },
             {
               key: 'status',
@@ -657,4 +693,25 @@ function ReallocateModal({ ctx, exception, surplus, onClose }) {
       )}
     </Modal>
   );
+}
+
+/* How a consignment is known.
+
+   Four tiers, weakest to strongest: a hand-keyed portal entry, a driver's phone
+   check-in, a despatch advice, a machine-to-machine EPCIS feed. A consignment
+   reported at more than one is labelled with its WEAKEST, because that is what
+   the confidence in it actually rests on.
+
+   Naming the tier is the point rather than a caveat: Sudan has no domestic
+   producer and its corridor runs on paper waybills, so the lowest tier is not a
+   fallback, it is the honest case — and it is the one serving the worst famine
+   phases. A picture that hid that would be more confident and less true. */
+/* TIER_LABELS is declared once, in tab_ops.jsx. The supply bundle concatenates
+   every file into ONE scope, so a second top-level const with the same name is
+   not shadowing — it is a SyntaxError that blanks the entire app at parse time.
+   Preflight reported it as four unresolved selectors; the page was simply dead. */
+function TierBadge({ tier }) {
+  const label = TIER_LABELS[tier] || 'Unreported';
+  const tone = tier === 'epcis' ? 'good' : tier === 'asn' ? 'info' : 'warn';
+  return <Badge tone={tone}>{label}</Badge>;
 }
