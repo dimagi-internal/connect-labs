@@ -18,12 +18,21 @@ function FunderTab({ ctx }) {
   const coverageByCountry = world.coverage_by_country || [];
   const obligated = contracts.reduce((n, c) => n + c.obligated_value, 0);
   const disbursed = contracts.reduce((n, c) => n + c.disbursed_value, 0);
-  const deliveredCartons = contracts.reduce(
-    (n, c) => n + c.delivered_quantity,
-    0,
-  );
+  // The ladder is about food, so it sums only the contracts that bought food.
+  // A haulage contract's dollars buy movement; letting its spend and its
+  // cartons into this chain attributes food money that was never spent on food
+  // and pulls cost per child below the price of a single carton.
+  const goods = contracts.filter((c) => c.buys_goods);
+  const goodsDisbursed = goods.reduce((n, c) => n + c.disbursed_value, 0);
+  const deliveredCartons = goods.reduce((n, c) => n + c.delivered_quantity, 0);
+  const confirmedCartons = goods.reduce((n, c) => n + c.confirmed_quantity, 0);
   const deliveredMt = Math.round((deliveredCartons * 150 * 92) / 1000000);
-  const costPerChild = deliveredCartons ? disbursed / deliveredCartons : null;
+  // Confirmed over confirmed. The narration promises this figure excludes
+  // consignments in transit; dividing confirmed-only money by every delivered
+  // carton quietly broke that promise in the denominator.
+  const costPerChild = confirmedCartons
+    ? goodsDisbursed / confirmedCartons
+    : null;
 
   return (
     <Page
@@ -119,9 +128,9 @@ function FunderTab({ ctx }) {
       >
         <div className="ladder">
           <div className="ladder-step">
-            <div className="ladder-value">{shortMoney(disbursed)}</div>
+            <div className="ladder-value">{shortMoney(goodsDisbursed)}</div>
             <div className="ladder-label">
-              disbursed against confirmed delivery
+              disbursed on supply contracts, against confirmed delivery
             </div>
           </div>
           <div className="ladder-arrow">→</div>
@@ -137,7 +146,9 @@ function FunderTab({ ctx }) {
           <div className="ladder-arrow">→</div>
           <div className="ladder-step">
             <div className="ladder-value">{formatNumber(deliveredCartons)}</div>
-            <div className="ladder-label">children given a full course</div>
+            <div className="ladder-label">
+              children given a full course, under OES supply contracts
+            </div>
           </div>
         </div>
         <p className="muted small method-note">
@@ -147,8 +158,14 @@ function FunderTab({ ctx }) {
             {costPerChild ? formatMoney(costPerChild, 'USD') : '—'}
           </strong>
           , computed from disbursements against confirmed deliveries only —
-          consignments in transit are excluded. All figures in this environment
-          are synthetic.
+          consignments in transit are excluded. A carton counts once, on the leg
+          that arrives at the delivery place its contract names, so a
+          consignment moving in hops is not counted again at every hop. Haulage
+          and storage contracts are excluded here: they buy movement, not
+          cartons. The card below counts a wider set — every carton that crossed
+          into a district, including stock imported outside an OES supply
+          contract — so it reads higher, and deliberately is not reconciled with
+          this one. All figures in this environment are synthetic.
         </p>
       </Card>
 

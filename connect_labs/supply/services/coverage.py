@@ -172,8 +172,11 @@ def courses_versus_recoveries(country=None):
     return {
         "courses_delivered": courses,
         "courses_method": (
-            "Cartons confirmed delivered, at one carton per child's full course. "
-            "This is arithmetic on the supply record — it says nothing about treatment."
+            "Every carton that crossed into a district, from any source — including "
+            "stock imported outside an OES supply contract — at one carton per child's "
+            "full course. Wider than the contract ladder above, and deliberately not "
+            "reconciled with it. This is arithmetic on the supply record — it says "
+            "nothing about treatment."
         ),
         "children_observed": total_observed,
         "children_recovered": recovered,

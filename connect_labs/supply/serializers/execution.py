@@ -178,6 +178,14 @@ def contract_dict(contract, include_shipments=False):
         "disbursed_value": float(contract.disbursed_value),
         "shipped_quantity": float(contract.shipped_quantity),
         "delivered_quantity": delivered,
+        # Confirmed at the delivery place, so the figure the disbursement was
+        # paid against. Cost per child divides money by cartons, and taking the
+        # numerator from confirmed arrivals and the denominator from every
+        # arrival is how that ratio comes out below the price of a carton.
+        "confirmed_quantity": float(contract.confirmed_quantity),
+        # A haulage contract buys movement, not food; the unit ladder sums only
+        # the contracts that actually bought cartons.
+        "buys_goods": contract.buys_goods,
         "delivered_metric_tonnes": gs1.cartons_to_mt(delivered) if contract.unit == "cartons" else None,
         "children_treated": gs1.cartons_to_children(delivered) if contract.unit == "cartons" else None,
     }

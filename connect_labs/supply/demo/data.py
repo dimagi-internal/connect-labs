@@ -163,7 +163,11 @@ CORRIDOR_AWARDS = [
         "SD",
         93,
         135,
-        "Inland haulage of 40,000 cartons from Port Sudan",
+        # Names its destination, not just its origin. A haulage contract whose
+        # only stated place is where the cartons are collected has no delivery
+        # point to measure against, and the contract measure counts arrivals at
+        # the place the contract names (see Contract._quantity_in_contract_unit).
+        "Inland haulage of 40,000 cartons from Port Sudan to Khartoum",
         40000,
         3.20,
     ),
@@ -318,7 +322,13 @@ CONTRACTS = [
     ("OES-C-2026-ET1", "Rift Valley Therapeutics PLC", "48,000 cartons RUTF delivered to Gode", 48000, 41.80),
     ("OES-C-2026-NG1", "Savanna Nutrients Ltd", "45,000 cartons RUTF delivered to Maiduguri", 45000, 42.10),
     ("OES-C-2026-BF1", "Faso NutriWorks SA", "20,000 cartons RUTF delivered to Djibo", 20000, 43.60),
-    ("OES-C-2026-SD1", "Blue Nile Freight Co", "Inland haulage of 40,000 cartons from Port Sudan", 40000, 3.20),
+    (
+        "OES-C-2026-SD1",
+        "Blue Nile Freight Co",
+        "Inland haulage of 40,000 cartons from Port Sudan to Khartoum",
+        40000,
+        3.20,
+    ),
 ]
 
 # Which contract each shipment belongs to, by reference prefix.
