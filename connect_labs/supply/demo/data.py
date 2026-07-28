@@ -381,14 +381,18 @@ SHIPMENTS = [
     # district boundary, which is what makes it count as supply reaching a
     # district rather than redistribution inside one (see services/coverage.py).
     #
-    # Borno's matching leg is NOT here, deliberately. Lifting Borno to the 34%
-    # its narration speaks needs ~1,400 more cartons across its boundary, and
-    # the Nigeria contract has only 325 cartons of headroom left before
-    # delivered_quantity exceeds the 45,000 it contracted for — because that
-    # figure double-counts every carton that moves hub-to-site inside Borno.
-    # The demo cannot tell its own coverage story until that is fixed. See
-    # docs/walkthroughs/oes-narrative-set-review.md K1.
+    # Borno's matching leg lands at Bama, the one Borno site that had never
+    # received anything. Together with the 15,000 already across the boundary it
+    # takes Borno to 34% of a caseload seven times Kassala's, on more than twice
+    # the cartons — which is the contrast the funder narrative is built on.
+    #
+    # It only fits because the short-receipt consignment stopped banking its
+    # cartons twice: the Nigeria contract had 325 cartons of headroom before
+    # delivered_quantity would have exceeded what it contracted for, and now has
+    # 2,617. The contract measure still counts a carton once per leg it travels
+    # (review K1) — this leg fits under the ceiling rather than resolving it.
     ("SHP-2026-0204", "Khartoum Central Warehouse", "Kassala Forward Store", [], 6388, "delivered", "checkin", 16),
+    ("SHP-2026-0305", "Kano Central Warehouse", "Bama Health Post", [], 1399, "delivered", "asn", 6),
 ]
 
 # Days each leg is running behind its planned arrival. Authored rather than
