@@ -135,8 +135,16 @@ scenes:
   - kind: wait_for
     target: css:.data-table
   - kind: hold
-    seconds: 2.4
+    seconds: 2.0
     note: '"Open to your organisation" — the eligibility rule, rendered as a shorter list'
+  - kind: click
+    target: css:tr:has-text('RUTF Northeast Nigeria Q3 2026') button:has-text('View bid')
+    note: Savanna has already priced this one
+  - kind: wait_for
+    target: css:.modal
+  - kind: hold
+    seconds: 2.6
+    note: the same 60,000 cartons to Maiduguri, now as the lots Amina priced
   impressive_because: 'Eligibility is decided on the server: an unqualified supplier''s page never receives
     the solicitation at all, rather than being shown it with the button hidden. It prevents the ordinary
     embarrassment of an ineligible bid excluded by hand after the fact.'
