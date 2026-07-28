@@ -16,7 +16,7 @@ request id, path), **scope** (opportunity/program/organization ids), and
 | Event | Trigger point |
 | --- | --- |
 | `list` / `read` / `create` / `update` / `delete` | The five `LabsRecordAPIClient` methods — covers every LabsRecord touch, production HTTP and labs-only synthetic alike (synthetic tagged `labs_only=true`) |
-| `export` | `ExportAPIClient.paginate` — the bulk PHI path (visit form JSON, worker identities); one event per crawl with total row count |
+| `export` | `ExportAPIClient.paginate` — the bulk PHI path (visit form JSON, worker identities); one event per crawl with total row count. A caller that samples rather than exports everything passes `partial_ok=True`, and its early stop is recorded as a **success** tagged `metadata.terminated = "early"`; an undeclared mid-stream teardown (client disconnect, timeout) stays a failure. See below. |
 | `page_view` | Every authenticated HTML page render (middleware; htmx partials excluded) — makes a user's session fully reconstructable, including pages that touch no data. Hidden by default on the dashboard |
 | `login` / `logout` / `login_failed` | Django auth signals (OAuth callback calls `auth.login`) |
 | `access_denied` | Any 403 response (middleware) — repeated 403s against one scope are the classic snooping signature |
@@ -36,6 +36,19 @@ identifiers and are kept verbatim). Filter the dashboard by username with
 interleaved with what each page actually read, exported, or changed. This
 same redaction applies to what the Umami tracker sends (`beforeSend` hook),
 so both stores hold the identical identifiers-not-content data class.
+
+**Partial exports are not failures.** Several callers *sample* the visit
+stream rather than export it — the audit-creation wizard's question-discovery
+endpoints read a couple of hundred rows, stop as soon as the field set goes
+stable, and abandon the page generator. Python signals that abandonment with
+`GeneratorExit`, which is byte-for-byte what a genuine mid-download teardown
+raises, so intent has to come from the caller: `paginate(partial_ok=True)`
+means "stopping early is expected here," and the event is recorded as a
+success carrying `metadata.terminated = "early"` plus the row count actually
+transferred. Without the flag the same teardown is still a failure. Read the
+distinction the boring way: a `failure` on an `export` means a bulk read
+someone was attempting did not complete. Sampling never appears there —
+which is what makes the failure column worth alarming on.
 
 **Never log PHI content.** Events carry opaque identifiers only — no names,
 form answers, or free text. This applies to `metadata` too. The audit log
