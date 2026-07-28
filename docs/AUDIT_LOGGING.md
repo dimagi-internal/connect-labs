@@ -45,10 +45,14 @@ stable, and abandon the page generator. Python signals that abandonment with
 raises, so intent has to come from the caller: `paginate(partial_ok=True)`
 means "stopping early is expected here," and the event is recorded as a
 success carrying `metadata.terminated = "early"` plus the row count actually
-transferred. Without the flag the same teardown is still a failure. Read the
-distinction the boring way: a `failure` on an `export` means a bulk read
-someone was attempting did not complete. Sampling never appears there —
-which is what makes the failure column worth alarming on.
+transferred. Without the flag the same teardown is still a failure. The flag
+forgives *only* the intentional stop: a sampler that hits a real error
+(HTTP 5xx, bad JSON) is recorded as a failure like any other export.
+
+Read the distinction the boring way: a `failure` on an `export` means a bulk
+read did not complete for a reason nobody asked for. A read that stopped
+because the caller had what it came for does not appear there — which is what
+makes the failure column worth alarming on.
 
 **Never log PHI content.** Events carry opaque identifiers only — no names,
 form answers, or free text. This applies to `metadata` too. The audit log
