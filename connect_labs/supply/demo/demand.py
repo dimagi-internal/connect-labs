@@ -102,6 +102,12 @@ INBOUND_SITES = ["Biu Nutrition Centre", "Askira Nutrition Centre"]
 # The site whose consignment arrives short, and by how much. Monguno and the
 # 900/840 split are what the partner narrative's receipt scene actually says.
 SHORT_RECEIPT_SITE = "Monguno Nutrition Centre"
+
+# Last-mile legs that leave the hub with a despatch advice rather than a phone
+# check-in. Without any, every row on the partner's receiving surface reads
+# "Entered by hand" and the badge stops meaning anything — the narration's whole
+# point is that hand-keyed data SAYS so, which needs something that does not.
+ADVISED_PARTNER_LEGS = {3, 4, 10}
 SHORT_RECEIPT_DESPATCHED = 900
 SHORT_RECEIPT_RECEIVED = 840
 
@@ -152,10 +158,23 @@ def seed_partner_stock(rng, nodes, sites):
         cartons = int(round(weekly * weeks))
         if cartons <= 0:
             continue
+        # The consignment the narration speaks about is the size the narration
+        # says it is. Sizing it from the burn rate like every other site left
+        # the advice reading 3,192 cartons twelve rows above a discrepancy
+        # panel reading 900 — the one screen whose subject is reconciliation,
+        # unable to reconcile itself.
+        if name == SHORT_RECEIPT_SITE:
+            cartons = SHORT_RECEIPT_DESPATCHED
 
         reference = f"SHP-2026-09{index:02d}"
         departed = now - timedelta(days=9 + index)
         arrived = departed + timedelta(days=2)
+        # Not every last-mile leg arrives the same way, and the narration's
+        # point about hand-keyed data only lands against something that is not.
+        # The three largest runs leave the hub with a despatch advice; the
+        # remote sites are a driver's phone call, which is the honest tier for
+        # a Borno feeding site and the one serving the worst access.
+        by_advice = index in ADVISED_PARTNER_LEGS
         shipment, _ = Shipment.objects.update_or_create(
             reference=reference,
             defaults={
@@ -166,6 +185,7 @@ def seed_partner_stock(rng, nodes, sites):
                 "unit": "cartons",
                 "departed_at": departed,
                 "eta": arrived,
+                "asn_reference": f"ASN-{reference[-8:]}" if by_advice else "",
             },
         )
         ShipmentLine.objects.update_or_create(
@@ -201,8 +221,20 @@ def seed_partner_stock(rng, nodes, sites):
                 "biz_step": SupplyEvent.BizStep.RECEIVING,
                 "event_time": arrived,
                 "read_point": site,
-                "quantity_list": [{"gtin": "", "quantity": cartons, "uom": "cartons"}],
-                "source_tier": SupplyEvent.SourceTier.CHECKIN,
+                # What the storekeeper COUNTED, which at the short-receipt site
+                # is not what the advice said. Recording the advised quantity
+                # here and then recording the counted one again as the short
+                # receipt banked both: Monguno held 4,032 cartons against a
+                # 3,192-carton consignment, and its weeks of cover were derived
+                # from the sum.
+                "quantity_list": [
+                    {
+                        "gtin": "",
+                        "quantity": (SHORT_RECEIPT_RECEIVED if name == SHORT_RECEIPT_SITE else cartons),
+                        "uom": "cartons",
+                    }
+                ],
+                "source_tier": (SupplyEvent.SourceTier.ASN if by_advice else SupplyEvent.SourceTier.CHECKIN),
             },
         )
         Shipment.objects.filter(pk=shipment.pk).update(status=Shipment.Status.DELIVERED, delivered_at=arrived)
@@ -364,18 +396,12 @@ def _short_receipt(shipment, site, contract, arrived):
     """
     from ..models import Discrepancy, SupplyEvent
 
-    event, _ = SupplyEvent.objects.update_or_create(
-        org=contract.org,
-        external_id=f"{shipment.reference}-short",
-        defaults={
-            "shipment": shipment,
-            "biz_step": SupplyEvent.BizStep.RECEIVING,
-            "event_time": arrived,
-            "read_point": site,
-            "quantity_list": [{"gtin": "", "quantity": SHORT_RECEIPT_RECEIVED, "uom": "cartons"}],
-            "source_tier": SupplyEvent.SourceTier.CHECKIN,
-        },
-    )
+    # The receipt itself was already written by the caller, recording the
+    # counted quantity. Writing a second inbound event here banked the cartons
+    # twice. This only raises the discrepancy against that receipt.
+    event = SupplyEvent.objects.filter(
+        shipment=shipment, biz_step=SupplyEvent.BizStep.RECEIVING, read_point=site
+    ).first()
     Discrepancy.objects.update_or_create(
         shipment=shipment,
         defaults={

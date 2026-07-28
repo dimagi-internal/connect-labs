@@ -270,3 +270,275 @@ and the why-brief but not a recipe, and reports success, so a narrative authored
 elsewhere lands in a state where it cannot be rendered and nothing says so.
 
 Filed against canopy rather than fixed here.
+
+---
+
+# Addendum — 2026-07-28: what judging actually found
+
+The review above was written before any narrative had been judged. Two of the
+four now have been, and the findings are a different shape from the ones a
+reading produced. Recorded here because the *pattern* generalises to the two
+narratives still unrendered.
+
+## G. The recurring defect: a scene that narrates and does not demonstrate
+
+`ddd-arc-eval` ran for the first time (on `oes-supply-base`) and returned
+**fail, 2/5 on all five dimensions**. Its most valuable finding is invisible to
+every per-scene lens, because a per-scene judge sees one frame and cannot
+compare two:
+
+> Scenes 3 and 4 carry the demo's two most differentiating claims — a submission
+> snapshot frozen at the moment of submission, and a qualification decided per
+> category with an expiry — and **neither claim was on screen**. Both scenes'
+> action lists ended at a nav click.
+
+And, separately:
+
+> Scene 4 is scene 2 with a card **deleted**. Same route, same queue, same three
+> rows. It shows strictly less than the scene two before it, and its removal
+> would not be noticed.
+
+Both are the same underlying failure: **the recipe stopped at the surface that
+contains the thing, instead of opening the thing.** A nav click is enough to
+frame a claim and never enough to demonstrate one.
+
+This is worth checking in every recipe in the set before rendering it, because
+it is cheap to check by reading and expensive to find by judging.
+
+## H. `oes-command-centre` — blockers found by reading, before spending a render
+
+Verified against the seeded world on 2026-07-28. All four remain open.
+
+1. **The payoff scene does not perform its action.** Scene 8's narration is
+   "Ada reallocates: cartons from the Kassala warehouse … to El Fasher … a
+   consignment appears on the map with planned milestones … and the exception
+   resolves against the action that resolved it." Its recipe actions are a
+   scroll, a click that expands an exception row, and two holds. Nothing is
+   reallocated. This is the scene the whole narrative builds toward, and it is
+   currently scene 6 with a row expanded — the same defect as G above, in the
+   worst possible place.
+
+2. **Scene 8's `show` and its narration disagree about the destination.** The
+   `show` says "to the site that raised the shortfall" — that is Askira
+   Nutrition Centre, in Nigeria. The narration says El Fasher, in Sudan. Kassala
+   → El Fasher is coherent (one corridor); Kassala → Askira is not.
+
+3. **"Nine days" does not exist.** Scenes 1 and 3 both narrate a consignment
+   nine days late; scene 3 asserts it of the specific consignment on screen.
+   No leg is nine days late — the authored slip table tops out at six.
+   `narrated_numbers` will fail on this. *Suggested fix, which also strengthens
+   the arc:* make `SHP-2026-0202` (Khartoum → El Fasher, check-in tier) the
+   nine-day one. That single change ties scene 2 (the Sudan corridor arrives as
+   phone check-ins), scene 3 (nine days behind plan), and scene 8 (Kassala → El
+   Fasher, because El Fasher is short *because* that leg is late) into one
+   causal chain instead of three unrelated corridors.
+
+4. **Scene 5's coverage figures are not in the data.** The narration says "this
+   district is at ninety-one percent of need, this one at thirty-four."
+   Actual `coverage_by_district()` on the seeded world:
+
+   | district | IPC | coverage |
+   | --- | --- | --- |
+   | Séno, Yagha, Yobe, Southern Darfur, North Darfur, Kassala | 2–5 | **0%** |
+   | Borno | 5 | 51.2% |
+   | Somali | 4 | 67.6% |
+   | Soum | 5 | **145.8%** |
+
+   Neither 91 nor 34 appears, so `narrated_numbers` fails. Worse for the demo:
+   six of nine rows read 0%, which `data_fidelity` flags as an identical column
+   and which makes a coverage table a poor advertisement for coverage. The
+   scene's own `show` is stale too — it claims "Borno at 31% with 33,232
+   children uncovered" against an actual 51.2% / 23,557.
+
+   The fix is deliveries seeded into more districts, not a narration edit.
+
+5. **Two smaller ones.** Scene 5 hovers a `span[title]` to reveal the caseload's
+   method — a native browser tooltip, which does not render in a headless
+   screenshot, so the beat captures nothing. Scene 4 has no actions at all
+   beyond a hold, and sits on the same frame as scene 3.
+
+## I. Known environment limitation
+
+The network map renders as an empty white panel in every local render: this
+environment has no `MAPBOX_TOKEN`. The arc judge routed it PRODUCT and it is the
+run's only non-tabular surface, so it costs `visual_variety` in every narrative
+that shows the command centre. It is a config gap, not a build defect, and it
+cannot be fixed from inside a recipe.
+
+## J. `oes-money-to-child` — read the same way, before rendering
+
+Same exercise, same date. Two findings, one of which is shared with
+`oes-command-centre` and is the single highest-leverage fix left in the set.
+
+1. **Scene 6 narrates a drill it never performs.** "Dale can follow a single
+   delivered batch through the distributions it fed to one child's arm
+   circumference over time" — the actions are two scrolls and two holds. The
+   drill-in modal exists (the partner narrative opens it); this scene just never
+   clicks. Finding G again.
+
+2. **Scene 5 narrates the same coverage figures as `oes-command-centre` scene 5,
+   and they are absent from the data in exactly the same way.** Both say
+   "ninety-one percent" and "thirty-four". `narrated_numbers` will fail on both.
+
+### The coverage seed, specified
+
+The narration is unusually precise, which means the target state can be derived
+rather than guessed. `oes-money-to-child` scene 5:
+
+> "this district is covered to ninety-one percent of need and this one — **which
+> received more cartons** — sits at thirty-four, with thirty-one thousand
+> children still uncovered."
+
+Solve it against the seeded caseloads and it lands on two specific districts:
+
+| district | caseload | target coverage | courses delivered | uncovered |
+| --- | ---: | ---: | ---: | ---: |
+| **Borno** | 48,232 | **34%** | ~16,399 | **~31,833** ✓ "thirty-one thousand" |
+| **Kassala** | 7,020 | **91%** | ~6,388 | ~632 |
+
+That pairing satisfies the hard part of the sentence — Borno receives **more
+cartons** (16,399 vs 6,388) and still sits far lower, because its caseload is
+seven times larger. That contrast *is* the scene's whole argument, and it is
+currently unavailable at any pair of districts in the seeded world.
+
+Current state, for comparison — six of nine districts at 0%, one above 100%:
+
+| district | IPC | coverage |
+| --- | --- | --- |
+| Séno, Yagha, Yobe, S. Darfur, N. Darfur, Kassala | 2–5 | 0% |
+| Borno | 5 | 51.2% |
+| Somali | 4 | 67.6% |
+| Soum | 5 | 145.8% |
+
+So the work is: deliver into Kassala (currently nothing lands there), reduce
+Borno's delivered volume to ~16,399, and give the remaining districts a
+non-degenerate spread. Delivered volume is derived from the append-only event
+log via `services/coverage.py`, so this is seeding shipments and receipts — not
+writing a coverage number. Two knock-on checks: the command-centre "Pipeline by
+corridor" gap column and `test_the_demo_world_*` in `tests/test_demand.py`.
+
+One fix, and both remaining narratives get a scene 5 that is true.
+
+## K. Two product bugs the concept judge found, verified 2026-07-28
+
+Neither is a demo defect. Both are wrong in the app, and both are on camera.
+
+### K1. `Contract.shipped_quantity` counts the same cartons on every leg
+
+`models/execution.py` sums **every** non-planned shipment on the contract:
+
+```python
+self.shipments.filter(unit=self.unit).exclude(status=PLANNED).aggregate(Sum("quantity"))
+```
+
+A consignment moves in hops, and each hop is its own `Shipment`, so a carton is
+counted once per leg it travels. Verified on `OES-C-2026-NG1`, whose contracted
+requirement is **45,000 cartons**:
+
+| legs | quantity |
+| --- | ---: |
+| Kano Plant → Kano Central | 20,000 |
+| Kano Central → Maiduguri | 15,000 |
+| Kano Central → Damaturu | 10,000 |
+| Maiduguri hub → 11 nutrition centres (last mile) | 9,910 |
+| **`shipped_quantity`** | **54,910** |
+
+54,910 shipped against a 45,000 requirement — 122% — rendered straight into the
+command centre's "Pipeline by corridor" table. `delivered_quantity` (44,675) has
+the same structure. In a product whose entire pitch is carton-level
+traceability, the headline movement figure double-counts.
+
+**This needs a domain decision, not a patch.** The contract promises 45,000
+cartons *delivered to Maiduguri*; the hub→centre legs are last-mile distribution
+*past* that delivery point. Counting only terminal legs, or only legs arriving at
+the contract's own `delivery_place`, both give defensible answers — and they give
+*different* answers (15,000 vs 44,675), which changes headline numbers in three
+narratives. Deliberately not decided here.
+
+### K2. The command centre's "Weeks of cover" table is empty where it matters
+
+All 12 nodes read 0 on hand / 0 weeks / runs dry today, and every node that
+actually received the 9,910 delivered cartons is **missing from the table
+entirely**. That reads as a broken join rather than an operational finding, and
+it sits on camera behind `oes-supply-base` scene 9's modal. It is also the table
+`oes-command-centre` scene 6 and `oes-partner-pipeline` scene 3 are built on, so
+it blocks both.
+
+## L. The one narration change the set needs
+
+`oes-supply-base` scene 8 says *"Splitting costs a little more per carton and
+buys the thing money cannot buy later."* Two independent judges computed the
+same refutation. Every alternative, against the seeded bid book:
+
+| award | total | blended | vs split |
+| --- | ---: | ---: | ---: |
+| **split as awarded** | **3,374,400** | **42.1800** | — |
+| Savanna both | 3,455,400 | 43.1925 | +81,000 |
+| Kano both | 3,554,600 | 44.4325 | +180,200 |
+| Lagos both | 3,693,600 | 46.1700 | +319,200 |
+| Faso both | 3,755,400 | 46.9425 | +381,000 |
+
+Each lot went to its own cheapest bidder, so the split is the **global cost
+minimum** — $1.01/carton *cheaper* than the best consolidation, not dearer. The
+demo shows a free lunch while narrating a sacrifice, and a supply officer does
+that subtraction in three seconds from the table the previous scene made them
+read.
+
+This cannot be fixed in data without breaking scene 7. Scene 7 requires a
+*different price leader per corridor*; if each lot then goes to its own leader,
+the split is necessarily cheapest. The two beats are mutually exclusive over one
+bid book.
+
+The honest sentence is also the stronger one, and this fixture already supports
+it: **each corridor's own cheapest bidder is a different plant, so the split is
+simultaneously the resilient award and the lowest-cost one.** That is a narration
+change to a locked narrative — a `concept_change` gate, and an operator decision.
+
+
+## M. K1 is now blocking, and a test proved it
+
+Attempting the coverage seed in §J turned K1 from a reporting defect into a hard
+blocker, which is worth recording because it settles the priority.
+
+Two halves of the double-count were found, not one. `services/coverage.py` had
+it as well as `models/execution.py`: summing every arrival in a district counts
+the cartons that reach the district hub, and then counts them AGAIN as the hub
+despatches them onward to the sites it serves. Borno read **24,675** against
+**15,000** that ever crossed its boundary. That half is fixed — a leg now counts
+toward a district only when it crosses into it, since redistribution inside a
+district is not new supply reaching it.
+
+The contract half is not, and it now blocks the narration:
+
+- Borno needs **~1,400 more cartons** across its boundary to reach the 34% its
+  narration speaks (16,399 of a 48,232 caseload, leaving the 31,833 uncovered
+  that the funder scene calls "thirty-one thousand").
+- Every route into Borno belongs to contract `OES-C-2026-NG1`, whose
+  `delivered_quantity` already reads **44,675 against 45,000 contracted** — 325
+  cartons of headroom.
+- Adding the leg took it to **46,074**, and
+  `test_disbursement_never_exceeds_obligation` failed with *"OES-C-2026-NG1
+  delivered more than it contracted for"*.
+
+The test is right and the invariant is real. The contract only appears nearly
+fulfilled because `delivered_quantity` counts each carton once per leg it
+travels; on any single-counting rule it is badly under-delivered. So the demo
+cannot tell its own coverage story until the contract measure is fixed, and the
+Borno leg is deliberately **not** seeded rather than papered over by raising the
+contract quantity.
+
+**The decision that unblocks everything.** What does a contract's `delivered`
+column mean? Three defensible single-counting answers, and they give very
+different headline numbers:
+
+| rule | NG1 delivered | note |
+| --- | ---: | --- |
+| arrivals at the contracted delivery place (Maiduguri) | 15,000 | literal reading of "45,000 cartons delivered to Maiduguri" |
+| first hop out of the supply source | 20,000 | "what the supplier despatched against this contract" |
+| terminal legs only (final resting place) | ~11,074 | each carton counted where it came to rest |
+
+All three drop "Delivered to date" on the command centre from 109,675 to
+roughly a third of that, and all three turn the pipeline gap from a rounding
+error into a real operational story. That is probably an improvement to the
+demo, but it changes headline figures in three narratives, so it is an operator
+call rather than a cleanup.

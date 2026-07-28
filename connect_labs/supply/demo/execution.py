@@ -25,7 +25,16 @@ from ..models import (
     SupplyEvent,
     SupplyNode,
 )
-from .data import APPROPRIATIONS, CONTRACT_BY_PREFIX, CONTRACTS, NODE_DISTRICTS, NODES, SHIPMENTS, STATUS_STEPS
+from .data import (
+    APPROPRIATIONS,
+    CONTRACT_BY_PREFIX,
+    CONTRACTS,
+    NODE_DISTRICTS,
+    NODES,
+    SHIPMENT_SLIP_DAYS,
+    SHIPMENTS,
+    STATUS_STEPS,
+)
 
 
 def seed_execution(rng, orgs, staff):
@@ -134,8 +143,10 @@ def _seed_shipments(rng, nodes, contracts):
         departed = now - timedelta(days=days_ago) if days_ago is not None else None
         transit_days = rng.randint(3, 9)
         planned_arrival = (departed + timedelta(days=transit_days)) if departed else now + timedelta(days=7)
-        # a few legs run late, which is what populates the exception queue
-        slip_days = rng.choice([0, 0, 0, 1, 2, 4])
+        # a few legs run late, which is what populates the exception queue —
+        # authored per leg (see SHIPMENT_SLIP_DAYS) so the queue ranks on a
+        # story rather than on whatever two draws happened to collide
+        slip_days = SHIPMENT_SLIP_DAYS.get(reference, 0)
         actual_arrival = planned_arrival + timedelta(days=slip_days)
 
         # Descriptive fields are refreshed on every run; LIFECYCLE state is not.
@@ -167,11 +178,25 @@ def _seed_shipments(rng, nodes, contracts):
                 sscc=gs1.make_sscc("629123", 1000 + index),
             )
 
-        _seed_legs(shipment, origin, destination, waypoint_nodes, departed, planned_arrival)
+        _seed_legs(shipment, origin, destination, waypoint_nodes, departed, planned_arrival, slip_days=slip_days)
         _seed_events(org, shipment, origin, destination, state, tier, departed, actual_arrival, cartons, index, rng)
 
 
-def _seed_legs(shipment, origin, destination, waypoint_nodes, departed, planned_arrival):
+def _seed_legs(shipment, origin, destination, waypoint_nodes, departed, planned_arrival, slip_days=0):
+    """Plan, estimate and actual per leg — with the ESTIMATE actually moving.
+
+    Every milestone was seeded with ``estimated_at == planned_at``, so a
+    consignment already running late but not yet arrived reported a delay of
+    zero and never entered the exception queue at all. Only legs that had
+    already been delivered — the ones with an ``actual_at`` — could ever be
+    late, which is exactly backwards: a delay you can still do something about
+    is the one worth surfacing.
+
+    It also left the product's own claim undemonstrated. Keeping planned,
+    estimated and actual as three separate timestamps only means anything if
+    the middle one moves when a leg slips, and nothing in the demo world ever
+    moved it.
+    """
     if shipment.milestones.exists():
         return
     legs = [(origin, Milestone.Kind.DEPART, departed)]
@@ -179,14 +204,21 @@ def _seed_legs(shipment, origin, destination, waypoint_nodes, departed, planned_
     span = (planned_arrival - departed) if departed else timedelta(days=7)
     for i, node in enumerate(hops, start=1):
         legs.append((node, Milestone.Kind.ARRIVE, (departed + (span * i / len(hops))) if departed else None))
+    last_index = len(legs) - 1
     for sequence, (node, kind, planned) in enumerate(legs):
+        # The slip lands on the arrival the consignment is still short of. An
+        # onward leg's estimate moving is what "nine days behind plan" means
+        # while the truck is still on the road.
+        estimated = planned
+        if slip_days and planned is not None and sequence == last_index:
+            estimated = planned + timedelta(days=slip_days)
         Milestone.objects.create(
             shipment=shipment,
             node=node,
             kind=kind,
             sequence=sequence,
             planned_at=planned,
-            estimated_at=planned,
+            estimated_at=estimated,
         )
 
 

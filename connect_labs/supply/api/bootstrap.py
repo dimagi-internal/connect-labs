@@ -252,6 +252,11 @@ def _staff_world(actor):
         # Severity lives on the server so the ranking is testable and so the
         # partner surface and this queue cannot disagree about the same node.
         world["exceptions"] = exceptions.build_queue()
+        # The queue's own advice is "reallocate from a node holding surplus".
+        # Naming which nodes those are, and how much each could spare without
+        # dropping below its own threshold, is what turns that sentence into
+        # something the screen can actually do.
+        world["surplus_nodes"] = cover.nodes_holding_surplus()
     if "actions" in ROLE_PERMS.get(role, {}):
         world["actions"] = [
             supply_action_dict(a)

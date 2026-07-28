@@ -50,16 +50,29 @@ scenes:
   concept_claim: The profile a supplier is judged on is frozen at submission, so a later edit to their
     live paperwork cannot change what the reviewer assessed.
   url: /supply/dev-login/?persona=amina
-  show: Amina's side at Savanna Nutrients — the expression of interest she submitted, with the profile
-    snapshot frozen onto it at the moment of submission, shown beside the live profile that has moved
-    on since.
+  show: Amina's side at Savanna Nutrients — the expression of interest she submitted, opened to the
+    "What the reviewer is assessing" panel, where the profile frozen at submission sits beside the live
+    profile as it stands today and the UNICEF RUTF approval she has since renewed is marked "changed
+    since".
   actions:
   - kind: wait_for
     target: css:.page
   - kind: click
     target: css:.navitem:has-text('Expressions of interest')
+  - kind: wait_for
+    target: css:.data-table
   - kind: hold
-    seconds: 2.4
+    seconds: 1.4
+  - kind: click
+    target: css:.card:has-text('Your applications') tr:has-text('OES Supply Base 2026-A')
+    note: open the application the qualification came from
+  - kind: wait_for
+    target: css:.modal
+  - kind: scroll_to
+    target: css:.modal .card:has-text('What the reviewer is assessing')
+  - kind: hold
+    seconds: 3.0
+    note: frozen beside live — the certificate renewed since is marked, and the left column did not move
   impressive_because: If Savanna updates a certificate next week the live profile changes and the snapshot
     does not, so the decision stays reconstructable a year from now. That is the property an inspector
     general asks about first.
@@ -69,15 +82,38 @@ scenes:
   concept_claim: A reviewer decides per category and each pass carries an expiry date, so one supplier
     can be qualified for RUTF and declined for therapeutic milk.
   url: /supply/dev-login/?persona=tomas
-  show: Tomas's review queue — one submission opened, decided per category, with the resulting qualification
-    carrying a granted date and an expiry.
+  show: 'Tomas''s review queue with Savanna''s submission opened — the frozen snapshot he is assessing,
+    and the per-category decision made on camera: qualify on ready-to-use therapeutic food with the date
+    that qualification expires, decline on therapeutic milk — one supplier and two different answers.'
   actions:
   - kind: wait_for
     target: css:.page
   - kind: click
     target: css:.navitem:has-text('EOI rounds')
+  - kind: wait_for
+    target: css:.data-table
   - kind: hold
-    seconds: 2.2
+    seconds: 1.2
+  - kind: click
+    target: css:.card:has-text('Review queue') tr:has-text('Savanna Nutrients Ltd') button:has-text('Review')
+    note: the submission the narration names
+  - kind: wait_for
+    target: css:.modal
+  - kind: hold
+    seconds: 1.8
+    note: the certifications as frozen, and the expiry each one carries
+  - kind: click
+    target: css:.modal .decision-row:has-text('RUTF') button:has-text('Qualify')
+    note: passes on ready-to-use therapeutic food
+  - kind: hold
+    seconds: 1.2
+  - kind: click
+    target: css:.modal .decision-row:has-text('Therapeutic milk') button:has-text('Reject')
+    note: declined where the evidence is thin — no plant, no approval
+  - kind: hold
+    seconds: 3.2
+    note: two different answers for one supplier, and the date the pass expires beside the one that carries
+      it
   impressive_because: One supplier, two different answers per category — which is how this actually works.
     And a roster that never expires quietly becomes a list of former suppliers.
   ai_quality: Per-category decisions are independent; the expiry is a real date, not a label.
@@ -95,7 +131,21 @@ scenes:
   - kind: wait_for
     target: css:.data-table
   - kind: hold
-    seconds: 2.4
+    seconds: 1.6
+    note: the registry unfiltered — every organisation holding a live qualification
+  - kind: select
+    target: css:.filter-row select:nth-of-type(1)
+    value: rutf
+    note: Ada filters by commodity, as the narration says she does
+  - kind: hold
+    seconds: 1.2
+  - kind: select
+    target: css:.filter-row select:nth-of-type(2)
+    value: NG
+    note: and by country — who can make RUTF for Nigeria today
+  - kind: hold
+    seconds: 2.6
+    note: the count in the card title moves with the filters; this is the answer Ada acts on
   impressive_because: The registry is not a list somebody maintains — it is the set of live qualifications,
     so it is current by construction. A lapsed certification drops a supplier out without anyone remembering
     to remove them.
@@ -104,15 +154,20 @@ scenes:
   concept_claim: Eligibility is enforced when the payload is built, so an unqualified supplier never receives
     the solicitation rather than seeing it with a hidden button.
   url: /supply/
-  show: The Solicitations tab with the live RUTF Northeast Nigeria Q3 2026 call and its three lots — visible
-    to a supplier only while they hold a live qualification in a matching category.
+  show: 'Ada''s solicitations list, where every call carries its lots on the row: sixty thousand cartons
+    of RUTF into Maiduguri, twenty thousand into Djibo, thirty-five thousand into Damaturu — the concrete
+    quantities the narration speaks, on the page of the person who published them, and the categories
+    that decide which suppliers ever receive it.'
   actions:
   - kind: click
     target: css:.navitem:has-text('Solicitations')
   - kind: wait_for
     target: css:.data-table
+  - kind: scroll_to
+    target: css:tr:has-text('RUTF Northeast Nigeria Q3 2026')
   - kind: hold
-    seconds: 2.2
+    seconds: 3.4
+    note: the lots are on the row — 60,000 to Maiduguri, spoken and readable without opening anything
   impressive_because: 'Eligibility is decided on the server: an unqualified supplier''s page never receives
     the solicitation at all, rather than being shown it with the button hidden. It prevents the ordinary
     embarrassment of an ineligible bid excluded by hand after the fact.'
@@ -121,11 +176,13 @@ scenes:
 - id: bids-priced-and-scored-lot-by-lot
   concept_claim: Pricing per lot surfaces a different leader on each corridor — information a per-tender
     comparison cannot show.
-  url: /supply/
-  show: 'The split tender — RUTF Sahel and Lake Chad Corridors Q3 2026 — opened to its per-lot comparison:
-    rows ranked by unit price with each reviewer''s technical score inline, and a different leader on
-    the Maiduguri lot than on Djibo.'
+  url: /supply/dev-login/?persona=ada&next=/supply/
+  show: 'The live tender — RUTF Northeast Nigeria Q3 2026 — opened to its per-lot comparison: rows ranked
+    by unit price with each reviewer''s technical score inline, and a different leader on the Maiduguri
+    lot (Savanna, out of Kano) than on Djibo (Faso NutriWorks, out of Ouagadougou).'
   actions:
+  - kind: wait_for
+    target: css:.page
   - kind: click
     target: css:.navitem:has-text('Solicitations')
   - kind: wait_for
@@ -135,9 +192,16 @@ scenes:
     note: the live tender, still open — bids priced per lot
   - kind: wait_for
     target: css:.modal
+  - kind: scroll_to
+    target: css:.modal .card:has-text('60,000 cartons RUTF delivered to Maiduguri')
+  - kind: hold
+    seconds: 2.4
+    note: Maiduguri — Savanna first on price at 42.29, technical 91
+  - kind: scroll_to
+    target: css:.modal .card:has-text('20,000 cartons RUTF delivered to Djibo')
   - kind: hold
     seconds: 2.6
-    note: price-ranked rows with each reviewer's technical score inline
+    note: Djibo — Faso NutriWorks first at 41.85, and Savanna drops to second
   impressive_because: The leader on the Maiduguri lot is not the leader on Djibo, which is exactly the
     information a per-tender comparison would have hidden.
   ai_quality: Two distinct price leaders are actually visible in the data, not asserted in a caption.
@@ -149,22 +213,24 @@ scenes:
     on purpose.
   actions:
   - kind: scroll_to
-    target: css:.modal:has-text('60,000 cartons RUTF delivered to Maiduguri')
+    target: css:.card:has-text('60,000 cartons RUTF delivered to Maiduguri')
   - kind: hold
     seconds: 1.4
   - kind: click
-    target: css:tr:has-text('Savanna Nutrients Ltd') button:has-text('Award')
+    target: css:.card:has-text('60,000 cartons RUTF delivered to Maiduguri') tr:has-text('Savanna Nutrients
+      Ltd') button:has-text('Award')
     note: Maiduguri to Savanna — cheapest into the Lake Chad corridor
   - kind: wait_for
     target: css:.toast
   - kind: hold
     seconds: 1.8
   - kind: scroll_to
-    target: css:.modal:has-text('20,000 cartons RUTF delivered to Djibo')
+    target: css:.card:has-text('20,000 cartons RUTF delivered to Djibo')
   - kind: hold
     seconds: 1.4
   - kind: click
-    target: css:tr:has-text('Faso NutriWorks SA') button:has-text('Award')
+    target: css:.card:has-text('20,000 cartons RUTF delivered to Djibo') tr:has-text('Faso NutriWorks
+      SA') button:has-text('Award')
     note: Djibo to Faso — a different plant on a different corridor
   - kind: wait_for
     target: css:.toast
@@ -179,8 +245,10 @@ scenes:
   concept_claim: The award is immutable and the contract carries it out against a named appropriation,
     so the same record the tender produced is what the supply chain moves against.
   url: /supply/
-  show: The contract created from the award — drawing against a named appropriation, carrying the IATI
-    activity identifier and the delivery schedule the supply chain will now move against.
+  show: 'A contract already in execution on the same corridor — created from the earlier Q2 award into
+    Maiduguri, not the one just made — opened to show what an award turns into: a named appropriation
+    with its IATI activity identifier, the money obligated against it, and the consignments the contracted
+    quantity is actually moving on.'
   actions:
   - kind: click
     target: css:.modal-close
@@ -192,7 +260,15 @@ scenes:
   - kind: scroll_to
     target: css:.card:has-text('Pipeline by corridor')
   - kind: hold
-    seconds: 2.2
+    seconds: 1.6
+  - kind: click
+    target: css:.card:has-text('Pipeline by corridor') tr:has-text('OES-C-2026-NG1')
+    note: the contract the Maiduguri award became
+  - kind: wait_for
+    target: css:.modal
+  - kind: hold
+    seconds: 3.2
+    note: the funding envelope, the IATI activity id, and the consignments it is moving on
   impressive_because: 'Almost every procurement system stops at the award, which is why nobody can trace
     a dollar to a carton. This is the midpoint: from here the same record is what the supply chain moves
     against.'

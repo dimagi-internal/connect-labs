@@ -52,6 +52,12 @@
   align-items: stretch;
 }
 
+/* The rail sticks. These pages scroll a long way — the partner surface is four
+   stacked cards — and a rail that scrolls away leaves roughly a fifth of the
+   viewport as an empty white column with no wayfinding in it, on every frame
+   after the first. Two independent reviews flagged the dead column before
+   anyone flagged the missing navigation, which is the giveaway that it reads as
+   a layout fault rather than a deliberate choice. */
 .sidenav {
   width: 232px;
   flex: 0 0 232px;
@@ -61,6 +67,11 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  max-height: 100vh;
+  overflow-y: auto;
 }
 .navitem {
   display: block;

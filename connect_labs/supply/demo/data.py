@@ -128,13 +128,19 @@ SPLIT_AWARD_LOTS = [
 
 # Additional fully-awarded solicitations, one per corridor, so post-award
 # execution has a contract per country rather than everything hanging off one.
-# (winner org, RFP title, brief, country, lot description, cartons, unit price)
+# Each corridor ran its own tender on its own clock, so the closing and
+# delivery dates are per-corridor rather than one shared offset — three rows
+# that differ only by the place name read as a copied fixture, not a history.
+# (winner org, RFP title, brief, country, bid closed N days ago,
+#  delivery due in N days, lot description, cartons, unit price)
 CORRIDOR_AWARDS = [
     (
         "Savanna Nutrients Ltd",
         "RUTF Northeast Nigeria Q2 2026",
         "Supply of RUTF to the north-east Nigeria response for the Q2 caseload.",
         "NG",
+        71,
+        104,
         "45,000 cartons RUTF delivered to Maiduguri",
         45000,
         42.10,
@@ -144,6 +150,8 @@ CORRIDOR_AWARDS = [
         "RUTF Sahel Q2 2026",
         "Supply of RUTF to the Burkina Faso Sahel region for the Q2 caseload.",
         "BF",
+        48,
+        67,
         "20,000 cartons RUTF delivered to Djibo",
         20000,
         43.60,
@@ -153,6 +161,8 @@ CORRIDOR_AWARDS = [
         "Sudan Corridor Logistics 2026",
         "Inland haulage and warehousing for imported RUTF through Port Sudan.",
         "SD",
+        93,
+        135,
         "Inland haulage of 40,000 cartons from Port Sudan",
         40000,
         3.20,
@@ -366,7 +376,36 @@ SHIPMENTS = [
     ("SHP-2026-0401", "Ouagadougou RUTF Plant", "Ouagadougou Central Warehouse", [], 9000, "confirmed", "asn", 24),
     ("SHP-2026-0402", "Ouagadougou Central Warehouse", "Djibo Distribution Hub", [], 6000, "delivered", "portal", 11),
     ("SHP-2026-0403", "Ouagadougou Central Warehouse", "Dori Distribution Hub", [], 5000, "in_transit", "portal", 4),
+    # Kassala is the well-covered district the funder narrative contrasts
+    # against Borno: a small caseload served to ~91% of need. It crosses a
+    # district boundary, which is what makes it count as supply reaching a
+    # district rather than redistribution inside one (see services/coverage.py).
+    #
+    # Borno's matching leg is NOT here, deliberately. Lifting Borno to the 34%
+    # its narration speaks needs ~1,400 more cartons across its boundary, and
+    # the Nigeria contract has only 325 cartons of headroom left before
+    # delivered_quantity exceeds the 45,000 it contracted for — because that
+    # figure double-counts every carton that moves hub-to-site inside Borno.
+    # The demo cannot tell its own coverage story until that is fixed. See
+    # docs/walkthroughs/oes-narrative-set-review.md K1.
+    ("SHP-2026-0204", "Khartoum Central Warehouse", "Kassala Forward Store", [], 6388, "delivered", "checkin", 16),
 ]
+
+# Days each leg is running behind its planned arrival. Authored rather than
+# drawn, because the exception queue ranks on these: two consignments drawn
+# independently landed on "2 days behind plan" together, and a queue whose top
+# two rows are identical after the place name reads as a fixture rather than a
+# morning's work. A leg absent from this table is on time.
+SHIPMENT_SLIP_DAYS = {
+    "SHP-2026-0302": 2,  # Kano → Maiduguri, the short well-instrumented leg
+    "SHP-2026-0402": 6,  # Ouagadougou → Djibo, a border crossing and a bad road
+    # Khartoum → El Fasher, the corridor that arrives as phone check-ins and
+    # serves the worst famine phase in the response. Nine days is the figure the
+    # command-centre narration speaks, and it is the leg the reallocation from
+    # Kassala answers — one causal chain instead of three unrelated corridors.
+    "SHP-2026-0202": 9,
+    "SHP-2026-0203": 1,
+}
 
 STATUS_STEPS = {
     "planned": [],
