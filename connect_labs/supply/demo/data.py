@@ -399,7 +399,11 @@ SHIPMENTS = [
 SHIPMENT_SLIP_DAYS = {
     "SHP-2026-0302": 2,  # Kano → Maiduguri, the short well-instrumented leg
     "SHP-2026-0402": 6,  # Ouagadougou → Djibo, a border crossing and a bad road
-    "SHP-2026-0202": 3,  # Khartoum → El Fasher, check-ins only
+    # Khartoum → El Fasher, the corridor that arrives as phone check-ins and
+    # serves the worst famine phase in the response. Nine days is the figure the
+    # command-centre narration speaks, and it is the leg the reallocation from
+    # Kassala answers — one causal chain instead of three unrelated corridors.
+    "SHP-2026-0202": 9,
     "SHP-2026-0203": 1,
 }
 

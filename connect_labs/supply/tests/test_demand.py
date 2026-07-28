@@ -333,6 +333,34 @@ def test_the_spoken_maiduguri_deadline_is_the_fifteenth_of_september():
     assert (lot.delivery_deadline.month, lot.delivery_deadline.day) == (9, 15)
 
 
+def test_a_consignment_still_on_the_road_can_be_late():
+    """The delay you can still act on is the one worth surfacing.
+
+    Milestones were seeded with estimated_at == planned_at, so a leg could only
+    ever report a delay once it had ARRIVED and carried an actual_at. A
+    consignment already nine days overdue and still in transit reported zero
+    and never entered the queue — exactly backwards, and it left the product's
+    three-timestamp claim undemonstrated, since the middle timestamp never
+    moved.
+    """
+    call_command("seed_supply_demo")
+    from connect_labs.supply.models import Shipment
+
+    late = [e for e in exceptions.build_queue() if e["kind"] == "Late"]
+    in_transit_refs = set(
+        Shipment.objects.filter(status=Shipment.Status.IN_TRANSIT).values_list("reference", flat=True)
+    )
+    from_the_road = [e for e in late if e.get("shipment_reference") in in_transit_refs]
+    assert from_the_road, "a consignment still in transit must be able to be late"
+
+    # And the estimate is what makes it late, not an actual arrival.
+    worst = from_the_road[0]
+    shipment = Shipment.objects.get(reference=worst["shipment_reference"])
+    arrival = shipment.milestones.order_by("-sequence").first()
+    assert arrival.actual_at is None, "still on the road"
+    assert arrival.estimated_at > arrival.planned_at, "the estimate is what moved"
+
+
 def test_a_node_can_only_spare_what_it_does_not_need():
     """The queue advises reallocating from surplus; this is what surplus means.
 
