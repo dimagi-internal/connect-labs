@@ -234,17 +234,30 @@ def run_default(*, definition, access_token, request=None, window=None, cchq_acc
     the loop. ``window`` overrides the default "yesterday, Africa/Lagos" day
     for backfills; it is a (window_start, window_end) UTC half-open pair, same
     convention as the weekly report, just spanning one day instead of seven.
-    cchq_access_token is accepted (the scheduler always forwards one when
-    available) but unused -- every hsd_visits field comes from Connect's own
-    connect_csv export; only the work_areas pipeline needs CommCare HQ, which
-    the pipeline engine's cchq_cases data source fetches on its own.
+
+    The work_areas (cchq_cases) pipeline is deliberately fetched directly via
+    fetch_cchq_cases_as_visit_dicts, NOT through WorkflowDataAccess.get_pipeline_data:
+    that generic path never threads a cchq_access_token down to the cchq_cases
+    fetcher (its PipelineDataAccess is constructed with request=None in every
+    headless run_default call), so it would raise CCHQHeadlessError every time
+    this runs unattended -- on schedule or via backfill. Calling the fetcher
+    directly lets us pass cchq_access_token explicitly (the scheduler mints one
+    per run via get_valid_cchq_access_token(owner); the backfill management
+    command does the same). If no cchq_access_token is available (or the fetch
+    otherwise fails), building-count enrichment degrades gracefully: indicator
+    #2's ratio is None rather than the whole run failing.
     """
+    import logging
     from collections import defaultdict
     from datetime import datetime, timedelta, timezone
 
+    from connect_labs.labs.analysis.backends.sql.cchq_cases_fetcher import fetch_cchq_cases_as_visit_dicts
+    from connect_labs.labs.analysis.config import DataSourceConfig
     from connect_labs.workflow.data_access import WorkflowDataAccess
     from connect_labs.workflow.flw_audit_compute import FORM_NAME, WAT_OFFSET, wat_date
     from connect_labs.workflow.flw_daily_indicator_compute import compute_flw_daily_indicators
+
+    logger = logging.getLogger(__name__)
 
     if window is not None:
         window_start, window_end = window
@@ -278,6 +291,12 @@ def run_default(*, definition, access_token, request=None, window=None, cchq_acc
         except (ValueError, TypeError):
             return None
 
+    def _to_float(value):
+        try:
+            return float(value) if value not in (None, "") else None
+        except (ValueError, TypeError):
+            return None
+
     def _in_window(row):
         dt = _parse(row.get("time_start"))
         return dt is not None and window_start <= dt < window_end
@@ -287,17 +306,32 @@ def run_default(*, definition, access_token, request=None, window=None, cchq_acc
         for r in pipeline_data.get("hsd_visits", {}).get("rows", [])
         if r.get("form_display_name") == FORM_NAME and _in_window(r)
     ]
-    wa_rows = pipeline_data.get("work_areas", {}).get("rows", [])
 
     visits_by_opp_flw = defaultdict(lambda: defaultdict(list))
     for r in hsd_rows:
         visits_by_opp_flw[r["opportunity_id"]][r["username"]].append(r)
 
+    work_area_data_source = DataSourceConfig(type="cchq_cases", case_type="work-area")
     building_counts_by_opp = defaultdict(dict)
-    for r in wa_rows:
-        entity_id = r.get("entity_id")
-        if entity_id:
-            building_counts_by_opp[r["opportunity_id"]][entity_id] = r.get("building_count")
+    for opp_id in opp_ids:
+        try:
+            wa_rows = fetch_cchq_cases_as_visit_dicts(
+                request, work_area_data_source, access_token, opp_id, cchq_access_token=cchq_access_token
+            )
+        except Exception:
+            logger.exception(
+                "flw_daily_indicator_report: failed to fetch work-area building counts for opp %s "
+                "(indicator #2's ratio will be None for this opp/day)",
+                opp_id,
+            )
+            continue
+        for row in wa_rows:
+            case = row.get("form_json", {}).get("case", {})
+            entity_id = case.get("case_id")
+            if entity_id:
+                building_counts_by_opp[opp_id][str(entity_id)] = _to_float(
+                    (case.get("properties") or {}).get("building_count")
+                )
 
     date_iso = wat_date(window_start)
     generated_at = datetime.now(timezone.utc).isoformat()
