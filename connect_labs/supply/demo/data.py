@@ -197,6 +197,7 @@ NODES = [
     # distribution hubs in the famine-affected zones
     ("Maiduguri Distribution Hub", "distribution_hub", "NG", 13.1510, 11.8311, None),
     ("Damaturu Distribution Hub", "distribution_hub", "NG", 11.9660, 11.7480, None),
+    ("Gombe Distribution Hub", "distribution_hub", "NG", 11.1673, 10.2897, None),
     ("El Fasher Distribution Hub", "distribution_hub", "SD", 25.3494, 13.6279, None),
     ("Nyala Distribution Hub", "distribution_hub", "SD", 24.8917, 12.0489, None),
     ("Gode Distribution Hub", "distribution_hub", "ET", 43.5500, 5.9527, None),
@@ -267,6 +268,14 @@ PARTNER_ORG = (
 DISTRICTS = {
     "NGA-2839": ("Borno", "NG", 5, 1_113_000),
     "NGA-2873": ("Yobe", "NG", 4, 625_000),
+    # The third north-east district, and the one the coverage scene turns on.
+    # Hauwa's view is scoped to Nigeria on the server, so the well-covered
+    # district she is compared against has to BE in Nigeria — Kassala is in
+    # Sudan and never appears on her page. Gombe is the smallest of the
+    # north-east states and sits a phase below Borno, which is what lets it
+    # take fewer cartons and still cover nearly all of its need. Yobe cannot
+    # play the part: 91% of its caseload is more courses than Borno received.
+    "NGA-2859": ("Gombe", "NG", 3, 600_000),
     "SDN-881": ("North Darfur", "SD", 5, 338_000),
     "SDN-5856": ("Southern Darfur", "SD", 2, 654_000),
     "SDN-884": ("Kassala", "SD", 3, 405_000),
@@ -284,6 +293,7 @@ NODE_DISTRICTS = {
     "Bama Health Post": "NGA-2839",
     "Monguno Health Post": "NGA-2839",
     "Damaturu Distribution Hub": "NGA-2873",
+    "Gombe Distribution Hub": "NGA-2859",
     "El Fasher Distribution Hub": "SDN-881",
     "Tawila Nutrition Site": "SDN-881",
     "Kebkabiya Nutrition Site": "SDN-881",
@@ -403,6 +413,13 @@ SHIPMENTS = [
     # (review K1) — this leg fits under the ceiling rather than resolving it.
     ("SHP-2026-0204", "Khartoum Central Warehouse", "Kassala Forward Store", [], 6388, "delivered", "checkin", 16),
     ("SHP-2026-0305", "Kano Central Warehouse", "Bama Health Post", [], 1399, "delivered", "asn", 6),
+    # Gombe: the small, well-covered district Hauwa's coverage table is read
+    # against. 9,464 courses against a 10,400 caseload is 91%, on well under
+    # the cartons Borno received — so tonnage ranks Borno first and coverage
+    # ranks it second, which is the whole point of the scene. It lands in
+    # Gombe rather than Maiduguri, so it does not count toward OES-C-2026-NG1's
+    # contracted delivery: a carton counts once, where its contract says.
+    ("SHP-2026-0306", "Kano Central Warehouse", "Gombe Distribution Hub", [], 9464, "delivered", "asn", 10),
 ]
 
 # Days each leg is running behind its planned arrival. Authored rather than

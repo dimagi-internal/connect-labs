@@ -112,13 +112,13 @@ def test_seed_execution_world():
     call_command("seed_supply_demo")
     from connect_labs.supply.models import Contract, Discrepancy, Shipment, SupplyEvent, SupplyNode
 
-    # 28 OES-network nodes plus Komadugu's 11 Borno feeding sites
-    assert SupplyNode.objects.count() == 39
+    # 29 OES-network nodes plus Komadugu's 11 Borno feeding sites
+    assert SupplyNode.objects.count() == 40
     assert Contract.objects.count() == 4
-    # 14 corridor consignments, 10 delivered into Komadugu's sites (a partner
+    # 15 corridor consignments, 10 delivered into Komadugu's sites (a partner
     # site holds stock only if something actually delivered to it), and 2 still
     # on the road so the calendar's inbound column is exercised.
-    assert Shipment.objects.count() == 28
+    assert Shipment.objects.count() == 29
 
     # every ingestion tier is represented, so the demo shows the real gradient
     tiers = set(SupplyEvent.objects.values_list("source_tier", flat=True))
@@ -242,3 +242,29 @@ def test_reseeding_rotates_demo_passwords(monkeypatch):
     user.refresh_from_db()
     assert user.check_password("rotated-secret-1")
     assert not user.check_password("oes-demo-2026")
+
+
+def test_seeded_nigeria_coverage_inverts_tonnage():
+    """The scene the government view exists for, on the data it actually gets.
+
+    Hauwa's page is scoped to Nigeria on the server, so the well-covered
+    district she is compared against has to be a Nigerian one — an earlier
+    seed put it in Sudan, where her page could never show it. The narration
+    says one district is covered to ninety-one percent while another, which
+    received MORE cartons, sits at thirty-four with thirty-one thousand
+    children still uncovered. If a reseed ever ranks them the same way by
+    tonnage and by coverage, the scene stops demonstrating anything.
+    """
+    from connect_labs.supply.services import coverage
+
+    call_command("seed_supply_demo", "--reset")
+    rows = {r["adm1_name"]: r for r in coverage.coverage_by_district(country="NG")}
+
+    best, worst = rows["Gombe"], rows["Borno"]
+    assert best["coverage_percent"] == pytest.approx(91.0, abs=0.5)
+    assert worst["coverage_percent"] == pytest.approx(34.0, abs=0.5)
+    # the inversion: more cartons, less covered
+    assert worst["courses_delivered"] > best["courses_delivered"]
+    assert worst["coverage_percent"] < best["coverage_percent"]
+    # "thirty-one thousand children still uncovered"
+    assert 31_000 <= worst["uncovered_children"] < 32_000
