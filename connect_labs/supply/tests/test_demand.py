@@ -7,8 +7,17 @@ from decimal import Decimal
 
 import pytest
 from django.core.management import call_command
+from django.utils import timezone
 
-from connect_labs.supply.models import ChildOutcome, Discrepancy, Shipment, ShortfallSignal, SupplyAction, SupplyNode
+from connect_labs.supply.models import (
+    ChildOutcome,
+    Discrepancy,
+    Shipment,
+    ShortfallSignal,
+    SupplyAction,
+    SupplyEvent,
+    SupplyNode,
+)
 from connect_labs.supply.services import coverage, exceptions
 
 from .factories import (
@@ -343,3 +352,214 @@ def test_the_seeded_world_has_a_partner_raised_exception_waiting(client):
     partner_rows = [r for r in body["exceptions"] if r["origin"] == "partner"]
     assert partner_rows, "the command centre must show a signal the partner raised"
     assert partner_rows[0]["org_name"] == "Komadugu Health Initiative"
+
+
+# --- the loop: a partner signals, the centre answers ------------------------
+
+
+def test_a_partner_raises_a_shortfall_and_the_centre_sees_it(client):
+    call_command("seed_supply_demo")
+    client.post("/supply/login/", {"email": "zara@komadugu.example", "password": "oes-demo-2026"})
+    site_id = client.get("/supply/api/bootstrap/").json()["sites"][0]["id"]
+
+    response = client.post(
+        "/supply/api/signals/raise/",
+        data={
+            "site_id": site_id,
+            "needed_by": "2026-09-09",
+            "children_affected": 640,
+            "cartons_short": 640,
+            "note": "Admissions above plan since the road reopened.",
+        },
+        content_type="application/json",
+    )
+    assert response.status_code == 200, response.content
+
+    client.post("/supply/login/", {"email": "oes-lead@oes.example", "password": "oes-demo-2026"})
+    queue = client.get("/supply/api/bootstrap/").json()["exceptions"]
+    mine = [r for r in queue if r.get("children_at_risk") == 640 and r["origin"] == "partner"]
+    assert mine, "the centre must see the signal the partner just raised"
+
+
+def test_a_partner_cannot_raise_a_shortfall_at_someone_elses_site(client):
+    call_command("seed_supply_demo")
+    client.post("/supply/login/", {"email": "zara@komadugu.example", "password": "oes-demo-2026"})
+    foreign = SupplyNode.objects.get(name="Tawila Nutrition Site")
+
+    response = client.post(
+        "/supply/api/signals/raise/",
+        data={"site_id": foreign.id, "needed_by": "2026-09-09", "children_affected": 100, "cartons_short": 100},
+        content_type="application/json",
+    )
+    assert response.status_code == 400
+
+
+def test_a_supplier_cannot_raise_a_shortfall_at_all(client):
+    call_command("seed_supply_demo")
+    client.post("/supply/login/", {"email": "supplier@savanna.example", "password": "oes-demo-2026"})
+    response = client.post(
+        "/supply/api/signals/raise/",
+        data={"site_id": 1, "needed_by": "2026-09-09", "children_affected": 10, "cartons_short": 10},
+        content_type="application/json",
+    )
+    assert response.status_code == 403
+
+
+def test_a_reallocation_creates_a_real_shipment_and_moves_the_numbers(client):
+    """Scene 8 of oes-command-centre: the numbers move because a truck moved."""
+    from connect_labs.supply.services import actions
+    from connect_labs.supply.services import cover as cover_service
+
+    CaseloadEstimateFactory(adm1_code=BORNO, children_sam=4330)
+    surplus = SupplyNodeFactory(kind="warehouse", adm1_code=BORNO, name="Kassala Test Store", country="NG")
+    thin = SupplyNodeFactory(kind="distribution_hub", adm1_code=BORNO, name="El Fasher Test Hub", country="NG")
+    SupplyEvent.objects.create(
+        biz_step=SupplyEvent.BizStep.RECEIVING,
+        event_time=timezone.now(),
+        read_point=surplus,
+        quantity_list=[{"gtin": "1", "quantity": 9000, "uom": "cartons"}],
+        source_tier=SupplyEvent.SourceTier.CHECKIN,
+    )
+    ContractFactory(org=SupplierOrgFactory())
+
+    before = cover_service.cover_for_node(thin)
+    action = actions.reallocate(
+        actor="ada@oes.example",
+        source_node=surplus,
+        target_node=thin,
+        quantity=3000,
+        rationale="El Fasher is eleven days from dry; Kassala holds more than its own caseload needs.",
+    )
+
+    # A real consignment, with planned milestones and stored geometry.
+    assert action.shipment is not None
+    assert action.shipment.status == Shipment.Status.PLANNED
+    assert action.shipment.milestones.count() == 2
+    assert all(m.planned_at is not None for m in action.shipment.milestones.all())
+
+    # And the source is drawn down, so the surplus is no longer double-counted.
+    assert float(cover_service.stock_on_hand(surplus)) == 9000  # not yet departed
+    assert action.effect
+    assert before is not None
+
+
+def test_a_reallocation_cannot_overdraw_the_source():
+    """A paper transfer would have the receiving site plan against nothing."""
+    from connect_labs.supply.services import actions
+    from connect_labs.supply.services.org_actions import ActionError
+
+    CaseloadEstimateFactory(adm1_code=BORNO)
+    surplus = SupplyNodeFactory(kind="warehouse", adm1_code=BORNO, name="Thin Store")
+    target = SupplyNodeFactory(kind="distribution_hub", adm1_code=BORNO, name="Target Hub")
+    ContractFactory(org=SupplierOrgFactory())
+    SupplyEvent.objects.create(
+        biz_step=SupplyEvent.BizStep.RECEIVING,
+        event_time=timezone.now(),
+        read_point=surplus,
+        quantity_list=[{"gtin": "1", "quantity": 500, "uom": "cartons"}],
+        source_tier=SupplyEvent.SourceTier.CHECKIN,
+    )
+    with pytest.raises(ActionError, match="holds"):
+        actions.reallocate(
+            actor="ada@oes.example",
+            source_node=surplus,
+            target_node=target,
+            quantity=5000,
+            rationale="wishful thinking",
+        )
+
+
+def test_a_reallocation_without_a_reason_is_refused():
+    from connect_labs.supply.services import actions
+    from connect_labs.supply.services.org_actions import ActionError
+
+    CaseloadEstimateFactory(adm1_code=BORNO)
+    a = SupplyNodeFactory(kind="warehouse", adm1_code=BORNO, name="A store")
+    b = SupplyNodeFactory(kind="distribution_hub", adm1_code=BORNO, name="B hub")
+    with pytest.raises(ActionError, match="why"):
+        actions.reallocate(actor="ada", source_node=a, target_node=b, quantity=10, rationale="   ")
+
+
+def test_resolving_a_signal_ties_it_to_the_action_that_resolved_it(client):
+    """The decision and the evidence that prompted it become one record."""
+    call_command("seed_supply_demo")
+    signal = ShortfallSignal.objects.filter(status=ShortfallSignal.Status.OPEN).first()
+    assert signal is not None
+
+    surplus = SupplyNode.objects.get(name="Kassala Forward Store")
+    SupplyEvent.objects.create(
+        biz_step=SupplyEvent.BizStep.RECEIVING,
+        event_time=timezone.now(),
+        read_point=surplus,
+        quantity_list=[{"gtin": "1", "quantity": 9000, "uom": "cartons"}],
+        source_tier=SupplyEvent.SourceTier.CHECKIN,
+    )
+
+    client.post("/supply/login/", {"email": "oes-lead@oes.example", "password": "oes-demo-2026"})
+    response = client.post(
+        "/supply/api/actions/reallocate/",
+        data={
+            "source_node_id": surplus.id,
+            "target_node_id": signal.site_id,
+            "quantity": 800,
+            "rationale": "Kukawa reported a shortfall four days ago; Kassala holds surplus.",
+            "signal_id": signal.id,
+        },
+        content_type="application/json",
+    )
+    assert response.status_code == 200, response.content
+
+    signal.refresh_from_db()
+    assert signal.status == ShortfallSignal.Status.RESOLVED
+    assert signal.resolved_by_action_id == response.json()["action"]["id"]
+
+    # And it has left the queue, because the situation changed.
+    queue = client.get("/supply/api/bootstrap/").json()["exceptions"]
+    assert not any(r.get("signal_id") == signal.id for r in queue)
+
+
+def test_a_partner_cannot_reallocate(client):
+    call_command("seed_supply_demo")
+    client.post("/supply/login/", {"email": "zara@komadugu.example", "password": "oes-demo-2026"})
+    response = client.post(
+        "/supply/api/actions/reallocate/",
+        data={"source_node_id": 1, "target_node_id": 2, "quantity": 10, "rationale": "no"},
+        content_type="application/json",
+    )
+    assert response.status_code == 403
+
+
+# --- the batch drill --------------------------------------------------------
+
+
+def test_a_delivered_batch_drills_to_a_child_who_recovered(client):
+    """The closing beat of both the partner and the funder narratives."""
+    from connect_labs.supply.models import MUAC_RECOVERED_MIN_MM, DistributionRecord
+
+    call_command("seed_supply_demo")
+    batch = DistributionRecord.objects.first().batch_lot
+
+    client.post("/supply/login/", {"email": "usg@oes.example", "password": "oes-demo-2026"})
+    body = client.get(f"/supply/api/batches/{batch}/").json()
+
+    assert body["records"], "a batch must resolve to the distributions it fed"
+    assert body["outcomes"], "and to the children admitted on it"
+    assert body["synthetic"] is True
+    recovered = [
+        o
+        for o in body["outcomes"]
+        if o["discharge_status"] == "recovered" and o["latest_muac_mm"] >= MUAC_RECOVERED_MIN_MM
+    ]
+    assert recovered, "at least one series must cross the recovery threshold"
+    # Every rendered series carries the synthetic label in the payload itself,
+    # so no consumer can drop it.
+    assert all(o["synthetic"] for o in body["outcomes"])
+
+
+def test_a_supplier_cannot_drill_into_child_outcomes(client):
+    call_command("seed_supply_demo")
+    from connect_labs.supply.models import DistributionRecord
+
+    batch = DistributionRecord.objects.first().batch_lot
+    client.post("/supply/login/", {"email": "supplier@savanna.example", "password": "oes-demo-2026"})
+    assert client.get(f"/supply/api/batches/{batch}/").status_code == 403

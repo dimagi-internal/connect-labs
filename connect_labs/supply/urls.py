@@ -2,6 +2,7 @@ from django.urls import path
 
 from . import views
 from .api import bootstrap as bootstrap_api
+from .api import demand as demand_api
 from .api import eoi as eoi_api
 from .api import execution as execution_api
 from .api import ingest as ingest_api
@@ -67,6 +68,14 @@ urlpatterns = [
     path("api/tokens/", execution_api.api_tokens, name="api_tokens"),
     path("api/tokens/<int:token_id>/revoke/", execution_api.revoke_api_token, name="api_token_revoke"),
     # --- ingestion (bearer-token authenticated, machine-to-machine) ---
+    # Demand side: the partner's signal and the centre's answer.
+    path("api/signals/", demand_api.signals, name="api_signals"),
+    path("api/signals/raise/", demand_api.raise_shortfall, name="api_signal_raise"),
+    path("api/actions/", demand_api.action_log, name="api_actions"),
+    path("api/actions/reallocate/", demand_api.reallocate, name="api_action_reallocate"),
+    path("api/actions/expedite/<int:shipment_id>/", demand_api.expedite, name="api_action_expedite"),
+    path("api/outcomes/", demand_api.outcomes_summary, name="api_outcomes"),
+    path("api/batches/<str:batch_lot>/", demand_api.batch_drill, name="api_batch_drill"),
     path("api/v1/epcis/capture/", ingest_api.epcis_capture, name="api_v1_epcis_capture"),
     path("api/v1/shipments/", ingest_api.shipments, name="api_v1_shipments"),
     path("api/v1/checkins/", ingest_api.checkins, name="api_v1_checkins"),
