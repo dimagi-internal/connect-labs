@@ -104,10 +104,19 @@
   align-items: center;
   gap: 8px;
   margin-bottom: 5px;
+  /* A partner shortfall carries TWO badges before its headline ("Partner
+     shortfall" and "Raised by Komadugu Health Initiative"). On a narrow
+     column the headline was the only flex child that could give, and a flex
+     child defaults to min-width:auto — so it shrank toward its longest word
+     and rendered as a ~10px vertical sliver of stacked letters. It is the
+     row the command centre's best scene is built on. */
+  flex-wrap: wrap;
 }
 .exception-what {
   font-weight: 600;
   font-size: 13px;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 .exception-why {
   font-size: 12px;

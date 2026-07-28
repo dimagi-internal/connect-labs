@@ -268,3 +268,45 @@ def test_seeded_nigeria_coverage_inverts_tonnage():
     assert worst["coverage_percent"] < best["coverage_percent"]
     # "thirty-one thousand children still uncovered"
     assert 31_000 <= worst["uncovered_children"] < 32_000
+
+
+def test_the_seeded_world_produces_all_four_exception_kinds():
+    """The command centre narrates "all four exception kinds" — over three.
+
+    Every seeded batch carried a 540-day shelf life, so every expiry landed in
+    January 2028 and the expiry-risk exception could not fire at all. The
+    service, its cover calculation and its queue row were written, tested and
+    unreachable: pytest passed, the recipe resolved, and the only way to notice
+    was to count the kinds in a rendered frame.
+    """
+    from connect_labs.supply.services import exceptions
+
+    call_command("seed_supply_demo", "--reset")
+    kinds = {r["kind"] for r in exceptions.build_queue()}
+    assert kinds == {"Late", "Short receipt", "Partner shortfall", "Expiry risk"}
+
+
+def test_a_late_row_that_harms_nobody_still_says_so_in_children():
+    """The queue's best argument for its own ranking, said out loud.
+
+    A row with no children behind it fell back to "SHP-2026-0402 is 6 days
+    behind plan", which argued in days while every other row argued in
+    children — and threw away the strongest evidence the ranking produces:
+    that a 6-day delay sorts BELOW a 1-day one because the destination is
+    holding enough stock to absorb it.
+    """
+    from connect_labs.supply.services import exceptions
+
+    call_command("seed_supply_demo", "--reset")
+    rows = exceptions.build_queue()
+    zero_risk = [r for r in rows if r["kind"] == "Late" and not r["children_at_risk"]]
+    assert zero_risk, "the demo needs a delay that costs nobody a course"
+    for row in zero_risk:
+        assert "No children go without" in row["what"]
+        assert "weeks of cover" in row["why"]
+
+    # and the point of it: worse lateness, lower rank
+    worst_late = max(zero_risk, key=lambda r: r["why"])
+    harmful = [r for r in rows if r["kind"] == "Late" and r["children_at_risk"]]
+    assert harmful, "expected at least one delay that does cost courses"
+    assert rows.index(worst_late) > rows.index(harmful[-1])

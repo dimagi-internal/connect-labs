@@ -422,6 +422,22 @@ SHIPMENTS = [
     ("SHP-2026-0306", "Kano Central Warehouse", "Gombe Distribution Hub", [], 9464, "delivered", "asn", 10),
 ]
 
+# Consignments carrying a short-dated batch, by reference -> shelf life in days
+# from the seed date.
+#
+# Every lot was seeded at 540 days, which put every expiry in January 2028 and
+# meant the expiry-risk exception could not fire at all: the service, its cover
+# calculation and its queue row were written, tested and unreachable, and the
+# command centre narrated "all four exception kinds" over three.
+#
+# Djibo is the right home for it. It is the most over-supplied node in the
+# network at 25 weeks of cover, which is exactly the situation this exception
+# exists to catch — stock sitting where the demand behind it is too small to
+# work through the batch before it expires. A short-dated lot at a node that
+# turns its stock over quickly would never be at risk, and seeding one there
+# would be the kind of detail that makes a demo world look authored.
+SHORT_DATED_LOTS = {"SHP-2026-0402": 150}
+
 # Days each leg is running behind its planned arrival. Authored rather than
 # drawn, because the exception queue ranks on these: two consignments drawn
 # independently landed on "2 days behind plan" together, and a queue whose top

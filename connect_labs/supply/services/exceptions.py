@@ -66,14 +66,30 @@ def late_exceptions(contracts=None, as_of=None):
                 "node_name": destination.name,
                 "children_at_risk": at_risk,
                 "by_date": node_cover["stockout_on"] if node_cover else None,
+                # Every row in one unit, INCLUDING the ones that come to zero.
+                # A row that fell back to "SHP-2026-0402 is 6 days behind plan"
+                # left the queue arguing in two units at once, and quietly threw
+                # away the best evidence the ranking produces: that a 6-day
+                # delay can sit below a 1-day one because the destination is
+                # holding enough stock to cover it. Said out loud, that is the
+                # whole case for ranking on children instead of on lateness.
                 "what": (
                     f"{at_risk:,} children lose a full course at {destination.name}"
                     if at_risk
-                    else f"{shipment.reference} is {delay:.0f} days behind plan"
+                    else f"No children go without at {destination.name}, despite {delay:.0f} days late"
                 ),
                 "why": (
                     f"{shipment.reference} is {delay:.0f} days behind the plan it was awarded "
                     f"against, moving {shipment.origin.name} to {destination.name}."
+                    + (
+                        ""
+                        if at_risk
+                        else (
+                            f" {destination.name} is holding "
+                            f"{node_cover['weeks_of_cover'] if node_cover else 0} weeks of cover, "
+                            f"so the delay is absorbed before anybody misses a course."
+                        )
+                    )
                 ),
                 "action": "Expedite the consignment, or reallocate from a node holding surplus.",
                 "derivation": (

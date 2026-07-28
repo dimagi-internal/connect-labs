@@ -33,6 +33,7 @@ from .data import (
     NODES,
     SHIPMENT_SLIP_DAYS,
     SHIPMENTS,
+    SHORT_DATED_LOTS,
     STATUS_STEPS,
 )
 
@@ -172,7 +173,7 @@ def _seed_shipments(rng, nodes, contracts):
                 shipment=shipment,
                 gtin=gs1.make_gtin("629123", 7346),
                 batch_lot=f"LOT26{index:02d}A",
-                expiry_date=(now + timedelta(days=540)).date(),
+                expiry_date=(now + timedelta(days=SHORT_DATED_LOTS.get(reference, 540))).date(),
                 quantity=cartons,
                 unit="cartons",
                 sscc=gs1.make_sscc("629123", 1000 + index),
