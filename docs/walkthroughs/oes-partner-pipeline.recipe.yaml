@@ -7,7 +7,7 @@ review_mode: autonomous
 why_brief: oes-partner-pipeline.why_brief.yaml
 tagline: The organisation that feeds the children finally sees the supply it depends on
 setup:
-  command: python manage.py seed_supply_demo --reset
+  command: python scripts/walkthroughs/oes/ensure_demo.py
   rerun: per_render
   timeout_seconds: 600
 scenes:
@@ -22,11 +22,16 @@ scenes:
     nothing about the supply behind it.'
   actions:
   - kind: wait_for
-    target: css:.key-figures
+    target: css:.keyfigures
     note: role-scoped payload lands
   - kind: hold
     seconds: 1.6
     note: read the four figures
+  - kind: scroll_to
+    target: css:.card:has-text('From a batch to the children it treated')
+    note: the panel that carries this scene's own claim — carton AND child
+  - kind: hold
+    seconds: 1.8
   impressive_because: Every other screen in this product looks outward from the centre. This one belongs
     to the organisation actually admitting the children, and it opens with what they can now see rather
     than what they are being asked to report.
@@ -41,7 +46,7 @@ scenes:
     assigned to it at all.'
   actions:
   - kind: scroll_to
-    target: text:Distribution calendar
+    target: css:.card:has-text('Distribution calendar')
   - kind: hold
     seconds: 2.0
     note: the covered / at risk / uncovered spread
@@ -59,12 +64,12 @@ scenes:
     1.4, Monguno comfortable at 6.
   actions:
   - kind: scroll_to
-    target: text:Weeks of cover by site
+    target: css:.card:has-text('Weeks of cover by site')
   - kind: hold
     seconds: 2.2
     note: the spread from empty to comfortable
   - kind: scroll_to
-    target: text:Stock on hand is receipts minus despatches
+    target: css:.card:has-text('Stock on hand is receipts minus despatches')
     note: the method, on screen
   - kind: hold
     seconds: 1.4
@@ -99,8 +104,13 @@ scenes:
     cartons short and the date it is needed by — and it lands in the OES command centre ranked by the
     children behind it.
   actions:
+  - kind: click
+    target: css:.navitem:has-text('Sites & distributions')
+    note: back to the partner surface — scene 4 left the SPA on another tab
+  - kind: wait_for
+    target: css:.keyfigures
   - kind: scroll_to
-    target: text:Weeks of cover by site
+    target: css:.card:has-text('Weeks of cover by site')
   - kind: click
     target: css:tr:has-text('Kukawa Nutrition Centre') button:has-text('Raise a shortfall')
   - kind: wait_for
@@ -114,6 +124,20 @@ scenes:
       distribution.
   - kind: hold
     seconds: 1.2
+  - kind: click
+    target: css:.modal button:has-text('Raise it')
+    note: raise it — the signal enters the OES queue
+  - kind: wait_for
+    target: css:.toast
+    note: confirmation
+  - kind: hold
+    seconds: 2.0
+    note: it is now in the command centre queue
+  - kind: scroll_to
+    target: css:.card:has-text('Shortfalls you have raised')
+    note: watch it land, rather than being told it did
+  - kind: hold
+    seconds: 2.2
   impressive_because: 'This inverts the direction a monitoring product runs in: the ground reports upward
     into a system that can respond, rather than the centre reporting downward about the ground.'
   ai_quality: The form is pre-filled from the site's real cover projection rather than blank, so the numbers
@@ -126,12 +150,18 @@ scenes:
     arrived on, the distribution it fed, and the children admitted on it — each with a MUAC series drawn
     against the WHO red, amber and green bands, climbing out of the red.'
   actions:
+  - kind: click
+    target: css:.navitem:has-text('Sites & distributions')
+    note: back to the partner surface — scene 4 left the SPA on another tab
+  - kind: wait_for
+    target: css:.keyfigures
   - kind: scroll_to
-    target: text:From a batch to the children it treated
+    target: css:.card:has-text('From a batch to the children it treated')
   - kind: hold
     seconds: 1.6
   - kind: click
-    target: css:tr:has-text('Monguno Nutrition Centre')
+    target: css:.card:has-text('From a batch to the children it treated') tr:has-text('Monguno Nutrition
+      Centre')
   - kind: wait_for
     target: css:.outcome-list
   - kind: hold

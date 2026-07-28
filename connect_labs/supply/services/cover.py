@@ -73,6 +73,12 @@ def _event_cartons(event):
     return total
 
 
+def stock_on_hand_by_id(node_id):
+    """Cartons held at a node, by id — for callers walking many nodes at once."""
+    node = SupplyNode.objects.filter(id=node_id).first()
+    return stock_on_hand(node) if node else Decimal("0")
+
+
 def stock_on_hand(node):
     """Cartons currently held at ``node``, derived from the event log."""
     received = Decimal("0")

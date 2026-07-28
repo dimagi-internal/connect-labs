@@ -410,3 +410,8 @@ scripts/walkthroughs/**/scenes.json
 .canopy/ddd/runs/**/*_deck.html
 # per-scene page dumps: machine-generated, 5-19MB each, superseded by the published run package
 .canopy/ddd/runs/**/walkthrough-run-data.json
+
+# DDD run artifacts — clips, snapshots and manifests are regenerated per render
+# and are far too large to version. The recipe + lock are the durable pair.
+.canopy/ddd/runs/*/snapshots/
+.canopy/ddd/runs/*/*.mp4

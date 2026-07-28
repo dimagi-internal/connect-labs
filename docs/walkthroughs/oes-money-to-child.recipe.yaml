@@ -7,7 +7,7 @@ review_mode: autonomous
 why_brief: oes-money-to-child.why_brief.yaml
 tagline: What the money bought, without the collapse that makes most dashboards untrustworthy
 setup:
-  command: python manage.py seed_supply_demo --reset
+  command: python scripts/walkthroughs/oes/ensure_demo.py
   rerun: per_render
   timeout_seconds: 600
 scenes:
@@ -20,11 +20,11 @@ scenes:
     and three separate bars per contract in the table, never summed into a single completion percentage.
   actions:
   - kind: wait_for
-    target: css:.key-figures
+    target: css:.keyfigures
   - kind: hold
     seconds: 2.2
   - kind: scroll_to
-    target: text:Obligated → disbursed → delivered
+    target: css:.card:has-text('Obligated → disbursed → delivered')
   - kind: hold
     seconds: 2.0
   impressive_because: Money can be committed against a contract, paid to a supplier, and still not be
@@ -57,7 +57,7 @@ scenes:
     cost per child treated written directly underneath it, including what it excludes.
   actions:
   - kind: scroll_to
-    target: text:What a dollar bought
+    target: css:.card:has-text('What a dollar bought')
   - kind: hold
     seconds: 2.0
   - kind: scroll_to
@@ -102,7 +102,7 @@ scenes:
     nothing at all.
   actions:
   - kind: scroll_to
-    target: text:Coverage by district
+    target: css:.card:has-text('Coverage by district')
   - kind: hold
     seconds: 2.6
   - kind: hover
@@ -126,7 +126,7 @@ scenes:
   - kind: wait_for
     target: css:.page
   - kind: scroll_to
-    target: text:Children treated
+    target: css:.card:has-text('Children treated')
   - kind: hold
     seconds: 2.8
     note: two figures, two methods, never reconciled into one

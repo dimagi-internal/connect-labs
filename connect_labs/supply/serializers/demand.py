@@ -29,10 +29,15 @@ def distribution_plan_dict(plan, inbound_cartons=0, on_hand=0):
     the same Tuesday.
     """
     required = float(plan.cartons_required or 0)
-    available = float(on_hand) + float(inbound_cartons)
-    if required <= 0:
-        state = "covered"
-    elif available >= required:
+    # Cover is decided by what the site will actually be HOLDING on the day.
+    # ``on_hand`` is the running balance at this date — opening stock, plus
+    # every consignment that lands on or before it, minus what earlier
+    # distributions already spent. A truck arriving on Friday does not cover
+    # Tuesday, so ``inbound_cartons`` (what is still on the road AFTER this
+    # date) is reported for context and deliberately does NOT count toward
+    # covering this one.
+    available = float(on_hand)
+    if required <= 0 or available >= required:
         state = "covered"
     elif available > 0:
         state = "at_risk"
@@ -45,7 +50,7 @@ def distribution_plan_dict(plan, inbound_cartons=0, on_hand=0):
         "scheduled_for": plan.scheduled_for.isoformat(),
         "expected_children": plan.expected_children,
         "cartons_required": required,
-        "cartons_inbound": float(inbound_cartons),
+        "cartons_inbound": float(inbound_cartons),  # still on the road AFTER this date
         "cartons_on_hand": float(on_hand),
         "state": state,
         "note": plan.note,
