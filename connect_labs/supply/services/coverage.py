@@ -30,37 +30,72 @@ def _delivered_cartons_by_district(country=None):
     return {r["destination__adm1_code"]: int(r["cartons"] or 0) for r in rows}
 
 
-def coverage_by_district(country=None, month=None):
-    """Coverage percent and uncovered children, per admin-1 district."""
-    month = month or date.today().replace(day=1)
-    delivered = _delivered_cartons_by_district(country=country)
+def _requirement_by_district(country=None, month=None):
+    """Children needing treatment per district, summed over the response window.
 
+    **Deliveries are cumulative, so the requirement has to be too.** A contract
+    delivers a season's supply in one consignment; a CaseloadEstimate is one
+    month. Dividing the first by the second is a unit error that reports a
+    district at 424% of need and makes the whole coverage figure worthless —
+    which is exactly what it did before this function existed.
+
+    The window is every month we hold an estimate for, up to ``month``. It is
+    returned alongside the figure so the surface can state what period the
+    coverage covers, because a coverage percent with no window is as
+    unanswerable as one with no denominator.
+    """
+    month = month or date.today().replace(day=1)
     estimates = CaseloadEstimate.objects.filter(month__lte=month)
     if country:
         estimates = estimates.filter(country=country)
 
-    # One row per district: the most recent estimate at or before the month.
-    latest = {}
+    per_district = {}
     for estimate in estimates.order_by("adm1_code", "month"):
-        latest[estimate.adm1_code] = estimate
+        row = per_district.setdefault(
+            estimate.adm1_code,
+            {"latest": estimate, "requirement": 0, "months": 0, "from_month": estimate.month},
+        )
+        row["latest"] = estimate  # ordered by month, so the last wins
+        row["requirement"] += estimate.children_sam or 0
+        row["months"] += 1
+        row["from_month"] = min(row["from_month"], estimate.month)
+    return per_district
+
+
+def coverage_by_district(country=None, month=None):
+    """Coverage percent and uncovered children, per admin-1 district.
+
+    Coverage is allowed to exceed 100%. A district CAN be over-supplied, and
+    saying so is the point — that is where stock sits long enough to reach its
+    expiry date, which the command centre raises as its own exception. Clamping
+    the figure at 100 would hide the surplus and make two different situations
+    render identically.
+    """
+    delivered = _delivered_cartons_by_district(country=country)
+    per_district = _requirement_by_district(country=country, month=month)
 
     rows = []
-    for adm1_code, estimate in latest.items():
+    for adm1_code, agg in per_district.items():
+        estimate = agg["latest"]
         cartons = delivered.get(adm1_code, 0)
         courses = gs1.cartons_to_children(cartons)
-        caseload = estimate.children_sam or 0
-        percent = round((courses / caseload) * 100, 1) if caseload else None
+        requirement = agg["requirement"]
+        percent = round((courses / requirement) * 100, 1) if requirement else None
         rows.append(
             {
                 "adm1_code": adm1_code,
                 "adm1_name": estimate.adm1_name,
                 "country": estimate.country,
                 "ipc_phase": estimate.ipc_phase,
-                "caseload": caseload,
+                "caseload": requirement,
+                "monthly_caseload": estimate.children_sam or 0,
+                "window_months": agg["months"],
+                "window_from": agg["from_month"].isoformat(),
                 "delivered_cartons": cartons,
                 "courses_delivered": courses,
                 "coverage_percent": percent,
-                "uncovered_children": max(caseload - courses, 0),
+                "uncovered_children": max(requirement - courses, 0),
+                "surplus_children": max(courses - requirement, 0),
                 "source_note": estimate.source_note,
             }
         )
@@ -78,11 +113,13 @@ def coverage_by_country(month=None):
         bucket["caseload"] += row["caseload"]
         bucket["courses_delivered"] += row["courses_delivered"]
         bucket["districts"] += 1
+        bucket["window_months"] = max(bucket.get("window_months", 0), row["window_months"])
     out = []
     for bucket in per_country.values():
         caseload = bucket["caseload"]
         bucket["coverage_percent"] = round((bucket["courses_delivered"] / caseload) * 100, 1) if caseload else None
         bucket["uncovered_children"] = max(caseload - bucket["courses_delivered"], 0)
+        bucket["surplus_children"] = max(bucket["courses_delivered"] - caseload, 0)
         out.append(bucket)
     return sorted(out, key=lambda r: r["coverage_percent"] or 0)
 

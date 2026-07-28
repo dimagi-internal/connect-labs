@@ -597,3 +597,49 @@ def test_the_partner_tab_is_in_the_bundle_build_list():
     build = (repo_root / "webpack" / "build-supply.js").read_text()
     assert "'tab_partner.jsx'," in build
     assert (repo_root / "connect_labs" / "static" / "supply" / "tab_partner.jsx").exists()
+
+
+def test_coverage_sums_the_requirement_over_the_same_window_as_deliveries():
+    """The unit error that reported a district at 424% of need.
+
+    Deliveries are cumulative — a contract lands a season's supply in one
+    consignment — so dividing them by a SINGLE month's caseload is comparing a
+    total to a rate. The requirement is summed over every month we hold an
+    estimate for, and the window is reported alongside the figure.
+    """
+    from datetime import date
+
+    for months_back in range(4):
+        month = date.today().replace(day=1)
+        for _ in range(months_back):
+            month = (month - __import__("datetime").timedelta(days=1)).replace(day=1)
+        CaseloadEstimateFactory(adm1_code=BORNO, month=month, children_sam=1_000)
+
+    hub = SupplyNodeFactory(kind="distribution_hub", adm1_code=BORNO, country="NG")
+    _delivered_shipment(hub, 2_000, reference="SHP-WINDOW")
+
+    row = next(r for r in coverage.coverage_by_district() if r["adm1_code"] == BORNO)
+    assert row["window_months"] == 4
+    assert row["caseload"] == 4_000, "requirement is the sum across the window"
+    assert row["monthly_caseload"] == 1_000, "and the monthly rate is still reported"
+    # 2000 courses against 4000 children = 50%, not the 200% a one-month
+    # denominator would have produced.
+    assert row["coverage_percent"] == 50.0
+    assert row["uncovered_children"] == 2_000
+
+
+def test_over_supply_is_reported_rather_than_clamped():
+    """A district CAN be over-supplied, and that is where expiry risk lives.
+
+    Clamping at 100% would render an over-supplied district identically to a
+    perfectly-supplied one, hiding the surplus the expiry exception exists to
+    catch.
+    """
+    CaseloadEstimateFactory(adm1_code=BORNO, children_sam=1_000)
+    hub = SupplyNodeFactory(kind="distribution_hub", adm1_code=BORNO, country="NG")
+    _delivered_shipment(hub, 2_500, reference="SHP-SURPLUS")
+
+    row = next(r for r in coverage.coverage_by_district() if r["adm1_code"] == BORNO)
+    assert row["coverage_percent"] == 250.0
+    assert row["uncovered_children"] == 0
+    assert row["surplus_children"] == 1_500
