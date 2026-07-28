@@ -128,13 +128,16 @@ scenes:
   actions:
   - kind: click
     target: css:.navitem:has-text('Solicitations')
-  - kind: click
-    target: css:tr:has-text('RUTF Sahel and Lake Chad Corridors Q3 2026')
   - kind: wait_for
     target: css:.data-table
+  - kind: click
+    target: css:tr:has-text('RUTF Northeast Nigeria Q3 2026') button:has-text('Compare bids')
+    note: the live tender, still open — bids priced per lot
+  - kind: wait_for
+    target: css:.modal
   - kind: hold
-    seconds: 2.8
-    note: two lots, two different price leaders
+    seconds: 2.6
+    note: price-ranked rows with each reviewer's technical score inline
   impressive_because: The leader on the Maiduguri lot is not the leader on Djibo, which is exactly the
     information a per-tender comparison would have hidden.
   ai_quality: Two distinct price leaders are actually visible in the data, not asserted in a caption.
@@ -145,17 +148,29 @@ scenes:
   show: The same solicitation showing both lots awarded — Maiduguri to one supplier, Djibo to another,
     on purpose.
   actions:
-  - kind: click
-    target: css:tr:has-text('60,000 cartons RUTF delivered to Maiduguri')
-    note: open the Maiduguri lot and its award
+  - kind: scroll_to
+    target: css:.modal:has-text('60,000 cartons RUTF delivered to Maiduguri')
   - kind: hold
-    seconds: 2.0
+    seconds: 1.4
   - kind: click
-    target: css:tr:has-text('20,000 cartons RUTF delivered to Djibo')
-    note: and the Djibo lot — a different winner
+    target: css:tr:has-text('Savanna Nutrients Ltd') button:has-text('Award')
+    note: Maiduguri to Savanna — cheapest into the Lake Chad corridor
+  - kind: wait_for
+    target: css:.toast
+  - kind: hold
+    seconds: 1.8
+  - kind: scroll_to
+    target: css:.modal:has-text('20,000 cartons RUTF delivered to Djibo')
+  - kind: hold
+    seconds: 1.4
+  - kind: click
+    target: css:tr:has-text('Faso NutriWorks SA') button:has-text('Award')
+    note: Djibo to Faso — a different plant on a different corridor
+  - kind: wait_for
+    target: css:.toast
   - kind: hold
     seconds: 2.4
-    note: two corridors, two suppliers, one tender
+    note: two corridors, two suppliers, one tender — awarded on camera
   impressive_because: 'Concentrating a four-country response on the cheapest single bidder is the classic
     humanitarian supply failure: when that plant or that corridor goes down, every district goes down
     at the same moment. Splitting costs a little more per carton and buys the thing money cannot buy later.'
@@ -168,7 +183,12 @@ scenes:
     activity identifier and the delivery schedule the supply chain will now move against.
   actions:
   - kind: click
+    target: css:.modal-close
+    note: close the comparison — its backdrop otherwise intercepts the nav
+  - kind: click
     target: css:.navitem:has-text('Command centre')
+  - kind: wait_for
+    target: css:.exception-list
   - kind: scroll_to
     target: css:.card:has-text('Pipeline by corridor')
   - kind: hold
