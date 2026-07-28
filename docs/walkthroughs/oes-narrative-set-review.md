@@ -630,3 +630,127 @@ narration is wrong:
 
 2. **`oes-supply-base` scene 8** ("splitting costs a little more per carton") —
    unchanged from §L. Still the cost minimum.
+
+---
+
+# Addendum 3 — 2026-07-28, session 3: the four decisions taken, and what they cost
+
+Every open decision in §K1, §L, §P and §Q was put to the operator and
+answered. All four are now implemented, and all four narratives re-rendered
+clean into `-002` run dirs with every deterministic lens passing.
+
+## R. K1 resolved: a carton counts once, where its contract says
+
+**Decision: arrivals at the contract's own `delivery_place`.** The rule reads
+off `Lot.delivery_place`, so it is checkable against the contract's own text
+rather than against a convention kept somewhere else. A contract for "45,000
+cartons delivered to Maiduguri" is discharged by the cartons that reach
+Maiduguri: the plant→warehouse legs before it are not delivery yet, and the
+hub→centre legs after it are last-mile distribution past the delivery point.
+
+| contract | was | now | of contracted |
+| --- | ---: | ---: | ---: |
+| OES-C-2026-NG1 | 44,675 | **15,000** | 45,000 |
+| OES-C-2026-ET1 | 28,000 | **12,000** | 48,000 |
+| OES-C-2026-BF1 | 15,000 | **6,000** | 20,000 |
+| OES-C-2026-SD1 | 20,388 | **14,000** | 40,000 |
+| "Delivered to date" | 109,675 | **47,000** | — |
+
+Three things fell out of it that were not part of the decision:
+
+1. **The Sudan haulage lot named only where cartons are collected** ("from Port
+   Sudan"), which left it no delivery point to measure against. It now names
+   Khartoum too — a data fix that makes the contract text honest rather than a
+   special case in the measure.
+2. **Cost per child divided confirmed-only money by every delivered carton**,
+   though the locked narration promises the figure excludes consignments in
+   transit. Confirmed over confirmed now.
+3. **The unit ladder summed haulage spend and haulage cartons into a food
+   chain**, attributing movement money to cartons. Supply contracts only. Cost
+   per child now reads **$41.80**, which is a price a reader can recognise.
+
+The §O contradiction is gone: the ladder and the outcome card no longer state
+the same method over figures 2.36× apart. They still differ — 33,000 against
+58,251 — because they genuinely measure different sets, and both now say so on
+screen. The wider figure counts every carton that crossed into a district
+including imported stock; the ladder counts only what OES supply contracts
+delivered. That is the card's own thesis, applied to itself.
+
+## S. The other three decisions
+
+- **§L, supply-base scene 8** — narration changed to the honest and stronger
+  claim: each corridor's cheapest bidder is a different plant, so the split is
+  the resilient award *and* the lowest-cost one. No data change, so scene 7's
+  per-corridor price leader survives.
+- **§Q, command-centre scene 8** — re-targeted at the Komadugu shortfall, as the
+  judge suggested. Scenes 7 and 8 are now one loop: raised, acted on, closed.
+- **§P, money-to-child scene 5** — Gombe seeded as the third north-east
+  district. **The locked narration is now true word for word with no change to
+  it**: ninety-one percent, thirty-four, and 31,833 children still uncovered.
+
+## T. A resolved signal has to close ON CAMERA
+
+Re-targeting scene 8 exposed a design fault behind it. A `ShortfallSignal` was
+dropped from the queue the instant it resolved, so the one loop in the product
+that genuinely completes completed by a row *ceasing to exist*. A reader
+looking at the queue after the decision saw an absence, which is the weakest
+possible evidence for the claim the screen makes.
+
+It now stays for a week marked **Closed**, carrying the actor, the effect and
+the recorded reason, sorted below everything still waiting on somebody, and out
+of the children-at-risk headline (1,521 → 1,434 on camera). **Closed** and
+**Answered** render as different states, because they are: a partner signal
+resolves — what was reported is no longer true — while a derived row can only
+be answered until the cartons land.
+
+## U. The recurring defect, third sitting: three more found
+
+§N named the pattern — built, tested, unreachable. Three more, all invisible to
+pytest, preflight and the narration:
+
+| what | state found |
+| --- | --- |
+| `Milestone.estimated_at` | serialized on every milestone, rendered nowhere. The rail showed `actual ?: planned`, so the field that actually MOVES — the whole reason a delay is measurable — was never on screen, under a card subtitle promising three timestamps |
+| expiry-risk exceptions | service, cover calculation and queue row written and tested; every seeded lot carried 540 days, so every expiry landed in January 2028 and the exception could not fire. The narration said "all four exception kinds" over three |
+| `cartons_short` on a shortfall | serialized, never rendered, while scene 5 narrated it as a field of the record and the Receiving screen two cards above proved the product could show it |
+
+Djibo now carries a 150-day lot: it is the most over-supplied node at 25 weeks
+of cover, which is exactly what the exception exists to catch. It also gives
+the node one coherent story — too much stock to consume before it expires, and
+a 6-day delay that therefore harms nobody.
+
+## V. Two rendering faults only a frame catches
+
+- **The partner-shortfall headline collapsed to a ~10px vertical sliver** in
+  scenes 6–8. It carries two badges before its text and a flex child defaults to
+  `min-width: auto`, so the headline was the only item that could give and shrank
+  toward its longest word. It is the row the command centre's best scene is
+  built on.
+- **The command centre's own payoff rendered below the fold.** Closing the
+  signal sinks it to the BOTTOM of a queue ranked by what nobody has acted on,
+  so `scroll_to(.exception-list)` framed the rows the scene is not about. Caught
+  by looking at the snapshot, not by the run report — 43/43 actions were "ok".
+
+## W. A lens that was passing without running
+
+`duplicate_frames` reported **"pass (0 pairs compared) — pillow/numpy
+unavailable"** on all four narratives. That is a false pass, not a pass, and it
+is the lens specifically credited in §Addendum-2 with catching the silent
+`scroll_to` no-op. Installed into the runtime; it now genuinely compares
+consecutive frames and genuinely passes.
+
+Worth generalising: a deterministic lens that degrades to "pass" when its
+dependency is missing is worse than one that fails, because the run report
+reads identically to a real pass.
+
+## X. What was NOT verified this session
+
+- The `-002` verdicts are being produced by fresh independent judges as this is
+  written; the scores are not yet in this document.
+- The zero-risk row wording, the expiry exception and the closed-signal state
+  are asserted by tests and read off the live app, but have not yet been judged.
+- No video render, no VO timing eval, and nothing uploaded to canopy-web.
+- `oes-supply-base` and `oes-partner-pipeline` render 63 and 35 actions against
+  the 65 and 40 quoted in the session brief. The `-001` run reports show 63 and
+  35 as well, so this is a difference between the brief and the last run dir,
+  not a regression introduced here.
