@@ -149,22 +149,24 @@ scenes:
     on purpose.
   actions:
   - kind: scroll_to
-    target: css:.modal:has-text('60,000 cartons RUTF delivered to Maiduguri')
+    target: css:.card:has-text('60,000 cartons RUTF delivered to Maiduguri')
   - kind: hold
     seconds: 1.4
   - kind: click
-    target: css:tr:has-text('Savanna Nutrients Ltd') button:has-text('Award')
+    target: css:.card:has-text('60,000 cartons RUTF delivered to Maiduguri') tr:has-text('Savanna Nutrients
+      Ltd') button:has-text('Award')
     note: Maiduguri to Savanna — cheapest into the Lake Chad corridor
   - kind: wait_for
     target: css:.toast
   - kind: hold
     seconds: 1.8
   - kind: scroll_to
-    target: css:.modal:has-text('20,000 cartons RUTF delivered to Djibo')
+    target: css:.card:has-text('20,000 cartons RUTF delivered to Djibo')
   - kind: hold
     seconds: 1.4
   - kind: click
-    target: css:tr:has-text('Faso NutriWorks SA') button:has-text('Award')
+    target: css:.card:has-text('20,000 cartons RUTF delivered to Djibo') tr:has-text('Faso NutriWorks
+      SA') button:has-text('Award')
     note: Djibo to Faso — a different plant on a different corridor
   - kind: wait_for
     target: css:.toast
