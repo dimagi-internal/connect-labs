@@ -92,6 +92,16 @@ def stock_on_hand(node):
     return received - despatched
 
 
+def has_received_any(node):
+    """Has anything ever arrived here, on the event log's account?
+
+    Distinguishes a site that has burned through its stock (zero on hand, a
+    real burn-down behind it) from one that has never been served at all. Both
+    hold zero cartons and they are not the same operational fact.
+    """
+    return SupplyEvent.objects.filter(read_point=node, biz_step__in=_INBOUND_STEPS).exists()
+
+
 def caseload_for_district(adm1_code, month=None):
     """The most recent caseload estimate for a district at or before ``month``."""
     if not adm1_code:
@@ -156,6 +166,14 @@ def cover_for_node(node, as_of=None, month=None):
         return None
     stock = stock_on_hand(node)
     weeks = float(stock / burn)
+    # A site awaiting its first consignment is not a site that has burned
+    # through its stock, and reporting both as "runs dry today" makes the two
+    # indistinguishable at exactly the moment they call for opposite actions —
+    # one needs the pipeline unblocked, the other needs a resupply against a
+    # known consumption rate. It also fills the top of a queue sorted by
+    # urgency with a dozen identical rows, which reads as a broken join rather
+    # than as twelve sites that have never been served.
+    awaiting_first_delivery = stock <= 0 and not has_received_any(node)
     return {
         "node_id": node.id,
         "node_name": node.name,
@@ -164,7 +182,10 @@ def cover_for_node(node, as_of=None, month=None):
         "served_children": round(served_children(node, month=month)),
         "weekly_burn": round(float(burn), 1),
         "weeks_of_cover": round(weeks, 1),
-        "stockout_on": (as_of + timedelta(days=int(weeks * 7))).isoformat(),
+        "awaiting_first_delivery": awaiting_first_delivery,
+        # Null rather than today's date when nothing has ever arrived: there is
+        # no burn-down to project from, and a date here would be a fabrication.
+        "stockout_on": (None if awaiting_first_delivery else (as_of + timedelta(days=int(weeks * 7))).isoformat()),
         "as_of": as_of.isoformat(),
         "method": (
             "Stock on hand is receipts minus despatches from the event log. "
@@ -175,12 +196,19 @@ def cover_for_node(node, as_of=None, month=None):
 
 
 def cover_by_node(nodes=None, as_of=None, month=None):
-    """Cover for every demand-serving node, worst first."""
+    """Cover for every demand-serving node, worst first.
+
+    Sites awaiting a first delivery sort AFTER the burn-down, despite holding
+    zero cartons. They are not a cover ranking — nothing has arrived, so there
+    is no rate to be worse than — and leading with a dozen of them buries the
+    sites whose cover is genuinely running out, which is the question this
+    table exists to answer.
+    """
     if nodes is None:
         nodes = demand_serving_nodes()
     rows = [cover_for_node(n, as_of=as_of, month=month) for n in nodes]
     rows = [r for r in rows if r is not None]
-    return sorted(rows, key=lambda r: r["weeks_of_cover"])
+    return sorted(rows, key=lambda r: (r["awaiting_first_delivery"], r["weeks_of_cover"]))
 
 
 def children_at_risk(node, delay_days, as_of=None, month=None):

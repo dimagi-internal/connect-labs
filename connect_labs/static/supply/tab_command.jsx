@@ -315,25 +315,37 @@ function CommandTab({ ctx }) {
                 key: 'weeks',
                 label: 'Weeks of cover',
                 value: (r) => r.weeks_of_cover,
-                render: (r) => (
-                  <Badge
-                    tone={
-                      r.weeks_of_cover < 2
-                        ? 'bad'
-                        : r.weeks_of_cover < 4
-                        ? 'warn'
-                        : 'good'
-                    }
-                  >
-                    {r.weeks_of_cover}
-                  </Badge>
-                ),
+                // A site awaiting its first delivery has no cover figure to
+                // colour. Showing it as a red 0 puts it in the same visual
+                // language as a site two days from running dry, and the two
+                // need opposite responses.
+                render: (r) =>
+                  r.awaiting_first_delivery ? (
+                    <Badge tone="info">Not yet served</Badge>
+                  ) : (
+                    <Badge
+                      tone={
+                        r.weeks_of_cover < 2
+                          ? 'bad'
+                          : r.weeks_of_cover < 4
+                          ? 'warn'
+                          : 'good'
+                      }
+                    >
+                      {r.weeks_of_cover}
+                    </Badge>
+                  ),
               },
               {
                 key: 'dry',
                 label: 'Runs dry',
-                value: (r) => r.stockout_on,
-                render: (r) => formatDate(r.stockout_on),
+                value: (r) => r.stockout_on || '',
+                render: (r) =>
+                  r.stockout_on ? (
+                    formatDate(r.stockout_on)
+                  ) : (
+                    <span className="muted">awaiting first consignment</span>
+                  ),
               },
             ]}
           />

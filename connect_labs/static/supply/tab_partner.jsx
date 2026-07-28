@@ -48,7 +48,9 @@ function PartnerTab({ ctx }) {
             label: 'Thinnest cover',
             value: worst ? `${worst.weeks_of_cover} wk` : '—',
             hint: worst
-              ? `${worst.node_name} runs dry ${formatDate(worst.stockout_on)}`
+              ? worst.stockout_on
+                ? `${worst.node_name} runs dry ${formatDate(worst.stockout_on)}`
+                : `${worst.node_name} is awaiting its first consignment`
               : '',
           },
           {
@@ -198,6 +200,11 @@ function PartnerTab({ ctx }) {
                 label: 'Runs dry',
                 value: (c) => c.stockout_on,
                 render: (c) => {
+                  // Nothing has arrived, so there is no burn-down to date.
+                  if (!c.stockout_on)
+                    return (
+                      <span className="muted">awaiting first consignment</span>
+                    );
                   // Through the shared parser, so this day-count and every
                   // rendered date in the app agree about what day it is.
                   const days = Math.round(
@@ -389,7 +396,7 @@ function RaiseShortfall({ node, onClose, onSubmit }) {
   );
   const [children, setChildren] = useState(String(shortfall || 100));
   const [cartons, setCartons] = useState(String(shortfall || 100));
-  const [neededBy, setNeededBy] = useState(node.stockout_on);
+  const [neededBy, setNeededBy] = useState(node.stockout_on || '');
   const [note, setNote] = useState('');
 
   return (
@@ -440,9 +447,13 @@ function RaiseShortfall({ node, onClose, onSubmit }) {
       </FormRow>
       <FormRow
         label="Needed by"
-        hint={`${node.node_name} is projected to run dry on ${formatDate(
-          node.stockout_on,
-        )}.`}
+        hint={
+          node.stockout_on
+            ? `${node.node_name} is projected to run dry on ${formatDate(
+                node.stockout_on,
+              )}.`
+            : `${node.node_name} has not received a consignment yet, so there is no projected stockout date.`
+        }
       >
         <input
           type="date"

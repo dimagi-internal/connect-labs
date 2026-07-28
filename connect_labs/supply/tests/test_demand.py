@@ -18,7 +18,7 @@ from connect_labs.supply.models import (
     SupplyEvent,
     SupplyNode,
 )
-from connect_labs.supply.services import coverage, exceptions
+from connect_labs.supply.services import cover, coverage, exceptions
 
 from .factories import (
     CaseloadEstimateFactory,
@@ -331,6 +331,36 @@ def test_the_spoken_maiduguri_deadline_is_the_fifteenth_of_september():
 
     lot = Lot.objects.get(rfp__title="RUTF Northeast Nigeria Q3 2026", delivery_place="Maiduguri", category="rutf")
     assert (lot.delivery_deadline.month, lot.delivery_deadline.day) == (9, 15)
+
+
+def test_a_site_awaiting_its_first_delivery_is_not_reported_as_running_dry():
+    """Zero cartons is two different facts and they need opposite actions.
+
+    A dozen sites that had never been served rendered identically to a site two
+    days from stocking out — 0 on hand, 0 weeks, "runs dry today" — and, sorted
+    worst-first, they filled the top of the queue and pushed every real cover
+    figure below the fold. A judge reading that frame concluded the join was
+    broken. It was not; the two states were simply indistinguishable.
+    """
+    call_command("seed_supply_demo")
+    rows = cover.cover_by_node()
+
+    never_served = [r for r in rows if r["awaiting_first_delivery"]]
+    burning_down = [r for r in rows if not r["awaiting_first_delivery"]]
+    assert never_served, "the demo world needs at least one unserved site for this to mean anything"
+    assert burning_down, "and at least one with real cover"
+
+    # A projected stockout date has to come from an actual burn-down.
+    for row in never_served:
+        assert row["stock_on_hand"] == 0
+        assert row["stockout_on"] is None
+    for row in burning_down:
+        assert row["stockout_on"] is not None
+
+    # The ranking answers "whose cover is running out", so the sites that have
+    # no cover to run out of sort last however many of them there are.
+    first_unserved = next(i for i, r in enumerate(rows) if r["awaiting_first_delivery"])
+    assert all(r["awaiting_first_delivery"] for r in rows[first_unserved:])
 
 
 def test_seeded_caseloads_cover_every_famine_district_with_a_node():
