@@ -223,33 +223,28 @@ Program managers can update a case's status directly from the workflow view. Sta
 
 ---
 
-## SAM Follow-up Timeline
+## FLW Daily Indicator Report (CHC PRE-RCT Nigeria)
 
-The **SAM Follow-up Timeline** dashboard displays a recovery picture for each SAM case — including the MUAC colour band, whether the child has recovered, and the date of the follow-up visit.
+The **FLW Daily Indicator Report** is a daily early-warning view for Program 176 (CHC PRE-RCT Nigeria). It sits alongside the existing weekly audit report and is designed to surface data-quality concerns the next day rather than waiting up to two weeks for the weekly cycle to confirm a problem.
 
-### Colour, Recovered, and Date columns
+### What it shows
 
-The dashboard populates these three columns using whichever data is available for the opportunity being viewed:
+Each day, ten indicators are computed automatically for every FLW. The summary view presents a **14-day table** — one row per FLW, one column per day — where each cell contains a single "investigate today?" flag. At a glance you can see which workers have had concerns on which days without reading through raw numbers.
 
-- **If the opportunity's forms record a pre-computed MUAC colour band, a recovery yes/no flag, and a dedicated follow-up visit date field**, those values are used directly. This is the case for the primary SAM opportunity and is unaffected by this change.
-- **If the opportunity does not include those pre-baked fields** — for example, a mirrored or synthetic copy of a SAM opportunity that records MUAC as a raw measurement in centimetres and uses a general visit date — the dashboard derives the equivalent values automatically. It calculates the MUAC colour band from the centimetre reading, determines recovery status from that derived band, and uses the generic visit date in place of a dedicated follow-up date field.
+The ten indicators are:
 
-The end result is the same in both cases: the Colour, Recovered, and Date columns show meaningful data rather than appearing blank. You do not need to configure anything differently depending on which opportunity you are viewing.
+| Indicator | What it checks |
+|---|---|
+| **Form volume vs. work-area building count** | Whether the number of forms submitted is plausible given the number of buildings in the FLW's assigned area |
+| **Oversized households** | Whether any households recorded an unusually high number of members |
+| **Rushed back-to-back visits** | Whether consecutive visits were completed too quickly to have been conducted properly |
+| **Vaccine-response rate** | Whether the proportion of positive vaccine responses is within an expected range |
+| **GPS camping** | Whether the FLW's GPS coordinates cluster in one spot across multiple visits, suggesting they did not travel to households |
+| **Implausible travel speed** | Whether the distance between consecutive GPS points implies movement faster than is physically possible |
+| **Duplicate household phone numbers** | Whether the same phone number appears across multiple households |
+| **Duplicate child names** | Whether the same child name appears multiple times in a way that suggests copied entries |
+| **Straight-lining on yes/no questions** | Whether a FLW answered two specific yes/no questions identically across every visit on a given day |
+| **MUAC value repetition** | Whether the same MUAC measurement was recorded across multiple children in a pattern unlikely to occur naturally |
 
-!!! note "Mirrored opportunities and derived values"
-    If your program uses a mirrored or synthetic copy of a SAM opportunity, the recovery data you see in the SAM Follow-up Timeline is derived from the raw MUAC measurement recorded in those forms. The derivation follows the same colour-band thresholds used elsewhere in the program, so the figures are directly comparable to those from the primary opportunity.
-
----
-
-## Weekly Dual-Track Image Audit
-
-The **Weekly Dual-Track Image Audit** workflow surfaces MUAC tape photos for human review. Each photo tile is analysed automatically by an AI reviewer before you see it, so the most likely problems are already flagged when you open the audit.
-
-### AI checks on MUAC images
-
-Two independent AI checks run on every MUAC tape photo:
-
-| Check | Badge shown | What it means |
-|---|---|---|
-| **Framing check** | **Hyperzoomed** | The photo is framed too closely — the tape and surrounding tissue are not fully visible, making an accurate reading impossible |
-| **Reading-match check** | **MUAC M
+!!! note "Form volume vs. building count requires a CommCare connection"
+    The **Form volume vs. work-area building count** indicator compares each FLW's daily form submissions against the number of buildings in their assigned area. This figure is pulled directly from CommCare, so it only populates when the report runs with a valid CommCare connection

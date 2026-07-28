@@ -49,7 +49,7 @@ class AuditTrailMiddleware:
             reset_audit_context(token)
             raise
         try:
-            if response.status_code == 403:
+            if response.status_code == 403 and self._is_known_actor(request):
                 service.record(
                     Action.ACCESS_DENIED,
                     resource_type="http",
@@ -62,6 +62,25 @@ class AuditTrailMiddleware:
         finally:
             reset_audit_context(token)
         return response
+
+    @staticmethod
+    def _is_known_actor(request) -> bool:
+        """Whether a 403 is worth recording as an access denial.
+
+        §164.308(a)(1)(ii)(D) is about a KNOWN workforce member being refused
+        access — that is the signal a reviewer acts on. An anonymous 403 is a
+        stranger who was never going to get in: over 2026-07-24..28 every single
+        one of the 82 recorded denials was unauthenticated, 75 of them bare `/`
+        hits and the rest internet background scanners probing /admin/index.php,
+        /admin/login.php, /admin/uploads.php. Recording those buries real
+        denials in noise and trains reviewers to ignore the card — and it is the
+        card an alarm would key on.
+
+        Unauthenticated 403s remain in the web-server access logs, which is the
+        right place for scanner traffic.
+        """
+        user = getattr(request, "user", None)
+        return bool(user is not None and getattr(user, "is_authenticated", False))
 
     @staticmethod
     def _is_page_view(request, response) -> bool:

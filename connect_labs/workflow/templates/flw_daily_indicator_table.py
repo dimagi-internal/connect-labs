@@ -1,0 +1,449 @@
+"""FLW Daily Indicator Table — Program 176 (CHC PRE-RCT Nigeria).
+
+Workflow 2 of a two-workflow pair (see flw_daily_indicator_report.py,
+"Workflow 1"). Reads Workflow 1's saved daily snapshots (one completed
+WorkflowRun per opportunity per day) via a dedicated read-only API endpoint
+(api/flw-daily-indicator-history/) and displays them as a 14-day grid: one
+row per FLW, one column per day, a single 0/1 "investigate today" flag per
+cell. Clicking an FLW's name expands an inline detail table -- same day
+columns as the row above it, one row per indicator -- showing every one of
+the 10 raw indicator values alongside its threshold, with over-threshold
+values highlighted, so it's immediately clear WHICH indicator(s) tripped the
+flag on which day.
+
+All 9 evaluated indicators' thresholds live in the THRESHOLDS constant below
+(indicator #1, total forms, is informational only and never trips the flag)
+-- by design, per the user's explicit requirement that thresholds be tunable
+here without touching or recomputing Workflow 1's history. Retuning a
+threshold is a one-line render_code edit; it takes effect immediately on next
+page load, no backfill needed, since the raw values are already stored.
+
+No pipeline_schema: like flw_audit_trend_dashboard.py, this template never
+reads CommCare/Connect visit data directly -- everything comes from Workflow
+1's already-computed history via a plain browser fetch(), same
+cross-workflow-read pattern used elsewhere in this codebase.
+
+config.source_definition_id (set on the instance after creation, since
+Workflow 1's id is only known once it exists) points at Workflow 1's
+definition id -- same two-step dance flw_audit_trend_dashboard.py uses.
+"""
+from __future__ import annotations
+
+DEFINITION = {
+    "name": "FLW Daily Indicator Table",
+    "description": (
+        "Program 176 (CHC PRE-RCT Nigeria) 14-day per-FLW daily indicator grid, sourced from the "
+        "FLW Daily Indicator Report's saved daily snapshots. One 0/1 flag per FLW per day; expand a "
+        "row to see all 10 indicators + thresholds for every day and exactly which ones tripped."
+    ),
+    "version": 1,
+    "templateType": "flw_daily_indicator_table",
+    "statuses": [],
+    "config": {
+        "showSummaryCards": False,
+        "showFilters": False,
+        "source_definition_id": None,
+    },
+    "pipeline_sources": [],
+}
+
+RENDER_CODE = r"""function WorkflowUI({ definition, workers }) {
+    var sourceDefinitionId = definition.config && definition.config.source_definition_id;
+    var NUM_DAYS = 14;
+    var FETCH_DAYS = 18; // small buffer past 14 for schedule/timezone slack
+
+    // Thresholds for the 9 evaluated indicators (indicator #1, total forms, is
+    // informational only and never trips the flag). These are the ONLY place
+    // thresholds live -- retune here, no changes to Workflow 1 needed.
+    var THRESHOLDS = {
+        avg_forms_per_building: 10,   // flag if max forms/building ratio >= this
+        households_4plus_children: 2, // flag if count > this
+        gap_lt_2min: 15,              // flag if count >= this
+        vaccine_yes_pct: 50,          // flag if % received_any_vaccine=yes < this
+        camping_pct: 80,              // flag if % of forms in largest GPS cluster >= this
+        travel_speed_violation: 2,    // flag if count of implausible-speed gaps >= this
+        duplicate: 2,                 // flag if duplicate HH phone/child name count >= this
+        straight_line_pct: 95,        // flag if either straight-lining field's mode share >= this
+        muac_repetition_pct: 30,      // flag if MUAC value repetition % >= this
+    };
+
+    var oppNames = React.useMemo(function () {
+        var m = {};
+        try {
+            var el = document.getElementById("user-opportunities");
+            if (el) JSON.parse(el.textContent).forEach(function (o) { m[o.id] = o.name; });
+        } catch (e) { console.error("FLW daily indicator table: failed to parse user-opportunities", e); }
+        return m;
+    }, []);
+
+    var nameMap = React.useMemo(function () {
+        var m = {};
+        (workers || []).forEach(function (w) { if (w.username) m[w.username] = w.name || w.username; });
+        return m;
+    }, [workers]);
+
+    var _state = React.useState({ loading: true, error: null, days: [] });
+    var state = _state[0];
+    var setState = _state[1];
+
+    React.useEffect(function () {
+        if (!sourceDefinitionId) {
+            setState({ loading: false, error: "No source_definition_id configured on this workflow.", days: [] });
+            return;
+        }
+        var url = "/labs/workflow/api/flw-daily-indicator-history/?definition_id=" + sourceDefinitionId;
+        fetch(url, { credentials: "same-origin" })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (data.error) {
+                    setState({ loading: false, error: data.error, days: [] });
+                } else {
+                    setState({ loading: false, error: null, days: data.days || [] });
+                }
+            })
+            .catch(function (e) {
+                setState({ loading: false, error: String(e), days: [] });
+            });
+    }, [sourceDefinitionId]);
+
+    // "Yesterday" in Africa/Lagos (UTC+1, no DST) -- matches flw_daily_indicator_report's
+    // own definition of the calendar day a run covers, since today's report hasn't run yet.
+    var dayColumns = React.useMemo(function () {
+        var now = new Date();
+        var watNow = new Date(now.getTime() + 60 * 60 * 1000);
+        var end = new Date(Date.UTC(watNow.getUTCFullYear(), watNow.getUTCMonth(), watNow.getUTCDate() - 1));
+        var days = [];
+        for (var i = NUM_DAYS - 1; i >= 0; i--) {
+            var d = new Date(end);
+            d.setUTCDate(d.getUTCDate() - i);
+            days.push(d.toISOString().slice(0, 10));
+        }
+        return days;
+    }, []);
+
+    var earliestNeeded = dayColumns[0];
+
+    var rows = React.useMemo(function () {
+        var rowMap = {};
+        state.days.forEach(function (d) {
+            if (!d.date || d.date < earliestNeeded) return; // outside the FETCH_DAYS buffer window we care about
+            (d.flws || []).forEach(function (f) {
+                var rk = d.opportunity_id + "::" + f.username;
+                if (!rowMap[rk]) {
+                    rowMap[rk] = { opportunity_id: d.opportunity_id, username: f.username, byDate: {} };
+                }
+                rowMap[rk].byDate[d.date] = f;
+            });
+        });
+        return Object.keys(rowMap)
+            .map(function (k) { return rowMap[k]; })
+            .sort(function (a, b) {
+                var nameA = nameMap[a.username] || a.username;
+                var nameB = nameMap[b.username] || b.username;
+                return nameA.localeCompare(nameB);
+            });
+    }, [state.days, earliestNeeded, nameMap]);
+
+    var _lloFilter = React.useState("__all__");
+    var lloFilter = _lloFilter[0];
+    var setLloFilter = _lloFilter[1];
+    var _flwFilter = React.useState("__all__");
+    var flwFilter = _flwFilter[0];
+    var setFlwFilter = _flwFilter[1];
+    var _expanded = React.useState({});
+    var expanded = _expanded[0];
+    var setExpanded = _expanded[1];
+
+    var lloOptions = React.useMemo(function () {
+        var seen = {};
+        rows.forEach(function (r) { seen[r.opportunity_id] = oppNames[r.opportunity_id] || ("Opportunity " + r.opportunity_id); });
+        return Object.keys(seen).map(Number).map(function (id) { return { value: id, label: seen[id] }; })
+            .sort(function (a, b) { return a.label.localeCompare(b.label); });
+    }, [rows, oppNames]);
+
+    var flwOptions = React.useMemo(function () {
+        var seen = {};
+        rows.forEach(function (r) {
+            if (lloFilter !== "__all__" && String(r.opportunity_id) !== lloFilter) return;
+            seen[r.username] = nameMap[r.username] || r.username;
+        });
+        return Object.keys(seen).map(function (u) { return { value: u, label: seen[u] }; })
+            .sort(function (a, b) { return a.label.localeCompare(b.label); });
+    }, [rows, lloFilter, nameMap]);
+
+    var filteredRows = rows.filter(function (r) {
+        if (lloFilter !== "__all__" && String(r.opportunity_id) !== lloFilter) return false;
+        if (flwFilter !== "__all__" && r.username !== flwFilter) return false;
+        return true;
+    });
+
+    if (state.loading) return <div className="p-6 text-gray-600">Loading daily indicator history...</div>;
+    if (state.error) return <div className="p-6 text-red-600">Error: {state.error}</div>;
+    if (state.days.length === 0) {
+        return (
+            <div className="p-6 text-gray-600">
+                No saved daily reports yet — this table reads Workflow 1's completed runs, which
+                appear once its daily schedule (or a manual test run) has run at least once.
+            </div>
+        );
+    }
+
+    function toggleExpanded(rowKey) {
+        setExpanded(function (prev) {
+            var next = Object.assign({}, prev);
+            next[rowKey] = !next[rowKey];
+            return next;
+        });
+    }
+
+    return (
+        <div className="space-y-4 p-4">
+            <div>
+                <h1 className="text-xl font-bold">{definition.name}</h1>
+                <p className="text-sm text-gray-500">{definition.description}</p>
+            </div>
+
+            <div className="bg-white rounded-lg border p-4 flex flex-wrap gap-4 items-center">
+                <div>
+                    <div className="text-xs font-semibold text-gray-500 uppercase mb-1">LLO</div>
+                    <select
+                        className="border rounded px-2 py-1 text-sm"
+                        value={lloFilter}
+                        onChange={function (e) { setLloFilter(e.target.value); setFlwFilter("__all__"); }}
+                    >
+                        <option value="__all__">All LLOs</option>
+                        {lloOptions.map(function (o) { return <option key={o.value} value={String(o.value)}>{o.label}</option>; })}
+                    </select>
+                </div>
+                <div>
+                    <div className="text-xs font-semibold text-gray-500 uppercase mb-1">FLW</div>
+                    <select
+                        className="border rounded px-2 py-1 text-sm"
+                        value={flwFilter}
+                        onChange={function (e) { setFlwFilter(e.target.value); }}
+                    >
+                        <option value="__all__">All FLWs</option>
+                        {flwOptions.map(function (o) { return <option key={o.value} value={o.value}>{o.label}</option>; })}
+                    </select>
+                </div>
+            </div>
+
+            <div className="bg-white rounded-lg shadow-sm p-4 overflow-x-auto">
+                {filteredRows.length === 0 ? (
+                    <div className="text-sm text-gray-500 p-6 text-center">No FLWs match the selected filters.</div>
+                ) : (
+                    <table className="min-w-full text-sm border-collapse">
+                        <thead>
+                            <tr>
+                                <th className="sticky left-0 bg-white text-left px-3 py-2 border-b border-gray-200 font-medium text-gray-600 w-6"></th>
+                                <th className="sticky left-6 bg-white text-left px-3 py-2 border-b border-gray-200 font-medium text-gray-600">FLW</th>
+                                <th className="text-left px-3 py-2 border-b border-gray-200 font-medium text-gray-600">LLO</th>
+                                {dayColumns.map(function (d) {
+                                    return (
+                                        <th key={d} className="text-center px-2 py-2 border-b border-gray-200 font-medium text-gray-600 whitespace-nowrap">
+                                            {formatShortDate(d)}
+                                        </th>
+                                    );
+                                })}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {filteredRows.map(function (row) {
+                                var rowKey = row.opportunity_id + "::" + row.username;
+                                var isOpen = !!expanded[rowKey];
+                                return (
+                                    <React.Fragment key={rowKey}>
+                                        <tr className="hover:bg-gray-50">
+                                            <td className="sticky left-0 bg-white px-3 py-2 border-b border-gray-100 text-center">
+                                                <button
+                                                    type="button"
+                                                    onClick={function () { toggleExpanded(rowKey); }}
+                                                    className="text-gray-400 hover:text-gray-700"
+                                                    title={isOpen ? "Collapse" : "Expand"}
+                                                >
+                                                    {isOpen ? "▼" : "▶"}
+                                                </button>
+                                            </td>
+                                            <td className="sticky left-6 bg-white px-3 py-2 border-b border-gray-100 font-medium text-gray-900 whitespace-nowrap">
+                                                <button type="button" onClick={function () { toggleExpanded(rowKey); }} className="hover:underline text-left">
+                                                    {nameMap[row.username] || row.username}
+                                                </button>
+                                            </td>
+                                            <td className="px-3 py-2 border-b border-gray-100 text-gray-500 whitespace-nowrap">
+                                                {oppNames[row.opportunity_id] || ("Opp #" + row.opportunity_id)}
+                                            </td>
+                                            {dayColumns.map(function (d) {
+                                                var cell = cellInfo(row.byDate[d], THRESHOLDS);
+                                                return (
+                                                    <td key={d} className={"px-2 py-2 border-b border-gray-100 text-center " + cell.cls} title={cell.title}>
+                                                        {cell.text}
+                                                    </td>
+                                                );
+                                            })}
+                                        </tr>
+                                        {isOpen && (
+                                            <tr>
+                                                <td colSpan={3 + dayColumns.length} className="bg-gray-50 border-b border-gray-200 p-3">
+                                                    <ExpandedFlwDetail row={row} dayColumns={dayColumns} thresholds={THRESHOLDS} />
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </React.Fragment>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                )}
+            </div>
+        </div>
+    );
+}
+
+// Every one of the 10 daily indicators, in display order. `path` reaches into
+// a Workflow-1 per-FLW indicator dict (dot-notated); `thresholdKey` looks up
+// THRESHOLDS (null for indicator #1, which never trips). `direction`
+// determines the trip comparison: "gte" (>= threshold), "gt" (> threshold),
+// or "lt" (< threshold).
+var INDICATOR_DEFS = [
+    { key: "total_forms", label: "Total Forms", path: "total_forms", thresholdKey: null, direction: null },
+    { key: "avg_forms_per_building", label: "Max Forms/Building", path: "avg_forms_per_building.max_ratio", thresholdKey: "avg_forms_per_building", direction: "gte" },
+    { key: "households_4plus_children", label: "HHs w/ 4+ Children", path: "households_4plus_children_count", thresholdKey: "households_4plus_children", direction: "gt" },
+    { key: "gap_lt_2min", label: "Visits <2min Apart", path: "gap_lt_2min_count", thresholdKey: "gap_lt_2min", direction: "gte" },
+    { key: "vaccine_yes_pct", label: "% Vaccine Yes", path: "vaccine_yes_pct", thresholdKey: "vaccine_yes_pct", direction: "lt" },
+    { key: "camping_pct", label: "% in Largest GPS Cluster (Camping)", path: "camping_pct_largest_cluster", thresholdKey: "camping_pct", direction: "gte" },
+    { key: "travel_speed_violation", label: "Implausible Travel-Speed Gaps", path: "travel_speed_violation_count", thresholdKey: "travel_speed_violation", direction: "gte" },
+    { key: "duplicate", label: "Duplicate HH Phone / Child Name", path: "duplicate_count", thresholdKey: "duplicate", direction: "gte" },
+    { key: "straight_line_dw", label: "Straight-Line % (Child Unwell Today)", path: "straight_line_pct.dw_child_unwell_today", thresholdKey: "straight_line_pct", direction: "gte" },
+    { key: "straight_line_diarrhea", label: "Straight-Line % (Diarrhea Last Month)", path: "straight_line_pct.diarrhea_last_month", thresholdKey: "straight_line_pct", direction: "gte" },
+    { key: "muac_repetition_pct", label: "MUAC Repetition %", path: "muac_repetition_pct", thresholdKey: "muac_repetition_pct", direction: "gte" },
+];
+
+function getByPath(obj, path) {
+    var parts = path.split(".");
+    var cur = obj;
+    for (var i = 0; i < parts.length; i++) {
+        if (cur == null) return null;
+        cur = cur[parts[i]];
+    }
+    return cur;
+}
+
+function tripped(value, threshold, direction) {
+    if (value == null || threshold == null) return false;
+    if (direction === "gte") return value >= threshold;
+    if (direction === "gt") return value > threshold;
+    if (direction === "lt") return value < threshold;
+    return false;
+}
+
+// Computes every indicator's {value, threshold, evaluable, tripped} for one
+// FLW-day, plus whether ANY of them tripped (indicator #1 never contributes).
+function indicatorDetailsForDay(flw, thresholds) {
+    return INDICATOR_DEFS.map(function (def) {
+        var value = flw ? getByPath(flw, def.path) : null;
+        var threshold = def.thresholdKey ? thresholds[def.thresholdKey] : null;
+        var evaluable = value != null;
+        return {
+            key: def.key,
+            label: def.label,
+            value: value,
+            threshold: threshold,
+            evaluable: evaluable,
+            tripped: def.thresholdKey ? tripped(value, threshold, def.direction) : false,
+        };
+    });
+}
+
+function cellInfo(flw, thresholds) {
+    if (!flw) return { text: "—", cls: "text-gray-300", title: "No report for this day" };
+    var details = indicatorDetailsForDay(flw, thresholds);
+    var anyTripped = details.some(function (d) { return d.tripped; });
+    return anyTripped
+        ? { text: "●", cls: "text-red-600 font-bold text-base", title: "Flagged — expand row for which indicator(s) tripped" }
+        : { text: "○", cls: "text-green-600 text-base", title: "OK — no indicator over threshold" };
+}
+
+function formatShortDate(isoDate) {
+    var parts = isoDate.split("-");
+    if (parts.length < 3) return isoDate;
+    var months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    var month = parseInt(parts[1], 10) - 1;
+    var day = parseInt(parts[2], 10);
+    if (month < 0 || month > 11 || isNaN(day)) return isoDate;
+    return months[month] + " " + day;
+}
+
+function ExpandedFlwDetail({ row, dayColumns, thresholds }) {
+    // Transposed from the main grid's own orientation: here, days are the
+    // COLUMNS (matching the day columns directly above this expanded row) and
+    // indicators are the ROWS -- one row per indicator, its threshold shown
+    // alongside its label, so scanning down a column reads as "this FLW's day",
+    // same as scanning down the main table.
+    var detailsByDay = {};
+    dayColumns.forEach(function (d) {
+        var flw = row.byDate[d];
+        detailsByDay[d] = flw ? indicatorDetailsForDay(flw, thresholds) : null;
+    });
+
+    return (
+        <div className="overflow-x-auto">
+            <table className="min-w-full text-xs border-collapse bg-white rounded border">
+                <thead>
+                    <tr>
+                        <th className="sticky left-0 bg-white text-left px-2 py-1.5 border-b font-medium text-gray-600 whitespace-nowrap">Indicator</th>
+                        {dayColumns.map(function (d) {
+                            return (
+                                <th key={d} className="text-center px-2 py-1.5 border-b font-medium text-gray-600 whitespace-nowrap">
+                                    {formatShortDate(d)}
+                                </th>
+                            );
+                        })}
+                    </tr>
+                </thead>
+                <tbody className="divide-y">
+                    {INDICATOR_DEFS.map(function (def) {
+                        return (
+                            <tr key={def.key}>
+                                <td className="sticky left-0 bg-white px-2 py-1.5 font-medium text-gray-700 whitespace-nowrap">
+                                    {def.label}
+                                    {def.thresholdKey && (
+                                        <span className="text-gray-400 font-normal"> (thr: {thresholds[def.thresholdKey]})</span>
+                                    )}
+                                </td>
+                                {dayColumns.map(function (d) {
+                                    var dayDetails = detailsByDay[d];
+                                    if (!dayDetails) {
+                                        return <td key={d} className="px-2 py-1.5 text-center text-gray-300">—</td>;
+                                    }
+                                    var det = dayDetails.filter(function (x) { return x.key === def.key; })[0];
+                                    var display = det.value == null ? "n/a" : det.value;
+                                    var cellCls = det.tripped ? "bg-red-50 text-red-700 font-semibold" : "text-gray-700";
+                                    return (
+                                        <td key={d} className={"px-2 py-1.5 text-center whitespace-nowrap " + cellCls}>
+                                            {display}
+                                        </td>
+                                    );
+                                })}
+                            </tr>
+                        );
+                    })}
+                </tbody>
+            </table>
+        </div>
+    );
+}"""
+
+TEMPLATE = {
+    "key": "flw_daily_indicator_table",
+    "name": "FLW Daily Indicator Table",
+    "description": (
+        "Program 176 (CHC PRE-RCT Nigeria) 14-day per-FLW daily indicator grid, sourced from the "
+        "FLW Daily Indicator Report's saved daily snapshots. One 0/1 flag per FLW per day; expand a "
+        "row to see all 10 indicators + thresholds for every day and exactly which ones tripped."
+    ),
+    "icon": "fa-table-cells",
+    "color": "indigo",
+    "multi_opp": True,
+    "definition": DEFINITION,
+    "render_code": RENDER_CODE,
+}

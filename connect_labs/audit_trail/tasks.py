@@ -72,10 +72,24 @@ def archive_audit_events(day_iso: str | None = None):
     data_key, digest_key = _day_keys(day)
     s3 = _get_s3_client()
     s3.put_object(Bucket=bucket, Key=data_key, Body=body, ContentType="application/gzip")
+    # Two digests, each naming exactly what it covers. The sidecar used to print
+    # the digest of the UNCOMPRESSED payload against the ".jsonl.gz" filename, so
+    # an auditor doing the obvious thing — `sha256sum` the object they downloaded
+    # — got a mismatch on an archive that was in fact intact. An attestation
+    # artifact that fails when the data is good is worse than none.
+    # Line 1 verifies the stored object as-is; line 2 verifies the content after
+    # `gunzip`, and is the digest to quote when attesting to the events.
+    gz_digest = hashlib.sha256(body).hexdigest()
+    content_name = data_key[: -len(".gz")]
     s3.put_object(
         Bucket=bucket,
         Key=digest_key,
-        Body=f"{digest}  {data_key} ({len(lines)} events)\n".encode(),
+        Body=(
+            f"{gz_digest}  {data_key}\n"
+            f"{digest}  {content_name}\n"
+            f"# {len(lines)} events for {day}; line 1 = stored object, "
+            f"line 2 = gunzipped content\n"
+        ).encode(),
         ContentType="text/plain",
     )
     logger.info("Archived %s audit events for %s to s3://%s/%s", len(lines), day, bucket, data_key)

@@ -38,6 +38,36 @@ def test_archive_writes_jsonl_and_digest(settings):
 
 
 @pytest.mark.django_db
+def test_digest_sidecar_names_what_each_hash_covers(settings):
+    """Both digests must verify against the artifact they are written next to.
+
+    The sidecar used to print the UNCOMPRESSED payload's digest against the
+    ".jsonl.gz" filename, so an auditor who ran `sha256sum` on the object they
+    downloaded got a mismatch on an archive that was intact.
+    """
+    import hashlib
+
+    settings.AUDIT_TRAIL_ARCHIVE_BUCKET = "test-audit-bucket"
+    event = AuditEvent.objects.create(action=Action.READ, resource_type="thing", opportunity_id=1)
+    _backdate(event, 1)
+
+    s3 = MagicMock()
+    with patch("connect_labs.audit_trail.tasks._get_s3_client", return_value=s3):
+        archive_audit_events()
+
+    data_call, digest_call = s3.put_object.call_args_list
+    stored = data_call.kwargs["Body"]
+    lines = [ln for ln in digest_call.kwargs["Body"].decode().splitlines() if not ln.startswith("#")]
+
+    gz_hash, gz_name = lines[0].split()
+    raw_hash, raw_name = lines[1].split()
+
+    assert gz_name.endswith(".jsonl.gz") and raw_name.endswith(".jsonl")
+    assert gz_hash == hashlib.sha256(stored).hexdigest()
+    assert raw_hash == hashlib.sha256(gzip.decompress(stored)).hexdigest()
+
+
+@pytest.mark.django_db
 def test_archive_noop_without_bucket(settings):
     settings.AUDIT_TRAIL_ARCHIVE_BUCKET = None
     assert archive_audit_events()["skipped"] is True
