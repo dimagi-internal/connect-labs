@@ -1,8 +1,14 @@
 # OES narrative set — review of v1
 
-Status: **review complete, 2026-07-27.** Reviewer: Claude, acting on delegated
-authority for the `concept_change` gate (the operator explicitly stood down from
-human review for this cycle).
+Status: **review complete and acted on, 2026-07-27.** Reviewer: Claude, acting
+on delegated authority for the `concept_change` gate (the operator explicitly
+stood down from human review for this cycle).
+
+All four narratives were corrected and re-posted to canopy-web as **v2**, and
+all four `concept_change` gates are **resolved: approve**. Every scene in the
+set now reads `built`, because the corrected build order below was executed —
+see the `supply:` commits on this branch and `connect_labs/supply/README.md`
+for what landed.
 
 Subject: the four narratives ACE posted to canopy-web at 2026-07-27T20:34Z, all
 at `concept_change · pending`, all v1, all with zero runs:

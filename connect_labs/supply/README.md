@@ -49,13 +49,17 @@ Design record: `docs/superpowers/specs/2026-07-25-supply-chain-rfp-eoi-design.md
 
 ```
 connect_labs/supply/
-  models/          procurement.py | execution.py   split by lifecycle stage
-  serializers/     procurement.py | execution.py   same seam; the SPA's wire contract
+  models/          procurement.py | execution.py | demand.py   by lifecycle stage
+  serializers/     procurement.py | execution.py | demand.py   the SPA's wire contract
   services/        the business rules — API modules stay thin
     ingestion/     _core.py + epcis.py | asn.py | manual.py  (see below)
+    cover.py       stock, burn, weeks of cover, children at risk, expiry risk
+    exceptions.py  the command-centre queue, ranked in one unit
+    coverage.py    delivery against caseload; courses vs recorded recoveries
+    actions.py     reallocation, expedite, raising a shortfall
     eoi_actions.py rfp_actions.py org_actions.py tokens.py
-  api/             thin JSON views: bootstrap, orgs, eoi, rfp, execution, ingest
-  demo/            data.py (the narrative) + organisations | solicitations | execution
+  api/             thin JSON views: bootstrap, orgs, eoi, rfp, execution, ingest, demand
+  demo/            data.py (the narrative) + organisations | solicitations | execution | demand
   routes.py        digitised road corridors and sea lanes for the flow map
   gs1.py           SSCC / GTIN / GLN check digits, and the carton→MT→children ladder
   rbac.py roles.py decorators.py audit.py
@@ -98,6 +102,47 @@ this app. `Milestone` keeps planned / estimated / actual as three separate
 timestamps (DCSA's PLN/EST/ACT), so "late" is a real measurement rather than a
 vibe. A receipt that does not reconcile raises a `Discrepancy`.
 
+**Demand.** The third stage, and the denominator the other two lack. A
+`CaseloadEstimate` says how many severely malnourished children a district is
+expected to have this month, joined to the IPC choropleth by `adm1_code` and
+carrying its own derivation in `source_note`. A `SupplyNode` that carries an
+`adm1_code` is answerable for children; one that does not (a port, a national
+warehouse) sits on the route without a denominator, and reporting cover there
+would be meaningless rather than zero.
+
+Everything downstream is derived from those two facts in **one place**,
+`services/cover.py`: stock on hand from the event log, weekly burn from the
+admission rate, weeks of cover, the projected stockout date, children at risk
+from a delay, and cartons that will expire before the caseload can consume
+them. The command centre and the implementing-partner surface both render what
+it returns, because the two must agree about the same node and two
+implementations would drift on first touch. It is also why exception severity
+is no longer computed in `tab_command.jsx` — a ranking that decides which
+children go without belongs somewhere pytest can reach.
+
+`services/exceptions.py` builds the command-centre queue from all of that.
+**Every row carries the same unit: children who miss a full course.** Four
+different things can be wrong — a late consignment, a short receipt, an
+expiring batch, a partner's shortfall — and that is the only quantity they
+share, so it is the only one that makes ranking them against each other an
+ordering rather than an accident. Each row also carries the derivation that
+produced its rank.
+
+A `SupplyAction` is append-only (enforced in `save`/`delete`) and requires a
+rationale. A reallocation is not a status change: it creates a real `Shipment`
+from the surplus node with planned milestones and stored geometry, so the
+downstream figures recompute _from_ it. It refuses to overdraw the source,
+because a paper transfer leaves the receiving site planning against cartons
+that never arrive.
+
+The last mile — `DistributionRecord` and `ChildOutcome` — is **synthesised
+inside supply**, deliberately. Importing Connect service-delivery data would
+end the zero-cross-app-import property this app is built on. Outcomes are
+labelled synthetic in the payload itself rather than only in a template, and
+discharges are seeded to the Sphere performance band for SAM treatment
+(recovery above 75%, defaulting below 15%) so the gap between courses delivered
+and recoveries recorded has a size somebody can defend.
+
 ---
 
 ## Ingestion: three tiers, and why
@@ -131,13 +176,22 @@ Capture is **idempotent on `external_id`** because delivery is at-least-once.
 
 ## Roles
 
-| Role              | Surface                                                     |
-| ----------------- | ----------------------------------------------------------- |
-| supplier          | own org, EOI, bidding, operations, integration tokens       |
-| reviewer          | review queue, bid scoring, registry, command centre         |
-| procurement_admin | the above plus rounds, RFPs, awards, discrepancy resolution |
-| gov_observer      | one country's view, read-only, **scoped server-side**       |
-| funder            | money view, read-only                                       |
+| Role              | Surface                                                                     |
+| ----------------- | --------------------------------------------------------------------------- |
+| supplier          | own org, EOI, bidding, operations, integration tokens                       |
+| partner           | own sites, distribution calendar, cover, raising shortfalls, outcomes       |
+| reviewer          | review queue, bid scoring, registry, command centre                         |
+| procurement_admin | the above plus rounds, RFPs, awards, discrepancy resolution, supply actions |
+| gov_observer      | one country's view, read-only, **scoped server-side**                       |
+| funder            | money view, read-only                                                       |
+
+The **partner** is an implementing organisation — it runs the feeding sites. It
+is neither a supplier (it never bids, so no `eoi` or `bids`) nor an observer
+(it acts: it receives stock, raises shortfalls, records what it distributed).
+It is a `kind` discriminator on `SupplierOrg` rather than a parallel model, so
+membership, authentication and API tokens stay single-path. A partner's sites
+are scoped in the bootstrap payload the same way the government observer's
+country is: another partner's sites never reach the page.
 
 `rbac.py` is the real gate; `static/supply/perms.js` mirrors it for show/hide
 only, and `test_rbac_contract.py` parses the JS literal and asserts equality —

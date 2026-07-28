@@ -10,7 +10,7 @@
     "two-suppliers-two-corridors-one-tender",
     "the-award-becomes-the-contract"
   ],
-  "fetched_at": "2026-07-28T01:37:31.705912+00:00",
+  "fetched_at": "2026-07-28T02:11:24.716723+00:00",
   "name": "oes-supply-base",
   "narrative": "Ada runs procurement for Operation End Starvation. Before the lean season they have to turn a folder of emailed spreadsheets and PDF certificates into something they can query: a standing set of suppliers known to be able to deliver, per commodity and per corridor. They open an expression-of-interest round; Amina at Savanna Nutrients in Kano applies, and at the moment of submission the profile Amina is judged on is frozen — so the decision stays reconstructable even after Savanna edits its paperwork. Tomas reviews that frozen snapshot and qualifies Savanna per category, with an expiry, and those live qualifications become the registry itself. When Ada publishes a solicitation, only suppliers holding a live qualification in a matching category can see or bid on it — enforced on the server, not by hiding a button. Bids are priced and scored lot by lot, so Ada awards Maiduguri and Djibo to different suppliers on purpose, splitting the corridor risk rather than handing a four-country response to the single cheapest bidder. The award is not the finish line: it becomes the contract the rest of the system tracks physically.",
   "personas": {
@@ -40,9 +40,9 @@
     {
       "features": [
         {
-          "description": "The staff console landing surface at /supply/console/, showing open rounds, live solicitations and the review queue for the acting role.",
+          "description": "The staff console landing surface — the Dashboard tab of the SPA at /supply/, showing open rounds, live solicitations and the review queue for the acting role.",
           "id": "procurement-console",
-          "verify": "GET /supply/console/ returns 200 for procurement_admin and renders the open-round and review-queue counts from the bootstrap payload."
+          "verify": "pytest connect_labs/supply/tests/test_bootstrap.py — a procurement_admin's bootstrap payload carries rounds, rfps and review_queue. The app is a single SPA route; there is no /supply/console/ URL to GET."
         }
       ],
       "id": "the-supply-base-before-the-emergency",
@@ -54,7 +54,7 @@
     {
       "features": [
         {
-          "description": "EOIRound with a draft to open to closed lifecycle, declared open categories, and open/close dates, managed from /supply/eoi-rounds/.",
+          "description": "EOIRound with a draft to open to closed lifecycle, declared open categories, and open/close dates, managed from the EOI rounds tab.",
           "id": "eoi-round-lifecycle",
           "verify": "pytest connect_labs/supply/tests/test_eoi.py covers the round transitions; POST /supply/api/eoi/rounds/<id>/transition/ moves draft to open."
         }
@@ -96,7 +96,7 @@
     {
       "features": [
         {
-          "description": "The registry surface at /supply/registry/, listing orgs by live qualification with category, country and expiry filters, excluding expired qualifications.",
+          "description": "The Supplier registry tab, listing orgs by live qualification with category, country and expiry filters, excluding expired qualifications.",
           "id": "registry-browser",
           "verify": "GET /supply/api/registry/ returns only orgs holding a live qualification; pytest asserts an expired qualification is excluded from the payload."
         }
@@ -124,9 +124,9 @@
     {
       "features": [
         {
-          "description": "The per-lot comparison surface — LotBid rows price-ranked with BidScore technical scores inline, at /supply/solicitations/<id>/.",
+          "description": "The per-lot comparison surface — LotBid rows price-ranked with BidScore technical scores inline, in the solicitation detail view.",
           "id": "per-lot-bid-comparison",
-          "verify": "GET /supply/api/rfps/<id>/comparison/ returns per-lot rows ordered by unit price with technical scores attached."
+          "verify": "GET /supply/api/rfps/<id>/comparison/ returns per-lot rows ordered by unit price with technical scores attached; pytest connect_labs/supply/tests/test_rfp.py::test_scoring_and_comparison_ranked_by_price."
         }
       ],
       "id": "bids-priced-and-scored-lot-by-lot",
@@ -143,9 +143,9 @@
           "verify": "pytest connect_labs/supply/tests/test_rfp.py asserts a lot cannot be awarded twice and an unsubmitted bid cannot be awarded."
         },
         {
-          "description": "Seeded demo state in which one solicitation's lots are awarded to two different qualified suppliers, so the split is visible rather than asserted.",
+          "description": "Seeded demo state in which one solicitation's lots are awarded to two different qualified suppliers, with the local supplier cheaper on its own corridor — so the comparison screen shows two different price leaders rather than asserting a split.",
           "id": "split-award-demo-state",
-          "verify": "After seed_supply_demo, at least one RFP has lots with two distinct awarded_org values; asserted in test_seed.py."
+          "verify": "pytest connect_labs/supply/tests/test_demand.py::test_the_demo_world_contains_a_genuinely_split_award and ::test_the_price_leader_differs_by_lot."
         }
       ],
       "id": "two-suppliers-two-corridors-one-tender",
@@ -170,5 +170,5 @@
     }
   ],
   "slug": "oes-supply-base",
-  "version": 1
+  "version": 2
 }

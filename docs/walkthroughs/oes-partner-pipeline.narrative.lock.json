@@ -7,7 +7,7 @@
     "zara-raises-a-shortfall-and-the-centre-answers",
     "from-a-batch-to-the-child-who-recovered"
   ],
-  "fetched_at": "2026-07-28T01:37:37.550939+00:00",
+  "fetched_at": "2026-07-28T02:11:25.365976+00:00",
   "name": "oes-partner-pipeline",
   "narrative": "Zara runs supply for Komadugu Health Initiative, which operates eleven therapeutic feeding sites across Borno. They know their caseload precisely, because they admit the children — and today they know almost nothing about the supply they depend on. This is that inverted. Inbound consignments arrive in the frame Komadugu actually plans in: a distribution day, at a named site, with a known number of children expected, each one reading as covered, at risk, or uncovered. From what has physically arrived and the rate they are admitting, each site shows its weeks of cover and the date it runs dry — the difference between planning and triaging admissions. When a truck arrives short, the storekeeper counts it and records the receipt themselves, and the shortfall becomes a discrepancy raised by the person holding the cartons rather than an argument between head offices. When cover will not last, Zara raises a shortfall signal from this screen, and it lands in the OES command centre as the exception their team acts on. And because Komadugu's own workers already screen every child they treat, a received batch can be followed forward — to the distributions it fed, and to one child's arm circumference climbing out of the red.",
   "personas": {
@@ -25,12 +25,12 @@
         {
           "description": "An org kind discriminator (supplier or implementing_partner) on the existing org model, plus a partner role in roles.py and rbac.py mirrored in perms.js, so membership, auth and tokens stay single-path.",
           "id": "implementing-partner-role",
-          "verify": "test_rbac_contract.py still asserts perms.js equals ROLE_PERMS with the partner role present; a partner user resolves to the partner role and reaches only partner surfaces, asserted in test_surfaces.py."
+          "verify": "pytest connect_labs/supply/tests/test_rbac_contract.py still asserts perms.js equals ROLE_PERMS with the partner row present; test_demand.py::test_a_partner_cannot_reach_procurement_surfaces."
         },
         {
           "description": "Partner orgs own their distribution_hub and delivery_point nodes and link to the caseload each site serves.",
           "id": "partner-owned-nodes",
-          "verify": "A partner's bootstrap payload contains only their own sites; another partner's sites are absent, asserted like the gov country scoping."
+          "verify": "pytest connect_labs/supply/tests/test_demand.py::test_a_partner_sees_only_their_own_sites — another organisation's delivery points are absent from the payload, asserted like the gov country scoping."
         }
       ],
       "id": "the-organisation-that-feeds-the-children-sees-the-least",
@@ -42,9 +42,9 @@
     {
       "features": [
         {
-          "description": "A DistributionPlan per site node and date, carrying expected children and cartons required, rendered as a calendar with inbound consignments joined onto it.",
+          "description": "A DistributionPlan per site node and date, carrying expected children and cartons required, rendered as a calendar with inbound consignments joined onto it. The covered / at risk / uncovered state resolves on the SERVER, so the calendar cannot disagree with the cover projection about the same Tuesday.",
           "id": "distribution-plan",
-          "verify": "Each planned distribution renders covered, at risk or uncovered from the cartons required versus the cartons inbound and on hand; the three states are asserted against seeded fixtures."
+          "verify": "pytest connect_labs/supply/tests/test_demand.py::test_a_partner_gets_a_calendar_not_a_shipment_list."
         }
       ],
       "id": "inbound-supply-in-the-calendar-they-plan-in",
@@ -56,9 +56,9 @@
     {
       "features": [
         {
-          "description": "Per-site stock on hand from receiving events, a weekly burn rate from the caseload the site serves, and from those weeks of cover and a projected stockout date — the same derivation the command centre uses, scoped to the partner.",
+          "description": "Per-site stock on hand from receiving events, a weekly burn rate from the caseload the site serves, and from those weeks of cover and a projected stockout date — literally the same server-side derivation the command centre uses (services/cover.py), scoped to the partner. One implementation, not two agreeing ones.",
           "id": "partner-cover-projection",
-          "verify": "Weeks of cover equals stock on hand divided by weekly burn per site; the projected date matches a hand-computed fixture and agrees with the figure the command centre shows for the same node."
+          "verify": "pytest connect_labs/supply/tests/test_cover.py::test_weeks_of_cover_matches_a_hand_computation (against a hand-computed fixture) and test_demand.py::test_the_partner_and_the_centre_report_the_same_cover."
         }
       ],
       "id": "weeks-of-cover-and-the-date-it-runs-dry",
@@ -70,7 +70,7 @@
     {
       "features": [
         {
-          "description": "Partner-side receipt capture at the check-in tier, with its webform equivalent, raising a Discrepancy when the count fails to reconcile against the ASN and shipment lines.",
+          "description": "Partner-side receipt capture at the check-in tier, with its webform equivalent, raising a Discrepancy when the count fails to reconcile against the ASN and shipment lines — now attributable to a receiving partner org, which had no representation in the model when this was first written.",
           "id": "partner-receipt-and-discrepancy",
           "verify": "test_execution.py asserts the webform and API doors produce identical records; a short receipt raises a Discrepancy attributed to the receiving partner org."
         }
@@ -86,11 +86,11 @@
         {
           "description": "A ShortfallSignal raised from the partner surface carrying site, date, children affected, cartons short and a note, resolvable by a SupplyAction.",
           "id": "shortfall-signal",
-          "verify": "A partner-raised signal appears in the procurement_admin queue with a partner-raised origin; the resolving action's id is referenced on the signal and the resulting shipment appears on the partner's calendar."
+          "verify": "pytest connect_labs/supply/tests/test_demand.py::test_a_partner_raises_a_shortfall_and_the_centre_sees_it, plus test_a_partner_cannot_raise_a_shortfall_at_someone_elses_site."
         }
       ],
       "id": "zara-raises-a-shortfall-and-the-centre-answers",
-      "narrative": "Kukawa will not last. Zara raises a shortfall from this screen: the site, the date, the children affected, the cartons short. It lands in the OES command centre ranked by the children behind it, not as a message somebody may or may not read. Two days later the answer comes back the same way — cartons reallocated from a surplus warehouse in Kassala, with the reason attached, appearing on Zara's calendar as cover for the Thursday distribution. The direction is what matters here: the ground reported upward into a system that could respond, rather than the centre reporting downward about the ground.",
+      "narrative": "Kukawa will not last. Zara raises a shortfall from this screen: the site, the date, the children affected, the cartons short. It does not go into a message queue somebody may or may not read — it lands in the OES command centre ranked against every other exception by the children behind it, and marked as raised by Komadugu rather than derived centrally. The direction is what matters here: the ground reporting upward into a system that can respond, rather than the centre reporting downward about the ground. What OES does with it is the next narrative.",
       "persona": "zara",
       "provenance": "S4",
       "title": "Zara raises a shortfall, and the centre answers"
@@ -100,12 +100,12 @@
         {
           "description": "A DistributionRecord per site, date and partner org, carrying cartons dispensed, children served, and the batch lot traced back to a ShipmentLine — synthesised inside supply, keeping the app's zero cross-app-import boundary intact.",
           "id": "distribution-record",
-          "verify": "Every DistributionRecord's batch lot resolves to a real ShipmentLine on a delivered shipment; cartons dispensed never exceed cartons received at that node."
+          "verify": "pytest connect_labs/supply/tests/test_demand.py::test_every_distribution_record_traces_to_a_real_delivered_batch."
         },
         {
-          "description": "A ChildOutcome with an anonymised identifier, admission measurement, a per-visit measurement series, discharge status, and the batch lot it was treated on, rendered as a series with the recovery thresholds marked and labelled synthetic on screen.",
+          "description": "A ChildOutcome with an anonymised identifier, admission measurement, a per-visit measurement series, discharge status, and the batch lot it was treated on, rendered against the WHO red/amber/green MUAC bands and labelled synthetic on screen. Discharges are seeded to the Sphere performance band (recovery above 75%, defaulting below 15%) so the series and the discharge status cannot disagree.",
           "id": "child-outcome-series",
-          "verify": "A batch drills to its distributions and to at least one child series crossing the recovery threshold; every surface rendering the series carries the synthetic-data label."
+          "verify": "pytest connect_labs/supply/tests/test_demand.py::test_every_seeded_outcome_series_agrees_with_its_discharge_status and test_a_delivered_batch_drills_to_a_child_who_recovered."
         }
       ],
       "id": "from-a-batch-to-the-child-who-recovered",
@@ -116,5 +116,5 @@
     }
   ],
   "slug": "oes-partner-pipeline",
-  "version": 1
+  "version": 2
 }

@@ -7,7 +7,7 @@
     "coverage-by-district-not-tonnage-delivered",
     "the-number-everyone-quotes-tested"
   ],
-  "fetched_at": "2026-07-28T01:37:38.750264+00:00",
+  "fetched_at": "2026-07-28T02:11:26.638487+00:00",
   "name": "oes-money-to-child",
   "narrative": "Dale signs the appropriations that pay for this response and has to defend what they bought. The funder view refuses the collapse that makes most dashboards untrustworthy: obligated, disbursed and delivered stay three separate numbers per contract, because money can be committed, paid, and still not be food in a warehouse — and the gaps are where the programmatic risk lives. The funding diagram conserves, every dollar tracing to its own envelope, and anything unattributable is reported rather than quietly dropped. The unit ladder carries its method on screen, so cost per child treated is a figure that can be challenged instead of asserted. Then delivery is measured against caseload rather than counted, which is what a host government needs: Hauwa sees only Nigeria's flows, scoped on the server, and reads coverage by district — where the response reached, and where the state still has to fill the gap itself. Finally the number everyone quotes gets tested. \"Children treated\" is almost always cartons divided by a treatment factor; here a delivered batch is followed to the distributions it fed and to a measured recovery, and the two figures disagree. That gap is the finding.",
   "personas": {
@@ -30,7 +30,7 @@
     {
       "features": [
         {
-          "description": "Obligated, disbursed and delivered rendered as three separate bars per contract at /supply/funding/, never summed into a single completion figure.",
+          "description": "Obligated, disbursed and delivered rendered as three separate bars per contract on the funder tab, never summed into a single completion figure.",
           "id": "three-stage-money-bars",
           "verify": "pytest connect_labs/supply/tests/test_dashboards.py asserts disbursement never exceeds obligation and the three stages are reported separately per contract."
         }
@@ -58,13 +58,13 @@
     {
       "features": [
         {
-          "description": "The dollars to tonnes to cartons to children ladder tile with its conversion method and the derived cost per child treated in the same frame.",
+          "description": "The dollars to tonnes to cartons to children ladder tile with its conversion method and the derived cost per child treated in the same frame. Already shipped in Phase 3 — the ladder, the 150 x 92 g method note and the cost-per-child figure all render today; this scene demonstrates it rather than adding it.",
           "id": "unit-ladder-with-method",
           "verify": "The rendered cost per child equals delivered value divided by delivered cartons within rounding, and the method note is present in the same card."
         }
       ],
       "id": "cost-per-child-with-its-method-on-screen",
-      "narrative": "Dale needs one number for a briefing and needs it to survive being questioned. The ladder runs dollars to metric tonnes to cartons to children, and the conversion is written next to it: one carton is a hundred and fifty sachets, which is one child's full course of treatment. A reader who can see that can see exactly what the figure claims and what it does not. That is what makes it a number you can argue with, rather than one you either accept or discard.",
+      "narrative": "Dale needs one number for a briefing and needs it to survive being questioned. The ladder runs dollars to metric tonnes to cartons to children, and the conversion is written next to it: one carton is a hundred and fifty sachets, which is one child's full course of treatment. Cost per child is computed from disbursements against confirmed deliveries only — consignments in transit are excluded, and it says so. A reader who can see that can see exactly what the figure claims and what it does not. That is what makes it a number you can argue with, rather than one you either accept or discard. It is also the same conversion the command centre's requirement-from-caseload column uses, from one constant in gs1.py, so the two screens cannot quietly disagree.",
       "persona": "dale",
       "provenance": "S2",
       "title": "Cost per child, with its method on screen"
@@ -88,7 +88,7 @@
         {
           "description": "Coverage percent and uncovered children per admin-1 district on the government view and per country on the funder view, consuming the CaseloadEstimate model, shown beside the existing volume figures.",
           "id": "coverage-by-district",
-          "verify": "Coverage equals delivered courses divided by caseload per district; a district with higher tonnage and a larger caseload renders lower coverage than a smaller, better-covered one."
+          "verify": "pytest connect_labs/supply/tests/test_demand.py::test_coverage_is_delivery_against_need_not_volume and test_country_scoping_excludes_other_districts."
         }
       ],
       "id": "coverage-by-district-not-tonnage-delivered",
@@ -100,23 +100,23 @@
     {
       "features": [
         {
-          "description": "Courses delivered and children with a recorded recovery reported side by side with the difference labelled and its method stated, replacing the single carton-derived children figure as the headline.",
+          "description": "Courses delivered and children with a recorded recovery reported side by side in one row with the difference labelled and both methods stated, replacing the single carton-derived children figure as the headline. Outcomes are observed on a SAMPLE of the children each batch fed, so the two are reported with their methods rather than subtracted — the honest framing of a gap between differently-sized things.",
           "id": "two-figures-and-the-gap",
-          "verify": "Both figures render with distinct labels and methods; the labelled gap equals courses delivered minus recorded recoveries for the same period."
+          "verify": "pytest connect_labs/supply/tests/test_demand.py::test_the_two_headline_figures_are_reported_separately — both figures render with distinct labels and methods, and the observed recovery rate is stated."
         },
         {
           "description": "The delivered-batch drill from the funder ladder through DistributionRecord to a ChildOutcome measurement series, labelled synthetic on screen.",
           "id": "batch-to-outcome-drill",
-          "verify": "A delivered batch resolves to its distributions and to at least one child series crossing the recovery threshold, with the synthetic-data label present in the same frame."
+          "verify": "pytest connect_labs/supply/tests/test_demand.py::test_a_delivered_batch_drills_to_a_child_who_recovered — the synthetic label rides in the payload itself, so no consumer can drop it."
         }
       ],
       "id": "the-number-everyone-quotes-tested",
-      "narrative": "Here is the number every report leads with, and how it is almost always made: cartons delivered, divided by a treatment factor. It is arithmetic presented as an outcome. Beside it now sits a different figure — children with a recorded recovery, built from measurements taken at the point of treatment — and Dale can follow a single delivered batch through the distributions it fed to one child's arm circumference climbing out of the red. The two numbers do not agree, because not every child admitted on a batch completes treatment. That gap is the most useful thing on the screen. It is the difference between what was shipped and what is known to have worked, and a funder who can see it is being told the truth.",
+      "narrative": "Here is the number every report leads with, and how it is almost always made: cartons delivered, divided by a treatment factor. It is arithmetic presented as an outcome. Beside it now sits a different figure — children with a recorded recovery, built from measurements taken at the point of treatment — and Dale can follow a single delivered batch through the distributions it fed to one child's arm circumference climbing out of the red. The two do not agree, and the reason is stated rather than left hanging: outcomes are observed on a sample, and of the children who are observed, not all complete treatment. This cohort recovers at a rate inside the Sphere performance band the sector grades itself against, with the defaulters and inpatient transfers shown alongside. That gap is the most useful thing on the screen. It is the difference between what was shipped and what is known to have worked, and a funder who can see it is being told the truth.",
       "persona": "dale",
       "provenance": "S5",
       "title": "The number everyone quotes, tested"
     }
   ],
   "slug": "oes-money-to-child",
-  "version": 1
+  "version": 2
 }

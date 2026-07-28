@@ -9,7 +9,7 @@
     "the-signal-came-from-the-ground",
     "ada-reallocates-and-the-numbers-move"
   ],
-  "fetched_at": "2026-07-28T01:37:38.145070+00:00",
+  "fetched_at": "2026-07-28T02:11:26.000470+00:00",
   "name": "oes-command-centre",
   "narrative": "Once contracts are running, Ada's question is not where the shipments are — it is which children are about to go without, and what can still be done about it. The command centre opens by admitting the uncomfortable part: the Kano plant sends clean structured events, a despatch from Lagos arrives as a standard advice document, and the Port Sudan to El Fasher corridor — which serves the worst famine phases — arrives as a driver's phone check-in, hand-keyed and labelled as such. So the picture is brightest exactly where access is easiest. Because every milestone keeps planned, estimated and actual as three separate timestamps, lateness is a measurement rather than an argument; and because status is derived from an append-only event log, nobody can clear a red row by editing a field. Onto that Ada adds the demand side: a caseload per district, so a nine-day delay is reported as twelve thousand children missing a full course by a named date rather than as tonnage at risk. They see the shortfall a partner in Borno raised from their own screen, reallocate from a surplus warehouse in Kassala, and watch the cover, the pipeline gap and the map recompute against the decision they just recorded.",
   "personas": {
@@ -25,9 +25,9 @@
     {
       "features": [
         {
-          "description": "The command centre at /supply/command-centre/ — a severity-ranked exception queue beside the live corridor map, each row carrying status, cause and a recommended action.",
+          "description": "The command centre — the Command centre tab of the staff SPA: a severity-ranked exception queue beside the live corridor map, each row carrying status, cause, a recommended action, and the derivation behind its rank.",
           "id": "exception-first-command-centre",
-          "verify": "GET /supply/command-centre/ returns 200 for procurement_admin and renders exception rows ordered by severity; asserted in test_dashboards.py."
+          "verify": "pytest connect_labs/supply/tests/test_demand.py::test_the_queue_ranks_everything_in_one_unit. The app is a single SPA route; there is no /supply/command-centre/ URL to GET."
         }
       ],
       "id": "which-children-are-about-to-go-without",
@@ -83,12 +83,12 @@
         {
           "description": "A CaseloadEstimate per country, admin-1 district and month, joined to the existing admin1_ipc geojson by adm1_code, with a source note per figure.",
           "id": "caseload-estimate",
-          "verify": "A caseload row exists for every district carrying a famine phase; the district panel renders caseload, delivered, coverage percent and uncovered children, asserted in test_dashboards.py."
+          "verify": "pytest connect_labs/supply/tests/test_demand.py::test_seeded_caseloads_cover_every_famine_district_with_a_node and test_every_coverage_row_carries_its_source_note."
         },
         {
-          "description": "The pipeline-by-corridor card gains a requirement-from-caseload column and a gap-to-need column beside the existing gap-to-contract.",
+          "description": "A requirement-from-caseload card beside the contract pipeline, showing what each district needs against what has landed in it. The conversion goes through gs1.CARTONS_PER_CHILD_TREATED rather than restating the ladder, so it cannot drift from the funder view's cost-per-child figure.",
           "id": "requirement-against-need",
-          "verify": "The pipeline card's requirement equals caseload times the treatment factor, not contract quantity; asserted against a seeded district."
+          "verify": "pytest connect_labs/supply/tests/test_demand.py::test_coverage_is_delivery_against_need_not_volume — a district with MORE tonnage and a larger caseload renders lower coverage than a smaller, better-covered one."
         }
       ],
       "id": "the-caseload-underneath-the-map",
@@ -102,21 +102,21 @@
         {
           "description": "Per-node stock on hand derived from receiving events, a weekly burn rate from the caseload the node serves, and from those a weeks-of-cover figure and a projected stockout date.",
           "id": "cover-and-stockout-projection",
-          "verify": "Stock on hand equals receipts minus dispatches per node; weeks of cover equals stock divided by weekly burn; the projected date matches a hand-computed fixture."
+          "verify": "pytest connect_labs/supply/tests/test_cover.py — stock on hand equals receipts minus despatches; weeks of cover equals stock divided by weekly burn; the projected date matches a hand-computed fixture."
         },
         {
-          "description": "Exception severity ranked by children at risk by date rather than tonnage times lateness, with the derivation shown on the expanded row.",
+          "description": "Exception severity ranked by children at risk by date rather than tonnage times lateness, with the derivation shown on the expanded row. Computed in services/exceptions.py on the SERVER — it was previously ExceptionSeverity() in tab_command.jsx, where no test in this repo could reach it and the partner surface would have needed a second copy. All four exception kinds now carry the same unit.",
           "id": "children-at-risk-severity",
-          "verify": "Two exceptions with equal tonnage but different caseloads rank by the larger children-at-risk figure."
+          "verify": "pytest connect_labs/supply/tests/test_cover.py::test_equal_tonnage_ranks_by_caseload_not_by_lateness, and test_demand.py::test_severity_is_not_computed_in_the_browser guards the regression."
         },
         {
           "description": "An exception class raised from ShipmentLine expiry dates when stock at a node will expire before the caseload it serves can consume it.",
           "id": "expiry-risk-exception",
-          "verify": "A seeded batch expiring inside the cover window appears in the queue with the carton count at risk."
+          "verify": "pytest connect_labs/supply/tests/test_cover.py::test_expiry_risk_flags_stock_the_caseload_cannot_consume, and the negative case."
         }
       ],
       "id": "twelve-thousand-children-by-the-ninth-of-september",
-      "narrative": "Now the queue can rank by what actually matters. The top row is not nine days late — it is twelve thousand children losing a full course of treatment in El Fasher by the ninth of September. Behind that figure is what physically arrived, the rate the site is consuming it, and the date the store runs dry. Below it sits a different kind of risk: three thousand two hundred cartons in Kassala that expire before the caseload can consume them, which is a loss nobody is currently looking for.",
+      "narrative": "Now the queue can rank by what actually matters. Every row carries the same unit — children who miss a full course of treatment — because that is the only quantity a late consignment, a short receipt, an expiring batch and a partner's shortfall all share, and ranking them against each other any other way is not an ordering. Behind each figure is what physically arrived, the rate the site is consuming it, and the date the store runs dry; expand a row and the derivation is there. Below the late consignments sits a different kind of risk: cartons sitting where the caseload is too small to work through them before they expire, which is a loss nobody is currently looking for.",
       "persona": "ada",
       "provenance": "S4",
       "title": "Twelve thousand children, by the ninth of September"
@@ -126,7 +126,7 @@
         {
           "description": "ShortfallSignal rows raised by an implementing partner surface in the command-centre queue with a partner-raised origin marker, naming the organisation, site and report date.",
           "id": "partner-raised-exceptions",
-          "verify": "A signal created by a partner org appears in the procurement_admin queue with origin partner and the partner org name; a centrally-derived exception does not carry the marker."
+          "verify": "pytest connect_labs/supply/tests/test_demand.py::test_a_partner_raised_row_says_so_and_a_derived_one_does_not."
         }
       ],
       "id": "the-signal-came-from-the-ground",
@@ -140,12 +140,12 @@
         {
           "description": "An append-only SupplyAction (expedite, reallocate, split lot, raise mini tender) with actor, rationale and effect, written through the existing audit log.",
           "id": "supply-action-model",
-          "verify": "Every action is audited with actor and rationale; actions cannot be edited or deleted once recorded."
+          "verify": "pytest connect_labs/supply/tests/test_demand.py::test_a_recorded_action_cannot_be_rewritten_or_deleted — save() and delete() raise once a record exists — and test_a_reallocation_without_a_reason_is_refused."
         },
         {
-          "description": "A reallocation creates a real Shipment from the surplus node with planned milestones and stored route geometry, so downstream figures recompute from it rather than being adjusted.",
+          "description": "A reallocation creates a real Shipment from the surplus node with planned milestones and stored route geometry, so downstream figures recompute from it rather than being adjusted. It refuses to overdraw the source: a paper transfer would have the receiving site plan against cartons that never arrive.",
           "id": "reallocation-creates-a-shipment",
-          "verify": "After a reallocation the destination's weeks of cover, the corridor pipeline gap and the flow map all reflect the new shipment; the resolved exception references the action id."
+          "verify": "pytest connect_labs/supply/tests/test_demand.py::test_a_reallocation_creates_a_real_shipment_and_moves_the_numbers, test_a_reallocation_cannot_overdraw_the_source, and test_resolving_a_signal_ties_it_to_the_action_that_resolved_it."
         }
       ],
       "id": "ada-reallocates-and-the-numbers-move",
@@ -156,5 +156,5 @@
     }
   ],
   "slug": "oes-command-centre",
-  "version": 1
+  "version": 2
 }
