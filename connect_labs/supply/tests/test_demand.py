@@ -563,3 +563,37 @@ def test_a_supplier_cannot_drill_into_child_outcomes(client):
     batch = DistributionRecord.objects.first().batch_lot
     client.post("/supply/login/", {"email": "supplier@savanna.example", "password": "oes-demo-2026"})
     assert client.get(f"/supply/api/batches/{batch}/").status_code == 403
+
+
+# --- structural guards ------------------------------------------------------
+
+
+def test_severity_is_not_computed_in_the_browser():
+    """Guard against the ranking drifting back into untested JS.
+
+    tab_command.jsx used to hold ExceptionSeverity() and buildExceptions(),
+    where nothing in this repo could test them and where the partner surface
+    would have needed a second copy. If either name comes back, the queue has
+    two sources of truth again.
+    """
+    from pathlib import Path
+
+    import connect_labs.supply as supply_pkg
+
+    static = Path(supply_pkg.__file__).resolve().parent.parent / "static" / "supply"
+    command_tab = (static / "tab_command.jsx").read_text()
+    assert "function ExceptionSeverity" not in command_tab
+    assert "function buildExceptions" not in command_tab
+    assert "world.exceptions" in command_tab
+
+
+def test_the_partner_tab_is_in_the_bundle_build_list():
+    """A tab file nobody concatenates is a tab that does not exist."""
+    from pathlib import Path
+
+    import connect_labs.supply as supply_pkg
+
+    repo_root = Path(supply_pkg.__file__).resolve().parents[2]
+    build = (repo_root / "webpack" / "build-supply.js").read_text()
+    assert "'tab_partner.jsx'," in build
+    assert (repo_root / "connect_labs" / "static" / "supply" / "tab_partner.jsx").exists()

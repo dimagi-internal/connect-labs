@@ -10,6 +10,7 @@ function GovTab({ ctx }) {
   const country = world.scope_country;
   const contracts = world.contracts || [];
   const nodes = (world.nodes || []).filter((n) => n.country === country);
+  const coverage = world.coverage || [];
 
   // Only flows that touch this country.
   const shipments = contracts
@@ -134,6 +135,89 @@ function GovTab({ ctx }) {
         subtitle="What has landed at each storage point."
       >
         <StockByNode nodes={warehouses} shipments={shipments} />
+      </Card>
+      <Card
+        title="Coverage by district, not tonnage delivered"
+        subtitle="Where the response reached, and where the state still has to fill the gap itself."
+      >
+        {coverage.length ? (
+          <DataTable
+            rows={coverage}
+            rowKey={(r) => r.adm1_code}
+            columns={[
+              {
+                key: 'district',
+                label: 'District',
+                value: (r) => r.adm1_name,
+                render: (r) => (
+                  <span title={r.source_note}>
+                    {r.adm1_name}{' '}
+                    <Badge
+                      tone={
+                        r.ipc_phase >= 5
+                          ? 'bad'
+                          : r.ipc_phase >= 4
+                          ? 'warn'
+                          : 'muted'
+                      }
+                    >
+                      IPC {r.ipc_phase}
+                    </Badge>
+                  </span>
+                ),
+              },
+              {
+                key: 'caseload',
+                label: 'Children needing treatment',
+                value: (r) => r.caseload,
+                render: (r) => formatNumber(r.caseload),
+              },
+              {
+                key: 'delivered',
+                label: 'Courses delivered',
+                value: (r) => r.courses_delivered,
+                render: (r) => formatNumber(r.courses_delivered),
+              },
+              {
+                key: 'coverage',
+                label: 'Coverage of need',
+                value: (r) => r.coverage_percent || 0,
+                render: (r) =>
+                  r.coverage_percent === null ? (
+                    <Badge tone="muted">no data</Badge>
+                  ) : (
+                    <Badge
+                      tone={
+                        r.coverage_percent >= 80
+                          ? 'good'
+                          : r.coverage_percent >= 50
+                          ? 'warn'
+                          : 'bad'
+                      }
+                    >
+                      {r.coverage_percent}%
+                    </Badge>
+                  ),
+              },
+              {
+                key: 'uncovered',
+                label: 'Children still uncovered',
+                value: (r) => r.uncovered_children,
+                render: (r) => formatNumber(r.uncovered_children),
+              },
+            ]}
+          />
+        ) : (
+          <EmptyState
+            title="No caseload estimates for this country."
+            hint="Coverage cannot be reported without a denominator."
+          />
+        )}
+        <p className="muted small method-note">
+          Coverage is courses delivered divided by the district's monthly SAM
+          caseload. Hover a district name for how its caseload was estimated.
+          All figures in this environment are synthetic.
+        </p>
       </Card>
     </Page>
   );
