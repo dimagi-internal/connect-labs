@@ -80,14 +80,62 @@ def _supplier_world(actor):
     }
 
 
-def _inbound_cartons(site, on_or_before):
-    """Cartons on the road to ``site`` that could land by a given date."""
-    total = Shipment.objects.filter(
-        destination=site,
+def _inbound_by_site(site_ids):
+    """Cartons still on the road to each site, with their expected arrival.
+
+    Only consignments that have not yet landed — anything delivered is already
+    counted in stock on hand, and adding both would double-count the same
+    cartons.
+    """
+    inbound = {}
+    rows = Shipment.objects.filter(
+        destination_id__in=site_ids,
         unit="cartons",
         status__in=[Shipment.Status.PLANNED, Shipment.Status.IN_TRANSIT],
-    )
-    return float(sum(float(s.quantity) for s in total))
+    ).select_related("destination")
+    for shipment in rows:
+        eta = shipment.eta.date() if shipment.eta else None
+        inbound.setdefault(shipment.destination_id, []).append((eta, float(shipment.quantity)))
+    return inbound
+
+
+def _plans_with_running_balance(plans, inbound, site_ids):
+    """Resolve each planned distribution against a RUNNING balance per site.
+
+    Cartons are spent when they are distributed. Scoring every planned day
+    against the same opening stock let one site's 329 cartons cover both its
+    5 August and its 12 August distribution, and the calendar then marked a day
+    "covered" that the cover projection said the site would already be dry for —
+    the two panels disagreeing about the same site on the same date.
+
+    Walking the plans in date order and decrementing as they are served is what
+    makes the calendar and the projection two views of one ledger instead of two
+    independent guesses.
+    """
+    balance = {sid: float(cover.stock_on_hand_by_id(sid)) for sid in site_ids}
+    pending = {sid: sorted(rows, key=lambda r: (r[0] is None, r[0])) for sid, rows in inbound.items()}
+
+    rows_out = []
+    for plan in plans:  # already ordered by scheduled_for
+        sid = plan.site_id
+        # Land anything due to arrive on or before this distribution day.
+        still_out = []
+        arrived = 0.0
+        for eta, qty in pending.get(sid, []):
+            if eta is not None and eta <= plan.scheduled_for:
+                arrived += qty
+            else:
+                still_out.append((eta, qty))
+        pending[sid] = still_out
+        balance[sid] = balance.get(sid, 0.0) + arrived
+
+        on_hand = balance.get(sid, 0.0)
+        inbound_ahead = sum(q for _e, q in pending.get(sid, []))
+        rows_out.append(distribution_plan_dict(plan, inbound_cartons=inbound_ahead, on_hand=on_hand))
+        # Spend what this distribution consumes — capped at what is actually
+        # there, because a site cannot dispense stock it does not hold.
+        balance[sid] = max(0.0, on_hand - float(plan.cartons_required or 0))
+    return rows_out
 
 
 def _partner_world(actor):
@@ -107,15 +155,7 @@ def _partner_world(actor):
         .select_related("site")
         .order_by("scheduled_for", "site__name")
     )
-    plan_rows = []
-    for plan in plans:
-        plan_rows.append(
-            distribution_plan_dict(
-                plan,
-                inbound_cartons=_inbound_cartons(plan.site, plan.scheduled_for),
-                on_hand=cover.stock_on_hand(plan.site),
-            )
-        )
+    plan_rows = _plans_with_running_balance(plans, _inbound_by_site(site_ids), site_ids)
 
     contracts = (
         Contract.objects.filter(shipments__destination_id__in=site_ids)

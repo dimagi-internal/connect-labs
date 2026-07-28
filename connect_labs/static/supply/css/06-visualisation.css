@@ -349,3 +349,59 @@
   font-weight: 600;
   margin: 4px 0 6px;
 }
+
+/* The bands were carrying the whole clinical claim as undefined colour. */
+.muac-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+  font-size: 11px;
+  color: var(--oes-ink-soft);
+  margin-bottom: 8px;
+}
+.muac-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin-right: 4px;
+  vertical-align: -1px;
+}
+.muac-swatch.sam {
+  background: #fee4e2;
+}
+.muac-swatch.mam {
+  background: #fef0c7;
+}
+.muac-swatch.ok {
+  background: #d1fadf;
+}
+
+/* Thresholds drawn, not merely implied by a colour change. */
+.muac-rule {
+  stroke: rgba(16, 24, 40, 0.28);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+.muac-rule-label {
+  font-size: 7px;
+  fill: rgba(16, 24, 40, 0.55);
+}
+/* One marker per visit — a bare line reads as a two-point interpolation. */
+.muac-point {
+  fill: var(--oes-ink, #101828);
+  stroke: #fff;
+  stroke-width: 1;
+}
+.outcome-row {
+  cursor: pointer;
+}
+.outcome-row.focused {
+  border-color: var(--oes-accent-dark, #175cd3);
+  background: #f5f8ff;
+  grid-template-columns: 220px 1fr 130px;
+}
+.outcome-row.focused .muac-spark {
+  height: 96px;
+}

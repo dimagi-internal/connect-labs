@@ -113,9 +113,10 @@ def test_seed_execution_world():
     # 28 OES-network nodes plus Komadugu's 11 Borno feeding sites
     assert SupplyNode.objects.count() == 39
     assert Contract.objects.count() == 4
-    # 14 corridor consignments plus 10 into Komadugu's sites — a partner site
-    # holds stock only if something actually delivered to it.
-    assert Shipment.objects.count() == 24
+    # 14 corridor consignments, 10 delivered into Komadugu's sites (a partner
+    # site holds stock only if something actually delivered to it), and 2 still
+    # on the road so the calendar's inbound column is exercised.
+    assert Shipment.objects.count() == 26
 
     # every ingestion tier is represented, so the demo shows the real gradient
     tiers = set(SupplyEvent.objects.values_list("source_tier", flat=True))

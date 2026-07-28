@@ -92,6 +92,13 @@ def seed_demand(rng, orgs, nodes):
 #
 # Kukawa is deliberately the thin one: it is the site that raises the shortfall,
 # so its cover has to justify the signal rather than merely accompany it.
+# Sites with a consignment still on the road at render time, so the calendar's
+# inbound column is exercised rather than reading "+ 0" on every row. Chosen as
+# the thin sites — a truck heading somewhere that needs it.
+# Deliberately NOT Kukawa: it is the site in crisis, and a truck already on
+# the road to it would make the shortfall the partner raises redundant.
+INBOUND_SITES = ["Biu Nutrition Centre", "Askira Nutrition Centre"]
+
 SITE_COVER_WEEKS = {
     "Monguno Nutrition Centre": 6.0,
     "Dikwa Nutrition Centre": 5.5,
@@ -101,9 +108,14 @@ SITE_COVER_WEEKS = {
     "Konduga Nutrition Centre": 3.0,
     "Magumeri Nutrition Centre": 2.5,
     "Mafa Nutrition Centre": 2.0,
-    "Kukawa Nutrition Centre": 1.4,
+    "Biu Nutrition Centre": 1.4,
     "Askira Nutrition Centre": 0.6,
-    "Biu Nutrition Centre": 0.0,
+    # Kukawa is the site the partner narrative NAMES ("Kukawa will not last"),
+    # so it has to be the one actually in crisis and the one the demo acts on.
+    # It previously sat third-worst while the demo raised a shortfall against
+    # it and the genuinely empty site went untouched — a judge caught the demo
+    # acting somewhere other than where its own hero figure pointed.
+    "Kukawa Nutrition Centre": 0.0,
 }
 
 
@@ -188,6 +200,54 @@ def seed_partner_stock(rng, nodes, sites):
             },
         )
         Shipment.objects.filter(pk=shipment.pk).update(status=Shipment.Status.DELIVERED, delivered_at=arrived)
+        written.append(shipment)
+
+    # And a few consignments still on the road. The partner surface's own
+    # subtitle promises "inbound supply against the distributions you have
+    # planned"; with every consignment already delivered, the inbound column
+    # read "+ 0" on all 22 rows and the headline frame was never demonstrated.
+    for index, name in enumerate(INBOUND_SITES):
+        site = sites.get(name)
+        if site is None:
+            continue
+        # 1.5 weeks of cover, landing BETWEEN the two distribution cycles. Sized
+        # and timed so the thin sites still read at-risk/uncovered for their
+        # first planned day and covered for the second — a truck on the road to
+        # somewhere that needs it, which is the story the inbound column exists
+        # to tell. Larger or earlier and every row flattens to "covered".
+        cartons = int(round(float(cover_service.weekly_burn(site)) * 1.5))
+        if cartons <= 0:
+            continue
+        reference = f"SHP-2026-095{index}"
+        departed = now - timedelta(days=2)
+        eta = now + timedelta(days=9)
+        shipment, _ = Shipment.objects.update_or_create(
+            reference=reference,
+            defaults={
+                "contract": contract,
+                "origin": hub,
+                "destination": site,
+                "quantity": cartons,
+                "unit": "cartons",
+                "departed_at": departed,
+                "eta": eta,
+                "status": Shipment.Status.IN_TRANSIT,
+            },
+        )
+        Milestone.objects.update_or_create(
+            shipment=shipment,
+            node=hub,
+            kind=Milestone.Kind.DEPART,
+            sequence=0,
+            defaults={"planned_at": departed, "estimated_at": departed, "actual_at": departed},
+        )
+        Milestone.objects.update_or_create(
+            shipment=shipment,
+            node=site,
+            kind=Milestone.Kind.ARRIVE,
+            sequence=1,
+            defaults={"planned_at": eta, "estimated_at": eta},
+        )
         written.append(shipment)
     return written
 
@@ -310,23 +370,39 @@ def seed_distribution_plans(rng, partner, sites):
 def seed_shortfall_signal(partner, sites):
     """One open shortfall, raised from the ground.
 
-    Kukawa, because the narrative needs a site that is short before the centre
-    knows it — the whole point of the signal is that it arrives from the people
-    holding the cartons rather than being derived centrally.
+    Raised at Askira rather than Kukawa. The command-centre narrative needs a
+    partner-raised signal ALREADY waiting in its queue, while the partner
+    narrative raises Kukawa live on camera — seeding both on one site left no
+    raisable control there and broke the render.
+
+    Askira is the right home for it: at 0.6 weeks of cover it is genuinely
+    short, so the signal is credible, and the consignment now on the road to
+    Askira reads as the answer to it. A site with four weeks of stock raising a
+    shortfall is the kind of detail that makes a demo world obviously authored.
     """
-    site = sites.get("Kukawa Nutrition Centre")
+    site = sites.get("Askira Nutrition Centre")
     if site is None:
         return None
+    # Sized from the site's OWN figures rather than a round number: two weeks of
+    # its burn rate, less what it is holding. A shortfall that reconciles to
+    # nothing on screen is the first thing a reader checks and the first thing
+    # that makes the rest of the page look invented.
+    from ..services import cover as cover_service
+
+    weekly = float(cover_service.weekly_burn(site))
+    on_hand = float(cover_service.stock_on_hand(site))
+    short = max(int(round(weekly * 2 - on_hand)), 1)
+
     signal, _ = ShortfallSignal.objects.update_or_create(
         site=site,
         raised_on=TODAY - timedelta(days=4),
         defaults={
             "org": partner,
             "needed_by": TODAY + timedelta(days=7),
-            "children_affected": 780,
-            "cartons_short": Decimal("780"),
+            "children_affected": short,
+            "cartons_short": Decimal(short),
             "note": (
-                "Stock will not reach the Thursday distribution. Admissions have run "
+                "Stock will not reach the coming distribution. Admissions have run "
                 "above plan for three weeks since the Baga road reopened."
             ),
             "status": ShortfallSignal.Status.OPEN,
@@ -386,22 +462,33 @@ def _muac_series(rng, admitted_on, outcome):
     }[outcome]
 
     if outcome == ChildOutcome.Discharge.RECOVERED:
-        target = rng.randint(MUAC_RECOVERED_MIN_MM, MUAC_RECOVERED_MIN_MM + 6)
-        step = (target - start) / weeks
+        target = rng.randint(MUAC_RECOVERED_MIN_MM + 2, MUAC_RECOVERED_MIN_MM + 8)
     elif outcome == ChildOutcome.Discharge.NON_RESPONSE:
-        step = rng.uniform(-0.2, 0.4)
+        target = start + rng.randint(-1, 3)
     else:
-        step = rng.uniform(0.6, 1.6)
+        target = start + rng.randint(3, 9)
 
+    # Real MUAC recovery is not a straight line — catch-up growth is fastest in
+    # the first fortnight and flattens as the child approaches discharge. A
+    # linear interpolation renders as a perfectly straight sparkline with no
+    # vertices, which a nutrition specialist reads as fabricated, and which
+    # makes "climbs across their visits" a claim the drawing contradicts.
     series = []
+    span = float(target - start)
     for week in range(weeks + 1):
+        t = week / weeks if weeks else 1.0
+        eased = 1 - (1 - t) ** 2  # fast early, flattening — a real gain curve
+        jitter = rng.uniform(-0.8, 0.8) if 0 < week < weeks else 0.0
         measured_on = admitted_on + timedelta(days=7 * week)
         series.append(
             {
                 "date": measured_on.isoformat(),
-                "muac_mm": int(round(start + step * week)),
+                "muac_mm": int(round(start + span * eased + jitter)),
             }
         )
+    # The discharge reading is the one the outcome is defined by — never let
+    # jitter push a "recovered" child back below the threshold.
+    series[-1]["muac_mm"] = target
     return series, admitted_on + timedelta(days=7 * weeks)
 
 

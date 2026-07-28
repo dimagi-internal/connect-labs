@@ -27,6 +27,11 @@ scenes:
   - kind: hold
     seconds: 1.6
     note: read the four figures
+  - kind: scroll_to
+    target: css:.card:has-text('From a batch to the children it treated')
+    note: the panel that carries this scene's own claim — carton AND child
+  - kind: hold
+    seconds: 1.8
   impressive_because: Every other screen in this product looks outward from the centre. This one belongs
     to the organisation actually admitting the children, and it opens with what they can now see rather
     than what they are being asked to report.
@@ -128,6 +133,11 @@ scenes:
   - kind: hold
     seconds: 2.0
     note: it is now in the command centre queue
+  - kind: scroll_to
+    target: css:.card:has-text('Shortfalls you have raised')
+    note: watch it land, rather than being told it did
+  - kind: hold
+    seconds: 2.2
   impressive_because: 'This inverts the direction a monitoring product runs in: the ground reports upward
     into a system that can respond, rather than the centre reporting downward about the ground.'
   ai_quality: The form is pre-filled from the site's real cover projection rather than blank, so the numbers

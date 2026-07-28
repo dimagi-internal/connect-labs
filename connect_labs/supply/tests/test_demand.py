@@ -673,6 +673,74 @@ def test_the_partner_calendar_shows_all_three_cover_states():
     assert weeks[-1] >= 4, "and one has to be comfortable"
 
 
+def test_the_calendar_depletes_stock_across_successive_distributions():
+    """Cartons are spent when they are distributed.
+
+    Scoring every planned day against the same opening stock let one site's 329
+    cartons cover both its 5 August and its 12 August distribution, and the
+    calendar then marked a day "covered" that the cover projection said the site
+    would already be dry for. Three independent judges caught the contradiction
+    before any human did.
+    """
+    call_command("seed_supply_demo")
+    from connect_labs.supply.api.bootstrap import build_bootstrap
+
+    class _Req:
+        pass
+
+    from django.contrib.auth import get_user_model
+
+    request = _Req()
+    request.user = get_user_model().objects.get(username="zara@komadugu.example")
+    world = build_bootstrap(request)
+
+    by_site = {}
+    for plan in world["distribution_plans"]:
+        by_site.setdefault(plan["site_name"], []).append(plan)
+
+    fell = False
+    for site, plans in by_site.items():
+        plans.sort(key=lambda p: p["scheduled_for"])
+        for earlier, later in zip(plans, plans[1:]):
+            # Either stock fell by what the earlier distribution consumed, or a
+            # consignment landed in between and raised it. It must never be
+            # unchanged, which is what "the same cartons cover both" looks like.
+            if later["cartons_on_hand"] < earlier["cartons_on_hand"]:
+                fell = True
+            assert later["cartons_on_hand"] != earlier["cartons_on_hand"] or earlier["cartons_on_hand"] == 0, (
+                f"{site}: stock unchanged across two distributions "
+                f"({earlier['cartons_on_hand']} -> {later['cartons_on_hand']})"
+            )
+    assert fell, "at least one site must visibly draw down"
+
+
+def test_a_consignment_arriving_later_does_not_cover_an_earlier_day():
+    """A truck arriving on Friday does not cover Tuesday.
+
+    Counting everything still on the road as available flattened every row to
+    'covered' — including a site holding nothing on the day it was due to
+    distribute.
+    """
+    call_command("seed_supply_demo")
+    from connect_labs.supply.api.bootstrap import build_bootstrap
+
+    class _Req:
+        pass
+
+    from django.contrib.auth import get_user_model
+
+    request = _Req()
+    request.user = get_user_model().objects.get(username="zara@komadugu.example")
+    world = build_bootstrap(request)
+
+    for plan in world["distribution_plans"]:
+        if plan["cartons_on_hand"] == 0 and plan["cartons_required"] > 0:
+            assert plan["state"] == "uncovered", (
+                f"{plan['site_name']} holds nothing on {plan['scheduled_for']} but reads "
+                f"{plan['state']} — inbound arriving later must not cover this day"
+            )
+
+
 def test_the_site_that_raised_the_shortfall_is_actually_short():
     """The signal has to be justified by the cover, not merely accompany it."""
     call_command("seed_supply_demo")

@@ -90,13 +90,33 @@ function PartnerTab({ ctx }) {
                 render: (p) => formatNumber(p.cartons_required),
               },
               {
+                // Projected, not current: the running balance on that day, after
+                // every consignment that lands by then and every distribution
+                // before it. Labelling it 'on hand' invited the reading that it
+                // was today's stock, which then looked like it disagreed with
+                // the cover table below.
                 key: 'available',
-                label: 'On hand + inbound',
-                value: (p) => p.cartons_on_hand + p.cartons_inbound,
-                render: (p) =>
-                  `${formatNumber(p.cartons_on_hand)} + ${formatNumber(
-                    p.cartons_inbound,
-                  )}`,
+                label: 'Stock on the day',
+                value: (p) => p.cartons_on_hand,
+                render: (p) => (
+                  <span
+                    title={
+                      p.cartons_inbound
+                        ? `${formatNumber(
+                            p.cartons_inbound,
+                          )} more cartons are on the road, arriving after this date`
+                        : 'Projected from receipts, arrivals and earlier distributions'
+                    }
+                  >
+                    {formatNumber(p.cartons_on_hand)}
+                    {p.cartons_inbound ? (
+                      <span className="muted small">
+                        {' '}
+                        (+{formatNumber(p.cartons_inbound)} later)
+                      </span>
+                    ) : null}
+                  </span>
+                ),
               },
               {
                 key: 'state',
@@ -174,22 +194,54 @@ function PartnerTab({ ctx }) {
                 key: 'dry',
                 label: 'Runs dry',
                 value: (c) => c.stockout_on,
-                render: (c) => formatDate(c.stockout_on),
+                render: (c) => {
+                  const days = Math.round(
+                    (new Date(c.stockout_on) - new Date(c.as_of)) / 86400000,
+                  );
+                  return (
+                    <span>
+                      {formatDate(c.stockout_on)}
+                      <span className="muted small">
+                        {' '}
+                        · {days} day{days === 1 ? '' : 's'}
+                      </span>
+                    </span>
+                  );
+                },
               },
               {
                 key: 'act',
                 label: '',
                 value: () => '',
-                render: (c) =>
-                  supplyCan(world.role, 'signals', 'raise') ? (
+                render: (c) => {
+                  if (!supplyCan(world.role, 'signals', 'raise')) return null;
+                  // Eleven identical filled buttons were the highest-contrast
+                  // column on the card and out-shouted the cover figures they
+                  // sat beside — a site with six weeks of stock offered the
+                  // same call to action as one already dry. The filled variant
+                  // is now reserved for sites at or below the stated triage
+                  // threshold; everything else gets a quiet ghost control.
+                  const open = openSignals.find((s) => s.site_id === c.node_id);
+                  if (open) {
+                    return (
+                      <span className="muted small">
+                        Raised {formatDate(open.raised_on)}
+                      </span>
+                    );
+                  }
+                  const urgent = c.weeks_of_cover < 2;
+                  return (
                     <button
                       type="button"
-                      className="btn btn-sm"
+                      className={`btn btn-sm ${
+                        urgent ? 'btn-primary' : 'btn-ghost'
+                      }`}
                       onClick={() => setRaising(c)}
                     >
                       Raise a shortfall
                     </button>
-                  ) : null,
+                  );
+                },
               },
             ]}
           />
@@ -200,6 +252,7 @@ function PartnerTab({ ctx }) {
           />
         )}
         <p className="muted small method-note">
+          {cover.length ? `As of ${formatDate(cover[0].as_of)}. ` : ''}
           {cover.length ? cover[0].method : ''} These are the same figures the
           OES command centre reads for these sites.
         </p>
@@ -268,7 +321,7 @@ function PartnerTab({ ctx }) {
               { key: 'batch', label: 'Batch', value: (r) => r.batch_lot },
               {
                 key: 'consignment',
-                label: 'Arrived on',
+                label: 'Shipment',
                 value: (r) => r.shipment_reference || '',
                 render: (r) => r.shipment_reference || '—',
               },
@@ -401,6 +454,19 @@ function RaiseShortfall({ node, onClose, onSubmit }) {
 function BatchDrill({ record, onClose }) {
   const outcomes = record.outcomes || [];
   const recovered = outcomes.filter((o) => o.discharge_status === 'recovered');
+  // The narration follows ONE child. An undifferentiated list makes the viewer
+  // pick for themselves, so open on the strongest arc — the child who starts
+  // deepest in the red and finishes clearest inside green.
+  const strongest = outcomes.reduce(
+    (best, o) =>
+      !best ||
+      o.latest_muac_mm - o.admission_muac_mm >
+        best.latest_muac_mm - best.admission_muac_mm
+        ? o
+        : best,
+    null,
+  );
+  const [focus, setFocus] = useState(strongest ? strongest.id : null);
 
   return (
     <Modal
@@ -421,22 +487,56 @@ function BatchDrill({ record, onClose }) {
       </p>
       <p className="muted small">
         {recovered.length} of {outcomes.length} children in the recorded sample
-        were discharged as recovered.
+        were discharged as recovered.{' '}
+        <strong>
+          That sample is {outcomes.length} of the{' '}
+          {formatNumber(record.children_served)} children this distribution fed
+        </strong>{' '}
+        — a rate from {outcomes.length} children carries a wide interval and is
+        not the batch&rsquo;s recovery rate.
       </p>
+      <MuacLegend />
       <div className="outcome-list">
         {outcomes.map((child) => (
-          <MuacSeries key={child.id} child={child} />
+          <MuacSeries
+            key={child.id}
+            child={child}
+            focused={child.id === focus}
+            onFocus={() => setFocus(child.id)}
+          />
         ))}
       </div>
     </Modal>
   );
 }
 
-function MuacSeries({ child }) {
+/* The bands carry the entire clinical claim and were never defined on screen.
+   The stated audience is a supply manager, not a clinician — without a key,
+   "out of the red and into green" is undecodable colour. */
+function MuacLegend() {
+  return (
+    <div className="muac-legend">
+      <span>
+        <i className="muac-swatch sam" /> Severe · under 115 mm
+      </span>
+      <span>
+        <i className="muac-swatch mam" /> Moderate · 115–124 mm
+      </span>
+      <span>
+        <i className="muac-swatch ok" /> Recovered · 125 mm and above
+      </span>
+      <span className="muted">
+        WHO mid-upper-arm-circumference thresholds, children 6–59 months
+      </span>
+    </div>
+  );
+}
+
+function MuacSeries({ child, focused, onFocus }) {
   const series = child.measurements || [];
   if (!series.length) return null;
   const width = 220;
-  const height = 56;
+  const height = focused ? 96 : 56;
   const lo = 95;
   const hi = 135;
   const x = (i) => (i / Math.max(series.length - 1, 1)) * width;
@@ -449,15 +549,25 @@ function MuacSeries({ child }) {
     .join(' ');
 
   return (
-    <div className="outcome-row">
+    <div
+      className={`outcome-row ${focused ? 'focused' : ''}`}
+      onClick={onFocus}
+      role="button"
+      tabIndex={0}
+    >
       <div className="outcome-id">
         <strong>{child.anon_id}</strong>
         <Badge tone={child.discharge_status === 'recovered' ? 'good' : 'warn'}>
           {child.discharge_label}
         </Badge>
+        {focused ? (
+          <span className="muted small">
+            {series.length} visits over {series.length - 1} weeks
+          </span>
+        ) : null}
       </div>
       <svg viewBox={`0 0 ${width} ${height}`} className="muac-spark">
-        {/* The red / yellow / green bands a MUAC series is read against. */}
+        {/* The red / amber / green bands a MUAC series is read against. */}
         <rect
           x="0"
           y={y(115)}
@@ -479,10 +589,42 @@ function MuacSeries({ child }) {
           height={y(125)}
           className="muac-band ok"
         />
+        {/* The two thresholds, drawn and labelled, so colour is not the only
+            thing carrying the clinical meaning. */}
+        <line x1="0" x2={width} y1={y(115)} y2={y(115)} className="muac-rule" />
+        <line x1="0" x2={width} y1={y(125)} y2={y(125)} className="muac-rule" />
+        {focused ? (
+          <>
+            <text x="2" y={y(125) - 2} className="muac-rule-label">
+              125 mm · recovered
+            </text>
+            <text x="2" y={y(115) - 2} className="muac-rule-label">
+              115 mm · severe
+            </text>
+          </>
+        ) : null}
         <path d={path} className="muac-line" />
+        {/* One marker per visit — a bare line reads as a two-point
+            interpolation, which is not what "across their visits" claims. */}
+        {series.map((m, i) => (
+          <circle
+            key={m.date}
+            cx={x(i)}
+            cy={y(m.muac_mm)}
+            r={focused ? 3 : 2}
+            className="muac-point"
+          >
+            <title>{`${m.date}: ${m.muac_mm} mm`}</title>
+          </circle>
+        ))}
       </svg>
       <div className="outcome-figures">
         {child.admission_muac_mm} → {child.latest_muac_mm} mm
+        {focused ? (
+          <div className="muted small">
+            +{child.latest_muac_mm - child.admission_muac_mm} mm
+          </div>
+        ) : null}
       </div>
     </div>
   );
