@@ -213,11 +213,34 @@ function PartnerTab({ ctx }) {
                 render: (s) => formatDate(s.raised_on),
               },
               { key: 'site', label: 'Site', value: (s) => s.site_name },
+              // The unit the entire supply chain is denominated in, and it was
+              // the one field this record dropped. The narration names "the
+              // cartons short" as part of what gets reported upward, and the
+              // Receiving screen two cards above proves the product can carry
+              // it — "ADVISED 900 / YOU COUNTED 840 / SHORT 60". A shortfall
+              // stated only in children cannot be checked against the count
+              // that produced it.
+              {
+                key: 'cartons',
+                label: 'Cartons short',
+                value: (s) => s.cartons_short,
+                render: (s) => formatNumber(Math.round(s.cartons_short)),
+              },
               {
                 key: 'children',
                 label: 'Children affected',
                 value: (s) => s.children_affected,
                 render: (s) => formatNumber(s.children_affected),
+              },
+              // "Marked as raised by Komadugu rather than derived centrally" is
+              // the scene's claim, and it was carried only by the card title.
+              // The command centre renders the same distinction as a badge on
+              // the row; the partner's own screen should agree with it.
+              {
+                key: 'origin',
+                label: 'Reported by',
+                value: (s) => s.org_name,
+                render: (s) => <Badge tone="info">{s.org_name}</Badge>,
               },
               {
                 key: 'by',
