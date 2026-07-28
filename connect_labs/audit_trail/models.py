@@ -16,6 +16,7 @@ import uuid
 import pgtrigger
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 
 class Action(models.TextChoices):
@@ -57,7 +58,14 @@ class AuditEvent(models.Model):
     """Append-only audit event (ASTM E2147 field set)."""
 
     event_uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
-    occurred_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    # Stamped by service.record() at the moment the access HAPPENS, not when the
+    # row is written. This was auto_now_add, which meant bulk_create stamped every
+    # event in a request identically at flush time — a request that made 347
+    # sequential API calls recorded all 347 as one instant, so intra-request
+    # ordering was lost and the timestamp was wrong by the request's duration.
+    # "When did this access occur" is the whole point of an audit trail, so the
+    # default here is only a backstop for rows built outside record().
+    occurred_at = models.DateTimeField(default=timezone.now, db_index=True)
 
     # Who — FK for joins, plus snapshots so the row stays useful if the user
     # is deleted (same rationale as CustomPGHistoryMiddleware).
