@@ -493,3 +493,52 @@ The honest sentence is also the stronger one, and this fixture already supports
 it: **each corridor's own cheapest bidder is a different plant, so the split is
 simultaneously the resilient award and the lowest-cost one.** That is a narration
 change to a locked narrative — a `concept_change` gate, and an operator decision.
+
+
+## M. K1 is now blocking, and a test proved it
+
+Attempting the coverage seed in §J turned K1 from a reporting defect into a hard
+blocker, which is worth recording because it settles the priority.
+
+Two halves of the double-count were found, not one. `services/coverage.py` had
+it as well as `models/execution.py`: summing every arrival in a district counts
+the cartons that reach the district hub, and then counts them AGAIN as the hub
+despatches them onward to the sites it serves. Borno read **24,675** against
+**15,000** that ever crossed its boundary. That half is fixed — a leg now counts
+toward a district only when it crosses into it, since redistribution inside a
+district is not new supply reaching it.
+
+The contract half is not, and it now blocks the narration:
+
+- Borno needs **~1,400 more cartons** across its boundary to reach the 34% its
+  narration speaks (16,399 of a 48,232 caseload, leaving the 31,833 uncovered
+  that the funder scene calls "thirty-one thousand").
+- Every route into Borno belongs to contract `OES-C-2026-NG1`, whose
+  `delivered_quantity` already reads **44,675 against 45,000 contracted** — 325
+  cartons of headroom.
+- Adding the leg took it to **46,074**, and
+  `test_disbursement_never_exceeds_obligation` failed with *"OES-C-2026-NG1
+  delivered more than it contracted for"*.
+
+The test is right and the invariant is real. The contract only appears nearly
+fulfilled because `delivered_quantity` counts each carton once per leg it
+travels; on any single-counting rule it is badly under-delivered. So the demo
+cannot tell its own coverage story until the contract measure is fixed, and the
+Borno leg is deliberately **not** seeded rather than papered over by raising the
+contract quantity.
+
+**The decision that unblocks everything.** What does a contract's `delivered`
+column mean? Three defensible single-counting answers, and they give very
+different headline numbers:
+
+| rule | NG1 delivered | note |
+| --- | ---: | --- |
+| arrivals at the contracted delivery place (Maiduguri) | 15,000 | literal reading of "45,000 cartons delivered to Maiduguri" |
+| first hop out of the supply source | 20,000 | "what the supplier despatched against this contract" |
+| terminal legs only (final resting place) | ~11,074 | each carton counted where it came to rest |
+
+All three drop "Delivered to date" on the command centre from 109,675 to
+roughly a third of that, and all three turn the pipeline gap from a rounding
+error into a real operational story. That is probably an improvement to the
+demo, but it changes headline figures in three narratives, so it is an operator
+call rather than a cleanup.

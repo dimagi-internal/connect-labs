@@ -376,6 +376,19 @@ SHIPMENTS = [
     ("SHP-2026-0401", "Ouagadougou RUTF Plant", "Ouagadougou Central Warehouse", [], 9000, "confirmed", "asn", 24),
     ("SHP-2026-0402", "Ouagadougou Central Warehouse", "Djibo Distribution Hub", [], 6000, "delivered", "portal", 11),
     ("SHP-2026-0403", "Ouagadougou Central Warehouse", "Dori Distribution Hub", [], 5000, "in_transit", "portal", 4),
+    # Kassala is the well-covered district the funder narrative contrasts
+    # against Borno: a small caseload served to ~91% of need. It crosses a
+    # district boundary, which is what makes it count as supply reaching a
+    # district rather than redistribution inside one (see services/coverage.py).
+    #
+    # Borno's matching leg is NOT here, deliberately. Lifting Borno to the 34%
+    # its narration speaks needs ~1,400 more cartons across its boundary, and
+    # the Nigeria contract has only 325 cartons of headroom left before
+    # delivered_quantity exceeds the 45,000 it contracted for — because that
+    # figure double-counts every carton that moves hub-to-site inside Borno.
+    # The demo cannot tell its own coverage story until that is fixed. See
+    # docs/walkthroughs/oes-narrative-set-review.md K1.
+    ("SHP-2026-0204", "Khartoum Central Warehouse", "Kassala Forward Store", [], 6388, "delivered", "checkin", 16),
 ]
 
 # Days each leg is running behind its planned arrival. Authored rather than
