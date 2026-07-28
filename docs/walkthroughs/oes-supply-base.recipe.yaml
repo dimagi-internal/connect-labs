@@ -104,15 +104,39 @@ scenes:
   concept_claim: Eligibility is enforced when the payload is built, so an unqualified supplier never receives
     the solicitation rather than seeing it with a hidden button.
   url: /supply/
-  show: The Solicitations tab with the live RUTF Northeast Nigeria Q3 2026 call and its three lots — visible
-    to a supplier only while they hold a live qualification in a matching category.
+  show: 'The live RUTF Northeast Nigeria Q3 2026 call, opened to its lots: sixty thousand cartons into
+    Maiduguri due 15 September, twenty thousand into Djibo, thirty-five thousand into Damaturu — the
+    concrete quantities the narration speaks. Then Amina''s side, where the same solicitation is one of
+    the two her live RUTF qualification lets her see at all.'
   actions:
   - kind: click
     target: css:.navitem:has-text('Solicitations')
   - kind: wait_for
     target: css:.data-table
   - kind: hold
-    seconds: 2.2
+    seconds: 1.6
+  - kind: click
+    target: css:tr:has-text('RUTF Northeast Nigeria Q3 2026') button:has-text('Compare bids')
+    note: open the call so the spoken quantities and the delivery date are on screen
+  - kind: wait_for
+    target: css:.modal
+  - kind: scroll_to
+    target: css:.modal .card:has-text('60,000 cartons RUTF delivered to Maiduguri')
+  - kind: hold
+    seconds: 2.6
+    note: 60,000 cartons to Maiduguri, due 15 September — spoken and readable
+  - kind: goto
+    target: /supply/dev-login/?persona=amina&next=/supply/
+    note: the same call from the qualified supplier's side
+  - kind: wait_for
+    target: css:.page
+  - kind: click
+    target: css:.navitem:has-text('Solicitations & bids')
+  - kind: wait_for
+    target: css:.data-table
+  - kind: hold
+    seconds: 2.4
+    note: '"Open to your organisation" — the eligibility rule, rendered as a shorter list'
   impressive_because: 'Eligibility is decided on the server: an unqualified supplier''s page never receives
     the solicitation at all, rather than being shown it with the button hidden. It prevents the ordinary
     embarrassment of an ineligible bid excluded by hand after the fact.'
@@ -121,11 +145,13 @@ scenes:
 - id: bids-priced-and-scored-lot-by-lot
   concept_claim: Pricing per lot surfaces a different leader on each corridor — information a per-tender
     comparison cannot show.
-  url: /supply/
-  show: 'The split tender — RUTF Sahel and Lake Chad Corridors Q3 2026 — opened to its per-lot comparison:
-    rows ranked by unit price with each reviewer''s technical score inline, and a different leader on
-    the Maiduguri lot than on Djibo.'
+  url: /supply/dev-login/?persona=ada&next=/supply/
+  show: 'The live tender — RUTF Northeast Nigeria Q3 2026 — opened to its per-lot comparison: rows ranked
+    by unit price with each reviewer''s technical score inline, and a different leader on the Maiduguri
+    lot (Savanna, out of Kano) than on Djibo (Faso NutriWorks, out of Ouagadougou).'
   actions:
+  - kind: wait_for
+    target: css:.page
   - kind: click
     target: css:.navitem:has-text('Solicitations')
   - kind: wait_for
@@ -135,9 +161,16 @@ scenes:
     note: the live tender, still open — bids priced per lot
   - kind: wait_for
     target: css:.modal
+  - kind: scroll_to
+    target: css:.modal .card:has-text('60,000 cartons RUTF delivered to Maiduguri')
+  - kind: hold
+    seconds: 2.4
+    note: Maiduguri — Savanna first on price at 42.29, technical 91
+  - kind: scroll_to
+    target: css:.modal .card:has-text('20,000 cartons RUTF delivered to Djibo')
   - kind: hold
     seconds: 2.6
-    note: price-ranked rows with each reviewer's technical score inline
+    note: Djibo — Faso NutriWorks first at 41.85, and Savanna drops to second
   impressive_because: The leader on the Maiduguri lot is not the leader on Djibo, which is exactly the
     information a per-tender comparison would have hidden.
   ai_quality: Two distinct price leaders are actually visible in the data, not asserted in a caption.

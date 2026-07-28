@@ -296,6 +296,43 @@ def test_the_price_leader_differs_by_lot():
     assert len(set(leaders)) == 2, f"expected two different price leaders, got {leaders}"
 
 
+def test_the_live_tender_is_won_by_a_different_supplier_on_each_corridor():
+    """Scenes 7 and 8 of oes-supply-base are awarded live, on this tender.
+
+    The pre-awarded split tender above proves the property in seeded history.
+    This is the one Ada actually awards on camera, and the narration says the
+    leader on Maiduguri is not the leader on Djibo — so if this tender ranks
+    the same organisation first on both lots, awarding Djibo to anyone else
+    looks arbitrary on screen. It did, once: a single global price ladder made
+    the first-listed bidder cheapest on every lot.
+    """
+    call_command("seed_supply_demo")
+    from connect_labs.supply.models import RFP
+    from connect_labs.supply.services import rfp_actions
+
+    rfp = RFP.objects.get(title="RUTF Northeast Nigeria Q3 2026")
+    leaders = {}
+    for lot in rfp.lots.filter(delivery_place__in=("Maiduguri", "Djibo"), category="rutf"):
+        ranked = rfp_actions.lot_comparison(lot)
+        leaders[lot.delivery_place] = ranked[0].bid.org.legal_name
+        # Every bid on the two compared corridors carries a technical score,
+        # because the narration reads them off the screen beside the price.
+        assert all(
+            b.scores.exists() for b in ranked
+        ), f"unscored bid on the {lot.delivery_place} lot, which scene 7 narrates as scored"
+
+    assert leaders["Maiduguri"] != leaders["Djibo"], f"one leader on both corridors: {leaders}"
+
+
+def test_the_spoken_maiduguri_deadline_is_the_fifteenth_of_september():
+    """oes-supply-base scene 6 says the date out loud, so it cannot drift."""
+    call_command("seed_supply_demo")
+    from connect_labs.supply.models import Lot
+
+    lot = Lot.objects.get(rfp__title="RUTF Northeast Nigeria Q3 2026", delivery_place="Maiduguri", category="rutf")
+    assert (lot.delivery_deadline.month, lot.delivery_deadline.day) == (9, 15)
+
+
 def test_seeded_caseloads_cover_every_famine_district_with_a_node():
     call_command("seed_supply_demo")
     from connect_labs.supply.models import CaseloadEstimate

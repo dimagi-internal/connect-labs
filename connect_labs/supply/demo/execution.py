@@ -25,7 +25,16 @@ from ..models import (
     SupplyEvent,
     SupplyNode,
 )
-from .data import APPROPRIATIONS, CONTRACT_BY_PREFIX, CONTRACTS, NODE_DISTRICTS, NODES, SHIPMENTS, STATUS_STEPS
+from .data import (
+    APPROPRIATIONS,
+    CONTRACT_BY_PREFIX,
+    CONTRACTS,
+    NODE_DISTRICTS,
+    NODES,
+    SHIPMENT_SLIP_DAYS,
+    SHIPMENTS,
+    STATUS_STEPS,
+)
 
 
 def seed_execution(rng, orgs, staff):
@@ -134,8 +143,10 @@ def _seed_shipments(rng, nodes, contracts):
         departed = now - timedelta(days=days_ago) if days_ago is not None else None
         transit_days = rng.randint(3, 9)
         planned_arrival = (departed + timedelta(days=transit_days)) if departed else now + timedelta(days=7)
-        # a few legs run late, which is what populates the exception queue
-        slip_days = rng.choice([0, 0, 0, 1, 2, 4])
+        # a few legs run late, which is what populates the exception queue —
+        # authored per leg (see SHIPMENT_SLIP_DAYS) so the queue ranks on a
+        # story rather than on whatever two draws happened to collide
+        slip_days = SHIPMENT_SLIP_DAYS.get(reference, 0)
         actual_arrival = planned_arrival + timedelta(days=slip_days)
 
         # Descriptive fields are refreshed on every run; LIFECYCLE state is not.
