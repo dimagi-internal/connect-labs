@@ -109,3 +109,95 @@ def test_export_client_error_still_audited(monkeypatch, db):
     assert event.outcome == Outcome.FAILURE
     assert event.record_count == 1
     assert event.metadata["error"] == "ExportAPIError"
+
+
+def _three_page_client(monkeypatch):
+    """An ExportAPIClient whose stream yields 3 pages of 1 row each."""
+    from connect_labs.labs.integrations.connect.export_client import ExportAPIClient
+
+    client = ExportAPIClient(base_url="https://example.invalid", access_token="t")
+
+    def fake_paginate(endpoint, params=None):
+        yield [{"id": 1}]
+        yield [{"id": 2}]
+        yield [{"id": 3}]
+
+    monkeypatch.setattr(client, "_paginate", fake_paginate)
+    return client
+
+
+@pytest.mark.django_db
+def test_sampler_early_stop_is_a_successful_partial_export(monkeypatch, db):
+    """A caller that declares `partial_ok` and stops early is NOT a failure.
+
+    Abandoning the generator throws GeneratorExit into it; before this was
+    distinguished from a real disconnect, every sampling call (the audit
+    wizard's *-questions endpoints) logged a failed bulk-PHI export.
+    """
+    client = _three_page_client(monkeypatch)
+
+    for page in client.paginate("/export/opportunity/765/user_visits/", partial_ok=True):
+        break  # sampler: got what it needed on page 1
+
+    event = AuditEvent.objects.get()
+    assert event.outcome == Outcome.SUCCESS
+    assert "error" not in event.metadata
+    # The partial-read fact is still on the compliance record...
+    assert event.metadata["terminated"] == "early"
+    # ...along with how much PHI was actually read.
+    assert event.record_count == 1
+
+
+@pytest.mark.django_db
+def test_abandoned_stream_without_partial_ok_is_still_a_failure(monkeypatch, db):
+    """Regression guard: a genuine mid-stream teardown must stay a failure.
+
+    Same GeneratorExit mechanism as the sampler above — the ONLY difference is
+    that this caller never declared it might stop early, so an interrupted
+    export (client disconnected, request timed out) still gets recorded.
+    """
+    client = _three_page_client(monkeypatch)
+
+    pages = client.paginate("/export/opportunity/765/user_visits/")
+    next(pages)
+    pages.close()  # what a mid-download disconnect does to the generator
+
+    event = AuditEvent.objects.get()
+    assert event.outcome == Outcome.FAILURE
+    assert event.metadata["error"] == "GeneratorExit"
+    assert "terminated" not in event.metadata
+    assert event.record_count == 1
+
+
+@pytest.mark.django_db
+def test_partial_ok_does_not_mask_real_errors(monkeypatch, db):
+    """`partial_ok` forgives an early stop, never an actual exception."""
+    from connect_labs.labs.integrations.connect.export_client import ExportAPIClient, ExportAPIError
+
+    client = ExportAPIClient(base_url="https://example.invalid", access_token="t")
+
+    def fake_paginate(endpoint, params=None):
+        yield [{"id": 1}]
+        raise ExportAPIError("boom")
+
+    monkeypatch.setattr(client, "_paginate", fake_paginate)
+    with pytest.raises(ExportAPIError):
+        list(client.paginate("/export/opportunity/765/user_visits/", partial_ok=True))
+
+    event = AuditEvent.objects.get()
+    assert event.outcome == Outcome.FAILURE
+    assert event.metadata["error"] == "ExportAPIError"
+
+
+@pytest.mark.django_db
+def test_full_read_with_partial_ok_is_not_tagged_early(monkeypatch, db):
+    """Declaring `partial_ok` doesn't tag a stream the caller fully consumed."""
+    client = _three_page_client(monkeypatch)
+
+    pages = list(client.paginate("/export/opportunity/765/user_visits/", partial_ok=True))
+
+    assert len(pages) == 3
+    event = AuditEvent.objects.get()
+    assert event.outcome == Outcome.SUCCESS
+    assert "terminated" not in event.metadata
+    assert event.record_count == 3

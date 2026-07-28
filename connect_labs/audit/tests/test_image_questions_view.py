@@ -183,6 +183,46 @@ def test_image_types_returns_502_on_api_error(labs_client, httpx_mock):
 
 
 @override_settings(**LABS_SETTINGS)
+def test_sampler_stopping_early_audits_a_successful_partial_export(labs_client, httpx_mock):
+    """The sampler's early exit must not log a failed bulk-PHI export.
+
+    This endpoint stops as soon as the question-id set goes stable, abandoning
+    the page generator mid-stream. That raises GeneratorExit inside
+    ExportAPIClient.paginate, which used to be audited as outcome=failure — so
+    these endpoints logged 100% failure on every call they ever served.
+    """
+    from connect_labs.audit_trail.models import Action, AuditEvent, Outcome
+
+    # Every record carries the same question id, so after STABLE_THRESHOLD rows
+    # with nothing new the view breaks out — page 2 is never requested.
+    records = [
+        _make_record(
+            i,
+            form_json={"form": {"group": {"photo_a": f"img{i}.jpg"}}},
+            images=[{"blob_id": f"b{i}", "name": f"img{i}.jpg"}],
+            username=f"user{i}",
+        )
+        for i in range(1, 61)
+    ]
+    next_url = "https://connect.example.com/export/opportunity/42/user_visits/?images=true&last_id=60"
+    httpx_mock.add_response(url=CONNECT_URL, json=_page(records, next_url=next_url))
+
+    response = labs_client.get(ENDPOINT)
+    assert response.status_code == 200
+    assert [item["id"] for item in response.json()] == ["group/photo_a"]
+
+    event = AuditEvent.objects.get(action=Action.EXPORT)
+    assert event.outcome == Outcome.SUCCESS
+    assert "error" not in event.metadata
+    assert event.metadata["terminated"] == "early"
+    # record_count is PHI actually transferred, not rows inspected: page 1
+    # arrived whole. The early stop is why page 2 was never requested — and
+    # httpx_mock has no response registered for it, so this test would error
+    # if the sampler ran on.
+    assert event.record_count == len(records)
+
+
+@override_settings(**LABS_SETTINGS)
 def test_image_types_returns_401_when_no_oauth_token(db):
     """Returns 401 when no labs_oauth token is in the session."""
     from connect_labs.users.models import User
