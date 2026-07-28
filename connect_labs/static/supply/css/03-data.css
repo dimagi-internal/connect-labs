@@ -202,3 +202,79 @@
   line-height: 1.35;
   white-space: nowrap;
 }
+
+/* ---------- distribution week grid ---------- */
+
+/* A site per row, a day per column. An uncovered cell is a hole in a grid and
+   the eye finds it before it reads the number in it, which a date-sorted list
+   cannot do however well it is coloured. */
+/* The grid scrolls INSIDE its card. Left to size itself it is wider than the
+   content column, which scrolls the whole page sideways instead — taking the
+   nav rail and the row labels off the left edge, which is worse than the
+   overflow it was avoiding. */
+.week-grid-wrap {
+  overflow-x: auto;
+  max-width: 100%;
+}
+.week-grid {
+  width: max-content;
+  max-width: none;
+  border-collapse: separate;
+  border-spacing: 4px;
+  font-size: 13px;
+}
+.week-grid thead th {
+  text-align: left;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--oes-ink-soft);
+  font-weight: 600;
+  padding: 0 6px 2px;
+  white-space: nowrap;
+}
+.week-grid-site {
+  text-align: left;
+  font-weight: 600;
+  white-space: nowrap;
+  padding-right: 10px;
+  min-width: 176px;
+  position: sticky;
+  left: 0;
+  background: var(--oes-panel);
+  z-index: 1;
+}
+.week-cell {
+  border-radius: 8px;
+  padding: 7px 9px;
+  min-width: 96px;
+  border: 1px solid var(--oes-line);
+  background: var(--oes-panel);
+  vertical-align: top;
+}
+.week-cell.empty {
+  border-style: dashed;
+  background: transparent;
+}
+.week-cell.covered {
+  background: rgba(16, 122, 87, 0.09);
+  border-color: rgba(16, 122, 87, 0.32);
+}
+.week-cell.at_risk {
+  background: rgba(180, 118, 12, 0.11);
+  border-color: rgba(180, 118, 12, 0.38);
+}
+.week-cell.uncovered {
+  background: rgba(176, 32, 42, 0.1);
+  border-color: rgba(176, 32, 42, 0.4);
+}
+.week-cell-children {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.week-cell-stock {
+  font-size: 11px;
+  color: var(--oes-ink-soft);
+  font-variant-numeric: tabular-nums;
+  margin-top: 1px;
+}
