@@ -52,7 +52,10 @@ function PartnerTab({ ctx }) {
               : '',
           },
           {
-            label: 'Shortfalls raised',
+            label:
+              openSignals.length === 1
+                ? 'Shortfall raised'
+                : 'Shortfalls raised',
             value: openSignals.length,
             hint: openSignals.length
               ? 'awaiting an answer from OES'
@@ -63,7 +66,7 @@ function PartnerTab({ ctx }) {
 
       <Card
         title="Distribution calendar"
-        subtitle="The frame you actually plan in: a day, a site, and the children booked in for it."
+        subtitle="The frame you actually plan in: a day, a site, and the children booked in for it. Stock on the day includes consignments scheduled to land by then — the cover table below counts only what has physically arrived, which is why a site can run dry there and still be covered here."
       >
         {plans.length ? (
           <DataTable
@@ -303,7 +306,7 @@ function PartnerTab({ ctx }) {
 
       <Card
         title="From a batch to the children it treated"
-        subtitle="Both ends of this chain already exist. Nothing currently holds them as one record."
+        subtitle="Each distribution resolves to the batch that supplied it and to the treatment records of the children it fed."
       >
         {records.length ? (
           <DataTable
@@ -365,7 +368,11 @@ function PartnerTab({ ctx }) {
       ) : null}
 
       {batch ? (
-        <BatchDrill record={batch} onClose={() => setBatch(null)} />
+        <BatchDrill
+          record={batch}
+          allRecords={records}
+          onClose={() => setBatch(null)}
+        />
       ) : null}
     </Page>
   );
@@ -451,8 +458,15 @@ function RaiseShortfall({ node, onClose, onSubmit }) {
   );
 }
 
-function BatchDrill({ record, onClose }) {
-  const outcomes = record.outcomes || [];
+function BatchDrill({ record, onClose, allRecords }) {
+  // A lot split across sites is the normal case, and the product already holds
+  // both legs — scoping a batch-titled modal to one of them contradicted the
+  // table it was opened from and left the narration's plural "distributions"
+  // with nothing on screen behind it.
+  const siblings = (allRecords || [record]).filter(
+    (r) => r.batch_lot === record.batch_lot,
+  );
+  const outcomes = siblings.flatMap((r) => r.outcomes || []);
   const recovered = outcomes.filter((o) => o.discharge_status === 'recovered');
   // The narration follows ONE child. An undifferentiated list makes the viewer
   // pick for themselves, so open on the strongest arc — the child who starts
@@ -467,6 +481,15 @@ function BatchDrill({ record, onClose }) {
     null,
   );
   const [focus, setFocus] = useState(strongest ? strongest.id : null);
+  // The focused record leads. It was being built correctly and then rendered
+  // eighth of thirteen, below the modal's own scroll fold — so the one child
+  // the story is about was not on screen while it was being described.
+  const ordered = focus
+    ? [
+        ...outcomes.filter((o) => o.id === focus),
+        ...outcomes.filter((o) => o.id !== focus),
+      ]
+    : outcomes;
 
   return (
     <Modal
@@ -481,23 +504,32 @@ function BatchDrill({ record, onClose }) {
     >
       <p className="muted small">
         Arrived on {record.shipment_reference || 'an unrecorded consignment'},
-        distributed at {record.site_name} on {formatDate(record.distributed_on)}{' '}
-        to {formatNumber(record.children_served)} children.{' '}
-        <strong>Treatment records in this environment are synthetic.</strong>
+        distributed across {siblings.length}{' '}
+        {siblings.length === 1 ? 'site' : 'sites'} —{' '}
+        {siblings
+          .map(
+            (r) =>
+              `${r.site_name} on ${formatDate(
+                r.distributed_on,
+              )} (${formatNumber(r.children_served)} children)`,
+          )
+          .join('; ')}
+        . <strong>Treatment records in this environment are synthetic.</strong>
       </p>
       <p className="muted small">
         {recovered.length} of {outcomes.length} children in the recorded sample
         were discharged as recovered.{' '}
         <strong>
           That sample is {outcomes.length} of the{' '}
-          {formatNumber(record.children_served)} children this distribution fed
+          {formatNumber(siblings.reduce((n, r) => n + r.children_served, 0))}{' '}
+          children this batch fed
         </strong>{' '}
         — a rate from {outcomes.length} children carries a wide interval and is
         not the batch&rsquo;s recovery rate.
       </p>
       <MuacLegend />
       <div className="outcome-list">
-        {outcomes.map((child) => (
+        {ordered.map((child) => (
           <MuacSeries
             key={child.id}
             child={child}
