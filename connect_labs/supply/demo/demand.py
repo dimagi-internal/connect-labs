@@ -245,13 +245,14 @@ def seed_partner(orgs, nodes):
     _seed_partner_user(partner, contact_email)
 
     sites = {}
-    for index, (name, node_country, lon, lat) in enumerate(PARTNER_SITES):
+    for index, (name, node_country, lon, lat, weight) in enumerate(PARTNER_SITES):
         node, _ = SupplyNode.objects.update_or_create(
             name=name,
             defaults={
                 "kind": SupplyNode.Kind.DELIVERY_POINT,
                 "country": node_country,
                 "adm1_code": "NGA-2839",
+                "catchment_weight": weight,
                 "gln": gs1.make_gln("629124", 200 + index),
                 "location": Point(lon, lat, srid=4326),
                 "owner": partner,

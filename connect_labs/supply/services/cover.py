@@ -116,10 +116,17 @@ def served_children(node, month=None):
         return 0
     if node.kind != SupplyNode.Kind.DELIVERY_POINT:
         return estimate.children_sam
-    sites = demand_serving_nodes().filter(adm1_code=node.adm1_code, kind=SupplyNode.Kind.DELIVERY_POINT).count()
-    if sites == 0:
-        return 0
-    return estimate.children_sam / sites
+
+    # Sites are not the same size, so the district does not divide evenly
+    # between them. An even split makes every row on the partner's calendar
+    # read 214 / 214 — identical figures down the page, which is the surest
+    # sign a demo was generated rather than observed. `catchment_weight` is the
+    # share of the district each site actually serves.
+    peers = list(demand_serving_nodes().filter(adm1_code=node.adm1_code, kind=SupplyNode.Kind.DELIVERY_POINT))
+    total_weight = sum(max(p.catchment_weight, 0) for p in peers)
+    if total_weight <= 0:
+        return estimate.children_sam / len(peers) if peers else 0
+    return estimate.children_sam * (max(node.catchment_weight, 0) / total_weight)
 
 
 def weekly_burn(node, month=None):

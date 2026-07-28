@@ -201,18 +201,26 @@ NODES = [
 # Komadugu Health Initiative's own feeding sites — the implementing partner's
 # eleven sites across Borno. They are ordinary delivery_point nodes owned by a
 # partner org, not a parallel structure: a site is a site whoever runs it.
+# name, country, lon, lat, catchment weight.
+#
+# The weight is each site's share of Borno's caseload, and it is deliberately
+# uneven: Monguno and Ngala host large displaced populations and admit several
+# times what a rural post like Askira does. An even split renders every row of
+# the distribution calendar with identical figures — 214 children, 214 cartons,
+# eleven times down the page — which is the surest sign a demo world was
+# generated rather than observed.
 PARTNER_SITES = [
-    ("Monguno Nutrition Centre", "NG", 13.6100, 12.6750),
-    ("Kukawa Nutrition Centre", "NG", 13.5500, 12.9200),
-    ("Dikwa Nutrition Centre", "NG", 13.9170, 12.0400),
-    ("Gwoza Nutrition Centre", "NG", 13.6940, 11.0850),
-    ("Ngala Nutrition Centre", "NG", 14.1890, 12.3540),
-    ("Damboa Nutrition Centre", "NG", 12.7550, 11.1550),
-    ("Konduga Nutrition Centre", "NG", 13.4180, 11.6540),
-    ("Magumeri Nutrition Centre", "NG", 12.8320, 12.0910),
-    ("Mafa Nutrition Centre", "NG", 13.6000, 11.9230),
-    ("Askira Nutrition Centre", "NG", 13.3300, 10.4500),
-    ("Biu Nutrition Centre", "NG", 12.1950, 10.6120),
+    ("Monguno Nutrition Centre", "NG", 13.6100, 12.6750, 3.4),
+    ("Ngala Nutrition Centre", "NG", 14.1890, 12.3540, 2.6),
+    ("Dikwa Nutrition Centre", "NG", 13.9170, 12.0400, 1.9),
+    ("Gwoza Nutrition Centre", "NG", 13.6940, 11.0850, 1.6),
+    ("Kukawa Nutrition Centre", "NG", 13.5500, 12.9200, 1.5),
+    ("Damboa Nutrition Centre", "NG", 12.7550, 11.1550, 1.2),
+    ("Konduga Nutrition Centre", "NG", 13.4180, 11.6540, 1.0),
+    ("Mafa Nutrition Centre", "NG", 13.6000, 11.9230, 0.9),
+    ("Magumeri Nutrition Centre", "NG", 12.8320, 12.0910, 0.7),
+    ("Biu Nutrition Centre", "NG", 12.1950, 10.6120, 0.6),
+    ("Askira Nutrition Centre", "NG", 13.3300, 10.4500, 0.4),
 ]
 
 # The implementing partner. Not a supplier — they never bid; they receive at
@@ -273,7 +281,7 @@ NODE_DISTRICTS = {
     "Djibo Distribution Hub": "BFA-2806",
     "Dori Distribution Hub": "BFA-2876",
     "Sebba Nutrition Site": "BFA-2877",
-    **{name: "NGA-2839" for name, _c, _lon, _lat in PARTNER_SITES},
+    **{name: "NGA-2839" for name, _c, _lon, _lat, _w in PARTNER_SITES},
 }
 
 APPROPRIATIONS = [
