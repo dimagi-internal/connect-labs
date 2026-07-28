@@ -29,8 +29,19 @@ function PartnerReceivingTab({ ctx }) {
   const arriving = inbound.filter(
     (s) => s.status === 'in_transit' || s.status === 'planned',
   );
-  const awaitingCount = inbound.filter((s) => s.status === 'delivered').length;
   const openDiscrepancies = discrepancies.filter((d) => d.status === 'open');
+  // A consignment whose count has already been recorded is not awaiting one,
+  // even though it is still "delivered" rather than "confirmed". Counting them
+  // together offered "Record the count" on a row whose short count is reported
+  // twelve lines below, and overstated the awaiting tile by exactly those rows
+  // — on the scene whose thesis is that a discrepancy exists the moment the
+  // count is recorded.
+  const countedRefs = new Set(discrepancies.map((d) => d.shipment_reference));
+  const isCounted = (s) =>
+    countedRefs.has(s.reference) || s.status === 'confirmed';
+  const awaitingCount = inbound.filter(
+    (s) => s.status === 'delivered' && !isCounted(s),
+  ).length;
   const cartonsShort = openDiscrepancies.reduce(
     (n, d) => n + (d.shortfall || 0),
     0,
@@ -123,8 +134,22 @@ function PartnerReceivingTab({ ctx }) {
               label: '',
               sortable: false,
               value: () => '',
-              render: (s) =>
-                s.status === 'delivered' ? (
+              render: (s) => {
+                if (isCounted(s)) {
+                  const d = discrepancies.find(
+                    (x) => x.shipment_reference === s.reference,
+                  );
+                  return (
+                    <Badge tone={d ? 'bad' : 'good'}>
+                      {d
+                        ? `Counted · ${formatNumber(
+                            Math.abs(d.shortfall || 0),
+                          )} short`
+                        : 'Counted'}
+                    </Badge>
+                  );
+                }
+                return s.status === 'delivered' ? (
                   <button
                     type="button"
                     className="btn btn-sm"
@@ -135,7 +160,8 @@ function PartnerReceivingTab({ ctx }) {
                   >
                     Record the count
                   </button>
-                ) : null,
+                ) : null;
+              },
             },
           ]}
         />

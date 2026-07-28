@@ -43,10 +43,13 @@ scenes:
     assigned to it at all.'
   actions:
   - kind: scroll_to
-    target: css:.card:has-text('Distribution calendar')
+    target: css:.card:has-text('Distribution calendar') h2
+    note: the card TITLE — scrolling into the body left a naked date-sorted table, which
+      is precisely the artifact this scene's narration says it is not
   - kind: hold
-    seconds: 2.0
-    note: the covered / at risk / uncovered spread
+    seconds: 2.4
+    note: title, the sentence reconciling this card with the cover table, the column
+      headers, and the covered / at risk / uncovered spread
   impressive_because: A shipment table sorted by arrival date is the supplier's view of the world. This
     is the frame a partner actually plans in, and the cover state is resolved on the server so it cannot
     disagree with the projection below it.
@@ -98,8 +101,9 @@ scenes:
   - kind: scroll_to
     target: css:.card:has-text('Arriving at your sites')
   - kind: click
-    target: css:tr:has-text('SHP-2026-0909') button:has-text('Record the count')
-    note: open the consignment the count was taken against
+    target: css:.card:has-text('Arriving at your sites') tr:has-text('SHP-2026-0909')
+    note: open the consignment the count was taken against — its row now reads "Counted ·
+      60 short" rather than offering a count it has already had
   - kind: wait_for
     target: css:.modal
   - kind: hold
@@ -152,6 +156,12 @@ scenes:
   - kind: hold
     seconds: 2.0
     note: it is now in the command centre queue
+  - kind: scroll_to
+    target: css:.card:has-text('Weeks of cover by site')
+    note: the row that changed — Kukawa's button is now a dated stamp, so a duplicate
+      raise is structurally impossible
+  - kind: hold
+    seconds: 1.8
   - kind: scroll_to
     target: css:.card:has-text('Shortfalls you have raised')
     note: watch it land, rather than being told it did
