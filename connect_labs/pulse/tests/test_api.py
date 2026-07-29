@@ -39,7 +39,11 @@ def make_event(vid, *, field_ts=None, status="approved", usd="0.70", flagged=Fal
 
 
 @pytest.fixture
-def populated(db):
+def populated(db, settings, django_user_model):
+    # A configured poller is part of a working system, not an extra: without
+    # one there is no ingest, and the API says so instead of badging LIVE.
+    django_user_model.objects.create(username="poller-account")
+    settings.PULSE_POLLER_USERNAME = "poller-account"
     PulseOpportunity.objects.create(
         opportunity_id=765, name="Mother Baby Wellness (Nigeria)", lifetime_visit_count=120351, is_active=True
     )
@@ -81,7 +85,32 @@ class TestIngestHonesty:
     def test_live_ok_after_recent_success(self, client, populated):
         ingest.record_success("tail")
         ingest.record_success("cheap")
-        assert client.get(reverse("pulse:api_summary")).json()["ingest"]["live_ok"] is True
+        state = client.get(reverse("pulse:api_summary")).json()["ingest"]
+        assert state["live_ok"] is True
+        assert state["poller"] == "poller-account"
+
+    def test_names_the_account_it_polls_as(self, client, populated):
+        """Scope follows the poller's org membership, so a wrong account rescales
+        every figure on screen. Prod proved it: the numbers came out ~5x low and
+        nothing errored. Naming the account on the page makes that visible from
+        the display rather than only from arithmetic nobody does."""
+        state = client.get(reverse("pulse:api_summary")).json()["ingest"]
+        assert state["poller"] == "poller-account"
+        assert state["poller_error"] == ""
+
+    def test_unconfigured_poller_cannot_be_badged_live(self, client, populated, settings):
+        """No poller means no further ingest, so the last data received is all
+        there will ever be — the badge must drop immediately rather than wait
+        for staleness to accumulate."""
+        settings.PULSE_POLLER_USERNAME = ""
+        ingest.record_success("tail")
+        ingest.record_success("cheap")
+
+        state = client.get(reverse("pulse:api_summary")).json()["ingest"]
+        assert state["live_ok"] is False
+        assert state["poller"] == ""
+        assert "no pulse poller configured" in state["poller_error"].lower()
+        assert "poller" in state["message"].lower()
 
     def test_stale_ingest_refuses_to_claim_live(self, client, populated):
         """The failure that matters: the poller's refresh token died hours ago
@@ -191,3 +220,35 @@ class TestPublicAccess:
     def test_authenticated_display_requires_login(self, client):
         response = client.get(reverse("pulse:display", args=["nightmap"]))
         assert response.status_code in (302, 403)
+
+
+@pytest.mark.django_db
+class TestOperatorIndex:
+    """The operator page, where a wrong poller has to be catchable by eye."""
+
+    def test_names_the_poller_and_never_on_the_public_page(self, client, populated, django_user_model):
+        from connect_labs.pulse.views import mint_public_token
+
+        operator = django_user_model.objects.create(username="operator")
+        client.force_login(operator)
+        body = client.get(reverse("pulse:index")).content.decode()
+        assert "poller-account" in body
+
+        # The account we poll as is an operational detail, not something a
+        # funder holding a public link should ever be shown.
+        client.logout()
+        token = mint_public_token(operator, label="A funder")
+        public = client.get(reverse("pulse:public", args=[token.token])).content.decode()
+        assert "poller-account" not in public
+
+    def test_unconfigured_poller_is_called_out_on_the_page(self, client, populated, settings, django_user_model):
+        settings.PULSE_POLLER_USERNAME = ""
+        client.force_login(django_user_model.objects.create(username="operator2"))
+        body = client.get(reverse("pulse:index")).content.decode()
+        assert "No poller configured" in body
+
+    def test_template_comments_do_not_leak_into_the_page(self, client, populated, django_user_model):
+        """`{# ... #}` only comments out a single line; a multi-line one renders
+        its tail as visible text on the page."""
+        client.force_login(django_user_model.objects.create(username="operator3"))
+        assert "{#" not in client.get(reverse("pulse:index")).content.decode()
