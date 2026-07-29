@@ -1,0 +1,351 @@
+[
+  {
+    "scene": "8 — Ada reallocates, and the numbers move",
+    "dimension": "design_soundness",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The reallocation's outcome has no renderer. services/exceptions.py:185-243 already implements the right idea — an exception whose node has an undelivered inbound reallocation is ANSWERED (not resolved), carries {action_id, effect, actor, rationale}, and sorts to the bottom of the queue — and bootstrap.py:254 ships it to the client in world['exceptions']. But grep for `answered_by` across the whole repo returns only the two lines in exceptions.py that create and sort on it: no template, no JSX, no test reads it. On camera the consequence is that after Ada submits, the El Fasher exception is still rank 1, byte-identical, with its 'Reallocate to El Fasher Distribution Hub' button still live — inviting a second click on a problem already acted on. The row also failed to re-sort even though the map's consignment count refreshed 16→17, which points at a partial refetch of the world payload.",
+    "fix_recommendation": "Render answered_by on the exception card: an 'Answered by <actor> — <effect>' block quoting the recorded rationale and action id, plus a visible demoted/answered treatment on the row. Then confirm the action's success handler refetches world['exceptions'] so the server-side demotion actually reaches the screen."
+  },
+  {
+    "scene": "8 — Ada reallocates, and the numbers move",
+    "dimension": "why_groundedness",
+    "severity": "medium",
+    "route": "CONCEPT",
+    "fix_kind": "options",
+    "detail": "The narration promises four outcomes and the product deliberately refuses three of them. 'El Fasher's weeks of cover moves out of the red' and 'the pipeline gap for that corridor closes' cannot happen, and should not: the new consignment is created with status PLANNED and the cartons have not arrived, so cover and the delivered-gap correctly stay put. That restraint is the app's own load-bearing invariant and is a stronger claim than the one being made. The narration is wrong here, not the model. Spine item S5 is status GAP and the walkthrough is narrating past it.",
+    "fix_recommendation": "Either (a) re-narrate scene 8 to what actually happens — a real consignment against a named contract, the exception marked answered by the action that answers it and demoted below the ones nobody has touched, and the children still at risk until the truck lands; or (b) change the target: reallocate against the Komadugu partner shortfall instead. That row IS a ShortfallSignal, so actions.reallocate's `signal` branch fires, resolved_by_action is set, the exception genuinely resolves, and scenes 7 and 8 close the partner loop that why_brief S6 exists to make."
+  },
+  {
+    "scene": "8 — Ada reallocates, and the numbers move",
+    "dimension": "claim_reality_coherence",
+    "severity": "high",
+    "route": "DEFER",
+    "fix_kind": "mechanical",
+    "detail": "Diffing scene 7 (before) against scene 8 (after) page text, the ONLY changes in the entire document are the map fallback copy going from '16 consignments with routed corridors' to '17', and a green toast reading 'Reallocated — a consignment is on the map with planned milestones.' Unchanged: the '1,521 Children at risk / across 7 exceptions' KPI, the '7 In transit / 652 MT moving' KPI, the El Fasher exception row in full, the Weeks-of-cover row for El Fasher (0 on hand / 'Not yet served' / 'awaiting first consignment'), and the OES-C-2026-SD1 pipeline GAP of 19,612. The one genuine piece of evidence that a real record was created is a digit inside a paragraph of grey disabled-feature prose.",
+    "fix_recommendation": "Track alongside finding 1; this resolves once answered_by renders and the narration is corrected. Non-blocking by rubric."
+  },
+  {
+    "scene": "8 — Ada reallocates, and the numbers move",
+    "dimension": "visual_polish",
+    "severity": "low",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The confirmation toast (tab_command.jsx:604) asserts the outcome rather than showing it — 'a consignment is on the map with planned milestones' — and points the viewer at the one panel that cannot render. Under the OBJECTIVE-DATA STANDING RULE a toast that states the conclusion is a pre-digested verdict where a moved number belongs. The model already computed a far better string: SupplyAction.effect reads '<N> cartons from <source> to <target>, planned to arrive <date>'.",
+    "fix_recommendation": "Replace the toast copy with the SupplyAction.effect string the action already returns, so the confirmation names the quantity, both nodes and the planned arrival date instead of gesturing at the map."
+  },
+  {
+    "scene": "8 — Ada reallocates, and the numbers move",
+    "dimension": "motion_friction",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The after-frame is scrolled so the top of the exception card just acted on is clipped above the viewport — only a trailing '...rate.' fragment plus the CTA line and buttons are visible. The card fits in one viewport; this is a scene-framing miss, not a density problem.",
+    "fix_recommendation": "Spec edit: add a scroll_to on the El Fasher exception card (or reduce the scroll offset) before the post-submit hold so the full card, including its headline and children figure, is in frame when the outcome is narrated."
+  },
+  {
+    "scene": "8 — Ada reallocates, and the numbers move",
+    "dimension": "concept_clarity",
+    "severity": "low",
+    "route": "CONCEPT",
+    "fix_kind": "mechanical",
+    "detail": "The scene's own point — that the decision and the evidence that prompted it become one record — is never visible on screen. Nothing in the frame ties the action to the exception; the recorded rationale Ada typed disappears with the modal.",
+    "fix_recommendation": "Surface the recorded rationale on the answered exception card (covered by finding 1), so 'the decision and the evidence are the same record' is something the viewer reads rather than something the narrator claims."
+  },
+
+  {
+    "scene": "6 — Twelve thousand children, by the ninth of September",
+    "dimension": "design_soundness",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The queue's stated premise is that every row is ranked in one unit — children who miss a full course. Two of the seven rows (SHP-2026-0302, 2 days behind into Maiduguri; SHP-2026-0402, 6 days behind into Djibo) print only a days-behind headline and carry no children figure at all, reverting to exactly the status-board framing the narrative rejects. Independent arithmetic confirms these rows are genuinely 0: the five stated figures sum to 1,087+240+87+60+47 = 1,521, exactly the 'Children at risk' KPI. cover.children_at_risk returns 0 when the delay is absorbed by stock on hand. So the ranking is correct and defensible — a 6-day delay ranked below a 1-day delay because the receiving node has cover — and the product hides its single most persuasive argument by printing nothing.",
+    "fix_recommendation": "Render the zero explicitly on rows whose consequence is nil: '0 children lose a full course — the delay is absorbed by N weeks of cover on hand at <node>'. Keep the unit on every row so the ordering is self-evidently one ordering."
+  },
+  {
+    "scene": "6 — Twelve thousand children, by the ninth of September",
+    "dimension": "why_groundedness",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The concept_claim says all FOUR exception kinds are ranked in one unit and the narration explicitly describes an expiry-risk row 'below the late consignments — cartons sitting where the caseload is too small to work through them before they expire'. No such row exists: the queue holds Late (x4), Short receipt (x2) and Partner shortfall (x1). The capability is real — cover.expiry_risk and exceptions.expiry_exceptions are implemented and unit-tested in test_cover.py — but the demo's only visible lot expires Jan 19 2028, far outside the 180-day horizon, so the exception can never fire. This is a seed-data gap, not a capability gap.",
+    "fix_recommendation": "Seed a short-dated lot at an over-supplied node so expiry_exceptions fires — Soum's nodes are the natural home, since the coverage table already shows Soum at 145.8% of need, which is precisely the 'stock where the caseload is too small to consume it' case the narration describes."
+  },
+  {
+    "scene": "6 — Twelve thousand children, by the ninth of September",
+    "dimension": "concept_clarity",
+    "severity": "medium",
+    "route": "CONCEPT",
+    "fix_kind": "mechanical",
+    "detail": "A cold viewer cannot verify the queue's premise from this frame, because the frame contradicts it (two unit-less rows) and omits the promised fourth kind. The one derivation shown reads as a formula fragment — 'How this was ranked: 9 days late against 0.0 weeks of cover; the days after the store runs dry x the admission rate' — in small grey italics, with a literal 'x' for the multiplication sign and an unrounded '0.0 weeks'.",
+    "fix_recommendation": "Set the derivation as a readable sentence at body weight rather than small italic, use a proper multiplication sign, and render '0 weeks of cover' rather than '0.0'."
+  },
+  {
+    "scene": "6 — Twelve thousand children, by the ninth of September",
+    "dimension": "claim_reality_coherence",
+    "severity": "medium",
+    "route": "DEFER",
+    "fix_kind": "options",
+    "detail": "The scene title asserts 'Twelve thousand children, by the ninth of September'. Neither figure appears anywhere in the captured page text: the largest single exception is 1,087 children, the total at risk is 1,521, and no date on screen is later than 8 August 2026. The same 'twelve thousand children' claim sits in the locked top-level narrative and in the why_brief's problem statement, so this is a systematic drift between the story and the data, not a stray title.",
+    "fix_recommendation": "Either regenerate the demo data so a single exception genuinely carries a five-figure children-at-risk number (raising El Fasher's served caseload would do it), or retitle the scene and amend the locked narrative and why_brief problem statement to the real figure. Requires a pick — the narrative is locked."
+  },
+  {
+    "scene": "6 — Twelve thousand children, by the ninth of September",
+    "dimension": "motion_friction",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The scene's final scripted action is scroll_to the 'Weeks of cover' card, and the narration is explicitly about it ('the rate the site is consuming it, and the date the store runs dry'). The action reported ok, but the captured frame shows the top of the exception list and the blank map panel — the Weeks of cover card is nowhere in it. The scene's own end state is not what was captured, most likely because expanding the derivation row changed the document height after the scroll resolved.",
+    "fix_recommendation": "Spec edit: move the derivation click before the scroll, or add a short wait/settle hold between the expand and the final scroll_to so the Weeks-of-cover card is genuinely in frame when it is narrated."
+  },
+
+  {
+    "scene": "7 — The signal came from the ground",
+    "dimension": "visual_polish",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "Real content-overflow defect on the partner-shortfall exception card. Its headline ('87 children at Askira Nutrition Centre by 4 August') collapses into a one-character-wide vertical column of fragments — 'at / As / Nu / Ce / by / Au' — that escapes the card's right border and renders in the gutter between the exception list and the map panel, while the card's own body sits blank with its badges pushed to the bottom-left. Present in scenes 6, 7 and 8; worst in 7, where it destroys the headline of the exact row the scene exists to show.",
+    "fix_recommendation": "Fix the card's width/overflow constraint — the headline element is being sized to a near-zero column while a sibling (probably the badge row) takes the available width. Add min-width:0 / overflow-wrap on the headline's flex child so the title wraps inside the card."
+  },
+  {
+    "scene": "7 — The signal came from the ground",
+    "dimension": "claim_reality_coherence",
+    "severity": "medium",
+    "route": "DEFER",
+    "fix_kind": "mechanical",
+    "detail": "Three claims about this row are unbacked by the screen. (1) The narration says it was raised 'four days ago — and it says so'; no report date or relative age appears on this card or on any card in the page text. (2) The spec's show field says the row sits 'above every exception the system derived for itself'; it is 3rd of 7, below two higher-impact derived rows — which is correct behaviour under a children-ranked queue, but contradicts the claim. (3) The spec calls it 'the Kukawa shortfall'; the row on screen is at Askira Nutrition Centre. Kukawa is a different node that appears only in the Weeks-of-cover table.",
+    "fix_recommendation": "Add a 'Reported <date>' / relative-age field to partner-raised cards so 'four days ago' is checkable, and correct the spec's show text: the row is at Askira, and it sits third because the ranking is honest — which is a better line than claiming it sits on top."
+  },
+  {
+    "scene": "7 — The signal came from the ground",
+    "dimension": "motion_friction",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The narrated card is clipped at the top of the viewport — its 'Partner shortfall' and 'Raised by Komadugu Health Initiative' badges are cut at y=0 — and roughly a third of the frame below it is given to the blank map panel and an unrelated 'Pipeline by corridor' table re-shown from scene 2. The card fits in one viewport.",
+    "fix_recommendation": "Spec edit: scroll_to the Komadugu exception card itself rather than the exception list container, so the full card from badge row to Reallocate button is in frame before the hold."
+  },
+  {
+    "scene": "7 — The signal came from the ground",
+    "dimension": "concept_clarity",
+    "severity": "low",
+    "route": "CONCEPT",
+    "fix_kind": "mechanical",
+    "detail": "The 'Raised by Komadugu Health Initiative' badge is legible and correctly differentiated, so the scene's literal claim lands. But nothing on screen says why that distinction matters — the coordination-vs-monitoring point exists only in narration.",
+    "fix_recommendation": "Add a short info affordance on the origin badge stating what distinguishes a partner-raised signal from a centrally-derived one, so the point survives without audio."
+  },
+  {
+    "scene": "7 — The signal came from the ground",
+    "dimension": "design_soundness",
+    "severity": "low",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The partner-raised row carries no 'How this was ranked' derivation, unlike the El Fasher row above it — odd in the one scene whose subject is that row's provenance, and it leaves the 87-children figure unexplained. It is not reconstructible from the visible node figures (38 on hand, 63 weekly burn, dry Aug 1).",
+    "fix_recommendation": "Give partner-raised rows a derivation line too, stating that the figure is the partner's own reported count rather than a centrally-derived one — which reinforces the scene's point instead of undercutting it."
+  },
+
+  {
+    "scene": "3 — Late is a measurement, not an argument",
+    "dimension": "design_soundness",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The scene's entire concept_claim is that planned, estimated and actual are kept as three separate timestamps per milestone. The card's own subtitle reads 'Planned, estimated and actual — the three are never collapsed.' Every row shows exactly ONE date. Verified in source: shipment_detail.jsx:100-102 renders a ternary — `m.actual_at ? 'Actual X' : 'Planned X'` — and `estimated_at` is never rendered anywhere in the file. The final leg reads 'Arrive · El Fasher Distribution Hub / Planned Jul 28, 2026 · +9d vs plan', which is self-contradictory on its face: a date labelled Planned cannot be +9d against plan, and the estimated date (~6 Aug) that would make the delta subtractable is not on screen. The model keeps three; the UI shows one.",
+    "fix_recommendation": "Render all three values in the rail row — Planned <date> · Estimated <date> · Actual <date or em-dash> — so the +9d delta can be verified by subtracting two dates the viewer can see. This is the whole point of the scene and the data is already on the model."
+  },
+  {
+    "scene": "3 — Late is a measurement, not an argument",
+    "dimension": "claim_reality_coherence",
+    "severity": "medium",
+    "route": "DEFER",
+    "fix_kind": "mechanical",
+    "detail": "The word 'Estimated' never appears as a rendered value anywhere in the modal, despite being named in the card's subtitle and being the load-bearing quantity of the narration ('what is now estimated'). The narrated '+9 days behind' is visible as a delta but is not checkable against any baseline on screen.",
+    "fix_recommendation": "Resolves with the design_soundness fix above."
+  },
+  {
+    "scene": "3 — Late is a measurement, not an argument",
+    "dimension": "why_groundedness",
+    "severity": "low",
+    "route": "CONCEPT",
+    "fix_kind": "mechanical",
+    "detail": "Provenance to why_brief S2 is real and specific (models/execution.py genuinely keeps planned/estimated/actual separately), but the grounding is architectural rather than visible: the spine item's claim is true of the schema and false of the screen.",
+    "fix_recommendation": "Same fix — expose the third value so the spine claim is demonstrated rather than asserted."
+  },
+  {
+    "scene": "3 — Late is a measurement, not an argument",
+    "dimension": "visual_polish",
+    "severity": "low",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The rail row runs the date-type label, the date and the delta together in one small grey line, so 'Planned Jul 28, 2026 · +9d vs plan' reads as a single string rather than as a labelled value plus a computed variance. There is also no 'today' marker on the rail.",
+    "fix_recommendation": "Set the date-type as a distinct small-caps label, give the delta its own emphasis, and add a today marker to the rail so an overdue-but-unreached leg is visually obvious."
+  },
+  {
+    "scene": "3 — Late is a measurement, not an argument",
+    "dimension": "concept_clarity",
+    "severity": "low",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "A second, separate derivation defect on the same rail: 'Arrive · Kassala Forward Store / Planned Jul 23, 2026 · 0d vs plan' with an unfilled status dot. The run's present day is 28 July 2026, so this leg is five days past its planned arrival with no actual recorded, and it is reported as on-time. On the one screen whose purpose is to prove that lateness is measured correctly, an overdue leg renders identically to an on-schedule one.",
+    "fix_recommendation": "Compute the delta for an unreached milestone against today, not against nothing, so a leg past its planned date shows a positive delta rather than 0d."
+  },
+
+  {
+    "scene": "2 — Three ways the data arrives, and the honest one",
+    "dimension": "motion_friction",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The scene's last scripted action is `click .modal-close`, so the captured frame is the page AFTER the modal was dismissed. Everything the scene narrates — the delivery schedule's per-consignment 'Reported by' tier badges (tab_command.jsx:540-549) — was on screen for the 3-second hold and then discarded before capture. The graded frame instead shows the Pipeline-by-corridor and Requirement-from-caseload tables, the latter being scene 5's reveal shown three scenes early. The spec's own note explains the close ('an open backdrop swallows all six of those clicks'), so this is a sequencing choice, not a bug.",
+    "fix_recommendation": "Spec edit: move the `click .modal-close` action from the tail of scene 2 to the head of scene 3, which already needs the backdrop gone before it clicks an exception row. Scene 2's frame then lands on the delivery schedule with its tier badges visible, and scene 3 is unaffected."
+  },
+  {
+    "scene": "2 — Three ways the data arrives, and the honest one",
+    "dimension": "claim_reality_coherence",
+    "severity": "high",
+    "route": "DEFER",
+    "fix_kind": "mechanical",
+    "detail": "The scene's entire subject is unevidenced in the graded frame. Searching the full page-text dump for 'tier', 'hand-keyed', 'Entered by hand', 'EPCIS', 'phone', 'check-in' returns nothing except the phrase 'despatch advice' used generically inside an exception's remediation text. The why_brief calls S1 'the credibility beat of the whole product' and it is the one beat with no captured evidence at all.",
+    "fix_recommendation": "Resolves entirely with the motion_friction fix above — the tier badges are real, shipped and were on screen; only the capture point is wrong."
+  },
+  {
+    "scene": "2 — Three ways the data arrives, and the honest one",
+    "dimension": "visual_polish",
+    "severity": "low",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "Every GAP pill in Pipeline-by-corridor renders in the same amber regardless of magnitude — 1,218 against a 45,000 requirement (2.7%) is coloured identically to 19,612 against 40,000 (49%) — with no legend or stated threshold. IPC phase codes appear inline with no gloss.",
+    "fix_recommendation": "Scale the GAP pill treatment to the gap as a proportion of requirement with a stated threshold, and add an inline definition affordance on the IPC codes."
+  },
+  {
+    "scene": "2 — Three ways the data arrives, and the honest one",
+    "dimension": "concept_clarity",
+    "severity": "low",
+    "route": "CONCEPT",
+    "fix_kind": "mechanical",
+    "detail": "Nothing in the captured frame communicates the capability-gradient idea; it exists only in narration.",
+    "fix_recommendation": "Resolves with the motion_friction fix; consider also a one-line legend on the delivery-schedule card naming the three tiers."
+  },
+  {
+    "scene": "2 — Three ways the data arrives, and the honest one",
+    "dimension": "design_soundness",
+    "severity": "low",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The clicked corridor row shows no residual state after the modal closes — no highlight, no recently-viewed marker — so the after-frame gives no trace that an interaction occurred.",
+    "fix_recommendation": "Add a lightweight visited/selected treatment on the corridor row so the interaction leaves a mark."
+  },
+
+  {
+    "scene": "5 — The caseload underneath the map",
+    "dimension": "motion_friction",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The scene's second scroll_to (the Kassala row) pushes the 'Requirement from caseload' card's own title and its orienting sentence out of frame, so the capture opens cold on a bare column-header row with no card title. The whole card fits in one viewport. The contrast the scene exists for is legible — Borno and Kassala are both in frame — but the viewer is never told what table they are reading.",
+    "fix_recommendation": "Spec edit: pick a single scroll position that keeps the card title, the Borno row and the Kassala row simultaneously in frame, rather than two scrolls where the second overshoots the heading."
+  },
+  {
+    "scene": "5 — The caseload underneath the map",
+    "dimension": "visual_polish",
+    "severity": "low",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "Coverage pills mix precision without a rule — 0%, 34%, 91% as integers beside 67.6% and 145.8% at one decimal — and colour semantics collide: Soum at 145.8% gets the same green as Kassala at 91%, even though over-supply is precisely the condition the next scene's expiry-risk argument depends on. No threshold legend is shown.",
+    "fix_recommendation": "Fix precision to one consistent rule, give above-100% coverage its own distinct treatment rather than reusing the 'good' green, and add a threshold legend so the colour encodes a stated objective rule."
+  },
+  {
+    "scene": "5 — The caseload underneath the map",
+    "dimension": "design_soundness",
+    "severity": "low",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The concept_claim says 'every figure carries the method that produced it', but the only provenance affordance is a native HTML title attribute on the district name (tab_command.jsx:277, `<span title={r.source_note}>`). A native tooltip is undiscoverable, unstyled, keyboard-inaccessible and renders nothing in a headless capture — the spec's own action note concedes this. The table also gives no sort indicator despite being ordered ascending by coverage.",
+    "fix_recommendation": "Replace the native title attribute with a real info affordance (a small info glyph opening a popover carrying the source note), and add a sort indicator to the coverage column."
+  },
+  {
+    "scene": "5 — The caseload underneath the map",
+    "dimension": "concept_clarity",
+    "severity": "low",
+    "route": "CONCEPT",
+    "fix_kind": "mechanical",
+    "detail": "SAM, IPC and 'full course' are all load-bearing and none is glossed on screen. Five of nine rows are flat zeros before the load-bearing contrast appears.",
+    "fix_recommendation": "Add a one-line glossary or info affordance near the IPC pills and the coverage footnote."
+  },
+
+  {
+    "scene": "4 — Nobody can clear a red row by editing a field",
+    "dimension": "use_case_soundness",
+    "severity": "low",
+    "route": "CONCEPT",
+    "fix_kind": "redesign",
+    "detail": "Scored once for the whole walkthrough and attached to its most emblematic scene. The use case is genuinely substantive — a multi-country famine response, real caseload denominators, exceptions ranked in children rather than tonnage, a reallocation requiring a recorded reason. It is held to 3 by the rubric's rule that the feature is never shown at the scale where its value would be felt, and scene 4 is the clearest instance: the append-only event log, which the why_brief calls 'the load-bearing invariant of this app', is demonstrated on a table containing exactly ONE row, from exactly one source tier ('Phone check-in'), with an em-dash for its quantity. A single entry cannot show accumulation, cannot show that nothing was edited, and cannot show the provenance variety that scene 2 spent its whole narration on. The payoff scene compounds it by exercising the reallocation on the one exception kind whose resolution the model cannot express.",
+    "fix_recommendation": "Redraft what the walkthrough demonstrates: pick a consignment further along its route whose event log carries several actual events across at least two source tiers, so append-only accumulation and mixed provenance are both visible in one frame — and let the log visibly be where scene 2's three tiers pay off, rather than a card that mentions one."
+  },
+  {
+    "scene": "4 — Nobody can clear a red row by editing a field",
+    "dimension": "concept_clarity",
+    "severity": "low",
+    "route": "CONCEPT",
+    "fix_kind": "mechanical",
+    "detail": "The card states what it is ('Append-only. How each event reached us is recorded alongside it.') but not why it matters; the no-hand-edit invariant lands only in narration. A prominent 'Record an event' button sits in the modal footer with no on-screen explanation that appending an event is the only write path — the very distinction the scene is arguing.",
+    "fix_recommendation": "Add a line to the event-log card stating the invariant explicitly — that status and milestone actuals are derived from this log and cannot be set directly — so the argument survives without audio and the 'Record an event' button reads as evidence for it rather than against it."
+  },
+  {
+    "scene": "4 — Nobody can clear a red row by editing a field",
+    "dimension": "visual_polish",
+    "severity": "low",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The 'Phone check-in' source pill is the only accent element in the card and is tied to no legend, so its colour is decorative rather than semantic — a viewer cannot tell whether blue encodes 'human-reported, lower trust' or nothing at all. The one event's quantity cell is an unexplained em-dash.",
+    "fix_recommendation": "Give the source pills a consistent colour-per-tier scheme with a legend on the card, and either populate or explicitly label the empty quantity cell."
+  },
+  {
+    "scene": "4 — Nobody can clear a red row by editing a field",
+    "dimension": "why_groundedness",
+    "severity": "low",
+    "route": "CONCEPT",
+    "fix_kind": "mechanical",
+    "detail": "Spine item S3 is grounded and well-evidenced in the repo (test_ingestion.py asserts monotonic status, idempotency on external_id, discrepancy on short receipt), but the rendered frame demonstrates none of those properties — the grounding is real and invisible.",
+    "fix_recommendation": "Resolves with the use_case_soundness fix — a richer log makes the grounding visible."
+  },
+  {
+    "scene": "4 — Nobody can clear a red row by editing a field",
+    "dimension": "claim_reality_coherence",
+    "severity": "low",
+    "route": "DEFER",
+    "fix_kind": "mechanical",
+    "detail": "The absence of an editable status field is genuine supporting evidence, but 'derived from an append-only log' and 'a red row goes away when the situation changes' both require trusting the narrator against a one-row table.",
+    "fix_recommendation": "Resolves with a richer event log."
+  },
+
+  {
+    "scene": "1 — Which children are about to go without",
+    "dimension": "design_soundness",
+    "severity": "low",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "Judge-of-record finding; the per-scene judge did not run the cross-card arithmetic. The KPI row reads '115,170 Delivered to date / 1589 MT · 115,170 children treated'. That figure is the sum of the corridor DELIVERED column (43,782 + 15,000 + 36,000 + 20,388), i.e. cartons arrived at contract destinations — one of which is Port Sudan, a port, not a district. The Requirement-from-caseload card on the same page totals 48,787 courses delivered into districts against a requirement of 129,760, leaving 82,857 children with no carton assigned. So the same screen simultaneously claims 115,170 children treated and 82,857 children uncovered out of 129,760 needed. Glossing an arrivals figure as 'children treated' is also an outcome claim the delivery data cannot support, and it undercuts the exact argument scene 5 exists to make.",
+    "fix_recommendation": "Drop the '· 115,170 children treated' gloss from the KPI and label it as cartons delivered against contract, or re-point it at the coverage card's courses-delivered-into-districts figure so the two cards reconcile."
+  },
+  {
+    "scene": "1 — Which children are about to go without",
+    "dimension": "visual_polish",
+    "severity": "low",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "Three different action-button treatments across exception card types with no stated rule (Late gets outline 'Open' plus solid 'Reallocate'; Short receipt gets a single 'Resolve'; Partner shortfall gets a solid 'Reallocate'), so solid-green does not consistently mean 'the recommended action'. Each card also restates its own headline almost verbatim on the next line ('1,087 children lose a full course at El Fasher Distribution Hub' followed by '1,087 children lose a full course'), consuming vertical space in the scene whose whole premise is reading the queue.",
+    "fix_recommendation": "Standardise button semantics — solid for the single recommended action, outline for secondary — across all exception kinds, and drop the duplicated stat line so more of the ranked queue fits in one viewport."
+  },
+  {
+    "scene": "1 — Which children are about to go without",
+    "dimension": "motion_friction",
+    "severity": "low",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The opening frame cuts the second exception card mid-sentence ('...the outcome to close it.') with its action button entirely out of frame, so the establishing shot of a severity-ranked queue shows one and a half rows.",
+    "fix_recommendation": "Spec edit: end the scene's hold at a card boundary so at least two complete exception cards, including their actions, are in frame."
+  }
+]

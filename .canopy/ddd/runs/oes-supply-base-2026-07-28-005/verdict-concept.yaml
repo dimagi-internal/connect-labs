@@ -1,0 +1,149 @@
+schema_version: 1
+kind: concept
+gate: gating
+live_state_verified: true
+calibration: provisional
+rubric_name: ddd-concept-eval
+ran_at: "2026-07-28T19:05:00Z"
+run_dir: /Users/jjackson/emdash/worktrees/connect-labs/emdash/supply-3-vqp90/.canopy/ddd/runs/oes-supply-base-2026-07-28-005
+scenes_evaluated: 9
+self_assessed: false
+
+dimensions:
+  concept_clarity:
+    score: 3
+    weight: 0.20
+    justification: >-
+      The two-stage arc — expression of interest into a registry, then tenders drawn from
+      it, then per-lot award, then contract — is legible scene to scene, and every scene
+      carries a claim a viewer can name. Scene 1 sets the goal cleanly (14 qualified
+      suppliers, 4 applications to review, coverage by category). The through-line breaks
+      in the middle: scene 4's review modal promises "RUTF qualified until Jan 20, 2028",
+      and scene 5's registry — the scene that claims to BE the answer — shows Savanna's
+      earliest expiry as Feb 18, 2027, i.e. the decision the viewer just watched is not in
+      the registry. Scene 5's own claim (a lapsed certification removes a supplier with
+      nobody maintaining a list) is about an absence the screen structurally cannot show.
+  design_soundness:
+    score: 3
+    weight: 0.20
+    justification: >-
+      The product design is genuinely well-judged: the frozen snapshot rendered beside the
+      live profile with a "changed since" badge and the sentence "editing the profile
+      cannot reach it" (scene 3); per-category decision rows that state the expiry BEFORE
+      you click (scene 4); per-lot bid tables ranked by unit price with the technical score
+      inline and a different leader on each corridor (scene 7); award pills plus contract
+      drawn against a named appropriation with an IATI activity id (scenes 8, 9). Two
+      soundness gaps remain. Scene 6's whole claim — eligibility enforced server-side, an
+      unqualified supplier never receives the solicitation — is argued entirely from Ada's
+      own list; the surface that would prove it (tab_bids.jsx, driven by
+      world.eligible_rfps, with the empty state "No solicitations are open to you yet.")
+      is shipped and never shown. Scene 5 offers no expiring-soon affordance at all, only
+      an "Any expiry" filter, so the expiry story has no on-screen anchor.
+  visual_polish:
+    score: 3
+    weight: 0.15
+    justification: >-
+      Consistent, restrained, professional: one green accent, well-formed tables, real
+      empty states, correct number and currency formatting, an honest top-level
+      "Demonstration environment — all data is synthetic" marker. Three deductions. In
+      scene 7 the sticky modal header "RUTF Northeast Nigeria Q3 2026" completely hides the
+      lot heading "60,000 cartons RUTF delivered to Maiduguri" and clips the sub-line
+      "60,000 cartons → Maiduguri, Nigeria · due Sep 15, 2026" mid-glyph — on the exact
+      frame the narration names that lot. Scene 8 frames the identical card correctly, so
+      this is a scroll-offset defect, not a layout limit. Scene 5's payoff frame is a
+      three-row table over roughly 55% empty white. Scene 6's cursor sits on top of the
+      "35,000 cartons → Damaturu" figure.
+  why_groundedness:
+    score: 3
+    weight: 0.20
+    justification: >-
+      Every scene resolves to a spine item (S0–S5), and every spine item carries implemented
+      or documented evidence (EOISubmission.profile_snapshot, Qualification(org, category,
+      granted, expires), rfp_actions.org_can_bid, Lot/LotBid/BidScore/Award,
+      Contract-from-Award). The brief is honest about its own gaps, and gap G2 — "the split
+      is only asserted in narration" — is now genuinely closed on screen. Two claims are
+      still asserted rather than grounded in a frame: S2's expiry-removes-a-supplier
+      property (scene 5 shows only who is present) and S3's server-side eligibility
+      (scene 6 shows only the publisher's list).
+  claim_reality_coherence:
+    score: 2
+    weight: 0.10
+    blocking: false
+    justification: >-
+      Four scenes narrate an act the trace never performs. Scene 2 says Ada "opens a round
+      and names what they are collecting interest in" over an already-Open round with 8
+      applications and an unclicked "New round" button. Scene 3 says "the moment they
+      submit" over an application submitted Mar 12, 2026 and already marked Qualified.
+      Scene 4 says "a pass stamps a qualification onto the organisation" but stops one click
+      short of "Record decision" — verified in tab_rounds.jsx, the Qualify/Reject buttons
+      only set local React state and the POST to /supply/api/eoi/submissions/<id>/review/
+      never fires. Scene 6 says "Ada publishes a solicitation" over an already-Published
+      one. Separately, scene 3 opens the 2026-A application (commitments 34,000
+      cartons/month, 28 day lead time) while scene 4's Tomas reviews the 2026-B submission
+      (39,000 cartons/month, 14 day lead time) — the narration binds them as one story, the
+      numbers say they are two. And the Sudan lot reads "40,000 truck-months → Khartoum" in
+      scenes 6 and 7 but "40,000 cartons" in scene 9's pipeline table, for the same record.
+  motion_friction:
+    score: 2
+    weight: 0.15
+    justification: >-
+      Execution is technically clean — 63 of 63 actions succeeded, no timeouts, holds of
+      1.2–3.4s, scenes of 2.5–13.4s. The friction is in how scenes are framed against their
+      words. Four of nine scenes hold on a static list or an already-completed record while
+      the narration describes an act being taken (2, 3, 4, 6), and the one that matters most
+      — scene 4's qualification decision — stops one click before it commits, which the very
+      next frame then contradicts. Scene 7 holds for 2.4s on the Maiduguri comparison with
+      that lot's title behind the sticky header. The demo, not the product, framed these
+      wrong.
+
+overall_score: 2
+overall_rule: lowest
+
+verdict: fail
+blocking_reason: null
+
+fix_recommendation: |
+  Three of the previous run's dimensions moved up (concept_clarity, design_soundness,
+  visual_polish all 2 → 3) and all three declared changes verify on these frames. The
+  weakest link did not move: the walkthrough still narrates acts it does not perform.
+
+  Highest value first:
+
+  [PRODUCT/scripting] Scene 4 — add `click css:.modal button:has-text('Record decision')`
+  after the two decision clicks, then `wait_for css:.toast`. Verified in
+  connect_labs/static/supply/tab_rounds.jsx: Qualify/Reject only call setDecisions() on
+  local state; nothing reaches the server until "Record decision" POSTs to
+  /supply/api/eoi/submissions/<id>/review/. Today the registry in scene 5 shows Savanna's
+  earliest expiry as Feb 18, 2027 — the Jan 20, 2028 qualification the viewer just watched
+  Tomas grant is simply not there. This is the pivotal act of the whole narrative and it
+  currently leaves no trace.
+
+  [PRODUCT/scripting] Scene 3 — open the 2026-B application (submitted Jul 19, 2026), the
+  one Tomas actually reviews in scene 4, instead of the 2026-A one. As it stands the same
+  supplier's declared capacity changes from 34,000 cartons/month · 28d to 39,000 · 14d
+  between two consecutive scenes that the narration presents as one story.
+
+  [PRODUCT] Scene 6 — the Sudan lot renders "40,000 truck-months → Khartoum", one row above
+  "6 truck-months → Maiduguri". connect_labs/supply/demo/data.py describes the lot as
+  "Inland haulage of 40,000 cartons from Port Sudan to Khartoum" at USD 3.20; only
+  demo/solicitations.py:299 (`"unit": "truck-months" if country == "SD" else "cartons"`)
+  relabels it. Scene 9's pipeline table already calls the same contract 40,000 cartons.
+  Drop the SD special case so the lot is denominated in the unit its own description and
+  its own contract use.
+
+  [PRODUCT/scripting] Scene 6 — add a persona hop to a supplier holding no matching
+  qualification and show "Solicitations & bids" without this tender in it. The surface
+  exists (tab_bids.jsx over world.eligible_rfps, empty state "No solicitations are open to
+  you yet."). Right now the strongest server-side claim in the demo is the one thing the
+  camera never corroborates.
+
+  [PRODUCT] Scene 7 — the sticky modal header occludes the narrated lot title. Scroll to
+  the card with a header-height offset (or scroll_to the card's parent), as scene 8 already
+  achieves for the identical card.
+
+  [CONCEPT/options] Scene 9 — the closing beat lands on "No consignments raised against this
+  contract yet." Making the contract genuinely award-produced was the right fix, but it
+  traded a populated payoff frame for an empty one while OES-C-2026-NG1/BF1/SD1 sit in the
+  background table with real shipped and delivered numbers. Either seed a first consignment
+  against the new contract, or add a short second beat that opens NG1 to show what this
+  record looks like once it is moving.

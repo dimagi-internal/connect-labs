@@ -1,0 +1,99 @@
+[
+  {
+    "id": "arc-sagging-middle-5-6",
+    "dimension": "escalation",
+    "route": "CONCEPT",
+    "fix_kind": "options",
+    "severity": "high",
+    "scenes": [4, 5, 6],
+    "title": "Two consecutive low-energy beats (5 and 6) immediately after the act-one peak",
+    "evidence": "Scene 4 is the act-one peak — a decision modal with the frozen profile on the left and Qualify/Reject controls on the right, made on camera. Scene 5 then drops to the emptiest frame in the deck: after the RUTF + Nigeria filters are applied, three rows (Kano Therapeutic Foods, Lagos NutriWorks, Savanna Nutrients) sit in a card occupying the top third of the viewport with roughly 60% of the frame blank white. Scene 6 is a static list — the recipe performs only a click, a scroll_to and a 3.4s hold; nothing is done on screen — and its concept claim ('an unqualified supplier's page never receives the solicitation') concerns a screen the sequence never shows, since the frame is Ada's admin list of all six solicitations.",
+    "why_it_matters": "The viewer has just watched a real decision get made and is then given two beats in a row with less on screen and less happening. This is the deck's only sag and it sits exactly where momentum into act two should be built.",
+    "options": [
+      "Give scene 5 the un-filtered registry first and let the filters narrow it on camera to three rows — the count moving from 14 to 3 is the drama, and the recipe already applies the filters, so the payoff is the delta rather than the endpoint. Consider ending on the expiry filter so the 'lapsed suppliers drop out' claim has on-screen evidence, which it currently does not.",
+      "Re-shoot scene 6 from the supplier seat. The demo already proves it can log in as Amina (scene 3); showing a qualified supplier's Solicitations tab carrying the tender, ideally beside a non-qualified one that has no such row, converts scene 6 from an assertion into the only frame that could prove it.",
+      "Merge 5 and 6 into a single beat and spend the recovered time on the act-two climax, which is currently the more under-served end."
+    ]
+  },
+  {
+    "id": "arc-climax-undercut-by-own-frame",
+    "dimension": "escalation",
+    "route": "CONCEPT",
+    "fix_kind": "options",
+    "severity": "high",
+    "scenes": [6, 7, 8],
+    "title": "Scene 8's climax is spoiled by a prior identical split award visible in frame for three straight scenes, and by its own 2/4 Published state",
+    "evidence": "The solicitations list rendered behind scenes 6, 7 and 8 contains the row 'RUTF Sahel and Lake Chad Corridors Q3 2026 — 60,000 cartons to Maiduguri, 20,000 cartons to Djibo — 2 / 2 — Awarded'. That is the exact lot pair and the exact split outcome the narrative spends scenes 6 through 8 building toward, sitting on screen, already done, one row above the live tender. Separately, scene 8's own header reads '2 / 4' with status 'Published' and two lots (Damaturu, haulage) still carrying live Award buttons, so the frame at the moment of climax reads as a job half finished.",
+    "why_it_matters": "The single most important reveal in the demo is pre-announced by set dressing the viewer has been staring at for three scenes, and then lands on a frame that says the tender is not resolved. Both are sequence-level problems invisible to any per-scene judge.",
+    "options": [
+      "Rename or re-date the seeded prior solicitation so its lots do not mirror Maiduguri/Djibo, keeping it as history without pre-spoiling the reveal.",
+      "Award the remaining two lots off-camera in the seed, or drop them from the tender, so scene 8's frame reads as a completed decision rather than 2/4 Published.",
+      "Scroll scene 8 so the backdrop list is out of frame and the modal fills the viewport at the moment of award."
+    ]
+  },
+  {
+    "id": "arc-same-modal-7-8",
+    "dimension": "visual_variety",
+    "route": "CONCEPT",
+    "fix_kind": "options",
+    "severity": "medium",
+    "scenes": [1, 3, 4, 6, 7, 8, 9],
+    "title": "Five of nine frames are modals, and scenes 7 and 8 are the same modal with the same twelve rows",
+    "evidence": "Scene 7 and scene 8 both show the RUTF Northeast Nigeria Q3 2026 comparison modal, the same Maiduguri and Djibo lot cards, the same four-row tables, the same unit prices (42.29 / 43.77 / 45.79 / 48.64 and 41.85 / 45.90 / 46.42 / 47.31) and the same technical scores. The visible delta is two 'Awarded' pills, a green toast, and a scroll offset. Scenes 6, 7 and 8 are all anchored on the same Solicitations page. Modals carry scenes 3, 4, 7, 8 and 9.",
+    "route_rationale": "CONCEPT, not PRODUCT. The product demonstrably has other surfaces the narrative chose not to visit — a supplier-side console (used once, in scene 3), an Organisation tab, an Integration tab, and the Command centre with its exception list and corridor pipeline (reached only in scene 9). The repetition is a narrative routing choice, not a one-surface product.",
+    "options": [
+      "Shoot scene 7 from the supplier side (Amina pricing her lots) and keep scene 8 on Ada's comparison. The compare-then-award pair then reads as two different people at two different screens, and it simultaneously repays Amina's dropped thread.",
+      "Tighten to a single scene covering compare-and-award if the split is the only point, and reinvest the scene elsewhere.",
+      "If both scenes stay on the same modal, make the difference unmissable — hold scene 7 on Djibo alone so the leader flip is the whole frame, then open scene 8 at the top with both Awarded pills, rather than overlapping the same two cards in both."
+    ]
+  },
+  {
+    "id": "arc-opening-generic-close-unresolved",
+    "dimension": "opening_and_close",
+    "route": "CONCEPT",
+    "fix_kind": "options",
+    "severity": "medium",
+    "scenes": [1, 8, 9],
+    "title": "Opening does not dramatize the stated pain; close resolves a different contract than the climax awarded",
+    "evidence": "Scene 1 is a standard admin dashboard — four KPI tiles (14 / 4 / 1 / 1), a coverage bar chart, an applications table. It poses the narration's question but shows nothing of the 'folder of emailed PDFs and certificates' the entire narrative is set against; that pain is spoken only. Scene 9 opens OES-C-2026-NG1, which the recipe note explicitly identifies as the Q2 Maiduguri award (45,000 cartons, awarded under 'RUTF Northeast Nigeria Q2 2026'), not the 60,000-carton Q3 lot awarded on camera one scene earlier.",
+    "why_it_matters": "The close is otherwise the strongest single frame in the deck — obligated USD 1,894,500 against a named FY2026 appropriation with an IATI activity id, disbursed against confirmed delivery only, and nineteen consignments tagged EPCIS feed / despatch advice / phone check-in / entered by hand. It is doing real work and would land harder if it were the consequence of the climax rather than a parallel case.",
+    "options": [
+      "Have scene 9 open the contract that the scene-8 award produced, or add one line of narration acknowledging the jump ('the Q2 award into the same corridor, three months further along') so the viewer is not silently handed a different record.",
+      "Seed the Q3 award so it produces a contract with at least one consignment, making the last beat the literal continuation of the last decision.",
+      "Give scene 1 something that shows rather than states the before-state — the Organisation tab's raw certificate attachments, or a first frame on the un-filtered registry — so the opening carries the pain it names."
+    ]
+  },
+  {
+    "id": "arc-unwelded-hinge-4-5",
+    "dimension": "arc_shape",
+    "route": "CONCEPT",
+    "fix_kind": "options",
+    "severity": "medium",
+    "note": "arc_shape scored 4; emitted anyway because it is a genuine sequence-level defect no per-scene judge can see.",
+    "scenes": [4, 5],
+    "title": "The act-one/act-two hinge is asserted, never demonstrated — the decision is left unrecorded and the registry shows no trace of it",
+    "evidence": "Scene 4's recipe clicks Qualify on RUTF and Reject on Therapeutic milk, then holds; it never clicks 'Record decision', so the modal ends mid-decision with Cancel and Record decision still live. Scene 4's panel promises 'RUTF — qualified until Jan 20, 2028'. Scene 5's registry then lists Savanna Nutrients with earliest expiry Feb 17, 2027 — the pre-existing 2026-A qualification, not the one just made. The narration's hinge, 'those live qualifications become the registry itself', is therefore carried entirely by voice.",
+    "why_it_matters": "This is the causal joint between the demo's two acts. Everything after scene 5 depends on the registry being the output of scene 4, and it is the one link in the chain the sequence does not show happening.",
+    "options": [
+      "Click 'Record decision' at the end of scene 4 and let the toast or the queue row's state change be the last thing on screen, so the write is witnessed.",
+      "Open scene 5 already filtered so Savanna's newly granted RUTF qualification, with the Jan 20 2028 expiry the previous scene named, is the row the camera rests on.",
+      "If the seeded state cannot carry the fresh grant, reword scene 5's narration so it does not claim a causal link the frame contradicts."
+    ]
+  },
+  {
+    "id": "arc-amina-thread-dropped",
+    "dimension": "persona_coherence",
+    "route": "CONCEPT",
+    "fix_kind": "options",
+    "severity": "low",
+    "note": "persona_coherence scored 4; emitted as an actionable sequence-level observation, not a gating defect.",
+    "scenes": [3, 6, 7, 8],
+    "title": "Amina is opened with a grievance and never returned to, including in the scene whose claim is about what she sees",
+    "evidence": "Amina's persona intro states she has 'never known whether a submitted document was actually read'. She appears in scene 3 only. Tomas qualifies her in scene 4 and Savanna wins the Maiduguri lot in scene 8, but the sequence never cuts back to her seat — not to see the qualification arrive, not to receive the solicitation in scene 6, not to price the lots in scene 7. Scene 6, whose whole claim is that an unqualified supplier's page never receives the solicitation, is shot from Ada's admin list.",
+    "why_it_matters": "The demo pays the full cost of introducing a third persona and collects only one scene of value from her, while the two beats that would most benefit from her seat are shot from the buyer's.",
+    "options": [
+      "Return to Amina for one short beat between scenes 5 and 6, or fold that return into a re-shot scene 6 showing the solicitation present on a qualified supplier's page.",
+      "If she cannot return, trim her intro's grievance to something scene 3 alone satisfies, so the sequence does not open an obligation it will not meet."
+    ]
+  }
+]

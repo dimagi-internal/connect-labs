@@ -1,0 +1,89 @@
+schema_version: 1
+kind: arc
+gate: gating
+live_state_verified: true
+calibration: provisional
+rubric_name: ddd-arc-eval
+run_id: oes-command-centre-2026-07-28-001
+spec: docs/walkthroughs/oes-command-centre.recipe.yaml
+narrative_lock_version: 2
+scenes_judged: 8
+gates:
+  snapshot_consistency: pass
+  duplicate_frames: pass
+  run_report: 41/41 actions ok
+excluded_from_deduction:
+  - "Network map renders a grey 'Map unavailable' box (no MAPBOX_TOKEN in this environment)."
+  - "Single-route SPA — every surface is a client-side tab, so all scenes share one URL by design."
+dimensions:
+  arc_shape:
+    score: 2
+    weight: 0.30
+    justification: >-
+      Three deduction rules fire independently. (a) The final scene is not the strongest
+      moment — scene 8 is scene 1's composition plus a toast, and the numbers it narrates
+      moving do not move (max 3). (b) Two adjacent scenes make the same point with different
+      pixels — scenes 3 and 4 are one modal at ~90px of scroll, and scenes 2 and 7 both
+      centre the identical 'Pipeline by corridor' table (max 2). (c) The most impressive
+      artifact in the run — the exception queue ranked by children who lose a full course,
+      with live action buttons — is fully revealed in scene 1 and never topped; scene 6
+      re-shows it having added one italic derivation line (max 2). There is a real intended
+      argument order (problem to provenance to measurement to immutability to denominator to
+      ranked queue to ground signal to action) and the story is statable in one sentence, so
+      this is not a 1 — but the sequence's last frame is its first frame.
+  escalation:
+    score: 2
+    weight: 0.25
+    justification: >-
+      'Two scenes showing the same surface with only a scroll between them' fires on scenes
+      3 and 4 — identical modal, ~90px scroll, one new event-log row (max 2). Removal test,
+      naming names: scene 5's top half is the same 9-row 'Requirement from caseload' table
+      already shown in scene 2, so only its 'Weeks of cover' half earns its place; scene 7's
+      lower two-thirds is scene 2's pipeline table verbatim and contributes nothing to its
+      partner-raised beat; scene 8 introduces no surface scene 1 did not already show. Four
+      of eight scenes are wholly or mostly restatement. Scene 3's modal and scene 5's
+      weeks-of-cover table genuinely add, which keeps this off 1.
+  visual_variety:
+    score: 2
+    weight: 0.20
+    justification: >-
+      Six of eight frames (1, 2, 5, 6, 7, 8) are the same command-centre page at different
+      scroll offsets; the remaining two (3, 4) are one modal at two scroll offsets. More than
+      half the scenes on one surface at different scroll offsets caps this at 2. Tables are
+      not penalised as such — this product is legitimately table-heavy — the penalty is for
+      showing the SAME table twice (pipeline in 2 and 7, caseload in 2 and 5) and the same
+      exception column three times (1, 6, 8). The modal is the only genuinely different shape
+      in the run and it is spent twice on nearly the same view. Routed CONCEPT, not PRODUCT —
+      the app has four other tabs (Dashboard, EOI rounds & review, Supplier registry,
+      Solicitations) visible in the rail in every frame, and the narrative visits none of
+      them. This is the narrative choosing one surface, not the product having only one.
+  persona_coherence:
+    score: 4
+    weight: 0.15
+    justification: >-
+      Ada Nwosu / Procurement is in the header of all eight frames and every scene is the same
+      person pursuing one goal — find which children go without, then move stock. No persona
+      switch, motivated or otherwise. Held off 5 because scenes 2, 3 and 4 are told in a
+      system-design voice about the data model (ingestion tiers, three timestamps, append-only
+      log) rather than from Ada's decision, and scene 2's narration is entirely about how data
+      arrives while its frame contains no provenance affordance at all — the persona's stated
+      attention and the screen's content diverge for that beat.
+  opening_and_close:
+    score: 2
+    weight: 0.10
+    justification: >-
+      The opening is genuinely strong: scene 1 leads with '1,521 children at risk across 7
+      exceptions' and ranks by children rather than tonnage — the problem stated in terms a
+      stranger feels, in the first tile. The close does not answer it. Scene 8 still reads
+      '1,521 / across 7 exceptions', and the El Fasher exception the opening posed is still in
+      the queue with its 'Reallocate to El Fasher Distribution Hub' button live and unpressed.
+      'The close does not answer the opening's question' caps this at 2.
+overall_score: 2
+overall_rule: lowest
+one_sentence_story: >-
+  Ada, a famine-response procurement lead, opens a queue that ranks her problems by the
+  children behind them rather than by tonnage, satisfies herself that the lateness and its
+  provenance are auditable, adds a caseload denominator so delivery becomes coverage, and
+  reallocates surplus stock to close the worst gap.
+story_statable: true
+verdict: fail

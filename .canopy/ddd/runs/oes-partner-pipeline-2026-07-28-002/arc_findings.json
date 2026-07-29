@@ -1,0 +1,71 @@
+[
+  {
+    "id": "arc-001",
+    "dimension": "visual_variety",
+    "severity": "high",
+    "route": "CONCEPT",
+    "fix_kind": "options",
+    "scenes": [1, 2, 3, 5],
+    "title": "Four of six beats are the same scrolling page; the cover table appears in three of them",
+    "detail": "Scenes 1, 2, 3 and 5 are all /supply/ 'Sites & distributions' at four scroll offsets, inside identical chrome (same header, same four-item left nav, same white card shell). The 'Weeks of cover by site' table is in frame three separate times — the bottom 40% of scene 2, all of scene 3, and the top 25% of scene 5 — and its 'As of Jul 28, 2026. Stock on hand is receipts minus despatches...' method note appears twice (scenes 3 and 5). Only scene 4 (Receiving tab) and scene 6 (batch modal with MUAC sparklines against WHO bands) break the shape; scene 6 is the only frame identifiable from a thumbnail.",
+    "why_concept_not_product": "The product is not short of surfaces. Organisation and Integration sit unvisited in the left nav in every single frame, and scene 6 proves the product has modals and charts. The narrative chose to revisit one page, so the fix is a spec/camera change, not a build.",
+    "options": [
+      "Move one middle beat onto an unvisited surface (Organisation or Integration) if it can carry a real claim.",
+      "Give scene 3 the drill-in treatment scene 6 gets — open a single site rather than showing the eleven-row table flat — so the cover claim arrives as a different shape from scene 2's grid.",
+      "Cut the third appearance of the cover table entirely (see arc-003)."
+    ]
+  },
+  {
+    "id": "arc-002",
+    "dimension": "escalation",
+    "severity": "high",
+    "route": "CONCEPT",
+    "fix_kind": "options",
+    "scenes": [1, 2, 3],
+    "title": "Scenes 1 and 2 are one viewport and a scroll, not two beats",
+    "detail": "Scene 1's captured frame already contains the Distribution calendar card that scene 2 is about — its title, its full reconciling sentence ('Stock on the day includes consignments scheduled to land by then...') and 6 of the 11 site rows. Scene 2's only action is a scroll_to the legend below the grid, which reveals the remaining 5 rows and the legend text. Scene 2's own lower 40% is then the header and first five rows of 'Weeks of cover by site', which is scene 3's entire subject. Three consecutive beats are one page moving downward. This trips the rubric's 'two scenes showing the same surface with only a scroll between them: max 2' twice over.",
+    "note": "Each of the three does carry a distinct claim — that is why arc_shape holds at 4 and this is not scored as repetition of the same point. The problem is that three narration beats are spent where the pixels support two.",
+    "options": [
+      "Merge scenes 1 and 2 into one beat: hold on the key figures, then scroll to the legend within the same scene, so the calendar's reveal is motion inside a beat rather than a beat of its own.",
+      "Keep three beats but give scene 2 a distinct camera — e.g. hover/expand a single at-risk day cell (Askira, or the empty Biu row) — so the calendar claim is made on something scene 1 did not already show."
+    ]
+  },
+  {
+    "id": "arc-003",
+    "dimension": "arc_shape",
+    "severity": "medium",
+    "route": "CONCEPT",
+    "fix_kind": "mechanical",
+    "scenes": [5, 6],
+    "title": "Scene 5's frame leaks scene 6's setup — the intended mitigation under-shot",
+    "detail": "The recipe's scene-5 final action targets 'Shortfalls you have raised' tr:last-child with the explicit note 'so the batch card below it stays under the fold — it is scene 6's reveal and targeting the heading left it filling the bottom third'. It did not work. In the captured scene_5.png the 'From a batch to the children it treated' card occupies the bottom ~30%: its heading, its subtitle, its column headers (DISTRIBUTED / SITE / BATCH / SHIPMENT / CHILDREN SERVED / OUTCOMES RECORDED) and four data rows are all legible. Scene 5's frame is also topped by the tail of the cover table, so the shortfalls table it is actually about is a band in the middle.",
+    "impact": "The finale's setup is shown one beat early. The payoff itself (the MUAC modal) is untouched, so no arc_shape cap fires — but scene 5 arrives visually crowded and scene 6's table-to-modal reveal loses a little surprise.",
+    "fix": "Re-point scene 5's closing camera so the shortfalls table sits high in the viewport with the batch card fully below the fold — scroll to the shortfalls card heading and then offset down by the card's own height, or scroll the raised row to viewport-centre rather than to the card's last row."
+  },
+  {
+    "id": "arc-004",
+    "dimension": "persona_coherence",
+    "severity": "low",
+    "route": "CONCEPT",
+    "fix_kind": "options",
+    "scenes": [4, 5],
+    "title": "Two actors are narrated but never shown: the storekeeper and the centre",
+    "detail": "Scene 4's narration says 'the storekeeper counts what came off it and records the receipt from a phone' while the frame is Zara's desktop Receiving list — the storekeeper never appears and neither does a phone. Scene 5's title is 'Zara raises a shortfall, and the centre answers' and its narration says the signal 'lands in the OES command centre ranked against every other exception', but the run never visits the command centre and the only on-screen state is STATUS: open (and, back in scene 1, 'awaiting an answer from OES'). The narration's own closing line concedes it — 'What OES does with it is the next narrative'.",
+    "impact": "No persona switch occurs on screen, so the max-2 rule does not fire and the run stays clearly one person's story. But the scene-5 title promises a beat the sequence does not deliver.",
+    "options": [
+      "Retitle scene 5 to what the frame actually shows — e.g. 'Zara raises a shortfall, with Komadugu's name on it' — so the title stops promising the centre.",
+      "Reword scene 4 so the count is attributed to Zara's organisation rather than to an unseen individual using an unseen device."
+    ]
+  },
+  {
+    "id": "arc-005",
+    "dimension": "arc_shape",
+    "severity": "info",
+    "route": "NONE",
+    "fix_kind": "none",
+    "scenes": [4, 5],
+    "title": "Confirmed: this iteration's two additions are in frame and are named by the narration",
+    "detail": "Verified against the captured frames, not the spec. Scene 5's 'Shortfalls you have raised' table shows both new columns — CARTONS SHORT (94 for Kukawa, 87 for Askira) and REPORTED BY (a 'Komadugu Health Initiative' badge on both rows) — and the narration names both ('the site, the date, the children affected, the cartons short' ... 'marked as raised by Komadugu rather than derived centrally'). The provenance idea is also set up a beat earlier: scene 4's consignment table carries legible 'Entered by hand' / 'Despatch advice' chips and the narration lands on 'it is labelled as hand-keyed, because it was'. Provenance therefore reads as a two-beat thread (4 then 5) rather than a one-off column, which is the sequence working as intended.",
+    "note": "Recorded so a later iteration does not re-litigate whether these landed."
+  }
+]

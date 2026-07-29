@@ -1,0 +1,141 @@
+{
+  "schema_version": 1,
+  "kind": "arc",
+  "run_id": "oes-partner-pipeline-2026-07-28-005",
+  "findings": [
+    {
+      "id": "ARC-001",
+      "dimension": "escalation",
+      "also_affects": ["visual_variety", "arc_shape"],
+      "route": "CONCEPT",
+      "fix_kind": "options",
+      "severity": "blocking",
+      "scenes": [1, 2],
+      "title": "Scene 2 is scene 1 scrolled 30 pixels — the retarget to thead did not change the frame",
+      "evidence": "Measured, not eyeballed: the best vertical alignment of scene_1.png onto scene_2.png is dy=30px, at which 95.3% of the 690 overlapping pixel rows are identical (tolerance 3/255). Both frames contain the identical content set — nav rail, the four key figures (11 / 4 / 0 wk / 1), the Distribution calendar title, its reconciling sentence, the SAT AUG 1 - FRI AUG 7 header row, and the Askira-through-Konduga rows including amber Askira (63, 38 on hand +94) and red Biu (94, 0 on hand +141). Scene 2's only visible gain is the Kukawa row half-appearing at the bottom edge. The consecutive-duplicate gate passes because the md5s differ, but a 30px camera move is the defect that gate exists to catch.",
+      "why_it_matters": "Every piece of evidence scene 2's narration cites is already on screen during scene 1. For two consecutive scenes the viewer watches a still picture while two different arguments are made over it. This is the single defect that caps both escalation and visual_variety, and it is why the run cannot score above 2 overall no matter how good scenes 3-6 are.",
+      "options": [
+        "Cut scene 2 and fold its cover-state claim into scene 1's narration — scene 1's frame already shows all three states.",
+        "Keep scene 2 but make it a genuinely different frame: scroll far enough that the key figures leave the viewport entirely and the calendar fills the screen, e.g. target the LAST calendar row (Kukawa or below) rather than thead, or collapse/zoom so all eleven sites' rows are visible at once. The test is that scene 1's four key-figure tiles must NOT be in scene 2's frame.",
+        "Give scene 2 a state change rather than a camera move — hover or click a calendar cell so the at-risk/uncovered reasoning opens, making it a drill-in rather than a scroll."
+      ],
+      "verification": "Re-run the alignment check: no vertical offset between scene_1.png and scene_2.png may leave more than ~60% of overlapping rows identical."
+    },
+    {
+      "id": "ARC-002",
+      "dimension": "visual_variety",
+      "route": "CONCEPT",
+      "product_component": true,
+      "fix_kind": "options",
+      "severity": "blocking",
+      "scenes": [1, 2, 3, 5],
+      "title": "Four of six frames are one scrolling page; the product's only map surface is never visited",
+      "evidence": "Scenes 1, 2, 3 and 5 are all http://localhost:8009/supply/ 'Sites & distributions' at different scroll positions (page_text url identical across all six scenes; scenes 1/2 at scroll ~0-30, scene 3 on the Weeks-of-cover card, scene 5 on the Shortfalls + batch cards). That is 4/6, which trips 'more than half the scenes are the same surface at different scroll offsets: max 2'. The two real shape breaks are scene 4 (Receiving tab: arriving-consignments table plus the Short-counts card) and scene 6 (modal of MUAC small-multiples against WHO colour bands). Meanwhile connect_labs/static/supply/flowmap.jsx is a Mapbox GL v3 + deck.gl flow map, mounted in tab_command.jsx and tab_gov.jsx — a genuinely different visual shape that exists in this product and appears in zero frames of this run.",
+      "why_it_matters": "This is a narrative choice, not a product limit — which is why it routes CONCEPT. The product has a map, a modal, charts, a form and four tabs; the run spends two thirds of its running time on one scrolling page of tables. The eye habituates well before the scene 6 payoff arrives.",
+      "options": [
+        "HIGHEST VALUE: add or retarget a beat onto the OES command-centre flow map after scene 5's raise. This closes ARC-003 at the same time — scene 5's narration already promises the command centre and the frame never shows it. One new surface, two findings closed, and it is the only non-table shape in the middle of the run.",
+        "If the command centre is out of the partner persona's reach, cut scene 2 (ARC-001) — 3/6 does not trip the rule where 4/6 does.",
+        "Make scene 3 a drill-in rather than a scroll (open one site's cover detail) so it reads as a different surface from scenes 1/2/5."
+      ],
+      "verification": "At most half the scenes may share a url+surface. Count distinct on-screen shapes across the run; target at least four of {table, map, form/modal, chart, drill-in}."
+    },
+    {
+      "id": "ARC-003",
+      "dimension": "arc_shape",
+      "route": "CONCEPT",
+      "fix_kind": "options",
+      "severity": "major",
+      "scenes": [5],
+      "title": "Scene 5 is titled 'and the centre answers' but no frame in the run ever shows the centre",
+      "evidence": "Scene 5's title is 'Zara raises a shortfall, and the centre answers' and its concept_claim asserts the signal 'enters the central queue ranked by the children behind it, marked as partner-raised'. The captured frame shows only the partner's own 'Shortfalls you have raised' table: Kukawa Jul 29 2026, 94 cartons short, 94 children affected, REPORTED BY 'Komadugu Health Initiative', needed by Aug 9 2026, STATUS 'open'. Askira sits above it, also 'open'. Scene 1's key figure already read '1 Shortfall raised — awaiting an answer from OES'. The run therefore opens on an unanswered shortfall and closes with two unanswered shortfalls.",
+      "why_it_matters": "The second half of the scene's own title is never delivered. What IS shown — the partner-raised provenance chip and the ranking-by-children figure — is strong and true; the unearned half is 'the centre answers'. A viewer who was told the centre answers and only ever sees 'open' reads the claim as marketing.",
+      "options": [
+        "Show it: extend scene 5 (or add a beat) onto the OES command-centre queue with the Kukawa row visible in it, ranked among the other exceptions. Also closes ARC-002.",
+        "Rename the scene to what the frame actually proves — 'Zara raises a shortfall, and it enters the queue ranked by children' — and drop the answer claim from the narration."
+      ],
+      "verification": "Either a frame contains the central queue with the just-created Kukawa record in it, or the title and narration no longer promise an answer."
+    },
+    {
+      "id": "ARC-004",
+      "dimension": "escalation",
+      "route": "CONCEPT",
+      "fix_kind": "options",
+      "severity": "major",
+      "scenes": [4, 6],
+      "title": "The finale opens the exact consignment scene 4 found short, and the narration never says so",
+      "evidence": "Scene 4 establishes SHP-2026-0909 as the short count: 900 advised, 840 counted, 60 short, '60 lose a full course'. Scene 6's modal opens with 'Batch LOT2609B — Arrived on SHP-2026-0909, distributed across 1 site — Monguno Nutrition Centre on Jul 22, 2026 (129 children)'. Scene 5's batch table confirms the join (Monguno / LOT2609B / SHP-2026-0909 / 129 children served / 14 outcomes recorded). The rebuilt batch-to-distribution join is verifiably correct across the run — every batch row's shipment matches its site's consignment in scene 4's receiving table (Askira/0900/38, Damboa/0902/657, Gwoza/0904/1126, Dikwa/0903/1635). But neither scene's narration mentions that the finale's batch and the run's short count are the same shipment.",
+      "why_it_matters": "This is escalation lying on the floor. Right now scene 6 is 'here is a batch, and here are children who recovered'. With one clause it becomes 'here is the shipment we caught 60 cartons short of, and here are the children the 840 that did arrive actually treated' — which closes the arc on the specific record the run has been tracking rather than on an arbitrary good-news batch.",
+      "options": [
+        "Add the clause to scene 6's narration naming SHP-2026-0909 as scene 4's short count.",
+        "Add a brief beat in scene 6 that holds on the 'Arrived on SHP-2026-0909' line before the curves, so the callback is on screen when it is spoken."
+      ],
+      "verification": "Scene 6's narration names the consignment reference established in scene 4."
+    },
+    {
+      "id": "ARC-005",
+      "dimension": "arc_shape",
+      "route": "CONCEPT",
+      "fix_kind": "mechanical",
+      "severity": "minor",
+      "scenes": [5, 6],
+      "title": "PRIOR FINDING NOT FIXED — scene 6's batch card still fills the bottom third of scene 5",
+      "evidence": "The recipe's own note on scene 5's closing scroll_to claims targeting the named Kukawa row 'keeps the batch card below under the fold — it is scene 6's reveal'. It does not. In scene_5.png the heading 'From a batch to the children it treated' sits at y=472 of 720, with its subtitle, its full column header row and five data rows (Askira/LOT2600B, Damboa/LOT2602B, Gwoza/LOT2604B, Dikwa/LOT2603B, Monguno/LOT2609B) visible below it — roughly 34% of the frame is scene 6's subject, including the exact Monguno row scene 6 clicks. Separately, the top ~21% of scene 5 is still the tail of scene 3's Weeks-of-cover card (Gwoza, Dikwa, and the method note), so scene 5's frame is bracketed by the scene before it and the scene after it.",
+      "why_it_matters": "The finale's reveal is pre-announced. By the time scene 6 opens the modal the viewer has already read the batch table's structure and seen the Monguno row. Half of what makes scene 6 land is that the chain from batch to child was not visible until it was.",
+      "fix": "Scene 5's closing scroll must place the Kukawa shortfall row low in the viewport rather than centred — anchor the camera so 'From a batch to the children it treated' stays below y=720. Targeting the 'Shortfalls you have raised' card's own header row (thead) with the Kukawa row beneath it, rather than centring the row itself, is the usual shape of this fix.",
+      "verification": "scene_5_page_text.json must not contain 'From a batch to the children it treated', and the string must not be visible in scene_5.png."
+    },
+    {
+      "id": "ARC-006",
+      "dimension": "persona_coherence",
+      "route": "CONCEPT",
+      "fix_kind": "options",
+      "severity": "minor",
+      "scenes": [4],
+      "title": "Scene 4 argues from the storekeeper's authority on the partner admin's screen",
+      "evidence": "Scene 4 is titled 'The storekeeper counts it, and the short count is evidence' and its impressive_because rests on the count happening 'at the loading bay'. The frame is the Receiving tab of Zara's partner-admin session — eleven sites' consignments listed together (Magumeri, Mafa, Kukawa, Konduga, Gwoza, Dikwa, Damboa, Askira), each with a 'Record the count' button. That is an oversight surface across the whole network, not one storekeeper's bay.",
+      "why_it_matters": "The claim the scene makes its case on — provenance from the person holding the cartons — is the strongest idea in the middle of the run, and the screen supporting it is one level removed from that person. It does not break the persona (the header still reads Komadugu Health Initiative throughout), but it is the reason persona_coherence is a 4 and not a 5.",
+      "options": [
+        "Reframe the narration to the partner's own voice — 'our sites record the count against the advice, and it is labelled hand-keyed' — matching the surface actually shown.",
+        "If a site-scoped receiving view exists, show that instead, so the screen is the bay the argument invokes."
+      ],
+      "verification": "The narration's stated actor matches the scope of the surface in frame."
+    }
+  ],
+  "fixed_since_previous_run": [
+    {
+      "prior_finding": "Scene 5's closing scroll used tr:last-child, which resolved to the OLD Askira row in a newest-first table",
+      "status": "FIXED",
+      "evidence": "scene_5.png shows 'Shortfalls you have raised' with the Kukawa row first (Jul 29 2026, 94 cartons short, 94 children affected, Komadugu Health Initiative, needed by Aug 9 2026, open) and Askira second. The row the scene created is in frame."
+    },
+    {
+      "prior_finding": "The MUAC chart in scene 6 letterboxed to about a third of its width",
+      "status": "FIXED",
+      "evidence": "scene_6.png: each series spans roughly x=405-965 of the 140-1140 modal, ~56% of modal width, with the red/amber/green WHO bands, the 115 mm and 125 mm threshold labels and the start-to-end mm delta all legible. The highlighted MON-2607-002 row climbs visibly from the red band into green."
+    },
+    {
+      "prior_finding": "The batch-to-distribution join let a site distribute what it never received",
+      "status": "FIXED",
+      "evidence": "Cross-checked every batch row in scene_5.png against the receiving table in scene_4.png: Askira/LOT2600B/SHP-2026-0900 (38 cartons), Damboa/LOT2602B/SHP-2026-0902 (657), Gwoza/LOT2604B/SHP-2026-0904 (1,126), Dikwa/LOT2603B/SHP-2026-0903 (1,635), Monguno/LOT2609B/SHP-2026-0909. Every site distributes only its own consignment."
+    },
+    {
+      "prior_finding": "The Weeks of cover table appeared in three separate frames",
+      "status": "PARTIALLY FIXED",
+      "evidence": "It now appears fully in scene 3 and as a ~21% tail at the top of scene 5 — two frames, down from three. Scenes 1 and 2 no longer reach it."
+    },
+    {
+      "prior_finding": "Scene 4 gained a beat on the counted consignment row before moving to the short-count card",
+      "status": "PARTIALLY FIXED",
+      "evidence": "The final scene 4 frame does carry provenance and the short count together — 'Entered by hand' and 'Despatch advice' chips are visible on the arriving rows while the Short-counts card shows SHP-2026-0909 at 900 advised / 840 counted / 60 short. But SHP-2026-0909's own row has scrolled off the top of the arriving table (visible rows run 0908 down to 0900), so the provenance chip for the short consignment specifically is not in the frame that argues about it. Intermediate beat only; not scored here."
+    },
+    {
+      "prior_finding": "Scene 2 retargeted from the calendar footnote to its header row (thead)",
+      "status": "NOT FIXED — see ARC-001",
+      "evidence": "The retarget moved the camera 30 pixels. Scene 2 is still scene 1's frame at 95.3% pixel identity."
+    },
+    {
+      "prior_finding": "Scene 5 leaking scene 6's setup into the bottom ~30% of its frame",
+      "status": "NOT FIXED — see ARC-005",
+      "evidence": "The batch card heading sits at y=472/720 with five data rows below it; ~34% of scene 5's frame is scene 6's subject."
+    }
+  ]
+}

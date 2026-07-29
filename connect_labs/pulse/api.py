@@ -19,6 +19,7 @@ from django.http import JsonResponse
 from django.utils import timezone
 from django.views import View
 
+from connect_labs.pulse.client import PulseAuthError, get_poller_user
 from connect_labs.pulse.models import (
     TIER_HOT,
     TIER_INTERVALS_SECONDS,
@@ -55,8 +56,27 @@ def _ingest_state() -> dict:
     else:
         message = f"No successful ingest for {staleness // 60} minutes — showing stored data, not live."
 
+    # Surface WHO we poll as. Scope follows that account's org membership, so a
+    # wrong poller silently rescales every figure on the screen -- it happened
+    # on the first prod deploy and nothing errored. Making it visible means the
+    # next person can spot it from the page instead of from the numbers.
+    #
+    # An unresolvable poller also forfeits the LIVE badge immediately rather
+    # than waiting for staleness to accumulate: no poller means no further
+    # ingest, so whatever is on screen is already the last of it.
+    try:
+        poller = get_poller_user().username
+        poller_error = ""
+    except PulseAuthError as exc:
+        poller = ""
+        poller_error = str(exc).split("\n")[0]
+        healthy = False
+        message = message or "No Pulse poller configured — ingest cannot run."
+
     return {
         "live_ok": healthy,
+        "poller": poller,
+        "poller_error": poller_error,
         "last_success_at": last_success.isoformat() if last_success else None,
         "staleness_seconds": staleness,
         "hot_interval_seconds": TIER_INTERVALS_SECONDS[TIER_HOT],

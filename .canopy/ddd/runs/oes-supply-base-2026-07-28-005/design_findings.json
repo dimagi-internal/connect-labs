@@ -1,0 +1,92 @@
+[
+  {
+    "scene": "4 — Tomas qualifies the supplier, per category and with an expiry",
+    "dimension": "motion_friction",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The narration says 'A pass stamps a qualification onto the organisation with an expiry date', and the modal states 'RUTF qualified until Jan 20, 2028'. The action trace clicks Qualify on RUTF and Reject on Therapeutic milk and then holds 3.2s — it never clicks the 'Record decision' button visible at bottom-right of the same frame. Verified in connect_labs/static/supply/tab_rounds.jsx: decide() only calls setDecisions() on local React state; the POST to /supply/api/eoi/submissions/<id>/review/ fires only from 'Record decision'. The next scene proves the omission: scene 5's registry lists Savanna Nutrients Ltd with earliest expiry Feb 18, 2027 (the pre-existing 2026-A qualification), not the Jan 20, 2028 just granted on camera. The pivotal act of the walkthrough leaves no trace in the screen the narrative calls the answer.",
+    "fix_recommendation": "In oes-supply-base.recipe.yaml scene 'tomas-qualifies-the-supplier-per-category-and-with-an-expiry', append after the Reject click: {kind: click, target: \"css:.modal button:has-text('Record decision')\"} then {kind: wait_for, target: css:.toast} then a 2.5s hold, so the decision commits and the toast confirms it before scene 5 reads the registry."
+  },
+  {
+    "scene": "3 — Amina applies, and the profile is frozen",
+    "dimension": "claim_reality_coherence",
+    "severity": "medium",
+    "route": "DEFER",
+    "fix_kind": "mechanical",
+    "detail": "The scene opens the 'OES Supply Base 2026-A' application — submitted Mar 12, 2026, status Qualified, commitments 'RUTF 34,000 cartons/month · NG, SD · 28 day lead time'. Scene 4's Tomas reviews the 2026-B submission — frozen Jul 19, 2026, commitments 'RUTF 39,000 cartons/month · NG, SD · 14 day lead time'. The narration binds them into one story ('so the decision Tomas is about to make stays reconstructable'), but they are two different submissions with visibly different capacity and lead-time figures, and the one shown was already decided four months earlier. A viewer reads the changing numbers as inconsistent data rather than as two applications.",
+    "fix_recommendation": "Retarget scene 3's click to the 2026-B row (tr:has-text('OES Supply Base 2026-B')) so the frozen snapshot the viewer sees is the one Tomas opens in scene 4, and the commitment figures match across the two scenes."
+  },
+  {
+    "scene": "6 — A solicitation reaches only qualified suppliers",
+    "dimension": "design_soundness",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The scene's concept claim is that eligibility is enforced when the payload is built, so an unqualified supplier never receives the solicitation rather than seeing it with a hidden button. The frame is Ada's own 'All solicitations' list, which shows every tender regardless of eligibility — nothing on screen bears on the claim, which is carried entirely by narration. The counter-shot is already shipped: connect_labs/static/supply/tab_bids.jsx renders 'Solicitations you are qualified to bid on' from world.eligible_rfps with the empty state 'No solicitations are open to you yet.', and connect_labs/supply/api/rfp.py gates on rfp_actions.org_can_bid.",
+    "fix_recommendation": "Add a persona hop inside scene 6 (or a short scene 6b) to a supplier org holding no live RUTF/transport qualification, click 'Solicitations & bids', and hold on a list that does not contain RUTF Northeast Nigeria Q3 2026 — the absence is the evidence."
+  },
+  {
+    "scene": "6 — A solicitation reaches only qualified suppliers",
+    "dimension": "claim_reality_coherence",
+    "severity": "medium",
+    "route": "DEFER",
+    "fix_kind": "mechanical",
+    "detail": "The Sudan Corridor Logistics 2026 row reads '40,000 truck-months → Khartoum', sitting five rows above '6 truck-months → Maiduguri' for a six-month haulage contract — an implausibility a supply-chain viewer will catch immediately. connect_labs/supply/demo/data.py describes the lot as 'Inland haulage of 40,000 cartons from Port Sudan to Khartoum' with quantity 40000 and unit price USD 3.20 (a per-carton haulage rate); only connect_labs/supply/demo/solicitations.py:299 ('unit': 'truck-months' if country == 'SD' else 'cartons') relabels it. Scene 9's 'Pipeline by corridor' table shows the same record as OES-C-2026-SD1, 40,000 cartons — so the two screens contradict each other on the same lot.",
+    "fix_recommendation": "Remove the SD special case at connect_labs/supply/demo/solicitations.py:299 so the corridor-award lot is denominated in cartons, matching both its own description in data.py and the contract row in scene 9."
+  },
+  {
+    "scene": "7 — Bids priced and scored lot by lot",
+    "dimension": "visual_polish",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The scene scroll_to's the card 'css:.modal .card:has-text(\"60,000 cartons RUTF delivered to Maiduguri\")' and holds 2.4s. On the captured frame the sticky modal header 'RUTF Northeast Nigeria Q3 2026' sits over that card's heading, hiding it completely, and clips the sub-line '60,000 cartons → Maiduguri, Nigeria · due Sep 15, 2026' through the middle of its glyphs. The narration at that moment names the Maiduguri lot and its price; the on-screen label identifying the lot is not readable. Scene 8 renders the identical card fully legible, so this is a scroll-offset issue rather than a layout constraint.",
+    "fix_recommendation": "Offset the modal scroll by the sticky header height (or scroll_to the card's preceding sibling / the card's container) so the lot heading clears the sticky bar, as scene 8 already achieves."
+  },
+  {
+    "scene": "5 — The registry answers who can supply today",
+    "dimension": "design_soundness",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "fix_kind": "options",
+    "detail": "The scene's claim — 'the registry IS the set of live qualifications, so a lapsed certification removes a supplier without anyone maintaining a list' — is about an absence, and the screen can only show presence. The narration asserts 'this one has dropped out because its certification lapsed last month'; no dropped supplier, no lapse, and no expiring-soon count appears anywhere on the frame. The recipe's own show text promises 'the expiring-soon count called out'; what is actually rendered is an 'Any expiry' filter dropdown, and scene 1's dashboard says 'no near-term expiries'. The three-row filtered result also leaves roughly 55% of the frame empty.",
+    "fix_recommendation": "Either (a) add an 'expiring in 90 days' / 'lapsed this month' summary chip on the registry card header and hold on it, or (b) script the scene to select the 'Expiring in 30 days' filter so the shrinking count demonstrates expiry as a live property, or (c) seed one named supplier whose qualification lapsed last month and show it present-then-absent across the filter change. Pick one — each changes what the scene demonstrates."
+  },
+  {
+    "scene": "2 — Ada opens a round and names the categories",
+    "dimension": "claim_reality_coherence",
+    "severity": "low",
+    "route": "DEFER",
+    "fix_kind": "options",
+    "detail": "The narration is 'Ada opens a round and names what they are collecting interest in: ready-to-use therapeutic food, therapeutic milk, road transport, and warehousing.' The trace clicks the 'EOI rounds' nav item and holds 2s. The screen shows OES Supply Base 2026-B already Open with 8 applications received, and a 'New round' button that is never clicked. The categories are visible as pills on the existing rounds, which supports the second half of the claim, but no round is opened on camera.",
+    "fix_recommendation": "Either click 'New round' and fill the category checkboxes so the declaration happens on camera, or soften the narration to 'Ada's round is open, and it names what they are collecting interest in' so the words match a list-reading frame."
+  },
+  {
+    "scene": "6 — A solicitation reaches only qualified suppliers",
+    "dimension": "motion_friction",
+    "severity": "low",
+    "route": "PRODUCT",
+    "fix_kind": "options",
+    "detail": "The narration is 'Ada publishes a solicitation carrying concrete lots — sixty thousand cartons of RUTF into Maiduguri by the fifteenth of September.' The trace clicks the Solicitations nav, scrolls to the row and holds 3.4s over a tender already in 'Published' status; the 'New solicitation' button is not touched. The quantities and destinations are genuinely readable on the row, which is the strong half of the scene, but the delivery date the narration speaks (Sep 15) appears only inside the detail modal, not on this frame.",
+    "fix_recommendation": "Either open the tender detail so the 'due Sep 15, 2026' line the narration speaks is on screen, or reword to 'Ada's solicitation carries concrete lots' so no publish act is claimed."
+  },
+  {
+    "scene": "9 — The award becomes the contract",
+    "dimension": "concept_clarity",
+    "severity": "low",
+    "route": "CONCEPT",
+    "fix_kind": "options",
+    "detail": "The contract now genuinely descends from scene 8's award — OES-C-2026-NG2, 'awarded under RUTF Northeast Nigeria Q3 2026, Jul 28, 2026', obligated USD 2,537,400.00 (60,000 x USD 42.29), IATI activity US-GOV-1-OES-OES-C-2026-NG2 — which is a real improvement over opening an unrelated Q2 contract. The cost is that the narrative's closing beat, 'from here the same record is what the supply chain moves against', lands on a Delivery schedule card reading 'No consignments raised against this contract yet.' while OES-C-2026-NG1, BF1, ET1 and SD1 sit in the background table with real shipped and delivered quantities. The honest empty state is correct; it is simply the weakest possible payoff frame for the last scene.",
+    "fix_recommendation": "Either seed one consignment against the newly created contract as part of the award side-effect, or extend the scene with a short second beat opening OES-C-2026-NG1 (same supplier, same corridor, 15,000 of 45,000 delivered) to show what this record looks like once it is moving."
+  },
+  {
+    "scene": "7 — Bids priced and scored lot by lot",
+    "dimension": "claim_reality_coherence",
+    "severity": "low",
+    "route": "DEFER",
+    "fix_kind": "mechanical",
+    "detail": "The narration says bids are shown as 'rows ranked by price with the reviewer's technical score beside each one'. Two of the four lots — 35,000 cartons to Damaturu and the Kano–Maiduguri haulage lot — render an unscored 'Score' action button in the TECHNICAL column instead of a number. Both held frames (Maiduguri, Djibo) do carry real scores (91/60/83/82 and 88/79/61/74), so the defect is out of frame in this run, but any scroll past the second lot exposes it.",
+    "fix_recommendation": "Seed BidScore rows for the Damaturu and haulage lots in connect_labs/supply/demo/solicitations.py so every lot in the live tender shows a technical score, matching what the narration claims about the surface."
+  }
+]

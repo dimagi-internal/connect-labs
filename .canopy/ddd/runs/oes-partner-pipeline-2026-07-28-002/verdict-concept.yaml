@@ -1,0 +1,338 @@
+schema_version: 1
+kind: concept
+gate: gating
+live_state_verified: true
+calibration: provisional
+rubric_name: ddd-concept-eval
+ran_at: 2026-07-28T23:55:00Z
+run_dir: /Users/jjackson/emdash/worktrees/connect-labs/emdash/supply-3-vqp90/.canopy/ddd/runs/oes-partner-pipeline-2026-07-28-002
+spec_name: oes-partner-pipeline
+scenes_evaluated: 6
+self_assessed: false
+
+judge_provenance:
+  all_six_scenes: >-
+    Independent fresh visual-judge sub-agents, each given only the screenshot, page
+    text, rubric and scene context — no build history, no design rationale. None
+    returned a self-assessed verdict.
+  render_integrity: >-
+    run-report.json shows 35/35 actions ok, 0 failed; all six snapshots share
+    render_id 19fab01daf7 (single render, no mixed-dir hazard).
+  aggregator_moderations: one — scene 4 design_soundness raised 2 -> 3 (documented
+    below). All other per-scene scores adopted as returned.
+
+# ─────────────────────────────────────────────────────────────
+# WHAT CHANGED THIS ITERATION — VERIFIED
+# ─────────────────────────────────────────────────────────────
+iteration_verification:
+  cartons_short_column:
+    status: LANDED
+    evidence: scene_5 — "Shortfalls you have raised" renders RAISED / SITE /
+      CARTONS SHORT / CHILDREN AFFECTED / REPORTED BY / NEEDED BY / STATUS.
+      Kukawa row reads "Jul 28, 2026 · Kukawa Nutrition Centre · 94 · 94 ·
+      Komadugu Health Initiative · Aug 8, 2026 · open".
+  reported_by_provenance_badge:
+    status: LANDED
+    evidence: scene_5 — blue "Komadugu Health Initiative" pill under a REPORTED BY
+      header on both rows (tab_partner.jsx:239-244).
+  children_figure_reconstructable:
+    status: PARTIAL
+    detail: The carton-to-child identity IS in the same viewport, but only as ~11px
+      grey text in a DIFFERENT card's footnote ("at one carton per child's full
+      course", under Weeks of cover). The shortfall card itself carries no
+      definition, so CARTONS SHORT 94 and CHILDREN AFFECTED 94 read as a duplicated
+      column. The MAGNITUDE 94 is not reconstructable at all — it is
+      (weekly_burn x 2) - stock_on_hand (tab_partner.jsx:341-344), and neither the
+      two-week horizon nor the weekly burn appears on the card or in the modal.
+  prior_judge_regression_recheck:
+    claim: "a counted consignment still offered 'Record the count' and inflated the
+      'Awaiting your count' tile"
+    status: FIXED — CONFIRMED, do not re-raise
+    evidence: scene_4 page text — SHP-2026-0909 renders "Counted · 60 short", not a
+      button. 10 rows Delivered, 1 counted, 9 offering "Record the count"; the tile
+      reads 9. "Consignments in transit 2 / 235 cartons" = 94 + 141 = 235. Every
+      tile reconciles exactly. Monguno's cover also carries 840 (the COUNTED figure),
+      not the advised 900 — the short receipt propagates correctly into the projection.
+
+# ─────────────────────────────────────────────────────────────
+# THE QUESTION ASKED: is the OES-command-centre claim visible on the partner screen?
+# ─────────────────────────────────────────────────────────────
+command_centre_claim_assessment:
+  narration: "it lands in the OES command centre ranked against every other
+    exception by the children behind it, and marked as raised by Komadugu"
+  marked_as_raised_by_komadugu: EVIDENCED — the REPORTED BY badge now carries it.
+  lands_in_the_command_centre: ASSERTED IN PROSE, NEVER DEMONSTRATED.
+    The claim appears as modal copy ("This lands in the OES command centre ranked by
+    the children behind it...", tab_partner.jsx:379-382) and as a toast string, both
+    of which the viewer sees mid-scene. Neither is a state. The record's only status
+    is an amber "open" pill, identical to the pre-existing Askira row.
+  ranked_by_children_behind_it: NOT VISIBLE. No rank, no queue position, no
+    acknowledgement, no destination link anywhere on the partner surface.
+  the_sharpest_form_of_the_problem: The card's own lede reads "Reported upward from
+    this screen, and answered against the same record" — sitting 40px above two rows
+    both stamped "open". The card promises an answered state the product never shows,
+    and the scene is titled "Zara raises a shortfall, and the centre answers".
+  should_it_be_visible: YES, in a bounded form — and the product is already most of
+    the way there. The narration's thesis is precisely "it does not go into a message
+    queue somebody may or may not read", which is the one thing this screen fails to
+    demonstrate. Showing the full central ordering would leak other partners' data,
+    so the right shape is (a) an acknowledgement/arrival state on the row, and (b) the
+    answered state the model ALREADY supports — ShortfallSignal.resolved_by_action
+    exists on the model (models/demand.py:139) and rides the wire as
+    resolved_by_action_id (serializers/demand.py:72), but no seeded signal is resolved
+    and the UI never renders it. Seeding the Askira Jul 24 signal as answered by a
+    SupplyAction and rendering the actor/effect/date on the row would make both the
+    lede and the narration self-evidencing without inventing a new concept.
+
+dimensions:
+  concept_clarity:
+    score: 2
+    weight: 0.15
+    justification: >-
+      Bound by scene 2, whose whole concept is cover state per site AND date and whose
+      frame carries neither: the date header row (FRI JUL 31 ... THU AUG 6) is scrolled
+      off the top, and every visible cell renders the identical covered green, so the
+      three-state read the scene exists to show is absent from its own frame. Scene 1
+      also fails its five-second read — the opening frame is dominated by a 7x11 grid in
+      which 11 of 77 cells carry data, so a cold viewer's impression is "there isn't
+      much data here", the inverse of the narrated "they know their caseload to the
+      child". Scenes 3 and 6 are genuinely clear (4).
+  use_case_soundness:
+    score: 3
+    weight: 0.15
+    justification: >-
+      Scored once for the whole story, attached to scene 2. The underlying use is real
+      and at genuine scale — eleven sites, a 0-to-5.5-week cover ladder, a live
+      shortfall with a named deadline, a batch resolving to 657 children fed — and no
+      skeptic would call it a toy. Held at 3 because two independent judges fired the
+      same rule from opposite ends: the demonstrated week contains ZERO non-covered
+      cells inside the narrated viewport, so the calendar never has to discriminate on
+      camera; and the shortfall's payoff (the centre responding) is explicitly deferred
+      to another narrative, so the loop the concept is built on never closes on screen.
+    route_note: per rubric, ALWAYS route CONCEPT / fix_kind redesign.
+  design_soundness:
+    score: 3
+    weight: 0.20
+    justification: >-
+      The core chains hold — the raise button sits on the row that is actually short,
+      modal to toast to record is clean, and the cover-table button correctly converts
+      to a dated "Raised Jul 28, 2026" stamp so a duplicate raise is structurally
+      impossible. Three interactions do not hold. (1) The calendar tells the user how to
+      read it ("a cell is short exactly when the second number is below the first") and
+      then renders three colours that binary rule cannot produce; two independent judges
+      each tried to reproduce the encoding from the stated rule and each failed, because
+      the cell shows THREE numbers ("38 on hand +94") and the state uses only the first
+      of them (serializers/demand.py:33-45). (2) The justification Zara types on camera
+      is captured and then rendered nowhere. (3) A cross-scene data contradiction: Biu
+      reads "0 cartons · awaiting first consignment" in the cover table and, two cards
+      below, "Jul 6, 2026 · Biu Nutrition Centre · LOT2601A · 280 children served".
+    scene_4_moderation: >-
+      The scene-4 judge scored this 2 under "narration describes a core interaction the
+      action_trace never performs". Moderated to 3: the narration's subject is "the
+      storekeeper", describing off-camera how the record on screen came to exist — it
+      does not claim the demo performs a capture. The weaker true finding (the
+      "Record the count" affordance is on screen eight times and never exercised, so the
+      concept's stated low-tech capture tier is never demonstrated) is retained as a
+      finding. This moderation does not affect the overall score, which is bound at 2
+      by scene 2.
+  visual_polish:
+    score: 2
+    weight: 0.12
+    justification: >-
+      Bound by scene 2, where the load-bearing encoding fails outright: the covered cell
+      fill is #E9F3F0 on #FFFFFF, roughly 1.03:1, so at projector distance the calendar
+      reads as white boxes with an outline and the cover state — the entire point of the
+      card — is invisible. Compounding it in the same frame, one column stacks five
+      identical filled primary "Raise a shortfall" buttons beside one inert grey text
+      cell (inconsistent control styling within a scene), and rows are clipped mid-cell
+      at both edges. Elsewhere: scene 3's weeks-of-cover badges paint red through 1.6
+      while the card's own stated triage threshold is 1 week (tab_partner.jsx:112-114
+      bands at 2 and 4 against a subhead that says 4 and 1), which is alarm-colouring
+      beyond the stated rule.
+      Scene 6 is independently bound at 2 from the opposite end: the MUAC series the
+      whole walkthrough builds toward renders as a ~220px sparkline occupying ~17% of
+      the frame while 35-40% of the modal width is dead whitespace, with ~7px threshold
+      labels on one row of 33, no time axis anywhere, no shared y-scale visible across
+      the cohort rows, and the fifth record hard-clipped mid-chart by the footer with no
+      scroll cue for the other 28. Root cause confirmed in source: .muac-spark is
+      width:100%/height:56px (css/06-visualisation.css:318) but the SVG carries a
+      viewBox with default preserveAspectRatio, so the chart scales to fit its HEIGHT
+      and letterboxes horizontally. The primary green Close button also reuses the
+      legend's "Recovered" green for a dismiss action, and the modal scrim does not
+      cover the top header bar or the orange "open" pill behind it.
+  why_groundedness:
+    score: 4
+    weight: 0.15
+    justification: >-
+      The strongest dimension, uniformly 4 across all six scenes. Every scene's
+      provenance resolves to a real spine item (S0-S5) and the built surface instantiates
+      it field-for-field rather than gesturing at it: S1's "distribution day at a named
+      site with children expected" IS the grid's axes, S3's stated method is printed
+      under the table, S4's REPORTED BY is a first-class field not a caption, and S5's
+      partner attribution is the literal content of "the ground reports upward". Short of
+      5 because the three spine items carrying the product's novelty (S1, S2, S4) are
+      status "gap" with empty evidence[] in the why_brief, so their assumed halves — the
+      at-risk/uncovered states, and the central ranking — are asserted rather than
+      demonstrated.
+  claim_reality_coherence:
+    score: 1
+    weight: 0.10
+    blocking: false
+    advisory: true
+    justification: >-
+      Bound by scene 2, where four of five narrated specifics are falsified by the
+      artifact. "Next Tuesday at Monguno": as of Jul 28 the next Tuesday is Aug 4, which
+      belongs to Gwoza; Monguno's only cell in the week is Sun Aug 2. "needs eight
+      hundred cartons": the string never appears — Monguno's cell reads 532 booked over
+      840 on hand, and 800 is a loose round of the SUPPLY figure, the opposite quantity
+      from the one the sentence names. "the consignment covering it is on the road":
+      no in-transit or ETA state exists anywhere on the page. "The Thursday distribution
+      at Kukawa reads as at risk": Kukawa is 235 booked against 375 on hand and its cell
+      fill is byte-identical to every covered cell. Scene 4 (2) narrates "labelled as
+      hand-keyed" while SHP-2026-0909's row and the REPORTED BY header are both out of
+      frame; scene 5 (2) claims central ranking with no on-screen referent. Scenes 3 and
+      6 verify cleanly (4) — every figure reconciles arithmetically.
+  motion_friction:
+    score: 2
+    weight: 0.13
+    justification: >-
+      The same fits-but-mis-framed miss fires in three of six scenes, each a scripting
+      fix rather than a product defect. Scene 2 scrolled to the calendar's FOOTNOTE,
+      pushing the date headers, the card title and the only two informative cells (the
+      amber Askira and red Biu) above the fold — the grid demonstrably fits one 720px
+      viewport. Scene 4 scrolled past SHP-2026-0909, the one row carrying the
+      "hand-keyed" punchline. Scene 5's final target `tr:last-child` resolves, in a
+      newest-first table, to the OLD Askira Jul 24 row — the camera's last gesture points
+      at the record the demo did NOT just create — and Kukawa's changed cover row, the
+      scripted duplicate-raise proof, is off the top while the three rows in frame all
+      still read "Raise a shortfall". Scenes 3 and 6 frame their subjects correctly (4).
+
+overall_score: 2
+overall_rule: lowest
+overall_rule_note: >-
+  Minimum across the six non-advisory dimensions. claim_reality_coherence (1) is
+  excluded per spec and never drives the verdict; the binding dimensions are
+  concept_clarity, visual_polish and motion_friction, all 2, all bound by scene 2.
+
+per_scene_scores:
+  scene_1: { concept_clarity: 3, use_case_soundness: 4, design_soundness: 3, visual_polish: 3, why_groundedness: 4, claim_reality_coherence: 3, motion_friction: 3, min: 3 }
+  scene_2: { concept_clarity: 2, use_case_soundness: 3, design_soundness: 3, visual_polish: 2, why_groundedness: 4, claim_reality_coherence: 1, motion_friction: 2, min: 2 }
+  scene_3: { concept_clarity: 4, use_case_soundness: 4, design_soundness: 3, visual_polish: 3, why_groundedness: 4, claim_reality_coherence: 4, motion_friction: 4, min: 3 }
+  scene_4: { concept_clarity: 3, use_case_soundness: 4, design_soundness: 3, visual_polish: 3, why_groundedness: 4, claim_reality_coherence: 2, motion_friction: 2, min: 2 }
+  scene_5: { concept_clarity: 3, use_case_soundness: 3, design_soundness: 3, visual_polish: 3, why_groundedness: 4, claim_reality_coherence: 2, motion_friction: 2, min: 2 }
+  scene_6: { concept_clarity: 4, use_case_soundness: 4, design_soundness: 3, visual_polish: 2, why_groundedness: 4, claim_reality_coherence: 4, motion_friction: 3, min: 2 }
+
+strengths_worth_protecting:
+  - >-
+    Scene 6's statistical honesty is exemplary and arithmetically exact. The modal
+    states that 25 of 33 children in the recorded sample were discharged as recovered,
+    that the sample is 33 of the 657 children this batch fed, and that a rate from 33
+    children carries a wide interval and is not the batch's recovery rate. Verified
+    independently by two passes: 18 DIK + 7 MON = 25 recovered of 33 listed rows, and
+    332 + 325 = 657. It refuses to publish a headline recovery rate it cannot support.
+    A nutrition epidemiologist would accept it. This is the single most credible thing
+    in the walkthrough — do not let a polish pass dilute it.
+  - Clinical fidelity in scene 6 holds across all 33 rows. Every admission MUAC is
+    98-113 mm (correctly below the 115 mm severe threshold for a SAM admission), every
+    row labelled Recovered discharges at or above 127 mm, and every Defaulted /
+    Non Response row ends below 125 mm. No row's label contradicts its numbers.
+  - Scene 3's cover table reconciles exactly on all eleven rows against
+    on_hand / (children_per_month x 7/30), and "Kukawa is eleven days out" is both on
+    screen and arithmetically correct. The method is printed under the table.
+  - The receiving surface is now fully self-consistent — the regression the previous
+    judge reported is genuinely fixed, and every key figure reconciles.
+  - The "Demonstration environment — all data is synthetic" and "Treatment records in
+    this environment are synthetic" markers are correct, honest framing and were scored
+    as neutral throughout, per the standing rule. Entity-level data (org names, site
+    names, consignment references, MUAC series) reads as real.
+
+verdict: fail
+blocking_reason: null
+
+fix_recommendation: |
+  Overall 2/5. Nothing here is a concept failure — why_groundedness is a uniform 4 and
+  the product's arithmetic is genuinely defensible. The score is bound by scene 2, where
+  a mis-framed capture and a narration written against a different dataset compound into
+  a scene that falsifies itself.
+
+  Fix in this order:
+
+  1. [PRODUCT · scripting · mechanical] Re-frame scene 2. Change the scroll target from
+     `css:.card:has-text('Distribution calendar') .method-note` to the calendar's
+     `thead` (or the card element), so the date header row and the amber Askira / red
+     Biu cells are settled in frame BEFORE any day is named. This single change fixes
+     concept_clarity, motion_friction and most of claim_reality_coherence for the
+     binding scene.
+
+  2. [DEFER -> narration · options] Scene 2's narration names a Tuesday Monguno
+     distribution of eight hundred cartons and an at-risk Kukawa Thursday. On screen
+     Monguno is Sun Aug 2 (532 booked / 840 on hand, covered) and Kukawa Thu Aug 6 is
+     covered (235 / 375). Either renarrate to the cells that exist ("Sunday at Monguno,
+     five hundred and thirty-two children booked in against eight hundred and forty
+     cartons") and drop "on the road" until an in-transit state is on screen, OR reshape
+     the seeded week so a genuinely at-risk and a genuinely uncovered distribution fall
+     inside the visible seven days. Do not ship the current pairing.
+
+  3. [PRODUCT · mechanical] Make the calendar's cover state legible and reproducible.
+     The covered fill is ~1.03:1 against white, so the encoding is invisible on a
+     projector; and the stated binary rule cannot produce three colours because the cell
+     shows three numbers while the state uses only the on-hand figure. Replace the tint
+     with a saturated status bar plus a text state chip per cell, label the operands
+     in-cell ("532 children booked" / "840 cartons on hand" / "+94 scheduled, does not
+     cover this day"), and restate the legend as the three-way rule the code implements.
+
+  4. [PRODUCT · mechanical] Give the shortfall record a destination state so the
+     narration's central claim stops being prose. ShortfallSignal.resolved_by_action
+     already exists on the model and rides the wire; seed the Askira Jul 24 signal as
+     answered by a SupplyAction, render the actor/effect/date on the row, and add an
+     acknowledged state between open and answered. Until then, change the card lede from
+     "answered against the same record" to something both rows can support.
+
+  5. [PRODUCT · mechanical] Fix the batch-to-distribution join. seed_distribution_records
+     (demo/demand.py:493-525) round-robins the first six delivered ShipmentLines
+     GLOBALLY across all eleven sites and dates them TODAY-21-index, so every
+     distribution references a SHP-2026-01xx/02xx/03xx shipment that never appears on
+     the partner's own Receiving tab, every distribution predates every receipt, and Biu
+     — which has no delivered consignment at all — shows 280 children served. Seed from
+     the partner's own delivered SHP-2026-09xx consignments, date them after arrival,
+     and skip sites with no receipts. This is the walkthrough's payoff claim ("each
+     distribution resolves to the batch that supplied it"); it is currently the least
+     grounded data on the screen.
+
+  6. [PRODUCT · mechanical] Give scene 6's payoff the presentation it has earned — this
+     is the highest value-per-line fix in the list, because the content is already the
+     most credible thing in the walkthrough and only its rendering lets it down. The
+     MUAC spark is `width:100%; height:56px` (css/06-visualisation.css:318) but its SVG
+     uses a viewBox with default preserveAspectRatio, so it scales to fit its HEIGHT and
+     letterboxes to ~220px inside a ~700px column. Add `preserveAspectRatio="none"` (or
+     match the viewBox ratio) so the series fills its column; pin the selected child as
+     a full-width detail panel above the cohort list with a labelled visit axis and
+     y-ticks at 115/125/135 mm at body type; put the cohort list in a scroll container
+     with a record count ("33 treatment records") so the fifth row stops being
+     hard-clipped by the footer; restyle Close as a neutral control so green stays
+     semantically reserved for "Recovered"; and extend the modal scrim over the top
+     header bar.
+
+  7. [PRODUCT · mechanical] Cheap credibility repairs elsewhere: bind the
+     weeks-of-cover badge bands to the thresholds the card actually states (red below 1,
+     not below 2); seed the Askira signal's needed_by from its stockout date — it is
+     currently TODAY+7 = Aug 4, three days AFTER the site runs dry on Aug 1
+     (demo/demand.py:481); add a SITE column to the batch modal's record rows and lead
+     with the site the user actually clicked (clicking MONGUNO currently opens a list
+     whose first 22 rows are Dikwa children).
+
+  8. [DEFER · entity-realism, low] Four synthetic tells a CMAM adviser would catch, none
+     urgent, all in the seeded outcome series: DIK-2607-002 discharges at exactly
+     112 -> 112 mm (real MUAC carries 2-3 mm observer noise, so an identical pair does not
+     occur); no Recovered child discharges at 125 or 126 mm although real programmes
+     discharge on FIRST crossing, so the absence of any at-threshold discharge is a
+     distribution artifact in exactly the place the scene asks to be believed; every one
+     of the six defaulters GAINED MUAC (+5, +7, +4, +6, +9, +4) whereas real defaulters
+     commonly present flat or declining; and MON-2606-001 is "Transferred to inpatient
+     care" while RISING 113 -> 118 mm, which reads backwards since transfer normally
+     follows deterioration or a complication (and no reason field is shown).
+     Optional strengthening of an already-strong caveat: print the interval instead of
+     the adjective — 25/33 is 75.8%, Wilson 95% CI roughly 58-89% — and name SELECTION
+     rather than size as the limitation, since at 5% coverage "which 33 of 657 got
+     outcome records" threatens the inference more than n does. Both are objective data,
+     not editorialising, so neither violates the standing rule.

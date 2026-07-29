@@ -22,6 +22,10 @@ from django.contrib.auth import get_user_model
 
 from connect_labs.labs.connect_tokens import ConnectTokenError, get_valid_access_token
 from connect_labs.labs.integrations.connect.export_client import ExportAPIClient
+from connect_labs.pulse.models import PulseScalar
+
+# DB override for the poller identity, settable via `manage.py pulse_poller`.
+SCALAR_POLLER = "poller"
 
 logger = logging.getLogger(__name__)
 
@@ -39,46 +43,53 @@ class PulseAuthError(RuntimeError):
 def get_poller_user():
     """The Django user whose Connect membership defines Pulse's scope.
 
-    Configured explicitly via ``PULSE_POLLER_USERNAME``. When that is unset we
-    fall back to whichever user has the most recently refreshed Connect token,
-    and say so loudly in the log.
+    **There is deliberately no default.** The poller must be named explicitly,
+    either by ``manage.py pulse_poller --set <username>`` (stored in the DB) or
+    by the ``PULSE_POLLER_USERNAME`` setting.
 
-    The fallback exists because the alternative is worse: an unset env var
-    would otherwise mean a deployed Pulse silently ingests nothing, and the
-    display would show an empty screen with no indication that the cause is a
-    missing setting. Falling back makes it work and complain; failing shut
-    makes it look broken for a reason nobody can see from the page.
+    An earlier version fell back to whichever user happened to have a stored
+    Connect token, on the theory that ingesting *something* beat ingesting
+    nothing. That was wrong, and prod proved it within minutes: it picked an
+    account with narrower org membership and every headline figure came out
+    understated roughly 5x — 207 opportunities instead of 497, 317,365
+    lifetime services instead of 1,648,363. Nothing errored. The display was
+    confidently wrong, which is far worse than visibly empty.
 
-    Which user matters, so this is a setting to fill in rather than rely on —
-    scope (and therefore every headline number) follows that user's org
-    membership.
+    Scope follows this user's Connect org membership, so guessing at it means
+    guessing at every number on a funder's screen. Refusing to start is the
+    correct failure: it is loud, it is diagnosable, and it cannot mislead.
     """
     user_model = get_user_model()
-    username = getattr(settings, "PULSE_POLLER_USERNAME", "") or ""
 
-    if username:
-        try:
-            return user_model.objects.get(username=username)
-        except user_model.DoesNotExist:
-            raise PulseAuthError(
-                f"PULSE_POLLER_USERNAME={username!r} does not exist in labs. "
-                "The user must have logged into labs in a browser at least once."
-            )
+    # DB override first, then settings. The override exists because the env var
+    # lives in an ECS task definition — changing it needs AWS access and a
+    # redeploy, while `pulse_poller --set` runs through run-labs-command.
+    username = ""
+    override = PulseScalar.objects.filter(key=SCALAR_POLLER).first()
+    if override:
+        username = (override.value or {}).get("username", "") or ""
+    source = "pulse_poller override"
+    if not username:
+        username = getattr(settings, "PULSE_POLLER_USERNAME", "") or ""
+        source = "PULSE_POLLER_USERNAME"
 
-    from connect_labs.labs.models import UserConnectToken
-
-    token = UserConnectToken.objects.order_by("-updated_at").first()
-    if token is None:
+    if not username:
         raise PulseAuthError(
-            "PULSE_POLLER_USERNAME is not set and no user has a stored Connect token. "
-            "Set PULSE_POLLER_USERNAME to a user who has logged into labs in a browser."
+            "No Pulse poller configured. Scope — and therefore every figure on a "
+            "Pulse display — follows one Connect account's org membership, so it "
+            "must be named explicitly rather than guessed.\n"
+            "Set it with:  manage.py pulse_poller --set <username>\n"
+            "List candidates with:  manage.py pulse_poller --list"
         )
-    logger.warning(
-        "[pulse] PULSE_POLLER_USERNAME is unset; falling back to %r. Scope (and every "
-        "headline figure) follows that user's org membership — set the env var explicitly.",
-        token.user.username,
-    )
-    return token.user
+
+    try:
+        return user_model.objects.get(username=username)
+    except user_model.DoesNotExist:
+        raise PulseAuthError(
+            f"Pulse poller {username!r} (from {source}) does not exist in labs. "
+            "That user must have logged into labs in a browser at least once. "
+            "List candidates with: manage.py pulse_poller --list"
+        )
 
 
 def get_access_token() -> str:

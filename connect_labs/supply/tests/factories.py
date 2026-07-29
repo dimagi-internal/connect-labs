@@ -159,7 +159,12 @@ class ShipmentFactory(factory.django.DjangoModelFactory):
     contract = factory.SubFactory(ContractFactory)
     reference = factory.Sequence(lambda n: f"SHP-{n:04d}")
     origin = factory.SubFactory(SupplyNodeFactory)
-    destination = factory.SubFactory(SupplyNodeFactory)
+    # Lands at the place its contract promised to deliver to, so a shipment
+    # built with no opinion about geography counts toward that contract. The
+    # contract measure counts only arrivals at its own delivery place (a carton
+    # once, not once per leg), and a default destination named "Node 7" would
+    # silently zero every quantity assertion in the suite.
+    destination = factory.LazyAttribute(lambda s: SupplyNodeFactory(name=s.contract.award.lot.delivery_place))
     quantity = 60000
 
 

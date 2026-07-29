@@ -1,0 +1,106 @@
+schema_version: 1
+kind: arc
+gate: gating
+live_state_verified: true
+calibration: provisional
+rubric_name: ddd-arc-eval
+scenes_judged: 6
+run_id: oes-partner-pipeline-2026-07-28-002
+spec: docs/walkthroughs/oes-partner-pipeline.recipe.yaml
+gates_checked:
+  render_clean: true          # run-report.json — 35 actions, 35 ok, 0 failed
+  duplicate_frames: pass      # sha256 of scene_1..6.png all distinct; each scene_N_before.png
+                              # equals scene_(N-1).png as expected, no stalled camera
+  snapshot_consistency: pass  # all 9 pngs written 17:15:55, single render
+dimensions:
+  arc_shape:
+    score: 4
+    weight: 0.30
+    justification: >
+      It genuinely builds, and it builds in the right direction: blind (S1) → supply
+      against the days they plan in (S2) → weeks of cover and the date it runs dry (S3)
+      → count it yourself and the short count becomes evidence (S4) → raise it upward
+      with your own name on it (S5) → follow the carton to a child crossing 125 mm (S6).
+      Stakes rise monotonically from "we cannot see" to "a named child recovered", and
+      the single most impressive artifact in the whole run — the MUAC series climbing
+      red→amber→green in the S6 batch modal — is LAST, so no deduction rule fires.
+      S6 could not be moved anywhere else; S4 could not precede S3. One flat stretch and
+      one leak keep it off 5: S2 and S3 are adjacently swappable (day-granularity cover
+      vs week-granularity cover, both on the same page — they are distinct claims, and
+      the on-screen method note explicitly reconciles them, so this is a flat stretch
+      and not a repeat), and S5's frame already shows the "From a batch to the children
+      it treated" card that is S6's setup.
+  escalation:
+    score: 2
+    weight: 0.25
+    justification: >
+      Capped by the rule "two scenes showing the same surface with only a scroll between
+      them: max 2", which fires twice. S1's frame already contains the Distribution
+      calendar card — its title, its reconciling sentence and 6 of 11 site rows — and S2
+      is that same card scrolled down to reveal the remaining rows plus the legend. S2's
+      lower 40% is then the top of the "Weeks of cover by site" table, which is exactly
+      what S3 is about. Three consecutive beats are one page scrolling. Every scene does
+      carry a claim no other scene makes (that is why arc_shape survives at 4), but
+      S1→S2→S3 could be two beats rather than three without losing a single argument,
+      and the run would be tighter for it.
+  visual_variety:
+    score: 2
+    weight: 0.20
+    justification: >
+      Capped by "more than half the scenes are the same surface at different scroll
+      offsets: max 2". Scenes 1, 2, 3 and 5 — four of six — are the /supply/ "Sites &
+      distributions" page at scroll 0, mid, lower and lower-again, inside an identical
+      chrome (same header, same four-item left nav, same card shell). The "Weeks of
+      cover by site" table specifically appears in three separate frames (S2 bottom, S3
+      full-frame, S5 top) and its method note appears twice (S3, S5). Only two frames
+      break shape: S4's Receiving tab (still stacked tables, but a different surface with
+      the provenance chips) and S6's modal of MUAC sparklines against WHO bands — the one
+      frame in the run a viewer could identify from a thumbnail. This is not a
+      product limitation: Organisation and Integration sit unvisited in the nav, and the
+      product clearly has modals and charts (S6 proves it). The narrative chose to spend
+      two thirds of its runtime on one scrolling page.
+  persona_coherence:
+    score: 4
+    weight: 0.15
+    justification: >
+      One person, one goal, no screen-level switch: every frame carries the "partner ·
+      Komadugu Health Initiative" badge, every surface is the partner's own, and Zara's
+      goal (protect supply across eleven sites) deepens rather than drifts. Held off 5
+      by narration that twice reaches past the frame: S4 attributes the count to "the
+      storekeeper ... from a phone" while the screen is Zara's desktop Receiving list —
+      a colleague introduced and never shown — and S5's title promises "and the centre
+      answers" while the only on-screen answer is STATUS: open and, in S1, "awaiting an
+      answer from OES". Neither is a persona switch, so the max-2 rule does not fire, but
+      both ask the viewer to take an actor on trust.
+  opening_and_close:
+    score: 5
+    weight: 0.10
+    justification: >
+      The tightest thing in the run. S1 opens on the problem in terms a stranger feels —
+      "they know their caseload to the child and almost nothing about the supply they
+      depend on ... the only organisation touching both the carton and the child, and the
+      one with no instrument to do it" — and puts four real derived figures behind it (11
+      feeding sites, 4 distributions not covered, 0 wk thinnest cover, 1 shortfall
+      raised). It does not explain the product. S6 then delivers precisely the instrument
+      the opening said did not exist: a batch resolving forward to a named child's arm
+      circumference crossing out of red into green, labelled Recovered, with the sample
+      size stated honestly (25 of 33 recorded, 33 of the 657 this batch fed) and the
+      synthetic caveat in the same frame. The close answers the opening's exact question,
+      and it stops on the payoff rather than trailing off.
+overall_score: 2
+overall_rule: lowest
+weighted_score: 3.2
+one_sentence_story: >-
+  An implementing partner in Borno that admits the children but cannot see its own
+  supply gets that supply rendered in the calendar it plans in, learns the date each
+  site runs dry, counts a short consignment at its own loading bay, raises the shortfall
+  upward with its own name on it, and follows a received batch forward to a child whose
+  arm circumference climbs out of the red.
+verdict: warn
+verdict_rationale: >
+  The story is real and it lands — arc_shape 4, opening_and_close 5, and a one-sentence
+  summary comes easily, which is the strongest signal this lens produces. What caps the
+  run at 2 is not the story but the camera: four of six beats are one scrolling page and
+  the cover table is shown three separate times. Both capped dimensions have the same
+  mechanical fix (merge S1/S2, re-point S5 off the cover table), so this is close work,
+  not a redesign.

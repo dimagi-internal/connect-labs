@@ -1,0 +1,190 @@
+schema_version: 1
+kind: concept
+gate: gating
+live_state_verified: true
+calibration: provisional
+rubric_name: ddd-concept-eval
+ran_at: "2026-07-28T12:15:00Z"
+run_dir: /Users/jjackson/emdash/worktrees/connect-labs/emdash/supply-session-2-wy34f/.canopy/ddd/runs/oes-money-to-child-2026-07-28-001
+spec: docs/walkthroughs/oes-money-to-child.recipe.yaml
+why_brief: docs/walkthroughs/oes-money-to-child.why_brief.yaml
+scenes_evaluated: 6
+self_assessed: false
+independence: "Six fresh per-scene visual-judge sub-agents; judge did not build the feature."
+snapshot_consistency: pass   # 6 scenes, one render
+
+# Per-scene dimension scores (aggregate below is weakest-link across scenes)
+per_scene:
+  1: { concept_clarity: 2, use_case_soundness: 3, design_soundness: 2, visual_polish: 2, why_groundedness: 4, claim_reality_coherence: 2, motion_friction: 3, overall: 2 }
+  2: { concept_clarity: 3, use_case_soundness: 2, design_soundness: 2, visual_polish: 2, why_groundedness: 3, claim_reality_coherence: 1, motion_friction: 2, overall: 2 }
+  3: { concept_clarity: 2, use_case_soundness: 4, design_soundness: 2, visual_polish: 2, why_groundedness: 3, claim_reality_coherence: 2, motion_friction: 4, overall: 2 }
+  4: { concept_clarity: 2, use_case_soundness: 3, design_soundness: 2, visual_polish: 3, why_groundedness: 4, claim_reality_coherence: 2, motion_friction: 2, overall: 2 }
+  5: { concept_clarity: 3, use_case_soundness: 2, design_soundness: 2, visual_polish: 3, why_groundedness: 4, claim_reality_coherence: 2, motion_friction: 2, overall: 2 }
+  6: { concept_clarity: 2, use_case_soundness: 3, design_soundness: 2, visual_polish: 3, why_groundedness: 2, claim_reality_coherence: 1, motion_friction: 2, overall: 2 }
+
+dimensions:
+  concept_clarity:
+    score: 2
+    weight: 0.15
+    justification: >-
+      The premise is unusually well written and two concrete roles are named on screen, but
+      four of six scenes fail the five-second test with an inverted read. Scene 1 reads
+      "97% disbursed, 44% delivered" when the truth is the reverse (the stage bars render in
+      a different order from their own column header). Scene 6 reads "81.1%, it's working" —
+      the exact opposite of its thesis that the headline should be distrusted. Scene 3's
+      load-bearing cost-per-child figure is the smallest number in its frame. A viewer cannot
+      state in one sentence what the product's headline "children treated" number is, because
+      the page carries two of them 2.36x apart.
+  use_case_soundness:
+    score: 2
+    weight: 0.15
+    justification: >-
+      The underlying problem — funding traceability from appropriation to child outcome in
+      famine response — is genuinely load-bearing and worth demonstrating. But the walkthrough
+      never shows the features at the scale where their value is felt: 4 contracts and 2
+      envelopes for the Sankey (the contract table beside it is strictly more checkable), and
+      2 district rows, one of them all zeros, for a 37-state national allocation. Worse, scene
+      5's data actively refutes its own claim: Yobe (0 cartons, 0%) and Borno (16,399 cartons,
+      34%) rank identically on volume and on coverage, so tonnage would have produced the same
+      answer coverage does. And scene 6 never exercises the batch-to-child traceability that is
+      the stated payoff of the whole product.
+  design_soundness:
+    score: 2
+    weight: 0.20
+    justification: >-
+      The product's own logic contradicts itself on its central quantity. Under one stated
+      method ("one carton = one child's full course") the funder page renders 115,170 children
+      given a full course and, ~180px below in the same frame, 48,787 courses delivered — with
+      no annotation and no affordance to resolve them. Root cause verified in source:
+      coverage.py's _delivered_cartons_by_district counts only legs crossing a district
+      boundary (deliberately de-duplicating multi-hop redistribution) while the funder ladder
+      sums every delivery hop. Separately, scene 1's StageBars renders obligated/delivered/
+      disbursed under a header reading obligated/disbursed/delivered; scene 6 narrates a
+      batch-to-MUAC drill the product does not surface; scene 5's sole provenance affordance is
+      a native title attribute that renders nothing; scene 2's Sankey instructs the viewer to
+      verify a reconciliation and supplies no values to verify it with.
+  visual_polish:
+    score: 2
+    weight: 0.12
+    justification: >-
+      Baseline craft is genuinely competent — consistent card system, restrained palette, real
+      whitespace rhythm, a well-set discharge table. Two scenes drop to 2 on product-side
+      defects: the Sankey draws white node labels on ~5px bars sliced mid-glyph on 8 of 10
+      nodes, truncates a one-line label inside a box with 140px of unused fill, and gives both
+      envelopes one hue so crossings are untraceable; scene 1's sticky header slices the rail's
+      active nav pill to a 2px sliver and its three-colour bar chart carries no legend or
+      values; scene 3 inverts hierarchy, putting the scene's subject in 11px prose beneath seven
+      larger numbers. Recurring: unstated alarm-colour on coverage pills, left-aligned numerics,
+      and a stock bar rendering ~48% fill against a value of 0.
+  why_groundedness:
+    score: 2
+    weight: 0.15
+    justification: >-
+      Provenance is real and traceable — every scene's concept_claim maps to a named spine item
+      (S0-S5), and four scenes score 3-4. Scene 6 drops to 2: its provenance is spine S5 (status
+      GAP), only half of S5 was built, and the narration re-asserts the unbuilt half (batch to
+      one child's MUAC) as delivered. S5 also promises "children treated stops being a division
+      sum" while that division sum stands intact and is presented approvingly two cards up in the
+      same frame. Scene 2 is a related but milder case: the "unattributable band" half of S1 has
+      no artifact path — the code computes unattributed contracts and appends a caption sentence
+      saying they "are excluded from this diagram" (disclosure of a drop, not a band), and with
+      this seed there are zero, so even the sentence does not render.
+  claim_reality_coherence:
+    score: 1
+    weight: 0.10
+    blocking: false
+    advisory: true
+    justification: >-
+      ADVISORY — excluded from overall_score. Systematic overstatement across the run. Scene 5
+      narrates "ninety-one percent of need" when the page's only percentages are 0% and 34%, and
+      narrates that the 34% district "received more cartons" when on screen the 34% district IS
+      the higher-volume one and its comparator received zero. Scene 6 narrates a batch-to-MUAC
+      drill absent from the product, and frames a 122-child sample against a 48,787-course count
+      as "two figures that do not agree" — a category error, since the sample is drawn from that
+      population. Scene 2 narrates conservation over a diagram rendering zero numbers, and an
+      unattributable band that does not exist. Scene 4 narrates server-side scoping with no
+      on-screen referent while showing "3 Consignments inbound" against "5 consignments with
+      routed corridors" in the same frame. Credit where due: scene 3's ladder arithmetic and
+      scene 6's discharge table are exactly right.
+  motion_friction:
+    score: 2
+    weight: 0.13
+    justification: >-
+      Scripting is competent in places (scene 3 lands the ladder and its method note in one
+      settled frame; scene 5 frames its card fully), but four scenes mis-frame or under-perform
+      the narrated subject. Scene 2's offset decapitates the four hero KPI numbers — leaving only
+      their labels — while the voiceover says the totals reconcile. Scene 4 waits for
+      css:.data-table and then holds on a viewport that does not contain it, so the claim's only
+      on-screen support is never framed. Scene 5's hover fires ok:true and produces no visible
+      tooltip. Scene 6's closing beat of the entire narrative is two scrolls and a hold while the
+      narration describes a multi-step drill. A stray cursor sits mid-frame in several scenes.
+
+overall_score: 2
+overall_rule: lowest
+gating_dimensions: [concept_clarity, use_case_soundness, design_soundness, visual_polish, why_groundedness, motion_friction]
+
+verdict: fail
+blocking_reason: null
+
+fix_recommendation: |
+  Fix the denominator first — everything else is downstream of it.
+
+  [PRODUCT / mechanical] ONE DELIVERED-CARTON FIGURE. The funder page renders two answers to
+  the same stated computation: 115,170 children given a full course (ladder + key row) and
+  48,787 courses delivered (outcome card + coverage table, which sum to exactly 48,787).
+  Verified cause: connect_labs/supply/services/coverage.py::_delivered_cartons_by_district
+  counts only legs crossing a district boundary — it de-duplicates multi-hop redistribution,
+  and its own docstring documents the double-count it exists to fix — while the funder ladder
+  (serializers/execution.py) sums every hop. Consequences: 48,787 x 13.8kg = 673 MT, not the
+  displayed 1,589 MT; and cost per child on the page's own other denominator is ~USD 49-50,
+  not the displayed USD 21.27. Derive the ladder from the same confirmed-delivery record, or
+  state each figure's scope explicitly. The same defect appears on the government view
+  (43,782 vs 16,399 for Nigeria).
+
+  [PRODUCT / mechanical] STAGE BAR ORDER. tab_funder.jsx:365-382 renders obligated -> delivered
+  -> disbursed; tab_funder.jsx:87 labels the column "Obligated -> disbursed -> delivered". A
+  funder reading row NG1 concludes "97% disbursed, 44% delivered" when the truth is the inverse,
+  on the one screen whose stated purpose is to stop those three being confused. Also add a
+  DELIVERED money column — today the third of the three promised figures exists only as a native
+  title tooltip.
+
+  [CONCEPT / redesign] SCENE 5 MUST CONTAIN THE INVERSION IT NARRATES. The narrated 91% district
+  does not exist, and with Yobe at 0/0% and Borno at 16,399/34% the screen demonstrates the
+  trivial monotone case — tonnage and coverage rank identically, so the feature looks redundant.
+  Render the coverage table at LGA granularity using the per-destination volumes already on the
+  same page (Ngala 1,627 / Dikwa 1,635 / Gwoza 1,126 / Bama 1,399 / Askira 38 ...), sorted by
+  coverage, so a high-volume/low-coverage row sits visibly beneath a low-volume/high-coverage
+  one. This simultaneously fixes the DISTRICT-vs-state taxonomy error, the two-row thinness, and
+  the unrenderable 91%. Then re-record the narration against real values.
+
+  [CONCEPT / redesign] SCENE 6 MUST PERFORM ITS PAYOFF. The batch -> distributions -> one child's
+  MUAC drill is the stated reason to build this product, and it is narrated as if performed while
+  the action_trace contains zero effecting actions and the drill's entry button ("follow batch ...
+  to the children it treated") returns zero occurrences in the captured page text — the BatchDrill
+  component exists in JSX but has no data to render. Seed the batches, script the click, and end
+  the demo on an act rather than a scroll. Until it ships, cut the sentence.
+
+  [CONCEPT / options] SCENE 2 CLAIMS SOFTWARE THAT ISN'T THERE. The Sankey renders no numbers, so
+  "totals reconcile at every stage" is unverifiable; its left column is sized in appropriated
+  dollars and its middle/right in obligated dollars, so ~93% of the mass vanishes at the first
+  stage with no residual band — the exact failure the narration mocks. And "unattributable value
+  is shown as its own band" describes behaviour the code does not have (it excludes such
+  contracts and discloses them in a sentence). Put values on the nodes, reconcile the units, and
+  either build the band or amend spine S1 and the narration.
+
+  [DEFER] claim_reality_coherence findings are recorded per scene and routed DEFER; they do not
+  gate convergence, but scenes 5 and 6 contain narrated figures with no on-screen referent and
+  should not be shown to an external audience in their current form.
+
+design_findings_count: 37
+design_findings_by_route: { PRODUCT: 17, CONCEPT: 14, RESEARCH: 0, DEFER: 6 }
+design_findings_by_severity: { high: 2, medium: 24, low: 11 }
+outputs:
+  - verdict-concept.yaml
+  - design_findings.json
+
+notes:
+  - "Single-route SPA at /supply/ — all scenes share one URL by design; not treated as a defect."
+  - "No MAPBOX_TOKEN, so the scene-4 map panel renders a 'Map unavailable' placeholder. Known infra limitation: noted, NOT deducted on any dimension. The fallback copy is a well-designed, honest empty state."
+  - "Synthetic/demo-environment labels ('Demonstration environment — all data is synthetic', 'Synthetic in this environment', 'Treatment outcomes ... are synthetic') are honest framing and were never scored as flaws."
+  - "Arithmetic verified independently: ladder 1,589 MT / 13.8kg = 115,145 cartons ~ 115,170 OK; discharge table 99+17+3+3 = 122 and shares total 100.0% OK; Borno 16,399/48,232 = 34.0% OK; 48,232-16,399 = 31,833 OK."

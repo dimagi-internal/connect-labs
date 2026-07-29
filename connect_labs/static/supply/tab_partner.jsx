@@ -29,40 +29,75 @@ function PartnerTab({ ctx }) {
   const openSignals = signals.filter((s) => s.status !== 'resolved');
   const atRisk = plans.filter((p) => p.state !== 'covered');
 
+  // The thresholds the cover card already states in words: at four weeks you
+  // plan, at one you triage. Stated once, here, so the tile and the table
+  // cannot disagree about what counts as bad.
+  // Distributions that resolve to something, first.
+  //
+  // A distribution handed out three days ago legitimately has no treatment
+  // records yet, and one per batch received means there are now several of
+  // them. Sorted by date alone, the card whose whole point is that a batch
+  // resolves FORWARD opened with seven consecutive rows reading zero.
+  const traceable = [...records].sort(
+    (a, b) =>
+      (b.outcomes || []).length - (a.outcomes || []).length ||
+      (a.distributed_on < b.distributed_on ? 1 : -1),
+  );
+
+  const worstWeeks = worst ? worst.weeks_of_cover : null;
+  const worstTone =
+    worstWeeks === null
+      ? undefined
+      : worstWeeks < 2
+      ? 'critical'
+      : worstWeeks < 4
+      ? 'at-risk'
+      : 'ok';
+
   return (
     <Page
       title={world.org ? world.org.legal_name : 'Partner'}
       lede="Inbound supply against the distributions you have planned — and how long each site's stock lasts."
     >
+      {/* Thinnest cover LEADS. It is the only figure here that says a child
+          may go without, and it used to be rendered at the same size and
+          weight as a static count of feeding sites. */}
       <KeyFigures
         figures={[
-          { label: 'Feeding sites', value: sites.length },
-          {
-            label: 'Distributions not covered',
-            value: atRisk.length,
-            hint: atRisk.length
-              ? 'inbound supply falls short of what is booked in'
-              : 'every planned day is covered',
-          },
           {
             label: 'Thinnest cover',
             value: worst ? `${worst.weeks_of_cover} wk` : '—',
+            lead: true,
+            tone: worstTone,
             hint: worst
               ? worst.stockout_on
                 ? `${worst.node_name} runs dry ${formatDate(worst.stockout_on)}`
                 : `${worst.node_name} is awaiting its first consignment`
               : '',
+            method:
+              'Stock on hand divided by the rate this site is admitting children. Stock is receipts minus despatches from the event log; the rate is the district SAM caseload shared between the sites serving it, at one carton per full course. At four weeks you plan; at one you triage.',
           },
           {
-            label:
-              openSignals.length === 1
-                ? 'Shortfall raised'
-                : 'Shortfalls raised',
-            value: openSignals.length,
-            hint: openSignals.length
-              ? 'awaiting an answer from OES'
-              : 'none open',
+            label: 'Distributions not covered',
+            value: atRisk.length,
+            tone: atRisk.length ? 'at-risk' : 'ok',
+            hint: atRisk.length
+              ? 'inbound supply falls short of what is booked in'
+              : 'every planned day is covered',
+            method:
+              'A planned distribution is covered when the cartons projected to be on hand that day — including consignments scheduled to land by then — reach the children booked in for it.',
           },
+          {
+            // Counts what is OPEN, and now says so. The label read
+            // "Shortfalls raised" above a table listing one already raised.
+            label: 'Shortfalls awaiting an answer',
+            value: openSignals.length,
+            tone: openSignals.length ? 'at-risk' : undefined,
+            hint: openSignals.length
+              ? 'reported to OES, not yet answered'
+              : `${signals.length} raised, all answered`,
+          },
+          { label: 'Feeding sites', value: sites.length },
         ]}
       />
 
@@ -213,11 +248,34 @@ function PartnerTab({ ctx }) {
                 render: (s) => formatDate(s.raised_on),
               },
               { key: 'site', label: 'Site', value: (s) => s.site_name },
+              // The unit the entire supply chain is denominated in, and it was
+              // the one field this record dropped. The narration names "the
+              // cartons short" as part of what gets reported upward, and the
+              // Receiving screen two cards above proves the product can carry
+              // it — "ADVISED 900 / YOU COUNTED 840 / SHORT 60". A shortfall
+              // stated only in children cannot be checked against the count
+              // that produced it.
+              {
+                key: 'cartons',
+                label: 'Cartons short',
+                value: (s) => s.cartons_short,
+                render: (s) => formatNumber(Math.round(s.cartons_short)),
+              },
               {
                 key: 'children',
                 label: 'Children affected',
                 value: (s) => s.children_affected,
                 render: (s) => formatNumber(s.children_affected),
+              },
+              // "Marked as raised by Komadugu rather than derived centrally" is
+              // the scene's claim, and it was carried only by the card title.
+              // The command centre renders the same distinction as a badge on
+              // the row; the partner's own screen should agree with it.
+              {
+                key: 'origin',
+                label: 'Reported by',
+                value: (s) => s.org_name,
+                render: (s) => <Badge tone="info">{s.org_name}</Badge>,
               },
               {
                 key: 'by',
@@ -242,11 +300,11 @@ function PartnerTab({ ctx }) {
 
       <Card
         title="From a batch to the children it treated"
-        subtitle="Each distribution resolves to the batch that supplied it and to the treatment records of the children it fed."
+        subtitle="Each distribution resolves to the batch that supplied it and to the treatment records of the children it fed. Distributions with outcomes recorded are listed first — a batch handed out last week has none yet."
       >
         {records.length ? (
           <DataTable
-            rows={records}
+            rows={traceable}
             rowKey={(r) => r.id}
             onRowClick={(r) => setBatch(r)}
             columns={[
@@ -507,8 +565,27 @@ function MuacLegend() {
 function MuacSeries({ child, focused, onFocus }) {
   const series = child.measurements || [];
   if (!series.length) return null;
-  const width = 220;
-  const height = focused ? 96 : 56;
+  // A viewBox wide enough to match the box it is drawn into.
+  //
+  // The SVG is `width: 100%; height: 56px` in a column several hundred pixels
+  // wide, and the default preserveAspectRatio (xMidYMid meet) scales to
+  // whichever axis binds — with a 220-wide viewBox against a 56px height, that
+  // is the height, so it rendered at 1:1 and letterboxed the rest. The
+  // narrative's closing payoff, a child's arm circumference climbing out of the
+  // red, drew at roughly a third of its own width with 7px labels.
+  //
+  // Widening the viewBox fixes the ratio rather than stretching it with
+  // `preserveAspectRatio="none"`, which would horizontally distort the two WHO
+  // threshold labels drawn inside it.
+  const width = 560;
+  // ONE height for every child in the batch, so the vertical scale is the
+  // same on every row and two series can be compared by eye. The focused row
+  // used to be drawn 96px tall against 56 for the rest — the same millimetre
+  // domain, but 2.5px/mm against 1.4px/mm, so the child the reader is looking
+  // at climbed more steeply than the others purely because it was selected.
+  // Focus now adds information (the visit count, the labelled thresholds),
+  // not vertical exaggeration.
+  const height = 68;
   const lo = 95;
   const hi = 135;
   const x = (i) => (i / Math.max(series.length - 1, 1)) * width;
@@ -620,9 +697,28 @@ function DistributionWeekGrid({ plans }) {
   // site, and the children booked in for each day", and a fortnight of columns
   // both contradicts that and overflows the content area — which scrolled the
   // whole page sideways and took the nav rail off the left edge.
-  const days = Array.from(new Set(plans.map((p) => p.scheduled_for)))
-    .sort()
-    .slice(0, 7);
+  // A CONTIGUOUS seven days, not the first seven days that happen to have a
+  // distribution on them. Taking the distinct planned dates worked only while
+  // every site sat on its own day; once the schedule was allowed to cluster
+  // the way a real one does, seven distinct dates spanned eleven calendar days
+  // with the gaps silently removed — a grid headed "a week" running Thu 30 Jul
+  // to Sun 9 Aug. The empty columns are the point: the legend already says an
+  // empty cell is a day with nothing planned.
+  const planned = Array.from(new Set(plans.map((p) => p.scheduled_for))).sort();
+  const first = parseSupplyDate(planned[0]);
+  const days = [];
+  for (let i = 0; i < 7 && first; i += 1) {
+    const d = new Date(
+      first.getFullYear(),
+      first.getMonth(),
+      first.getDate() + i,
+    );
+    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(
+      2,
+      '0',
+    )}-${String(d.getDate()).padStart(2, '0')}`;
+    days.push(iso);
+  }
   const daySet = new Set(days);
   plans = plans.filter((p) => daySet.has(p.scheduled_for));
   const sites = Array.from(new Set(plans.map((p) => p.site_name))).sort();

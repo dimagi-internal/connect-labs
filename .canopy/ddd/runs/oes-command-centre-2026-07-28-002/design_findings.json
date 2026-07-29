@@ -1,0 +1,155 @@
+[
+  {
+    "scene": "6 — Twelve thousand children, by the ninth of September (also visible in scenes 1 and 8)",
+    "dimension": "design_soundness",
+    "severity": "high",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The expiry-risk row's recommended action reads '→ Reallocate the surplus to a node with cover below plan' and its only button reads 'Reallocate to Djibo Distribution Hub' — Djibo IS the surplus node, which the same queue states holds 25.2 weeks of cover. Verified in source: connect_labs/static/supply/tab_command.jsx renders 'Reallocate to {e.node_name}' for any row whose action matches /reallocate/i, and the modal posts target_node_id = exception.node_id, so following the product's own advice moves stock INTO the node that already cannot consume what it holds. nodes_holding_surplus() would even offer Djibo as its own source. Systemic across the whole expiry-risk class, not a one-off.",
+    "fix_recommendation": "Derive the button from the exception's DIRECTION rather than from the node in its title. Deficit exceptions (late, short receipt, partner shortfall) keep 'Reallocate to <node>' with target_node_id = exception.node_id. Expiry-risk inverts: label 'Reallocate from Djibo Distribution Hub', post source_node_id = exception.node_id, and pick the target by the cover-below-plan rule the recommendation already names. Exclude the row's own node from the candidate list on both paths."
+  },
+  {
+    "scene": "1, 6, 7, 8 — every scene that shows the command-centre split",
+    "dimension": "visual_polish",
+    "severity": "high",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "A dead 'Map unavailable — This environment has no Mapbox access token configured' panel occupies roughly 45% of the viewport (~590px of 1280) in half the walkthrough, including the opening frame and the payoff frame, while the load-bearing exception queue is squeezed into a ~350px column. Two independent scene judges reported the five-second read of those frames as 'something is broken — the biggest thing on screen says Map unavailable'. The panel sits under a header promising 'Flows follow real road and sea corridors'.",
+    "fix_recommendation": "When no Mapbox token is present, collapse the Network panel to a single-line inline notice and let the Exceptions card take the full width, so three or four ranked rows land above the fold and the viewer SEES the 1,087 → 907 → 240 ordering the narration describes. Configuring a token for the demo environment fixes the same frames and additionally makes spine S5's 'the map moves in response' demonstrable in scene 8. Do not fix this by cropping or zooming the capture."
+  },
+  {
+    "scene": "5 — The caseload underneath the map",
+    "dimension": "motion_friction",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The narrated 'Requirement from caseload' card is decapitated: its title, its subtitle, and all four column headers (DISTRICT / REQUIREMENT (CHILDREN) / COURSES DELIVERED / COVERAGE / GAP TO NEED (CHILDREN)) are scrolled off the top of the frame. A cold viewer sees four unlabelled numeric columns — for Séno, the requirement 660 and the gap 660 are indistinguishable. The card fits comfortably in one 720px viewport, so this is a fits-but-mis-framed scripting miss: the trace's second scroll_to (tr:has-text('Kassala')) undid the correct framing the first scroll_to had established.",
+    "fix_recommendation": "In the scene spec, drop the second scroll_to(tr:has-text('Kassala')) and hold on scroll_to(card 'Requirement from caseload'), which frames title, subtitle, all four headers and all ten rows at once. Add a hover on a district cell with a settle-hold so the caseload-provenance tooltip is on screen when the voiceover says 'and where that estimate comes from' — the concept_claim's second half ('every figure carries the method that produced it') is currently never exercised by the trace."
+  },
+  {
+    "scene": "2 — Three ways the data arrives, and the honest one",
+    "dimension": "claim_reality_coherence",
+    "severity": "medium",
+    "route": "DEFER",
+    "fix_kind": "mechanical",
+    "detail": "The scene narrates a three-way capability gradient (Kano EPCIS events, a Lagos despatch advice, a Sudan phone check-in) over a frame that shows ONE tier four times — every row of OES-C-2026-SD1's delivery schedule reads 'Phone check-in'. The words 'tier', 'ingestion' and 'hand-keyed' appear nowhere on screen. Verified in demo/data.py: the Nigeria contract's legs DO carry epcis and asn tiers, so the gradient exists in the data and the scene simply opened the one corridor where it is invisible. The narrated 'Lagos despatch' has no referent at all — there is no Lagos consignment in the seed data — and the narrated 'Port Sudan to El Fasher leg' is two legs in the table, not one.",
+    "fix_recommendation": "Re-script scene 2 as beats bound to its sentences: open OES-C-2026-NG1 while the Kano/Lagos lines are spoken (its delivery schedule carries EPCIS and Despatch advice badges), then open OES-C-2026-SD1 for the honest-case line, holding on the Delivery schedule. Either seed a Lagos despatch or drop Lagos from the narration, and correct 'Port Sudan to El Fasher' to the two legs that exist."
+  },
+  {
+    "scene": "8 — Ada closes the signal the partner raised",
+    "dimension": "design_soundness",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The payoff scene's claim is 'carrying who decided and why'. The reason is present and verbatim; the actor renders as 'oes-lead@oes.example' while the chrome one row above reads 'Ada Nwosu'. A first-time user reproducing this clicks as Ada and the system records a role account on a reserved placeholder domain. demo/data.py already carries the display name ('oes-lead@oes.example', 'Ada Nwosu', PROCUREMENT_ADMIN), so the product knows the person's name and prints the fixture instead. Entity-level data must read as real even inside a correctly-labelled synthetic environment.",
+    "fix_recommendation": "Render the staff display name and role on the closed row — 'Closed by Ada Nwosu, Procurement, on Jul 28, 2026, against the reallocation that answered it' — and retire the .example domain from seeded actor addresses. Also link the consignment the action created (every other exception row has an 'Open SHP-…' affordance; the artifact this action produced has none, so 'a real consignment with planned milestones' is asserted in prose and is a dead end)."
+  },
+  {
+    "scene": "8 — Ada closes the signal the partner raised",
+    "dimension": "motion_friction",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The scene's last sentence is 'the headline stops counting its eighty-seven children', and the headline is off-frame in both the before and after captures. The recompute genuinely happened — the captured page text reads '2,341 Children at risk · across 7 unanswered exceptions · 1 closed' against 2,428/8 before — so the product did the work and the camera missed it. The scene's other signature claim, that Askira's weeks of cover deliberately does NOT move, is likewise only in the voiceover: the Weeks-of-cover row (Askira 0.6 wk, runs dry Aug 1) is far below the fold and nothing on the card says cover is held until receipt.",
+    "fix_recommendation": "Append a scroll_to the KPI strip plus a hold at the end of scene 8 so 2,341 · 7 unanswered · 1 closed is on screen while the narration says it, and capture the strip in the before-frame so the decrement reads as a delta. Separately (PRODUCT), state the restraint on the card itself: 'Askira cover unchanged at 0.6 weeks until the cartons are received' — it is the most distinctive thing the product does here and it currently exists only as narration."
+  },
+  {
+    "scene": "6 — Twelve thousand children, by the ninth of September",
+    "dimension": "use_case_soundness",
+    "severity": "medium",
+    "route": "CONCEPT",
+    "fix_kind": "redesign",
+    "detail": "The queue ranks by magnitude alone. services/exceptions.py sorts by (resolved, answered, -children_at_risk, key) with no time-to-impact term, so 907 children due 25 December 2026 outrank 87 children due 4 August 2026 — five months out above six days out. The narration explicitly promises 'which children go without, where, and by when' and asserts that ranking these kinds against each other any other way 'is not an ordering'; a logistics specialist triages this queue in the opposite order to the one shown. Every row already carries by_date, so the missing term is in the data, not absent from it.",
+    "fix_recommendation": "Change what the queue demonstrates: either add an imminence term to the rank (children at risk within a stated horizon, or children × time-to-impact) or state on the card the horizon the ordering is computed within. Because this changes the demonstrated behaviour rather than its presentation, route it to the concept_change gate; do not auto-apply."
+  },
+  {
+    "scene": "1 and 6 — the exception queue",
+    "dimension": "concept_clarity",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The queue's stated premise is that every row carries the same unit, but two of four row titles are headlined in cartons ('907 cartons at Djibo Distribution Hub expire before they can be used', '240 cartons short at Maiduguri Distribution Hub') while two are headlined in children. The common unit appears only on the second line. Separately, on the children-headlined rows that second line is a verbatim duplicate of the title ('1,087 children lose a full course at El Fasher Distribution Hub' followed by '1,087 children lose a full course'), which reads as an unfinished template.",
+    "fix_recommendation": "Lead every row title with the common unit and demote the physical quantity to the sub-line: '907 children lose a full course at Djibo Distribution Hub (907 cartons expire 25 Dec)', '240 children lose a full course at Maiduguri Distribution Hub (short receipt, 240 cartons)'. On the rows where the title already carries the figure, drop the duplicated impact line."
+  },
+  {
+    "scene": "5 and 6 — Weeks of cover card",
+    "dimension": "design_soundness",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The card promising 'the date the store runs dry' delivers a date on 2 of its 12 visible rows; the other 10 read '0 / Not yet served / awaiting first consignment', including El Fasher, the node the featured derivation is about. The card is silently truncated — tab_command.jsx renders cover.slice(0, 12) with no 'showing 12 of N' and no way to see the rest — and because the sort is worst-first, the two nodes the queue explicitly cites (Maiduguri holding 5.4 weeks, Djibo holding 25.2 weeks) never appear in the table that is supposed to be their source. The derivation also prints '0.0 weeks of cover' for a node the table renders as 'Not yet served': the same fact in two incompatible renderings.",
+    "fix_recommendation": "Show the truncation ('12 of N nodes, worst first') with a way to see the rest, and make the derivation quote the table verbatim — replace '0.0 weeks of cover' with 'no stock on hand; awaiting first consignment' for an unserved node. Consider surfacing the cited surplus nodes (Maiduguri, Djibo) in the same card, since the queue's recommendations depend on figures the card currently hides."
+  },
+  {
+    "scene": "1 — Which children are about to go without",
+    "dimension": "claim_reality_coherence",
+    "severity": "medium",
+    "route": "DEFER",
+    "fix_kind": "mechanical",
+    "detail": "The KPI reads '47,000 Delivered to date · 649 MT · 47,000 children treated', equating cartons landed with children treated. The product's own funder tab argues at length that this is wrong — 'Children treated is cartons divided by a treatment factor — arithmetic presented as an outcome' — and renders two figures side by side there. The same screen also disagrees with itself: the caseload card's courses-delivered column sums to 58,251 against the KPI's 47,000, because one counts once at the contract's delivery place and the other counts every boundary-crossing leg. And 10 of 12 nodes read 'awaiting first consignment' beneath a headline claiming 47,000 children already treated.",
+    "fix_recommendation": "Relabel the KPI hint to '47,000 courses delivered' (contract-scoped, counted once at the delivery place) and add a one-line note distinguishing it from the district-scoped courses-delivered column below, so the two totals on one screen are reconciled rather than contradictory."
+  },
+  {
+    "scene": "4 — Nobody can clear a red row by editing a field",
+    "dimension": "use_case_soundness",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The scene's whole argument is that status is derived from an append-only log — and the log it opens has exactly ONE row ('Jul 19, 2026 · Departed · Khartoum Central Warehouse · — · Phone check-in'), with the quantity column empty. A log with nothing appended demonstrates neither append-only-ness, nor monotonic status, nor idempotency, nor the short-receipt discrepancy the tests assert. The invariant is the strongest thing about this product and the frame chosen makes it look thin.",
+    "fix_recommendation": "Open the event log of a consignment with a real multi-event history — the delivered SHP-2026-0204, or the short-receipt shipment where despatch (15,000) and count-at-destination (14,760) both appear and raise a Discrepancy — so a viewer sees several entries with differing sources and can watch the status be the sum of them rather than a field."
+  },
+  {
+    "scene": "7 — The signal came from the ground",
+    "dimension": "claim_reality_coherence",
+    "severity": "medium",
+    "route": "DEFER",
+    "fix_kind": "mechanical",
+    "detail": "The narration says the shortfall was raised 'from their own screen, four days ago — and it says so', and the recipe's own ai_quality criterion is that the marker 'names the organisation and the report date'. The card names the organisation ('Raised by Komadugu Health Initiative') but carries no report date anywhere in the frame or the captured page text; the only date shown is the deadline (by 4 August). Half the stated acceptance criterion for this scene is unmet.",
+    "fix_recommendation": "Render the report date in the partner-raised marker — 'Raised by Komadugu Health Initiative · 24 July' — so the narration's 'four days ago' is visible rather than asserted, and the origin marker meets its own ai_quality criterion."
+  },
+  {
+    "scene": "5, 6, 8 — every scene resting on spine S4/S5/S6",
+    "dimension": "why_groundedness",
+    "severity": "medium",
+    "route": "RESEARCH",
+    "fix_kind": "mechanical",
+    "detail": "Three of the eight scenes trace to why_brief spine items that are still status:gap with evidence:[] — S4 (report lateness in children), S5 (act inside the system), S6 (the signal came from the partner). This build shipped all three, and the narrative lock's features[] name the passing tests. So the walkthrough's strongest scenes currently trace to spine items the brief still describes as unbuilt, which is exactly the broken-provenance-chain case the dimension penalises.",
+    "fix_recommendation": "Promote S4, S5 and S6 from gap to grounded in oes-command-centre.why_brief.yaml, citing test_demand.py::test_the_queue_ranks_everything_in_one_unit, test_cover.py::test_expiry_risk_flags_stock_the_caseload_cannot_consume and test_demand.py::test_a_resolved_signal_closes_on_the_queue_rather_than_vanishing, and move the corresponding G1–G4 gaps to closed. Also reconcile S5's 'the map, the pipeline gap and the forecast all move in response' with what scene 8 deliberately does NOT move."
+  },
+  {
+    "scene": "1 — Pipeline by corridor card",
+    "dimension": "design_soundness",
+    "severity": "low",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The Pipeline card's fourth column is headed REQUIREMENT and holds the contract quantity, while the sibling card directly below is headed 'Requirement from caseload' and its subtitle says in terms 'A contract quantity is what was bought; this is what is required.' One screen uses the same word for two things it explicitly says are different. Separately, SHIPPED equals DELIVERED in all four rows (correct — every in-flight leg is last-mile past the delivery place) while the KPI beside it reads '7 In transit · 652 MT moving', so the two panels tell a reader opposite stories about whether anything is en route.",
+    "fix_recommendation": "Rename the Pipeline column to CONTRACTED (tab_command.jsx column key 'req', label 'Requirement'), and either drop the SHIPPED column or scope it to cartons in flight toward the delivery place so it can differ from DELIVERED and agree with the in-transit KPI."
+  },
+  {
+    "scene": "5 — Requirement from caseload card",
+    "dimension": "visual_polish",
+    "severity": "low",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "Coverage percentages mix precision in one column (0%, 34%, 67.6%, 91%, 145.8%), and the pills are colour-coded green/amber/red with no threshold stated anywhere on the card. Soum renders 145.8% in green as though good, while the same over-supply is what the exception queue flags as an expiry risk two cards above — the colour tells the reader the opposite conclusion from the product's own evidence. Under the objective-data standing rule, colour must encode a stated threshold, not an implied verdict.",
+    "fix_recommendation": "Normalise the column to one decimal throughout, print the threshold rule on the card ('<50% / 50–89% / ≥90% of need'), and stop colouring >100% as good — render over-supply in the same tone the expiry-risk exception uses so the two surfaces agree."
+  },
+  {
+    "scene": "1 and 6 — exception queue copy",
+    "dimension": "visual_polish",
+    "severity": "low",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "Copy defects a careful viewer catches on a projector: 'SHP-2026-0203 is 1 days behind the plan it was awarded against'; two date formats inside a single card ('907 children lose a full course by Dec 25, 2026' directly above 'can consume before 2026-12-25'); one KPI tile ('4 Active contracts') lacking the sub-caption its three siblings have, leaving a visibly short card; and the left nav panel terminating mid-page, leaving a dead grey gutter beside the content.",
+    "fix_recommendation": "Pluralise the day count, render all dates through one formatter, give the Active contracts tile a sub-caption (e.g. '4 corridors'), and extend the nav panel to full column height."
+  },
+  {
+    "scene": "3 — Late is a measurement, not an argument",
+    "dimension": "design_soundness",
+    "severity": "low",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The milestone rail (the strongest frame in the walkthrough) prints '0d vs plan' on a leg with no ACTUAL and '+9d vs plan' on another, but never says which timestamp the delta is measured against — the first is estimate-vs-plan, the second is estimate-vs-plan too, while the completed leg's is actual-vs-plan. The scene's whole point is that the three timestamps are never collapsed, so the one derived figure on the rail should say which pair it comes from.",
+    "fix_recommendation": "Label the delta with its basis: '0d est vs plan' / '+9d est vs plan' while ACTUAL is empty, and '0d act vs plan' once the leg completes."
+  }
+]

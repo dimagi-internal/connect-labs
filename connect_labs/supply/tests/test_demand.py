@@ -268,18 +268,23 @@ def test_the_partner_and_the_centre_report_the_same_cover(client):
 
 
 def test_the_demo_world_contains_a_genuinely_split_award():
-    """Scene 8 of oes-supply-base: two corridors, two suppliers, one tender."""
+    """A PRIOR split, on corridors the live tender does not use.
+
+    It used to carry the live tender's own two lots verbatim, so the
+    solicitations list showed the exact split three scenes build to already
+    marked 2/2 Awarded, one row above the tender being awarded on camera.
+    """
     call_command("seed_supply_demo")
     from connect_labs.supply.models import RFP, Award
 
-    rfp = RFP.objects.get(title="RUTF Sahel and Lake Chad Corridors Q3 2026")
+    rfp = RFP.objects.get(title="RUTF Horn and Sahel Corridors Q1 2026")
     assert rfp.status == RFP.Status.AWARDED
     awards = Award.objects.filter(lot__rfp=rfp).select_related("lot_bid__bid__org", "lot")
     assert awards.count() == 2
     winners = {a.lot_bid.bid.org.legal_name for a in awards}
     assert len(winners) == 2, f"the split has to be visible, got {winners}"
     places = {a.lot.delivery_place for a in awards}
-    assert places == {"Maiduguri", "Djibo"}
+    assert places == {"Gode", "Dori"}
 
 
 def test_the_price_leader_differs_by_lot():
@@ -288,7 +293,7 @@ def test_the_price_leader_differs_by_lot():
     from connect_labs.supply.models import RFP
     from connect_labs.supply.services import rfp_actions
 
-    rfp = RFP.objects.get(title="RUTF Sahel and Lake Chad Corridors Q3 2026")
+    rfp = RFP.objects.get(title="RUTF Horn and Sahel Corridors Q1 2026")
     leaders = []
     for lot in rfp.lots.all().order_by("delivery_place"):
         ranked = rfp_actions.lot_comparison(lot)
@@ -331,6 +336,48 @@ def test_the_spoken_maiduguri_deadline_is_the_fifteenth_of_september():
 
     lot = Lot.objects.get(rfp__title="RUTF Northeast Nigeria Q3 2026", delivery_place="Maiduguri", category="rutf")
     assert (lot.delivery_deadline.month, lot.delivery_deadline.day) == (9, 15)
+
+
+def test_a_reallocation_answers_the_exception_it_was_made_against():
+    """The queue's central claim, and it was not true.
+
+    A reallocation creates a real consignment with planned milestones, and
+    until it arrives the target's stock is unchanged — correctly, the cartons
+    are not there yet. But that left the row identical to before, so the demo's
+    climax was a toast: nothing on the screen moved, and the only record that a
+    decision had been taken was one that had already faded.
+
+    An answered row stays in the queue, because the children are still at risk
+    until the truck arrives. It stops competing with the rows nobody has done
+    anything about.
+    """
+    call_command("seed_supply_demo")
+    from connect_labs.supply.models import SupplyNode
+    from connect_labs.supply.services import actions
+
+    before = exceptions.build_queue()
+    target_row = next(r for r in before if r["kind"] == "Late" and r["children_at_risk"] > 0)
+    assert target_row["answered_by"] is None, "nothing has been done about it yet"
+
+    source = cover.nodes_holding_surplus()[0]
+    actions.reallocate(
+        actor="test@oes.example",
+        source_node=SupplyNode.objects.get(id=source["node_id"]),
+        target_node=SupplyNode.objects.get(id=target_row["node_id"]),
+        quantity=500,
+        rationale="Answering the worst gap in the queue.",
+    )
+
+    after = {r["key"]: r for r in exceptions.build_queue()}
+    answered = after[target_row["key"]]
+    assert answered["answered_by"] is not None
+    assert "cartons" in answered["answered_by"]["effect"]
+    assert answered["answered_by"]["rationale"] == "Answering the worst gap in the queue."
+
+    # And it stops leading a queue that asks "what has nobody acted on".
+    ordered = exceptions.build_queue()
+    first_answered = next(i for i, r in enumerate(ordered) if r["answered_by"])
+    assert all(r["answered_by"] for r in ordered[first_answered:])
 
 
 def test_a_consignment_still_on_the_road_can_be_late():
@@ -433,12 +480,21 @@ def test_seeded_outcomes_land_inside_the_sphere_performance_band():
     reason. Seeding to the sector's own thresholds is that reason.
     """
     call_command("seed_supply_demo")
-    total = ChildOutcome.objects.count()
+    # Over DISCHARGED children. The Sphere rates are defined on completed
+    # courses, and a child admitted last week has not completed one — counting
+    # them in the denominator would report a programme as failing for the crime
+    # of having recently admitted anybody.
+    discharged = ChildOutcome.objects.exclude(discharge_status=ChildOutcome.Discharge.IN_TREATMENT)
+    total = discharged.count()
     assert total > 50, "need a cohort big enough for the rates to mean anything"
-    recovered = ChildOutcome.objects.filter(discharge_status=ChildOutcome.Discharge.RECOVERED).count()
-    defaulted = ChildOutcome.objects.filter(discharge_status=ChildOutcome.Discharge.DEFAULTED).count()
+    recovered = discharged.filter(discharge_status=ChildOutcome.Discharge.RECOVERED).count()
+    defaulted = discharged.filter(discharge_status=ChildOutcome.Discharge.DEFAULTED).count()
     assert recovered / total > 0.75
     assert defaulted / total < 0.15
+
+    # And children still mid-course exist, because the demo world has to
+    # contain a batch handed out last week as well as one handed out in April.
+    assert ChildOutcome.objects.filter(discharge_status=ChildOutcome.Discharge.IN_TREATMENT).exists()
 
 
 def test_every_seeded_outcome_series_agrees_with_its_discharge_status():
@@ -633,9 +689,15 @@ def test_resolving_a_signal_ties_it_to_the_action_that_resolved_it(client):
     assert signal.status == ShortfallSignal.Status.RESOLVED
     assert signal.resolved_by_action_id == response.json()["action"]["id"]
 
-    # And it has left the queue, because the situation changed.
+    # And it is still ON the queue, marked closed and carrying the decision.
+    # It used to be dropped the moment it resolved, which meant the one loop in
+    # the product that actually completes completed by a row ceasing to exist.
     queue = client.get("/supply/api/bootstrap/").json()["exceptions"]
-    assert not any(r.get("signal_id") == signal.id for r in queue)
+    closed = next((r for r in queue if r.get("signal_id") == signal.id), None)
+    assert closed is not None
+    assert closed["tone"] == "good"
+    assert closed["resolved_by"]["action_id"] == response.json()["action"]["id"]
+    assert closed["resolved_by"]["rationale"].startswith("Kukawa reported a shortfall")
 
 
 def test_a_partner_cannot_reallocate(client):
@@ -654,10 +716,16 @@ def test_a_partner_cannot_reallocate(client):
 
 def test_a_delivered_batch_drills_to_a_child_who_recovered(client):
     """The closing beat of both the partner and the funder narratives."""
-    from connect_labs.supply.models import MUAC_RECOVERED_MIN_MM, DistributionRecord
+    from connect_labs.supply.models import MUAC_RECOVERED_MIN_MM
 
     call_command("seed_supply_demo")
-    batch = DistributionRecord.objects.first().batch_lot
+    # A batch whose children have outcomes recorded. Not every distribution has
+    # any — one handed out three days ago legitimately does not yet — and the
+    # funder's drill only offers the ones that do.
+    from connect_labs.supply.models import ChildOutcome as _CO
+
+    batch = _CO.objects.exclude(batch_lot="").values_list("batch_lot", flat=True).first()
+    assert batch, "the demo needs at least one batch with recorded outcomes"
 
     client.post("/supply/login/", {"email": "usg@oes.example", "password": "oes-demo-2026"})
     body = client.get(f"/supply/api/batches/{batch}/").json()
@@ -872,3 +940,87 @@ def test_the_site_that_raised_the_shortfall_is_actually_short():
     site_cover = cover_service.cover_for_node(signal.site)
     assert site_cover is not None
     assert site_cover["weeks_of_cover"] < 2, "a site with weeks of cover would not be raising a shortfall"
+
+
+def test_a_resolved_signal_closes_on_the_queue_rather_than_vanishing():
+    """The one exception that genuinely closes must close ON CAMERA.
+
+    A ShortfallSignal was dropped from the queue the instant it resolved, so
+    the only loop in the product that completes did so by the row ceasing to
+    exist. A reader looking at the screen after the decision saw an absence,
+    which is the weakest possible evidence for the claim the screen makes. It
+    now stays for a week carrying the actor, the effect and the reason, sorted
+    below everything still waiting on somebody, and out of the headline.
+    """
+    from connect_labs.supply.services import actions
+
+    site = SupplyNodeFactory(kind="delivery_point", adm1_code=BORNO, country="NG", name="Askira Test Site")
+    source = SupplyNodeFactory(kind="distribution_hub", adm1_code=YOBE, country="NG", name="Surplus Test Hub")
+    SupplyEvent.objects.create(
+        biz_step=SupplyEvent.BizStep.RECEIVING,
+        event_time=timezone.now(),
+        read_point=source,
+        quantity_list=[{"gtin": "1", "quantity": 5000, "uom": "cartons"}],
+        source_tier=SupplyEvent.SourceTier.CHECKIN,
+    )
+    ContractFactory(org=SupplierOrgFactory())
+    signal = ShortfallSignalFactory(site=site, children_affected=87, cartons_short=87)
+
+    before = {r["key"]: r for r in exceptions.build_queue()}
+    row = before[f"signal-{signal.id}"]
+    assert row["resolved_by"] is None and row["tone"] == "bad"
+
+    action = actions.reallocate(
+        actor="ada@oes.example",
+        source_node=source,
+        target_node=site,
+        quantity=87,
+        rationale="Komadugu raised it four days ago.",
+        signal=signal,
+    )
+
+    rows = exceptions.build_queue()
+    after = {r["key"]: r for r in rows}
+    closed = after.get(f"signal-{signal.id}")
+    assert closed is not None, "the signal vanished instead of closing on camera"
+    assert closed["tone"] == "good"
+    assert closed["resolved_by"]["action_id"] == action.id
+    assert closed["resolved_by"]["actor"] == "ada@oes.example"
+    assert closed["resolved_by"]["rationale"] == "Komadugu raised it four days ago."
+    # sunk below anything still waiting on somebody
+    assert rows[-1]["key"] == closed["key"]
+    # and out of the headline, which counts what nobody has acted on
+    headline = sum(r["children_at_risk"] or 0 for r in rows if not r["answered_by"] and not r["resolved_by"])
+    assert (
+        headline
+        == sum(r["children_at_risk"] or 0 for r in before.values() if not r["answered_by"] and not r["resolved_by"])
+        - 87
+    )
+
+
+def test_an_expiry_row_names_the_node_the_cartons_must_LEAVE():
+    """The one exception kind whose subject is holding too much, not too little.
+
+    Every other row names a node that needs cartons, so the queue's reallocate
+    control moved stock toward it. An expiry row names a node holding more than
+    it can consume before the batch expires — and the control sent cartons INTO
+    it, which is the opposite of the row's own advice and would deepen exactly
+    the problem the row exists to report.
+
+    This was unreachable until expiry risk could fire at all: every seeded lot
+    expired eighteen months out, so no expiry row was ever rendered and nothing
+    ever pressed the button.
+    """
+    from connect_labs.supply.services import exceptions
+
+    call_command("seed_supply_demo", "--reset")
+    rows = {r["kind"]: r for r in exceptions.build_queue()}
+
+    expiry = rows.get("Expiry risk")
+    assert expiry is not None, "the demo needs an expiry-risk row for this to be checkable"
+    assert expiry["reallocation_role"] == "source"
+    assert "surplus" in expiry["action"].lower()
+
+    for kind, row in rows.items():
+        if kind != "Expiry risk":
+            assert row["reallocation_role"] == "target", f"{kind} should pull cartons toward its node"

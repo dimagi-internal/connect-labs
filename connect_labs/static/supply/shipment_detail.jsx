@@ -96,16 +96,38 @@ function ShipmentDetail({ ctx, shipmentId, onClose }) {
                 <div className="rail-title">
                   {m.kind === 'depart' ? 'Depart' : 'Arrive'} · {m.node_name}
                 </div>
-                <div className="muted small">
-                  {m.actual_at
-                    ? `Actual ${formatDate(m.actual_at)}`
-                    : `Planned ${formatDate(m.planned_at)}`}
-                  {m.delta_days !== null && m.delta_days !== undefined
-                    ? ` · ${m.delta_days > 0 ? '+' : ''}${
-                        m.delta_days
-                      }d vs plan`
-                    : ''}
+                {/* All three, always, side by side and labelled.
+                    This rail showed ONE of them — actual if it had one,
+                    otherwise planned — so the estimate, which is the field
+                    that actually moves and the entire reason a delay is
+                    measurable, was never on screen. The card's own subtitle
+                    promised three timestamps and the narration argued from
+                    them while the reader could see one. A missing value
+                    renders as an em dash rather than collapsing the column,
+                    because "not estimated yet" and "estimated for today" are
+                    different facts. */}
+                <div className="rail-stamps">
+                  <span className="rail-stamp">
+                    <span className="rail-stamp-label">Planned</span>
+                    {m.planned_at ? formatDate(m.planned_at) : '—'}
+                  </span>
+                  <span className="rail-stamp">
+                    <span className="rail-stamp-label">Estimated</span>
+                    {m.estimated_at ? formatDate(m.estimated_at) : '—'}
+                  </span>
+                  <span className="rail-stamp">
+                    <span className="rail-stamp-label">Actual</span>
+                    {m.actual_at ? formatDate(m.actual_at) : '—'}
+                  </span>
                 </div>
+                {m.delta_days !== null && m.delta_days !== undefined ? (
+                  <div
+                    className={`rail-delta ${m.delta_days > 0 ? 'late' : ''}`}
+                  >
+                    {m.delta_days > 0 ? '+' : ''}
+                    {m.delta_days}d vs plan
+                  </div>
+                ) : null}
               </div>
             </div>
           ))}

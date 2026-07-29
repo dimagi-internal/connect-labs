@@ -1,0 +1,82 @@
+[
+  {
+    "id": "arc-setup-and-payoff-are-different-applications",
+    "dimension": "arc_shape",
+    "route": "CONCEPT",
+    "fix_kind": "options",
+    "severity": "high",
+    "scenes": [3, 4],
+    "title": "The application the viewer watches freeze is not the one the reviewer opens",
+    "evidence": "Scene 3's modal is titled 'OES Supply Base 2026-A — your application', status 'Qualified', 'Submitted Mar 12, 2026', commitments 'RUTF 34,000 cartons/month · NG, SD · 28 day lead time', and its footer reads 'The reviewer's decision WAS MADE against the left-hand column' — past tense, a round that closed months ago. Scene 4's modal is 'Review — Savanna Nutrients Ltd', 'Frozen Jul 19, 2026', commitments 'RUTF 39,000 cartons/month · NG, SD · 14 day lead time', drawn from the 2026-B review queue. The same supplier, two different submissions to two different rounds, presented as one continuous story. Scene 3's own page also shows both rows in 'Your applications' (2026-B Submitted, 2026-A Qualified), so the correct one was on screen and the recipe deliberately clicked the older one (its note: 'open the application the qualification came from').",
+    "why_it_matters": "The whole point of scene 3 is that the frozen column is what Tomas is about to judge. If the frozen column belongs to a round already decided, the setup does not set up the payoff, and the narration's 'the decision Tomas is about to make stays reconstructable a year from now' has no on-screen referent. This is invisible to any per-scene judge — each frame is internally consistent.",
+    "options": [
+      "Point scene 3 at the 2026-B row (still 'Submitted') so the frozen profile is literally the one scene 4 opens; the 'changed since' certification badge is the reason the scene exists and can be seeded on that submission instead.",
+      "Keep the 2026-A application but re-cut the narration to say a past decision is still reconstructable, and move the 'about to be judged' language into scene 4 where the pending submission actually is.",
+      "Seed one submission only — remove the duplicate 2026-A/2026-B pair for Savanna — so there is nothing for the camera to pick wrongly."
+    ]
+  },
+  {
+    "id": "arc-act-one-hinge-never-lands",
+    "dimension": "arc_shape",
+    "route": "CONCEPT",
+    "fix_kind": "options",
+    "severity": "high",
+    "scenes": [4, 5],
+    "title": "The qualification decision is never committed, and the registry contradicts what the decision promised",
+    "evidence": "Scene 4 selects Qualify on RUTF and Reject on Therapeutic milk; the panel reads 'RUTF — qualified until Jan 20, 2028' and the 'Record decision' button sits unclicked at the bottom of the frame — the recipe's last action for the scene is a 3.2s hold after the Reject click. Scene 5 then shows the registry filtered to RUTF + Nigeria: three rows (Kano Therapeutic Foods Feb 17 2027, Lagos NutriWorks Feb 19 2027, Savanna Nutrients Feb 18 2027). Savanna's EARLIEST EXPIRY is Feb 18, 2027 — not the Jan 20, 2028 scene 4 just promised — and it sits in an ordinary alphabetical row indistinguishable from two suppliers who were already there.",
+    "why_it_matters": "Scenes 4 and 5 are the causal hinge of act one: a decision creates a registry entry, and the registry is nothing but the set of live qualifications. As shot, the decision is abandoned mid-gesture and the registry shows a pre-existing state, so the viewer is told the mechanism rather than shown it. Exactly the same class of defect the run just fixed at the other end (award → contract), still open here.",
+    "options": [
+      "Click 'Record decision' on camera and let scene 5 open unfiltered so Savanna's row appears (or its expiry changes) as a visible consequence — the same 'the award produced this contract' move that repaired scene 9.",
+      "If the decision must stay uncommitted, cut the promised date from the panel or make scene 5 show the qualification that scene 4's date actually produces, so the two frames stop disagreeing.",
+      "Add a one-beat reaction shot between 4 and 5 — the toast or the registry count moving 2 → 3 — rather than a scene transition that hides the state change."
+    ]
+  },
+  {
+    "id": "arc-scene-7-is-scene-8-minus-the-outcome",
+    "dimension": "escalation",
+    "route": "CONCEPT",
+    "fix_kind": "options",
+    "severity": "high",
+    "scenes": [7, 8],
+    "title": "Scene 7 is contained entirely inside scene 8's frame",
+    "evidence": "Scene 7 and scene 8 are the same modal, 'RUTF Northeast Nigeria Q3 2026', at adjacent scroll offsets. Every row scene 7 shows is present in scene 8 with identical values and identical order: Maiduguri — Savanna 42.29 / tech 91, Kano 43.77 / 60, Lagos 45.79 / 83, Faso 48.64 / 82; Djibo — Faso 41.85 / 88, Savanna 45.90 / 79, Kano 46.42 / 61, Lagos 47.31 / 74. Scene 8 adds only the two 'Awarded —' badges and a toast. Scene 7's narrated point (the leader on Maiduguri is not the leader on Djibo) is fully legible in scene 8's own frame.",
+    "why_it_matters": "Two of nine beats are spent on one surface, and the earlier of the two is strictly a subset of the later. Cutting scene 7 would cost the story almost nothing, which by the rubric caps escalation at 3 — and it is the beat immediately before the run's biggest moment, so it drains momentum where it is least affordable.",
+    "options": [
+      "Cut scene 7 and open scene 8 on the un-awarded comparison, sorting or highlighting per lot before awarding — one beat that both reveals the split leaders and acts on them.",
+      "Keep both but make scene 7 do something the frame cannot already say: sort by technical score so the price/quality tension is on camera, or bring in the third lot (Damaturu, 35,000) that neither scene currently reads.",
+      "Reassign the recovered time to the close, which is the more under-served end (see arc-close-lands-on-an-empty-schedule)."
+    ]
+  },
+  {
+    "id": "arc-close-lands-on-an-empty-schedule",
+    "dimension": "opening_and_close",
+    "route": "CONCEPT",
+    "fix_kind": "options",
+    "severity": "medium",
+    "scenes": [1, 8, 9],
+    "title": "The finale now resolves the right contract, but its bottom half is an empty state and it calls itself the midpoint",
+    "evidence": "Scene 9 opens OES-C-2026-NG2 — 'Savanna Nutrients Ltd · Maiduguri, Nigeria', '60,000 cartons RUTF delivered to Maiduguri · awarded under RUTF Northeast Nigeria Q3 2026, Jul 28, 2026' — which is the lot awarded on camera one scene earlier. The upper card is the run's densest new material (US Government, FY2026 Emergency Food Security — Horn of Africa & Sahel, IATI US-GOV-1-OES-OES-C-2026-NG2, OBLIGATED USD 2,537,400, UNIT PRICE 42.29). The lower half is 'No consignments raised against this contract yet', 'DISBURSED USD 0.00', '0 confirmed at destination · 60,000 outstanding' — under narration claiming 'what carries it out is a contract, carrying the delivery schedule into execution' and 'the same record is what the supply chain moves against'. The narration also says 'This is the midpoint'. Separately, the opening's stated question — 'who is qualified to supply RUTF to north-east Nigeria today' — is answered in scene 5, not at the close.",
+    "why_it_matters": "The chain is now correct, which is the real win over the previous run, but a finale whose largest element is an empty state and whose narration announces it is not the end reads as stopping rather than landing. The viewer's last impression is a blank delivery table.",
+    "options": [
+      "Seed one or two consignments against OES-C-2026-NG2 so the delivery schedule has rows and DISBURSED is non-zero — the claim 'trace a dollar to a carton' then has a picture.",
+      "Scroll the close to the funding card and end there, cutting the empty schedule out of frame, and re-cut the narration to promise the money trail rather than the movement.",
+      "Add a short callback line that closes the opening's loop explicitly — the folder of PDFs became a registry, a tender, and a funded contract — so the close answers the question the opening asked instead of introducing a new act."
+    ]
+  },
+  {
+    "id": "arc-one-shell-and-an-unused-surface",
+    "dimension": "visual_variety",
+    "route": "CONCEPT",
+    "fix_kind": "options",
+    "severity": "medium",
+    "scenes": [2, 5, 6, 7, 8, 9],
+    "title": "Nine frames in one shell, and the app's most distinct surface appears only as backdrop",
+    "evidence": "Every frame is the same chrome: left nav, green accent, header pill. Shapes break down as one dashboard (1), three full-page tables (2, 5, 6) and five modals (3, 4, 7, 8, 9), with 7 and 8 the same modal at adjacent scroll offsets. After scene 1's small bar chart there is no chart, no map and no form in the run. Meanwhile the Command centre — 'Pipeline by corridor', with IPC severity chips (Séno IPC 2, Yagha IPC 4), 0% coverage chips and a gap column — is visible behind scene 9's modal and is never shown as a frame of its own. Routed CONCEPT, not PRODUCT: the surface exists and the narrative simply passes through it to open a modal.",
+    "why_it_matters": "By the middle of the run the eye has habituated — scenes 5, 6, 7 and 8 are four consecutive frames of rows of text in the same container. One genuinely different shape in that stretch would reset attention, and the product already has one sitting unused.",
+    "options": [
+      "Hold on the Command centre for a beat before opening the contract in scene 9 — corridor pipeline and IPC severity is the only frame in the run that looks like a crisis rather than a spreadsheet, and it motivates why the tender exists.",
+      "Give scene 5 the registry coverage visual (the bar chart from scene 1's 'Registry coverage by category') or the count moving under the filters, so it is not a third static table.",
+      "Shoot scene 6 from Amina's seat — the supplier's Solicitations tab — which changes the chrome, changes the persona badge, and is the only framing that could actually show the eligibility rule the scene claims."
+    ]
+  }
+]

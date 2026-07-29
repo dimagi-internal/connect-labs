@@ -1,0 +1,252 @@
+schema_version: 1
+kind: concept
+gate: gating
+live_state_verified: true
+calibration: provisional
+rubric_name: ddd-concept-eval
+ran_at: 2026-07-28T18:05:00Z
+run_dir: /Users/jjackson/emdash/worktrees/connect-labs/emdash/supply-3-vqp90/.canopy/ddd/runs/oes-command-centre-2026-07-28-002
+spec: docs/walkthroughs/oes-command-centre.recipe.yaml
+why_brief: docs/walkthroughs/oes-command-centre.why_brief.yaml
+scenes_evaluated: 8
+self_assessed: false
+independence_note: >
+  Scenes 1, 2, 5, 6 and 8 were scored by fresh, independent canopy:visual-judge
+  sub-agents that received only the screenshot, the captured page text, the
+  rubric and the scene context object. Scenes 3, 4 and 7 were scored by the
+  aggregating judge, which had no build history in context. All on-screen
+  assertions below were re-verified against connect_labs/supply/ source.
+
+iteration_changes_verified:
+  contract_delivered_counted_once:
+    landed: true
+    evidence: >
+      Pipeline by corridor shows no over-delivery — NG1 45,000/15,000/15,000 gap
+      30,000; SD1 40,000/14,000/14,000 gap 26,000. models/execution.py
+      _quantity_in_contract_unit() now filters to legs arriving at the contract's
+      own delivery_place, so the plant->warehouse and hub->centre hops no longer
+      double-count.
+    residue: >
+      SHIPPED equals DELIVERED in all four rows while the KPI beside it reads
+      "7 In transit · 652 MT moving", because every in-flight leg is last-mile
+      past the delivery place. Arithmetically correct, but the card and the KPI
+      tell a reader opposite stories about whether anything is moving.
+  milestone_rail_pln_est_act:
+    landed: true
+    evidence: >
+      Scene 3 renders three labelled timestamps per leg (PLANNED / ESTIMATED /
+      ACTUAL) with a per-leg delta, and the featured leg reads "+9d vs plan"
+      against Jul 28 planned / Aug 6 estimated. This is the strongest single
+      frame in the walkthrough.
+    residue: >
+      "0d vs plan" on a leg with no ACTUAL is computed from the estimate; the
+      label does not say which timestamp the delta is measured against.
+  late_row_with_no_children_at_risk:
+    landed: true
+    evidence: >
+      Two rows read "No children go without at Maiduguri Distribution Hub,
+      despite 2 days late" (5.4 weeks of cover) and "...at Djibo Distribution
+      Hub, despite 6 days late" (25.2 weeks of cover), and both sort BELOW the
+      1-day-late Nyala row that costs 47 courses.
+  expiry_risk_exception_fires:
+    landed: true
+    evidence: >
+      "Expiry risk — 907 cartons at Djibo Distribution Hub expire before they can
+      be used · 907 children lose a full course by Dec 25, 2026" is present, so
+      all four exception kinds (Late, Expiry risk, Short receipt, Partner
+      shortfall) appear in one queue.
+    residue: >
+      The expiry row is where the reallocation direction bug is visible (see
+      finding 1) and where the magnitude-only ranking is least defensible.
+  scene8_closes_scene7_signal:
+    landed: true
+    evidence: >
+      The same Komadugu Health Initiative row is marked Closed, carrying the
+      effect ("87 cartons from Gombe Distribution Hub to Askira Nutrition Centre,
+      planned to arrive 3 August"), the typed reason verbatim, and the actor and
+      date; it has sunk to the bottom of the queue; the headline recomputed
+      2,428 -> 2,341 across 7 unanswered · 1 closed; and the map caption's
+      consignment count moved 17 -> 18. Cover deliberately did not move.
+    residue: >
+      The actor renders as "oes-lead@oes.example" rather than the signed-in Ada
+      Nwosu, and the headline decrement — the sentence the scene ends on — is
+      scrolled off-frame.
+
+dimensions:
+  concept_clarity:
+    score: 3
+    weight: 0.20
+    justification: >
+      The spine idea — rank by the children behind each exception, not by tonnage
+      — is stated on the frame itself ("Ranked by the children behind each one,
+      not by tonnage"; "2,428 Children at risk across 8 unanswered exceptions")
+      and scene 1 establishes the problem cleanly for a cold viewer. It is held
+      to 3 by the screen contradicting its own unit: two of four row titles are
+      headlined in cartons ("907 cartons at Djibo...", "240 cartons short at
+      Maiduguri") in a queue whose whole claim is one common unit, and scene 2's
+      "three ways the data arrives" is narrated over a frame where all four rows
+      read the same tier.
+  use_case_soundness:
+    score: 4
+    weight: 0.15
+    gating: false
+    justification: >
+      The demonstrated use is load-bearing, not a toy: a four-country famine
+      response where a partner-raised shortfall is answered by a reallocation
+      from a documented surplus node, the reason is required, and the signal
+      closes against the action that answered it — an artifact a WhatsApp thread
+      cannot produce afterwards. Held to 4 because the supporting machinery is
+      shown thin (10 of 12 nodes in Weeks of cover read "awaiting first
+      consignment", and the featured event log has one entry).
+  design_soundness:
+    score: 2
+    weight: 0.20
+    justification: >
+      A core interaction shown on camera is incoherent and it is systemic, not a
+      one-off: the expiry-risk row advises "Reallocate the surplus to a node with
+      cover below plan" and offers only a button reading "Reallocate to Djibo
+      Distribution Hub" — Djibo is the surplus node, which the page itself says
+      holds 25.2 weeks of cover. tab_command.jsx posts target_node_id =
+      exception.node_id unconditionally, so following the product's own advice
+      moves stock into the node that already cannot consume what it has.
+      Compounded in scene 8 by the closing actor (oes-lead@oes.example)
+      contradicting the signed-in user (Ada Nwosu).
+  visual_polish:
+    score: 2
+    weight: 0.15
+    justification: >
+      In 4 of 8 scenes (1, 6, 7, 8) a dead "Map unavailable — no Mapbox access
+      token configured" panel occupies roughly 45% of the viewport while the
+      load-bearing exception queue is squeezed into a ~27% column, so the opening
+      frame and the payoff frame are both dominated by an unavailable state.
+      Independent defects compound it: the exception card repeats its impact line
+      verbatim ("1,087 children lose a full course at El Fasher Distribution Hub"
+      then "1,087 children lose a full course"), one card carries two date
+      formats ("by Dec 25, 2026" above "before 2026-12-25"), coverage percentages
+      mix precision (34% / 67.6% / 91% / 145.8%), one KPI tile lacks the
+      sub-caption its three siblings have, and the page prints "1 days behind".
+  why_groundedness:
+    score: 3
+    weight: 0.20
+    justification: >
+      Every scene carries a resolvable provenance and no concept_claim
+      contradicts the spine. But three of the eight scenes (5, 6, 8) hang off
+      spine items S4/S5/S6 that are still status:gap with evidence:[] in the
+      why_brief, even though this build shipped them with named passing tests
+      (test_demand.py, test_cover.py) declared in the narrative lock's features[].
+      The provenance chain is therefore broken exactly where the walkthrough is
+      strongest. S5 also promises "the map, the pipeline gap and the forecast all
+      move in response" and scene 8 delivers none of the three moving on camera.
+  claim_reality_coherence:
+    score: 2
+    weight: 0.10
+    blocking: false
+    advisory: true
+    justification: >
+      Non-blocking, but the largest cluster. Scene 2's narration names a Kano
+      EPCIS feed and a Lagos despatch advice; neither is in the frame (all four
+      rows read "Phone check-in") and no Lagos consignment exists in the seed
+      data at all. Scene 5 opens on "the famine-phase colouring under the map" on
+      a page rendering "Map unavailable", and its "where that estimate comes
+      from" is hover-gated with no hover in the trace. Scene 7's "raised four
+      days ago" appears nowhere on the card. Scene 8's headline decrement and the
+      deliberately-static cover are both off-frame. Separately, the KPI hint
+      "47,000 children treated" equates cartons delivered with children treated —
+      the exact conflation the product's own funder tab calls out as "arithmetic
+      presented as an outcome" — and disagrees with the caseload table's 58,251
+      courses delivered on the same page.
+  motion_friction:
+    score: 2
+    weight: 0.15
+    justification: >
+      Four scenes narrate an artifact that would have fitted the viewport but is
+      mis-framed. Scene 5 is the clearest: the second scroll_to (the Kassala row)
+      undid the first, pushing the "Requirement from caseload" title, subtitle
+      and ALL FOUR column headers off the top, so the scene's payoff column
+      ("gap to need", the children with no carton assigned) is an unlabelled
+      integer column — for Séno, 660 and 660 are indistinguishable. Scene 6's
+      final scripted move (scroll_to Weeks of cover, ok:true) is not what the
+      frame shows, and its closing narration is about the expiry card instead.
+      Scene 8 ends on the closed row while the voiceover's last sentence is about
+      a headline that is off-screen. Scene 2 holds a Sudan-only table through two
+      thirds of a voiceover about Kano and Lagos. Action fidelity itself is
+      exemplary: 43/43 actions ok, real fill+click, genuine before/after deltas.
+
+overall_score: 2
+overall_rule: lowest
+overall_note: >
+  Minimum across the five gating dimensions (concept_clarity, design_soundness,
+  visual_polish, why_groundedness, motion_friction). claim_reality_coherence is
+  advisory and excluded; use_case_soundness is scored and routed but is not one
+  of the five gating dimensions named in the skill's Step 4.
+
+verdict: fail
+blocking_reason: null
+
+fix_recommendation: |
+  All five changes this iteration set out to make DID land — verified on screen
+  and in source. The verdict is driven by defects that survived them, three of
+  which are one-line fixes.
+
+  [PRODUCT] Fix the reallocation direction (the only thing here that is a real
+  bug, visible in scenes 1, 6 and 8). tab_command.jsx renders "Reallocate to
+  {e.node_name}" and posts target_node_id = exception.node_id for any row whose
+  action text matches /reallocate/i. For the expiry-risk class the row's node is
+  the SOURCE: the button must read "Reallocate from Djibo Distribution Hub" and
+  post source_node_id = exception.node_id, with the target chosen by the
+  cover-below-plan rule the recommendation already states. Today the product's
+  own advice, followed literally, moves stock into the node that cannot consume
+  what it already holds — and Djibo is offered in its own source list.
+
+  [PRODUCT] Stop the unavailable map from owning the frame. Collapse the Network
+  panel to a one-line inline notice when no token is present and let Exceptions
+  take the full width, so the load-bearing queue owns the opening and payoff
+  frames instead of a 45%-width grey box. (Configuring a Mapbox token for the
+  demo environment fixes the same frames and additionally makes spine S5's "the
+  map moves in response" demonstrable.)
+
+  [PRODUCT] Stamp the session user as the actor. Scene 8's whole claim is
+  "carrying who decided"; the record reads "oes-lead@oes.example" while the
+  chrome reads "Ada Nwosu". Render the staff display name (and retire the
+  .example domain from seeded actors — entity-level data must read as real even
+  in a labelled synthetic environment).
+
+  [PRODUCT — scene scripting] Re-frame three scenes. Scene 5: drop the second
+  scroll_to(Kassala); the single scroll to the "Requirement from caseload" card
+  frames its title, subtitle, all four headers and all ten rows in one viewport,
+  and add a hover on a district cell so "where that estimate comes from" is on
+  screen when the voiceover says it. Scene 6: drop the trailing scroll_to(Weeks
+  of cover) — the closing narration is about the expiry card, which is already in
+  frame. Scene 8: append a scroll_to the KPI strip plus a hold, so 2,341 · 7
+  unanswered · 1 closed is visible when the narration says the headline stops
+  counting its eighty-seven children.
+
+  [PRODUCT — scene scripting] Scene 2 cannot evidence a three-tier gradient from
+  the one contract where every row reads "Phone check-in". Open OES-C-2026-NG1
+  first (its legs carry epcis and asn tiers in the seed data) while the Kano and
+  Lagos lines are spoken, then open OES-C-2026-SD1 for the honest-case line. The
+  narration's "Lagos despatch" also has no referent in the data — there is no
+  Lagos consignment — so either seed one or drop Lagos from the line.
+
+  [CONCEPT] The queue ranks by magnitude alone (services/exceptions.py sorts by
+  -children_at_risk), so 907 children due 25 December outrank 87 children due 4
+  August, in a demo whose narration promises "where, and by when" and asserts
+  that ranking any other way "is not an ordering". by_date already exists on
+  every row. Either add a time-to-impact term or state the horizon the queue is
+  ranked within. This changes what the walkthrough demonstrates, so it routes to
+  the concept_change gate rather than auto-apply.
+
+  [RESEARCH] Update why_brief spine S4, S5 and S6 from status:gap / evidence:[]
+  to grounded, citing the tests this build shipped (test_demand.py::
+  test_the_queue_ranks_everything_in_one_unit, test_cover.py::
+  test_expiry_risk_flags_stock_the_caseload_cannot_consume,
+  test_demand.py::test_a_resolved_signal_closes_on_the_queue_rather_than_vanishing).
+  Three of the strongest scenes currently trace to spine items the brief still
+  calls unbuilt.
+
+  [DEFER] Reconcile the two meanings of "delivered" on one screen: the KPI reads
+  "47,000 Delivered to date · 47,000 children treated" (contract-scoped, counted
+  once at the delivery place) while the caseload card's courses-delivered column
+  sums to 58,251 (district-scoped, every boundary-crossing leg). Relabel the KPI
+  to "courses delivered" — the product's own funder tab already argues that
+  cartons divided by a factor is not an outcome.

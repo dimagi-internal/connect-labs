@@ -16,17 +16,21 @@ scenes:
     summed into one completion number.
   role: overview
   url: /supply/
-  show: Dale's funder view — obligated, disbursed and delivered as three separate figures in the key row
-    and three separate bars per contract in the table, never summed into a single completion percentage.
+  show: Dale's funder view — obligated, disbursed and delivered as separate figures in the key row and
+    as their own bars per contract in the table, never summed into a single completion percentage.
   actions:
   - kind: wait_for
     target: css:.keyfigures
   - kind: hold
     seconds: 2.2
   - kind: scroll_to
-    target: css:.card:has-text('Obligated → disbursed → delivered')
+    target: css:.card:has-text('Stage by stage, per contract')
+    note: the per-contract stage bars — the ACTUAL evidence for this scene's claim, and a
+      shape used nowhere else in the run. Framing the key figures instead left scene 1 and
+      scene 2 as the same capture 179px apart (mean abs diff 2.3/255), and the bars that
+      carry the claim appeared in no frame at all.
   - kind: hold
-    seconds: 2.0
+    seconds: 2.6
   impressive_because: Money can be committed against a contract, paid to a supplier, and still not be
     food in a warehouse. The distance between those stages is exactly where the programmatic risk sits,
     and most reports fold them into whichever number looks best.
@@ -61,7 +65,12 @@ scenes:
   - kind: hold
     seconds: 2.0
   - kind: scroll_to
-    target: css:.method-note
+    target: css:.card:has-text('What a dollar bought') .ladder-result
+    note: the ladder's CONCLUSION — the cost per child, at figure size. It used to be one
+      bolded number inside a five-line grey method paragraph, which was both the thing the
+      scene is about and the least readable text on the page; the method now sits behind an
+      "i" on that line. A bare .method-note also matched a later card and scrolled the frame
+      onto the closing scene's payoff.
   - kind: hold
     seconds: 2.4
     note: the method, in the same frame as the number
@@ -86,8 +95,13 @@ scenes:
     note: Hauwa opens her own country view
   - kind: wait_for
     target: css:.data-table
+  - kind: scroll_to
+    target: css:.data-table
+    note: waiting for the table is not framing it. The consignment list IS the proof of
+      server-side scoping, and it sat entirely below the fold while half the frame was the
+      empty map panel.
   - kind: hold
-    seconds: 2.2
+    seconds: 2.6
     note: Nigeria only — the rest was never in the payload
   impressive_because: The first question a government counterpart asks about a shared dashboard is what
     else it can see, and "the browser hides it" is not an answer that survives contact.
@@ -133,7 +147,18 @@ scenes:
   - kind: scroll_to
     target: css:.two-figures
   - kind: hold
-    seconds: 2.0
+    seconds: 1.8
+  - kind: click
+    target: css:.figure-drill button
+    note: follow the batch to the children behind the gap. The endpoint and the chart both
+      existed and were reachable only from the implementing partner's page, so the one
+      human image in this narrative had no route to the funder who narrates it.
+  - kind: wait_for
+    target: css:.modal
+  - kind: hold
+    seconds: 3.2
+    note: one child's arm circumference climbing out of the red, with the sample size stated
+      beside it rather than a rate implied from it
   impressive_because: '"Children treated" is almost always cartons divided by a treatment factor — arithmetic
     presented as an outcome. The gap between that and a measured recovery is the most useful thing on
     the screen, and a funder who can see it is being told the truth.'

@@ -1,0 +1,89 @@
+schema_version: 1
+kind: arc
+gate: gating
+live_state_verified: true
+calibration: provisional
+rubric_name: ddd-arc-eval
+scenes_judged: 6
+run_id: oes-money-to-child-2026-07-28-005
+spec: docs/walkthroughs/oes-money-to-child.recipe.yaml
+dimensions:
+  arc_shape:
+    score: 2
+    weight: 0.30
+    justification: >-
+      The designed order is sound (money kept apart -> the flow conserves -> cost per child with
+      its method -> a government's own scoped view -> coverage against need -> the quoted number
+      tested), and scene 6's drill modal genuinely is the strongest frame, so the "final scene is
+      not the strongest moment" deduction does not bite. Two others do. (a) The payoff lands
+      before the setup: scene 3's frame carries the whole finale card in its bottom third —
+      "Children treated — the figure, and the measurement", 58,251 Courses delivered, 88 / 108
+      Recorded recoveries and the highlighted 81.5% Observed recovery rate — three scenes before
+      scene 6's narration introduces "a different figure ... the two do not agree" as a reveal.
+      The prior run's acceptance test (those figures in no frame before scene 6) still fails.
+      (b) Scenes 1 and 2 are adjacent frames of one picture: aligned at a 179 px vertical offset
+      the two screenshots agree to a mean absolute difference of 2.3/255, and the only artifact
+      legible in both is the Sankey, so as captured they make the same point twice.
+  escalation:
+    score: 2
+    weight: 0.25
+    justification: >-
+      Scenes 3, 4, 5 and 6 each add something no other scene shows (the unit ladder plus its
+      method paragraph; Nigeria's consignment list; coverage against caseload with the 0% / 34%
+      / 91% spread; the per-child MUAC series). Scene 2 does not. Measured, it is scene 1 scrolled
+      179 px: the Sankey it exists to show is already whole in scene 1's frame, and its unique
+      contribution is the caption paragraph beneath. That is the rubric's "two scenes showing the
+      same surface with only a scroll between them", which caps this at 2. Compounding it, the
+      artifact scene 1's own concept_claim rests on — the per-contract obligated -> disbursed ->
+      delivered bars — is framed in neither scene 1 nor scene 2; it surfaces only as a cropped
+      sliver in the top ~90 px of scene 3, a scene about something else.
+  visual_variety:
+    score: 4
+    weight: 0.20
+    justification: >-
+      Five genuinely different shapes across six frames: stat tiles over a Sankey (1), the Sankey
+      (2), a horizontal ladder of chained value cards plus a dense method paragraph and three stat
+      cards (3), a full-bleed 18-row consignment table with status pills (4), a horizontal bar
+      chart above a coverage table with IPC and coverage badges (5), and a modal of four per-child
+      MUAC series over banded severity zones (6). Four of six frames come off the same funder URL,
+      but the rubric judges shape, not scroll position, and scenes 3 and 6 are not the same shape
+      as 1 or 2. The one repeated layout is the Sankey in scenes 1 and 2 — named, and the reason
+      this is 4 rather than 5.
+  persona_coherence:
+    score: 3
+    weight: 0.15
+    justification: >-
+      Two switches, one motivated and one not. Dale -> Hauwa at scene 4 is set up explicitly
+      ("Hauwa coordinates Nigeria's response and gets a version of this scoped to Nigeria"), and
+      the frame corroborates it — the "Government observer / Hauwa Ibrahim" chip is in shot. The
+      return Hauwa -> Dale at scene 6 is not motivated in the narration: the beat opens on "the
+      number every report leads with" and only names Dale mid-paragraph, so the viewer is moved
+      from Nigerian districts back to a global funder page with no bridge. The spec's own `show`
+      says "Back on the funder view"; the spoken track never does. Per the deduction rule, an
+      unmotivated switch caps this at 3.
+  opening_and_close:
+    score: 4
+    weight: 0.10
+    justification: >-
+      The close is strong and specific: scene 6 answers the opening's question with one child's
+      arm circumference climbing out of the red band, four cases labelled with their discharge
+      outcomes, and the honesty line "that sample is 4 of the 38 children this batch fed" in the
+      same frame. The opening's narration is also strong — it states the problem in terms a
+      stranger feels ("the people who pay for famine response usually cannot see what their money
+      bought"). What keeps it off 5 is that the opening FRAME does not show what the opening SAYS:
+      the beat is about the three stages being kept apart per contract, and the per-contract bars
+      are below the fold while the lower half of the frame is the next scene's Sankey.
+overall_score: 2
+overall_rule: lowest
+weighted_score: 2.75
+one_sentence_story: >-
+  A funder and a host-government coordinator each get a view that refuses to collapse money into
+  one flattering number — obligated, disbursed and delivered kept apart, every derived figure
+  carrying its method — and the demo ends by testing the "children treated" number everyone
+  quotes against a measured recovery, and showing the gap.
+verdict: fail
+prior_findings_status:
+  arc-01: open
+  arc-02: open
+  arc-03: fixed
+  arc-06: fixed

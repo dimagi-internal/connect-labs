@@ -1,0 +1,106 @@
+[
+  {
+    "id": "arc-01-finale-does-not-show-its-payoff",
+    "dimension": "opening_and_close",
+    "also_affects": ["arc_shape"],
+    "route": "CONCEPT",
+    "fix_kind": "redesign",
+    "severity": "critical",
+    "scenes": [1, 8],
+    "title": "The finale narrates four numbers moving and shows none of them move",
+    "detail": "Scene 8's narration promises 'a consignment appears on the map with planned milestones, El Fasher's weeks of cover moves out of the red, the pipeline gap for that corridor closes, and the exception resolves against the action that resolved it.' Pixel diff against scene 1: the 'Children at risk' tile still reads 1,521 across 7 exceptions, character for character; the 'In transit' tile still reads 7 / 652 MT moving; the El Fasher exception is still the top card with its 'Reallocate to El Fasher Distribution Hub' button live and unpressed; 'Weeks of cover' is not in frame at all; the SD1 corridor gap (19,612 in scenes 2 and 7) is not in frame. The only evidence of the action is a green toast and the map placeholder's count going 16 to 17 — inside the one panel this eval is instructed not to score. For a run titled 'which children are about to go without', the finale must show that number fall, or show El Fasher's weeks-of-cover flip out of red, inside the frame.",
+    "recommendation": "Re-cut scene 8 to close on a surface that visibly changed: scroll_to the 'Weeks of cover' card after the toast so El Fasher's row is the last thing on screen, and add a hold on the KPI row only if the count actually decrements. Do not close on the same composition the run opened with.",
+    "note_probable_product_cause": "Per the rubric, arc-order dimensions are never routed PRODUCT. But the recipe's own `show` for this scene states 'the exception the reallocation answers leaves the queue when it lands' and it demonstrably does not. There is very likely a real product defect behind this finding — the reallocation does not decrement `children at risk`, does not resolve the exception, and does not increment 'In transit' even though the map count rose. That belongs to the product loop; file it there separately."
+  },
+  {
+    "id": "arc-02-scenes-3-and-4-are-one-modal-scrolled",
+    "dimension": "escalation",
+    "also_affects": ["arc_shape", "visual_variety"],
+    "route": "CONCEPT",
+    "fix_kind": "options",
+    "severity": "high",
+    "scenes": [3, 4],
+    "title": "Scenes 3 and 4 are the same modal ~90px apart",
+    "detail": "Both frames show the SHP-2026-0202 modal with the identical Milestones rail and the identical Consignment lines table. Scene 4's entire delta is that the page scrolled far enough to reveal one event-log row ('Jul 19, 2026 / Departed / Khartoum Central Warehouse / Phone check-in'). Two scenes, ~90 pixels of difference. This trips the escalation rule 'two scenes showing the same surface with only a scroll between them' and the arc_shape rule 'two adjacent scenes make the same point with different pixels'.",
+    "recommendation": "Cheapest: merge into one scene whose frame holds both the three-timestamp rail and the event log. Better: keep two scenes but make scene 4 a DIFFERENT consignment — an EPCIS-sourced one from the Kano plant — so the append-only claim and the provenance contrast are shown side by side rather than asserted. Also note the append-only log currently demonstrates itself with exactly one row; one entry is a weak proof of an append-only log."
+  },
+  {
+    "id": "arc-03-provenance-claim-and-provenance-evidence-are-two-scenes-apart",
+    "dimension": "escalation",
+    "also_affects": ["arc_shape"],
+    "route": "CONCEPT",
+    "fix_kind": "options",
+    "severity": "high",
+    "scenes": [2, 4],
+    "title": "Scene 2 argues the whole ingestion-tier case and its frame contains zero source badges",
+    "detail": "Scene 2 is the beat that carries the narrative's most distinctive claim — three ingestion tiers, and 'anything hand-keyed says so, everywhere it appears'. Its recipe opens the SD1 contract modal to the delivery schedule, holds 3 seconds on it, and then CLICKS THE MODAL CLOSE before the frame is captured. The resulting screenshot shows the 'Pipeline by corridor' and 'Requirement from caseload' tables — no tier, no source, no hand-keyed marker anywhere. The only source badge in all eight frames is the single 'Phone check-in' chip in scene 4, two scenes later, inside a frame about something else. The run's second beat is a hole.",
+    "recommendation": "Cheapest fix in the whole set: move the `click css:.modal-close` action out of scene 2 and make it the first action of scene 3. Scene 2 then captures the delivery schedule it spent 3 seconds holding on, and the ingestion-tier claim lands where it is argued."
+  },
+  {
+    "id": "arc-04-caseload-reveal-lands-before-its-setup",
+    "dimension": "arc_shape",
+    "also_affects": ["escalation", "visual_variety"],
+    "route": "CONCEPT",
+    "fix_kind": "options",
+    "severity": "high",
+    "scenes": [2, 5],
+    "title": "The 'Requirement from caseload' table is fully shown in scene 2, then presented as new in scene 5",
+    "detail": "Scene 2's frame already contains the complete caseload table — Seno 660, Yagha 880, Yobe 18,960, Southern Darfur 5,668, North Darfur 14,648, Borno 48,232 at 34%, Somali 67.6%. Scene 5's narration then says 'Ada adds the caseload behind it' and treats the denominator as a reveal. The viewer saw it three scenes earlier. The payoff lands before the setup, and scene 5's frame is then half restatement — only its 'Weeks of cover' half is new.",
+    "recommendation": "Either stop scene 2's scroll above the caseload card (scroll_to the pipeline card and hold there, or capture inside the modal per finding arc-03, which fixes both at once), or drop the 'adds' framing from scene 5's narration."
+  },
+  {
+    "id": "arc-05-pipeline-table-respent-in-scene-7",
+    "dimension": "escalation",
+    "route": "CONCEPT",
+    "fix_kind": "options",
+    "severity": "medium",
+    "scenes": [2, 7],
+    "title": "Scene 7 re-spends scene 2's pipeline table under a beat that has nothing to do with it",
+    "detail": "Scene 7 exists to make one point: the top exception was raised by Komadugu Health Initiative from their own screen, and it says so. Its only action is a `hover`, which produces no visual state change, so the frame is whatever the scroll position happens to hold — which turns out to be the tail of the partner card over the 'Pipeline by corridor' table, identical to scene 2 down to the 19,612 gap chip, plus the 'Requirement from caseload' header for the third time. The scene's actual subject occupies a small strip at the top.",
+    "recommendation": "Replace the no-op hover with a click that expands the partner-raised row, and scroll_to that row so it fills the frame. The 'Raised by Komadugu Health Initiative' chip should be the largest thing on screen in the scene that exists for it."
+  },
+  {
+    "id": "arc-06-run-peaks-in-frame-one",
+    "dimension": "arc_shape",
+    "route": "CONCEPT",
+    "fix_kind": "redesign",
+    "severity": "high",
+    "scenes": [1, 6, 8],
+    "title": "The best artifact in the run is fully revealed in scene 1 and never topped",
+    "detail": "The exception queue — rows carrying '1,087 children lose a full course', a cause, a recommended action, and live buttons — is the single most impressive thing in the eight frames, and it is complete in frame one. Scene 6 returns to it having added one italic line ('How this was ranked: 9 days late against 0.0 weeks of cover'). Scene 8 returns to it having added nothing. This trips arc_shape's 'most impressive artifact appears in scene 1 or 2 and is never topped' rule directly.",
+    "recommendation": "Two options. (a) Open colder — scene 1 shows the queue unranked or as raw consignment status, and scene 6's re-rank into children becomes an actual reveal. (b) Keep the strong open and give the run a genuinely new peak at the end: the newly-created reallocation consignment's own milestone modal, with its planned legs, as the closing image."
+  },
+  {
+    "id": "arc-07-headline-figure-never-appears-on-screen",
+    "dimension": "arc_shape",
+    "route": "CONCEPT",
+    "fix_kind": "options",
+    "severity": "medium",
+    "scenes": [6],
+    "title": "Scene 6 is titled 'Twelve thousand children, by the ninth of September' and no such figure exists in any frame",
+    "detail": "The master narrative promises 'a nine-day delay is reported as twelve thousand children missing a full course by a named date'. Scene 6's frame shows the El Fasher row at 1,087 children, and the KPI tile reads 1,521 across all 7 exceptions. Neither twelve thousand nor the ninth of September appears anywhere in the run. The scene title makes a promise an order of magnitude larger than the screen delivers, which reads as inflation to exactly the audience — a programme director or a funder — who will check.",
+    "recommendation": "Retitle the scene to the figure the product actually produces, or fix the seed so the headline exception genuinely carries the narrated magnitude. Do not ship a title the screen contradicts by 10x."
+  },
+  {
+    "id": "arc-08-eight-frames-one-surface",
+    "dimension": "visual_variety",
+    "route": "CONCEPT",
+    "fix_kind": "options",
+    "severity": "high",
+    "scenes": [1, 2, 5, 6, 7, 8],
+    "title": "Six of eight frames are the same page at different scroll offsets; the narrative never leaves one tab",
+    "detail": "Shape census: mixed KPI+cards (1, 8), dense table stack (2, 5, 7), cards (6), modal (3, 4). Routed CONCEPT rather than PRODUCT deliberately — the left rail in every single frame shows four other surfaces the narrative never visits (Dashboard, EOI rounds & review, Supplier registry, Solicitations). The product is not short of surfaces; this narrative chose to spend all eight scenes scrolling one tab. There is no form frame in the run (the reallocation modal with its required-reason textarea is filled in scene 8 but captured post-submit) and no chart of any kind.",
+    "recommendation": "Cheapest: capture the reallocation modal mid-fill in scene 8 — the required-reason textarea with Ada's text in it is a form shape the run currently lacks entirely, and it is already being typed into. Beyond that, one scene that steps out to a second tab (or the milestone modal of the consignment the reallocation created) would break the scroll monotony at near-zero cost."
+  },
+  {
+    "id": "arc-09-broken-card-occupies-the-last-three-frames",
+    "dimension": "arc_shape",
+    "route": "CONCEPT",
+    "fix_kind": "mechanical",
+    "severity": "medium",
+    "scenes": [6, 7, 8],
+    "title": "A visibly malformed card sits in the run's closing three frames including the payoff",
+    "detail": "The partner-shortfall exception card renders with its text squeezed into a roughly 10px column — '87 ch at As Nu Ce by Au' running vertically — in scenes 6, 7 and 8. The per-scene defect itself belongs to the concept/visual judge and is not scored here. What IS a sequence problem is its placement: the run's final image, the one a funder remembers, contains an obviously broken element, and scene 7 is built entirely around that card.",
+    "recommendation": "Fix the card layout before re-render. Until then this is not a re-cut problem — no scene ordering hides it, because the card is in the queue the run keeps returning to."
+  }
+]

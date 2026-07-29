@@ -1,0 +1,66 @@
+[
+  {
+    "id": "arc-01-finale-reveal-still-on-screen-in-scene-3",
+    "dimension": "arc_shape",
+    "scenes": [3, 6],
+    "route": "CONCEPT",
+    "severity": "high",
+    "repeat_of": "arc-01-payoff-spent-in-scene-3 (run 001)",
+    "detail": "Scene 3's captured frame contains the whole of scene 6's reveal. Below the 'What a dollar bought' ladder and its method note sits the 'Children treated — the figure, and the measurement' card, fully legible in the bottom ~40% of the frame: 58,251 courses delivered, 90/110 recorded recoveries, 81.8% observed recovery rate, with the subtitle 'Two numbers, two methods, reported side by side and never reconciled into one'. It is held there for 2.4s while the narration is talking about cost per child. Scene 6 then opens with 'Here is the number every report leads with... Beside it now sits a different figure' — announcing as a reveal something the viewer read three scenes earlier. This is the second consecutive iteration with this exact defect. The recipe carries an inline note claiming it was fixed by re-pointing scene 3's second scroll_to at 'css:.card:has-text(\\'What a dollar bought\\') .method-note' instead of a bare '.method-note'. That change did stop the camera landing ON the later card, but the card is still in frame underneath, so the leak survived the fix. Do not assume this one is closed without diffing the new scene_3.png.",
+    "fix_recommendation": "Verify by pixels, not by selector. Options, roughly in order of cheapness: (a) after scrolling to the method note, scroll a further ~120px so the ladder + method paragraph fill the viewport and the 'Children treated' card falls below the fold — the card's heading currently sits at y≈451 of 720, so it needs to move below ~700; (b) capture scene 3 at the top of the 'What a dollar bought' card rather than at its method note, since both the ladder and the method paragraph fit in one viewport (they occupy y≈155-390 in the current frame); (c) if neither frames cleanly, move the 'Children treated' card lower in the page so it cannot share a viewport with the ladder. Whichever is chosen, the acceptance test is that the strings '58,251', '81.8%' and 'Recorded recoveries' appear in no frame before scene 6.",
+    "fix_kind": "options"
+  },
+  {
+    "id": "arc-02-scenes-1-and-2-are-one-screen-163px-apart",
+    "dimension": "escalation",
+    "scenes": [1, 2],
+    "route": "CONCEPT",
+    "severity": "high",
+    "repeat_of": "arc-04-scenes-1-and-2-overlap (run 001)",
+    "detail": "Scenes 1 and 2 are the same surface with only a scroll between them, which is the rubric's explicit max-2 case for escalation. The offset is 163px: the 'Where the money went' heading sits at y=292 in scene 1 and y=129 in scene 2. The sankey that scene 2 exists to present — both appropriation nodes, all four partner nodes, all four country nodes — already fills roughly 60% of scene 1's frame. Meanwhile scene 1's own claim ('obligated, disbursed and delivered stay three separate figures per contract... this view keeps them apart, per contract') is only half-evidenced: the key-figures row is in frame, but the 'Stage by stage, per contract' table with its three-stage bars per contract is below the fold and is never captured in any scene of the run. Scene 2 adds only the sankey's reconciliation caption, which is the one thing scene 1 was missing. The prior iteration's fix correctly pulled scene 1 back onto the key figures; it did not push the sankey out of scene 1's frame.",
+    "fix_recommendation": "Give each of the two scenes its own artifact. Option A (preferred): re-point scene 1 at the 'Stage by stage, per contract' table — that is where obligated/disbursed/delivered are literally drawn as three separate bars per contract, it is the claim's real evidence, it is a shape that appears nowhere else in the run, and it puts a full viewport between scene 1 and the sankey. Keep a brief hold on the key-figures row first (the current scene-1 opening) and capture on the table. Option B: keep scene 1 on the key figures but shorten the page above the sankey so the diagram is not yet in view at that scroll position. Option C: merge 1 and 2 into a single scene and reclaim the runtime for the coverage or drill beats, which are currently the fastest-moving parts of the run.",
+    "fix_kind": "options"
+  },
+  {
+    "id": "arc-03-scene-4-does-not-show-its-own-claim",
+    "dimension": "escalation",
+    "scenes": [4, 5],
+    "route": "CONCEPT",
+    "severity": "high",
+    "detail": "Scene 4 is the persona handoff — structurally the most important transition in the run — and it is the weakest frame in it. Its claim is that Nigeria's scoping is applied server-side, and the evidence for that claim is the consignment table containing only Nigerian destinations. The recipe waits for 'css:.data-table' but never scrolls to it, and wait_for does not scroll, so the table is never in view. What the frame actually shows is a four-tile KPI row and a grey 'Map unavailable — This environment has no Mapbox access token configured' card taking about 52% of the height. A viewer at the handoff moment sees a role chip change and an error box. Scene 5, one scroll later on the same page, carries the whole weight of Hauwa's half of the story — and it does land: the inversion is legible at a glance (Borno IPC 5, 48,232 needing treatment, 16,399 courses, 34%, 31,833 still uncovered; Gombe IPC 3, 10,400, 9,464 courses, 91%, 936 uncovered; Yobe IPC 4 at 0% on 18,960 children), with red/amber/green coverage pills and the estimation note beneath. The payoff this iteration was built to deliver works. It is scene 4 that is doing almost no work.",
+    "fix_recommendation": "Add an explicit scroll_to the consignment table in scene 4 and capture there, so the handoff frame shows the thing the narration claims — fifteen rows of Nigerian destinations (Askira, Biu, Ngala, Monguno, Magumeri, Mafa, Kukawa, Konduga, Gwoza, Dikwa, Damboa, Gombe, Bama, Damaturu, Maiduguri, Kano) and nothing from Burkina Faso, Ethiopia or Sudan, which are visibly present on Dale's sankey two scenes earlier. That contrast is the proof of scoping and it is currently never on screen. Separately, one small addition would make scene 5 unarguable: the hover on the Borno caseload note fires but no tooltip is rendered in the captured frame, so 'hover a district name for how its caseload was estimated' is asserted rather than shown.",
+    "fix_kind": "options"
+  },
+  {
+    "id": "arc-04-the-runs-only-non-tabular-surface-fails-to-render",
+    "dimension": "visual_variety",
+    "scenes": [4, 5],
+    "route": "PRODUCT",
+    "severity": "medium",
+    "detail": "This is a PRODUCT/environment finding, not a narrative one: the narrative did try to visit a genuinely different surface and the environment could not draw it. Hauwa's 'Where supply is going' card — routed corridors over current food-insecurity classification, the only map and the only non-card, non-tabular shape anywhere in the six scenes — renders as 'Map unavailable. This environment has no Mapbox access token configured, so the network map cannot be drawn.' The fallback copy is honest and well-written, but it means the run's visual range is bounded by white cards containing tiles, tables, bars and a sankey. It also lands on the frame where a government counterpart's view is introduced, so the moment the demo widens to a second audience it visibly degrades.",
+    "fix_recommendation": "Configure a Mapbox access token in the walkthrough render environment (the same one the labs runner supplies as MAPBOX_TOKEN) so scene 4 captures the corridor map over IPC classification. If a token cannot be provided in the demo environment, treat the map card as unshowable and re-plan scene 4 around the consignment table per arc-03 — but do not leave the error box as the dominant object in the handoff frame either way.",
+    "fix_kind": "mechanical"
+  },
+  {
+    "id": "arc-05-unmotivated-hand-back-to-dale",
+    "dimension": "persona_coherence",
+    "scenes": [5, 6],
+    "route": "CONCEPT",
+    "severity": "medium",
+    "repeat_of": "arc-06-unmotivated-hand-back-to-dale (run 001)",
+    "detail": "The outbound handoff into scene 4 is properly motivated in narration and chrome. The return is not: between scene 5 and scene 6 the header chip flips from 'Government observer / Hauwa Ibrahim' to 'Funder / Dale Whitmore', the page title changes back to 'Funding and delivery', and the narration gives no cue that we have left Hauwa — it opens on a new topic ('Here is the number every report leads with') and only names Dale mid-paragraph, after the screen has already changed hands. The rubric's 'persona switch the narration does not motivate: max 3' fires. What makes this worth fixing rather than tolerating is that the bridge is sitting right there and is unused: scene 5 ends on Yobe at 0% coverage with 18,960 children uncovered and the line 'it is the same figure that justifies the next appropriation' — an explicit hook back to the person who signs appropriations. Scene 6 drops it and starts elsewhere, so a raised question is abandoned at the same moment the persona changes.",
+    "fix_recommendation": "Open scene 6's narration on the handback, using the hook scene 5 already sets up — something to the effect of 'Hauwa's uncovered figure is the case for the next appropriation, and it goes back to the person who signs it. So the last question is Dale's: of what has already been shipped, what is known to have worked?' That motivates the switch, spends the Yobe beat instead of dropping it, and makes the two-figure comparison an answer to a question the previous scene asked rather than a new topic.",
+    "fix_kind": "options"
+  },
+  {
+    "id": "arc-06-children-treated-grows-when-the-scope-narrows",
+    "dimension": "persona_coherence",
+    "scenes": [1, 3, 4, 6],
+    "route": "CONCEPT",
+    "severity": "high",
+    "repeat_of": "arc-09-children-noun-changes-value-twice (run 001)",
+    "detail": "Across the persona handoff the demo's headline noun contradicts itself in a way no frame reconciles. Scene 1's funder key-figure row reads '33,000 Children treated / 455 MT delivered' for the whole global response. Scene 4's Nigeria-only government view reads '53,246 Children treated / 735 MT of therapeutic food' — one country reporting 61% more treated children than the global total, three scenes later, under a different persona. Scene 3 and scene 6 add a third value, 58,251 courses delivered. The page text does explain the difference (the ladder counts only cartons under OES supply contracts against confirmed delivery, the wider card counts every carton that crossed into a district from any source), and the wider figure is deliberately 'not reconciled' with the narrow one — but that explanation lives in a method paragraph on Dale's page and is never brought into contact with Hauwa's number. As a SEQUENCE this is the most damaging unforced error in the run: the narrative's entire thesis is that this dashboard does not let a number mean two things, and a viewer who reads the tiles in order watches one number mean two things across the handoff. It has now survived two iterations.",
+    "fix_recommendation": "Make the two scopes explicit at the point of contrast rather than in a paragraph the viewer has already scrolled past. Cheapest: relabel the tiles so the scope is in the label — 'Children treated under OES contracts' on the funder view versus 'Children treated in Nigeria, all sources' on the country view — so the numbers cannot be read as the same quantity. Better: have scene 4's narration name it in one clause ('this counts every carton that entered Nigeria, not only the ones OES paid for, which is why it is larger than the funder's figure'), which turns a contradiction into a demonstration of the same discipline the rest of the run is arguing for.",
+    "fix_kind": "options"
+  }
+]

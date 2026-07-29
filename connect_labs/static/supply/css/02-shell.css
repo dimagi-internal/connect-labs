@@ -68,9 +68,12 @@
   flex-direction: column;
   gap: 2px;
   position: sticky;
-  top: 0;
+  /* Below the topbar, not under it. Pinning the rail at 0 put its first nav
+     item — usually the ACTIVE one — behind the sticky header, so the frame
+     could not say which section it was showing. */
+  top: var(--oes-topbar-h);
   align-self: flex-start;
-  max-height: 100vh;
+  max-height: calc(100vh - var(--oes-topbar-h));
   overflow-y: auto;
 }
 .navitem {
@@ -196,6 +199,30 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
   gap: 18px;
+  /* Cards size to their content instead of stretching to match the tallest
+     one in the row. A four-row category list was being stretched to the
+     height of a four-row table with taller cells, leaving roughly half the
+     card as empty white below the last bar — the single largest area of dead
+     space in the product. */
+  align-items: start;
+}
+
+/* An asymmetric split, for a short card beside a wide table.
+
+   Two equal columns gave a four-row category list the same width as a
+   four-column table of supplier names, round titles, category pills and
+   dates — so the table wrapped "OES Supply Base 2026-B" onto four lines
+   while the list left half its column empty. */
+.grid-2-wide {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.8fr) minmax(420px, 1.6fr);
+  gap: 18px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .grid-2-wide {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* ---------- key figures ---------- */
@@ -211,21 +238,153 @@
   border: 1px solid var(--oes-line);
   border-radius: var(--oes-radius);
   padding: 16px;
+  position: relative;
 }
 .keyfigure-value {
-  font-size: 28px;
+  font-size: var(--oes-figure);
   font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1.1;
+  font-variant-numeric: tabular-nums;
 }
 .keyfigure-label {
   font-size: 13px;
   color: var(--oes-ink-soft);
   margin-top: 4px;
 }
+
+/* The one figure the row is built around.
+
+   Laid out across rather than down: a short value ("4") in a double-width
+   box left most of the tile as empty air, so the emphasis read as a layout
+   accident. The number sits on the left at display size and its label and
+   hint fill the width beside it. */
+.keyfigure-lead {
+  grid-column: span 2;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  column-gap: 16px;
+}
+.keyfigure-lead .keyfigure-value {
+  font-size: var(--oes-display);
+  grid-row: span 2;
+}
+.keyfigure-lead .keyfigure-label {
+  margin-top: 0;
+  font-size: var(--oes-body);
+  color: var(--oes-ink);
+  font-weight: 600;
+  /* Beside a wide value like a date, the label column gets squeezed and
+     "Next bid deadline" breaks after two words. */
+  white-space: nowrap;
+}
+@media (max-width: 700px) {
+  .keyfigure-lead .keyfigure-label {
+    white-space: normal;
+  }
+}
+.keyfigure-lead .keyfigure-hint {
+  grid-column: 2;
+}
+@media (max-width: 900px) {
+  .keyfigure-lead {
+    grid-column: span 1;
+  }
+}
+
+/* Status, and ONLY status, carries colour. A left bar rather than a tint:
+   it survives a projector, and it does not turn the whole tile into a
+   warning when only the number is one. */
+.keyfigure.tone-critical,
+.keyfigure.tone-at-risk,
+.keyfigure.tone-ok {
+  border-left-width: 4px;
+}
+.keyfigure.tone-critical {
+  border-left-color: var(--oes-critical);
+}
+.keyfigure.tone-critical .keyfigure-value {
+  color: var(--oes-critical);
+}
+.keyfigure.tone-at-risk {
+  border-left-color: var(--oes-at-risk);
+}
+.keyfigure.tone-at-risk .keyfigure-value {
+  color: var(--oes-at-risk);
+}
+.keyfigure.tone-ok {
+  border-left-color: var(--oes-ok);
+}
+
+/* ---- InfoNote: the method, on demand ---------------------------------- */
+.infonote {
+  position: relative;
+  display: inline-flex;
+  margin-left: 6px;
+  vertical-align: baseline;
+}
+.infonote-btn {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  border: 1px solid var(--oes-line);
+  background: var(--oes-panel);
+  color: var(--oes-ink-soft);
+  font-size: 10px;
+  font-style: italic;
+  font-family: Georgia, serif;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.infonote-btn:hover,
+.infonote-btn.open {
+  border-color: var(--oes-accent);
+  color: var(--oes-accent);
+  background: var(--oes-ok-bg);
+}
+.infonote-body {
+  position: absolute;
+  top: 22px;
+  left: -8px;
+  z-index: 30;
+  width: 320px;
+  max-width: 74vw;
+  background: var(--oes-ink);
+  color: #fff;
+  font-size: var(--oes-small);
+  font-weight: 400;
+  line-height: 1.5;
+  padding: 10px 12px;
+  border-radius: 8px;
+  box-shadow: var(--oes-shadow);
+}
 .keyfigure-hint {
   font-size: 11px;
   color: var(--oes-ink-soft);
   margin-top: 6px;
   opacity: 0.85;
+}
+
+/* Anything scrolled to lands BELOW the sticky topbar.
+   scrollIntoView aligns an element to the top of the scrollport, which is
+   underneath a `position: sticky; top: 0` header — so every scroll_to in the
+   walkthroughs was clipping the first ~52px of whatever it framed. It cost a
+   lot title on the exact hold that named it, a table's entire column-header
+   row, and the active nav pill, in three different narratives. One property
+   fixes the class rather than each instance. */
+:root {
+  --oes-topbar-h: 53px;
+}
+.card,
+.page > h1,
+.keyfigures,
+.data-table thead,
+.exception,
+.modal .card {
+  scroll-margin-top: calc(var(--oes-topbar-h) + 14px);
 }

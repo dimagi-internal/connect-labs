@@ -1,0 +1,257 @@
+schema_version: 1
+kind: concept
+gate: gating
+live_state_verified: true
+calibration: provisional
+rubric_name: ddd-concept-eval
+ran_at: "2026-07-28T11:52:00-06:00"
+run_dir: /Users/jjackson/emdash/worktrees/connect-labs/emdash/supply-session-2-wy34f/.canopy/ddd/runs/oes-command-centre-2026-07-28-001
+unified_spec: docs/walkthroughs/oes-command-centre.recipe.yaml
+narrative_lock: docs/walkthroughs/oes-command-centre.narrative.lock.json
+why_brief: docs/walkthroughs/oes-command-centre.why_brief.yaml
+scenes_evaluated: 8
+self_assessed: false
+independence: "Judge did not build or render this narrative. Eight per-scene visual-judge
+  sub-agents were dispatched fresh, each seeing only one screenshot, that scene's page
+  text, the rubric and a context object — no build history, no design rationale."
+
+gates:
+  spec_qa: pass
+  snapshot_consistency: "pass (8 scenes, every snapshot from one render)"
+  run_report: "41 actions, all ok, zero must_succeed failures"
+
+dimensions:
+  concept_clarity:
+    score: 2
+    weight: 0.15
+    binding_scene: 6
+    justification: >-
+      Scene 6's frame cannot support its own claim. The queue's premise — every exception
+      ranked in one unit — is contradicted on screen by two of seven rows that report in
+      days and carry no children figure, and the fourth exception kind the narration
+      names (an expiring batch) is absent from the queue entirely. Elsewhere the concept
+      reads clearly to someone already in the space, but SAM / IPC / "full course" are
+      never glossed on screen.
+  use_case_soundness:
+    score: 3
+    weight: 0.15
+    binding_scene: 4
+    scored_once_for_the_story: true
+    justification: >-
+      The use case itself is genuinely substantive — a multi-country famine response,
+      real caseload denominators, exceptions ranked by children rather than tonnage. It
+      is held to 3 by the rubric's "never shown at the scale where its value would be
+      felt" rule: the append-only invariant is demonstrated on a ONE-ROW event log, and
+      the reallocation payoff is demonstrated on the one exception kind whose resolution
+      the data model cannot express. Both are casting/data choices, not concept flaws.
+  design_soundness:
+    score: 2
+    weight: 0.20
+    binding_scenes: [3, 6, 8]
+    justification: >-
+      Three independent interaction-model breaks. (1) Scene 3's milestone rail claims
+      "planned, estimated and actual — the three are never collapsed" and renders exactly
+      one timestamp per row; estimated_at is never rendered at all. (2) Scene 6's queue
+      silently switches unit for two rows. (3) Scene 8's reallocation leaves the exception
+      it answers first in the queue with its Reallocate button still live, inviting a
+      second click on a problem already acted on — because answered_by, which the server
+      computes and sorts on, has no renderer anywhere in the UI.
+  visual_polish:
+    score: 2
+    weight: 0.12
+    binding_scenes: [6, 7]
+    justification: >-
+      A real content-overflow defect on the partner-shortfall exception card: its headline
+      collapses into a one-character-wide vertical column of fragments that escapes the
+      card border into the map gutter. Present in scenes 6, 7 and 8, and worst in 7 where
+      it destroys the headline of the very row the scene exists to show. Secondary:
+      coverage pills mix 0- and 1-decimal precision and colour 145.8% the same green as
+      91%, contradicting the demo's own expiry-risk argument.
+  why_groundedness:
+    score: 2
+    weight: 0.15
+    binding_scenes: [6, 8]
+    justification: >-
+      Two scenes assert past their evidence. Scene 6 is titled "Twelve thousand children,
+      by the ninth of September"; the screen shows 1,521 children at risk and no date
+      later than 8 August — an order-of-magnitude gap that also sits in the locked
+      top-level narrative. Scene 8's spine item S5 is status GAP, and three of the four
+      outcomes it narrates are contradicted by the page's own text rather than merely
+      unshown.
+  claim_reality_coherence:
+    score: 1
+    weight: 0.10
+    blocking: false
+    advisory: true
+    excluded_from_overall: true
+    binding_scenes: [2, 8]
+    justification: >-
+      Scene 2's entire subject — three ingestion tiers, hand-keyed data marked wherever it
+      appears — is absent from the graded frame and from the full page-text dump, because
+      the scene's last scripted action dismisses the modal that held it. Scene 8 narrates
+      four recomputes and three are contradicted by the after-frame. Also unbacked: "four
+      days ago" on the partner row (no report date exists on any card), and the +9d delta
+      in scene 3 (no second date on screen to subtract from).
+  motion_friction:
+    score: 2
+    weight: 0.13
+    binding_scenes: [2, 5, 6, 7, 8]
+    justification: >-
+      Five of eight scenes mis-frame the artifact they narrate, and in every case the
+      artifact would have fit. Scene 2 closes the modal before capture; scene 5's second
+      scroll pushes the card's own title off-screen; scene 6's final scroll_to "Weeks of
+      cover" is not reflected in the frame at all; scenes 7 and 8 clip the acted-on
+      exception card at the top of the viewport.
+
+overall_score: 2
+overall_rule: lowest
+
+per_scene:
+  1: { concept_clarity: 4, use_case_soundness: 4, design_soundness: 3, visual_polish: 3, why_groundedness: 4, claim_reality_coherence: 4, motion_friction: 3, scene_min: 3 }
+  2: { concept_clarity: 3, use_case_soundness: 3, design_soundness: 3, visual_polish: 3, why_groundedness: 4, claim_reality_coherence: 1, motion_friction: 2, scene_min: 2 }
+  3: { concept_clarity: 3, use_case_soundness: 4, design_soundness: 2, visual_polish: 3, why_groundedness: 3, claim_reality_coherence: 2, motion_friction: 4, scene_min: 2 }
+  4: { concept_clarity: 3, use_case_soundness: 2, design_soundness: 3, visual_polish: 3, why_groundedness: 3, claim_reality_coherence: 3, motion_friction: 4, scene_min: 2 }
+  5: { concept_clarity: 3, use_case_soundness: 4, design_soundness: 3, visual_polish: 3, why_groundedness: 4, claim_reality_coherence: 4, motion_friction: 2, scene_min: 2 }
+  6: { concept_clarity: 2, use_case_soundness: 3, design_soundness: 2, visual_polish: 2, why_groundedness: 2, claim_reality_coherence: 2, motion_friction: 2, scene_min: 2 }
+  7: { concept_clarity: 3, use_case_soundness: 3, design_soundness: 3, visual_polish: 2, why_groundedness: 4, claim_reality_coherence: 2, motion_friction: 2, scene_min: 2 }
+  8: { concept_clarity: 3, use_case_soundness: 3, design_soundness: 2, visual_polish: 3, why_groundedness: 2, claim_reality_coherence: 1, motion_friction: 2, scene_min: 2 }
+
+judge_overrides:
+  - scene: 1
+    dimension: design_soundness
+    from: 4
+    to: 3
+    reason: >-
+      The per-scene judge did not run the cross-card arithmetic. The KPI reads "115,170
+      Delivered to date · 115,170 children treated" while the Requirement-from-caseload
+      card on the same page totals 48,787 courses delivered and 82,857 children with no
+      carton assigned. Delivered-at-port is being glossed as children-treated, and the
+      two cards are irreconcilable on one screen.
+  - scene: 4
+    dimension: use_case_soundness
+    note: >-
+      Per-scene score of 2 retained as evidence but NOT propagated as the story-level
+      score; the rubric requires use_case_soundness be scored once for the whole
+      walkthrough. Story-level score is 3.
+
+arithmetic_verified_by_judge:
+  scene_6_queue_ordering:
+    verdict: "ORDERING IS CORRECT AND THE DERIVATIONS RECONCILE"
+    rows:
+      - { rank: 1, kind: Late, node: El Fasher, children: 1087, check: "846 wk-burn / 7 x 9 days dry = 1087.7 -> 1,087 OK" }
+      - { rank: 2, kind: Short receipt, node: Maiduguri, children: 240, check: "15,000 - 14,760 = 240 cartons = 240 courses OK" }
+      - { rank: 3, kind: Partner shortfall, node: Askira, children: 87, check: "partner-reported; NOT reconstructible from 38 on hand / 63 wk burn" }
+      - { rank: 4, kind: Short receipt, node: Monguno, children: 60, check: "900 - 840 = 60 OK" }
+      - { rank: 5, kind: Late, node: Nyala, children: 47, check: "327 wk-burn / 7 x 1 day = 46.7 -> 47 OK" }
+      - { rank: 6, kind: Late, node: Maiduguri, children: "NOT STATED", check: "genuinely 0 - delay absorbed by cover on hand; row prints days instead" }
+      - { rank: 7, kind: Late, node: Djibo, children: "NOT STATED", check: "genuinely 0 - same; row prints days instead" }
+    monotone_descending: true
+    kpi_reconciles: "1,087+240+87+60+47 = 1,521 = the 'Children at risk' KPI exactly"
+    finding: >-
+      The ranking is defensible and the arithmetic is exact. The defect is presentational:
+      the two zero-consequence rows print "N days behind plan" instead of "0 children -
+      the delay is absorbed by N weeks of cover", so the product hides its single
+      strongest argument (a 6-day delay outranked by a 1-day delay, correctly). Only
+      three of the four claimed exception kinds are present; expiry risk never fires.
+  scene_5_coverage_table:
+    verdict: "BOTH PERCENTAGES AND THE 'MORE CARTONS' CLAIM ARE CORRECT AND ON SCREEN"
+    kassala: { requirement: 7020, delivered: 6388, coverage_shown: "91%", computed: "91.00%", gap_shown: 632, computed_gap: 632 }
+    borno:   { requirement: 48232, delivered: 16399, coverage_shown: "34%", computed: "34.00%", gap_shown: 31833, computed_gap: 31833 }
+    more_cartons_claim: "TRUE - Borno received 16,399 courses vs Kassala's 6,388 = 2.57x, i.e. more than twice, at 34% vs 91%"
+    caseload_ratio: "48,232 / 7,020 = 6.87x, matching the spec's 'seven times larger'"
+    other_rows: "Somali 20,000/29,576 = 67.62% OK; Soum 6,000/4,116 = 145.77% OK, gap clamped to 0 OK"
+    both_visible_in_one_frame: true
+    finding: "No arithmetic defect. Scene 5 is the strongest scene in the walkthrough."
+  scene_8_reallocation:
+    verdict: "OUTCOME IS ASSERTED, NOT SHOWN - three of four narrated outcomes are contradicted by the after-frame"
+    changed:
+      - "map fallback copy: '16 consignments with routed corridors' -> '17' (buried in grey disabled-feature prose)"
+      - "a green toast: 'Reallocated - a consignment is on the map with planned milestones.'"
+    unchanged:
+      - "'1,521 Children at risk / across 7 exceptions' KPI - identical"
+      - "'7 In transit / 652 MT moving' KPI - identical"
+      - "the El Fasher exception row - still rank 1, still 1,087 children, Reallocate button still live"
+      - "Weeks of cover, El Fasher: 0 on hand / 'Not yet served' / 'awaiting first consignment'"
+      - "Pipeline by corridor, OES-C-2026-SD1 GAP: still 19,612"
+    root_cause_verified_in_source: >-
+      services/exceptions.py:185-243 already implements exactly the right idea - an
+      exception whose node has an undelivered inbound reallocation is ANSWERED (not
+      resolved), carries action_id / effect / actor / rationale, and sorts to the bottom.
+      bootstrap.py:254 ships it to the client in world["exceptions"]. But `answered_by`
+      appears in NO template and NO JSX anywhere in the repo - grep returns only the two
+      lines in exceptions.py that create and sort on it. The payoff has no renderer.
+      Separately the row did not re-sort after the action even though the consignment
+      count did refresh, which points at a partial refetch of the world payload.
+    honest_reading: >-
+      The product is RIGHT and the narration is WRONG. Cover and the pipeline gap
+      deliberately do not move, because the cartons have not arrived - which is the app's
+      own stated invariant and the more impressive claim. The narration promises movement
+      the model correctly refuses to produce.
+
+verdict: fail
+blocking_reason: null
+
+fix_recommendation: |
+  Overall 2/5 — FAIL. The concept is strong and the arithmetic underneath it is, where it
+  is shown, exact: the queue's ranking reconciles to the digit and the coverage table's
+  percentages are all correct. The failures are that the product does not render its own
+  best evidence, and the narration repeatedly asserts past it.
+
+  Fix in this order.
+
+  1. [PRODUCT/mechanical] Render `answered_by`. services/exceptions.py already computes
+     action_id, effect, actor and rationale per exception and sorts answered rows to the
+     bottom; nothing in the UI reads it. Add an "Answered by <actor> — <effect>" block to
+     the exception card and let the row visibly demote. This single change turns scene 8
+     from an assertion into a demonstration, and it is the walkthrough's entire payoff.
+     Also confirm the world payload refetches the exception list after an action — the
+     row did not re-sort even though the consignment count did.
+
+  2. [CONCEPT/options] Re-narrate scene 8 to the truth, which is better than the claim.
+     Drop "El Fasher's weeks of cover moves out of the red" and "the pipeline gap for that
+     corridor closes" — the product deliberately refuses both because the cartons have not
+     landed, and saying so is the stronger, more credible line. Alternative worth
+     considering: reallocate against the Komadugu partner shortfall instead, which IS a
+     ShortfallSignal, so `resolved_by_action` fires, the exception genuinely resolves, and
+     scenes 7 and 8 close the loop the why_brief's S6 exists to make.
+
+  3. [PRODUCT/mechanical] Render the estimated timestamp. shipment_detail.jsx renders
+     `Actual X` OR `Planned X` and never `estimated_at`, under a card whose own subtitle
+     reads "Planned, estimated and actual — the three are never collapsed." Render all
+     three so the +9d delta is subtractable on screen. Also fix the Kassala leg, five days
+     past its planned arrival with no actual, still reporting "0d vs plan".
+
+  4. [PRODUCT/mechanical] Fix the exception-card text overflow. The partner-shortfall
+     card's headline collapses to a one-character-wide vertical column that escapes the
+     card border into the map gutter, in scenes 6, 7 and 8.
+
+  5. [PRODUCT/mechanical] Print the zero. Give the two zero-consequence Late rows an
+     explicit "0 children — the delay is absorbed by N weeks of cover on hand". A 6-day
+     delay correctly ranked below a 1-day delay is the most persuasive thing on the
+     screen and the product currently hides it.
+
+  6. [PRODUCT/mechanical] Seed an expiry-risk exception. cover.expiry_risk and
+     exceptions.expiry_exceptions are implemented and unit-tested, but the only lot in
+     the demo expires Jan 2028, far outside the 180-day horizon, so the fourth exception
+     kind never fires and the narration names a row that does not exist.
+
+  7. [PRODUCT/mechanical] Fix the "115,170 children treated" KPI. It equates cartons
+     arrived at contract destinations with children treated, and it sits on the same page
+     as a coverage card totalling 48,787 courses delivered and 82,857 children uncovered.
+     Label it "delivered to date" only, or reconcile the two.
+
+  8. [PRODUCT/mechanical — spec edits] Re-frame five scenes on the artifact they narrate:
+     move scene 2's `.modal-close` to the head of scene 3 so the ingestion tiers survive
+     to the captured frame; hold scene 5 where the card title and the Borno/Kassala
+     contrast are both visible; verify scene 6's final scroll to "Weeks of cover" actually
+     lands; un-clip the exception card in scenes 7 and 8.
+
+  9. [DEFER] Reconcile the narrative against the data: the locked narrative and scene 6's
+     title both say "twelve thousand children" and "the ninth of September"; the product
+     says 1,521 and August. The partner row is 3rd of 7, not top, is at Askira not Kukawa,
+     and carries no report date to back "four days ago".
+
+next_step: >-
+  Findings 1 and 2 are the run. Everything else is cleanup. Do NOT re-render before
+  fixing 1 — the payoff scene cannot pass while the product has no renderer for the
+  outcome it claims.

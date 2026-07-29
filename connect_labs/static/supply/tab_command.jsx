@@ -29,6 +29,13 @@ function CommandTab({ ctx }) {
   const [selected, setSelected] = useState(null);
   const [openContract, setOpenContract] = useState(null);
   const [reallocatingFor, setReallocatingFor] = useState(null);
+  const [openShipmentId, setOpenShipmentId] = useState(null);
+
+  // Split the cover table: somewhere with stock has a run-dry date, somewhere
+  // awaiting its first consignment does not, and mixing them ranks the second
+  // group above the first because zero sorts lowest.
+  const served = cover.filter((r) => !r.awaiting_first_delivery);
+  const awaitingFirst = cover.filter((r) => r.awaiting_first_delivery);
 
   const inTransit = shipments.filter((s) => s.status === 'in_transit');
   const deliveredCartons = contracts.reduce(
@@ -49,14 +56,32 @@ function CommandTab({ ctx }) {
         figures={[
           {
             label: 'Children at risk',
+            // Children behind rows nobody has acted on. A row with cartons
+            // already on the road is still outstanding, but counting it here
+            // meant the figure could not move when Ada did something — the
+            // headline was identical before and after a reallocation.
+            lead: true,
+            tone: 'critical',
+            method:
+              'Every exception on this screen, converted to the same unit: children who miss a full course if nothing is done. Rows somebody has already acted on are excluded, so this figure moves when a decision is taken. Ranked on the children who go without inside the next 30 days, because harm falling outside the window a decision can still affect is real but is not what this worklist is for.',
             value: formatNumber(
-              exceptions.reduce((n, e) => n + (e.children_at_risk || 0), 0),
+              exceptions
+                .filter((e) => !e.answered_by && !e.resolved_by)
+                .reduce((n, e) => n + (e.children_at_risk || 0), 0),
             ),
-            hint: exceptions.length
-              ? `across ${exceptions.length} exception${
-                  exceptions.length === 1 ? '' : 's'
-                }`
-              : 'nothing outstanding',
+            hint: (() => {
+              const open = exceptions.filter(
+                (e) => !e.answered_by && !e.resolved_by,
+              ).length;
+              const closed = exceptions.filter((e) => e.resolved_by).length;
+              const answered = exceptions.length - open - closed;
+              if (!exceptions.length) return 'nothing outstanding';
+              return `across ${open} unanswered exception${
+                open === 1 ? '' : 's'
+              }${answered ? ` · ${answered} answered` : ''}${
+                closed ? ` · ${closed} closed` : ''
+              }`;
+            })(),
           },
           {
             label: 'In transit',
@@ -66,15 +91,25 @@ function CommandTab({ ctx }) {
           {
             label: 'Delivered to date',
             value: formatNumber(deliveredCartons),
+            // Courses, not children — and it says which contracts it counts.
+            // "N children treated" over a carton count is the conflation the
+            // funder page's own card exists to attack, and this tile was a
+            // third number wearing that same label.
             hint: `${Math.round(
               (deliveredCartons * 150 * 92) / 1000000,
-            )} MT · ${formatNumber(deliveredCartons)} children treated`,
+            )} MT · ${formatNumber(
+              deliveredCartons,
+            )} courses, at contracted delivery points`,
           },
           { label: 'Active contracts', value: contracts.length },
         ]}
       />
 
-      <div className="command-split">
+      {/* Two columns only when there is a second thing to put in one. Without
+          a Mapbox token the right-hand column was a dashed grey box and the
+          worklist — the actual product on this screen — was squeezed into
+          about a quarter of the frame. */}
+      <div className={`command-split ${mapAvailable() ? '' : 'no-map'}`}>
         <Card
           title="Exceptions"
           subtitle="Ranked by the children behind each one, not by tonnage."
@@ -111,14 +146,72 @@ function CommandTab({ ctx }) {
                   {selected === e.key && e.derivation ? (
                     <div className="exception-derivation">
                       How this was ranked: {e.derivation}
+                      {/* Why it sits where it sits, when the harm falls
+                          outside the window a decision today can affect.
+                          Ranking on the raw figure alone put 907 children due
+                          in December above 87 due next week, on a screen that
+                          promises "where, and by when". */}
+                      {e.children_at_risk && !e.children_at_risk_soon
+                        ? ` Ranked below rows costing children within ${
+                            e.decision_horizon_days
+                          } days: this falls due ${formatDate(
+                            e.by_date,
+                          )}, outside the window a decision taken today can change.`
+                        : ''}
                     </div>
                   ) : null}
-                  <div className="exception-action">→ {e.action}</div>
+                  {/* Closed and answered are different states and the
+                      difference is the product's own argument. A partner
+                      signal RESOLVES: the thing that was reported is no longer
+                      true. A derived row can only be ANSWERED — cartons are on
+                      the road, and until they land the children behind it are
+                      still at risk. Rendering both as "done" would claim the
+                      invariant the rest of this screen exists to keep. */}
+                  {e.resolved_by ? (
+                    <div className="exception-answered">
+                      <Badge tone="good">Closed</Badge> {e.resolved_by.effect}
+                      <div className="muted small">
+                        {e.resolved_by.rationale}
+                      </div>
+                      <div className="muted small">
+                        Closed by {e.resolved_by.actor} on{' '}
+                        {formatDate(e.resolved_by.resolved_on)}, against the
+                        reallocation that answered it.
+                      </div>
+                    </div>
+                  ) : e.answered_by ? (
+                    <div className="exception-answered">
+                      <Badge tone="good">Answered</Badge> {e.answered_by.effect}
+                      <div className="muted small">
+                        {e.answered_by.rationale}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="exception-action">→ {e.action}</div>
+                  )}
+                  {/* A late row names a consignment and could not open it.
+                      The milestone rail (planned / estimated / actual kept
+                      apart) and the append-only event log behind that status
+                      are the two things that make this queue trustworthy, and
+                      both were one component away with no route to them from
+                      the surface that depends on them. */}
+                  {e.shipment_id ? (
+                    <span
+                      className="btn btn-sm btn-secondary"
+                      onClick={(ev) => {
+                        ev.stopPropagation();
+                        setOpenShipmentId(e.shipment_id);
+                      }}
+                    >
+                      Open {e.shipment_reference}
+                    </span>
+                  ) : null}
                   {/* The queue has always ADVISED a reallocation and never
                       offered one, so the single sentence that tells the reader
                       what to do about a row was the only thing on the card
                       they could not act on. */}
                   {e.node_id &&
+                  !e.answered_by &&
                   /reallocate/i.test(e.action || '') &&
                   supplyCan(world.role, 'actions', 'create') ? (
                     <span
@@ -128,7 +221,9 @@ function CommandTab({ ctx }) {
                         setReallocatingFor(e);
                       }}
                     >
-                      Reallocate to {e.node_name}
+                      {e.reallocation_role === 'source'
+                        ? `Reallocate from ${e.node_name}`
+                        : `Reallocate to ${e.node_name}`}
                     </span>
                   ) : null}
                   {e.discrepancy_id &&
@@ -300,10 +395,19 @@ function CommandTab({ ctx }) {
             hint="Coverage cannot be reported without a denominator."
           />
         )}
+        {/* The window, stated. This said "monthly SAM caseload" while the
+            denominator is the caseload summed across the response window, so
+            the stated method was about four times off — in a card whose whole
+            claim is that a contract quantity and a requirement are different
+            things and both can be checked. */}
         <p className="muted small method-note">
-          Coverage is courses delivered divided by the district's monthly SAM
-          caseload. Hover a district for how its caseload was estimated. All
-          figures in this environment are synthetic.
+          Coverage is courses delivered divided by the district's SAM caseload
+          summed over the{' '}
+          {coverage[0] && coverage[0].window_months
+            ? `${coverage[0].window_months}-month response window`
+            : 'response window'}
+          , not against a single month. Hover a district for how its caseload
+          was estimated. All figures in this environment are synthetic.
         </p>
       </Card>
 
@@ -311,9 +415,16 @@ function CommandTab({ ctx }) {
         title="Weeks of cover"
         subtitle="Stock on hand against the rate each site is admitting children — the date the store runs dry."
       >
+        {/* Nodes that have actually been served, thinnest first.
+            The card sorted every node by weeks of cover and truncated at
+            twelve — and a node that has never received anything scores zero,
+            so ten never-served hubs and transit points led the table and
+            pushed the two sites with real stock off the bottom. The card
+            exists to say WHEN A STORE RUNS DRY, and it was showing the nodes
+            for which that question has no answer yet. */}
         {cover.length ? (
           <DataTable
-            rows={cover.slice(0, 12)}
+            rows={served}
             rowKey={(r) => r.node_id}
             columns={[
               { key: 'node', label: 'Node', value: (r) => r.node_name },
@@ -373,16 +484,37 @@ function CommandTab({ ctx }) {
             hint="No node carries a caseload."
           />
         )}
+        {/* Reported, not dropped. Ten nodes with no receipt behind them are a
+            fact about the network — a hub that has never been served is worth
+            knowing about — they just are not rows in a run-dry table. */}
+        {awaitingFirst.length ? (
+          <p className="muted small">
+            <strong>{awaitingFirst.length}</strong> further node
+            {awaitingFirst.length === 1 ? ' has' : 's have'} received nothing
+            yet and so have no run-dry date:{' '}
+            {awaitingFirst.map((r) => r.node_name).join(', ')}.
+          </p>
+        ) : null}
         <p className="muted small method-note">
           {cover.length ? cover[0].method : ''}
         </p>
       </Card>
+
+      {openShipmentId ? (
+        <ShipmentDetail
+          ctx={ctx}
+          shipmentId={openShipmentId}
+          onClose={() => setOpenShipmentId(null)}
+        />
+      ) : null}
 
       {reallocatingFor ? (
         <ReallocateModal
           ctx={ctx}
           exception={reallocatingFor}
           surplus={world.surplus_nodes || []}
+          cover={world.cover || []}
+          nodes={nodes}
           onClose={() => setReallocatingFor(null)}
         />
       ) : null}
@@ -512,6 +644,16 @@ function ContractDetailModal({ contract, onClose }) {
               render: (s) => formatDate(s.eta),
             },
             {
+              key: 'tier',
+              label: 'Reported by',
+              sortable: false,
+              value: () => '',
+              // The picture is brightest where access is easiest, and saying so
+              // on the same row as the delivery is the difference between an
+              // honest map and a confident one.
+              render: (s) => <TierBadge tier={s.source_tier} />,
+            },
+            {
               key: 'status',
               label: 'Status',
               value: (s) => s.status,
@@ -543,24 +685,84 @@ function ContractDetailModal({ contract, onClose }) {
    what it could spare without dropping below its own threshold — because a
    reallocation that solves one stockout by causing another is not a decision
    anybody would defend afterwards. */
-function ReallocateModal({ ctx, exception, surplus, onClose }) {
-  const candidates = surplus.filter((n) => n.node_id !== exception.node_id);
-  const [sourceId, setSourceId] = useState(
-    candidates.length ? String(candidates[0].node_id) : '',
+function ReallocateModal({ ctx, exception, surplus, cover, onClose, nodes }) {
+  // An expiry row names the node the cartons must leave, not the node they
+  // must reach — it is the one exception kind whose subject is holding TOO
+  // MUCH. Treating its node as the destination made the queue advise moving
+  // stock into the node that already cannot consume what it has, which is the
+  // opposite of the row's own sentence. So the fixed end of the move depends
+  // on which kind of row opened this.
+  const fixedIsSource = exception.reallocation_role === 'source';
+
+  // Nearest usable counterpart first, not largest. Ranking purely by size
+  // offered a Burkina Faso hub as the counterpart for a Sudanese one — a
+  // correct answer to "who has the most" and an absurd answer to "where should
+  // this come from". A corridor within the same country moves in days; the
+  // same cartons across two borders do not arrive in time to matter.
+  const byId = {};
+  (nodes || []).forEach((n) => {
+    byId[n.id] = n;
+  });
+  const fixedCountry = (byId[exception.node_id] || {}).country;
+  const near = (list) =>
+    list
+      .filter((n) => n.node_id !== exception.node_id)
+      .map((n) => ({
+        ...n,
+        sameCountry:
+          !!fixedCountry && (byId[n.node_id] || {}).country === fixedCountry,
+      }))
+      .sort((a, b) =>
+        a.sameCountry === b.sameCountry
+          ? (b.rank || 0) - (a.rank || 0)
+          : a.sameCountry
+          ? -1
+          : 1,
+      );
+
+  // Sources are nodes holding more than their own caseload can consume.
+  // Destinations are nodes running below plan — the row's advice is
+  // "reallocate the surplus to a node with cover below plan", so the picker
+  // has to be able to offer exactly those.
+  const sourceOptions = near(
+    surplus.map((n) => ({ ...n, rank: n.spare_cartons })),
   );
+  const destOptions = near(
+    (cover || [])
+      .filter((n) => (n.weeks_of_cover ?? 99) < 4)
+      .map((n) => ({
+        node_id: n.node_id,
+        node_name: n.node_name,
+        weeks_of_cover: n.weeks_of_cover,
+        rank: -(n.weeks_of_cover ?? 0),
+      })),
+  );
+
+  const spareAtFixed = (
+    surplus.find((n) => n.node_id === exception.node_id) || {}
+  ).spare_cartons;
+  const [counterpartId, setCounterpartId] = useState(() => {
+    const options = fixedIsSource ? destOptions : sourceOptions;
+    return options.length ? String(options[0].node_id) : '';
+  });
   const suggested = Math.max(exception.children_at_risk || 0, 0);
   const [quantity, setQuantity] = useState(String(suggested || 100));
   const [rationale, setRationale] = useState('');
 
-  const source = candidates.find((n) => String(n.node_id) === sourceId);
-  const overdrawn = source && Number(quantity) > source.spare_cartons;
+  const sourceId = fixedIsSource ? exception.node_id : Number(counterpartId);
+  const targetId = fixedIsSource ? Number(counterpartId) : exception.node_id;
+  const spare = fixedIsSource
+    ? spareAtFixed
+    : (sourceOptions.find((n) => String(n.node_id) === counterpartId) || {})
+        .spare_cartons;
+  const overdrawn = spare !== undefined && Number(quantity) > spare;
 
   const submit = async () => {
     const ok = await ctx.act(
       () =>
         supplyPost('/supply/api/actions/reallocate/', {
-          source_node_id: Number(sourceId),
-          target_node_id: exception.node_id,
+          source_node_id: sourceId,
+          target_node_id: targetId,
           quantity: Number(quantity),
           rationale,
           signal_id: exception.signal_id || null,
@@ -570,9 +772,19 @@ function ReallocateModal({ ctx, exception, surplus, onClose }) {
     if (ok) onClose();
   };
 
+  const options = fixedIsSource ? destOptions : sourceOptions;
+  const sourceName = fixedIsSource
+    ? exception.node_name
+    : (sourceOptions.find((n) => String(n.node_id) === counterpartId) || {})
+        .node_name;
+
   return (
     <Modal
-      title={`Reallocate to ${exception.node_name}`}
+      title={
+        fixedIsSource
+          ? `Reallocate from ${exception.node_name}`
+          : `Reallocate to ${exception.node_name}`
+      }
       onClose={onClose}
       footer={
         <React.Fragment>
@@ -585,7 +797,7 @@ function ReallocateModal({ ctx, exception, surplus, onClose }) {
             onClick={submit}
             disabled={
               ctx.busy ||
-              !sourceId ||
+              !counterpartId ||
               !rationale.trim() ||
               overdrawn ||
               Number(quantity) <= 0
@@ -597,20 +809,29 @@ function ReallocateModal({ ctx, exception, surplus, onClose }) {
       }
     >
       <p className="modal-lede">{exception.why}</p>
-      {candidates.length ? (
+      {options.length ? (
         <React.Fragment>
           <FormRow
-            label="Move from"
-            hint="Only nodes holding more than their own caseload can consume."
+            label={fixedIsSource ? 'Move to' : 'Move from'}
+            hint={
+              fixedIsSource
+                ? 'Only nodes running below four weeks of cover — the surplus should go where it will be used.'
+                : 'Only nodes holding more than their own caseload can consume.'
+            }
           >
             <select
-              value={sourceId}
-              onChange={(e) => setSourceId(e.target.value)}
+              value={counterpartId}
+              onChange={(e) => setCounterpartId(e.target.value)}
             >
-              {candidates.map((n) => (
+              {options.map((n) => (
                 <option key={n.node_id} value={n.node_id}>
-                  {n.node_name} — {formatNumber(n.spare_cartons)} cartons spare
-                  ({n.weeks_of_cover} wk cover)
+                  {n.node_name} —{' '}
+                  {fixedIsSource
+                    ? `${n.weeks_of_cover} wk cover`
+                    : `${formatNumber(n.spare_cartons)} cartons spare (${
+                        n.weeks_of_cover
+                      } wk cover)`}
+                  {n.sameCountry ? ' · same corridor' : ' · cross-border'}
                 </option>
               ))}
             </select>
@@ -618,12 +839,10 @@ function ReallocateModal({ ctx, exception, surplus, onClose }) {
           <FormRow
             label="Cartons"
             hint={
-              source
+              spare !== undefined
                 ? `${formatNumber(
-                    source.spare_cartons,
-                  )} can move without taking ${
-                    source.node_name
-                  } below six weeks.`
+                    spare,
+                  )} can move without taking ${sourceName} below six weeks.`
                 : ''
             }
           >
@@ -635,7 +854,7 @@ function ReallocateModal({ ctx, exception, surplus, onClose }) {
           </FormRow>
           {overdrawn ? (
             <div className="form-error">
-              That would take {source.node_name} below its own threshold.
+              That would take {sourceName} below its own threshold.
             </div>
           ) : null}
           <FormRow
@@ -651,10 +870,39 @@ function ReallocateModal({ ctx, exception, surplus, onClose }) {
         </React.Fragment>
       ) : (
         <EmptyState
-          title="No node is holding surplus."
-          hint="Nothing can be moved without causing a stockout somewhere else."
+          title={
+            fixedIsSource
+              ? 'No node is running below plan.'
+              : 'No node is holding surplus.'
+          }
+          hint={
+            fixedIsSource
+              ? 'There is nowhere the surplus would be used sooner than it expires here.'
+              : 'Nothing can be moved without causing a stockout somewhere else.'
+          }
         />
       )}
     </Modal>
   );
+}
+
+/* How a consignment is known.
+
+   Four tiers, weakest to strongest: a hand-keyed portal entry, a driver's phone
+   check-in, a despatch advice, a machine-to-machine EPCIS feed. A consignment
+   reported at more than one is labelled with its WEAKEST, because that is what
+   the confidence in it actually rests on.
+
+   Naming the tier is the point rather than a caveat: Sudan has no domestic
+   producer and its corridor runs on paper waybills, so the lowest tier is not a
+   fallback, it is the honest case — and it is the one serving the worst famine
+   phases. A picture that hid that would be more confident and less true. */
+/* TIER_LABELS is declared once, in tab_ops.jsx. The supply bundle concatenates
+   every file into ONE scope, so a second top-level const with the same name is
+   not shadowing — it is a SyntaxError that blanks the entire app at parse time.
+   Preflight reported it as four unresolved selectors; the page was simply dead. */
+function TierBadge({ tier }) {
+  const label = TIER_LABELS[tier] || 'Unreported';
+  const tone = tier === 'epcis' ? 'good' : tier === 'asn' ? 'info' : 'warn';
+  return <Badge tone={tone}>{label}</Badge>;
 }

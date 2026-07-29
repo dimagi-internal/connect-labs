@@ -81,7 +81,12 @@ def reallocate(request):
         signal = ShortfallSignal.objects.filter(id=body["signal_id"]).first()
 
     action = actions.reallocate(
-        actor=request.user.email or request.user.get_username(),
+        # The person, by the name the rest of the screen calls them. The record
+        # read "oes-lead@oes.example" while the chrome above it read "Ada
+        # Nwosu", at the one moment the product asks you to read WHO decided —
+        # which is half of what the action log exists to carry. The audit entry
+        # below still keys on the account; this is the human-facing label.
+        actor=(getattr(request.user, "name", "") or "").strip() or request.user.email or request.user.get_username(),
         source_node=source,
         target_node=target,
         quantity=body.get("quantity"),

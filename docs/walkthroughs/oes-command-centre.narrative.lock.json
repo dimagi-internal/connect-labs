@@ -7,7 +7,7 @@
     "the-caseload-underneath-the-map",
     "twelve-thousand-children-by-the-ninth-of-september",
     "the-signal-came-from-the-ground",
-    "ada-reallocates-and-the-numbers-move"
+    "ada-closes-the-signal-the-partner-raised"
   ],
   "fetched_at": "2026-07-28T02:11:26.000470+00:00",
   "name": "oes-command-centre",
@@ -138,21 +138,21 @@
     {
       "features": [
         {
-          "description": "An append-only SupplyAction (expedite, reallocate, split lot, raise mini tender) with actor, rationale and effect, written through the existing audit log.",
           "id": "supply-action-model",
-          "verify": "pytest connect_labs/supply/tests/test_demand.py::test_a_recorded_action_cannot_be_rewritten_or_deleted — save() and delete() raise once a record exists — and test_a_reallocation_without_a_reason_is_refused."
+          "description": "A reallocation is recorded as a SupplyAction with actor, rationale and effect, and creates a real Shipment with planned milestones rather than adjusting a figure.",
+          "verify": "pytest connect_labs/supply/tests/test_demand.py asserts a reallocation creates a shipment and cannot overdraw its source."
         },
         {
-          "description": "A reallocation creates a real Shipment from the surplus node with planned milestones and stored route geometry, so downstream figures recompute from it rather than being adjusted. It refuses to overdraw the source: a paper transfer would have the receiving site plan against cartons that never arrive.",
-          "id": "reallocation-creates-a-shipment",
-          "verify": "pytest connect_labs/supply/tests/test_demand.py::test_a_reallocation_creates_a_real_shipment_and_moves_the_numbers, test_a_reallocation_cannot_overdraw_the_source, and test_resolving_a_signal_ties_it_to_the_action_that_resolved_it."
+          "id": "partner-signal-closes-visibly",
+          "description": "A ShortfallSignal resolved by a reallocation stays on the exception queue for a week marked Closed, carrying the resolving action's actor, effect and rationale, and is excluded from the children-at-risk headline.",
+          "verify": "pytest connect_labs/supply/tests/test_demand.py::test_a_resolved_signal_closes_on_the_queue_rather_than_vanishing"
         }
       ],
-      "id": "ada-reallocates-and-the-numbers-move",
-      "narrative": "Ada reallocates: cartons from the Kassala warehouse, which is holding more than its own caseload needs, to El Fasher, with the reason recorded. A consignment appears on the map with planned milestones, El Fasher's weeks of cover moves out of the red, the pipeline gap for that corridor closes, and the exception resolves against the action that resolved it. The decision and the evidence that prompted it are now the same record — which is the thing a messaging group can never give you afterwards.",
+      "id": "ada-closes-the-signal-the-partner-raised",
+      "narrative": "Ada answers the shortfall Komadugu raised in the last scene. Eighty-seven cartons move from Gombe, which is holding well above what its own caseload can consume, to Askira, with the reason recorded. What that creates is a real consignment with planned milestones rather than a status change — so Askira's weeks of cover deliberately do NOT move yet, because cartons on the road are not cartons on a shelf, and the centre says so instead of claiming the stronger word. What does change is the signal: it closes against the action that answered it, carrying who decided and why, and the headline stops counting its eighty-seven children. The report and the decision are now one record — which is the thing a messaging group can never give you afterwards.",
       "persona": "ada",
       "provenance": "S5",
-      "title": "Ada reallocates, and the numbers move"
+      "title": "Ada closes the signal the partner raised"
     }
   ],
   "slug": "oes-command-centre",

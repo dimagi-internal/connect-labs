@@ -437,24 +437,65 @@ class TestPollerUserResolution:
         with pytest.raises(PulseAuthError, match="does not exist"):
             get_poller_user()
 
-    def test_falls_back_to_a_stored_token_when_unset(self, settings, django_user_model):
-        """An unset env var must not mean 'ingest nothing forever' — that shows
-        up as an empty screen with no visible cause."""
+    def test_refuses_to_guess_when_unconfigured(self, settings, django_user_model):
+        """There is deliberately no default.
+
+        An earlier version fell back to whichever user had a stored token. Prod
+        picked an account with narrower org membership and every headline figure
+        came out ~5x understated with nothing erroring. Refusing to start is the
+        correct failure: loud, diagnosable, and unable to mislead.
+        """
         from django.utils import timezone as tz
 
         from connect_labs.labs.models import UserConnectToken
-        from connect_labs.pulse.client import get_poller_user
+        from connect_labs.pulse.client import PulseAuthError, get_poller_user
 
-        user = django_user_model.objects.create(username="fallback-user")
+        # A usable token exists — it must still not be picked implicitly.
+        user = django_user_model.objects.create(username="some-other-user")
         UserConnectToken.objects.create(
             user=user, access_token="x", refresh_token="y", expires_at=tz.now() + timedelta(hours=1)
         )
         settings.PULSE_POLLER_USERNAME = ""
-        assert get_poller_user().username == "fallback-user"
 
-    def test_raises_when_unset_and_no_token_exists(self, settings):
-        settings.PULSE_POLLER_USERNAME = ""
-        from connect_labs.pulse.client import PulseAuthError, get_poller_user
-
-        with pytest.raises(PulseAuthError, match="no user has a stored Connect token"):
+        with pytest.raises(PulseAuthError, match="No Pulse poller configured"):
             get_poller_user()
+
+
+@pytest.mark.django_db
+class TestPollerOverride:
+    """The poller identity is settable from the DB.
+
+    Scope — every headline figure — follows this user's org membership, and on
+    a deployed environment the env var lives in an ECS task definition. Being
+    able to correct it without AWS access is the difference between a display
+    that understates the estate for a week and one that is fixed in a minute.
+    """
+
+    def test_db_override_wins_over_settings(self, settings, django_user_model):
+        from connect_labs.pulse.client import SCALAR_POLLER, get_poller_user
+
+        django_user_model.objects.create(username="from-settings")
+        django_user_model.objects.create(username="from-db")
+        settings.PULSE_POLLER_USERNAME = "from-settings"
+        PulseScalar.objects.create(key=SCALAR_POLLER, value={"username": "from-db"})
+
+        assert get_poller_user().username == "from-db"
+
+    def test_clearing_the_override_falls_back_to_settings(self, settings, django_user_model):  # noqa: D401
+        from connect_labs.pulse.client import SCALAR_POLLER, get_poller_user
+
+        django_user_model.objects.create(username="from-settings")
+        settings.PULSE_POLLER_USERNAME = "from-settings"
+        PulseScalar.objects.filter(key=SCALAR_POLLER).delete()
+
+        assert get_poller_user().username == "from-settings"
+
+    def test_empty_override_is_ignored(self, settings, django_user_model):
+        """A blank value must not resolve to a user named '' or crash."""
+        from connect_labs.pulse.client import SCALAR_POLLER, get_poller_user
+
+        django_user_model.objects.create(username="from-settings")
+        settings.PULSE_POLLER_USERNAME = "from-settings"
+        PulseScalar.objects.create(key=SCALAR_POLLER, value={"username": ""})
+
+        assert get_poller_user().username == "from-settings"

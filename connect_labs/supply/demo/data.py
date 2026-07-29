@@ -98,30 +98,38 @@ OPEN_ROUND = "OES Supply Base 2026-B"
 LIVE_RFP = "RUTF Northeast Nigeria Q3 2026"
 AWARDED_RFP = "RUTF Ethiopia Q2 2026"
 
-# The deliberately split tender. Two lots on two corridors, awarded to two
-# different suppliers on purpose — the decision the lot structure exists to
-# make possible. Concentrating a four-country response on the cheapest single
-# bidder is the classic humanitarian supply failure: when that plant or that
-# corridor goes down, every district goes down at the same moment. The split
-# has to be visible in the seeded world rather than asserted in a caption.
-SPLIT_AWARD_RFP = "RUTF Sahel and Lake Chad Corridors Q3 2026"
+# A PRIOR split tender: two lots on two corridors, awarded to two different
+# suppliers on purpose. Concentrating a four-country response on the cheapest
+# single bidder is the classic humanitarian supply failure — when that plant or
+# that corridor goes down, every district goes down at the same moment — and
+# seeding a previous split shows the practice is routine rather than staged for
+# the demo.
+#
+# It must be a DIFFERENT corridor pair from the live tender. It used to carry
+# the live tender's two lots verbatim — same places, same quantities, same
+# split outcome — sitting one row above it in the solicitations list and
+# marked 2/2 Awarded. Three scenes build to that award
+# being made on camera, and the answer was already on screen behind them the
+# whole time. A prior split is worth seeding, because it shows the practice is
+# routine rather than staged for the demo; it just must not be THIS split.
+SPLIT_AWARD_RFP = "RUTF Horn and Sahel Corridors Q1 2026"
 
 # lot description, category, quantity, delivery country, delivery place, winner
 SPLIT_AWARD_LOTS = [
     (
-        "60,000 cartons RUTF delivered to Maiduguri",
+        "30,000 cartons RUTF delivered to Gode",
         "rutf",
-        60000,
-        "NG",
-        "Maiduguri",
-        "Savanna Nutrients Ltd",
+        30000,
+        "ET",
+        "Gode",
+        "Rift Valley Therapeutics PLC",
     ),
     (
-        "20,000 cartons RUTF delivered to Djibo",
+        "12,000 cartons RUTF delivered to Dori",
         "rutf",
-        20000,
+        12000,
         "BF",
-        "Djibo",
+        "Dori",
         "Faso NutriWorks SA",
     ),
 ]
@@ -163,7 +171,11 @@ CORRIDOR_AWARDS = [
         "SD",
         93,
         135,
-        "Inland haulage of 40,000 cartons from Port Sudan",
+        # Names its destination, not just its origin. A haulage contract whose
+        # only stated place is where the cartons are collected has no delivery
+        # point to measure against, and the contract measure counts arrivals at
+        # the place the contract names (see Contract._quantity_in_contract_unit).
+        "Inland haulage of 40,000 cartons from Port Sudan to Khartoum",
         40000,
         3.20,
     ),
@@ -193,6 +205,7 @@ NODES = [
     # distribution hubs in the famine-affected zones
     ("Maiduguri Distribution Hub", "distribution_hub", "NG", 13.1510, 11.8311, None),
     ("Damaturu Distribution Hub", "distribution_hub", "NG", 11.9660, 11.7480, None),
+    ("Gombe Distribution Hub", "distribution_hub", "NG", 11.1673, 10.2897, None),
     ("El Fasher Distribution Hub", "distribution_hub", "SD", 25.3494, 13.6279, None),
     ("Nyala Distribution Hub", "distribution_hub", "SD", 24.8917, 12.0489, None),
     ("Gode Distribution Hub", "distribution_hub", "ET", 43.5500, 5.9527, None),
@@ -263,6 +276,14 @@ PARTNER_ORG = (
 DISTRICTS = {
     "NGA-2839": ("Borno", "NG", 5, 1_113_000),
     "NGA-2873": ("Yobe", "NG", 4, 625_000),
+    # The third north-east district, and the one the coverage scene turns on.
+    # Hauwa's view is scoped to Nigeria on the server, so the well-covered
+    # district she is compared against has to BE in Nigeria — Kassala is in
+    # Sudan and never appears on her page. Gombe is the smallest of the
+    # north-east states and sits a phase below Borno, which is what lets it
+    # take fewer cartons and still cover nearly all of its need. Yobe cannot
+    # play the part: 91% of its caseload is more courses than Borno received.
+    "NGA-2859": ("Gombe", "NG", 3, 600_000),
     "SDN-881": ("North Darfur", "SD", 5, 338_000),
     "SDN-5856": ("Southern Darfur", "SD", 2, 654_000),
     "SDN-884": ("Kassala", "SD", 3, 405_000),
@@ -280,6 +301,7 @@ NODE_DISTRICTS = {
     "Bama Health Post": "NGA-2839",
     "Monguno Health Post": "NGA-2839",
     "Damaturu Distribution Hub": "NGA-2873",
+    "Gombe Distribution Hub": "NGA-2859",
     "El Fasher Distribution Hub": "SDN-881",
     "Tawila Nutrition Site": "SDN-881",
     "Kebkabiya Nutrition Site": "SDN-881",
@@ -318,7 +340,13 @@ CONTRACTS = [
     ("OES-C-2026-ET1", "Rift Valley Therapeutics PLC", "48,000 cartons RUTF delivered to Gode", 48000, 41.80),
     ("OES-C-2026-NG1", "Savanna Nutrients Ltd", "45,000 cartons RUTF delivered to Maiduguri", 45000, 42.10),
     ("OES-C-2026-BF1", "Faso NutriWorks SA", "20,000 cartons RUTF delivered to Djibo", 20000, 43.60),
-    ("OES-C-2026-SD1", "Blue Nile Freight Co", "Inland haulage of 40,000 cartons from Port Sudan", 40000, 3.20),
+    (
+        "OES-C-2026-SD1",
+        "Blue Nile Freight Co",
+        "Inland haulage of 40,000 cartons from Port Sudan to Khartoum",
+        40000,
+        3.20,
+    ),
 ]
 
 # Which contract each shipment belongs to, by reference prefix.
@@ -381,15 +409,42 @@ SHIPMENTS = [
     # district boundary, which is what makes it count as supply reaching a
     # district rather than redistribution inside one (see services/coverage.py).
     #
-    # Borno's matching leg is NOT here, deliberately. Lifting Borno to the 34%
-    # its narration speaks needs ~1,400 more cartons across its boundary, and
-    # the Nigeria contract has only 325 cartons of headroom left before
-    # delivered_quantity exceeds the 45,000 it contracted for — because that
-    # figure double-counts every carton that moves hub-to-site inside Borno.
-    # The demo cannot tell its own coverage story until that is fixed. See
-    # docs/walkthroughs/oes-narrative-set-review.md K1.
+    # Borno's matching leg lands at Bama, the one Borno site that had never
+    # received anything. Together with the 15,000 already across the boundary it
+    # takes Borno to 34% of a caseload seven times Kassala's, on more than twice
+    # the cartons — which is the contrast the funder narrative is built on.
+    #
+    # It only fits because the short-receipt consignment stopped banking its
+    # cartons twice: the Nigeria contract had 325 cartons of headroom before
+    # delivered_quantity would have exceeded what it contracted for, and now has
+    # 2,617. The contract measure still counts a carton once per leg it travels
+    # (review K1) — this leg fits under the ceiling rather than resolving it.
     ("SHP-2026-0204", "Khartoum Central Warehouse", "Kassala Forward Store", [], 6388, "delivered", "checkin", 16),
+    ("SHP-2026-0305", "Kano Central Warehouse", "Bama Health Post", [], 1399, "delivered", "asn", 6),
+    # Gombe: the small, well-covered district Hauwa's coverage table is read
+    # against. 9,464 courses against a 10,400 caseload is 91%, on well under
+    # the cartons Borno received — so tonnage ranks Borno first and coverage
+    # ranks it second, which is the whole point of the scene. It lands in
+    # Gombe rather than Maiduguri, so it does not count toward OES-C-2026-NG1's
+    # contracted delivery: a carton counts once, where its contract says.
+    ("SHP-2026-0306", "Kano Central Warehouse", "Gombe Distribution Hub", [], 9464, "delivered", "asn", 10),
 ]
+
+# Consignments carrying a short-dated batch, by reference -> shelf life in days
+# from the seed date.
+#
+# Every lot was seeded at 540 days, which put every expiry in January 2028 and
+# meant the expiry-risk exception could not fire at all: the service, its cover
+# calculation and its queue row were written, tested and unreachable, and the
+# command centre narrated "all four exception kinds" over three.
+#
+# Djibo is the right home for it. It is the most over-supplied node in the
+# network at 25 weeks of cover, which is exactly the situation this exception
+# exists to catch — stock sitting where the demand behind it is too small to
+# work through the batch before it expires. A short-dated lot at a node that
+# turns its stock over quickly would never be at risk, and seeding one there
+# would be the kind of detail that makes a demo world look authored.
+SHORT_DATED_LOTS = {"SHP-2026-0402": 150}
 
 # Days each leg is running behind its planned arrival. Authored rather than
 # drawn, because the exception queue ranks on these: two consignments drawn

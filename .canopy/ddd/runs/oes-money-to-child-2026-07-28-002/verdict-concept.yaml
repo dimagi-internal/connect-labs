@@ -1,0 +1,220 @@
+schema_version: 1
+kind: concept
+gate: gating
+live_state_verified: true
+calibration: provisional
+rubric_name: ddd-concept-eval
+ran_at: "2026-07-28T17:40:00Z"
+run_dir: /Users/jjackson/emdash/worktrees/connect-labs/emdash/supply-3-vqp90/.canopy/ddd/runs/oes-money-to-child-2026-07-28-002
+spec: docs/walkthroughs/oes-money-to-child.recipe.yaml
+scenes_evaluated: 6
+self_assessed: false
+
+# What this iteration set out to change, verified frame-by-frame + against the code:
+iteration_verification:
+  - id: 1
+    claim: "A contract's delivered figure counts a carton ONCE, at the leg arriving at the contract's stated delivery place; no same-screen contradiction remains."
+    verdict: PARTIAL
+    detail: >-
+      The once-only rule shipped and is correct — Contract._quantity_in_contract_unit
+      (connect_labs/supply/models/execution.py:112-136) filters shipments by unit AND
+      destination__name__startswith(self.delivery_place), so upstream and downstream legs
+      are excluded by construction (test_dashboards.py:230-262 asserts 15,000 against
+      20,000 upstream + 9,910 downstream legs). The OLD contradiction (115,170 vs 48,787
+      on one stated method) is gone: scene 3's frame now shows 33,000 in the ladder and
+      58,251 in the card below with two DIFFERENT, explicitly-stated methods and a note
+      saying they are deliberately not reconciled. But TWO new same-screen contradictions
+      are on camera. (a) Scene 3's ladder mixes bases: rung 1 is confirmed money ($502k)
+      and rungs 2-4 are delivered volume (455 MT / 33,000 cartons / 33,000 children), so
+      the card's own "chain, so every step can be checked" yields $15.21/child against the
+      $41.80 asserted three lines below. (b) Scene 4/5's government page shows
+      "53,246 Cartons delivered" and "53,246 Children treated" as two adjacent tiles on
+      the same stated conversion, while the Coverage-by-district table on the same page
+      totals 25,863 courses delivered — 2.06x apart, same conversion.
+  - id: 2
+    claim: "Cost per child is confirmed money over confirmed cartons, haulage excluded from the food ladder; reads about $41.80."
+    verdict: LANDED
+    detail: >-
+      On screen in scene 3: "Cost per child treated = USD 41.80, computed from
+      disbursements against confirmed deliveries only". Code confirms
+      (tab_funder.jsx:25-35) costPerChild = goodsDisbursed / confirmedCartons, with
+      goods = contracts.filter(c => c.buys_goods) and buys_goods = lot.category != "transport"
+      (execution.py:156-163). $501,600 / 12,000 = $41.80 exactly. The $45k Blue Nile Freight
+      haulage disbursement is visible in the contract table but correctly absent from the
+      ladder's $502k. The figure is right; the ladder around it does not reproduce it.
+  - id: 3
+    claim: "Sankey renders a dollar figure on every band, all three columns on one obligated-dollar scale, unobligated balance in the caption with a reason."
+    verdict: LANDED
+    detail: >-
+      Scene 2: every node band carries its amount ($2.9M / $2.0M | $1.9M / $872k / $2.0M /
+      $128k | $1.9M / $872k / $2.0M / $128k) — each column sums to $4.9M. Caption reads
+      "Widths are proportional to obligated dollars, on one scale across all three columns…
+      $65.6M of the $70.5M appropriated is not yet under contract, and is reported here
+      rather than drawn — at true scale it is most of the diagram and every contract band
+      collapses below a pixel." Code matches (tab_funder.jsx:439-465, :627-637). Note: the
+      LINKS (curved paths) carry no labels, only the bands — consistent with the claim as
+      stated. Only residual is cosmetic label collision on the two sub-pixel bands.
+  - id: 4
+    claim: "Scene 5 shows Gombe 91% on fewer cartons than Borno 34% with 31,833 uncovered."
+    verdict: LANDED
+    detail: >-
+      Scene 5's table reads exactly: Yobe (IPC 4) 18,960 needing / 0 delivered / 0% /
+      18,960 uncovered; Borno (IPC 5) 48,232 / 16,399 / 34% / 31,833 uncovered;
+      Gombe (IPC 3) 10,400 / 9,464 / 91% / 936 uncovered. Gombe reaches 91% on 9,464
+      courses while Borno sits at 34% on 16,399 — the tonnage/coverage inversion the
+      scene exists to prove is legible in one frame, with Yobe's zero as the control.
+      This is the strongest scene in the walkthrough. Caveat below (method note is wrong).
+
+dimensions:
+  concept_clarity:
+    score: 3
+    weight: 0.15
+    justification: >-
+      The arc is legible and both roles are named on camera (Funder / Dale Whitmore,
+      Government observer / Hauwa Ibrahim in the header chip). Scene 1 opens on the
+      problem — "What was appropriated, what is committed, what has been paid, and what
+      reached children" — with three separated money figures, which is exactly the
+      goal-setting an overview scene should do. What costs it: the phrase "Children
+      treated" denotes THREE different numbers across the walkthrough — 33,000 (funder
+      key tile, scene 1), 53,246 (government key tile, scene 4), and a card headlined
+      "Children treated — the figure, and the measurement" whose lead number is 58,251
+      (scene 3/6). A cold viewer watching the demo whose entire thesis is "that number is
+      usually a division sum" has to be told which of the three the product means.
+  use_case_soundness:
+    score: 4
+    weight: 0.15
+    justification: >-
+      Substantive and not achievable by the obvious alternatives: a sovereign government
+      reading its own districts' coverage against caseload, a funder reading cost per
+      child with the conversion in frame, and a delivered batch followed to a named
+      child's MUAC series with the sample size stated. A skeptical buyer sees real work.
+      Held at 4 rather than 5 because the scale shown is modest — 4 contracts, $4.9M of a
+      $70.5M appropriation, and a 12-child observed sample — so the value is demonstrated
+      rather than stress-tested.
+  design_soundness:
+    score: 2
+    weight: 0.20
+    justification: >-
+      The core affordance this product sells is "check the arithmetic yourself", and in
+      two places a viewer who does that gets a wrong answer. (1) Scene 3's ladder is
+      captioned "Stated as a chain, so every step can be checked" but rung 1 is a
+      confirmed-basis figure ($502k) and rungs 2-4 are delivered-basis (455 MT / 33,000
+      cartons / 33,000 children); dividing the chain's own endpoints gives $15.21, not the
+      $41.80 asserted below it. Verified in tab_funder.jsx:25-35 vs :131-152 —
+      goodsDisbursed is confirmed-derived, deliveredCartons is not. (2) Scene 4/5's
+      government view renders the same raw leg total as both "Cartons delivered" and
+      "Children treated" (tab_gov.jsx:29-31, :44-55) — the carton-equals-child collapse
+      scene 6 exists to attack — and its per-row "Children covered" column credits a
+      20,000-carton Kano warehouse-to-warehouse transfer (visible in scene 5's top row)
+      and in-transit/planned consignments as children covered, directly above a coverage
+      table that correctly excludes them. A first-time user reproducing either number
+      lands somewhere the product contradicts.
+  visual_polish:
+    score: 3
+    weight: 0.12
+    justification: >-
+      Genuinely well-built: consistent type hierarchy, calm single-accent green, tidy card
+      rhythm, clean tables, real entity names (Savanna Nutrients Ltd, Maiduguri
+      Distribution Hub, OES-C-2026-NG1, IATI activity IDs) that read as production data.
+      The "Demonstration environment — all data is synthetic" rail is intended framing and
+      is not scored. Held at 3 by: the load-bearing method text in scene 3 (the
+      exclusions AND the $41.80 itself) is a five-line dense grey micro-paragraph in the
+      smallest type on the page; scene 4's frame is half-occupied by an empty "Map
+      unavailable" panel; scene 2's two sub-pixel bands push their labels
+      ("Blue Nile Freight Co · $128k", "Sudan · $128k") onto the flow stroke where they
+      collide; and scene 5's coverage pills are red/amber/green against no stated
+      threshold, which editorialises a number the OBJECTIVE-DATA rule says should be shown
+      plainly.
+  why_groundedness:
+    score: 4
+    weight: 0.15
+    justification: >-
+      Every scene carries a provenance id and all six resolve to real spine items
+      (S0-S5) whose rationales match what is on screen; nothing is invented for the
+      walkthrough. S0/S1/S2/S3 are grounded with implemented + documented evidence, and
+      the two spine items that were `status: gap` (S4 coverage-against-caseload, S5
+      batch-to-outcome) are precisely what scenes 5 and 6 now demonstrate as shipped —
+      the gaps closed in the direction the brief proposed. Held at 4 because S4's
+      evidence list is still empty in the why_brief, so one scene's claim rests on the
+      render rather than on a cited artifact.
+  claim_reality_coherence:
+    score: 2
+    weight: 0.10
+    blocking: false
+    advisory: true
+    justification: >-
+      Two on-screen METHOD statements are contradicted by the code that produced the
+      numbers beside them. (1) Scene 5's note reads "Coverage is courses delivered divided
+      by the district's monthly SAM caseload", but the denominator is a four-month
+      cumulative requirement — demo/demand.py:53 CASELOAD_MONTHS = 4, summed in
+      services/coverage.py:69-79 — so the stated method understates the denominator ~4x
+      (Borno's 48,232 is 4 x ~12,058). The row already carries window_months / window_from
+      / monthly_caseload; the card renders none of them, even though coverage.py:59-62
+      says the window must be surfaced. (2) Scene 3 asserts USD 41.80 next to a chain
+      whose visible endpoints give $15.21. Everything else checks out: the Sankey's
+      $65.6M/$70.5M caption, the 91%/34%/31,833 coverage row, the 12-of-656 sample
+      disclosure and the WHO MUAC thresholds in scene 6's modal are all present in the
+      captured page text. Advisory — excluded from overall_score.
+  motion_friction:
+    score: 2
+    weight: 0.13
+    justification: >-
+      Mechanically the render is clean: 28/28 actions ok, no failures, no spinners,
+      generous 2-3s holds, and scenes 1, 3, 5 and 6 each land their narrated artifact
+      fully in frame (scene 3 gets the ladder, its method note and the two-figures card in
+      one viewport; scene 6's modal frames the highlighted child's MUAC series with the
+      legend above it). Scene 4 is the miss: its narration is about server-side country
+      scoping proved by the fact that only Nigerian consignments are in the payload, the
+      scene waits for css:.data-table — and then never scrolls to it, so the table is
+      entirely below the fold and the centre of the frame is a "Map unavailable" panel.
+      The artifact fits and the scene simply framed it wrong, which the rubric caps at 2.
+
+overall_score: 2
+overall_rule: lowest
+overall_basis: >-
+  Lowest of the gating dimensions (concept_clarity 3, use_case_soundness 4,
+  design_soundness 2, visual_polish 3, why_groundedness 4, motion_friction 2).
+  claim_reality_coherence (2) is advisory and excluded.
+
+verdict: fail
+blocking_reason: null
+
+fix_recommendation: |
+  Three of the four changes this iteration set out to make landed cleanly — cost per child
+  is confirmed-over-confirmed at $41.80 with haulage excluded, the Sankey labels every band
+  on one obligated scale with the $65.6M unobligated balance explained in the caption, and
+  scene 5 proves the tonnage/coverage inversion (Gombe 91% on 9,464 courses vs Borno 34% on
+  16,399 with 31,833 uncovered). The delivered-counts-once rule also shipped correctly at
+  the contract level. What blocks the verdict is that the SAME class of defect the
+  iteration targeted survived in two other places, both on camera:
+
+  [PRODUCT] Scene 3 — make the unit ladder reproduce its own cost figure. Drive all four
+  rungs off the confirmed basis (confirmedCartons and the MT derived from it) so
+  $502k → 12,000 cartons → 12,000 children → $41.80 checks out end to end, and move the
+  delivered-volume figures (455 MT / 33,000) into their own clearly-labelled rung or into
+  the wider card below. Today rung 1 is confirmed and rungs 2-4 are delivered
+  (tab_funder.jsx:25-35 vs :131-152), so the card's own "every step can be checked"
+  promise fails the first check a skeptic performs.
+
+  [PRODUCT] Scenes 4/5 — stop the government view collapsing cartons into children.
+  Compute the "Children treated" tile from coverage.coverage_by_district's courses
+  (cross-boundary, delivered/confirmed only) instead of the raw leg sum, so it agrees with
+  the coverage table 90px below it (25,863, not 53,246), and drop or re-scope the per-row
+  "Children covered" column so a 20,000-carton warehouse-to-warehouse transfer and
+  in-transit/planned consignments are not credited as children covered.
+
+  [PRODUCT] Scene 5 — the method note is wrong, in the one card whose claim is that the
+  method is checkable. Replace "the district's monthly SAM caseload" with the actual
+  window and render window_months / window_from (already on the row) beside the
+  denominator; CASELOAD_MONTHS = 4.
+
+  [PRODUCT/scripting] Scene 4 — add `scroll_to css:.data-table` before the 2.2s hold so
+  the consignment table that evidences server-side scoping is what the viewer sees, and
+  supply a Mapbox token to the walkthrough environment (or collapse the map card when
+  unavailable) so half the frame is not an empty panel.
+
+  [CONCEPT] Reserve the phrase "Children treated" for the measured figure. It currently
+  labels 33,000 (funder tile), 53,246 (government tile) and a card whose lead number is
+  58,251. Rename the carton-derived tiles "Courses delivered — contract ladder" and
+  "Courses delivered — all sources", which is the distinction the page already explains in
+  prose but contradicts in its own headings.

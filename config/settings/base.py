@@ -231,6 +231,13 @@ MIDDLEWARE = [
     "connect_labs.audit_trail.middleware.AuditTrailMiddleware",
 ]
 
+# Per-request cost telemetry, prepended so it is the OUTERMOST middleware and
+# therefore times the whole request — including the audit-trail flush and every
+# other middleware — rather than just the view. request.user is still readable
+# because it is only inspected after get_response() returns, by which point
+# AuthenticationMiddleware has run further in.
+MIDDLEWARE.insert(0, "connect_labs.utils.request_telemetry.RequestTelemetryMiddleware")
+
 # STATIC
 # ------------------------------------------------------------------------------
 STATIC_ROOT = str(BASE_DIR / "staticfiles")
@@ -368,6 +375,15 @@ LOGGING = {
         "connect_labs.audit_trail.stream": {
             "handlers": ["audit_stream"],
             "level": "INFO",
+            "propagate": False,
+        },
+        # Per-request cost telemetry (connect_labs/utils/request_telemetry.py).
+        # Reuses the message-only formatter so each line is pure JSON and Logs
+        # Insights can parse it without a regex. Only fires for requests that
+        # breach a threshold, so this stream is low-volume by construction.
+        "connect_labs.telemetry.request": {
+            "handlers": ["audit_stream"],
+            "level": "WARNING",
             "propagate": False,
         },
         "django.security.DisallowedHost": {
@@ -635,5 +651,20 @@ PULSE_EVENT_RETENTION_DAYS = env.int("PULSE_EVENT_RETENTION_DAYS", default=30)
 # dashboard can see. Must have logged into labs in a browser at least once so a
 # refresh token exists. Refresh tokens have an absolute lifetime — if this user
 # stops logging in, ingest stops, and PulseIngestHealth surfaces it.
-PULSE_POLLER_USERNAME = env("PULSE_POLLER_USERNAME", default="")
+#
+# Named explicitly, and deliberately not derived from whoever happens to hold a
+# token: the first prod deploy did derive it, picked an account with narrower
+# org membership, and understated every headline figure ~5x without erroring.
+#
+# `jonathan` is Jonathan Jackson's labs account (jjackson@dimagi.com). The name
+# is worth stating because it is not the obvious one — labs usernames come from
+# Connect OAuth, so they are Connect handles, not email local-parts or GitHub
+# names. There is no `jjackson` user on labs; `jjackson-admin` and
+# `jjackson+test` exist but hold no Connect token. Confirm before changing it:
+# `manage.py pulse_poller --list`.
+#
+# A stopgap until Pulse has a service account of its own. Overridable
+# per-environment by the env var, or at runtime without a redeploy via
+# `manage.py pulse_poller --set <username>`.
+PULSE_POLLER_USERNAME = env("PULSE_POLLER_USERNAME", default="jonathan")
 # "30/m" → 30 writes per minute per user. Reads uncapped.

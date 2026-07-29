@@ -100,17 +100,40 @@ class Contract(models.Model):
     def obligated_value(self):
         return self.total_quantity * self.unit_price
 
-    def _quantity_in_contract_unit(self, **filters):
-        """Sum shipment quantities, counting only shipments denominated in this
-        contract's own unit.
+    @property
+    def delivery_place(self):
+        """The place this contract promised to deliver to, in its own words.
 
+        Read off the awarded lot, so the measure below is checkable against the
+        contract's own text rather than against a rule kept somewhere else.
+        """
+        return self.award.lot.delivery_place
+
+    def _quantity_in_contract_unit(self, **filters):
+        """Sum the legs that discharge this contract, counting each carton once.
+
+        Two guards, and both exist because of a number that went out wrong.
+
+        Unit: only shipments denominated in this contract's own unit count.
         Mixing units here is how a carton count gets multiplied by a
         per-truck-month rate and reports a nine-figure disbursement against a
         six-figure obligation.
+
+        Place: only legs *arriving at the contract's own delivery place* count.
+        A consignment moves in hops and every hop is its own Shipment, so
+        summing them all counts a carton once per leg it travels — OES-C-2026-NG1
+        read 54,910 shipped against 45,000 contracted, and the funder page put
+        115,170 children next to 48,787 courses with the same stated method.
+        A contract for "45,000 cartons delivered to Maiduguri" is discharged by
+        the cartons that reach Maiduguri: the plant->warehouse legs before it are
+        not delivery yet, and the hub->centre legs after it are last-mile
+        distribution *past* the delivery point, already paid for.
         """
         from django.db.models import Sum
 
-        total = self.shipments.filter(unit=self.unit, **filters).aggregate(n=Sum("quantity"))["n"]
+        total = self.shipments.filter(
+            unit=self.unit, destination__name__startswith=self.delivery_place, **filters
+        ).aggregate(n=Sum("quantity"))["n"]
         return total or 0
 
     @property
@@ -119,19 +142,30 @@ class Contract(models.Model):
 
     @property
     def shipped_quantity(self):
-        from django.db.models import Sum
-
-        total = (
-            self.shipments.filter(unit=self.unit)
-            .exclude(status=Shipment.Status.PLANNED)
-            .aggregate(n=Sum("quantity"))["n"]
+        """Everything moving against the contract that is not still on paper."""
+        return self._quantity_in_contract_unit(
+            **{"status__in": [s for s in Shipment.Status if s != Shipment.Status.PLANNED]}
         )
-        return total or 0
+
+    @property
+    def confirmed_quantity(self):
+        """Arrived at the delivery place AND confirmed there — the paid-for figure."""
+        return self._quantity_in_contract_unit(status=Shipment.Status.CONFIRMED)
+
+    @property
+    def buys_goods(self):
+        """True for a supply contract, False for a service one (haulage, storage).
+
+        A haulage contract's dollars buy movement, not cartons. Summing its
+        spend into a cost-per-child ladder attributes food money that was never
+        spent on food and drags the figure below what a course of RUTF costs.
+        """
+        return self.award.lot.category != "transport"
 
     @property
     def disbursed_value(self):
         """Only confirmed deliveries are paid for."""
-        return self._quantity_in_contract_unit(status=Shipment.Status.CONFIRMED) * self.unit_price
+        return self.confirmed_quantity * self.unit_price
 
 
 class Shipment(models.Model):

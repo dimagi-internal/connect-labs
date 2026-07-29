@@ -18,12 +18,27 @@ function FunderTab({ ctx }) {
   const coverageByCountry = world.coverage_by_country || [];
   const obligated = contracts.reduce((n, c) => n + c.obligated_value, 0);
   const disbursed = contracts.reduce((n, c) => n + c.disbursed_value, 0);
-  const deliveredCartons = contracts.reduce(
-    (n, c) => n + c.delivered_quantity,
-    0,
-  );
+  // The ladder is about food, so it sums only the contracts that bought food.
+  // A haulage contract's dollars buy movement; letting its spend and its
+  // cartons into this chain attributes food money that was never spent on food
+  // and pulls cost per child below the price of a single carton.
+  const goods = contracts.filter((c) => c.buys_goods);
+  const goodsDisbursed = goods.reduce((n, c) => n + c.disbursed_value, 0);
+  const deliveredCartons = goods.reduce((n, c) => n + c.delivered_quantity, 0);
+  // ONE basis for the whole ladder, end to end: money paid against confirmed
+  // delivery, and the cartons that same confirmation covers.
+  //
+  // The rungs used to mix. Rung 1 was confirmed money and rungs 2-4 were every
+  // delivered carton, so the chain's own endpoints divided to $15.21 while the
+  // note three lines below asserted $41.80 — on a card captioned "stated as a
+  // chain, so every step can be checked". The first thing a reader checks is
+  // the first and last rung against each other, and it did not hold.
+  const confirmedCartons = goods.reduce((n, c) => n + c.confirmed_quantity, 0);
+  const confirmedMt = Math.round((confirmedCartons * 150 * 92) / 1000000);
   const deliveredMt = Math.round((deliveredCartons * 150 * 92) / 1000000);
-  const costPerChild = deliveredCartons ? disbursed / deliveredCartons : null;
+  const costPerChild = confirmedCartons
+    ? goodsDisbursed / confirmedCartons
+    : null;
 
   return (
     <Page
@@ -45,16 +60,26 @@ function FunderTab({ ctx }) {
                   (obligated / appropriated) * 100,
                 )}% of appropriation`
               : null,
+            method:
+              'The sum of every contract signed against these envelopes, at its contracted quantity and price. Money committed — not yet paid, and not yet food.',
           },
           {
             label: 'Disbursed',
             value: shortMoney(disbursed),
             hint: 'paid against confirmed delivery only',
+            method:
+              'Paid only against consignments CONFIRMED at the place their contract names. A consignment on the road has moved no money, which is why this figure sits so far below obligated.',
           },
+          // Courses, not children. Every one of these tiles used to say
+          // "children treated" over a carton count, which is the exact
+          // conflation the card further down this page exists to attack — and
+          // it made the same phrase name three different numbers across the
+          // demo. A carton delivered is a course delivered; whether a child
+          // completed it is what the measured recoveries below are for.
           {
-            label: 'Children treated',
+            label: 'Courses delivered under contract',
             value: formatNumber(deliveredCartons),
-            hint: `${formatNumber(deliveredMt)} MT delivered`,
+            hint: `${formatNumber(deliveredMt)} MT · treatment outcomes below`,
           },
         ]}
       />
@@ -70,6 +95,24 @@ function FunderTab({ ctx }) {
         title="Stage by stage, per contract"
         subtitle="Obligated, disbursed and delivered are tracked separately and never merged."
       >
+        {/* The bars encoded three stages and explained them only in a native
+            `title` tooltip — which does not render in a screenshot, does not
+            survive a projector, and cannot be read by anyone using a keyboard.
+            Three grey-green bars with no key is decoration. */}
+        <div className="stage-legend">
+          <span className="stage-key">
+            <i className="stage-swatch obligated" /> obligated
+          </span>
+          <span className="stage-key">
+            <i className="stage-swatch delivered" /> delivered
+          </span>
+          <span className="stage-key">
+            <i className="stage-swatch disbursed" /> disbursed
+          </span>
+          <span className="muted small">
+            each bar is a share of what that contract obligated
+          </span>
+        </div>
         <DataTable
           rows={contracts}
           rowKey={(c) => c.id}
@@ -119,40 +162,46 @@ function FunderTab({ ctx }) {
       >
         <div className="ladder">
           <div className="ladder-step">
-            <div className="ladder-value">{shortMoney(disbursed)}</div>
+            <div className="ladder-value">{shortMoney(goodsDisbursed)}</div>
             <div className="ladder-label">
-              disbursed against confirmed delivery
+              disbursed on supply contracts, against confirmed delivery
             </div>
           </div>
           <div className="ladder-arrow">→</div>
           <div className="ladder-step">
-            <div className="ladder-value">{formatNumber(deliveredMt)} MT</div>
-            <div className="ladder-label">therapeutic food delivered</div>
+            <div className="ladder-value">{formatNumber(confirmedMt)} MT</div>
+            <div className="ladder-label">
+              therapeutic food confirmed received
+            </div>
           </div>
           <div className="ladder-arrow">→</div>
           <div className="ladder-step">
-            <div className="ladder-value">{formatNumber(deliveredCartons)}</div>
+            <div className="ladder-value">{formatNumber(confirmedCartons)}</div>
             <div className="ladder-label">cartons (150 sachets each)</div>
           </div>
           <div className="ladder-arrow">→</div>
           <div className="ladder-step">
-            <div className="ladder-value">{formatNumber(deliveredCartons)}</div>
-            <div className="ladder-label">children given a full course</div>
+            <div className="ladder-value">{formatNumber(confirmedCartons)}</div>
+            <div className="ladder-label">
+              children given a full course, paid for and confirmed
+            </div>
           </div>
         </div>
-        <p className="muted small method-note">
-          Method: one carton contains 150 × 92 g sachets, which is one child's
-          full course of treatment. Cost per child treated ={' '}
-          <strong>
+        {/* The figure, at the size of a finding — with its method one click
+            away rather than five lines of grey beneath it. */}
+        <div className="ladder-result">
+          <div className="ladder-result-value">
             {costPerChild ? formatMoney(costPerChild, 'USD') : '—'}
-          </strong>
-          , computed from disbursements against confirmed deliveries only —
-          consignments in transit are excluded. All figures in this environment
-          are synthetic.
-        </p>
+          </div>
+          <div className="ladder-result-label">
+            cost per child treated
+            <InfoNote
+              label="cost per child treated"
+              text="One carton is 150 × 92 g sachets — one child's full course. Computed from disbursements against CONFIRMED deliveries only, so consignments in transit are excluded from both sides. A carton counts once, on the leg arriving at the delivery place its contract names, so a consignment moving in hops is not counted again at every hop. Haulage and storage contracts are excluded: they buy movement, not cartons."
+            />
+          </div>
+        </div>
       </Card>
-
-      <TwoFiguresAndTheGap outcomes={outcomes} />
 
       <Card
         title="Coverage against need, by country"
@@ -217,6 +266,19 @@ function FunderTab({ ctx }) {
           />
         )}
       </Card>
+
+      {/* The measured half comes LAST, after the coverage table.
+          It sat directly under the unit ladder, so the ladder scene's frame
+          also contained the finale's reveal — 58,251 courses and the observed
+          recovery rate — and the closing scene then announced as new a figure
+          the viewer had already read three scenes earlier. A 250px card cannot
+          exclude the card beneath it in a 720px viewport, so the fix is the
+          page order, not the camera. It also reads better: coverage against
+          need is the last SUPPLY question, and this is the first outcome one. */}
+      <TwoFiguresAndTheGap
+        outcomes={outcomes}
+        records={world.distribution_records || []}
+      />
     </Page>
   );
 }
@@ -231,8 +293,24 @@ function FunderTab({ ctx }) {
    That gap is the most useful thing on this page. It is the difference between
    what was shipped and what is known to have worked, and reporting one without
    the other is how a funder ends up defending a number nobody measured. */
-function TwoFiguresAndTheGap({ outcomes }) {
+function TwoFiguresAndTheGap({ outcomes, records }) {
+  const [openBatch, setOpenBatch] = useState(null);
   if (!outcomes) return null;
+
+  // The batch drill has existed as a tested endpoint and a built component
+  // since the demand stage, reachable only from the implementing partner's own
+  // page. The funder narrative's closing beat is Dale following a delivered
+  // batch forward to one child's arm circumference — the single human image in
+  // a narrative otherwise made of arithmetic — and there was no route to it
+  // from his surface. Same component, same records, one route.
+  const batches = [];
+  const seen = new Set();
+  (records || []).forEach((r) => {
+    if (!r.batch_lot || seen.has(r.batch_lot)) return;
+    if (!(r.outcomes || []).length) return;
+    seen.add(r.batch_lot);
+    batches.push(r);
+  });
   const breakdown = outcomes.discharge_breakdown || {};
   const labels = {
     recovered: 'Recovered',
@@ -255,8 +333,14 @@ function TwoFiguresAndTheGap({ outcomes }) {
           <div className="figure-value">
             {formatNumber(outcomes.courses_delivered)}
           </div>
-          <div className="figure-label">Courses delivered</div>
-          <p className="muted small">{outcomes.courses_method}</p>
+          <div className="figure-label">
+            Courses delivered
+            <InfoNote
+              label="courses delivered"
+              text={outcomes.courses_method}
+            />
+          </div>
+          <p className="muted small">Arithmetic on the supply record.</p>
         </div>
         <div className="figure-block">
           <div className="figure-value">
@@ -267,9 +351,16 @@ function TwoFiguresAndTheGap({ outcomes }) {
             </span>
           </div>
           <div className="figure-label">
-            Recorded recoveries, in the observed sample
+            Recovered, of children discharged
+            <InfoNote
+              label="recorded recoveries"
+              text={outcomes.recovery_method}
+            />
           </div>
-          <p className="muted small">{outcomes.recovery_method}</p>
+          <p className="muted small">
+            {formatNumber(outcomes.children_in_treatment)} more are still in
+            treatment and count on neither side.
+          </p>
         </div>
         <div className="figure-block figure-gap">
           <div className="figure-value">
@@ -277,10 +368,34 @@ function TwoFiguresAndTheGap({ outcomes }) {
               ? '—'
               : `${outcomes.observed_recovery_rate}%`}
           </div>
-          <div className="figure-label">Observed recovery rate</div>
-          <p className="muted small">{outcomes.gap_note}</p>
+          <div className="figure-label">
+            Observed recovery rate
+            <InfoNote label="the gap" text={outcomes.gap_note} />
+          </div>
+          <p className="muted small">Sphere expects above 75%.</p>
         </div>
       </div>
+      {batches.length ? (
+        <div className="figure-drill">
+          <span className="muted small">
+            The gap is the finding, and it is followable:{' '}
+          </span>
+          <button
+            type="button"
+            className="btn-link"
+            onClick={() => setOpenBatch(batches[0])}
+          >
+            follow batch {batches[0].batch_lot} to the children it treated
+          </button>
+        </div>
+      ) : null}
+      {openBatch ? (
+        <BatchDrill
+          record={openBatch}
+          allRecords={records}
+          onClose={() => setOpenBatch(null)}
+        />
+      ) : null}
       {rows.length ? (
         <DataTable
           rows={rows}
@@ -349,21 +464,63 @@ function StageBars({ contract }) {
    moved than was appropriated. */
 function Sankey({ appropriations, contracts }) {
   const width = 900;
-  const height = Math.max(220, contracts.length * 54 + 60);
+  const height = Math.max(240, contracts.length * 62 + 80);
   const colWidth = 150;
   const gap = 10;
+  // The gaps between stacked bands have to come OUT of the height the bands
+  // are scaled into, not be added on top of it. Scaling the bands to fill the
+  // whole box and then inserting a gap between each pair pushed the last band
+  // past the bottom edge, which clipped the smallest contract in the diagram —
+  // and the smallest contract is the one most likely to be the interesting one.
+  const bandCount = Math.max(
+    appropriations.length,
+    new Set(contracts.map((c) => c.org_name)).size,
+    new Set(contracts.map((c) => c.destination_country)).size,
+    1,
+  );
+  const drawable = height - 60 - (bandCount - 1) * gap;
 
-  const total = appropriations.reduce((n, a) => n + a.amount, 0) || 1;
-  const scale = (v) => (v / total) * (height - 60);
+  const appropriated = appropriations.reduce((n, a) => n + a.amount, 0) || 1;
+
+  // What each envelope has actually committed. The diagram traces OBLIGATED
+  // dollars through partner to country, so the first column has to be drawn in
+  // the same currency as the other two: it was drawn in appropriated dollars
+  // while they were drawn in obligated ones, and about 93% of the height
+  // evaporated between the first column and the second on a card whose caption
+  // promises the flow conserves.
+  //
+  // The unobligated balance is REPORTED below rather than drawn. Drawn to
+  // scale it is 93% of the diagram and every contract band collapses — Blue
+  // Nile's $128k is 0.18% of the appropriation and cannot be a visible band on
+  // any linear scale that also contains the balance. A number in the caption
+  // can be read; a band under a pixel cannot.
+  const obligatedByAppropriation = {};
+  contracts.forEach((c) => {
+    const key = `a${c.appropriation_id}`;
+    obligatedByAppropriation[key] =
+      (obligatedByAppropriation[key] || 0) + c.obligated_value;
+  });
+  const total = contracts.reduce((n, c) => n + c.obligated_value, 0) || 1;
+  const scale = (v) => (v / total) * drawable;
 
   // column 1: appropriations, column 2: partners, column 3: countries
   let y1 = 20;
   const approvals = appropriations.map((a) => {
-    const h = Math.max(6, scale(a.amount));
-    const node = { id: `a${a.id}`, label: a.title, value: a.amount, y: y1, h };
+    const committed = obligatedByAppropriation[`a${a.id}`] || 0;
+    const h = Math.max(6, scale(committed));
+    const node = {
+      id: `a${a.id}`,
+      label: a.title,
+      value: committed,
+      envelope: a.amount,
+      y: y1,
+      h,
+    };
     y1 += h + gap;
     return node;
   });
+
+  const residualTotal = Math.max(0, appropriated - total);
 
   const byPartner = {};
   contracts.forEach((c) => {
@@ -445,31 +602,94 @@ function Sankey({ appropriations, contracts }) {
           );
         })}
         {[approvals, partners, countries].map((col, ci) =>
-          col.map((n) => (
-            <g key={n.id}>
-              <rect
-                x={colX[ci]}
-                y={n.y}
-                width={colWidth}
-                height={n.h}
-                rx="3"
-                fill="#0d7a5f"
-              />
-              <text
-                x={colX[ci] + 4}
-                y={n.y + n.h / 2 + 4}
-                className="sankey-label"
-              >
-                {n.label.length > 26 ? `${n.label.slice(0, 25)}…` : n.label}
-              </text>
-            </g>
-          )),
+          col.map((n) => {
+            // A funding diagram with no figures on it cannot be checked, which
+            // is the one thing this card exists to allow. Every band carries
+            // its own amount: on its own line where the band is tall enough to
+            // hold two, appended to the label where it is not.
+            //
+            // A band too thin to contain 10px text puts its label OUTSIDE, in
+            // dark ink beside the bar, rather than spilling white letters over
+            // a 6px sliver and the background behind it. The smallest band is
+            // the one a reader is most likely to be hunting for — Blue Nile's
+            // $128k is 2.6% of the diagram — so it is the last label that
+            // should be the hardest to read.
+            const label =
+              n.label.length > 24 ? `${n.label.slice(0, 23)}…` : n.label;
+            const roomy = n.h >= 30;
+            const thin = n.h < 14;
+            if (thin) {
+              const last = ci === 2;
+              return (
+                <g key={n.id}>
+                  <rect
+                    x={colX[ci]}
+                    y={n.y}
+                    width={colWidth}
+                    height={n.h}
+                    rx="3"
+                    fill="#0d7a5f"
+                  />
+                  <text
+                    x={last ? colX[ci] - 8 : colX[ci] + colWidth + 8}
+                    y={n.y + n.h / 2 + 3.5}
+                    className="sankey-label sankey-label-outside"
+                    textAnchor={last ? 'end' : 'start'}
+                  >
+                    {label} · {shortMoney(n.value)}
+                  </text>
+                </g>
+              );
+            }
+            return (
+              <g key={n.id}>
+                <rect
+                  x={colX[ci]}
+                  y={n.y}
+                  width={colWidth}
+                  height={n.h}
+                  rx="3"
+                  fill="#0d7a5f"
+                />
+                {roomy ? (
+                  <React.Fragment>
+                    <text
+                      x={colX[ci] + 6}
+                      y={n.y + n.h / 2 - 2}
+                      className="sankey-label"
+                    >
+                      {label}
+                    </text>
+                    <text
+                      x={colX[ci] + 6}
+                      y={n.y + n.h / 2 + 13}
+                      className="sankey-label sankey-value"
+                    >
+                      {shortMoney(n.value)}
+                    </text>
+                  </React.Fragment>
+                ) : (
+                  <text
+                    x={colX[ci] + 6}
+                    y={n.y + n.h / 2 + 4}
+                    className="sankey-label"
+                  >
+                    {label} · {shortMoney(n.value)}
+                  </text>
+                )}
+              </g>
+            );
+          }),
         )}
       </svg>
       <div className="muted small">
-        Widths are proportional to obligated value. Every partner's inflow
-        equals the sum of its contracts, and every country's inflow equals the
-        sum of the contracts delivering there.
+        Every column sums to {shortMoney(total)} obligated.{' '}
+        <strong>{shortMoney(residualTotal)}</strong> of the{' '}
+        {shortMoney(appropriated)} appropriated is not yet under contract.
+        <InfoNote
+          label="the funding diagram"
+          text="Widths are proportional to obligated dollars on one scale across all three columns, so each column sums to the same total. Every partner's inflow equals the sum of its contracts, and every country's inflow equals the sum of the contracts delivering there. The first column shows what each envelope has COMMITTED, not its size — the unobligated balance is reported rather than drawn, because at true scale it is most of the diagram and every contract band collapses below a pixel."
+        />
         {unattributed.length
           ? ` ${unattributed.length} contract${
               unattributed.length === 1 ? '' : 's'

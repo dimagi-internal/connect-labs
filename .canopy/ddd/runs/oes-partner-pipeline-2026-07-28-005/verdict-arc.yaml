@@ -1,0 +1,118 @@
+schema_version: 1
+kind: arc
+gate: gating
+live_state_verified: true
+calibration: provisional
+rubric_name: ddd-arc-eval
+scenes_judged: 6
+
+gate_checks:
+  render_report: "37/37 actions ok, 0 failed"
+  snapshot_consistency: "pass — all six page_text files carry render_id 19fab49e3be; all snapshots written 18:34"
+  duplicate_frames: "pass on the literal check — all six scene_N.png have distinct md5. But see finding ARC-001: scene_2 is scene_1 scrolled 30px, 95.3% of the 690 overlapping rows pixel-identical. The consecutive-duplicate gate does not catch a 30px camera move, and this is exactly the defect it exists to catch."
+
+dimensions:
+  arc_shape:
+    score: 4
+    weight: 0.30
+    justification: >-
+      The build is real and the order is load-bearing. Scene 1 states what the partner
+      cannot see (four key figures: 11 sites, 4 distributions not covered, 0 wk thinnest
+      cover, 1 shortfall raised). Scene 3 supplies the instrument (weeks of cover and a
+      run-dry date per site, worst-first, with the derivation printed under the table).
+      Scene 4 moves from projection to physical evidence at the loading bay (900 advised
+      / 840 counted). Scene 5 sends that evidence upward. Scene 6 closes the chain the
+      opening implied — a received batch resolving to named children's MUAC series
+      climbing out of the WHO red band. The finale IS the strongest artifact in the run,
+      and no two scenes swap without loss: 5 depends on 3's cover table (the modal is
+      pre-filled from Kukawa's own projection), and 6 depends on 4's consignment
+      (LOT2609B arrived on SHP-2026-0909, the very shipment scene 4 found 60 cartons
+      short). Held at 4, not 5, by one flat stretch: scene 2 does not advance the picture
+      at all — its frame is scene 1's frame. Anchor 4 ("a clear build with one flat
+      stretch") names it exactly. The arc_shape deduction rules do not fire: the final
+      scene is the strongest moment, and the best artifact is not front-loaded.
+  escalation:
+    score: 2
+    weight: 0.25
+    justification: >-
+      CAPPED by the rule "two scenes showing the same surface with only a scroll between
+      them: max 2". Scenes 1 and 2 are the same viewport with a 30-pixel scroll between
+      them — measured, not estimated: 95.3% of the 690 overlapping rows are
+      pixel-identical, and the only visible change is that the Kukawa calendar row
+      half-appears at the bottom edge. Every piece of evidence scene 2's narration cites
+      is already in scene 1's frame: the covered rows, amber Askira (63 / 38 on hand +94),
+      and red Biu (94 / 0 on hand +141) are all visible in scene 1. Scene 2 therefore
+      shows the viewer nothing scene 1 did not; cutting it would cost the narration a
+      beat but the sequence not a single pixel of evidence. Scenes 3, 4, 5 and 6 each
+      earn their place cleanly and add something no other scene shows. The cap is the
+      whole of the deduction.
+  visual_variety:
+    score: 2
+    weight: 0.20
+    justification: >-
+      CAPPED by the rule "more than half the scenes are the same surface at different
+      scroll offsets: max 2". Four of six frames (1, 2, 3, 5) are the same continuous
+      /supply/ "Sites & distributions" page at different scroll positions, and two of
+      those four (1 and 2) are the same 30px window. The run does contain two genuine
+      shape breaks and they are good ones: scene 4 is a different tab (Receiving) with a
+      different table plus the short-count card, and scene 6 is a modal of small-multiple
+      MUAC charts against WHO colour bands — a real change of density and shape, and the
+      chart now spans roughly 56% of the modal width with legible bands rather than
+      letterboxing. That is why this is a 2 and not a 1. But the sequence still shows
+      the viewer one long scrolling page for two thirds of its running time, and the
+      product owns a Mapbox/deck.gl flow map (connect_labs/static/supply/flowmap.jsx,
+      mounted in tab_command.jsx and tab_gov.jsx) that this narrative never visits. The
+      ceiling here is a narrative choice, not a product limit.
+  persona_coherence:
+    score: 4
+    weight: 0.15
+    justification: >-
+      One organisation's story throughout. Every one of the six frames carries the same
+      chrome — the "partner" pill and "Komadugu Health Initiative" in the header — so
+      the viewer never loses whose screen this is, including on the Receiving tab and
+      inside the batch modal. The goal does not drift: see the supply, count it, raise
+      it, follow it to the child. The tab change in scene 4 is motivated on screen and
+      in narration ("the partner's own capture surface"). Held off 5 by one soft actor
+      slide: scene 4 is titled "the storekeeper counts it" and argues from the
+      storekeeper's authority, but the session on screen is Zara's partner-admin view
+      (the Receiving tab shows eleven sites' consignments and "Record the count" buttons,
+      not one storekeeper's bay). The narration's subject and the screen's evident user
+      are adjacent rather than identical. Not the max-2 rule — the user is still the
+      partner — but it is the reason this is not a 5.
+  opening_and_close:
+    score: 4
+    weight: 0.10
+    justification: >-
+      Both ends are genuinely strong on their own evidence. The opening states the
+      problem in terms a stranger feels, in the partner's own numbers rather than the
+      product's vocabulary: "0 wk thinnest cover — Biu Nutrition Centre is awaiting its
+      first consignment" and "1 shortfall raised — awaiting an answer from OES". The
+      close delivers the specific thing the opening promised and does it honestly — five
+      named children's MUAC series crossing 125 mm, "Treatment records in this
+      environment are synthetic" in the same frame as the series, and an unprompted
+      sample caveat ("14 of the 129 children this batch fed — a rate from 14 children
+      carries a wide interval"). On its own anchors this is a 5. It is held at 4 by the
+      rubric's sanity floor: with two scenes of the run being the same frame, this is not
+      yet a demo I would sit through twice, and the floor caps every dimension at 4.
+      Removing the scene 1/2 stall is what unlocks the 5 here — nothing at either end
+      needs changing.
+
+overall_score: 2
+overall_rule: lowest
+weighted_score: 3.1
+one_sentence_story: >-
+  A feeding-programme partner that knew its caseload exactly and nothing about the supply
+  behind it gets weeks-of-cover and a run-dry date for each of its eleven sites, counts a
+  consignment 60 cartons short at its own loading bay, raises that shortfall upward into
+  the central queue, and follows a received batch forward to the named children whose arm
+  circumference climbed out of the red.
+verdict: fail
+
+summary: >-
+  The story is statable in one sentence and the arc is real — this is not an arc-less run.
+  Both caps from the previous round fire again, and for the same structural reason: the
+  narrative still visits one long scrolling page four times out of six. The scene 2
+  retarget from the calendar footnote to its thead moved the camera 30 pixels, which is
+  not enough to make it a different frame from scene 1. The scene 5 retarget to the named
+  Kukawa row DID land — that row is now in frame — but the leak it was also supposed to
+  fix did not: scene 6's batch card still fills the bottom third of scene 5.

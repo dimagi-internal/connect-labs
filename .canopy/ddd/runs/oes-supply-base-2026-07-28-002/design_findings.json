@@ -1,0 +1,361 @@
+[
+  {
+    "scene": "9 — The award becomes the contract",
+    "dimension": "claim_reality_coherence",
+    "severity": "high",
+    "route": "DEFER",
+    "fix_kind": "options",
+    "detail": "Two independent falsifications. The narration's 'the same record is what the supply chain moves against' points at a contract with a different tender, quantity and unit price than the award just shown: the header reads '45,000 cartons RUTF delivered to Maiduguri · awarded under RUTF Northeast Nigeria Q2 2026' at USD 42.10, while the viewer has just watched a Q3 2026 award of 60,000 cartons to the same supplier at USD 42.29. Same supplier, same commodity, same city, tender names differing by one character. And the payoff 'nobody can trace a dollar to a carton' is spoken over a DISBURSED field reading USD 0.00.",
+    "fix_recommendation": "Either create and open the contract produced by the on-camera Q3 award, or add an explicit clause to the narration naming this as an earlier award on the same corridor already in execution. The recipe's own 'show' text already says 'not the one just made' — that disclosure never reaches the viewer."
+  },
+  {
+    "scene": "9 — The award becomes the contract",
+    "dimension": "concept_clarity",
+    "severity": "medium",
+    "route": "CONCEPT",
+    "fix_kind": "options",
+    "detail": "The five-second read is 'a contract for Savanna Nutrients, $1.89M obligated, nothing disbursed' — wrong on both axes the scene needs: that this is the contract just awarded, and that money has moved. The record's parts are well labelled (the 'The appropriation this contract obligates money from' subtitle is genuinely good plain English), so what it IS lands; the why does not.",
+    "fix_recommendation": "Open the contract on the demonstrated award, or narrate the substitution; and stage the closing frame on a contract where obligated -> disbursed -> delivered cartons is a visible chain rather than a zero."
+  },
+  {
+    "scene": "9 — The award becomes the contract",
+    "dimension": "design_soundness",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The DISBURSED card states its own rule — 'AGAINST CONFIRMED DELIVERY ONLY' — and reads USD 0.00 directly above twelve consignments with status Delivered. Verified in the model: disbursed_value = confirmed_quantity x unit_price, and _quantity_in_contract_unit counts only legs ARRIVING at the contract's delivery place (Maiduguri). The Delivery schedule card therefore lists hub-to-centre legs out of Maiduguri that by construction can never move the disbursed figure, plus consignments to Gombe and Damaturu under a contract headed 'delivered to Maiduguri'. Delivered quantities in the visible column also sum well above the card's own footer figure of '15,000 confirmed at destination'.",
+    "fix_recommendation": "Group the Delivery schedule into 'inbound against this contract' vs 'onward distribution past the delivery point', and distinguish Confirmed from Delivered in the status column, so the delivered rows reconcile to the stated confirmed figure and the disbursement rule is legible."
+  },
+  {
+    "scene": "9 — The award becomes the contract",
+    "dimension": "why_groundedness",
+    "severity": "low",
+    "route": "CONCEPT",
+    "fix_kind": "mechanical",
+    "detail": "Spine item S5 is grounded in real code (models/execution.py — Contract created from an Award, drawing against an Appropriation), and funder/appropriation/IATI id/obligated are all on screen. But the concept_claim's operative words — 'the same record the tender produced' — have nothing on screen linking this contract to any award: 'awarded under RUTF Northeast Nigeria Q2 2026' is dead plain text.",
+    "fix_recommendation": "Render the 'awarded under ...' line as a link to the award record, so the continuity claim is demonstrable on screen rather than narrated."
+  },
+  {
+    "scene": "9 — The award becomes the contract",
+    "dimension": "visual_polish",
+    "severity": "low",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The 'Drawn against' grid wraps DISBURSED and UNIT PRICE to a second row leaving a large dead right half; OBLIGATED USD 1,894,500.00 carries no more typographic weight than the FUNDER label beside it; and the caveat that resolves the whole 0.00 contradiction is the lowest-contrast text on the card.",
+    "fix_recommendation": "Promote OBLIGATED and DISBURSED to a paired hero treatment side by side with the 'against confirmed delivery only' rule at readable contrast, and rebalance the grid so the six fields sit on even rows."
+  },
+  {
+    "scene": "9 — The award becomes the contract",
+    "dimension": "motion_friction",
+    "severity": "low",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "All 8 actions ok and the captured frame is the legible result of a real effecting click. But the schedule's reconciliation footer — '45,000 cartons contracted · 15,000 confirmed at destination · 30,000 outstanding. Status and quantities are derived from the event log, not entered.' — is the literal proof of the narrated payoff and never enters frame during the 3.2s closing hold.",
+    "fix_recommendation": "Add a scroll_to on the modal's reconciliation footer inside the closing hold so the payoff line is on screen while it is narrated."
+  },
+
+  {
+    "scene": "8 — Two suppliers, two corridors, one tender",
+    "dimension": "use_case_soundness",
+    "severity": "low",
+    "route": "CONCEPT",
+    "fix_kind": "redesign",
+    "detail": "Scored once for the whole walkthrough, attached to the climax. The rewritten cost claim is TRUE — the split as awarded (USD 3,374,400, USD 42.18/carton) is USD 81,000 / USD 1.01 per carton cheaper than the cheapest single-supplier consolidation (Savanna, USD 3,455,400, USD 43.19/carton) — but that is exactly the problem for this dimension. Because the resilient split is also the cost minimum, the scene demonstrates no trade-off: greedy cheapest-per-lot reaches the identical answer, and the narration's own stated failure mode (concentrating a four-country response on the cheapest single bidder) is never instantiated, because concentrating is dearer here. Calling it 'the decision the lot structure exists to make possible' overstates what the data makes it: an automatic optimum. Steelman kept: the split does avoid a dominated outcome that would be both dearer and concentrated.",
+    "fix_recommendation": "Re-price the fixture so the resilient split genuinely costs something — make one supplier cheapest on BOTH corridors (e.g. Savanna bids ~41.50 into Djibo) so consolidating would be ~USD 60-90k cheaper and Ada is visibly paying a premium for corridor independence. Alternative: keep the data and soften the narration so it claims only that per-lot award avoids a dearer, concentrated outcome. Concept gate — do not auto-apply."
+  },
+  {
+    "scene": "8 — Two suppliers, two corridors, one tender",
+    "dimension": "design_soundness",
+    "severity": "low",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The award state machine is coherent (Award click -> badge + buttons removed + toast, proven by the before/after pair). But a single click commits USD 2,537,400 with no confirmation and no visible undo, and no award criterion is stated anywhere — price and technical are both shown with no combined score or weighting, so the audience's actual decision ('is this defensible?') is unsupported.",
+    "fix_recommendation": "Add a confirm step on Award naming lot, supplier and lot value, and surface the evaluation rule on the lot header (a combined score column, or an explicit 'lowest compliant price, technical >= 70' line)."
+  },
+  {
+    "scene": "8 — Two suppliers, two corridors, one tender",
+    "dimension": "visual_polish",
+    "severity": "low",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "Tables are tight and currency formatting is consistent, but technical scores are all rendered in the same accent green (60 styled identically to 91) and read as links though they are not, the column has no stated scale, and after award the Award-button column collapses to roughly 250px of empty unlabelled gutter on both tables. The Damaturu card is also clipped mid-glyph at the modal's bottom edge, pulling the eye to an unnarrated third lot at the payoff moment.",
+    "fix_recommendation": "Render TECHNICAL as plain text with its scale ('91 / 100'), reserving colour for a stated threshold only, and collapse the action column when a lot is awarded so no dead gutter remains."
+  },
+
+  {
+    "scene": "7 — Bids priced and scored lot by lot",
+    "dimension": "visual_polish",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The bid-comparison modal's sticky header occludes the Maiduguri lot card: the bold title '60,000 cartons RUTF delivered to Maiduguri' is entirely hidden and its subtitle is sliced mid-glyph, passing UNDER the header. This is a scroll-container layout bug, not a scroll position — and the corridor label is the load-bearing identifier for a claim that is about corridors. Secondary: 'USD' repeats in all 15 cells instead of the column header, and '.00' trails every seven-figure lot value.",
+    "fix_recommendation": "Add scroll-padding-top to the modal's scroll container (or scroll-margin-top on the lot cards) equal to the sticky header height, so scroll_to lands a card's title below the header rather than under it."
+  },
+  {
+    "scene": "7 — Bids priced and scored lot by lot",
+    "dimension": "design_soundness",
+    "severity": "low",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The TECHNICAL column renders a static value (91) and an interactive action ('Score') in identical teal styling, so a viewer cannot tell which cells are clickable. Every row also carries an equally prominent Award button with no selection or confirm step — 15 identical green CTAs, any of which awards the worst bid in one click. Separately, Award is live while the modal header still reads 'bids due Aug 9, 2026' and the tender status is Published.",
+    "fix_recommendation": "Render scored cells as plain non-interactive text with the scale in the column header ('TECHNICAL /100'), and unscored cells as a visually distinct ghost button labelled 'Add score'."
+  },
+  {
+    "scene": "7 — Bids priced and scored lot by lot",
+    "dimension": "claim_reality_coherence",
+    "severity": "low",
+    "route": "DEFER",
+    "fix_kind": "mechanical",
+    "detail": "Every narrated claim verifies against the page — the leaders genuinely differ (Savanna 42.29 on Maiduguri, Faso 41.85 on Djibo, with Faso actually LAST at Maiduguri at 48.64), rows rank strictly by price, and all 15 unit-price x quantity products are exact. But the scene's own title asserts bids are 'scored lot by lot' while 7 of 15 rows (the Damaturu and haulage lots) carry no score at all, only a 'Score' control.",
+    "fix_recommendation": "Seed BidScore rows for the Damaturu and haulage lots so the bid book is uniformly scored and the scene title is true."
+  },
+
+  {
+    "scene": "6 — A solicitation reaches only qualified suppliers",
+    "dimension": "concept_clarity",
+    "severity": "medium",
+    "route": "CONCEPT",
+    "fix_kind": "mechanical",
+    "detail": "The frame is the publisher's own tender list ('Publish lots to the qualified registry, compare bids and award'); nothing on it says or shows that visibility is restricted. A cold viewer's five-second read is 'a table of six tenders', not 'eligibility is enforced' — the scene's entire claim is carried by the narrator's voice. VERIFIED: the product does have the counter-shot — static/supply/tab_supplier_home.jsx renders a 'Solicitations open to you' card with the hint 'Solicitations are visible once your organisation holds a live qualification in a matching category' — and the walkthrough already logs in as a supplier persona in scene 3, so the shot was available and not taken.",
+    "fix_recommendation": "Split this into a two-beat scene: keep the publisher list, then add a beat on a supplier's home showing the 'Solicitations open to you' card, so the absence is visible rather than asserted."
+  },
+  {
+    "scene": "6 — A solicitation reaches only qualified suppliers",
+    "dimension": "design_soundness",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The narration asserts 'Ada publishes a solicitation' but the action_trace contains no effecting action for it — only nav-click, wait, scroll, hold; the row already exists in state Published. Separately, every row carries an identical 'Compare bids' button, including the narrated row at 0/4 awarded where no bids have been compared, and five rows already Awarded — one label for three different states.",
+    "fix_recommendation": "Make the row action state-dependent ('View award' when Awarded, 'Compare bids' once bids exist, 'Manage lots' for a published solicitation with no bids), and either perform the publish on camera or re-narrate to what is shown."
+  },
+  {
+    "scene": "6 — A solicitation reaches only qualified suppliers",
+    "dimension": "claim_reality_coherence",
+    "severity": "medium",
+    "route": "DEFER",
+    "fix_kind": "mechanical",
+    "detail": "Three of the narration's four assertions are unbacked by the frame: 'publishes' (no publish performed), 'by the fifteenth of September' (no date column of any kind exists in the solicitations table — the date is only inside the bid modal), and 'an unqualified supplier's page never receives the solicitation' (references a page not in shot). Only 'sixty thousand cartons of RUTF into Maiduguri' is literally visible.",
+    "fix_recommendation": "Add a closing/deadline column to the solicitations table so the narrated 15 September has somewhere on screen to live, and capture the supplier-side frame."
+  },
+  {
+    "scene": "6 — A solicitation reaches only qualified suppliers",
+    "dimension": "motion_friction",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "Two action-fidelity rules fire: the narration claims an effecting act ('publishes') the trace never performs, and the sequence is illegible — four pure camera moves (nav click, wait, scroll, 3.4s hold) under a narration describing publishing a multi-lot tender. Framing itself is fine; the cursor ends parked over the '35,0' of the narrated row's Damaturu lot line.",
+    "fix_recommendation": "Record the act — New solicitation, enter the lots and the 15 Sep date, Publish, land on the list with the new row visible — and move the final cursor position off the lot text."
+  },
+  {
+    "scene": "6 — A solicitation reaches only qualified suppliers",
+    "dimension": "visual_polish",
+    "severity": "low",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "Type hierarchy, status pills and the green CTA are consistent and nothing is misaligned, but the narrated row is visually indistinguishable from five stale awarded ones and sits last, below them; its four-line lot stack crowds the card's bottom edge. Data realism: the table shows '40,000 truck-months to Khartoum' beside the narrated tender's '6 truck-months to Maiduguri' — VERIFIED as a seed bug (demo/solicitations.py:299 sets unit='truck-months' for country SD while data.py supplies quantity 40000 from a lot described as 'Inland haulage of 40,000 cartons').",
+    "fix_recommendation": "Fix the Sudan lot's unit/quantity pairing in the seeder, sort Published solicitations above Awarded ones, and give the row's lot stack the same bottom padding as its siblings."
+  },
+
+  {
+    "scene": "5 — The registry answers who can supply today",
+    "dimension": "claim_reality_coherence",
+    "severity": "medium",
+    "route": "DEFER",
+    "fix_kind": "options",
+    "detail": "Two narrated elements have no on-screen referent. 'This one has dropped out because its certification lapsed last month' — no lapsed row exists; all three visible EARLIEST EXPIRY values read Feb 16/17/18 2027, roughly seven months in the future. 'These can move it' (road transport) — the commodity filter reads RUTF and every QUALIFIED FOR chip reads RUTF; road transport exists only as an unselected option in the dropdown. The scene narrates an absence, which is by construction invisible: a filtered-out supplier and a dropped-out supplier look identical.",
+    "fix_recommendation": "Either rewrite the narration to describe only what the RUTF/Nigeria filter shows, or change what is shown — render the excluded set (name, lapsed certification, lapse date) so removal-by-construction has something to look at."
+  },
+  {
+    "scene": "5 — The registry answers who can supply today",
+    "dimension": "concept_clarity",
+    "severity": "low",
+    "route": "CONCEPT",
+    "fix_kind": "mechanical",
+    "detail": "The subtitle 'Organisations holding live qualifications. Solicitations are issued from this registry.' states the idea in one line, but a cold viewer sees an ordinary filtered vendor table indistinguishable from any directory, and the self-maintaining mechanism — the differentiating idea — is not what the screen communicates. '3 qualified suppliers' also reads as the programme total against the dashboard's earlier '14 Qualified suppliers', with no '3 of 14 matching' framing.",
+    "fix_recommendation": "Add a meta line under the count reading 'Live as of <date> · N organisations excluded by lapsed or missing qualification', with the excluded count as a link."
+  },
+  {
+    "scene": "5 — The registry answers who can supply today",
+    "dimension": "design_soundness",
+    "severity": "low",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "Filters narrow and the count updates, so the model holds at a high level. But rows are dead ends with no path to the certification evidence that justifies inclusion — the panel exists one scene earlier — and there is no affordance anywhere to inspect what the registry excluded, so the practitioner must trust the list rather than verify it.",
+    "fix_recommendation": "Add a 'Lapsed (n)' toggle beside the count that lists excluded organisations with their lapse date and lapsed certification, and make registry rows open the org's certification record."
+  },
+  {
+    "scene": "5 — The registry answers who can supply today",
+    "dimension": "visual_polish",
+    "severity": "low",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "Alignment is tight, type hierarchy intentional and chips consistent, but three native unstyled select controls with default browser chevrons sit inside an otherwise fully custom-styled UI, and a three-row card leaves roughly the bottom half of the frame as empty grey.",
+    "fix_recommendation": "Restyle the three filter selects to match the app's custom control styling (border-radius, chevron, height matching the cards)."
+  },
+  {
+    "scene": "5 — The registry answers who can supply today",
+    "dimension": "motion_friction",
+    "severity": "low",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The executed portion is clean — 8/8 actions ok, two genuinely effecting select actions with deliberate 1.2s and 2.6s holds, one settled viewport. But the scene's longest hold sits on a frame where the third narrated beat (the dropout) has nothing on screen to land on; the viewer hears about an event while looking at an unchanged table.",
+    "fix_recommendation": "Script a beat for the dropout — during the closing hold, exercise the expiry filter or open the lapsed view so the narrated removal has an on-screen referent."
+  },
+
+  {
+    "scene": "4 — Tomas qualifies the supplier, per category and with an expiry",
+    "dimension": "design_soundness",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "Action-fidelity cap fires: the narration says 'a pass stamps a qualification onto the organisation with an expiry date', but the trace clicks Qualify on RUTF and Reject on Therapeutic milk and then stops — 'Record decision' is never clicked, the modal is left open and unsubmitted, and no organisation record is shown updating. Corroborated on screen: the registry in the very next scene lists Savanna's RUTF expiry as Feb 17 2027, not the Jan 20 2028 the modal previews. Compounding: one shared Reviewer notes textarea serves two opposite per-category verdicts, and clicking Reject produces no label feedback (the sub-label still reads 'no qualification granted').",
+    "fix_recommendation": "Append a click on '.modal button:has-text(\"Record decision\")' after the Reject, then wait_for the resulting confirmation/registry state and capture the frame there, so the narrated stamping is performed and its result is what the viewer sees."
+  },
+  {
+    "scene": "4 — Tomas qualifies the supplier, per category and with an expiry",
+    "dimension": "motion_friction",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The scene narrates the therapeutic-milk decline while that category's commitment row ('Therapeutic milk 14,000 cartons/month · NG, SD · 28 day lead time', present in the page text) is scrolled out of frame — the left column truncates mid-Commitments with no scroll affordance, when scrolling the modal body would have shown it. The cursor is also parked directly on the Reject button at capture, so selected-versus-hovered is unreadable on the one control the scene's claim depends on. And the sequence stops one click short of its own narrated payoff.",
+    "fix_recommendation": "Before the Reject click, scroll the modal's left column so the Therapeutic milk commitment row is in frame; after the click, add a short hold at a neutral point so the cursor is off the button in the captured frame."
+  },
+  {
+    "scene": "4 — Tomas qualifies the supplier, per category and with an expiry",
+    "dimension": "claim_reality_coherence",
+    "severity": "medium",
+    "route": "DEFER",
+    "fix_kind": "mechanical",
+    "detail": "Two narration claims lack footage. 'Stamps a qualification onto the organisation' — no stamp occurs; the decision is unsubmitted. 'Declined on therapeutic milk, where the evidence is thin' — no on-screen measure supports thinness, and the one datum bearing on it (a real 14,000 cartons/month milk commitment) is below the fold and cuts the other way. The actual basis (no milk-specific certification among GMP, ISO 22000 and a UNICEF RUTF approval) is an absence never surfaced beside the decision.",
+    "fix_recommendation": "Render each Decision row's own evidence inline beside its buttons — that category's commitment plus its matching certification, or an explicit 'no certification on file' marker — so the basis for each verdict sits next to the control."
+  },
+  {
+    "scene": "4 — Tomas qualifies the supplier, per category and with an expiry",
+    "dimension": "visual_polish",
+    "severity": "low",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "Real content overflows: the left column truncates mid-Commitments with no scrollbar or fade, hiding the therapeutic-milk row, while the right column carries roughly 230px of dead whitespace below the notes box. The marketing-style description paragraph is the largest type in the left column — larger than the Legal name value — while the load-bearing line 'Frozen Jul 19, 2026 — later edits by the supplier do not change this' is the smallest, lowest-contrast text in the modal.",
+    "fix_recommendation": "Let the modal body fill the available viewport height and give the left column its own scroll container with a visible scroll affordance, and raise the 'Frozen ...' line's weight and contrast above the description paragraph's."
+  },
+
+  {
+    "scene": "3 — Amina applies, and the profile is frozen",
+    "dimension": "design_soundness",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "fix_kind": "options",
+    "detail": "Action-fidelity cap fires twice over. The narration says Amina applies, declaring capacity, regions and lead times, and that at the moment of submission the profile is frozen — the trace contains no fill, select, type or submit click, only navigation, one row-open click and camera moves. Worse, the application opened is 'OES Supply Base 2026-A' (submitted Mar 12 2026, already Qualified), while the pending decision the narration invokes ('the decision Tomas is about to make') is on round 2026-B, submitted Jul 19 2026 — which is what scene 4 actually reviews. The two scenes show different submissions, and their commitments differ (34,000 cartons/month at 28d vs 39,000 at 14d); VERIFIED as randomly generated per submission in demo/solicitations.py::_commitments, so the figures are unrelated by construction.",
+    "fix_recommendation": "Two paths, pick one. (a) Re-script to open the 2026-B submission so the snapshot Amina shows is the one Tomas decides, ideally filling and submitting on camera. (b) Keep 2026-A and re-narrate so the scene is explicitly about a past, already-qualified application rather than the one about to be decided."
+  },
+  {
+    "scene": "3 — Amina applies, and the profile is frozen",
+    "dimension": "concept_clarity",
+    "severity": "low",
+    "route": "CONCEPT",
+    "fix_kind": "mechanical",
+    "detail": "The card's title and subtitle are well worded ('The profile frozen at submission, beside the live profile as it stands today'), but the hero of the comparison shows two word-for-word IDENTICAL prose paragraphs, so the five-second read is 'why am I being shown the same text twice?'. The one real divergence — UNICEF RUTF approval renewed from Jul 1 2027 to Jul 27 2028, marked 'changed since' — is row 3 of a small table, and the load-bearing sentence about it is the smallest grey text at the modal's fold.",
+    "fix_recommendation": "Collapse the unchanged prose into a single 'Description — unchanged since submission' row and sort changed rows to the top of the card, so the first thing on screen is the divergence rather than two identical paragraphs."
+  },
+  {
+    "scene": "3 — Amina applies, and the profile is frozen",
+    "dimension": "claim_reality_coherence",
+    "severity": "medium",
+    "route": "DEFER",
+    "fix_kind": "options",
+    "detail": "Several narrated claims have no footage backing: the applying, declaring and submitting never happen; Amina Bello appears nowhere in the UI (the supplier chrome names only 'Savanna Nutrients Ltd', where the previous frame named 'Ada Nwosu'); 'lead times per category' is shown for one category; and 'the decision Tomas is about to make' points at 2026-B while the screen shows 2026-A. The certificate divergence itself IS well demonstrated.",
+    "fix_recommendation": "Perform the submission on camera on the 2026-B round (or re-narrate to match 2026-A), and surface the acting user's name in the supplier chrome as the staff chrome does."
+  },
+  {
+    "scene": "3 — Amina applies, and the profile is frozen",
+    "dimension": "visual_polish",
+    "severity": "low",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "Clean type and calm palette, and the single amber 'changed since' pill is correctly restrained — it marks two values that literally differ rather than editorialising. Against that: the prose pair and the certification table below use different column grids (prose at x~155/718, headers at x~335/645), so the eye cannot map 'Frozen at submission' to 'AS SUBMITTED'; identical strings wrap to different line counts because the right column is narrower, making identical text LOOK different in a diff view.",
+    "fix_recommendation": "Align the AS SUBMITTED / LIVE TODAY headers to the same x-positions as the prose columns above, and give both prose columns equal width so identical text wraps identically."
+  },
+  {
+    "scene": "3 — Amina applies, and the profile is frozen",
+    "dimension": "motion_friction",
+    "severity": "low",
+    "route": "PRODUCT",
+    "fix_kind": "options",
+    "detail": "Framing is genuinely good — scroll_to landed 'What the reviewer is assessing' fully in frame with its footnote visible, and a 3.0s settle-hold precedes the capture. But the trace is navigation plus camera moves while the narration describes a multi-step declare-and-submit operation, so a viewer cannot tell from the capture what was done.",
+    "fix_recommendation": "Add the effecting beats the narration names (fill capacity/regions/lead time, click Submit) ahead of the modal open, or re-narrate the scene to describe reading an existing submission."
+  },
+
+  {
+    "scene": "2 — Ada opens a round and names the categories",
+    "dimension": "design_soundness",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "fix_kind": "options",
+    "detail": "Action-fidelity cap fires: the narration's core interaction — opening a round and naming its categories — has no effecting action; the only click is navigation, and the before/after pair confirms a route change, not a state change. Both rounds pre-exist with IDENTICAL category sets (RUTF, Therapeutic milk, Road transport, Warehousing on both 2026-A and 2026-B), which visually argues the categories are a fixed global taxonomy rather than something Ada declares per round. Independently: the Rounds table says 2026-B has 8 applications while the Review queue directly above shows exactly 4 rows, all 2026-B, with no 'showing 4 of 8' framing or filter chip.",
+    "fix_recommendation": "Two paths. (a) Perform the act on camera — click New round, name it, multi-select categories, save — noting the cost that this creates an empty round beside a populated 8-application queue. (b) Re-narrate to what is shown ('Ada's open round declares four categories, and every application in the queue is tagged against them'). Unconditionally, fix the 8-vs-4 mismatch by labelling the queue 'Showing 4 of 8 awaiting review'."
+  },
+  {
+    "scene": "2 — Ada opens a round and names the categories",
+    "dimension": "concept_clarity",
+    "severity": "low",
+    "route": "CONCEPT",
+    "fix_kind": "mechanical",
+    "detail": "The product is legible — rounds are published, applications arrive against them, they get reviewed — and the role is named. But the differentiating idea, that the declared category set is what makes applications comparable, is carried by narration: the chips read as decorative tags, and nothing on the frame shows a question set, field schema or application form, so 'answers the same questions' has no on-screen referent.",
+    "fix_recommendation": "On each Rounds row, expose the declared application schema — make the CATEGORIES cell open a per-category question set, or add a '12 required fields · same for every applicant' affordance beside the chips."
+  },
+  {
+    "scene": "2 — Ada opens a round and names the categories",
+    "dimension": "claim_reality_coherence",
+    "severity": "medium",
+    "route": "DEFER",
+    "fix_kind": "mechanical",
+    "detail": "The round-opening/category-naming interface is nowhere in frame, and 'every application arrives in the same shape and answers the same questions' has no on-screen referent. Credit where due: the four category names are visible verbatim exactly as narrated. Also note the staff Rounds table carries no open or close dates at all, though the recipe's show text promises 'its open and close dates' — the close date appears only on the supplier-side view in scene 3.",
+    "fix_recommendation": "Make the frozen profile / question set inspectable from the round row, and add open/close date columns to the staff Rounds table so the recipe's promised dates are actually on screen."
+  },
+  {
+    "scene": "2 — Ada opens a round and names the categories",
+    "dimension": "motion_friction",
+    "severity": "low",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The frame is fully settled with no spinner or half-painted state and the narrated artifact fits one viewport, but the action sequence is illegible: the trace is nav, wait and hold while the narration describes a multi-step act, so the viewer watches a page appear while hearing an operation described.",
+    "fix_recommendation": "Add a scroll_to and hold on the OES Supply Base 2026-B Rounds row so the four category chips are the framed subject at the moment the voiceover names them, rather than sitting below a queue the narration is not yet discussing."
+  },
+
+  {
+    "scene": "1 — The supply base, before the emergency",
+    "dimension": "claim_reality_coherence",
+    "severity": "medium",
+    "route": "DEFER",
+    "fix_kind": "mechanical",
+    "detail": "The narration's central question names north-east Nigeria and 'four countries', and the frame contains no country, region or corridor anywhere — 'Registry coverage by category' is commodity-only (RUTF, Therapeutic milk, Road transport, Warehousing). The screen answers 'how many RUTF suppliers', not 'who can deliver where', which is the load-bearing half of spine item S0's own 'per commodity AND per corridor'.",
+    "fix_recommendation": "Add a corridor/country dimension to the registry panel — bars grouped as category x corridor, or a compact commodity-by-corridor coverage matrix — so the opening screen visibly answers the question the voiceover asks. (This is why_brief Gap G1 surfacing on camera.)"
+  },
+  {
+    "scene": "1 — The supply base, before the emergency",
+    "dimension": "concept_clarity",
+    "severity": "low",
+    "route": "CONCEPT",
+    "fix_kind": "mechanical",
+    "detail": "The header names a concrete role (Ada Nwosu, Procurement) and the nav literally spells the two stages, but the five-second read lands on the applications queue — rich, four rows, chips, dates — rather than on the registry, which is the actual concept and appears as four bars in a card that is roughly 45% empty.",
+    "fix_recommendation": "Make the registry the visual hero of the opener: promote 'Registry coverage by category' to a full-width panel above the queues and give it the corridor dimension, so the frame shows the queryable set the narration describes."
+  },
+  {
+    "scene": "1 — The supply base, before the emergency",
+    "dimension": "visual_polish",
+    "severity": "low",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "Alignment is tight, type hierarchy real, colour restrained and semantic, with no editorialising. But category chip text breaks mid-phrase ('Therapeutic / milk') inside its pill in three of four table rows, the hero card is roughly 45% dead space, and the ROUND column repeats the identical string 'OES Supply Base 2026-B' four times over three wrapped lines each while supplier names wrap for want of width. Also unexplained: the hero tile reads '14 Qualified suppliers' while the category bars sum to 17.",
+    "fix_recommendation": "Set category chips to white-space: nowrap so cells wrap between chips rather than inside them; collapse the constant ROUND column into the card subtitle and give the freed width to supplier names; add a one-line note that a supplier may hold qualifications in several categories."
+  },
+  {
+    "scene": "1 — The supply base, before the emergency",
+    "dimension": "motion_friction",
+    "severity": "low",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The frame is fully settled and painted with a clean 2s hold, but the 'Solicitations' card header is sliced by the bottom viewport edge — the second of the two stages the narration explicitly names is cut off mid-card — and a stray oversized cursor sits over the nav pointing at empty space.",
+    "fix_recommendation": "End the hold at a scroll position where the Solicitations card is either fully in frame or fully below it, never sliced through its header, and suppress the rendered cursor on narrative-only scenes."
+  }
+]

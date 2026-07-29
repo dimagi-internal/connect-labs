@@ -56,6 +56,7 @@ function IntegrationTab({ ctx }) {
           rows={tokens}
           rowKey={(t) => t.id}
           empty="No tokens yet."
+          emptyHint="Name a token above and create one — it is shown once, at creation. Everything on this page can also be entered by hand under Operations."
           columns={[
             { key: 'label', label: 'Label', value: (t) => t.label },
             { key: 'prefix', label: 'Token', value: (t) => `${t.prefix}…` },

@@ -1,0 +1,108 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+# ALB access logging for connect-labs — the request-level telemetry that did not
+# exist during the 2026-07-29 incident.
+#
+# For 54 minutes the site was effectively down and there was NO way to ask "which
+# URL is slow?". ALB access logs were disabled and the app emitted no request
+# lines, so the culprit had to be inferred by counting repeated outbound httpx
+# INFO lines by hand. This stack removes that gap permanently.
+#
+# Access logs are the INFRASTRUCTURE half of the answer and are worth having even
+# though the app now logs expensive requests itself (connect_labs/utils/
+# request_telemetry.py): the ALB records every request from outside the process,
+# so it still tells the story when the app is too saturated to log, is being
+# OOM-killed, or never got the request at all. The app-side telemetry explains
+# WHY a request was expensive; these logs prove WHICH requests were, and how many.
+#
+# Owns only the bucket + its policy. Turning logging ON is a one-line attribute
+# change on the ALB, which this stack does not own — see infra/README.md.
+
+Description: >-
+  Labs ALB access-log bucket (+ delivery policy and retention lifecycle).
+  Standalone: owns the bucket only, and references (does not own) the ALB.
+
+Parameters:
+  BucketName:
+    Type: String
+    Default: labs-jj-alb-access-logs
+    Description: S3 bucket that receives ALB access logs.
+
+  RetentionDays:
+    Type: Number
+    Default: 90
+    Description: >-
+      Days to keep access logs before expiry. Labs serves roughly 240k requests a
+      day, so this is a few GB per quarter — cheap, but not worth keeping forever.
+      90 days comfortably covers "what changed since last quarter?" and is
+      deliberately SHORTER than the audit archive's 6-year COMPLIANCE retention:
+      these are operational logs, not the HIPAA record.
+
+Resources:
+  AccessLogBucket:
+    Type: AWS::S3::Bucket
+    # Retain: the bucket holds forensic evidence for past incidents, so a stack
+    # delete must not take it with them.
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Ref BucketName
+      # ALB access-log delivery does NOT support SSE-KMS. AES256 is the strongest
+      # option the delivery path accepts; anything else silently drops the logs.
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-access-logs
+            Status: Enabled
+            ExpirationInDays: !Ref RetentionDays
+          - Id: abort-incomplete-uploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+
+  # Grants the ALB log-delivery service write access. Modern regions deliver via
+  # the logdelivery service principal rather than a per-region ELB account id;
+  # the SourceAccount condition stops any other account's load balancer from
+  # writing here (the confused-deputy case).
+  AccessLogBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref AccessLogBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowALBLogDelivery
+            Effect: Allow
+            Principal:
+              Service: logdelivery.elasticloadbalancing.amazonaws.com
+            Action: s3:PutObject
+            Resource: !Sub '${AccessLogBucket.Arn}/*'
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+                s3:x-amz-acl: bucket-owner-full-control
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource:
+              - !GetAtt AccessLogBucket.Arn
+              - !Sub '${AccessLogBucket.Arn}/*'
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+
+Outputs:
+  AccessLogBucketName:
+    Description: Bucket receiving ALB access logs (point the ALB attribute here).
+    Value: !Ref AccessLogBucket
+    Export:
+      Name: labs-jj-alb-access-log-bucket

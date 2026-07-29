@@ -1,0 +1,196 @@
+schema_version: 1
+kind: concept
+gate: gating
+live_state_verified: true
+calibration: provisional
+rubric_name: ddd-concept-eval
+ran_at: 2026-07-28T18:05:00Z
+run_dir: /Users/jjackson/emdash/worktrees/connect-labs/emdash/supply-3-vqp90/.canopy/ddd/runs/oes-supply-base-2026-07-28-002
+spec: docs/walkthroughs/oes-supply-base.recipe.yaml
+narrative_lock: docs/walkthroughs/oes-supply-base.narrative.lock.json (version 2)
+why_brief: docs/walkthroughs/oes-supply-base.why_brief.yaml
+scenes_evaluated: 9
+self_assessed: false
+judges: 9 independent per-scene canopy:visual-judge dispatches
+snapshot_consistency: single render_id 19fab009432 across all captured scenes
+action_trace: 63/63 actions ok, 0 failed
+
+dimensions:
+  concept_clarity:
+    score: 2
+    weight: 0.15
+    justification: >-
+      Weakest link is scene 6 and scene 9. Scene 6's whole claim is that an unqualified
+      supplier never receives the solicitation, but the frame is the publisher's own list
+      of six tenders — nothing on screen shows or implies restricted visibility, and the
+      product's own supplier-side "Solicitations open to you" card (which exists, in
+      static/supply/tab_supplier_home.jsx, with the hint "Solicitations are visible once
+      your organisation holds a live qualification in a matching category") was not shown.
+      Scene 9's five-second read is wrong on two axes: a viewer believes the contract shown
+      is the one produced by the award they just watched (it is not — Q2 2026, 45,000
+      cartons at 42.10, vs the Q3 award of 60,000 at 42.29), and the hero DISBURSED figure
+      reads USD 0.00 under a narration about tracing a dollar to a carton. Mid-walkthrough
+      scenes (4, 7, 8) are clear at 4/5.
+  use_case_soundness:
+    score: 3
+    weight: 0.15
+    justification: >-
+      Scored once for the whole story, attached to scene 8. Two-stage EOI-into-registry
+      procurement is genuinely load-bearing work at real scale (USD 3.37M across two
+      countries, four lots, four bidders). But the climax demonstrates a decision that is
+      free: the split award as made is the global cost MINIMUM (USD 3,374,400 vs USD
+      3,455,400 for the cheapest single-supplier consolidation), so no trade-off between
+      cost and corridor resilience is ever exercised — greedy cheapest-per-lot lands on the
+      identical answer, and the narration's own stated failure mode (concentrating on the
+      cheapest single bidder) is never instantiated because concentrating is dearer here.
+      The lot structure is shown working, not shown buying anything.
+  design_soundness:
+    score: 2
+    weight: 0.20
+    justification: >-
+      Four scenes hit the action-fidelity cap: the narration describes a core interaction
+      the trace never performs. Scene 2 "Ada opens a round and names the categories" — the
+      only effecting action is a nav click; both rounds pre-exist with identical categories.
+      Scene 3 "Amina applies... the moment they submit" — no fill/select/type/submit
+      anywhere; an already-Qualified 2026-A application is opened and read. Scene 4 "a pass
+      stamps a qualification onto the organisation" — Qualify and Reject are clicked but
+      "Record decision" never is, so nothing is committed. Scene 6 "Ada publishes a
+      solicitation" — the row is already Published. Scene 9 adds a genuine model-vs-UI
+      incoherence: DISBURSED USD 0.00 sits directly above twelve consignments marked
+      Delivered.
+  visual_polish:
+    score: 2
+    weight: 0.12
+    justification: >-
+      Weakest link is scene 7: the modal's sticky header occludes the Maiduguri lot card —
+      its bold title is entirely hidden and the subtitle sliced mid-glyph — which is a
+      scroll-container layout bug (missing scroll-padding-top / scroll-margin-top), not a
+      scroll position. The corridor label is the load-bearing identifier for a claim that is
+      about corridors. Elsewhere the app is genuinely well made: consistent chip system,
+      semantic status colour, real type hierarchy, nothing garish, no editorialising. Other
+      recurring notes are ordinary craft ones — native unstyled selects inside a custom UI
+      (scene 5), a truncated modal column hiding the therapeutic-milk commitment (scene 4),
+      category chips wrapping mid-phrase (scene 1).
+  why_groundedness:
+    score: 3
+    weight: 0.15
+    justification: >-
+      Provenance is strong across the walkthrough — every scene names a real spine item and
+      most cite implemented code plus a passing test (EOISubmission.profile_snapshot,
+      Qualification(org, category, granted, expires), rbac.py, Lot/LotBid/BidScore/Award).
+      Scene 9 is the weak point at 3: spine item S5 is grounded, but the concept_claim's
+      operative words — "the same record the tender produced" — have nothing on screen
+      linking this contract to any award ("awarded under RUTF Northeast Nigeria Q2 2026" is
+      dead plain text), so the continuity claim is narrated rather than demonstrated.
+  claim_reality_coherence:
+    score: 1
+    weight: 0.10
+    blocking: false
+    advisory: true
+    justification: >-
+      Advisory and excluded from overall_score. Scene 9 is the floor at 1: the narration's
+      "the same record" points at a contract with a different tender, quantity and unit
+      price than the award just shown, and the payoff "nobody can trace a dollar to a
+      carton" is spoken over a DISBURSED field reading USD 0.00. Six other scenes sit at 2:
+      claimed acts that never occur (scenes 2, 3, 4, 6), and narrated facts with no on-screen
+      referent — scene 5's "this one has dropped out because its certification lapsed last
+      month" (every visible expiry is Feb 2027) and "these can move it" (the filter is RUTF;
+      every chip reads RUTF), scene 6's "by the fifteenth of September" (the table has no
+      date column at all). NOTE the bright spot: scene 8 scores 4 — the rewritten cost claim
+      is TRUE and every number on screen reconciles.
+  motion_friction:
+    score: 2
+    weight: 0.13
+    justification: >-
+      Scenes 4 and 6 are the floor. Scene 4 narrates the therapeutic-milk decline while that
+      category's commitment row is scrolled out of frame (it would have fit), the cursor is
+      parked on the Reject button at capture so selected-vs-hovered is unreadable, and the
+      sequence stops one click short of its own narrated payoff. Scene 6's trace is four
+      pure camera moves under a narration describing a publish. Scenes 7 and 8 are good at
+      4: each narrated lot got its own scroll_to plus a settled hold, and scene 8's two
+      award badges and the toast are simultaneously in one settled frame.
+
+overall_score: 2
+overall_rule: lowest
+
+verdict: fail
+blocking_reason: null
+
+changed_claim_verification:
+  scene: 8
+  claim: >-
+    "Here the split costs nothing to make: each corridor's cheapest bidder is a different
+    plant, so the resilient award is also the lowest-cost one."
+  status: TRUE
+  evidence: >-
+    From the bid book on screen: Maiduguri (60,000 cartons) cheapest is Savanna Nutrients
+    Ltd at USD 42.29 (lot value USD 2,537,400); Djibo (20,000 cartons) cheapest is Faso
+    NutriWorks SA at USD 41.85 (USD 837,000). Different suppliers, and both are the ones
+    actually awarded on camera. Split total USD 3,374,400 = USD 42.18/carton blended.
+    Cheapest single-supplier consolidation is Savanna at 2,537,400 + 918,000 = USD
+    3,455,400 = USD 43.19/carton (Kano 3,554,600; Lagos 3,693,600; Faso 3,755,400). The
+    split is USD 81,000 / USD 1.01 per carton CHEAPER. Holds for the three-RUTF-lot variant
+    too (4,838,450 split vs 4,919,450 Savanna-consolidated). All 15 unit-price x quantity
+    products on the page reconcile exactly. The previous narration ("costs a little more
+    per carton") was false; this one is true and in fact conservative.
+  consistency_with_scene_7: >-
+    Consistent over one bid book. Scene 7 claims a different price leader per corridor —
+    Savanna leads Maiduguri at 42.29 (technical 91), Faso leads Djibo at 41.85 (technical
+    88), and Faso is actually LAST at Maiduguri (48.64) while Savanna drops to second at
+    Djibo. The corridors genuinely invert, and the seed data encodes the reason (a plant is
+    cheapest into its own corridor and dearer across a border). Scene 7 and scene 8 tell the
+    same true story about the same numbers.
+  residual_concern: >-
+    The claim is now factually right but conceptually weaker. If the resilient split is ALSO
+    the cost minimum, the scene shows no trade-off at all — any naive cheapest-per-lot
+    system reaches the same answer, and the narration's stated failure mode (concentrating
+    on one bidder) is never instantiated because concentrating is dearer. See finding
+    CONCEPT-8-usecase.
+
+fix_recommendation: |
+  Five fixes, in leverage order.
+
+  1. [PRODUCT/mechanical] Scenes 2, 3, 4, 6 — perform the acts the narration names, or
+     re-narrate to what is shown. The cheapest and highest-value single one is scene 4:
+     append a click on ".modal button:has-text('Record decision')" after the Reject, then
+     wait_for and capture the committed state. That one change lifts design_soundness,
+     motion_friction and claim_reality_coherence together. Scene 3 and scene 6 need a
+     decision (perform vs re-narrate) — routed as options.
+
+  2. [PRODUCT/options] Scene 9 — the contract shown is not the award just watched (Q2 2026,
+     45,000 cartons at USD 42.10, vs the Q3 award of 60,000 at USD 42.29), same supplier and
+     same destination, tender names differing by one character, and the narration never
+     signals the substitution. Either create and open the contract from the on-camera award,
+     or say plainly in the narration that this is an earlier award on the same corridor
+     already in execution. Independently: render "awarded under RUTF Northeast Nigeria Q2
+     2026" as a link to the award, since record continuity is the scene's whole claim.
+
+  3. [PRODUCT/mechanical] Scene 9 — DISBURSED USD 0.00 sits above twelve Delivered
+     consignments and self-disclaims with "AGAINST CONFIRMED DELIVERY ONLY". The model is
+     internally defensible (disbursed_value = confirmed_quantity x unit_price, and
+     _quantity_in_contract_unit deliberately counts only legs ARRIVING at the contract's
+     delivery place), but the Delivery schedule card lists the hub-to-centre legs that by
+     construction can never move that figure. Group the schedule into "inbound against this
+     contract" vs "onward distribution", and show the confirmed-vs-delivered distinction, so
+     the closing payoff ("trace a dollar to a carton") is not narrated over a zero.
+
+  4. [PRODUCT/mechanical] Scene 7 — add scroll-padding-top to the bid-comparison modal's
+     scroll container (or scroll-margin-top on the lot cards) equal to the sticky header
+     height, so scroll_to lands a lot card's title below the header instead of under it.
+     This is the single visual_polish floor.
+
+  5. [CONCEPT/redesign] Scene 8 — the rewritten cost claim is now true, but the climax
+     demonstrates a free decision. Re-price the fixture so the resilient split genuinely
+     costs something (make one supplier cheapest on both corridors), so Ada is seen paying a
+     premium for corridor independence — or accept the current framing and stop calling it
+     "the decision the lot structure exists to make possible", since in this data it is an
+     automatic optimum. This is a concept_change gate; do not auto-apply.
+
+  Two verified data defects worth fixing regardless, both mechanical:
+   - connect_labs/supply/demo/solicitations.py:299 sets unit="truck-months" for country
+     "SD" while data.py:170-171 supplies the quantity 40,000 from a lot described as
+     "Inland haulage of 40,000 cartons" — so the solicitations table renders "40,000
+     truck-months to Khartoum" beside a 6-truck-month haulage lot in the same view.
+   - The seeded tender "RUTF Sahel and Lake Chad Corridors Q3 2026" (data.py:107-127) carries
+     the exact same two lot lines as the live tender (60,000 to Maiduguri, 20,000 to Djibo),
+     already 2/2 Awarded, one row above it. Rename or re-scope it.

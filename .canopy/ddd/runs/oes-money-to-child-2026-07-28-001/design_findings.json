@@ -1,0 +1,372 @@
+[
+  {
+    "scene": "1 \u2014 What the money bought, without the collapse",
+    "dimension": "concept_clarity",
+    "severity": "medium",
+    "route": "CONCEPT",
+    "detail": "The card promises three per-contract figures and shows two: the table has OBLIGATED and DISBURSED money columns but no DELIVERED column. The delivered value exists only as a native title tooltip on a bar. The bar graphic itself renders obligated -> delivered -> disbursed (tab_funder.jsx:365-382) under a column header reading 'Obligated -> disbursed -> delivered' (tab_funder.jsx:87), so the middle and third bars are swapped against their own label. Five-second read of row NG1 is '97% disbursed, 44% delivered' \u2014 the exact inverse of the data.",
+    "fix_recommendation": "Align StageBars with its header (or relabel the header 'Obligated -> delivered -> disbursed', the order the data supports) and add a DELIVERED money column beside OBLIGATED and DISBURSED so all three named figures are actually figures.",
+    "fix_kind": "mechanical",
+    "score": 2
+  },
+  {
+    "scene": "1 \u2014 What the money bought, without the collapse",
+    "dimension": "use_case_soundness",
+    "severity": "low",
+    "route": "CONCEPT",
+    "detail": "Stage separation is exercised on four contracts across four countries \u2014 a portfolio a funder would simply read in a spreadsheet. The discipline the product sells only becomes load-bearing at a scale nobody can eyeball, and that scale is never shown.",
+    "fix_recommendation": "Seed the demo with enough contracts (30-50+) that the table needs sorting and filtering to be usable, so the stage separation does work a human cannot do by hand.",
+    "fix_kind": "redesign",
+    "score": 3
+  },
+  {
+    "scene": "1 \u2014 What the money bought, without the collapse",
+    "dimension": "design_soundness",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "detail": "A user asking 'what was delivered on OES-C-2026-NG1?' has no path to an answer except an undiscoverable native title tooltip \u2014 and the tooltip reads 'Delivered $1.8M' on the bar the header has just told them is disbursed, so the disclosure actively contradicts the label.",
+    "fix_recommendation": "Replace the native title tooltips with a real hover/focus popover naming the stage and its value, and add a persistent inline colour key above the first row.",
+    "fix_kind": "mechanical",
+    "score": 2
+  },
+  {
+    "scene": "1 \u2014 What the money bought, without the collapse",
+    "dimension": "visual_polish",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "detail": "The sticky header slices the left rail's active nav pill to a ~2px sliver, leaving the 'Demonstration environment' card orphaned in an otherwise empty 260px gutter. The three-colour bar chart carries no legend and no values. The frame opens on ~110px of decapitated Sankey with a truncated node label and a dangling ribbon.",
+    "fix_recommendation": "Add scroll-margin-top / top padding equal to the sticky header height on the rail so the active nav item is never clipped, and add an inline colour key for the three stage bars.",
+    "fix_kind": "mechanical",
+    "score": 2
+  },
+  {
+    "scene": "1 \u2014 What the money bought, without the collapse",
+    "dimension": "claim_reality_coherence",
+    "severity": "medium",
+    "route": "DEFER",
+    "detail": "The narration says 'this view keeps them apart, per contract, and never collapses them'. The footage shows one of the three stages with no figure at all, and the visual carrying it is labelled as a different stage.",
+    "fix_recommendation": "Fixing the bar order and adding the delivered column resolves this dimension entirely.",
+    "fix_kind": "mechanical",
+    "score": 2
+  },
+  {
+    "scene": "1 \u2014 What the money bought, without the collapse",
+    "dimension": "motion_friction",
+    "severity": "low",
+    "route": "PRODUCT",
+    "detail": "The scene waits for .keyfigures and then scrolls past them without ever showing them, while the narration is explicitly about three top-level figures being folded into one. The resulting frame opens on 110px of decapitated Sankey.",
+    "fix_recommendation": "Insert a hold on the key-figure row before the scroll_to, so the three top-level figures are on screen while the narration says they get folded together, then scroll to the per-contract table.",
+    "fix_kind": "mechanical",
+    "score": 3
+  },
+  {
+    "scene": "2 \u2014 The diagram conserves, or it is a graphic",
+    "dimension": "concept_clarity",
+    "severity": "low",
+    "route": "CONCEPT",
+    "detail": "The on-screen subtitle promises four stages ('Appropriation -> partner -> country -> commodity delivered'); the diagram renders three columns and no commodity node. The five-second read is 'two big blocks emitting four thin threads \u2014 where did the rest of the money go?', the opposite of the intended 'it conserves'.",
+    "fix_recommendation": "Print each column's total on the column (Appropriated $70.5M / Obligated $4.9M) and either render the commodity column or amend the subtitle to the three stages actually drawn.",
+    "fix_kind": "mechanical",
+    "score": 3
+  },
+  {
+    "scene": "2 \u2014 The diagram conserves, or it is a graphic",
+    "dimension": "use_case_soundness",
+    "severity": "medium",
+    "route": "CONCEPT",
+    "detail": "Multi-envelope attribution is a real problem, but it is demonstrated on 2 envelopes and 4 contracts \u2014 and the same page renders those 4 contracts as a table directly beneath with obligated, disbursed and IATI IDs per row. At this scale the table is strictly more checkable than the numberless diagram, so the task shown is easier without the feature.",
+    "fix_recommendation": "Demonstrate on a portfolio where the diagram earns its keep (order 10 envelopes x 40 contracts), including at least one contract split across two envelopes and one genuinely unattributable contract, so both halves of the claim have something to bite on.",
+    "fix_kind": "redesign",
+    "score": 2
+  },
+  {
+    "scene": "2 \u2014 The diagram conserves, or it is a graphic",
+    "dimension": "design_soundness",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "detail": "The caption instructs the user to verify a reconciliation ('every country's inflow equals the sum of the contracts delivering there') and the component supplies no affordance to do it: no node values, no hover-for-value, no legend, no click-through from a ribbon to its contract row in the table directly below.",
+    "fix_recommendation": "Add value labels to every node, a hover tooltip giving each ribbon's contract ID and obligated amount, and a click that highlights the matching row in 'Stage by stage, per contract'.",
+    "fix_kind": "mechanical",
+    "score": 2
+  },
+  {
+    "scene": "2 \u2014 The diagram conserves, or it is a graphic",
+    "dimension": "visual_polish",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "detail": "White node labels are drawn on ~5px-tall node bars and sliced mid-glyph on 8 of 10 nodes. 'FY2026 Emergency Food Sec...' truncates inside a 160x155px box holding ~140px of empty fill. Both envelopes' ribbons share one hue and overlaps composite darker, so a crossing reads as a spurious third flow. Node geometry encodes nothing: all partner and country bars render at identical height regardless of value.",
+    "fix_recommendation": "Set a node minimum height that preserves rank order, place node labels outside the bars rather than overlaying 5px rects, wrap rather than truncate inside the appropriation boxes, and give each appropriation envelope its own hue with a legend.",
+    "fix_kind": "mechanical",
+    "score": 2
+  },
+  {
+    "scene": "2 \u2014 The diagram conserves, or it is a graphic",
+    "dimension": "why_groundedness",
+    "severity": "low",
+    "route": "CONCEPT",
+    "detail": "The concept_claim maps near-verbatim onto why_brief spine S1, so provenance is intact. But half the claim \u2014 'unattributable value is shown as its own band rather than dropped' \u2014 has no artifact path. The code (tab_funder.jsx:461, 513-518) computes unattributed contracts and appends a caption sentence saying they 'are excluded from this diagram', which is disclosure of a drop, not a band; and with this seed there are zero unattributed contracts so even the sentence does not render.",
+    "fix_recommendation": "Either build an actual residual band and seed a contract that produces one, or amend spine S1 and the scene's concept_claim to describe what the code does (an exclusion notice) rather than a band.",
+    "fix_kind": "options",
+    "score": 3
+  },
+  {
+    "scene": "2 \u2014 The diagram conserves, or it is a graphic",
+    "dimension": "claim_reality_coherence",
+    "severity": "high",
+    "route": "DEFER",
+    "detail": "Systematic overstatement. 'Totals reconcile at every stage' \u2014 the diagram renders zero numbers, and the page's only totals are cropped off the top of the frame. 'Each contract draws on its own envelope' \u2014 untraceable: one hue, no numbers, tangled crossings. 'Unattributable value is shown as its own band' \u2014 the product excludes such contracts and discloses them in a sentence, and none exist in this seed. Measured node geometry also shows the left column sized in appropriated dollars (227px) and the middle/right in obligated dollars (~22px), so ~93% of the mass vanishes between stage 1 and stage 2 with no band and no label \u2014 the exact failure the narration mocks.",
+    "fix_recommendation": "Do not narrate the unattributable band until it renders. Reconcile the diagram's units (size appropriation nodes by obligated value, or add an explicit labelled unobligated-remainder band) and put values on the nodes so the reconciliation claim becomes demonstrable.",
+    "fix_kind": "mechanical",
+    "score": 1
+  },
+  {
+    "scene": "2 \u2014 The diagram conserves, or it is a graphic",
+    "dimension": "motion_friction",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "detail": "The scroll_to landed the Sankey fully in frame, but the same offset decapitated the four hero KPI figures \u2014 only the labels survive ('Appropriated / 2 envelopes', 'Obligated / 7% of appropriation'), while $70.5M, $4.9M, $2.4M and 115,170 sit above the viewport edge \u2014 while the voiceover says the totals reconcile at every stage.",
+    "fix_recommendation": "Scroll to the section container rather than .sankey (or scroll_to the KPI row then settle-hold) so the four totals and the diagram are on screen together while the reconciliation is narrated.",
+    "fix_kind": "mechanical",
+    "score": 2
+  },
+  {
+    "scene": "3 \u2014 Cost per child, with its method on screen",
+    "dimension": "concept_clarity",
+    "severity": "medium",
+    "route": "CONCEPT",
+    "detail": "USD 21.27 \u2014 the number the whole scene exists to deliver \u2014 appears once, bold, inside a four-line ~11px prose paragraph, and is outranked typographically by seven larger figures in the same frame. The five-second read is 'a recovery-rate dashboard'; the cost per child is the last thing a viewer finds.",
+    "fix_recommendation": "Terminate the ladder in a fifth tile showing the cost per child at tile-numeral size with its basis beneath it, so the derived measure is legible at a glance. This is an objective measure shown plainly, not a verdict banner.",
+    "fix_kind": "mechanical",
+    "score": 2
+  },
+  {
+    "scene": "3 \u2014 Cost per child, with its method on screen",
+    "dimension": "design_soundness",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "detail": "The product presents two mutually exclusive outputs of the same explicitly stated computation, in adjacent cards, unreconciled: '115,170 cartons -> 115,170 children given a full course' above, and '48,787 Courses delivered \u2014 cartons confirmed delivered, at one carton per child's full course' below. 2.36x apart under one stated method, ~180px apart in one frame, with no affordance connecting them. Root cause in source: coverage.py's _delivered_cartons_by_district counts only legs crossing a district boundary (deliberately de-duplicating multi-hop redistribution) while the funder ladder sums every delivery hop. Consequences: 48,787 x 13.8kg = 673MT, not the displayed 1,589MT; and cost per child computed on the page's own other denominator is ~USD 49-50, not USD 21.27.",
+    "fix_recommendation": "Derive the ladder from the same confirmed-delivery carton record the coverage table and outcome card already use, so the ladder, the outcome card, the coverage table and the key-figure row agree by construction \u2014 which is what the narration already promises ('one constant in gs1.py, so the two screens cannot quietly disagree').",
+    "fix_kind": "mechanical",
+    "score": 2
+  },
+  {
+    "scene": "3 \u2014 Cost per child, with its method on screen",
+    "dimension": "visual_polish",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "detail": "Typographic hierarchy is inverted: the load-bearing figure is in 11px prose while seven less-important numbers are 2-3x larger. The chain arrows are ~14px light-grey glyphs on white with no connecting rule and no factor labels, so four bordered tiles read as an unrelated KPI row rather than a derivation. Steps 3 and 4 show the identical value across an arrow. Two adjacent cards use different type scales and one arbitrary accent tint for the same key-value role.",
+    "fix_recommendation": "Promote cost-per-child to a properly sized tile, label every ladder arrow with its factor, darken the arrow glyphs and add a connecting rule, and unify the value type scale across the two cards.",
+    "fix_kind": "mechanical",
+    "score": 2
+  },
+  {
+    "scene": "3 \u2014 Cost per child, with its method on screen",
+    "dimension": "why_groundedness",
+    "severity": "low",
+    "route": "CONCEPT",
+    "detail": "The concept_claim traces cleanly to spine S2 and the screen implements it. But the narration asserts one claim with no provenance shown anywhere: 'It is also the same conversion the command centre's requirement-from-caseload column uses, from one constant in gs1.py, so the two screens cannot quietly disagree.' Nothing on screen evidences a shared constant, and the frame itself supplies a counterexample.",
+    "fix_recommendation": "Either surface the shared constant on screen (a method-note clause naming it) or drop the claim from the narration until the surfaces actually agree.",
+    "fix_kind": "options",
+    "score": 3
+  },
+  {
+    "scene": "3 \u2014 Cost per child, with its method on screen",
+    "dimension": "claim_reality_coherence",
+    "severity": "medium",
+    "route": "DEFER",
+    "detail": "The gs1.py / command-centre cross-surface consistency claim has no corresponding element in the screenshot or page text, and the frame refutes it. 'That is what makes it a number you can argue with' is undercut because the magnitude of the stated exclusion (consignments in transit) is never given, so the caveat can be read but not evaluated.",
+    "fix_recommendation": "State the excluded in-transit tonnage beside the exclusion note, and either evidence or drop the cross-surface consistency claim.",
+    "fix_kind": "mechanical",
+    "score": 2
+  },
+  {
+    "scene": "4 \u2014 Nigeria's own view, scoped on the server",
+    "dimension": "concept_clarity",
+    "severity": "medium",
+    "route": "CONCEPT",
+    "detail": "The screen names the role and country clearly, but the scene's own concept \u2014 that scoping is enforced when the payload is built \u2014 has zero on-screen expression and exists only in narration. The five-second read is 'something didn't load, and a number is printed twice' (43,782 appears twice at equal weight as 'Cartons delivered' and 'Children treated').",
+    "fix_recommendation": "Add one persistent scope line under the H1, e.g. 'Scope: Nigeria. Applied when this page's data is assembled \u2014 records for other countries are never sent to this browser', with an info bubble linking to the method note.",
+    "fix_kind": "mechanical",
+    "score": 2
+  },
+  {
+    "scene": "4 \u2014 Nigeria's own view, scoped on the server",
+    "dimension": "use_case_soundness",
+    "severity": "low",
+    "route": "CONCEPT",
+    "detail": "Country-scoped access for a host government is genuinely load-bearing, but this render never shows the feature where its value would be felt: no scope indicator, no contrast in frame, no attempt to reach another country and be denied. The value is asserted, never demonstrated.",
+    "fix_recommendation": "Show the boundary being enforced rather than merely respected \u2014 the same route serving another country's rows to the funder returning a Nigeria-only payload for Hauwa, or an openable provenance line stating how many out-of-scope records were excluded.",
+    "fix_kind": "redesign",
+    "score": 3
+  },
+  {
+    "scene": "4 \u2014 Nigeria's own view, scoped on the server",
+    "dimension": "design_soundness",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "detail": "The one effecting interaction is a click on a single-item navigation rail that is already selected \u2014 an affordance that looks like navigation and behaves like a label \u2014 while the actual state change (the persona swap) happens entirely off-camera with no narration or on-screen explanation.",
+    "fix_recommendation": "Replace the decorative click with one that reveals something: make 'Country overview' open an expandable 'What this view can see' panel (scope, enforcement point, count of excluded records, as-of timestamp).",
+    "fix_kind": "mechanical",
+    "score": 2
+  },
+  {
+    "scene": "4 \u2014 Nigeria's own view, scoped on the server",
+    "dimension": "visual_polish",
+    "severity": "low",
+    "route": "PRODUCT",
+    "detail": "Two identical hero numbers sit adjacent at equal size and weight with no primary among four equal KPI cards. The rail card terminates at ~185px leaving roughly 535px of empty grey column with the demo note floating in it. One of four KPI cards is missing the tertiary sub-label the other three carry.",
+    "fix_recommendation": "Give the KPI row one primary: promote the objective measure (cartons delivered / MT) to hero size and demote the derived children figure to a secondary line beneath it, so the same number never appears twice at equal weight.",
+    "fix_kind": "mechanical",
+    "score": 3
+  },
+  {
+    "scene": "4 \u2014 Nigeria's own view, scoped on the server",
+    "dimension": "claim_reality_coherence",
+    "severity": "medium",
+    "route": "DEFER",
+    "detail": "The central narrated claim (server-side enforcement) has no visible referent \u2014 nothing distinguishes a server-scoped payload from a client filter or a static export. The frame also contains a self-contradiction the viewer can check without scrolling: '3 Consignments inbound' in the KPI row against '5 consignments with routed corridors' in the map fallback. Page-level, '43,782 Children treated' includes 35,000 cartons sitting at Kano Central Warehouse and Maiduguri Hub, and the same page's coverage table totals 16,399 courses for Nigeria.",
+    "fix_recommendation": "Reconcile the Nigeria figures to one definition \u2014 either recompute the country KPI from the same courses-delivered series the coverage table uses, or keep the supply-side total and relabel it with the funder view's own wording ('arithmetic on the supply record \u2014 it says nothing about treatment'). Fix the consignment count to a single source.",
+    "fix_kind": "options",
+    "score": 2
+  },
+  {
+    "scene": "4 \u2014 Nigeria's own view, scoped on the server",
+    "dimension": "motion_friction",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "detail": "The scene waits for css:.data-table and then holds on a viewport that does not contain it \u2014 the Nigeria-only flow table, the narrated evidence and the only on-screen support the claim has, is never framed. What the viewer gets instead is a KPI row and a placeholder panel.",
+    "fix_recommendation": "Add scroll_to css:.data-table with a settle-hold before the narration reaches 'the flows entering and moving within the country', so the Nigeria-only destination column is fully in frame while it is described.",
+    "fix_kind": "mechanical",
+    "score": 2
+  },
+  {
+    "scene": "5 \u2014 Coverage by district, not tonnage delivered",
+    "dimension": "concept_clarity",
+    "severity": "low",
+    "route": "CONCEPT",
+    "detail": "The card header states the concept on the face of the product and the column names are outstandingly plain-language. But the column header reads DISTRICT while Borno and Yobe are states (the district-equivalent unit in Nigerian health administration is the LGA), and a KPI band 400px up answers 'how many children got food' with 43,782 against this table's 16,399.",
+    "fix_recommendation": "Relabel the column STATE, or push the table to genuine LGA rows; and reconcile the 'Children treated' KPI with this table's covered total or rename it to what it actually counts.",
+    "fix_kind": "mechanical",
+    "score": 3
+  },
+  {
+    "scene": "5 \u2014 Coverage by district, not tonnage delivered",
+    "dimension": "use_case_soundness",
+    "severity": "medium",
+    "route": "CONCEPT",
+    "detail": "The screen fails to demonstrate its own concept. Yobe has 0 cartons and 0% coverage; Borno has 16,399 cartons and 34% coverage \u2014 the two rows rank identically on volume and on coverage, so sorting by tonnage yields the same allocation as sorting by coverage. The concept_claim's specific assertion ('which tonnage cannot') is not merely unproven, it is quietly contradicted by the only two data points on offer. Two rows, one all zeros, for a 37-state national allocation.",
+    "fix_recommendation": "Render the coverage table at LGA granularity (8-12 rows, sorted ascending by coverage) using the per-destination volumes already listed one card above, so a high-volume/low-coverage LGA sits visibly beneath a low-volume/high-coverage one and the concept proves itself without narration.",
+    "fix_kind": "redesign",
+    "score": 2
+  },
+  {
+    "scene": "5 \u2014 Coverage by district, not tonnage delivered",
+    "dimension": "design_soundness",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "detail": "The footnote instructs 'Hover a district name for how its caseload was estimated', the demo does exactly that, and nothing appears. The selector (span[title]) shows the provenance is bound to a native HTML title attribute: not keyboard-focusable, not touch-reachable, not capturable in a screenshot or shared PDF. For an evidence product whose audience decision is 'definitions available on demand', the sole methodology disclosure sits on the weakest possible channel. The table is also a dead end \u2014 no drill from a state row to the LGA rows in the card above.",
+    "fix_recommendation": "Replace the native title attribute with a focusable info affordance beside each area name that opens on click and keyboard, stating the caseload source, method, reference period and uncertainty; and make the area name drill to its constituent LGA rows.",
+    "fix_kind": "mechanical",
+    "score": 2
+  },
+  {
+    "scene": "5 \u2014 Coverage by district, not tonnage delivered",
+    "dimension": "visual_polish",
+    "severity": "low",
+    "route": "PRODUCT",
+    "detail": "Numerics are left-aligned in every column, so 0 and 16,399 do not share a digit position. The Damaturu stock bar renders ~48% filled while its value reads 0, an unexplained second encoding with no legend. Both coverage values wear identical red/pink alarm pills with no legend and no stated threshold \u2014 0% and 34% are very different facts styled identically, which is colour telling the reader a conclusion rather than encoding a defined rule.",
+    "fix_recommendation": "Right-align numeric columns with tabular figures; replace the coverage pill with a 100%-track bar per row so the measure is read positionally; give the Damaturu pale segment a legend entry or remove it; promote the metric definition out of the footnote into an info popover.",
+    "fix_kind": "mechanical",
+    "score": 3
+  },
+  {
+    "scene": "5 \u2014 Coverage by district, not tonnage delivered",
+    "dimension": "claim_reality_coherence",
+    "severity": "medium",
+    "route": "DEFER",
+    "detail": "Three narration claims fail against the footage. 'Covered to ninety-one percent of need' \u2014 91% appears nowhere in the screenshot or the full page text; the page's only percentages are 0% and 34%. 'This one, which received more cartons, sits at thirty-four' \u2014 contradicted: the 34% district is the one with MORE cartons and the comparison district has zero. The hover-reveals-provenance affordance produces no visible element. To the product's credit, 34% (16,399/48,232) and 31,833 (48,232-16,399) are both exactly right.",
+    "fix_recommendation": "Ship the LGA-level table that makes a genuine 91%-vs-34% volume/coverage inversion literally true and re-record against it; failing that, rewrite the narration to the values the screen actually shows.",
+    "fix_kind": "options",
+    "score": 2
+  },
+  {
+    "scene": "5 \u2014 Coverage by district, not tonnage delivered",
+    "dimension": "motion_friction",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "detail": "The scroll_to landed the card fully in frame (real credit), but the hover fired ok:true and the captured frame shows no result \u2014 the scene's entire second half is an action whose outcome the viewer never sees. The words and the screen also disagree at the moment of narration: the voiceover says 'ninety-one percent' over a frame whose only figures are 0% and 34%. The cursor occludes the row being narrated.",
+    "fix_recommendation": "Once the provenance popover is a real element, script it as an explicit click with a settle-hold so the methodology panel is legible while narrated, offset the pointer off the row, and re-time the numeric narration so each spoken figure lands on a figure visible in frame.",
+    "fix_kind": "mechanical",
+    "score": 2
+  },
+  {
+    "scene": "6 \u2014 The number everyone quotes, tested",
+    "dimension": "concept_clarity",
+    "severity": "medium",
+    "route": "CONCEPT",
+    "detail": "The card's subhead states the idea plainly and each tile carries its own method, but the frame requires work the viewer will not do \u2014 find 122 in demoted grey type, carry it to a non-adjacent tile, divide by 48,787 \u2014 to reach the intended point. The five-second read lands on the inverse conclusion, '81.1%, it's working'. A third figure (115,170) contradicting the first sits in the same frame.",
+    "fix_recommendation": "Render the observation coverage as a plain raw measure in the tile row ('122 of 48,787 courses delivered were observed, 0.25%') and state the sampling frame beside it \u2014 the objective number the audience decision actually needs.",
+    "fix_kind": "mechanical",
+    "score": 2
+  },
+  {
+    "scene": "6 \u2014 The number everyone quotes, tested",
+    "dimension": "use_case_soundness",
+    "severity": "low",
+    "route": "CONCEPT",
+    "detail": "Refusing to reconcile supply arithmetic with measured outcomes is genuinely substantive, but the demonstrated instance never reaches the scale where its value is felt: the measurement side is a 122-child sample with no stated frame, and the traceability that would make a delivered batch answerable to a child \u2014 the spine item's distinguishing content \u2014 is never exercised.",
+    "fix_recommendation": "The use case only becomes load-bearing when a funder can pick one batch and see the distributions and measurements it produced. Build and demonstrate that drill, or the card remains two numbers on a page rather than a chain that can be walked.",
+    "fix_kind": "redesign",
+    "score": 3
+  },
+  {
+    "scene": "6 \u2014 The number everyone quotes, tested",
+    "dimension": "design_soundness",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "detail": "The narration describes a core interaction \u2014 batch to distributions to one child's MUAC series \u2014 that the action_trace never performs and that the rendered product does not offer at all. The BatchDrill component exists in tab_funder.jsx, but its entry button ('follow batch ... to the children it treated') returns zero occurrences in the captured page text, so it does not render in this environment. The third tile asserts 'measurement series captured at the point of treatment' exist while providing no link or affordance to open one. Independently, the two 'cartons confirmed delivered' figures 2.36x apart sit in one frame with no path to resolve them.",
+    "fix_recommendation": "Seed the batch data so the drill entry point renders, make the '99 / 122' tile a real entry point into the observed cohort and one child's MUAC series with its batch and distribution, and remove the sentence claiming it from the narration until it ships.",
+    "fix_kind": "mechanical",
+    "score": 2
+  },
+  {
+    "scene": "6 \u2014 The number everyone quotes, tested",
+    "dimension": "visual_polish",
+    "severity": "low",
+    "route": "PRODUCT",
+    "detail": "The scene's load-bearing caveat, '/ 122', is set at roughly half the size of the numerator in light grey, with no 'n =' or 'of' framing \u2014 a hierarchy inversion on the content the whole scene depends on. The only accent fill and border in the row land on the derived 81.1% rather than on any raw measure, which is emphasis telling the reader which number matters. The Sphere threshold definitions do load-bearing work at 11px grey at the card floor.",
+    "fix_recommendation": "Give the denominator equal typographic weight ('99 of 122 observed', both at tile-numeral size), move the accent styling off the derived rate, and promote the Sphere threshold definitions into an openable info bubble on the rate.",
+    "fix_kind": "mechanical",
+    "score": 3
+  },
+  {
+    "scene": "6 \u2014 The number everyone quotes, tested",
+    "dimension": "why_groundedness",
+    "severity": "medium",
+    "route": "CONCEPT",
+    "detail": "Provenance points to spine S5 with status GAP, and only half of S5 was built. The spine's distinguishing content is 'a delivered batch can be followed to the distributions it fed and to one child's MUAC climbing out of the red'; only the side-by-side half exists, yet the narration re-asserts the unbuilt half as delivered. S5 also says 'children treated stops being a division sum' \u2014 and the division sum ($2.4M -> 1,589 MT -> 115,170 cartons -> 115,170 children) stands intact and is presented approvingly two cards up in the same frame.",
+    "fix_recommendation": "Either build the traceability half of S5 and re-derive the ladder from the confirmed-delivery record so the division sum genuinely stops being the headline, or split S5 into two spine items and narrate only the one that was built.",
+    "fix_kind": "redesign",
+    "score": 2
+  },
+  {
+    "scene": "6 \u2014 The number everyone quotes, tested",
+    "dimension": "claim_reality_coherence",
+    "severity": "high",
+    "route": "DEFER",
+    "detail": "Three of four substantive narration claims fail against the footage. The batch-to-MUAC drill is referenced as a present capability and exists nowhere in the page text or UI. 'The two do not agree' is not well-posed: a 122-child observed sample and a 48,787-course delivery count are not two estimates of one quantity that disagree \u2014 the sample is drawn from the population, so a ~0.25% sample cannot disagree with the count it came from, and no gap figure is rendered to test the claim. The one genuine same-quantity disagreement on screen (115,170 vs 48,787 under an identical stated method) goes entirely unnarrated. 'Recovers at a rate inside the Sphere performance band' is presented as a finding while the on-screen footnote discloses the data was seeded to sit inside that band.",
+    "fix_recommendation": "Rewrite the narration to the two claims the footage supports \u2014 the figures are reported with their methods and never reconciled, and the discharge composition is shown rather than collapsed. Replace 'the two do not agree' with the observed-coverage fraction, cut the batch-to-MUAC sentence until the drill ships, and drop the Sphere-band line while the data is seeded to satisfy it.",
+    "fix_kind": "mechanical",
+    "score": 1
+  },
+  {
+    "scene": "6 \u2014 The number everyone quotes, tested",
+    "dimension": "motion_friction",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "detail": "Framing is a genuine credit \u2014 the card is fully in frame and settled \u2014 but action-fidelity fires twice: the narration describes a multi-step drill while the trace contains only camera moves (wait_for, scroll_to, hold, scroll_to, hold), so the action sequence is not legible from the capture at all, and the narrative's closing beat is two scrolls and a hold. A stray OS cursor sits mid-frame over dead whitespace on the final shot.",
+    "fix_recommendation": "Once the drill exists, script the closing scene to perform it \u2014 click the observed-cohort tile, click one child, hold on the MUAC series crossing the threshold \u2014 so the last thing on screen is an act, not a scroll. Suppress the cursor overlay on hold-only scenes.",
+    "fix_kind": "mechanical",
+    "score": 2
+  }
+]

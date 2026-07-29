@@ -1,0 +1,149 @@
+schema_version: 1
+kind: arc
+gate: gating
+live_state_verified: true
+calibration: provisional
+rubric_name: ddd-arc-eval
+scenes_judged: 8
+gates_checked: >-
+  run-report.json 41/41 actions ok, 0 failed. snapshot_consistency: pass — all
+  eight scene_N_page_text.json carry one render_id (19fab46b2b2).
+  duplicate_frames: pass — 7 consecutive pairs compared, every pair differs by
+  more than 2%. Both gates clear, so the arc was judged rather than the take.
+  NOTE: the pixel gate passing is not the same as the page changing. The
+  captured DOM text is byte-identical for scenes 3+4 (md5 30ee071e) and for
+  scenes 5+6+7 (md5 16fd839d) — five of eight frames are two pages at
+  different scroll offsets, which the pixel gate cannot see and the rubric
+  prices at a hard cap.
+dimensions:
+  arc_shape:
+    score: 3
+    weight: 0.30
+    justification: >-
+      There is a real thesis and both ends of it are load-bearing, but the
+      middle is not. Scene 1 states the unit ("2,428 Children at risk / across 8
+      unanswered exceptions", "Ranked by the children behind each one, not by
+      tonnage") and scene 8 answers it on the same object — the Komadugu /
+      Askira card from frame 1 returns carrying a green "Closed" chip, the
+      effect ("87 cartons from Gombe Distribution Hub to Askira Nutrition
+      Centre, planned to arrive 4 August"), Ada's typed reason, and "Closed by
+      Ada Nwosu on Jul 29, 2026, against the reallocation that answered it".
+      Scene 7 is a genuine welded setup for that payoff. So neither the
+      "finale is not the strongest moment" cap nor the "most impressive artifact
+      is in scene 1 or 2" cap fires — the closed row is a new artifact and it is
+      last. What holds this at 3 rather than 4 is that the flat stretch is four
+      scenes, not one: scenes 2, 3 and 4 are three independent trust claims
+      (provenance tiers / three timestamps / append-only log) with no dependency
+      between them, and scene 5's denominator argument would work anywhere
+      before 6 — swap any of 2, 3, 4, 5 and nothing downstream breaks. Scene 6
+      has additionally been hollowed out by this round's reordering: the final
+      third of its narration is exclusively about the expiring-batch risk
+      ("cartons sitting where the caseload is too small to work through them
+      before they expire, which is a loss nobody is currently looking for"), and
+      the 30-day-horizon reranking pushed that row ("907 cartons at Djibo
+      Distribution Hub expire before they can be used", Dec 26) to 6th in the
+      queue and entirely below the fold of scene 6's frame. Its own title
+      promise is also absent: neither "twelve thousand" nor any September date
+      appears in the on-screen text of any of the eight frames, and scene 6's
+      visible headline is 2,428 — a SMALLER number than the one scene 1 opened
+      on, at the point the arc means to peak.
+  escalation:
+    score: 2
+    weight: 0.25
+    justification: >-
+      The rubric's "two scenes showing the same surface with only a scroll
+      between them: max 2" fires twice, unambiguously and machine-verifiably.
+      Scenes 3 and 4 have byte-identical page text (6,950 chars, the
+      SHP-2026-0202 modal): scene 4 still shows the tail of scene 3's milestone
+      rail (Kassala "0d vs plan", El Fasher "+9d vs plan") and the same one-row
+      Consignment lines table, and everything it adds is an Event log card
+      containing exactly ONE entry — "Jul 19, 2026 · Departed · Khartoum Central
+      Warehouse · — · Phone check-in". The strongest invariant in the product
+      ("status is derived from an append-only log; there is no cell to change
+      before a Monday meeting") is argued over a log with nothing to append to.
+      Scenes 5, 6 and 7 are worse: all THREE have byte-identical page text
+      (6,121 chars) — one page at three scroll offsets, with scene 7 adding only
+      a hover outline on a row already fully legible in scenes 1, 6 and 8. Scene
+      6 is the removable one and is named explicitly: scene 5's frame has
+      already shown the Weeks of cover card, scene 1 has already shown the
+      ranked queue, its expiry beat is below the fold, and the only net-new
+      pixels are one italic line ("How this was ranked: 9 days late against 0.0
+      weeks of cover; the days after the store runs dry x the admission rate").
+      Scene 2 also under-delivers on its own job: its claim is a three-tier
+      honesty gradient and its frame carries "Phone check-in" on all four
+      consignment rows and zero EPCIS or despatch-advice badges, so the gradient
+      chapter opens on a single-tier frame.
+  visual_variety:
+    score: 2
+    weight: 0.20
+    justification: >-
+      "More than half the scenes are the same surface at different scroll
+      offsets: max 2" fires on the count. Frames 1, 5, 6, 7 and 8 — five of
+      eight — are the same command-centre page scrolled; frames 3 and 4 are the
+      same consignment modal scrolled. That leaves two genuine shape breaks in
+      the whole run: scene 3's milestone rail (a timeline, not a table) and
+      scene 5's dense caseload table with IPC badges. Judged on shape rather
+      than decoration, a procurement product is not penalised for being made of
+      tables — it is penalised for showing the same one repeatedly, and frames
+      6, 7 and 8 are the same stack of bordered exception cards with a red
+      number, distinguishable only by scroll. The two shapes that would have
+      broken it are both absent: no map renders anywhere (scenes 7 and 8 each
+      carry a one-line "Map not drawn — No Mapbox token in this environment"),
+      and the reallocation modal — the run's only form, with the constrained
+      surplus-source list, the spare-capacity figures and the required reason
+      textarea — is executed by the actions but never captured, so across eight
+      frames the viewer never once sees a decision being MADE, only the record
+      of it. Held at 2 rather than 1 because scene 5's table is a real density
+      change and 145.8% beside 0% makes its claim visible rather than asserted.
+  persona_coherence:
+    score: 4
+    weight: 0.15
+    justification: >-
+      Structurally clean and now clean at the payoff too. One persona, one goal,
+      no hand-off, no drift: every frame's header reads "Procurement · Ada
+      Nwosu", and the audit stamp that broke this last round is fixed — scene 8
+      renders "Closed by Ada Nwosu on Jul 29, 2026" where it previously read
+      "oes-lead@oes.example". The narration's subject and the screen's evident
+      user agree in all eight frames, so neither deduction rule fires. Held to 4
+      by the sanity floor ("if you would not watch this twice, no dimension may
+      exceed 4") and by one goal wobble: scene 2's frame is dominated by FUNDER
+      / APPROPRIATION / IATI ACTIVITY / OBLIGATED / DISBURSED — a donor-reporting
+      concern — while the narration over it is about ingestion tiers and the
+      goal scene 1 set was which children go without.
+  opening_and_close:
+    score: 4
+    weight: 0.10
+    justification: >-
+      The opening states the problem in terms a stranger feels rather than
+      explaining the product — "2,428 Children at risk / across 8 unanswered
+      exceptions", "Ranked by the children behind each one, not by tonnage" —
+      and the frame now delivers it cleanly, because the dead map panel that
+      previously owned roughly 45% of frame 1 is gone and the worklist takes the
+      full row. The close does answer the opening's question, so the "close does
+      not answer the opening" cap does not fire. It is held off 5 because the
+      close does not SHOW the proof it verbally promises: the headline does move
+      in the DOM from "2,428 / across 8 unanswered exceptions" to "2,341 /
+      across 7 unanswered exceptions · 1 closed" — exactly the 87 children the
+      narration says it stops counting — but scene 8's frame is scrolled well
+      past the KPI row and opens mid-sentence on an unrelated card
+      ("SHP-2026-0302 is 2 days behind the plan it was awarded against"). The
+      run's cleanest numeric payoff exists in the page and is invisible in the
+      picture.
+overall_score: 2
+overall_rule: lowest
+weighted_score: 2.80
+one_sentence_story: >-
+  Ada opens a queue that ranks supply exceptions by the children who will go
+  without rather than by tonnage, establishes that those figures cannot be
+  argued away or edited, adds a caseload denominator so delivery reads as
+  coverage instead of tonnage, and then answers the shortfall a partner in Borno
+  raised from the ground — closing that exact row with who decided, what moved
+  and why.
+verdict: fail
+prior_findings_status:
+  scenes-3-4-one-modal-two-scrolls: open
+  scene-6-removable-and-6-7-identical: open (regressed — 5, 6 AND 7 now identical)
+  reallocation-modal-never-captured: open
+  close-headline-off-frame: open
+  actor-reads-role-mailbox: fixed
+  dead-map-panel-owns-45pct-of-frames: fixed (but no map surface now exists at all)

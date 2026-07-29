@@ -1,0 +1,111 @@
+schema_version: 1
+kind: arc
+gate: gating
+live_state_verified: true
+calibration: provisional
+rubric_name: ddd-arc-eval
+scenes_judged: 9
+
+gate_checks:
+  spec_qa: pass
+  render_clean: true          # run-report.json — 63/63 actions ok, 0 failed, setup exit_code 0
+  duplicate_frames: pass      # md5 of scene_1..9.png all distinct; no two CONSECUTIVE scenes captured the same picture
+  snapshot_consistency: pass  # every scene_N_page_text.json carries render_id 19fab009432 — one render, not a mixed dir
+
+dimensions:
+  arc_shape:
+    score: 4
+    weight: 0.30
+    justification: >-
+      A real two-act spine that survives being stated in one sentence. Act one builds the
+      supply base (1 orientation, 2 declared categories, 3 the profile frozen at submission,
+      4 the per-category decision made on camera) and pays off at 5 with the registry. Act
+      two draws a tender from it (6 publish, 7 per-lot comparison) and pays off at 8 with the
+      split award, then 9 widens to the contract. Nothing lands before its setup: the freeze
+      claimed in 3 is what Tomas reads in 4, and the cost argument asserted in 8 is planted
+      as visible rank-1 rows in 7 one scene earlier. Held below 5 by two unwelded joints —
+      the act-one/act-two hinge (scene 4 never clicks "Record decision", and scene 5's
+      registry shows Savanna expiring Feb 17 2027 rather than the Jan 20 2028 the decision
+      panel just promised, so the causal claim "those qualifications become the registry" is
+      asserted rather than demonstrated), and a close that resolves a different contract
+      (Q2, OES-C-2026-NG1, 45,000 cartons) than the award the climax just made (Q3, 60,000).
+  escalation:
+    score: 3
+    weight: 0.25
+    justification: >-
+      Rises cleanly 1 to 4 and 7 to 9, but sags for two consecutive beats immediately after
+      the act-one peak. Scene 5 is the emptiest frame in the deck — a three-row table with
+      roughly 60% of the viewport blank — and scene 6 is a static list on which nothing is
+      done, whose entire claim ("an unqualified supplier's page never receives it") concerns
+      a screen the sequence never shows. The act-two climax is then undercut twice by its own
+      frame: scene 8 reads "2 / 4" and status "Published" while the narration presents it as
+      the tender resolving, and the row directly above it — visible in scenes 6, 7 and 8 —
+      is a PRIOR solicitation already awarded 2/2 across the identical 60,000 Maiduguri /
+      20,000 Djibo lot pair, so the split the demo spends three scenes building to is
+      already-done set dressing on screen before it happens.
+  visual_variety:
+    score: 3
+    weight: 0.20
+    justification: >-
+      Five of nine frames are modals, and three consecutive scenes (6, 7, 8) are anchored on
+      the same Solicitations page. Scenes 7 and 8 are the same modal showing the same two
+      lot tables with the same twelve rows and the same prices; the delta is two "Awarded"
+      pills, a toast, and a scroll offset. Not the hard-cap case (7 and 8 make genuinely
+      different points — compare versus award — rather than the same point twice), but it is
+      the milder sibling and the deck's weakest stretch. Credit where due: 3 and 4 are
+      structurally different modals (a frozen-vs-live diff versus a decision form), scene 1
+      carries the only chart, and scene 9's facts grid plus provenance-tagged consignment
+      table is a distinct shape.
+  persona_coherence:
+    score: 4
+    weight: 0.15
+    justification: >-
+      Three personas, each doing role-appropriate work, with motivated handoffs — Amina
+      submits, Tomas reviews the exact thing she submitted, Ada acts on the registry that
+      produced. No persona does something their role would not. Held off 5 by one dropped
+      thread and one wrong seat: Amina appears once, and the grievance her intro states
+      ("never known whether a submitted document was actually read") is never paid off from
+      her side even though Savanna is the winning bidder in scene 8; and scene 6, the one
+      beat whose claim is entirely about what a supplier sees, is shot from Ada's admin list
+      instead of cutting to a supplier the demo has already proven it can log in as.
+  opening_and_close:
+    score: 3
+    weight: 0.10
+    justification: >-
+      The close is the stronger half and genuinely widens — obligated USD 1,894,500 against a
+      named FY2026 appropriation with an IATI activity id, disbursed only against confirmed
+      delivery, and nineteen consignments carrying mixed provenance (EPCIS feed / despatch
+      advice / phone check-in / entered by hand). But it resolves a contract the demo did not
+      make, so the final beat is not the consequence of the climax. The opening is a competent
+      but generic admin dashboard (14 / 4 / 1 / 1 tiles, a coverage bar chart); it poses the
+      question the narration asks but does nothing to dramatize the pain the whole narrative
+      is against — the folder of emailed PDFs is spoken, never seen.
+
+overall_score: 3
+overall_rule: lowest
+weighted_score: 3.45
+one_sentence_story: >-
+  Operation End Starvation turns a folder of emailed PDFs into a queryable supply base — a
+  declared EOI round, an application frozen at submission, a per-category qualification with
+  an expiry — then draws a live tender from that registry, compares bids lot by lot, splits
+  the award across two corridors because each corridor's cheapest bidder is a different
+  plant, and carries it into a contract with money and consignments behind it.
+verdict: warn
+
+notes:
+  scenes_7_and_8_build_not_contradict: verified
+  verification_detail: >-
+    The revised scene 8 narration is TRUE and is readable off scene 7's own tables. Awarding
+    both lots to the single cheapest bidder overall (Savanna) costs 60,000 x 42.29 plus
+    20,000 x 45.90 = USD 3,455,400; the split awards 60,000 x 42.29 to Savanna plus 20,000 x
+    41.85 to Faso = USD 3,374,400, which is USD 81,000 CHEAPER. The split is the cost
+    minimum, so "each corridor's cheapest bidder is a different plant, so the resilient award
+    is also the lowest-cost one" is correct. The two rank-1 rows the claim depends on are put
+    on screen in scene 7 (Maiduguri #1 Savanna 42.29 / tech 91; Djibo #1 Faso 41.85 / tech 88,
+    Savanna dropping to #2 at 45.90) and scene 8 awards exactly those two rows. This is now
+    the deck's strongest setup-to-payoff pair: 7 plants the evidence, 8 spends it. The prior
+    "costs a little more per carton" wording would have contradicted the very table scene 7
+    displays; that contradiction is gone.
+  judge_independence: >-
+    Judged by a fresh sub-agent dispatched for this lens only, over all nine screenshots at
+    once, with no part in authoring, seeding or rendering the narrative.

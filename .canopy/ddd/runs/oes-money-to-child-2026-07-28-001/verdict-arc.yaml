@@ -1,0 +1,82 @@
+schema_version: 1
+kind: arc
+gate: gating
+live_state_verified: true
+calibration: provisional
+rubric_name: ddd-arc-eval
+scenes_judged: 6
+gates:
+  snapshot_consistency: pass  # 6 scenes, one render
+  duplicate_frames: pass      # 5 consecutive pairs, all differ > 2%
+  run_report: pass            # 25 actions, 0 failed
+dimensions:
+  arc_shape:
+    score: 2
+    weight: 0.30
+    justification: >-
+      The finale's payoff artifact — the "Children treated — the figure, and the
+      measurement" card (48,787 courses / 99 of 122 recorded recoveries / 81.1%
+      observed rate) — is already fully on screen in scene 3, three scenes before
+      scene 6 announces it as a reveal. The most visually striking artifact, the
+      sankey, peaks in scene 2 and is never topped. Rubric rule "the most
+      impressive artifact appears in scene 1 or 2 and is never topped" and
+      "payoff lands before the setup" both fire.
+  escalation:
+    score: 2
+    weight: 0.25
+    justification: >-
+      Scenes 3 and 6 are the same funder surface separated by roughly 180px of
+      scroll; every unique thing in scene 3 (the dollars-to-children ladder and
+      its method note) reappears verbatim at the top of scene 6's frame, so
+      cutting scene 3 would cost the story nothing. Scenes 1 and 2 also overlap —
+      scene 1 opens on the bottom of the sankey that scene 2 then presents as new.
+      Rubric rule "two scenes showing the same surface with only a scroll between
+      them: max 2" fires.
+  visual_variety:
+    score: 2
+    weight: 0.20
+    justification: >-
+      Four of six frames (1, 2, 3, 6) are the funder page at four scroll offsets;
+      only scenes 4-5 leave it. Rubric rule "more than half the scenes are the
+      same surface at different scroll offsets: max 2" fires. This is NOT a
+      product limitation — the app renders a sankey, three-stage progress bars, a
+      four-step KPI ladder, comparison cards, horizontal stock bars and an
+      IPC-tagged coverage table. The narrative chose to revisit one page.
+  persona_coherence:
+    score: 3
+    weight: 0.15
+    justification: >-
+      The scene-4 hand-off to Hauwa is genuinely motivated on screen — the role
+      chip goes Funder to Government observer, the name changes, the page title
+      becomes "Nigeria — supply overview" and the nav collapses to one item. It is
+      the best-executed transition in the run. The scene-6 hand-back to Dale is
+      not: the chip silently flips to Funder with no spoken cue that we have left
+      Hauwa's screen. Rubric rule "a persona switch that the narration does not
+      motivate: max 3" fires on that return.
+  opening_and_close:
+    score: 3
+    weight: 0.10
+    justification: >-
+      The narration is strong at both ends — the opening states the problem in
+      terms a stranger feels, and the close does answer it, so the "close does not
+      answer the opening" max-2 rule does not fire. But both FRAMES are defective.
+      Scene 1 opens mid-scroll on a decapitated sankey node with the promised
+      key-figures row cut off above the viewport, and scene 6 ends on the orphaned
+      heading "Coverage against need, by country" with no content beneath it,
+      while its most vivid promise — following one batch to a child's MUAC series
+      climbing out of the red — has no on-screen referent at all.
+overall_score: 2
+overall_rule: lowest
+one_sentence_story: >-
+  A funder's supply dashboard that refuses to collapse obligated, disbursed and
+  delivered into one number, publishes the arithmetic behind its cost-per-child
+  figure, hands the host government a server-scoped view of coverage against need
+  rather than tonnage, and finally sets the headline "children treated" count
+  beside measured recoveries so the gap between what was shipped and what is
+  known to have worked is visible.
+verdict: fail
+notes: >-
+  The one-sentence sanity floor does NOT fire — the argument is well-constructed
+  and legible after one viewing. Every point deducted here is staging, not
+  thinking. The sanity floor "if you would not watch this twice, no dimension may
+  exceed 4" was applied.

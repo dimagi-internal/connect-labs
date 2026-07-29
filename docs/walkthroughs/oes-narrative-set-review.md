@@ -542,3 +542,417 @@ roughly a third of that, and all three turn the pipeline gap from a rounding
 error into a real operational story. That is probably an improvement to the
 demo, but it changes headline figures in three narratives, so it is an operator
 call rather than a cleanup.
+
+---
+
+# Addendum 2 — 2026-07-28 evening: all four judged
+
+Every narrative in the set has now been rendered and judged by both lenses.
+Renders are clean (`oes-supply-base` 65/65, `oes-partner-pipeline` 40/40,
+`oes-command-centre` 43/43, `oes-money-to-child` 28/28) and all four
+deterministic lenses pass on every one. Every narrative still scores 2/5.
+
+That combination is the finding. The renders are clean because the *recipes*
+are right; the scores are 2 because in several places the **product does not
+render its own best evidence**, and in a few the **narration asserts past what
+the model will do**.
+
+## N. The recurring shape: built, tested, unreachable
+
+Three separate capabilities were fully implemented, permission-checked and
+covered by tests, with no caller anywhere in the frontend:
+
+| capability | state found | where it was needed |
+| --- | --- | --- |
+| `actions.reallocate` + `POST api/actions/reallocate/` | service, endpoint, audit log, signal resolution — no UI at all | the command-centre's payoff scene, and the advice on every exception row |
+| `ShipmentDetail` (milestone rail + append-only event log) | built, reachable only from the supplier's own page | command-centre scenes 3 and 4, which narrate both |
+| `BatchDrill` + `api/batches/<lot>/` | built and tested (`test_demand.py` asserts MUAC crossing recovery), reachable only from the partner's page | the funder narrative's closing beat, its only human image |
+
+All three are now routed. The pattern is worth naming because it is invisible to
+every gate the repo has: pytest passes (the service works), preflight passes (no
+selector is wrong), and the narration describes the capability accurately —
+because the capability *exists*. Only a judge looking at a rendered frame and
+asking "where is it, though" catches it.
+
+## O. K1 is now visible on a single screen
+
+The contract double-count (§K1) stopped being an abstract measurement argument.
+On the funder page, in **one frame**:
+
+* the unit ladder reads **115,170 children**, method stated as one carton per
+  child's full course;
+* the outcome card 180px below reads **48,787 courses delivered**, method stated
+  identically.
+
+**2.36× apart, same stated method, same screen.** The ladder sums every hop;
+`coverage._delivered_cartons_by_district` counts only boundary-crossing legs
+(the fix in §K's first half). Cost per child is therefore either $21.27 or about
+$49–50 depending on which denominator the reader picks — on a card whose whole
+pitch is "stated as a chain, so every step can be checked".
+
+A judge did exactly what the card invites and broke it in under a minute. This
+is the strongest possible argument for resolving K1, and it now has a reproducer.
+
+## P. Scene 5 of `oes-money-to-child` cannot say what it says
+
+Corrected here because I got it wrong earlier in the day. The Borno/Kassala
+coverage pair (§J) was seeded and verified — **on the funder's view**. Scene 5
+is **Hauwa's** view, which is scoped to Nigeria on the server, and Kassala is in
+Sudan. On her page the table is Borno 34% and Yobe 0%.
+
+So the narration's contrast — "ninety-one percent … and this one, which received
+MORE cartons, sits at thirty-four" — is unavailable there twice over: 91% is not
+in scope, and of the two rows that ARE in scope the 34% district is the one with
+more cartons, with its comparator at zero. Tonnage would rank them identically,
+which is precisely what the scene exists to disprove.
+
+Making it true needs a **third Nigerian district with a small caseload and good
+coverage** — Borno keeps the volume and loses on coverage, the new district wins
+on coverage with fewer cartons. Yobe cannot play the part: 91% of its 18,960
+caseload is 17,254 courses, more than Borno's 16,399, so it would break the
+"more cartons" half.
+
+## Q. Two narration claims the model correctly refuses
+
+Both are `concept_change` calls, and in both the product is right and the
+narration is wrong:
+
+1. **`oes-command-centre` scene 8** narrates cover moving, the pipeline gap
+   closing and the exception resolving. The reallocation creates a `PLANNED`
+   consignment, so stock — and therefore cover, and therefore children at risk —
+   is deliberately unchanged until it lands. That invariant is the app's whole
+   credibility argument. The honest beat is the one now built: the exception is
+   **answered, not resolved**, carrying the actor, effect and recorded reason,
+   and the headline counts only what nobody has acted on (1,521 → 434 on camera).
+   A judge suggests an alternative worth considering: re-target the scene at the
+   Komadugu partner shortfall, which IS a `ShortfallSignal` and therefore does
+   genuinely resolve — welding scenes 7 and 8 into one loop.
+
+2. **`oes-supply-base` scene 8** ("splitting costs a little more per carton") —
+   unchanged from §L. Still the cost minimum.
+
+---
+
+# Addendum 3 — 2026-07-28, session 3: the four decisions taken, and what they cost
+
+Every open decision in §K1, §L, §P and §Q was put to the operator and
+answered. All four are now implemented, and all four narratives re-rendered
+clean into `-002` run dirs with every deterministic lens passing.
+
+## R. K1 resolved: a carton counts once, where its contract says
+
+**Decision: arrivals at the contract's own `delivery_place`.** The rule reads
+off `Lot.delivery_place`, so it is checkable against the contract's own text
+rather than against a convention kept somewhere else. A contract for "45,000
+cartons delivered to Maiduguri" is discharged by the cartons that reach
+Maiduguri: the plant→warehouse legs before it are not delivery yet, and the
+hub→centre legs after it are last-mile distribution past the delivery point.
+
+| contract | was | now | of contracted |
+| --- | ---: | ---: | ---: |
+| OES-C-2026-NG1 | 44,675 | **15,000** | 45,000 |
+| OES-C-2026-ET1 | 28,000 | **12,000** | 48,000 |
+| OES-C-2026-BF1 | 15,000 | **6,000** | 20,000 |
+| OES-C-2026-SD1 | 20,388 | **14,000** | 40,000 |
+| "Delivered to date" | 109,675 | **47,000** | — |
+
+Three things fell out of it that were not part of the decision:
+
+1. **The Sudan haulage lot named only where cartons are collected** ("from Port
+   Sudan"), which left it no delivery point to measure against. It now names
+   Khartoum too — a data fix that makes the contract text honest rather than a
+   special case in the measure.
+2. **Cost per child divided confirmed-only money by every delivered carton**,
+   though the locked narration promises the figure excludes consignments in
+   transit. Confirmed over confirmed now.
+3. **The unit ladder summed haulage spend and haulage cartons into a food
+   chain**, attributing movement money to cartons. Supply contracts only. Cost
+   per child now reads **$41.80**, which is a price a reader can recognise.
+
+The §O contradiction is gone: the ladder and the outcome card no longer state
+the same method over figures 2.36× apart. They still differ — 33,000 against
+58,251 — because they genuinely measure different sets, and both now say so on
+screen. The wider figure counts every carton that crossed into a district
+including imported stock; the ladder counts only what OES supply contracts
+delivered. That is the card's own thesis, applied to itself.
+
+## S. The other three decisions
+
+- **§L, supply-base scene 8** — narration changed to the honest and stronger
+  claim: each corridor's cheapest bidder is a different plant, so the split is
+  the resilient award *and* the lowest-cost one. No data change, so scene 7's
+  per-corridor price leader survives.
+- **§Q, command-centre scene 8** — re-targeted at the Komadugu shortfall, as the
+  judge suggested. Scenes 7 and 8 are now one loop: raised, acted on, closed.
+- **§P, money-to-child scene 5** — Gombe seeded as the third north-east
+  district. **The locked narration is now true word for word with no change to
+  it**: ninety-one percent, thirty-four, and 31,833 children still uncovered.
+
+## T. A resolved signal has to close ON CAMERA
+
+Re-targeting scene 8 exposed a design fault behind it. A `ShortfallSignal` was
+dropped from the queue the instant it resolved, so the one loop in the product
+that genuinely completes completed by a row *ceasing to exist*. A reader
+looking at the queue after the decision saw an absence, which is the weakest
+possible evidence for the claim the screen makes.
+
+It now stays for a week marked **Closed**, carrying the actor, the effect and
+the recorded reason, sorted below everything still waiting on somebody, and out
+of the children-at-risk headline (1,521 → 1,434 on camera). **Closed** and
+**Answered** render as different states, because they are: a partner signal
+resolves — what was reported is no longer true — while a derived row can only
+be answered until the cartons land.
+
+## U. The recurring defect, third sitting: three more found
+
+§N named the pattern — built, tested, unreachable. Three more, all invisible to
+pytest, preflight and the narration:
+
+| what | state found |
+| --- | --- |
+| `Milestone.estimated_at` | serialized on every milestone, rendered nowhere. The rail showed `actual ?: planned`, so the field that actually MOVES — the whole reason a delay is measurable — was never on screen, under a card subtitle promising three timestamps |
+| expiry-risk exceptions | service, cover calculation and queue row written and tested; every seeded lot carried 540 days, so every expiry landed in January 2028 and the exception could not fire. The narration said "all four exception kinds" over three |
+| `cartons_short` on a shortfall | serialized, never rendered, while scene 5 narrated it as a field of the record and the Receiving screen two cards above proved the product could show it |
+
+Djibo now carries a 150-day lot: it is the most over-supplied node at 25 weeks
+of cover, which is exactly what the exception exists to catch. It also gives
+the node one coherent story — too much stock to consume before it expires, and
+a 6-day delay that therefore harms nobody.
+
+## V. Two rendering faults only a frame catches
+
+- **The partner-shortfall headline collapsed to a ~10px vertical sliver** in
+  scenes 6–8. It carries two badges before its text and a flex child defaults to
+  `min-width: auto`, so the headline was the only item that could give and shrank
+  toward its longest word. It is the row the command centre's best scene is
+  built on.
+- **The command centre's own payoff rendered below the fold.** Closing the
+  signal sinks it to the BOTTOM of a queue ranked by what nobody has acted on,
+  so `scroll_to(.exception-list)` framed the rows the scene is not about. Caught
+  by looking at the snapshot, not by the run report — 43/43 actions were "ok".
+
+## W. A lens that was passing without running
+
+`duplicate_frames` reported **"pass (0 pairs compared) — pillow/numpy
+unavailable"** on all four narratives. That is a false pass, not a pass, and it
+is the lens specifically credited in §Addendum-2 with catching the silent
+`scroll_to` no-op. Installed into the runtime; it now genuinely compares
+consecutive frames and genuinely passes.
+
+Worth generalising: a deterministic lens that degrades to "pass" when its
+dependency is missing is worse than one that fails, because the run report
+reads identically to a real pass.
+
+## X. What was NOT verified this session
+
+- The `-002` verdicts are being produced by fresh independent judges as this is
+  written; the scores are not yet in this document.
+- The zero-risk row wording, the expiry exception and the closed-signal state
+  are asserted by tests and read off the live app, but have not yet been judged.
+- No video render, no VO timing eval, and nothing uploaded to canopy-web.
+- `oes-supply-base` and `oes-partner-pipeline` render 63 and 35 actions against
+  the 65 and 40 quoted in the session brief. The `-001` run reports show 63 and
+  35 as well, so this is a difference between the brief and the last run dir,
+  not a regression introduced here.
+
+---
+
+# Addendum 4 — 2026-07-28, round 2: judged, fixed, re-rendered
+
+The `-002` runs were judged by eight fresh independent agents (arc + concept
+on each narrative). Every narrative moved off the flat 2/5 the set had been
+stuck on, and the pattern in the verdicts changed shape: the narratives got
+better and **the camera became the binding constraint**.
+
+| narrative | arc (weighted / overall) | concept | was |
+| --- | --- | --- | --- |
+| `oes-supply-base` | 3.45 / **3** | 2 | 2 |
+| `oes-partner-pipeline` | 3.20 / 2 | 2 | 2 |
+| `oes-command-centre` | 2.85 / 2 | 2 | 2 |
+| `oes-money-to-child` | 2.55 / 2 | 2 | 2 |
+
+## Y. What the judges confirmed, independently
+
+Worth recording because it is the reason to keep paying for independent judges:
+
+* **§L's rewrite is true.** The supply-base concept judge reconciled all fifteen
+  unit-price × quantity products on screen and re-derived the split at
+  $3,374,400 ($42.18/carton) against $3,455,400 for the cheapest consolidation.
+  Scene 8 now scores the walkthrough's **best** claim_reality_coherence.
+* **The 7→8 weld works.** The command-centre arc judge verified in pixels that
+  scene 7's Askira row and scene 8's Closed row are the same row, that it sank
+  below the others, and that the headline moved by exactly the 87.
+* **Scene 5's inversion lands** — "the strongest data moment in the run".
+* **The counted-consignment finding was already fixed** before the run was
+  judged. Both the fresh judge and this session's own check agree: do not
+  inherit it. Verifying a judge's claim before acting on it paid for itself.
+
+## Z. Eight defects the second round found — one of them created by this branch
+
+**Making a capability visible is what exposes the code path nothing could
+reach.** Expiry-risk exceptions had never fired, so nothing had ever pressed
+the button on an expiry row — and that button ran the reallocation *backwards*.
+An expiry row names the node holding too MUCH; the queue offered "Reallocate to
+Djibo" on the row reporting Djibo at 25 weeks of cover, and posted
+`target_node_id` unconditionally. Following the product's own advice moved
+stock into the node that already could not use what it had. A row now declares
+whether its node is the source or the target of the move it advises.
+
+The rest, in rough order of how badly they undercut a stated claim:
+
+| defect | the claim it broke |
+| --- | --- |
+| the funder ladder mixed bases — confirmed money over every delivered carton, so its own endpoints divided to $15.21 against the $41.80 asserted three lines below | "stated as a chain, so every step can be checked" |
+| the government page repeated K1's per-leg double count: 53,246 against its own coverage table's 25,863, 800px apart | a number cannot mean two things |
+| a Kano warehouse-to-warehouse transfer was credited as "20,000 children covered" | a storage point serves no caseload |
+| "children treated" named three different numbers, all over carton counts | the card on that very page attacking that conflation |
+| coverage said "monthly SAM caseload" over a four-month denominator | "the method can be challenged" |
+| the MUAC payoff letterboxed to a third of its width | the narrative's only human image |
+| the action log recorded `oes-lead@oes.example` under a chrome reading "Ada Nwosu" | "carrying who decided" |
+| a dead 520px map panel owned ~45% of four frames | two judges read it as "something is broken" |
+
+## AA. The four decisions of round 2
+
+1. **Scene 9 closed on the wrong contract** (two judges). Awarding a lot created
+   an Award and *nothing else*, so "the award becomes the contract" was a
+   sentence rather than a link and the scene had to open a pre-seeded contract
+   from a different tender. `award_lot` now creates the execution contract, and
+   scene 9 opens `OES-C-2026-NG2` — the one the previous scene just made.
+2. **Scene 8 had lost its trade-off**, because the resilient split is also the
+   cost minimum. Accepted rather than re-priced: the narration now says the two
+   rules agree here, and that awarding lot by lot is what lets you tell when
+   they do not.
+3. **The queue ranked on magnitude with no time term**, so 907 children due in
+   December outranked 87 due next week on a screen promising "where, and by
+   when". A row now spends its figure only if the harm falls inside the
+   decision horizon.
+4. **The batch→distribution join was decorative** — the first six ShipmentLines
+   in the database round-robined across eleven sites, so Biu served 280 children
+   out of a batch it had never received while its own cover row read "awaiting
+   first consignment". A site now hands out only what arrived at it, only after
+   it arrived.
+
+Also fixed without a decision, because two judges flagged it: the prior split
+tender carried the **live tender's own two lots verbatim**, sitting one row
+above it marked 2/2 Awarded — the answer three scenes build to, already on
+screen behind them.
+
+## AB. What was NOT verified
+
+* **The `-005` renders have not been judged.** Every claim above about the
+  *fixes* is verified by tests, by reading the live app, or by looking at the
+  rendered frame; none of it is a score. The next honest step is another
+  dual-lens round.
+* The money-to-child arc judge's repeat finding stands: the outcome card
+  (58,251 / 81.8%) is still in scene 3's frame, so the finale announces
+  something already seen. On a continuous-scroll page a 250px card in a 720px
+  viewport cannot exclude the card beneath it — it needs a layout change, not
+  another scroll target.
+* Several judge findings were deliberately not taken this round: scene 2 of
+  partner-pipeline has four narrated specifics that the calendar falsifies;
+  command-centre scene 2 opens the one corridor where the three-tier gradient
+  is invisible; and the "ranked against every other exception" claim on the
+  partner's own screen is still asserted rather than shown.
+* No video render, no VO timing eval, nothing uploaded to canopy-web.
+
+---
+
+# Addendum 5 — 2026-07-28, round 3: partial judging, and a defect the fixes exposed
+
+**Only four of eight judges completed.** The command-centre arc and concept lenses,
+the money-to-child concept lens and the partner-pipeline concept lens all
+terminated on the session API limit. The partner-pipeline concept judge got far
+enough to dispatch its six per-scene visual judges, all of which returned, so
+that narrative has scene-level judgement but no assembled verdict.
+
+| narrative | arc | concept |
+| --- | --- | --- |
+| `oes-supply-base` | **3** (3.15 weighted) | 2 — three dimensions up from 2 |
+| `oes-money-to-child` | 2 (2.75, up from 2.55) | *did not complete* |
+| `oes-partner-pipeline` | 2 (3.10) | *per-scene only: 3,2,3,2,3,2* |
+| `oes-command-centre` | *did not complete* | *did not complete* |
+
+## AC. What round 2's fixes actually achieved, per the judges
+
+Confirmed fixed, verified against the frames rather than taken on trust:
+
+* **The award now produces its contract.** Scene 9 opens `OES-C-2026-NG2`, obligated
+  $2,537,400 = 60,000 × $42.29, awarded under the tender scene 8 awarded on camera.
+  The arc judge calls it "the run's real improvement".
+* **The duplicate prior tender is gone.**
+* **The scope inversion is gone** — Nigeria 25,863 < contract 33,000 < all-sources
+  58,251, and carton counts read "courses".
+* **The batch→distribution join is correct** on every row cross-checkable against
+  the receiving table.
+* **The MUAC charts fill their width**; scene 5's closing scroll lands on the row it
+  created; the money-to-child persona handoff frame is now a full-bleed table.
+
+## AD. A fix measured and refuted
+
+The partner-pipeline scene 2 retarget — footnote to `thead` — **moved the camera 30
+pixels**. The judge aligned the two frames and found **95.3% of the 690 overlapping
+pixel rows identical**. It was recorded in the last addendum as fixing "the binding
+scene". It did not.
+
+That is the second time in this run that something recorded as an improvement was
+refuted by an independent judge with a measurement. Both times the check was
+cheap and the belief was expensive.
+
+**It also exposes a real blind spot in our own tooling.** `duplicate_frames` passed
+this pair, because a 30px scroll shifts far more than 2% of pixels while showing
+the same content. A gate that exists to catch "the same surface twice" does not
+catch the most common way that happens. A scroll-invariant comparison — align the
+two frames at their best vertical offset and measure the overlap — would have.
+
+## AE. The recurring shape, third instance: fixing the join exposed the cohort
+
+Making the batch→distribution join real means a batch now resolves to a specific
+site on a specific date. That immediately made a pre-existing data defect
+checkable, and the scene-6 judge checked it:
+
+* the batch was distributed to Monguno on **22 July**, the page is as of **29 July**,
+  and the hero child is labelled **"9 visits over 8 weeks"**. An eight-week course
+  cannot belong to a batch that landed seven days ago.
+* **14 of 14 recorded outcomes are "Recovered"** — no defaulters, no non-response,
+  no transfers — and all fourteen MUAC trajectories are smoothly monotonic. A CMAM
+  adviser reads that as generated, not as a cohort. The seeder aims at the Sphere
+  thresholds in aggregate but produces no variation in the sample actually shown.
+
+Neither is caused by the join fix; both were unreachable before it, because the
+batch resolved to a shipment the site never received and no date could be checked
+against anything. This is the same shape as the expiry/reallocation bug: **making a
+capability real is what makes its data checkable, and the check then fails.**
+
+## AF. Product defects found by the per-scene judges, not yet fixed
+
+* **The distribution calendar's stated rule and its rendered colours disagree.** The
+  card says a cell is short "exactly when the second number is below the first";
+  Askira (38 on hand + 94 inbound against 63 booked) renders amber and Biu (0 + 141
+  against 94) renders red. Both pass the stated test. The real rule appears to be
+  "depends on stock that has not arrived", which is never stated.
+* **"4 Distributions not covered" reconciles with no reading of the grid** beneath it
+  — two non-green cells, zero short by the stated rule.
+* **`SHP-2026-0909` is tagged "Entered by hand"**, but scene 4's narration says the
+  count was taken "against the despatch advice". The advised 900 it is checked
+  against is itself hand-keyed, so the evidentiary contrast the scene rests on does
+  not exist for that record.
+* **The shortfall quantum is not reconstructable.** 94 = two weeks of burn (470)
+  minus stock on hand (375); the two-week horizon appears nowhere on screen.
+* **The MUAC charts have no axes and no shared y-scale**, so the threshold crossing
+  is only actually legible in one of fourteen rows.
+
+## AG. Where supply-base's remaining points are
+
+Its concept verdict is now capped by **motion_friction alone**, and every cause is a
+recipe fix:
+
+1. scene 4 never clicks **"Record decision"** — verified in `tab_rounds.jsx` that
+   Qualify/Reject only set local state — so scene 5's registry shows Savanna
+   expiring **Feb 2027**, not the **Jan 2028** granted on camera;
+2. scene 3 opens the **2026-A** application while scene 4 reviews **2026-B**, so the
+   profile the viewer watches freeze is not the one Tomas assesses;
+3. scene 7's sticky header occludes the Maiduguri lot title on the exact hold where
+   the narration names it.
+
+Plus one data bug: the Sudan lot renders **"40,000 truck-months"** in scene 6 and
+**40,000 cartons** in scene 9's pipeline table — one record, two units.

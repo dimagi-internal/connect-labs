@@ -1,0 +1,101 @@
+schema_version: 1
+kind: arc
+gate: gating
+live_state_verified: true
+calibration: provisional
+rubric_name: ddd-arc-eval
+scenes_judged: 9
+dimensions:
+  arc_shape:
+    score: 3
+    weight: 0.30
+    justification: >-
+      The spine is genuinely load-bearing and you could not shuffle it: round →
+      application → review → registry → solicitation → bids → award → contract.
+      Two links in that chain are asserted rather than shown, and both are only
+      visible across scenes. (1) Scene 3 opens the wrong application: its modal
+      is titled "OES Supply Base 2026-A — your application", status "Qualified",
+      submitted Mar 12 2026, commitments "34,000 cartons/month · 28 day lead
+      time", and its own footer reads "The reviewer's decision WAS MADE against
+      the left-hand column" — past tense, a round already closed. Scene 4 then
+      reviews a different object: round 2026-B, frozen Jul 19 2026, "39,000
+      cartons/month · 14 day lead time". So the profile the viewer watches
+      freeze is not the profile Tomas assesses, and the narration's "the
+      decision Tomas is about to make" has no on-screen referent. (2) Scene 4's
+      decision panel reads "RUTF — qualified until Jan 20, 2028", but scene 5's
+      registry lists Savanna Nutrients Ltd with EARLIEST EXPIRY Feb 18, 2027,
+      alongside two suppliers already there; nothing in scene 5 changed because
+      of scene 4, and "Record decision" is never clicked. Act one's causal hinge
+      is therefore narrated, not demonstrated. Against that: the close now does
+      resolve the contract the previous scene's award produced (scene 9,
+      OES-C-2026-NG2, "awarded under RUTF Northeast Nigeria Q3 2026, Jul 28,
+      2026"), which repairs the worst chain break of the previous run.
+  escalation:
+    score: 3
+    weight: 0.25
+    justification: >-
+      Most beats add something no other beat carries — the frozen/live column
+      pair (3), per-category Qualify/Reject (4), server-side eligibility (6),
+      per-lot leaders (7), the split award (8), the appropriation and IATI id
+      (9). Scene 7 is the exception and its removal would barely be noticed:
+      scene 8's frame contains every row scene 7 shows (Savanna 42.29/tech 91 on
+      Maiduguri, Faso 41.85/tech 88 on Djibo, identical prices, identical row
+      order) plus the two "Awarded —" badges and the toast. Scene 7 is scene 8
+      minus the outcome. Scene 5 is also thin: three rows in a card over roughly
+      60% blank viewport, and its narrated dropout ("this one has dropped out
+      because its certification lapsed last month") is an absence that cannot be
+      seen in frame.
+  visual_variety:
+    score: 3
+    weight: 0.20
+    justification: >-
+      Nine frames, one shell: same left nav, same green palette, same header
+      throughout. Shapes are one dashboard (1, KPI tiles + a small bar chart),
+      three full-page tables (2, 5, 6) and five modals (3, 4, 7, 8, 9). The
+      modals are not interchangeable — 3/4 are two-column comparison and
+      decision surfaces, 7/8 are ranked price tables, 9 is a record card — so
+      the run does not trip the same-surface-at-scroll-offsets cap, but 7 and 8
+      are literally the same modal at adjacent scroll positions. No map, no
+      form, no chart after scene 1. The app's most visually distinct surface is
+      in the run and never used: the Command centre corridor pipeline, with IPC
+      severity chips (Séno IPC 2, Yagha IPC 4), 0% coverage chips and a gap
+      column, is visible only as blurred backdrop behind scene 9's modal.
+  persona_coherence:
+    score: 4
+    weight: 0.15
+    justification: >-
+      One goal end to end, and both handoffs are motivated in the narration and
+      confirmed on screen by the role pill and name in the header — Procurement
+      / Ada Nwosu, Supplier / Savanna Nutrients Ltd, Reviewer / Tomas Berhane.
+      That badge is a genuinely good device and the viewer never loses track of
+      whose screen this is. One wobble, scene 3: the beat is Amina's ("Amina
+      applies for Savanna Nutrients, declaring capacity…") but nothing is
+      applied on camera — the frame is a months-old submitted application opened
+      for reading — and the header names the org where every other scene names
+      the person, so Amina Bello appears only as a contact line inside scene 4's
+      modal.
+  opening_and_close:
+    score: 3
+    weight: 0.10
+    justification: >-
+      The opening is the stronger end and is close to right: scene 1 states the
+      problem in a stranger's terms and the frame backs it with derived numbers
+      (14 qualified suppliers, 4 applications to review, coverage by category).
+      The close under-delivers on its own frame. Scene 9 carries the run's most
+      impressive facts — US Government funder, FY2026 Emergency Food Security
+      appropriation, IATI activity US-GOV-1-OES-OES-C-2026-NG2, USD 2,537,400
+      obligated at the 42.29 Savanna bid — but the bottom half of the modal is
+      the empty state "No consignments raised against this contract yet", with
+      DISBURSED USD 0.00, under narration claiming "the same record is what the
+      supply chain moves against". The narration also labels itself "this is the
+      midpoint", so the run announces that it stops rather than lands. It is
+      also not the question the opening asked: "who is qualified to supply RUTF
+      to north-east Nigeria today" is answered in scene 5, four scenes early.
+overall_score: 3
+overall_rule: lowest
+one_sentence_story: >-
+  Ada turns a folder of emailed supplier PDFs into a queryable registry of live,
+  expiring, per-category qualifications, runs one tender off it whose lots price
+  differently per corridor, splits the award across two suppliers on purpose,
+  and lands on the funded contract that award created.
+verdict: warn

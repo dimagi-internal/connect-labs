@@ -65,6 +65,7 @@ function PartnerReceivingTab({ ctx }) {
           },
           {
             label: 'Awaiting your count',
+            tone: awaitingCount ? 'at-risk' : 'ok',
             value: awaitingCount,
             hint: awaitingCount
               ? 'delivered but not yet confirmed'
@@ -72,6 +73,9 @@ function PartnerReceivingTab({ ctx }) {
           },
           {
             label: 'Short on receipt',
+            tone: cartonsShort ? 'critical' : 'ok',
+            method:
+              "The difference between what a despatch advice said was sent and what the storekeeper counted at the door. One carton is one child's full course, so a carton short is a child short — and the figure travels to the OES command centre in that unit, ranked against every other exception by the children behind it.",
             value: formatNumber(Math.abs(cartonsShort)),
             hint: openDiscrepancies.length
               ? `${openDiscrepancies.length} open discrepanc${

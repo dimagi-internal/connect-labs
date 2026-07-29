@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "kind": "arc",
+  "run_id": "oes-money-to-child-2026-07-28-005",
+  "scenes_judged": 6,
+  "findings": [
+    {
+      "id": "arc-01",
+      "status": "REPEAT",
+      "dimension": "arc_shape",
+      "route": "CONCEPT",
+      "fix_kind": "options",
+      "severity": "high",
+      "scenes": [3, 6],
+      "title": "The finale's reveal is fully legible in scene 3's frame, three scenes before it is narrated as a reveal",
+      "evidence": "scene_3.png: the bottom ~40% of the frame is the card 'Children treated — the figure, and the measurement' with all three of the finale's numbers rendered at full size — 58,251 Courses delivered, 88 / 108 Recorded recoveries in the observed sample, and 81.5% Observed recovery rate in the highlighted (blue-bordered) tile, each with its method paragraph beneath. Scene 6's narration then introduces exactly these as new: 'Beside it now sits a different figure — children with a recorded recovery ... The two do not agree.' The prior run's acceptance test (these figures appear in no frame before scene 6) still fails; the scene-3 recipe note claims a fix, but scrolling to that card's own .method-note lands the viewport with the payoff card immediately below it and fully in shot.",
+      "why_it_costs": "The one thing the whole narrative is built to deliver — that the number everyone quotes disagrees with the measured one — is spent in a scene about unit conversion. By scene 6 the only genuinely new material is the drill modal, so the finale reads as a detail on something already shown rather than the arrival.",
+      "fix_options": [
+        "Re-point scene 3's camera so the frame ends at the 'What a dollar bought' method paragraph — scroll to that card and offset upward, or scroll to the ladder row and hold, so the following card is below the fold.",
+        "If the viewport cannot exclude it, move the two-figures card lower in the funder page (below the fold from the ladder) so scene 3 physically cannot contain it.",
+        "Failing both, cut the reveal from scene 6's narration and re-cut the finale to be about the drill alone — but this is the weakest option: the disagreement is the story."
+      ],
+      "acceptance_test": "In every frame before scene 6, none of '58,251', '88 / 108', '81.5%' or the card heading 'Children treated — the figure, and the measurement' is visible."
+    },
+    {
+      "id": "arc-02",
+      "status": "REPEAT",
+      "dimension": "escalation",
+      "route": "CONCEPT",
+      "fix_kind": "options",
+      "severity": "high",
+      "scenes": [1, 2],
+      "title": "Scenes 1 and 2 are one picture 179 px apart; the artifact scene 1's claim rests on is never framed",
+      "evidence": "Aligning scene_1.png and scene_2.png at a 179 px vertical offset leaves a mean absolute pixel difference of 2.3/255 — they are the same capture, scrolled. The Sankey is whole in scene 1 (y≈387–670) and whole again in scene 2 (y≈209–490); scene 2's only new content is the conservation caption and the top header row of the 'Stage by stage, per contract' table. Meanwhile scene 1's concept_claim ('three separate figures per contract ... never summed') has no on-screen referent: the per-contract obligated → disbursed → delivered bars are below the fold in scene 1, are only a header row in scene 2, and appear solely as a cropped sliver in the top ~90 px of scene 3 (the OES-C-2026-SD1 row), a scene about something else.",
+      "why_it_costs": "The rubric caps escalation at 2 for two scenes on one surface separated by a scroll. It also wastes the opening: the viewer hears the demo's founding distinction (committed vs paid vs delivered) over a frame that shows a funding diagram belonging to the next beat.",
+      "fix_options": [
+        "Frame scene 1 on the key row PLUS the per-contract table — scroll to css:.contract-table (or equivalent) so the three-stage bars are the dominant object, and let the key figures ride at the top edge.",
+        "Alternatively hold scene 1 on the key row alone at scroll top and give scene 2 the Sankey, which is what the recipe intends but not what the frames show — requires the key row and the Sankey not to co-occupy one viewport."
+      ],
+      "acceptance_test": "Scene 1 and scene 2 differ by more than a pure vertical translation (no offset yields mean abs diff < 10/255), AND at least two contracts' three-stage bars are visible in scene 1's frame."
+    },
+    {
+      "id": "arc-04",
+      "status": "NEW",
+      "dimension": "persona_coherence",
+      "route": "CONCEPT",
+      "fix_kind": "options",
+      "severity": "medium",
+      "scenes": [5, 6],
+      "title": "The return from Hauwa to Dale at scene 6 is not motivated in the narration",
+      "evidence": "Scene 4's switch INTO Hauwa is explicitly set up ('Hauwa coordinates Nigeria's response and gets a version of this scoped to Nigeria'), and scene_4.png / scene_5.png carry the 'Government observer · Hauwa Ibrahim' chip. Scene 6's narration opens 'Here is the number every report leads with' and only names Dale mid-paragraph ('Dale can follow a single delivered batch'); nothing says we have left Nigeria's districts or why. The spec's `show` field says 'Back on the funder view' — the spoken track does not.",
+      "why_it_costs": "The viewer is moved from a Nigerian coverage table to a global funder page mid-sentence. It is the only place in the run where whose screen this is has to be inferred from the header chip.",
+      "fix_options": [
+        "Open scene 6's narration with the handback — e.g. 'Hauwa's coverage number is only as good as the delivery figure behind it, so back on Dale's view, here is the number every report leads with …'",
+        "Or make the return load-bearing: state that the uncovered-children figure Hauwa just read is computed from the same courses figure Dale is about to have challenged."
+      ],
+      "acceptance_test": "Scene 6's first sentence names the persona change and gives a reason for it."
+    },
+    {
+      "id": "arc-05",
+      "status": "NEW",
+      "dimension": "arc_shape",
+      "route": "CONCEPT",
+      "fix_kind": "options",
+      "severity": "low",
+      "scenes": [1, 3, 6],
+      "title": "Three different 'courses' magnitudes cross the sequence with no narrated bridge",
+      "evidence": "scene_1.png key row: '33,000 · Courses delivered under contract'. scene_3.png ladder: '12,000 · children given a full course, paid for and confirmed'. scene_3.png / scene_6.png card: '58,251 · Courses delivered'. Each carries its own method on screen and is individually defensible, but the narration for scenes 1, 3 and 6 never acknowledges that the headline count falls from 33,000 to 12,000 and then rises to 58,251 across three consecutive beats.",
+      "why_it_costs": "The run's whole thesis is that a figure is trustworthy when its method is on screen. A viewer tracking the number across the sequence sees it move twice without being told it moved — which is the exact suspicion the demo exists to disarm. Note this is a sequence-level gap only: no single frame contradicts itself, so the per-scene judges cannot see it.",
+      "fix_options": [
+        "Add one clause to scene 3's narration acknowledging the narrowing ('of the 33,000 under contract, 12,000 are paid-for and confirmed — that is what this ladder prices').",
+        "Or add one clause to scene 6 naming the widening explicitly before the comparison ('58,251 — wider than the contract ladder, because it counts every carton that crossed a district from any source')."
+      ],
+      "acceptance_test": "At least one narration beat explicitly relates the ladder figure to the key-row figure, and one relates the 58,251 card to the ladder figure."
+    }
+  ],
+  "prior_findings_recheck": [
+    {
+      "id": "arc-01",
+      "verdict": "still open",
+      "note": "Re-verified against scene_3.png of this run. The scroll target changed but the payoff card is still fully in frame, occupying the bottom ~40%."
+    },
+    {
+      "id": "arc-02",
+      "verdict": "still open",
+      "note": "Re-verified and quantified: 179 px offset, mean abs diff 2.3/255 after alignment. The three-stage bars remain uncaptured in both scenes 1 and 2."
+    },
+    {
+      "id": "arc-03",
+      "verdict": "fixed",
+      "note": "scene_4.png is now a full-bleed 18-row Nigeria-only consignment table (Askira, Biu, Ngala, Monguno, Gwoza, Dikwa, Maiduguri, Kano …). The map fallback is out of frame entirely, and the page text confirms it is now a two-line 'Map not drawn' note rather than a panel. The 'Government observer · Hauwa Ibrahim' chip is in shot, so the scoping claim has a visible owner."
+    },
+    {
+      "id": "arc-06",
+      "verdict": "fixed",
+      "note": "The scope inversion is gone. Hauwa's Nigeria page now reads 25,863 courses delivered against Dale's 33,000 under contract / 58,251 all-sources — narrowing scope now lowers the number. Carton-derived tiles are labelled 'Courses delivered' / 'Cartons delivered into districts'; the only surviving 'children' wording sits on measured-outcome fields (children needing treatment, children still uncovered, recorded recoveries), which is correct."
+    }
+  ]
+}

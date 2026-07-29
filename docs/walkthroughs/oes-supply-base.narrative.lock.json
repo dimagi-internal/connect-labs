@@ -149,7 +149,7 @@
         }
       ],
       "id": "two-suppliers-two-corridors-one-tender",
-      "narrative": "Ada awards Maiduguri to one supplier and Djibo to another. This is the decision the lot structure exists to make possible: concentrating a four-country response on the cheapest single bidder is the classic humanitarian supply failure, because when that plant or that corridor goes down, every district goes down at the same moment. Splitting costs a little more per carton and buys the thing money cannot buy later.",
+      "narrative": "Ada awards Maiduguri to one supplier and Djibo to another. This is the decision the lot structure exists to make possible: concentrating a four-country response on the cheapest single bidder is the classic humanitarian supply failure, because when that plant or that corridor goes down, every district goes down at the same moment. Here the split costs nothing to make: each corridor's cheapest bidder is a different plant, so the resilient award is also the lowest-cost one. On this tender the cheapest rule and the resilient rule agree. Awarding lot by lot is what lets you tell when they do not — which a single blended price cannot show you at all.",
       "persona": "ada",
       "provenance": "S4",
       "title": "Two suppliers, two corridors, one tender"

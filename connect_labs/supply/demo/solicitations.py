@@ -296,7 +296,16 @@ def _seed_corridor_awards(orgs, staff):
             defaults={
                 "category": rfp.categories[0],
                 "quantity": cartons,
-                "unit": "truck-months" if country == "SD" else "cartons",
+                # The unit the lot's own description states, on every screen.
+                #
+                # The Sudan lot was relabelled "truck-months" here while its
+                # description reads "Inland haulage of 40,000 CARTONS" and the
+                # contract it produces reports 40,000 cartons in the pipeline
+                # table — so scene 6 said "40,000 truck-months" and scene 9 said
+                # "40,000 cartons" about one record, five rows apart. A haulage
+                # contract is priced per carton moved here ($3.20), so cartons
+                # is the honest unit and the one everything else already uses.
+                "unit": "cartons",
                 "delivery_country": country,
                 "delivery_place": lot_desc.split(" to ")[-1] if " to " in lot_desc else "Port Sudan",
                 "delivery_deadline": TODAY + timedelta(days=due_in_days),
@@ -530,13 +539,13 @@ def _seed_split_award_rfp(rng, orgs, staff):
         title=SPLIT_AWARD_RFP,
         defaults={
             "brief": (
-                "RUTF into the Lake Chad basin and the Burkinabé Sahel. Bid lot by lot: "
+                "RUTF into the Somali region and the Burkinabé Sahel. Bid lot by lot: "
                 "OES intends to award corridors separately to avoid concentrating the "
                 "response on a single plant."
             ),
             "categories": ["rutf"],
-            "countries": ["NG", "BF"],
-            "bid_deadline": TODAY - timedelta(days=21),
+            "countries": ["ET", "BF"],
+            "bid_deadline": TODAY - timedelta(days=140),
             "status": RFP.Status.PUBLISHED,
             "created_by": staff[StaffRole.Role.PROCUREMENT_ADMIN],
         },

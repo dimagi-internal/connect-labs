@@ -1,0 +1,120 @@
+schema_version: 1
+kind: arc
+gate: gating
+live_state_verified: true
+calibration: provisional
+rubric_name: ddd-arc-eval
+scenes_judged: 8
+gates_checked: >-
+  run-report.json 43/43 actions ok, 0 failed. All eight scene_N_page_text.json
+  carry the same render_id (19faafea1c7), so the snapshots are one render. No two
+  CONSECUTIVE scene_N.png share an md5 — the duplicate-frame gate passes.
+dimensions:
+  arc_shape:
+    score: 4
+    weight: 0.30
+    justification: >-
+      There is a real three-act build and most of the order is load-bearing.
+      Act one (scene 1) states the unit — "2,428 children at risk across 8
+      unanswered exceptions", "Ranked by the children behind each one, not by
+      tonnage". Act two is a trust chain you could not reorder: scene 2 opens the
+      Sudan contract's delivery schedule, scene 3 opens one consignment's
+      milestone rail with PLANNED / ESTIMATED / ACTUAL kept as three columns and
+      "+9d vs plan" in red, scene 4 shows the event log those actuals derive
+      from. Act three supplies the denominator (scene 5's coverage table, Borno
+      IPC 5 at 34% with 31,833 uncovered beside Kassala at 91%) and then spends
+      it (scenes 6-8). The welded 7/8 loop LANDS and is verifiable in pixels: the
+      Askira row in scene 7 carries "Raised by Komadugu Health Initiative" and
+      "87 children lose a full course by Aug 4, 2026"; in scene 8 the SAME row
+      carries a green "Closed" chip, the effect ("87 cartons from Gombe
+      Distribution Hub to Askira Nutrition Centre, planned to arrive 3 August"),
+      the reason Ada typed, and "Closed by ... against the reallocation that
+      answered it". It has also genuinely sunk — in scene 7 a Monguno short-receipt
+      card sits below it; in scene 8 nothing sits below it but the Pipeline card.
+      That is the strongest moment in the run and it is last, so no
+      "finale is not the strongest moment" cap applies. Held at 4 by one flat
+      stretch and one swap: scene 4 is scene 3's modal scrolled, and scenes 5 and
+      6 traded artifacts — scene 5's frame already contains the "Weeks of cover"
+      card that scene 6 was scripted to reveal, so 6 arrives with nothing of its
+      own but a two-line italic derivation over the queue scene 1 already showed.
+  escalation:
+    score: 2
+    weight: 0.25
+    justification: >-
+      Two adjacent pairs are the same surface with only a scroll between them —
+      the rubric's explicit max-2 case, tripped twice. Scenes 3 and 4 have
+      byte-identical page_text (6,948 chars, the SHP-2026-0202 modal) and their
+      frames overlap by roughly half: scene 4 still shows the tail of scene 3's
+      milestone rail and the same one-row Consignment lines table, and its entire
+      net-new content is an Event log card containing a SINGLE entry ("Jul 19,
+      2026 · Departed · Khartoum Central Warehouse · Phone check-in"). An
+      append-only-log claim argued over one log line is the weakest artifact in
+      the run and it owns a whole scene. Scenes 6 and 7 are likewise
+      byte-identical page_text (6,119 chars) at two scroll offsets of the same
+      exception column. Scene 6 is the removable one: cut it and scene 5's frame
+      has already shown the Weeks of cover card, scene 1 has already shown the
+      ranked queue, and the only loss is two italic lines ("How this was ranked:
+      9 days late against 0.0 weeks of cover..."). Scene 2 also under-delivers on
+      its own sequence job — its claim is a three-tier honesty gradient, but its
+      page carries "Phone check-in" four times and zero EPCIS or despatch-advice
+      badges, so the gradient chapter opens on a single-tier frame.
+  visual_variety:
+    score: 2
+    weight: 0.20
+    justification: >-
+      Six of the eight frames are scroll-variants of just two surfaces. Frames 1,
+      6, 7 and 8 are the same exception-card column in the same left panel;
+      frames 3 and 4 are the same consignment modal. Only two frames supply real
+      shape contrast — scene 3's milestone rail (a timeline, not a table) and
+      scene 5's dense caseload/coverage tables with IPC badges. The surface that
+      was supposed to carry the contrast never renders at all: the Network panel
+      is a grey "Map unavailable — This environment has no Mapbox access token
+      configured" box occupying roughly 45% of frames 1, 6, 7 and 8, so the
+      repeated surface is repeated AND half-empty. And the one genuinely
+      different shape the narrative describes — the reallocation modal with the
+      constrained surplus-source list, the spare-capacity figures and the
+      required reason textarea — is executed by the actions but never captured;
+      scene 8 catches only the post-toast after-state. Across eight frames the
+      viewer never once sees the decision being made, only the record of it.
+  persona_coherence:
+    score: 3
+    weight: 0.15
+    justification: >-
+      Structurally this is flawless: one persona, one goal, no handoff, no drift.
+      Every frame's header chip reads "Procurement · Ada Nwosu" and every beat is
+      Ada pursuing the same question the opening posed. The single defect is
+      placed at the worst possible moment. Scene 8's whole point, in the
+      narration and in the concept claim, is that the record carries WHO decided —
+      and the line the frame actually renders is "Closed by oes-lead@oes.example
+      on Jul 28, 2026". The persona we have watched for eight scenes resolves, at
+      the payoff, to a generic role mailbox. I stopped short of the rubric's
+      max-2 "narration's subject and screen's evident user disagree" because the
+      session identity is unambiguous everywhere including scene 8's header; the
+      disagreement is confined to the audit stamp, which is unfortunately the one
+      string the finale asks the viewer to read.
+  opening_and_close:
+    score: 3
+    weight: 0.10
+    justification: >-
+      Both ends work, neither lands cleanly. The opening states the problem in
+      terms a stranger feels rather than explaining the product — "2,428 children
+      at risk", "across 8 unanswered exceptions", "Ranked by the children behind
+      each one, not by tonnage" — which is a strong first beat, but the right
+      half of that very first frame is an infrastructure error message ("Map
+      unavailable — This environment has no Mapbox access token configured"). The
+      close does answer the opening's question ("what can still be done about
+      it") with a closed row carrying actor, effect and reason. What it fails to
+      show is the proof it verbally promises: the headline DOES move in the DOM
+      from "2,428 / across 8 unanswered exceptions" to "2,341 / across 7
+      unanswered exceptions · 1 closed" — exactly the 87 children — but scene 8's
+      frame starts mid-list, so the number the opening led on is off-screen at the
+      close. The run's cleanest numeric payoff exists and is invisible.
+overall_score: 2
+overall_rule: lowest
+one_sentence_story: >-
+  Ada opens a queue that ranks supply exceptions by the children who will go
+  without rather than by tonnage, proves the numbers behind one row cannot be
+  argued away or edited, adds a caseload denominator so delivery reads as
+  coverage, and then answers the shortfall a partner raised from the ground —
+  closing that exact row with who decided, what moved and why.
+verdict: fail

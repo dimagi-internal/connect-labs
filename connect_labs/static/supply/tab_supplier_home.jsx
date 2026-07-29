@@ -19,42 +19,74 @@ function SupplierHome({ ctx }) {
     .filter(Boolean)
     .sort();
 
+  // Days to the next deadline. A date alone does not say whether it is
+  // tomorrow or in three months, which is the only thing a bidder needs.
+  const daysToDeadline = deadlines.length ? daysUntil(deadlines[0]) : null;
+
   return (
     <Page
       title={`Welcome, ${world.org.legal_name}`}
       lede="Your qualifications, open supply rounds and live solicitations."
     >
+      {/* A supplier's screen has one clock on it. The deadline leads, and
+          says how long is left rather than only a date — three tiles reading
+          "1" beside a bare date told them nothing about what to do today. */}
       <KeyFigures
         figures={[
           {
-            label: 'Live qualifications',
-            value: live.length,
-            hint: expiringSoon.length
-              ? `${expiringSoon.length} expiring within 60 days`
-              : null,
+            label: 'Next bid deadline',
+            value: deadlines.length ? formatDate(deadlines[0]) : '—',
+            lead: true,
+            tone:
+              daysToDeadline === null
+                ? undefined
+                : daysToDeadline <= 7
+                ? 'critical'
+                : daysToDeadline <= 21
+                ? 'at-risk'
+                : 'ok',
+            hint:
+              daysToDeadline === null
+                ? 'nothing open to bid on'
+                : `${daysToDeadline} day${
+                    daysToDeadline === 1 ? '' : 's'
+                  } left${
+                    unbid.length
+                      ? ` · ${unbid.length} without a submitted bid`
+                      : ''
+                  }`,
           },
           {
-            label: 'Open EOI rounds',
+            label:
+              live.length === 1 ? 'Live qualification' : 'Live qualifications',
+            value: live.length,
+            tone: expiringSoon.length ? 'at-risk' : undefined,
+            hint: expiringSoon.length
+              ? `${expiringSoon.length} expiring within 60 days`
+              : 'none expiring soon',
+            method:
+              'A qualification is what lets you see and bid on a solicitation in its category. It carries an expiry date, and when it lapses the solicitations gated on it stop reaching you — so this is the number to watch, not the count of tenders.',
+          },
+          {
+            label:
+              openRounds.length === 1 ? 'Open EOI round' : 'Open EOI rounds',
             value: openRounds.length,
+            tone: notApplied.length ? 'at-risk' : undefined,
             hint: notApplied.length
               ? `${notApplied.length} not yet applied to`
               : 'all applied to',
           },
           {
-            label: 'Solicitations open to you',
+            label:
+              rfps.length === 1
+                ? 'Solicitation open to you'
+                : 'Solicitations open to you',
             value: rfps.length,
-            hint: unbid.length
-              ? `${unbid.length} without a submitted bid`
-              : null,
-          },
-          {
-            label: 'Next bid deadline',
-            value: deadlines.length ? formatDate(deadlines[0]) : '—',
           },
         ]}
       />
 
-      <div className="grid-2">
+      <div className="grid-2-wide">
         <Card
           title="Your qualifications"
           subtitle="Granted through EOI review; solicitations are gated on these."

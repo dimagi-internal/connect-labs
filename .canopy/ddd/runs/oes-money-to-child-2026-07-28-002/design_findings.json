@@ -1,0 +1,74 @@
+[
+  {
+    "scene": "3 — cost-per-child-with-its-method-on-screen",
+    "dimension": "design_soundness",
+    "severity": "high",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The 'What a dollar bought' card is captioned 'Stated as a chain, so every step can be checked', but its rungs use two different bases: rung 1 is confirmed-basis money ($502k, 'disbursed on supply contracts, against confirmed delivery') while rungs 2-4 are delivered-basis volume (455 MT, 33,000 cartons, 33,000 children given a full course). Dividing the chain's own visible endpoints gives $502k / 33,000 = $15.21 per child, against the USD 41.80 asserted three lines below in the method note. Verified in connect_labs/static/supply/tab_funder.jsx:25-35 (goodsDisbursed and confirmedCartons drive costPerChild) versus :131-152 (the rungs render deliveredMt / deliveredCartons). The cost figure itself is correct — $501,600 / 12,000 confirmed cartons = $41.80 exactly — but the card that exists to make it checkable does not reproduce it. This is the same class of on-screen contradiction this iteration set out to remove.",
+    "fix_recommendation": "Drive all four rungs off the confirmed basis: $502k -> confirmed MT -> 12,000 cartons -> 12,000 children, so the chain divides to $41.80 end to end. Move the delivered-volume figures (455 MT / 33,000 cartons) into a separate, explicitly-labelled rung or into the wider 'Courses delivered' card below, where the different method is already stated."
+  },
+  {
+    "scene": "4/5 — nigerias-own-view-scoped-on-the-server / coverage-by-district-not-tonnage-delivered",
+    "dimension": "design_soundness",
+    "severity": "high",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The government view renders the identical raw leg total as two adjacent key figures — '53,246 Cartons delivered' and '53,246 Children treated (one carton = one full course)' (connect_labs/static/supply/tab_gov.jsx:29-31 and :44-55). That is literally the cartons-equals-children collapse scene 6's narration attacks ('cartons delivered, divided by a treatment factor; arithmetic presented as an outcome'), reproduced side by side on the page a government counterpart reads. Compounding it, the same page's Coverage-by-district table totals 25,863 courses delivered (Borno 16,399 + Gombe 9,464 + Yobe 0) on the SAME stated conversion — 2.06x apart, both visible in scene 5's scroll range. The difference is the intra-country plant-to-warehouse leg the contract-level once-only fix was written to stop counting: scene 5's own top table row shows 'Kano Central Warehouse | 20,000 cartons | 20,000 [children covered] | Confirmed', crediting a warehouse-to-warehouse transfer as 20,000 children. The per-row column also credits in-transit (94, 141) and planned (3,000) consignments as children covered.",
+    "fix_recommendation": "Compute the government 'Children treated' tile from coverage.coverage_by_district's courses (cross-boundary, delivered/confirmed only — services/coverage.py:36-47 already implements exactly this exclusion) so it reads 25,863 and agrees with the table below it. Drop the per-row 'Children covered' column, or restrict it to delivered/confirmed legs whose destination crosses an adm1 boundary, so warehouse transfers and undelivered consignments are never credited."
+  },
+  {
+    "scene": "5 — coverage-by-district-not-tonnage-delivered",
+    "dimension": "claim_reality_coherence",
+    "severity": "high",
+    "route": "DEFER",
+    "fix_kind": "mechanical",
+    "detail": "The card's method note reads 'Coverage is courses delivered divided by the district's monthly SAM caseload' (tab_gov.jsx:216-220). The denominator is not monthly: demo/demand.py:53 sets CASELOAD_MONTHS = 4 and services/coverage.py:69-79 sums children_sam across every monthly estimate up to the reporting month, so Borno's 48,232 is a four-month cumulative requirement (~12,058/month). The displayed coverage percentages are therefore roughly 4x what the stated method would produce. services/coverage.py:59-62 explicitly says a coverage percent with no window is unanswerable, and the row already carries window_months, window_from and monthly_caseload — the card renders none of them. The funder view's country coverage card (tab_funder.jsx:176-232) drops the window the same way. This lands in the one card whose concept claim is that the method is on screen and challengeable.",
+    "fix_recommendation": "Replace 'the district's monthly SAM caseload' with the actual window and render the window fields already on the row, e.g. 'Coverage is courses delivered in the 4 months from <window_from> divided by the district's SAM caseload over the same window (<monthly_caseload>/month).' Apply the same fix to the funder country card."
+  },
+  {
+    "scene": "4 — nigerias-own-view-scoped-on-the-server",
+    "dimension": "motion_friction",
+    "severity": "medium",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The scene's narration is about server-side country scoping — 'the flows entering and moving within the country, and nothing else… another country's consignments never reach the page at all' — and the artifact that evidences it is the 'Who is delivering what, where' consignment table, which the captured page text confirms is Nigeria-only. The scene waits for css:.data-table but never scrolls to it, so the table is entirely below the fold. The centre of the frame is instead an empty 'Map unavailable — this environment has no Mapbox access token configured' panel occupying roughly half the viewport. The artifact fits in one viewport and the scene simply framed it wrong.",
+    "fix_recommendation": "Add `- kind: scroll_to / target: css:.data-table` before the 2.2s hold in the scene's actions so the Nigeria-only consignment table is what is on screen while it is narrated."
+  },
+  {
+    "scene": "1/3/4 — walkthrough-wide",
+    "dimension": "concept_clarity",
+    "severity": "low",
+    "route": "CONCEPT",
+    "fix_kind": "mechanical",
+    "detail": "The phrase 'Children treated' labels three different numbers across the walkthrough: 33,000 on the funder key row (scene 1, carton-derived from contract deliveries), 53,246 on the government key row (scene 4, raw leg sum), and a card headlined 'Children treated — the figure, and the measurement' whose lead figure is 58,251 courses delivered (scenes 3 and 6). The page explains the distinction in prose — 'The card below counts a wider set… deliberately not reconciled with this one' — but its own headings contradict the explanation, in a demo whose thesis is that this exact number is habitually mislabelled.",
+    "fix_recommendation": "Reserve 'Children treated' for the measured/outcome figure. Rename the funder key tile to 'Courses delivered — contract ladder', the wider card's lead figure to 'Courses delivered — all sources', and the government tile to 'Courses delivered' with the coverage table as its denominator-bearing companion."
+  },
+  {
+    "scene": "3 — cost-per-child-with-its-method-on-screen",
+    "dimension": "visual_polish",
+    "severity": "low",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The most load-bearing content in the scene — the exclusions, the once-per-leg rule, the haulage carve-out and the USD 41.80 figure itself — is set as a five-line dense grey micro-paragraph in the smallest type on the page, beneath four large rung tiles that carry comparatively low-information numbers. The scene's whole claim is that the method sits in the same frame as the number; it does, but at a size that reads as fine print rather than as the argument.",
+    "fix_recommendation": "Promote cost per child to its own rung or a fifth figure tile at rung scale ('USD 41.80 / per child treated, confirmed deliveries only'), and break the method paragraph into two or three labelled lines (conversion / basis / exclusions) at body size instead of one grey block."
+  },
+  {
+    "scene": "5 — coverage-by-district-not-tonnage-delivered",
+    "dimension": "visual_polish",
+    "severity": "low",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The 'Coverage of need' column renders its values as coloured pills — 0% and 34% in red, 91% in green — against no stated threshold anywhere on the card. Per the objective-data standing rule, colour is justified only where it encodes a value crossing a STATED threshold; here it tells the reader which numbers are bad before they have been given the rule. The IPC badges beside each district are fine by contrast: IPC phase is an objective published classification.",
+    "fix_recommendation": "Either state the threshold in the method note (e.g. 'coverage below the 50% Sphere adequacy threshold is flagged') so the colour encodes a named rule, or render the pills in neutral ink and let the percentage and the uncovered-children column carry the comparison."
+  },
+  {
+    "scene": "2 — the-diagram-conserves-or-it-is-a-graphic",
+    "dimension": "visual_polish",
+    "severity": "low",
+    "route": "PRODUCT",
+    "fix_kind": "mechanical",
+    "detail": "The two sub-pixel-height bands at the bottom of the Sankey (Blue Nile Freight Co, $128k, and Sudan, $128k) push their labels outside the band, where they sit directly on the flow stroke connecting them; the text and the link graphic collide and the pair reads as one crowded line at the diagram's edge. Everything above it is clean and the conservation story is legible, so this is the one visual blemish on an otherwise strong frame.",
+    "fix_recommendation": "Enforce a minimum band height (e.g. 6px) for non-zero nodes and give the outside label a small vertical offset plus a background halo so it clears the link stroke, rather than letting sub-pixel values render as a hairline with overlapping text."
+  }
+]

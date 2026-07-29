@@ -1,0 +1,128 @@
+schema_version: 1
+kind: arc
+gate: gating
+live_state_verified: true
+calibration: provisional
+rubric_name: ddd-arc-eval
+scenes_judged: 6
+gates:
+  snapshot_consistency: pass  # 6 scenes, one render
+  duplicate_frames: pass      # 5 consecutive pairs, all differ > 2%
+  run_report: pass            # 28 actions, 0 failed
+iteration_note: >-
+  Independent re-judge of the same narrative after a re-render (prior run
+  oes-money-to-child-2026-07-28-001 scored fail / overall 2). Four of nine prior
+  findings are genuinely fixed and the run is materially better: the finale now
+  SHOWS the batch-to-child drill it used to only promise (arc-07), the sankey no
+  longer peaks at scene 2 and is topped by the scene-6 modal (arc-02), scene 3
+  is no longer a scroll-variant of scene 6 (arc-03), and scene 1 now opens on
+  the key-figures row instead of a decapitated sankey node (arc-08, half). Three
+  high/medium findings are REPEATS whose targeted fixes did not land: the
+  finale's reveal is still on screen in scene 3, scenes 1 and 2 still overlap,
+  and the hand-back to Dale is still unmotivated. The two hard max-2 rules
+  therefore still fire.
+dimensions:
+  arc_shape:
+    score: 2
+    weight: 0.30
+    justification: >-
+      The spine is real and load-bearing — money kept in three stages, the
+      diagram that conserves, the method behind cost-per-child, the host
+      government's scoped view, coverage against caseload, then the headline
+      number tested against a measured recovery. You could not swap any two
+      scenes without loss, and the finale is now the strongest moment in the run:
+      scene 6's Batch LOT2600A modal with twelve per-child MUAC series climbing
+      out of a red band, sample size stated on screen ("that sample is 12 of the
+      656 children this batch fed"). The "final scene is not the strongest" and
+      "most impressive artifact peaks in scene 1 or 2" rules no longer fire.
+      Held at 2 by the rubric's own 2-anchor — the payoff lands before the setup.
+      Scene 3's frame, held 2.4s while the narration talks about cost per child,
+      contains the entire "Children treated — the figure, and the measurement"
+      card in its bottom 40%: 58,251 courses delivered, 90 of 110 recorded
+      recoveries, 81.8% observed recovery rate, all fully legible. Scene 6 then
+      opens by announcing that comparison as a reveal ("Beside it now sits a
+      different figure"). Half of the finale's payoff is spent three scenes
+      early, and this is the second consecutive iteration in which it is — the
+      recipe carries an inline note claiming the fix, and the pixels say it did
+      not take.
+  escalation:
+    score: 2
+    weight: 0.25
+    justification: >-
+      Scenes 1 and 2 are the same surface with only a scroll between them — the
+      rubric's explicit max-2 case. The delta is 163px ("Where the money went"
+      sits at y=292 in scene 1 and y=129 in scene 2); the sankey that scene 2
+      presents as its subject already occupies roughly 60% of scene 1's frame,
+      while the per-contract three-stage bars that scene 1's own narration rests
+      on ("this view keeps them apart, per contract") are below the fold and
+      never captured. Scene 4 is the other weak link: its claim is server-side
+      country scoping, and the evidence for it — the Nigeria-only consignment
+      table — was waited for but never scrolled into view, so the frame's
+      dominant object is a half-page "Map unavailable" error card. Scenes 3, 5
+      and 6 each clearly earn their place: the ladder plus its exclusions in one
+      frame, the coverage inversion, the batch drill.
+  visual_variety:
+    score: 3
+    weight: 0.20
+    justification: >-
+      Real variety exists and is better than the prior run: a sankey (1-2), a
+      four-step tile chain over a dense method paragraph (3), a KPI row (4),
+      horizontal stock bars over an IPC-tagged coverage table (5), and a modal of
+      twelve small-multiple MUAC charts with WHO threshold bands (6). No single
+      surface takes more than half the frames, so the max-2 rule does not fire.
+      Capped at 3 because five of six frames are two pages at different scroll
+      offsets, every one of them the same white-card-on-grey density, and the one
+      genuinely different shape the run planned — the network map over IPC
+      classification, the only non-tabular surface Hauwa's view offers — renders
+      as a grey "Map unavailable / no Mapbox access token configured" box
+      occupying about 52% of scene 4. The eye habituates through the middle.
+  persona_coherence:
+    score: 3
+    weight: 0.15
+    justification: >-
+      The outbound handoff is the best-executed transition in the run and is
+      motivated in both narration and chrome: the role chip goes Funder to
+      Government observer, the name changes to Hauwa Ibrahim, the title becomes
+      "Nigeria — supply overview" and the nav collapses to one item. The return
+      is not: at scene 6 the chip silently flips back to Funder / Dale Whitmore
+      with no spoken cue that we have left Hauwa's screen — the narration only
+      names Dale mid-paragraph, after the frame has already changed hands. The
+      rubric's "persona switch the narration does not motivate: max 3" fires, and
+      this is a repeat of the prior run's arc-06. Compounding it, the two
+      personas' screens report incompatible versions of the same noun with
+      nothing on screen reconciling them: Dale's global view says 33,000 children
+      treated, Hauwa's Nigeria-only view says 53,246, and the funder card says
+      58,251 courses delivered. A demo whose entire thesis is number discipline
+      cannot have its headline noun grow when you narrow the scope.
+  opening_and_close:
+    score: 4
+    weight: 0.10
+    justification: >-
+      Both frames from the prior run are fixed. The opening narration states the
+      problem in terms a stranger feels ("the people who pay for famine response
+      usually cannot see what their money bought") and scene 1 now actually
+      captures the key-figures row that keeps appropriated / obligated /
+      disbursed apart. The close is strong and specific: it delivers exactly what
+      the title promises — money to child — ending on one child's arm
+      circumference going 98 to 131 mm across nine visits, with the sample size
+      and the synthetic label in the same frame rather than a rate implied from
+      it. Held at 4 rather than 5 because the opening frame is only adequate: the
+      per-contract three-stage bars its narration leans on are off-screen, and
+      the frame gives most of its area to the next scene's diagram.
+overall_score: 2
+overall_rule: lowest
+one_sentence_story: >-
+  A funder's dashboard refuses to collapse obligated, disbursed and delivered
+  into one number and shows the arithmetic behind its cost-per-child figure, a
+  Nigerian coordinator gets a server-scoped view that reads coverage against her
+  own caseload rather than tonnage, and the funder then follows one delivered
+  batch down to a child's MUAC series to find that the headline "children
+  treated" figure and the measured recoveries do not agree.
+verdict: fail
+notes: >-
+  The one-sentence sanity floor does NOT fire — the argument is legible after one
+  viewing and the persona handoff earns its place in it. The sequence's thinking
+  is sound; every point deducted here is staging. Two defects account for the
+  whole verdict, both repeats: scene 3's frame containing scene 6's reveal, and
+  scenes 1 and 2 being one screen 163px apart. Both are camera changes, not
+  product work.
