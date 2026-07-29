@@ -34,6 +34,23 @@ def _attach_user(req, username="jane_okeke"):
     return req
 
 
+def test_flag_endpoints_require_login(rf):
+    """Anonymous callers must be turned away (login_required redirect), not
+    served or handled as an unauthenticated 500."""
+    from django.contrib.auth.models import AnonymousUser
+
+    from connect_labs.flags import views as v
+
+    post_req = _post(rf, "/labs/workflow/api/503/flags/", {"opportunity_id": 10001})
+    post_req.user = AnonymousUser()
+    assert v.create_flag_for_run(post_req, workflow_run_id=503).status_code == 302
+
+    get_req = rf.get("/labs/workflow/api/503/flags/")
+    get_req.session = {}
+    get_req.user = AnonymousUser()
+    assert v.list_flags_for_run(get_req, workflow_run_id=503).status_code == 302
+
+
 @patch("connect_labs.flags.views.FlagsDataAccess")
 def test_post_flag_creates_via_data_access(MockDA, rf):
     from connect_labs.flags.models import FlagRecord
