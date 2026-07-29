@@ -9,6 +9,7 @@ urlpatterns = [
     path("api/summary/", api.SummaryView.as_view(), name="api_summary"),
     path("api/events/", api.EventsView.as_view(), name="api_events"),
     path("api/replay/", api.ReplayView.as_view(), name="api_replay"),
+    path("api/grid/", api.GridView.as_view(), name="api_grid"),
     # Authenticated views.
     path("", views.PulseIndexView.as_view(), name="index"),
     path("v/<slug:layout>/", views.PulseDisplayView.as_view(), name="display"),

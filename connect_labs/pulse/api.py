@@ -23,10 +23,12 @@ from connect_labs.pulse.models import (
     TIER_HOT,
     TIER_INTERVALS_SECONDS,
     PulseEvent,
+    PulseGridCell,
     PulseIngestHealth,
     PulseOpportunity,
     PulseRollup,
     PulseScalar,
+    PulseWork,
 )
 from connect_labs.pulse.normalize import COUNTRY_NAMES, FLAG_LABELS, SERVICE_LABELS
 
@@ -160,11 +162,71 @@ class SummaryView(View):
             for o in PulseOpportunity.objects.all().order_by("-lifetime_visit_count")[:600]
         ]
 
+        # Money comes from the works spine, which carries full history at ~53
+        # B/row — not from visits, which are only a rolling window.
+        money = PulseWork.objects.aggregate(
+            to_workers=Sum("usd_to_worker"),
+            to_orgs=Sum("usd_to_org"),
+            works=Count("id"),
+        )
+        approved_works = PulseWork.objects.filter(status="approved").count()
+        by_work_status = {
+            row["status"]: row["n"]
+            for row in PulseWork.objects.values("status").annotate(n=Count("id")).order_by("-n")
+        }
+        money_by_country = [
+            {
+                "country": row["country"],
+                "name": COUNTRY_NAMES.get(row["country"], row["country"]),
+                "works": row["n"],
+                "usd": float(row["usd"] or 0),
+            }
+            for row in PulseWork.objects.exclude(country="")
+            .values("country")
+            .annotate(n=Count("id"), usd=Sum("usd_to_worker"))
+            .order_by("-usd")
+        ]
+        # Rate per service is VOLUME-WEIGHTED, computed from money actually
+        # accrued over approved work. Averaging each opportunity's own rate
+        # instead lets a two-row test opportunity count as much as a
+        # 106,719-work programme -- which put "Malaria rapid test" at $17.03
+        # when the real programme pays $1.08.
+        money_by_service = [
+            {
+                "service": row["service_slug"],
+                "name": SERVICE_LABELS.get(row["service_slug"], row["service_slug"] or "Service delivery"),
+                "works": row["n"],
+                "approved": row["approved"],
+                "usd": float(row["usd"] or 0),
+                "rate": (float(row["usd"] or 0) / row["approved"]) if row["approved"] else None,
+            }
+            for row in PulseWork.objects.exclude(service_slug="")
+            .values("service_slug")
+            .annotate(
+                n=Count("id"),
+                approved=Count("id", filter=Q(status="approved")),
+                usd=Sum("usd_to_worker"),
+            )
+            .order_by("-usd")[:12]
+        ]
+
         return JsonResponse(
             {
                 "generated_at": timezone.now().isoformat(),
                 "ingest": _ingest_state(),
                 "scope": scope.value if scope else {},
+                "money": {
+                    "to_workers": float(money["to_workers"] or 0),
+                    "to_orgs": float(money["to_orgs"] or 0),
+                    "works": money["works"] or 0,
+                    "approved_works": approved_works,
+                    "usd_per_approved_work": (
+                        float(money["to_workers"] or 0) / approved_works if approved_works else 0
+                    ),
+                    "by_work_status": by_work_status,
+                    "by_country": money_by_country,
+                    "by_service": money_by_service,
+                },
                 "stored": {
                     "events": agg["n"] or 0,
                     "flagged": agg["flagged"] or 0,
@@ -183,6 +245,35 @@ class SummaryView(View):
                     "flags": FLAG_LABELS,
                     "services": SERVICE_LABELS,
                 },
+            }
+        )
+
+
+class GridView(View):
+    """The historical map layer: anonymous ~1 km cells.
+
+    This is what the map is *made of*. Live events light up on top of it, but
+    the accumulated shape of where Connect works comes from here — cells that
+    outlive the visit rows that produced them, and so keep getting denser while
+    labs holds no deep beneficiary-level archive.
+    """
+
+    def get(self, request):
+        limit = min(int(request.GET.get("limit", 20000)), 60000)
+        cells = PulseGridCell.objects.all().order_by("-n")[:limit]
+
+        rows = [
+            [c.lat_q, c.lon_q, c.n, c.approved_n, c.flagged_n, c.country or None, c.service_slug or None]
+            for c in cells
+        ]
+        return JsonResponse(
+            {
+                "fields": ["lat_q", "lon_q", "n", "approved_n", "flagged_n", "country", "service"],
+                # Cells are quantised to 1/100 degree; divide to get coordinates.
+                "quantum": 100,
+                "cells": rows,
+                "total_points": sum(r[2] for r in rows),
+                "truncated": len(rows) >= limit,
             }
         )
 

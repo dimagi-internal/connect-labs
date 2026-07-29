@@ -35,8 +35,11 @@ would put a "Connect Labs" navigation bar above a funder-facing screen.
       </div>
     </header>
 
-    {# Shown only when ingest is unhealthy. Deliberately impossible to miss:
-       a silently stale screen is the worst failure mode this system has. #}
+    {% comment %}
+      Shown only when ingest is unhealthy. Deliberately impossible to miss:
+      a silently stale screen is the worst failure mode this system has.
+      ({# #} is single-line only in Django — a multi-line one renders literally.)
+    {% endcomment %}
     <div class="pulse-alert" id="alert" hidden>
       <strong>Data is not live.</strong> <span id="alert-text"></span>
     </div>
