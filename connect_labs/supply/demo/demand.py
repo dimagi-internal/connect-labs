@@ -107,7 +107,12 @@ SHORT_RECEIPT_SITE = "Monguno Nutrition Centre"
 # check-in. Without any, every row on the partner's receiving surface reads
 # "Entered by hand" and the badge stops meaning anything — the narration's whole
 # point is that hand-keyed data SAYS so, which needs something that does not.
-ADVISED_PARTNER_LEGS = {3, 4, 10}
+# 9 is the short-receipt leg (SHP-2026-0909 into Monguno). The partner
+# narrative says the storekeeper's count was taken "against the despatch
+# advice" — which is only a meaningful check if there IS one. It was a phone
+# check-in, so a hand count was being reconciled against another hand-keyed
+# number and the scene's whole evidentiary contrast did not exist.
+ADVISED_PARTNER_LEGS = {3, 4, 9, 10}
 SHORT_RECEIPT_DESPATCHED = 900
 SHORT_RECEIPT_RECEIVED = 840
 

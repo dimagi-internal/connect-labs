@@ -87,12 +87,22 @@ function RFPsTab({ ctx }) {
               value: () => '',
               render: (r) => (
                 <div className="row-actions">
+                  {/* A tender with lots still to award is work; one already
+                      awarded is history. Six identical solid buttons down the
+                      column said every row needed the same attention, when
+                      five of them were finished months ago. */}
                   <button
                     type="button"
-                    className="btn btn-sm"
+                    className={`btn btn-sm ${
+                      r.lots.some((l) => !l.awarded_org) ? '' : 'btn-ghost'
+                    }`}
                     onClick={() => setOpenRfp(r)}
                   >
-                    {r.status === 'draft' ? 'Edit lots' : 'Compare bids'}
+                    {r.status === 'draft'
+                      ? 'Edit lots'
+                      : r.lots.some((l) => !l.awarded_org)
+                      ? 'Compare & award'
+                      : 'View bids'}
                   </button>
                   {canManage && r.status === 'draft' ? (
                     <button

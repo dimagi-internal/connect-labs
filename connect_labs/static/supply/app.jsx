@@ -124,9 +124,43 @@ function visibleTabs(role) {
   return TABS.filter((t) => t.roles.includes(role));
 }
 
+/* The open tab lives in the URL.
+
+   It used to be React state and nothing else, which meant a screen in this
+   product had no address: you could not send anyone a link to the command
+   centre, a refresh always dropped you back on the first tab, and the browser
+   back button did nothing at all. For an operations tool people are supposed
+   to work in — and hand to each other mid-incident — that is a missing
+   feature, not a missing nicety. */
+function tabFromHash(role) {
+  const wanted = (window.location.hash || '').replace(/^#\/?/, '');
+  const allowed = visibleTabs(role);
+  const match = allowed.find((t) => t.key === wanted);
+  return (match || allowed[0] || {}).key;
+}
+
 function App() {
   const [world, setWorld] = useState(BOOTSTRAP);
-  const [tab, setTab] = useState(visibleTabs(BOOTSTRAP.role)[0]?.key);
+  const [tab, setTabState] = useState(() => tabFromHash(BOOTSTRAP.role));
+
+  // Selecting a tab writes the URL; the URL changing (back, forward, a pasted
+  // link) selects the tab. One direction each, so they cannot fight.
+  const setTab = useCallback((key) => {
+    setTabState(key);
+    if (window.location.hash.replace(/^#\/?/, '') !== key) {
+      window.history.pushState(null, '', `#${key}`);
+    }
+  }, []);
+
+  useEffect(() => {
+    const onPop = () => setTabState(tabFromHash(BOOTSTRAP.role));
+    window.addEventListener('hashchange', onPop);
+    window.addEventListener('popstate', onPop);
+    return () => {
+      window.removeEventListener('hashchange', onPop);
+      window.removeEventListener('popstate', onPop);
+    };
+  }, []);
   const [toast, setToast] = useState(null);
   const [busy, setBusy] = useState(false);
 

@@ -83,6 +83,13 @@
   max-height: 620px;
   overflow-y: auto;
 }
+/* With no map beside it the queue has the whole row, and capping its height
+   only hides rows behind an inner scrollbar nobody looks for — the expiry
+   exception was cut off mid-row at the bottom of the panel. */
+.command-split.no-map .exception-panel .card-body {
+  max-height: none;
+  overflow-y: visible;
+}
 .exception-list {
   display: flex;
   flex-direction: column;

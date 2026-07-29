@@ -202,7 +202,7 @@ scenes:
   - kind: wait_for
     target: css:.data-table
   - kind: click
-    target: css:tr:has-text('RUTF Northeast Nigeria Q3 2026') button:has-text('Compare bids')
+    target: css:tr:has-text('RUTF Northeast Nigeria Q3 2026') button:has-text('Compare & award')
     note: the live tender, still open — bids priced per lot
   - kind: wait_for
     target: css:.modal

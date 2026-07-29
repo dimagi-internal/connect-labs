@@ -31,6 +31,12 @@ function CommandTab({ ctx }) {
   const [reallocatingFor, setReallocatingFor] = useState(null);
   const [openShipmentId, setOpenShipmentId] = useState(null);
 
+  // Split the cover table: somewhere with stock has a run-dry date, somewhere
+  // awaiting its first consignment does not, and mixing them ranks the second
+  // group above the first because zero sorts lowest.
+  const served = cover.filter((r) => !r.awaiting_first_delivery);
+  const awaitingFirst = cover.filter((r) => r.awaiting_first_delivery);
+
   const inTransit = shipments.filter((s) => s.status === 'in_transit');
   const deliveredCartons = contracts.reduce(
     (n, c) => n + c.delivered_quantity,
@@ -409,9 +415,16 @@ function CommandTab({ ctx }) {
         title="Weeks of cover"
         subtitle="Stock on hand against the rate each site is admitting children — the date the store runs dry."
       >
+        {/* Nodes that have actually been served, thinnest first.
+            The card sorted every node by weeks of cover and truncated at
+            twelve — and a node that has never received anything scores zero,
+            so ten never-served hubs and transit points led the table and
+            pushed the two sites with real stock off the bottom. The card
+            exists to say WHEN A STORE RUNS DRY, and it was showing the nodes
+            for which that question has no answer yet. */}
         {cover.length ? (
           <DataTable
-            rows={cover.slice(0, 12)}
+            rows={served}
             rowKey={(r) => r.node_id}
             columns={[
               { key: 'node', label: 'Node', value: (r) => r.node_name },
@@ -471,6 +484,17 @@ function CommandTab({ ctx }) {
             hint="No node carries a caseload."
           />
         )}
+        {/* Reported, not dropped. Ten nodes with no receipt behind them are a
+            fact about the network — a hub that has never been served is worth
+            knowing about — they just are not rows in a run-dry table. */}
+        {awaitingFirst.length ? (
+          <p className="muted small">
+            <strong>{awaitingFirst.length}</strong> further node
+            {awaitingFirst.length === 1 ? ' has' : 's have'} received nothing
+            yet and so have no run-dry date:{' '}
+            {awaitingFirst.map((r) => r.node_name).join(', ')}.
+          </p>
+        ) : null}
         <p className="muted small method-note">
           {cover.length ? cover[0].method : ''}
         </p>

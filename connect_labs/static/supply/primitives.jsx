@@ -161,7 +161,7 @@ function EmptyState({ title, hint }) {
   );
 }
 
-function DataTable({ columns, rows, empty, rowKey, onRowClick }) {
+function DataTable({ columns, rows, empty, emptyHint, rowKey, onRowClick }) {
   const [sort, setSort] = useState({ key: null, dir: 1 });
 
   const sorted = useMemo(() => {
@@ -180,7 +180,12 @@ function DataTable({ columns, rows, empty, rowKey, onRowClick }) {
   }, [rows, sort, columns]);
 
   if (!rows.length) {
-    return <EmptyState title={empty || 'Nothing to show yet.'} />;
+    // An empty state that says what to do next, not just that there is
+    // nothing. "No tokens yet." in the middle of a blank panel tells a reader
+    // the screen loaded and nothing else.
+    return (
+      <EmptyState title={empty || 'Nothing to show yet.'} hint={emptyHint} />
+    );
   }
 
   return (

@@ -177,6 +177,11 @@
   border-color: #8f1d13;
 }
 
+/* A row action is a label, not a paragraph: "Compare bids" was wrapping onto
+   two lines inside its own button in a narrow action column. */
+.row-actions .btn {
+  white-space: nowrap;
+}
 .btn-sm {
   padding: 5px 11px;
   font-size: 12px;
