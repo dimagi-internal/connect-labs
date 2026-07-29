@@ -15,7 +15,11 @@ jobs:
   update-docs:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      # The commit/push goes through DOCS_BOT_DEPLOY_KEY (a ruleset-bypass deploy
+      # key set on the checkout below), NOT GITHUB_TOKEN — so the token needs only
+      # read. This job runs an LLM over attacker-influenceable merged-PR text; keep
+      # its token unable to write repo contents.
+      contents: read
       pull-requests: read
 
     steps:
