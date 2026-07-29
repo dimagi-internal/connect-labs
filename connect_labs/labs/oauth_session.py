@@ -19,18 +19,19 @@ from __future__ import annotations
 
 import logging
 
+from django.conf import settings
 from django.contrib.auth import logout
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
 
-# Paths that either *create* the session.labs_oauth shape, *consume* a
-# different auth mechanism, or are otherwise outside the labs UI surface.
-# Running the refresh-or-logout check on these would be incorrect (e.g.,
-# logging the user out mid-OAuth-callback) or pointless (e.g., the MCP
-# endpoint authenticates via Bearer PAT, not session).
-_SKIP_PATH_PREFIXES = (
+# Labs-owned paths that either *create* the session.labs_oauth shape, *consume*
+# a different auth mechanism, or are otherwise outside the labs UI surface.
+# Running the refresh-or-logout check on these would be incorrect (e.g., logging
+# the user out mid-OAuth-callback) or pointless (e.g., the MCP endpoint
+# authenticates via Bearer PAT, not session).
+_LABS_SKIP_PATH_PREFIXES = (
     "/labs/login/",
     "/labs/initiate/",
     "/labs/callback/",
@@ -38,13 +39,44 @@ _SKIP_PATH_PREFIXES = (
     "/labs/test-auth/",
     "/labs/commcare/",
     "/labs/ocs/",
-    "/campaign/",
-    "/supply/",
     "/mcp/",
     "/admin/",
     "/o/",
     "/health/",
 )
+
+# This middleware is the labs authentication boundary in a SHARED-AUTH host:
+# labs and every standalone satellite site (supply, campaign, and any future
+# site) run in one Django project against one users.User table and one session
+# cookie, so `request.user.is_authenticated` is global — signing into any site
+# authenticates you everywhere. The boundary that keeps a satellite login from
+# BECOMING a labs login is here: any authenticated request to a NON-skipped path
+# with no live `session["labs_oauth"]` is logged out (see `_sync_session_token`).
+# Labs access therefore requires a labs OAuth session, which a satellite's own
+# login never establishes.
+#
+# Each satellite must skip-list its URL prefix, or its own users get logged out
+# on every request to it. Satellites declare their prefix in the
+# `LABS_SATELLITE_URL_PREFIXES` setting (alongside their INSTALLED_APPS + urls
+# entries) rather than importing labs — see docs/multi-site-auth.md. Kept as a
+# host setting so a new site is one config line, not an edit to this module.
+_DEFAULT_SATELLITE_URL_PREFIXES = ("/supply/", "/campaign/")
+
+
+def get_skip_path_prefixes() -> tuple[str, ...]:
+    """All path prefixes exempt from the labs OAuth reconcile/logout check.
+
+    Labs-owned prefixes plus every registered satellite site's prefix
+    (`settings.LABS_SATELLITE_URL_PREFIXES`). This is the multi-site host
+    contract; `docs/multi-site-auth.md` documents how to extend it.
+    """
+    satellites = tuple(getattr(settings, "LABS_SATELLITE_URL_PREFIXES", _DEFAULT_SATELLITE_URL_PREFIXES))
+    return _LABS_SKIP_PATH_PREFIXES + satellites
+
+
+# Back-compat alias: some callers/tests reference this name. Prefer
+# get_skip_path_prefixes(), which also reflects registered satellites.
+_SKIP_PATH_PREFIXES = _LABS_SKIP_PATH_PREFIXES
 
 
 class LabsOAuthSessionMiddleware:
@@ -63,7 +95,7 @@ class LabsOAuthSessionMiddleware:
         if not getattr(request, "user", None) or not request.user.is_authenticated:
             return False
         path = request.path
-        return not any(path.startswith(p) for p in _SKIP_PATH_PREFIXES)
+        return not any(path.startswith(p) for p in get_skip_path_prefixes())
 
     @staticmethod
     def _sync_session_token(request) -> None:

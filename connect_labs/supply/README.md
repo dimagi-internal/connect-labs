@@ -28,7 +28,8 @@ imports three things. Its only contact with labs is:
 1. an `INSTALLED_APPS` entry in `local.py` / `labs_aws.py` / `test.py`
    (deliberately **not** `base.py`, mirroring campaign),
 2. one line in `config/urls.py`,
-3. `"/supply/"` in `_SKIP_PATH_PREFIXES` in `connect_labs/labs/oauth_session.py`.
+3. `"/supply/"` in the `LABS_SATELLITE_URL_PREFIXES` setting (`config/settings/base.py`),
+   which `connect_labs/labs/oauth_session.py` reads. See [docs/multi-site-auth.md](../../docs/multi-site-auth.md).
 
 That third one is a **host contract**, not an implementation detail. Labs' OAuth
 middleware logs out any authenticated user whose `session["labs_oauth"]` is

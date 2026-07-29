@@ -20,4 +20,7 @@ def test_ping_unauthenticated():
 def test_labs_oauth_middleware_skips_supply():
     from connect_labs.labs import oauth_session
 
-    assert any(p.rstrip("/") == "/supply" for p in oauth_session._SKIP_PATH_PREFIXES)
+    # The host contract is now the LABS_SATELLITE_URL_PREFIXES setting, surfaced
+    # through get_skip_path_prefixes(). Supply must appear there or labs' OAuth
+    # reconciliation logs supply users out on every request.
+    assert any(p.rstrip("/") == "/supply" for p in oauth_session.get_skip_path_prefixes())
