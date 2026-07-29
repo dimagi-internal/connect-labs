@@ -415,3 +415,6 @@ scripts/walkthroughs/**/scenes.json
 # and are far too large to version. The recipe + lock are the durable pair.
 .canopy/ddd/runs/*/snapshots/
 .canopy/ddd/runs/*/*.mp4
+
+# Botched redirect target (CLI token accidentally written to "-")
+/-
