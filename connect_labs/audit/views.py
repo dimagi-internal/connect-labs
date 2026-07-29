@@ -35,6 +35,7 @@ from connect_labs.labs.analysis.data_access import fetch_opportunity_metadata, g
 from connect_labs.labs.analysis.sse_streaming import CeleryTaskStreamView
 from connect_labs.labs.context import get_org_data
 from connect_labs.opportunity.models import VisitValidationStatus
+from connect_labs.utils.json_safe import safe_json_for_script
 from connect_labs.utils.tables import get_validated_page_size
 from connect_labs.workflow.data_access import WorkflowDataAccess
 
@@ -100,8 +101,9 @@ class ExperimentAuditCreateView(LoginRequiredMixin, TemplateView):
         if program_id:
             opportunities = [o for o in opportunities if o.get("program") == program_id]
 
-        # Format for template
-        context["opportunities_json"] = json.dumps(
+        # Format for template. safe_json_for_script hardens the inline <script>
+        # embedding so opp/program names can't break out of the tag.
+        context["opportunities_json"] = safe_json_for_script(
             [
                 {
                     "id": opp.get("id"),
@@ -139,7 +141,8 @@ class ExperimentAuditCreateView(LoginRequiredMixin, TemplateView):
         }
         # Filter out empty values
         quick_params = {k: v for k, v in quick_params.items() if v}
-        context["quick_params"] = json.dumps(quick_params)
+        # From request.GET — safe_json_for_script prevents a </script> breakout.
+        context["quick_params"] = safe_json_for_script(quick_params)
 
         return context
 

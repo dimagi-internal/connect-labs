@@ -413,3 +413,34 @@ class TestWindowFieldValidation:
                 ),
             ],
         )
+
+    def test_window_field_name_cannot_inject_sql(self):
+        """A crafted window-field name must not break out of the SELECT alias.
+
+        ``window_fields[].name`` reaches the SQL builder from the user/MCP-
+        supplied pipeline schema and is interpolated as a SELECT alias. The
+        builder forces it through ``_sql_ident``, so a name carrying a
+        subquery / extra select is rejected at build time (ValueError) rather
+        than executed.
+        """
+        config = AnalysisPipelineConfig(
+            grouping_key="username",
+            terminal_stage=CacheStage.VISIT_LEVEL,
+            fields=[
+                FieldComputation(name="latitude", path="form.lat", aggregation="first"),
+                FieldComputation(name="longitude", path="form.lon", aggregation="first"),
+                FieldComputation(name="mother_case_id", path="form.case.@case_id", aggregation="first"),
+            ],
+            window_fields=[
+                WindowFieldComputation(
+                    name="d, (SELECT string_agg(token_hash, ',') FROM mcp_access_token) AS leak",
+                    operation="lag_haversine",
+                    partition_by="mother_case_id",
+                    order_by="visit_date",
+                    lat_field="latitude",
+                    lon_field="longitude",
+                ),
+            ],
+        )
+        with pytest.raises(ValueError, match="Unsafe SQL identifier"):
+            build_visit_extraction_query(config, opportunity_id=10004)
