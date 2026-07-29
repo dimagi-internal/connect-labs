@@ -16,11 +16,40 @@ behind it, and not otherwise.
 Each row also carries its ``derivation``, because a severity ranking nobody can
 reconstruct is a severity ranking nobody will act against.
 """
-from datetime import date
+from datetime import date, timedelta
 
 from .. import gs1
-from ..models import Discrepancy, Shipment, ShortfallSignal
+from ..models import Discrepancy, Shipment, ShortfallSignal, SupplyAction
 from . import cover
+
+# How long a resolved partner signal stays on the queue carrying its resolution.
+# Long enough that the close is visible to anyone who looks at the screen after
+# the decision, short enough that the queue does not become a history.
+RESOLVED_SIGNAL_VISIBLE_DAYS = 7
+
+# The window a decision taken today can still affect. Cartons reallocated now
+# take about a week to land, so a month is roughly two chances to act; harm
+# falling outside it is real but is not what this worklist is for.
+DECISION_HORIZON_DAYS = 30
+
+
+def _children_within_horizon(row, as_of):
+    """The children this row costs INSIDE the decision horizon.
+
+    A row with no date has already happened — a short receipt is counted, not
+    pending — so it spends its whole figure. A row dated beyond the horizon
+    spends none of it: the harm is real and stays on the row, it simply stops
+    competing for this month's attention with something happening next week.
+    """
+    at_risk = row.get("children_at_risk") or 0
+    by_date = row.get("by_date")
+    if not by_date:
+        return at_risk
+    try:
+        due = date.fromisoformat(str(by_date)[:10])
+    except ValueError:
+        return at_risk
+    return at_risk if due <= as_of + timedelta(days=DECISION_HORIZON_DAYS) else 0
 
 
 def _late_shipments(contracts=None):
@@ -61,14 +90,30 @@ def late_exceptions(contracts=None, as_of=None):
                 "node_name": destination.name,
                 "children_at_risk": at_risk,
                 "by_date": node_cover["stockout_on"] if node_cover else None,
+                # Every row in one unit, INCLUDING the ones that come to zero.
+                # A row that fell back to "SHP-2026-0402 is 6 days behind plan"
+                # left the queue arguing in two units at once, and quietly threw
+                # away the best evidence the ranking produces: that a 6-day
+                # delay can sit below a 1-day one because the destination is
+                # holding enough stock to cover it. Said out loud, that is the
+                # whole case for ranking on children instead of on lateness.
                 "what": (
                     f"{at_risk:,} children lose a full course at {destination.name}"
                     if at_risk
-                    else f"{shipment.reference} is {delay:.0f} days behind plan"
+                    else f"No children go without at {destination.name}, despite {delay:.0f} days late"
                 ),
                 "why": (
                     f"{shipment.reference} is {delay:.0f} days behind the plan it was awarded "
                     f"against, moving {shipment.origin.name} to {destination.name}."
+                    + (
+                        ""
+                        if at_risk
+                        else (
+                            f" {destination.name} is holding "
+                            f"{node_cover['weeks_of_cover'] if node_cover else 0} weeks of cover, "
+                            f"so the delay is absorbed before anybody misses a course."
+                        )
+                    )
                 ),
                 "action": "Expedite the consignment, or reallocate from a node holding surplus.",
                 "derivation": (
@@ -127,6 +172,14 @@ def expiry_exceptions(as_of=None):
                 "tone": "warn",
                 "node_id": node.id,
                 "node_name": node.name,
+                # This row's node is the SOURCE of the move it advises, not the
+                # destination. Every other exception names a node that needs
+                # cartons; this one names a node holding more than it can use
+                # before they expire. The queue offered "Reallocate to Djibo" on
+                # the row saying Djibo has 25 weeks of cover — following the
+                # product's own advice would have moved stock INTO the node that
+                # already cannot consume what it has.
+                "reallocation_role": "source",
                 "children_at_risk": risk["children_equivalent"],
                 "by_date": risk["expires_on"],
                 "what": f"{risk['cartons_at_risk']:,} cartons at {node.name} expire before they can be used",
@@ -150,17 +203,46 @@ def partner_signal_exceptions(as_of=None):
     difference is the point. A centre that only shows alerts it derived is
     running a monitoring product; one that shows what the people holding the
     cartons reported is running a coordination product.
+
+    A signal the centre has answered stays on the queue for a week, marked
+    resolved and carrying the action that resolved it. Dropping it the instant
+    it resolved meant the one exception in the product that genuinely CLOSES
+    closed off camera: the row simply stopped existing, and a reader looking at
+    the queue afterwards saw an absence rather than a decision. Absence is the
+    weakest possible evidence for the claim this screen is making.
     """
+    as_of = as_of or date.today()
     rows = []
-    signals = ShortfallSignal.objects.exclude(status=ShortfallSignal.Status.RESOLVED).select_related("site", "org")
+    signals = ShortfallSignal.objects.select_related("site", "org", "resolved_by_action").exclude(
+        status=ShortfallSignal.Status.RESOLVED,
+        resolved_by_action__isnull=True,
+    )
     for signal in signals:
+        action = signal.resolved_by_action if signal.status == ShortfallSignal.Status.RESOLVED else None
+        if action is not None and (as_of - action.created_at.date()).days > RESOLVED_SIGNAL_VISIBLE_DAYS:
+            continue
         rows.append(
             {
                 "key": f"signal-{signal.id}",
                 "kind": "Partner shortfall",
                 "origin": "partner",
-                "tone": "bad",
+                "tone": "good" if action else "bad",
                 "signal_id": signal.id,
+                # The close, on the row, with who made it and why. This is the
+                # one exception kind that genuinely resolves — a derived row can
+                # only be ANSWERED until the cartons land — so it is the only
+                # place the queue can show a loop completing.
+                "resolved_by": (
+                    {
+                        "action_id": action.id,
+                        "actor": action.actor,
+                        "effect": action.effect,
+                        "rationale": action.rationale,
+                        "resolved_on": action.created_at.date().isoformat(),
+                    }
+                    if action
+                    else None
+                ),
                 "node_id": signal.site_id,
                 "node_name": signal.site.name,
                 "org_name": signal.org.legal_name,
@@ -172,7 +254,11 @@ def partner_signal_exceptions(as_of=None):
                 ),
                 "why": signal.note
                 or f"{signal.org.legal_name} reported a shortfall of {int(signal.cartons_short):,} cartons.",
-                "action": "Reallocate from a node holding surplus, or expedite the next consignment.",
+                "action": (
+                    "Closed by the reallocation that answered it."
+                    if action
+                    else "Reallocate from a node holding surplus, or expedite the next consignment."
+                ),
                 "derivation": (
                     f"Reported by {signal.org.legal_name} on {signal.raised_on:%-d %B} "
                     f"from their own distribution calendar."
@@ -182,8 +268,54 @@ def partner_signal_exceptions(as_of=None):
     return rows
 
 
+def _answered_nodes():
+    """Nodes with cartons already on the way from a decision somebody took.
+
+    A reallocation creates a real consignment with planned milestones, and
+    until it arrives the node's stock — and therefore its cover, and therefore
+    its children at risk — is unchanged. Which is correct: the cartons are not
+    there yet. But it left the command centre unable to show its own central
+    claim, that an exception is answered by the action that answers it. The row
+    sat in the queue identical to before, and the only trace of a decision that
+    had actually been taken was a toast that had already faded.
+
+    So an exception whose node has an undelivered inbound reallocation is
+    ANSWERED, not resolved. It stays in the queue because the children are
+    still at risk until the truck arrives; it stops competing for attention
+    with the ones nobody has done anything about yet.
+    """
+    answered = {}
+    actions = SupplyAction.objects.filter(kind=SupplyAction.Kind.REALLOCATE, target_node__isnull=False).select_related(
+        "target_node", "shipment"
+    )
+    for action in actions:
+        shipment = action.shipment
+        if shipment is not None and shipment.status == Shipment.Status.CONFIRMED:
+            continue  # landed and counted; the node's own stock now carries it
+        answered.setdefault(action.target_node_id, action)
+    return answered
+
+
 def build_queue(contracts=None, as_of=None):
-    """Every exception, ranked by children at risk, worst first."""
+    """Every exception, ranked by the children who go without SOONEST.
+
+    Rows already answered by a reallocation sort last whatever their figure,
+    because the question this queue answers is "what has nobody done anything
+    about", and a row with cartons on the road is not that.
+
+    Within that, ranking is on children at risk *inside the decision horizon*
+    rather than on the raw figure. The screen promises "where, and by when" and
+    says any other ordering is not an ordering, and then ranked on magnitude
+    alone — so 907 children whose cartons expire on 25 December outranked 87
+    children who go without on 4 August. Both numbers are real; only one is
+    actionable this month, and a worklist that cannot tell them apart is a
+    leaderboard.
+
+    The unit does not change — it is still children, which is what makes the
+    four kinds comparable at all. What changes is that a row only spends its
+    figure if the harm falls within the horizon. A row with no date is treated
+    as already happening: a short receipt is not pending, it is counted.
+    """
     as_of = as_of or date.today()
     rows = (
         late_exceptions(contracts=contracts, as_of=as_of)
@@ -191,4 +323,36 @@ def build_queue(contracts=None, as_of=None):
         + expiry_exceptions(as_of=as_of)
         + partner_signal_exceptions(as_of=as_of)
     )
-    return sorted(rows, key=lambda r: (-(r["children_at_risk"] or 0), r["key"]))
+    answered = _answered_nodes()
+    for row in rows:
+        # Everything that is not an expiry row names the node that NEEDS
+        # cartons, so a reallocation raised from it moves stock toward it.
+        row.setdefault("reallocation_role", "target")
+        row["children_at_risk_soon"] = _children_within_horizon(row, as_of=as_of)
+        row["decision_horizon_days"] = DECISION_HORIZON_DAYS
+        action = answered.get(row.get("node_id"))
+        row["answered_by"] = (
+            {
+                "action_id": action.id,
+                "effect": action.effect,
+                "actor": action.actor,
+                "rationale": action.rationale,
+            }
+            if action
+            else None
+        )
+    return sorted(
+        rows,
+        key=lambda r: (
+            # closed rows sink below answered ones, and answered below
+            # everything still waiting on somebody. The queue's question is
+            # "what has nobody done anything about", and neither is that.
+            r.get("resolved_by") is not None,
+            r["answered_by"] is not None,
+            # then by who goes without soonest, with the raw figure only
+            # breaking ties between rows equally urgent
+            -(r.get("children_at_risk_soon") or 0),
+            -(r["children_at_risk"] or 0),
+            r["key"],
+        ),
+    )

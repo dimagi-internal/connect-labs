@@ -12,6 +12,17 @@ function GovTab({ ctx }) {
   const nodes = (world.nodes || []).filter((n) => n.country === country);
   const coverage = world.coverage || [];
 
+  // A node is answerable for children only if it serves a district. A port or
+  // a national warehouse sits on the route without any caseload behind it,
+  // which is exactly why it carries no adm1_code — the same test the coverage
+  // service uses when it decides which arrivals count.
+  const nodeById = {};
+  (world.nodes || []).forEach((n) => {
+    nodeById[n.id] = n;
+  });
+  const deliversToChildren = (s) =>
+    !!(nodeById[s.destination.id] || {}).adm1_code;
+
   // Only flows that touch this country.
   const shipments = contracts
     .flatMap((c) => (c.shipments || []).map((s) => ({ ...s, contract: c })))
@@ -26,9 +37,19 @@ function GovTab({ ctx }) {
       );
     });
 
-  const delivered = shipments
-    .filter((s) => s.status === 'delivered' || s.status === 'confirmed')
-    .reduce((n, s) => n + s.quantity, 0);
+  // Read off the same rows as the coverage table further down this page, which
+  // counts a leg only where it CROSSES INTO a district.
+  //
+  // Summing every delivered leg touching the country counted a carton once per
+  // hop it made: this tile read 53,246 while the coverage table 800px below
+  // totalled 25,863 on the identical one-carton-one-course conversion — 2.06x
+  // apart, on one screen, in a demo whose thesis is that a number cannot mean
+  // two things. It also credited a warehouse-to-warehouse transfer at Kano as
+  // 20,000 children covered, and counted consignments still on the road.
+  const delivered = coverage.reduce(
+    (n, r) => n + (r.courses_delivered || 0),
+    0,
+  );
   const inbound = shipments.filter((s) => s.status === 'in_transit');
   const warehouses = nodes.filter(
     (n) => n.kind === 'warehouse' || n.kind === 'distribution_hub',
@@ -42,16 +63,16 @@ function GovTab({ ctx }) {
       <KeyFigures
         figures={[
           {
-            label: 'Cartons delivered',
+            label: 'Cartons delivered into districts',
             value: formatNumber(delivered),
             hint: `${Math.round(
               (delivered * 150 * 92) / 1000000,
-            )} MT of therapeutic food`,
+            )} MT · counted once, where each crossed a district boundary`,
           },
           {
-            label: 'Children treated',
+            label: 'Courses delivered',
             value: formatNumber(delivered),
-            hint: 'one carton ≈ one full course',
+            hint: 'one carton is one full course',
           },
           { label: 'Consignments inbound', value: inbound.length },
           {
@@ -105,11 +126,30 @@ function GovTab({ ctx }) {
               value: (s) => s.quantity,
               render: (s) => `${formatNumber(s.quantity)} ${s.unit}`,
             },
+            // Only a leg that ends where children are treated covers any.
+            //
+            // This column restated every consignment's carton count as
+            // "children covered", so a warehouse-to-warehouse transfer into
+            // Kano was credited with covering 20,000 children and a
+            // consignment still on the road was credited with covering
+            // anybody at all. A storage point serves no caseload — that is
+            // precisely why it carries no district — so the honest cell is a
+            // dash, and the row's cartons are already in the column beside it.
             {
               key: 'children',
-              label: 'Children covered',
-              value: (s) => s.quantity,
-              render: (s) => formatNumber(s.quantity),
+              label: 'Courses on arrival',
+              value: (s) => (deliversToChildren(s) ? s.quantity : -1),
+              render: (s) =>
+                deliversToChildren(s) ? (
+                  formatNumber(s.quantity)
+                ) : (
+                  <span
+                    className="muted"
+                    title="A storage point serves no caseload of its own; these cartons are counted where they reach a district."
+                  >
+                    —
+                  </span>
+                ),
             },
             {
               key: 'when',
@@ -213,10 +253,23 @@ function GovTab({ ctx }) {
             hint="Coverage cannot be reported without a denominator."
           />
         )}
+        {/* The window, stated. This note said "monthly SAM caseload" while the
+            denominator is the caseload summed over the response window — four
+            months — so the stated method was about 4x off in the one card whose
+            whole claim is that its method can be challenged. The window is
+            already on every row; it was simply never rendered. */}
         <p className="muted small method-note">
-          Coverage is courses delivered divided by the district's monthly SAM
-          caseload. Hover a district name for how its caseload was estimated.
-          All figures in this environment are synthetic.
+          Coverage is courses delivered divided by the district's SAM caseload
+          summed over the{' '}
+          {coverage[0] && coverage[0].window_months
+            ? `${
+                coverage[0].window_months
+              }-month response window from ${formatDate(
+                coverage[0].window_from,
+              )}`
+            : 'response window'}
+          , not against a single month. Hover a district name for how its
+          caseload was estimated. All figures in this environment are synthetic.
         </p>
       </Card>
     </Page>

@@ -227,6 +227,42 @@ def test_disbursement_never_exceeds_obligation(admin_client):
         ), f"{contract.reference} delivered more than it contracted for"
 
 
+def test_a_carton_counts_once_however_many_legs_it_travels(db):
+    """A consignment moving in hops must not be counted at every hop.
+
+    Each hop is its own Shipment, so summing them all counted a carton once per
+    leg it travelled: OES-C-2026-NG1 read 54,910 shipped against 45,000
+    contracted, and the funder page put 115,170 children beside 48,787 courses
+    with the same stated method. A contract for "45,000 cartons delivered to
+    Maiduguri" is discharged by the cartons that reach Maiduguri.
+    """
+    contract = f.ContractFactory(total_quantity=45000, unit="cartons", unit_price=42)
+    delivery_place = contract.award.lot.delivery_place
+    hub = f.SupplyNodeFactory(name=delivery_place)
+    plant = f.SupplyNodeFactory(name="Kano RUTF Plant")
+    warehouse = f.SupplyNodeFactory(name="Kano Central Warehouse")
+    clinic = f.SupplyNodeFactory(name="Bama Health Post")
+
+    # the leg that discharges the contract
+    f.ShipmentFactory(
+        contract=contract, origin=warehouse, destination=hub, quantity=15000, status=Shipment.Status.CONFIRMED
+    )
+    # upstream of the delivery place: not delivery yet
+    f.ShipmentFactory(
+        contract=contract, origin=plant, destination=warehouse, quantity=20000, status=Shipment.Status.CONFIRMED
+    )
+    # downstream of it: last-mile distribution past the delivery point
+    f.ShipmentFactory(
+        contract=contract, origin=hub, destination=clinic, quantity=9910, status=Shipment.Status.CONFIRMED
+    )
+
+    assert contract.delivered_quantity == 15000
+    assert contract.shipped_quantity == 15000
+    assert contract.disbursed_value == 15000 * 42
+    # the whole point: the sum of every leg would have exceeded the contract
+    assert contract.delivered_quantity < 15000 + 20000 + 9910
+
+
 def test_shipments_in_a_foreign_unit_are_excluded_from_money(db):
     """Only shipments denominated in the contract's unit can move money."""
     contract = f.ContractFactory(total_quantity=100, unit="truck-months", unit_price=1000)

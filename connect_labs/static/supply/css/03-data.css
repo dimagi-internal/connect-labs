@@ -102,6 +102,11 @@
   border-radius: 6px;
   padding: 1px 7px;
   font-size: 11px;
+  /* A pill is a label, not a paragraph. "Therapeutic milk" was breaking
+     across two lines INSIDE its own border in a narrow table column, which
+     reads as a rendering fault rather than as a tag. The row wraps; the
+     pill does not. */
+  white-space: nowrap;
 }
 
 .muted {
@@ -141,6 +146,42 @@
   margin: 12px 0;
 }
 
+/* Two weights of row action.
+
+   `btn-ghost` and `btn-primary` were used in the cover table to reserve
+   emphasis for sites at or below the triage threshold — but neither class
+   existed, so all eleven rows fell back to the solid default and the table
+   rendered a wall of identical dark-green buttons down its right edge. The
+   affordance carried no information at all: a site with 38 days of cover
+   shouted exactly as loudly as one with none.
+
+   The distinction was written; it just was not styled. */
+.btn-ghost {
+  background: transparent;
+  color: var(--oes-ink-soft);
+  border: 1px solid var(--oes-line);
+  font-weight: 500;
+}
+.btn-ghost:hover {
+  color: var(--oes-accent-dark);
+  border-color: var(--oes-accent);
+  background: var(--oes-ok-bg);
+}
+.btn-primary {
+  background: var(--oes-critical);
+  border-color: var(--oes-critical);
+  color: #fff;
+}
+.btn-primary:hover {
+  background: #8f1d13;
+  border-color: #8f1d13;
+}
+
+/* A row action is a label, not a paragraph: "Compare bids" was wrapping onto
+   two lines inside its own button in a narrow action column. */
+.row-actions .btn {
+  white-space: nowrap;
+}
 .btn-sm {
   padding: 5px 11px;
   font-size: 12px;

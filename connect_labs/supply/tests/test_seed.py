@@ -112,13 +112,14 @@ def test_seed_execution_world():
     call_command("seed_supply_demo")
     from connect_labs.supply.models import Contract, Discrepancy, Shipment, SupplyEvent, SupplyNode
 
-    # 28 OES-network nodes plus Komadugu's 11 Borno feeding sites
-    assert SupplyNode.objects.count() == 39
+    # 29 OES-network nodes plus Komadugu's 11 Borno feeding sites
+    assert SupplyNode.objects.count() == 40
     assert Contract.objects.count() == 4
-    # 14 corridor consignments, 10 delivered into Komadugu's sites (a partner
-    # site holds stock only if something actually delivered to it), and 2 still
-    # on the road so the calendar's inbound column is exercised.
-    assert Shipment.objects.count() == 27
+    # 15 corridor consignments; 10 delivered into Komadugu's sites (a partner
+    # site holds stock only if something actually delivered to it) plus an
+    # earlier, since-consumed wave of 10 so cohorts exist that have had time to
+    # finish a course; and 2 still on the road for the calendar's inbound column.
+    assert Shipment.objects.count() == 39
 
     # every ingestion tier is represented, so the demo shows the real gradient
     tiers = set(SupplyEvent.objects.values_list("source_tier", flat=True))
@@ -242,3 +243,139 @@ def test_reseeding_rotates_demo_passwords(monkeypatch):
     user.refresh_from_db()
     assert user.check_password("rotated-secret-1")
     assert not user.check_password("oes-demo-2026")
+
+
+def test_seeded_nigeria_coverage_inverts_tonnage():
+    """The scene the government view exists for, on the data it actually gets.
+
+    Hauwa's page is scoped to Nigeria on the server, so the well-covered
+    district she is compared against has to be a Nigerian one — an earlier
+    seed put it in Sudan, where her page could never show it. The narration
+    says one district is covered to ninety-one percent while another, which
+    received MORE cartons, sits at thirty-four with thirty-one thousand
+    children still uncovered. If a reseed ever ranks them the same way by
+    tonnage and by coverage, the scene stops demonstrating anything.
+    """
+    from connect_labs.supply.services import coverage
+
+    call_command("seed_supply_demo", "--reset")
+    rows = {r["adm1_name"]: r for r in coverage.coverage_by_district(country="NG")}
+
+    best, worst = rows["Gombe"], rows["Borno"]
+    assert best["coverage_percent"] == pytest.approx(91.0, abs=0.5)
+    assert worst["coverage_percent"] == pytest.approx(34.0, abs=0.5)
+    # the inversion: more cartons, less covered
+    assert worst["courses_delivered"] > best["courses_delivered"]
+    assert worst["coverage_percent"] < best["coverage_percent"]
+    # "thirty-one thousand children still uncovered"
+    assert 31_000 <= worst["uncovered_children"] < 32_000
+
+
+def test_the_seeded_world_produces_all_four_exception_kinds():
+    """The command centre narrates "all four exception kinds" — over three.
+
+    Every seeded batch carried a 540-day shelf life, so every expiry landed in
+    January 2028 and the expiry-risk exception could not fire at all. The
+    service, its cover calculation and its queue row were written, tested and
+    unreachable: pytest passed, the recipe resolved, and the only way to notice
+    was to count the kinds in a rendered frame.
+    """
+    from connect_labs.supply.services import exceptions
+
+    call_command("seed_supply_demo", "--reset")
+    kinds = {r["kind"] for r in exceptions.build_queue()}
+    assert kinds == {"Late", "Short receipt", "Partner shortfall", "Expiry risk"}
+
+
+def test_a_late_row_that_harms_nobody_still_says_so_in_children():
+    """The queue's best argument for its own ranking, said out loud.
+
+    A row with no children behind it fell back to "SHP-2026-0402 is 6 days
+    behind plan", which argued in days while every other row argued in
+    children — and threw away the strongest evidence the ranking produces:
+    that a 6-day delay sorts BELOW a 1-day one because the destination is
+    holding enough stock to absorb it.
+    """
+    from connect_labs.supply.services import exceptions
+
+    call_command("seed_supply_demo", "--reset")
+    rows = exceptions.build_queue()
+    zero_risk = [r for r in rows if r["kind"] == "Late" and not r["children_at_risk"]]
+    assert zero_risk, "the demo needs a delay that costs nobody a course"
+    for row in zero_risk:
+        assert "No children go without" in row["what"]
+        assert "weeks of cover" in row["why"]
+
+    # and the point of it: worse lateness, lower rank
+    worst_late = max(zero_risk, key=lambda r: r["why"])
+    harmful = [r for r in rows if r["kind"] == "Late" and r["children_at_risk"]]
+    assert harmful, "expected at least one delay that does cost courses"
+    assert rows.index(worst_late) > rows.index(harmful[-1])
+
+
+def test_a_site_only_distributes_what_it_actually_received():
+    """The chain the closing scene follows has to be a real one.
+
+    The seeder round-robined the first six ShipmentLines in the database
+    across all eleven sites, so every distribution cited a consignment that
+    had gone somewhere else, every distribution predated the receipt that
+    supposedly supplied it, and Biu served 280 children out of a batch it had
+    never been sent while its own cover row read "awaiting first consignment".
+    """
+    from connect_labs.supply.models import DistributionRecord
+
+    call_command("seed_supply_demo", "--reset")
+    records = DistributionRecord.objects.select_related("site", "shipment_line__shipment")
+    assert records.exists()
+
+    for record in records:
+        shipment = record.shipment_line.shipment
+        assert shipment.destination_id == record.site_id, (
+            f"{record.site.name} handed out {record.batch_lot}, which was sent to " f"{shipment.destination.name}"
+        )
+        arrived = shipment.delivered_at
+        assert arrived is not None
+        assert record.distributed_on > arrived.date(), (
+            f"{record.site.name} distributed {record.batch_lot} on "
+            f"{record.distributed_on}, before it arrived on {arrived.date()}"
+        )
+        assert record.cartons_dispensed <= record.shipment_line.quantity
+
+
+def test_a_site_awaiting_its_first_consignment_has_distributed_nothing():
+    """Its own cover row says so on the same screen."""
+    from connect_labs.supply.models import DistributionRecord, SupplyNode
+    from connect_labs.supply.services import cover
+
+    call_command("seed_supply_demo", "--reset")
+    awaiting = [r for r in cover.cover_by_node() if r.get("awaiting_first_delivery")]
+    assert awaiting, "the demo needs a site with nothing delivered yet"
+
+    for row in awaiting:
+        node = SupplyNode.objects.get(id=row["node_id"])
+        assert not DistributionRecord.objects.filter(
+            site=node
+        ).exists(), f"{node.name} is awaiting its first consignment and has distribution records"
+
+
+def test_the_queue_ranks_on_who_goes_without_soonest():
+    """ "Where, and by when" has to be the ordering, not just the copy.
+
+    Ranking on the raw figure put 907 children whose cartons expire in
+    December above 87 children who go without next week. Both are real; only
+    one is actionable this month, and a worklist that cannot tell them apart
+    is a leaderboard.
+    """
+    from connect_labs.supply.services import exceptions
+
+    call_command("seed_supply_demo", "--reset")
+    rows = exceptions.build_queue()
+
+    distant = [r for r in rows if r["children_at_risk"] and not r["children_at_risk_soon"]]
+    imminent = [r for r in rows if r["children_at_risk_soon"]]
+    assert distant and imminent, "the demo needs one of each for this to be checkable"
+
+    # every row costing children within the horizon outranks every row that does not,
+    # even where the distant row's raw figure is larger
+    assert max(rows.index(r) for r in imminent) < min(rows.index(r) for r in distant)
+    assert any(d["children_at_risk"] > i["children_at_risk"] for d in distant for i in imminent)

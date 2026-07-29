@@ -75,9 +75,20 @@
   grid-template-columns: minmax(340px, 1fr) 1.55fr;
   gap: 18px;
 }
+/* No map to sit beside, so the worklist gets the whole row. */
+.command-split.no-map {
+  grid-template-columns: 1fr;
+}
 .exception-panel .card-body {
   max-height: 620px;
   overflow-y: auto;
+}
+/* With no map beside it the queue has the whole row, and capping its height
+   only hides rows behind an inner scrollbar nobody looks for — the expiry
+   exception was cut off mid-row at the bottom of the panel. */
+.command-split.no-map .exception-panel .card-body {
+  max-height: none;
+  overflow-y: visible;
 }
 .exception-list {
   display: flex;
@@ -104,10 +115,19 @@
   align-items: center;
   gap: 8px;
   margin-bottom: 5px;
+  /* A partner shortfall carries TWO badges before its headline ("Partner
+     shortfall" and "Raised by Komadugu Health Initiative"). On a narrow
+     column the headline was the only flex child that could give, and a flex
+     child defaults to min-width:auto — so it shrank toward its longest word
+     and rendered as a ~10px vertical sliver of stacked letters. It is the
+     row the command centre's best scene is built on. */
+  flex-wrap: wrap;
 }
 .exception-what {
   font-weight: 600;
   font-size: 13px;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 .exception-why {
   font-size: 12px;
@@ -172,9 +192,21 @@
   height: auto;
 }
 .sankey-label {
-  font-size: 9px;
+  font-size: 10px;
   fill: #fff;
   font-weight: 600;
+}
+/* The amount on the band. A funding diagram with no figures on it cannot be
+   checked, which is the one thing this card exists to allow. */
+.sankey-value {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.92;
+}
+/* A band too thin to hold its own text labels itself from outside, in ink
+   rather than in white, so the smallest flow stays the most legible one. */
+.sankey-label-outside {
+  fill: var(--oes-ink-soft);
 }
 
 .ladder {
@@ -216,24 +248,25 @@
   }
 }
 
+/* One line, not a panel. See MapUnavailable in flowmap.jsx. */
 .map-unavailable {
-  display: grid;
-  place-content: center;
-  text-align: center;
-  gap: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
   background: var(--oes-bg);
   border: 1px dashed var(--oes-line);
   border-radius: 8px;
-  padding: 24px;
+  padding: 10px 14px;
 }
 .map-unavailable-title {
   font-weight: 600;
+  font-size: 13px;
   color: var(--oes-ink-soft);
 }
 .map-unavailable-body {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--oes-ink-soft);
-  max-width: 460px;
 }
 
 /* --- Demand side: children at risk, and the MUAC series ------------------ */
@@ -296,7 +329,7 @@
    behind the line is what makes "climbing out of the red" literal. */
 .muac-spark {
   width: 100%;
-  height: 56px;
+  height: 68px;
 }
 .muac-band.sam {
   fill: #fee4e2;
@@ -402,6 +435,81 @@
   background: #f5f8ff;
   grid-template-columns: 220px 1fr 130px;
 }
+/* Focus adds information, not height — the vertical scale is shared across
+   every child in the batch so their series can be compared. */
 .outcome-row.focused .muac-spark {
-  height: 96px;
+  height: 68px;
+}
+
+/* The route from the gap to the children behind it. Deliberately a link rather
+   than a button: the finding is the two numbers disagreeing, and the drill is
+   the answer to "so who are they" — an invitation, not the primary action. */
+.figure-drill {
+  margin: 10px 0 4px;
+}
+
+/* A row somebody has already acted on. Deliberately not the same treatment as
+   the "→ do this" line it replaces: the reader's question changes from what
+   should be done to what was done and by whom. */
+.exception-answered {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.exception-answered .muted {
+  margin-top: 2px;
+}
+
+/* The unit ladder's conclusion, at the size of a conclusion.
+   It used to be one bolded number inside a five-line grey paragraph, under
+   four large tiles carrying lower-information figures. */
+.ladder-result {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--oes-line);
+}
+.ladder-result-value {
+  font-size: var(--oes-figure);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.ladder-result-label {
+  font-size: var(--oes-body);
+  color: var(--oes-ink-soft);
+}
+
+/* The key for the three-stage bars. See StageBars — the encoding used to be
+   explained only in a native title tooltip. */
+.stage-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  margin-bottom: 12px;
+  font-size: var(--oes-small);
+  color: var(--oes-ink-soft);
+}
+.stage-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.stage-swatch {
+  width: 18px;
+  height: 7px;
+  border-radius: 999px;
+  display: inline-block;
+}
+.stage-swatch.obligated {
+  background: #cbd5e1;
+}
+.stage-swatch.delivered {
+  background: rgba(13, 122, 95, 0.55);
+}
+.stage-swatch.disbursed {
+  background: var(--oes-accent);
 }

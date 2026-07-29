@@ -163,8 +163,18 @@ def courses_versus_recoveries(country=None):
         outcomes = outcomes.filter(site__country=country)
         records = records.filter(site__country=country)
 
-    total_observed = outcomes.count()
-    recovered = outcomes.filter(discharge_status=ChildOutcome.Discharge.RECOVERED).count()
+    # A recovery rate is computed over DISCHARGED children.
+    #
+    # Once children still mid-course were correctly recorded as in treatment
+    # rather than given a fabricated completed course, they landed in this
+    # denominator and the observed recovery rate fell from the high seventies
+    # to 47.8% — reporting a normally-performing programme as a failing one
+    # for the crime of having recently admitted anybody. Sphere defines
+    # recovery, default and death rates on exits from the programme.
+    discharged = outcomes.exclude(discharge_status=ChildOutcome.Discharge.IN_TREATMENT)
+    total_observed = discharged.count()
+    still_in_treatment = outcomes.filter(discharge_status=ChildOutcome.Discharge.IN_TREATMENT).count()
+    recovered = discharged.filter(discharge_status=ChildOutcome.Discharge.RECOVERED).count()
     breakdown = {
         status: outcomes.filter(discharge_status=status).count() for status, _label in ChildOutcome.Discharge.choices
     }
@@ -172,14 +182,21 @@ def courses_versus_recoveries(country=None):
     return {
         "courses_delivered": courses,
         "courses_method": (
-            "Cartons confirmed delivered, at one carton per child's full course. "
-            "This is arithmetic on the supply record — it says nothing about treatment."
+            "Every carton that crossed into a district, from any source — including "
+            "stock imported outside an OES supply contract — at one carton per child's "
+            "full course. Wider than the contract ladder above, and deliberately not "
+            "reconciled with it. This is arithmetic on the supply record — it says "
+            "nothing about treatment."
         ),
         "children_observed": total_observed,
         "children_recovered": recovered,
+        "children_in_treatment": still_in_treatment,
         "recovery_method": (
-            "Children with a recorded discharge as recovered, from measurement "
-            "series captured at the point of treatment. Synthetic in this environment."
+            "Children with a recorded discharge as recovered, out of those who have "
+            "been discharged at all, from measurement series captured at the point of "
+            "treatment. Children still mid-course are not counted on either side of "
+            "the ratio — a rate over exits is what the Sphere thresholds are defined "
+            "on. Synthetic in this environment."
         ),
         "observed_recovery_rate": round((recovered / total_observed) * 100, 1) if total_observed else None,
         "discharge_breakdown": breakdown,

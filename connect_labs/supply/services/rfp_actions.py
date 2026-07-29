@@ -10,7 +10,7 @@ from datetime import date
 from django.db import transaction
 from django.utils import timezone
 
-from ..models import RFP, Award, Bid, BidScore, Category, Lot, LotBid, Qualification
+from ..models import RFP, Appropriation, Award, Bid, BidScore, Category, Contract, Lot, LotBid, Qualification
 from .org_actions import ActionError
 
 VALID_CATEGORIES = {c.value for c in Category}
@@ -187,9 +187,51 @@ def award_lot(user, lot, lot_bid_id):
         raise ActionError("only submitted bids can be awarded")
 
     award = Award.objects.create(lot=lot, lot_bid=lot_bid, awarded_by=user)
+    _contract_from(award)
 
     rfp = lot.rfp
     if not rfp.lots.filter(award__isnull=True).exists():
         rfp.status = RFP.Status.AWARDED
         rfp.save(update_fields=["status"])
     return award
+
+
+def _next_contract_reference(country):
+    """OES-C-<year>-<country><n>, counting only that country's contracts."""
+    year = date.today().year
+    prefix = f"OES-C-{year}-{country}"
+    taken = Contract.objects.filter(reference__startswith=prefix).count()
+    return f"{prefix}{taken + 1}"
+
+
+def _contract_from(award):
+    """The execution record an award produces, created BY the award.
+
+    An award used to produce nothing but itself, so "the award becomes the
+    contract" was a sentence rather than a link: the only contracts in the
+    world were pre-seeded ones, and a demo that awards a lot on camera then
+    had to open somebody else's contract to show what happens next. The
+    procurement chain ended at the decision and the execution chain began, with
+    a gap between them that the narration stepped over.
+
+    The contract carries the awarded quantity at the awarded price, against the
+    funding envelope with the most room left — obligating money is the point of
+    an award, and an obligation with no envelope named cannot be traced.
+    """
+    lot = award.lot
+    appropriation = Appropriation.objects.order_by("-amount").first()
+    contract = Contract.objects.create(
+        award=award,
+        appropriation=appropriation,
+        org=award.lot_bid.bid.org,
+        reference=_next_contract_reference(lot.delivery_country),
+        total_quantity=lot.quantity,
+        unit=lot.unit,
+        unit_price=award.lot_bid.unit_price,
+        currency=award.lot_bid.currency,
+        starts_on=date.today(),
+        ends_on=lot.delivery_deadline,
+    )
+    contract.iati_activity_id = f"US-GOV-1-OES-{contract.reference}"
+    contract.save(update_fields=["iati_activity_id"])
+    return contract

@@ -64,8 +64,12 @@ scenes:
   - kind: hold
     seconds: 1.4
   - kind: click
-    target: css:.card:has-text('Your applications') tr:has-text('OES Supply Base 2026-A')
-    note: open the application the qualification came from
+    target: css:.card:has-text('Your applications') tr:has-text('OES Supply Base 2026-B')
+    note: the 2026-B application, which is the one Tomas reviews in the next scene. This
+      opened 2026-A — a different, already-qualified submission from March with different
+      capacity and lead-time figures — so the profile the viewer watched freeze was not the
+      profile the reviewer then assessed, and the numbers changed between consecutive frames.
+      Invisible per scene; both judges caught it only in sequence.
   - kind: wait_for
     target: css:.modal
   - kind: scroll_to
@@ -111,9 +115,19 @@ scenes:
     target: css:.modal .decision-row:has-text('Therapeutic milk') button:has-text('Reject')
     note: declined where the evidence is thin — no plant, no approval
   - kind: hold
-    seconds: 3.2
+    seconds: 2.4
     note: two different answers for one supplier, and the date the pass expires beside the one that carries
       it
+  - kind: click
+    target: css:.modal button:has-text('Record decision')
+    note: RECORD it. Qualify and Reject only set local state — the POST fires from this button
+      alone — so the pivotal act of the whole narrative left no trace, and the next scene's
+      registry still showed the OLD expiry while the narration claimed the one just granted.
+  - kind: wait_for
+    target: css:.toast
+  - kind: hold
+    seconds: 1.8
+    note: the decision is now a fact about the organisation, not a state in a form
   impressive_because: One supplier, two different answers per category — which is how this actually works.
     And a roster that never expires quietly becomes a list of former suppliers.
   ai_quality: Per-category decisions are independent; the expiry is a real date, not a label.
@@ -188,7 +202,7 @@ scenes:
   - kind: wait_for
     target: css:.data-table
   - kind: click
-    target: css:tr:has-text('RUTF Northeast Nigeria Q3 2026') button:has-text('Compare bids')
+    target: css:tr:has-text('RUTF Northeast Nigeria Q3 2026') button:has-text('Compare & award')
     note: the live tender, still open — bids priced per lot
   - kind: wait_for
     target: css:.modal
@@ -239,16 +253,19 @@ scenes:
     note: two corridors, two suppliers, one tender — awarded on camera
   impressive_because: 'Concentrating a four-country response on the cheapest single bidder is the classic
     humanitarian supply failure: when that plant or that corridor goes down, every district goes down
-    at the same moment. Splitting costs a little more per carton and buys the thing money cannot buy later.'
+    at the same moment. Here the split costs nothing to make — each corridor''s cheapest bidder is a
+    different plant, so the resilient award is also the lowest-cost one. The cheapest rule and the
+    resilient rule happen to agree on this tender. Awarding lot by lot is what lets you tell when they
+    do not, which a single blended price cannot show you at all.'
   ai_quality: Two different awarded organisations across one solicitation's lots.
 - id: the-award-becomes-the-contract
   concept_claim: The award is immutable and the contract carries it out against a named appropriation,
     so the same record the tender produced is what the supply chain moves against.
   url: /supply/
-  show: 'A contract already in execution on the same corridor — created from the earlier Q2 award into
-    Maiduguri, not the one just made — opened to show what an award turns into: a named appropriation
-    with its IATI activity identifier, the money obligated against it, and the consignments the contracted
-    quantity is actually moving on.'
+  show: 'The contract the award just made produced — OES-C-2026-NG2, created by that award moments ago,
+    carrying the 60,000 cartons at the price Savanna bid, obligated against a named funding envelope with
+    its IATI activity identifier. The record the tender produced is the record the supply chain moves
+    against.'
   actions:
   - kind: click
     target: css:.modal-close
@@ -262,8 +279,11 @@ scenes:
   - kind: hold
     seconds: 1.6
   - kind: click
-    target: css:.card:has-text('Pipeline by corridor') tr:has-text('OES-C-2026-NG1')
-    note: the contract the Maiduguri award became
+    target: css:.card:has-text('Pipeline by corridor') tr:has-text('OES-C-2026-NG2')
+    note: the contract THIS award produced, not the earlier Q2 one on the same corridor. Awarding
+      a lot used to create nothing but the award, so the scene had to open somebody else's
+      contract — same supplier, same city, tender names one character apart — and two judges
+      independently caught the substitution.
   - kind: wait_for
     target: css:.modal
   - kind: hold

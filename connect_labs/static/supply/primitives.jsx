@@ -36,17 +36,70 @@ function Card({ title, subtitle, actions, children, className }) {
   );
 }
 
+/* The figure row, with a hierarchy.
+
+   Every tile used to render identically, so a static housekeeping count
+   ("14 qualified suppliers") had exactly the same size, weight and colour as
+   a site with nothing left to give a child today ("0 wk thinnest cover").
+   A reader's eye landed nowhere, and on a projector nothing said which number
+   was the live risk.
+
+   A figure may now declare `tone` — critical | at-risk | ok — which is the
+   ONLY thing that colours a number on these screens, and `lead`, which makes
+   it the one tile the row is built around. Everything without either stays
+   quiet on purpose: most counts are context, not news. */
 function KeyFigures({ figures }) {
   return (
     <div className="keyfigures">
       {figures.map((fig) => (
-        <div className="keyfigure" key={fig.label}>
+        <div
+          className={`keyfigure${fig.lead ? ' keyfigure-lead' : ''}${
+            fig.tone ? ` tone-${fig.tone}` : ''
+          }`}
+          key={fig.label}
+        >
           <div className="keyfigure-value">{fig.value}</div>
-          <div className="keyfigure-label">{fig.label}</div>
+          <div className="keyfigure-label">
+            {fig.label}
+            {fig.method ? (
+              <InfoNote label={fig.label} text={fig.method} />
+            ) : null}
+          </div>
           {fig.hint ? <div className="keyfigure-hint">{fig.hint}</div> : null}
         </div>
       ))}
     </div>
+  );
+}
+
+/* How a figure was made, available rather than asserted.
+
+   The method behind every derived number on these screens was written out as
+   a paragraph of ~11px grey text under the thing it described — four of them
+   on the funder page alone. That is the honest instinct and the wrong shape:
+   it made explanation the dominant visual texture of the product, and three
+   independent reviews reported the load-bearing text as too small to read.
+
+   The method has to be REACHABLE, not shouted. It lives behind an "i" the
+   reader opens when they want to check, which is exactly when they want it. */
+function InfoNote({ label, text }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="infonote">
+      <button
+        type="button"
+        className={`infonote-btn${open ? ' open' : ''}`}
+        aria-label={`How ${label} is calculated`}
+        aria-expanded={open}
+        onClick={(ev) => {
+          ev.stopPropagation();
+          setOpen(!open);
+        }}
+      >
+        i
+      </button>
+      {open ? <span className="infonote-body">{text}</span> : null}
+    </span>
   );
 }
 
@@ -108,7 +161,7 @@ function EmptyState({ title, hint }) {
   );
 }
 
-function DataTable({ columns, rows, empty, rowKey, onRowClick }) {
+function DataTable({ columns, rows, empty, emptyHint, rowKey, onRowClick }) {
   const [sort, setSort] = useState({ key: null, dir: 1 });
 
   const sorted = useMemo(() => {
@@ -127,7 +180,12 @@ function DataTable({ columns, rows, empty, rowKey, onRowClick }) {
   }, [rows, sort, columns]);
 
   if (!rows.length) {
-    return <EmptyState title={empty || 'Nothing to show yet.'} />;
+    // An empty state that says what to do next, not just that there is
+    // nothing. "No tokens yet." in the middle of a blank panel tells a reader
+    // the screen loaded and nothing else.
+    return (
+      <EmptyState title={empty || 'Nothing to show yet.'} hint={emptyHint} />
+    );
   }
 
   return (
