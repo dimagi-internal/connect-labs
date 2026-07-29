@@ -9,7 +9,14 @@ name: Run Labs management command
 # secrets that are live in prod. Output goes to the web service's CloudWatch log group.
 #
 # AWS auth is the GitHub OIDC role (secrets.AWS_ROLE_ARN); no local creds needed.
-# Gated to main so only reviewed code/commands defined here can run against prod.
+#
+# SECURITY: the `guard` job gates only the REF (must be main) — it does NOT gate
+# the command string, which is a free-text dispatch input run verbatim as
+# `python manage.py <input>` against prod's DB and secrets. Anyone who can
+# dispatch this workflow therefore has prod-code-execution-equivalent access
+# (e.g. `shell -c ...`, `dumpdata`). This is intentional operator tooling, but
+# do not mistake the main-guard for a command allowlist. A required-reviewer
+# GitHub Environment gate is tracked in the security-audit issue.
 
 on:
   workflow_dispatch:
@@ -28,6 +35,8 @@ jobs:
   guard:
     name: Guard — branch must be main
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Refuse runs from non-main refs
         run: |
@@ -47,7 +56,7 @@ jobs:
       contents: read
     steps:
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}

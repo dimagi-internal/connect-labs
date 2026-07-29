@@ -3,6 +3,12 @@ name: Regenerate Confluence Summaries
 on:
   workflow_dispatch:
 
+# Least-privilege token: this job only reads the repo and calls out to
+# Confluence/Anthropic with their own secrets — it never needs a writable
+# GITHUB_TOKEN.
+permissions:
+  contents: read
+
 jobs:
   regenerate:
     runs-on: ubuntu-latest
