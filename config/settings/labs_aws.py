@@ -58,8 +58,47 @@ STORAGES["default"]["BACKEND"] = "connect_labs.utils.storages.MediaRootS3Boto3St
 
 # EMAIL (SES)
 # ------------------------------------------------------------------------------
+# Delivery is OFF by default and turns on only when LABS_EMAIL_ENABLED is set,
+# because turning it on has prerequisites that live outside this repo: an SES
+# domain identity whose DKIM CNAMEs are published in DNS, SES production access
+# (the account starts in the sandbox, where you may only send to verified
+# addresses), and ses:SendEmail on the ECS task role. infra/labs-email.yml owns
+# the AWS half; docs/OUTBOUND_EMAIL.md is the runbook. See #1039.
+#
+# While it is off, mail routes to NotConfiguredEmailBackend, which logs a
+# WARNING and reports 0 sent — deliberately NOT Django's console backend, which
+# reports success for mail it threw away.
 INSTALLED_APPS += ["anymail"]
-ANYMAIL = {}
+
+LABS_EMAIL_ENABLED = env.bool("LABS_EMAIL_ENABLED", default=False)
+LABS_EMAIL_DOMAIN = env("LABS_EMAIL_DOMAIN", default="")
+LABS_SES_REGION = env("LABS_SES_REGION", default=env("AWS_DEFAULT_REGION", default="us-east-1"))
+# Every send is tagged with this configuration set so SES routes bounce,
+# complaint and delivery-delay events to the labs-jj-email-events SNS topic.
+# Without it those events go nowhere and the domain's reputation degrades
+# unobserved.
+LABS_SES_CONFIGURATION_SET = env("LABS_SES_CONFIGURATION_SET", default="labs-jj-email")
+
+if LABS_EMAIL_ENABLED:
+    EMAIL_BACKEND = env("DJANGO_EMAIL_BACKEND", default="anymail.backends.amazon_ses.EmailBackend")
+    ANYMAIL = {
+        # boto3 finds credentials from the ECS task role; only the region needs
+        # pinning, since SES identities are per-region.
+        "AMAZON_SES_CLIENT_PARAMS": {"region_name": LABS_SES_REGION},
+        "AMAZON_SES_CONFIGURATION_SET_NAME": LABS_SES_CONFIGURATION_SET,
+    }
+else:
+    EMAIL_BACKEND = "connect_labs.utils.email.NotConfiguredEmailBackend"
+    ANYMAIL = {}
+
+# The inherited default from base.py is 'Connect <noreply@commcare-connect.org>',
+# a domain labs does not control and SES has not verified. Default the sender to
+# the labs sending domain instead; connect_labs.utils.email.check_email_config
+# fails the deploy's system checks if these ever drift apart.
+if LABS_EMAIL_DOMAIN:
+    DEFAULT_FROM_EMAIL = env("DJANGO_DEFAULT_FROM_EMAIL", default=f"Connect Labs <noreply@{LABS_EMAIL_DOMAIN}>")
+    SERVER_EMAIL = env("DJANGO_SERVER_EMAIL", default=DEFAULT_FROM_EMAIL)
+EMAIL_SUBJECT_PREFIX = env("DJANGO_EMAIL_SUBJECT_PREFIX", default="[Connect Labs]")
 
 # SENTRY
 # ------------------------------------------------------------------------------

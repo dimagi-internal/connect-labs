@@ -32,6 +32,7 @@ doing if labs proves long-lived enough to justify the import work.
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
 | `labs-monitoring.yml`      | SNS alert topic, RDS-connection + slot-exhaustion alarms, log metric filters                                                                                              | RDS instance, ECS log groups                                                  |
 | `labs-audit-analytics.yml` | Umami service (log group, target group, `/umami/*` ALB rule, task def, ECS service), Umami CodeBuild image pipeline + its role, audit-archive/secrets IAM inline policies | Object-Locked audit S3 bucket, Umami secrets, ECR repo, ALB/cluster/roles/VPC |
+| `labs-email.yml`           | SES domain identity + DKIM, `labs-jj-email` configuration set, `labs-jj-email-events` SNS topic + event destination, scoped `ses:SendEmail` managed policy                | ECS task role (policy attaches by name), the DNS zone, SES production access  |
 
 ## Deploy
 
@@ -65,6 +66,25 @@ aws cloudformation deploy \
   --capabilities CAPABILITY_NAMED_IAM \
   --parameter-overrides HttpsListenerArn=$LISTENER_ARN
 ```
+
+### Deploy: outbound email stack
+
+```bash
+aws cloudformation deploy \
+  --region us-east-1 --profile labs \
+  --stack-name labs-jj-email \
+  --template-file infra/labs-email.yml \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --parameter-overrides \
+    SendingDomain=labs.connect.dimagi.com \
+    EventEmail=you@dimagi.com
+```
+
+Creating the stack is **not** sufficient to send mail. SES stays unverified
+until the three DKIM CNAMEs in the stack Outputs are published in the
+`connect.dimagi.com` zone (which lives outside the labs account — there are no
+Route 53 hosted zones here), and the account must leave the SES sandbox via an
+AWS Support request. Full runbook: **[docs/OUTBOUND_EMAIL.md](../docs/OUTBOUND_EMAIL.md)**.
 
 To upgrade Umami: `aws codebuild start-build --project-name labs-jj-umami-build`
 (rebuilds `latest` from upstream with `BASE_PATH=/umami` baked in), then

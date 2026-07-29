@@ -1,0 +1,261 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+# Labs outbound email (SES). Third slice of infrastructure-as-code for the
+# connect-labs AWS environment — see infra/README.md.
+#
+# Before this stack, labs could not send email at all: EMAIL_BACKEND was the
+# console backend, SES had zero verified identities, the account was in the
+# sandbox, and the ECS task role had no ses:* permission. django-anymail was
+# installed but pointed nowhere (#1039).
+#
+# This stack owns the AWS half of the fix:
+#   * an SES domain identity with DKIM signing (outputs the CNAMEs that must be
+#     published in DNS — the one step this stack cannot do itself, because the
+#     connect.dimagi.com zone is not in the labs account)
+#   * a configuration set, so every send emits delivery/bounce/complaint events
+#   * an SNS topic + event destination, so those events land somewhere a human
+#     can see. AWS asks about bounce handling when granting production access,
+#     and an unwatched bounce rate is how a sending domain's reputation dies.
+#   * an IAM managed policy granting the ECS task role ses:SendEmail scoped to
+#     this identity and configuration set — nothing broader, and no static keys.
+#
+# It deliberately does NOT own the ECS task role (created out-of-band; the
+# policy attaches to it by name) and cannot grant SES production access, which
+# is an AWS Support request. See docs/OUTBOUND_EMAIL.md for the full runbook.
+
+Description: >-
+  Labs outbound email (SES): domain identity + DKIM, configuration set, bounce/
+  complaint SNS topic and event destination, and a scoped ses:SendEmail policy
+  for the ECS task role. See #1039 and docs/OUTBOUND_EMAIL.md.
+
+Parameters:
+  SendingDomain:
+    Type: String
+    Description: >-
+      Domain SES verifies and labs sends from, e.g.
+      labs.connect.dimagi.com. Use a labs-scoped subdomain, never the apex
+      or a domain prod Connect sends from — labs is a prototyping environment
+      and its sending reputation must not be able to affect anyone else's
+      deliverability.
+    AllowedPattern: '^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$'
+    ConstraintDescription: Must be a lowercase DNS domain name.
+
+  EventEmail:
+    Type: String
+    Default: ''
+    Description: >-
+      Address subscribed to the bounce/complaint SNS topic (the subscription
+      must be confirmed via the email AWS sends). Leave blank to create the
+      topic without a subscription and wire an endpoint to it later.
+
+  TaskRoleName:
+    Type: String
+    Default: labs-jj-ecs-task-role
+    Description: >-
+      Existing ECS task role that the send policy attaches to. Referenced, not
+      owned — this stack never creates or deletes the role.
+
+  ConfigurationSetName:
+    Type: String
+    Default: labs-jj-email
+    Description: >-
+      Must match LABS_SES_CONFIGURATION_SET in the ECS task definitions;
+      config/settings/labs_aws.py passes it on every send.
+
+Conditions:
+  HasEventEmail: !Not [!Equals [!Ref EventEmail, '']]
+
+Resources:
+  # ---------------------------------------------------------------------------
+  # Identity. Creating this is instant; it stays unverified until the DKIM
+  # CNAMEs in the Outputs are published in DNS. SES will refuse every send
+  # until then, which is the correct failure mode.
+  # ---------------------------------------------------------------------------
+  EmailIdentity:
+    Type: AWS::SES::EmailIdentity
+    Properties:
+      EmailIdentity: !Ref SendingDomain
+      DkimAttributes:
+        SigningEnabled: true
+      DkimSigningAttributes:
+        # Easy DKIM with a 2048-bit key. AWS rotates it; we publish CNAMEs that
+        # point at AWS-hosted records rather than the keys themselves, so key
+        # rotation needs no further DNS work.
+        NextSigningKeyLength: RSA_2048_BIT
+      FeedbackAttributes:
+        # Off deliberately. Email feedback forwarding delivers bounce reports to
+        # the From address, and labs sends from a no-reply mailbox on a domain
+        # with no inbound MX — the reports would go straight to a black hole and
+        # read as "bounce handling configured" while handling nothing. The SNS
+        # event destination below is the real path.
+        EmailForwardingEnabled: false
+
+  ConfigurationSet:
+    Type: AWS::SES::ConfigurationSet
+    Properties:
+      Name: !Ref ConfigurationSetName
+      ReputationOptions:
+        ReputationMetricsEnabled: true
+      SuppressionOptions:
+        # Account-level suppression is already on for BOUNCE and COMPLAINT;
+        # restating it here keeps the behaviour explicit and survives an
+        # account-level change. A hard-bounced address is never retried.
+        SuppressedReasons:
+          - BOUNCE
+          - COMPLAINT
+      SendingOptions:
+        SendingEnabled: true
+
+  # ---------------------------------------------------------------------------
+  # Bounce / complaint signal. Item (e) of #1039, and the thing AWS asks about
+  # when granting production access.
+  # ---------------------------------------------------------------------------
+  EmailEventsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: labs-jj-email-events
+      DisplayName: Labs email events
+
+  EmailEventsSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasEventEmail
+    Properties:
+      TopicArn: !Ref EmailEventsTopic
+      Protocol: email
+      Endpoint: !Ref EventEmail
+
+  EmailEventsTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref EmailEventsTopic
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowSESPublish
+            Effect: Allow
+            Principal:
+              Service: ses.amazonaws.com
+            Action: sns:Publish
+            Resource: !Ref EmailEventsTopic
+            Condition:
+              StringEquals:
+                AWS:SourceAccount: !Ref AWS::AccountId
+
+  EmailEventDestination:
+    Type: AWS::SES::ConfigurationSetEventDestination
+    Properties:
+      ConfigurationSetName: !Ref ConfigurationSet
+      EventDestination:
+        Name: sns-bounces-complaints
+        Enabled: true
+        MatchingEventTypes:
+          # DELIVERY is included so "did it actually land?" is answerable
+          # without turning on full event publishing to S3/Firehose.
+          - SEND
+          - DELIVERY
+          - BOUNCE
+          - COMPLAINT
+          - REJECT
+          - RENDERING_FAILURE
+          - DELIVERY_DELAY
+        SnsDestination:
+          TopicARN: !Ref EmailEventsTopic
+
+  # ---------------------------------------------------------------------------
+  # Permission. Item (d) of #1039 — the task role, not static credentials.
+  # Scoped to this identity and configuration set: labs cannot send as any
+  # other identity that later appears in the account.
+  # ---------------------------------------------------------------------------
+  SendEmailPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: labs-ses-send
+      Description: Allows the labs ECS tasks to send mail through the labs SES identity.
+      Roles:
+        - !Ref TaskRoleName
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: SendThroughLabsIdentity
+            Effect: Allow
+            Action:
+              # django-anymail 14 uses the SESv2 client; both actions are named
+              # under the ses: prefix regardless of API version.
+              - ses:SendEmail
+              - ses:SendRawEmail
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:identity/${SendingDomain}'
+              - !Sub 'arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:configuration-set/${ConfigurationSetName}'
+          - Sid: ReadSendQuota
+            Effect: Allow
+            # No resource-level scoping available for these; read-only.
+            Action:
+              - ses:GetAccount
+              - ses:GetEmailIdentity
+            Resource: '*'
+
+Outputs:
+  SendingDomainOut:
+    Description: Domain SES will send from once the DNS records below are published.
+    Value: !Ref SendingDomain
+    Export:
+      Name: labs-jj-email-sending-domain
+
+  ConfigurationSetOut:
+    Description: Value for the LABS_SES_CONFIGURATION_SET env var.
+    Value: !Ref ConfigurationSetName
+
+  EventsTopicArn:
+    Description: SNS topic receiving bounce/complaint/delivery events.
+    Value: !Ref EmailEventsTopic
+    Export:
+      Name: labs-jj-email-events-topic-arn
+
+  # --- DNS records to hand to whoever owns the connect.dimagi.com zone -------
+  # SES stays unverified, and every send fails, until all three CNAMEs resolve.
+  # DkimDNSTokenName/DkimDNSTokenValue are already FULLY QUALIFIED
+  # ('<token>._domainkey.<domain>' and '<token>.dkim.amazonses.com'). Do not
+  # append the domain or the amazonses suffix again — that produces a
+  # doubled-up record that looks plausible and silently never verifies.
+  DkimRecord1:
+    Description: DKIM CNAME 1 of 3 — publish as name -> value.
+    Value: !Sub
+      - '${Name} CNAME ${Value}'
+      - Name: !GetAtt EmailIdentity.DkimDNSTokenName1
+        Value: !GetAtt EmailIdentity.DkimDNSTokenValue1
+
+  DkimRecord2:
+    Description: DKIM CNAME 2 of 3 — publish as name -> value.
+    Value: !Sub
+      - '${Name} CNAME ${Value}'
+      - Name: !GetAtt EmailIdentity.DkimDNSTokenName2
+        Value: !GetAtt EmailIdentity.DkimDNSTokenValue2
+
+  DkimRecord3:
+    Description: DKIM CNAME 3 of 3 — publish as name -> value.
+    Value: !Sub
+      - '${Name} CNAME ${Value}'
+      - Name: !GetAtt EmailIdentity.DkimDNSTokenName3
+        Value: !GetAtt EmailIdentity.DkimDNSTokenValue3
+
+  SpfRecord:
+    Description: >-
+      OPTIONAL, and impossible to publish when SendingDomain is already a CNAME
+      (a CNAME must be the only record at its name, RFC 1034) — which is the
+      case for labs.connect.dimagi.com, a CNAME to the ALB. Skipping it is fine:
+      SES verification needs only the DKIM CNAMEs above, and with SES's default
+      MAIL FROM the envelope domain is amazonses.com, whose SPF Amazon already
+      publishes, so DMARC passes on DKIM alignment. Publish this only if
+      SendingDomain is a name with no CNAME on it.
+    Value: !Sub '${SendingDomain} TXT "v=spf1 include:amazonses.com -all"'
+
+  DmarcRecord:
+    Description: >-
+      Recommended DMARC TXT record. Starts at p=none (monitor only) so a labs
+      misconfiguration cannot cause legitimate mail to be rejected; tighten to
+      quarantine/reject once aggregate reports are clean.
+    Value: !If
+      - HasEventEmail
+      - !Sub '_dmarc.${SendingDomain} TXT "v=DMARC1; p=none; rua=mailto:${EventEmail}"'
+      - !Sub '_dmarc.${SendingDomain} TXT "v=DMARC1; p=none;"  (add rua=mailto:<addr> to receive reports)'

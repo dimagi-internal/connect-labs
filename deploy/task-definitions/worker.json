@@ -55,6 +55,18 @@
         {
           "name": "REDIS_URL",
           "value": "redis://labs-jj-redis.aceivh.0001.use1.cache.amazonaws.com:6379/0"
+        },
+        {
+          "name": "LABS_EMAIL_ENABLED",
+          "value": "False"
+        },
+        {
+          "name": "LABS_EMAIL_DOMAIN",
+          "value": "labs.connect.dimagi.com"
+        },
+        {
+          "name": "LABS_SES_CONFIGURATION_SET",
+          "value": "labs-jj-email"
         }
       ],
       "mountPoints": [],

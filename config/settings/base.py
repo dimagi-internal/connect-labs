@@ -296,10 +296,19 @@ CSRF_COOKIE_SAMESITE = "Lax"
 
 # EMAIL
 # ------------------------------------------------------------------------------
+# The console backend is the right default for local dev and CI. It is NOT a
+# safe default for a deployed environment — it reports success for mail it
+# discards — so config/settings/labs_aws.py overrides it with either the SES
+# backend or a fail-loud one. See connect_labs/utils/email.py and #1039.
 EMAIL_BACKEND = env(
     "DJANGO_EMAIL_BACKEND",
     default="django.core.mail.backends.console.EmailBackend",
 )
+# Real delivery is opt-in per environment; only labs_aws.py flips this on.
+LABS_EMAIL_ENABLED = False
+LABS_EMAIL_DOMAIN = ""
+# Kept low on purpose: nothing may block a request on SES. All sending goes
+# through connect_labs.utils.email.send_labs_email, which dispatches to Celery.
 EMAIL_TIMEOUT = 5
 DEFAULT_FROM_EMAIL = env(
     "DJANGO_DEFAULT_FROM_EMAIL",
