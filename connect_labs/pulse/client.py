@@ -37,21 +37,48 @@ class PulseAuthError(RuntimeError):
 
 
 def get_poller_user():
-    """The Django user whose Connect membership defines Pulse's scope."""
-    username = getattr(settings, "PULSE_POLLER_USERNAME", "") or ""
-    if not username:
-        raise PulseAuthError(
-            "PULSE_POLLER_USERNAME is not set. Pulse needs a designated user whose "
-            "Connect org membership defines what the dashboard can see."
-        )
+    """The Django user whose Connect membership defines Pulse's scope.
+
+    Configured explicitly via ``PULSE_POLLER_USERNAME``. When that is unset we
+    fall back to whichever user has the most recently refreshed Connect token,
+    and say so loudly in the log.
+
+    The fallback exists because the alternative is worse: an unset env var
+    would otherwise mean a deployed Pulse silently ingests nothing, and the
+    display would show an empty screen with no indication that the cause is a
+    missing setting. Falling back makes it work and complain; failing shut
+    makes it look broken for a reason nobody can see from the page.
+
+    Which user matters, so this is a setting to fill in rather than rely on —
+    scope (and therefore every headline number) follows that user's org
+    membership.
+    """
     user_model = get_user_model()
-    try:
-        return user_model.objects.get(username=username)
-    except user_model.DoesNotExist:
+    username = getattr(settings, "PULSE_POLLER_USERNAME", "") or ""
+
+    if username:
+        try:
+            return user_model.objects.get(username=username)
+        except user_model.DoesNotExist:
+            raise PulseAuthError(
+                f"PULSE_POLLER_USERNAME={username!r} does not exist in labs. "
+                "The user must have logged into labs in a browser at least once."
+            )
+
+    from connect_labs.labs.models import UserConnectToken
+
+    token = UserConnectToken.objects.order_by("-updated_at").first()
+    if token is None:
         raise PulseAuthError(
-            f"PULSE_POLLER_USERNAME={username!r} does not exist in labs. "
-            "The user must have logged into labs in a browser at least once."
+            "PULSE_POLLER_USERNAME is not set and no user has a stored Connect token. "
+            "Set PULSE_POLLER_USERNAME to a user who has logged into labs in a browser."
         )
+    logger.warning(
+        "[pulse] PULSE_POLLER_USERNAME is unset; falling back to %r. Scope (and every "
+        "headline figure) follows that user's org membership — set the env var explicitly.",
+        token.user.username,
+    )
+    return token.user
 
 
 def get_access_token() -> str:

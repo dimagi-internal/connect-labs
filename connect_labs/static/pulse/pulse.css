@@ -13,36 +13,48 @@
 :root {
   color-scheme: dark;
 
-  /* ground — ink with a blue bias, chosen against the warm map glow */
-  --ground: #070a12;
-  --panel: #0d1320;
-  --panel-2: #111829;
-  --rule: #1c2537;
-  --rule-soft: #151d2c;
+  /* Grounded in the labs brand rather than a generic dark theme:
+     brand-deep-purple #16006d is the sidenav colour, so the whole surface is
+     built down from it. Accents are brand-sky / brand-marigold / brand-sunset,
+     which is why this reads as Connect Labs at night rather than as a
+     different product that happens to be dark. */
+  --brand-deep-purple: #16006d;
+  --brand-indigo: #3843d0;
+  --brand-cornflower: #5d70d2;
+  --brand-sky: #8ea1ff;
+  --brand-marigold: #feaf31;
+  --brand-mango: #fc5f36;
+  --brand-sunset: #e44434;
 
-  --ink: #eaeff9;
-  --ink-2: #8e9bb4;
-  --ink-3: #56637c;
+  --ground: #08042a;
+  --panel: #100a3d;
+  --panel-2: #17114d;
+  --rule: #2a1f6b;
+  --rule-soft: #1d1553;
+
+  --ink: #eef0ff;
+  --ink-2: #a9b3e8;
+  --ink-3: #6d76b5;
 
   /* the light: a verified service turning on */
-  --light: #ffc145;
-  --light-dim: #b0821f;
+  --light: var(--brand-marigold);
+  --light-dim: #b87d1c;
 
-  /* categorical — validated for CVD separation on this dark ground,
-     and always direct-labelled so identity is never colour-alone */
-  --c-1: #bd8407;
-  --c-2: #166daf;
-  --c-3: #ad74bf;
-  --c-4: #007c5b;
+  /* categorical — always direct-labelled, so identity is never colour-alone */
+  --c-1: var(--brand-sky);
+  --c-2: var(--brand-cornflower);
+  --c-3: var(--brand-marigold);
+  --c-4: #35b39d;
 
   /* status — reserved, never reused as a series colour */
-  --ok: #3e9c74;
-  --warn: #c9902a;
-  --crit: #c25e55;
-  --idle: #54617a;
+  --ok: #35b39d;
+  --warn: var(--brand-marigold);
+  --crit: var(--brand-sunset);
+  --idle: #6d76b5;
 
   --mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace;
-  --sans: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  /* Work Sans is the labs typeface (see tailwind/tailwind.css --font-sans). */
+  --sans: 'Work Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
 
 * {
@@ -70,7 +82,7 @@
   background: radial-gradient(
     ellipse 120% 90% at 50% 45%,
     transparent 40%,
-    rgba(3, 5, 10, 0.55) 100%
+    rgba(4, 2, 20, 0.6) 100%
   );
 }
 
@@ -143,18 +155,18 @@
 }
 .pulse-mode[data-state='replay'] {
   color: var(--warn);
-  border-color: #3a2f16;
-  background: #17130a;
+  border-color: #5a4413;
+  background: #2c1f08;
 }
 .pulse-mode[data-state='live'] {
   color: var(--ok);
   border-color: #17352a;
-  background: #0a1611;
+  background: #0a2a26;
 }
 .pulse-mode[data-state='stale'] {
   color: var(--crit);
-  border-color: #3d221f;
-  background: #180d0c;
+  border-color: #5c211d;
+  background: #2b0f0d;
 }
 .pulse-mode[data-state='loading'] {
   color: var(--ink-3);
@@ -200,8 +212,8 @@
 /* ── not-live alert ─────────────────────────────────────────────── */
 .pulse-alert {
   grid-column: 1 / -1;
-  background: #2a1410;
-  border-bottom: 1px solid #4a241d;
+  background: #35100e;
+  border-bottom: 1px solid #6b2018;
   color: #f0b8b0;
   padding: 7px 18px;
   font-size: 12.5px;
@@ -263,7 +275,16 @@
   grid-area: map;
   position: relative;
   overflow: hidden;
-  background: #050810;
+  background: #06031f;
+}
+/* The basemap sits underneath; #sky is a transparent overlay carrying the
+   density layer and the live ignitions. Splitting them this way keeps the
+   real coastlines and country borders (which make the map legible) while
+   preserving the accumulated-light rendering (which makes it worth looking
+   at). */
+#basemap {
+  position: absolute;
+  inset: 0;
 }
 #sky {
   position: absolute;
@@ -271,6 +292,20 @@
   width: 100%;
   height: 100%;
   display: block;
+  pointer-events: none;
+  z-index: 1;
+}
+/* Mapbox's own chrome, toned to the brand surface. */
+.pulse-map .mapboxgl-ctrl-attrib {
+  background: rgba(8, 4, 42, 0.7);
+  font-family: var(--mono);
+  font-size: 9px;
+}
+.pulse-map .mapboxgl-ctrl-attrib a {
+  color: var(--ink-3);
+}
+.pulse-map .mapboxgl-ctrl-logo {
+  opacity: 0.35;
 }
 
 .pulse-map-head {
@@ -420,7 +455,7 @@
 .act-nav button[aria-pressed='true'] {
   border-color: var(--light-dim);
   color: var(--light);
-  background: #17130a;
+  background: #2c1f08;
 }
 .act-nav button:focus-visible {
   outline: 2px solid var(--light);
@@ -775,26 +810,26 @@
 }
 .chip[data-s='approved'] {
   color: var(--ok);
-  border-color: #1b3a2c;
-  background: #0a1611;
+  border-color: #1c4a44;
+  background: #0a2a26;
 }
 .chip[data-s='flagged'] {
   color: var(--warn);
-  border-color: #3a2f16;
-  background: #17130a;
+  border-color: #5a4413;
+  background: #2c1f08;
 }
 .chip[data-s='rejected'],
 .chip[data-s='duplicate'] {
   color: var(--crit);
-  border-color: #3d221f;
-  background: #180d0c;
+  border-color: #5c211d;
+  background: #2b0f0d;
 }
 .chip[data-s='pending'],
 .chip[data-s='over_limit'],
 .chip[data-s='incomplete'] {
   color: var(--idle);
-  border-color: #222a3a;
-  background: #0f1320;
+  border-color: #2f2470;
+  background: #171147;
 }
 
 .pulse-transport {

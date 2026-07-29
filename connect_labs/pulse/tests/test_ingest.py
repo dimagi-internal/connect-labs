@@ -416,3 +416,45 @@ class TestDueness:
             last_polled_at=timezone.now(),
         )
         assert c.is_due() is False
+
+
+@pytest.mark.django_db
+class TestPollerUserResolution:
+    """Who Pulse polls as decides every number on the screen, so this resolves
+    explicitly or complains — it never silently ingests nothing."""
+
+    def test_uses_the_configured_user(self, settings, django_user_model):
+        django_user_model.objects.create(username="jonathan")
+        settings.PULSE_POLLER_USERNAME = "jonathan"
+        from connect_labs.pulse.client import get_poller_user
+
+        assert get_poller_user().username == "jonathan"
+
+    def test_configured_but_missing_user_raises(self, settings):
+        settings.PULSE_POLLER_USERNAME = "nobody"
+        from connect_labs.pulse.client import PulseAuthError, get_poller_user
+
+        with pytest.raises(PulseAuthError, match="does not exist"):
+            get_poller_user()
+
+    def test_falls_back_to_a_stored_token_when_unset(self, settings, django_user_model):
+        """An unset env var must not mean 'ingest nothing forever' — that shows
+        up as an empty screen with no visible cause."""
+        from django.utils import timezone as tz
+
+        from connect_labs.labs.models import UserConnectToken
+        from connect_labs.pulse.client import get_poller_user
+
+        user = django_user_model.objects.create(username="fallback-user")
+        UserConnectToken.objects.create(
+            user=user, access_token="x", refresh_token="y", expires_at=tz.now() + timedelta(hours=1)
+        )
+        settings.PULSE_POLLER_USERNAME = ""
+        assert get_poller_user().username == "fallback-user"
+
+    def test_raises_when_unset_and_no_token_exists(self, settings):
+        settings.PULSE_POLLER_USERNAME = ""
+        from connect_labs.pulse.client import PulseAuthError, get_poller_user
+
+        with pytest.raises(PulseAuthError, match="no user has a stored Connect token"):
+            get_poller_user()

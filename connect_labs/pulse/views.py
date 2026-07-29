@@ -41,8 +41,14 @@ DEFAULT_LAYOUT = "nightmap"
 
 
 def _display_context(layout: str, *, public: bool, show_partner_names: bool = True) -> dict:
+    from django.conf import settings
+
     scope = PulseScalar.objects.filter(key="scope").first()
     return {
+        # Real basemap via the shared ConnectMap module, so the map carries
+        # coastlines and country borders instead of asking a viewer to infer
+        # geography from dots alone.
+        "mapbox_token": getattr(settings, "MAPBOX_TOKEN", "") or "",
         "layout": layout,
         "layout_meta": LAYOUTS.get(layout, LAYOUTS[DEFAULT_LAYOUT]),
         "layouts": LAYOUTS,

@@ -24,6 +24,10 @@
     speed: 240,
     replayHours: 48,
     livePollMs: 15000,
+    // Replay-seconds of silence tolerated before jumping to the next event.
+    // 20 min keeps natural gaps between visits feeling real while collapsing
+    // the overnight dead zone.
+    deadAirSkipSeconds: 20 * 60,
     maxSparks: 400,
   };
 
@@ -227,6 +231,23 @@
       ) {
         this._deliver(this.events[this.emitIndex++]);
         emitted += 1;
+      }
+
+      // Skip dead air. The work happens on Nigerian and Kenyan working hours,
+      // so a 48h window contains ~13 hours a night where nothing at all is
+      // delivered -- and at any sane speed the screen sits frozen through them,
+      // which reads as broken rather than as night-time.
+      //
+      // We jump the clock forward to the next real event instead of playing
+      // the silence. Nothing is fabricated and the displayed timestamp stays
+      // truthful; we just decline to spend two minutes rendering an empty
+      // Tuesday night.
+      if (!emitted && this.emitIndex < this.events.length) {
+        const next = this.events[this.emitIndex].field_ts;
+        if (next - this.clock > this.opts.deadAirSkipSeconds) {
+          this.clock = next - 1;
+          this.emit('skip', { to: this.clock });
+        }
       }
       // At high speed the clock can outrun the animation budget; bank the
       // remainder silently so the numbers stay honest even if the map skips.

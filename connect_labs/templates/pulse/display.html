@@ -12,6 +12,11 @@ would put a "Connect Labs" navigation bar above a funder-facing screen.
   <meta name="viewport" content="width=device-width, initial-scale=1">
   {% if is_public %}<meta name="robots" content="noindex, nofollow">{% endif %}
   <title>Connect Pulse — service delivery</title>
+  {# Work Sans is the labs typeface; loaded the same way base.html loads it. #}
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet">
   <link rel="stylesheet" href="{% static 'pulse/pulse.css' %}">
 </head>
 <body class="pulse-body">
@@ -47,6 +52,7 @@ would put a "Connect Labs" navigation bar above a funder-facing screen.
     <aside class="pulse-kpi" id="kpi"></aside>
 
     <section class="pulse-map">
+      <div id="basemap"></div>
       <canvas id="sky"></canvas>
       <div class="pulse-map-head">
         <div class="pulse-claim">
@@ -107,7 +113,10 @@ would put a "Connect Labs" navigation bar above a funder-facing screen.
       isPublic: {{ is_public|yesno:"true,false" }},
       showPartnerNames: {{ show_partner_names|yesno:"true,false" }}
     };
+    window.MAPBOX_TOKEN = "{{ mapbox_token|escapejs }}";
   </script>
+  <script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
+  <script src="{% static 'maps/connect_map.js' %}"></script>
   <script src="{% static 'pulse/store.js' %}"></script>
   <script src="{% static 'pulse/cards.js' %}"></script>
   <script src="{% static 'pulse/display.js' %}"></script>

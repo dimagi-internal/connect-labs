@@ -21,23 +21,29 @@
     speed: 240,
   });
 
-  /* ═══ map ═══════════════════════════════════════════════════════ */
+  /* ═══ map ═══════════════════════════════════════════════════════
+     A real Mapbox dark basemap underneath (coastlines, country borders,
+     place names) with our density + ignition layer painted on a transparent
+     canvas above it. Projection comes from the map, so the overlay stays
+     locked to the basemap through every pan and zoom.                     */
   const cv = $('#sky'),
     cx = cv.getContext('2d');
+
+  /* [west, south, east, north] */
   const FOCI = {
-    world: { lon: [-16, 90], lat: [-14, 32] },
-    ng: { lon: [2.5, 14.8], lat: [4.0, 14.2] },
-    ea: { lon: [28.5, 41.5], lat: [-6.5, 4.8] },
-    in: { lon: [68, 90], lat: [8, 30] },
+    world: [-17, -15, 92, 33],
+    ng: [2.5, 4.0, 14.8, 14.2],
+    ea: [28.5, -6.5, 41.5, 4.8],
+    in: [68, 8, 90, 30],
   };
-  let view = { ...FOCI.world },
-    target = { ...FOCI.world },
-    focus = 'world';
+  let focus = 'world';
   let W = 0,
     H = 0,
     dpr = 1,
-    baseLayer = null;
+    baseLayer = null,
+    baseDirty = true;
   let cells = [];
+  let map = null;
 
   function size() {
     dpr = Math.min(devicePixelRatio || 1, 2);
@@ -47,13 +53,24 @@
     cv.width = Math.round(W * dpr);
     cv.height = Math.round(H * dpr);
     cx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    drawBase();
+    baseDirty = true;
   }
 
-  /* Fit the focus box without distorting geography. */
-  function proj(la, lo, v) {
-    const lonSpan = v.lon[1] - v.lon[0],
-      latSpan = v.lat[1] - v.lat[0];
+  /* Project through the basemap so overlay and basemap can never disagree.
+   *
+   * Falls back to a plain equirectangular fit over the current focus bounds
+   * when Mapbox is unavailable (no token, blocked CDN, offline). Without this
+   * the whole map goes blank on a missing token rather than degrading to the
+   * density layer -- a silent blackout in exactly the situation where someone
+   * is least able to diagnose it. */
+  function proj(lat, lon) {
+    if (map) {
+      const pt = map.project([lon, lat]);
+      return [pt.x, pt.y];
+    }
+    const [w, s2, e, n] = FOCI[focus];
+    const lonSpan = e - w,
+      latSpan = n - s2;
     const boxAR = W / H,
       dataAR = lonSpan / latSpan;
     let sx,
@@ -69,17 +86,21 @@
       sx = sy;
       ox = (W - lonSpan * sx) / 2;
     }
-    return [ox + (lo - v.lon[0]) * sx, oy + (v.lat[1] - la) * sy];
+    return [ox + (lon - w) * sx, oy + (n - lat) * sy];
   }
 
   /**
-   * The ambient layer IS the basemap. Two passes — a wide soft bloom so
-   * clusters read as inhabited area, then a tight core so settlements stay
-   * countable when zoomed. Both radius and alpha are hard-capped: under
-   * `lighter` blending a dense cluster otherwise saturates to a white blob
-   * and destroys the structure that is the whole reason to zoom in.
+   * The density layer. Two passes — a wide soft bloom so clusters read as
+   * inhabited area, then a tight core so settlements stay countable when
+   * zoomed. Both radius and alpha are hard-capped: under `lighter` blending a
+   * dense cluster otherwise saturates to a white blob and destroys the
+   * structure that is the whole reason to zoom in.
+   *
+   * Rebuilt only when the view actually changed — on every frame it would
+   * cost more than the ignitions it sits under.
    */
   function drawBase() {
+    if (!W) return;
     const off = document.createElement('canvas');
     off.width = cv.width;
     off.height = cv.height;
@@ -87,38 +108,41 @@
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
     c.globalCompositeOperation = 'lighter';
 
-    const ppd = W / (view.lon[1] - view.lon[0]);
-    const zoom = Math.min(Math.max(ppd / 12, 0.6), 1.7);
+    const zoom = map
+      ? Math.min(Math.max(map.getZoom() / 4, 0.6), 1.9)
+      : Math.min(
+          Math.max(W / (FOCI[focus][2] - FOCI[focus][0]) / 12, 0.6),
+          1.7,
+        );
 
     for (const cell of cells) {
-      const [x, y] = proj(cell.lat, cell.lon, view);
+      const [x, y] = proj(cell.lat, cell.lon);
       if (x < -40 || x > W + 40 || y < -40 || y > H + 40) continue;
-      const w = cell.n;
-      const r = Math.min((2.2 + Math.log1p(w) * 1.0) * zoom, 12);
-      const a = Math.min(0.028 + Math.log1p(w) * 0.016, 0.095);
+      const r = Math.min((2.2 + Math.log1p(cell.n) * 1.0) * zoom, 14);
+      const a = Math.min(0.03 + Math.log1p(cell.n) * 0.018, 0.11);
       const g = c.createRadialGradient(x, y, 0, x, y, r);
-      g.addColorStop(0, `rgba(212,150,44,${a})`);
-      g.addColorStop(1, 'rgba(212,150,44,0)');
+      g.addColorStop(0, `rgba(254,175,49,${a})`);
+      g.addColorStop(1, 'rgba(254,175,49,0)');
       c.fillStyle = g;
       c.beginPath();
       c.arc(x, y, r, 0, 6.2832);
       c.fill();
     }
     for (const cell of cells) {
-      const [x, y] = proj(cell.lat, cell.lon, view);
+      const [x, y] = proj(cell.lat, cell.lon);
       if (x < -20 || x > W + 20 || y < -20 || y > H + 20) continue;
-      const w = cell.n;
       const r = Math.max(
         0.6,
-        Math.min((0.6 + Math.log1p(w) * 0.24) * zoom, 2.3),
+        Math.min((0.6 + Math.log1p(cell.n) * 0.26) * zoom, 2.6),
       );
-      const a = Math.min(0.26 + Math.log1p(w) * 0.075, 0.66);
-      c.fillStyle = `rgba(255,208,128,${a})`;
+      const a = Math.min(0.3 + Math.log1p(cell.n) * 0.08, 0.72);
+      c.fillStyle = `rgba(255,214,140,${a})`;
       c.beginPath();
       c.arc(x, y, r, 0, 6.2832);
       c.fill();
     }
     baseLayer = off;
+    baseDirty = false;
   }
 
   /* live ignitions */
@@ -142,56 +166,19 @@
     if (sparks.length > 260) sparks.splice(0, sparks.length - 260);
   }
 
-  const ANCHORS = {
-    NG: [6.6, 8.4, 'NIGERIA'],
-    KE: [-3.6, 37.4, 'KENYA'],
-    UG: [4.2, 30.4, 'UGANDA'],
-    IN: [19.4, 79.0, 'INDIA'],
-    CD: [-6.5, 23.0, 'DR CONGO'],
-    TZ: [-8.0, 34.5, 'TANZANIA'],
-  };
-
   let lastPaint = 0;
   function paint(ts) {
     requestAnimationFrame(paint);
     const dt = Math.min((ts - lastPaint) / 1000, 0.1);
     lastPaint = ts;
 
-    let moving = false;
-    for (const k of ['lon', 'lat']) {
-      for (let i = 0; i < 2; i++) {
-        const d = target[k][i] - view[k][i];
-        if (Math.abs(d) > 1e-4) {
-          view[k][i] += d * Math.min(dt * 3.2, 1);
-          moving = true;
-        }
-      }
-    }
-    if (moving) drawBase();
+    if (baseDirty) drawBase();
 
     cx.clearRect(0, 0, W, H);
 
-    cx.strokeStyle = 'rgba(120,140,180,.05)';
-    cx.lineWidth = 1;
-    for (let lo = -180; lo <= 180; lo += 10) {
-      const [x] = proj(0, lo, view);
-      if (x > 0 && x < W) {
-        cx.beginPath();
-        cx.moveTo(x, 0);
-        cx.lineTo(x, H);
-        cx.stroke();
-      }
-    }
-    for (let la = -60; la <= 60; la += 10) {
-      const [, y] = proj(la, 0, view);
-      if (y > 0 && y < H) {
-        cx.beginPath();
-        cx.moveTo(0, y);
-        cx.lineTo(W, y);
-        cx.stroke();
-      }
-    }
-
+    /* The basemap already supplies coastlines, borders and place names, so the
+       overlay draws only what the basemap cannot: accumulated density and the
+       services arriving right now. */
     if (baseLayer) {
       cx.save();
       cx.setTransform(1, 0, 0, 1, 0, 0);
@@ -199,35 +186,18 @@
       cx.restore();
     }
 
-    /* Country names, offset clear of their own cluster and skipped where the
-       header copy sits, so type never lands on top of the claim. */
-    cx.font = '600 10px ui-monospace, Menlo, monospace';
-    cx.textAlign = 'center';
-    cx.letterSpacing = '2px';
-    for (const k in ANCHORS) {
-      const [la, lo, name] = ANCHORS[k];
-      const [x, y] = proj(la, lo, view);
-      if (x < 34 || x > W - 34 || y < 22 || y > H - 22) continue;
-      if (y < 150 && x < 520) continue; // reserved for the claim
-      cx.fillStyle = 'rgba(5,8,16,.75)';
-      cx.fillText(name, x + 0.6, y + 0.6);
-      cx.fillStyle = 'rgba(158,173,202,.5)';
-      cx.fillText(name, x, y);
-    }
-    cx.letterSpacing = '0px';
-
     cx.globalCompositeOperation = 'lighter';
     for (let i = sparks.length - 1; i >= 0; i--) {
-      const s = sparks[i];
-      s.t += dt;
+      const s2 = sparks[i];
+      s2.t += dt;
       const life = 3.4;
-      if (s.t > life) {
+      if (s2.t > life) {
         sparks.splice(i, 1);
         continue;
       }
-      const p = s.t / life,
-        [r, g, b] = s.col;
-      const [x, y] = proj(s.la, s.lo, view);
+      const p = s2.t / life,
+        [r, g, b] = s2.col;
+      const [x, y] = proj(s2.la, s2.lo);
       if (x < -40 || x > W + 40 || y < -40 || y > H + 40) continue;
       if (p < 0.55 && !reduced) {
         const rr = 3 + p * 34;
@@ -252,6 +222,35 @@
       cx.fill();
     }
     cx.globalCompositeOperation = 'source-over';
+  }
+
+  function initBasemap() {
+    if (!window.ConnectMap || !window.mapboxgl || !window.MAPBOX_TOKEN) {
+      console.warn(
+        '[pulse] no Mapbox token or ConnectMap — density layer only',
+      );
+      return null;
+    }
+    const m = window.ConnectMap.createMap($('#basemap'), {
+      center: [20, 8],
+      zoom: 2.2,
+      interactive: true,
+    });
+    // Any view change invalidates the projected density layer.
+    m.on('move', () => {
+      baseDirty = true;
+    });
+    m.on('zoom', () => {
+      baseDirty = true;
+    });
+    m.on('resize', () => {
+      size();
+    });
+    m.on('load', () => {
+      baseDirty = true;
+      setFocus(focus, true);
+    });
+    return m;
   }
 
   /* ═══ layouts ═══════════════════════════════════════════════════
@@ -422,11 +421,22 @@
     if (manual) autoCycle = false;
   }
 
-  function setFocus(k) {
+  function setFocus(k, immediate) {
     focus = k;
-    target = { lon: [...FOCI[k].lon], lat: [...FOCI[k].lat] };
     $$('.pulse-focus button').forEach((b) =>
       b.setAttribute('aria-pressed', b.dataset.focus === k),
+    );
+    if (!map) {
+      baseDirty = true;
+      return;
+    }
+    const [w, s2, e, n] = FOCI[k];
+    map.fitBounds(
+      [
+        [w, s2],
+        [e, n],
+      ],
+      { padding: 40, duration: immediate ? 0 : 1600 },
     );
   }
 
@@ -542,6 +552,7 @@
     wireControls();
     addEventListener('resize', size);
     size();
+    map = initBasemap();
 
     try {
       window.PulseCards.CARDS.kpis.mount($('#kpi'), store);

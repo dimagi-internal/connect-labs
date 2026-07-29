@@ -152,27 +152,62 @@
       nodes[c.key] = val;
     }
 
+    // The all-time total is a *running* figure: it starts from the last synced
+    // scope count and then climbs as each new service arrives. A headline that
+    // freezes the moment the page loads reads as a screenshot, not a feed --
+    // and the whole claim of this screen is that the number is still moving.
+    let baseline = 0; // last figure the server reported
+    let delivered = 0; // services seen live since that figure
+    let paidBaseline = 0;
+    let paidLive = 0;
+
+    const renderTotals = () => {
+      nodes.services.textContent = nf.format(baseline + delivered);
+      nodes.paid.innerHTML =
+        '<small>$</small>' + nf.format(Math.round(paidBaseline + paidLive));
+    };
+
     const paint = (s) => {
       if (!s) return;
       const scope = s.scope || {};
       const money = s.money || {};
-      countUp(nodes.services, scope.lifetime_visits || 0);
-      nodes.paid.innerHTML =
-        '<small>$</small>' + nf.format(Math.round(money.to_workers || 0));
+      const nextBaseline = scope.lifetime_visits || 0;
+      const first = baseline === 0;
+      baseline = nextBaseline;
+      paidBaseline = money.to_workers || 0;
+      // A fresh server figure already includes what we counted locally.
+      delivered = 0;
+      paidLive = 0;
       nodes.cps.innerHTML =
         '<small>$</small>' + (money.usd_per_approved_work || 0).toFixed(2);
+      if (first) countUp(nodes.services, baseline, renderTotals);
+      else renderTotals();
+      nodes.paid.innerHTML =
+        '<small>$</small>' + nf.format(Math.round(paidBaseline));
     };
     store.on('summary', paint);
     paint(store.summary);
+
+    store.on('event', (ev) => {
+      delivered += 1;
+      if (ev.status === 'approved' && ev.usd) paidLive += ev.usd;
+      renderTotals();
+    });
+    store.on('backfill', () => {
+      delivered = 0;
+      paidLive = 0;
+      renderTotals();
+    });
 
     store.on('counts', (c) => {
       nodes.live.textContent = nf.format(c.verified);
     });
   });
 
-  function countUp(node, end) {
+  function countUp(node, end, onDone) {
     if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
       node.textContent = nf.format(end);
+      if (onDone) onDone();
       return;
     }
     const dur = 1800,
@@ -181,6 +216,7 @@
       const p = Math.min((t - t0) / dur, 1);
       node.textContent = nf.format(Math.round(end * (1 - Math.pow(1 - p, 3))));
       if (p < 1) requestAnimationFrame(run);
+      else if (onDone) onDone();
     };
     requestAnimationFrame(run);
   }
