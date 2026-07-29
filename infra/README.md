@@ -32,6 +32,7 @@ doing if labs proves long-lived enough to justify the import work.
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
 | `labs-monitoring.yml`      | SNS alert topic + subscriptions, RDS-connection + slot-exhaustion alarms, web-CPU / ALB-latency / ALB-5xx / no-healthy-target alarms, log metric filters                  | RDS instance, ECS cluster + service, ALB + target group, ECS log groups       |
 | `labs-audit-analytics.yml` | Umami service (log group, target group, `/umami/*` ALB rule, task def, ECS service), Umami CodeBuild image pipeline + its role, audit-archive/secrets IAM inline policies | Object-Locked audit S3 bucket, Umami secrets, ECR repo, ALB/cluster/roles/VPC |
+| `labs-access-logs.yml`     | ALB access-log S3 bucket, its delivery policy, and a 90-day retention lifecycle                                                                                           | The ALB itself (logging is switched on via a CLI attribute — see below)       |
 
 ## Deploy
 
@@ -100,6 +101,62 @@ Note these are deliberately **not** paired with a timeout reduction: long-runnin
 audit work legitimately needs the 600s gunicorn and ALB idle timeouts. The
 alarms are how we learn that long requests are hurting, since the timeouts never
 will.
+
+### Deploy: ALB access logs
+
+```bash
+aws cloudformation deploy \
+  --region us-east-1 --profile labs \
+  --stack-name labs-jj-access-logs \
+  --template-file infra/labs-access-logs.yml
+```
+
+The stack owns only the bucket. Logging is an attribute on the ALB, which this
+stack does not own, so switch it on once:
+
+```bash
+LB=$(aws elbv2 describe-load-balancers --names labs-jj-alb --profile labs \
+  --region us-east-1 --query 'LoadBalancers[0].LoadBalancerArn' --output text)
+
+aws elbv2 modify-load-balancer-attributes --profile labs --region us-east-1 \
+  --load-balancer-arn "$LB" \
+  --attributes Key=access_logs.s3.enabled,Value=true \
+               Key=access_logs.s3.bucket,Value=labs-jj-alb-access-logs \
+               Key=access_logs.s3.prefix,Value=alb
+```
+
+That call **validates the bucket policy** and fails if delivery wouldn't work,
+so a success is real. Confirm within a minute or two:
+
+```bash
+aws s3 ls s3://labs-jj-alb-access-logs/ --recursive --profile labs | head
+# alb/AWSLogs/<account>/ELBAccessLogTestFile   <- written immediately on enable
+```
+
+Real logs then arrive on a ~5 minute cadence. Two gotchas worth knowing: ALB
+delivery does **not** support SSE-KMS (the bucket is AES256 for this reason —
+KMS silently drops logs), and logs are delivered on a delay, so they are a
+forensic record, not a live view.
+
+### Why there are two layers of request telemetry
+
+During the 2026-07-29 incident the site was effectively down for 54 minutes and
+there was **no way to ask "which URL is slow?"** — access logs were off and the
+app emitted no request lines. The web log group held ~40,000 lines for that
+window and not one recorded a request's cost; the culprit had to be found by
+counting repeated outbound `httpx` INFO lines by hand.
+
+Both layers now exist, and they answer different questions:
+
+| Layer                     | Where                                                  | Answers                                                                                                | Blind to                            |
+| ------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ | ----------------------------------- |
+| **ALB access logs**       | S3, this stack                                         | which requests, how many, how slow, what status — for **every** request, recorded outside the process  | why a request was expensive         |
+| **App request telemetry** | `connect_labs/utils/request_telemetry.py` → CloudWatch | DB queries + outbound HTTP calls per request, and to which host — for requests that breach a threshold | anything that never reaches the app |
+
+The ALB half still works when the app is too saturated to log, is being
+OOM-killed, or never received the request. The app half is the only thing that
+can say _139 outbound calls to connect.dimagi.com in one request_ — which is
+exactly what the incident was, and what took a day to establish without it.
 
 ### Deploy: audit + analytics stack
 
