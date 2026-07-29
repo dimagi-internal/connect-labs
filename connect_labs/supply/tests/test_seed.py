@@ -310,3 +310,71 @@ def test_a_late_row_that_harms_nobody_still_says_so_in_children():
     harmful = [r for r in rows if r["kind"] == "Late" and r["children_at_risk"]]
     assert harmful, "expected at least one delay that does cost courses"
     assert rows.index(worst_late) > rows.index(harmful[-1])
+
+
+def test_a_site_only_distributes_what_it_actually_received():
+    """The chain the closing scene follows has to be a real one.
+
+    The seeder round-robined the first six ShipmentLines in the database
+    across all eleven sites, so every distribution cited a consignment that
+    had gone somewhere else, every distribution predated the receipt that
+    supposedly supplied it, and Biu served 280 children out of a batch it had
+    never been sent while its own cover row read "awaiting first consignment".
+    """
+    from connect_labs.supply.models import DistributionRecord
+
+    call_command("seed_supply_demo", "--reset")
+    records = DistributionRecord.objects.select_related("site", "shipment_line__shipment")
+    assert records.exists()
+
+    for record in records:
+        shipment = record.shipment_line.shipment
+        assert shipment.destination_id == record.site_id, (
+            f"{record.site.name} handed out {record.batch_lot}, which was sent to " f"{shipment.destination.name}"
+        )
+        arrived = shipment.delivered_at
+        assert arrived is not None
+        assert record.distributed_on > arrived.date(), (
+            f"{record.site.name} distributed {record.batch_lot} on "
+            f"{record.distributed_on}, before it arrived on {arrived.date()}"
+        )
+        assert record.cartons_dispensed <= record.shipment_line.quantity
+
+
+def test_a_site_awaiting_its_first_consignment_has_distributed_nothing():
+    """Its own cover row says so on the same screen."""
+    from connect_labs.supply.models import DistributionRecord, SupplyNode
+    from connect_labs.supply.services import cover
+
+    call_command("seed_supply_demo", "--reset")
+    awaiting = [r for r in cover.cover_by_node() if r.get("awaiting_first_delivery")]
+    assert awaiting, "the demo needs a site with nothing delivered yet"
+
+    for row in awaiting:
+        node = SupplyNode.objects.get(id=row["node_id"])
+        assert not DistributionRecord.objects.filter(
+            site=node
+        ).exists(), f"{node.name} is awaiting its first consignment and has distribution records"
+
+
+def test_the_queue_ranks_on_who_goes_without_soonest():
+    """ "Where, and by when" has to be the ordering, not just the copy.
+
+    Ranking on the raw figure put 907 children whose cartons expire in
+    December above 87 children who go without next week. Both are real; only
+    one is actionable this month, and a worklist that cannot tell them apart
+    is a leaderboard.
+    """
+    from connect_labs.supply.services import exceptions
+
+    call_command("seed_supply_demo", "--reset")
+    rows = exceptions.build_queue()
+
+    distant = [r for r in rows if r["children_at_risk"] and not r["children_at_risk_soon"]]
+    imminent = [r for r in rows if r["children_at_risk_soon"]]
+    assert distant and imminent, "the demo needs one of each for this to be checkable"
+
+    # every row costing children within the horizon outranks every row that does not,
+    # even where the distant row's raw figure is larger
+    assert max(rows.index(r) for r in imminent) < min(rows.index(r) for r in distant)
+    assert any(d["children_at_risk"] > i["children_at_risk"] for d in distant for i in imminent)

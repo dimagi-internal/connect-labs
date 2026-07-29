@@ -98,30 +98,38 @@ OPEN_ROUND = "OES Supply Base 2026-B"
 LIVE_RFP = "RUTF Northeast Nigeria Q3 2026"
 AWARDED_RFP = "RUTF Ethiopia Q2 2026"
 
-# The deliberately split tender. Two lots on two corridors, awarded to two
-# different suppliers on purpose — the decision the lot structure exists to
-# make possible. Concentrating a four-country response on the cheapest single
-# bidder is the classic humanitarian supply failure: when that plant or that
-# corridor goes down, every district goes down at the same moment. The split
-# has to be visible in the seeded world rather than asserted in a caption.
-SPLIT_AWARD_RFP = "RUTF Sahel and Lake Chad Corridors Q3 2026"
+# A PRIOR split tender: two lots on two corridors, awarded to two different
+# suppliers on purpose. Concentrating a four-country response on the cheapest
+# single bidder is the classic humanitarian supply failure — when that plant or
+# that corridor goes down, every district goes down at the same moment — and
+# seeding a previous split shows the practice is routine rather than staged for
+# the demo.
+#
+# It must be a DIFFERENT corridor pair from the live tender. It used to carry
+# the live tender's two lots verbatim — same places, same quantities, same
+# split outcome — sitting one row above it in the solicitations list and
+# marked 2/2 Awarded. Three scenes build to that award
+# being made on camera, and the answer was already on screen behind them the
+# whole time. A prior split is worth seeding, because it shows the practice is
+# routine rather than staged for the demo; it just must not be THIS split.
+SPLIT_AWARD_RFP = "RUTF Horn and Sahel Corridors Q1 2026"
 
 # lot description, category, quantity, delivery country, delivery place, winner
 SPLIT_AWARD_LOTS = [
     (
-        "60,000 cartons RUTF delivered to Maiduguri",
+        "30,000 cartons RUTF delivered to Gode",
         "rutf",
-        60000,
-        "NG",
-        "Maiduguri",
-        "Savanna Nutrients Ltd",
+        30000,
+        "ET",
+        "Gode",
+        "Rift Valley Therapeutics PLC",
     ),
     (
-        "20,000 cartons RUTF delivered to Djibo",
+        "12,000 cartons RUTF delivered to Dori",
         "rutf",
-        20000,
+        12000,
         "BF",
-        "Djibo",
+        "Dori",
         "Faso NutriWorks SA",
     ),
 ]

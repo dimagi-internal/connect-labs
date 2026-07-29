@@ -43,8 +43,8 @@ scenes:
     assigned to it at all.'
   actions:
   - kind: scroll_to
-    target: css:.card:has-text('Distribution calendar') .method-note
-    note: the legend BELOW the grid. Targeting the card title scrolled zero pixels — it
+    target: css:.card:has-text('Distribution calendar') thead
+    note: the grid's own header row. Targeting the legend below it pushed the date headers and the only two informative cells — amber Askira, red Biu — off the top, so the binding scene framed its own footnote. Targeting the card title scrolled zero pixels — it
       was already on screen at scroll 0 — so this scene captured the same frame as scene
       1 twice running. A scroll_to an element already in the viewport is a silent no-op.
   - kind: hold
@@ -94,6 +94,14 @@ scenes:
   - kind: hold
     seconds: 1.6
     note: what is inbound to their own sites, and how each was reported
+  - kind: scroll_to
+    target: css:.card:has-text('Arriving at your sites') tr:has-text('SHP-2026-0909')
+    note: the counted row itself, so the provenance chip the narration calls out ("entered by
+      hand" against "despatch advice") and the REPORTED BY header are both in frame. The scene
+      used to jump straight to the short-count card, which carries no provenance at all, so the
+      punchline was argued over a frame that did not contain it.
+  - kind: hold
+    seconds: 2.0
   - kind: scroll_to
     target: css:.card:has-text('Short counts you have raised')
   - kind: hold
@@ -151,8 +159,11 @@ scenes:
   - kind: hold
     seconds: 1.8
   - kind: scroll_to
-    target: css:.card:has-text('Shortfalls you have raised') tr:last-child
-    note: the LAST row of the card, so the batch card below it stays under the fold —
+    target: css:.card:has-text('Shortfalls you have raised') tr:has-text('Kukawa')
+    note: the row this scene just CREATED. The table is newest-first, so `tr:last-child`
+      pointed the camera's closing gesture at the OLD Askira row — the one record the demo
+      did not make — while Kukawa's sat off-frame. Naming the site is stable against ordering.
+      It also keeps the batch card below under the fold —
       it is scene 6's reveal and targeting the heading left it filling the bottom third
   - kind: hold
     seconds: 2.2

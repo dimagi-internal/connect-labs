@@ -136,6 +136,18 @@ function CommandTab({ ctx }) {
                   {selected === e.key && e.derivation ? (
                     <div className="exception-derivation">
                       How this was ranked: {e.derivation}
+                      {/* Why it sits where it sits, when the harm falls
+                          outside the window a decision today can affect.
+                          Ranking on the raw figure alone put 907 children due
+                          in December above 87 due next week, on a screen that
+                          promises "where, and by when". */}
+                      {e.children_at_risk && !e.children_at_risk_soon
+                        ? ` Ranked below rows costing children within ${
+                            e.decision_horizon_days
+                          } days: this falls due ${formatDate(
+                            e.by_date,
+                          )}, outside the window a decision taken today can change.`
+                        : ''}
                     </div>
                   ) : null}
                   {/* Closed and answered are different states and the

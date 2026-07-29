@@ -492,24 +492,55 @@ def seed_shortfall_signal(partner, sites):
 
 
 def seed_distribution_records(rng, partner, sites, plans):
-    """What was actually handed out, tied back to a real delivered batch."""
-    batches = list(
+    """What was actually handed out, tied back to the batch THIS SITE received.
+
+    The join used to be decorative: the first six ShipmentLines in the whole
+    database were round-robined across all eleven sites, so every distribution
+    cited a consignment that had gone somewhere else, every distribution was
+    dated three weeks before the receipt that supposedly supplied it, and Biu
+    — which the cover table correctly reports as awaiting its first
+    consignment — served 280 children out of a batch it had never been sent.
+
+    A funder following a batch forward to a child is the closing image of one
+    of these narratives and the only human moment in the set. It has to be a
+    real chain: a site can only hand out what arrived at it, and only after it
+    arrived.
+    """
+    arrivals = (
         ShipmentLine.objects.filter(
             shipment__status__in=("delivered", "confirmed"),
             batch_lot__gt="",
-        ).order_by(
-            "id"
-        )[:6]
+            shipment__destination__in=list(sites.values()),
+        )
+        .select_related("shipment", "shipment__destination")
+        .order_by("shipment__destination_id", "id")
     )
-    if not batches:
-        return []
+    by_site = {}
+    for line in arrivals:
+        by_site.setdefault(line.shipment.destination_id, []).append(line)
 
     records = []
-    site_list = sorted(sites.values(), key=lambda n: n.name)
-    for index, site in enumerate(site_list):
-        line = batches[index % len(batches)]
-        distributed_on = TODAY - timedelta(days=21 + index)
-        children = rng.randint(120, 340)
+    for index, site in enumerate(sorted(sites.values(), key=lambda n: n.name)):
+        lines = by_site.get(site.id)
+        if not lines:
+            # No receipt, no distribution. A site awaiting its first
+            # consignment has nothing to hand out, and saying otherwise
+            # contradicts its own cover row on the same screen.
+            continue
+        line = lines[index % len(lines)]
+        arrived = line.shipment.delivered_at or line.shipment.eta
+        arrived_on = arrived.date() if hasattr(arrived, "date") else arrived
+        if arrived_on is None:
+            continue
+        # Handed out after it landed, and before today.
+        latest = min(TODAY - timedelta(days=1), arrived_on + timedelta(days=9))
+        if latest <= arrived_on:
+            continue
+        distributed_on = arrived_on + timedelta(days=rng.randint(1, (latest - arrived_on).days))
+        # A site cannot dispense more than the batch brought it.
+        children = min(rng.randint(120, 340), int(line.quantity))
+        if children <= 0:
+            continue
         record, _ = DistributionRecord.objects.update_or_create(
             site=site,
             distributed_on=distributed_on,

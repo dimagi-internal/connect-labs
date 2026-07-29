@@ -239,17 +239,19 @@ scenes:
     note: two corridors, two suppliers, one tender — awarded on camera
   impressive_because: 'Concentrating a four-country response on the cheapest single bidder is the classic
     humanitarian supply failure: when that plant or that corridor goes down, every district goes down
-    at the same moment. Here the split costs nothing to make: each corridor''s cheapest bidder is a
-    different plant, so the resilient award is also the lowest-cost one.'
+    at the same moment. Here the split costs nothing to make — each corridor''s cheapest bidder is a
+    different plant, so the resilient award is also the lowest-cost one. The cheapest rule and the
+    resilient rule happen to agree on this tender. Awarding lot by lot is what lets you tell when they
+    do not, which a single blended price cannot show you at all.'
   ai_quality: Two different awarded organisations across one solicitation's lots.
 - id: the-award-becomes-the-contract
   concept_claim: The award is immutable and the contract carries it out against a named appropriation,
     so the same record the tender produced is what the supply chain moves against.
   url: /supply/
-  show: 'A contract already in execution on the same corridor — created from the earlier Q2 award into
-    Maiduguri, not the one just made — opened to show what an award turns into: a named appropriation
-    with its IATI activity identifier, the money obligated against it, and the consignments the contracted
-    quantity is actually moving on.'
+  show: 'The contract the award just made produced — OES-C-2026-NG2, created by that award moments ago,
+    carrying the 60,000 cartons at the price Savanna bid, obligated against a named funding envelope with
+    its IATI activity identifier. The record the tender produced is the record the supply chain moves
+    against.'
   actions:
   - kind: click
     target: css:.modal-close
@@ -263,8 +265,11 @@ scenes:
   - kind: hold
     seconds: 1.6
   - kind: click
-    target: css:.card:has-text('Pipeline by corridor') tr:has-text('OES-C-2026-NG1')
-    note: the contract the Maiduguri award became
+    target: css:.card:has-text('Pipeline by corridor') tr:has-text('OES-C-2026-NG2')
+    note: the contract THIS award produced, not the earlier Q2 one on the same corridor. Awarding
+      a lot used to create nothing but the award, so the scene had to open somebody else's
+      contract — same supplier, same city, tender names one character apart — and two judges
+      independently caught the substitution.
   - kind: wait_for
     target: css:.modal
   - kind: hold

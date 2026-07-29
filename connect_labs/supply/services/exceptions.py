@@ -16,7 +16,7 @@ behind it, and not otherwise.
 Each row also carries its ``derivation``, because a severity ranking nobody can
 reconstruct is a severity ranking nobody will act against.
 """
-from datetime import date
+from datetime import date, timedelta
 
 from .. import gs1
 from ..models import Discrepancy, Shipment, ShortfallSignal, SupplyAction
@@ -26,6 +26,30 @@ from . import cover
 # Long enough that the close is visible to anyone who looks at the screen after
 # the decision, short enough that the queue does not become a history.
 RESOLVED_SIGNAL_VISIBLE_DAYS = 7
+
+# The window a decision taken today can still affect. Cartons reallocated now
+# take about a week to land, so a month is roughly two chances to act; harm
+# falling outside it is real but is not what this worklist is for.
+DECISION_HORIZON_DAYS = 30
+
+
+def _children_within_horizon(row, as_of):
+    """The children this row costs INSIDE the decision horizon.
+
+    A row with no date has already happened — a short receipt is counted, not
+    pending — so it spends its whole figure. A row dated beyond the horizon
+    spends none of it: the harm is real and stays on the row, it simply stops
+    competing for this month's attention with something happening next week.
+    """
+    at_risk = row.get("children_at_risk") or 0
+    by_date = row.get("by_date")
+    if not by_date:
+        return at_risk
+    try:
+        due = date.fromisoformat(str(by_date)[:10])
+    except ValueError:
+        return at_risk
+    return at_risk if due <= as_of + timedelta(days=DECISION_HORIZON_DAYS) else 0
 
 
 def _late_shipments(contracts=None):
@@ -273,11 +297,24 @@ def _answered_nodes():
 
 
 def build_queue(contracts=None, as_of=None):
-    """Every exception, ranked by children at risk, worst first.
+    """Every exception, ranked by the children who go without SOONEST.
 
     Rows already answered by a reallocation sort last whatever their figure,
     because the question this queue answers is "what has nobody done anything
     about", and a row with cartons on the road is not that.
+
+    Within that, ranking is on children at risk *inside the decision horizon*
+    rather than on the raw figure. The screen promises "where, and by when" and
+    says any other ordering is not an ordering, and then ranked on magnitude
+    alone — so 907 children whose cartons expire on 25 December outranked 87
+    children who go without on 4 August. Both numbers are real; only one is
+    actionable this month, and a worklist that cannot tell them apart is a
+    leaderboard.
+
+    The unit does not change — it is still children, which is what makes the
+    four kinds comparable at all. What changes is that a row only spends its
+    figure if the harm falls within the horizon. A row with no date is treated
+    as already happening: a short receipt is not pending, it is counted.
     """
     as_of = as_of or date.today()
     rows = (
@@ -291,6 +328,8 @@ def build_queue(contracts=None, as_of=None):
         # Everything that is not an expiry row names the node that NEEDS
         # cartons, so a reallocation raised from it moves stock toward it.
         row.setdefault("reallocation_role", "target")
+        row["children_at_risk_soon"] = _children_within_horizon(row, as_of=as_of)
+        row["decision_horizon_days"] = DECISION_HORIZON_DAYS
         action = answered.get(row.get("node_id"))
         row["answered_by"] = (
             {
@@ -310,6 +349,9 @@ def build_queue(contracts=None, as_of=None):
             # "what has nobody done anything about", and neither is that.
             r.get("resolved_by") is not None,
             r["answered_by"] is not None,
+            # then by who goes without soonest, with the raw figure only
+            # breaking ties between rows equally urgent
+            -(r.get("children_at_risk_soon") or 0),
             -(r["children_at_risk"] or 0),
             r["key"],
         ),

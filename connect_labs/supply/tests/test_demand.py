@@ -268,18 +268,23 @@ def test_the_partner_and_the_centre_report_the_same_cover(client):
 
 
 def test_the_demo_world_contains_a_genuinely_split_award():
-    """Scene 8 of oes-supply-base: two corridors, two suppliers, one tender."""
+    """A PRIOR split, on corridors the live tender does not use.
+
+    It used to carry the live tender's own two lots verbatim, so the
+    solicitations list showed the exact split three scenes build to already
+    marked 2/2 Awarded, one row above the tender being awarded on camera.
+    """
     call_command("seed_supply_demo")
     from connect_labs.supply.models import RFP, Award
 
-    rfp = RFP.objects.get(title="RUTF Sahel and Lake Chad Corridors Q3 2026")
+    rfp = RFP.objects.get(title="RUTF Horn and Sahel Corridors Q1 2026")
     assert rfp.status == RFP.Status.AWARDED
     awards = Award.objects.filter(lot__rfp=rfp).select_related("lot_bid__bid__org", "lot")
     assert awards.count() == 2
     winners = {a.lot_bid.bid.org.legal_name for a in awards}
     assert len(winners) == 2, f"the split has to be visible, got {winners}"
     places = {a.lot.delivery_place for a in awards}
-    assert places == {"Maiduguri", "Djibo"}
+    assert places == {"Gode", "Dori"}
 
 
 def test_the_price_leader_differs_by_lot():
@@ -288,7 +293,7 @@ def test_the_price_leader_differs_by_lot():
     from connect_labs.supply.models import RFP
     from connect_labs.supply.services import rfp_actions
 
-    rfp = RFP.objects.get(title="RUTF Sahel and Lake Chad Corridors Q3 2026")
+    rfp = RFP.objects.get(title="RUTF Horn and Sahel Corridors Q1 2026")
     leaders = []
     for lot in rfp.lots.all().order_by("delivery_place"):
         ranked = rfp_actions.lot_comparison(lot)

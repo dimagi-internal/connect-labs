@@ -530,13 +530,13 @@ def _seed_split_award_rfp(rng, orgs, staff):
         title=SPLIT_AWARD_RFP,
         defaults={
             "brief": (
-                "RUTF into the Lake Chad basin and the Burkinabé Sahel. Bid lot by lot: "
+                "RUTF into the Somali region and the Burkinabé Sahel. Bid lot by lot: "
                 "OES intends to award corridors separately to avoid concentrating the "
                 "response on a single plant."
             ),
             "categories": ["rutf"],
-            "countries": ["NG", "BF"],
-            "bid_deadline": TODAY - timedelta(days=21),
+            "countries": ["ET", "BF"],
+            "bid_deadline": TODAY - timedelta(days=140),
             "status": RFP.Status.PUBLISHED,
             "created_by": staff[StaffRole.Role.PROCUREMENT_ADMIN],
         },
