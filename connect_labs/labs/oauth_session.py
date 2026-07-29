@@ -39,6 +39,18 @@ _LABS_SKIP_PATH_PREFIXES = (
     "/labs/test-auth/",
     "/labs/commcare/",
     "/labs/ocs/",
+    # Public, token-gated Pulse displays. A labs-owned path (so it belongs
+    # here rather than in LABS_SATELLITE_URL_PREFIXES) that is deliberately
+    # unauthenticated: a funder opening a shared link must never trip the
+    # logout path, and a signed-in staffer opening one shouldn't be logged out
+    # by viewing a page that needs no token of theirs.
+    #
+    # Skipping is safe for the boundary this middleware defends: the view
+    # authenticates nobody and grants nothing. Access is gated on an
+    # unguessable, individually revocable token, and it serves only aggregate,
+    # PII-free Pulse data. Only /p/ is skipped — the authenticated Pulse views
+    # under /labs/pulse/ stay inside the boundary.
+    "/labs/pulse/p/",
     "/mcp/",
     "/admin/",
     "/o/",

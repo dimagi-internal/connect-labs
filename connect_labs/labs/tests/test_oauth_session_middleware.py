@@ -243,3 +243,21 @@ def test_oauth_flow_paths_are_skipped(skip_path):
     _run(request)
 
     assert request.user.is_authenticated  # untouched
+
+
+def test_public_pulse_display_is_skipped_but_the_rest_of_pulse_is_not():
+    """Pulse's public token route is deliberately outside the labs boundary.
+
+    It authenticates nobody and grants nothing — access is gated on an
+    unguessable, revocable token and it serves only aggregate, PII-free data —
+    so an authenticated viewer must not be logged out by opening one.
+
+    The assertion that matters is the second one: only ``/labs/pulse/p/`` is
+    exempt. The authenticated Pulse views under ``/labs/pulse/`` stay inside
+    the boundary, so widening the hole would fail here.
+    """
+    from connect_labs.labs.oauth_session import get_skip_path_prefixes
+
+    prefixes = get_skip_path_prefixes()
+    assert "/labs/pulse/p/" in prefixes
+    assert "/labs/pulse/" not in prefixes
