@@ -22,6 +22,10 @@ from django.contrib.auth import get_user_model
 
 from connect_labs.labs.connect_tokens import ConnectTokenError, get_valid_access_token
 from connect_labs.labs.integrations.connect.export_client import ExportAPIClient
+from connect_labs.pulse.models import PulseScalar
+
+# DB override for the poller identity, settable via `manage.py pulse_poller`.
+SCALAR_POLLER = "poller"
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +58,19 @@ def get_poller_user():
     membership.
     """
     user_model = get_user_model()
-    username = getattr(settings, "PULSE_POLLER_USERNAME", "") or ""
+
+    # Resolution order: DB override, then env, then fallback. The DB override
+    # exists because the env var lives in an ECS task definition — changing it
+    # needs AWS access and a redeploy, whereas the poller identity is exactly
+    # the thing you discover you got wrong *after* looking at the numbers.
+    # `manage.py pulse_poller --set <username>` can be run through the existing
+    # run-labs-command workflow, so correcting scope doesn't need either.
+    username = ""
+    override = PulseScalar.objects.filter(key=SCALAR_POLLER).first()
+    if override:
+        username = (override.value or {}).get("username", "") or ""
+    if not username:
+        username = getattr(settings, "PULSE_POLLER_USERNAME", "") or ""
 
     if username:
         try:
