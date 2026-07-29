@@ -30,7 +30,7 @@ doing if labs proves long-lived enough to justify the import work.
 
 | Template                   | Owns                                                                                                                                                                      | References (does not own)                                                     |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `labs-monitoring.yml`      | SNS alert topic, RDS-connection + slot-exhaustion alarms, log metric filters                                                                                              | RDS instance, ECS log groups                                                  |
+| `labs-monitoring.yml`      | SNS alert topic + subscriptions, RDS-connection + slot-exhaustion alarms, web-CPU / ALB-latency / ALB-5xx / no-healthy-target alarms, log metric filters                  | RDS instance, ECS cluster + service, ALB + target group, ECS log groups       |
 | `labs-audit-analytics.yml` | Umami service (log group, target group, `/umami/*` ALB rule, task def, ECS service), Umami CodeBuild image pipeline + its role, audit-archive/secrets IAM inline policies | Object-Locked audit S3 bucket, Umami secrets, ECR repo, ALB/cluster/roles/VPC |
 
 ## Deploy
@@ -49,6 +49,57 @@ aws cloudformation deploy \
 - After the first deploy with an email, **confirm the subscription** via the
   email AWS sends, or alarms won't reach your inbox.
 - Re-run the same command to apply template changes (idempotent).
+
+### An SNS subscription nobody confirms is the same as no alerting
+
+Until 2026-07-29 this topic had **zero confirmed subscribers**: `AlarmEmail` was
+set to a Google Group, and the only other subscription was `Deleted`. Every
+alarm was firing into nothing.
+
+A Google Group cannot complete an SNS subscription. The confirmation is a link
+someone has to click, and the group's default posting policy rejects mail from
+an external sender (AWS SNS), so the confirmation usually never arrives — and
+when it does, no member owns clicking it. The link expires after 3 days.
+
+`AgentAlarmEmail` (default `hal@dimagi-ai.com`) is the fix: an agent mailbox
+reads its own inbox and confirms via the API, so the path stays live and
+someone is actually watching the volume. Verify at any time with:
+
+```bash
+aws sns list-subscriptions-by-topic --profile labs --region us-east-1 \
+  --topic-arn "$(aws sns list-topics --profile labs --region us-east-1 \
+    --query "Topics[?contains(TopicArn,'labs-jj-alerts')].TopicArn" --output text)" \
+  --query 'Subscriptions[].{Endpoint:Endpoint,Arn:SubscriptionArn}' --output table
+```
+
+Any row whose `Arn` reads `PendingConfirmation` or `Deleted` is **not**
+receiving alerts.
+
+### What the alarms watch, and why these thresholds
+
+The original three alarms all watched the **database**. On 2026-07-29 the web
+tier sat at 100% CPU for 54 minutes with ALB p95 latency in the tens of seconds
+— and all three stayed `OK`, because the database was healthy throughout (7–12%
+CPU, sub-ms IO). The added alarms watch the tier that actually failed.
+
+Thresholds come from the measured 5-day distribution, not from feel:
+
+| Alarm | Fires when | Normal baseline |
+| --- | --- | --- |
+| `labs-jj-web-cpu-high` | web CPU ≥ 90% for 15 min | median **0.8%** |
+| `labs-jj-alb-latency-high` | ALB **p95** > 10s for 15 min | median p95 **0.23s**; only 1.7% of buckets exceed 10s |
+| `labs-jj-alb-5xx-high` | ALB-generated 5xx > 25 in 5 min | ~1–5 per 15 min; incident peaked at 84 |
+| `labs-jj-web-no-healthy-targets` | healthy hosts < 1 for 3 min | `desiredCount=1`, so this is a full outage |
+| `labs-jj-rds-connections-high` | connections > 90 for 10 min | 5–15; **was 120 and never fired at a 106 peak** |
+
+Latency is alarmed on **p95, not Average** — Average is dragged toward zero by
+health checks and static assets and stayed unremarkable through the whole
+incident.
+
+Note these are deliberately **not** paired with a timeout reduction: long-running
+audit work legitimately needs the 600s gunicorn and ALB idle timeouts. The
+alarms are how we learn that long requests are hurting, since the timeouts never
+will.
 
 ### Deploy: audit + analytics stack
 

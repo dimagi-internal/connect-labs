@@ -27,6 +27,20 @@ Parameters:
       create the alarms + SNS topic without an email subscription (alarms still
       fire to the topic; wire Slack/another endpoint to it later).
 
+  AgentAlarmEmail:
+    Type: String
+    Default: hal@dimagi-ai.com
+    Description: >-
+      Second alarm recipient — an agent mailbox that can CONFIRM its own
+      subscription. SNS email subscriptions are inert until someone clicks the
+      confirmation link, and a Google Group cannot: the group's default posting
+      policy rejects mail from an external sender (AWS SNS), so the confirmation
+      never lands, and even when it does no member owns clicking it. The link
+      also expires in 3 days. Result was a topic with zero confirmed
+      subscribers — alarms fired into nothing. An agent mailbox reads its own
+      inbox and confirms via the API, so this path stays live. Set to '' to
+      skip.
+
   DbInstanceIdentifier:
     Type: String
     Default: labs-jj-postgres
@@ -34,11 +48,13 @@ Parameters:
 
   DbConnectionsThreshold:
     Type: Number
-    Default: 120
+    Default: 90
     Description: >-
       Alarm when DatabaseConnections exceeds this for 10 minutes. db.t3.small
-      has ~155 usable slots (max_connections minus rds_reserved); 120 is an
-      early warning with headroom to act before exhaustion.
+      has ~155 usable slots (max_connections minus rds_reserved). Was 120 and
+      never fired: the 2026-07-29 incident peaked at 106 and sat in the 90s for
+      50 minutes, entirely under the old threshold. Steady state is 5-15, so 90
+      is still ~6x headroom over normal while actually catching that shape.
 
   WebLogGroupName:
     Type: String
@@ -50,8 +66,56 @@ Parameters:
     Default: /ecs/labs-jj-worker
     Description: CloudWatch log group for the celery worker/beat service.
 
+  ClusterName:
+    Type: String
+    Default: labs-jj-cluster
+    Description: ECS cluster hosting the web and worker services.
+
+  WebServiceName:
+    Type: String
+    Default: labs-jj-web
+    Description: ECS service for the web tier (the one that saturates).
+
+  LoadBalancerDimension:
+    Type: String
+    Default: app/labs-jj-alb/ffecbe258260c7ee
+    Description: >-
+      CloudWatch LoadBalancer dimension value for the labs ALB (the
+      "app/<name>/<id>" suffix of the ALB ARN, not the ARN itself).
+
+  TargetGroupDimension:
+    Type: String
+    Default: targetgroup/labs-jj-target-group/d844a0f01a3b9e70
+    Description: >-
+      CloudWatch TargetGroup dimension value for the web target group.
+
+  WebCpuThreshold:
+    Type: Number
+    Default: 90
+    Description: >-
+      Alarm when web-service CPU stays at/above this for 15 minutes. Median web
+      CPU over the 5 days to 2026-07-29 was 0.8%; above 90% accounts for ~1.1h
+      of those 5 days and is almost entirely the incident itself.
+
+  LatencyP95Threshold:
+    Type: Number
+    Default: 10
+    Description: >-
+      Alarm when ALB p95 target response time (seconds) stays above this for 15
+      minutes. Median p95 over the same 5 days was 0.23s and only 1.7% of
+      5-minute buckets exceeded 10s, so this is a rare, meaningful signal.
+
+  Elb5xxThreshold:
+    Type: Number
+    Default: 25
+    Description: >-
+      Alarm when the ALB itself returns this many 5xx in 5 minutes. ELB-generated
+      5xx (as opposed to target 5xx) mean the ALB could not get a usable response
+      — the shape seen during the incident, which peaked at 84.
+
 Conditions:
   HasAlarmEmail: !Not [!Equals [!Ref AlarmEmail, '']]
+  HasAgentAlarmEmail: !Not [!Equals [!Ref AgentAlarmEmail, '']]
 
 Resources:
   # ── Alert topic ────────────────────────────────────────────────────
@@ -68,6 +132,17 @@ Resources:
       TopicArn: !Ref AlertTopic
       Protocol: email
       Endpoint: !Ref AlarmEmail
+
+  # The subscriber that is actually confirmed and receiving. Subscribe is
+  # idempotent for the same topic+protocol+endpoint, so this adopts the live
+  # subscription rather than creating a duplicate.
+  AgentAlertEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAgentAlarmEmail
+    Properties:
+      TopicArn: !Ref AlertTopic
+      Protocol: email
+      Endpoint: !Ref AgentAlarmEmail
 
   # ── RDS connection-count alarm (the primary early-warning) ──────────
   # The 2026-06-29 incident climbed 43 -> 87 -> exhaustion with NO alert.
@@ -139,6 +214,125 @@ Resources:
       ComparisonOperator: GreaterThanOrEqualToThreshold
       TreatMissingData: notBreaching
       AlarmActions: [!Ref AlertTopic]
+
+  # ══════════════════════════════════════════════════════════════════
+  # Performance alarms — added after the 2026-07-29 incident
+  #
+  # For 54 minutes (07:33-08:27 MDT) the single web task sat at 100% CPU,
+  # ALB p95 latency ran into the tens of seconds, and Postgres connections
+  # climbed to 106. Every alarm in this stack stayed OK the entire time,
+  # because all three watched the DATABASE and the problem was the WEB TIER.
+  # The DB was healthy throughout: 7-12% CPU, sub-millisecond IO.
+  #
+  # These three alarms watch the signals that were actually screaming.
+  # Thresholds are set from the measured 5-day distribution rather than
+  # picked by feel — see each parameter's Description.
+  # ══════════════════════════════════════════════════════════════════
+
+  # ── Web tier saturation (the signal that would have caught it first) ──
+  WebCpuHighAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: labs-jj-web-cpu-high
+      AlarmDescription: >-
+        The web service has been pinned near 100% CPU for 15 minutes. It runs a
+        single task on 1 vCPU, so this means requests are queueing and the site
+        is effectively down for everyone. Usual cause is a request path fanning
+        out remote calls in a loop. Check the web log group for one URL repeating
+        at high volume before reaching for a scale-up.
+      Namespace: AWS/ECS
+      MetricName: CPUUtilization
+      Dimensions:
+        - Name: ClusterName
+          Value: !Ref ClusterName
+        - Name: ServiceName
+          Value: !Ref WebServiceName
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: !Ref WebCpuThreshold
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+      OKActions: [!Ref AlertTopic]
+
+  # ── User-visible slowness ──────────────────────────────────────────
+  # p95, not Average: Average is dragged to ~0 by health checks and static
+  # assets and stayed unremarkable through the whole incident.
+  TargetLatencyHighAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: labs-jj-alb-latency-high
+      AlarmDescription: >-
+        ALB p95 target response time has been above threshold for 15 minutes —
+        real users are waiting tens of seconds. Deliberately NOT a timeout
+        change: long-running audit work legitimately needs the 600s gunicorn
+        and ALB idle timeouts. This alarm is how we find out that the long
+        requests are hurting, since the timeouts will never tell us.
+      Namespace: AWS/ApplicationELB
+      MetricName: TargetResponseTime
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !Ref LoadBalancerDimension
+      ExtendedStatistic: p95
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: !Ref LatencyP95Threshold
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+      OKActions: [!Ref AlertTopic]
+
+  # ── ALB-generated 5xx (502/503/504) ────────────────────────────────
+  Elb5xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: labs-jj-alb-5xx-high
+      AlarmDescription: >-
+        The ALB is returning 5xx it generated itself — it could not get a usable
+        response from the web task (no healthy target, connection refused, or the
+        idle timeout elapsed). Distinct from target 5xx, which mean the app
+        answered with an error; during the 2026-07-29 incident target 5xx was 1
+        while ELB 5xx peaked at 84, so watching only application errors misses it.
+      Namespace: AWS/ApplicationELB
+      MetricName: HTTPCode_ELB_5XX_Count
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !Ref LoadBalancerDimension
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: !Ref Elb5xxThreshold
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
+  # ── No healthy target at all ───────────────────────────────────────
+  # desiredCount is 1, so losing the one task is a full outage with no
+  # redundancy to absorb it.
+  NoHealthyTargetsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: labs-jj-web-no-healthy-targets
+      AlarmDescription: >-
+        The web target group has no healthy target — labs is down. The service
+        runs desiredCount=1, so a single task death is a total outage and a
+        deploy has no capacity margin.
+      Namespace: AWS/ApplicationELB
+      MetricName: HealthyHostCount
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !Ref LoadBalancerDimension
+        - Name: TargetGroup
+          Value: !Ref TargetGroupDimension
+      Statistic: Minimum
+      Period: 60
+      EvaluationPeriods: 3
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref AlertTopic]
+      OKActions: [!Ref AlertTopic]
 
 Outputs:
   AlertTopicArn:
