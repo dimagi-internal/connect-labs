@@ -294,7 +294,7 @@ class ExperimentBulkAssessmentView(LoginRequiredMixin, DetailView):
         data_access = AuditDataAccess(request=self.request)
         try:
             # Try to find the session across all opportunities the user has access to
-            session = data_access.get_audit_session(session_id, try_multiple_opportunities=True)
+            session = data_access.get_audit_session(session_id)
             if not session:
                 from django.http import Http404
 
@@ -351,7 +351,7 @@ class ExperimentSaveAuditView(LoginRequiredMixin, View):
 
             try:
                 # Get session
-                session = data_access.get_audit_session(session_id, try_multiple_opportunities=True)
+                session = data_access.get_audit_session(session_id)
                 if not session:
                     return JsonResponse({"error": "Session not found"}, status=404)
 
@@ -408,7 +408,7 @@ class ExperimentAuditDeleteView(LoginRequiredMixin, View):
             try:
                 # Get session (confirms it exists and the user's OAuth scope can see it
                 # before we attempt the delete)
-                session = data_access.get_audit_session(session_id, try_multiple_opportunities=True)
+                session = data_access.get_audit_session(session_id)
                 if not session:
                     return JsonResponse({"error": "Session not found"}, status=404)
 
@@ -435,7 +435,7 @@ class ExperimentAuditCompleteView(LoginRequiredMixin, View):
 
             try:
                 # Get session
-                session = data_access.get_audit_session(session_id, try_multiple_opportunities=True)
+                session = data_access.get_audit_session(session_id)
                 if not session:
                     return JsonResponse({"error": "Session not found"}, status=404)
 
@@ -524,7 +524,7 @@ class ExperimentAuditUncompleteView(LoginRequiredMixin, View):
     def post(self, request, session_id):
         data_access = AuditDataAccess(request=request)
         try:
-            session = data_access.get_audit_session(session_id, try_multiple_opportunities=True)
+            session = data_access.get_audit_session(session_id)
             if not session:
                 return JsonResponse({"error": "Session not found"}, status=404)
 
@@ -547,7 +547,7 @@ class ExperimentApplyAssessmentResultsView(LoginRequiredMixin, View):
     def post(self, request, session_id):
         data_access = AuditDataAccess(request=request)
         try:
-            session = data_access.get_audit_session(session_id, try_multiple_opportunities=True)
+            session = data_access.get_audit_session(session_id)
             if not session:
                 return JsonResponse({"error": "Session not found"}, status=404)
 
@@ -614,7 +614,7 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
     def get(self, request, session_id):
         data_access = AuditDataAccess(request=request)
         try:
-            session = data_access.get_audit_session(session_id, try_multiple_opportunities=True)
+            session = data_access.get_audit_session(session_id)
             if not session:
                 return JsonResponse({"error": "Session not found"}, status=404)
 
@@ -1016,7 +1016,7 @@ def _resolve_visit_cluster_group(data_access, request, session_id, group_id):
     """Shared lookup for the cluster CSV export and JSON images views: the
     session, the requested group, and per-visit Connect link + GPS data.
     Returns (error_response, context) — context is None when error_response is set."""
-    session = data_access.get_audit_session(session_id, try_multiple_opportunities=True)
+    session = data_access.get_audit_session(session_id)
     if not session:
         return JsonResponse({"error": "Session not found"}, status=404), None
 

@@ -289,6 +289,7 @@ class LabsRecordAPIClient:
         experiment: str | None = None,
         type: str | None = None,
         model_class: type[LocalLabsRecord] | None = None,
+        opportunity_id: int | None = None,
     ) -> LocalLabsRecord | None:
         """Get a single record by ID.
 
@@ -300,14 +301,21 @@ class LabsRecordAPIClient:
             experiment: Optional experiment name filter (optimization hint)
             type: Optional record type filter (optimization hint)
             model_class: Optional proxy model class to instantiate
+            opportunity_id: Override the client's opportunity scope for this one
+                call. Lets a caller sweep several opportunity scopes on a SINGLE
+                client — one connection pool, HTTP keep-alive, one TLS handshake
+                — instead of constructing a client (and paying a fresh TLS
+                handshake) per opportunity. See AuditDataAccess.get_audit_session.
 
         Returns:
             LocalLabsRecord instance (or proxy model) or None if not found
         """
-        if self._is_labs_only():
+        effective_opportunity_id = self._effective_opportunity_id(opportunity_id)
+
+        if self._is_labs_only(opportunity_id):
             return _local_backend.get_record_by_id(
                 record_id=record_id,
-                opportunity_id=self.opportunity_id,
+                opportunity_id=effective_opportunity_id,
                 experiment=experiment,
                 type=type,
                 model_class=model_class,
@@ -320,13 +328,21 @@ class LabsRecordAPIClient:
             if type:
                 params["type"] = type
 
-            # Include scope params so the API can authorize access to non-public records
-            if self.organization_id and isinstance(self.organization_id, int):
-                params["organization_id"] = self.organization_id
-            if self.program_id:
-                params["program_id"] = self.program_id
-            if self.opportunity_id:
-                params["opportunity_id"] = self.opportunity_id
+            # Include scope params so the API can authorize access to non-public records.
+            # When an explicit opportunity_id override is given it is the ONLY scope sent:
+            # the server's GET handler picks the first scope param it finds (opportunity,
+            # then program, then org) and filters on it literally, so leaking this client's
+            # program/org scope alongside an overridden opportunity would silently query
+            # the wrong scope.
+            if opportunity_id is not None:
+                params["opportunity_id"] = effective_opportunity_id
+            else:
+                if self.organization_id and isinstance(self.organization_id, int):
+                    params["organization_id"] = self.organization_id
+                if self.program_id:
+                    params["program_id"] = self.program_id
+                if self.opportunity_id:
+                    params["opportunity_id"] = self.opportunity_id
 
             response = self.http_client.get(url, params=params)
             response.raise_for_status()
