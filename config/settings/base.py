@@ -181,6 +181,16 @@ AUTH_USER_MODEL = "users.User"
 LOGIN_REDIRECT_URL = "/labs/overview/"
 LOGIN_URL = "/labs/login/"
 
+# Multi-site host contract. Labs and each standalone satellite site (supply,
+# campaign, and any future site) share ONE Django auth realm — one users.User
+# table and one session cookie — so being logged into any site authenticates
+# you everywhere. LabsOAuthSessionMiddleware is the labs boundary: it logs out
+# any authenticated request to a labs path that lacks a live labs OAuth session,
+# so a satellite login never becomes a labs login. Each satellite MUST list its
+# URL prefix here (next to its INSTALLED_APPS + urls.py entries) or its own
+# users get logged out on every request to it. See docs/multi-site-auth.md.
+LABS_SATELLITE_URL_PREFIXES = ["/supply/", "/campaign/"]
+
 # PASSWORDS
 # ------------------------------------------------------------------------------
 PASSWORD_HASHERS = [

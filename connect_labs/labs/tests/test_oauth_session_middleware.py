@@ -171,6 +171,40 @@ def test_missing_labs_oauth_payload_logs_user_out():
 
 
 @pytest.mark.django_db
+@override_settings(LABS_SATELLITE_URL_PREFIXES=["/supply/", "/campaign/"])
+def test_satellite_paths_are_skipped():
+    """A satellite site's own paths must NOT be reconciled — its users have no
+    labs_oauth (they use the satellite's own auth), so checking them would log
+    every satellite user out. This is the multi-site host contract."""
+    user = User.objects.create(username="supplier")
+    request = _make_request("/supply/dashboard/", user, session_data=None)
+
+    _run(request)
+
+    assert request.user.is_authenticated  # untouched on its own site
+
+
+@pytest.mark.django_db
+@override_settings(LABS_SATELLITE_URL_PREFIXES=["/newsite/"])
+def test_new_satellite_prefix_is_honored_via_setting():
+    """Adding a site is a one-line LABS_SATELLITE_URL_PREFIXES change — no edit to
+    this module. The new prefix is skipped; a labs path with no labs_oauth is
+    still logged out (the boundary that stops a satellite login becoming a labs
+    login)."""
+    from connect_labs.labs.oauth_session import get_skip_path_prefixes
+
+    assert "/newsite/" in get_skip_path_prefixes()
+
+    on_newsite = _make_request("/newsite/home/", User.objects.create(username="n1"), session_data=None)
+    _run(on_newsite)
+    assert on_newsite.user.is_authenticated  # skipped
+
+    on_labs = _make_request("/microplans/", User.objects.create(username="n2"), session_data=None)
+    _run(on_labs)
+    assert not on_labs.user.is_authenticated  # labs path still gated
+
+
+@pytest.mark.django_db
 def test_anonymous_user_is_no_op():
     """Anonymous requests aren't touched — login mixins handle them."""
     from django.contrib.auth.models import AnonymousUser
