@@ -854,3 +854,105 @@ screen behind them.
   is invisible; and the "ranked against every other exception" claim on the
   partner's own screen is still asserted rather than shown.
 * No video render, no VO timing eval, nothing uploaded to canopy-web.
+
+---
+
+# Addendum 5 — 2026-07-28, round 3: partial judging, and a defect the fixes exposed
+
+**Only four of eight judges completed.** The command-centre arc and concept lenses,
+the money-to-child concept lens and the partner-pipeline concept lens all
+terminated on the session API limit. The partner-pipeline concept judge got far
+enough to dispatch its six per-scene visual judges, all of which returned, so
+that narrative has scene-level judgement but no assembled verdict.
+
+| narrative | arc | concept |
+| --- | --- | --- |
+| `oes-supply-base` | **3** (3.15 weighted) | 2 — three dimensions up from 2 |
+| `oes-money-to-child` | 2 (2.75, up from 2.55) | *did not complete* |
+| `oes-partner-pipeline` | 2 (3.10) | *per-scene only: 3,2,3,2,3,2* |
+| `oes-command-centre` | *did not complete* | *did not complete* |
+
+## AC. What round 2's fixes actually achieved, per the judges
+
+Confirmed fixed, verified against the frames rather than taken on trust:
+
+* **The award now produces its contract.** Scene 9 opens `OES-C-2026-NG2`, obligated
+  $2,537,400 = 60,000 × $42.29, awarded under the tender scene 8 awarded on camera.
+  The arc judge calls it "the run's real improvement".
+* **The duplicate prior tender is gone.**
+* **The scope inversion is gone** — Nigeria 25,863 < contract 33,000 < all-sources
+  58,251, and carton counts read "courses".
+* **The batch→distribution join is correct** on every row cross-checkable against
+  the receiving table.
+* **The MUAC charts fill their width**; scene 5's closing scroll lands on the row it
+  created; the money-to-child persona handoff frame is now a full-bleed table.
+
+## AD. A fix measured and refuted
+
+The partner-pipeline scene 2 retarget — footnote to `thead` — **moved the camera 30
+pixels**. The judge aligned the two frames and found **95.3% of the 690 overlapping
+pixel rows identical**. It was recorded in the last addendum as fixing "the binding
+scene". It did not.
+
+That is the second time in this run that something recorded as an improvement was
+refuted by an independent judge with a measurement. Both times the check was
+cheap and the belief was expensive.
+
+**It also exposes a real blind spot in our own tooling.** `duplicate_frames` passed
+this pair, because a 30px scroll shifts far more than 2% of pixels while showing
+the same content. A gate that exists to catch "the same surface twice" does not
+catch the most common way that happens. A scroll-invariant comparison — align the
+two frames at their best vertical offset and measure the overlap — would have.
+
+## AE. The recurring shape, third instance: fixing the join exposed the cohort
+
+Making the batch→distribution join real means a batch now resolves to a specific
+site on a specific date. That immediately made a pre-existing data defect
+checkable, and the scene-6 judge checked it:
+
+* the batch was distributed to Monguno on **22 July**, the page is as of **29 July**,
+  and the hero child is labelled **"9 visits over 8 weeks"**. An eight-week course
+  cannot belong to a batch that landed seven days ago.
+* **14 of 14 recorded outcomes are "Recovered"** — no defaulters, no non-response,
+  no transfers — and all fourteen MUAC trajectories are smoothly monotonic. A CMAM
+  adviser reads that as generated, not as a cohort. The seeder aims at the Sphere
+  thresholds in aggregate but produces no variation in the sample actually shown.
+
+Neither is caused by the join fix; both were unreachable before it, because the
+batch resolved to a shipment the site never received and no date could be checked
+against anything. This is the same shape as the expiry/reallocation bug: **making a
+capability real is what makes its data checkable, and the check then fails.**
+
+## AF. Product defects found by the per-scene judges, not yet fixed
+
+* **The distribution calendar's stated rule and its rendered colours disagree.** The
+  card says a cell is short "exactly when the second number is below the first";
+  Askira (38 on hand + 94 inbound against 63 booked) renders amber and Biu (0 + 141
+  against 94) renders red. Both pass the stated test. The real rule appears to be
+  "depends on stock that has not arrived", which is never stated.
+* **"4 Distributions not covered" reconciles with no reading of the grid** beneath it
+  — two non-green cells, zero short by the stated rule.
+* **`SHP-2026-0909` is tagged "Entered by hand"**, but scene 4's narration says the
+  count was taken "against the despatch advice". The advised 900 it is checked
+  against is itself hand-keyed, so the evidentiary contrast the scene rests on does
+  not exist for that record.
+* **The shortfall quantum is not reconstructable.** 94 = two weeks of burn (470)
+  minus stock on hand (375); the two-week horizon appears nowhere on screen.
+* **The MUAC charts have no axes and no shared y-scale**, so the threshold crossing
+  is only actually legible in one of fourteen rows.
+
+## AG. Where supply-base's remaining points are
+
+Its concept verdict is now capped by **motion_friction alone**, and every cause is a
+recipe fix:
+
+1. scene 4 never clicks **"Record decision"** — verified in `tab_rounds.jsx` that
+   Qualify/Reject only set local state — so scene 5's registry shows Savanna
+   expiring **Feb 2027**, not the **Jan 2028** granted on camera;
+2. scene 3 opens the **2026-A** application while scene 4 reviews **2026-B**, so the
+   profile the viewer watches freeze is not the one Tomas assesses;
+3. scene 7's sticky header occludes the Maiduguri lot title on the exact hold where
+   the narration names it.
+
+Plus one data bug: the Sudan lot renders **"40,000 truck-months"** in scene 6 and
+**40,000 cartons** in scene 9's pipeline table — one record, two units.
