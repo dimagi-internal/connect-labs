@@ -144,7 +144,15 @@ class GenericTimelineDataStreamView(AnalysisPipelineSSEMixin, BaseSSEStreamView)
         first_weight = first_row.computed.get("weight")
         current_weight = last_row.computed.get("weight")
 
-        logger.info(f"[Timeline Stream] Weight extraction - first: {first_weight}, current: {current_weight}")
+        # Do NOT log the weight values — this is per-patient clinical data, and at
+        # INFO it also becomes a Sentry breadcrumb (LoggingIntegration level=INFO),
+        # shipping PHI to a third-party processor on the next error. Log presence
+        # only.
+        logger.debug(
+            "[Timeline Stream] Weight extraction present first=%s current=%s",
+            first_weight is not None,
+            current_weight is not None,
+        )
 
         if first_weight is not None:
             header["starting_weight"] = first_weight
@@ -157,7 +165,10 @@ class GenericTimelineDataStreamView(AnalysisPipelineSSEMixin, BaseSSEStreamView)
         else:
             header["weight_gain"] = None
 
-        logger.info(f"[Timeline Stream] Header data with weights: {header}")
+        # `header` carries per-patient demographic + weight fields — never log its
+        # contents (PHI, and an INFO line becomes a Sentry breadcrumb). Log the
+        # shape only.
+        logger.debug("[Timeline Stream] Header assembled with %d field(s)", len(header))
 
         # Extract data for each visit from computed fields (including images)
         visit_data = []

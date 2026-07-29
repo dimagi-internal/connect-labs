@@ -559,7 +559,14 @@ class LabsRecordAPIClient:
             return
 
         if self._is_labs_only():
-            _local_backend.delete_records(record_ids=record_ids)
+            # Scope the delete to this client's own labs-only opp/program so a
+            # client scoped to one tenant can't delete another tenant's records
+            # by id (the local backend has no membership check behind it).
+            _local_backend.delete_records(
+                record_ids=record_ids,
+                opportunity_id=self.opportunity_id,
+                program_id=self.program_id,
+            )
             return
 
         try:

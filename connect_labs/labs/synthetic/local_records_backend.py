@@ -183,7 +183,28 @@ def update_record(
     return LocalLabsRecord(row.to_api_dict())
 
 
-def delete_records(*, record_ids: list[int]) -> None:
+def delete_records(
+    *,
+    record_ids: list[int],
+    opportunity_id: int | None = None,
+    program_id: int | None = None,
+) -> None:
+    """Delete labs-only records, scoped to the caller's opportunity/program.
+
+    The scope filter is what isolates one labs-only tenant from another: without
+    it, a client legitimately scoped to opp A could delete records belonging to
+    opp B just by passing their ids (there is no membership check behind the
+    local backend). Mirrors the scoping ``update_record``/``get_records`` already
+    enforce. A caller must supply at least one scope; an unscoped delete is
+    refused rather than allowed to span every tenant.
+    """
     if not record_ids:
         return
-    LabsLocalRecord.objects.filter(id__in=record_ids).delete()
+    qs = LabsLocalRecord.objects.filter(id__in=record_ids)
+    if opportunity_id is not None:
+        qs = qs.filter(opportunity_id=opportunity_id)
+    elif program_id is not None:
+        qs = qs.filter(program_id=program_id)
+    else:
+        raise ValueError("delete_records requires an opportunity_id or program_id scope")
+    qs.delete()

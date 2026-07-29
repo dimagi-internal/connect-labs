@@ -17,6 +17,19 @@ from .roles import resolve_role
 
 User = get_user_model()
 
+# Supply self-registration writes to the SHARED ``users.User`` table (the same
+# one the labs app authenticates against), and labs derives staff/admin access
+# purely from the account's e-mail domain. So an open signup that accepted a
+# ``@dimagi.com`` / ``@dimagi-ai.com`` address would mint a labs "Dimagi admin"
+# from an anonymous, unverified web form — and would let an attacker pre-claim a
+# real Dimagi user's username before they first OAuth in. Those identities must
+# only ever come through the real OAuth flow, never open registration (this
+# module's own docstring: "staff accounts are seeded only"). Reject the
+# privileged domains here. NOTE: this closes the privilege-escalation and
+# account-takeover paths but does not make supply-created accounts non-labs
+# users — see the security-audit issue for the architectural fix.
+_PRIVILEGED_SIGNUP_DOMAINS = ("@dimagi.com", "@dimagi-ai.com")
+
 
 def ping(request):
     return JsonResponse({"status": "ok"})
@@ -31,6 +44,9 @@ class SignupForm(forms.Form):
 
     def clean_email(self):
         email = self.cleaned_data["email"].strip().lower()
+        if any(email.endswith(domain) for domain in _PRIVILEGED_SIGNUP_DOMAINS):
+            # Dimagi accounts are provisioned via OAuth, never open signup.
+            raise forms.ValidationError("Accounts on this domain cannot be created here. Please sign in instead.")
         if User.objects.filter(email__iexact=email).exists() or User.objects.filter(username=email).exists():
             raise forms.ValidationError("An account with that email address already exists.")
         return email

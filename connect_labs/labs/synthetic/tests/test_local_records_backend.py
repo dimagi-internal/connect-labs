@@ -160,8 +160,28 @@ def test_backend_update_missing_raises(labs_only_opp):
 def test_backend_delete_records(labs_only_opp):
     rec_a = backend.create_record(opportunity_id=10_000, experiment="e", type="t", data={})
     rec_b = backend.create_record(opportunity_id=10_000, experiment="e", type="t", data={})
-    backend.delete_records(record_ids=[rec_a.id, rec_b.id])
+    backend.delete_records(record_ids=[rec_a.id, rec_b.id], opportunity_id=10_000)
     assert LabsLocalRecord.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_backend_delete_records_is_scoped_to_opportunity(labs_only_opp):
+    """A delete scoped to opp A must not remove opp B's records even if their
+    ids are passed — the scope filter is the cross-tenant isolation boundary."""
+    mine = backend.create_record(opportunity_id=10_000, experiment="e", type="t", data={})
+    other = LabsLocalRecord.objects.create(opportunity_id=10_001, experiment="e", type="t", data={})
+    backend.delete_records(record_ids=[mine.id, other.id], opportunity_id=10_000)
+    assert not LabsLocalRecord.objects.filter(id=mine.id).exists()
+    # other tenant's record survives despite its id being in the request
+    assert LabsLocalRecord.objects.filter(id=other.id).exists()
+
+
+@pytest.mark.django_db
+def test_backend_delete_records_requires_scope(labs_only_opp):
+    rec = backend.create_record(opportunity_id=10_000, experiment="e", type="t", data={})
+    with pytest.raises(ValueError, match="requires an opportunity_id or program_id"):
+        backend.delete_records(record_ids=[rec.id])
+    assert LabsLocalRecord.objects.filter(id=rec.id).exists()
 
 
 # ─── LabsRecordAPIClient dispatch ──────────────────────────────────────────
