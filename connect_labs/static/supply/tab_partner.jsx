@@ -29,40 +29,75 @@ function PartnerTab({ ctx }) {
   const openSignals = signals.filter((s) => s.status !== 'resolved');
   const atRisk = plans.filter((p) => p.state !== 'covered');
 
+  // The thresholds the cover card already states in words: at four weeks you
+  // plan, at one you triage. Stated once, here, so the tile and the table
+  // cannot disagree about what counts as bad.
+  // Distributions that resolve to something, first.
+  //
+  // A distribution handed out three days ago legitimately has no treatment
+  // records yet, and one per batch received means there are now several of
+  // them. Sorted by date alone, the card whose whole point is that a batch
+  // resolves FORWARD opened with seven consecutive rows reading zero.
+  const traceable = [...records].sort(
+    (a, b) =>
+      (b.outcomes || []).length - (a.outcomes || []).length ||
+      (a.distributed_on < b.distributed_on ? 1 : -1),
+  );
+
+  const worstWeeks = worst ? worst.weeks_of_cover : null;
+  const worstTone =
+    worstWeeks === null
+      ? undefined
+      : worstWeeks < 2
+      ? 'critical'
+      : worstWeeks < 4
+      ? 'at-risk'
+      : 'ok';
+
   return (
     <Page
       title={world.org ? world.org.legal_name : 'Partner'}
       lede="Inbound supply against the distributions you have planned — and how long each site's stock lasts."
     >
+      {/* Thinnest cover LEADS. It is the only figure here that says a child
+          may go without, and it used to be rendered at the same size and
+          weight as a static count of feeding sites. */}
       <KeyFigures
         figures={[
-          { label: 'Feeding sites', value: sites.length },
-          {
-            label: 'Distributions not covered',
-            value: atRisk.length,
-            hint: atRisk.length
-              ? 'inbound supply falls short of what is booked in'
-              : 'every planned day is covered',
-          },
           {
             label: 'Thinnest cover',
             value: worst ? `${worst.weeks_of_cover} wk` : '—',
+            lead: true,
+            tone: worstTone,
             hint: worst
               ? worst.stockout_on
                 ? `${worst.node_name} runs dry ${formatDate(worst.stockout_on)}`
                 : `${worst.node_name} is awaiting its first consignment`
               : '',
+            method:
+              'Stock on hand divided by the rate this site is admitting children. Stock is receipts minus despatches from the event log; the rate is the district SAM caseload shared between the sites serving it, at one carton per full course. At four weeks you plan; at one you triage.',
           },
           {
-            label:
-              openSignals.length === 1
-                ? 'Shortfall raised'
-                : 'Shortfalls raised',
-            value: openSignals.length,
-            hint: openSignals.length
-              ? 'awaiting an answer from OES'
-              : 'none open',
+            label: 'Distributions not covered',
+            value: atRisk.length,
+            tone: atRisk.length ? 'at-risk' : 'ok',
+            hint: atRisk.length
+              ? 'inbound supply falls short of what is booked in'
+              : 'every planned day is covered',
+            method:
+              'A planned distribution is covered when the cartons projected to be on hand that day — including consignments scheduled to land by then — reach the children booked in for it.',
           },
+          {
+            // Counts what is OPEN, and now says so. The label read
+            // "Shortfalls raised" above a table listing one already raised.
+            label: 'Shortfalls awaiting an answer',
+            value: openSignals.length,
+            tone: openSignals.length ? 'at-risk' : undefined,
+            hint: openSignals.length
+              ? 'reported to OES, not yet answered'
+              : `${signals.length} raised, all answered`,
+          },
+          { label: 'Feeding sites', value: sites.length },
         ]}
       />
 
@@ -265,11 +300,11 @@ function PartnerTab({ ctx }) {
 
       <Card
         title="From a batch to the children it treated"
-        subtitle="Each distribution resolves to the batch that supplied it and to the treatment records of the children it fed."
+        subtitle="Each distribution resolves to the batch that supplied it and to the treatment records of the children it fed. Distributions with outcomes recorded are listed first — a batch handed out last week has none yet."
       >
         {records.length ? (
           <DataTable
-            rows={records}
+            rows={traceable}
             rowKey={(r) => r.id}
             onRowClick={(r) => setBatch(r)}
             columns={[
@@ -655,9 +690,28 @@ function DistributionWeekGrid({ plans }) {
   // site, and the children booked in for each day", and a fortnight of columns
   // both contradicts that and overflows the content area — which scrolled the
   // whole page sideways and took the nav rail off the left edge.
-  const days = Array.from(new Set(plans.map((p) => p.scheduled_for)))
-    .sort()
-    .slice(0, 7);
+  // A CONTIGUOUS seven days, not the first seven days that happen to have a
+  // distribution on them. Taking the distinct planned dates worked only while
+  // every site sat on its own day; once the schedule was allowed to cluster
+  // the way a real one does, seven distinct dates spanned eleven calendar days
+  // with the gaps silently removed — a grid headed "a week" running Thu 30 Jul
+  // to Sun 9 Aug. The empty columns are the point: the legend already says an
+  // empty cell is a day with nothing planned.
+  const planned = Array.from(new Set(plans.map((p) => p.scheduled_for))).sort();
+  const first = parseSupplyDate(planned[0]);
+  const days = [];
+  for (let i = 0; i < 7 && first; i += 1) {
+    const d = new Date(
+      first.getFullYear(),
+      first.getMonth(),
+      first.getDate() + i,
+    );
+    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(
+      2,
+      '0',
+    )}-${String(d.getDate()).padStart(2, '0')}`;
+    days.push(iso);
+  }
   const daySet = new Set(days);
   plans = plans.filter((p) => daySet.has(p.scheduled_for));
   const sites = Array.from(new Set(plans.map((p) => p.site_name))).sort();

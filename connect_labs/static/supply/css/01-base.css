@@ -14,6 +14,30 @@
   --oes-radius: 10px;
   --oes-shadow: 0 1px 2px rgba(16, 34, 28, 0.06),
     0 8px 24px rgba(16, 34, 28, 0.06);
+
+  /* ---- Semantic status, separate from the brand -----------------------
+     The brand green was doing double duty as "this is OES" and "this is
+     fine", so a healthy figure and a header pill were the same colour and
+     nothing on a screen full of green read as reassuring. These four are
+     the ONLY colours allowed to mean something about a number. */
+  --oes-critical: #b42318;
+  --oes-critical-bg: #fef3f2;
+  --oes-at-risk: #b54708;
+  --oes-at-risk-bg: #fffaeb;
+  --oes-ok: #067647;
+  --oes-ok-bg: #ecfdf3;
+  --oes-neutral: #4a5f58;
+  --oes-neutral-bg: #f2f4f3;
+
+  /* ---- Type scale ------------------------------------------------------
+     Four steps and two weights. Everything on these screens was rendered
+     in two sizes of grey, so a static housekeeping count and a site with
+     nothing left to give a child looked identical. */
+  --oes-display: 34px;
+  --oes-figure: 26px;
+  --oes-body: 14px;
+  --oes-small: 12.5px;
+  --oes-micro: 11.5px;
 }
 
 * {

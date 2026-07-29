@@ -214,17 +214,103 @@
   border: 1px solid var(--oes-line);
   border-radius: var(--oes-radius);
   padding: 16px;
+  position: relative;
 }
 .keyfigure-value {
-  font-size: 28px;
+  font-size: var(--oes-figure);
   font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1.1;
+  font-variant-numeric: tabular-nums;
 }
 .keyfigure-label {
   font-size: 13px;
   color: var(--oes-ink-soft);
   margin-top: 4px;
+}
+
+/* The one figure the row is built around. */
+.keyfigure-lead {
+  grid-column: span 2;
+}
+.keyfigure-lead .keyfigure-value {
+  font-size: var(--oes-display);
+}
+@media (max-width: 900px) {
+  .keyfigure-lead {
+    grid-column: span 1;
+  }
+}
+
+/* Status, and ONLY status, carries colour. A left bar rather than a tint:
+   it survives a projector, and it does not turn the whole tile into a
+   warning when only the number is one. */
+.keyfigure.tone-critical,
+.keyfigure.tone-at-risk,
+.keyfigure.tone-ok {
+  border-left-width: 4px;
+}
+.keyfigure.tone-critical {
+  border-left-color: var(--oes-critical);
+}
+.keyfigure.tone-critical .keyfigure-value {
+  color: var(--oes-critical);
+}
+.keyfigure.tone-at-risk {
+  border-left-color: var(--oes-at-risk);
+}
+.keyfigure.tone-at-risk .keyfigure-value {
+  color: var(--oes-at-risk);
+}
+.keyfigure.tone-ok {
+  border-left-color: var(--oes-ok);
+}
+
+/* ---- InfoNote: the method, on demand ---------------------------------- */
+.infonote {
+  position: relative;
+  display: inline-flex;
+  margin-left: 6px;
+  vertical-align: baseline;
+}
+.infonote-btn {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  border: 1px solid var(--oes-line);
+  background: var(--oes-panel);
+  color: var(--oes-ink-soft);
+  font-size: 10px;
+  font-style: italic;
+  font-family: Georgia, serif;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.infonote-btn:hover,
+.infonote-btn.open {
+  border-color: var(--oes-accent);
+  color: var(--oes-accent);
+  background: var(--oes-ok-bg);
+}
+.infonote-body {
+  position: absolute;
+  top: 22px;
+  left: -8px;
+  z-index: 30;
+  width: 320px;
+  max-width: 74vw;
+  background: var(--oes-ink);
+  color: #fff;
+  font-size: var(--oes-small);
+  font-weight: 400;
+  line-height: 1.5;
+  padding: 10px 12px;
+  border-radius: 8px;
+  box-shadow: var(--oes-shadow);
 }
 .keyfigure-hint {
   font-size: 11px;

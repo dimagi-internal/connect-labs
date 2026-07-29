@@ -65,10 +65,12 @@ scenes:
   - kind: hold
     seconds: 2.0
   - kind: scroll_to
-    target: css:.card:has-text('What a dollar bought') .method-note
-    note: this card's OWN method note. A bare .method-note matched a later card and
-      scrolled the frame onto the closing scene's payoff, so the finale's reveal was
-      already on screen three scenes early.
+    target: css:.card:has-text('What a dollar bought') .ladder-result
+    note: the ladder's CONCLUSION — the cost per child, at figure size. It used to be one
+      bolded number inside a five-line grey method paragraph, which was both the thing the
+      scene is about and the least readable text on the page; the method now sits behind an
+      "i" on that line. A bare .method-note also matched a later card and scrolled the frame
+      onto the closing scene's payoff.
   - kind: hold
     seconds: 2.4
     note: the method, in the same frame as the number

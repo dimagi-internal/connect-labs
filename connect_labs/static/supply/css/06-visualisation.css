@@ -450,3 +450,25 @@
 .exception-answered .muted {
   margin-top: 2px;
 }
+
+/* The unit ladder's conclusion, at the size of a conclusion.
+   It used to be one bolded number inside a five-line grey paragraph, under
+   four large tiles carrying lower-information figures. */
+.ladder-result {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--oes-line);
+}
+.ladder-result-value {
+  font-size: var(--oes-figure);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.ladder-result-label {
+  font-size: var(--oes-body);
+  color: var(--oes-ink-soft);
+}

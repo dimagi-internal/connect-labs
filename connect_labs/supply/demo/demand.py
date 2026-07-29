@@ -507,22 +507,42 @@ def seed_distribution_plans(rng, partner, sites):
 
     plans = []
     site_list = sorted(sites.values(), key=lambda n: n.name)
-    for offset, site in enumerate(site_list):
+    for site in site_list:
         weekly = cover.weekly_burn(site)
+        expected_week = int(round(float(weekly)))
+
+        # Which weekdays this site runs on.
+        #
+        # The day used to be `3 + alphabetical index % 7`, which put exactly one
+        # site on each day in name order: Askira Saturday, Biu Sunday, Damboa
+        # Monday, straight down a perfect diagonal across an otherwise empty
+        # grid. It is the largest element on the partner's main screen and it
+        # announced itself as generated at a glance — a reviewer called it a
+        # generator tell before they read a single number.
+        #
+        # Real feeding sites run on fixed weekdays, several sites share a day,
+        # and a big site runs more than once a week. Drawn from the shared PRNG
+        # so the world is still identical on every seed.
+        days_per_week = 2 if expected_week >= 900 else 1
+        weekdays = sorted(rng.sample(range(7), days_per_week))
+        per_day = max(int(round(expected_week / days_per_week)), 1)
+
         for week in (0, 1):
-            scheduled = TODAY + timedelta(days=3 + offset % 7 + week * 7)
-            expected = int(round(float(weekly)))
-            plan, _ = DistributionPlan.objects.update_or_create(
-                site=site,
-                scheduled_for=scheduled,
-                defaults={
-                    "org": partner,
-                    "expected_children": max(expected, 1),
-                    "cartons_required": Decimal(max(expected, 1)),
-                    "note": "",
-                },
-            )
-            plans.append(plan)
+            for weekday in weekdays:
+                scheduled = TODAY + timedelta(days=1 + weekday + week * 7)
+                # Attendance is not identical week to week.
+                expected = max(int(round(per_day * rng.uniform(0.88, 1.12))), 1)
+                plan, _ = DistributionPlan.objects.update_or_create(
+                    site=site,
+                    scheduled_for=scheduled,
+                    defaults={
+                        "org": partner,
+                        "expected_children": expected,
+                        "cartons_required": Decimal(expected),
+                        "note": "",
+                    },
+                )
+                plans.append(plan)
     return plans
 
 

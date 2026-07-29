@@ -60,11 +60,15 @@ function FunderTab({ ctx }) {
                   (obligated / appropriated) * 100,
                 )}% of appropriation`
               : null,
+            method:
+              'The sum of every contract signed against these envelopes, at its contracted quantity and price. Money committed — not yet paid, and not yet food.',
           },
           {
             label: 'Disbursed',
             value: shortMoney(disbursed),
             hint: 'paid against confirmed delivery only',
+            method:
+              'Paid only against consignments CONFIRMED at the place their contract names. A consignment on the road has moved no money, which is why this figure sits so far below obligated.',
           },
           // Courses, not children. Every one of these tiles used to say
           // "children treated" over a carton count, which is the exact
@@ -165,22 +169,20 @@ function FunderTab({ ctx }) {
             </div>
           </div>
         </div>
-        <p className="muted small method-note">
-          Method: one carton contains 150 × 92 g sachets, which is one child's
-          full course of treatment. Cost per child treated ={' '}
-          <strong>
+        {/* The figure, at the size of a finding — with its method one click
+            away rather than five lines of grey beneath it. */}
+        <div className="ladder-result">
+          <div className="ladder-result-value">
             {costPerChild ? formatMoney(costPerChild, 'USD') : '—'}
-          </strong>
-          , computed from disbursements against confirmed deliveries only —
-          consignments in transit are excluded. A carton counts once, on the leg
-          that arrives at the delivery place its contract names, so a
-          consignment moving in hops is not counted again at every hop. Haulage
-          and storage contracts are excluded here: they buy movement, not
-          cartons. The card below counts a wider set — every carton that crossed
-          into a district, including stock imported outside an OES supply
-          contract — so it reads higher, and deliberately is not reconciled with
-          this one. All figures in this environment are synthetic.
-        </p>
+          </div>
+          <div className="ladder-result-label">
+            cost per child treated
+            <InfoNote
+              label="cost per child treated"
+              text="One carton is 150 × 92 g sachets — one child's full course. Computed from disbursements against CONFIRMED deliveries only, so consignments in transit are excluded from both sides. A carton counts once, on the leg arriving at the delivery place its contract names, so a consignment moving in hops is not counted again at every hop. Haulage and storage contracts are excluded: they buy movement, not cartons."
+            />
+          </div>
+        </div>
       </Card>
 
       <Card
@@ -313,8 +315,14 @@ function TwoFiguresAndTheGap({ outcomes, records }) {
           <div className="figure-value">
             {formatNumber(outcomes.courses_delivered)}
           </div>
-          <div className="figure-label">Courses delivered</div>
-          <p className="muted small">{outcomes.courses_method}</p>
+          <div className="figure-label">
+            Courses delivered
+            <InfoNote
+              label="courses delivered"
+              text={outcomes.courses_method}
+            />
+          </div>
+          <p className="muted small">Arithmetic on the supply record.</p>
         </div>
         <div className="figure-block">
           <div className="figure-value">
@@ -325,9 +333,16 @@ function TwoFiguresAndTheGap({ outcomes, records }) {
             </span>
           </div>
           <div className="figure-label">
-            Recorded recoveries, in the observed sample
+            Recovered, of children discharged
+            <InfoNote
+              label="recorded recoveries"
+              text={outcomes.recovery_method}
+            />
           </div>
-          <p className="muted small">{outcomes.recovery_method}</p>
+          <p className="muted small">
+            {formatNumber(outcomes.children_in_treatment)} more are still in
+            treatment and count on neither side.
+          </p>
         </div>
         <div className="figure-block figure-gap">
           <div className="figure-value">
@@ -335,8 +350,11 @@ function TwoFiguresAndTheGap({ outcomes, records }) {
               ? '—'
               : `${outcomes.observed_recovery_rate}%`}
           </div>
-          <div className="figure-label">Observed recovery rate</div>
-          <p className="muted small">{outcomes.gap_note}</p>
+          <div className="figure-label">
+            Observed recovery rate
+            <InfoNote label="the gap" text={outcomes.gap_note} />
+          </div>
+          <p className="muted small">Sphere expects above 75%.</p>
         </div>
       </div>
       {batches.length ? (
@@ -647,15 +665,13 @@ function Sankey({ appropriations, contracts }) {
         )}
       </svg>
       <div className="muted small">
-        Widths are proportional to obligated dollars, on one scale across all
-        three columns, so each column sums to the same total —{' '}
-        {shortMoney(total)}. Every partner's inflow equals the sum of its
-        contracts, and every country's inflow equals the sum of the contracts
-        delivering there. The first column shows what each envelope has
-        committed, not its size: <strong>{shortMoney(residualTotal)}</strong> of
-        the {shortMoney(appropriated)} appropriated is not yet under contract,
-        and is reported here rather than drawn — at true scale it is most of the
-        diagram and every contract band collapses below a pixel.
+        Every column sums to {shortMoney(total)} obligated.{' '}
+        <strong>{shortMoney(residualTotal)}</strong> of the{' '}
+        {shortMoney(appropriated)} appropriated is not yet under contract.
+        <InfoNote
+          label="the funding diagram"
+          text="Widths are proportional to obligated dollars on one scale across all three columns, so each column sums to the same total. Every partner's inflow equals the sum of its contracts, and every country's inflow equals the sum of the contracts delivering there. The first column shows what each envelope has COMMITTED, not its size — the unobligated balance is reported rather than drawn, because at true scale it is most of the diagram and every contract band collapses below a pixel."
+        />
         {unattributed.length
           ? ` ${unattributed.length} contract${
               unattributed.length === 1 ? '' : 's'
