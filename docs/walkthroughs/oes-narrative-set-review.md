@@ -754,3 +754,103 @@ reads identically to a real pass.
   the 65 and 40 quoted in the session brief. The `-001` run reports show 63 and
   35 as well, so this is a difference between the brief and the last run dir,
   not a regression introduced here.
+
+---
+
+# Addendum 4 — 2026-07-28, round 2: judged, fixed, re-rendered
+
+The `-002` runs were judged by eight fresh independent agents (arc + concept
+on each narrative). Every narrative moved off the flat 2/5 the set had been
+stuck on, and the pattern in the verdicts changed shape: the narratives got
+better and **the camera became the binding constraint**.
+
+| narrative | arc (weighted / overall) | concept | was |
+| --- | --- | --- | --- |
+| `oes-supply-base` | 3.45 / **3** | 2 | 2 |
+| `oes-partner-pipeline` | 3.20 / 2 | 2 | 2 |
+| `oes-command-centre` | 2.85 / 2 | 2 | 2 |
+| `oes-money-to-child` | 2.55 / 2 | 2 | 2 |
+
+## Y. What the judges confirmed, independently
+
+Worth recording because it is the reason to keep paying for independent judges:
+
+* **§L's rewrite is true.** The supply-base concept judge reconciled all fifteen
+  unit-price × quantity products on screen and re-derived the split at
+  $3,374,400 ($42.18/carton) against $3,455,400 for the cheapest consolidation.
+  Scene 8 now scores the walkthrough's **best** claim_reality_coherence.
+* **The 7→8 weld works.** The command-centre arc judge verified in pixels that
+  scene 7's Askira row and scene 8's Closed row are the same row, that it sank
+  below the others, and that the headline moved by exactly the 87.
+* **Scene 5's inversion lands** — "the strongest data moment in the run".
+* **The counted-consignment finding was already fixed** before the run was
+  judged. Both the fresh judge and this session's own check agree: do not
+  inherit it. Verifying a judge's claim before acting on it paid for itself.
+
+## Z. Eight defects the second round found — one of them created by this branch
+
+**Making a capability visible is what exposes the code path nothing could
+reach.** Expiry-risk exceptions had never fired, so nothing had ever pressed
+the button on an expiry row — and that button ran the reallocation *backwards*.
+An expiry row names the node holding too MUCH; the queue offered "Reallocate to
+Djibo" on the row reporting Djibo at 25 weeks of cover, and posted
+`target_node_id` unconditionally. Following the product's own advice moved
+stock into the node that already could not use what it had. A row now declares
+whether its node is the source or the target of the move it advises.
+
+The rest, in rough order of how badly they undercut a stated claim:
+
+| defect | the claim it broke |
+| --- | --- |
+| the funder ladder mixed bases — confirmed money over every delivered carton, so its own endpoints divided to $15.21 against the $41.80 asserted three lines below | "stated as a chain, so every step can be checked" |
+| the government page repeated K1's per-leg double count: 53,246 against its own coverage table's 25,863, 800px apart | a number cannot mean two things |
+| a Kano warehouse-to-warehouse transfer was credited as "20,000 children covered" | a storage point serves no caseload |
+| "children treated" named three different numbers, all over carton counts | the card on that very page attacking that conflation |
+| coverage said "monthly SAM caseload" over a four-month denominator | "the method can be challenged" |
+| the MUAC payoff letterboxed to a third of its width | the narrative's only human image |
+| the action log recorded `oes-lead@oes.example` under a chrome reading "Ada Nwosu" | "carrying who decided" |
+| a dead 520px map panel owned ~45% of four frames | two judges read it as "something is broken" |
+
+## AA. The four decisions of round 2
+
+1. **Scene 9 closed on the wrong contract** (two judges). Awarding a lot created
+   an Award and *nothing else*, so "the award becomes the contract" was a
+   sentence rather than a link and the scene had to open a pre-seeded contract
+   from a different tender. `award_lot` now creates the execution contract, and
+   scene 9 opens `OES-C-2026-NG2` — the one the previous scene just made.
+2. **Scene 8 had lost its trade-off**, because the resilient split is also the
+   cost minimum. Accepted rather than re-priced: the narration now says the two
+   rules agree here, and that awarding lot by lot is what lets you tell when
+   they do not.
+3. **The queue ranked on magnitude with no time term**, so 907 children due in
+   December outranked 87 due next week on a screen promising "where, and by
+   when". A row now spends its figure only if the harm falls inside the
+   decision horizon.
+4. **The batch→distribution join was decorative** — the first six ShipmentLines
+   in the database round-robined across eleven sites, so Biu served 280 children
+   out of a batch it had never received while its own cover row read "awaiting
+   first consignment". A site now hands out only what arrived at it, only after
+   it arrived.
+
+Also fixed without a decision, because two judges flagged it: the prior split
+tender carried the **live tender's own two lots verbatim**, sitting one row
+above it marked 2/2 Awarded — the answer three scenes build to, already on
+screen behind them.
+
+## AB. What was NOT verified
+
+* **The `-005` renders have not been judged.** Every claim above about the
+  *fixes* is verified by tests, by reading the live app, or by looking at the
+  rendered frame; none of it is a score. The next honest step is another
+  dual-lens round.
+* The money-to-child arc judge's repeat finding stands: the outcome card
+  (58,251 / 81.8%) is still in scene 3's frame, so the finale announces
+  something already seen. On a continuous-scroll page a 250px card in a 720px
+  viewport cannot exclude the card beneath it — it needs a layout change, not
+  another scroll target.
+* Several judge findings were deliberately not taken this round: scene 2 of
+  partner-pipeline has four narrated specifics that the calendar falsifies;
+  command-centre scene 2 opens the one corridor where the three-tier gradient
+  is invisible; and the "ranked against every other exception" claim on the
+  partner's own screen is still asserted rather than shown.
+* No video render, no VO timing eval, nothing uploaded to canopy-web.
