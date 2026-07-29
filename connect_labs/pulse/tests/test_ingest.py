@@ -84,6 +84,23 @@ def opp(db):
 
 @pytest.fixture
 def cursor(db):
+    """An already-positioned cursor — the steady state.
+
+    ``last_polled_at`` set means "this cursor has been seeded", so tail_visits
+    tails rather than bootstrapping. Use ``fresh_cursor`` to exercise the
+    first-run seeding path.
+    """
+    return PulseCursor.objects.create(
+        opportunity_id=765,
+        endpoint=ingest.VISITS_ENDPOINT,
+        last_id=0,
+        last_polled_at=timezone.now() - timedelta(days=1),
+    )
+
+
+@pytest.fixture
+def fresh_cursor(db):
+    """Never polled — the first-run case."""
     return PulseCursor.objects.create(opportunity_id=765, endpoint=ingest.VISITS_ENDPOINT)
 
 
@@ -314,3 +331,85 @@ class TestRollups:
         from connect_labs.pulse.models import PulseRollup
 
         assert PulseRollup.objects.aggregate(n=Sum("n"))["n"] == 2
+
+
+@pytest.mark.django_db
+class TestCursorSeeding:
+    """A fresh cursor must start at the present, not at the beginning of time.
+
+    Otherwise the live tail — which is capped and cadenced for small deltas —
+    becomes the path that drags full history, at 16KB/row on the wire.
+    """
+
+    def test_fresh_cursor_seeds_to_newest_and_stores_nothing(self, opp, fresh_cursor):
+        client = FakeClient([visit(i) for i in range(1, 500)])
+        result = ingest.tail_visits(client, fresh_cursor)
+
+        assert result.get("seeded") is True
+        assert result["stored"] == 0  # history is backfill's job, not the tail's
+        fresh_cursor.refresh_from_db()
+        assert fresh_cursor.last_id == 499
+
+    def test_seeding_requests_only_one_row(self, opp, fresh_cursor):
+        client = FakeClient([visit(i) for i in range(1, 500)])
+        ingest.tail_visits(client, fresh_cursor)
+        endpoint, params, partial_ok = client.calls[0]
+        assert params["cursor_order"] == "reverse"
+        assert params["page_size"] == 1
+        assert partial_ok is True
+
+    def test_next_poll_after_seeding_tails_normally(self, opp, fresh_cursor):
+        client = FakeClient([visit(i) for i in range(1, 10)])
+        ingest.tail_visits(client, fresh_cursor)
+        fresh_cursor.refresh_from_db()
+
+        client.rows.append(visit(10))
+        result = ingest.tail_visits(client, fresh_cursor)
+        assert result["stored"] == 1
+        assert PulseEvent.objects.count() == 1
+
+    def test_opportunity_with_no_visits_is_marked_dormant(self, opp, fresh_cursor):
+        ingest.tail_visits(FakeClient([]), fresh_cursor)
+        fresh_cursor.refresh_from_db()
+        assert fresh_cursor.tier == TIER_DORMANT
+        assert fresh_cursor.last_id is None
+
+    def test_seeded_cursor_is_not_reseeded(self, opp, fresh_cursor):
+        """Seeding is a one-time bootstrap; re-seeding would skip real events."""
+        client = FakeClient([visit(1), visit(2)])
+        ingest.tail_visits(client, fresh_cursor)
+        fresh_cursor.refresh_from_db()
+        client.calls.clear()
+
+        client.rows.append(visit(3))
+        ingest.tail_visits(client, fresh_cursor)
+        assert client.calls[0][1]["cursor_order"] == "forward"
+
+
+@pytest.mark.django_db
+class TestDueness:
+    """Regression: a never-polled cursor must be due immediately.
+
+    due_at once returned timezone.now() for unpolled cursors, which is always
+    microseconds later than the `now` the caller already captured — so nothing
+    was ever due and ingest silently polled nothing while looking healthy.
+    """
+
+    def test_never_polled_cursor_is_due(self, fresh_cursor):
+        assert fresh_cursor.is_due() is True
+
+    def test_never_polled_cursor_is_due_against_a_pre_captured_now(self, fresh_cursor):
+        now = timezone.now()
+        assert fresh_cursor.is_due(now) is True
+
+    def test_due_cursors_includes_never_polled(self, fresh_cursor):
+        assert len(ingest.due_cursors()) == 1
+
+    def test_recently_polled_hot_cursor_is_not_due(self, db):
+        c = PulseCursor.objects.create(
+            opportunity_id=99,
+            endpoint=ingest.VISITS_ENDPOINT,
+            tier=TIER_HOT,
+            last_polled_at=timezone.now(),
+        )
+        assert c.is_due() is False

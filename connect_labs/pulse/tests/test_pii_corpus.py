@@ -20,9 +20,11 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import timedelta
 
 import pytest
 from django.urls import reverse
+from django.utils import timezone
 
 from connect_labs.pulse import ingest
 from connect_labs.pulse.models import PulseCursor, PulseEvent, PulseOpportunity
@@ -116,7 +118,14 @@ def ingested(db):
         opportunity_id=765, name="Mother Baby Wellness (Nigeria)", usd_per_service="0.70"
     )
     rows = [raw_visit(1000 + i, i) for i in range(60)]
-    cursor = PulseCursor.objects.create(opportunity_id=765, endpoint=ingest.VISITS_ENDPOINT)
+    # Already-positioned cursor: a fresh one would seed to the present rather
+    # than ingest, and this module needs records actually stored to search.
+    cursor = PulseCursor.objects.create(
+        opportunity_id=765,
+        endpoint=ingest.VISITS_ENDPOINT,
+        last_id=0,
+        last_polled_at=timezone.now() - timedelta(days=1),
+    )
     ingest.tail_visits(_Client(rows), cursor, max_rows=10_000)
     ingest.rebuild_rollups()
     ingest.record_success("tail")

@@ -10,16 +10,29 @@ account produced them.
 So: run this before trusting anything, and again whenever the poller changes.
 
     python manage.py pulse_scope
-    python manage.py pulse_scope --baseline    # compare to the design baseline
+    python manage.py pulse_scope --baseline           # compare to the design baseline
+    python manage.py pulse_scope --profile main       # bootstrap: use a CLI token
+
+``--profile`` exists to break a chicken-and-egg: you cannot set
+PULSE_POLLER_USERNAME confidently until you know which account sees what, but
+the normal path needs that setting to resolve a user. With a CLI token from
+``~/.commcare-connect/token.json`` this reports both the account's identity and
+its scope, so you can then configure it knowingly.
 """
 
 from __future__ import annotations
 
 import json
+import os
+from pathlib import Path
 
+from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
+from connect_labs.labs.integrations.connect.export_client import ExportAPIClient
 from connect_labs.pulse.client import PulseAuthError, fetch_json, get_client, get_poller_user
+
+CLI_TOKEN_PATH = Path.home() / ".commcare-connect" / "token.json"
 
 # Measured 2026-07-28 through ace@dimagi-ai.com. Recorded so drift is visible
 # rather than inferred; see docs/superpowers/specs/2026-07-28-connect-pulse-design.md
@@ -42,17 +55,69 @@ class Command(BaseCommand):
             help="Compare against the ace@dimagi-ai.com baseline measured during design.",
         )
         parser.add_argument("--json", action="store_true", help="Emit machine-readable output.")
+        parser.add_argument(
+            "--profile",
+            default="",
+            help="Bootstrap using a CLI token profile from ~/.commcare-connect/token.json "
+            "instead of the configured poller user.",
+        )
+
+    def _client_from_profile(self, profile: str):
+        """Bootstrap path: authenticate from a locally stored CLI token."""
+        if not CLI_TOKEN_PATH.exists():
+            raise CommandError(f"No CLI token file at {CLI_TOKEN_PATH}.")
+        blob = json.loads(CLI_TOKEN_PATH.read_text())
+        profiles = blob.get("profiles") or {}
+        entry = profiles.get(profile)
+        if not entry:
+            raise CommandError(f"Profile {profile!r} not found. Available: {', '.join(sorted(profiles)) or 'none'}")
+
+        expires_at = entry.get("expires_at")
+        token = entry.get("access_token")
+        if not token:
+            raise CommandError(f"Profile {profile!r} has no access_token.")
+
+        identity = self._introspect(token)
+        return (
+            ExportAPIClient(base_url=settings.CONNECT_PRODUCTION_URL, access_token=token, timeout=120.0),
+            identity,
+            expires_at,
+        )
+
+    def _introspect(self, token: str) -> dict:
+        """Ask Connect who this token belongs to — that username is exactly what
+        PULSE_POLLER_USERNAME must be set to."""
+        from connect_labs.labs.integrations.connect.oauth import introspect_token
+
+        client_id = getattr(settings, "CONNECT_OAUTH_CLIENT_ID", None) or os.environ.get("CONNECT_OAUTH_CLIENT_ID")
+        client_secret = getattr(settings, "CONNECT_OAUTH_CLIENT_SECRET", None) or os.environ.get(
+            "CONNECT_OAUTH_CLIENT_SECRET"
+        )
+        if not (client_id and client_secret):
+            return {}
+        try:
+            return introspect_token(token, client_id, client_secret, settings.CONNECT_PRODUCTION_URL) or {}
+        except Exception:
+            return {}
 
     def handle(self, *args, **options):
+        profile = options["profile"]
+        identity, expires_at, user = {}, None, None
+
         try:
-            user = get_poller_user()
-            with get_client() as client:
+            if profile:
+                client, identity, expires_at = self._client_from_profile(profile)
+            else:
+                user = get_poller_user()
+                client = get_client()
+            with client:
                 payload = fetch_json(client, "/export/opp_org_program_list/")
         except PulseAuthError as exc:
             raise CommandError(
                 f"{exc}\n\n"
                 "Pulse polls as a designated Connect user. Set PULSE_POLLER_USERNAME and make "
-                "sure that user has signed into labs in a browser so a refresh token exists."
+                "sure that user has signed into labs in a browser so a refresh token exists.\n"
+                "To bootstrap without that, run with --profile <cli-token-profile>."
             )
 
         opps = payload.get("opportunities") or []
@@ -64,11 +129,20 @@ class Command(BaseCommand):
             "lifetime_visits": sum(o.get("visit_count") or 0 for o in opps),
         }
 
+        who = user.username if user else (identity.get("username") or "unknown")
+
         if options["json"]:
-            self.stdout.write(json.dumps({"user": user.username, "scope": actual}, indent=2))
+            self.stdout.write(json.dumps({"user": who, "identity": identity, "scope": actual}, indent=2))
             return
 
-        self.stdout.write(self.style.MIGRATE_HEADING(f"Pulse poller: {user.username}"))
+        self.stdout.write(self.style.MIGRATE_HEADING(f"Connect account: {who}"))
+        if identity:
+            email = identity.get("email") or "—"
+            self.stdout.write(f"  {'email':<22} {email}")
+            self.stdout.write(self.style.NOTICE(f"  → set PULSE_POLLER_USERNAME={who}"))
+        if expires_at:
+            self.stdout.write(f"  {'token expires':<22} {expires_at}")
+        self.stdout.write("")
         for key, value in actual.items():
             self.stdout.write(f"  {key:<22} {value:>12,}")
 

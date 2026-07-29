@@ -22,9 +22,15 @@ Design constraints that are load-bearing, not stylistic:
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+from datetime import timezone as dt_timezone
+
 from django.conf import settings
 from django.db import models
 from django.utils import timezone
+
+# Sentinel "due forever ago" for cursors that have never been polled.
+_EPOCH = datetime(1970, 1, 1, tzinfo=dt_timezone.utc)
 
 # Poll cadence by how recently an opportunity produced work. Polling all ~494
 # visible opps uniformly would be absurd; in practice ~14 are live at any time.
@@ -156,9 +162,17 @@ class PulseCursor(models.Model):
 
     @property
     def due_at(self):
+        """When this cursor next wants polling.
+
+        A never-polled cursor is due at the epoch, not at ``now()``. Returning
+        ``now()`` here looks equivalent but is not: callers capture their own
+        ``now`` first and compare against this, so a freshly-evaluated ``now()``
+        is always a few microseconds *later* and the cursor is never due. That
+        bug polls nothing, forever, while looking perfectly healthy.
+        """
         if self.last_polled_at is None:
-            return timezone.now()
-        return self.last_polled_at + timezone.timedelta(seconds=TIER_INTERVALS_SECONDS[self.tier])
+            return _EPOCH
+        return self.last_polled_at + timedelta(seconds=TIER_INTERVALS_SECONDS[self.tier])
 
     def is_due(self, now=None) -> bool:
         return (now or timezone.now()) >= self.due_at

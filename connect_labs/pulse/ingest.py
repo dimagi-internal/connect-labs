@@ -200,12 +200,56 @@ def _store_events(rows, opp) -> tuple[int, int]:
     return len(created), off_map
 
 
+def seed_cursor(client, cursor: PulseCursor) -> PulseCursor:
+    """Point a brand-new cursor at *now* rather than at the beginning of time.
+
+    Without this, a fresh cursor has ``last_id=None`` and the forward tail
+    starts from the oldest visit an opportunity ever recorded — so a first run
+    would drag full history (26.5 GB across the estate, at 16 KB/row) through
+    the *live tail* path, which is capped and cadenced for small deltas.
+
+    History is backfill's job, walking backwards on its own schedule. Tailing
+    should only ever mean "what happened since I last looked". One 1-row
+    reverse request costs ~0.45s and establishes that.
+    """
+    endpoint = f"/export/opportunity/{cursor.opportunity_id}/{VISITS_ENDPOINT}/"
+    newest = None
+    for page in client.paginate(endpoint, params={"cursor_order": "reverse", "page_size": 1}, partial_ok=True):
+        if page:
+            newest = page[0]
+        break  # declared via partial_ok
+
+    if newest is None:
+        # Opportunity has never recorded a visit. Leave last_id unset so the
+        # next poll re-checks cheaply rather than assuming an id.
+        cursor.last_polled_at = timezone.now()
+        cursor.tier = TIER_DORMANT
+        cursor.save(update_fields=["last_polled_at", "tier"])
+        return cursor
+
+    from connect_labs.pulse.normalize import _parse_ts
+
+    cursor.last_id = newest.get("id")
+    cursor.backfill_oldest_id = newest.get("id")
+    cursor.newest_sync_ts = _parse_ts(newest.get("date_created"))
+    cursor.last_polled_at = timezone.now()
+    cursor.tier = tier_for(cursor.newest_sync_ts)
+    cursor.save()
+    return cursor
+
+
 def tail_visits(client, cursor: PulseCursor, max_rows: int = MAX_ROWS_PER_TAIL) -> dict:
     """Pull everything new for one opportunity since ``cursor.last_id``.
 
     Forward keyset order, so the API returns only rows created since the last
     poll. Capped per call; the cursor resumes on the next tick.
+
+    A cursor that has never been positioned is seeded to the present first —
+    see ``seed_cursor`` for why that matters.
     """
+    if cursor.last_id is None and cursor.last_polled_at is None:
+        seed_cursor(client, cursor)
+        return {"opportunity_id": cursor.opportunity_id, "seen": 0, "stored": 0, "off_map": 0, "seeded": True}
     opp = PulseOpportunity.objects.filter(opportunity_id=cursor.opportunity_id).first()
     endpoint = f"/export/opportunity/{cursor.opportunity_id}/{VISITS_ENDPOINT}/"
     params = {"cursor_order": "forward", "page_size": PAGE_SIZE}
