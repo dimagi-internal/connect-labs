@@ -54,6 +54,10 @@ function CommandTab({ ctx }) {
             // already on the road is still outstanding, but counting it here
             // meant the figure could not move when Ada did something — the
             // headline was identical before and after a reallocation.
+            lead: true,
+            tone: 'critical',
+            method:
+              'Every exception on this screen, converted to the same unit: children who miss a full course if nothing is done. Rows somebody has already acted on are excluded, so this figure moves when a decision is taken. Ranked on the children who go without inside the next 30 days, because harm falling outside the window a decision can still affect is real but is not what this worklist is for.',
             value: formatNumber(
               exceptions
                 .filter((e) => !e.answered_by && !e.resolved_by)

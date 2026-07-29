@@ -578,7 +578,14 @@ function MuacSeries({ child, focused, onFocus }) {
   // `preserveAspectRatio="none"`, which would horizontally distort the two WHO
   // threshold labels drawn inside it.
   const width = 560;
-  const height = focused ? 96 : 56;
+  // ONE height for every child in the batch, so the vertical scale is the
+  // same on every row and two series can be compared by eye. The focused row
+  // used to be drawn 96px tall against 56 for the rest — the same millimetre
+  // domain, but 2.5px/mm against 1.4px/mm, so the child the reader is looking
+  // at climbed more steeply than the others purely because it was selected.
+  // Focus now adds information (the visit count, the labelled thresholds),
+  // not vertical exaggeration.
+  const height = 68;
   const lo = 95;
   const hi = 135;
   const x = (i) => (i / Math.max(series.length - 1, 1)) * width;

@@ -21,10 +21,24 @@ function ConsoleHome({ ctx }) {
       }).length,
     0,
   );
+  // The oldest thing waiting on a decision. A queue length says how much
+  // there is; the date says whether anyone is keeping up with it.
+  const waitingDates = queue
+    .map((q) => q.submitted_at || q.created_at)
+    .filter(Boolean)
+    .sort();
+  const oldestWaiting = waitingDates.length ? waitingDates[0] : null;
+
   const openRounds = rounds.filter((r) => r.status === 'open');
   const liveRfps = rfps.filter((r) => r.status === 'published');
   const awaitingAward = liveRfps.filter((r) =>
     r.lots.some((l) => !l.awarded_org),
+  );
+  // Lots, not solicitations. "1 live solicitation" understates four separate
+  // award decisions sitting on one tender.
+  const unawardedLots = liveRfps.reduce(
+    (n, r) => n + r.lots.filter((l) => !l.awarded_org).length,
+    0,
   );
 
   return (
@@ -32,34 +46,50 @@ function ConsoleHome({ ctx }) {
       title="Procurement dashboard"
       lede="Registry health, applications awaiting review, and solicitations in flight."
     >
+      {/* The queue leads: it is the only figure here that is somebody's work
+          rather than a description of the world. Registry size is context. */}
       <KeyFigures
         figures={[
           {
-            label: 'Qualified suppliers',
-            value: registry.length,
-            hint: expiringSoon
-              ? `${expiringSoon} qualifications expiring within 60 days`
-              : 'no near-term expiries',
-          },
-          {
             label: 'Applications to review',
             value: queue.length,
-            hint: queue.length ? 'awaiting a decision' : 'queue clear',
+            lead: true,
+            tone: queue.length ? 'at-risk' : 'ok',
+            hint: queue.length
+              ? `oldest waiting since ${
+                  oldestWaiting ? formatDate(oldestWaiting) : '—'
+                }`
+              : 'queue clear',
+          },
+          {
+            label: 'Qualified suppliers',
+            value: registry.length,
+            tone: expiringSoon ? 'at-risk' : undefined,
+            hint: expiringSoon
+              ? `${expiringSoon} qualification${
+                  expiringSoon === 1 ? '' : 's'
+                } expiring within 60 days`
+              : 'no near-term expiries',
+            method:
+              'The registry IS the set of live qualifications — there is no list anyone maintains. A lapsed certification drops a supplier out of it without anybody remembering to remove them, which is why the expiry count beside it is the number worth watching.',
+          },
+          {
+            label: 'Lots awaiting award',
+            value: unawardedLots,
+            tone: unawardedLots ? 'at-risk' : undefined,
+            hint: `across ${liveRfps.length} live solicitation${
+              liveRfps.length === 1 ? '' : 's'
+            }`,
           },
           {
             label: 'Open EOI rounds',
             value: openRounds.length,
             hint: `${rounds.length} total`,
           },
-          {
-            label: 'Live solicitations',
-            value: liveRfps.length,
-            hint: `${awaitingAward.length} with unawarded lots`,
-          },
         ]}
       />
 
-      <div className="grid-2">
+      <div className="grid-2-wide">
         <Card title="Registry coverage by category">
           {Object.keys(byCategory).length ? (
             <div className="bar-list">

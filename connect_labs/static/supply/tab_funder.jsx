@@ -95,6 +95,24 @@ function FunderTab({ ctx }) {
         title="Stage by stage, per contract"
         subtitle="Obligated, disbursed and delivered are tracked separately and never merged."
       >
+        {/* The bars encoded three stages and explained them only in a native
+            `title` tooltip — which does not render in a screenshot, does not
+            survive a projector, and cannot be read by anyone using a keyboard.
+            Three grey-green bars with no key is decoration. */}
+        <div className="stage-legend">
+          <span className="stage-key">
+            <i className="stage-swatch obligated" /> obligated
+          </span>
+          <span className="stage-key">
+            <i className="stage-swatch delivered" /> delivered
+          </span>
+          <span className="stage-key">
+            <i className="stage-swatch disbursed" /> disbursed
+          </span>
+          <span className="muted small">
+            each bar is a share of what that contract obligated
+          </span>
+        </div>
         <DataTable
           rows={contracts}
           rowKey={(c) => c.id}

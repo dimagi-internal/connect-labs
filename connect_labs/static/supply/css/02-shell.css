@@ -199,6 +199,30 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
   gap: 18px;
+  /* Cards size to their content instead of stretching to match the tallest
+     one in the row. A four-row category list was being stretched to the
+     height of a four-row table with taller cells, leaving roughly half the
+     card as empty white below the last bar — the single largest area of dead
+     space in the product. */
+  align-items: start;
+}
+
+/* An asymmetric split, for a short card beside a wide table.
+
+   Two equal columns gave a four-row category list the same width as a
+   four-column table of supplier names, round titles, category pills and
+   dates — so the table wrapped "OES Supply Base 2026-B" onto four lines
+   while the list left half its column empty. */
+.grid-2-wide {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.8fr) minmax(420px, 1.6fr);
+  gap: 18px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .grid-2-wide {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* ---------- key figures ---------- */
@@ -229,12 +253,31 @@
   margin-top: 4px;
 }
 
-/* The one figure the row is built around. */
+/* The one figure the row is built around.
+
+   Laid out across rather than down: a short value ("4") in a double-width
+   box left most of the tile as empty air, so the emphasis read as a layout
+   accident. The number sits on the left at display size and its label and
+   hint fill the width beside it. */
 .keyfigure-lead {
   grid-column: span 2;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  column-gap: 16px;
 }
 .keyfigure-lead .keyfigure-value {
   font-size: var(--oes-display);
+  grid-row: span 2;
+}
+.keyfigure-lead .keyfigure-label {
+  margin-top: 0;
+  font-size: var(--oes-body);
+  color: var(--oes-ink);
+  font-weight: 600;
+}
+.keyfigure-lead .keyfigure-hint {
+  grid-column: 2;
 }
 @media (max-width: 900px) {
   .keyfigure-lead {

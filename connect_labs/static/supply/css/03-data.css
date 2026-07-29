@@ -102,6 +102,11 @@
   border-radius: 6px;
   padding: 1px 7px;
   font-size: 11px;
+  /* A pill is a label, not a paragraph. "Therapeutic milk" was breaking
+     across two lines INSIDE its own border in a narrow table column, which
+     reads as a rendering fault rather than as a tag. The row wraps; the
+     pill does not. */
+  white-space: nowrap;
 }
 
 .muted {

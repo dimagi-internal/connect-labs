@@ -322,7 +322,7 @@
    behind the line is what makes "climbing out of the red" literal. */
 .muac-spark {
   width: 100%;
-  height: 56px;
+  height: 68px;
 }
 .muac-band.sam {
   fill: #fee4e2;
@@ -428,8 +428,10 @@
   background: #f5f8ff;
   grid-template-columns: 220px 1fr 130px;
 }
+/* Focus adds information, not height — the vertical scale is shared across
+   every child in the batch so their series can be compared. */
 .outcome-row.focused .muac-spark {
-  height: 96px;
+  height: 68px;
 }
 
 /* The route from the gap to the children behind it. Deliberately a link rather
@@ -471,4 +473,36 @@
 .ladder-result-label {
   font-size: var(--oes-body);
   color: var(--oes-ink-soft);
+}
+
+/* The key for the three-stage bars. See StageBars — the encoding used to be
+   explained only in a native title tooltip. */
+.stage-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  margin-bottom: 12px;
+  font-size: var(--oes-small);
+  color: var(--oes-ink-soft);
+}
+.stage-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.stage-swatch {
+  width: 18px;
+  height: 7px;
+  border-radius: 999px;
+  display: inline-block;
+}
+.stage-swatch.obligated {
+  background: #cbd5e1;
+}
+.stage-swatch.delivered {
+  background: rgba(13, 122, 95, 0.55);
+}
+.stage-swatch.disbursed {
+  background: var(--oes-accent);
 }
