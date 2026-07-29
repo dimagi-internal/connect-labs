@@ -51,6 +51,17 @@ def test_signup_duplicate_org_name_shows_error():
     assert get_user_model().objects.filter(email="other@x.example").count() == 0
 
 
+@pytest.mark.parametrize("email", ["evil@dimagi.com", "attacker@dimagi-ai.com", "MixedCase@Dimagi.com"])
+def test_signup_rejects_privileged_domains(email):
+    """Open signup must not mint labs-privileged (Dimagi) accounts in the shared
+    user table — that would grant labs admin from an unverified web form."""
+    resp = Client().post("/supply/signup/", {**SIGNUP, "email": email})
+    assert resp.status_code == 200
+    assert get_user_model().objects.filter(email__iexact=email).count() == 0
+    assert get_user_model().objects.filter(username__iexact=email).count() == 0
+    assert SupplierOrg.objects.count() == 0
+
+
 def test_signup_password_mismatch():
     resp = Client().post("/supply/signup/", {**SIGNUP, "password2": "different-9"})
     assert resp.status_code == 200
