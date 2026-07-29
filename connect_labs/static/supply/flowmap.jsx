@@ -310,17 +310,25 @@ function mapAvailable() {
   );
 }
 
-function MapUnavailable({ shipments, height }) {
+/* A missing map should cost a line, not half the screen.
+
+   This reserved the map's full height — 520px of dashed grey — so on a
+   deployment without a Mapbox token it occupied about 45% of the command
+   centre, including the opening frame and the payoff frame. Two independent
+   reviewers' five-second read of those screens was "something is broken",
+   which is an expensive way to say "no token configured". The tables carry
+   everything the map would have shown, so the honest render is one sentence
+   that says so and then gets out of the way. */
+function MapUnavailable({ shipments }) {
   const routed = (shipments || []).filter((s) => s.route && s.route.length > 1);
   return (
-    <div className="map-unavailable" style={{ height: height || 520 }}>
-      <div className="map-unavailable-title">Map unavailable</div>
-      <div className="map-unavailable-body">
-        This environment has no Mapbox access token configured, so the network
-        map cannot be drawn. Everything it visualises is still in the tables
-        below — {routed.length} consignment
-        {routed.length === 1 ? '' : 's'} with routed corridors.
-      </div>
+    <div className="map-unavailable">
+      <span className="map-unavailable-title">Map not drawn</span>
+      <span className="map-unavailable-body">
+        No Mapbox token in this environment. The {routed.length} routed corridor
+        {routed.length === 1 ? '' : 's'} it would show are in the tables on this
+        page.
+      </span>
     </div>
   );
 }
@@ -337,7 +345,7 @@ function FlowMap({ nodes, shipments, focusCountry, height }) {
   });
 
   if (!mapAvailable()) {
-    return <MapUnavailable shipments={shipments} height={height} />;
+    return <MapUnavailable shipments={shipments} />;
   }
 
   return (

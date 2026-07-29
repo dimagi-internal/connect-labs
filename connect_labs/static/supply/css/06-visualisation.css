@@ -75,6 +75,10 @@
   grid-template-columns: minmax(340px, 1fr) 1.55fr;
   gap: 18px;
 }
+/* No map to sit beside, so the worklist gets the whole row. */
+.command-split.no-map {
+  grid-template-columns: 1fr;
+}
 .exception-panel .card-body {
   max-height: 620px;
   overflow-y: auto;
@@ -237,24 +241,25 @@
   }
 }
 
+/* One line, not a panel. See MapUnavailable in flowmap.jsx. */
 .map-unavailable {
-  display: grid;
-  place-content: center;
-  text-align: center;
-  gap: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
   background: var(--oes-bg);
   border: 1px dashed var(--oes-line);
   border-radius: 8px;
-  padding: 24px;
+  padding: 10px 14px;
 }
 .map-unavailable-title {
   font-weight: 600;
+  font-size: 13px;
   color: var(--oes-ink-soft);
 }
 .map-unavailable-body {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--oes-ink-soft);
-  max-width: 460px;
 }
 
 /* --- Demand side: children at risk, and the MUAC series ------------------ */

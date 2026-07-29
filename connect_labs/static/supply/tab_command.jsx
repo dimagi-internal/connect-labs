@@ -95,7 +95,11 @@ function CommandTab({ ctx }) {
         ]}
       />
 
-      <div className="command-split">
+      {/* Two columns only when there is a second thing to put in one. Without
+          a Mapbox token the right-hand column was a dashed grey box and the
+          worklist — the actual product on this screen — was squeezed into
+          about a quarter of the frame. */}
+      <div className={`command-split ${mapAvailable() ? '' : 'no-map'}`}>
         <Card
           title="Exceptions"
           subtitle="Ranked by the children behind each one, not by tonnage."
@@ -369,10 +373,19 @@ function CommandTab({ ctx }) {
             hint="Coverage cannot be reported without a denominator."
           />
         )}
+        {/* The window, stated. This said "monthly SAM caseload" while the
+            denominator is the caseload summed across the response window, so
+            the stated method was about four times off — in a card whose whole
+            claim is that a contract quantity and a requirement are different
+            things and both can be checked. */}
         <p className="muted small method-note">
-          Coverage is courses delivered divided by the district's monthly SAM
-          caseload. Hover a district for how its caseload was estimated. All
-          figures in this environment are synthetic.
+          Coverage is courses delivered divided by the district's SAM caseload
+          summed over the{' '}
+          {coverage[0] && coverage[0].window_months
+            ? `${coverage[0].window_months}-month response window`
+            : 'response window'}
+          , not against a single month. Hover a district for how its caseload
+          was estimated. All figures in this environment are synthetic.
         </p>
       </Card>
 

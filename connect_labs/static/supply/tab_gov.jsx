@@ -12,6 +12,17 @@ function GovTab({ ctx }) {
   const nodes = (world.nodes || []).filter((n) => n.country === country);
   const coverage = world.coverage || [];
 
+  // A node is answerable for children only if it serves a district. A port or
+  // a national warehouse sits on the route without any caseload behind it,
+  // which is exactly why it carries no adm1_code — the same test the coverage
+  // service uses when it decides which arrivals count.
+  const nodeById = {};
+  (world.nodes || []).forEach((n) => {
+    nodeById[n.id] = n;
+  });
+  const deliversToChildren = (s) =>
+    !!(nodeById[s.destination.id] || {}).adm1_code;
+
   // Only flows that touch this country.
   const shipments = contracts
     .flatMap((c) => (c.shipments || []).map((s) => ({ ...s, contract: c })))
@@ -115,11 +126,30 @@ function GovTab({ ctx }) {
               value: (s) => s.quantity,
               render: (s) => `${formatNumber(s.quantity)} ${s.unit}`,
             },
+            // Only a leg that ends where children are treated covers any.
+            //
+            // This column restated every consignment's carton count as
+            // "children covered", so a warehouse-to-warehouse transfer into
+            // Kano was credited with covering 20,000 children and a
+            // consignment still on the road was credited with covering
+            // anybody at all. A storage point serves no caseload — that is
+            // precisely why it carries no district — so the honest cell is a
+            // dash, and the row's cartons are already in the column beside it.
             {
               key: 'children',
-              label: 'Children covered',
-              value: (s) => s.quantity,
-              render: (s) => formatNumber(s.quantity),
+              label: 'Courses on arrival',
+              value: (s) => (deliversToChildren(s) ? s.quantity : -1),
+              render: (s) =>
+                deliversToChildren(s) ? (
+                  formatNumber(s.quantity)
+                ) : (
+                  <span
+                    className="muted"
+                    title="A storage point serves no caseload of its own; these cartons are counted where they reach a district."
+                  >
+                    —
+                  </span>
+                ),
             },
             {
               key: 'when',

@@ -118,11 +118,13 @@ scenes:
     target: css:.modal-close
     note: close the consignment — scene 4 ends inside it
   - kind: scroll_to
-    target: css:.card:has-text('Requirement from caseload')
-    note: the card, ONCE. A second scroll to a row inside it undid this one and pushed the card
-      title and all four column headers off the top, so the payoff column — children with no
-      carton assigned — rendered as an unlabelled integer column and 660 requirement was
-      indistinguishable from 660 gap. The whole card fits in one viewport.
+    target: css:.card:has-text('Requirement from caseload') .method-note
+    note: this card's own method note, which is the LAST thing in it. Scrolling to the card
+      aligns its top and leaves the table hanging off the bottom; scrolling to a row in the
+      middle decapitated the headers, so the payoff column rendered as an unlabelled integer
+      column and 660 requirement was indistinguishable from 660 gap; and `tr:last-child`
+      resolved into the pipeline table above it. Aligning the footer pulls the whole card —
+      title, headers and every district — up into one viewport.
   - kind: hold
     seconds: 4.2
   impressive_because: With a denominator, delivery stops being tonnage and becomes coverage. Volume alone
