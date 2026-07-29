@@ -22,6 +22,18 @@
           back to stored data rather than pretending to be live.
         </p>
       {% endif %}
+      {# The poller is named on the page because getting it wrong doesn't error. #}
+      {# It rescales every figure below, and the first prod deploy did exactly   #}
+      {# that: ~5x understated, silently. Wrong account is now visible here.     #}
+      {% if ingest.poller %}
+        <p class="small mb-2">Polling as <code>{{ ingest.poller }}</code> — every figure below is
+          bounded by that account's Connect org membership.
+          Change it with <code>manage.py pulse_poller --set &lt;username&gt;</code>.</p>
+      {% else %}
+        <p class="small text-danger mb-2">No poller configured, so ingest cannot run.
+          {{ ingest.poller_error }}
+          List candidates with <code>manage.py pulse_poller --list</code>.</p>
+      {% endif %}
       <table class="table table-sm mb-0">
         <thead><tr><th>Tier</th><th>State</th><th>Last success</th><th>Failures</th><th>Last error</th></tr></thead>
         <tbody>

@@ -626,5 +626,20 @@ PULSE_EVENT_RETENTION_DAYS = env.int("PULSE_EVENT_RETENTION_DAYS", default=30)
 # dashboard can see. Must have logged into labs in a browser at least once so a
 # refresh token exists. Refresh tokens have an absolute lifetime — if this user
 # stops logging in, ingest stops, and PulseIngestHealth surfaces it.
-PULSE_POLLER_USERNAME = env("PULSE_POLLER_USERNAME", default="")
+#
+# Named explicitly, and deliberately not derived from whoever happens to hold a
+# token: the first prod deploy did derive it, picked an account with narrower
+# org membership, and understated every headline figure ~5x without erroring.
+#
+# `jonathan` is Jonathan Jackson's labs account (jjackson@dimagi.com). The name
+# is worth stating because it is not the obvious one — labs usernames come from
+# Connect OAuth, so they are Connect handles, not email local-parts or GitHub
+# names. There is no `jjackson` user on labs; `jjackson-admin` and
+# `jjackson+test` exist but hold no Connect token. Confirm before changing it:
+# `manage.py pulse_poller --list`.
+#
+# A stopgap until Pulse has a service account of its own. Overridable
+# per-environment by the env var, or at runtime without a redeploy via
+# `manage.py pulse_poller --set <username>`.
+PULSE_POLLER_USERNAME = env("PULSE_POLLER_USERNAME", default="jonathan")
 # "30/m" → 30 writes per minute per user. Reads uncapped.
