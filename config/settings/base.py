@@ -231,6 +231,13 @@ MIDDLEWARE = [
     "connect_labs.audit_trail.middleware.AuditTrailMiddleware",
 ]
 
+# Per-request cost telemetry, prepended so it is the OUTERMOST middleware and
+# therefore times the whole request — including the audit-trail flush and every
+# other middleware — rather than just the view. request.user is still readable
+# because it is only inspected after get_response() returns, by which point
+# AuthenticationMiddleware has run further in.
+MIDDLEWARE.insert(0, "connect_labs.utils.request_telemetry.RequestTelemetryMiddleware")
+
 # STATIC
 # ------------------------------------------------------------------------------
 STATIC_ROOT = str(BASE_DIR / "staticfiles")
@@ -359,6 +366,15 @@ LOGGING = {
         "connect_labs.audit_trail.stream": {
             "handlers": ["audit_stream"],
             "level": "INFO",
+            "propagate": False,
+        },
+        # Per-request cost telemetry (connect_labs/utils/request_telemetry.py).
+        # Reuses the message-only formatter so each line is pure JSON and Logs
+        # Insights can parse it without a regex. Only fires for requests that
+        # breach a threshold, so this stream is low-volume by construction.
+        "connect_labs.telemetry.request": {
+            "handlers": ["audit_stream"],
+            "level": "WARNING",
             "propagate": False,
         },
         "django.security.DisallowedHost": {

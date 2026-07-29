@@ -21,6 +21,7 @@ from connect_labs.audit_trail.models import Action as _AuditAction
 from connect_labs.audit_trail.models import Outcome as _AuditOutcome
 from connect_labs.labs.models import LocalLabsRecord
 from connect_labs.labs.synthetic import local_records_backend as _local_backend
+from connect_labs.utils import request_telemetry
 
 logger = logging.getLogger(__name__)
 
@@ -152,6 +153,11 @@ class LabsRecordAPIClient:
         self.http_client = httpx.Client(
             headers={"Authorization": f"Bearer {self.access_token}"},
             timeout=120.0,
+            # Count every call against the in-flight request so a fan-out shows up
+            # as one telemetry line instead of thousands of httpx INFO lines. This
+            # is the client that issued ~139 sequential calls per page open in the
+            # 2026-07-29 incident. No-op outside a request (Celery, shell).
+            event_hooks=request_telemetry.httpx_event_hooks(),
         )
 
     def close(self):
