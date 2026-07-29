@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 TIER_CHEAP = "cheap"
 TIER_TAIL = "tail"
+TIER_WORKS = "works"
 
 
 @celery_app.task(name="connect_labs.pulse.tasks.poll_cheap_tier")
@@ -47,8 +48,12 @@ def poll_cheap_tier(rate_sample_limit: int = 25) -> dict:
                 except Exception as exc:  # one bad opp must not kill the sweep
                     logger.warning("[pulse] rate refresh failed for opp %s: %s", opp.opportunity_id, exc)
 
+        # Country comes from visit GPS, not from the opportunity record, so it
+        # has to be derived after events land rather than during the sync.
+        countries = ingest.refresh_opportunity_countries()
+
         ingest.record_success(TIER_CHEAP)
-        return {"scope": scope, "rates_refreshed": rated}
+        return {"scope": scope, "rates_refreshed": rated, "countries_set": countries}
     except PulseAuthError as exc:
         # The expired-refresh-token case. Must be loud: this is the failure that
         # otherwise looks exactly like "no new data".
@@ -172,3 +177,50 @@ def rebuild_rollups(days: int = 7) -> int:
     from django.utils import timezone
 
     return ingest.rebuild_rollups(since=timezone.now() - timezone.timedelta(days=days))
+
+
+@celery_app.task(name="connect_labs.pulse.tasks.poll_works")
+def poll_works(limit: int = 40) -> dict:
+    """Tail completed_works — the money and payment-status spine.
+
+    Separate from the visit tail because it is ~25x cheaper per row and carries
+    the full history, while the visit tail is deliberately kept to a rolling
+    window. This is the stream that answers "how much was earned and paid".
+    """
+    cursors = [
+        c for c in PulseCursor.objects.filter(endpoint=ingest.WORKS_ENDPOINT).order_by("-newest_sync_ts") if c.is_due()
+    ][:limit]
+    if not cursors:
+        ingest.record_success(TIER_WORKS)
+        return {"polled": 0, "stored": 0}
+
+    stored = polled = 0
+    try:
+        with get_client() as client:
+            for cursor in cursors:
+                try:
+                    stored += ingest.sync_works(client, cursor)["stored"]
+                    polled += 1
+                except Exception as exc:
+                    cursor.consecutive_failures += 1
+                    cursor.last_error = str(exc)[:2000]
+                    cursor.save(update_fields=["consecutive_failures", "last_error"])
+                    logger.warning("[pulse] works sync failed for opp %s: %s", cursor.opportunity_id, exc)
+        ingest.record_success(TIER_WORKS)
+        return {"polled": polled, "stored": stored}
+    except PulseAuthError as exc:
+        ingest.record_failure(TIER_WORKS, f"auth: {exc}")
+        raise
+    except Exception as exc:
+        ingest.record_failure(TIER_WORKS, str(exc))
+        raise
+
+
+@celery_app.task(name="connect_labs.pulse.tasks.fold_events_to_grid")
+def fold_events_to_grid() -> dict:
+    """Age out visit-level rows into the anonymous grid.
+
+    Runs nightly. The map keeps getting denser; labs stops holding the records
+    that made it dense.
+    """
+    return ingest.fold_events_to_grid()

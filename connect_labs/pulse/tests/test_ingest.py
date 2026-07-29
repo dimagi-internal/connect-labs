@@ -267,10 +267,13 @@ class TestCheapTier:
         rate = ingest.refresh_rate(client, opp)
         assert float(rate) == pytest.approx(0.75)  # rejected work excluded
 
-    def test_ensure_cursors_covers_every_opportunity(self, opp):
+    def test_ensure_cursors_covers_every_opportunity_on_both_streams(self, opp):
+        """Each opportunity needs a cursor per stream — visits and works are
+        tailed independently, at different cadences and costs."""
         PulseOpportunity.objects.create(opportunity_id=999, name="Other")
-        assert ingest.ensure_cursors() == 2
-        assert PulseCursor.objects.count() == 2
+        assert ingest.ensure_cursors() == 4  # 2 opps x 2 streams
+        assert PulseCursor.objects.filter(endpoint=ingest.VISITS_ENDPOINT).count() == 2
+        assert PulseCursor.objects.filter(endpoint=ingest.WORKS_ENDPOINT).count() == 2
         assert ingest.ensure_cursors() == 0  # idempotent
 
 

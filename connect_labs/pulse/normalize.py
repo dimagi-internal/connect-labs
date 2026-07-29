@@ -17,9 +17,11 @@ copying the record, so a new PII field appearing upstream cannot flow through.
 
 from __future__ import annotations
 
+import hashlib
 import re
 from datetime import datetime
 from datetime import timezone as dt_timezone
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 # Fields this module is permitted to read off an export visit record. Anything
@@ -189,6 +191,68 @@ def _parse_ts(raw: Any) -> datetime | None:
 def _as_bool(raw: Any) -> bool:
     # The export serialises booleans as the strings "True"/"False".
     return str(raw).strip().lower() == "true"
+
+
+def work_key_for(record: dict) -> str:
+    """Stable dedup key for a completed_work, carrying none of its inputs.
+
+    ``completed_works`` omits ``id`` from the payload (the server uses one for
+    the cursor but does not serialise it), so rows have no natural key. The
+    identifying tuple is (opportunity, worker, entity, payment unit) — and
+    ``entity_id`` is a beneficiary name and phone number.
+
+    Hashing it gives a key that dedupes correctly across overlapping polls
+    while storing nothing identifying. The hash is one-way and the entity
+    component is never persisted alongside it, so the stored key cannot be
+    reversed into the beneficiary it describes.
+    """
+    parts = (
+        str(record.get("opportunity_id") or ""),
+        str(record.get("username") or ""),
+        str(record.get("entity_id") or ""),
+        str(record.get("payment_unit_id") or ""),
+    )
+    return hashlib.sha256("\x1f".join(parts).encode("utf-8")).hexdigest()
+
+
+def work_to_fields(record: dict, opportunity=None) -> dict | None:
+    """Normalise one completed_works record into PulseWork kwargs.
+
+    Reads named keys only — ``entity_id``/``entity_name`` feed the hash and are
+    never carried through.
+    """
+    created = _parse_ts(record.get("date_created"))
+    if created is None:
+        return None
+
+    status = (record.get("status") or "").strip() or "unknown"
+    return {
+        "work_key": work_key_for(record),
+        "opportunity_id": int(record.get("opportunity_id") or getattr(opportunity, "opportunity_id", 0) or 0),
+        "program_id": getattr(opportunity, "program_id", None) if opportunity is not None else None,
+        "org_slug": (getattr(opportunity, "org_slug", "") if opportunity is not None else "") or "",
+        "worker_hash": (str(record.get("username") or "").strip())[:64],
+        "payment_unit_id": record.get("payment_unit_id"),
+        "service_slug": service_slug_for(getattr(opportunity, "name", "") if opportunity is not None else ""),
+        "country": (getattr(opportunity, "country", "") if opportunity is not None else "") or "",
+        "status": status[:32],
+        "created_ts": created,
+        "status_ts": _parse_ts(record.get("status_modified_date")),
+        "payment_date": _parse_ts(record.get("payment_date")),
+        "approved_count": int(record.get("saved_approved_count") or 0),
+        "completed_count": int(record.get("saved_completed_count") or 0),
+        "usd_to_worker": _decimal_or_none(record.get("saved_payment_accrued_usd")),
+        "usd_to_org": _decimal_or_none(record.get("saved_org_payment_accrued_usd")),
+    }
+
+
+def _decimal_or_none(raw):
+    if raw in (None, "", "None"):
+        return None
+    try:
+        return Decimal(str(raw))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
 
 
 def visit_to_event_fields(record: dict, opportunity=None) -> dict | None:

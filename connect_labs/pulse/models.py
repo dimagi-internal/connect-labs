@@ -133,6 +133,102 @@ class PulseEvent(models.Model):
         return f"visit {self.connect_visit_id} · {self.status}"
 
 
+class PulseWork(models.Model):
+    """One unit of payable work — the money and payment-status spine.
+
+    Sourced from ``completed_works``, which is **25x cheaper than
+    ``user_visits``** (53 vs 1,346 bytes/row gzipped) because it carries no
+    ``form_json``. All 1.65M visits' worth of history is ~87 MB here versus
+    ~7.5 GB via visits, so this stream — not the visit stream — is what carries
+    deep history.
+
+    It is *not* one row per visit. Measured ratios of works-to-visits: ~0.92 for
+    simple programmes (Malaria RDT, Sahaj), but ~0.23 for KMC, where one payment
+    unit spans several follow-up visits. So this answers "how much work was done
+    and paid for", never "how many visits happened" — that number comes free
+    from ``PulseOpportunity.lifetime_visit_count``.
+
+    No natural key: the export omits ``id`` (it is used for the cursor but not
+    serialised). ``work_key`` is a salted hash of the identifying tuple, so rows
+    dedupe across overlapping polls without storing the beneficiary identifier
+    the tuple contains.
+    """
+
+    work_key = models.CharField(max_length=64, unique=True, db_index=True)
+    opportunity_id = models.IntegerField(db_index=True)
+    program_id = models.IntegerField(null=True, blank=True, db_index=True)
+    org_slug = models.CharField(max_length=120, blank=True)
+
+    worker_hash = models.CharField(max_length=64, blank=True)
+    payment_unit_id = models.IntegerField(null=True, blank=True)
+    service_slug = models.CharField(max_length=48, blank=True)
+    # Denormalised from the opportunity (works carry no GPS of their own) so
+    # money can be grouped by country without a join on every card.
+    country = models.CharField(max_length=2, blank=True, db_index=True)
+
+    status = models.CharField(max_length=32, db_index=True)
+    created_ts = models.DateTimeField(db_index=True)
+    status_ts = models.DateTimeField(null=True, blank=True)
+    payment_date = models.DateTimeField(null=True, blank=True, db_index=True)
+
+    approved_count = models.IntegerField(default=0)
+    completed_count = models.IntegerField(default=0)
+    usd_to_worker = models.DecimalField(max_digits=12, decimal_places=4, null=True, blank=True)
+    usd_to_org = models.DecimalField(max_digits=12, decimal_places=4, null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["created_ts", "opportunity_id"]),
+            models.Index(fields=["status", "created_ts"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"work {self.work_key[:8]} · {self.status}"
+
+
+class PulseGridCell(models.Model):
+    """Aggregated geography, so the map can show history without holding it.
+
+    Visit-level rows expire (see ``PULSE_EVENT_RETENTION_DAYS``); before they
+    do, their coordinates are folded into ~1 km cells and the rows are deleted.
+    A cell recording "412 services here" is genuinely not client-level data —
+    it cannot be resolved back to a household — yet it renders a *denser* map
+    than retaining the rows would, because it accumulates indefinitely.
+
+    This is the mechanism that lets Pulse show years of coverage while storing
+    no deep archive of beneficiary-level records.
+    """
+
+    lat_q = models.IntegerField()  # round(lat * 100) — ~1.1 km
+    lon_q = models.IntegerField()
+    country = models.CharField(max_length=2, blank=True, db_index=True)
+    service_slug = models.CharField(max_length=48, blank=True)
+
+    n = models.IntegerField(default=0)
+    # Kept per cell so the historical map can show *quality*, not just volume —
+    # a cell with a high flag ratio is a story a bare count can't tell.
+    approved_n = models.IntegerField(default=0)
+    flagged_n = models.IntegerField(default=0)
+
+    first_ts = models.DateTimeField(null=True, blank=True)
+    last_ts = models.DateTimeField(null=True, blank=True, db_index=True)
+
+    class Meta:
+        unique_together = [("lat_q", "lon_q", "service_slug")]
+        indexes = [models.Index(fields=["country", "n"])]
+
+    def __str__(self) -> str:
+        return f"cell {self.lat_q/100:.2f},{self.lon_q/100:.2f} n={self.n}"
+
+    @property
+    def lat(self) -> float:
+        return self.lat_q / 100.0
+
+    @property
+    def lon(self) -> float:
+        return self.lon_q / 100.0
+
+
 class PulseCursor(models.Model):
     """High-water mark for one (opportunity, endpoint) export stream."""
 

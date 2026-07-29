@@ -38,10 +38,12 @@ turns the endpoint into a change feed, so a poll returns only what is new.
 from __future__ import annotations
 
 import logging
+import re
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 
 from django.db import transaction
+from django.db.models import Count as models_count
 from django.utils import timezone
 
 from connect_labs.pulse.models import (
@@ -51,9 +53,11 @@ from connect_labs.pulse.models import (
     TIER_WARM,
     PulseCursor,
     PulseEvent,
+    PulseGridCell,
     PulseIngestHealth,
     PulseOpportunity,
     PulseScalar,
+    PulseWork,
 )
 from connect_labs.pulse.normalize import is_on_map, parse_location, service_slug_for, visit_to_event_fields
 
@@ -122,6 +126,101 @@ def refresh_opportunities(client) -> dict:
     return scope
 
 
+def refresh_opportunity_countries() -> int:
+    """Derive each opportunity's country from where its work actually happened.
+
+    Nothing in the export says which country an opportunity operates in — the
+    name sometimes hints ("KMC - UG - ...") but not reliably, and it is free
+    text. The only ground truth is the GPS on its visits.
+
+    So: take the modal country across an opp's events. Without this,
+    ``PulseOpportunity.country`` stays empty and every country-scoped card
+    (notably "$ by country" on the financial view) silently renders nothing —
+    a field that exists but is never populated is worse than one that is
+    absent, because it fails quietly rather than loudly.
+
+    Caveat worth knowing: an opportunity quiet for longer than the event
+    retention window has no events left to derive from, so it keeps whatever
+    country it was last assigned. That is why this runs on the cheap tier
+    (every 5 min) rather than only at backfill time.
+    """
+    updated = 0
+    rows = (
+        PulseEvent.objects.exclude(country="")
+        .values("opportunity_id", "country")
+        .annotate(n=models_count("id"))
+        .order_by("opportunity_id", "-n")
+    )
+    modal: dict[int, str] = {}
+    for row in rows:
+        modal.setdefault(row["opportunity_id"], row["country"])
+
+    for opp_id, country in modal.items():
+        updated += (
+            PulseOpportunity.objects.filter(opportunity_id=opp_id).exclude(country=country).update(country=country)
+        )
+
+    # Works denormalise country from their opportunity, so a newly-derived
+    # country has to be pushed onto rows already stored — otherwise money-by-
+    # country stays empty for all historical work.
+    backfilled = 0
+    for opp in PulseOpportunity.objects.exclude(country=""):
+        backfilled += (
+            PulseWork.objects.filter(opportunity_id=opp.opportunity_id)
+            .exclude(country=opp.country)
+            .update(country=opp.country)
+        )
+
+    if updated or backfilled:
+        logger.info("[pulse] set country on %s opportunities from visit GPS; backfilled %s works", updated, backfilled)
+    return updated
+
+
+def sample_opportunity_countries(client, limit: int = 600) -> int:
+    """Give historical opportunities a country from a single sampled visit.
+
+    ``refresh_opportunity_countries`` derives country from stored events, but
+    events are a rolling window — an opportunity that stopped delivering before
+    the window has none, so it never gets a country and its (possibly large)
+    historical spend is invisible to every country-scoped card.
+
+    One ``cursor_order=reverse&page_size=1`` request returns that opportunity's
+    most recent visit, which carries GPS. That is ~0.45s and a few KB per
+    opportunity — cheap enough to cover the whole estate — and it means the
+    money spine gets geography without pulling a single extra visit into
+    storage. The sampled record is read for its coordinate and discarded.
+    """
+    from connect_labs.pulse.normalize import country_for
+
+    targets = PulseOpportunity.objects.filter(country="").values_list("opportunity_id", flat=True)[:limit]
+    resolved = 0
+    for opp_id in list(targets):
+        endpoint = f"/export/opportunity/{opp_id}/{VISITS_ENDPOINT}/"
+        try:
+            page = next(
+                iter(client.paginate(endpoint, params={"cursor_order": "reverse", "page_size": 1}, partial_ok=True)),
+                [],
+            )
+        except Exception as exc:
+            logger.debug("[pulse] country sample failed for opp %s: %s", opp_id, exc)
+            continue
+        if not page:
+            continue
+        point = parse_location(page[0].get("location"))
+        if not point:
+            continue
+        country = country_for(*point)
+        if not country:
+            continue
+        PulseOpportunity.objects.filter(opportunity_id=opp_id).update(country=country)
+        PulseWork.objects.filter(opportunity_id=opp_id).exclude(country=country).update(country=country)
+        resolved += 1
+
+    if resolved:
+        logger.info("[pulse] resolved country for %s historical opportunities by sampling", resolved)
+    return resolved
+
+
 def _to_decimal(raw) -> Decimal | None:
     if raw in (None, "", "None"):
         return None
@@ -165,6 +264,124 @@ def refresh_rate(client, opp: PulseOpportunity, sample: int = 1000) -> Decimal |
     opp.usd_per_service = rate
     opp.save(update_fields=["usd_per_service", "updated_at"])
     return rate
+
+
+# ---------------------------------------------------------------------------
+# Works stream — the money/status spine, and where deep history lives
+# ---------------------------------------------------------------------------
+
+WORKS_ENDPOINT = "completed_works"
+
+# `completed_works` omits `id` from the payload but the server still keysets on
+# it — the `next` link carries `last_id=…`. Recovering it from there is what
+# makes this stream incrementally tailable instead of a full re-read.
+_LAST_ID_RE = re.compile(r"[?&]last_id=(\d+)")
+
+
+def _last_id_from_next(next_url: str | None) -> int | None:
+    if not next_url:
+        return None
+    match = _LAST_ID_RE.search(next_url)
+    return int(match.group(1)) if match else None
+
+
+def sync_works(client, cursor: PulseCursor, max_rows: int = 20000) -> dict:
+    """Pull completed_works for one opportunity, forward from the cursor.
+
+    At ~53 bytes/row gzipped this stream is cheap enough to carry full history —
+    all 1.65M visits' worth is ~87 MB — which is why deep history lives here and
+    not in the visit stream.
+
+    Note on freshness: works *mutate* (pending → approved, payment_date filled
+    in later). Tailing by id only sees new rows, so status changes on older work
+    need a periodic full re-read. That is affordable precisely because the whole
+    stream is 87 MB; ``resync_works`` does it by resetting the cursor.
+    """
+    opp = PulseOpportunity.objects.filter(opportunity_id=cursor.opportunity_id).first()
+    endpoint = f"/export/opportunity/{cursor.opportunity_id}/{WORKS_ENDPOINT}/"
+    params = {"cursor_order": "forward", "page_size": PAGE_SIZE}
+    if cursor.last_id:
+        params["last_id"] = cursor.last_id
+
+    stored = seen = 0
+    newest = cursor.newest_sync_ts
+    last_id = cursor.last_id
+
+    for page, next_url in _paginate_with_next(client, endpoint, params):
+        if not page:
+            continue
+        stored += _store_works(page, opp)
+        seen += len(page)
+        last_id = _last_id_from_next(next_url) or last_id
+        for row in page:
+            ts = _parse_ts_safe(row.get("date_created"))
+            if ts and (newest is None or ts > newest):
+                newest = ts
+        if seen >= max_rows:
+            break  # declared via partial_ok
+
+    cursor.last_id = last_id or cursor.last_id
+    cursor.newest_sync_ts = newest
+    cursor.last_polled_at = timezone.now()
+    cursor.tier = tier_for(newest)
+    cursor.consecutive_failures = 0
+    cursor.last_error = ""
+    cursor.save()
+
+    return {"opportunity_id": cursor.opportunity_id, "seen": seen, "stored": stored}
+
+
+def _paginate_with_next(client, endpoint, params):
+    """Yield (page, next_url) so callers can recover the cursor from the link.
+
+    ``ExportAPIClient.paginate`` hides the envelope, and for this endpoint the
+    envelope is the only place the cursor exists.
+    """
+    from connect_labs.pulse.client import fetch_json
+
+    query = "&".join(f"{k}={v}" for k, v in params.items())
+    path = f"{endpoint}?{query}"
+    while path:
+        payload = fetch_json(client, path)
+        next_url = payload.get("next")
+        yield payload.get("results") or [], next_url
+        if not next_url:
+            return
+        # The server emits http:// next links behind the proxy; keep the path.
+        path = next_url.split(".com", 1)[1] if ".com" in next_url else None
+
+
+def _parse_ts_safe(raw):
+    from connect_labs.pulse.normalize import _parse_ts
+
+    return _parse_ts(raw)
+
+
+def _store_works(rows, opp) -> int:
+    from connect_labs.pulse.normalize import work_to_fields
+
+    fields = [f for f in (work_to_fields(row, opp) for row in rows) if f is not None]
+    if not fields:
+        return 0
+
+    # Postgres rejects ON CONFLICT DO UPDATE when one statement proposes the
+    # same key twice ("cannot affect row a second time"), which would fail the
+    # whole batch rather than the duplicate. Collapse to the last occurrence —
+    # rows arrive in ascending id order, so the last one is the freshest state.
+    deduped: dict[str, dict] = {}
+    for row in fields:
+        deduped[row["work_key"]] = row
+    fields = list(deduped.values())
+    created = PulseWork.objects.bulk_create(
+        [PulseWork(**f) for f in fields],
+        # Works mutate; a re-seen row should update its status and payment date
+        # rather than be discarded, or "approved" would never arrive.
+        update_conflicts=True,
+        update_fields=["status", "status_ts", "payment_date", "approved_count", "usd_to_worker", "usd_to_org"],
+        unique_fields=["work_key"],
+        batch_size=500,
+    )
+    return len(created)
 
 
 # ---------------------------------------------------------------------------
@@ -315,17 +532,20 @@ def _bump_off_map(n: int) -> None:
 
 
 def ensure_cursors() -> int:
-    """Give every known opportunity a visits cursor."""
-    existing = set(PulseCursor.objects.filter(endpoint=VISITS_ENDPOINT).values_list("opportunity_id", flat=True))
-    missing = [
-        PulseCursor(opportunity_id=opp_id, endpoint=VISITS_ENDPOINT, tier=TIER_COLD)
-        for opp_id in PulseOpportunity.objects.exclude(opportunity_id__in=existing).values_list(
-            "opportunity_id", flat=True
-        )
-    ]
-    if missing:
-        PulseCursor.objects.bulk_create(missing, ignore_conflicts=True)
-    return len(missing)
+    """Give every known opportunity a cursor on each stream."""
+    created = 0
+    for endpoint in (VISITS_ENDPOINT, WORKS_ENDPOINT):
+        existing = set(PulseCursor.objects.filter(endpoint=endpoint).values_list("opportunity_id", flat=True))
+        missing = [
+            PulseCursor(opportunity_id=opp_id, endpoint=endpoint, tier=TIER_COLD)
+            for opp_id in PulseOpportunity.objects.exclude(opportunity_id__in=existing).values_list(
+                "opportunity_id", flat=True
+            )
+        ]
+        if missing:
+            PulseCursor.objects.bulk_create(missing, ignore_conflicts=True)
+            created += len(missing)
+    return created
 
 
 def due_cursors(limit: int = 40):
@@ -364,6 +584,98 @@ def record_failure(tier: str, error: str) -> None:
 # ---------------------------------------------------------------------------
 # Rollups
 # ---------------------------------------------------------------------------
+
+
+def fold_events_to_grid(before=None, batch: int = 5000) -> dict:
+    """Fold visit coordinates into ~1 km cells, then drop the visit rows.
+
+    This is what lets the map show years of coverage while labs retains no deep
+    archive of beneficiary-level records. A cell recording "412 services here"
+    cannot be resolved back to a household, and it accumulates indefinitely —
+    so the map gets *denser* over time even as the underlying rows expire.
+
+    Idempotent: folding is keyed on the cell, and folded rows are deleted in the
+    same transaction, so a retry cannot double-count.
+    """
+    from django.conf import settings
+
+    retention_days = getattr(settings, "PULSE_EVENT_RETENTION_DAYS", 30)
+    cutoff = before or (timezone.now() - timedelta(days=retention_days))
+
+    folded = deleted = 0
+    while True:
+        rows = list(
+            PulseEvent.objects.filter(field_ts__lt=cutoff).values(
+                "id", "lat", "lon", "country", "field_ts", "service_slug", "status", "flagged"
+            )[:batch]
+        )
+        if not rows:
+            break
+
+        cells: dict[tuple[int, int, str], dict] = {}
+        for row in rows:
+            if row["lat"] is None or row["lon"] is None:
+                continue
+            key = (int(round(row["lat"] * 100)), int(round(row["lon"] * 100)), row["service_slug"] or "")
+            cell = cells.setdefault(
+                key,
+                {
+                    "n": 0,
+                    "approved_n": 0,
+                    "flagged_n": 0,
+                    "country": row["country"] or "",
+                    "first": row["field_ts"],
+                    "last": row["field_ts"],
+                },
+            )
+            cell["n"] += 1
+            if row["status"] == "approved":
+                cell["approved_n"] += 1
+            if row["flagged"]:
+                cell["flagged_n"] += 1
+            if row["field_ts"] < cell["first"]:
+                cell["first"] = row["field_ts"]
+            if row["field_ts"] > cell["last"]:
+                cell["last"] = row["field_ts"]
+
+        with transaction.atomic():
+            for (lat_q, lon_q, service_slug), data in cells.items():
+                existing = (
+                    PulseGridCell.objects.select_for_update()
+                    .filter(lat_q=lat_q, lon_q=lon_q, service_slug=service_slug)
+                    .first()
+                )
+                if existing is None:
+                    PulseGridCell.objects.create(
+                        lat_q=lat_q,
+                        lon_q=lon_q,
+                        service_slug=service_slug,
+                        country=data["country"],
+                        n=data["n"],
+                        approved_n=data["approved_n"],
+                        flagged_n=data["flagged_n"],
+                        first_ts=data["first"],
+                        last_ts=data["last"],
+                    )
+                else:
+                    existing.n += data["n"]
+                    existing.approved_n += data["approved_n"]
+                    existing.flagged_n += data["flagged_n"]
+                    if existing.first_ts is None or data["first"] < existing.first_ts:
+                        existing.first_ts = data["first"]
+                    if existing.last_ts is None or data["last"] > existing.last_ts:
+                        existing.last_ts = data["last"]
+                    existing.save(update_fields=["n", "approved_n", "flagged_n", "first_ts", "last_ts"])
+                folded += data["n"]
+
+            deleted += PulseEvent.objects.filter(id__in=[r["id"] for r in rows]).delete()[0]
+
+        if len(rows) < batch:
+            break
+
+    if folded or deleted:
+        logger.info("[pulse] folded %s points into grid, dropped %s events", folded, deleted)
+    return {"folded": folded, "deleted": deleted, "cutoff": cutoff.isoformat()}
 
 
 def rebuild_rollups(since=None) -> int:

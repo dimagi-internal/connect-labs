@@ -591,7 +591,26 @@ CELERY_BEAT_SCHEDULE = {
         "task": "connect_labs.pulse.tasks.poll_visit_tail",
         "schedule": crontab(minute="*"),
     },
+    # completed_works: ~53 B/row gzipped vs 1,346 for user_visits, so this
+    # stream carries full history (~87MB for everything) while the visit tail
+    # stays a rolling window.
+    "pulse-works": {
+        "task": "connect_labs.pulse.tasks.poll_works",
+        "schedule": crontab(minute="*/2"),
+    },
+    # Fold expiring visit rows into ~1km cells overnight. The map keeps getting
+    # denser; labs stops holding the beneficiary-level rows that made it dense.
+    "pulse-fold-grid": {
+        "task": "connect_labs.pulse.tasks.fold_events_to_grid",
+        "schedule": crontab(hour=3, minute=20),
+    },
 }
+
+# How long visit-level rows survive before being folded into the anonymous
+# grid and deleted. Visits are the only beneficiary-level records Pulse holds,
+# and they exist only to make the map and ticker live -- scale and money come
+# from summary endpoints that carry no beneficiary data at all.
+PULSE_EVENT_RETENTION_DAYS = env.int("PULSE_EVENT_RETENTION_DAYS", default=30)
 
 # The Connect user Pulse polls as; their org membership defines what the
 # dashboard can see. Must have logged into labs in a browser at least once so a
