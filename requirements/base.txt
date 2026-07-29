@@ -376,6 +376,8 @@ multidict==6.7.1
     #   yarl
 nexus-rpc==1.2.0
     # via temporalio
+nh3==0.3.6
+    # via -r requirements/base.in
 numpy==2.4.3
     # via
     #   geopandas

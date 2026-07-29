@@ -1114,7 +1114,10 @@ def _build_per_mother_cte(
         else:
             raise ValueError(f"pre_aggregation {agg!r} not supported in per-mother CTE")
 
-        select_parts.append(f"{collapse} AS {f.name}_per_mother")
+        # _sql_ident on the user/MCP-supplied field name — matches the guard
+        # used on the outer aggregation select; keeps this alias from becoming a
+        # SQL-injection sink if the outer validation path ever changes.
+        select_parts.append(f"{collapse} AS {_sql_ident(f.name)}_per_mother")
 
     select_clause = ",\n        ".join(select_parts)
 
@@ -1680,14 +1683,27 @@ def _window_field_to_sql(wf: "WindowFieldComputation") -> str:  # noqa: F821
     a unique window name across fields.
     """
     if wf.operation == "lag_haversine":
-        window_spec = f"PARTITION BY base.{wf.partition_by} ORDER BY base.{wf.order_by}"
+        # Every identifier below is user/MCP-supplied via the pipeline schema
+        # (window_fields[].name/partition_by/order_by/lat_field/lon_field reach
+        # here through pipeline_update_schema / pipeline_preview). Force each
+        # through _sql_ident so a crafted name like
+        # ``d, (SELECT ... ) AS leak`` can't break out of the SELECT alias —
+        # the same guard every other alias/column in this builder uses. The
+        # config layer validates the four references against declared fields,
+        # but wf.name is otherwise unchecked; this closes it at the sink.
+        part_by = _sql_ident(wf.partition_by)
+        order_by = _sql_ident(wf.order_by)
+        lat_field = _sql_ident(wf.lat_field)
+        lon_field = _sql_ident(wf.lon_field)
+        name = _sql_ident(wf.name)
+        window_spec = f"PARTITION BY base.{part_by} ORDER BY base.{order_by}"
         return (
             f"haversine_meters("
-            f"LAG(base.{wf.lat_field}::float) OVER ({window_spec}), "
-            f"LAG(base.{wf.lon_field}::float) OVER ({window_spec}), "
-            f"base.{wf.lat_field}::float, "
-            f"base.{wf.lon_field}::float"
-            f") AS {wf.name}"
+            f"LAG(base.{lat_field}::float) OVER ({window_spec}), "
+            f"LAG(base.{lon_field}::float) OVER ({window_spec}), "
+            f"base.{lat_field}::float, "
+            f"base.{lon_field}::float"
+            f") AS {name}"
         )
     raise ValueError(f"Unknown window operation {wf.operation!r} in field {wf.name!r}")
 

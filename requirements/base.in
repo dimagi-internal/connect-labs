@@ -49,6 +49,7 @@ pydantic-ai
 shapely>=2.0.0  # For coverage maps WKT parsing
 geopandas>=0.14.0  # For coverage maps spatial operations
 markdown  # For solicitation markdown rendering
+nh3  # HTML sanitizer for user-authored markdown output (XSS defense)
 mcp>=1.0.0  # MCP protocol library (low-level; pulled in by fastmcp)
 fastmcp>=3.0.0,<4.0.0  # FastMCP 3.x server (remote labs MCP — Streamable-HTTP transport)
 uvicorn>=0.30.0  # ASGI server worker for the MCP Streamable-HTTP app (config.asgi)

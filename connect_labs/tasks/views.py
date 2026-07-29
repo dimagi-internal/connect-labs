@@ -21,6 +21,7 @@ from connect_labs.labs.context import get_org_data
 from connect_labs.labs.integrations.ocs.api_client import OCSAPIError, OCSDataAccess
 from connect_labs.tasks.data_access import TaskDataAccess
 from connect_labs.tasks.models import TaskRecord
+from connect_labs.utils.json_safe import safe_json_for_script
 
 logger = logging.getLogger(__name__)
 
@@ -148,8 +149,9 @@ class TaskCreationWizardView(LoginRequiredMixin, TemplateView):
         if program_id:
             opportunities = [o for o in opportunities if o.get("program") == program_id]
 
-        # Format for template
-        context["opportunities_json"] = json.dumps(
+        # Format for template. safe_json_for_script hardens the inline <script>
+        # embedding (opportunity/program names can't break out of the tag).
+        context["opportunities_json"] = safe_json_for_script(
             [
                 {
                     "id": opp.get("id"),
@@ -298,19 +300,19 @@ class TaskCreateEditView(LoginRequiredMixin, TemplateView):
             {
                 "is_edit_mode": is_edit_mode,
                 "task_id": task_id,
-                "task_data": json.dumps(task_data) if task_data else "null",
+                "task_data": safe_json_for_script(task_data) if task_data else "null",
                 "task": task_data,  # Also pass as dict for template access
-                "timeline_json": json.dumps(timeline),
+                "timeline_json": safe_json_for_script(timeline),
                 "opportunity_id": opportunity_id,
                 "opportunity_name": opportunity_name,
-                "flw_list_json": json.dumps(flw_list),
+                "flw_list_json": safe_json_for_script(flw_list),
                 "has_connect_token": has_token,
                 "token_expires_at": token_expires_at,
                 "has_context": bool(opportunity_id),
                 "current_user_name": current_user_name,
                 "network_manager_name": network_manager_name,
                 "program_manager_name": program_manager_name,
-                "quick_params": json.dumps(quick_params),
+                "quick_params": safe_json_for_script(quick_params),
             }
         )
 
