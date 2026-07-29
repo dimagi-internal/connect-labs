@@ -1,16 +1,27 @@
 """Two-speed ingest from Connect's export API.
 
-The two speeds are forced by measured cost, not taste. Per row on the wire:
+The two speeds are forced by measured cost, not taste. Measured across six
+programmes (1,200 sampled rows), per ``user_visits`` row:
 
-    user_visits      16,119 bytes   (99% of it form_json, which we discard)
-    completed_works      561 bytes
-    user_data            637 bytes
-    what we store        381 bytes
+    uncompressed        25,153 bytes   (94-103% of it form_json, discarded)
+    gzipped on the wire  4,578 bytes   (form JSON is repetitive: 5.5x)
+    what we store           381 bytes
+
+    completed_works         561 bytes  } clean — no form_json
+    user_data               637 bytes  }
 
 ``user_visits`` has no field-selection and no date filter, so there is no way
-to ask for less. A full 1.65M-visit history would move ~26.5 GB to store
-~628 MB. But it is also the *only* source of GPS, flags and per-event timing —
-i.e. the map, the ticker and the trust cards.
+to ask for less: we download every anthropometric reading and every form
+answer, then keep the timestamp, the point and the status. Across all 1.65M
+visits that is ~41 GB uncompressed / **~7.5 GB actually transferred**, to store
+~0.63 GB.
+
+Cost varies ~10x by programme — Back-to-School is 6.5 KB/row raw, Readers is
+62 KB/row — and the expensive ones also compress worst (4.5x vs 12.9x), because
+their bulk is unique content rather than boilerplate.
+
+But ``user_visits`` is also the *only* source of GPS, flags and per-event
+timing — i.e. the map, the ticker and the trust cards.
 
 So:
 
@@ -205,7 +216,7 @@ def seed_cursor(client, cursor: PulseCursor) -> PulseCursor:
 
     Without this, a fresh cursor has ``last_id=None`` and the forward tail
     starts from the oldest visit an opportunity ever recorded — so a first run
-    would drag full history (26.5 GB across the estate, at 16 KB/row) through
+    would drag full history (~7.5 GB gzipped across the estate) through
     the *live tail* path, which is capped and cadenced for small deltas.
 
     History is backfill's job, walking backwards on its own schedule. Tailing

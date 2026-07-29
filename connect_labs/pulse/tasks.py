@@ -105,10 +105,13 @@ def _recent_window():
 def backfill_visits(self, days: int = 90, opportunity_ids: list[int] | None = None) -> dict:
     """Walk history backwards for the chosen opportunities.
 
-    Manual and one-shot. At ~16 KB/row on the wire this is the expensive part
-    of the whole system — 90 days is the default because it covers every
-    currently-live programme while staying well short of the ~26.5 GB a full
-    1.65M-visit history would move.
+    Manual and one-shot, and the expensive part of the whole system: ~4.6 KB
+    gzipped per row, because ``user_visits`` ships every form's full JSON and
+    offers no way to ask for less.
+
+    90 days is the default because it covers every currently-live programme.
+    Full history is ~7.5 GB and, at the ~470 events/sec measured against
+    production, roughly 1-2 hours — tractable if the denser map is worth it.
     """
     from django.utils import timezone
 

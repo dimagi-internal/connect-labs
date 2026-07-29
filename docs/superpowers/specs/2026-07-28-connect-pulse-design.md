@@ -52,18 +52,32 @@ Verified against `dimagi/commcare-connect` `commcare_connect/data_export/`.
 - `?cursor_order=reverse&page_size=1` — cheap freshness probe (~0.45s/opp)
 - `?last_id=<max_seen>` — returns only rows created since the last poll
 
-**Cost per endpoint** (measured, opp 765):
+**Cost per endpoint.** Measured across six programmes, 1,200 sampled rows
+(corrected 2026-07-29: an earlier figure of 26.5 GB extrapolated from a single
+opportunity and ignored gzip — it was wrong in both directions).
 
-| Endpoint | Bytes/row | Notes |
-|---|---|---|
-| `user_visits` | 16,119 | **99% is `form_json`**; no field selection, no date filter |
-| `completed_works` | 561 | clean |
-| `user_data` | 637 | clean |
-| `payment` / `invoice` | small | clean |
-| *what Pulse actually stores* | 381 | 2.4% of the wire bytes |
+| Endpoint | Uncompressed B/row | Gzipped B/row | Notes |
+|---|---|---|---|
+| `user_visits` | 25,153 | **4,578** | 94–103% is `form_json`; no field selection, no date filter |
+| `completed_works` | 561 | — | clean |
+| `user_data` | 637 | — | clean |
+| *what Pulse stores* | 381 | — | 1.5% of the uncompressed payload |
 
-A full 1.65M-visit backfill would move **~26.5 GB to store ~628 MB**. Steady-state
-tailing is ~20 MB/day, which is irrelevant. **The cost is entirely in backfill depth.**
+There is no way to ask for less than the whole form: every anthropometric
+reading and form answer is downloaded so we can keep a timestamp, a point and a
+status.
+
+Full 1.65M-visit history is **~41 GB uncompressed / ~7.5 GB actually
+transferred**, storing ~0.63 GB. At the ~470 events/sec measured against
+production that is roughly **1–2 hours** — so full history is tractable, not
+prohibitive, and it is what makes the map ~60× denser than the prototype.
+
+Cost varies ~10× by programme (Back-to-School 6.5 KB/row raw, Readers 62 KB/row),
+and the expensive ones compress worst (4.5× vs 12.9×) because their bulk is
+unique content rather than boilerplate.
+
+Steady-state tailing is a few MB/day, which is irrelevant. **The cost is
+entirely in backfill depth.**
 
 `opp_org_program_list` returns all 494 opps *with lifetime `visit_count`* in one
 request — headline scale numbers are effectively free.
@@ -113,8 +127,10 @@ account.** Two consequences that must be handled, not assumed:
    stretch, ingest stops. Must fail loudly (surfaced status on the page + log), never
    silently serve stale data as live.
 
-**Backfill depth: last 90 days**, extendable. Covers every currently-live programme,
-~30–40 min to first useful screen, deep history backfills later.
+**Backfill depth: last 90 days** to first useful screen, then extend to full
+history. The corrected cost measurement (7.5 GB / 1–2 hours for everything,
+not 26.5 GB / 4–5 hours) makes full history a reasonable overnight job rather
+than a project, and the dense map is a large part of the visual payoff.
 
 ### Layer 2 · Common data model
 
