@@ -296,7 +296,16 @@ def _seed_corridor_awards(orgs, staff):
             defaults={
                 "category": rfp.categories[0],
                 "quantity": cartons,
-                "unit": "truck-months" if country == "SD" else "cartons",
+                # The unit the lot's own description states, on every screen.
+                #
+                # The Sudan lot was relabelled "truck-months" here while its
+                # description reads "Inland haulage of 40,000 CARTONS" and the
+                # contract it produces reports 40,000 cartons in the pipeline
+                # table — so scene 6 said "40,000 truck-months" and scene 9 said
+                # "40,000 cartons" about one record, five rows apart. A haulage
+                # contract is priced per carton moved here ($3.20), so cartons
+                # is the honest unit and the one everything else already uses.
+                "unit": "cartons",
                 "delivery_country": country,
                 "delivery_place": lot_desc.split(" to ")[-1] if " to " in lot_desc else "Port Sudan",
                 "delivery_deadline": TODAY + timedelta(days=due_in_days),

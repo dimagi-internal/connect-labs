@@ -24,11 +24,13 @@ scenes:
   - kind: hold
     seconds: 2.2
   - kind: scroll_to
-    target: css:.keyfigures
-    note: the three figures this scene exists to keep apart — obligated, disbursed and
-      delivered. It used to scroll past them onto the next scene's diagram.
+    target: css:.card:has-text('Stage by stage, per contract')
+    note: the per-contract stage bars — the ACTUAL evidence for this scene's claim, and a
+      shape used nowhere else in the run. Framing the key figures instead left scene 1 and
+      scene 2 as the same capture 179px apart (mean abs diff 2.3/255), and the bars that
+      carry the claim appeared in no frame at all.
   - kind: hold
-    seconds: 2.0
+    seconds: 2.6
   impressive_because: Money can be committed against a contract, paid to a supplier, and still not be
     food in a warehouse. The distance between those stages is exactly where the programmatic risk sits,
     and most reports fold them into whichever number looks best.

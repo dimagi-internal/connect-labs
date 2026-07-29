@@ -480,12 +480,21 @@ def test_seeded_outcomes_land_inside_the_sphere_performance_band():
     reason. Seeding to the sector's own thresholds is that reason.
     """
     call_command("seed_supply_demo")
-    total = ChildOutcome.objects.count()
+    # Over DISCHARGED children. The Sphere rates are defined on completed
+    # courses, and a child admitted last week has not completed one — counting
+    # them in the denominator would report a programme as failing for the crime
+    # of having recently admitted anybody.
+    discharged = ChildOutcome.objects.exclude(discharge_status=ChildOutcome.Discharge.IN_TREATMENT)
+    total = discharged.count()
     assert total > 50, "need a cohort big enough for the rates to mean anything"
-    recovered = ChildOutcome.objects.filter(discharge_status=ChildOutcome.Discharge.RECOVERED).count()
-    defaulted = ChildOutcome.objects.filter(discharge_status=ChildOutcome.Discharge.DEFAULTED).count()
+    recovered = discharged.filter(discharge_status=ChildOutcome.Discharge.RECOVERED).count()
+    defaulted = discharged.filter(discharge_status=ChildOutcome.Discharge.DEFAULTED).count()
     assert recovered / total > 0.75
     assert defaulted / total < 0.15
+
+    # And children still mid-course exist, because the demo world has to
+    # contain a batch handed out last week as well as one handed out in April.
+    assert ChildOutcome.objects.filter(discharge_status=ChildOutcome.Discharge.IN_TREATMENT).exists()
 
 
 def test_every_seeded_outcome_series_agrees_with_its_discharge_status():
@@ -707,10 +716,16 @@ def test_a_partner_cannot_reallocate(client):
 
 def test_a_delivered_batch_drills_to_a_child_who_recovered(client):
     """The closing beat of both the partner and the funder narratives."""
-    from connect_labs.supply.models import MUAC_RECOVERED_MIN_MM, DistributionRecord
+    from connect_labs.supply.models import MUAC_RECOVERED_MIN_MM
 
     call_command("seed_supply_demo")
-    batch = DistributionRecord.objects.first().batch_lot
+    # A batch whose children have outcomes recorded. Not every distribution has
+    # any — one handed out three days ago legitimately does not yet — and the
+    # funder's drill only offers the ones that do.
+    from connect_labs.supply.models import ChildOutcome as _CO
+
+    batch = _CO.objects.exclude(batch_lot="").values_list("batch_lot", flat=True).first()
+    assert batch, "the demo needs at least one batch with recorded outcomes"
 
     client.post("/supply/login/", {"email": "usg@oes.example", "password": "oes-demo-2026"})
     body = client.get(f"/supply/api/batches/{batch}/").json()

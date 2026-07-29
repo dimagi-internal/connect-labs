@@ -183,11 +183,6 @@ function FunderTab({ ctx }) {
         </p>
       </Card>
 
-      <TwoFiguresAndTheGap
-        outcomes={outcomes}
-        records={world.distribution_records || []}
-      />
-
       <Card
         title="Coverage against need, by country"
         subtitle="Tonnage cannot distinguish a large delivery into a large caseload from a small one into a small caseload. Coverage can."
@@ -251,6 +246,19 @@ function FunderTab({ ctx }) {
           />
         )}
       </Card>
+
+      {/* The measured half comes LAST, after the coverage table.
+          It sat directly under the unit ladder, so the ladder scene's frame
+          also contained the finale's reveal — 58,251 courses and the observed
+          recovery rate — and the closing scene then announced as new a figure
+          the viewer had already read three scenes earlier. A 250px card cannot
+          exclude the card beneath it in a 720px viewport, so the fix is the
+          page order, not the camera. It also reads better: coverage against
+          need is the last SUPPLY question, and this is the first outcome one. */}
+      <TwoFiguresAndTheGap
+        outcomes={outcomes}
+        records={world.distribution_records || []}
+      />
     </Page>
   );
 }

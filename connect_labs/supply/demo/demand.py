@@ -9,7 +9,7 @@ they treated.
 Deterministic like the other two: it takes the shared PRNG so the world is
 identical on every run.
 """
-from datetime import timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 
 from django.contrib.gis.geos import Point
@@ -238,6 +238,85 @@ def seed_partner_stock(rng, nodes, sites):
             },
         )
         Shipment.objects.filter(pk=shipment.pk).update(status=Shipment.Status.DELIVERED, delivered_at=arrived)
+
+        # An EARLIER consignment, since consumed.
+        #
+        # Every partner receipt landed within the last three weeks, so once a
+        # distribution was correctly forced to follow the receipt that supplied
+        # it, no cohort had time to finish a course: every recorded outcome came
+        # out "still in treatment" with two measurements, and the narrative
+        # whose closing image is a child's arm circumference climbing out of the
+        # red had no climb to show.
+        #
+        # A programme running since the spring has older batches behind it. This
+        # one is received and then fully despatched again, so stock on hand — and
+        # therefore every weeks-of-cover figure on every screen — is unchanged,
+        # while the site gains a real prior batch whose children have had time
+        # to recover, default or not respond.
+        prior_ref = f"SHP-2026-08{index:02d}"
+        prior_departed = now - timedelta(days=96 + index)
+        prior_arrived = prior_departed + timedelta(days=2)
+        prior_shipment, _ = Shipment.objects.update_or_create(
+            reference=prior_ref,
+            defaults={
+                "contract": contract,
+                "origin": hub,
+                "destination": site,
+                "quantity": cartons,
+                "unit": "cartons",
+                "departed_at": prior_departed,
+                "eta": prior_arrived,
+            },
+        )
+        ShipmentLine.objects.update_or_create(
+            shipment=prior_shipment,
+            batch_lot=f"LOT25{index:02d}A",
+            defaults={
+                "gtin": gs1.make_gtin("629123", 300 + index),
+                "quantity": cartons,
+                "unit": "cartons",
+                "expiry_date": (now + timedelta(days=120 + index * 5)).date(),
+            },
+        )
+        for kind, node, when in (
+            (Milestone.Kind.DEPART, hub, prior_departed),
+            (Milestone.Kind.ARRIVE, site, prior_arrived),
+        ):
+            Milestone.objects.update_or_create(
+                shipment=prior_shipment,
+                node=node,
+                kind=kind,
+                sequence=0 if kind == Milestone.Kind.DEPART else 1,
+                defaults={"planned_at": when, "estimated_at": when, "actual_at": when},
+            )
+        SupplyEvent.objects.update_or_create(
+            org=contract.org,
+            external_id=f"{prior_ref}-recv",
+            defaults={
+                "shipment": prior_shipment,
+                "biz_step": SupplyEvent.BizStep.RECEIVING,
+                "event_time": prior_arrived,
+                "read_point": site,
+                "quantity_list": [{"gtin": "", "quantity": cartons, "uom": "cartons"}],
+                "source_tier": SupplyEvent.SourceTier.CHECKIN,
+            },
+        )
+        # ...and handed out again, so it leaves no balance behind it.
+        SupplyEvent.objects.update_or_create(
+            org=contract.org,
+            external_id=f"{prior_ref}-dispensed",
+            defaults={
+                "shipment": prior_shipment,
+                "biz_step": SupplyEvent.BizStep.DEPARTING,
+                "event_time": prior_arrived + timedelta(days=40),
+                "read_point": site,
+                "quantity_list": [{"gtin": "", "quantity": cartons, "uom": "cartons"}],
+                "source_tier": SupplyEvent.SourceTier.CHECKIN,
+            },
+        )
+        Shipment.objects.filter(pk=prior_shipment.pk).update(
+            status=Shipment.Status.CONFIRMED, delivered_at=prior_arrived
+        )
 
         # One consignment arrives short, at the site the narration names, with
         # the figures the narration speaks. The partner narrative's scene 4 is
@@ -527,32 +606,38 @@ def seed_distribution_records(rng, partner, sites, plans):
             # consignment has nothing to hand out, and saying otherwise
             # contradicts its own cover row on the same screen.
             continue
-        line = lines[index % len(lines)]
-        arrived = line.shipment.delivered_at or line.shipment.eta
-        arrived_on = arrived.date() if hasattr(arrived, "date") else arrived
-        if arrived_on is None:
-            continue
-        # Handed out after it landed, and before today.
-        latest = min(TODAY - timedelta(days=1), arrived_on + timedelta(days=9))
-        if latest <= arrived_on:
-            continue
-        distributed_on = arrived_on + timedelta(days=rng.randint(1, (latest - arrived_on).days))
-        # A site cannot dispense more than the batch brought it.
-        children = min(rng.randint(120, 340), int(line.quantity))
-        if children <= 0:
-            continue
-        record, _ = DistributionRecord.objects.update_or_create(
-            site=site,
-            distributed_on=distributed_on,
-            defaults={
-                "org": partner,
-                "cartons_dispensed": Decimal(children),
-                "children_served": children,
-                "batch_lot": line.batch_lot,
-                "shipment_line": line,
-            },
-        )
-        records.append(record)
+        # One distribution per batch the site received, not one per site. A
+        # single record per site meant a batch fanned out to exactly one
+        # distribution, so the traceability the closing scene demonstrates had
+        # no fan-out in it at all — and, once distributions were correctly
+        # forced to follow their receipts, every cohort was too recent to have
+        # finished a course.
+        for line in lines:
+            arrived = line.shipment.delivered_at or line.shipment.eta
+            arrived_on = arrived.date() if hasattr(arrived, "date") else arrived
+            if arrived_on is None:
+                continue
+            # Handed out after it landed, and before today.
+            latest = min(TODAY - timedelta(days=1), arrived_on + timedelta(days=9))
+            if latest <= arrived_on:
+                continue
+            distributed_on = arrived_on + timedelta(days=rng.randint(1, (latest - arrived_on).days))
+            # A site cannot dispense more than the batch brought it.
+            children = min(rng.randint(120, 340), int(line.quantity))
+            if children <= 0:
+                continue
+            record, _ = DistributionRecord.objects.update_or_create(
+                site=site,
+                distributed_on=distributed_on,
+                defaults={
+                    "org": partner,
+                    "cartons_dispensed": Decimal(children),
+                    "children_served": children,
+                    "batch_lot": line.batch_lot,
+                    "shipment_line": line,
+                },
+            )
+            records.append(record)
     return records
 
 
@@ -603,6 +688,11 @@ def _muac_series(rng, admitted_on, outcome):
     return series, admitted_on + timedelta(days=7 * weeks)
 
 
+def _measured_on(measurement):
+    """The date a MUAC reading was taken, as a date."""
+    return date.fromisoformat(measurement["date"])
+
+
 def _discharge_deck(rng):
     """A shuffled deck of 100 outcomes matching DISCHARGE_MIX exactly.
 
@@ -643,6 +733,29 @@ def seed_child_outcomes(rng, partner, records):
             dealt += 1
             admitted_on = record.distributed_on + timedelta(days=rng.randint(0, 5))
             series, discharged_on = _muac_series(rng, admitted_on, outcome)
+
+            # A visit that has not happened yet is not a measurement.
+            #
+            # The full course was generated and stored whatever today's date
+            # was, so a child admitted five days ago carried nine weekly
+            # readings and a discharge — and once the batch join was made real,
+            # that became checkable and false on its face: an eight-week course
+            # attributed to a consignment that landed a week ago. It also made
+            # every recorded outcome look complete, so a fourteen-child sample
+            # came out fourteen-of-fourteen recovered with no variation at all,
+            # which a CMAM adviser reads as generated rather than observed.
+            #
+            # The series is truncated at today. A child still mid-course is
+            # still IN TREATMENT — which is a status this model already has,
+            # and the honest one for a batch distributed last week.
+            observed = [m for m in series if _measured_on(m) <= TODAY]
+            if len(observed) < 2:
+                # Admitted, not yet re-measured. Nothing to draw and nothing to
+                # claim; the batch's children_served already counts them.
+                continue
+            completed = discharged_on <= TODAY and len(observed) == len(series)
+            status = outcome if completed else ChildOutcome.Discharge.IN_TREATMENT
+
             child, _ = ChildOutcome.objects.update_or_create(
                 anon_id=anon_id,
                 defaults={
@@ -651,10 +764,10 @@ def seed_child_outcomes(rng, partner, records):
                     "batch_lot": record.batch_lot,
                     "distribution_record": record,
                     "admitted_on": admitted_on,
-                    "admission_muac_mm": series[0]["muac_mm"],
-                    "measurements": series,
-                    "discharge_status": outcome,
-                    "discharged_on": discharged_on if discharged_on <= TODAY else None,
+                    "admission_muac_mm": observed[0]["muac_mm"],
+                    "measurements": observed,
+                    "discharge_status": status,
+                    "discharged_on": discharged_on if completed else None,
                 },
             )
             outcomes.append(child)
