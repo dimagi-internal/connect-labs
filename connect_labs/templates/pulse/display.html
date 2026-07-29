@@ -1,0 +1,124 @@
+{% load static %}<!doctype html>
+{% comment %}
+Standalone document, not an extension of base.html.
+
+A wall display has no navbar, no breadcrumbs and no chrome — and the public
+variant is opened by people who have never seen labs. Inheriting the labs shell
+would put a "Connect Labs" navigation bar above a funder-facing screen.
+{% endcomment %}
+<html lang="en" data-layout="{{ layout }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  {% if is_public %}<meta name="robots" content="noindex, nofollow">{% endif %}
+  <title>Connect Pulse — service delivery</title>
+  {# Work Sans is the labs typeface; loaded the same way base.html loads it. #}
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet">
+  <link rel="stylesheet" href="{% static 'pulse/pulse.css' %}">
+</head>
+<body class="pulse-body">
+
+  <div class="pulse-shell" id="shell">
+
+    <header class="pulse-bar">
+      <div class="pulse-brand">Connect <b>Pulse</b></div>
+
+      {# Status is server-decided. The page may not upgrade itself to LIVE. #}
+      <div class="pulse-mode" id="mode" data-state="loading">
+        <i class="pulse-dot"></i><span id="mode-text">Connecting…</span>
+      </div>
+
+      <div class="pulse-bar-spacer"></div>
+
+      <div class="pulse-scope">
+        <div><span class="pulse-lbl">Opportunities</span><span class="pulse-v" id="s-opp">—</span></div>
+        <div><span class="pulse-lbl">Programmes</span><span class="pulse-v" id="s-prog">—</span></div>
+        <div><span class="pulse-lbl">Countries</span><span class="pulse-v" id="s-cty">—</span></div>
+      </div>
+    </header>
+
+    {% comment %}
+      Shown only when ingest is unhealthy. Deliberately impossible to miss:
+      a silently stale screen is the worst failure mode this system has.
+      ({# #} is single-line only in Django — a multi-line one renders literally.)
+    {% endcomment %}
+    <div class="pulse-alert" id="alert" hidden>
+      <strong>Data is not live.</strong> <span id="alert-text"></span>
+    </div>
+
+    <aside class="pulse-kpi" id="kpi"></aside>
+
+    <section class="pulse-map">
+      <div id="basemap"></div>
+      <canvas id="sky"></canvas>
+      <div class="pulse-map-head">
+        <div class="pulse-claim">
+          <span class="pulse-lbl" id="act-eyebrow">The pulse</span>
+          <h1 id="act-title">Every point of light is a service someone actually received.</h1>
+          <p id="act-note">Positions are the worker's GPS at the moment of delivery.</p>
+        </div>
+        <div class="pulse-focus" role="group" aria-label="Map focus">
+          <button data-focus="world" aria-pressed="true">Everywhere</button>
+          <button data-focus="ng" aria-pressed="false">Nigeria</button>
+          <button data-focus="ea" aria-pressed="false">East Africa</button>
+          <button data-focus="in" aria-pressed="false">India</button>
+        </div>
+      </div>
+      <div class="pulse-map-foot">
+        <div class="pulse-legend">
+          <span><i style="background:#8a6418"></i>Delivered before</span>
+          <span><i style="background:var(--light)"></i>Arriving now</span>
+          <span><i style="background:var(--warn)"></i>Flagged for review</span>
+          <span><i style="background:var(--crit)"></i>Rejected</span>
+        </div>
+        <div class="pulse-privacy">
+          Household coordinates are never shown below town scale. No beneficiary
+          names or phone numbers appear on this screen.
+        </div>
+      </div>
+    </section>
+
+    <aside class="pulse-act" id="act"></aside>
+
+    <section class="pulse-tick">
+      <div class="pulse-tick-head">
+        <span class="pulse-lbl">Field time</span>
+        <span class="pulse-lbl">Nearest town</span>
+        <span class="pulse-lbl h-svc">Service</span>
+        <span class="pulse-lbl">Outcome</span>
+        <span class="pulse-lbl" style="text-align:right">To worker</span>
+      </div>
+      <div class="pulse-tick-rows" id="ticker"></div>
+      <div class="pulse-transport">
+        <div class="pulse-controls">
+          <button id="btn-play">Pause</button>
+          <button data-speed="60">60&times;</button>
+          <button data-speed="240">240&times;</button>
+          <button data-speed="900">900&times;</button>
+          <span class="pulse-speed" id="speed-read">240&times;</span>
+        </div>
+        <span class="pulse-kbd"><b>1</b>&ndash;<b>4</b> acts &middot; <b>space</b> pause &middot; <b>F</b> focus</span>
+      </div>
+    </section>
+
+  </div>
+
+  <script>
+    window.PULSE_CONFIG = {
+      base: "/labs/pulse",
+      layout: "{{ layout|escapejs }}",
+      isPublic: {{ is_public|yesno:"true,false" }},
+      showPartnerNames: {{ show_partner_names|yesno:"true,false" }}
+    };
+    window.MAPBOX_TOKEN = "{{ mapbox_token|escapejs }}";
+  </script>
+  <script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
+  <script src="{% static 'maps/connect_map.js' %}"></script>
+  <script src="{% static 'pulse/store.js' %}"></script>
+  <script src="{% static 'pulse/cards.js' %}"></script>
+  <script src="{% static 'pulse/display.js' %}"></script>
+</body>
+</html>

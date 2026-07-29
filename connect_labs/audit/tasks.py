@@ -334,7 +334,7 @@ def _run_ai_review_on_sessions(
     session_image_counts = {}
     for session_id in session_ids:
         try:
-            session = data_access.get_audit_session(session_id, try_multiple_opportunities=True)
+            session = data_access.get_audit_session(session_id)
             if session:
                 visit_images = session.data.get("visit_images", {})
                 reviewable_count = 0
@@ -376,7 +376,7 @@ def _run_ai_review_on_sessions(
             break
         try:
             # Get session data
-            session = data_access.get_audit_session(session_id, try_multiple_opportunities=True)
+            session = data_access.get_audit_session(session_id)
             if not session:
                 logger.warning(f"[AIReview] Session {session_id} not found")
                 continue

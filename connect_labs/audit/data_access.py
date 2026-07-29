@@ -32,6 +32,24 @@ from connect_labs.workflow.data_access import BaseDataAccess
 
 logger = logging.getLogger(__name__)
 
+# Cross-opportunity audit-session lookup (see AuditDataAccess.get_audit_session).
+# The mapping is immutable in practice, so the TTL only bounds staleness after a
+# record is deleted or re-scoped; a stale entry self-heals on the next miss.
+_SESSION_OPP_CACHE_TTL = 60 * 60 * 6  # 6 hours
+# Hard ceiling on how many opportunity scopes one lookup will probe. Each probe is
+# a remote round-trip, so this bounds the worst case of a cache miss.
+_SESSION_SEARCH_OPP_LIMIT = 1000
+
+
+def _session_opp_cache_key(session_id: int) -> str:
+    """Cache key for an audit session's storage opportunity.
+
+    Deliberately NOT namespaced per user: it records where a record lives, which
+    is the same fact for everyone. Authorization is unaffected — every fetch
+    still carries the caller's own token and is re-authorized server-side.
+    """
+    return f"audit:session-opp:{session_id}"
+
 
 def _coerce_int(value) -> int | None:
     """Best-effort int coercion for scope ids, which reach us as int or str."""
@@ -1137,51 +1155,104 @@ class AuditDataAccess(BaseDataAccess):
             }
         )
 
-    def get_audit_session(
-        self, session_id: int, try_multiple_opportunities: bool = False
-    ) -> AuditSessionRecord | None:
-        """Get an audit session by ID.
+    def get_audit_session(self, session_id: int) -> AuditSessionRecord | None:
+        """Fetch an audit session by id. **This is the only way to do it.**
 
-        Uses the API's server-side id filter (get_record_by_id) — one small
-        request — NOT a fetch-all-and-scan. The previous implementation pulled
-        every AuditSession in scope (full payloads, dominated by visit_images
-        metadata) to find one id, and repeated that dump per opportunity in the
-        cross-opp fallback; the review screen paid it twice per open (#905).
+        There used to be a ``try_multiple_opportunities`` flag guarding the
+        cross-opportunity fallback. Every one of the eleven call sites passed
+        ``True``, so the flag only ever offered callers a way to get the lookup
+        wrong; it is gone, and the efficient path is the single path.
+
+        Why a lookup by primary key needs a strategy at all: the production
+        export API's GET handler authorizes and filters on whichever scope
+        param it is given, and with no scope at all it serves only *public*
+        records. An audit session is tagged with the opportunity it was created
+        under, so one the caller isn't currently scoped to cannot be fetched by
+        id alone — it has to be located first. (If a scope-free by-id endpoint
+        lands on production, this method is the one place that has to change.)
+
+        Resolution order, cheapest first:
+
+        1. **Remembered location.** A session's storage opportunity is
+           immutable, so it is memoised and the common case is one request.
+        2. **Ambient scope**, for the ordinary "viewing a session in the
+           opportunity that owns it" case.
+        3. **A bounded sweep** of the caller's other opportunities, whose
+           result is then memoised so nobody pays for it twice.
+
+        The sweep is what caused the 2026-07-29 incident: it was running per
+        page-open with no memoisation and a fresh client — and therefore a
+        fresh TLS handshake — per candidate opportunity, at ~700 requests/min
+        against production Connect. It now reuses one pooled connection and
+        runs at most once per session id per TTL.
+
+        Only the session's LOCATION is ever cached, never the record itself.
+        Every fetch still goes to the server with the caller's own token and
+        the server still runs its per-user opportunity authorization, so a
+        cache hit cannot widen what a user is allowed to read.
         """
-        # First try with current opportunity_id
-        session = self.labs_api.get_record_by_id(
+        cache_key = _session_opp_cache_key(session_id)
+        remembered_opp_id = cache.get(cache_key)
+
+        if remembered_opp_id is not None:
+            session = self._fetch_session(session_id, opportunity_id=remembered_opp_id)
+            if session:
+                return session
+            # Stale (deleted or re-scoped) — forget it and fall through to a re-resolve.
+            cache.delete(cache_key)
+
+        session = self._fetch_session(session_id)
+        if session:
+            self._remember_session_location(session_id, session)
+            return session
+
+        try:
+            return self._sweep_opportunities_for_session(session_id, skip=remembered_opp_id)
+        except Exception:
+            logger.debug("Cross-opportunity session search failed for session %s", session_id, exc_info=True)
+            return None
+
+    def _fetch_session(self, session_id: int, opportunity_id: int | None = None) -> AuditSessionRecord | None:
+        """One round-trip for a session by id, optionally under an explicit scope."""
+        return self.labs_api.get_record_by_id(
             session_id,
             experiment="audit",
             type="AuditSession",
             model_class=AuditSessionRecord,
+            opportunity_id=opportunity_id,
         )
-        if session:
-            return session
 
-        # If not found and try_multiple_opportunities is True, search other opportunities
-        if try_multiple_opportunities:
-            try:
-                opportunities = self.search_opportunities(query="", limit=1000)
+    def _remember_session_location(
+        self, session_id: int, session: AuditSessionRecord, found_under: int | None = None
+    ) -> None:
+        """Memoise where a session actually lives, read off the record itself.
 
-                for opp in opportunities:
-                    opp_id = opp.get("id")
-                    if opp_id == self.opportunity_id:
-                        continue
+        Uses ``_storage_record`` because ``AuditSessionRecord.opportunity_id``
+        is a property over ``data["opportunity_id"]`` — the opportunity being
+        *audited*, not the storage scope the API filters by. ``found_under`` is
+        the scope the fetch succeeded under, used when the record carries no
+        storage opportunity of its own.
+        """
+        storage_opp_id = _coerce_int(_storage_record(session).opportunity_id)
+        if storage_opp_id is None:
+            storage_opp_id = found_under
+        if storage_opp_id is not None:
+            cache.set(_session_opp_cache_key(session_id), storage_opp_id, _SESSION_OPP_CACHE_TTL)
 
-                    temp_labs_api = LabsRecordAPIClient(self.access_token, opp_id)
-                    try:
-                        session = temp_labs_api.get_record_by_id(
-                            session_id,
-                            experiment="audit",
-                            type="AuditSession",
-                            model_class=AuditSessionRecord,
-                        )
-                        if session:
-                            return session
-                    finally:
-                        temp_labs_api.close()
-            except Exception:
-                logger.debug("Cross-opportunity session search failed for session %s", session_id)
+    def _sweep_opportunities_for_session(self, session_id: int, skip: int | None = None) -> AuditSessionRecord | None:
+        """Last resort: probe the caller's other opportunities, then memoise the hit."""
+        ambient_opp_id = _coerce_int(self.opportunity_id)
+
+        for opp in self.search_opportunities(query="", limit=_SESSION_SEARCH_OPP_LIMIT):
+            opp_id = _coerce_int(opp.get("id"))
+            # Ambient scope and the remembered id were both already tried above.
+            if opp_id is None or opp_id == ambient_opp_id or opp_id == skip:
+                continue
+
+            session = self._fetch_session(session_id, opportunity_id=opp_id)
+            if session:
+                self._remember_session_location(session_id, session, found_under=opp_id)
+                return session
 
         return None
 
@@ -1318,12 +1389,12 @@ class AuditDataAccess(BaseDataAccess):
            lookup returns nothing and update_record raises
            "Record {id} not found", aborting the whole save.
         2. A client scoped to the session's own STORAGE opportunity when that
-           differs from the ambient scope. ``get_audit_session(
-           try_multiple_opportunities=True)`` deliberately loads sessions from
-           other opportunities, so the read side already crosses that boundary
-           and the write side has to follow it — otherwise the labs-only/
-           synthetic backend dispatch (``_is_labs_only()``, keyed on the
-           client's opportunity_id) also routes to the wrong target.
+           differs from the ambient scope. ``get_audit_session`` deliberately
+           loads sessions from other opportunities, so the read side already
+           crosses that boundary and the write side has to follow it —
+           otherwise the labs-only/synthetic backend dispatch
+           (``_is_labs_only()``, keyed on the client's opportunity_id) also
+           routes to the wrong target.
 
         Note the storage/target distinction: ``AuditSessionRecord`` overrides
         ``opportunity_id`` with a property over ``data["opportunity_id"]`` —

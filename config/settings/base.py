@@ -162,6 +162,7 @@ LOCAL_APPS = [
     "connect_labs.program",
     "connect_labs.microplans",
     "connect_labs.pages",
+    "connect_labs.pulse",
     "connect_labs.solicitations",
     "connect_labs.users",
     "connect_labs.web",
@@ -180,6 +181,16 @@ AUTHENTICATION_BACKENDS = [
 AUTH_USER_MODEL = "users.User"
 LOGIN_REDIRECT_URL = "/labs/overview/"
 LOGIN_URL = "/labs/login/"
+
+# Multi-site host contract. Labs and each standalone satellite site (supply,
+# campaign, and any future site) share ONE Django auth realm — one users.User
+# table and one session cookie — so being logged into any site authenticates
+# you everywhere. LabsOAuthSessionMiddleware is the labs boundary: it logs out
+# any authenticated request to a labs path that lacks a live labs OAuth session,
+# so a satellite login never becomes a labs login. Each satellite MUST list its
+# URL prefix here (next to its INSTALLED_APPS + urls.py entries) or its own
+# users get logged out on every request to it. See docs/multi-site-auth.md.
+LABS_SATELLITE_URL_PREFIXES = ["/supply/", "/campaign/"]
 
 # PASSWORDS
 # ------------------------------------------------------------------------------
@@ -578,5 +589,42 @@ CELERY_BEAT_SCHEDULE = {
         "task": "connect_labs.audit_trail.tasks.emit_canary_event",
         "schedule": crontab(minute="*/30"),
     },
+    # Pulse ingest. Two speeds because user_visits costs 16KB/row on the wire
+    # (99% discarded form_json) while the metadata endpoints cost ~560B/row —
+    # see connect_labs/pulse/ingest.py. Backfill is deliberately NOT on beat:
+    # it is a slow manual one-shot that must never stall the live tail.
+    "pulse-cheap-tier": {
+        "task": "connect_labs.pulse.tasks.poll_cheap_tier",
+        "schedule": crontab(minute="*/5"),
+    },
+    "pulse-visit-tail": {
+        "task": "connect_labs.pulse.tasks.poll_visit_tail",
+        "schedule": crontab(minute="*"),
+    },
+    # completed_works: ~53 B/row gzipped vs 1,346 for user_visits, so this
+    # stream carries full history (~87MB for everything) while the visit tail
+    # stays a rolling window.
+    "pulse-works": {
+        "task": "connect_labs.pulse.tasks.poll_works",
+        "schedule": crontab(minute="*/2"),
+    },
+    # Fold expiring visit rows into ~1km cells overnight. The map keeps getting
+    # denser; labs stops holding the beneficiary-level rows that made it dense.
+    "pulse-fold-grid": {
+        "task": "connect_labs.pulse.tasks.fold_events_to_grid",
+        "schedule": crontab(hour=3, minute=20),
+    },
 }
+
+# How long visit-level rows survive before being folded into the anonymous
+# grid and deleted. Visits are the only beneficiary-level records Pulse holds,
+# and they exist only to make the map and ticker live -- scale and money come
+# from summary endpoints that carry no beneficiary data at all.
+PULSE_EVENT_RETENTION_DAYS = env.int("PULSE_EVENT_RETENTION_DAYS", default=30)
+
+# The Connect user Pulse polls as; their org membership defines what the
+# dashboard can see. Must have logged into labs in a browser at least once so a
+# refresh token exists. Refresh tokens have an absolute lifetime — if this user
+# stops logging in, ingest stops, and PulseIngestHealth surfaces it.
+PULSE_POLLER_USERNAME = env("PULSE_POLLER_USERNAME", default="")
 # "30/m" → 30 writes per minute per user. Reads uncapped.

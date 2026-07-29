@@ -4,6 +4,14 @@ env:
   DOCKER_BUILDKIT: 1
   COMPOSE_DOCKER_CLI_BUILD: 1
 
+# Least-privilege GITHUB_TOKEN. CI only reads the repo (checkout, lint, tests);
+# it never writes contents, comments, or checks. Without this block the token
+# inherits the repo/org default (often read-write), and the linter/pytest jobs
+# run PR-branch code (pre-commit hooks, pip installs) — no reason to hand that a
+# writable token.
+permissions:
+  contents: read
+
 # No paths-ignore: the linter/pytest jobs are required status checks on main
 # (branch ruleset), and a path-filtered workflow never reports its checks on a
 # docs-only PR — which would leave that PR permanently unmergeable. Running CI

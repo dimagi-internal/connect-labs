@@ -28,6 +28,7 @@ from __future__ import annotations
 import json
 import logging
 
+from django.contrib.auth.decorators import login_required
 from django.http import HttpRequest, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
@@ -79,6 +80,7 @@ def _coaching_conversation(prompt_text: str, flw_name: str = "there") -> list[di
     ]
 
 
+@login_required
 @csrf_exempt
 @require_http_methods(["POST"])
 def manager_audit_create_api(request: HttpRequest, run_id: int) -> JsonResponse:
@@ -179,6 +181,7 @@ def manager_audit_create_api(request: HttpRequest, run_id: int) -> JsonResponse:
     )
 
 
+@login_required
 @csrf_exempt
 @require_http_methods(["POST"])
 def manager_coaching_attach_api(request: HttpRequest, run_id: int) -> JsonResponse:

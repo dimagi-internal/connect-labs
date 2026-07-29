@@ -13,6 +13,7 @@ Manual flags can also be POSTed by render code if a template exposes a
 import json
 import logging
 
+from django.contrib.auth.decorators import login_required
 from django.http import HttpRequest, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
@@ -42,6 +43,7 @@ def _refuse_if_run_completed(request: HttpRequest, workflow_run_id: int) -> Json
     return None
 
 
+@login_required
 @csrf_exempt
 @require_http_methods(["POST"])
 def create_flag_for_run(request: HttpRequest, workflow_run_id: int) -> JsonResponse:
@@ -89,6 +91,7 @@ def create_flag_for_run(request: HttpRequest, workflow_run_id: int) -> JsonRespo
     )
 
 
+@login_required
 @require_http_methods(["GET"])
 def list_flags_for_run(request: HttpRequest, workflow_run_id: int) -> JsonResponse:
     """GET /labs/workflow/api/<workflow_run_id>/flags/
