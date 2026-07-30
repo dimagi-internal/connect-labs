@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from connect_labs.microplans.core.grouping import GroupingConfig, group_work_areas
+from connect_labs.microplans.core.grouping import GroupingConfig, _absorb_enclosed_clusters, group_work_areas
 
 
 def _cell(wa_id: str, lon: float, lat: float, building_count: int = 10, ward: str | None = None) -> dict:
@@ -521,3 +521,132 @@ class TestTopUpDoesNotBridgeAcrossAnotherGroup:
         )
         a_group = next(cells for _seed, cells in result if "A" in cells)
         assert set(a_group) == {"A", "C"}
+
+
+class TestAbsorbEnclosedClusters:
+    """A cluster that geometrically FILLS A HOLE in another cluster's territory
+    (boxed in on every side, not just "touches only one neighbour") must always
+    be absorbed into it — independent of min_buildings/max_buildings, since
+    there is no other valid destination. Being adjacent to only one neighbour
+    is NOT sufficient on its own (an ordinary small WAG bordering a bigger one
+    on just one edge, with open land on its other sides, must NOT be
+    force-merged) — real grid geometry (unit squares) is used throughout so the
+    hole-filling check is exercised for real, not just the graph prefilter."""
+
+    @staticmethod
+    def _grid_adjacency(cells: dict[str, tuple[int, int]]) -> dict[str, list[str]]:
+        """4-connected adjacency for a {id: (col, row)} grid-position map."""
+        pos_to_id = {xy: wid for wid, xy in cells.items()}
+        adjacency: dict[str, list[str]] = {}
+        for wid, (c, r) in cells.items():
+            adjacency[wid] = [
+                pos_to_id[nb] for nb in ((c - 1, r), (c + 1, r), (c, r - 1), (c, r + 1)) if nb in pos_to_id
+            ]
+        return adjacency
+
+    def _ring_with_center(self, center_buildings=5, ring_buildings=10):
+        from shapely.geometry import box
+
+        # 3x3 grid: 8 "ring" cells (one cluster) fully surrounding a single
+        # "center" cell (a separate, 1-cell cluster) — a real donut shape, so
+        # the ring's union genuinely has an interior hole exactly where CTR is.
+        positions = {}
+        ring = []
+        for r in range(3):
+            for c in range(3):
+                wid = "CTR" if (c, r) == (1, 1) else f"G{r}{c}"
+                positions[wid] = (c, r)
+                if wid != "CTR":
+                    ring.append(wid)
+        geoms = {wid: box(c, r, c + 1, r + 1) for wid, (c, r) in positions.items()}
+        adjacency = self._grid_adjacency(positions)
+        by_id = {w: {"building_count": ring_buildings} for w in ring}
+        by_id["CTR"] = {"building_count": center_buildings}
+        clusters = [ring, ["CTR"]]
+        return clusters, adjacency, by_id, geoms, ring
+
+    def test_enclosed_cell_absorbed_into_surrounding_cluster(self):
+        clusters, adjacency, by_id, geoms, ring = self._ring_with_center()
+        result = _absorb_enclosed_clusters(clusters, adjacency, geoms)
+        assert len(result) == 1
+        assert set(result[0]) == set(ring) | {"CTR"}
+        # The bigger, surrounding cluster's own cell stays the seed (position 0).
+        assert result[0][0] == ring[0]
+
+    def test_direction_is_geometric_not_size_based(self):
+        # Even if the enclosed cell is given a much bigger building count than
+        # the ring around it, it's still the one absorbed — a solid single cell
+        # can never have an interior hole, so it can never be the "outer" side
+        # regardless of size; only the ring (which has the actual hole) can be.
+        clusters, adjacency, by_id, geoms, ring = self._ring_with_center(center_buildings=1000)
+        result = _absorb_enclosed_clusters(clusters, adjacency, geoms)
+        assert len(result) == 1
+        assert result[0][0] == ring[0]
+
+    def test_not_enclosed_when_only_bordering_one_edge(self):
+        # A-B-C in a row: B only touches A and... no wait, B touches BOTH A and
+        # C (two different clusters) — not an enclave. Also covers the simpler
+        # "leftover row next to a village" shape: a single cell bordering just
+        # one neighbour on ONE side, with open geometry on the others, must
+        # never be merged just because "it only touches one other cluster."
+        from shapely.geometry import box
+
+        positions = {"A": (0, 0), "B": (1, 0), "C": (2, 0)}
+        geoms = {wid: box(c, r, c + 1, r + 1) for wid, (c, r) in positions.items()}
+        adjacency = self._grid_adjacency(positions)
+        clusters = [["A"], ["B"], ["C"]]
+        result = _absorb_enclosed_clusters(clusters, adjacency, geoms)
+        assert sorted(result, key=len) == sorted(clusters, key=len)
+
+    def test_leftover_row_next_to_a_village_is_not_an_enclave(self):
+        # The exact shape that regressed earlier: a village block plus a
+        # leftover row sitting along ONE of its edges. The row touches only the
+        # village (one cluster), but doesn't fill a hole in it — must stay separate.
+        from shapely.geometry import box
+
+        positions = {}
+        village = []
+        for r in range(5):
+            for c in range(5):
+                wid = f"V{r}{c}"
+                positions[wid] = (c, r)
+                village.append(wid)
+        leftover = []
+        for c in range(3):
+            wid = f"X{c}"
+            positions[wid] = (c, -1)  # directly below the village's bottom row
+            leftover.append(wid)
+        geoms = {wid: box(c, r, c + 1, r + 1) for wid, (c, r) in positions.items()}
+        adjacency = self._grid_adjacency(positions)
+        clusters = [village, leftover]
+        result = _absorb_enclosed_clusters(clusters, adjacency, geoms)
+        assert sorted(result, key=len) == sorted(clusters, key=len)
+
+    def test_nested_enclaves_resolve_in_one_pass(self):
+        # 5x5 grid: OUTER (the 16-cell outer ring), MID (the 8-cell inner ring),
+        # CTR (the single center cell) — CTR is enclosed by MID, and once
+        # resolved MID+CTR together are enclosed by OUTER. Both must resolve.
+        from shapely.geometry import box
+
+        positions = {}
+        outer, mid = [], []
+        for r in range(5):
+            for c in range(5):
+                if (c, r) == (2, 2):
+                    wid = "CTR"
+                elif 1 <= c <= 3 and 1 <= r <= 3:
+                    wid = f"M{r}{c}"
+                    mid.append(wid)
+                else:
+                    wid = f"O{r}{c}"
+                    outer.append(wid)
+                positions[wid] = (c, r)
+        geoms = {wid: box(c, r, c + 1, r + 1) for wid, (c, r) in positions.items()}
+        adjacency = self._grid_adjacency(positions)
+        clusters = [outer, mid, ["CTR"]]
+        by_id = {w: {"building_count": 100} for w in outer}
+        by_id.update({w: {"building_count": 20} for w in mid})
+        by_id["CTR"] = {"building_count": 5}
+        result = _absorb_enclosed_clusters(clusters, adjacency, geoms)
+        assert len(result) == 1
+        assert set(result[0]) == set(outer) | set(mid) | {"CTR"}
