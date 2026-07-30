@@ -186,6 +186,49 @@ class DeletedWorkflowBackup(models.Model):
         return f"backup:def={self.definition_id}:opp={self.opportunity_id}:{self.name}"
 
 
+class DocComment(models.Model):
+    """A comment left on a Documentations page (``/labs/docs/<doc_key>/``).
+
+    Stored in the labs database, deliberately NOT in the Connect LabsRecord
+    store: these are notes about labs' own documentation, not program data, so
+    they have no opportunity/program/organization to be scoped by and nothing
+    about them belongs on production Connect.
+
+    Comments are global — every logged-in labs user sees the same thread on a
+    page, regardless of their selected program or opportunity context.
+    """
+
+    doc_key = models.CharField(max_length=64, db_index=True)
+    body = models.TextField()
+    author = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="doc_comments",
+    )
+    # Denormalised so a thread still reads sensibly if a display name changes.
+    author_name = models.CharField(max_length=255, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = "labs_doc_comment"
+        ordering = ["created_at", "id"]
+        verbose_name = "Documentation comment"
+        verbose_name_plural = "Documentation comments"
+
+    def __str__(self) -> str:
+        return f"comment:{self.doc_key}:{self.author_name or self.author_id}"
+
+    def as_dict(self) -> dict[str, Any]:
+        """Serialize for the comments JSON API."""
+        return {
+            "id": self.id,
+            "body": self.body,
+            "author_name": self.author_name or self.author.username,
+            "author_username": self.author.username,
+            "created_at": self.created_at.isoformat(),
+        }
+
+
 class WorkflowSchedule(models.Model):
     """A recurring schedule that runs a workflow's default-run headlessly.
 
