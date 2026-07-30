@@ -232,6 +232,13 @@ def _contract_from(award):
         starts_on=date.today(),
         ends_on=lot.delivery_deadline,
     )
-    contract.iati_activity_id = f"US-GOV-1-OES-{contract.reference}"
+    # US-GOV-1 is the reporting org; the reference IS the activity id, and it
+    # already begins "OES-". Interpolating it after a literal "OES-" produced
+    # US-GOV-1-OES-OES-C-2026-NG2 — a duplicated segment an IATI validator
+    # rejects, on the one field in the demo whose whole job is to be traceable
+    # by someone outside this system. The appropriations are unaffected: their
+    # activity ids ("OES-FY2026-001") do not carry the prefix themselves, so
+    # both now read US-GOV-1-OES-… from one rule.
+    contract.iati_activity_id = f"US-GOV-1-{contract.reference}"
     contract.save(update_fields=["iati_activity_id"])
     return contract

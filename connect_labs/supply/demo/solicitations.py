@@ -73,18 +73,39 @@ LIVE_RFP_RUTF_PRICES = {
 # The Damaturu and haulage lots are deliberately left unscored — reviewers work
 # through a tender lot by lot, and a comparison screen with every cell filled in
 # on the day bidding closes is the tell of a fixture rather than a tender.
+# Keyed by (category, delivery_place), because the live tender carries a
+# transport lot delivering to Maiduguri as well as an RUTF one, and a
+# place-only key silently gave both the RUTF panel's scores.
+#
+# EVERY lot is scored. Leaving two of the four unscored meant the comparison
+# Ada awards from rendered a "Score" button — the affordance to score it later
+# — in the Technical column of half the tender, so a scene claiming bids are
+# "priced AND scored lot by lot" showed a tender still mid-evaluation at the
+# moment it was awarded. Scores differ per lot: the same supplier assessed on
+# two corridors is assessed on that corridor's evidence.
 LIVE_RFP_TECHNICAL_SCORES = {
-    "Maiduguri": {
+    ("rutf", "Maiduguri"): {
         "Savanna Nutrients Ltd": 91,
         "Kano Therapeutic Foods PLC": 60,
         "Lagos NutriWorks Ltd": 83,
         "Faso NutriWorks SA": 82,
     },
-    "Djibo": {
+    ("rutf", "Djibo"): {
         "Faso NutriWorks SA": 88,
         "Savanna Nutrients Ltd": 79,
         "Kano Therapeutic Foods PLC": 61,
         "Lagos NutriWorks Ltd": 74,
+    },
+    ("rutf", "Damaturu"): {
+        "Savanna Nutrients Ltd": 87,
+        "Lagos NutriWorks Ltd": 80,
+        "Faso NutriWorks SA": 76,
+        "Kano Therapeutic Foods PLC": 64,
+    },
+    ("transport", "Maiduguri"): {
+        "Northern Corridor Logistics Ltd": 84,
+        "TransSahel Carriers Ltd": 77,
+        "Horn Transit Services PLC": 69,
     },
 }
 
@@ -345,7 +366,12 @@ def _seed_live_rfp(rng, orgs, staff):
             ),
             "categories": ["rutf", "transport"],
             "countries": ["NG", "BF"],
-            "bid_deadline": TODAY + timedelta(days=12),
+            # BEHIND today, because the narrative awards this tender on camera
+            # and you cannot award a tender that is still taking bids. It used
+            # to close twelve days out, so the award was stamped Jul 29 against
+            # a deadline of Aug 11 — the demo performed, on screen, the single
+            # thing a procurement auditor looks for first.
+            "bid_deadline": TODAY - timedelta(days=3),
             "status": RFP.Status.PUBLISHED,
             "created_by": staff[StaffRole.Role.PROCUREMENT_ADMIN],
         },
@@ -450,10 +476,10 @@ def _seed_live_rfp(rng, orgs, staff):
                 },
             )
 
-    # Scored on the two corridors the award turns on; the rest awaits reviewers.
+    # Every lot scored — see LIVE_RFP_TECHNICAL_SCORES on why none is left out.
     for lot in lots:
-        scores = LIVE_RFP_TECHNICAL_SCORES.get(lot.delivery_place)
-        if not scores or lot.category != "rutf":
+        scores = LIVE_RFP_TECHNICAL_SCORES.get((lot.category, lot.delivery_place))
+        if not scores:
             continue
         for lot_bid in LotBid.objects.filter(lot=lot).select_related("bid__org"):
             score = scores.get(lot_bid.bid.org.legal_name)

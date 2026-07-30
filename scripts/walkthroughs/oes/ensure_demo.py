@@ -16,6 +16,8 @@ disappears.
 It also sets the GDAL/GEOS paths Django's GIS stack needs on macOS, where the
 Homebrew prefix is not where the loader looks.
 """
+from __future__ import annotations
+
 import os
 import shutil
 import subprocess
@@ -24,11 +26,43 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
+
+def _main_clone_venv() -> Path | None:
+    """The venv in the main clone this worktree shares, found via git.
+
+    An emdash worktree keeps no venv of its own — it borrows the main clone's.
+    Asking git where the common .git lives locates that clone whatever the
+    checkout is called and wherever it sits, which a hardcoded path cannot:
+    this list used to name ``~/emdash-projects/connect-labs`` and silently
+    stopped resolving when the clone moved to ``~/emdash/repositories``, so
+    every OES render failed preflight with an error that reads like a missing
+    Django rather than a moved directory.
+    """
+    try:
+        common = subprocess.run(
+            ["git", "rev-parse", "--git-common-dir"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+    except (subprocess.CalledProcessError, OSError):
+        return None
+    if not common:
+        return None
+    return (REPO_ROOT / common).resolve().parent / ".venv/bin/python"
+
+
 # Candidate interpreters, best first. The main-repo venv is the one a worktree
 # shares (this repo uses emdash worktrees, whose venv lives in the main clone).
 CANDIDATES = [
-    Path.home() / "emdash-projects/connect-labs/.venv/bin/python",
-    REPO_ROOT / ".venv/bin/python",
+    p
+    for p in (
+        _main_clone_venv(),
+        REPO_ROOT / ".venv/bin/python",
+        Path.home() / "emdash-projects/connect-labs/.venv/bin/python",
+    )
+    if p is not None
 ]
 
 # Homebrew's GDAL/GEOS, which django.contrib.gis will not find unaided on
