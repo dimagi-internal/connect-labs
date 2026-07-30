@@ -100,6 +100,23 @@ if LABS_EMAIL_DOMAIN:
     SERVER_EMAIL = env("DJANGO_SERVER_EMAIL", default=DEFAULT_FROM_EMAIL)
 EMAIL_SUBJECT_PREFIX = env("DJANGO_EMAIL_SUBJECT_PREFIX", default="[Connect Labs]")
 
+# Django's DEFAULT_LOGGING attaches an AdminEmailHandler to the `django` logger,
+# which mails ADMINS on every unhandled 500. base.py sets
+# disable_existing_loggers=False and never overrides that logger, so the handler
+# survives — it was simply invisible while EMAIL_BACKEND was the console backend,
+# which printed the mail to stdout and discarded it.
+#
+# The moment SES delivery was enabled (#1039) that turned every 500 into real
+# outbound mail to dimagi@commcare-connect.org, at roughly one message every two
+# minutes, all of it landing in DeliveryDelay. On a freshly verified sending
+# domain that is exactly how reputation gets burned.
+#
+# Errors already go to Sentry and CloudWatch; mailing them is redundant. Empty
+# ADMINS is the bulletproof off switch: django.core.mail.mail_admins() returns
+# immediately when it is empty, whatever logger the handler is attached to.
+ADMINS = []
+MANAGERS = []
+
 # SENTRY
 # ------------------------------------------------------------------------------
 SENTRY_DSN = env("SENTRY_DSN", default="")
