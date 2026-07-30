@@ -206,13 +206,21 @@ scenes:
     note: the live tender, still open — bids priced per lot
   - kind: wait_for
     target: css:.modal
+  # .card-head, not .card. The recorder scrolls with Playwright's
+  # scroll_into_view_if_needed, which does NOT honour the scroll-margin-top
+  # rule added for this exact class of bug — it stops as soon as the element
+  # is minimally visible, and for a card taller than the modal body that
+  # leaves the TITLE above the top edge. Scene 7 framed a lot card whose
+  # title the narration speaks aloud and the frame did not contain, twice.
+  # Targeting the header makes the title and its due-date subtitle the thing
+  # guaranteed to be in view.
   - kind: scroll_to
-    target: css:.modal .card:has-text('60,000 cartons RUTF delivered to Maiduguri')
+    target: css:.modal .card:has-text('60,000 cartons RUTF delivered to Maiduguri') .card-head
   - kind: hold
     seconds: 2.4
     note: Maiduguri — Savanna first on price at 42.29, technical 91
   - kind: scroll_to
-    target: css:.modal .card:has-text('20,000 cartons RUTF delivered to Djibo')
+    target: css:.modal .card:has-text('20,000 cartons RUTF delivered to Djibo') .card-head
   - kind: hold
     seconds: 2.6
     note: Djibo — Faso NutriWorks first at 41.85, and Savanna drops to second

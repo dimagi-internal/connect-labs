@@ -105,7 +105,10 @@ def _seed_contracts(orgs, appropriations):
                 "currency": "USD",
                 "starts_on": (timezone.now() - timedelta(days=60)).date(),
                 "ends_on": (timezone.now() + timedelta(days=120)).date(),
-                "iati_activity_id": f"US-GOV-1-OES-{reference}",
+                # The reference already begins "OES-" — see the note in
+                # rfp_actions._contract_from. Prepending it again duplicated
+                # the segment.
+                "iati_activity_id": f"US-GOV-1-{reference}",
             },
         )
         contracts[reference] = contract
