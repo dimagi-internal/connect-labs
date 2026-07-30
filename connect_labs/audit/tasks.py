@@ -249,6 +249,23 @@ def _reading_for(comparison_field: str | None, reading_by_field: dict[str, str])
 # this leaves headroom without being unbounded.
 _MAX_REVIEWERS_PER_IMAGE = 4
 
+# Caps the outer per-session image pool (see _run_ai_review_on_sessions). Benchmarked
+# directly against the real ML classify gateway (see PR that introduced this constant
+# for the full results): throughput plateaus right around this concurrency level --
+# roughly double the throughput of the previous value of 5 -- and pushing higher (15-30)
+# buys no further throughput while pushing per-call latency up and eventually producing
+# read timeouts (observed starting around 30 concurrent gateway calls).
+#
+# This pool isn't the only source of concurrent load on the gateway: real-world worst
+# case is this value multiplied by _MAX_REVIEWERS_PER_IMAGE above, since each outer
+# worker's image can fan out to that many reviewers. At today's actual usage (2
+# reviewers/image), that's up to 20 concurrent gateway calls, comfortably inside the
+# benchmarked plateau. At the theoretical cap of 4 reviewers/image, worst case rises to
+# 40 -- still short of where timeouts appeared (~60), but past where latency started
+# climbing. If reviewer-count-per-image grows toward that cap in practice, or the
+# gateway's own capacity changes, re-benchmark before raising either constant further.
+_MAX_CONCURRENT_IMAGES_PER_SESSION = 10
+
 
 def _run_ai_review_on_sessions(
     data_access,
@@ -537,7 +554,9 @@ def _run_ai_review_on_sessions(
                 # bounded/validated count -- cap max_workers so a misconfigured
                 # or oversized reviewer list can't spin up unbounded OS threads
                 # (and unbounded concurrent connections to the ML gateway) on
-                # top of the outer pool's own 10 workers.
+                # top of the outer pool's own _MAX_CONCURRENT_IMAGES_PER_SESSION
+                # workers -- see that constant's definition for the combined
+                # worst-case concurrency this multiplies out to.
                 if len(runnable) == 1:
                     per_agent_results = [_run_one(runnable[0])]
                 else:
@@ -550,11 +569,7 @@ def _run_ai_review_on_sessions(
                     v_id, b_id, q_id, img_qid, ai_result, ai_notes, ai_confidence, human_result, False
                 )
 
-            # 10 workers: benchmarked against the real ML gateway -- throughput plateaus
-            # around this concurrency level (roughly double the throughput of 5 workers),
-            # and pushing further (15-30) buys no additional throughput while pushing
-            # per-call latency up and eventually producing read timeouts.
-            with ThreadPoolExecutor(max_workers=10) as pool:
+            with ThreadPoolExecutor(max_workers=_MAX_CONCURRENT_IMAGES_PER_SESSION) as pool:
                 fut_map = {pool.submit(_fetch_and_review, item): item for item in work_items}
                 for fut in as_completed(fut_map):
                     try:

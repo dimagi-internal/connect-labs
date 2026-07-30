@@ -505,9 +505,12 @@ class _CancelOnFirstAgent:
 
 @override_settings(CACHES=_LOCMEM)
 def test_cancel_key_drops_still_queued_futures_mid_session(monkeypatch):
-    """With more images than ThreadPoolExecutor's max_workers=10, some futures
-    are still queued (never started) when the flag flips -- those must be
-    .cancel()'d rather than run, so far fewer than all images get reviewed."""
+    """With enough images to keep the outer pool's workers saturated (a 4x
+    margin over _MAX_CONCURRENT_IMAGES_PER_SESSION, matching this pool's own
+    sizing), some futures are still queued (never started) when the flag
+    flips -- those must be .cancel()'d rather than run, so far fewer than all
+    images get reviewed. The margin is derived from the production constant
+    so this stays a meaningful test if that constant is retuned again."""
     from django.core.cache import cache
 
     cache.clear()
@@ -518,7 +521,8 @@ def test_cancel_key_drops_still_queued_futures_mid_session(monkeypatch):
         lambda aid: {"agent_cancel_multi": _CancelOnFirstAgent()}[aid],
     )
 
-    images = [{"blob_id": f"blob{i}", "question_id": "form/photo_a", "related_fields": []} for i in range(20)]
+    n_images = tasks._MAX_CONCURRENT_IMAGES_PER_SESSION * 4
+    images = [{"blob_id": f"blob{i}", "question_id": "form/photo_a", "related_fields": []} for i in range(n_images)]
     session = _FakeSession({"visit_images": {"1": images}})
 
     class _SingleSessionDataAccess:
@@ -541,10 +545,10 @@ def test_cancel_key_drops_still_queued_futures_mid_session(monkeypatch):
     )
 
     assert result["cancelled"] is True
-    # Bounded, not exact: max_workers=10 means at most a handful were already
-    # running when the flag flipped; the rest of the 20 were still queued.
-    assert result["total_reviewed"] < 20
-    assert len(_CancelOnFirstAgent.seen) < 20
+    # Bounded, not exact: at most _MAX_CONCURRENT_IMAGES_PER_SESSION were already
+    # running when the flag flipped; the rest of n_images were still queued.
+    assert result["total_reviewed"] < n_images
+    assert len(_CancelOnFirstAgent.seen) < n_images
 
 
 def test_legacy_single_agent_still_runs_on_all(patched_registry):
