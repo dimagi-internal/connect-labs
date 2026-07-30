@@ -88,6 +88,12 @@ CSV_HEADERS = {
     "target_population": "Target Population",
     "lga": "LGA",  # Nigeria ADM2 — see note above
     "state": "State",  # Nigeria ADM1 — see note above
+    # Added 2026-07: Connect's importer template now also carries these two.
+    # Implementation Area is Connect's own ward/area field — same value as
+    # `ward` above (confirmed with product). Work Area Group Name is labs'
+    # own `work_area_group` (the grouping-strategy label), passed through as-is.
+    "implementation_area": "Implementation Area",
+    "work_area_group": "Work Area Group Name",
 }
 
 
@@ -105,6 +111,9 @@ class WorkAreaPayload:
     # case_properties (the Connect/FLW-facing bucket) so the shared plan stays blind.
     arm: str = "intervention"
     case_properties: dict = field(default_factory=dict)
+    # Same value as `ward` — Connect's own ward/area field (see CSV_HEADERS note).
+    implementation_area: str = ""
+    work_area_group: str = ""
 
 
 _SLUG_ALPHABET = string.ascii_uppercase + string.digits
@@ -307,6 +316,8 @@ def to_csv_rows(payloads: list[WorkAreaPayload]) -> list[dict]:
             h["target_population"]: p.target_population,
             h["lga"]: p.case_properties.get("lga", ""),
             h["state"]: p.case_properties.get("state", ""),
+            h["implementation_area"]: p.implementation_area,
+            h["work_area_group"]: p.work_area_group,
         }
         for p in payloads
     ]

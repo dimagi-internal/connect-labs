@@ -427,19 +427,32 @@
         </label>
         <div id="grp-bfs-params" class="grid grid-cols-2 gap-1">
           <label class="block">
-            <span class="text-gray-600" id="grp-max-label">Max buildings per group</span>
+            <span class="text-gray-600" id="grp-target-label">Target buildings per group</span>
+            <input id="grp-target-buildings" type="number" value="200" min="1" class="base-input mt-0.5 text-xs">
+          </label>
+          <label class="block">
+            <span class="text-gray-600">Max buildings per group</span>
             <input id="grp-max-buildings" type="number" value="200" min="1" class="base-input mt-0.5 text-xs">
           </label>
           <label class="block">
             <span class="text-gray-600">Adjacency buffer (m)</span>
             <input id="grp-buffer-m" type="number" value="100" min="0" step="10" class="base-input mt-0.5 text-xs">
           </label>
+          <label class="block">
+            <span class="text-gray-600">Min buildings per group</span>
+            <input id="grp-min-buildings" type="number" value="0" min="0" class="base-input mt-0.5 text-xs">
+          </label>
+          <label class="block">
+            <span class="text-gray-600">Max reach beyond buffer (m)</span>
+            <input id="grp-reach-m" type="number" value="100" min="0" step="10" class="base-input mt-0.5 text-xs">
+          </label>
         </div>
+        <p id="grp-topup-note" class="text-[10px] text-gray-500 leading-snug">Groups aim for <b>Target</b> buildings. A group under <b>Min</b> merges into (or takes cells from) its nearest neighbour — up to <b>Max</b> buildings, searching up to <b>Max reach</b> beyond the adjacency buffer. <b>Min = 0</b> turns this off (a group can end up smaller than Target with no top-up).</p>
         <label class="block hidden" id="grp-bbox-params">
           <span class="text-gray-600">Target work areas per group</span>
           <input id="grp-target-size" type="number" value="30" min="1" class="base-input mt-0.5 text-xs">
         </label>
-        <p id="grp-barrier-note" class="hidden text-[10px] text-gray-500 leading-snug">Same as walkable clusters, but a cluster's border stops at a <b>major road, river, or railway</b> (from Overture) — it keeps growing in every other direction up to the max buildings. Where road/river data is sparse it falls back to plain walkable clusters.</p>
+        <p id="grp-barrier-note" class="hidden text-[10px] text-gray-500 leading-snug">Same as walkable clusters, but a cluster's border stops at a <b>major road, river, or railway</b> (from Overture) — it keeps growing in every other direction up to the max buildings, and the top-up pass respects the same barrier. Where road/river data is sparse it falls back to plain walkable clusters.</p>
         <button type="button" id="btn-regroup" class="button button-sm primary-dark" disabled>Apply grouping</button>
         <p class="text-[10px] text-gray-400">Re-groups every active work area. Audited per work area.</p>
       </div>

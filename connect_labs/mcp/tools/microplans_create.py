@@ -76,8 +76,9 @@ def _access_token_for(user, program_id: int) -> str:
             },
             "grouping": {
                 "type": "object",
-                "description": "Phase-1 GroupingConfig (strategy=bfs_adjacency|bbox, target_size, max_buildings, "
-                "buffer_distance_m). See microplans_coverage_param_schema.",
+                "description": "Phase-1 GroupingConfig (strategy=bfs_adjacency|barrier_aware|bbox, target_size, "
+                "target_buildings, buffer_distance_m, plus the top-up pass's max_buildings/min_buildings/"
+                "max_reach_m). See microplans_coverage_param_schema.",
                 "additionalProperties": True,
             },
             "group_id": {
@@ -226,10 +227,18 @@ _CONFIG_FIELD_HELP = {
         "population": "Ward population for population-weighted expected_visit_count (None = visits==building_count).",
     },
     "GroupingConfig": {
-        "strategy": "Phase-1 cell→group bucketing: 'bfs_adjacency' (Connect-GIS parity) or 'bbox'.",
+        "strategy": "Phase-1 cell→group bucketing: 'bfs_adjacency' (Connect-GIS parity), 'barrier_aware', or 'bbox'.",
         "target_size": "bbox: approx cells per super-grid bucket.",
-        "max_buildings": "bfs_adjacency: cap on buildings per contiguous group.",
-        "buffer_distance_m": "bfs_adjacency: adjacency buffer in metres.",
+        "target_buildings": "bfs_adjacency/barrier_aware: aim-for building total per group (was 'max_buildings' "
+        "before 2026-07 — that key still works as an alias when target_buildings is omitted).",
+        "buffer_distance_m": "bfs_adjacency/barrier_aware: adjacency buffer in metres.",
+        "max_buildings": "bfs_adjacency/barrier_aware: hard ceiling for the top-up pass (a group under "
+        "min_buildings may merge/steal past target_buildings, up to this). None/omitted = target_buildings "
+        "(no headroom, top-up pass is a no-op even if min_buildings is set).",
+        "min_buildings": "bfs_adjacency/barrier_aware: a group under this merges into (or steals cells from) its "
+        "nearest neighbour. 0 (default) disables the whole top-up pass.",
+        "max_reach_m": "bfs_adjacency/barrier_aware: search radius for the top-up pass, independent of "
+        "buffer_distance_m. None/omitted = buffer_distance_m.",
     },
     "AssignmentConfig": {
         "strategy": "Phase-2 CHW assignment: 'minimax_spread' (Neal Lesh), 'round_robin', or 'manual'.",

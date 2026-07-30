@@ -1584,8 +1584,11 @@ class ProgramPlanRegenerateView(LoginRequiredMixin, View):
 class ProgramPlanRegroupView(LoginRequiredMixin, View):
     """Phase-1 op: re-apply the grouping strategy to a plan's cells (Celery-offloaded).
 
-    Body: ``{"strategy", "max_buildings", "buffer_distance_m", "target_size", "revision"}``.
-    All params optional; see `core.grouping.GroupingConfig` for defaults.
+    Body: ``{"strategy", "target_buildings", "buffer_distance_m", "target_size", "revision",
+    "max_buildings", "min_buildings", "max_reach_m"}``. All params optional; see
+    `core.grouping.GroupingConfig` for defaults (the last three drive the undersized-
+    group top-up pass — "max_buildings" is also accepted as a legacy alias for
+    "target_buildings" when that key is absent, for plans saved before 2026-07).
     """
 
     def post(self, request, program_id, plan_id):

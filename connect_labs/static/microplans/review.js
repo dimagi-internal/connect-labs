@@ -1471,8 +1471,12 @@
   on('grp-strategy', 'change', () => {
     const s = $('grp-strategy').value;
     // barrier_aware is walkable clusters + barrier cuts, so it uses the same
-    // max-buildings + buffer inputs (a hard cap, exactly like walkable clusters).
+    // target/max/min/buffer/reach inputs (exactly like walkable clusters).
     $('grp-bfs-params').classList.toggle(
+      'hidden',
+      s !== 'bfs_adjacency' && s !== 'barrier_aware',
+    );
+    $('grp-topup-note')?.classList.toggle(
       'hidden',
       s !== 'bfs_adjacency' && s !== 'barrier_aware',
     );
@@ -1487,8 +1491,11 @@
     const strategy = $('grp-strategy').value;
     const body = { strategy };
     if (strategy === 'bfs_adjacency' || strategy === 'barrier_aware') {
+      body.target_buildings = +$('grp-target-buildings').value;
       body.max_buildings = +$('grp-max-buildings').value;
       body.buffer_distance_m = +$('grp-buffer-m').value;
+      body.min_buildings = +$('grp-min-buildings').value;
+      body.max_reach_m = +$('grp-reach-m').value;
     } else {
       body.target_size = +$('grp-target-size').value;
     }
@@ -1656,8 +1663,14 @@
       $('grp-strategy').value = g.strategy;
       $('grp-strategy').dispatchEvent(new Event('change'));
     }
+    // g.max_buildings is legacy (pre-2026-07) for target_buildings — a plan saved
+    // before the target/max/min split only has it, so fall back to it here too.
+    if (g.target_buildings || g.max_buildings)
+      $('grp-target-buildings').value = g.target_buildings || g.max_buildings;
     if (g.max_buildings) $('grp-max-buildings').value = g.max_buildings;
     if (g.buffer_distance_m) $('grp-buffer-m').value = g.buffer_distance_m;
+    if (g.min_buildings) $('grp-min-buildings').value = g.min_buildings;
+    if (g.max_reach_m) $('grp-reach-m').value = g.max_reach_m;
     if (g.target_size) $('grp-target-size').value = g.target_size;
     if (a.strategy) {
       $('asg-strategy').value = a.strategy;
@@ -1692,8 +1705,11 @@
   let asgBaseline = null;
   const GRP_FIELDS = [
     'grp-strategy',
+    'grp-target-buildings',
     'grp-max-buildings',
     'grp-buffer-m',
+    'grp-min-buildings',
+    'grp-reach-m',
     'grp-target-size',
   ];
   const ASG_FIELDS = ['asg-strategy', 'asg-workers', 'asg-restarts'];
@@ -1983,13 +1999,19 @@
       // Grouping fields only exist when there's a plan UI on the page (review
       // mode); on new-plan mode the backend falls back to its defaults.
       const grpStrategy = $('grp-strategy');
+      const grpTarget = $('grp-target-buildings');
       const grpMax = $('grp-max-buildings');
       const grpBuf = $('grp-buffer-m');
+      const grpMin = $('grp-min-buildings');
+      const grpReach = $('grp-reach-m');
       const grouping = grpStrategy
         ? {
             strategy: grpStrategy.value,
+            target_buildings: +grpTarget.value,
             max_buildings: +grpMax.value,
             buffer_distance_m: +grpBuf.value,
+            min_buildings: +grpMin.value,
+            max_reach_m: +grpReach.value,
           }
         : {};
       if (PLAN_ID) {
@@ -2914,8 +2936,6 @@
         const u5 = fam ? famU5(pops, fam) : null;
         const bld = r.buildings;
         const nWAs = r.nWAs;
-        // Avg U5 per work area — only meaningful once the plan has work areas.
-        const avg = u5 != null && nWAs ? u5 / nWAs : null;
         const ward = r.ward; // display only
         const aid = r.area_id; // unique key for target/pops/delete — never the name
         // U5-for-calc: manual edit wins; else the saved per-area target (post-create)
@@ -2927,6 +2947,11 @@
             ? Math.round(u5)
             : '';
         const val = aid in manualTargets ? manualTargets[aid] : base;
+        // Avg U5/WA tracks the SAME value driving the calc (manual edit / saved
+        // target / source U5) — not always the raw source U5 — so it moves with
+        // the "U5 for calc" cell instead of staying frozen at the source number.
+        const valNum = parseFloat(val);
+        const avg = !isNaN(valNum) && nWAs ? valNum / nWAs : null;
         const delCell = created
           ? '<td class="py-1"></td>'
           : `<td class="py-1 text-right"><button type="button" class="setup-del text-gray-400 hover:text-red-600 px-1"
@@ -2935,7 +2960,7 @@
                 )}" title="Remove this area" aria-label="Remove ${esc(
                   ward,
                 )}">✕</button></td>`;
-        return `<tr>
+        return `<tr data-n-was="${nWAs == null ? '' : nWAs}">
           <td class="pr-2 py-1 text-gray-700 truncate" title="${esc(
             ward,
           )}">${esc(ward)}</td>
@@ -2952,14 +2977,14 @@
           }</td>
           <td class="pr-2 py-1 text-right"><input type="number" min="0" step="1"
                 class="setup-target base-input text-xs text-right" style="width:5.5rem"
-                data-key="${esc(aid)}" value="${val}"></td>
+                data-key="${esc(aid)}" data-base="${base}" value="${val}"></td>
           <td class="pr-2 py-1 text-right text-gray-600">${
             nWAs == null ? '—' : nWAs.toLocaleString()
           }</td>
           <td class="pr-2 py-1 text-right text-gray-600">${
             r.nExcl ? r.nExcl.toLocaleString() : '—'
           }</td>
-          <td class="pr-2 py-1 text-right text-gray-600">${
+          <td class="pr-2 py-1 text-right text-gray-600 setup-avg">${
             avg == null ? '—' : avg.toFixed(1)
           }</td>
           ${delCell}
@@ -3171,6 +3196,16 @@
     // Cheap visibility toggle only — NOT a full renderSetupTable(), which would
     // rebuild every <input> and drop focus/cursor position mid-keystroke.
     updateSaveTargetsVisibility();
+    // Live-patch this row's Avg U5/WA (same value driving the calc) in place —
+    // it should move with the "U5 for calc" edit, not wait for a full re-render.
+    const tr = inp.closest('tr');
+    const avgCell = tr && tr.querySelector('.setup-avg');
+    if (avgCell) {
+      const nWAs = parseFloat(tr.dataset.nWas);
+      const raw = String(inp.value).trim();
+      const v = raw === '' ? parseFloat(inp.dataset.base) : parseFloat(raw);
+      avgCell.textContent = !isNaN(v) && nWAs ? (v / nWAs).toFixed(1) : '—';
+    }
   });
   // Per-row ✕ removes that area from the plan (delegated so it works after re-render).
   document.getElementById('setup-tbody')?.addEventListener('click', (e) => {

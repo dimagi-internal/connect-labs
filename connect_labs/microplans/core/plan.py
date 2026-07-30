@@ -692,10 +692,11 @@ def to_workarea_payloads(work_areas: list[dict], lga: str = "", state: str = "")
                 "state": wa_state,
             }
         )
+        ward = str(props.get("ward") or w.get("work_area_group") or "").strip()
         payloads.append(
             WorkAreaPayload(
                 slug=w["id"],
-                ward=str(props.get("ward") or w.get("work_area_group") or "").strip(),
+                ward=ward,
                 centroid_lon=float(lon),
                 centroid_lat=float(lat),
                 boundary_wkt=shape(w["geometry"]).wkt if w.get("geometry") else "",
@@ -703,6 +704,11 @@ def to_workarea_payloads(work_areas: list[dict], lga: str = "", state: str = "")
                 expected_visit_count=int(w.get("expected_visit_count", 0)),
                 target_population=int(w.get("target_population", 0)),
                 case_properties=cp,
+                # Implementation Area = Connect's own ward/area field — same value
+                # as `ward` (confirmed with product, 2026-07). Work Area Group Name
+                # is labs' own grouping-strategy label, passed through as-is.
+                implementation_area=ward,
+                work_area_group=str(w.get("work_area_group") or "").strip(),
             )
         )
     return payloads

@@ -111,7 +111,7 @@
   {% if group.is_study %}
   <p class="text-[11px] text-gray-400 mt-1 flex items-center flex-wrap">
     <span class="text-gray-500">Connect&nbsp;CSV is blind</span>&nbsp;— each ward exports an arm-free work-area file.
-    {% include "microplans/_info.html" with text="Exported columns: Area Slug, Ward, Centroid, Boundary, Building Count, Expected Visit Count, Target Population, LGA, State. There is no Arm column — the field organisation only ever receives a ward to cover, never which arm it is." only %}
+    {% include "microplans/_info.html" with text="Exported columns: Area Slug, Ward, Centroid, Boundary, Building Count, Expected Visit Count, Target Population, LGA, State, Implementation Area, Work Area Group Name. There is no Arm column — the field organisation only ever receives a ward to cover, never which arm it is." only %}
   </p>
   {% endif %}
 
