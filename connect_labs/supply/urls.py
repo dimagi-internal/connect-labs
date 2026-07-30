@@ -79,10 +79,10 @@ urlpatterns = [
     path("api/actions/expedite/<int:shipment_id>/", demand_api.expedite, name="api_action_expedite"),
     path("api/outcomes/", demand_api.outcomes_summary, name="api_outcomes"),
     path("api/batches/<str:batch_lot>/", demand_api.batch_drill, name="api_batch_drill"),
-    # --- demo world (env-token authenticated; 404 unless SUPPLY_DEMO_RESEED_TOKEN
-    #     is set). Lets a render loop put the world back between takes without a
-    #     shell — every OES narrative mutates state, so take two needs take
-    #     one's world back.
+    # --- demo world. Authenticated with a labs MCP PAT (the same credential the
+    #     MCP server takes), so a render loop can put the world back between
+    #     takes without a shell and without anything to provision — every OES
+    #     narrative mutates state, so take two needs take one's world back.
     path("api/demo/reseed/", demo_api.reseed, name="api_demo_reseed"),
     path("api/v1/epcis/capture/", ingest_api.epcis_capture, name="api_v1_epcis_capture"),
     path("api/v1/shipments/", ingest_api.shipments, name="api_v1_shipments"),

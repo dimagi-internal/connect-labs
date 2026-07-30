@@ -342,11 +342,15 @@ aws --profile labs --region us-east-1 ecs execute-command \
   --interactive --command "python manage.py seed_supply_demo --reset"
 ```
 
-**Over HTTP** — `POST /supply/api/demo/reseed/`, bearer-token authenticated:
+**Programmatically** — the path a render loop uses, on any instance:
 
 ```bash
+# as an MCP tool (agents):        supply_demo_reseed
+# or over HTTP, same implementation:
 curl -X POST https://labs.connect.dimagi.com/supply/api/demo/reseed/ \
-  -H "Authorization: Bearer $SUPPLY_DEMO_RESEED_TOKEN"
+  -H "Authorization: Bearer $CONNECT_LABS_MCP_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"password": "something-you-will-log-in-with"}'
 ```
 
 This exists because every OES walkthrough mutates state — a reviewer records a
@@ -355,16 +359,20 @@ already has an award, so take two of a render does not merely look different, it
 fails. An interactive ECS session is not something a render loop can do between
 takes, which is why prod renders were effectively single-shot.
 
-**It is disabled unless configured.** With no `SUPPLY_DEMO_RESEED_TOKEN` in the
-server's environment the route 404s as though it did not exist — `/supply/` has
-open registration on a public host, and an endpoint that empties it should not
-advertise itself. To enable it on labs: create the secret, then reference it from
-`deploy/task-definitions/{web,worker}.json` alongside `SUPPLY_DEMO_PASSWORD`.
+**Auth is a labs MCP Personal Access Token** — the same credential the MCP server
+uses, self-service at `/labs/mcp/tokens/`. Nothing to provision per instance and
+no AWS step: if a machine can already talk to the labs MCP it already has one.
+(An earlier version invented its own `SUPPLY_DEMO_RESEED_TOKEN` env var on the
+grounds that the reseed deletes `supply_*` and `ApiToken` lives there, so a
+DB-stored credential cannot authenticate its own destruction. True of `ApiToken`;
+false of an MCP PAT, which lives in the `mcp` app, outside everything this
+touches. The env var bought nothing and cost a deploy-time provisioning step.)
 
-The token is read from the environment rather than stored as an `ApiToken`
-because the reseed deletes the `supply_*` tables, and `ApiToken` lives in them: a
-DB-stored credential would be valid for the request that erases it and absent for
-the next one. The secret has to outlive the data it resets.
+**`password` sets every persona's password as part of the reseed.** The seeder
+rotates them on every run anyway, so a caller that can reseed can already choose
+the value — which means a render needs no pre-shared secret at all: reseed, then
+sign in with what you just set. Minimum 8 characters, because `/supply/` is
+publicly reachable.
 
 `scripts/walkthroughs/oes/ensure_demo.py` picks the path automatically — it POSTs
 when `OES_BASE_URL` names a deployed host and runs the management command when it
