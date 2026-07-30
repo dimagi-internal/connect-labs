@@ -1,7 +1,29 @@
 auth:
-  type: url
-  url: /supply/dev-login/?persona=ada
-base_url: http://localhost:8009
+  # Off-camera personas. dev-login is a hard 403 outside DEBUG — /supply/ has open
+  # registration on a public host, so an endpoint that logs a caller in as a
+  # procurement admin without a password is only defensible while it refuses in
+  # production. So each persona is signed in through the REAL form before
+  # recording starts, in a throwaway context, and the recorder swaps cookies
+  # before a scene's nav when its `persona:` changes. No login is ever filmed.
+  #
+  # The password is read from $SUPPLY_DEMO_PASSWORD. The repo's own demo password
+  # is deliberately rejected on the deployed site, and a committed spec must not
+  # carry a credential either way.
+  type: form
+  login_url: /supply/login/
+  fields:
+    email: input[name="email"]
+    password: input[name="password"]
+  submit: button[type="submit"]
+  # Only renders once signed in, so a failed login aborts the render instead of
+  # filming a logged-out shell that reads as a product bug.
+  success: .navitem
+  password_env: SUPPLY_DEMO_PASSWORD
+  personas:
+    ada: oes-lead@oes.example
+    amina: supplier@savanna.example
+    tomas: oes-review@oes.example
+base_url: https://labs.connect.dimagi.com
 narrative_locked: true
 review_mode: autonomous
 why_brief: oes-supply-base.why_brief.yaml
@@ -49,7 +71,7 @@ scenes:
 - id: amina-applies-and-the-profile-is-frozen
   concept_claim: The profile a supplier is judged on is frozen at submission, so a later edit to their
     live paperwork cannot change what the reviewer assessed.
-  url: /supply/dev-login/?persona=amina
+  url: /supply/
   show: Amina's side at Savanna Nutrients — the expression of interest she submitted, opened to the
     "What the reviewer is assessing" panel, where the profile frozen at submission sits beside the live
     profile as it stands today and the UNICEF RUTF approval she has since renewed is marked "changed
@@ -85,7 +107,7 @@ scenes:
 - id: tomas-qualifies-the-supplier-per-category-and-with-an-expiry
   concept_claim: A reviewer decides per category and each pass carries an expiry date, so one supplier
     can be qualified for RUTF and declined for therapeutic milk.
-  url: /supply/dev-login/?persona=tomas
+  url: /supply/
   show: 'Tomas''s review queue with Savanna''s submission opened — the frozen snapshot he is assessing,
     and the per-category decision made on camera: qualify on ready-to-use therapeutic food with the date
     that qualification expires, decline on therapeutic milk — one supplier and two different answers.'
@@ -134,7 +156,7 @@ scenes:
 - id: the-registry-answers-who-can-supply-today
   concept_claim: The registry IS the set of live qualifications, so a lapsed certification removes a supplier
     without anyone maintaining a list.
-  url: /supply/dev-login/?persona=ada&next=/supply/
+  url: /supply/
   show: The Supplier registry tab — organisations listed by live qualification, with category, country
     and expiry filters, and the expiring-soon count called out.
   actions:
@@ -190,7 +212,7 @@ scenes:
 - id: bids-priced-and-scored-lot-by-lot
   concept_claim: Pricing per lot surfaces a different leader on each corridor — information a per-tender
     comparison cannot show.
-  url: /supply/dev-login/?persona=ada&next=/supply/
+  url: /supply/
   show: 'The live tender — RUTF Northeast Nigeria Q3 2026 — opened to its per-lot comparison: rows ranked
     by unit price with each reviewer''s technical score inline, and a different leader on the Maiduguri
     lot (Savanna, out of Kano) than on Djibo (Faso NutriWorks, out of Ouagadougou).'

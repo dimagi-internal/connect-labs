@@ -1,7 +1,27 @@
 auth:
-  type: url
-  url: /supply/dev-login/?persona=zara
-base_url: http://localhost:8009
+  # Off-camera personas. dev-login is a hard 403 outside DEBUG — /supply/ has open
+  # registration on a public host, so an endpoint that logs a caller in as a
+  # procurement admin without a password is only defensible while it refuses in
+  # production. So each persona is signed in through the REAL form before
+  # recording starts, in a throwaway context, and the recorder swaps cookies
+  # before a scene's nav when its `persona:` changes. No login is ever filmed.
+  #
+  # The password is read from $SUPPLY_DEMO_PASSWORD. The repo's own demo password
+  # is deliberately rejected on the deployed site, and a committed spec must not
+  # carry a credential either way.
+  type: form
+  login_url: /supply/login/
+  fields:
+    email: input[name="email"]
+    password: input[name="password"]
+  submit: button[type="submit"]
+  # Only renders once signed in, so a failed login aborts the render instead of
+  # filming a logged-out shell that reads as a product bug.
+  success: .navitem
+  password_env: SUPPLY_DEMO_PASSWORD
+  personas:
+    zara: zara@komadugu.example
+base_url: https://labs.connect.dimagi.com
 narrative_locked: true
 review_mode: autonomous
 why_brief: oes-partner-pipeline.why_brief.yaml
