@@ -13,7 +13,7 @@
   const $ = (s) => document.querySelector(s);
   const $$ = (s) => Array.from(document.querySelectorAll(s));
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const { nf } = window.PulseCards.helpers;
+  const { nf, usd } = window.PulseCards.helpers;
 
   const store = new window.PulseStore({
     base: CFG.base,
@@ -297,8 +297,19 @@
       {
         card: 'money',
         eyebrow: 'The ledger',
-        title:
-          '$663,682 has reached frontline workers, one verified service at a time.',
+        /* A figure in an act title must come from the payload the panels below
+           it are drawn from. This one was hardcoded, and by the time anyone
+           looked it read $663,682 against a live $478,490 -- 39% high, on the
+           same screen as two correct copies of the real number. A stale
+           constant cannot be spotted by eye, so titles quoting a number are
+           functions of the summary and unquote themselves when it is absent. */
+        title: (s) =>
+          s?.money?.to_workers
+            ? `${usd(
+                s.money.to_workers,
+                0,
+              )} has reached frontline workers, one verified service at a time.`
+            : 'Money reaches frontline workers, one verified service at a time.',
         note: 'Every dollar here was earned by a specific unit of approved work — not allocated, not budgeted.',
         focus: 'world',
       },
@@ -397,13 +408,23 @@
       );
   }
 
+  /* Titles may be a function of the summary so a quoted figure tracks the
+     data. Repainted on every summary, not just on act change -- otherwise the
+     number freezes at whatever it was when the act opened. */
+  function paintActTitle() {
+    const a = ACTS[act];
+    if (!a) return;
+    $('#act-title').textContent =
+      typeof a.title === 'function' ? a.title(store.summary) : a.title;
+  }
+
   function setAct(i, manual) {
     act = (i + ACTS.length) % ACTS.length;
     const a = ACTS[act];
     const card = window.PulseCards.CARDS[a.card];
     $('#act-label').textContent = card ? card.label : a.eyebrow;
     $('#act-eyebrow').textContent = a.eyebrow;
-    $('#act-title').textContent = a.title;
+    paintActTitle();
     $('#act-note').textContent = a.note;
     $$('#act .act-nav button').forEach((b) =>
       b.setAttribute('aria-pressed', +b.dataset.act === act),
@@ -480,6 +501,7 @@
     $('#s-opp').textContent = nf.format(scope.opportunities || 0);
     $('#s-prog').textContent = nf.format(scope.programs || 0);
     $('#s-cty').textContent = (s.money?.by_country || []).length || '—';
+    paintActTitle();
   });
 
   store.on('event', ignite);

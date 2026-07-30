@@ -420,6 +420,21 @@
             .join('');
         };
         renderRank($('bycountry'), m.by_country, 'name');
+        /* by_service reconciles to to_workers; by_country does not, because
+           Connect leaves country blank on most opportunities. Say what the
+           breakdown covers rather than letting three full-width bars imply
+           they are the whole portfolio. */
+        const cov = m.by_country_unattributed;
+        if (cov && cov.usd > 0 && cov.usd_share < 0.98) {
+          $('bycountry').insertAdjacentHTML(
+            'beforeend',
+            `<div class="flow-note">Covers ${usdCompact(
+              m.to_workers - cov.usd,
+            )} of ${usdCompact(
+              m.to_workers,
+            )} — country not recorded for the rest.</div>`,
+          );
+        }
         renderRank($('byservice'), m.by_service, 'name');
       },
       () => store.summary,

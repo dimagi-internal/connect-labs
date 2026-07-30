@@ -1,108 +1,157 @@
 {% extends 'base.html' %}
-{% load static %}
+{% load humanize %}
+
+{# Tailwind, matching the audit_trail house style. This page was originally    #}
+{# written in Bootstrap classes -- card / row / col / badge bg-success / table #}
+{# table-sm -- none of which base.html ships, so every one of them was a no-op #}
+{# and the page rendered as unstyled semantic HTML. It read as fine in tests   #}
+{# because a string-in-body assertion passes with no CSS at all.               #}
 
 {% block content %}
-<div class="container py-4" style="max-width: 960px;">
+<div class="max-w-screen-lg mx-auto px-4 py-8">
 
-  <h1 class="h4 mb-1">Connect Pulse</h1>
-  <p class="text-muted mb-4">Funder-facing service-delivery telemetry.</p>
+  <h1 class="text-2xl font-semibold text-brand-deep-purple">Connect Pulse</h1>
+  <p class="text-sm text-gray-500 mt-1 mb-6">Funder-facing service-delivery telemetry.</p>
 
   {# Ingest health first, because every number below is worthless if it's stale. #}
-  <div class="card mb-4 border-{% if ingest.live_ok %}success{% else %}warning{% endif %}">
-    <div class="card-body">
-      <h2 class="h6 text-uppercase text-muted mb-2" style="letter-spacing:.08em;">Ingest</h2>
-      {% if ingest.live_ok %}
-        <p class="mb-2"><span class="badge bg-success">Healthy</span>
-          Last success {{ ingest.last_success_at|default:"—" }}.</p>
-      {% else %}
-        <p class="mb-2"><span class="badge bg-warning text-dark">Not live</span> {{ ingest.message }}</p>
-        <p class="small text-muted mb-2">
-          Pulse polls as a designated Connect user. Refresh tokens expire — if that
-          user hasn't signed into labs for a while, ingest stops and displays fall
-          back to stored data rather than pretending to be live.
-        </p>
-      {% endif %}
-      {# The poller is named on the page because getting it wrong doesn't error. #}
-      {# It rescales every figure below, and the first prod deploy did exactly   #}
-      {# that: ~5x understated, silently. Wrong account is now visible here.     #}
-      {% if ingest.poller %}
-        <p class="small mb-2">Polling as <code>{{ ingest.poller }}</code> — every figure below is
-          bounded by that account's Connect org membership.
-          Change it with <code>manage.py pulse_poller --set &lt;username&gt;</code>.</p>
-      {% else %}
-        <p class="small text-danger mb-2">No poller configured, so ingest cannot run.
-          {{ ingest.poller_error }}
-          List candidates with <code>manage.py pulse_poller --list</code>.</p>
-      {% endif %}
-      <table class="table table-sm mb-0">
-        <thead><tr><th>Tier</th><th>State</th><th>Last success</th><th>Failures</th><th>Last error</th></tr></thead>
-        <tbody>
+  <div class="bg-white rounded-lg shadow-sm p-4 mb-6 border-l-4 {% if ingest.live_ok %}border-green-500{% else %}border-amber-500{% endif %}">
+    <h2 class="text-xs text-gray-500 uppercase tracking-wider mb-3">Ingest</h2>
+
+    {% if ingest.live_ok %}
+      <p class="text-sm mb-3">
+        <span class="inline-block bg-green-100 text-green-800 text-xs font-medium px-2 py-0.5 rounded">Healthy</span>
+        <span class="text-gray-600 ml-1">Last success {{ ingest.last_success_at|default:"—" }}.</span>
+      </p>
+    {% else %}
+      <p class="text-sm mb-2">
+        <span class="inline-block bg-amber-100 text-amber-800 text-xs font-medium px-2 py-0.5 rounded">Not live</span>
+        <span class="text-gray-700 ml-1">{{ ingest.message }}</span>
+      </p>
+      <p class="text-xs text-gray-500 mb-3">
+        Pulse polls as a designated Connect user. Refresh tokens expire — if that
+        user hasn't signed into labs for a while, ingest stops and displays fall
+        back to stored data rather than pretending to be live.
+      </p>
+    {% endif %}
+
+    {# The poller is named on the page because getting it wrong doesn't error. #}
+    {# It rescales every figure below, and the first prod deploy did exactly   #}
+    {# that: ~5x understated, silently. Wrong account is now visible here.     #}
+    {% if ingest.poller %}
+      <p class="text-xs text-gray-600 mb-4">
+        Polling as <code class="bg-gray-100 px-1 py-0.5 rounded text-gray-800">{{ ingest.poller }}</code>
+        — every figure below is bounded by that account's Connect org membership.
+        Change it with <code class="bg-gray-100 px-1 py-0.5 rounded text-gray-800">manage.py pulse_poller --set &lt;username&gt;</code>.
+      </p>
+    {% else %}
+      <div class="bg-red-50 border border-red-200 text-red-800 rounded-lg p-3 mb-4 text-sm">
+        <span class="font-medium">No poller configured, so ingest cannot run.</span>
+        {{ ingest.poller_error }}
+        List candidates with <code class="bg-red-100 px-1 py-0.5 rounded">manage.py pulse_poller --list</code>.
+      </div>
+    {% endif %}
+
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 text-left text-xs text-gray-500 uppercase">
+          <tr>
+            <th class="px-3 py-2 font-medium">Tier</th>
+            <th class="px-3 py-2 font-medium">State</th>
+            <th class="px-3 py-2 font-medium">Last success</th>
+            <th class="px-3 py-2 font-medium">Failures</th>
+            <th class="px-3 py-2 font-medium">Last error</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
         {% for t in ingest.tiers %}
           <tr>
-            <td><code>{{ t.tier }}</code></td>
-            <td>{% if t.healthy %}<span class="text-success">ok</span>{% else %}<span class="text-danger">stale</span>{% endif %}</td>
-            <td class="small">{{ t.last_success_at|default:"never" }}</td>
-            <td>{{ t.consecutive_failures }}</td>
-            <td class="small text-muted">{{ t.last_error|truncatechars:70 }}</td>
+            <td class="px-3 py-2"><code class="bg-gray-100 px-1 py-0.5 rounded text-gray-800">{{ t.tier }}</code></td>
+            <td class="px-3 py-2">
+              {% if t.healthy %}<span class="text-green-700">ok</span>{% else %}<span class="text-red-600 font-medium">stale</span>{% endif %}
+            </td>
+            <td class="px-3 py-2 text-gray-600">{{ t.last_success_at|default:"never" }}</td>
+            <td class="px-3 py-2 {% if t.consecutive_failures %}text-red-600 font-medium{% else %}text-gray-600{% endif %}">{{ t.consecutive_failures }}</td>
+            <td class="px-3 py-2 text-xs text-gray-500">{{ t.last_error|truncatechars:70 }}</td>
           </tr>
         {% empty %}
-          <tr><td colspan="5" class="text-muted small">Ingest has never run.</td></tr>
+          <tr><td colspan="5" class="px-3 py-4 text-center text-gray-400 text-sm">Ingest has never run.</td></tr>
         {% endfor %}
         </tbody>
       </table>
     </div>
   </div>
 
-  <div class="card mb-4">
-    <div class="card-body">
-      <h2 class="h6 text-uppercase text-muted mb-3" style="letter-spacing:.08em;">Scope</h2>
-      <div class="row text-center">
-        <div class="col"><div class="h4 mb-0">{{ scope.opportunities|default:"—" }}</div><div class="small text-muted">Opportunities</div></div>
-        <div class="col"><div class="h4 mb-0">{{ scope.programs|default:"—" }}</div><div class="small text-muted">Programmes</div></div>
-        <div class="col"><div class="h4 mb-0">{{ scope.orgs|default:"—" }}</div><div class="small text-muted">Organisations</div></div>
-        <div class="col"><div class="h4 mb-0">{{ scope.lifetime_visits|default:"—" }}</div><div class="small text-muted">Lifetime services</div></div>
+  <div class="bg-white rounded-lg shadow-sm p-6 mb-8">
+    <h2 class="text-xs text-gray-500 uppercase tracking-wider mb-4">Scope</h2>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+      <div>
+        <div class="text-2xl font-semibold text-brand-deep-purple">{{ scope.opportunities|default:"—"|intcomma }}</div>
+        <div class="text-xs text-gray-500 mt-1">Opportunities</div>
+      </div>
+      <div>
+        <div class="text-2xl font-semibold text-brand-deep-purple">{{ scope.programs|default:"—"|intcomma }}</div>
+        <div class="text-xs text-gray-500 mt-1">Programmes</div>
+      </div>
+      <div>
+        <div class="text-2xl font-semibold text-brand-deep-purple">{{ scope.orgs|default:"—"|intcomma }}</div>
+        <div class="text-xs text-gray-500 mt-1">Organisations</div>
+      </div>
+      <div>
+        <div class="text-2xl font-semibold text-brand-deep-purple">{{ scope.lifetime_visits|default:"—"|intcomma }}</div>
+        <div class="text-xs text-gray-500 mt-1">Lifetime services</div>
       </div>
     </div>
   </div>
 
-  <h2 class="h6 text-uppercase text-muted mb-3" style="letter-spacing:.08em;">Layouts</h2>
-  <div class="row g-3 mb-4">
+  <h2 class="text-xs text-gray-500 uppercase tracking-wider mb-3">Layouts</h2>
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
     {% for slug, meta in layouts.items %}
-    <div class="col-md-4">
-      <div class="card h-100">
-        <div class="card-body d-flex flex-column">
-          <h3 class="h6">{{ meta.label }}</h3>
-          <p class="small text-muted flex-grow-1">{{ meta.blurb }}</p>
-          <a class="btn btn-sm btn-primary" href="{% url 'pulse:display' slug %}">Open</a>
-        </div>
-      </div>
+    <div class="bg-white rounded-lg shadow-sm p-4 flex flex-col">
+      <h3 class="font-medium text-brand-deep-purple">{{ meta.label }}</h3>
+      <p class="text-xs text-gray-500 mt-1 mb-4 flex-grow">{{ meta.blurb }}</p>
+      <a class="button button-md bg-brand-indigo hover:bg-brand-deep-purple text-white text-center"
+         href="{% url 'pulse:display' slug %}">Open</a>
     </div>
     {% endfor %}
   </div>
 
-  <h2 class="h6 text-uppercase text-muted mb-3" style="letter-spacing:.08em;">Public links</h2>
-  <p class="small text-muted">
+  <h2 class="text-xs text-gray-500 uppercase tracking-wider mb-3">Public links</h2>
+  <p class="text-xs text-gray-500 mb-3 max-w-2xl">
     Each link is separately revocable, so one handed to a funder can be killed
     without breaking the others. Public links show no beneficiary or worker
     identities, but they do show partner organisation names alongside their
     delivery volumes and per-service rates.
   </p>
-  <table class="table table-sm">
-    <thead><tr><th>Label</th><th>Layout</th><th>Partner names</th><th>Views</th><th>Link</th></tr></thead>
-    <tbody>
-      {% for t in tokens %}
-      <tr>
-        <td>{{ t.label|default:"—" }}</td>
-        <td><code>{{ t.layout_slug }}</code></td>
-        <td>{% if t.show_partner_names %}shown{% else %}anonymised{% endif %}</td>
-        <td>{{ t.view_count }}</td>
-        <td class="small"><a href="{% url 'pulse:public' t.token %}">{% url 'pulse:public' t.token %}</a></td>
-      </tr>
-      {% empty %}
-      <tr><td colspan="5" class="text-muted small">No public links yet.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <div class="bg-white rounded-lg shadow-sm overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 text-left text-xs text-gray-500 uppercase">
+          <tr>
+            <th class="px-3 py-2 font-medium">Label</th>
+            <th class="px-3 py-2 font-medium">Layout</th>
+            <th class="px-3 py-2 font-medium">Partner names</th>
+            <th class="px-3 py-2 font-medium">Views</th>
+            <th class="px-3 py-2 font-medium">Link</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for t in tokens %}
+          <tr>
+            <td class="px-3 py-2">{{ t.label|default:"—" }}</td>
+            <td class="px-3 py-2"><code class="bg-gray-100 px-1 py-0.5 rounded text-gray-800">{{ t.layout_slug }}</code></td>
+            <td class="px-3 py-2 text-gray-600">{% if t.show_partner_names %}shown{% else %}anonymised{% endif %}</td>
+            <td class="px-3 py-2 text-gray-600">{{ t.view_count }}</td>
+            <td class="px-3 py-2 text-xs">
+              <a class="text-brand-indigo hover:underline" href="{% url 'pulse:public' t.token %}">{% url 'pulse:public' t.token %}</a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="5" class="px-3 py-6 text-center text-gray-400 text-sm">No public links yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
 
 </div>
 {% endblock %}
