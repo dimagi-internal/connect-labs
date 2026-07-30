@@ -169,8 +169,29 @@ function RFPDetailModal({ ctx, rfp, canAward, canManage, onClose }) {
                     label: '',
                     sortable: false,
                     value: () => '',
-                    render: (b) =>
-                      canAward && !entry.lot.awarded_org ? (
+                    render: (b) => {
+                      if (!canAward || entry.lot.awarded_org) return null;
+                      // You cannot award what you have not evaluated. This lot's
+                      // TECHNICAL column is still partly unpressed "Score"
+                      // actions, so offering a live Award here invites a decision
+                      // taken against an evaluation that does not exist yet. The
+                      // server refuses it too — this just says so before the click.
+                      const pending = entry.unscored_bidders || [];
+                      if (pending.length) {
+                        return (
+                          <button
+                            type="button"
+                            className="btn btn-sm"
+                            disabled
+                            title={`Score every bid on this lot first — still unscored: ${pending.join(
+                              ', ',
+                            )}`}
+                          >
+                            Award
+                          </button>
+                        );
+                      }
+                      return (
                         <button
                           type="button"
                           className="btn btn-sm"
@@ -178,7 +199,8 @@ function RFPDetailModal({ ctx, rfp, canAward, canManage, onClose }) {
                         >
                           Award
                         </button>
-                      ) : null,
+                      );
+                    },
                   },
                 ]}
               />

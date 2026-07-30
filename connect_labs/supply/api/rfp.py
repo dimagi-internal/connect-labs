@@ -154,7 +154,15 @@ def comparison(request, rfp_id):
             row = lot_bid_dict(lot_bid, include_scores=True)
             row["price_rank"] = rank
             rows.append(row)
-        lots.append({"lot": lot_dict(lot), "lot_bids": rows})
+        # Who still has no technical score. The client disables Award and says
+        # why, rather than offering a button the server will refuse.
+        lots.append(
+            {
+                "lot": lot_dict(lot),
+                "lot_bids": rows,
+                "unscored_bidders": rfp_actions.unscored_bidders(lot),
+            }
+        )
     return JsonResponse({"rfp": rfp_dict(rfp), "lots": lots})
 
 

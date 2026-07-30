@@ -114,6 +114,21 @@ class LotBidFactory(factory.django.DjangoModelFactory):
     unit_price = 42
 
 
+class BidScoreFactory(factory.django.DjangoModelFactory):
+    """A reviewer's technical score on one lot bid.
+
+    Needed by anything that awards through the API: a lot cannot be awarded until
+    every submitted bid on it is scored.
+    """
+
+    class Meta:
+        model = m.BidScore
+
+    lot_bid = factory.SubFactory(LotBidFactory)
+    reviewer = factory.SubFactory(UserFactory)
+    technical_score = 80
+
+
 class SupplyNodeFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = m.SupplyNode

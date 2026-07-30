@@ -228,6 +228,9 @@ def test_award_sets_rfp_awarded_when_all_lots_done(admin_client):
     bid = f.BidFactory(rfp=rfp, status=Bid.Status.SUBMITTED)
     lb1 = f.LotBidFactory(bid=bid, lot=lot1, unit_price=40)
     lb2 = f.LotBidFactory(bid=bid, lot=lot2, unit_price=41)
+    # A lot cannot be awarded until every submitted bid on it is scored.
+    f.BidScoreFactory(lot_bid=lb1)
+    f.BidScoreFactory(lot_bid=lb2)
 
     assert _post(client, f"/supply/api/lots/{lot1.id}/award/", {"lot_bid_id": lb1.id}).status_code == 200
     rfp.refresh_from_db()
@@ -245,6 +248,9 @@ def test_cannot_award_same_lot_twice(admin_client):
     bid = f.BidFactory(rfp=rfp, status=Bid.Status.SUBMITTED)
     lb = f.LotBidFactory(bid=bid, lot=lot)
     other = f.LotBidFactory(bid=f.BidFactory(rfp=rfp, status=Bid.Status.SUBMITTED), lot=lot)
+    # A lot cannot be awarded until every submitted bid on it is scored.
+    f.BidScoreFactory(lot_bid=lb)
+    f.BidScoreFactory(lot_bid=other)
     assert _post(client, f"/supply/api/lots/{lot.id}/award/", {"lot_bid_id": lb.id}).status_code == 200
     assert _post(client, f"/supply/api/lots/{lot.id}/award/", {"lot_bid_id": other.id}).status_code == 400
     assert Award.objects.count() == 1
@@ -265,3 +271,73 @@ def test_supplier_cannot_score(supplier_client):
     _qualify(member.org)
     lb = f.LotBidFactory()
     assert _post(client, f"/supply/api/lot-bids/{lb.id}/score/", {"technical_score": 99}).status_code == 403
+
+
+def test_cannot_award_a_lot_whose_bids_are_not_all_scored(admin_client):
+    """You cannot award what you have not evaluated.
+
+    The comparison table ranks on price and shows a technical column beside it, so
+    a live Award button on a lot whose TECHNICAL cells are still unpressed "Score"
+    actions let the decision precede the evaluation the screen was promising —
+    the first thing an auditor asks about an award. Enforced on the server rather
+    than only by disabling the button, because a disabled button is a suggestion
+    and this is a rule.
+    """
+    client, _user = admin_client
+    rfp = f.RFPFactory(status=RFP.Status.PUBLISHED)
+    lot = f.LotFactory(rfp=rfp)
+    scored = f.LotBidFactory(bid=f.BidFactory(rfp=rfp, status=Bid.Status.SUBMITTED), lot=lot, unit_price=40)
+    f.LotBidFactory(bid=f.BidFactory(rfp=rfp, status=Bid.Status.SUBMITTED), lot=lot, unit_price=41)
+    f.BidScoreFactory(lot_bid=scored)
+
+    resp = _post(client, f"/supply/api/lots/{lot.id}/award/", {"lot_bid_id": scored.id})
+
+    assert resp.status_code == 400
+    assert "scored" in resp.json()["error"]
+    assert Award.objects.count() == 0
+
+
+def test_award_succeeds_once_every_bid_on_the_lot_is_scored(admin_client):
+    client, _user = admin_client
+    rfp = f.RFPFactory(status=RFP.Status.PUBLISHED)
+    lot = f.LotFactory(rfp=rfp)
+    lot_bids = [
+        f.LotBidFactory(bid=f.BidFactory(rfp=rfp, status=Bid.Status.SUBMITTED), lot=lot, unit_price=40 + i)
+        for i in range(2)
+    ]
+    for lb in lot_bids:
+        f.BidScoreFactory(lot_bid=lb)
+
+    resp = _post(client, f"/supply/api/lots/{lot.id}/award/", {"lot_bid_id": lot_bids[0].id})
+
+    assert resp.status_code == 200, resp.json()
+    assert Award.objects.filter(lot=lot).exists()
+
+
+def test_an_unscored_draft_bid_does_not_block_the_award(admin_client):
+    """Only SUBMITTED bids are in the evaluation. A draft nobody submitted must
+    not hold the tender hostage."""
+    client, _user = admin_client
+    rfp = f.RFPFactory(status=RFP.Status.PUBLISHED)
+    lot = f.LotFactory(rfp=rfp)
+    submitted = f.LotBidFactory(bid=f.BidFactory(rfp=rfp, status=Bid.Status.SUBMITTED), lot=lot, unit_price=40)
+    f.LotBidFactory(bid=f.BidFactory(rfp=rfp, status=Bid.Status.DRAFT), lot=lot, unit_price=39)
+    f.BidScoreFactory(lot_bid=submitted)
+
+    resp = _post(client, f"/supply/api/lots/{lot.id}/award/", {"lot_bid_id": submitted.id})
+
+    assert resp.status_code == 200, resp.json()
+
+
+def test_comparison_names_who_is_still_unscored(admin_client):
+    """The client disables Award and says why, rather than offering a button the
+    server will refuse."""
+    client, _user = admin_client
+    rfp = f.RFPFactory(status=RFP.Status.PUBLISHED)
+    lot = f.LotFactory(rfp=rfp)
+    org = f.SupplierOrgFactory(legal_name="Unscored Foods Ltd")
+    f.LotBidFactory(bid=f.BidFactory(rfp=rfp, org=org, status=Bid.Status.SUBMITTED), lot=lot, unit_price=40)
+
+    body = client.get(f"/supply/api/rfps/{rfp.id}/comparison/").json()
+
+    assert body["lots"][0]["unscored_bidders"] == ["Unscored Foods Ltd"]
