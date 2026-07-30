@@ -109,7 +109,15 @@ def test_coverage_param_schema_reflects_dataclasses(user):
     # Every CoverageConfig knob is discoverable — not just cell_size_m.
     assert {"cell_size_m", "min_confidence", "sources", "exclude_isolated_singletons", "population"} <= cov_fields
     group_fields = {f["name"] for f in out["grouping"]["fields"]}
-    assert {"strategy", "target_size", "max_buildings", "buffer_distance_m"} <= group_fields
+    assert {
+        "strategy",
+        "target_size",
+        "target_buildings",
+        "buffer_distance_m",
+        "max_buildings",
+        "min_buildings",
+        "max_reach_m",
+    } <= group_fields
     assert set(out["grouping"]["strategies"]) == {"bbox", "bfs_adjacency", "barrier_aware"}
     assign_fields = {f["name"] for f in out["assignment"]["fields"]}
     assert {"strategy", "workers", "restarts", "seed"} <= assign_fields
