@@ -206,6 +206,20 @@ class SummaryView(View):
             .annotate(n=Count("id"), usd=Sum("usd_to_worker"))
             .order_by("-usd")
         ]
+        # Country comes from the opportunity, and Connect leaves it blank on
+        # most of them -- `pulse_backfill --countries` resolves it by sampling a
+        # visit's GPS, but any opportunity with no ingested visit stays blank.
+        # The excluded rows used to just vanish, so the panel rendered
+        # full-width bars over 6% of the money and read as the whole picture.
+        # Report the remainder instead: a consumer can then say what the
+        # breakdown covers rather than implying it covers everything.
+        country_usd = sum(r["usd"] for r in money_by_country)
+        country_works = sum(r["works"] for r in money_by_country)
+        money_country_unattributed = {
+            "works": (money["works"] or 0) - country_works,
+            "usd": float(money["to_workers"] or 0) - country_usd,
+            "usd_share": (country_usd / float(money["to_workers"]) if money["to_workers"] else 0),
+        }
         # Rate per service is VOLUME-WEIGHTED, computed from money actually
         # accrued over approved work. Averaging each opportunity's own rate
         # instead lets a two-row test opportunity count as much as a
@@ -245,6 +259,7 @@ class SummaryView(View):
                     ),
                     "by_work_status": by_work_status,
                     "by_country": money_by_country,
+                    "by_country_unattributed": money_country_unattributed,
                     "by_service": money_by_service,
                 },
                 "stored": {

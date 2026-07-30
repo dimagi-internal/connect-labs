@@ -252,3 +252,84 @@ class TestOperatorIndex:
         its tail as visible text on the page."""
         client.force_login(django_user_model.objects.create(username="operator3"))
         assert "{#" not in client.get(reverse("pulse:index")).content.decode()
+
+    def test_operator_page_uses_no_bootstrap_only_classes(self):
+        """base.html ships Tailwind, so Bootstrap class names are silent no-ops.
+
+        This page was written entirely in them — card / card-body / row / col /
+        badge bg-success / table-sm / btn-primary — and rendered as unstyled
+        semantic HTML on prod for its whole life. Nothing caught it, because
+        every other test here asserts strings are *present in the body*, and a
+        substring check passes identically with no CSS at all. Only a screenshot
+        showed it.
+
+        So this asserts on the class vocabulary rather than on appearance, which
+        is the part that can be checked without eyes. Scanned against the
+        template source, not the rendered page, so base.html's own markup can't
+        muddy the result.
+        """
+        import re
+        from pathlib import Path
+
+        from django.conf import settings
+
+        src = Path(settings.APPS_DIR) / "templates" / "pulse" / "index.html"
+        # Drop Django comments — they legitimately *name* these classes to
+        # explain the bug, and `{# #}` is single-line so this is exact.
+        body = "\n".join(line for line in src.read_text().splitlines() if not line.strip().startswith("{#"))
+
+        bootstrap_only = [
+            "card-body",
+            "text-muted",
+            "table-sm",
+            "btn-primary",
+            "btn-sm",
+            "col-md-",
+            "text-uppercase",
+            "d-flex",
+            "flex-grow-1",
+            "bg-success",
+            "bg-warning",
+            "text-success",
+            "text-danger",
+            "text-dark",
+        ]
+        found = [c for c in bootstrap_only if c in body]
+        assert not found, (
+            f"Bootstrap-only classes in a template that extends base.html (Tailwind): {found}. "
+            "These render as nothing. Use the Tailwind/audit_trail house style instead."
+        )
+        # And confirm it is positively styled, not merely free of the wrong classes.
+        assert re.search(r"class=\"[^\"]*\brounded-lg\b", body), "expected Tailwind styling"
+
+
+class TestDisplayCopy:
+    """The funder-facing act copy.
+
+    A figure written into a headline cannot be checked by eye — it looks exactly
+    as authoritative when it is stale. The Financial view shipped
+    `'$663,682 has reached frontline workers'` as a literal against a live
+    $478,490: 39% high, on the same screen as two correct copies of the real
+    number. Titles quoting money must be functions of the summary.
+    """
+
+    def test_no_currency_amount_is_hardcoded_in_act_copy(self):
+        import re
+        from pathlib import Path
+
+        from django.conf import settings
+
+        src = (Path(settings.APPS_DIR) / "static" / "pulse" / "display.js").read_text()
+        # Block comments are stripped first: the note above the ledger title
+        # quotes the offending figures on purpose, and a comment cannot reach a
+        # screen. Everything that can render is still scanned.
+        src = re.sub(r"/\*.*?\*/", "", src, flags=re.DOTALL)
+
+        # A currency literal is `$` immediately followed by a digit. Interpolation
+        # (`${usd(...)}`) and the DOM helper (`$('#id')`) are `$` followed by `{`
+        # or `(`, so this discriminates cleanly without parsing JS.
+        offenders = re.findall(r"\$\d[\d,\.]*", src)
+        assert not offenders, (
+            f"Hardcoded currency in display copy: {offenders}. "
+            "Make the title a function of the summary so the figure tracks the data."
+        )
