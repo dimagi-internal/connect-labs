@@ -505,7 +505,7 @@ class _CancelOnFirstAgent:
 
 @override_settings(CACHES=_LOCMEM)
 def test_cancel_key_drops_still_queued_futures_mid_session(monkeypatch):
-    """With more images than ThreadPoolExecutor's max_workers=5, some futures
+    """With more images than ThreadPoolExecutor's max_workers=10, some futures
     are still queued (never started) when the flag flips -- those must be
     .cancel()'d rather than run, so far fewer than all images get reviewed."""
     from django.core.cache import cache
@@ -541,7 +541,7 @@ def test_cancel_key_drops_still_queued_futures_mid_session(monkeypatch):
     )
 
     assert result["cancelled"] is True
-    # Bounded, not exact: max_workers=5 means at most a handful were already
+    # Bounded, not exact: max_workers=10 means at most a handful were already
     # running when the flag flipped; the rest of the 20 were still queued.
     assert result["total_reviewed"] < 20
     assert len(_CancelOnFirstAgent.seen) < 20

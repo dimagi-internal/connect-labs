@@ -537,7 +537,7 @@ def _run_ai_review_on_sessions(
                 # bounded/validated count -- cap max_workers so a misconfigured
                 # or oversized reviewer list can't spin up unbounded OS threads
                 # (and unbounded concurrent connections to the ML gateway) on
-                # top of the outer pool's own 5 workers.
+                # top of the outer pool's own 10 workers.
                 if len(runnable) == 1:
                     per_agent_results = [_run_one(runnable[0])]
                 else:
@@ -550,7 +550,11 @@ def _run_ai_review_on_sessions(
                     v_id, b_id, q_id, img_qid, ai_result, ai_notes, ai_confidence, human_result, False
                 )
 
-            with ThreadPoolExecutor(max_workers=5) as pool:
+            # 10 workers: benchmarked against the real ML gateway -- throughput plateaus
+            # around this concurrency level (roughly double the throughput of 5 workers),
+            # and pushing further (15-30) buys no additional throughput while pushing
+            # per-call latency up and eventually producing read timeouts.
+            with ThreadPoolExecutor(max_workers=10) as pool:
                 fut_map = {pool.submit(_fetch_and_review, item): item for item in work_items}
                 for fut in as_completed(fut_map):
                     try:
