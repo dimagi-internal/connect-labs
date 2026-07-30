@@ -946,3 +946,79 @@
     display: none;
   }
 }
+
+/* ── phone ──────────────────────────────────────────────────────────
+   The existing breakpoints stop at 900px, which is a small laptop, not a
+   phone. Below that the shell stacked correctly but the top-bar scope block
+   and the KPI row never wrapped, so a 390px screen rendered 756px wide -- a
+   funder opening a public link on a phone got a page they had to drag
+   sideways to read. Verified at 360 / 390 / 430px. */
+@media (max-width: 620px) {
+  .pulse-shell {
+    grid-template-rows: auto 300px auto auto auto;
+  }
+  .pulse-bar {
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    padding: 8px 12px;
+  }
+  /* The spacer exists to push scope right on a wide bar; on a wrapped bar it
+     just forces a second row to be full width before scope can wrap. */
+  .pulse-bar-spacer {
+    display: none;
+  }
+  .pulse-scope {
+    width: 100%;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+
+  .pulse-kpi {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+  .kpi-cell {
+    padding: 11px 12px;
+    border-right: 1px solid var(--rule-soft);
+    border-bottom: 1px solid var(--rule-soft);
+  }
+
+  .pulse-focus {
+    flex-wrap: wrap;
+  }
+  .pulse-focus button {
+    padding: 5px 8px;
+    font-size: 9px;
+  }
+
+  /* Legend + privacy note are absolutely positioned over the map. At this
+     width both wrap and collide with the act copy. Every other child of
+     .pulse-map is absolutely positioned, so a static foot would land at the
+     TOP of the box -- making the section a flex column leaves the foot as the
+     only in-flow child, and justify-content pins it under the map.
+     Right padding clears Mapbox's attribution control, which stays anchored
+     to the canvas corner and would otherwise sit on the privacy line. */
+  .pulse-map {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+  }
+  .pulse-map-foot {
+    position: static;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    padding: 8px 40px 9px 12px;
+    background: rgba(6, 3, 31, 0.82);
+    border-top: 1px solid var(--rule);
+  }
+  .pulse-privacy {
+    text-align: left;
+    max-width: none;
+  }
+
+  /* No keyboard to shortcut with. */
+  .pulse-kbd {
+    display: none;
+  }
+}

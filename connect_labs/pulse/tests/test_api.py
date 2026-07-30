@@ -378,3 +378,46 @@ class TestDisplayCopy:
             f"Hardcoded currency in display copy: {offenders}. "
             "Make the title a function of the summary so the figure tracks the data."
         )
+
+
+class TestPhoneLayout:
+    """A public Pulse link is shareable, so a funder may well open it on a phone.
+
+    The stylesheet's smallest breakpoint was 900px — a small laptop. Below it
+    the shell stacked, but the top-bar scope block and the KPI row never
+    wrapped, so a 390px screen laid out 756px wide and had to be dragged
+    sideways. Measured in a real browser; asserted here on the stylesheet so a
+    later edit can't quietly drop it.
+    """
+
+    def _css(self):
+        from pathlib import Path
+
+        from django.conf import settings
+
+        return (Path(settings.APPS_DIR) / "static" / "pulse" / "pulse.css").read_text()
+
+    def test_a_phone_width_breakpoint_exists(self):
+        import re
+
+        widths = [int(w) for w in re.findall(r"@media\s*\(max-width:\s*(\d+)px\)", self._css())]
+        assert widths, "no width breakpoints at all"
+        assert min(widths) <= 640, (
+            f"smallest breakpoint is {min(widths)}px, which no phone reaches. "
+            "Phones are 360-430px; without one the shell lays out ~2x the screen width."
+        )
+
+    def test_the_two_blocks_that_forced_the_overflow_are_wrapped(self):
+        """`.pulse-scope` (top-bar readout) and `.pulse-kpi` were the offenders:
+        a flex row and a flex column that stayed side-by-side at any width."""
+        css = self._css()
+        phone = css[css.index("@media (max-width: 620px)") :]
+        assert ".pulse-scope" in phone and "flex-wrap: wrap" in phone
+        assert ".pulse-kpi" in phone and "grid-template-columns: 1fr 1fr" in phone
+
+    def test_the_privacy_note_survives_on_a_phone(self):
+        """It states that household coordinates and names are never shown. It is
+        a compliance statement, so shrinking the layout must not drop it."""
+        css = self._css()
+        phone = css[css.index("@media (max-width: 620px)") :]
+        assert "display: none" not in phone.split(".pulse-privacy")[1].split("}")[0]
