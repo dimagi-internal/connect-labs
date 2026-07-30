@@ -132,6 +132,22 @@ def create_mock_request(access_token: str, opportunity_id: int | None = None):
     return MockRequest()
 
 
+class ImageDownloadError(ValueError):
+    """An image could not be fetched from Connect.
+
+    Carries the upstream HTTP status when there was one, so callers can tell the
+    difference between "this blob genuinely does not exist" (a 404 worth passing
+    through as a 404) and "the fetch failed" (a fault worth logging and
+    surfacing as a 5xx). Subclasses ``ValueError`` because that is what this
+    method has always raised — existing callers that catch ``ValueError`` keep
+    working unchanged.
+    """
+
+    def __init__(self, message: str, status_code: int | None = None):
+        super().__init__(message)
+        self.status_code = status_code
+
+
 # =============================================================================
 # Filtering Logic
 # =============================================================================
@@ -1538,7 +1554,7 @@ class AuditDataAccess(BaseDataAccess):
                     logger.error(
                         f"[Audit] HTTP {status} downloading image blob_id={blob_id} opp={opportunity_id}: {e}"
                     )
-                    raise ValueError(f"Failed to download image (HTTP {status})") from e
+                    raise ImageDownloadError(f"Failed to download image (HTTP {status})", status_code=status) from e
                 last_exc = e
                 logger.warning(
                     f"[Audit] HTTP {status} downloading image blob_id={blob_id} opp={opportunity_id} "
@@ -1558,8 +1574,9 @@ class AuditDataAccess(BaseDataAccess):
             f"after {self.IMAGE_DOWNLOAD_MAX_ATTEMPTS} attempts: {last_exc}"
         )
         if isinstance(last_exc, httpx.HTTPStatusError):
-            raise ValueError(f"Failed to download image (HTTP {last_exc.response.status_code})") from last_exc
-        raise ValueError("Failed to download image due to a connection error") from last_exc
+            status = last_exc.response.status_code
+            raise ImageDownloadError(f"Failed to download image (HTTP {status})", status_code=status) from last_exc
+        raise ImageDownloadError("Failed to download image due to a connection error") from last_exc
 
     def get_flw_names(self, opportunity_id: int | None = None) -> dict[str, str]:
         """
