@@ -12,6 +12,7 @@ green badge over data that stopped arriving on Tuesday. ``summary`` returns
 
 from __future__ import annotations
 
+import math
 from datetime import timedelta
 
 from django.db.models import Count, Q, Sum
@@ -355,14 +356,53 @@ class ReplayView(View):
         end = timezone.now()
         start = end - timedelta(hours=hours)
 
-        rows = list(PulseEvent.objects.filter(field_ts__gte=start, field_ts__lte=end).order_by("field_ts")[:limit])
+        qs = PulseEvent.objects.filter(field_ts__gte=start, field_ts__lte=end)
+
+        # Sample ACROSS the window rather than taking its head. Slicing an
+        # ordered queryset returns the chronologically first `limit` rows, which
+        # makes a longer window show *less*: asking for 336h returned 2000 rows
+        # spanning 12.8h -- 3.8% of what was requested -- and 94% of them
+        # Nigeria, because whichever programme submitted first monopolises the
+        # head. Four of the eight countries with delivery never appeared at all,
+        # so the map read as one country however wide the window.
+        #
+        # Strided on rank in field-time order, so the sample is uniform over the
+        # window and fills the point budget exactly. Striding on `visit_id % n`
+        # instead is a one-liner but under-delivers whenever ids are sparse
+        # relative to the stride -- 12 events at limit 3 yields 2 -- which is the
+        # small-window case a country- or day-filtered view actually hits.
+        # ROW_NUMBER is exact at every size. Deterministic, so consecutive polls
+        # agree and points do not appear and vanish between frames.
+        total = qs.count()
+        stride = max(1, math.ceil(total / limit)) if total > limit else 1
+        if stride > 1:
+            table = PulseEvent._meta.db_table
+            rows = list(
+                PulseEvent.objects.raw(
+                    f"""SELECT * FROM (
+                            SELECT *, ROW_NUMBER() OVER (ORDER BY field_ts, id) AS rn
+                            FROM {table} WHERE field_ts >= %s AND field_ts <= %s
+                        ) ranked
+                        WHERE (rn - 1) %% %s = 0
+                        ORDER BY field_ts, id
+                        LIMIT %s""",
+                    [start, end, stride, limit],
+                )
+            )
+        else:
+            rows = list(qs.order_by("field_ts")[:limit])
 
         return JsonResponse(
             {
                 "fields": EVENT_FIELDS,
                 "events": [_event_row(e) for e in rows],
                 "window": {"from": start.isoformat(), "to": end.isoformat(), "hours": hours, "basis": "field_ts"},
-                "truncated": len(rows) >= limit,
+                # A sample is not a truncation, and conflating them would let the
+                # display claim completeness it does not have. Both are declared.
+                "truncated": len(rows) >= limit and stride == 1,
+                "sampled": stride > 1,
+                "sample_stride": stride,
+                "matched": total,
                 "ingest": _ingest_state(),
             }
         )
