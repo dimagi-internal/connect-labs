@@ -20,10 +20,10 @@ def other_user(django_user_model):
     return django_user_model.objects.create(username="other", email="other@dimagi.com", name="Otto Other")
 
 
-def _post(client, body, doc_key="chc"):
+def _post(client, body, doc_key="chc", **extra):
     return client.post(
         reverse("labs:docs_comments", args=[doc_key]),
-        data=json.dumps({"body": body}),
+        data=json.dumps({"body": body, **extra}),
         content_type="application/json",
     )
 
@@ -193,10 +193,75 @@ def test_comment_bodies_are_never_served_as_html(client, author):
 
 
 @pytest.mark.django_db
-def test_docs_page_renders_comment_panel(client, author):
+def test_comment_anchors_to_a_section(client, author):
+    client.force_login(author)
+    response = _post(
+        client,
+        "This step needs the case property spelled out.",
+        section_id="setup-task-types",
+        section_label="Configure the relearn task types on Connect",
+    )
+    assert response.status_code == 201
+
+    comment = client.get(COMMENTS_URL).json()["comments"][0]
+    assert comment["section_id"] == "setup-task-types"
+    assert comment["section_label"] == "Configure the relearn task types on Connect"
+
+
+@pytest.mark.django_db
+def test_comment_without_section_is_page_wide(client, author):
+    client.force_login(author)
+    _post(client, "general note")
+    comment = client.get(COMMENTS_URL).json()["comments"][0]
+    assert comment["section_id"] == ""
+    assert comment["section_label"] == ""
+
+
+@pytest.mark.django_db
+def test_overlong_section_fields_are_truncated_not_rejected(client, author):
+    """A renamed or absurd heading must not cost the user their comment."""
+    client.force_login(author)
+    response = _post(client, "kept", section_id="x" * 400, section_label="y" * 900)
+    assert response.status_code == 201
+
+    comment = DocComment.objects.get()
+    assert len(comment.section_id) == 128
+    assert len(comment.section_label) == 255
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("payload", ["[]", '"a string"', "null", "42"])
+def test_non_object_json_body_rejected(client, author, payload):
+    """A JSON array/scalar must 400, not raise on .get()."""
+    client.force_login(author)
+    response = client.post(COMMENTS_URL, data=payload, content_type="application/json")
+    assert response.status_code == 400
+    assert DocComment.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_non_string_section_id_does_not_error(client, author):
+    client.force_login(author)
+    response = _post(client, "body", section_id={"nope": 1})
+    assert response.status_code == 201
+
+
+@pytest.mark.django_db
+def test_docs_page_renders_comment_sidebar_and_new_setup_steps(client, author):
+    client.force_login(author)
+    content = client.get(reverse("labs:docs_chc")).content.decode()
+    # Sidebar rail, not the old bottom panel.
+    assert 'id="dc-rail"' in content
+    # The two documented setup steps and their anchors.
+    assert 'id="setup-task-types"' in content
+    assert 'id="setup-verification-rules"' in content
+    assert "trigger_forced_module_capturing_a_valid_image" in content
+    assert "form.check_dob_gap_suspicious_duplicate" in content
+
+
+@pytest.mark.django_db
+def test_docs_page_wires_up_the_comments_endpoint(client, author):
     client.force_login(author)
     response = client.get(reverse("labs:docs_chc"))
     assert response.status_code == 200
-    content = response.content.decode()
-    assert 'id="docs-comments"' in content
-    assert COMMENTS_URL in content
+    assert COMMENTS_URL in response.content.decode()

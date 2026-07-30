@@ -277,6 +277,8 @@
     <a class="nav-item" href="#setup">3 · Setup Steps</a>
     <a class="nav-sub" href="#setup-streams">The three RCT opportunities</a>
     <a class="nav-sub" href="#setup-sequence">Setup sequence</a>
+    <a class="nav-sub" href="#setup-task-types">Relearn task types</a>
+    <a class="nav-sub" href="#setup-verification-rules">Verification rules</a>
     <a class="nav-item" href="#faq">4 · FAQ</a>
     <a class="nav-item" href="#changelog">5 · Changelog</a>
   </nav>
@@ -832,12 +834,78 @@ flowchart TD
         <h4>Raise the Jira ticket for feature enablement</h4>
         <p>Send the opportunity URL to the tech team via a Jira ticket to enable the <b>microplanning</b> and <b>auditing</b> features on the opp.</p>
       </li>
-      <li>
-        <h4>Configure verification rules &amp; relearn tasks</h4>
-        <ul>
-          <li>Verification rules: duplicate children — Q path <code>form.check_child_duplicate_casedb</code>, Q value <code>0</code>; suspicious sibling DOB gap — <code>form.check_dob_gap_suspicious_duplicate</code> (see <a href="#sd-dedup">Deduplication</a>); duration ≈ 1 minute if used.</li>
-          <li>Relearn task types, mapped to the relearn user property (see <a href="#sd-relearn">Relearning module</a>). The case-property field is not marked required in the form <b>but must be filled</b> — if a task is misconfigured, archive it and do <b>not</b> recreate it.</li>
-        </ul>
+      <li id="setup-task-types">
+        <h4>Configure the relearn task types on Connect</h4>
+        <p>Done on the opportunity once it exists (<b>Task Types → New Task Type</b>). Each task type is what lets a reviewer push an FLW back through one forced-learn module — see <a href="#sd-relearn">Relearning module</a> and <a href="#wf-relearn">Relearn intervention</a>.</p>
+        <div class="callout">
+          <b>Task units sync hourly from CommCare HQ.</b>
+          <p>If the unit you need is not yet in the <b>Task unit</b> dropdown, the hourly sync has not picked up the app change — wait for it rather than working around it.</p>
+        </div>
+        <p>The form has four fields:</p>
+        <div class="table-wrap"><table>
+          <tr><th>Field</th><th>What to enter</th></tr>
+          <tr><td><b>Task unit</b> *</td><td>The synced unit for the module being re-taught.</td></tr>
+          <tr><td><b>Name</b> *</td><td>What the reviewer sees when assigning the task.</td></tr>
+          <tr><td><b>Case property</b></td><td>The user property that is set when the task is assigned — the values in the table below.</td></tr>
+          <tr><td><b>Description</b> *</td><td>Why the FLW is being sent back; shown with the task.</td></tr>
+        </table></div>
+        <div class="callout danger">
+          <b>Case property is not marked required on Connect, but it is the field that makes the task work.</b>
+          <p>It carries the user property that is triggered when the task is assigned. Leave it empty and the task will save and can be assigned, but nothing is ever triggered on the phone — the FLW is never shown the module. If a task type is misconfigured, <b>archive it and do not recreate it</b>.</p>
+        </div>
+        <p>One property per forced-learn module (click any value to copy it):</p>
+        <div class="table-wrap"><table>
+          <tr><th>Forced-learn module (Deliver app)</th><th>Case property</th></tr>
+          <tr><td>Service Delivery Guidelines</td><td><code class="copyable">trigger_forced_module_service_delivery_guidelines</code></td></tr>
+          <tr><td>How Your Work is Reviewed?</td><td><code class="copyable">trigger_forced_module_how_work_is_reviewed</code></td></tr>
+          <tr><td>Deworming Medicine</td><td><code class="copyable">trigger_forced_module_deworming</code></td></tr>
+          <tr><td>Vaccination Counseling</td><td><code class="copyable">trigger_forced_module_vaccination_counseling</code></td></tr>
+          <tr><td>MUAC Testing</td><td><code class="copyable">trigger_forced_module_muac_testing</code></td></tr>
+          <tr><td>ORS &amp; Zinc Distribution</td><td><code class="copyable">trigger_forced_module_ors_zinc</code></td></tr>
+          <tr><td>Capturing a Valid Image</td><td><code class="copyable">trigger_forced_module_capturing_a_valid_image</code></td></tr>
+        </table></div>
+      </li>
+      <li id="setup-verification-rules">
+        <h4>Configure the verification rules</h4>
+        <p>Configured on the opportunity after the task types, under <b>Verification Rules Configuration</b>. These are the automated checks that flag a visit for review.</p>
+
+        <h5 style="margin:1.1rem 0 .3rem">Working hours</h5>
+        <p>Visits submitted outside this window are flagged.</p>
+        <div class="table-wrap"><table>
+          <tr><th>Field</th><th>Value</th></tr>
+          <tr><td>Start Time</td><td><code class="copyable">07:00 AM</code></td></tr>
+          <tr><td>End Time</td><td><code class="copyable">06:00 PM</code></td></tr>
+        </table></div>
+
+        <h5 style="margin:1.1rem 0 .3rem">Deliver Unit Rules</h5>
+        <p><b>Duration</b> is the minimum time in minutes needed to complete the form; <code>0</code> means no minimum is enforced.</p>
+        <div class="table-wrap"><table>
+          <tr><th>Deliver unit</th><th>Duration (minutes)</th></tr>
+          <tr><td>No Children Work Area</td><td><code class="copyable">0</code></td></tr>
+          <tr><td>Service Delivery Unit</td><td><code class="copyable">0</code></td></tr>
+        </table></div>
+
+        <h5 style="margin:1.1rem 0 .3rem">Form Validation Rules</h5>
+        <p>Add one rule per check with the <b>+</b> button. Both current rules apply to the <b>Service Delivery Unit</b> only — leave <i>No Children Work Area</i> unticked. See <a href="#sd-dedup">Deduplication</a> for what these checks do.</p>
+        <div class="table-wrap"><table>
+          <tr><th>Name</th><th>Question path</th><th>Question value</th><th>Deliver unit</th></tr>
+          <tr>
+            <td><code class="copyable">Duplicate Child Check</code></td>
+            <td><code class="copyable">form.check_child_duplicate_casedb</code></td>
+            <td><code class="copyable">0</code></td>
+            <td>Service Delivery Unit</td>
+          </tr>
+          <tr>
+            <td><code class="copyable">Suspicious DOB Gap</code></td>
+            <td><code class="copyable">form.check_dob_gap_suspicious_duplicate</code></td>
+            <td><code class="copyable">0</code></td>
+            <td>Service Delivery Unit</td>
+          </tr>
+        </table></div>
+        <div class="callout warn">
+          <b><code>form.check_dob_gap_suspicious_duplicate</code> does not exist in every Deliver app.</b>
+          <p>It is present in the <b>RCT</b> Deliver apps but <b>not</b> in <code>[PRE-RCT] CHC Deliver App - EHA</code> (v12), where only <code>form.check_child_duplicate_casedb</code> is defined. Check the app the opportunity actually points at before adding the second rule — a rule on a question path the form does not contain can never evaluate. Both paths are calculations, so they are read from the submitted form, not answered by the FLW.</p>
+        </div>
       </li>
       <li>
         <h4>Invite the FLWs</h4>

@@ -17,6 +17,9 @@ from connect_labs.labs.models import DocComment
 logger = logging.getLogger(__name__)
 
 MAX_BODY_LENGTH = 5000
+# Match the model's field widths so an over-long anchor is trimmed, not an error.
+MAX_SECTION_ID_LENGTH = 128
+MAX_SECTION_LABEL_LENGTH = 255
 
 
 def list_comments(doc_key: str) -> list[dict]:
@@ -25,13 +28,27 @@ def list_comments(doc_key: str) -> list[dict]:
     return [comment.as_dict() for comment in comments]
 
 
-def create_comment(doc_key: str, body: str, author, author_name: str = "") -> dict:
+def create_comment(
+    doc_key: str,
+    body: str,
+    author,
+    author_name: str = "",
+    section_id: str = "",
+    section_label: str = "",
+) -> dict:
     """Persist one comment and return its serialized form.
+
+    ``section_id`` anchors the comment to an element in the document; blank
+    means the comment is about the page as a whole. Both section fields are
+    truncated rather than rejected — a renamed heading is not worth failing a
+    comment over.
 
     Raises:
         ValueError: if the body is empty or over ``MAX_BODY_LENGTH``.
     """
-    body = (body or "").strip()
+    # str() rather than a type check: these arrive from JSON, and a number or
+    # bool is harmless once stringified.
+    body = str(body or "").strip()
     if not body:
         raise ValueError("Comment cannot be empty")
     if len(body) > MAX_BODY_LENGTH:
@@ -42,6 +59,8 @@ def create_comment(doc_key: str, body: str, author, author_name: str = "") -> di
         body=body,
         author=author,
         author_name=author_name or author.username,
+        section_id=str(section_id or "").strip()[:MAX_SECTION_ID_LENGTH],
+        section_label=str(section_label or "").strip()[:MAX_SECTION_LABEL_LENGTH],
     )
     return comment.as_dict()
 

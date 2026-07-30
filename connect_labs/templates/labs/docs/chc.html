@@ -14,6 +14,8 @@
   .docs-embed h1,.docs-embed h2,.docs-embed h3,.docs-embed h4,
   .docs-embed .brand .word,.docs-embed .topbar .word{font-family:inherit}
   .docs-embed .shell{min-height:calc(100vh - 6rem)}
+  /* The doc assumes a 1rem offset; clear the labs fixed header instead. */
+  .docs-embed section,.docs-embed .sub,.docs-embed .steps>li[id]{scroll-margin-top:5rem}
   .docs-embed .sidebar{top:4rem; height:calc(100vh - 4rem)}
   .docs-embed .topbar{top:4rem}
   /* The doc styles bare elements globally (a, h1-h4); undo that for the labs
@@ -22,88 +24,168 @@
   h1:not(.docs-embed h1),h2:not(.docs-embed h2),
   h3:not(.docs-embed h3),h4:not(.docs-embed h4){font-family:inherit;margin:0}
 
-  /* Comments — sits under the doc's main column, clear of its 264px sidebar. */
-  .docs-comments{padding:0 clamp(1.2rem,4vw,3.5rem) 3rem; margin-left:264px}
-  @media (max-width:880px){ .docs-comments{margin-left:0} }
-  .docs-comments h2{font-size:1.35rem; font-weight:600; margin:0 0 .25rem}
-  .docs-comments .sub{color:var(--muted); font-size:.88rem; margin:0 0 1.2rem}
-  .docs-comments textarea{
-    width:100%; min-height:5.5rem; resize:vertical; padding:.7rem .85rem;
-    font:inherit; color:var(--ink); background:var(--raise);
+  /* ── Click-to-copy values in the doc ─────────────────────────────────── */
+  .docs-embed code.copyable{cursor:pointer; border-style:dashed; position:relative}
+  .docs-embed code.copyable:hover{background:var(--accent-soft); border-color:var(--accent)}
+  .docs-embed code.copyable.copied{background:var(--ok-soft); border-color:var(--ok)}
+  /* Copy blocked by the browser — the text is selected instead. */
+  .docs-embed code.copyable.copy-failed{background:var(--amber-soft); border-color:var(--amber)}
+
+  /* ── Comments: Google-Docs-style right rail ──────────────────────────── */
+  :root{--docs-rail-w:340px}
+
+  /* Anchor affordance next to each commentable heading. */
+  .docs-embed .dc-anchor{
+    margin-left:.5rem; background:none; border:0; padding:.1rem .3rem; cursor:pointer;
+    color:var(--muted); font:inherit; font-size:.8rem; opacity:0; transition:opacity .12s;
+    border-radius:5px; vertical-align:middle;
+  }
+  .docs-embed .dc-anchor:hover{background:var(--chip); color:var(--accent-ink)}
+  .docs-embed h2:hover .dc-anchor,.docs-embed h3:hover .dc-anchor,
+  .docs-embed .dc-anchor:focus-visible{opacity:1}
+  .docs-embed .dc-anchor.has-comments{opacity:1; color:var(--accent-ink); font-weight:600}
+  .dc-flash{animation:dc-flash 1.6s ease-out}
+  @keyframes dc-flash{0%,35%{background:var(--accent-soft)}100%{background:transparent}}
+
+  .dc-rail{
+    position:fixed; top:4rem; right:0; bottom:0; width:var(--docs-rail-w); z-index:25;
+    background:var(--raise); border-left:1px solid var(--line);
+    display:flex; flex-direction:column; transform:translateX(100%);
+    transition:transform .18s ease-out; box-shadow:-2px 0 12px rgba(28,40,35,.08);
+  }
+  .dc-rail.open{transform:none}
+  /* Narrow the document rather than letting the rail sit on top of it. */
+  #docs-body{transition:margin-right .18s ease-out}
+  body.dc-rail-open #docs-body{margin-right:var(--docs-rail-w)}
+  @media (prefers-reduced-motion: reduce){ .dc-rail{transition:none} }
+  .dc-rail-head{
+    display:flex; align-items:center; gap:.5rem;
+    padding:.85rem 1rem; border-bottom:1px solid var(--line); flex:0 0 auto;
+  }
+  .dc-rail-head strong{font-size:1rem}
+  .dc-rail-head .n{color:var(--muted); font-size:.82rem}
+  .dc-rail-head button.close{
+    margin-left:auto; background:none; border:0; cursor:pointer;
+    color:var(--muted); font-size:1.1rem; line-height:1; padding:.2rem .35rem; border-radius:5px;
+  }
+  .dc-rail-head button.close:hover{background:var(--chip); color:var(--ink)}
+  .dc-scroll{flex:1 1 auto; overflow-y:auto; padding:.9rem 1rem 2rem}
+
+  .dc-compose{border-bottom:1px solid var(--line); padding:.9rem 1rem; flex:0 0 auto}
+  .dc-compose .target{
+    display:flex; align-items:baseline; gap:.4rem; margin-bottom:.45rem;
+    font-size:.78rem; color:var(--muted);
+  }
+  .dc-compose .target b{color:var(--accent-ink); font-weight:600}
+  .dc-compose textarea{
+    width:100%; min-height:4.5rem; resize:vertical; padding:.55rem .7rem;
+    font:inherit; font-size:.9rem; color:var(--ink); background:var(--bg);
     border:1px solid var(--line); border-radius:8px;
   }
-  .docs-comments textarea:focus{outline:2px solid var(--accent); outline-offset:1px}
-  .docs-comments .row{display:flex; align-items:center; gap:.75rem; margin-top:.6rem}
-  .docs-comments button.post{
-    background:var(--accent); color:#fff; border:0; border-radius:8px;
-    padding:.5rem 1.1rem; font:inherit; font-weight:600; cursor:pointer;
+  .dc-compose textarea:focus{outline:2px solid var(--accent); outline-offset:1px}
+  .dc-compose .row{display:flex; align-items:center; gap:.6rem; margin-top:.5rem}
+  .dc-compose button.post{
+    background:var(--accent); color:#fff; border:0; border-radius:7px;
+    padding:.4rem .9rem; font:inherit; font-size:.86rem; font-weight:600; cursor:pointer;
   }
-  .docs-comments button.post:disabled{opacity:.55; cursor:default}
-  .docs-comments .msg{font-size:.86rem; color:var(--muted)}
-  .docs-comments .msg.error{color:var(--red)}
-  .docs-comments ul{list-style:none; padding:0; margin:1.6rem 0 0}
-  .docs-comments li{
-    background:var(--raise); border:1px solid var(--line); border-radius:10px;
-    padding:.85rem 1rem; margin-bottom:.7rem; box-shadow:var(--shadow);
+  .dc-compose button.post:disabled{opacity:.55; cursor:default}
+  .dc-compose button.clear{
+    background:none; border:0; color:var(--muted); font:inherit; font-size:.8rem;
+    cursor:pointer; text-decoration:underline; padding:0;
   }
-  .docs-comments .meta{display:flex; align-items:baseline; gap:.6rem; margin-bottom:.35rem}
-  .docs-comments .who{font-weight:600; font-size:.92rem}
-  .docs-comments .when{color:var(--muted); font-size:.78rem}
-  .docs-comments .body{white-space:pre-wrap; margin:0}
-  .docs-comments button.del{
-    margin-left:auto; background:none; border:0; padding:0; cursor:pointer;
-    color:var(--muted); font:inherit; font-size:.8rem; text-decoration:underline;
-  }
-  .docs-comments button.del:hover{color:var(--red)}
+  .dc-msg{font-size:.8rem; color:var(--muted)}
+  .dc-msg.error{color:var(--red)}
 
-  /* The doc is long, so give the thread a way in from anywhere on the page. */
-  .docs-comments-jump{
-    position:fixed; right:1.25rem; bottom:1.25rem; z-index:20;
+  .dc-group{margin-bottom:1.3rem}
+  .dc-group > button.jump{
+    display:block; width:100%; text-align:left; background:none; border:0; cursor:pointer;
+    padding:0 0 .4rem; font:inherit; font-size:.76rem; font-weight:700;
+    letter-spacing:.05em; text-transform:uppercase; color:var(--accent-ink);
+  }
+  .dc-group > button.jump:hover{text-decoration:underline}
+  .dc-card{
+    background:var(--bg); border:1px solid var(--line); border-radius:9px;
+    padding:.6rem .75rem; margin-bottom:.5rem;
+  }
+  .dc-card .meta{display:flex; align-items:baseline; gap:.45rem; margin-bottom:.25rem}
+  .dc-card .who{font-weight:600; font-size:.85rem}
+  .dc-card .when{color:var(--muted); font-size:.72rem}
+  .dc-card .body{white-space:pre-wrap; margin:0; font-size:.88rem}
+  .dc-card button.del{
+    margin-left:auto; background:none; border:0; padding:0; cursor:pointer;
+    color:var(--muted); font:inherit; font-size:.74rem; text-decoration:underline;
+  }
+  .dc-card button.del:hover{color:var(--red)}
+  .dc-empty{color:var(--muted); font-size:.88rem}
+
+  /* Toggle pill, bottom-right. */
+  .dc-toggle{
+    position:fixed; right:1.25rem; bottom:1.25rem; z-index:26;
     display:inline-flex; align-items:center; gap:.45rem;
     background:var(--accent); color:#fff; border:0; border-radius:999px;
     padding:.6rem 1.1rem; font:inherit; font-size:.88rem; font-weight:600;
     cursor:pointer; box-shadow:0 2px 10px rgba(28,40,35,.25);
   }
-  .docs-comments-jump:hover{filter:brightness(1.07)}
-  @media print{ .docs-comments-jump{display:none} }
+  .dc-toggle:hover{filter:brightness(1.07)}
+  .dc-toggle.rail-open{right:calc(var(--docs-rail-w) + 1.25rem)}
+  @media print{ .dc-toggle,.dc-rail,.docs-embed .dc-anchor{display:none} }
+  @media (max-width:880px){
+    :root{--docs-rail-w:100vw}
+    /* Full-width rail on small screens — overlay instead of squeezing. */
+    body.dc-rail-open #docs-body{margin-right:0}
+    .dc-toggle.rail-open{right:1.25rem; bottom:auto; top:4.5rem}
+  }
 </style>
-<div class="docs-embed mb-8">
+
+<div class="docs-embed mb-8" id="docs-body">
   {% include "labs/docs/chc_content.html" %}
-
-  <section class="docs-comments"
-           id="docs-comments"
-           data-list-url="{% url 'labs:docs_comments' doc_key %}"
-           data-csrf="{{ csrf_token }}">
-    <h2>Comments</h2>
-    <p class="sub">Visible to everyone with access to Labs. Use this to flag corrections or ask questions about this document.</p>
-
-    <label for="docs-comment-body" class="sr-only" hidden>Add a comment</label>
-    <textarea id="docs-comment-body" placeholder="Add a comment…" maxlength="5000"></textarea>
-    <div class="row">
-      <button type="button" class="post" id="docs-comment-post">Post comment</button>
-      <span class="msg" id="docs-comment-msg"></span>
-    </div>
-
-    <ul id="docs-comment-list"></ul>
-  </section>
 </div>
 
-<button type="button" class="docs-comments-jump" id="docs-comments-jump">
-  <i class="fa-regular fa-comments"></i><span id="docs-comments-count">Comments</span>
+<aside class="dc-rail" id="dc-rail" aria-label="Comments" data-list-url="{% url 'labs:docs_comments' doc_key %}" data-csrf="{{ csrf_token }}">
+  <div class="dc-rail-head">
+    <strong>Comments</strong><span class="n" id="dc-count"></span>
+    <button type="button" class="close" id="dc-close" aria-label="Close comments">&times;</button>
+  </div>
+
+  <div class="dc-compose">
+    <div class="target">Commenting on <b id="dc-target-label">the whole page</b>
+      <button type="button" class="clear" id="dc-target-clear" hidden>whole page instead</button>
+    </div>
+    <label for="dc-body" class="dc-msg">Your comment is visible to everyone on Labs.</label>
+    <textarea id="dc-body" maxlength="5000" placeholder="Add a comment…"></textarea>
+    <div class="row">
+      <button type="button" class="post" id="dc-post">Comment</button>
+      <span class="dc-msg" id="dc-msg"></span>
+    </div>
+  </div>
+
+  <div class="dc-scroll" id="dc-list"></div>
+</aside>
+
+<button type="button" class="dc-toggle" id="dc-toggle" aria-expanded="false" aria-controls="dc-rail">
+  <i class="fa-regular fa-comments"></i><span id="dc-toggle-label">Comments</span>
 </button>
 
 <script>
 (function () {
-  var root = document.getElementById("docs-comments");
-  if (!root) return;
+  var rail = document.getElementById("dc-rail");
+  if (!rail) return;
 
-  var listUrl = root.dataset.listUrl;
-  var csrf = root.dataset.csrf;
-  var list = document.getElementById("docs-comment-list");
-  var input = document.getElementById("docs-comment-body");
-  var postBtn = document.getElementById("docs-comment-post");
-  var msg = document.getElementById("docs-comment-msg");
+  var listUrl = rail.dataset.listUrl;
+  var csrf = rail.dataset.csrf;
+  var listEl = document.getElementById("dc-list");
+  var input = document.getElementById("dc-body");
+  var postBtn = document.getElementById("dc-post");
+  var msg = document.getElementById("dc-msg");
+  var countEl = document.getElementById("dc-count");
+  var toggle = document.getElementById("dc-toggle");
+  var toggleLabel = document.getElementById("dc-toggle-label");
+  var targetLabel = document.getElementById("dc-target-label");
+  var targetClear = document.getElementById("dc-target-clear");
+
   var currentUser = "";
+  var comments = [];
+  var target = { id: "", label: "" };   // "" == the page as a whole
 
   function say(text, isError) {
     msg.textContent = text || "";
@@ -113,70 +195,203 @@
   function when(iso) {
     if (!iso) return "";
     var d = new Date(iso);
-    if (isNaN(d)) return "";
-    return d.toLocaleString(undefined, {
-      year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit"
+    return isNaN(d) ? "" : d.toLocaleString(undefined, {
+      month: "short", day: "numeric", hour: "numeric", minute: "2-digit"
     });
   }
 
-  // Built with textContent throughout — comment bodies are user input and must
-  // never be parsed as HTML.
-  function render(comments) {
-    var count = document.getElementById("docs-comments-count");
-    if (count) count.textContent = comments.length ? "Comments (" + comments.length + ")" : "Comments";
-    list.textContent = "";
+  function openRail(open) {
+    rail.classList.toggle("open", open);
+    toggle.classList.toggle("rail-open", open);
+    document.body.classList.toggle("dc-rail-open", open);
+    toggle.setAttribute("aria-expanded", open ? "true" : "false");
+  }
+
+  /* ---- anchoring -------------------------------------------------------- */
+
+  // Commentable blocks are the doc's own sections and sub-sections; both carry
+  // an id already because the doc's nav links to them.
+  function anchors() {
+    return Array.prototype.slice.call(
+      document.querySelectorAll("#docs-body section[id], #docs-body .sub[id], #docs-body .steps>li[id]")
+    );
+  }
+
+  function headingOf(block) {
+    return block.querySelector("h2, h3, h4");
+  }
+
+  function labelOf(block) {
+    var h = headingOf(block);
+    if (!h) return block.id;
+    // Strip the injected button and any badge text from the visible label.
+    var clone = h.cloneNode(true);
+    Array.prototype.forEach.call(clone.querySelectorAll("button, .badge, .tag"), function (n) {
+      n.remove();
+    });
+    return clone.textContent.trim().replace(/\s+/g, " ");
+  }
+
+  function setTarget(id, label) {
+    target = { id: id || "", label: label || "" };
+    targetLabel.textContent = target.id ? target.label : "the whole page";
+    targetClear.hidden = !target.id;
+  }
+
+  function injectAnchorButtons() {
+    anchors().forEach(function (block) {
+      var h = headingOf(block);
+      if (!h || h.querySelector(".dc-anchor")) return;
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "dc-anchor";
+      btn.dataset.sectionId = block.id;
+      btn.title = "Comment on this section";
+      btn.textContent = "💬";
+      btn.addEventListener("click", function (e) {
+        e.preventDefault();
+        setTarget(block.id, labelOf(block));
+        openRail(true);
+        input.focus();
+      });
+      h.appendChild(btn);
+    });
+  }
+
+  function markAnchorsWithComments() {
+    var counts = {};
+    comments.forEach(function (c) {
+      if (c.section_id) counts[c.section_id] = (counts[c.section_id] || 0) + 1;
+    });
+    Array.prototype.forEach.call(document.querySelectorAll(".dc-anchor"), function (btn) {
+      var n = counts[btn.dataset.sectionId] || 0;
+      btn.classList.toggle("has-comments", n > 0);
+      btn.textContent = n > 0 ? "💬 " + n : "💬";
+      btn.title = n > 0 ? n + " comment(s) on this section" : "Comment on this section";
+    });
+  }
+
+  function scrollToSection(id) {
+    var el = id && document.getElementById(id);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+    el.classList.remove("dc-flash");
+    void el.offsetWidth;            // restart the animation
+    el.classList.add("dc-flash");
+  }
+
+  /* ---- rendering ------------------------------------------------------- */
+
+  // textContent throughout — comment bodies are user input and must never be
+  // parsed as HTML.
+  function card(c) {
+    var wrap = document.createElement("div");
+    wrap.className = "dc-card";
+
+    var meta = document.createElement("div");
+    meta.className = "meta";
+    var who = document.createElement("span");
+    who.className = "who";
+    who.textContent = c.author_name;
+    var ts = document.createElement("span");
+    ts.className = "when";
+    ts.textContent = when(c.created_at);
+    meta.appendChild(who);
+    meta.appendChild(ts);
+
+    if (c.author_username && c.author_username === currentUser) {
+      var del = document.createElement("button");
+      del.type = "button";
+      del.className = "del";
+      del.textContent = "Delete";
+      del.addEventListener("click", function () { remove(c.id, del); });
+      meta.appendChild(del);
+    }
+
+    var body = document.createElement("p");
+    body.className = "body";
+    body.textContent = c.body;
+
+    wrap.appendChild(meta);
+    wrap.appendChild(body);
+    return wrap;
+  }
+
+  function render() {
+    countEl.textContent = comments.length ? "(" + comments.length + ")" : "";
+    toggleLabel.textContent = comments.length ? "Comments (" + comments.length + ")" : "Comments";
+    listEl.textContent = "";
+
     if (!comments.length) {
-      var empty = document.createElement("li");
-      empty.className = "body";
-      empty.style.color = "var(--muted)";
-      empty.textContent = "No comments yet — be the first.";
-      list.appendChild(empty);
+      var empty = document.createElement("p");
+      empty.className = "dc-empty";
+      empty.textContent = "No comments yet. Hover any section heading and click 💬 to comment on it.";
+      listEl.appendChild(empty);
+      markAnchorsWithComments();
       return;
     }
+
+    // Group by section, in document order, with page-wide comments last.
+    var order = anchors().map(function (b) { return b.id; });
+    var groups = {};
     comments.forEach(function (c) {
-      var li = document.createElement("li");
-
-      var meta = document.createElement("div");
-      meta.className = "meta";
-      var who = document.createElement("span");
-      who.className = "who";
-      who.textContent = c.author_name;
-      var ts = document.createElement("span");
-      ts.className = "when";
-      ts.textContent = when(c.created_at);
-      meta.appendChild(who);
-      meta.appendChild(ts);
-
-      if (c.author_username && c.author_username === currentUser) {
-        var del = document.createElement("button");
-        del.type = "button";
-        del.className = "del";
-        del.textContent = "Delete";
-        del.addEventListener("click", function () { remove(c.id, del); });
-        meta.appendChild(del);
-      }
-
-      var body = document.createElement("p");
-      body.className = "body";
-      body.textContent = c.body;
-
-      li.appendChild(meta);
-      li.appendChild(body);
-      list.appendChild(li);
+      var key = c.section_id || "";
+      (groups[key] = groups[key] || []).push(c);
     });
+
+    var keys = Object.keys(groups).sort(function (a, b) {
+      if (a === "") return 1;
+      if (b === "") return -1;
+      var ia = order.indexOf(a), ib = order.indexOf(b);
+      // Sections no longer in the document sort after the ones that are.
+      if (ia === -1) ia = order.length;
+      if (ib === -1) ib = order.length;
+      return ia - ib;
+    });
+
+    keys.forEach(function (key) {
+      var group = document.createElement("div");
+      group.className = "dc-group";
+
+      var head = document.createElement("button");
+      head.type = "button";
+      head.className = "jump";
+      var block = key && document.getElementById(key);
+      var label = key
+        ? (block ? labelOf(block) : (groups[key][0].section_label || key) + " (section not found)")
+        : "Whole page";
+      head.textContent = label;
+      head.title = key ? "Jump to this section" : "Comments on the page as a whole";
+      head.addEventListener("click", function () {
+        if (key) scrollToSection(key);
+      });
+      group.appendChild(head);
+
+      groups[key].forEach(function (c) { group.appendChild(card(c)); });
+      listEl.appendChild(group);
+    });
+
+    markAnchorsWithComments();
   }
+
+  /* ---- network --------------------------------------------------------- */
 
   function errorFrom(response, payload) {
     return (payload && payload.error) || ("Request failed (" + response.status + ")");
   }
 
+  function asJson(r) {
+    return r.json().then(function (j) { return { r: r, j: j }; });
+  }
+
   function load() {
     fetch(listUrl, { headers: { "Accept": "application/json" } })
-      .then(function (r) { return r.json().then(function (j) { return { r: r, j: j }; }); })
+      .then(asJson)
       .then(function (res) {
         if (!res.r.ok) throw new Error(errorFrom(res.r, res.j));
         currentUser = res.j.current_username || "";
-        render(res.j.comments || []);
+        comments = res.j.comments || [];
+        render();
       })
       .catch(function (e) { say(e.message, true); });
   }
@@ -189,9 +404,9 @@
     fetch(listUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-CSRFToken": csrf },
-      body: JSON.stringify({ body: body })
+      body: JSON.stringify({ body: body, section_id: target.id, section_label: target.label })
     })
-      .then(function (r) { return r.json().then(function (j) { return { r: r, j: j }; }); })
+      .then(asJson)
       .then(function (res) {
         if (!res.r.ok) throw new Error(errorFrom(res.r, res.j));
         input.value = "";
@@ -205,11 +420,8 @@
   function remove(id, btn) {
     if (!window.confirm("Delete this comment?")) return;
     btn.disabled = true;
-    fetch(listUrl + id + "/delete/", {
-      method: "POST",
-      headers: { "X-CSRFToken": csrf }
-    })
-      .then(function (r) { return r.json().then(function (j) { return { r: r, j: j }; }); })
+    fetch(listUrl + id + "/delete/", { method: "POST", headers: { "X-CSRFToken": csrf } })
+      .then(asJson)
       .then(function (res) {
         if (!res.r.ok) throw new Error(errorFrom(res.r, res.j));
         load();
@@ -217,17 +429,60 @@
       .catch(function (e) { say(e.message, true); btn.disabled = false; });
   }
 
-  postBtn.addEventListener("click", post);
+  /* ---- wiring ---------------------------------------------------------- */
 
-  var jump = document.getElementById("docs-comments-jump");
-  if (jump) {
-    jump.addEventListener("click", function () {
-      root.scrollIntoView({ behavior: "smooth", block: "start" });
-      input.focus({ preventScroll: true });
-    });
+  postBtn.addEventListener("click", post);
+  targetClear.addEventListener("click", function () { setTarget("", ""); input.focus(); });
+  document.getElementById("dc-close").addEventListener("click", function () { openRail(false); });
+  toggle.addEventListener("click", function () { openRail(!rail.classList.contains("open")); });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && rail.classList.contains("open")) openRail(false);
+  });
+
+  injectAnchorButtons();
+  setTarget("", "");
+  load();
+
+  /* ---- click-to-copy on values marked copyable in the doc -------------- */
+
+  // execCommand fallback: the async clipboard API is rejected outside a secure
+  // or focused context, and a value the reader cannot copy defeats the point of
+  // documenting it. If both paths fail, select the text so Ctrl/Cmd-C works.
+  function copyText(text, el) {
+    var flash = function (ok) {
+      el.classList.add(ok ? "copied" : "copy-failed");
+      setTimeout(function () { el.classList.remove("copied", "copy-failed"); }, 1200);
+      if (!ok) {
+        var range = document.createRange();
+        range.selectNodeContents(el);
+        var sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+    };
+    var legacy = function () {
+      var ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "");
+      ta.style.cssText = "position:fixed;top:-1000px;opacity:0";
+      document.body.appendChild(ta);
+      ta.select();
+      var ok = false;
+      try { ok = document.execCommand("copy"); } catch (err) { ok = false; }
+      ta.remove();
+      flash(ok);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { flash(true); }, legacy);
+    } else {
+      legacy();
+    }
   }
 
-  load();
+  document.addEventListener("click", function (e) {
+    var code = e.target.closest && e.target.closest("#docs-body code.copyable");
+    if (code) copyText(code.dataset.copy || code.textContent, code);
+  });
 })();
 </script>
 {% endblock %}

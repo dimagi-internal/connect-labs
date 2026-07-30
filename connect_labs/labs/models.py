@@ -196,9 +196,19 @@ class DocComment(models.Model):
 
     Comments are global — every logged-in labs user sees the same thread on a
     page, regardless of their selected program or opportunity context.
+
+    A comment is anchored to a section of the page (``section_id`` matches an
+    element id in the document, e.g. ``setup-sequence``) so the sidebar can group
+    threads the way Google Docs does. ``section_id`` is blank for a comment on
+    the page as a whole.
     """
 
     doc_key = models.CharField(max_length=64, db_index=True)
+    # Element id within the document; blank means "the page as a whole".
+    section_id = models.CharField(max_length=128, blank=True, default="", db_index=True)
+    # Heading text captured at write time, so a thread still labels itself if
+    # the document is re-exported and that section is renamed or removed.
+    section_label = models.CharField(max_length=255, blank=True, default="")
     body = models.TextField()
     author = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -223,6 +233,8 @@ class DocComment(models.Model):
         return {
             "id": self.id,
             "body": self.body,
+            "section_id": self.section_id,
+            "section_label": self.section_label,
             "author_name": self.author_name or self.author.username,
             "author_username": self.author.username,
             "created_at": self.created_at.isoformat(),

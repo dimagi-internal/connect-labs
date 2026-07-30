@@ -37,16 +37,22 @@ def doc_comments(request: HttpRequest, doc_key: str) -> JsonResponse:
         )
 
     try:
-        body = json.loads(request.body or b"{}")
+        payload = json.loads(request.body or b"{}")
     except json.JSONDecodeError as exc:
         return JsonResponse({"error": f"Invalid JSON: {exc}"}, status=400)
+
+    # A list, string, or null body would blow up on .get below.
+    if not isinstance(payload, dict):
+        return JsonResponse({"error": "Expected a JSON object"}, status=400)
 
     try:
         comment = docs_comments.create_comment(
             doc_key=doc_key,
-            body=body.get("body", ""),
+            body=payload.get("body", ""),
             author=request.user,
             author_name=request.user.name or request.user.username,
+            section_id=payload.get("section_id", "") or "",
+            section_label=payload.get("section_label", "") or "",
         )
     except ValueError as exc:
         return JsonResponse({"error": str(exc)}, status=400)
