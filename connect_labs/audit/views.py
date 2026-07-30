@@ -2279,9 +2279,9 @@ class AIReviewAPIView(LoginRequiredMixin, View):
                             image_bytes = data_access.download_image_from_connect(blob_id, opportunity_id)
 
                         # Run AI review using shared utility
-                        from connect_labs.audit.ai_review import run_single_ai_review
+                        from connect_labs.audit.ai_review import run_single_ai_review_with_notes
 
-                        ai_result = run_single_ai_review(
+                        ai_result, ai_notes = run_single_ai_review_with_notes(
                             agent=agent,
                             image_bytes=image_bytes,
                             reading=reading,
@@ -2297,7 +2297,7 @@ class AIReviewAPIView(LoginRequiredMixin, View):
                                 "visit_id": visit_id,
                                 "blob_id": blob_id,
                                 "ai_result": ai_result,
-                                "ai_notes": "",
+                                "ai_notes": ai_notes,
                             }
                         )
 
