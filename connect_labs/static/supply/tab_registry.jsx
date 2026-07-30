@@ -163,6 +163,31 @@ function RegistryDetailModal({ row, onClose }) {
             value: (q) => q.expires_at,
             render: (q) => <ExpiryChip iso={q.expires_at} />,
           },
+          // Two dates alone make the eligibility judgment visible but not
+          // defensible: the question after "is it live" is always "who decided
+          // that, and against what". Both come off the application the decision
+          // froze at submission.
+          {
+            key: 'by',
+            label: 'Granted by',
+            value: (q) => q.granted_by || '',
+            render: (q) =>
+              q.granted_by || <span className="muted">not recorded</span>,
+          },
+          {
+            key: 'src',
+            label: 'Assessed against',
+            sortable: false,
+            value: () => '',
+            render: (q) =>
+              q.source_round ? (
+                <span title={`Frozen application #${q.source_submission_id}`}>
+                  {q.source_round}
+                </span>
+              ) : (
+                <span className="muted">—</span>
+              ),
+          },
         ]}
       />
 

@@ -64,6 +64,18 @@ class EOISubmissionFactory(factory.django.DjangoModelFactory):
     categories = ["rutf"]
 
 
+class EOIReviewFactory(factory.django.DjangoModelFactory):
+    """A reviewer's decision on an EOI submission — the record a qualification
+    cites when the registry is asked who granted it."""
+
+    class Meta:
+        model = m.EOIReview
+
+    submission = factory.SubFactory(EOISubmissionFactory)
+    reviewer = factory.SubFactory(UserFactory)
+    decisions = factory.LazyFunction(lambda: {"rutf": "qualify"})
+
+
 class QualificationFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = m.Qualification
