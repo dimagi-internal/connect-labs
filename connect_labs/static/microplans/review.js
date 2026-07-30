@@ -418,7 +418,7 @@
     src.setData(fcOut);
   }
 
-  function refreshMap() {
+  function refreshMap(opts) {
     if (!map || !mapReady) return;
     const data = fc();
     // Work-area territories via the shared PlanLayers component (same paint the
@@ -487,7 +487,13 @@
         inspectWA(hoverWAId, false);
       });
     }
-    Microplans.fitTo(map, data, { maxZoom: 16, animate: false, duration: 0 });
+    // Only re-fit the viewport on first load, or when a caller explicitly asks
+    // (e.g. Regenerate, where the area's geometry may have moved somewhere new).
+    // Everyday edits (reassign/move/exclude/regroup/reassign-workers/save-targets)
+    // must never yank the map away from whatever the user was looking at.
+    if (firstTime || (opts && opts.fit)) {
+      Microplans.fitTo(map, data, { maxZoom: 16, animate: false, duration: 0 });
+    }
   }
   function setSelState() {
     if (!map || !mapReady) return;
@@ -780,7 +786,7 @@
     }
     btn.disabled = !(planningRows().length > 0 && !!SETUP_COUNTS);
   }
-  function render(data) {
+  function render(data, opts) {
     if (data && data.revision !== undefined) planRevision = data.revision;
     WAS = data.work_areas || [];
     if (data && data.area_populations) AREA_POPS = data.area_populations;
@@ -791,13 +797,19 @@
     renderTable();
     renderVisitsTable();
     renderSetupTable(); // keep the planning table filled after create/regenerate
-    refreshMap();
+    refreshMap(opts); // opts.fit re-centers the map — only pass it when the
+    // geometry itself may have moved (e.g. Regenerate); everyday edits omit it
+    // so the viewport stays put (see refreshMap).
     // Keep the plan's boundary outlines on the map on every render (create,
     // regenerate, save, filter) — not just the sampling-overlay path.
     drawPlanBoundaries(data);
     setSelState();
     syncPlanTools();
     syncCreateEnabled();
+    // A pinned single/bulk Inspect panel (from a prior click/shift-click) shows a
+    // snapshot taken at click time — without this, it stays stale after an edit
+    // (e.g. "Move to group…") even though WAS/the map already reflect the change.
+    revertInspect();
   }
 
   // Grey-out: grouping / assignment / bulk / export all act on a plan's work areas,
@@ -1590,6 +1602,15 @@
   });
 
   on('btn-export', 'click', async () => {
+    // The CSV's Expected Visit Count / Target Population columns come from the
+    // last-SAVED area targets, not whatever's currently typed in "U5 for calc" —
+    // warn before exporting numbers that don't match what's on screen.
+    if (targetsDirty()) {
+      const proceed = confirm(
+        'You have an unsaved "U5 for calc" edit. The CSV will use the last-saved Expected Visit Count / Target Population, not this pending change.\n\nClick Cancel to save it first ("Update table"), or OK to download anyway.',
+      );
+      if (!proceed) return;
+    }
     const resp = await post(CSV_URL, {});
     if (!resp.ok) {
       $('status').textContent = 'Export failed.';
@@ -2047,7 +2068,9 @@
         circleAreas = [];
         refreshAreaStats();
         prefillSetupForm(data);
-        render(data);
+        // Regenerate can rebuild from an entirely new area definition, so (unlike
+        // a plain edit) the viewport should follow the new geometry.
+        render(data, { fit: true });
         // Work areas changed — the building overlay (if shown) is now stale and
         // would misalign. render() already restamped planRevision, so re-fetching
         // gets the new layout's footprints (and misses the old HTTP cache entry).

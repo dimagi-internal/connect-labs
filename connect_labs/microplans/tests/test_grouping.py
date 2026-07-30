@@ -461,3 +461,63 @@ class TestTopUpContiguityGuard:
         # R0 successfully grows by taking it (and D1, still reaching for min).
         assert "D0" in r0_group
         assert len(r0_group) > 1
+
+
+class TestTopUpDoesNotBridgeAcrossAnotherGroup:
+    """A merge/steal must never reach across a THIRD cluster's already-claimed
+    cells — that would leave that group's cells sitting in the gap between two
+    pieces of the merged group (the "another WAG runs in between" bug)."""
+
+    @staticmethod
+    def _in_a_row(a_buildings, b_buildings, c_buildings):
+        from shapely.geometry import Point
+        from shapely.strtree import STRtree
+
+        clusters = [["A"], ["B"], ["C"]]
+        by_id = {
+            "A": {"building_count": a_buildings},
+            "B": {"building_count": b_buildings},
+            "C": {"building_count": c_buildings},
+        }
+        cents = {"A": (0.0, 0.0), "B": (10.0, 0.0), "C": (20.0, 0.0)}
+        geoms = {wid: Point(xy).buffer(4.0) for wid, xy in cents.items()}
+        wa_ids = list(geoms.keys())
+        tree = STRtree([geoms[w] for w in wa_ids])
+        adjacency = {wid: [] for wid in wa_ids}  # none touching — three separate clusters
+        return clusters, by_id, geoms, cents, adjacency, tree, wa_ids
+
+    def test_blocked_when_third_cluster_sits_in_the_gap(self):
+        from connect_labs.microplans.core.grouping import _top_up_undersized_clusters
+
+        # A (10, undersized) is too small to merge with B (1000 — combined would
+        # breach max_buildings) and the only other candidate, C (100, would fit),
+        # sits on the far side of B — the straight line to it crosses B's cell.
+        clusters, by_id, geoms, cents, adjacency, tree, wa_ids = self._in_a_row(10, 1000, 100)
+        result = _top_up_undersized_clusters(
+            clusters, by_id, geoms, cents, adjacency, tree, wa_ids, 50, 200, 25.0, None
+        )
+        a_group = next(cells for _seed, cells in result if "A" in cells)
+        # Neither path works (B too big, C blocked by B) — A stays standalone
+        # rather than bridging across B's territory.
+        assert a_group == ["A"]
+
+    def test_allowed_across_genuinely_empty_gap(self):
+        from connect_labs.microplans.core.grouping import _top_up_undersized_clusters
+
+        # Same distances, but no third cluster in the way at all — nothing but
+        # empty terrain between A and C, so the merge proceeds normally.
+        clusters = [["A"], ["C"]]
+        by_id = {"A": {"building_count": 10}, "C": {"building_count": 100}}
+        from shapely.geometry import Point
+        from shapely.strtree import STRtree
+
+        cents = {"A": (0.0, 0.0), "C": (20.0, 0.0)}
+        geoms = {wid: Point(xy).buffer(4.0) for wid, xy in cents.items()}
+        wa_ids = list(geoms.keys())
+        tree = STRtree([geoms[w] for w in wa_ids])
+        adjacency = {wid: [] for wid in wa_ids}
+        result = _top_up_undersized_clusters(
+            clusters, by_id, geoms, cents, adjacency, tree, wa_ids, 50, 200, 25.0, None
+        )
+        a_group = next(cells for _seed, cells in result if "A" in cells)
+        assert set(a_group) == {"A", "C"}
