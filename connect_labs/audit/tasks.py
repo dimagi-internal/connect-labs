@@ -664,6 +664,84 @@ def _run_ai_review_on_sessions(
     }
 
 
+def _run_duplicate_detection_on_sessions(
+    data_access,
+    session_ids: list[int],
+    access_token: str,
+    progress_callback=None,
+) -> dict:
+    """Run group-level duplicate-photo detection on each session and persist.
+
+    Batches each session's images by (FLW, day, photo-type), calls the live
+    /detect_duplicates endpoint, and writes non-destructive "Potential Duplicate"
+    flags. Runs AFTER per-image AI review so the flag merges additively into any
+    existing ai_notes. Non-fatal per session -- a failure on one session is
+    logged and the rest proceed.
+
+    INTENTIONALLY SEQUENTIAL across sessions: unlike _run_ai_review_on_sessions,
+    which fans image reviews out over a ThreadPoolExecutor, this loop processes
+    sessions one at a time -- and each session's run_duplicate_detection makes its
+    /detect_duplicates calls sequentially too. Do NOT wrap this in a thread pool
+    to run many sessions' detect calls at once: each detect call is a long single
+    op, and concurrent calls slow every request enough to be problematic. Modest
+    incidental overlap is fine; deliberate parallel fan-out of the detect calls is
+    not the intended model.
+    """
+    from connect_labs.audit.duplicate_detection import build_duplicate_warnings, run_duplicate_detection
+
+    totals = {
+        "sessions_processed": 0,
+        "groups_detected": 0,
+        "images_flagged": 0,
+        "days_processed": 0,
+        "skipped_over_limit": 0,
+        "skipped_presign": 0,
+        "detect_failures": 0,
+        "session_errors": 0,  # sessions that raised before finishing detection
+    }
+    total = len(session_ids)
+    for idx, session_id in enumerate(session_ids, start=1):
+        try:
+            session = data_access.get_audit_session(session_id)
+            if not session:
+                continue
+
+            def _cb(p, t, m, _idx=idx):
+                if progress_callback:
+                    progress_callback(_idx, total, m)
+
+            summary = run_duplicate_detection(session, access_token, progress_callback=_cb)
+            if summary.get("days_processed"):
+                data_access.save_audit_session(session)
+            for key in (
+                "groups_detected",
+                "images_flagged",
+                "days_processed",
+                "skipped_over_limit",
+                "skipped_presign",
+                "detect_failures",
+            ):
+                totals[key] += summary.get(key, 0)
+            totals["sessions_processed"] += 1
+        except Exception as e:
+            totals["session_errors"] += 1
+            logger.warning(f"[DuplicateDetection] Failed to process session {session_id}: {e}")
+
+        if progress_callback:
+            progress_callback(idx, total, f"Duplicate detection {idx}/{total} sessions")
+
+    # Build a human-readable note for the run summary whenever ANY part of the
+    # de-duplication run failed or was skipped. Empty warnings => clean run.
+    warnings, note = build_duplicate_warnings(totals)
+    totals["warnings"] = warnings
+    totals["note"] = note
+    if warnings:
+        logger.warning("[DuplicateDetection] %s", note)
+
+    logger.info(f"[DuplicateDetection] Complete across sessions: {totals}")
+    return totals
+
+
 @celery_app.task(bind=True)
 def run_audit_creation(
     self,
@@ -782,10 +860,15 @@ def run_audit_creation(
     needs_visit_fetch = not visit_ids
     is_per_flw = granularity == "per_flw"
     has_ai_agent = bool(ai_agent_id) or bool(ai_reviewers)
+    # Group-level duplicate-photo detection is an independent, opt-in assessment
+    # (runs with or without a per-image AI agent). Batched per (FLW, day, type).
+    detect_duplicates = bool(criteria.get("detect_duplicates"))
     # Base stages: (fetch visits) + extract images + create sessions + (AI review)
     total_stages = 3 if needs_visit_fetch else 2
     if has_ai_agent:
         total_stages += 1  # Add AI review stage
+    if detect_duplicates:
+        total_stages += 1  # Add duplicate-detection stage
 
     set_task_progress(
         self,
@@ -1265,6 +1348,50 @@ def run_audit_creation(
 
             current_stage += 1
 
+        # =========================================================================
+        # STAGE 5 (optional): Duplicate-photo detection (per FLW, per day, per type)
+        # =========================================================================
+        duplicate_results = None
+        if detect_duplicates and sessions_created:
+            msg = f"Stage {current_stage}/{total_stages}: Detecting duplicate photos..."
+            set_task_progress(
+                self, msg, current_stage=current_stage, total_stages=total_stages, stage_name="Duplicate Detection"
+            )
+            _update_job_progress(
+                data_access,
+                task_id,
+                username,
+                status="running",
+                current_stage=current_stage,
+                total_stages=total_stages,
+                stage_name="Duplicate Detection",
+                message=msg,
+            )
+            try:
+                duplicate_results = _run_duplicate_detection_on_sessions(
+                    data_access=data_access,
+                    session_ids=[s["id"] for s in sessions_created],
+                    access_token=access_token,
+                    progress_callback=lambda p, t, m: (
+                        set_task_progress(
+                            self,
+                            f"Stage {current_stage}/{total_stages}: {m}",
+                            current_stage=current_stage,
+                            total_stages=total_stages,
+                            stage_name="Duplicate Detection",
+                            processed=p,
+                            total=t,
+                        ),
+                        _relay(p, t, f"Duplicate detection · {m}"),
+                    ),
+                )
+                logger.info(f"[AuditCreation] Duplicate detection complete: {duplicate_results}")
+            except Exception as e:
+                logger.warning(f"[AuditCreation] Duplicate detection failed (non-fatal): {e}")
+                duplicate_results = {"error": str(e)}
+
+            current_stage += 1
+
         # Mark complete
         result = {
             "success": True,
@@ -1275,6 +1402,23 @@ def run_audit_creation(
         }
         if ai_review_results:
             result["ai_review"] = ai_review_results
+        if duplicate_results:
+            result["duplicate_detection"] = duplicate_results
+
+        # Surface any duplicate-detection failures/skips in the run summary. A
+        # wholesale Stage-5 exception is stored as {"error": ...}; a partial
+        # failure produces a "note" from _run_duplicate_detection_on_sessions.
+        duplicate_note = ""
+        if duplicate_results:
+            if duplicate_results.get("error"):
+                duplicate_note = f"Duplicate detection failed: {duplicate_results['error']}"
+            else:
+                duplicate_note = duplicate_results.get("note") or ""
+        if duplicate_note:
+            result["duplicate_detection_note"] = duplicate_note
+        completion_message = "Audit creation complete"
+        if duplicate_note:
+            completion_message += f" · {duplicate_note}"
 
         set_task_progress(
             self,
@@ -1295,7 +1439,7 @@ def run_audit_creation(
             current_stage=total_stages,
             total_stages=total_stages,
             stage_name="Complete",
-            message="Audit creation complete",
+            message=completion_message,
             result=result,
         )
 

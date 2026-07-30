@@ -261,6 +261,36 @@ class AuditSessionRecord(LocalLabsRecord):
 
         visit_result["assessments"][blob_id] = assessment
 
+    def flag_potential_duplicate(self, visit_id: int, blob_id: str, question_id: str, group_id: int):
+        """Non-destructively flag an image as a potential duplicate subject.
+
+        Composes with any per-image AI review already written for this blob:
+        the "Potential Duplicate" label is MERGED into ai_notes using
+        AI_NOTES_JOIN_SEP (the same mechanism _combine_reviewer_results uses),
+        so get_assessment_stats().ai_flags_by_label counts it alongside e.g. a
+        muac_overzoom "Hyperzoomed" flag rather than clobbering it. The human
+        `result` is left untouched (flag-only). ``group_id`` is a connected-
+        component index so the review UI can sort duplicates adjacently.
+        """
+        from connect_labs.audit.duplicate_detection import DUPLICATE_FLAG_LABEL
+
+        visit_key = str(visit_id)
+        visit_results = self.data.setdefault("visit_results", {})
+        visit_result = visit_results.setdefault(visit_key, {"assessments": {}})
+        assessments = visit_result.setdefault("assessments", {})
+        assessment = assessments.setdefault(blob_id, {"question_id": question_id, "result": None, "notes": ""})
+
+        assessment["question_id"] = question_id or assessment.get("question_id")
+        assessment["ai_result"] = "no_match"
+        assessment["duplicate_group"] = group_id
+
+        existing_labels = [
+            label.strip() for label in (assessment.get("ai_notes") or "").split(AI_NOTES_JOIN_SEP) if label.strip()
+        ]
+        if DUPLICATE_FLAG_LABEL not in existing_labels:
+            existing_labels.append(DUPLICATE_FLAG_LABEL)
+        assessment["ai_notes"] = AI_NOTES_JOIN_SEP.join(existing_labels)
+
     def clear_assessment(self, visit_id: int, blob_id: str):
         """
         Remove an assessment entry for an image.
