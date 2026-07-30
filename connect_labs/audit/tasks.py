@@ -250,20 +250,24 @@ def _reading_for(comparison_field: str | None, reading_by_field: dict[str, str])
 _MAX_REVIEWERS_PER_IMAGE = 4
 
 # Caps the outer per-session image pool (see _run_ai_review_on_sessions). Benchmarked
-# directly against the real ML classify gateway (see PR that introduced this constant
-# for the full results): throughput plateaus right around this concurrency level --
-# roughly double the throughput of the previous value of 5 -- and pushing higher (15-30)
-# buys no further throughput while pushing per-call latency up and eventually producing
-# read timeouts (observed starting around 30 concurrent gateway calls).
+# directly against the real ML classify gateway at this pool size times today's actual
+# 2 reviewers/image (i.e. real concurrent gateway calls = pool size x reviewers/image):
+#   pool=5  (10 concurrent calls):  baseline
+#   pool=10 (20 concurrent calls):  throughput ~2x pool=5, latency flat -- this value
+#   pool=15 (30 concurrent calls):  no throughput gain over pool=10, latency starts climbing
+#   pool=20 (40 concurrent calls):  still no throughput gain, latency climbs further, no errors
+#   pool=30 (60 concurrent calls):  no throughput gain, ~5% of calls hit read timeouts
+# i.e. throughput plateaus at pool=10 and going higher only adds queueing delay, with
+# outright timeouts first appearing around 60 concurrent calls.
 #
 # This pool isn't the only source of concurrent load on the gateway: real-world worst
 # case is this value multiplied by _MAX_REVIEWERS_PER_IMAGE above, since each outer
 # worker's image can fan out to that many reviewers. At today's actual usage (2
-# reviewers/image), that's up to 20 concurrent gateway calls, comfortably inside the
-# benchmarked plateau. At the theoretical cap of 4 reviewers/image, worst case rises to
-# 40 -- still short of where timeouts appeared (~60), but past where latency started
-# climbing. If reviewer-count-per-image grows toward that cap in practice, or the
-# gateway's own capacity changes, re-benchmark before raising either constant further.
+# reviewers/image) that's the 20-concurrent-call row above, right at the plateau. At the
+# theoretical cap of 4 reviewers/image, worst case rises to 40 concurrent calls -- the
+# row where latency has climbed but no timeouts appeared yet. If reviewer-count-per-image
+# grows toward that cap in practice, or the gateway's own capacity changes, re-benchmark
+# before raising either constant further.
 _MAX_CONCURRENT_IMAGES_PER_SESSION = 10
 
 
