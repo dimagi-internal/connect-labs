@@ -332,13 +332,43 @@ gh workflow run deploy-labs.yml --repo dimagi-internal/connect-labs \
   --ref main --field run_migrations=<true if migrations>
 ```
 
-Then seed via ECS exec (container is `web`, not `connect-labs`):
+Then seed. Two ways, and the second is the one a render loop can use.
+
+**ECS exec** — a human at a terminal:
 
 ```bash
 aws --profile labs --region us-east-1 ecs execute-command \
   --cluster labs-jj-cluster --task <arn> --container web \
   --interactive --command "python manage.py seed_supply_demo --reset"
 ```
+
+**Over HTTP** — `POST /supply/api/demo/reseed/`, bearer-token authenticated:
+
+```bash
+curl -X POST https://labs.connect.dimagi.com/supply/api/demo/reseed/ \
+  -H "Authorization: Bearer $SUPPLY_DEMO_RESEED_TOKEN"
+```
+
+This exists because every OES walkthrough mutates state — a reviewer records a
+qualification, a buyer awards two lots — and `award_lot` refuses a lot that
+already has an award, so take two of a render does not merely look different, it
+fails. An interactive ECS session is not something a render loop can do between
+takes, which is why prod renders were effectively single-shot.
+
+**It is disabled unless configured.** With no `SUPPLY_DEMO_RESEED_TOKEN` in the
+server's environment the route 404s as though it did not exist — `/supply/` has
+open registration on a public host, and an endpoint that empties it should not
+advertise itself. To enable it on labs: create the secret, then reference it from
+`deploy/task-definitions/{web,worker}.json` alongside `SUPPLY_DEMO_PASSWORD`.
+
+The token is read from the environment rather than stored as an `ApiToken`
+because the reseed deletes the `supply_*` tables, and `ApiToken` lives in them: a
+DB-stored credential would be valid for the request that erases it and absent for
+the next one. The secret has to outlive the data it resets.
+
+`scripts/walkthroughs/oes/ensure_demo.py` picks the path automatically — it POSTs
+when `OES_BASE_URL` names a deployed host and runs the management command when it
+is local, so a recipe's `setup:` block does not need to know which world it films.
 
 Task definitions are version-controlled in `deploy/task-definitions/` and
 registered from the repo on every deploy — editing them in the AWS console has

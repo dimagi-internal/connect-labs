@@ -3,6 +3,7 @@ from django.urls import path
 from . import views, views_dev_auth
 from .api import bootstrap as bootstrap_api
 from .api import demand as demand_api
+from .api import demo as demo_api
 from .api import eoi as eoi_api
 from .api import execution as execution_api
 from .api import ingest as ingest_api
@@ -78,6 +79,11 @@ urlpatterns = [
     path("api/actions/expedite/<int:shipment_id>/", demand_api.expedite, name="api_action_expedite"),
     path("api/outcomes/", demand_api.outcomes_summary, name="api_outcomes"),
     path("api/batches/<str:batch_lot>/", demand_api.batch_drill, name="api_batch_drill"),
+    # --- demo world (env-token authenticated; 404 unless SUPPLY_DEMO_RESEED_TOKEN
+    #     is set). Lets a render loop put the world back between takes without a
+    #     shell — every OES narrative mutates state, so take two needs take
+    #     one's world back.
+    path("api/demo/reseed/", demo_api.reseed, name="api_demo_reseed"),
     path("api/v1/epcis/capture/", ingest_api.epcis_capture, name="api_v1_epcis_capture"),
     path("api/v1/shipments/", ingest_api.shipments, name="api_v1_shipments"),
     path("api/v1/checkins/", ingest_api.checkins, name="api_v1_checkins"),
