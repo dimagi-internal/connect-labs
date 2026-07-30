@@ -1,0 +1,1215 @@
+<title>Connect-CHC · System Documentation</title>
+<style>
+  :root{
+    --bg:#FAFAF6; --raise:#FFFFFF; --ink:#1C2823; --muted:#5A6A61; --line:#E2E7E0;
+    --accent:#0E7C66; --accent-soft:#E3F1EC; --accent-ink:#0A5A4B;
+    --amber:#B45309; --amber-soft:#FCF0E0; --red:#B3261E; --red-soft:#FBE9E7;
+    --ok:#15803D; --ok-soft:#E5F3E8; --code-bg:#F0F3EE; --chip:#EEF2ED;
+    --shadow:0 1px 3px rgba(28,40,35,.08);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0F1613; --raise:#171F1C; --ink:#E5ECE7; --muted:#94A49B; --line:#273430;
+      --accent:#43BA9D; --accent-soft:#153229; --accent-ink:#7BD5BE;
+      --amber:#E8A65B; --amber-soft:#332715; --red:#EC8B84; --red-soft:#361B18;
+      --ok:#5FC580; --ok-soft:#15301D; --code-bg:#1D2723; --chip:#222E29;
+      --shadow:0 1px 3px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0F1613; --raise:#171F1C; --ink:#E5ECE7; --muted:#94A49B; --line:#273430;
+    --accent:#43BA9D; --accent-soft:#153229; --accent-ink:#7BD5BE;
+    --amber:#E8A65B; --amber-soft:#332715; --red:#EC8B84; --red-soft:#361B18;
+    --ok:#5FC580; --ok-soft:#15301D; --code-bg:#1D2723; --chip:#222E29;
+    --shadow:0 1px 3px rgba(0,0,0,.35);
+  }
+  :root[data-theme="light"]{
+    --bg:#FAFAF6; --raise:#FFFFFF; --ink:#1C2823; --muted:#5A6A61; --line:#E2E7E0;
+    --accent:#0E7C66; --accent-soft:#E3F1EC; --accent-ink:#0A5A4B;
+    --amber:#B45309; --amber-soft:#FCF0E0; --red:#B3261E; --red-soft:#FBE9E7;
+    --ok:#15803D; --ok-soft:#E5F3E8; --code-bg:#F0F3EE; --chip:#EEF2ED;
+    --shadow:0 1px 3px rgba(28,40,35,.08);
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  @media (prefers-reduced-motion: reduce){ html{scroll-behavior:auto} *{transition:none!important;animation:none!important} }
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    font-size:16px; line-height:1.65;
+  }
+  h1,h2,h3,h4{font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif; line-height:1.25; text-wrap:balance; margin:0 0 .5em}
+  h1{font-size:2.1rem; font-weight:600}
+  h2{font-size:1.6rem; font-weight:600; padding-top:.4rem}
+  h3{font-size:1.2rem; font-weight:600}
+  h4{font-size:1.02rem; font-weight:600}
+  p{margin:.4em 0 1em}
+  a{color:var(--accent); text-decoration:none}
+  a:hover{text-decoration:underline}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:.86em; background:var(--code-bg); border:1px solid var(--line); border-radius:4px; padding:.08em .35em}
+  li{margin:.25em 0}
+
+  /* Layout */
+  .shell{display:grid; grid-template-columns:264px 1fr; min-height:100vh}
+  .sidebar{
+    position:sticky; top:0; height:100vh; overflow-y:auto; padding:1.4rem 1rem 2rem;
+    border-right:1px solid var(--line); background:var(--raise);
+  }
+  .brand{padding:0 .6rem 1rem; border-bottom:1px solid var(--line); margin-bottom:1rem}
+  .brand .word{font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif; font-size:1.25rem; font-weight:600}
+  .brand .word em{font-style:normal; color:var(--accent)}
+  .brand .sub{font-size:.72rem; letter-spacing:.09em; text-transform:uppercase; color:var(--muted); margin-top:.2rem}
+  nav a.nav-item{
+    display:block; padding:.42rem .6rem; border-radius:6px; color:var(--ink);
+    font-size:.9rem; margin:.1rem 0;
+  }
+  nav a.nav-sub{display:block; padding:.26rem .6rem .26rem 1.5rem; border-radius:6px; color:var(--muted); font-size:.82rem}
+  nav a:hover{background:var(--chip); text-decoration:none}
+  nav a.active{background:var(--accent-soft); color:var(--accent-ink); font-weight:600}
+  nav a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+  main{padding:2.4rem clamp(1.2rem,4vw,3.5rem) 5rem; min-width:0}
+  .content{max-width:none}
+
+  /* Mobile */
+  .topbar{display:none}
+  @media (max-width:880px){
+    .shell{grid-template-columns:1fr}
+    .sidebar{display:none}
+    .topbar{
+      display:flex; gap:.8rem; align-items:center; position:sticky; top:0; z-index:30;
+      background:var(--raise); border-bottom:1px solid var(--line); padding:.7rem 1rem;
+    }
+    .topbar .word{font-family:Georgia,serif; font-weight:600}
+    .topbar select{
+      margin-left:auto; background:var(--bg); color:var(--ink); border:1px solid var(--line);
+      border-radius:6px; padding:.35rem .5rem; font-size:.9rem; max-width:55vw;
+    }
+  }
+
+  /* Hero */
+  .hero{border-bottom:1px solid var(--line); padding-bottom:1.6rem; margin-bottom:2.2rem}
+  .eyebrow{font-size:.72rem; letter-spacing:.12em; text-transform:uppercase; color:var(--accent-ink); font-weight:700}
+  .hero p.lede{font-size:1.08rem; color:var(--muted)}
+
+  /* LDVP strip */
+  .ldvp{display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:.8rem; margin:1.2rem 0 0}
+  .ldvp .stage{background:var(--raise); border:1px solid var(--line); border-radius:10px; padding:.9rem 1rem; box-shadow:var(--shadow)}
+  .ldvp .stage b{display:block; font-size:.95rem; color:var(--accent-ink)}
+  .ldvp .stage span{font-size:.82rem; color:var(--muted)}
+
+  /* Sections */
+  section{margin-bottom:3.2rem; scroll-margin-top:1rem}
+  .sec-head{display:flex; align-items:baseline; gap:.8rem; border-bottom:2px solid var(--accent); padding-bottom:.4rem; margin-bottom:1.4rem}
+  .sec-head h2{margin:0}
+  .sec-head .tag{font-size:.72rem; letter-spacing:.1em; text-transform:uppercase; color:var(--muted)}
+  .sub{scroll-margin-top:1rem; margin-top:2rem}
+
+  /* Cards + callouts */
+  .card{background:var(--raise); border:1px solid var(--line); border-radius:10px; padding:1.1rem 1.3rem; box-shadow:var(--shadow); margin:1rem 0}
+  .callout{border-left:4px solid var(--accent); background:var(--accent-soft); border-radius:0 8px 8px 0; padding:.8rem 1.1rem; margin:1rem 0}
+  .callout.warn{border-left-color:var(--amber); background:var(--amber-soft)}
+  .callout.danger{border-left-color:var(--red); background:var(--red-soft)}
+  .callout b:first-child{display:block; margin-bottom:.15rem}
+  .callout p{margin:.2em 0}
+
+  /* Tables */
+  .table-wrap{overflow-x:auto; border:1px solid var(--line); border-radius:10px; margin:1rem 0; background:var(--raise); box-shadow:var(--shadow)}
+  table{border-collapse:collapse; width:100%; font-size:.88rem}
+  th{
+    text-align:left; font-size:.72rem; letter-spacing:.07em; text-transform:uppercase;
+    color:var(--muted); background:var(--chip); padding:.6rem .8rem; border-bottom:1px solid var(--line); white-space:nowrap;
+  }
+  td{padding:.6rem .8rem; border-bottom:1px solid var(--line); vertical-align:top}
+  tr:last-child td{border-bottom:none}
+  td.num, .tnum{font-variant-numeric:tabular-nums}
+
+  /* Chips */
+  .chip{display:inline-block; font-size:.74rem; font-weight:600; border-radius:999px; padding:.1rem .6rem; border:1px solid transparent; white-space:nowrap}
+  .chip.ok{background:var(--ok-soft); color:var(--ok)}
+  .chip.warn{background:var(--amber-soft); color:var(--amber)}
+  .chip.bad{background:var(--red-soft); color:var(--red)}
+  .chip.neutral{background:var(--chip); color:var(--muted)}
+  .chip.acc{background:var(--accent-soft); color:var(--accent-ink)}
+  .swatch{display:inline-block; width:.85em; height:.85em; border-radius:3px; border:1px solid var(--line); vertical-align:-.08em; margin-right:.35em}
+
+  /* Steps */
+  .steps{counter-reset:step; list-style:none; margin:1.4rem 0; padding:0}
+  .steps>li{
+    counter-increment:step; position:relative; padding:0 0 1.6rem 3.2rem;
+  }
+  .steps>li::before{
+    content:counter(step); position:absolute; left:0; top:.05rem;
+    width:2.1rem; height:2.1rem; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    background:var(--accent); color:#fff; font-weight:700; font-size:.95rem;
+    font-family:Georgia,serif;
+  }
+  .steps>li::after{
+    content:""; position:absolute; left:1.02rem; top:2.4rem; bottom:.2rem; width:2px; background:var(--line);
+  }
+  .steps>li:last-child::after{display:none}
+  .steps h4{margin:.15rem 0 .3rem}
+  .steps p{margin:.2em 0 .5em}
+
+  /* FAQ */
+  .faq-controls{display:flex; flex-wrap:wrap; gap:.6rem; align-items:center; margin-bottom:1.2rem}
+  .tabs{display:flex; flex-wrap:wrap; gap:.4rem}
+  .tabs button{
+    background:var(--raise); color:var(--ink); border:1px solid var(--line); border-radius:999px;
+    padding:.4rem 1rem; font-size:.88rem; cursor:pointer; font-weight:600;
+  }
+  .tabs button[aria-selected="true"]{background:var(--accent); border-color:var(--accent); color:#fff}
+  .faq-search{
+    margin-left:auto; background:var(--raise); border:1px solid var(--line); border-radius:8px;
+    padding:.45rem .7rem; font-size:.88rem; color:var(--ink); min-width:220px;
+  }
+  @media (max-width:600px){ .faq-search{margin-left:0; width:100%} }
+  .faq-panel{display:none}
+  .faq-panel.visible{display:block}
+  .faq-panel>.aud-label{display:none; font-size:.74rem; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); margin:1.2rem 0 .4rem}
+  .searching .faq-panel{display:block}
+  .searching .faq-panel>.aud-label{display:block}
+  details.faq{
+    background:var(--raise); border:1px solid var(--line); border-radius:10px; margin:.55rem 0; box-shadow:var(--shadow);
+  }
+  details.faq summary{
+    cursor:pointer; padding:.8rem 1.1rem; font-weight:600; list-style:none; display:flex; gap:.6rem; align-items:baseline;
+  }
+  details.faq summary::-webkit-details-marker{display:none}
+  details.faq summary::before{content:"+"; color:var(--accent); font-weight:700; font-family:ui-monospace,monospace}
+  details.faq[open] summary::before{content:"–"}
+  details.faq .body{padding:0 1.1rem 1rem 2.4rem; color:var(--ink)}
+  details.faq .body p{margin:.3em 0 .7em}
+  details.faq.hidden{display:none}
+  .no-results{display:none; color:var(--muted); font-style:italic; padding:1rem 0}
+  .searching .no-results.show{display:block}
+
+  /* Version & status badges */
+  .badges{display:flex; flex-wrap:wrap; gap:.5rem; align-items:center; margin-bottom:.7rem}
+  .badge{font-size:.7rem; font-weight:700; letter-spacing:.08em; text-transform:uppercase; border-radius:6px; padding:.18rem .6rem; white-space:nowrap}
+  .badge.ver{background:var(--chip); color:var(--muted); border:1px solid var(--line)}
+  .badge.wip{background:var(--amber-soft); color:var(--amber); border:1px dashed var(--amber)}
+
+  /* Deprecated / inactive box */
+  .deprecated{
+    position:relative; border:2px dashed var(--muted); background:var(--chip);
+    border-radius:10px; padding:1.2rem 1.3rem 1.1rem; margin-top:.9rem;
+  }
+  .deprecated>.dep-tag{
+    position:absolute; top:-.75rem; right:1rem; background:var(--red); color:var(--bg);
+    font-size:.7rem; font-weight:700; letter-spacing:.09em; text-transform:uppercase;
+    border-radius:6px; padding:.18rem .65rem;
+  }
+  .deprecated h3{margin-top:0}
+
+  /* Proposed / not-yet-implemented box */
+  .proposed{
+    border:2px dashed var(--muted); background:var(--chip); border-radius:10px;
+    padding:1rem 1.3rem 1.1rem; margin:1.4rem 0;
+  }
+  .proposed>.proposed-tag{
+    display:inline-block; font-size:.7rem; letter-spacing:.09em; text-transform:uppercase;
+    color:var(--muted); font-weight:700; border:1px solid var(--muted); border-radius:999px;
+    padding:.1rem .6rem; margin-bottom:.6rem;
+  }
+  .proposed h4{margin-top:0}
+
+  /* Code blocks */
+  pre.codeblock{
+    background:var(--code-bg); border:1px solid var(--line); border-radius:8px;
+    padding:.8rem 1rem; overflow-x:auto; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-size:.82rem; line-height:1.55; margin:.6rem 0 1rem;
+  }
+  pre.codeblock code{background:transparent; border:none; padding:0; font-size:inherit}
+
+  /* Mermaid containers */
+  .diagram{background:var(--raise); border:1px solid var(--line); border-radius:10px; padding:1rem; margin:1.2rem 0; overflow-x:auto; box-shadow:var(--shadow)}
+  .diagram .cap{font-size:.78rem; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; margin-bottom:.6rem; font-weight:600}
+  pre.mermaid{margin:0; background:transparent}
+
+  /* Two-col definition grid */
+  .defs{display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:.8rem; margin:1rem 0}
+  .defs .d{background:var(--raise); border:1px solid var(--line); border-radius:10px; padding:.85rem 1rem}
+  .defs .d b{color:var(--accent-ink)}
+  .defs .d span{display:block; font-size:.85rem; color:var(--muted); margin-top:.2rem}
+
+  footer{border-top:1px solid var(--line); margin-top:3rem; padding-top:1.2rem; color:var(--muted); font-size:.82rem}
+</style>
+
+<div class="topbar">
+  <span class="word">Connect-<em style="color:var(--accent);font-style:normal">CHC</em> Docs</span>
+  <span class="badge wip">v0.1 · Draft</span>
+  <select id="mobile-nav" aria-label="Jump to section">
+    <option value="">Jump to…</option>
+    <option value="#system-design">System Design (CCHQ App)</option>
+    <option value="#workflow">Completed Workflow</option>
+    <option value="#setup">Setup Steps</option>
+    <option value="#faq">FAQ</option>
+    <option value="#changelog">Changelog</option>
+  </select>
+</div>
+
+<div class="shell">
+<aside class="sidebar">
+  <div class="brand">
+    <div class="word">Connect-<em>CHC</em></div>
+    <div class="sub">System Documentation</div>
+    <div class="badges" style="margin-top:.5rem;margin-bottom:0"><span class="badge ver">v0.1</span><span class="badge wip">Draft / WIP</span></div>
+  </div>
+  <nav aria-label="Sections">
+    <a class="nav-item" href="#system-design">1 · System Design (CCHQ App)</a>
+    <a class="nav-sub" href="#sd-context">Program context &amp; LDVP</a>
+    <a class="nav-sub" href="#sd-personas">Users &amp; personas</a>
+    <a class="nav-sub" href="#sd-cases">Case architecture</a>
+    <a class="nav-sub" href="#sd-modules">Modules &amp; forms</a>
+    <a class="nav-sub" href="#sd-gps">GPS settings</a>
+    <a class="nav-sub" href="#sd-status">Work Area statuses</a>
+    <a class="nav-sub" href="#sd-payment">Payment eligibility logic</a>
+    <a class="nav-sub" href="#sd-dedup">Deduplication</a>
+    <a class="nav-sub" href="#sd-learn">Learn App &amp; quiz engine</a>
+    <a class="nav-sub" href="#sd-relearn">Relearning module</a>
+    <a class="nav-item" href="#workflow">2 · Completed Workflow</a>
+    <a class="nav-sub" href="#wf-daily">FLW end-to-end flow</a>
+    <a class="nav-sub" href="#wf-inaccessible">Inaccessible WA approval</a>
+    <a class="nav-sub" href="#wf-relearn">Relearn intervention</a>
+    <a class="nav-sub" href="#wf-wag">WAG progression</a>
+    <a class="nav-sub" href="#wf-autowag">Auto-WAG Selection</a>
+    <a class="nav-sub" href="#wf-workstart">Work Start Control</a>
+    <a class="nav-item" href="#setup">3 · Setup Steps</a>
+    <a class="nav-sub" href="#setup-streams">The three RCT opportunities</a>
+    <a class="nav-sub" href="#setup-sequence">Setup sequence</a>
+    <a class="nav-item" href="#faq">4 · FAQ</a>
+    <a class="nav-item" href="#changelog">5 · Changelog</a>
+  </nav>
+</aside>
+
+<main>
+<div class="content">
+
+<div class="hero">
+  <div class="eyebrow">Connect by Dimagi · Child Health Campaign</div>
+  <div class="badges"><span class="badge ver">v0.1</span><span class="badge wip">🚧 Draft · Work in Progress — not a released version</span></div>
+  <h1>Connect-CHC System Documentation</h1>
+  <p class="lede">How the CHC Deliver &amp; Learn apps work on CommCare HQ and CommCare Connect — the case architecture, the frontline worker workflow, program setup, and answers for every team. Based on the Connect-CHC System Design document (2026 design for the RCT, informed by the Jan 2026 Nigeria field visit).</p>
+  <div class="ldvp">
+    <div class="stage"><b>Learn</b><span>Train &amp; certify FLWs in the Learn App before field work.</span></div>
+    <div class="stage"><b>Deliver</b><span>Register households &amp; deliver child health services offline-first.</span></div>
+    <div class="stage"><b>Verify</b><span>GPS, timestamps &amp; mandatory photos verify each service.</span></div>
+    <div class="stage"><b>Pay</b><span>Payment accrues per verified child visit on Connect.</span></div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<section id="system-design">
+  <div class="sec-head"><h2>System Design (CCHQ App)</h2><span class="tag">Section 1</span></div>
+
+  <div class="sub" id="sd-context">
+    <h3>Program context</h3>
+    <p>Connect-CHC delivers a digitally managed <b>Learn–Deliver–Verify–Pay (LDVP)</b> model for essential child health interventions using Dimagi's CommCare platform through CommCare Connect. Frontline Workers (FLWs) visit households and deliver four services to children under five: <b>MUAC malnutrition screening</b>, <b>ORS &amp; Zinc distribution</b>, <b>deworming (Albendazole)</b>, and <b>vaccine counseling</b>. The system embeds eligibility logic, data validation, GPS stamping, and photo verification to ensure service fidelity and reduce fraud, with offline-first data capture on low-cost Android devices and automated incentive calculation tied to verified outputs.</p>
+
+    <h4>Key terms</h4>
+    <div class="defs">
+      <div class="d"><b>Household (HH)</b><span>A family unit visited by the FLW within a Work Area, where under-5 (U5) children may be registered for service delivery.</span></div>
+      <div class="d"><b>Service Delivery (SD)</b><span>Delivering a health service to an eligible child and recording it in the app. Appears as the "CHC Service Delivery" Deliver Unit type — payment accrues per child visit.</span></div>
+      <div class="d"><b>Work Area (WA)</b><span>A ~50m × 50m geographic square assigned to an FLW. The FLW must be physically inside an allocated WA to deliver services.</span></div>
+      <div class="d"><b>Work Area Group (WAG)</b><span>A bundle of WAs shown to the FLW one group at a time. A WAG must be fully completed before the next group is unlocked.</span></div>
+      <div class="d"><b>Deliver Unit (DU)</b><span>The unit against which payment accrues per verified visit. Two types: <i>CHC Service Delivery</i> (one paid unit per child served) and <i>No Children Found WA</i> (pays the equivalent of one child visit).</span></div>
+      <div class="d"><b>Payment Unit (PU)</b><span>A grouping against which the FLW's delivery progress and payment are tracked on Connect.</span></div>
+    </div>
+  </div>
+
+  <div class="sub" id="sd-personas">
+    <h3>Users &amp; personas</h3>
+    <div class="table-wrap"><table>
+      <tr><th>Persona</th><th>What they do</th><th>Platform</th><th>Scale</th></tr>
+      <tr><td><b>Program Manager (PM)</b></td><td>Oversees intervention design and performance. Configures workflows and incentive rules, reviews aggregate dashboards and KPIs, monitors verification rates and data quality.</td><td>Web (CommCare HQ / Admin Portal)</td><td class="tnum">1–3 per country program</td></tr>
+      <tr><td><b>Network Manager (NM)</b></td><td>Manages FLWs in an assigned geography. Monitors performance dashboards, conducts supervision and spot-checks, flags anomalies, reviews inaccessible-WA requests.</td><td>Web (primary), optional mobile</td><td class="tnum">1 per 20–40 FLWs</td></tr>
+      <tr><td><b>Frontline Worker (FLW)</b></td><td>Conducts household visits, registers households and U5 children, delivers services via structured mobile workflows, submits data offline with later sync. Earnings tied to verified outputs.</td><td>Mobile (Android, offline-first)</td><td class="tnum">100s–1,000s</td></tr>
+    </table></div>
+  </div>
+
+  <div class="sub" id="sd-cases">
+    <h3>Case architecture (2026 Deliver App)</h3>
+    <div class="table-wrap"><table>
+      <tr><th>Case type</th><th>Description</th><th>Open condition</th><th>Relationship</th></tr>
+      <tr><td><code>household</code></td><td>Stores general information about the household.</td><td>Created by the household registration form.</td><td>Parent case of <code>child</code>.</td></tr>
+      <tr><td><code>child</code></td><td>Stores information about a given household member.</td><td>Triggered by the Save-to-Case feature when a U5 child is registered.</td><td>Child case of <code>household</code>.</td></tr>
+      <tr><td><code>work-area</code></td><td>Defines the boundaries where the FLW must be for service delivery.</td><td>Uploaded at the start of the program.</td><td>—</td></tr>
+      <tr><td><code>commcare-user</code></td><td>Holds the FLW's last recorded position, current service area and current WAG.</td><td>—</td><td>—</td></tr>
+    </table></div>
+    <div class="callout"><b>Legacy note (2025 design)</b><p>The 2025 app used <code>deliver-unit</code> cases with manual check-in / check-out forms and a "Change service area" flow. The 2026 redesign replaced these with <code>work-area</code> cases and <b>auto-checkin</b> — the form itself resolves which WA the FLW is standing in, so no separate check-in step exists.</p></div>
+  </div>
+
+  <div class="sub" id="sd-modules">
+    <h3>Modules &amp; forms</h3>
+    <div class="table-wrap"><table>
+      <tr><th>Module</th><th>Form</th><th>What it does</th></tr>
+      <tr><td rowspan="1">Household Management</td><td><b>Add HH &amp; Children</b></td><td>Verifies GPS location and confirms the FLW is inside a valid Work Area before data entry. Collects caregiver consent. Registers household info (head of household, contact details, number of U5 children) and each eligible child under 59 months (name, DOB, gender) with duplication checks at household and child level. DOB can be entered as a direct date or as year + month; today's date and age 0 are disallowed. Creates one <code>household</code> case and one <code>child</code> case per registered child.</td></tr>
+      <tr><td>Service Delivery Management</td><td><b>Health Service Delivery</b></td><td>Verifies GPS location inside a valid WA. Blocks the form if a complete delivery already exists for the child. Delivers <b>Deworming</b> (12–59 months, age-based dosage: 200mg for 12–24m, 400mg for 25–59m, with prior-dose and wellness checks), <b>MUAC screening</b> (0–59 months, colour-coded Green/Yellow/Red with referral for Yellow/Red and mandatory photo), <b>ORS &amp; Zinc</b> (all U5, with diarrhea screening and mandatory handover photo; <b>2 co-packs per child for the RCT</b>), and <b>Vaccine Counseling</b> (immunization history, vaccination-card photo, reasons if not vaccinated). Only the <b>MUAC and ORS photos are mandatory</b> — deworming and vaccination-card photos are optional. Shows an end-of-form summary of each service status and whether the visit qualifies as a complete, valid delivery. Updates the <code>child</code> and <code>work-area</code> cases.</td></tr>
+      <tr><td rowspan="2">Work Area Management</td><td><b>No Children Found</b></td><td>Requires explicit confirmation of intent. Verifies GPS inside the selected WA (15m leeway). Confirms the whole WA was visited and no eligible U5 child was found — blocks submission if children were found or prior delivery records exist. Records the reason (no visible structures, access denied, no households, no one home, no eligible children, time constraints, other) and captures a building photo as evidence (or a written explanation). Sets <code>hq_status_wa = visited</code> on submission (light yellow fill / orange point on the map).</td></tr>
+      <tr><td><b>Inaccessible WA</b></td><td>Verifies GPS (preferred 10m / minimum 15m, no positional expectation vs. the WA). Checks for an existing closure request and blocks if one is pending; allows resubmission only after rejection. Requires explicit confirmation with a warning that the request is irreversible. Collects a written reason; on submit sets <code>hq_status_wa = inaccessible_requested</code> (black point, no fill on the map) and hands the request to the NM/LLO team on Connect for review.</td></tr>
+    </table></div>
+    <div class="callout"><b>Registration &amp; delivery are deliberately split (chosen design: "Option 4")</b><p>One <b>Register HH &amp; Children</b> form creates the household and all child cases via a repeat group; a separate, simple <b>Child Service Delivery</b> form (case type <code>child</code>) records each delivery. One submission of the delivery form = one Deliver Unit for that child, which Connect handles cleanly, while the FLW's mental model stays "go to the household, do everything from there."</p></div>
+
+    <h4>Case lists &amp; status icons</h4>
+    <p>The case lists give the FLW at-a-glance progress without opening each record:</p>
+    <div class="table-wrap"><table>
+      <tr><th>List / view</th><th>What the FLW sees</th></tr>
+      <tr><td>Household case list</td><td>Delivered vs. total children per household (e.g. 1/2), with a <span class="chip ok">green</span> / <span class="chip warn">yellow</span> / <span class="chip bad">red</span> icon: all children served, partially served, or none served. A "Visited" column shows whether the child has been visited.</td></tr>
+      <tr><td>Child case list</td><td>An icon marks each child already served with a service delivery. The HSD form will not move ahead for a child whose complete delivery is already recorded.</td></tr>
+      <tr><td>Work Area details</td><td>Registered households, registered children, and delivered visits for that WA — plus the WA name/label so PMs can identify WAs from the mobile app.</td></tr>
+    </table></div>
+  </div>
+
+  <div class="sub" id="sd-gps">
+    <h3>GPS settings</h3>
+    <p>Auto-capture GPS is enabled app-wide. Every field form carries a GPS block with the same accuracy thresholds — <b>preferred accuracy &lt; 15 m, minimum accuracy &lt; 25 m</b> — plus a form-specific location-verification block:</p>
+    <div class="table-wrap"><table>
+      <tr><th>Form</th><th>Min accuracy</th><th>Preferred</th><th>Location verification</th></tr>
+      <tr><td>Add HH &amp; Children</td><td class="tnum">25 m</td><td class="tnum">15 m</td><td>Auto-checkin confirms registration is inside one of the WAs of the FLW's current WAG (a 15m boundary leeway check is planned).</td></tr>
+      <tr><td>Health Service Delivery</td><td class="tnum">25 m</td><td class="tnum">15 m</td><td>Delivery must happen within <b>50 m</b> of the household's registration location.</td></tr>
+      <tr><td>No Children Found</td><td class="tnum">25 m</td><td class="tnum">15 m</td><td>FLW must be inside the selected WA with a 15m leeway; the form is only offered when no forms have been submitted against that WA.</td></tr>
+      <tr><td>Inaccessible WA</td><td class="tnum">25 m</td><td class="tnum">15 m</td><td>Location captured, but no expectation of being at a specific spot relative to the WA.</td></tr>
+      <tr><td>Request New WAG</td><td class="tnum">25 m</td><td class="tnum">15 m</td><td>GPS capture only.</td></tr>
+    </table></div>
+    <p><span class="chip acc">Added in Master app version 1887 (July 2026)</span></p>
+    <p>Two GPS <b>custom properties</b> are enabled on the app to improve background location capture (added on the tech team's latest recommendation):</p>
+    <div class="table-wrap"><table>
+      <tr><th>Custom property</th><th>Value</th><th>Purpose</th></tr>
+      <tr><td><code>cc-gps-auto-capture-accuracy</code></td><td class="tnum">15 m</td><td>Target accuracy for background auto-capture, so a good reading is usually already available when the FLW opens a form.</td></tr>
+      <tr><td><code>cc-gps-auto-capture-timeout</code></td><td class="tnum">10 min</td><td>How long the app keeps trying to improve the background reading.</td></tr>
+    </table></div>
+    <h4>Messages shown to the FLW</h4>
+    <div class="table-wrap"><table>
+      <tr><th>Condition</th><th>Message</th></tr>
+      <tr><td>No location collected</td><td>📍 <b>Location required</b> — your location is needed to proceed. Press the button below; you may need to wait up to a minute.</td></tr>
+      <tr><td>Accuracy worse than minimum (&gt;25 m)</td><td>⚠️ <b>Improve location accuracy</b> — press Record Location to improve accuracy; shows minimum vs. current accuracy.</td></tr>
+      <tr><td>Accuracy between 15–25 m</td><td>✅ <b>Location captured</b> — accuracy can still improve; wait a little longer or proceed to see which Work Area you are in.</td></tr>
+      <tr><td>Accuracy better than preferred (&lt;15 m)</td><td>✅ <b>Location ready</b> — please continue.</td></tr>
+    </table></div>
+    <div class="callout warn"><b>Known limitation</b><p>Where two workers' WAs are contiguous, the combined leeway (25m accuracy + 15m boundary leeway = up to 40m) can let a worker submit inside a neighbouring worker's WA.</p></div>
+  </div>
+
+  <div class="sub" id="sd-status">
+    <h3>Work Area statuses</h3>
+    <p>On the HQ side, <code>hq_status_wa</code> has exactly <b>three</b> possible values:</p>
+    <div class="table-wrap"><table>
+      <tr><th><code>hq_status_wa</code></th><th>Meaning</th></tr>
+      <tr><td><code>null</code> (blank)</td><td>WA assigned, not started yet.</td></tr>
+      <tr><td><code>visited</code></td><td>Set when a household is registered in the WA, <b>or</b> when the No Children WA form is filled.</td></tr>
+      <tr><td><code>inaccessible_requested</code></td><td>Set when the FLW requests inaccessibility. <b>It stays this way even after Connect approves (or rejects) the request</b> — there is no <code>inaccessible_approved</code> HQ status.</td></tr>
+    </table></div>
+    <p>Map colours change <b>only</b> for the <code>visited</code> and <code>inaccessible_requested</code> statuses:</p>
+    <div class="table-wrap"><table>
+      <tr><th><code>hq_status_wa</code></th><th>Boundary (fill)</th><th>Point</th></tr>
+      <tr><td><code>null</code> — not started</td><td><span class="swatch" style="background:transparent"></span>No fill (default)</td><td>No point colour (default)</td></tr>
+      <tr><td><code>visited</code></td><td><span class="swatch" style="background:#FFF9C4"></span><code>#FFF9C4</code> light yellow</td><td><span class="swatch" style="background:#F9A825"></span><code>#F9A825</code> orange</td></tr>
+      <tr><td><code>inaccessible_requested</code></td><td><span class="swatch" style="background:transparent"></span>No fill (<code>''</code>)</td><td><span class="swatch" style="background:#000000"></span><code>#000000</code> black</td></tr>
+    </table></div>
+    <p style="font-size:.88rem;color:var(--muted)">Once a WA is already visited, its existing colours are kept — the colour assignment only fires on the status transition.</p>
+    <p>Two separate properties track WA state because CommCare HQ and Connect care about different lifecycles — HQ tracks whether the FLW has <i>worked in</i> a WA, Connect tracks whether <i>payable delivery</i> has happened there:</p>
+    <div class="table-wrap"><table>
+      <tr><th>Scenario</th><th><code>hq_status_wa</code> (HQ)</th><th><code>wa_status</code> (Connect)</th></tr>
+      <tr><td>Before assignment</td><td>—</td><td><span class="chip neutral">UNASSIGNED</span></td></tr>
+      <tr><td>After assignment</td><td>blank</td><td><span class="chip neutral">NOT_VISITED</span></td></tr>
+      <tr><td>Household registration</td><td>visited</td><td><span class="chip neutral">NOT_VISITED</span></td></tr>
+      <tr><td>Child service delivery</td><td>visited</td><td><span class="chip warn">VISITED</span></td></tr>
+      <tr><td>No U5 Children form</td><td>visited</td><td><span class="chip warn">VISITED</span></td></tr>
+      <tr><td>Inaccessible form filled by FLW</td><td>inaccessible_requested</td><td><span class="chip bad">REQUEST_FOR_INACCESSIBLE</span></td></tr>
+      <tr><td>Inaccessible approved by NM/PM</td><td>inaccessible_requested</td><td><span class="chip neutral">INACCESSIBLE</span></td></tr>
+      <tr><td>Inaccessible rejected by NM/PM</td><td>inaccessible_requested</td><td><span class="chip neutral">NOT_VISITED</span></td></tr>
+      <tr><td>Expected visits reached on Connect</td><td>visited (no change)</td><td><span class="chip ok">EXPECTED_VISIT_REACHED</span></td></tr>
+    </table></div>
+    <p style="font-size:.88rem;color:var(--muted)">Example of why they diverge: registering a household marks the WA <i>visited</i> for HQ but still <i>not visited</i> for Connect — only an actual child delivery flips Connect's status. Status updates from Connect (e.g. inaccessible review outcomes) sync back to HQ in realtime.</p>
+  </div>
+
+  <div class="sub" id="sd-payment">
+    <h3>Payment eligibility logic (Service Delivery Checks)</h3>
+    <p>A <code>calculations</code> block in the Health Service Delivery form decides whether a visit qualifies for payment. Each of four checks returns <b>1 (pass)</b> or <b>0 (fail)</b>, where <i>pass</i> means the service was <b>delivered OR the child was legitimately ineligible</b>:</p>
+    <div class="table-wrap"><table>
+      <tr><th>Check</th><th>Passes when…</th></tr>
+      <tr><td><code>mal_check</code> — MUAC</td><td>Measurement taken AND photo captured; <i>or</i> parent refused MUAC consent; <i>or</i> child &lt; 6 months (ineligible by age).</td></tr>
+      <tr><td><code>ors_check</code> — ORS + Zinc</td><td>ORS photo captured AND handover confirmed. No age exemption — ORS applies to all U5 children.</td></tr>
+      <tr><td><code>dw_check</code> — Deworming</td><td>Deworming delivered; <i>or</i> child received a dose within the last 6 months; <i>or</i> child is unwell today; <i>or</i> child &lt; 12 months.</td></tr>
+      <tr><td><code>vc_check</code> — Vaccine Counseling</td><td>Counseling completed (vaccine questionnaire answered AND completion confirmed). Binary — no exemptions.</td></tr>
+    </table></div>
+    <p>The master flag: <code>all_service_del_checks = 1</code> only when <b>all four</b> checks pass, else 0. A display flag converts it to a Yes/No the FLW sees on the summary screen.</p>
+    <h4>Payment scenarios</h4>
+    <div class="table-wrap"><table>
+      <tr><th>Scenario</th><th>MUAC</th><th>ORS</th><th>DW</th><th>VC</th><th>Pays?</th></tr>
+      <tr><td>All 4 services delivered</td><td>1</td><td>1</td><td>1</td><td>1</td><td><span class="chip ok">Yes</span></td></tr>
+      <tr><td>Child &lt; 6 mo; ORS + VC done, DW skipped (age)</td><td>1 (age)</td><td>1</td><td>1 (age)</td><td>1</td><td><span class="chip ok">Yes</span></td></tr>
+      <tr><td>Child 2 yr; MUAC consent refused, others done</td><td>1 (consent)</td><td>1</td><td>1</td><td>1</td><td><span class="chip ok">Yes</span></td></tr>
+      <tr><td>Child 3 yr sick today; MUAC + ORS + VC done</td><td>1</td><td>1</td><td>1 (sick)</td><td>1</td><td><span class="chip ok">Yes</span></td></tr>
+      <tr><td>Child 3 yr healthy; DW skipped without reason</td><td>1</td><td>1</td><td>0</td><td>1</td><td><span class="chip bad">No</span></td></tr>
+      <tr><td>ORS photo missing</td><td>1</td><td>0</td><td>1</td><td>1</td><td><span class="chip bad">No</span></td></tr>
+    </table></div>
+    <div class="callout"><b>Core principle</b><p>Payment requires either <b>delivery</b> or a <b>documented valid exemption</b> for every service. A missed service without a recorded reason fails the check.</p></div>
+    <h4>FLW-facing status labels</h4>
+    <p>In parallel, a <code>delivery_status_label</code> block renders reason-aware labels on the summary screen (initialized to ❌ Not Delivered on form load, updated as the FLW answers). Labels map 1:1 to the checks, so the FLW can see exactly which service blocks payment and why:</p>
+    <div class="table-wrap"><table>
+      <tr><th>Label</th><th>Meaning</th><th>Counts toward payment?</th></tr>
+      <tr><td>✅ Delivered</td><td>Service successfully provided.</td><td><span class="chip ok">Yes</span></td></tr>
+      <tr><td>⚠️ Ineligible / No Consent</td><td>Valid documented reason the service couldn't be delivered (e.g. "Recently Given", "Sick Child", "Less than 12 Months", "No Consent").</td><td><span class="chip ok">Yes — still pays</span></td></tr>
+      <tr><td>❌ Not Delivered</td><td>Service skipped without a valid reason.</td><td><span class="chip bad">No</span></td></tr>
+    </table></div>
+  </div>
+
+  <div class="sub" id="sd-dedup">
+    <h3>Deduplication strategy</h3>
+    <p>Duplicates are handled at two levels — in the app (blocking) and on the Connect platform (flagging):</p>
+    <ul>
+      <li><b>Household / family uniqueness (in-app, blocking):</b> each set of parents is a family unit, and the combination of the <b>father's name + mother's name</b> is the family case name. The Household form checks the household casedb — if that name combination already exists among the user's registered households, the app <b>blocks the FLW from registering the household</b>. First and last names are captured as separate required fields on one screen.</li>
+      <li><b>Child uniqueness:</b> a three-layer check — one blocking check inside the Household form, plus two hidden flags evaluated in the Health Service Delivery (HSD) form that Connect verification rules use to reject suspicious visits. Detailed below.</li>
+      <li><b>Cross-user duplicates:</b> the app cannot check across users — different users registering the same household or child is possible. That's what the opp-level duplicate verification flags are for.</li>
+    </ul>
+
+    <h4>Child duplication checks</h4>
+    <p><span class="chip acc">Current logic: Master app versions 1744–1903 (July 2026)</span></p>
+    <p>All in-form checks live in the <code>child_duplicate_check</code> group of the <b>Add Family &amp; Children</b> (Household) form; the two suspicion flags are then surfaced in the HSD form for Connect to act on:</p>
+    <div class="table-wrap"><table>
+      <tr><th>Check</th><th>Where it runs</th><th>Logic</th><th>Enforcement</th></tr>
+      <tr><td>Repeated child name in the same household</td><td>Repeat group of the Household form (<code>child_duplicate_check</code>)</td><td>A validation condition checks whether the child's name repeats within the household's registered children.</td><td><span class="chip bad">Blocks in app</span> — the FLW cannot register a same-name child in the same household.</td></tr>
+      <tr><td>Same name + DOB child in the user's casedb</td><td>Hidden property <code>form.check_child_duplicate_casedb</code> in the HSD form</td><td>Calculates the count of repeating children (same name + DOB) minus 1; defaults to 0.</td><td><span class="chip warn">Connect verification flag</span> — configured on the opp to reject the visit.</td></tr>
+      <tr><td>Suspicious DOB gap between siblings</td><td><code>flag_child_for_dob_gap_suspicious</code> — calculated in the Household form, stored as a <b>child case property</b>; read in the HSD form as <code>form.check_dob_gap_suspicious_duplicate</code></td><td>Children in a household should be twins or have an age gap greater than 8 months; if neither, the flag is set to 1.</td><td><span class="chip warn">Connect verification flag</span> — configured on the opp to reject the visit.</td></tr>
+    </table></div>
+    <div class="callout warn"><b>Setup requirement</b><p>Both HSD form values — <code>form.check_child_duplicate_casedb</code> and <code>form.check_dob_gap_suspicious_duplicate</code> — must be configured as <b>verification flags on the opportunity</b> at setup time, or the rejection rules will not fire on Connect.</p></div>
+
+    <div class="table-wrap"><table>
+      <tr><th>Duplicate scenario</th><th>Where it's caught</th></tr>
+      <tr><td>Same user re-registers a household</td><td>Blocked by app logic (within the same user's data).</td></tr>
+      <tr><td>Same user registers a same-name child in the same household</td><td>Blocked in-app by the validation condition in the Household form's repeat group.</td></tr>
+      <tr><td>Same name + DOB child anywhere in the user's casedb (e.g. in another household)</td><td>Flagged via <code>form.check_child_duplicate_casedb</code> in the HSD form; rejected by the Connect verification rule.</td></tr>
+      <tr><td>Implausibly close sibling DOBs (not twins, gap ≤ 8 months)</td><td>Flagged via <code>form.check_dob_gap_suspicious_duplicate</code> in the HSD form; rejected by the Connect verification rule.</td></tr>
+      <tr><td>Different users register the same household or child</td><td>Opp-level flags only — no in-app blocker.</td></tr>
+    </table></div>
+    <div class="callout warn"><b>Limitation of all dedupe checks — the casedb is user-scoped</b><p>Every check above runs against the casedb, which has <b>user-level ownership</b>: only households and children registered by the <b>current user</b> are visible to it. Example: FLW1 cannot register two children named Abhishek with DOB 02-04-2020 anywhere in the opportunity — the second is caught as a duplicate. But FLW1 and FLW2 can <b>each</b> register an Abhishek with DOB 02-04-2020, because neither can see the other's cases. Cross-user duplicates can only be caught at the platform level.</p></div>
+    <p style="font-size:.88rem;color:var(--muted)">The design doc's original child entity-id approach (concatenating father's name + phone number + mother's name + number of children + child's name) was superseded by the implemented checks above.</p>
+    <p style="font-size:.88rem;color:var(--muted)">A scoring-based "fuzzy" matching approach (government ID, phone, GPS proximity, normalized names, overlapping members with score thresholds for auto-merge vs. human review) was documented but explicitly marked <b>won't do</b>.</p>
+  </div>
+
+  <div class="sub" id="sd-learn">
+    <h3>Learn App &amp; quiz engine</h3>
+    <p>The assessment quiz is powered by a single lookup table, <code>post_assess</code>, holding the full question bank. <b>Each row is one answer option</b>, not a full question — a question spans multiple rows. The app randomises which questions appear:</p>
+    <div class="table-wrap"><table>
+      <tr><th>Column</th><th>Used by</th><th>Purpose</th></tr>
+      <tr><td><code>question_id</code></td><td>Learn</td><td>Unique ID per question (q1, q2, q3…). Must be continuous with no gaps.</td></tr>
+      <tr><td><code>question_text</code></td><td>Both</td><td>The question shown; identical across all rows of the same question.</td></tr>
+      <tr><td><code>answer</code></td><td>Both</td><td>One option per row; typically 3–4 rows per question.</td></tr>
+      <tr><td><code>answer_status</code></td><td>Both</td><td>1 = correct, 0 = incorrect. Exactly one row per question is 1. The sum of selected values is the score.</td></tr>
+      <tr><td><code>category</code></td><td>Relearn</td><td>Groups questions into relearn topics (e.g. <code>vaccine_counseling</code>).</td></tr>
+      <tr><td><code>question_index</code></td><td>Relearn</td><td>Sequential number (1…n) within a category; must have no gaps.</td></tr>
+      <tr><td><code>question_category</code></td><td>—</td><td>Not used by the app; can be left as is.</td></tr>
+    </table></div>
+    <p><b>Learn randomiser:</b> builds the list of unique <code>question_id</code>s, randomly picks <code>maximum_random_question_count_tobeshown</code> of them (typically 20), renders each with its option rows, and scores by summing <code>answer_status</code> of selected answers.<br>
+    <b>Relearn randomiser:</b> filters by the selected <code>category</code>, treats <code>question_index</code> 1…n as the bank, and picks randomly within it.</p>
+    <p><b>Assessment quiz gating:</b> the quiz unlocks automatically only after all learn modules are completed. It has <b>20 questions and a pass mark of 80</b> (16 of 20 correct), with unlimited attempts. On passing and submitting, the FLW receives a push notification on the Connect app that Learn is finished and they can claim the Deliver job. (The relearn quiz is stricter — 100 marks to pass; see <a href="#sd-relearn">Relearning module</a>.)</p>
+    <div class="table-wrap"><table>
+      <tr><th>App property</th><th>Module</th><th>Meaning</th></tr>
+      <tr><td><code>maximum_number_of_question</code></td><td>Learn</td><td>Hard-coded total bank size (q1…q60 → 60). Must be updated manually whenever questions change.</td></tr>
+      <tr><td><code>maximum_random_question_count_tobeshown</code></td><td>Learn</td><td>Questions shown per quiz attempt (typically 20). Must not exceed bank size.</td></tr>
+      <tr><td><code>maximum_random_question_count_tobeshown</code></td><td>Relearn</td><td>Questions shown per selected category. Must not exceed the smallest category size (each category needs ≥ 5 questions).</td></tr>
+    </table></div>
+    <div class="callout danger"><b>Why gaps break the quiz</b><p>The randomiser builds IDs like q1…qN up to <code>maximum_number_of_question</code>. A missing ID in the middle makes it pick an ID with no rows, producing an <b>empty question slot</b>. After removing questions, always re-number to stay continuous and update the max-count property. The same applies to <code>question_index</code> within each relearn category.</p></div>
+
+    <h4>OCS support bot</h4>
+    <p>When the FLW fills the Learn app, the <b>OCS bot</b> is triggered — it appears in the <b>Connect Messaging module</b>. The bot supports FLWs with app navigation and answers common FLW questions (FAQs).</p>
+  </div>
+
+  <div class="sub" id="sd-relearn">
+    <h3>Relearning module</h3>
+    <p><span class="chip acc">Current flow: Connect task–driven (Master app versions 1673–1904, May–July 2026)</span></p>
+    <p>A quality-control mechanism driven entirely from <b>Connect tasks</b> — nothing needs to be done on CommCare HQ. When an FLW needs retraining, a task is triggered on Connect; the Deliver app locks itself to the matching relearn module until the FLW passes it.</p>
+    <ol>
+      <li><b>Task triggered on Connect:</b> from Connect (audits), a task is triggered for one user or multiple users. The task sets a designated user property to <code>1</code>. Task types must be configured on Connect before the opportunity launches.</li>
+      <li><b>Deliver app locks:</b> form display conditions read the property — all deliver-related forms are hidden and only the relearn-related forms show. Relearn has multiple modules (e.g. deworming, MUAC, service delivery); the module matching the triggered task is the one shown.</li>
+      <li><b>FLW completes the module and quiz:</b> the FLW works through the module and attends a quiz with randomised questions drawn from the category of the triggered task. <b>A score of 100 is required to pass.</b></li>
+      <li><b>Unlock:</b> on achieving 100 and submitting the <b>Continue Service Delivery</b> form, the task question is submitted — the task is marked <b>finished on Connect</b> and all relearn-related properties in the Deliver app reset, restoring the deliver forms.</li>
+    </ol>
+    <div class="callout danger"><b>While a task is pending, Connect rejects the FLW's visits</b><p>Any service delivery visits submitted while a relearn task is open will be rejected on Connect — the FLW must clear the task before resuming payable work.</p></div>
+    <div class="callout warn"><b>Superseded: the App Control / HQ flow</b><p>The earlier design — an admin logging into CommCare HQ as the FLW and submitting an App Control form — is no longer used. Everything now runs from Connect.</p></div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="workflow">
+  <div class="sec-head"><h2>Completed Workflow</h2><span class="tag">Section 2</span></div>
+
+  <div class="sub" id="wf-daily">
+    <h3>FLW end-to-end flow</h3>
+    <p>The full FLW journey has two phases: a one-time <b>onboarding &amp; Learn</b> phase (from Personal ID sign-up to claiming the Deliver job), and the repeating <b>field delivery</b> phase (one WAG at a time, auto-checkin attaching every submission to the WA the FLW is standing in — there is no manual check-in).</p>
+
+    <h4>Phase 1 — Onboarding &amp; Learn (one-time)</h4>
+    <div class="diagram">
+      <div class="cap">Sign-up → Learn → claim Deliver</div>
+      <pre class="mermaid">
+flowchart TD
+  A["Register &amp; sign up<br/>on Personal ID"] --> B["Invited to the opportunity"]
+  B --> C["Accept the opportunity<br/>from the Connect menu page"]
+  C --> D["Learn app downloads"]
+  D --> E["Welcome form, then complete<br/>every learn module<br/>(progress visible on Connect)"]
+  E --> F["All modules complete →<br/>assessment quiz unlocks automatically"]
+  F --> G{"20 questions —<br/>score ≥ 80 marks?<br/>(16 of 20 correct)"}
+  G -- "No — retake<br/>(unlimited attempts)" --> F
+  G -- "Yes" --> H["Push notification on Connect:<br/>Learn finished, go to Deliver"]
+  H --> I["View job status page →<br/>claim the job"]
+  I --> J["Deliver app downloads"]
+  J --> K["Blocked at Welcome screen until<br/>allow_flw_to_start_delivery = 1<br/>and Work Areas are assigned"]
+  K --> L["Submit Welcome to CHC form →<br/>first WAG set (north-west most)"]
+      </pre>
+    </div>
+    <ol>
+      <li><b>Sign up and accept.</b> The FLW registers and signs up on Personal ID, receives an invitation to the opportunity, and accepts it from the Connect menu page. The Learn app downloads.</li>
+      <li><b>Complete the learn modules.</b> The Learn app opens with an initial welcome form, then all learn modules are available. Every module must be finished; as module forms are submitted, progress is trackable by the FLW on the Connect menu and by the Network Manager on the Connect platform.</li>
+      <li><b>Pass the assessment quiz.</b> When all modules are complete, the assessment quiz is enabled automatically: <b>20 questions, minimum 80 marks to pass (16 of 20 correct), unlimited attempts</b>.</li>
+      <li><b>Claim the Deliver job.</b> On passing, the FLW gets a push notification on the Connect app that Learn is finished and they can go to Deliver. From the <b>view job status</b> page they claim the job, and the Deliver app downloads.</li>
+      <li><b>Wait for the go-ahead.</b> FLWs are advised to <b>sync the app whenever they start</b>. Initially they are blocked from starting — <code>allow_flw_to_start_delivery = 0</code> (see <a href="#wf-workstart">Work Start Control</a>). Once the PM allows the FLW to start and assigns their Work Areas, the FLW sees the <b>Welcome to CHC</b> form; submitting it sets their first WAG — the north-west most (see <a href="#wf-autowag">Auto-WAG Selection</a>).</li>
+    </ol>
+
+    <h4>Phase 2 — Field delivery (repeats per WA and WAG)</h4>
+    <p>After the Welcome to CHC form, the FLW sees: <b>Add Household</b>, <b>No Children Found WA</b>, <b>Inaccessible WA</b>, and <b>Request WAG Change</b>. The <b>Health Service Delivery form stays hidden until at least one household is registered</b>.</p>
+    <div class="diagram">
+      <div class="cap">Daily field workflow</div>
+      <pre class="mermaid">
+flowchart TD
+  A["Sync &amp; open Deliver App"] --> B["Check the WA map,<br/>travel to a WA in the current WAG"]
+  B --> C{"Households with<br/>U5 children found?"}
+  C -- "Yes" --> D["Add Household form<br/>GPS: inside_polygon() loop over<br/>the WAs of the current WAG"]
+  D --> E["Health Service Delivery per child<br/>must be &lt; 50m from the<br/>HH registration location"]
+  E --> F["Summary → submit →<br/>visit visible on Connect"]
+  C -- "No children in the WA" --> G["No Children Found WA<br/>must be inside the WA —<br/>pays one visit"]
+  B -- "WA unreachable" --> H["Inaccessible WA request<br/>can be filled from anywhere"]
+  F --> I{"All WAs in the<br/>WAG attended?"}
+  G --> I
+  H --> I
+  I -- "No" --> B
+  I -- "Yes" --> J["Change WAG form →<br/>next (closest) WAG assigned"]
+      </pre>
+    </div>
+    <h4>Step by step</h4>
+    <ol>
+      <li><b>Sync, check the map, travel.</b> The FLW syncs the app at the start, checks the Work Area map, and travels to a WA of their current WAG based on the map.</li>
+      <li><b>Arrive — the GPS gate.</b> In the Add Household form, the GPS block captures location (minimum 25m / preferred 15m accuracy). The form then iterates through a loop, running CommCare's <code>inside_polygon()</code> function against each WA of the current WAG. If the FLW is inside any of them, the form says they are inside and service delivery is allowed; if they are inside none, they are not allowed to proceed.</li>
+      <li><b>Screen the household.</b> The FLW asks whether U5 children live in the house and whether a parent can be spoken to. If not, they move on — this interaction is not recorded in the app.</li>
+      <li><b>Consent.</b> The caregiver/parent consent (participation, sharing basic details, MUAC capture, ORS/Zinc/deworming) is recorded before registration proceeds.</li>
+      <li><b>Register household &amp; children.</b> One form registers the household (named by father's + mother's names, with in-app duplicate blocking), the number of children, and every U5 child via a repeat group. Registration is <i>not</i> allowed when the household has no U5 child. Submission creates the household case and child cases and marks the WA <i>visited</i> for HQ — but not yet for Connect. Registering the first household also unhides the Health Service Delivery form.</li>
+      <li><b>Deliver services per child.</b> The FLW comes back to the Health Service Delivery form and fills it for each child: deworming (with age/dose/wellness logic; photo optional), MUAC (reading + mandatory photo), ORS/Zinc — 2 co-packs per child for the RCT (mandatory handover photo), vaccine counseling (history + optional card photo). The form checks the FLW's distance from the GPS location captured at household registration: <b>under 50m</b> → delivery allowed; farther → "out of vicinity of the household" and the form cannot proceed. A child marked <b>unwell</b> cannot be revisited for that service — the FLW is still paid for the first visit.</li>
+      <li><b>Review the summary and submit.</b> The final screen shows ✅ / ⚠️ / ❌ per service and whether the visit qualifies as a complete, valid delivery. As soon as the form is submitted, the delivery is visible on Connect. Each payable child visit is one Deliver Unit.</li>
+      <li><b>Edge paths.</b> A WA with no eligible children → <b>No Children Found WA</b> form (the FLW must be <b>inside the WA</b>; pays one visit; only available when nothing has been submitted against that WA). A WA that can't be reached → <b>Inaccessible WA</b> request, which can be filled <b>from anywhere geographically</b> (goes to NM review; see below).</li>
+      <li><b>Complete the WAG.</b> When every WA is attended (delivered / no-children / inaccessible), the FLW submits the <b>Change WAG</b> form to get their next WAG — the geographically closest one (see <a href="#wf-autowag">Auto-WAG Selection</a>).</li>
+    </ol>
+  </div>
+
+  <div class="sub" id="wf-inaccessible">
+    <h3>Inaccessible WA approval</h3>
+    <div class="diagram">
+      <div class="cap">Request → review → sync</div>
+      <pre class="mermaid">
+sequenceDiagram
+  participant F as FLW · Deliver App
+  participant H as CommCare HQ
+  participant N as NM · Connect Web
+  F->>H: Submit "Report Inaccessible WA" (reason, photo, GPS)
+  Note over H: hq_status_wa → inaccessible_requested (permanent)
+  H->>N: Appears under "Review Inaccessible WAs"
+  N->>N: Review details per WA
+  alt Approved
+    N->>H: Connect wa_status → INACCESSIBLE
+  else Rejected
+    N->>H: Connect wa_status → NOT_VISITED (reason is kept)
+    N-->>F: FLW notified
+  end
+  Note over H: hq_status_wa stays inaccessible_requested either way
+  H-->>F: Realtime sync from Connect to HQ updates the phone case list
+      </pre>
+    </div>
+    <p>The request form captures the WA name and case id (hidden, from the loaded case), user case id, date of visit, reason (flood, conflict, road damage, public buildings, etc.), free-text details, a <b>mandatory photo</b>, and GPS (no positional expectation). It can only be filled when no household form is associated with that WA. On Connect, the NM sees the list of workers with pending requests, expands to see each WA's details, and approves or rejects with an auto-populated review date. The review outcome syncs from Connect back to CCHQ in <b>realtime</b>, updating the FLW's case list (on rejection, only <code>wa_status</code> is sent back — the recorded reason is kept). Until every WA in the group is resolved, the FLW cannot change WAGs. No case is closed in the process.</p>
+  </div>
+
+  <div class="sub" id="wf-relearn">
+    <h3>Relearn intervention</h3>
+    <div class="diagram">
+      <div class="cap">Task → lock → module + quiz → unlock</div>
+      <pre class="mermaid">
+flowchart TD
+  subgraph CONNECT ["ON CONNECT"]
+    A["Audits flag an FLW<br/>(inconsistent data, low volume)"] --> B["Task triggered —<br/>for one user or many"]
+    B --> C["Relearn user property<br/>set to 1"]
+  end
+  subgraph APP ["IN THE DELIVER APP (next sync)"]
+    D["Display conditions hide<br/>ALL deliver forms"] --> E["Only the matching relearn<br/>module shows<br/>(deworming / MUAC / SD ...)"]
+    E --> F["FLW completes the module<br/>and attends the quiz —<br/>randomised questions from<br/>the task's category"]
+    F --> G{"Score = 100?"}
+    G -- "No — retake the quiz" --> F
+    G -- "Yes" --> H["Submit the<br/>Continue Service Delivery form"]
+  end
+  subgraph UNLOCK ["RESOLUTION"]
+    I["Task question submitted →<br/>task marked FINISHED on Connect"] --> J["All relearn properties reset —<br/>deliver forms restored,<br/>work resumes"]
+  end
+  C --> D
+  H --> I
+  K["⚠ While the task is pending,<br/>Connect REJECTS the FLW's visits"]
+  C -.-> K
+      </pre>
+    </div>
+    <p>While the task is open, Connect <b>rejects any visits</b> the FLW submits — clearing the task is a precondition for payable work. No step involves CommCare HQ; tasks are triggered and completed entirely through Connect.</p>
+  </div>
+
+  <div class="sub" id="wf-wag">
+    <div class="deprecated">
+      <span class="dep-tag">Deprecated — not in use</span>
+      <h3>WAG progression (legacy)</h3>
+      <div class="callout warn"><b>Superseded from Master app version 1949</b><p>The "first WAG in the list" ordering described below is the legacy behavior and is <b>no longer active</b>. From version 1949 onward, the next WAG is chosen geographically by <a href="#wf-autowag">Auto-WAG Selection</a> — the list-based pick below remains only as its fallback when centroid data is missing.</p></div>
+      <p>WAG ordering was handled <b>dynamically in the app</b> using WA statuses — no serial numbers are uploaded (the <code>wag_serial_number</code> upload approach was rejected because the number can only be known after clustering and assignment):</p>
+      <ol>
+        <li>Build <code>incomplete_wag_list</code> — distinct <code>work_area_group</code> values from <code>work-area</code> cases where <code>wa_status = ''</code>. Any WAG whose WAs are all complete drops out automatically.</li>
+        <li>If the list is not empty → the first WAG in the list becomes <code>#user/current_work_area_group</code>.</li>
+        <li>If the list is empty → the FLW sees "you are at the last WAG."</li>
+      </ol>
+      <p style="font-size:.88rem;color:var(--muted)">The WAG identifier lives on the work-area case as the <code>work_area_group</code> property (shown on Connect as "Work Area Group") — this part is still true for Auto-WAG Selection.</p>
+    </div>
+  </div>
+
+  <div class="sub" id="wf-autowag">
+    <h3>Auto-WAG Selection</h3>
+    <p><span class="chip acc">Available from: Master app version 1949</span></p>
+    <p>Auto-WAG Selection automatically assigns Work Area Groups (WAGs) to FLWs in a <b>geographically logical order</b>, replacing the earlier logic where the next WAG was picked arbitrarily from an unordered list (which could send an FLW north one day, south the next, and back north again).</p>
+    <p>It has two parts:</p>
+    <div class="defs">
+      <div class="d"><b>First WAG Selection</b><span>Assigns the north-west most WAG when a user has no WAG yet.</span></div>
+      <div class="d"><b>Next WAG Selection</b><span>Assigns the geographically closest WAG when the user finishes their current one.</span></div>
+    </div>
+
+    <h4>How it works — for everyone (non-technical explanation)</h4>
+    <p>Think of the FLW's territory as a map with several Work Area Groups (WAGs) they need to cover, one at a time — each WAG being a bundle of Work Areas (WAs).</p>
+    <ul>
+      <li><b>Where do they start?</b> At the top-left corner of the map — the north-west most WAG. This gives every FLW a consistent, predictable starting point.</li>
+      <li><b>Where do they go next?</b> Once a WAG is fully completed (every WA in it is done), the app looks at all remaining WAGs and picks the one nearest to where they just finished. No more being sent to a far corner of the territory and then back again.</li>
+      <li><b>The overall effect:</b> the FLW sweeps across their territory like reading a page — start at the top corner, always move to the closest remaining WAG — which cuts down travel time and keeps their daily movement sensible.</li>
+      <li><b>What if map data is missing?</b> The app quietly falls back to the old way of picking a WAG, so no one is ever stuck without an assignment.</li>
+    </ul>
+    <div class="callout"><b>The FLW does not choose WAGs themselves</b><p>The app decides automatically. They only confirm the switch when they finish a WAG.</p></div>
+
+    <h4>How it works — technical explanation</h4>
+    <p><b>Data prerequisites</b></p>
+    <ul>
+      <li>Every <code>work-area</code> case carries: <code>work_area_group</code> (WAG name), <code>hq_status_wa</code> (visit status; empty = unvisited), and <code>wag_centroid</code> — the WAG's center point stored as <code>"lat lon"</code> (space-separated). All WAs of one WAG share the same centroid.</li>
+      <li>The FLW's active WAG is held in the user property <code>current_work_area_group</code>; the case list is filtered to it.</li>
+    </ul>
+    <p><b>Core pattern.</b> XPath cannot sort a nodeset by a computed value, so both parts use a hidden repeat-loop pattern: build a space-separated list of candidate WAG names, spawn one repeat iteration per candidate, compute a score/distance per iteration via hidden values, then select the row matching the min/max.</p>
+
+    <h4>Hidden variables</h4>
+    <p>Top level (before the loop):</p>
+    <div class="table-wrap"><table>
+      <tr><th>Hidden value</th><th>Purpose</th></tr>
+      <tr><td><code>candidate_wag_names</code></td><td>Space-joined list of distinct WAG names having unvisited WAs (<code>hq_status_wa = ''</code>); the Next-WAG form additionally excludes the current WAG.</td></tr>
+      <tr><td><code>candidate_wag_count</code></td><td><code>count-selected()</code> of the above; drives the repeat count.</td></tr>
+      <tr><td><code>current_wag_centroid</code></td><td>(Next WAG only) centroid of the user's current WAG, looked up from any one of its WAs.</td></tr>
+    </table></div>
+    <p>Inside the repeat group <code>wag_loop</code> (one iteration per candidate WAG):</p>
+    <div class="table-wrap"><table>
+      <tr><th>Hidden value</th><th>Purpose</th></tr>
+      <tr><td><code>item_index</code></td><td><code>int(position(current()/..))</code> — 0-based row index.</td></tr>
+      <tr><td><code>wag_name</code></td><td><code>selected-at(candidate_wag_names, item_index)</code> — this row's WAG.</td></tr>
+      <tr><td><code>wag_cent</code></td><td>Centroid looked up from casedb by WAG name.</td></tr>
+      <tr><td><code>wag_lat</code> / <code>wag_lon</code></td><td>(First WAG only) centroid split via <code>selected-at(wag_cent, 0/1)</code>.</td></tr>
+      <tr><td><code>nw_score</code></td><td>(First WAG only) <code>wag_lat - wag_lon</code> — north and west both raise the score.</td></tr>
+      <tr><td><code>wag_dist</code></td><td>(Next WAG only) <code>distance(current_wag_centroid, wag_cent)</code> in meters.</td></tr>
+    </table></div>
+    <p>Top level (after the loop):</p>
+    <div class="table-wrap"><table>
+      <tr><th>Hidden value</th><th>Purpose</th></tr>
+      <tr><td><code>max_nw_score</code> / <code>min_wag_dist</code></td><td><code>max()</code> / <code>min()</code> over non-blank loop rows.</td></tr>
+      <tr><td><code>first_wag</code> / <code>closest_wag</code></td><td>Row matching the max/min, <code>[1]</code> predicate to resolve ties: e.g. <code>/data/wag_loop[nw_score != ''][nw_score = /data/max_nw_score][1]/wag_name</code></td></tr>
+    </table></div>
+
+    <p><b>First WAG flow:</b> no <code>current_work_area_group</code> → all unstarted WAGs are candidates → highest <code>nw_score</code> (= latitude − longitude) wins → saved to the user property.</p>
+    <p><b>Next WAG flow:</b> switching is gated — the FLW can ask for the next WAG only when every WA in the current WAG is <b>attended</b>: it has visits (if the FLW could go in), or it is marked inaccessible (if they couldn't). A <b>pending inaccessible request blocks the switch</b>, as do unvisited and inaccessible-rejected WAs — the form shows the FLW exactly which WAs are blocking. Once eligible: candidates = unstarted WAGs excluding current → smallest <code>wag_dist</code> from the current WAG's centroid wins → current WAG's WA cases are closed → user property updated.</p>
+    <div class="callout"><b>Fallback</b><p>Rows with blank/malformed centroids are excluded by the <code>!= ''</code> predicates rather than erroring; the final assignment uses <code>coalesce(geo_result, old_list_based_pick)</code> so a blank geo-result silently reverts to legacy behavior.</p></div>
+    <div class="callout danger"><b>Known limitation — WAG names with spaces</b><p><code>selected-at()</code> / <code>count-selected()</code> split on spaces, so WAG names containing spaces (e.g. "Rainer Valley-1") fragment into invalid items and break both forms. Connect-generated names are space-free and safe; manually uploaded names must avoid spaces. Workaround for affected users: set <code>current_work_area_group</code> manually from HQ — do <b>not</b> use the Change WAG form, which shares the same defect.</p></div>
+  </div>
+
+  <div class="sub" id="wf-workstart">
+    <h3>Work Start Control (<code>allow_flw_to_start_delivery</code>)</h3>
+    <p><span class="chip acc">Available from: Master app version 1938</span></p>
+    <p>Work Start Control gates whether an FLW can begin service delivery at all. The app reads the user property <code>allow_flw_to_start_delivery</code> on the FLW's mobile worker account: if the property is <b>missing or 0</b>, the app shows a wait message on the Welcome screen and blocks submission. Only when the property is set to <code>1</code> can the FLW start work.</p>
+    <div class="callout"><b>Who sets it, and when</b><p>The property is set to <code>1</code> per FLW from CommCare HQ by the <b>Dimagi delivery team</b>, after all locations (WAs/WAGs) in the microplan have been assigned to the users. This ensures no FLW accidentally starts work while the assignment process is still underway.</p></div>
+
+    <h4>What is being done right now?</h4>
+    <p>The property is currently set to <code>1</code> for multiple mobile workers using the <b>Bulk Upload</b> feature in CommCare HQ (<b>Users → Mobile Workers → Bulk Upload</b>):</p>
+    <ol>
+      <li>Download the mobile worker Excel file.</li>
+      <li>Fill the value <code>1</code> in the <code>data: allow_flw_to_start_delivery</code> column for the target users.</li>
+      <li>Re-upload the file.</li>
+    </ol>
+    <p>This works, but it is manual, spreadsheet-based, and error-prone — there is a risk of editing the wrong rows or overwriting other user data in the sheet.</p>
+
+    <div class="proposed">
+    <span class="proposed-tag">Proposed — not implemented yet, under consideration</span>
+    <h4>What is the possible solution that can be tried to implement?</h4>
+    <p>Use the CommCare HQ <b>Mobile Worker Edit API</b> instead. This is a <b>manual, on-demand action performed by a Dimagi team member</b> whenever the property needs to be set — it is <b>not</b> an automated or scheduled process (no cron jobs, no scheduled scripts). The calls are executed at the time of the request, e.g. via curl, Postman, or a manually run helper.</p>
+    <div class="table-wrap"><table>
+      <tr><th>Aspect</th><th>Detail</th></tr>
+      <tr><td>Endpoint</td><td><code>PATCH https://www.commcarehq.org/a/[domain]/api/v0.5/user/[user_id]/</code></td></tr>
+      <tr><td>Authentication</td><td>API Key auth using a web user's email and API key (generated under <b>My Account → API Keys</b> in HQ), sent as header <code>Authorization: ApiKey user@example.com:API_KEY</code>. The web user must have permission to edit mobile workers in the project space.</td></tr>
+      <tr><td>Value format</td><td>The value must be sent as the <b>string</b> <code>"1"</code> — custom user data values are stored as strings.</td></tr>
+      <tr><td>Prerequisite</td><td>The property <code>allow_flw_to_start_delivery</code> must already be defined under <b>Users → Edit User Fields</b> in the project space.</td></tr>
+    </table></div>
+    <p>Request body:</p>
+    <pre class="codeblock"><code>{
+  "user_data": {
+    "allow_flw_to_start_delivery": "1"
+  }
+}</code></pre>
+    <div class="callout danger"><b>Critical caution — fetch, merge, then PATCH</b><p>The <code>user_data</code> object should contain the user's <b>complete set of custom properties</b>. The Dimagi member must first fetch the user via <code>GET /api/v0.5/user/[user_id]/</code>, merge <code>"allow_flw_to_start_delivery": "1"</code> into the returned <code>user_data</code>, and send the merged object back — sending only the single property risks wiping out the user's other custom data.</p></div>
+    <p><b>For multiple users:</b> retrieve user IDs via the User List API (<code>GET /api/v0.5/user/?limit=100</code>, paginating through results), then repeat the fetch–merge–PATCH steps for each target user. These calls are executed by the Dimagi member at the time of the request, not by any scheduled system.</p>
+    <div class="callout warn"><b>Known limitation</b><p>The edit API does not support changing the default phone number — this does not affect this use case.</p></div>
+    <p style="font-size:.88rem;color:var(--muted)">Bulk Upload remains available as a fallback for very large one-time updates, but the API method is the recommended approach going forward.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="setup">
+  <div class="sec-head"><h2>Setup Steps</h2><span class="tag">Section 3</span></div>
+  <p>How a CHC RCT deployment is stood up — from CommCare HQ project spaces through Connect programs, opportunities, and microplanning to FLW launch. The RCT (August 2026) runs across <b>4 LLOs, ~100 FLWs per LLO, covering ~40 wards</b>.</p>
+
+  <div class="sub" id="setup-streams">
+    <h3>The three RCT opportunities</h3>
+    <p>Each LLO runs three opportunities, in order — the same setup path applies to each:</p>
+    <div class="table-wrap"><table>
+      <tr><th>Opportunity</th><th>Purpose</th><th>Scope</th></tr>
+      <tr><td><b>Demo</b></td><td>The LLO trains FLWs: Personal ID sign-up, how the app works, the full workflow, demonstrated hands-on.</td><td>One location; training only.</td></tr>
+      <tr><td><b>Practice visits</b></td><td>FLWs do actual, real service delivery in a small area <b>outside the RCT wards</b>.</td><td>A couple of visits per FLW.</td></tr>
+      <tr><td><b>Real (production)</b></td><td>Live RCT service delivery.</td><td>~100 FLWs per LLO × 4 LLOs; ~40 wards.</td></tr>
+    </table></div>
+  </div>
+
+  <div class="sub" id="setup-sequence">
+    <h3>Setup sequence <span class="badge wip" style="vertical-align:middle">🚧 WIP — not complete</span></h3>
+    <p style="font-size:.88rem;color:var(--muted)">This sequence is still being written up and reviewed — steps may be missing or change as the RCT deployment process is finalised.</p>
+    <ol class="steps">
+      <li>
+        <h4>Preparation</h4>
+        <ul>
+          <li>Activate Twilio messaging for the deployment country — <b>at least one month before deployment</b>.</li>
+          <li>Align with the LLOs on the population estimates of the treatment wards and on the number of workers / weeks in the program.</li>
+          <li>Connect workspaces (Dimagi PM workspace + 4 NM workspaces, with admin access) — already in place from the pre-RCT cohort; create only if missing.</li>
+        </ul>
+      </li>
+      <li>
+        <h4>Create the CommCare HQ project space</h4>
+        <p><b>4+1</b> structure: one project space per LLO plus one training space. Confirm the domain name, create the domain, and ensure admin rights for the delivery team.</p>
+      </li>
+      <li>
+        <h4>Configure the project space (CCHQ Setup checklist)</h4>
+        <ul>
+          <li>Update the subscription; request Connect subscription via accounts@dimagi.com.</li>
+          <li>Via <b>linked domains</b> from the master space: feature flags (request via support@dimagi.com) and lookup tables (<code>post_assess</code> — see <a href="#sd-learn">Learn App &amp; quiz engine</a>).</li>
+          <li>Connection settings: CCHQ ↔ Connect (CCC) server connection + data forwarding; connection with OCS for the support bot.</li>
+          <li>OCS bot setup: 4 UCR expressions (Register User OCS, Trigger OCS Bot, Session Completion API, 24-hr expiry API) and 2 configurable form repeaters (OCS User Registration, Trigger Bot) — the repeaters can only be added <b>after the first push</b>, once the UCR expressions exist.</li>
+          <li>Payment Conditional Alert (Messaging → Conditional Alerts), created once per cohort/app.</li>
+          <li>Mobile worker <code>cohort_id</code> field — set per user once Learn is completed.</li>
+          <li>Update the program tracker for live programs.</li>
+        </ul>
+      </li>
+      <li>
+        <h4>Copy the apps from the master space</h4>
+        <p>Copy the latest Learn and Deliver apps down from <code>ccc-chc-master</code> to the project space via linked domains, <b>with proper naming</b>. App-level behavior — GPS settings, question bank, display conditions, dedupe logic — is maintained upstream on the master app (see <a href="#system-design">System Design</a>) and pushed to all downstream spaces.</p>
+      </li>
+      <li>
+        <h4>Create the program on Connect</h4>
+        <p>Create the program on the Dimagi CHC PM workspace and invite the organizations to it. The LLO creates <b>Personal IDs for all FLWs</b>.</p>
+      </li>
+      <li>
+        <h4>Create the opportunity</h4>
+        <ul>
+          <li>Opportunity name, <b>Deliver Units</b> (CHC Service Delivery — one paid unit per child served; No Children Found WA — pays one child-visit equivalent), <b>Payment Units</b>, and the list of users.</li>
+          <li>Per-LLO config fields: description, Learn app pass score, pay per org, pay per FLW, start &amp; end dates, and max daily / max total counts for HSD and NCF visits.</li>
+          <li>Test opportunities: identical details with a <code>[test]</code> prefix on the name and adjusted start/end dates.</li>
+        </ul>
+      </li>
+      <li>
+        <h4>Raise the Jira ticket for feature enablement</h4>
+        <p>Send the opportunity URL to the tech team via a Jira ticket to enable the <b>microplanning</b> and <b>auditing</b> features on the opp.</p>
+      </li>
+      <li>
+        <h4>Configure verification rules &amp; relearn tasks</h4>
+        <ul>
+          <li>Verification rules: duplicate children — Q path <code>form.check_child_duplicate_casedb</code>, Q value <code>0</code>; suspicious sibling DOB gap — <code>form.check_dob_gap_suspicious_duplicate</code> (see <a href="#sd-dedup">Deduplication</a>); duration ≈ 1 minute if used.</li>
+          <li>Relearn task types, mapped to the relearn user property (see <a href="#sd-relearn">Relearning module</a>). The case-property field is not marked required in the form <b>but must be filled</b> — if a task is misconfigured, archive it and do <b>not</b> recreate it.</li>
+        </ul>
+      </li>
+      <li>
+        <h4>Invite the FLWs</h4>
+        <p>The LLO invites FLWs to the opportunity. FLWs accept from the Connect menu, download the Learn app, and work through the learn modules (see <a href="#wf-daily">FLW end-to-end flow</a>, Phase 1).</p>
+      </li>
+      <li>
+        <h4>Microplanning — in parallel with Learn</h4>
+        <ul>
+          <li>Confirm the building data source and update the Python grid-generation code (GitHub repo).</li>
+          <li>Generate the grids — requires ward name, ward boundaries, and grid size (~50m × 50m WAs).</li>
+          <li>Upload the CSV on Connect microplanning (field template available on Connect).</li>
+          <li>Run the clustering algorithm: <code>max_number_of_wa_in_wag = 50</code>, <code>max_count_of_building_in_wag = 200</code> — whichever hits first closes the WAG.</li>
+          <li>Export the CSV, pivot it to check the distribution of WAs into WAGs, and manually recluster on the map for equitable distribution (merge singleton WAGs into larger neighbours; keep building counts per WAG roughly uniform).</li>
+          <li>Share the map with the LLO — areas to exclude, FLW assignment preferences — and get sign-off. <b>These steps are irreversible.</b></li>
+        </ul>
+        <p>Case-property formats the app expects on the uploaded <code>work-area</code> cases:</p>
+        <ul>
+          <li><code>centroid</code> — <code>&lt;lat&gt; &lt;long&gt;</code> (strip any <code>SRID=4326;POINT</code> prefix); <code>wag_centroid</code> in the same format for <a href="#wf-autowag">Auto-WAG Selection</a>.</li>
+          <li><code>bounding_box</code> — space-separated coordinate pairs compatible with <code>inside_polygon()</code> (strip any <code>SRID=4326;POLYGON((</code> prefix).</li>
+          <li><code>wa_status</code> — empty value as the unvisited default (not <code>NOT_STARTED</code>).</li>
+          <li><code>work_area_group</code> — the WAG identifier; WAG names must contain <b>no spaces</b>. Do not upload <code>wag_serial_number</code>.</li>
+        </ul>
+      </li>
+      <li>
+        <h4>Assign WAGs to the FLWs</h4>
+        <p>Complete the assignment on Connect. Meanwhile FLWs finishing Learn claim the Deliver job but stay blocked at the wait screen — <code>allow_flw_to_start_delivery = 0</code> (see <a href="#wf-workstart">Work Start Control</a>). This is deliberate: no FLW accidentally starts work during assignment.</p>
+      </li>
+      <li>
+        <h4>Unblock and launch</h4>
+        <p>Once all microplan locations are assigned, the Dimagi delivery team sets <code>allow_flw_to_start_delivery = 1</code> from the back end and asks the FLWs to <b>sync the app and start</b>.</p>
+      </li>
+      <li>
+        <h4>Pre-launch sanity checks</h4>
+        <ul>
+          <li><code>question_id</code> runs q1…qN with no gaps; <code>question_index</code> runs 1…n per category with no gaps; exactly one correct answer per question; every category ≥ 5 questions; app max-count properties match the bank.</li>
+          <li>Test auto-checkin inside/outside a WA, the No Children Found display condition, and the inaccessible request → approve/reject round-trip from Connect back to the phone.</li>
+          <li>Verify a full service delivery produces the expected ✅/⚠️/❌ summary and payment flag for the key scenarios (all delivered; age exemptions; consent refusal; skipped-without-reason).</li>
+        </ul>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="faq">
+  <div class="sec-head"><h2>FAQ</h2><span class="tag">Section 4</span></div>
+  <div class="faq-controls">
+    <div class="tabs" role="tablist" aria-label="FAQ audience">
+      <button role="tab" aria-selected="true" data-aud="tech">Tech</button>
+      <button role="tab" aria-selected="false" data-aud="delivery">Delivery</button>
+      <button role="tab" aria-selected="false" data-aud="llo">LLO</button>
+      <button role="tab" aria-selected="false" data-aud="flw">FLW</button>
+    </div>
+    <input class="faq-search" id="faq-search" type="search" placeholder="Search all FAQs…" aria-label="Search FAQs">
+  </div>
+
+  <div id="faq-wrap">
+  <!-- TECH -->
+  <div class="faq-panel visible" data-aud="tech">
+    <div class="aud-label">Tech</div>
+    <details class="faq"><summary>Why are there two Work Area status properties (<code>hq_status_wa</code> vs <code>wa_status</code>)?</summary><div class="body">
+      <p>They track different lifecycles. <code>hq_status_wa</code> (HQ) records whether the FLW has worked in the WA at all — it flips to <i>visited</i> as soon as a household is registered. <code>wa_status</code> (Connect) records whether payable delivery happened — it only flips to <i>VISITED</i> on a child service delivery or a No U5 Children form. Example: household + child registered → HQ says <i>visited</i>, Connect still says <i>NOT_VISITED</i>; child delivered → both say visited.</p>
+    </div></details>
+    <details class="faq"><summary>Which case property stores the WAG identifier?</summary><div class="body">
+      <p><code>work_area_group</code> on the <code>work-area</code> case (shown on Connect as "Work Area Group"). It is not <code>wag_id</code>.</p>
+    </div></details>
+    <details class="faq"><summary>How does the app decide which WAG comes next?</summary><div class="body">
+      <p>Geographically, via <a href="#wf-autowag">Auto-WAG Selection</a> (from Master app v1949): the first WAG is the north-west most (highest latitude − longitude score over the WAG centroids), and each next WAG is the one whose <code>wag_centroid</code> is closest to the current WAG's centroid — computed with a hidden repeat-loop since XPath can't sort. No serial numbers are uploaded (<code>wag_serial_number</code> was rejected because the order can only be known after clustering and assignment). If centroid data is blank or malformed, the app falls back to the legacy list-based pick (first WAG with unvisited WAs).</p>
+    </div></details>
+    <details class="faq"><summary>How does auto-checkin work?</summary><div class="body">
+      <p>Each field form carries a GPS block plus a verification block. After the GPS reading meets the accuracy threshold, the form checks the coordinates against the boundaries of the WAs in the FLW's current WAG (centroid + <code>inside_polygon()</code> boundary logic) and attaches the submission to the WA the FLW is standing in — updating that WA's status automatically. There is no separate check-in form (that was the 2025 design).</p>
+    </div></details>
+    <details class="faq"><summary>What formats do <code>centroid</code> and <code>bounding_box</code> need?</summary><div class="body">
+      <p><code>centroid</code> must be plain <code>&lt;lat&gt; &lt;long&gt;</code>, and <code>bounding_box</code> must be space-separated coordinate pairs consumable by <code>inside_polygon()</code> — e.g. <code>28.56735227 77.38577810 28.56735227 77.38680018 …</code> closing back at the first pair. Raw exports arrive with <code>SRID=4326;POINT</code> / <code>SRID=4326;POLYGON((</code> prefixes that must be stripped, or the app's location checks fail.</p>
+    </div></details>
+    <details class="faq"><summary>What is the expected default value of <code>wa_status</code>?</summary><div class="body">
+      <p>The Deliver app is designed to expect an <b>empty value</b> as the unvisited default. Uploads that set <code>NOT_STARTED</code> as the default break the workflow logic (the WAG-progression query and the No Children Found display condition both key off <code>wa_status = ''</code>).</p>
+    </div></details>
+    <details class="faq"><summary>How is <code>allow_flw_to_start_delivery</code> set on user accounts?</summary><div class="body">
+      <p>Today via <b>Bulk Upload</b> in CommCare HQ (Users → Mobile Workers → Bulk Upload): download the mobile worker Excel, fill <code>1</code> in the <code>data: allow_flw_to_start_delivery</code> column for the target users, re-upload. A Mobile Worker Edit API method (fetch–merge–PATCH per user) is proposed but not yet in use. The property must be defined under Users → Edit User Fields first, and the value is the <b>string</b> <code>"1"</code>. See <a href="#wf-workstart">Work Start Control</a>.</p>
+    </div></details>
+    <details class="faq"><summary>Why do WAG names with spaces break the app?</summary><div class="body">
+      <p>Auto-WAG Selection and the Change WAG form build space-separated candidate lists and read them with <code>selected-at()</code> / <code>count-selected()</code>, which split on spaces — a name like "Rainer Valley-1" fragments into invalid items. Connect-generated WAG names are space-free and safe; manually uploaded names must avoid spaces. Workaround for an affected user: set <code>current_work_area_group</code> manually from HQ (do not use the Change WAG form — it shares the defect).</p>
+    </div></details>
+    <details class="faq"><summary>How does the relearn lock/unlock mechanism work technically?</summary><div class="body">
+      <p>A task triggered on Connect sets a designated user property to <code>1</code>. The Deliver app's form display conditions read it and hide all deliver-related forms, showing only the relearn module that matches the triggered task (deworming, MUAC, service delivery, etc.). The FLW must pass the module's quiz — randomised questions from that task's category, 100 marks to pass — and submit the <b>Continue Service Delivery</b> form, which submits the task question: the task is marked finished on Connect and all relearn properties reset, restoring the deliver forms. Nothing runs on CommCare HQ. Note that Connect rejects visits submitted while the task is pending.</p>
+    </div></details>
+    <details class="faq"><summary>What breaks if <code>question_id</code> or <code>question_index</code> has gaps?</summary><div class="body">
+      <p>The Learn randomiser generates IDs q1…qN up to <code>maximum_number_of_question</code>; a missing ID returns no rows and renders an <b>empty question slot</b>. The relearn randomiser does the same with <code>question_index</code> within a category. After any deletion, re-number to stay continuous, keep exactly one <code>answer_status = 1</code> row per question, and update <code>maximum_number_of_question</code>.</p>
+    </div></details>
+    <details class="faq"><summary>What is Save to Case used for?</summary><div class="body">
+      <p>Save to Case questions manipulate cases without following the standard Case Management setup — create, update, close, and index from within the form builder. In CHC it's mainly used for conditional case updates (e.g. creating the child case from the registration repeat group and indexing it to the household).</p>
+    </div></details>
+    <details class="faq"><summary>Are there known GPS edge cases?</summary><div class="body">
+      <p>Yes — where two workers' WAs are contiguous, the combined allowance (25m minimum accuracy + 15m boundary leeway = up to 40m) can let one worker's submissions land in the neighbouring worker's WA. Also note the thresholds are uniform across forms (preferred &lt;15m, minimum &lt;25m) — relaxed from tighter values that proved hard to reach in urban testing — and the background auto-capture custom properties (<code>cc-gps-auto-capture-accuracy: 15m</code>, <code>cc-gps-auto-capture-timeout: 10 min</code>) keep a fresh reading available before a form opens.</p>
+    </div></details>
+  </div>
+
+  <!-- DELIVERY -->
+  <div class="faq-panel" data-aud="delivery">
+    <div class="aud-label">Delivery</div>
+    <details class="faq"><summary>How do I add, edit, or remove assessment questions?</summary><div class="body">
+      <p>Edit the <code>post_assess</code> lookup table — remember each question spans multiple rows (one per option). Then run the checklist:</p>
+      <ul>
+        <li>Exactly one row per question has <code>answer_status = 1</code>; <code>question_text</code> identical across a question's rows.</li>
+        <li><code>question_id</code> continuous q1…qN (re-number after deletions).</li>
+        <li><code>question_index</code> continuous 1…n within each category; each category keeps ≥ 5 questions.</li>
+        <li>Update <code>maximum_number_of_question</code> to the new bank size; confirm <code>maximum_random_question_count_tobeshown</code> ≤ bank size (Learn) and ≤ smallest category size (Relearn).</li>
+      </ul>
+    </div></details>
+    <details class="faq"><summary>How do I trigger a relearn module for an FLW?</summary><div class="body">
+      <p>Entirely from Connect — nothing on CommCare HQ. From Connect audits, trigger the task (for one user or multiple users); it sets the relearn user property and the FLW's Deliver app locks to the matching relearn module on next sync. The FLW must complete the module, score 100 on its quiz, and submit the Continue Service Delivery form — that marks the task finished on Connect and unlocks the app automatically. Remember: while the task is pending, Connect rejects the FLW's visits. Task types must be configured on Connect before the opp launches.</p>
+    </div></details>
+    <details class="faq"><summary>What clustering settings should we use?</summary><div class="body">
+      <p>The delivery team's accepted proposal: <code>max_number_of_wa_in_wag = 50</code> and <code>max_count_of_building_in_wag = 200</code>, whichever hits first. Watch for known algorithm issues: overlapping WAG boundaries, fragmented (non-contiguous) WAGs, high variance in WAs-per-WAG (1–107 observed), and "singleton" WAGs with a single WA — 54 of them appeared in one test run. Singletons and undersized WAGs are consolidated manually at clustering time; adjacent WAGs are preferably assigned to the same FLW.</p>
+    </div></details>
+    <details class="faq"><summary>What should I check before accepting a clustering output?</summary><div class="body">
+      <ul>
+        <li>No WAG overlaps; closed polygons only; contiguous single-polygon WAGs.</li>
+        <li>No building-covered areas missed; nothing outside the opp area.</li>
+        <li>WA size intact (50×50m); unique colour coding per WAG.</li>
+        <li>Building count per WAG roughly uniform; WAs-per-WAG variance low.</li>
+      </ul>
+    </div></details>
+    <details class="faq"><summary>Which verification flags should be configured on the opp?</summary><div class="body">
+      <p><b>Duplicates: yes</b> — configure rejection rules against two hidden values submitted by the HSD form: <code>form.check_child_duplicate_casedb</code> (&gt; 0 when a child with the same name + DOB already exists in the user's casedb) and <code>form.check_dob_gap_suspicious_duplicate</code> (1 when household children are neither twins nor more than 8 months apart). Both must be set up at opp-creation time or the rules won't fire. <b>Location distance: no</b> — the app's GPS checks already cover it. <b>Duration: optional</b> — if kept, set around 1 minute; GW9 data shows users complete forms very quickly.</p>
+    </div></details>
+    <details class="faq"><summary>How should visit targets be planned?</summary><div class="body">
+      <p>Use <b>saturation targets, not visit targets</b>, with buffer visits and time built in. Denominator estimates (Grid3 / Geopode / Overture building data all have significant weaknesses) should be treated as ±40%. Contract a lower payable-visit maximum and be prepared for substantially more (e.g. present 150k payable visits, prepare for 250k), with reaction mechanisms when camping (oversaturation of one spot) is observed.</p>
+    </div></details>
+    <details class="faq"><summary>Can Work Areas be moved between FLWs?</summary><div class="body">
+      <p>Yes at assignment level, but with auto-checkin it carries extra work — reassignment requires updating the lookup/case data in CCHQ so the app's WAG resolution reflects the new owner. Reassigning adjacent WAGs to better performers is easier when FLWs were never shown the full list of WAGs they'd receive (which is the chosen approach).</p>
+    </div></details>
+  </div>
+
+  <!-- LLO -->
+  <div class="faq-panel" data-aud="llo">
+    <div class="aud-label">LLO</div>
+    <details class="faq"><summary>What counts as a payable visit?</summary><div class="body">
+      <p>A child visit pays when <b>every one of the four services</b> (deworming, MUAC, ORS/Zinc, vaccine counseling) was either delivered or had a documented valid exemption — child too young, dose within the last 6 months, child unwell today, or MUAC consent refused. Any service skipped without a recorded reason makes the visit non-payable. The FLW sees this on the summary screen before leaving the household.</p>
+    </div></details>
+    <details class="faq"><summary>Are FLWs paid for Work Areas with no children?</summary><div class="body">
+      <p>Yes — the <b>No Children Found WA</b> deliver unit pays the equivalent of one child visit when an FLW properly reports a WA with no eligible U5 children (with reason and photo evidence). This recognizes effort in sparse areas, balanced against gaming risk: the form blocks submission if prior deliveries exist for that WA, and requires the FLW to confirm they covered the entire WA.</p>
+    </div></details>
+    <details class="faq"><summary>How do I review inaccessible Work Area requests?</summary><div class="body">
+      <p>On Connect, open <b>Review Inaccessible WAs</b>. You'll see workers with pending requests; expand a worker to list their requested WAs, click a WA for its details (reason, free-text explanation, mandatory photo, GPS, visit date), and approve or reject in the row — the review date auto-populates. Approve → the WA's Connect status becomes <i>INACCESSIBLE</i> and it counts as attended for WAG switching. Reject → only <code>wa_status</code> is sent back to HQ as <i>NOT_VISITED</i> (the recorded reason is kept), and the FLW is notified. Either way, <code>hq_status_wa</code> on the phone stays <i>inaccessible_requested</i> — the black map marker does not change. The review outcome syncs from Connect to HQ in <b>realtime</b>. FLWs cannot move to their next WAG until every WA in the group is resolved, so review requests promptly.</p>
+    </div></details>
+    <details class="faq"><summary>What do the map colours mean?</summary><div class="body">
+      <p><b>No fill, no point</b> — not started. <b>Light yellow fill (#FFF9C4) / orange point (#F9A825)</b> — visited (a household was registered or the No Children WA form was filled). <b>Black point (#000000), no fill</b> — inaccessible requested; the marker stays black even after you approve or reject the request on Connect, because the HQ-side status never changes from <i>inaccessible_requested</i>.</p>
+    </div></details>
+    <details class="faq"><summary>How is duplicate or fraudulent data caught?</summary><div class="body">
+      <p>Several layers: GPS verification on every form (registration inside the WA; delivery within 50m of the household; No-Children only inside the WA), mandatory photo evidence (MUAC reading and ORS handover; building photo for no-children WAs), duplicate detection (in-app blocking on household and child names; HSD-form duplicate flags rejected via Connect verification rules), and relearn tasks. NMs supplement this with dashboard monitoring and spot checks; while a relearn task is pending, Connect rejects the FLW's visits.</p>
+    </div></details>
+    <details class="faq"><summary>When does an FLW get flagged for relearning?</summary><div class="body">
+      <p>During review of submissions in Connect audits — inconsistent data, low submission volume, or other quality metrics. A task is triggered from Connect (for one FLW or several at once); the FLW's app locks to the matching relearn module (deworming, MUAC, service delivery, etc.) until they pass its quiz with 100 marks. While the task is pending, Connect rejects that FLW's visits, so the intervention directly pauses payable work.</p>
+    </div></details>
+  </div>
+
+  <!-- FLW -->
+  <div class="faq-panel" data-aud="flw">
+    <div class="aud-label">FLW</div>
+    <details class="faq"><summary>Why does the app keep asking for my location?</summary><div class="body">
+      <p>Your location proves you are inside your assigned Work Area — it's how every service is verified for payment. If you see <i>Improve Location Accuracy</i>, press <b>Record Location</b> and wait up to a minute, preferably outdoors with a clear sky view. Once accuracy is good enough the app tells you which Work Area you are in and lets you continue.</p>
+    </div></details>
+    <details class="faq"><summary>The app says I have to wait and can't start delivery — why?</summary><div class="body">
+      <p>Delivery is switched on per FLW once your Work Areas have been assigned. Until then, the Welcome screen shows a wait message and blocks submission — this is expected while the assignment process finishes. Once the team enables you, <b>sync the app</b> and the Welcome to CHC form will appear; submitting it sets your first WAG. Syncing whenever you start is good practice anyway.</p>
+    </div></details>
+    <details class="faq"><summary>How does the Learn assessment quiz work? What score do I need?</summary><div class="body">
+      <p>The quiz unlocks automatically once you complete every learn module. It has <b>20 questions</b> and you need <b>80 marks — 16 of 20 correct — to pass</b>, with unlimited attempts. When you pass, you get a push notification on Connect that Learn is finished; go to the view job status page and claim the Deliver job. (A relearn quiz, if a task is assigned to you later, requires a full 100 to pass.)</p>
+    </div></details>
+    <details class="faq"><summary>Where do I get help using the app?</summary><div class="body">
+      <p>The <b>OCS support bot</b> is available in the Connect Messaging module — it's triggered once you fill the Learn app. It helps with app navigation and answers common questions. Your Network Manager remains the escalation point for anything the bot can't resolve.</p>
+    </div></details>
+    <details class="faq"><summary>When can I use the "No Children Found" form?</summary><div class="body">
+      <p>Only when you have visited the <b>entire</b> Work Area and found no eligible under-5 children — and only if you haven't submitted anything else for that WA yet. You'll confirm your intent, pick the reason (no buildings, access denied, no one home, etc.), and take a photo of a building inside the WA as evidence. If children were actually found, the form blocks you and points you to the Health Service Delivery form instead. A properly reported no-children WA pays the same as one child visit.</p>
+    </div></details>
+    <details class="faq"><summary>Can I come back to a household to serve a child who was away?</summary><div class="body">
+      <p>Yes — children registered but not yet served stay in your case list, and you can return to complete their service delivery. Exception: a child marked as <b>unwell</b> in the service delivery form cannot be revisited for that delivery — you are still paid for that first visit.</p>
+    </div></details>
+    <details class="faq"><summary>What do ✅, ⚠️ and ❌ mean on the summary screen?</summary><div class="body">
+      <p>✅ <b>Delivered</b> — you provided the service. ⚠️ <b>Ineligible / No Consent</b> — the service couldn't be given for a valid recorded reason (child too young, recently dosed, sick today, consent refused); this still counts toward payment. ❌ <b>Not Delivered</b> — the service was skipped without a valid reason, and the visit will <b>not</b> be payable. Check the summary before leaving the household — a ❌ tells you exactly which service to fix.</p>
+    </div></details>
+    <details class="faq"><summary>Why was my visit not counted for payment?</summary><div class="body">
+      <p>One or more of the four services shows ❌ — most commonly a missing photo (MUAC reading or ORS handover), an unconfirmed handover, or a skipped service with no reason recorded. Every service needs either a delivery or a valid documented reason. Also make sure you were within 50m of where the household was registered when delivering.</p>
+    </div></details>
+    <details class="faq"><summary>How do I take a MUAC photo that gets approved?</summary><div class="body">
+      <p>Take the photo <b>after reading the measurement, while the tape is still on the arm</b>. Child's arm by the side of the body, elbow bent about 90°. Hold the phone straight-on, level with the tape, far enough back that you can see: the arm centred, elbow and forearm at the bottom, side of the torso behind, and the tape around the <b>middle of the left upper arm</b> with bare skin above and below it.</p>
+      <p><b>Rejected if:</b> the tape is on any body part other than the mid upper arm; the photo is so zoomed-in the reading window, colour zone or surrounding skin can't be seen; the tape is skewed in the reading window. <b>Avoid:</b> pulling the tape too tight, glare on the reading window, fingers blocking the window, measuring near the elbow/shoulder, extended elbow.</p>
+    </div></details>
+    <details class="faq"><summary>How do I take an ORS photo that gets approved?</summary><div class="body">
+      <p>Take the photo <b>after handing the packet to the caregiver, while they are holding it</b> in front of their body. Hold the phone straight-on and level with the packet; all four edges of the packet visible, front label facing the camera, caregiver's clothes visible behind.</p>
+      <p><b>Rejected if:</b> the packet is lying on a surface instead of held; the back label is captured; another object (e.g. zinc tablets) obscures the packet. <b>Avoid:</b> glare on the label.</p>
+    </div></details>
+    <details class="faq"><summary>How do I get my next Work Area Group?</summary><div class="body">
+      <p>Finish every Work Area in your current WAG — each WA must be delivered, reported as no-children, or approved as inaccessible. Then use <b>Request New WAG</b>; the app assigns your next group automatically. If a WA is stuck on a pending inaccessible request, your Network Manager needs to approve or reject it first.</p>
+    </div></details>
+    <details class="faq"><summary>What if I can't reach a Work Area at all?</summary><div class="body">
+      <p>Submit the <b>Inaccessible WA</b> request with the reason (flood, conflict, road damage, etc.), details, and a mandatory photo. <b>This is irreversible</b> — once submitted it cannot be withdrawn, and you can't submit it for a WA where you've already registered a household. Your Network Manager reviews it on Connect: approved means the WA counts as attended and you won't need to return (the marker on your map stays black); rejected means it returns to your list to visit. While a request is pending you cannot submit another one for that WA — and a pending request also blocks you from switching to your next WAG.</p>
+    </div></details>
+    <details class="faq"><summary>What consent do I need before registering a family?</summary><div class="body">
+      <p>Read the caregiver consent statement and record their answer before proceeding. It covers participation, recording the child's basic details (name, age, sex, illness history), MUAC measurement, and giving ORS/Zinc and deworming medicine. The caregiver can refuse — and can revoke consent at any point during the intervention. If MUAC consent specifically is refused, record it; the visit can still be payable with that exemption documented.</p>
+    </div></details>
+  </div>
+  </div>
+  <p class="no-results" id="faq-empty">No FAQs match your search.</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="changelog">
+  <div class="sec-head"><h2>Changelog</h2><span class="tag">Section 5</span></div>
+  <p>Summary of the <a href="https://www.commcarehq.org/a/ccc-chc-master/apps/view/cd72e145f211ddd44ec648120f1b2d5c/releases/">master Deliver App release history</a> (ccc-chc-master), built for the CHC RCT launching August 2026. Empty builds, reverts, and repeated fix iterations are collapsed into their landing versions.</p>
+
+  <h3>March 2026 — core build &amp; V1.0</h3>
+  <div class="table-wrap"><table>
+    <tr><th>Version</th><th>Date</th><th>Change</th></tr>
+    <tr><td class="tnum">24–28</td><td>Mar 4–5</td><td>Basic app structure; first (untested) auto check-in.</td></tr>
+    <tr><td class="tnum">48–51</td><td>Mar 5</td><td>HH &amp; Child form, <code>work-area</code> case, household update-case logic.</td></tr>
+    <tr><td class="tnum">76</td><td>Mar 6</td><td>Service delivery form added.</td></tr>
+    <tr><td class="tnum">102–181</td><td>Mar 9–11</td><td>Bug-fix rounds on HH form and HSD; auto check-in temporarily disabled for testing.</td></tr>
+    <tr><td class="tnum">272–288</td><td>Mar 11–12</td><td>Fallback form/menu structure confirmed (no Save-to-Case); centroid distance converted to meters.</td></tr>
+    <tr><td class="tnum">303–333</td><td>Mar 12</td><td>Case-list progress UX: household list shows delivered vs. total children with red/yellow/green icons; HSD blocked (with icon) when a child is already served.</td></tr>
+    <tr><td class="tnum">349–397</td><td>Mar 13</td><td>No Children Found form + WA verification block; household registration auto-updates <code>wa_status</code> to visited via auto-checkin; No-Children/Inaccessible forms display only while <code>wa_status</code> is empty.</td></tr>
+    <tr><td class="tnum">423–433</td><td>Mar 13</td><td>Request New WAG form; Inaccessible WA form; No-Children-WA payment unit added.</td></tr>
+    <tr><td class="tnum">442–444</td><td>Mar 13</td><td><b>FINAL V1.0 for testing</b> — stale-GPS setting, bug fixes, end-of-form navigation.</td></tr>
+    <tr><td class="tnum">454</td><td>Mar 16</td><td>Forced relearn module work begins (display-condition based, per case list).</td></tr>
+    <tr><td class="tnum">586–603</td><td>Mar 17</td><td>Testing feedback: child summary, photo instructions, WA label, <b>Vit A removed</b>, SAM ID group removed; household dedupe on father + mother name.</td></tr>
+    <tr><td class="tnum">613–645</td><td>Mar 19–23</td><td>Vaccine check block; case details for all Deliver menus; "Not inside WA" error fixes.</td></tr>
+    <tr><td class="tnum">683–730</td><td>Mar 24</td><td>Test-review fixes; HSD case-list delivery status fix; <b>Household → Family form</b> rename; family-name bug fix.</td></tr>
+    <tr><td class="tnum">773–778</td><td>Mar 24</td><td>HSD GPS floating label; WA case id pinned to HH form data.</td></tr>
+    <tr><td class="tnum">801</td><td>Mar 24</td><td>Continue Delivery Service form: appears when all assigned relearn modules are complete; resets module triggers and relearning flags.</td></tr>
+    <tr><td class="tnum">804–837</td><td>Mar 25</td><td>GPS labels, widget validation and photo-instruction fixes; <b>GPS thresholds set to minimum 25m / preferred 15m</b>.</td></tr>
+    <tr><td class="tnum">873–886</td><td>Mar 27</td><td>Add Family form UI changes.</td></tr>
+    <tr><td class="tnum">1063–1103</td><td>Mar 30–31</td><td>Force-learn activity aligned to Learn content; auto-resized images; relearn modular questions; relearn completed.</td></tr>
+  </table></div>
+
+  <h3>April 2026 — SME / LLO feedback round</h3>
+  <div class="table-wrap"><table>
+    <tr><th>Version</th><th>Date</th><th>Change</th></tr>
+    <tr><td class="tnum">1119–1124</td><td>Apr 1</td><td>DOB entry as direct date or year + month; WA details show registered HHs, registered children, delivered visits.</td></tr>
+    <tr><td class="tnum">1137</td><td>Apr 21</td><td><code>connect_id</code> for OCS bots.</td></tr>
+    <tr><td class="tnum">1198</td><td>Apr 23</td><td>Photo-instruction updates; feedback from Erin (SME), LLOs, ST &amp; WV; photo questions added for DW and VC; vaccine-card availability question with reason if absent.</td></tr>
+    <tr><td class="tnum">1217–1233</td><td>Apr 24–27</td><td>"Add all children at once" label; MUAC exemption &lt; 6 months and DW exemption &lt; 1 year (with pay); vaccine-card question hidden when not vaccinated; vaccine table on its own screen; MUAC one-decimal validation; Inaccessible form allowed only when the WA has no visits.</td></tr>
+    <tr><td class="tnum">1237–1264</td><td>Apr 27</td><td>Delivery disabled in WAs approved inaccessible / no-children; <code>wa_status</code> no longer flips to completed on expected-visit-count — stays visited; inaccessible icons per colour scheme; <code>work_area_id</code> set in the deliver-unit question.</td></tr>
+    <tr><td class="tnum">1473–1514</td><td>Apr 27–28</td><td>Relearn assessment bugfix; renamed properties; custom icon logic for forced-learn modules; minor fixes.</td></tr>
+  </table></div>
+
+  <h3>May 2026 — WAG plumbing &amp; status model</h3>
+  <div class="table-wrap"><table>
+    <tr><th>Version</th><th>Date</th><th>Change</th></tr>
+    <tr><td class="tnum">1581–1595</td><td>May 4–5</td><td><code>wag_serial_number</code> replaced by the <code>work_area_group</code> property; follow-up logic fixes.</td></tr>
+    <tr><td class="tnum">1610</td><td>May 8</td><td>Age 0 blocked; DOB cannot be today; photo-link calculation blank when no photo; redundant properties removed.</td></tr>
+    <tr><td class="tnum">1645</td><td>May 27</td><td>No-U5 form only when WA status is default; <b>WAG switch gating</b> (no NOT_STARTED, no empty VISITED without remark, no pending inaccessible); <code>child_count</code> set in HH form; "force closure" wording removed; WA update question in Inaccessible form.</td></tr>
+    <tr><td class="tnum">1646</td><td>May 27</td><td><b><code>hq_status_wa</code> property added</b> (HQ-side status, separate from Connect's <code>wa_status</code>).</td></tr>
+    <tr><td class="tnum">1673–1693</td><td>May 27–28</td><td>Relearn task questions added; staging bug-fix rounds.</td></tr>
+  </table></div>
+
+  <h3>June 2026 — hotfixes &amp; support bot</h3>
+  <div class="table-wrap"><table>
+    <tr><th>Version</th><th>Date</th><th>Change</th></tr>
+    <tr><td class="tnum">1704–1720</td><td>Jun 2–9</td><td>App icon update; OCS bot updates; chatbot form inside the app; trigger-force-module task disabled.</td></tr>
+    <tr><td class="tnum">1721–1723</td><td>Jun 10–11</td><td>Display-condition fixes; ORS co-pack 2 → 1; location display condition in Inaccessible WA unhidden.</td></tr>
+    <tr><td class="tnum">1727–1732</td><td>Jun 12</td><td>Hotfix: <code>work_area_group</code> name in service delivery / <code>current_wag</code> in HSD; Request New WAG now handles <b>rejected</b> inaccessible requests (previously treated as pending); label listing rejected-inaccessible WAs with no further FLW input.</td></tr>
+  </table></div>
+
+  <h3>July 2026 — RCT readiness</h3>
+  <div class="table-wrap"><table>
+    <tr><th>Version</th><th>Date</th><th>Change</th></tr>
+    <tr><td class="tnum">1744–1777</td><td>Jul 2–3</td><td><b>Child duplication rework</b>: repeat-group check (full name + DOB) blocks registration; casedb check (father + mother + child + DOB) saved as hidden HSD prop for Connect verification-rule rejection; <code>exact_dob</code> saved in HSD; relearn forced module fully removed; HSD distance-from-HH default null.</td></tr>
+    <tr><td class="tnum">1824–1885</td><td>Jul 3–4</td><td>Image updates; relearn display conditions optimised + UI fixes; distance-from-HH null validation; dedupe excludes the current child case in HSD.</td></tr>
+    <tr><td class="tnum">1887</td><td>Jul 14</td><td><b>GPS custom properties enabled</b>: <code>cc-gps-auto-capture-accuracy</code> 15m, <code>cc-gps-auto-capture-timeout</code> 10 min.</td></tr>
+    <tr><td class="tnum">1890–1903</td><td>Jul 16</td><td>Dedupe iterations: DOB-gap suspicion flag (same household, &lt; 8 months → 1) for the Connect verification rule; within-HH dedupe on child name only; "Deliver Units" wording removed from questions; MUAC decimal regex; inaccessible-rejected WAs allowed in no-children deliver-unit condition.</td></tr>
+    <tr><td class="tnum">1904</td><td>Jul 21</td><td><code>relearn_trigger</code> question removed.</td></tr>
+    <tr><td class="tnum">1921</td><td>Jul 24</td><td>Deworming date validation (no future / &gt; 6 months old); "Visited" column; <b>2 co-packs for the RCT</b>; photo instructions only on "Yes"; ORS example image above the capture button; follow-up options fixed; "Choose Image" removed (camera only); reticle overlay on image capture.</td></tr>
+    <tr><td class="tnum">1938</td><td>Jul 24</td><td><b>Work Start Control</b>: <code>allow_flw_to_start_delivery</code> user property gates the Welcome screen; duplicate-check label fix; MUAC guide reticle; MUAC regex accepts 14.0.</td></tr>
+    <tr><td class="tnum">1939</td><td>Jul 27</td><td>Support bot hidden from forms.</td></tr>
+    <tr><td class="tnum">1946–1949</td><td>Jul 28</td><td><b>Auto-WAG Selection</b>: first WAG = north-west most; next WAG = closest by <code>wag_centroid</code>; follow-up logic fixes.</td></tr>
+  </table></div>
+</section>
+
+<footer>
+  Source: <i>Connect-CHC System Design Document</i> (2025 legacy design + 2026 RCT design, March 2026). Related artifacts referenced in the source doc: form-workflow Google Sheet, system design diagrams, chatbot reference document, and test app links.<br>
+  Master Deliver App (CHC RCT): <a href="https://www.commcarehq.org/a/ccc-chc-master/apps/view/cd72e145f211ddd44ec648120f1b2d5c/releases/">release change log on CommCare HQ (ccc-chc-master)</a>.<br>
+  Setup Steps draw on the <i>Checklist | RCT Deployment Tasks</i> workbook (Deployment Checklist, CCHQ Setup, Microplanning, Connect Opp config sheets) plus the delivery team's current process.<br>
+  Document version <b>0.1</b> — draft, work in progress; not a released version.
+</footer>
+
+</div>
+</main>
+</div>
+
+<script>
+(function(){
+  // Scroll-spy for sidebar
+  var links = Array.prototype.slice.call(document.querySelectorAll('nav a'));
+  var targets = links.map(function(a){ return document.querySelector(a.getAttribute('href')); }).filter(Boolean);
+  var byId = {};
+  links.forEach(function(a){ byId[a.getAttribute('href').slice(1)] = a; });
+  if('IntersectionObserver' in window){
+    var current = null;
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if(e.isIntersecting){
+          if(current) current.classList.remove('active');
+          var a = byId[e.target.id];
+          if(a){ a.classList.add('active'); current = a; }
+        }
+      });
+    }, {rootMargin:'-10% 0px -70% 0px'});
+    targets.forEach(function(t){ io.observe(t); });
+  }
+
+  // Mobile nav
+  var mnav = document.getElementById('mobile-nav');
+  if(mnav){ mnav.addEventListener('change', function(){ if(this.value){ location.hash = this.value; this.value=''; } }); }
+
+  // FAQ tabs
+  var wrap = document.getElementById('faq-wrap');
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('.tabs button'));
+  var panels = Array.prototype.slice.call(document.querySelectorAll('.faq-panel'));
+  function selectTab(aud){
+    tabs.forEach(function(b){ b.setAttribute('aria-selected', String(b.dataset.aud===aud)); });
+    panels.forEach(function(p){ p.classList.toggle('visible', p.dataset.aud===aud); });
+  }
+  tabs.forEach(function(b){ b.addEventListener('click', function(){
+    document.getElementById('faq-search').value='';
+    endSearch();
+    selectTab(b.dataset.aud);
+  }); });
+
+  // FAQ search across all audiences
+  var search = document.getElementById('faq-search');
+  var items = Array.prototype.slice.call(document.querySelectorAll('details.faq'));
+  var empty = document.getElementById('faq-empty');
+  function endSearch(){
+    wrap.classList.remove('searching');
+    document.querySelector('section#faq').classList.remove('searching');
+    items.forEach(function(d){ d.classList.remove('hidden'); d.removeAttribute('open'); });
+    empty.classList.remove('show');
+  }
+  search.addEventListener('input', function(){
+    var q = this.value.trim().toLowerCase();
+    var sec = document.querySelector('section#faq');
+    if(!q){ endSearch(); return; }
+    wrap.classList.add('searching');
+    sec.classList.add('searching');
+    var hits = 0;
+    items.forEach(function(d){
+      var match = d.textContent.toLowerCase().indexOf(q) !== -1;
+      d.classList.toggle('hidden', !match);
+      if(match){ d.setAttribute('open',''); hits++; } else { d.removeAttribute('open'); }
+    });
+    empty.classList.toggle('show', hits===0);
+  });
+})();
+</script>
+<script>
+// Local-file fallback: the Claude artifact runtime renders <pre class="mermaid"> natively,
+// but a plain local copy needs the mermaid library (loaded from CDN; blocked harmlessly by the artifact CSP).
+(function(){
+  var pres = document.querySelectorAll('pre.mermaid');
+  if(!pres.length) return;
+  setTimeout(function(){
+    var rendered = document.querySelector('pre.mermaid svg, .mermaid svg');
+    if(rendered || window.mermaid) return;
+    var s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js';
+    s.onload = function(){
+      var dark = matchMedia('(prefers-color-scheme: dark)').matches;
+      window.mermaid.initialize({startOnLoad:false, theme: dark ? 'dark' : 'neutral'});
+      window.mermaid.run({querySelector:'pre.mermaid'});
+    };
+    document.body.appendChild(s);
+  }, 800);
+})();
+</script>

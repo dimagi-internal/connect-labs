@@ -6,7 +6,7 @@ To grant external users access to more workflow templates, add to EXTERNAL_USER_
 
 from connect_labs.utils.dimagi_user import is_dimagi_user
 
-EXTERNAL_USER_FEATURES = {"tasks", "workflow"}
+EXTERNAL_USER_FEATURES = {"tasks", "workflow", "docs"}
 EXTERNAL_USER_WORKFLOW_TEMPLATES = {"bulk_image_audit"}
 
 
