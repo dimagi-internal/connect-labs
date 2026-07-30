@@ -9,6 +9,7 @@ token that doesn't surface makes the screen lie.
 from __future__ import annotations
 
 from datetime import timedelta
+from io import StringIO
 
 import pytest
 from django.utils import timezone
@@ -499,3 +500,74 @@ class TestPollerOverride:
         PulseScalar.objects.create(key=SCALAR_POLLER, value={"username": ""})
 
         assert get_poller_user().username == "from-settings"
+
+
+@pytest.mark.django_db
+class TestBackfillFoldFlag:
+    """`--fold` is an action, not a modifier.
+
+    It was excluded from the "did you ask for anything?" guard, so
+    `pulse_backfill --fold` printed "Nothing to do" and exited before reaching
+    the fold — with a zero exit code, which reads as "folded nothing" rather
+    than "did nothing". Retention is the wrong thing to no-op quietly: folding
+    is what clears the only beneficiary-level rows Pulse holds.
+    """
+
+    def _aged_event(self, vid):
+        from connect_labs.pulse.models import PulseEvent
+
+        old = timezone.now() - timedelta(days=400)
+        return PulseEvent.objects.create(
+            connect_visit_id=vid,
+            opportunity_id=765,
+            field_ts=old,
+            sync_ts=old,
+            lat=11.03,
+            lon=7.63,
+            country="NG",
+            status="approved",
+            service_slug="mbw",
+            worker_hash="abc123",
+        )
+
+    def test_fold_alone_actually_folds(self, settings):
+        from django.core.management import call_command
+
+        from connect_labs.pulse.models import PulseEvent, PulseGridCell
+
+        settings.PULSE_EVENT_RETENTION_DAYS = 30
+        for i in range(3):
+            self._aged_event(9100 + i)
+
+        out = StringIO()
+        call_command("pulse_backfill", "--fold", stdout=out)
+
+        assert "Nothing to do" not in out.getvalue()
+        assert PulseGridCell.objects.exists(), "aged events were not folded into the grid"
+        assert not PulseEvent.objects.filter(connect_visit_id__gte=9100).exists()
+
+    def test_fold_alone_never_calls_connect(self, settings, monkeypatch):
+        """Retention is local work. Requiring a poller token to run it would
+        make the control fail exactly when auth is broken."""
+        from django.core.management import call_command
+
+        from connect_labs.pulse.models import PulseGridCell
+
+        settings.PULSE_EVENT_RETENTION_DAYS = 30
+        self._aged_event(9200)
+
+        def explode(*a, **k):  # noqa: ARG001
+            raise AssertionError("--fold must not reach the Connect client")
+
+        monkeypatch.setattr("connect_labs.pulse.management.commands.pulse_backfill.get_client", explode)
+        monkeypatch.setattr("connect_labs.pulse.management.commands.pulse_backfill.get_poller_user", explode)
+
+        call_command("pulse_backfill", "--fold", stdout=StringIO())
+        assert PulseGridCell.objects.exists()
+
+    def test_no_flags_still_refuses(self):
+        from django.core.management import call_command
+
+        out = StringIO()
+        call_command("pulse_backfill", stdout=out)
+        assert "Nothing to do" in out.getvalue()
