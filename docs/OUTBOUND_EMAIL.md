@@ -1,22 +1,32 @@
 # Outbound email from labs (SES)
 
-**Status: wired, not yet delivering.** The application side is complete and
-merged; two steps that need a human are outstanding (DNS, and SES production
-access). This is the runbook for both. Background: issue #1039.
+**Status: live as of 2026-07-29.** Both human prerequisites landed — DKIM is
+verified and the account has SES production access — and `LABS_EMAIL_ENABLED` is
+now `True` in the deployed task definitions. Labs can send real email. Steps (1)
+through (3) below are kept as the record of how it was turned on, and as the
+runbook for standing it up again elsewhere. Background: issue #1039.
 
 ## Where it stands
 
-| Piece                                    | State                                                       |
-| ---------------------------------------- | ----------------------------------------------------------- |
-| Django settings pointed at SES           | ✅ `config/settings/labs_aws.py`, behind `LABS_EMAIL_ENABLED` |
-| Fail-loud backend while disabled         | ✅ `connect_labs.utils.email.NotConfiguredEmailBackend`       |
-| Celery-only send path                    | ✅ `connect_labs.utils.email.send_labs_email`                 |
-| SES identity, config set, bounce SNS, IAM | ✅ `infra/labs-email.yml` (deploy it)                         |
-| DKIM CNAMEs published in DNS             | ⛔ **needs the connect.dimagi.com zone owner**                |
-| SES production access (leave the sandbox) | ⛔ **needs an AWS Support request**                           |
+| Piece                                     | State                                                        |
+| ----------------------------------------- | ------------------------------------------------------------ |
+| Django settings pointed at SES            | ✅ `config/settings/labs_aws.py`, behind `LABS_EMAIL_ENABLED`  |
+| Fail-loud backend while disabled          | ✅ `connect_labs.utils.email.NotConfiguredEmailBackend`        |
+| Celery-only send path                     | ✅ `connect_labs.utils.email.send_labs_email`                  |
+| SES identity, config set, bounce SNS, IAM | ✅ `infra/labs-email.yml`, deployed as stack `labs-jj-email`   |
+| DKIM CNAMEs published in DNS              | ✅ verified 2026-07-29 (`DkimAttributes.Status: SUCCESS`)      |
+| Bounce/complaint SNS subscription         | ✅ **confirmed** — a pending subscription delivers nothing     |
+| SES production access                     | ✅ granted 2026-07-29, case `178538590200841` (50k/day, 14/s)  |
+| `LABS_EMAIL_ENABLED` in deployed task def | ✅ `True` (web + worker)                                       |
 
-Until the last two land, `LABS_EMAIL_ENABLED` stays `False` and every
-`send_labs_email()` logs a WARNING and delivers nothing — on purpose.
+> **Reading the SES API after success:** `VerificationInfo.ErrorType` is *not*
+> cleared when verification succeeds — a verified identity can still report a
+> stale `HOST_NOT_FOUND` there indefinitely. Trust
+> `VerifiedForSendingStatus` and `DkimAttributes.Status`; ignore `ErrorType`.
+
+To turn delivery back **off**, set `LABS_EMAIL_ENABLED=False` and deploy. Mail
+then routes to `NotConfiguredEmailBackend`, which logs a WARNING and reports 0
+sent. The identity, DNS records and IAM policy can all stay in place.
 
 ## Why it fails loudly instead of quietly
 
@@ -73,9 +83,15 @@ records. Read them out of the stack and hand them to whoever owns the zone:
 ```bash
 aws cloudformation describe-stacks --profile labs --region us-east-1 \
   --stack-name labs-jj-email \
-  --query 'Stacks[0].Outputs[?starts_with(OutputKey,`Dkim`)||OutputKey==`SpfRecord`||OutputKey==`DmarcRecord`].[OutputKey,OutputValue]' \
+  --query 'Stacks[0].Outputs[?starts_with(OutputKey,`Dkim`)||OutputKey==`DmarcRecord`].[OutputKey,OutputValue]' \
   --output table
 ```
+
+This deliberately excludes the stack's `SpfRecord` output. That output exists for
+the case where `SendingDomain` is a name with no CNAME of its own, and it carries
+its own explanation — but `--output table` shows only key and value, so pasting it
+into the list you hand the zone owner is how you end up asking for a record
+Cloudflare will reject. See the note below.
 
 Three DKIM CNAMEs are **required** — SES stays unverified and refuses every send
 until all three resolve. DNS for `dimagi.com` is on **Cloudflare**; the DKIM
@@ -196,3 +212,38 @@ retry three times with exponential backoff, then fail the task loudly.
   more email-capable than it was.
 - **Turning it back off** is one env var. The identity, DNS records and IAM
   policy can all stay in place.
+
+### The inherited monthly reminder — the one unattended send path
+
+Turning delivery on means auditing what can send *without* anyone asking. In labs
+there was exactly one such path, inherited from prod Connect:
+`connect_labs.program.tasks.send_monthly_delivery_reminder_email`, registered as a
+django-celery-beat `PeriodicTask` by `program/migrations/0009_…`, firing on the
+25th of each month at 09:00 UTC. The worker runs `celery … worker --beat` with the
+DatabaseScheduler, so it really does fire — it last ran 2026-07-25.
+
+It reached nobody, because it walks `Organization → UserOrganizationMembership`
+and both tables are empty in labs (`organizations: 0`, `memberships: 0`,
+`completedwork: 0`). But `users` is **not** empty — OAuth login writes a real
+Django `User`, and there were 70 real addresses in it. So the task was a landmine
+that simply wasn't armed: populate those org tables for any experiment and labs
+would start mailing real people unprompted, from a prototyping environment.
+
+`organization/` and `program/` have no routed URLs at all (see `config/urls.py`),
+so the task is dead code here. It is now **disabled**:
+
+```bash
+PeriodicTask.objects.filter(name="send_monthly_delivery_reminder").update(enabled=False)
+```
+
+That is runtime config, not schema — django-celery-beat is designed for it, and
+migration `0009` uses `update_or_create` without touching `enabled`, so a
+re-migration will not silently re-arm it. Verify with:
+
+```python
+PeriodicTask.objects.filter(name="send_monthly_delivery_reminder").values("enabled")
+```
+
+**If you add a feature that sends mail, this is the check to repeat:** grep for
+`send_labs_email` / `send_mail_async` call sites, and list enabled `PeriodicTask`
+rows. A send path nobody remembers is worse than no send path.
