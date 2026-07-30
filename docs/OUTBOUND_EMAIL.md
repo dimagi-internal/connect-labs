@@ -244,6 +244,52 @@ re-migration will not silently re-arm it. Verify with:
 PeriodicTask.objects.filter(name="send_monthly_delivery_reminder").values("enabled")
 ```
 
-**If you add a feature that sends mail, this is the check to repeat:** grep for
-`send_labs_email` / `send_mail_async` call sites, and list enabled `PeriodicTask`
-rows. A send path nobody remembers is worse than no send path.
+### The audit to repeat before enabling mail anywhere
+
+A send path nobody remembers is worse than no send path. All three of these are
+required — **any one alone will miss something**, and the third was learned the hard
+way (see below).
+
+**1. Call sites.** Finds code we wrote:
+
+```bash
+grep -rn -e send_labs_email -e send_mail_async -e send_mail -e EmailMessage \
+        -e EmailMultiAlternatives -e mail_admins --include="*.py" connect_labs config
+```
+
+**2. Enabled scheduled tasks.** Finds things that send with nobody watching. Note it
+queries the **database**, not `@celery_app.task` definitions — the worker runs
+`celery … worker --beat` with the DatabaseScheduler, so the DB row is the truth:
+
+```python
+list(PeriodicTask.objects.filter(enabled=True).values("name", "task"))
+```
+
+**3. Resolved log handlers — run this in the deployed container, not locally.**
+Finds what the *framework* attaches, which has no call site and no entry in our
+`LOGGING` dict:
+
+```python
+import logging
+[type(h).__name__ for h in logging.getLogger("django").handlers]
+# ['StreamHandler', 'AdminEmailHandler']  <-- AdminEmailHandler = every 500 mails ADMINS
+```
+
+> **Why step 3 exists.** When SES was first switched on (#1046), the pre-flip audit
+> ran steps 1 and 2, found nothing reachable, and concluded no admin-email path
+> existed. That was wrong. Django's `DEFAULT_LOGGING` attaches
+> `mail_admins`/`AdminEmailHandler` to the `django` logger; `base.py` sets
+> `disable_existing_loggers: False` and never overrides that logger, so the handler
+> was always live. Under the console backend it was invisible — each report was
+> printed to stdout and discarded. Under SES it became ~41 real messages to
+> `dimagi@commcare-connect.org` in ten hours, all stuck in `DeliveryDelay`, on a
+> domain verified the previous day. Fixed in #1057 by `ADMINS = []`.
+>
+> The general lesson, worth carrying beyond email: **grep cannot find behaviour the
+> framework supplies for you.** Ask what is attached at runtime, in the environment
+> that will actually send.
+
+Finally, a channel that silently discards output hides all of this indefinitely —
+Django's console backend returns `1`, i.e. "one message sent", for mail it threw
+away. Turning such a channel on is never just a config flip; it exposes everything
+that was already writing to it.
