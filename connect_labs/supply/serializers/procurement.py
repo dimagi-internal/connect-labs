@@ -18,12 +18,36 @@ def certification_dict(cert):
 
 
 def qualification_dict(qual):
+    """One live qualification, including WHO granted it and from WHICH application.
+
+    The registry is the screen that answers "can this supplier be issued a
+    solicitation today", and the follow-up question is always "who decided that,
+    and against what". Granted/expires alone cannot answer it: the detail panel
+    showed two dates and no decision-maker, so the eligibility judgment was
+    visible but not defensible. Both come off the submission the decision froze.
+    """
+    submission = qual.source_submission
+    review = None
+    if submission is not None:
+        # The decision that created this qualification. Latest wins — an amended
+        # review supersedes the one before it.
+        review = submission.reviews.order_by("-id").first()
+    reviewer = getattr(review, "reviewer", None)
     return {
         "id": qual.id,
         "category": qual.category,
         "granted_at": qual.granted_at.isoformat(),
         "expires_at": qual.expires_at.isoformat(),
         "status": qual.status,
+        # Who signed it off. None when the record predates a named reviewer —
+        # rendered as an explicit gap rather than a blank, because "unknown" is
+        # itself the finding an auditor would write up.
+        # get_display_name is the User model's own name-or-username-or-email
+        # fallback; this project's User has no first_name/last_name at all.
+        "granted_by": reviewer.get_display_name() if reviewer else None,
+        # The frozen application the decision was made against.
+        "source_submission_id": submission.id if submission else None,
+        "source_round": submission.round.title if submission else None,
     }
 
 

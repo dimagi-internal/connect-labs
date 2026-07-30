@@ -89,7 +89,77 @@ def _find_python() -> str:
     )
 
 
+def _reseed_remotely(base_url: str, token: str) -> int:
+    """Reseed a DEPLOYED site over HTTP (``/supply/api/demo/reseed/``).
+
+    The deployed site has no shell for the render loop to use. The documented
+    alternative was an interactive ``aws ecs execute-command`` — an SSO token and
+    a human — which a loop cannot do between takes, so prod renders were
+    effectively single-shot even though every OES narrative mutates state.
+    """
+    import json
+    import urllib.error
+    import urllib.request
+
+    url = f"{base_url.rstrip('/')}/supply/api/demo/reseed/"
+    print(f"ensure_demo: POST {url}", flush=True)
+    request = urllib.request.Request(
+        url,
+        data=b"{}",
+        method="POST",
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=300) as response:
+            body = json.loads(response.read() or b"{}")
+    except urllib.error.HTTPError as exc:
+        detail = (exc.read() or b"").decode("utf-8", "replace")[:300]
+        hint = ""
+        if exc.code == 404:
+            hint = (
+                "  (404 means SUPPLY_DEMO_RESEED_TOKEN is not set on the SERVER — "
+                "the endpoint hides itself when unconfigured)"
+            )
+        elif exc.code == 403:
+            hint = "  (403 means the local token does not match the server's)"
+        elif exc.code == 409:
+            hint = "  (409 means another reseed is in flight — retry shortly)"
+        print(f"ensure_demo: reseed failed HTTP {exc.code}: {detail}{hint}", file=sys.stderr)
+        return 1
+    except OSError as exc:
+        print(f"ensure_demo: could not reach {url}: {exc}", file=sys.stderr)
+        return 1
+
+    summary = body.get("summary") or {}
+    print(
+        "ensure_demo: reseeded "
+        f"{summary.get('suppliers', '?')} suppliers, "
+        f"{summary.get('solicitations', '?')} solicitations, "
+        f"{summary.get('awards', '?')} awards",
+        flush=True,
+    )
+    return 0
+
+
 def main() -> int:
+    # A deployed target reseeds over HTTP; a local one runs the management
+    # command. Same entry point either way, so the recipe's `setup:` block does
+    # not have to know which world it is filming.
+    base_url = os.environ.get("OES_BASE_URL", "").strip()
+    token = os.environ.get("SUPPLY_DEMO_RESEED_TOKEN", "").strip()
+    is_local = (not base_url) or "localhost" in base_url or "127.0.0.1" in base_url
+    if not is_local:
+        if not token:
+            print(
+                f"ensure_demo: OES_BASE_URL is {base_url} (not local) but "
+                "$SUPPLY_DEMO_RESEED_TOKEN is empty, so the demo world cannot be "
+                "reset — and every OES narrative mutates state, so the take after "
+                "this one would film an already-awarded tender.",
+                file=sys.stderr,
+            )
+            return 1
+        return _reseed_remotely(base_url, token)
+
     python = _find_python()
     env = dict(os.environ)
     for key, path in GEO_LIBS.items():

@@ -9,6 +9,8 @@ from . import factories as f
 
 pytestmark = pytest.mark.django_db
 
+TODAY = date.today()
+
 
 def _post(client, url, payload):
     return client.post(url, data=json.dumps(payload), content_type="application/json")
@@ -206,3 +208,64 @@ def test_registry_filters(admin_client):
     expiring = client.get("/supply/api/registry/?expiring_within_days=30").json()["registry"]
     assert [r["org"]["legal_name"] for r in expiring] == ["Savanna Nutrients"]
     assert [q["category"] for q in expiring[0]["qualifications"]] == ["transport"]
+
+
+def test_registry_qualification_names_who_granted_it_and_from_which_application(admin_client):
+    """The registry answers "can this supplier be issued a solicitation today";
+    the next question is always "who decided that, and against what". Granted and
+    expires alone made the judgment visible but not defensible."""
+    client, _user = admin_client
+    reviewer = f.UserFactory(name="Tomas Berhane")
+    org = f.SupplierOrgFactory(legal_name="Evidence Foods Ltd")
+    rnd = f.EOIRoundFactory(title="OES Supply Base 2026-A", status=EOIRound.Status.CLOSED)
+    sub = f.EOISubmissionFactory(org=org, round=rnd, status=EOISubmission.Status.QUALIFIED)
+    f.EOIReviewFactory(submission=sub, reviewer=reviewer, decisions={"rutf": "qualify"})
+    f.QualificationFactory(
+        org=org,
+        category="rutf",
+        source_submission=sub,
+        granted_at=TODAY,
+        expires_at=TODAY + timedelta(days=400),
+    )
+
+    registry = client.get("/supply/api/registry/").json()["registry"]
+    row = next(r for r in registry if r["org"]["legal_name"] == "Evidence Foods Ltd")
+    qual = row["qualifications"][0]
+
+    assert qual["granted_by"] == "Tomas Berhane"
+    assert qual["source_round"] == "OES Supply Base 2026-A"
+    assert qual["source_submission_id"] == sub.id
+
+
+def test_a_qualification_with_no_recorded_reviewer_reports_the_gap(admin_client):
+    """None rather than a blank: "unknown decision-maker" is itself the finding an
+    auditor would write up, so the API must not hide it."""
+    client, _user = admin_client
+    org = f.SupplierOrgFactory(legal_name="Unattributed Foods Ltd")
+    f.QualificationFactory(
+        org=org, category="rutf", source_submission=None, granted_at=TODAY, expires_at=TODAY + timedelta(days=400)
+    )
+
+    registry = client.get("/supply/api/registry/").json()["registry"]
+    row = next(r for r in registry if r["org"]["legal_name"] == "Unattributed Foods Ltd")
+
+    assert row["qualifications"][0]["granted_by"] is None
+    assert row["qualifications"][0]["source_round"] is None
+
+
+def test_the_seeded_registry_records_a_reviewer_for_every_qualification():
+    """One seeder path created its reviews with reviewer=None, so most of the demo
+    roster would have rendered "not recorded" — which reads as the product failing
+    to capture the decision-maker rather than as the seeder being lazy."""
+    from django.core.management import call_command
+
+    from connect_labs.supply.models import Qualification
+    from connect_labs.supply.serializers import qualification_dict
+
+    call_command("seed_supply_demo", "--reset")
+    missing = [
+        q.org.legal_name
+        for q in Qualification.objects.select_related("org", "source_submission")
+        if qualification_dict(q)["granted_by"] is None
+    ]
+    assert missing == [], f"qualifications with no recorded reviewer: {missing}"

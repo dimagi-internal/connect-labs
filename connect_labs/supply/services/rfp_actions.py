@@ -176,6 +176,22 @@ def lot_comparison(lot):
 
 
 @transaction.atomic
+def unscored_bidders(lot):
+    """Submitted bidders on *lot* with no technical score yet, by name.
+
+    The comparison screen ranks on price and shows a technical column beside it,
+    so an award made while that column is still empty is a decision taken
+    against an evaluation the screen is only promising.
+    """
+    return sorted(
+        lb.bid.org.legal_name
+        for lb in LotBid.objects.filter(lot=lot, bid__status=Bid.Status.SUBMITTED)
+        .select_related("bid__org")
+        .prefetch_related("scores")
+        if not lb.scores.all()
+    )
+
+
 def award_lot(user, lot, lot_bid_id):
     if hasattr(lot, "award"):
         raise ActionError("this lot has already been awarded")
@@ -185,6 +201,18 @@ def award_lot(user, lot, lot_bid_id):
         raise ActionError("that bid is not on this lot")
     if lot_bid.bid.status != Bid.Status.SUBMITTED:
         raise ActionError("only submitted bids can be awarded")
+    # You cannot award what you have not evaluated. The comparison table offered
+    # a live Award button on lots whose TECHNICAL cells were still unpressed
+    # "Score" actions — so the product permitted the decision before the
+    # evaluation it displays existed, which is the first thing an auditor asks
+    # about an award. Enforced here rather than only by disabling the button,
+    # because a disabled button is a suggestion and this is a rule.
+    pending = unscored_bidders(lot)
+    if pending:
+        raise ActionError(
+            "every submitted bid on this lot must be technically scored before it "
+            f"can be awarded — still unscored: {', '.join(pending)}"
+        )
 
     award = Award.objects.create(lot=lot, lot_bid=lot_bid, awarded_by=user)
     _contract_from(award)

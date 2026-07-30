@@ -1,7 +1,28 @@
 auth:
-  type: url
-  url: /supply/dev-login/?persona=dale
-base_url: http://localhost:8009
+  # Off-camera personas. dev-login is a hard 403 outside DEBUG — /supply/ has open
+  # registration on a public host, so an endpoint that logs a caller in as a
+  # procurement admin without a password is only defensible while it refuses in
+  # production. So each persona is signed in through the REAL form before
+  # recording starts, in a throwaway context, and the recorder swaps cookies
+  # before a scene's nav when its `persona:` changes. No login is ever filmed.
+  #
+  # The password is read from $SUPPLY_DEMO_PASSWORD. The repo's own demo password
+  # is deliberately rejected on the deployed site, and a committed spec must not
+  # carry a credential either way.
+  type: form
+  login_url: /supply/login/
+  fields:
+    email: input[name="email"]
+    password: input[name="password"]
+  submit: button[type="submit"]
+  # Only renders once signed in, so a failed login aborts the render instead of
+  # filming a logged-out shell that reads as a product bug.
+  success: .navitem
+  password_env: SUPPLY_DEMO_PASSWORD
+  personas:
+    dale: usg@oes.example
+    hauwa: gov-ng@oes.example
+base_url: https://labs.connect.dimagi.com
 narrative_locked: true
 review_mode: autonomous
 why_brief: oes-money-to-child.why_brief.yaml
@@ -82,7 +103,7 @@ scenes:
 - id: nigerias-own-view-scoped-on-the-server
   concept_claim: A government observer's country filter is applied when the payload is built, so another
     country's consignments never reach the page.
-  url: /supply/dev-login/?persona=hauwa
+  url: /supply/
   show: Hauwa's country view — the flows entering and moving within Nigeria, and nothing else. Another
     country's consignments are not hidden on this page; they were never in the payload.
   actions:
@@ -132,7 +153,7 @@ scenes:
 - id: the-number-everyone-quotes-tested
   concept_claim: Courses delivered and recorded recoveries are reported side by side with their methods
     and never reconciled, so the gap between shipped and known-to-have-worked is visible.
-  url: /supply/dev-login/?persona=dale&next=/supply/
+  url: /supply/
   show: Back on the funder view — courses delivered and recorded recoveries side by side with their methods,
     the observed recovery rate and the discharge breakdown beneath, and one delivered batch followed through
     to a child's MUAC series climbing out of the red.

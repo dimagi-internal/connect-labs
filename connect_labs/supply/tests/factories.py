@@ -64,6 +64,18 @@ class EOISubmissionFactory(factory.django.DjangoModelFactory):
     categories = ["rutf"]
 
 
+class EOIReviewFactory(factory.django.DjangoModelFactory):
+    """A reviewer's decision on an EOI submission — the record a qualification
+    cites when the registry is asked who granted it."""
+
+    class Meta:
+        model = m.EOIReview
+
+    submission = factory.SubFactory(EOISubmissionFactory)
+    reviewer = factory.SubFactory(UserFactory)
+    decisions = factory.LazyFunction(lambda: {"rutf": "qualify"})
+
+
 class QualificationFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = m.Qualification
@@ -112,6 +124,21 @@ class LotBidFactory(factory.django.DjangoModelFactory):
     bid = factory.SubFactory(BidFactory)
     lot = factory.SubFactory(LotFactory)
     unit_price = 42
+
+
+class BidScoreFactory(factory.django.DjangoModelFactory):
+    """A reviewer's technical score on one lot bid.
+
+    Needed by anything that awards through the API: a lot cannot be awarded until
+    every submitted bid on it is scored.
+    """
+
+    class Meta:
+        model = m.BidScore
+
+    lot_bid = factory.SubFactory(LotBidFactory)
+    reviewer = factory.SubFactory(UserFactory)
+    technical_score = 80
 
 
 class SupplyNodeFactory(factory.django.DjangoModelFactory):

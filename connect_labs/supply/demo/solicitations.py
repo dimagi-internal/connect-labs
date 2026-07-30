@@ -69,10 +69,8 @@ LIVE_RFP_RUTF_PRICES = {
     },
 }
 
-# Technical scores on the two corridors the award decision actually turns on.
-# The Damaturu and haulage lots are deliberately left unscored — reviewers work
-# through a tender lot by lot, and a comparison screen with every cell filled in
-# on the day bidding closes is the tell of a fixture rather than a tender.
+# Technical scores for every lot of the live tender.
+#
 # Keyed by (category, delivery_place), because the live tender carries a
 # transport lot delivering to Maiduguri as well as an RUTF one, and a
 # place-only key silently gave both the RUTF panel's scores.
@@ -201,7 +199,7 @@ def _seed_closed_round(rng, orgs, staff):
     return rnd
 
 
-def _seed_open_round(rng, orgs):
+def _seed_open_round(rng, orgs, staff):
     rnd, _ = EOIRound.objects.update_or_create(
         title=OPEN_ROUND,
         defaults={
@@ -260,7 +258,11 @@ def _seed_open_round(rng, orgs):
             verdict = "qualify" if status == EOISubmission.Status.QUALIFIED else "reject"
             EOIReview.objects.create(
                 submission=sub,
-                reviewer=None,
+                # A named reviewer, not None. The registry now shows who granted
+                # each qualification, and "not recorded" against most of the
+                # roster reads as the product failing to capture it rather than
+                # as this seeder having been lazy.
+                reviewer=staff[StaffRole.Role.REVIEWER],
                 decisions={c: verdict for c in categories},
                 notes=(
                     "Existing qualification extended."

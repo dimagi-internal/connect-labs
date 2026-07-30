@@ -55,7 +55,7 @@ class ProcurementSeeder:
         # A closed round first: it is what populated the registry the live
         # solicitations then draw their bidders from.
         _seed_closed_round(rng, orgs, staff)
-        _seed_open_round(rng, orgs)
+        _seed_open_round(rng, orgs, staff)
         _seed_live_rfp(rng, orgs, staff)
         _seed_awarded_rfp(rng, orgs, staff)
         _seed_split_award_rfp(rng, orgs, staff)
