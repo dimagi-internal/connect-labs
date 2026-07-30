@@ -249,6 +249,30 @@ def _reading_for(comparison_field: str | None, reading_by_field: dict[str, str])
 # this leaves headroom without being unbounded.
 _MAX_REVIEWERS_PER_IMAGE = 4
 
+# Caps the outer per-session image pool (see _run_ai_review_on_sessions). Benchmarked
+# directly against the real ML classify gateway at each pool size below, times today's
+# actual 2 reviewers/image (i.e. real concurrent gateway calls = pool size x
+# reviewers/image) -- full run data (throughput, latency distributions) is in the PR
+# description that introduced this constant; figures below are that run's measured
+# results, not estimates:
+#   pool=5  (10 concurrent calls):  baseline
+#   pool=10 (20 concurrent calls):  throughput ~2x pool=5, latency flat -- this value
+#   pool=15 (30 concurrent calls):  no throughput gain over pool=10, latency starts climbing
+#   pool=20 (40 concurrent calls):  still no throughput gain, latency climbs further, no errors
+#   pool=30 (60 concurrent calls):  no throughput gain, 3 of 60 calls (5%) hit read timeouts
+# i.e. throughput plateaus at pool=10 and going higher only adds queueing delay, with
+# outright timeouts first appearing around 60 concurrent calls.
+#
+# This pool isn't the only source of concurrent load on the gateway: real-world worst
+# case is this value multiplied by _MAX_REVIEWERS_PER_IMAGE above, since each outer
+# worker's image can fan out to that many reviewers. At today's actual usage (2
+# reviewers/image) that's the 20-concurrent-call row above, right at the plateau. At the
+# theoretical cap of 4 reviewers/image, worst case rises to 40 concurrent calls -- the
+# row where latency has climbed but no timeouts appeared yet. If reviewer-count-per-image
+# grows toward that cap in practice, or the gateway's own capacity changes, re-benchmark
+# before raising either constant further.
+_MAX_CONCURRENT_IMAGES_PER_SESSION = 10
+
 
 def _run_ai_review_on_sessions(
     data_access,
@@ -537,7 +561,9 @@ def _run_ai_review_on_sessions(
                 # bounded/validated count -- cap max_workers so a misconfigured
                 # or oversized reviewer list can't spin up unbounded OS threads
                 # (and unbounded concurrent connections to the ML gateway) on
-                # top of the outer pool's own 5 workers.
+                # top of the outer pool's own _MAX_CONCURRENT_IMAGES_PER_SESSION
+                # workers -- see that constant's definition for the combined
+                # worst-case concurrency this multiplies out to.
                 if len(runnable) == 1:
                     per_agent_results = [_run_one(runnable[0])]
                 else:
@@ -550,7 +576,7 @@ def _run_ai_review_on_sessions(
                     v_id, b_id, q_id, img_qid, ai_result, ai_notes, ai_confidence, human_result, False
                 )
 
-            with ThreadPoolExecutor(max_workers=5) as pool:
+            with ThreadPoolExecutor(max_workers=_MAX_CONCURRENT_IMAGES_PER_SESSION) as pool:
                 fut_map = {pool.submit(_fetch_and_review, item): item for item in work_items}
                 for fut in as_completed(fut_map):
                     try:
