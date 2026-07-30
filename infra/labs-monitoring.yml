@@ -66,6 +66,14 @@ Parameters:
     Default: /ecs/labs-jj-worker
     Description: CloudWatch log group for the celery worker/beat service.
 
+  DeployRoleName:
+    Type: String
+    Default: github-actions-labs-deploy
+    Description: >-
+      Existing GitHub Actions OIDC role (referenced, not owned). Granted
+      read-only access to the ECS log groups so the "Run Labs management
+      command" workflow can echo a one-off task's output into the Actions log.
+
   ClusterName:
     Type: String
     Default: labs-jj-cluster
@@ -118,6 +126,33 @@ Conditions:
   HasAgentAlarmEmail: !Not [!Equals [!Ref AgentAlarmEmail, '']]
 
 Resources:
+  # ── IAM: let CI read a one-off task's log stream ───────────────────
+  # The "Run Labs management command" workflow runs a command as a one-off
+  # Fargate task and echoes its stdout/stderr into the Actions log. The deploy
+  # role had NO logs:* permission, so that read failed with AccessDenied on
+  # every run — and because the call swallowed stderr, the workflow reported
+  # "(no log events found)" instead. A failing command showed an exit code and
+  # nothing else; its traceback had to be fetched from CloudWatch by hand.
+  #
+  # Read-only, and scoped to the two ECS log groups this stack already knows
+  # about — CI can read task output, and nothing else.
+  DeployRoleLogReadPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: labs-ecs-log-read
+      Roles: [!Ref DeployRoleName]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'logs:GetLogEvents'
+              - 'logs:FilterLogEvents'
+              - 'logs:DescribeLogStreams'
+            Resource:
+              - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${WebLogGroupName}:*'
+              - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:${WorkerLogGroupName}:*'
+
   # ── Alert topic ────────────────────────────────────────────────────
   AlertTopic:
     Type: AWS::SNS::Topic
