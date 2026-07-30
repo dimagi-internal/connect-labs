@@ -142,35 +142,55 @@ def _reseed_remotely(base_url: str, token: str, password: str | None = None) -> 
     effectively single-shot even though every OES narrative mutates state.
     """
     import json
+    import time
     import urllib.error
     import urllib.request
 
     url = f"{base_url.rstrip('/')}/supply/api/demo/reseed/"
     print(f"ensure_demo: POST {url}", flush=True)
     payload = json.dumps({"password": password} if password else {}).encode()
-    request = urllib.request.Request(
-        url,
-        data=payload,
-        method="POST",
-        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=300) as response:
-            body = json.loads(response.read() or b"{}")
-    except urllib.error.HTTPError as exc:
-        detail = (exc.read() or b"").decode("utf-8", "replace")[:300]
-        hint = ""
-        if exc.code == 401:
-            hint = "  (401 means the labs MCP token is invalid, revoked or expired)"
-        elif exc.code == 404:
-            hint = "  (404 means this instance predates the reseed route — deploy it first)"
-        elif exc.code == 409:
-            hint = "  (409 means another reseed is in flight — retry shortly)"
-        print(f"ensure_demo: reseed failed HTTP {exc.code}: {detail}{hint}", file=sys.stderr)
-        return 1
-    except OSError as exc:
-        print(f"ensure_demo: could not reach {url}: {exc}", file=sys.stderr)
-        return 1
+
+    # A 409 means somebody else's reseed is mid-flight, and the server said
+    # "retry" — so retry, rather than failing the render. Back-to-back callers
+    # collide constantly in the loop this exists to serve: a preflight and the
+    # render that follows it are two reseeds seconds apart, and treating the
+    # second one's 409 as fatal aborted a take whose only problem was being
+    # punctual. Found exactly that way.
+    deadline_attempts = 10
+    for attempt in range(1, deadline_attempts + 1):
+        request = urllib.request.Request(
+            url,
+            data=payload,
+            method="POST",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=300) as response:
+                body = json.loads(response.read() or b"{}")
+            break
+        except urllib.error.HTTPError as exc:
+            detail = (exc.read() or b"").decode("utf-8", "replace")[:300]
+            if exc.code == 409 and attempt < deadline_attempts:
+                wait = min(5 * attempt, 20)
+                print(
+                    f"ensure_demo: another reseed in flight (409) — retrying in {wait}s "
+                    f"[{attempt}/{deadline_attempts}]",
+                    flush=True,
+                )
+                time.sleep(wait)
+                continue
+            hint = ""
+            if exc.code == 401:
+                hint = "  (401 means the labs MCP token is invalid, revoked or expired)"
+            elif exc.code == 404:
+                hint = "  (404 means this instance predates the reseed route — deploy it first)"
+            elif exc.code == 409:
+                hint = "  (409 persisted — a reseed appears wedged, or one is very slow)"
+            print(f"ensure_demo: reseed failed HTTP {exc.code}: {detail}{hint}", file=sys.stderr)
+            return 1
+        except OSError as exc:
+            print(f"ensure_demo: could not reach {url}: {exc}", file=sys.stderr)
+            return 1
 
     summary = body.get("summary") or {}
     print(
