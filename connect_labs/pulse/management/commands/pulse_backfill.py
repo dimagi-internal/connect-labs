@@ -8,7 +8,13 @@ a scheduled job — it is the expensive path and must never stall the live tail.
     python manage.py pulse_backfill --works              # money spine, all history
     python manage.py pulse_backfill --visits --days 30   # map + ticker
     python manage.py pulse_backfill --countries          # geography for old opps
+    python manage.py pulse_backfill --fold               # run retention now
     python manage.py pulse_backfill --all --days 30
+
+Pair ``--fold`` with ``--visits``. A history pull loads visits that are mostly
+older than ``PULSE_EVENT_RETENTION_DAYS`` already, so without it those rows sit
+at beneficiary level until the next nightly fold -- up to 24 hours, purely
+because of when the backfill happened to run.
 
 Cost, measured: ``completed_works`` is ~53 B/row gzipped, so the whole works
 history is ~87 MB. ``user_visits`` is ~4.6 KB/row because it ships every form's
@@ -45,25 +51,36 @@ class Command(BaseCommand):
         want_visits = options["visits"] or do_all
         want_countries = options["countries"] or do_all
 
-        if not (want_works or want_visits or want_countries):
-            self.stdout.write(self.style.WARNING("Nothing to do — pass --works, --visits, --countries or --all."))
+        # --fold is an action in its own right, not a modifier: it is the only
+        # way to run retention on demand, and it needs no Connect call at all.
+        # Excluding it from this guard made `pulse_backfill --fold` print
+        # "Nothing to do" and exit before reaching the fold below -- silently,
+        # with a zero exit code, which reads as "folded nothing" rather than
+        # "did nothing". Retention is the wrong thing to no-op quietly: the rows
+        # it clears are the only beneficiary-level records Pulse holds.
+        want_fold = options["fold"] or do_all
+        if not (want_works or want_visits or want_countries or want_fold):
+            self.stdout.write(
+                self.style.WARNING("Nothing to do — pass --works, --visits, --countries, --fold or --all.")
+            )
             return
 
-        user = get_poller_user()
-        self.stdout.write(self.style.MIGRATE_HEADING(f"Polling as {user.username}"))
+        if want_works or want_visits or want_countries:
+            user = get_poller_user()
+            self.stdout.write(self.style.MIGRATE_HEADING(f"Polling as {user.username}"))
 
-        with get_client(timeout=300.0) as client:
-            ingest.refresh_opportunities(client)
-            ingest.ensure_cursors()
+            with get_client(timeout=300.0) as client:
+                ingest.refresh_opportunities(client)
+                ingest.ensure_cursors()
 
-            if want_works:
-                self._run("works", lambda: self._backfill_works(client))
-            if want_visits:
-                self._run(f"visits ({options['days']}d)", lambda: self._backfill_visits(client, options["days"]))
-            if want_countries:
-                self._run("countries", lambda: ingest.sample_opportunity_countries(client, limit=1000))
+                if want_works:
+                    self._run("works", lambda: self._backfill_works(client))
+                if want_visits:
+                    self._run(f"visits ({options['days']}d)", lambda: self._backfill_visits(client, options["days"]))
+                if want_countries:
+                    self._run("countries", lambda: ingest.sample_opportunity_countries(client, limit=1000))
 
-        if options["fold"]:
+        if want_fold:
             self._run("fold to grid", lambda: ingest.fold_events_to_grid()["folded"])
 
         ingest.refresh_opportunity_countries()
