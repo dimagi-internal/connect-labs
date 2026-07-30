@@ -58,7 +58,7 @@
         },
         {
           "name": "LABS_EMAIL_ENABLED",
-          "value": "False"
+          "value": "True"
         },
         {
           "name": "LABS_EMAIL_DOMAIN",
