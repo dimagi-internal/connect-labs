@@ -7,14 +7,21 @@ This is the authoritative cross-reference for `core/workarea.py` (`CSV_HEADERS`,
 `to_csv_rows`) and `views.ProgramPlanCSVView`. The source of truth on the Connect
 side is **`dimagi/commcare-connect`**:
 
-- `commcare_connect/microplanning/tasks.py` → `WorkAreaCSVImporter`
+- `commcare_connect/microplanning/tasks.py` → `WorkAreaCSVImporter`, `ImplementationAreaCSVImporter`, `WorkAreaCSVExporter`
 - `commcare_connect/microplanning/views.py` → `WorkAreaImport` (the upload view)
-- `commcare_connect/microplanning/models.py` → `WorkArea` (SRID = 4326)
+- `commcare_connect/microplanning/models.py` → `WorkArea`, `WorkAreaGroup`, `ImplementationArea` (SRID = 4326)
 
 Verified live on 2026-05-31 by importing a labs export into a real opportunity
 (`ai-demo-space` / `d99e4422-e11a-476e-b885-fdf92026ea54`). See "Live verification"
 below — the first attempt was **rejected** for blank LGA/State; the corrected
 export imported cleanly ("Successfully created 5 work area(s)").
+
+**2026-07-30 update:** read `tasks.py` + `models.py` directly off GitHub
+(`dimagi/commcare-connect`, commit `b8f92039` on `main`, merged 2026-07-27 —
+branch `pkv/ccct-2585-ward-layer-models-import`, which lines up with product's
+updated import template). `Implementation Area` and `Work Area Group Name` are
+now real, importer-recognized columns — confirmed against source below (not
+yet re-verified with a live upload; see the caveats in each section).
 
 ---
 
@@ -61,10 +68,13 @@ Nigeria-specific names. Track the Connect-side change as the trigger.
 
 ---
 
-## Required columns (header row — exact labels, all 9 required)
+## Required columns (header row — exact labels, 9 required)
 
-`_validate_headers` fails the whole file if **any** of these are missing
-(`missing = set(HEADERS.values()) - headers`). Extra columns are ignored.
+`_validate_headers` fails the whole file if **any** of `WorkAreaCSVImporter.HEADERS`
+are missing (`missing = set(HEADERS.values()) - headers`). This set is still
+**exactly 9** — unchanged by the 2026-07 update. Unrecognized extra columns are
+ignored by header validation, but two specific extras below are NOT just
+ignored — the importer actively reads them if present.
 
 | #   | Header label           | labs `WorkAreaPayload` field  | Notes                                                   |
 | --- | ---------------------- | ----------------------------- | ------------------------------------------------------- |
@@ -81,6 +91,64 @@ Nigeria-specific names. Track the Connect-side change as the trigger.
 The labs header set (`core/workarea.py:CSV_HEADERS`) matches these labels
 **field-for-field and in order**. The export's structure has always been correct;
 the historical failure mode is **values**, not columns (see the gap below).
+
+### `Implementation Area` — OPTIONAL, name-matched against a separate model
+
+`WorkAreaCSVImporter.OPTIONAL_HEADERS = {"implementation_area": "Implementation Area"}`
+— NOT in `HEADERS`, so the column may be **omitted entirely** with no error.
+When present, the raw string is **not free text on the WorkArea alone** — it's
+looked up by exact name against `ImplementationArea` rows _already existing for
+that opportunity_ (`ImplementationArea.objects.filter(opportunity_id=...).values_list("name","id")`):
+
+- **Match found:** `WorkArea.implementation_area` (FK) is set to that
+  `ImplementationArea`.
+- **No match** (including "no ImplementationArea has been created yet" — labs
+  never creates them today): `implementation_area` FK stays `null`, but the raw
+  string is still stored verbatim on `WorkArea.implementation_area_name`
+  (`CharField`, blank-ok). **No error either way** — this column can never fail
+  validation.
+- **Auto-relink:** if `ImplementationArea` rows matching that name are imported
+  _afterward_ (via the separate `ImplementationAreaCSVImporter` /
+  `import_implementation_areas_task`, headers `Implementation Area Name`,
+  `Centroid`, `Boundary` — a different upload entirely, its own endpoint), its
+  `_after_insert` back-fills `implementation_area` on any `WorkArea` whose
+  `implementation_area_name` matches and whose FK is still null.
+
+**Implication for labs:** setting `Implementation Area = ward` (current
+behavior, per product 2026-07-30) is safe and will always import without
+error, but it only becomes a _real linked_ Implementation Area in Connect if a
+same-named `ImplementationArea` (with its own centroid + boundary) already
+exists, or is uploaded later, for that opportunity. Labs does not currently
+export/create `ImplementationArea` rows — if product wants the link to
+actually resolve, that would need a separate feature (generate + upload an
+Implementation Area file per plan/ward). Until then this column is decorative
+text on import.
+
+### `Work Area Group Name` — OPTIONAL, but all-or-nothing across the file
+
+`GROUP_NAME_HEADER = "Work Area Group Name"` — explicitly commented in
+Connect's source as "optional column, not part of `HEADERS`... a sheet is
+allowed to omit it entirely." But if it's present at all, **every row must have
+a non-empty value, or every row must be blank** — a partial mix is a **hard
+file-level rejection**:
+
+> `_after_rows`: `has_group_names = total_rows > 0 and rows_with_group ==
+total_rows`; if `0 < rows_with_group < total_rows` →
+> _"Work Area Group Name is required for all Work Areas, or must be omitted for
+> all."_ — **this fails the ENTIRE file**, not just the offending rows.
+
+When all rows have it: for each distinct group name, Connect looks up (or
+creates, `bulk_create`) a `WorkAreaGroup(opportunity, name, ward=<ward of the
+first row seen with that name>)`, then sets `WorkArea.work_area_group` (FK) to
+it. Group centroids are recomputed after insert.
+
+**Labs-side check (done 2026-07-30):** every code path that builds a work area
+(`core/plan.py` — coverage-mode creation, sampling-mode creation, and
+`core/grouping.group_work_areas`, including its `"group-no-geometry"` fallback)
+always stamps a non-empty `work_area_group` string — confirmed by grep, no
+path leaves it blank for a subset of a plan's active work areas. So the
+all-or-nothing rule should always be satisfied by labs' export in practice, but
+this has not been exercised end-to-end against a real upload.
 
 ---
 
@@ -163,14 +231,13 @@ body: {"lga": "<LGA name>", "state": "<State name>"}
 
 ---
 
-## Not read by the importer
+## No work-area write API
 
-- `Work Area Group Name` ("group_name") is in Connect's **exporter** headers
-  (`WorkAreaCSVExporter`) but **not** the importer — group assignment is created
-  inside Connect (clustering / assignment mode), not carried by the import. The
-  labs export omits it; that is correct.
-- There is no work-area **write API** on the labs-reachable `export` scope
-  (`WorkAreaDataView` is read-only). The CSV web import is the only path in.
+There is no work-area **write API** on the labs-reachable `export` scope
+(`WorkAreaDataView` is read-only). The CSV web import is the only path in —
+see the `Implementation Area` / `Work Area Group Name` sections above for how
+those two columns are actually consumed by the importer (confirmed against
+`dimagi/commcare-connect` source 2026-07-30).
 
 ---
 
