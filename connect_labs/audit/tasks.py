@@ -250,13 +250,16 @@ def _reading_for(comparison_field: str | None, reading_by_field: dict[str, str])
 _MAX_REVIEWERS_PER_IMAGE = 4
 
 # Caps the outer per-session image pool (see _run_ai_review_on_sessions). Benchmarked
-# directly against the real ML classify gateway at this pool size times today's actual
-# 2 reviewers/image (i.e. real concurrent gateway calls = pool size x reviewers/image):
+# directly against the real ML classify gateway at each pool size below, times today's
+# actual 2 reviewers/image (i.e. real concurrent gateway calls = pool size x
+# reviewers/image) -- full run data (throughput, latency distributions) is in the PR
+# description that introduced this constant; figures below are that run's measured
+# results, not estimates:
 #   pool=5  (10 concurrent calls):  baseline
 #   pool=10 (20 concurrent calls):  throughput ~2x pool=5, latency flat -- this value
 #   pool=15 (30 concurrent calls):  no throughput gain over pool=10, latency starts climbing
 #   pool=20 (40 concurrent calls):  still no throughput gain, latency climbs further, no errors
-#   pool=30 (60 concurrent calls):  no throughput gain, ~5% of calls hit read timeouts
+#   pool=30 (60 concurrent calls):  no throughput gain, 3 of 60 calls (5%) hit read timeouts
 # i.e. throughput plateaus at pool=10 and going higher only adds queueing delay, with
 # outright timeouts first appearing around 60 concurrent calls.
 #
