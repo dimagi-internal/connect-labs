@@ -331,6 +331,13 @@ def _bfs_adjacency(
             unvisited.discard(seed)
         clusters.append(cluster)
 
+    # ---- Always-on: dissolve any cluster fully enclosed by exactly one other
+    # cluster — a work area landlocked inside a single other group's territory
+    # (every one of its neighbours belongs to that one group) should never stay
+    # its own separate group, regardless of size or whether the min_buildings
+    # top-up pass below is even enabled. ----
+    clusters = _absorb_enclosed_clusters(clusters, adjacency, geoms_3857)
+
     # ---- Phase 2 (optional): top up any cluster under min_buildings by merging/
     # stealing from a nearby neighbour, before labels are assigned. ----
     resolved_max = max_buildings if max_buildings is not None else target_buildings
@@ -400,6 +407,93 @@ def _bfs_single_cluster(
                 queue.append(neighbour)
                 seen.add(neighbour)
     return cluster
+
+
+# ---- Always-on: dissolve fully-enclosed clusters -----------------------------
+
+
+def _absorb_enclosed_clusters(
+    clusters: list[list[str]],
+    adjacency: dict[str, list[str]],
+    geoms_3857: dict[str, object],
+) -> list[list[str]]:
+    """Merge any cluster that geometrically FILLS A HOLE in another cluster's
+    territory into it — i.e. every side of it is boxed in by that one other
+    cluster, with no exposed edge to open/unclaimed terrain or a third group.
+    Runs unconditionally (independent of min_buildings/max_buildings) since
+    there is no other valid destination for a landlocked cluster; the
+    alternative is a WAG map where a lone work area (or a few) sits stranded
+    inside another group's territory.
+
+    Being adjacent to only ONE other cluster ("touches exactly one neighbour")
+    is NOT enough on its own — that's also true of any ordinary small WAG that
+    simply borders a bigger one along one edge while facing open land on its
+    other sides, which must NOT be force-merged. The real, precise test is
+    geometric: does the union of the OTHER cluster's cells have an interior
+    hole, and does this cluster's own union sit inside that hole? A simple
+    edge-cell (or a leftover row sitting next to a village) never creates a
+    hole in anything, so it correctly doesn't qualify — only a work area (or
+    small group of them) truly boxed in on every side does. The adjacency graph
+    (which already excludes edges dropped across a barrier) is used only as a
+    cheap prefilter for which pairs are even worth the geometric check.
+
+    The geometry is naturally asymmetric — a solid cluster with no interior
+    hole can never be "filled into" by anything, so the direction is already
+    determined by which side actually has the hole; no size-based tie-break is
+    needed (unlike the top-up merge/steal pass above, where "touches only one
+    neighbour" genuinely is symmetric).
+
+    Repeats until stable: resolving one enclave can expose another (an enclave
+    inside what was itself an enclave), each resolution shrinks the cluster
+    count by one, so this always terminates."""
+    if len(clusters) < 2:
+        return clusters
+
+    from shapely.geometry import Polygon
+    from shapely.ops import unary_union
+
+    def fills_a_hole(inner_cells: list[str], outer_cells: list[str]) -> bool:
+        inner_geom = unary_union([geoms_3857[w] for w in inner_cells])
+        outer_geom = unary_union([geoms_3857[w] for w in outer_cells])
+        polys = outer_geom.geoms if hasattr(outer_geom, "geoms") else [outer_geom]
+        for poly in polys:
+            for interior in poly.interiors:
+                if Polygon(interior).buffer(1e-6).contains(inner_geom):
+                    return True
+        return False
+
+    active: dict[int, list[str]] = {cid: list(cluster) for cid, cluster in enumerate(clusters)}
+    cell_owner: dict[str, int] = {}
+    for cid, cluster in active.items():
+        for w in cluster:
+            cell_owner[w] = cid
+
+    changed = True
+    while changed and len(active) > 1:
+        changed = False
+        for cid in list(active.keys()):
+            if cid not in active:
+                continue  # already absorbed earlier this pass
+            cells = active[cid]
+            neighbour_owners = {
+                cell_owner[nb]
+                for c in cells
+                for nb in adjacency.get(c, [])
+                if nb in cell_owner and cell_owner[nb] != cid
+            }
+            if len(neighbour_owners) != 1:
+                continue
+            (other_id,) = neighbour_owners
+            if not fills_a_hole(cells, active[other_id]):
+                continue  # only touches one neighbour, but isn't actually boxed in
+            # The surrounding cluster's own identity survives — its cells stay
+            # first in the list so it remains the seed for ward-prefix labeling.
+            active[other_id] = active[other_id] + cells
+            for w in cells:
+                cell_owner[w] = other_id
+            del active[cid]
+            changed = True
+    return list(active.values())
 
 
 # ---- Phase-2 top-up: fix undersized clusters (#26) ----------------------------
