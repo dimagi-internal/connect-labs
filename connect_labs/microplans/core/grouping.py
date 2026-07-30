@@ -423,7 +423,11 @@ def _top_up_undersized_clusters(
 
     1. Find the nearest cross-cluster cell pair within ``max_reach_m`` (independent
        of the ``buffer_distance_m`` used for phase-1 clustering), skipping any pair
-       whose connecting segment crosses a barrier under ``barrier_aware``.
+       whose connecting segment crosses a barrier under ``barrier_aware``, OR — when
+       the pair isn't already graph-adjacent — crosses a cell belonging to a THIRD
+       cluster (reaching across genuinely empty terrain is fine; reaching across
+       another group's already-claimed territory is not, since that would leave that
+       group's cells sitting in the gap between two pieces of the merged group).
     2. If the two clusters' combined total fits under ``max_buildings``, merge them
        whole — the bigger/established cluster's own seed survives as the merged
        group's identity (so its ward-prefixed label doesn't change).
@@ -482,8 +486,29 @@ def _top_up_undersized_clusters(
                     stack.append(nb)
         return len(seen) == len(cell_set)
 
+    def crosses_other_cluster(a: str, b: str, allowed: set) -> bool:
+        """True if the straight line between two cells passes through a cell owned
+        by a cluster OTHER than the two under consideration (`allowed`). Reaching
+        across genuinely empty/unclaimed space (sparse terrain) is fine — reaching
+        across a THIRD group's already-claimed territory is not: it would leave
+        that group's cells sitting in the gap between two pieces of the merged
+        group, which is exactly the "another WAG runs in between" artifact this
+        guards against."""
+        line = LineString([cents_3857[a], cents_3857[b]])
+        for idx in tree.query(line, predicate="intersects"):
+            wid2 = wa_ids[idx]
+            if wid2 in (a, b):
+                continue
+            owner = cell_owner.get(wid2)
+            if owner is not None and owner not in allowed:
+                return True
+        return False
+
     def nearest_donor(recipient_id: int, exclude: set):
-        """Nearest (donor_id, is_adjacent) across max_reach_m, or None."""
+        """Nearest (donor_id, is_adjacent) across max_reach_m, or None. A candidate
+        reached only via the wider search (not a real phase-1 edge) is skipped if
+        the straight line to it crosses a third cluster's cells — see
+        crosses_other_cluster."""
         rec = active[recipient_id]
         best = None  # (dist, donor_id, is_adjacent)
         for wid in rec["cells"]:
@@ -498,8 +523,11 @@ def _top_up_undersized_clusters(
                 dist = geom.distance(geoms_3857[nb])
                 if dist > max_reach_m or crosses_barrier(wid, nb):
                     continue
+                is_adjacent = nb in adjacency.get(wid, [])
+                if not is_adjacent and crosses_other_cluster(wid, nb, {recipient_id, donor_id}):
+                    continue
                 if best is None or dist < best[0]:
-                    best = (dist, donor_id, nb in adjacency.get(wid, []))
+                    best = (dist, donor_id, is_adjacent)
         return best[1:] if best else None
 
     def has_safe_link(cell: str, recipient_cells: set) -> bool:
