@@ -148,6 +148,12 @@ class LabsDocsCHCView(LoginRequiredMixin, TemplateView):
 
     template_name = "labs/docs/chc.html"
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        # Keys the comment thread (see docs_comment_views.ALLOWED_DOC_KEYS).
+        context["doc_key"] = "chc"
+        return context
+
 
 class LabsOverviewView(LoginRequiredMixin, TemplateView):
     """

@@ -1,6 +1,6 @@
 from django.urls import include, path
 
-from connect_labs.labs import views, views_test_auth
+from connect_labs.labs import docs_comment_views, views, views_test_auth
 from connect_labs.labs.analysis import views as analysis_views
 from connect_labs.labs.integrations.commcare import oauth_views as commcare_oauth_views
 from connect_labs.labs.integrations.connect import oauth_views as connect_oauth_views
@@ -31,6 +31,16 @@ urlpatterns = [
     # Documentations (project-wise tech docs, context-free)
     path("docs/", views.LabsDocsView.as_view(), name="docs"),
     path("docs/chc/", views.LabsDocsCHCView.as_view(), name="docs_chc"),
+    path(
+        "docs/api/comments/<str:doc_key>/",
+        docs_comment_views.doc_comments,
+        name="docs_comments",
+    ),
+    path(
+        "docs/api/comments/<str:doc_key>/<int:comment_id>/delete/",
+        docs_comment_views.delete_doc_comment,
+        name="docs_comment_delete",
+    ),
     # Status page
     path("status/", views.StatusView.as_view(), name="status"),
     # Scout data agent

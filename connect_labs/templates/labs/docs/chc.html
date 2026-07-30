@@ -21,8 +21,213 @@
   a:not(.docs-embed a){color:inherit;text-decoration:inherit}
   h1:not(.docs-embed h1),h2:not(.docs-embed h2),
   h3:not(.docs-embed h3),h4:not(.docs-embed h4){font-family:inherit;margin:0}
+
+  /* Comments — sits under the doc's main column, clear of its 264px sidebar. */
+  .docs-comments{padding:0 clamp(1.2rem,4vw,3.5rem) 3rem; margin-left:264px}
+  @media (max-width:880px){ .docs-comments{margin-left:0} }
+  .docs-comments h2{font-size:1.35rem; font-weight:600; margin:0 0 .25rem}
+  .docs-comments .sub{color:var(--muted); font-size:.88rem; margin:0 0 1.2rem}
+  .docs-comments textarea{
+    width:100%; min-height:5.5rem; resize:vertical; padding:.7rem .85rem;
+    font:inherit; color:var(--ink); background:var(--raise);
+    border:1px solid var(--line); border-radius:8px;
+  }
+  .docs-comments textarea:focus{outline:2px solid var(--accent); outline-offset:1px}
+  .docs-comments .row{display:flex; align-items:center; gap:.75rem; margin-top:.6rem}
+  .docs-comments button.post{
+    background:var(--accent); color:#fff; border:0; border-radius:8px;
+    padding:.5rem 1.1rem; font:inherit; font-weight:600; cursor:pointer;
+  }
+  .docs-comments button.post:disabled{opacity:.55; cursor:default}
+  .docs-comments .msg{font-size:.86rem; color:var(--muted)}
+  .docs-comments .msg.error{color:var(--red)}
+  .docs-comments ul{list-style:none; padding:0; margin:1.6rem 0 0}
+  .docs-comments li{
+    background:var(--raise); border:1px solid var(--line); border-radius:10px;
+    padding:.85rem 1rem; margin-bottom:.7rem; box-shadow:var(--shadow);
+  }
+  .docs-comments .meta{display:flex; align-items:baseline; gap:.6rem; margin-bottom:.35rem}
+  .docs-comments .who{font-weight:600; font-size:.92rem}
+  .docs-comments .when{color:var(--muted); font-size:.78rem}
+  .docs-comments .body{white-space:pre-wrap; margin:0}
+  .docs-comments button.del{
+    margin-left:auto; background:none; border:0; padding:0; cursor:pointer;
+    color:var(--muted); font:inherit; font-size:.8rem; text-decoration:underline;
+  }
+  .docs-comments button.del:hover{color:var(--red)}
+
+  /* The doc is long, so give the thread a way in from anywhere on the page. */
+  .docs-comments-jump{
+    position:fixed; right:1.25rem; bottom:1.25rem; z-index:20;
+    display:inline-flex; align-items:center; gap:.45rem;
+    background:var(--accent); color:#fff; border:0; border-radius:999px;
+    padding:.6rem 1.1rem; font:inherit; font-size:.88rem; font-weight:600;
+    cursor:pointer; box-shadow:0 2px 10px rgba(28,40,35,.25);
+  }
+  .docs-comments-jump:hover{filter:brightness(1.07)}
+  @media print{ .docs-comments-jump{display:none} }
 </style>
 <div class="docs-embed mb-8">
   {% include "labs/docs/chc_content.html" %}
+
+  <section class="docs-comments"
+           id="docs-comments"
+           data-list-url="{% url 'labs:docs_comments' doc_key %}"
+           data-csrf="{{ csrf_token }}">
+    <h2>Comments</h2>
+    <p class="sub">Visible to everyone with access to Labs. Use this to flag corrections or ask questions about this document.</p>
+
+    <label for="docs-comment-body" class="sr-only" hidden>Add a comment</label>
+    <textarea id="docs-comment-body" placeholder="Add a comment…" maxlength="5000"></textarea>
+    <div class="row">
+      <button type="button" class="post" id="docs-comment-post">Post comment</button>
+      <span class="msg" id="docs-comment-msg"></span>
+    </div>
+
+    <ul id="docs-comment-list"></ul>
+  </section>
 </div>
+
+<button type="button" class="docs-comments-jump" id="docs-comments-jump">
+  <i class="fa-regular fa-comments"></i><span id="docs-comments-count">Comments</span>
+</button>
+
+<script>
+(function () {
+  var root = document.getElementById("docs-comments");
+  if (!root) return;
+
+  var listUrl = root.dataset.listUrl;
+  var csrf = root.dataset.csrf;
+  var list = document.getElementById("docs-comment-list");
+  var input = document.getElementById("docs-comment-body");
+  var postBtn = document.getElementById("docs-comment-post");
+  var msg = document.getElementById("docs-comment-msg");
+  var currentUser = "";
+
+  function say(text, isError) {
+    msg.textContent = text || "";
+    msg.classList.toggle("error", !!isError);
+  }
+
+  function when(iso) {
+    if (!iso) return "";
+    var d = new Date(iso);
+    if (isNaN(d)) return "";
+    return d.toLocaleString(undefined, {
+      year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit"
+    });
+  }
+
+  // Built with textContent throughout — comment bodies are user input and must
+  // never be parsed as HTML.
+  function render(comments) {
+    var count = document.getElementById("docs-comments-count");
+    if (count) count.textContent = comments.length ? "Comments (" + comments.length + ")" : "Comments";
+    list.textContent = "";
+    if (!comments.length) {
+      var empty = document.createElement("li");
+      empty.className = "body";
+      empty.style.color = "var(--muted)";
+      empty.textContent = "No comments yet — be the first.";
+      list.appendChild(empty);
+      return;
+    }
+    comments.forEach(function (c) {
+      var li = document.createElement("li");
+
+      var meta = document.createElement("div");
+      meta.className = "meta";
+      var who = document.createElement("span");
+      who.className = "who";
+      who.textContent = c.author_name;
+      var ts = document.createElement("span");
+      ts.className = "when";
+      ts.textContent = when(c.created_at);
+      meta.appendChild(who);
+      meta.appendChild(ts);
+
+      if (c.author_username && c.author_username === currentUser) {
+        var del = document.createElement("button");
+        del.type = "button";
+        del.className = "del";
+        del.textContent = "Delete";
+        del.addEventListener("click", function () { remove(c.id, del); });
+        meta.appendChild(del);
+      }
+
+      var body = document.createElement("p");
+      body.className = "body";
+      body.textContent = c.body;
+
+      li.appendChild(meta);
+      li.appendChild(body);
+      list.appendChild(li);
+    });
+  }
+
+  function errorFrom(response, payload) {
+    return (payload && payload.error) || ("Request failed (" + response.status + ")");
+  }
+
+  function load() {
+    fetch(listUrl, { headers: { "Accept": "application/json" } })
+      .then(function (r) { return r.json().then(function (j) { return { r: r, j: j }; }); })
+      .then(function (res) {
+        if (!res.r.ok) throw new Error(errorFrom(res.r, res.j));
+        currentUser = res.j.current_username || "";
+        render(res.j.comments || []);
+      })
+      .catch(function (e) { say(e.message, true); });
+  }
+
+  function post() {
+    var body = input.value.trim();
+    if (!body) { say("Write something first.", true); return; }
+    postBtn.disabled = true;
+    say("Saving…");
+    fetch(listUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-CSRFToken": csrf },
+      body: JSON.stringify({ body: body })
+    })
+      .then(function (r) { return r.json().then(function (j) { return { r: r, j: j }; }); })
+      .then(function (res) {
+        if (!res.r.ok) throw new Error(errorFrom(res.r, res.j));
+        input.value = "";
+        say("");
+        load();
+      })
+      .catch(function (e) { say(e.message, true); })
+      .finally(function () { postBtn.disabled = false; });
+  }
+
+  function remove(id, btn) {
+    if (!window.confirm("Delete this comment?")) return;
+    btn.disabled = true;
+    fetch(listUrl + id + "/delete/", {
+      method: "POST",
+      headers: { "X-CSRFToken": csrf }
+    })
+      .then(function (r) { return r.json().then(function (j) { return { r: r, j: j }; }); })
+      .then(function (res) {
+        if (!res.r.ok) throw new Error(errorFrom(res.r, res.j));
+        load();
+      })
+      .catch(function (e) { say(e.message, true); btn.disabled = false; });
+  }
+
+  postBtn.addEventListener("click", post);
+
+  var jump = document.getElementById("docs-comments-jump");
+  if (jump) {
+    jump.addEventListener("click", function () {
+      root.scrollIntoView({ behavior: "smooth", block: "start" });
+      input.focus({ preventScroll: true });
+    });
+  }
+
+  load();
+})();
+</script>
 {% endblock %}
