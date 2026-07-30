@@ -120,6 +120,35 @@ class StatusView(LoginRequiredMixin, TemplateView):
     template_name = "labs/status.html"
 
 
+class LabsDocsView(LoginRequiredMixin, TemplateView):
+    """
+    Landing page for project-wise technical documentation.
+
+    Accessible to any logged-in user regardless of program or opportunity context.
+    """
+
+    template_name = "labs/docs/index.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["doc_projects"] = [
+            {
+                "name": "CHC",
+                "url": "/labs/docs/chc/",
+                "icon": "fa-hand-holding-medical",
+                "description": "Connect-CHC system documentation: architecture, apps, workflows, and deployment",
+                "color": "teal",
+            },
+        ]
+        return context
+
+
+class LabsDocsCHCView(LoginRequiredMixin, TemplateView):
+    """Connect-CHC system documentation — standalone page served as-is."""
+
+    template_name = "labs/docs/chc.html"
+
+
 class LabsOverviewView(LoginRequiredMixin, TemplateView):
     """
     Main landing page for labs projects.
@@ -195,6 +224,15 @@ class LabsOverviewView(LoginRequiredMixin, TemplateView):
                 "description": "RFP management system for posting Solicitations and receiving responses",
                 "color": "indigo",
                 "feature": "solicitations",
+            },
+            {
+                "name": "Documentations",
+                "url": "/labs/docs/",
+                "icon": "fa-book",
+                "description": "Project-wise technical documentation, open to everyone "
+                "regardless of program or opportunity context",
+                "color": "teal",
+                "feature": "docs",
             },
             {
                 "name": "Labs Admin",

@@ -28,6 +28,9 @@ urlpatterns = [
     path("test-auth/", views_test_auth.test_auth_view, name="test_auth"),
     # Labs Overview
     path("overview/", views.LabsOverviewView.as_view(), name="overview"),
+    # Documentations (project-wise tech docs, context-free)
+    path("docs/", views.LabsDocsView.as_view(), name="docs"),
+    path("docs/chc/", views.LabsDocsCHCView.as_view(), name="docs_chc"),
     # Status page
     path("status/", views.StatusView.as_view(), name="status"),
     # Scout data agent

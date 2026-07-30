@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+  /* Fit the standalone doc inside the labs chrome (fixed header + sidenav).
+     The doc's own body rules lose to Tailwind's classes on <body>, so restore
+     its colors scoped to the embed — but keep the labs font (Work Sans)
+     throughout so the page matches the rest of labs. */
+  .docs-embed{
+    background:var(--bg); color:var(--ink);
+    font-size:16px; line-height:1.65;
+    border-radius:0.75rem; overflow:clip; box-shadow:var(--shadow);
+  }
+  .docs-embed h1,.docs-embed h2,.docs-embed h3,.docs-embed h4,
+  .docs-embed .brand .word,.docs-embed .topbar .word{font-family:inherit}
+  .docs-embed .shell{min-height:calc(100vh - 6rem)}
+  .docs-embed .sidebar{top:4rem; height:calc(100vh - 4rem)}
+  .docs-embed .topbar{top:4rem}
+  /* The doc styles bare elements globally (a, h1-h4); undo that for the labs
+     chrome outside the embed. */
+  a:not(.docs-embed a){color:inherit;text-decoration:inherit}
+  h1:not(.docs-embed h1),h2:not(.docs-embed h2),
+  h3:not(.docs-embed h3),h4:not(.docs-embed h4){font-family:inherit;margin:0}
+</style>
+<div class="docs-embed mb-8">
+  {% include "labs/docs/chc_content.html" %}
+</div>
+{% endblock %}
