@@ -170,7 +170,7 @@ The bulk assessment page header identifies the field worker being reviewed. For 
 
 === "AI-Assisted Review"
 
-    Before you start, click **Run AI Review** to have AI pre-screen all images in the session. AI review processes multiple images at the same time, so a session of around 30 images typically completes in about 2 minutes.
+    Before you start, click **Run AI Review** to have AI pre-screen all images in the session. AI review processes multiple images at the same time — throughput has been increased so that image-heavy batches complete roughly twice as fast as before. A session of around 30 images typically completes in about 2 minutes.
 
     The AI reviewer assigned to each image type during session creation runs only on images of that type. If you assigned different reviewers to different photo types, each photo is assessed only by the reviewer you chose for it.
 
@@ -178,4 +178,4 @@ The bulk assessment page header identifies the field worker being reviewed. For 
     | --- | --- | --- |
     | **Scale Image Validation** | A weight-related image type is selected and this agent is chosen for it | Compares scale photos against the reading entered by the FLW and flags mismatches |
     | **MUAC OverZoom** | A MUAC image type is selected and this agent is chosen for it | Classifies photos for excessive zoom and flags images the agent identifies as hyperzoomed |
-    | **MUAC Reading Match** | A MUAC image type is selected and this agent is chosen for it | Compares the MUAC tape photo against the manually-entered MUAC value (in cm) and flags mismatches; the recorded reading is shown
+    | **MUAC Reading Match** | A MUAC image type is selected and this agent is chosen for it | Compares the MUAC tape photo against the manually-entered
