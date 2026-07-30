@@ -28,11 +28,11 @@ Bringing the core resources under CloudFormation (importing the existing RDS,
 ECS, etc.) is a deliberate later step — "the rest, as needed" — and only worth
 doing if labs proves long-lived enough to justify the import work.
 
-| Template                   | Owns                                                                                                                                                                      | References (does not own)                                                     |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Template                   | Owns                                                                                                                                                                             | References (does not own)                                                                           |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
 | `labs-monitoring.yml`      | SNS alert topic + subscriptions, RDS-connection + slot-exhaustion alarms, web-CPU / ALB-latency / ALB-5xx / no-healthy-target alarms, log metric filters, CI log-read IAM policy | RDS instance, ECS cluster + service, ALB + target group, ECS log groups, GitHub Actions deploy role |
-| `labs-audit-analytics.yml` | Umami service (log group, target group, `/umami/*` ALB rule, task def, ECS service), Umami CodeBuild image pipeline + its role, audit-archive/secrets IAM inline policies | Object-Locked audit S3 bucket, Umami secrets, ECR repo, ALB/cluster/roles/VPC |
-| `labs-access-logs.yml`     | ALB access-log S3 bucket, its delivery policy, and a 90-day retention lifecycle                                                                                           | The ALB itself (logging is switched on via a CLI attribute — see below)       |
+| `labs-audit-analytics.yml` | Umami service (log group, target group, `/umami/*` ALB rule, task def, ECS service), Umami CodeBuild image pipeline + its role, audit-archive/secrets IAM inline policies        | Object-Locked audit S3 bucket, Umami secrets, ECR repo, ALB/cluster/roles/VPC                       |
+| `labs-access-logs.yml`     | ALB access-log S3 bucket, its delivery policy, and a 90-day retention lifecycle                                                                                                  | The ALB itself (logging is switched on via a CLI attribute — see below)                             |
 
 ## Deploy
 
