@@ -179,8 +179,53 @@ class TestReplay:
     def test_truncation_is_declared(self, client, populated):
         """Silent truncation reads as 'that's all there was'."""
         data = client.get(reverse("pulse:api_replay"), {"hours": 72, "limit": 3}).json()
-        assert data["truncated"] is True
+        assert data["sampled"] is True
         assert len(data["events"]) == 3
+
+    def test_a_capped_window_is_sampled_across_not_cut_at_the_head(self, client, db):
+        """Slicing an ordered queryset returns the window's *head*.
+
+        On prod this made a longer window show less: 336h returned 2000 rows
+        spanning 12.8h, 94% from one country, because whichever programme
+        submitted first monopolised the head. Four of the eight countries with
+        delivery never appeared, so the map read as one country at any zoom.
+        """
+        now = timezone.now()
+        # Two countries, interleaved in time: NG early, KE late. A head-slice
+        # would return only NG; a sample must reach both ends.
+        for i in range(60):
+            make_event(2000 + i, field_ts=now - timedelta(hours=47 - (i // 2)), country="NG")
+        for i in range(60):
+            make_event(3000 + i, field_ts=now - timedelta(hours=20 - (i // 4)), country="KE")
+
+        data = client.get(reverse("pulse:api_replay"), {"hours": 48, "limit": 20}).json()
+        assert data["sampled"] is True
+        assert data["sample_stride"] > 1
+        assert data["matched"] > len(data["events"])
+
+        ts_idx = data["fields"].index("field_ts")
+        cty_idx = data["fields"].index("country")
+        stamps = [r[ts_idx] for r in data["events"]]
+        span_hours = (max(stamps) - min(stamps)) / 3600
+        assert span_hours > 20, f"sample covers only {span_hours:.1f}h of a 48h window"
+        assert {"NG", "KE"} <= {r[cty_idx] for r in data["events"]}, "sample missed a country entirely"
+
+    def test_sampling_is_deterministic_so_replay_does_not_reshuffle(self, client, populated):
+        """The viewer polls repeatedly; a re-sampled window would make points
+        appear and vanish between frames."""
+        now = timezone.now()
+        for i in range(50):
+            make_event(4000 + i, field_ts=now - timedelta(hours=i % 40))
+
+        a = client.get(reverse("pulse:api_replay"), {"hours": 48, "limit": 10}).json()
+        b = client.get(reverse("pulse:api_replay"), {"hours": 48, "limit": 10}).json()
+        assert [r[0] for r in a["events"]] == [r[0] for r in b["events"]]
+
+    def test_an_uncapped_window_is_neither_sampled_nor_truncated(self, client, populated):
+        data = client.get(reverse("pulse:api_replay"), {"hours": 72}).json()
+        assert data["sampled"] is False
+        assert data["sample_stride"] == 1
+        assert data["truncated"] is False
 
 
 @pytest.mark.django_db
