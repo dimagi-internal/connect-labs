@@ -235,6 +235,17 @@ def courses_versus_recoveries(country=None):
         "children_observed": total_observed,
         "children_recovered": recovered,
         "children_in_treatment": still_in_treatment,
+        # The base the measured figure rests on, so the card can state it.
+        #
+        # The batch modal states its own base scrupulously — "6 of the 314
+        # children this batch fed" — while the headline card the whole outcomes
+        # story is named for stated none of its own: 79 discharged children sat
+        # beside 58,251 courses with no cohort size, no site count and no share.
+        # Rigor applied where it is safe and withheld where it stings is worse
+        # than no rigor, on a card whose only claim is method honesty.
+        "children_total": outcomes.count(),
+        "sites_observed": outcomes.values("site_id").distinct().count(),
+        "observed_share_of_courses": (round((outcomes.count() / courses) * 100, 2) if courses else None),
         "recovery_method": (
             "Children with a recorded discharge as recovered, out of those who have "
             "been discharged at all, from measurement series captured at the point of "

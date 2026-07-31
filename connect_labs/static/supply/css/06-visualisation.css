@@ -311,11 +311,21 @@
   border-radius: 6px;
   background: #fff;
 }
+/* Selecting a row must not re-break its ID.
+   Focusing a row adds the visit-window span to this flex line; with the
+   default `min-width: auto` the ID was the item that gave way, so the
+   focused row's "DAM-2607-015" broke across three lines while five
+   same-length IDs beneath it each sat on one — a layout regression that
+   fired only on the row the reader is looking at. */
 .outcome-id {
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 12px;
+  flex-wrap: nowrap;
+}
+.outcome-id > strong {
+  white-space: nowrap;
 }
 .outcome-figures {
   font-size: 12px;

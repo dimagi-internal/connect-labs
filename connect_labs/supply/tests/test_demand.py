@@ -116,6 +116,60 @@ def test_the_two_headline_figures_are_reported_separately():
     assert result["gap_note"]
 
 
+def test_the_measured_figure_states_the_base_it_rests_on():
+    """A rate quoted beside 5,000 courses must say how few children it came from.
+
+    The batch modal always stated its own base ("6 of the 314 children this
+    batch fed"); the headline card stated none of its own, so 79 discharged
+    children sat next to 58,251 courses with no cohort size, no site count and
+    no share to signal that the measured figure covers a fraction of a percent
+    of the delivered one.
+    """
+    CaseloadEstimateFactory(adm1_code=BORNO)
+    hub = SupplyNodeFactory(kind="distribution_hub", adm1_code=BORNO, country="NG")
+    _delivered_shipment(hub, 5_000, reference="SHP-BASE")
+    partner = PartnerOrgFactory()
+    sites = [SupplyNodeFactory(kind="delivery_point", adm1_code=BORNO, country="NG") for _ in range(2)]
+    for site in sites:
+        record = DistributionRecordFactory(org=partner, site=site)
+        for n in range(5):
+            ChildOutcomeFactory(
+                org=partner,
+                site=site,
+                distribution_record=record,
+                discharge_status=(ChildOutcome.Discharge.RECOVERED if n < 4 else ChildOutcome.Discharge.IN_TREATMENT),
+            )
+
+    result = coverage.courses_versus_recoveries()
+    # The cohort is every observed child, discharged or not — 10 — which is the
+    # number a reader needs to judge the interval, not the 8 the rate divides by.
+    assert result["children_total"] == 10
+    assert result["children_observed"] == 8
+    assert result["sites_observed"] == 2
+    assert result["observed_share_of_courses"] == 0.2
+
+
+def test_died_is_a_discharge_category_even_at_zero():
+    """Sphere grades on three rates, so the mortality category must exist.
+
+    The table cited Sphere while carrying no mortality row, because rows were
+    filtered to n > 0 and no deaths are seeded. That is the one omission which
+    can only ever raise the recovery share, so the category is always present
+    and a zero is reported as a zero.
+    """
+    assert "died" in ChildOutcome.Discharge.values
+    CaseloadEstimateFactory(adm1_code=BORNO)
+    partner = PartnerOrgFactory()
+    site = SupplyNodeFactory(kind="delivery_point", adm1_code=BORNO, country="NG")
+    record = DistributionRecordFactory(org=partner, site=site)
+    ChildOutcomeFactory(
+        org=partner, site=site, distribution_record=record, discharge_status=ChildOutcome.Discharge.RECOVERED
+    )
+
+    breakdown = coverage.courses_versus_recoveries()["discharge_breakdown"]
+    assert breakdown["died"] == 0, "a zero mortality count must be reported, not omitted"
+
+
 # --- the exception queue ----------------------------------------------------
 
 
