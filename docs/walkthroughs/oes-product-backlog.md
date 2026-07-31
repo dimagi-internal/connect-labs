@@ -252,6 +252,16 @@ The 28-row consignment table has no sticky header, so any scrolled user (not jus
 
 **Proposed fix:** Make the table header sticky, drop COURSES ON ARRIVAL in favour of one 'one carton = one full course' note in the QUANTITY header, group or subdue repeated PARTNER/COMMODITY values, and give each status its own visually distinct pill.
 
+> **REOPENED, 31 July 2026.** The sticky header shipped in #1084 never engaged:
+> every `.data-table` sits inside `.table-wrap`, whose `overflow-x: auto` makes
+> the wrap the sticky element's scrollport, so the topbar-height offset parked
+> the header row 54px INTO every table — over the first data rows, eating their
+> clicks (#1093, #1096 removed the offset). Headers are back at their natural
+> position and first rows are clickable, but a scrolled long table once again
+> shows unlabelled columns. The real fix is a layout decision — the wrap owning
+> vertical scrolling (max-height + overflow-y) or an unwrapped table — and is
+> left for a human eye alongside the other layout calls above.
+
 ### scene 4 · claim_reality_coherence · mechanical
 
 'Savanna Nutrients Ltd | RUTF | Maiduguri Distribution Hub | 15,000 cartons | Jul 31, 2026 | Delivered' is future-dated relative to today (Jul 30, 2026) and that single row carries 92% of Borno's entire reported coverage (15,000 of 16,399). An auditor treats a future-dated completion as a control failure, not a rounding issue.
