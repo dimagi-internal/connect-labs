@@ -1,0 +1,819 @@
+{
+  "_provenance": {
+    "source": "Google Sheet 19sqU7xpSb_0VX6H_QZK2dcRz0RvXiQ1En9kvSZkEiY8, tab 'Organizations'",
+    "columns": "A=Organization Name, B=Short Name, C=Has Used Connect",
+    "captured": "2026-07-31",
+    "refresh": "manage.py pulse_partner_map --refresh (needs Sheets read access)",
+    "why": "Connect publishes partner NAMES only for orgs the polling account is a member of (10 of 74). This snapshot supplies the rest. It is checked in rather than fetched at runtime because labs has no Sheets credentials, and because a funder-facing name should change only through a reviewed commit."
+  },
+  "organizations": [
+    {
+      "name": "ABIREDED ONGD",
+      "short": ""
+    },
+    {
+      "name": "Action Multisectorielles Pour La Solidarité À L'Autopromotion Paysanne, AMSA ASBL",
+      "short": "AMSA"
+    },
+    {
+      "name": "ADEMUR",
+      "short": ""
+    },
+    {
+      "name": "Alliance Des Familles Pour Le Développement Intégral Du Congo",
+      "short": "AFDIC"
+    },
+    {
+      "name": "Comité D'Entraide Familiale",
+      "short": "CEF"
+    },
+    {
+      "name": "Coordination Nationale De Renforcement Du Système Communautaire",
+      "short": "CNRSC"
+    },
+    {
+      "name": "Je Suis l’Enfant",
+      "short": "Je Suis"
+    },
+    {
+      "name": "La Lumiere Des Enfants",
+      "short": "LLDE"
+    },
+    {
+      "name": "SANRU Asbl",
+      "short": ""
+    },
+    {
+      "name": "Union Paysanne Pour La Paix Et Le Developpement Social",
+      "short": ""
+    },
+    {
+      "name": "Better Her Initiative",
+      "short": ""
+    },
+    {
+      "name": "Morogoro Saving The Poor Organization",
+      "short": "MOSAPORG"
+    },
+    {
+      "name": "SUJUKWA",
+      "short": "Sujukwa"
+    },
+    {
+      "name": "Tanzania Agricultural Modernization Association",
+      "short": "TAMA"
+    },
+    {
+      "name": "Tanzania Association Of Clinical Officers And Clinical Assistants",
+      "short": "TACOCA"
+    },
+    {
+      "name": "TANZANIA COMMUNITY CARE",
+      "short": ""
+    },
+    {
+      "name": "Tanzania Development and AIDs Prevention Association",
+      "short": "TFCH"
+    },
+    {
+      "name": "Tanzania Faith And Community For Health",
+      "short": ""
+    },
+    {
+      "name": "Tumaini Letu Nshamba",
+      "short": "Tumaini"
+    },
+    {
+      "name": "Afghan Social Marketing Organization",
+      "short": "ASMO"
+    },
+    {
+      "name": "Organisation Pour Le Développement Durable, Le Renforcement Et L’Autopromotion Des Structures Communautaires",
+      "short": "DEDRAS"
+    },
+    {
+      "name": "Association Des Pères Jésuites Du Burundi/Service Yezu Mwiza",
+      "short": ""
+    },
+    {
+      "name": "IPROSARUDE",
+      "short": ""
+    },
+    {
+      "name": "Actions Humanitaires Pour Le Changement Et Le Développement",
+      "short": "AHCD"
+    },
+    {
+      "name": "Agir Pour Sauver La Vie",
+      "short": "APSLV"
+    },
+    {
+      "name": "AHCD (Humanitarian Actions For Change And Development)",
+      "short": ""
+    },
+    {
+      "name": "Association BE-AFRICA SANTE",
+      "short": ""
+    },
+    {
+      "name": "Together ِAssociation For Development And Environment",
+      "short": ""
+    },
+    {
+      "name": "Union Des Amis Socio Culturels D'Acrtion En Developpement",
+      "short": "UNASCAD"
+    },
+    {
+      "name": "Ansh",
+      "short": "Ansh"
+    },
+    {
+      "name": "Every Infant Matters Association",
+      "short": "EIM"
+    },
+    {
+      "name": "Afya Research Africa",
+      "short": ""
+    },
+    {
+      "name": "Association For Humanitarian Development",
+      "short": ""
+    },
+    {
+      "name": "CFK Africa",
+      "short": ""
+    },
+    {
+      "name": "Community Health Worker Champions Network",
+      "short": "CHW-CN"
+    },
+    {
+      "name": "Global Communications Institute",
+      "short": "GlobCom"
+    },
+    {
+      "name": "HOPE REKINDLED INITIATIVE",
+      "short": ""
+    },
+    {
+      "name": "Kakamega MNCH Alliance",
+      "short": ""
+    },
+    {
+      "name": "KIKAPU GARDEN",
+      "short": "Kikapu"
+    },
+    {
+      "name": "Ministry Of Health And Sanitation, County Government Of Turkana, Kenya",
+      "short": ""
+    },
+    {
+      "name": "Ndaloh Heritage Organization",
+      "short": ""
+    },
+    {
+      "name": "Nomad Health Initiative",
+      "short": ""
+    },
+    {
+      "name": "Pendeza Community Development Services",
+      "short": ""
+    },
+    {
+      "name": "Safari Doctors",
+      "short": ""
+    },
+    {
+      "name": "Turkana Integrated Aid",
+      "short": "TiA"
+    },
+    {
+      "name": "Transformative Agents Of Change Initiatives - TACI",
+      "short": ""
+    },
+    {
+      "name": "Uthabiti Africa",
+      "short": ""
+    },
+    {
+      "name": "Global Health Innovations",
+      "short": "GHI"
+    },
+    {
+      "name": "HENIKE Consultants Limited",
+      "short": "Henike"
+    },
+    {
+      "name": "Healthright Kenya",
+      "short": ""
+    },
+    {
+      "name": "Supporting Citizen Initiative For Development In Africa",
+      "short": "SCIDA"
+    },
+    {
+      "name": "Centre for Girls and Interaction (CEGI)",
+      "short": "CEGI"
+    },
+    {
+      "name": "Communities In Development Activities",
+      "short": ""
+    },
+    {
+      "name": "Foundation For Community And Capacity Development",
+      "short": ""
+    },
+    {
+      "name": "Help A Community Trust",
+      "short": ""
+    },
+    {
+      "name": "Maikhanda Trust",
+      "short": ""
+    },
+    {
+      "name": "Parent and Child Health Initiative (PACHI)",
+      "short": "PACHI"
+    },
+    {
+      "name": "Smile Mums Foundation",
+      "short": ""
+    },
+    {
+      "name": "Uchembere Wabwino Maternity Clinic",
+      "short": ""
+    },
+    {
+      "name": "WANDIKWEZA",
+      "short": ""
+    },
+    {
+      "name": "Digital & Health Mozambique",
+      "short": "D&H Moz"
+    },
+    {
+      "name": "The Marginalised Mirror",
+      "short": ""
+    },
+    {
+      "name": "Abubuwa Societal Development Initiative",
+      "short": "ASDI"
+    },
+    {
+      "name": "Africa Health Budget Initiative",
+      "short": ""
+    },
+    {
+      "name": "African Institute Of Development Professionals(Idevpro-Africa)’S Devpronet International Community Development Initiative",
+      "short": "iDevPro"
+    },
+    {
+      "name": "Ajwad Humanitarian Initiative",
+      "short": ""
+    },
+    {
+      "name": "AREWA HEALTH TRUST INIATIVE",
+      "short": "AHTI"
+    },
+    {
+      "name": "Avaalnche of Hope Foundation",
+      "short": ""
+    },
+    {
+      "name": "BELA Community Development Initiative",
+      "short": "Bela"
+    },
+    {
+      "name": "BELGRA CARE FOUNDATION",
+      "short": ""
+    },
+    {
+      "name": "Better Life Restoration Initiative",
+      "short": "BERI"
+    },
+    {
+      "name": "Carelink Resource Foundation",
+      "short": ""
+    },
+    {
+      "name": "Center for Child Care and Human Development",
+      "short": "C3HD"
+    },
+    {
+      "name": "Centre for Well-being and Integrated Nutrition Solutions (C-WINS)",
+      "short": "C-WINS"
+    },
+    {
+      "name": "Civil Society Scaling-Up Nutrition In Nigeria",
+      "short": "CS-SUNN"
+    },
+    {
+      "name": "Communal Conservation Friendl, Health & Social Development Support Initaitive",
+      "short": ""
+    },
+    {
+      "name": "COMMUNITY ENLIGHTENMENT & DEVELOPMENT INITIATIVE",
+      "short": ""
+    },
+    {
+      "name": "Concern For Women And Children Development Foundation",
+      "short": "COWACDI"
+    },
+    {
+      "name": "Concern Health And Medical Corps Initiative",
+      "short": ""
+    },
+    {
+      "name": "Create A Wonderful World Initiative (CWI)",
+      "short": "CWI"
+    },
+    {
+      "name": "Dafavour Health Care Services Enterprises",
+      "short": ""
+    },
+    {
+      "name": "De Flores Humanitarian Foundation",
+      "short": "DFHF"
+    },
+    {
+      "name": "EHA Clinics (REACH Program)",
+      "short": "EHA-C"
+    },
+    {
+      "name": "Ephod Leadership Innovation Initiative",
+      "short": ""
+    },
+    {
+      "name": "Equity Watch Initiative",
+      "short": ""
+    },
+    {
+      "name": "Fahimta Women and Youth Development Initiative",
+      "short": "FAWOYDI"
+    },
+    {
+      "name": "Foundation For Integrated Care",
+      "short": "FIC"
+    },
+    {
+      "name": "Foundation For Sustainable Health Promotion And Development (FOSHPAD)",
+      "short": ""
+    },
+    {
+      "name": "Friends Of The Community Organization",
+      "short": "FOCO"
+    },
+    {
+      "name": "Godiya Society For Women And Adolescent Health",
+      "short": ""
+    },
+    {
+      "name": "Grassroot Initiative For Strengthening Community Resilience",
+      "short": "GISCOR"
+    },
+    {
+      "name": "Health Development Alternative Initiative",
+      "short": "HDAI"
+    },
+    {
+      "name": "HealthCare Empowerment Initiative",
+      "short": "HEI"
+    },
+    {
+      "name": "Helping Hands and Grassroot Support Foundation",
+      "short": "HHGSF"
+    },
+    {
+      "name": "Hope And Awareness Foundation",
+      "short": ""
+    },
+    {
+      "name": "HSE STRATEGY DEVELOPMENT LTD",
+      "short": ""
+    },
+    {
+      "name": "Initiation For Children Education And Development",
+      "short": ""
+    },
+    {
+      "name": "Initiative For Social Development In Africa",
+      "short": "ISODAF"
+    },
+    {
+      "name": "Intercommunity For African Development Initiative",
+      "short": "IADI"
+    },
+    {
+      "name": "Janna Health Foundation",
+      "short": "JHF"
+    },
+    {
+      "name": "Kishimi Shelter and Care foundation",
+      "short": "KSCF"
+    },
+    {
+      "name": "Life To Live Foundation",
+      "short": ""
+    },
+    {
+      "name": "Lifeline Initiative for Widows Empowerment and Economic Development",
+      "short": "LIWEED"
+    },
+    {
+      "name": "Matrix Health Analytic Consultants",
+      "short": ""
+    },
+    {
+      "name": "NETWORK OF PEOPLE LIVING WITH HIV/AIDS IN NIGERIA",
+      "short": "NEPWHAN"
+    },
+    {
+      "name": "Parkers Mobile Clinic",
+      "short": ""
+    },
+    {
+      "name": "Peace Restoration And Integral Global Development Initiative",
+      "short": "PRIDE"
+    },
+    {
+      "name": "Planned Parenthood Federation Of Nigeria",
+      "short": "PPFN"
+    },
+    {
+      "name": "Psycare Health-Rights Foundation",
+      "short": "PHRF"
+    },
+    {
+      "name": "Roadmap for Women and Youth Development",
+      "short": "RAWYOD"
+    },
+    {
+      "name": "Rural Women And Youth Development",
+      "short": "RUWOYD"
+    },
+    {
+      "name": "Save Mothers & Children Initiative",
+      "short": "SMACI"
+    },
+    {
+      "name": "Save the Child Initiative",
+      "short": "STCI"
+    },
+    {
+      "name": "Society for Child Support and Economic Empowerment",
+      "short": "SOCSEE"
+    },
+    {
+      "name": "Society For Family Health",
+      "short": "SFH"
+    },
+    {
+      "name": "Society For Women Development and Empowerment of Nigeria",
+      "short": ""
+    },
+    {
+      "name": "Sufabel Community Development Initiative",
+      "short": ""
+    },
+    {
+      "name": "The Bakhita Initiative",
+      "short": ""
+    },
+    {
+      "name": "Voluntary Aid Initiative",
+      "short": ""
+    },
+    {
+      "name": "Women Health Empowerment And Emacipation Initiative",
+      "short": "WHEEI"
+    },
+    {
+      "name": "Women Voice And Child Health Education Initiative",
+      "short": ""
+    },
+    {
+      "name": "Rise to Inspire Africa Initiative",
+      "short": "RIA"
+    },
+    {
+      "name": "Developing-8 Health And Social Protection Programme",
+      "short": "D-8 HSP"
+    },
+    {
+      "name": "Solina Health",
+      "short": "Solina"
+    },
+    {
+      "name": "Centre For Community And Public Health Improvement",
+      "short": "CPHI"
+    },
+    {
+      "name": "Community Health Access And Finance",
+      "short": "CHAF"
+    },
+    {
+      "name": "Daindemben Federation",
+      "short": "Daindemben"
+    },
+    {
+      "name": "FOCUS 1000",
+      "short": "FOCUS 1000"
+    },
+    {
+      "name": "MUNAFA M'PATIE FEDERATION",
+      "short": "Munafa"
+    },
+    {
+      "name": "N'Domakeh Federation",
+      "short": ""
+    },
+    {
+      "name": "Welbodi Partnership",
+      "short": ""
+    },
+    {
+      "name": "Infinity Mind Foundation",
+      "short": "Infinity Mind"
+    },
+    {
+      "name": "Melian Foundation",
+      "short": ""
+    },
+    {
+      "name": "Action For Humanitarian Initiatives Uganda",
+      "short": "AFHI"
+    },
+    {
+      "name": "Antarah Empowerment Foundation",
+      "short": ""
+    },
+    {
+      "name": "Community Health Alliance Uganda",
+      "short": "CHAU"
+    },
+    {
+      "name": "Friendship Christian Organization",
+      "short": "FCO"
+    },
+    {
+      "name": "Health Access Connect",
+      "short": ""
+    },
+    {
+      "name": "Keah Medical Center",
+      "short": ""
+    },
+    {
+      "name": "Kinga Health Initiative And Development Network",
+      "short": "KHIDNET"
+    },
+    {
+      "name": "Kyetume Community Based Heath Care Programme-Kcbhcp",
+      "short": "Kyetume"
+    },
+    {
+      "name": "Nama Wellness Community Centre",
+      "short": "NAWEC"
+    },
+    {
+      "name": "Ogandaze Africa Foundation",
+      "short": ""
+    },
+    {
+      "name": "Preterm Infant Parents Network Uganda",
+      "short": "PIPN"
+    },
+    {
+      "name": "RESILIENT ACTION ORGANISATION",
+      "short": "RAO"
+    },
+    {
+      "name": "Sunrise Hope",
+      "short": ""
+    },
+    {
+      "name": "Women And Children With Albinism In Uganda",
+      "short": "WACAU"
+    },
+    {
+      "name": "Compelling Works Limited, Uganda",
+      "short": ""
+    },
+    {
+      "name": "Agrikeen",
+      "short": ""
+    },
+    {
+      "name": "Empowercare Youths Network Solution EYNS",
+      "short": ""
+    },
+    {
+      "name": "Live Well Social Enterprise",
+      "short": ""
+    },
+    {
+      "name": "The Girl Nurture Project",
+      "short": "Girl Nurture"
+    },
+    {
+      "name": "Resilient Villages Zimbabwe",
+      "short": "RVZ"
+    },
+    {
+      "name": "Community Advocates For Women’S Reproduction And Children’S Health",
+      "short": ""
+    },
+    {
+      "name": "Good Health Community Programmes",
+      "short": ""
+    },
+    {
+      "name": "Accessibility Independent Lifestyle Initiative",
+      "short": "AILI"
+    },
+    {
+      "name": "Rise for Humanity Development Initiative",
+      "short": "RIHDI"
+    },
+    {
+      "name": "Women Can Do It",
+      "short": ""
+    },
+    {
+      "name": "Fondation pour la Recherche et l'Innovation Africaine",
+      "short": "FRIA"
+    },
+    {
+      "name": "National Podoconiosis Action Network",
+      "short": "NaPAN"
+    },
+    {
+      "name": "Humanity Support Initiative for Educational Empowerment and Social Development",
+      "short": ""
+    },
+    {
+      "name": "ONG Internationale L'Écologie Nouvelle",
+      "short": ""
+    },
+    {
+      "name": "ONG pour \"La Paix Solidarité\"",
+      "short": ""
+    },
+    {
+      "name": "Data for Decision Making (DADEMA)",
+      "short": "DADEMA"
+    },
+    {
+      "name": "Women's Hope For Change",
+      "short": ""
+    },
+    {
+      "name": "World Vision Ethiopia",
+      "short": "WV-E"
+    },
+    {
+      "name": "Wounded Healers Foundation",
+      "short": ""
+    },
+    {
+      "name": "Youth Health and Right Initiative for Advocacy and Empowerment",
+      "short": "YOHRIAE"
+    },
+    {
+      "name": "Zenith Of The Girl Child And Women Initiative Support(Zegcawis)",
+      "short": "ZEGCAWIS"
+    },
+    {
+      "name": "Care Relief Organization",
+      "short": "CRO"
+    },
+    {
+      "name": "Advancing Community Research, Innovation and Development Centre – Africa",
+      "short": "ACRIDC-Africa"
+    },
+    {
+      "name": "Evidence for Good",
+      "short": "E4G"
+    },
+    {
+      "name": "Albarka Health Spring Foundation",
+      "short": "AHSF"
+    },
+    {
+      "name": "Future Resilience and Development Foundation (FRAD)_",
+      "short": "FRAD"
+    },
+    {
+      "name": "ASWHAN",
+      "short": "ASWHAN"
+    },
+    {
+      "name": "Centre for Community Well Being and Health Initiative",
+      "short": "CCWHI"
+    },
+    {
+      "name": "Kebbi Alliance for Positive People",
+      "short": "KAPOP"
+    },
+    {
+      "name": "Grow strong foundation",
+      "short": "GSF"
+    },
+    {
+      "name": "Better AID Foundation",
+      "short": "BAF"
+    },
+    {
+      "name": "Revive Health Initiative",
+      "short": "RHI"
+    },
+    {
+      "name": "Crest for Growth and Development",
+      "short": "CIGD"
+    },
+    {
+      "name": "Wahatana Empowerment Initiative",
+      "short": "WEI"
+    },
+    {
+      "name": "Better AID Foundation",
+      "short": "BAF"
+    },
+    {
+      "name": "Revive Health Initiative",
+      "short": "RHI"
+    },
+    {
+      "name": "Crest for Growth and Development",
+      "short": "CIGD"
+    },
+    {
+      "name": "Wahatana Empowerment Initiative",
+      "short": "WEI"
+    },
+    {
+      "name": "Concern On Climate Change For The Community Initiative (FOURCi)",
+      "short": "FOURCi"
+    },
+    {
+      "name": "Albarka Health Spring Foundation",
+      "short": "AHSF"
+    },
+    {
+      "name": "Center For Advocacy, Transparency And Accountability Initiative",
+      "short": "CATAI"
+    },
+    {
+      "name": "Smiling Hearts Initiatives International (SHI)",
+      "short": "SHI"
+    },
+    {
+      "name": "Hope Alive Driven Campaign Initiative",
+      "short": "HADCI"
+    },
+    {
+      "name": "Elela Care Humanitarian And Development Organization",
+      "short": "ELELA"
+    },
+    {
+      "name": "Anti-Sexual Violence Lead Support Initiative",
+      "short": "ASViOL"
+    },
+    {
+      "name": "Green Habitat Initiative",
+      "short": "GHI"
+    },
+    {
+      "name": "Community Resilience Building for Youth and Women Empowerment Initiatives (CORWEI)",
+      "short": "CORWEI"
+    },
+    {
+      "name": "Amin & Joy Buba Dibal Foundation",
+      "short": "AJDF"
+    },
+    {
+      "name": "Juriya Community Impact Initiative (JCII)",
+      "short": "JCII"
+    },
+    {
+      "name": "Nkafamiya Rescue Mission",
+      "short": "NRM"
+    },
+    {
+      "name": "Novel Alliance for Development Aid (NADA)",
+      "short": "NADA"
+    },
+    {
+      "name": "Kanem Borno Human Development Association",
+      "short": "KABHUDA"
+    },
+    {
+      "name": "Trend Frontline Synergy",
+      "short": "TFS"
+    },
+    {
+      "name": "Grassroots initiative for humanitarian and development response",
+      "short": "GIRD"
+    }
+  ]
+}

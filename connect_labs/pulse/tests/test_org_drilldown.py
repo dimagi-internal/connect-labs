@@ -267,10 +267,30 @@ class TestPartnersConnectWillNotName:
         row = next(o for o in summary(viewer)["orgs"] if o["slug"] == unnamed_partner)
         assert row["visits"] == 65_777
 
-    def test_its_slug_stands_in_and_is_flagged_as_not_a_name(self, viewer, unnamed_partner):
+    def test_the_master_list_supplies_the_name_connect_withholds(self, viewer, unnamed_partner):
+        """Connect never names this partner, but the master Organizations list
+        does — so the display shows the partner, with the Connect workspace it
+        came from still carried alongside."""
         row = next(o for o in summary(viewer)["orgs"] if o["slug"] == unnamed_partner)
-        assert row["name"] == "janna-health-foundation"
+        assert row["name"] == "janna-health-foundation"  # the Connect workspace
+        assert row["partner"] == "Janna Health Foundation"  # the real partner
+        assert row["named"] is True
+
+    def test_a_partner_in_neither_source_still_shows_its_slug_flagged(self, viewer, portfolio):
+        """The residue has to stay visible rather than vanish: unmatched is a
+        reason to show an identifier, not a reason to drop
+        the partner."""
+        PulseOpportunity.objects.create(
+            opportunity_id=52,
+            name="Unknown partner work",
+            org_slug="ehealth-africa-connect-interviews",
+            program_id=10,
+            lifetime_visit_count=2_943,
+        )
+        row = next(o for o in summary(viewer)["orgs"] if o["slug"] == "ehealth-africa-connect-interviews")
+        assert row["partner"] == ""
         assert row["named"] is False
+        assert row["name"] == "ehealth-africa-connect-interviews"
 
     def test_the_slug_is_never_prettified_into_a_guess(self, viewer, portfolio):
         """Title-casing reads plausibly and is wrong where it matters: the real

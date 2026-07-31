@@ -580,7 +580,13 @@
           opt.value = o.slug;
           // Connect's own partner name, verbatim. Say which partners are
           // dormant rather than letting someone pick one and get a blank map.
-          const label = o.named === false ? `${o.name} (identifier)` : o.name;
+          const label = o.partner
+            ? o.partner === o.name
+              ? o.partner
+              : `${o.partner} · ${o.name}`
+            : o.named === false
+            ? `${o.name} (identifier)`
+            : o.name;
           opt.textContent = o.recent_events
             ? label
             : `${label} — no recent delivery`;
@@ -747,18 +753,29 @@
         store.org === r.slug &&
         store.lastGrid &&
         store.lastGrid.exact === false;
+      // The real partner leads when we know it; the Connect workspace it came
+      // from stays visible underneath, because several workspaces can be the
+      // same partner and hiding that would make one of them look like the whole.
+      const title = r.partner || r.name;
+      const isSlug = !r.partner && r.named === false;
       return (
         `<div class="pulse-partner-head">
            <span class="pulse-partner-name"${
-             r.named === false ? ' data-slug="1"' : ''
-           }>${r.name}</span>
+             isSlug ? ' data-slug="1"' : ''
+           }>${title}</span>
            ${where ? `<span class="pulse-partner-where">${where}</span>` : ''}
          </div>` +
-        (r.funder
-          ? `<div class="pulse-partner-funder">funded by <b>${r.funder}</b></div>`
-          : `<div class="pulse-partner-funder">${nf.format(
-              r.opportunities,
-            )} opportunit${r.opportunities === 1 ? 'y' : 'ies'}</div>`) +
+        `<div class="pulse-partner-funder">${
+          r.partner && r.partner !== r.name
+            ? `workspace <b>${r.name}</b> · `
+            : ''
+        }${
+          r.funder
+            ? `funded by <b>${r.funder}</b>`
+            : `${nf.format(r.opportunities)} opportunit${
+                r.opportunities === 1 ? 'y' : 'ies'
+              }`
+        }</div>` +
         `<div class="pulse-partner-figs">
            <div><span class="pf-l">Paid out</span>
                 <div class="pf-v gold">${usdCompact(r.usd_total)}</div></div>

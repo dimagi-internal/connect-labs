@@ -36,6 +36,7 @@ from connect_labs.pulse.models import (
     PulseWork,
 )
 from connect_labs.pulse.normalize import COUNTRY_NAMES, FLAG_LABELS, SERVICE_LABELS, service_label
+from connect_labs.pulse.partner_names import resolve as resolve_partner
 
 MAX_EVENTS = 2000
 DEFAULT_REPLAY_HOURS = 48
@@ -419,6 +420,10 @@ def _org_menu(request):
     menu = []
     for slug in by_slug:
         org = named_of.get(slug) or _UnnamedOrg(slug)
+        # Connect names 10 of these; the master Organizations list supplies the
+        # rest and, more importantly, says which Connect orgs are the SAME real
+        # partner -- Solina Health runs both `solina` and `connect-nigeria`.
+        partner = resolve_partner(org.slug, org.display_name if org.named else "")
         country = country_of.get(org.slug, "")
         m = money_of.get(org.slug) or {}
         worker = float(m.get("usd") or 0)
@@ -432,7 +437,12 @@ def _org_menu(request):
                 # Whether that name is Connect's or just the slug standing in
                 # for one. The display marks the difference rather than letting
                 # an identifier pass as a considered name.
-                "named": bool(getattr(org, "named", False)),
+                "named": bool(getattr(org, "named", False)) or bool(partner["parent"]),
+                # The real partner behind this workspace, when we can say so at
+                # high confidence. Several Connect orgs can share one.
+                "partner": partner["parent"],
+                "partner_short": partner["short"],
+                "partner_evidence": partner["why"],
                 "funder": org.funder_slug,
                 "country": country,
                 "opportunities": by_slug[org.slug]["opps"],
