@@ -117,6 +117,20 @@ function formatMoney(value, currency) {
   })}`;
 }
 
+/* "4 days ago" / "today" between two ISO dates, in whole calendar days.
+   Used where a provenance stamp needs to be readable at a glance: an absolute
+   date tells a reader when, a relative one tells them whether it is stale. */
+function daysBetweenLabel(iso, asOfIso) {
+  const then = parseSupplyDate(iso);
+  const now = parseSupplyDate(asOfIso);
+  if (!then || !now) return '';
+  const days = Math.round((now - then) / 86400000);
+  if (days === 0) return 'today';
+  if (days === 1) return 'yesterday';
+  if (days < 0) return `in ${-days} days`;
+  return `${days} days ago`;
+}
+
 function formatNumber(value) {
   if (value === null || value === undefined) return '—';
   return Number(value).toLocaleString();

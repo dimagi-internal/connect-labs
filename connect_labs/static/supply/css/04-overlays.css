@@ -2,10 +2,19 @@
 
 /* ---------- modal ---------- */
 
+/* Dark enough that nothing behind a modal is legible.
+   At 0.45 the dashboard bled through in half-readable fragments that framed the
+   modal's own content: the nav clipped to "Supplier regis", orphaned numbers
+   30,000 / 14,000 / 36,000 / 26,000 down the right edge, a "GAP" cut to "AP",
+   and a half-covered coverage row along the bottom. Two unrelated datasets
+   competed in one frame — and the unrelated one contained numbers that ALSO
+   appear in the modal's footer, which invites a straight misread. The blur is
+   the belt to the opacity's braces, for anything high-contrast behind. */
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(16, 34, 28, 0.45);
+  background: rgba(16, 34, 28, 0.72);
+  backdrop-filter: blur(3px);
   display: grid;
   place-items: center;
   padding: 24px;

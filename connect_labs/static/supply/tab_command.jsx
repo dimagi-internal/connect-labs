@@ -83,10 +83,16 @@ function CommandTab({ ctx }) {
               }`;
             })(),
           },
+          // A method on all four, not only on the one that happens to be
+          // contestable. The `i` bubble sat on "Children at risk" alone, so the
+          // three tiles beside it read as facts needing no explanation while the
+          // page's whole argument is that every figure carries a method.
           {
             label: 'In transit',
             value: inTransit.length,
             hint: `${Math.round(tonnesInFlight)} MT moving`,
+            method:
+              'Consignments whose status is in transit — despatched and not yet arrived. Counted as consignments, not cartons, because one lorry is one thing that can be expedited. The tonnage beside it is the same set converted at 150 x 92 g sachets per carton.',
           },
           {
             label: 'Delivered to date',
@@ -100,8 +106,15 @@ function CommandTab({ ctx }) {
             )} MT · ${formatNumber(
               deliveredCartons,
             )} courses, at contracted delivery points`,
+            method:
+              'Cartons recorded as delivered against a contract, at the delivery point that contract names. One carton is one full course. This says nothing about whether a course reached a child — the government and funder surfaces report that separately.',
           },
-          { label: 'Active contracts', value: contracts.length },
+          {
+            label: 'Active contracts',
+            value: contracts.length,
+            method:
+              'Contracts with an award behind them that have not been closed out. A contract counts once however many consignments it has moved, so this is a count of commercial relationships under management rather than of activity.',
+          },
         ]}
       />
 
@@ -134,9 +147,21 @@ function CommandTab({ ctx }) {
                 >
                   <div className="exception-head">
                     <Badge tone={e.tone}>{e.kind}</Badge>
+                    {/* A provenance stamp needs the WHEN, not just the who.
+                        The declared feature promises a marker "naming the
+                        organisation, site and report date" and the pill carried
+                        two of the three; the date existed on the row but rendered
+                        only inside the derivation, which shows on the selected
+                        row alone. Without it a reader cannot tell whether the
+                        partner reported this today or last month — which is the
+                        half that makes it provenance rather than a label. */}
                     {e.origin === 'partner' ? (
                       <Badge tone="info">
                         Raised by {e.org_name || 'a partner'}
+                        {e.raised_on ? ` · ${formatDate(e.raised_on)}` : ''}
+                        {e.raised_on && world.as_of
+                          ? ` (${daysBetweenLabel(e.raised_on, world.as_of)})`
+                          : ''}
                       </Badge>
                     ) : null}
                     <span className="exception-what">{e.what}</span>
@@ -201,9 +226,15 @@ function CommandTab({ ctx }) {
                       are the two things that make this queue trustworthy, and
                       both were one component away with no route to them from
                       the surface that depends on them. */}
+                  {/* Inspect is the primary; commit is not.
+                      The state-changing "Reallocate to …" was the solid-green
+                      primary while the read-only "Open SHP-…" was the outline
+                      secondary, so the loudest control on the worklist was the
+                      one that moves stock. Reading the consignment first is what
+                      a reader should be nudged toward. */}
                   {e.shipment_id ? (
                     <span
-                      className="btn btn-sm btn-secondary"
+                      className="btn btn-sm"
                       onClick={(ev) => {
                         ev.stopPropagation();
                         setOpenShipmentId(e.shipment_id);
@@ -221,7 +252,7 @@ function CommandTab({ ctx }) {
                   /reallocate/i.test(e.action || '') &&
                   supplyCan(world.role, 'actions', 'create') ? (
                     <span
-                      className="btn btn-sm"
+                      className="btn btn-sm btn-secondary"
                       onClick={(ev) => {
                         ev.stopPropagation();
                         setReallocatingFor(e);

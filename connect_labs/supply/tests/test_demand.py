@@ -271,8 +271,39 @@ def test_a_partner_raised_row_says_so_and_a_derived_one_does_not():
     rows = {r["kind"]: r for r in exceptions.build_queue()}
     assert rows["Partner shortfall"]["origin"] == "partner"
     assert rows["Partner shortfall"]["org_name"] == "Komadugu Test Initiative"
+    # WHO reported it is half a provenance stamp. Without WHEN, a reader cannot
+    # tell whether the partner reported this today or last month, and the pill
+    # rendered only the organisation while the date sat in the derivation — which
+    # shows on the selected row alone.
+    assert rows["Partner shortfall"]["raised_on"], "the marker needs a report date"
     assert rows["Short receipt"]["origin"] == "derived"
     assert "org_name" not in rows["Short receipt"]
+
+
+def test_no_recommended_action_names_a_verb_the_row_cannot_reach():
+    """Half of one recommendation had no control anywhere on the screen.
+
+    A late row read "Expedite the consignment, or reallocate from a node holding
+    surplus" beside exactly two buttons: Open and Reallocate. Expediting is real
+    and it happens by recording a despatch event against the consignment, which
+    is where Open leads — so the prose has to name that route rather than a verb
+    with no affordance.
+    """
+    CaseloadEstimateFactory(adm1_code=BORNO, children_sam=4330)
+    site = SupplyNodeFactory(kind="delivery_point", adm1_code=BORNO)
+    ShortfallSignalFactory(org=PartnerOrgFactory(), site=site)
+    shipment = _delivered_shipment(site, 900, reference="SHP-VERB")
+    Discrepancy.objects.create(
+        shipment=shipment,
+        expected_quantity=Decimal("900"),
+        received_quantity=Decimal("800"),
+        status=Discrepancy.Status.OPEN,
+    )
+
+    for row in exceptions.build_queue():
+        action = (row.get("action") or "").lower()
+        if "expedit" in action:
+            assert "open" in action, f"{row['kind']} recommends expediting without naming the route: {action!r}"
 
 
 def test_a_resolved_signal_leaves_the_queue():
