@@ -64,7 +64,7 @@
         }
       ],
       "id": "cost-per-child-with-its-method-on-screen",
-      "narrative": "Dale needs one number for a briefing and needs it to survive being questioned. The ladder runs dollars to metric tonnes to cartons to full courses, and every conversion is written on the arrow between the rungs: one carton is a hundred and fifty ninety-two-gram sachets, which is one child's full course of treatment. What it prices is a course bought and confirmed — not a child treated, and the label says so, because the measured half of that question is the last card on this page. Cost per course is computed from disbursements against confirmed deliveries only; consignments in transit are excluded from both sides of the division, and haulage contracts are excluded because those dollars buy movement rather than cartons. A reader who can see all of that can see exactly what the figure claims and what it does not. That is what makes it a number you can argue with, rather than one you either accept or discard.",
+      "narrative": "Dale needs one number for a briefing and needs it to survive being questioned. The ladder runs dollars to metric tonnes to cartons to full courses, and every conversion is written on the arrow between the rungs: one carton is a hundred and fifty sachets of ninety-two grams each, which is one child's full course of treatment. What it prices is a course bought and confirmed — not a child treated, and the label says so, because the measured half of that question is the last card on this page. Cost per course is computed from disbursements against confirmed deliveries only; consignments in transit are excluded from both sides of the division, and haulage contracts are excluded because those dollars buy movement rather than cartons. A reader who can see all of that can see exactly what the figure claims and what it does not. That is what makes it a number you can argue with, rather than one you either accept or discard.",
       "persona": "dale",
       "provenance": "S2",
       "title": "Cost per child, with its method on screen"
@@ -118,5 +118,5 @@
     }
   ],
   "slug": "oes-money-to-child",
-  "version": 3
+  "version": 4
 }

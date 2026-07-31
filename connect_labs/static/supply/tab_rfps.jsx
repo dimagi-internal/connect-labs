@@ -110,7 +110,7 @@ function RFPsTab({ ctx }) {
               key: 'status',
               label: 'Status',
               value: (r) => r.status,
-              render: (r) => <StatusChip status={r.status} />,
+              render: (r) => <SolicitationStatusChip rfp={r} />,
             },
             {
               key: 'act',

@@ -221,3 +221,9 @@ textarea:focus {
 .nowrap {
   white-space: nowrap;
 }
+
+/* A cleared queue, stated inline rather than as an empty panel. */
+.queue-clear {
+  margin: 0 0 18px;
+  padding: 10px 0 0;
+}

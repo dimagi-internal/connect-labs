@@ -139,15 +139,24 @@ scenes:
   - kind: click
     target: css:.page-actions .infonote-btn
     note: the scope marker, opened on camera — the one artifact that can carry a server-side claim
+  # THE CANONICAL FRAME IS THE OPEN SCOPE MARKER, and it has to be, because it is
+  # the only element on the page that can carry the claim. A frame of the
+  # consignment list cannot: a table with no other country in it looks exactly
+  # like a table from a single-country programme, so an absence proves nothing.
+  # The previous take opened the marker, CLOSED it, then scrolled away and
+  # snapshotted the list — leaving the arc's strongest assertion resting entirely
+  # on the voiceover.
+  - kind: snapshot
+    note: 'the canonical frame: the scope marker open — applied at source, from this account''s own
+      country assignment, with nothing on the page that widens it'
   - kind: hold
-    seconds: 3.0
+    seconds: 3.2
     note: applied at source, from this account's own country assignment
-  - kind: click
-    target: css:.page-actions .infonote-btn
-    note: closed, so it does not sit over the table in the frames that follow
+  # Scrolling now dismisses the note by itself (see primitives.InfoNote), so it
+  # cannot follow the camera into the frames that come after it.
   - kind: scroll_to
     target: css:.card:has-text('Who is delivering what, where') .card-head
-    note: the consignment list IS the proof of server-side scoping — framed with its header row
+    note: and then the consignments themselves — Nigeria only, framed with the header row
   - kind: hold
     seconds: 2.4
     note: Nigeria only — the rest was never in the payload
@@ -206,11 +215,18 @@ scenes:
     target: css:.two-figures
   - kind: hold
     seconds: 1.8
-  # The discharge table the narration names — defaulters and inpatient
-  # transfers "shown alongside" — was never scrolled into frame, so the beat
-  # about the Sphere band landed on the tiles above it.
+  # THE CANONICAL FRAME IS THE TWO FIGURES AND THE DISCHARGE TABLE, not the
+  # batch modal. The scene's claim is that the two numbers are reported side by
+  # side and never reconciled — and the modal, when open, covers the entire card
+  # that carries them. Snapshotting inside the modal left every figure the
+  # narration names (the courses delivered, the recovered-of-discharged pair, the
+  # observed rate, the defaulters and transfers) behind the thing the scene had
+  # just opened. The modal is the payoff BEAT; the card is the frame.
   - kind: scroll_to
     target: css:.card:has-text('Children treated') .data-table
+  - kind: snapshot
+    note: 'the canonical frame: two figures with two methods side by side, and every discharge
+      category beneath them including the zeroes'
   - kind: hold
     seconds: 2.6
     note: every discharge category, including the zeroes — the Sphere band the sector grades on
@@ -231,11 +247,10 @@ scenes:
   # batch is now selected for having recorded recoveries in it (see
   # tab_funder.TwoFiguresAndTheGap), so the narrated "out of the red" has a
   # series that actually crosses 125 mm.
-  - kind: snapshot
-    note: 'the canonical frame: one child''s arm circumference climbing out of the red, with the
-      sample size stated beside it rather than a rate implied from it'
   - kind: hold
     seconds: 3.2
+    note: one child's arm circumference climbing out of the red, with the sample size stated beside
+      it rather than a rate implied from it
   impressive_because: '"Children treated" is almost always cartons divided by a treatment factor — arithmetic
     presented as an outcome. The gap between that and a measured recovery is the most useful thing on
     the screen, and a funder who can see it is being told the truth.'

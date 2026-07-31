@@ -397,9 +397,17 @@ def seed_caseloads():
     for adm1_code, (name, country, ipc_phase, under5) in DISTRICTS.items():
         children = sam_caseload(under5, ipc_phase)
         prevalence = SAM_PREVALENCE_BY_IPC_PHASE.get(ipc_phase, 0.01)
+        # The note has to EVALUATE, and it has to say which figure it evaluates
+        # to. It stated the formula and stopped, so a reader multiplying it out
+        # got the MONTHLY caseload while the cell beside it showed the same
+        # caseload summed across the response window — roughly four times
+        # larger. On a method note whose whole purpose is that the denominator
+        # can be checked, the arithmetic did not reach the number it sat next to.
         note = (
             f"Synthetic. {under5:,} under-5s x {prevalence:.1%} SAM prevalence "
-            f"(IPC phase {ipc_phase}) x {INCIDENCE_CORRECTION} incidence correction / 12 months."
+            f"(IPC phase {ipc_phase}) x {INCIDENCE_CORRECTION} incidence correction / 12 months "
+            f"= {children:,} children admitted per month. A coverage figure divides by this "
+            f"summed across the response window, not by one month."
         )
         for back in range(CASELOAD_MONTHS):
             month = _months_back(TODAY, back)

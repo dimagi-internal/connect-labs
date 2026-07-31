@@ -45,7 +45,7 @@
         }
       ],
       "id": "three-ways-the-data-arrives-and-the-honest-one",
-      "narrative": "The data arrives three different ways, because that is the real capability gradient of this supply chain. The Kano plant emits structured visibility events to the international standard — machine to machine, no typing. The Lagos despatch arrives as an advice document, the same shipment-to-package-to-item tree the commodity trade has used for fifty years. And the Port Sudan to El Fasher leg arrives as a driver's phone check-in: a consignment number, a place, what happened. Sudan has no domestic producer and that corridor runs on paper waybills, so the lowest tier is not a fallback — it is the honest case, and it is the one serving the worst famine phases. Anything hand-keyed says so, everywhere it appears.",
+      "narrative": "Visibility is not evenly distributed, and this contract is the proof. The Sudan corridor runs from Port Sudan through Khartoum out to El Fasher and Nyala, and every single leg of it arrived here as a phone check-in — a driver, a reference and a place. Not one of these four consignments carries a despatch advice, let alone a structured visibility feed, and the REPORTED BY column says so on every row rather than presenting the four of them as if they were equally well evidenced. That is the honest end of the gradient. The product accepts the phone call as first-class, because on the hardest corridors it is all there is, and then refuses to launder it: a hand-keyed figure is labelled hand-keyed everywhere it appears, so nobody mistakes the weakest evidence in the chain for the strongest.",
       "persona": "ada",
       "provenance": "S1",
       "title": "Three ways the data arrives, and the honest one"
@@ -156,5 +156,5 @@
     }
   ],
   "slug": "oes-command-centre",
-  "version": 3
+  "version": 4
 }

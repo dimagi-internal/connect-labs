@@ -494,7 +494,7 @@ function CommandTab({ ctx }) {
               },
               {
                 key: 'gap',
-                label: 'Gap to need (children)',
+                label: 'Children with no supply positioned',
                 value: (r) => r.uncovered_children,
                 render: (r) => formatNumber(r.uncovered_children),
               },
