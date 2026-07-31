@@ -5,6 +5,7 @@ endpoint. Server state is the only state.
 """
 from django.db import models
 from django.http import JsonResponse
+from django.utils import timezone
 
 from ..decorators import current_actor
 from ..models import (
@@ -300,6 +301,15 @@ def build_bootstrap(request):
         "role": actor.role,
         "perms": ROLE_PERMS.get(actor.role, {}),
         "org": None,
+        # The instant every figure in this payload is true of.
+        #
+        # No surface carried one, while rows carried dates spanning several days
+        # either side of today. An auditor cannot cite a disbursement or a
+        # coverage figure without knowing what moment it was true of, and the
+        # absence is exactly what let a consignment dated tomorrow sit marked
+        # "Delivered" with nothing on screen contradicting it. Set here rather
+        # than per-role so no surface can be built without one.
+        "as_of": timezone.localdate().isoformat(),
     }
     if actor.role == "supplier":
         data.update(_supplier_world(actor))

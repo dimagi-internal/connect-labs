@@ -176,8 +176,13 @@
 .stage-fill.obligated {
   background: #cbd5e1;
 }
+/* Disbursed and delivered were two greens 45% apart in alpha on the same hue —
+   close enough that a viewer could not tell which bar was which, on the one
+   card whose whole point is that the three stages never merge. Disbursed keeps
+   the accent green (money is the page's subject); delivered takes a distinct
+   hue, so the pair is separable by colour and not only by length. */
 .stage-fill.delivered {
-  background: rgba(13, 122, 95, 0.55);
+  background: #7c5cd6;
 }
 .stage-fill.disbursed {
   background: var(--oes-accent);
@@ -233,9 +238,22 @@
   color: var(--oes-ink-soft);
   margin-top: 3px;
 }
+/* Each arrow now carries the constant that gets you across it, stacked under
+   the glyph so the chain still reads left to right at a glance. */
 .ladder-arrow {
   color: var(--oes-ink-soft);
   font-size: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.ladder-op {
+  font-size: 10px;
+  line-height: 1.25;
+  max-width: 92px;
+  text-align: center;
+  color: var(--oes-ink-soft);
 }
 .method-note {
   margin: 0;
@@ -518,7 +536,7 @@
   background: #cbd5e1;
 }
 .stage-swatch.delivered {
-  background: rgba(13, 122, 95, 0.55);
+  background: #7c5cd6;
 }
 .stage-swatch.disbursed {
   background: var(--oes-accent);

@@ -30,6 +30,21 @@
   border-bottom: 1px solid var(--oes-bg);
   vertical-align: top;
 }
+/* An IATI activity identifier is one token and must never break mid-token —
+   it wrapped across three lines in 4 of 4 rows, which makes the page's only
+   external-verification affordance unreadable, never mind checkable. */
+.iati-id code {
+  white-space: nowrap;
+}
+
+/* A total is the table's own arithmetic, so it reads as part of the table and
+   not as another row of data — a rule above it, no rule below, and weight. */
+.data-table .totals-row td {
+  border-top: 2px solid var(--oes-line);
+  border-bottom: none;
+  font-weight: 600;
+  color: var(--oes-ink);
+}
 .data-table tr:last-child td {
   border-bottom: 0;
 }
