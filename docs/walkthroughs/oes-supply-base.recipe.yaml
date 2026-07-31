@@ -307,13 +307,20 @@ scenes:
     note: the count in the card title moves with the filters; this is the answer Ada acts on
   # A third of the voiceover is about expiry and lapse, and the third filter was
   # never touched — the expiry mechanism the screen exists to demonstrate had no
-  # on-camera exercise at all.
+  # on-camera exercise at all. Widen back to all countries first: no NG RUTF
+  # qualification expires within the window, and filming an empty table on the
+  # load-bearing card reads as breakage, not as a demonstration.
+  - kind: select
+    target: css:.filter-row .filter-field:nth-of-type(2) select
+    value: ''
+    note: widen back to every country —
   - kind: select
     target: css:.filter-row .filter-field:nth-of-type(3) select
     value: '90'
-    note: and the expiry filter — who lapses out of this answer within ninety days
+    note: and ask the expiry question — who lapses out of the RUTF pool within ninety days
   - kind: hold
     seconds: 1.4
+    note: one supplier, with the date its qualification runs out — the lapse mechanism, exercised
   - kind: hover
     target: css:.page-head h1
     note: park the cursor clear of the table so no expiry date is occluded on the closing frame
