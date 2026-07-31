@@ -115,7 +115,19 @@ def late_exceptions(contracts=None, as_of=None):
                         )
                     )
                 ),
-                "action": "Expedite the consignment, or reallocate from a node holding surplus.",
+                # Every verb here has to have a control on the row.
+                #
+                # This read "Expedite the consignment, or reallocate from a node
+                # holding surplus" beside exactly two buttons — Open and
+                # Reallocate — so half the recommendation had no affordance
+                # anywhere on the screen. Expediting is real, and it happens by
+                # recording a despatch event against the consignment, which is
+                # what Open leads to; saying so turns a dead half-sentence into
+                # the route it always was.
+                "action": (
+                    "Reallocate from a node holding surplus, or open the consignment "
+                    "to record an expedited despatch."
+                ),
                 "derivation": (
                     f"{delay:.0f} days late against "
                     f"{node_cover['weeks_of_cover'] if node_cover else 0} weeks of cover; "
@@ -257,7 +269,10 @@ def partner_signal_exceptions(as_of=None):
                 "action": (
                     "Closed by the reallocation that answered it."
                     if action
-                    else "Reallocate from a node holding surplus, or expedite the next consignment."
+                    else (
+                        "Reallocate from a node holding surplus, or open the next "
+                        "consignment to record an expedited despatch."
+                    )
                 ),
                 "derivation": (
                     f"Reported by {signal.org.legal_name} on {signal.raised_on:%-d %B} "

@@ -47,9 +47,13 @@ function ShipmentDetail({ ctx, shipmentId, onClose }) {
       onClose={onClose}
       footer={
         <React.Fragment>
+          {/* "Record an event" and "Close" carried identical weight and outline,
+              so the write action — the only thing in this footer that changes
+              anything — had no primary treatment and sat indistinguishable from
+              dismissing the dialog. */}
           <button
             type="button"
-            className="btn btn-secondary"
+            className="btn"
             onClick={() => setRecording(true)}
           >
             Record an event
@@ -64,7 +68,7 @@ function ShipmentDetail({ ctx, shipmentId, onClose }) {
               Confirm delivery
             </button>
           ) : null}
-          <button type="button" className="btn btn-secondary" onClick={onClose}>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>
             Close
           </button>
         </React.Fragment>
