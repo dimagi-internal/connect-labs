@@ -6,6 +6,7 @@ from connect_labs.microplans.core.grouping import (
     GroupingConfig,
     _absorb_enclosed_clusters,
     _reassign_dominated_cells,
+    _reassign_isolated_pieces_touching_other_wags,
     group_work_areas,
 )
 
@@ -739,3 +740,133 @@ class TestReassignDominatedCells:
         result = _reassign_dominated_cells(clusters_with_seed, by_id, geoms, wa_ids, tree, 1000, barrier)
         x_group = next(cells for _seed, cells in result if "X" in cells)
         assert x_group == ["X", "W"]
+
+
+class TestReassignIsolatedPiecesTouchingOtherWags:
+    """A disconnected piece within a WAG (cells only attached to EACH OTHER,
+    cut off from the WAG's main body) is fine to keep its label if it only
+    touches open terrain — but if it ALSO touches a different WAG (edge or
+    corner), the whole piece must move there."""
+
+    def test_disconnected_pair_touching_foreign_wag_moves_together(self):
+        from shapely.geometry import box
+        from shapely.strtree import STRtree
+
+        geoms = {
+            "O1": box(0, 0, 1, 1),
+            "O2": box(1, 0, 2, 1),
+            "O3": box(2, 0, 3, 1),
+            "O4": box(0, 1, 1, 2),
+            "O5": box(1, 1, 2, 2),
+            "OX1": box(10, 10, 11, 11),
+            "OX2": box(11, 10, 12, 11),
+            "RED1": box(11, 11, 12, 12),  # corner-touches OX2 only
+        }
+        wa_ids = list(geoms.keys())
+        tree = STRtree([geoms[w] for w in wa_ids])
+        clusters_with_seed = [
+            ("O1", ["O1", "O2", "O3", "O4", "O5", "OX1", "OX2"]),
+            ("RED1", ["RED1"]),
+        ]
+        result = _reassign_isolated_pieces_touching_other_wags(clusters_with_seed, geoms, wa_ids, tree, None)
+        groups = {frozenset(cells) for _seed, cells in result}
+        assert groups == {frozenset(["O1", "O2", "O3", "O4", "O5"]), frozenset(["OX1", "OX2", "RED1"])}
+
+    def test_disconnected_piece_touching_only_open_terrain_stays_put(self):
+        # Same layout, no red cell at all — the stray pair touches nothing but
+        # open terrain, so it stays under the main WAG's label (allowed to be
+        # geographically disconnected — the whole point of the top-up pass
+        # reaching across a real gap in sparse areas).
+        from shapely.geometry import box
+        from shapely.strtree import STRtree
+
+        geoms = {
+            "O1": box(0, 0, 1, 1),
+            "O2": box(1, 0, 2, 1),
+            "O3": box(2, 0, 3, 1),
+            "O4": box(0, 1, 1, 2),
+            "O5": box(1, 1, 2, 2),
+            "OX1": box(10, 10, 11, 11),
+            "OX2": box(11, 10, 12, 11),
+        }
+        wa_ids = list(geoms.keys())
+        tree = STRtree([geoms[w] for w in wa_ids])
+        clusters_with_seed = [("O1", ["O1", "O2", "O3", "O4", "O5", "OX1", "OX2"])]
+        result = _reassign_isolated_pieces_touching_other_wags(clusters_with_seed, geoms, wa_ids, tree, None)
+        assert len(result) == 1
+        assert set(result[0][1]) == {"O1", "O2", "O3", "O4", "O5", "OX1", "OX2"}
+
+    def test_diagonal_only_touch_still_counts(self):
+        # The stray piece touches the foreign WAG only at a CORNER (no shared
+        # edge) — this pass counts that (unlike _reassign_dominated_cells,
+        # which is strictly orthogonal).
+        from shapely.geometry import box
+        from shapely.strtree import STRtree
+
+        geoms = {
+            "O1": box(0, 0, 1, 1),
+            "OX": box(10, 10, 11, 11),
+            "RED": box(11, 11, 12, 12),  # touches OX only at the (11, 11) corner
+        }
+        wa_ids = list(geoms.keys())
+        tree = STRtree([geoms[w] for w in wa_ids])
+        clusters_with_seed = [("O1", ["O1", "OX"]), ("RED", ["RED"])]
+        result = _reassign_isolated_pieces_touching_other_wags(clusters_with_seed, geoms, wa_ids, tree, None)
+        groups = {frozenset(cells) for _seed, cells in result}
+        assert groups == {frozenset(["O1"]), frozenset(["OX", "RED"])}
+
+    def test_ordinary_single_piece_wag_is_never_touched(self):
+        # A normal, single connected WAG bordering a different WAG along an
+        # ordinary shared edge — this must NEVER trigger anything (it has
+        # only one piece, so there's nothing "disconnected" to reassign).
+        from shapely.geometry import box
+        from shapely.strtree import STRtree
+
+        geoms = {
+            "O1": box(0, 0, 1, 1),
+            "O2": box(1, 0, 2, 1),
+            "RED": box(2, 0, 3, 1),  # touches O2 along a normal shared edge
+        }
+        wa_ids = list(geoms.keys())
+        tree = STRtree([geoms[w] for w in wa_ids])
+        clusters_with_seed = [("O1", ["O1", "O2"]), ("RED", ["RED"])]
+        result = _reassign_isolated_pieces_touching_other_wags(clusters_with_seed, geoms, wa_ids, tree, None)
+        groups = {frozenset(cells) for _seed, cells in result}
+        assert groups == {frozenset(["O1", "O2"]), frozenset(["RED"])}
+
+    def test_overrides_max_buildings_unlike_dominated_cells(self):
+        # A stray piece must move even when the receiving WAG is already huge
+        # — unlike _reassign_dominated_cells, there's no ceiling here.
+        from shapely.geometry import box
+        from shapely.strtree import STRtree
+
+        geoms = {
+            "O1": box(0, 0, 1, 1),
+            "O2": box(1, 0, 2, 1),
+            "OX": box(10, 10, 11, 11),
+            "RED": box(11, 10, 12, 11),
+        }
+        wa_ids = list(geoms.keys())
+        tree = STRtree([geoms[w] for w in wa_ids])
+        clusters_with_seed = [("O1", ["O1", "O2", "OX"]), ("RED", ["RED"])]
+        result = _reassign_isolated_pieces_touching_other_wags(clusters_with_seed, geoms, wa_ids, tree, None)
+        groups = {frozenset(cells) for _seed, cells in result}
+        assert groups == {frozenset(["O1", "O2"]), frozenset(["OX", "RED"])}
+
+    def test_barrier_blocks_reassignment(self):
+        from shapely.geometry import LineString, box
+        from shapely.prepared import prep
+        from shapely.strtree import STRtree
+
+        geoms = {
+            "O1": box(0, 0, 1, 1),
+            "OX": box(10, 10, 11, 11),
+            "RED": box(11, 10, 12, 11),
+        }
+        wa_ids = list(geoms.keys())
+        tree = STRtree([geoms[w] for w in wa_ids])
+        clusters_with_seed = [("O1", ["O1", "OX"]), ("RED", ["RED"])]
+        barrier = prep(LineString([(10.5, -5), (10.5, 20)]))  # runs right between OX and RED
+        result = _reassign_isolated_pieces_touching_other_wags(clusters_with_seed, geoms, wa_ids, tree, barrier)
+        groups = {frozenset(cells) for _seed, cells in result}
+        assert groups == {frozenset(["O1", "OX"]), frozenset(["RED"])}

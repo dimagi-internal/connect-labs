@@ -46,6 +46,25 @@ algorithm. ``max_buildings`` (the new hard ceiling) and ``max_reach_m`` (the
 top-up pass's own search radius, independent of ``buffer_distance_m``) bound
 how far this can go. ``min_buildings=0`` (the default) disables the whole pass,
 so existing plans/callers that don't set it behave exactly as before.
+
+Shape-sanity loop, added 2026-07
+----------------------------------
+The top-up pass above is deliberately allowed to reach across genuinely empty
+terrain (its whole point, for sparse rural areas) — but that can leave the
+merged-in piece geometrically disconnected from the rest of its new WAG, or
+mostly-but-not-fully boxed in by a different one. After top-up runs once,
+three always-on fixes are iterated together to a fixed point (each can expose
+new work for the others): ``_absorb_enclosed_clusters`` (a cluster 100% boxed
+in by ONE other cluster), ``_reassign_isolated_pieces_touching_other_wags`` (a
+piece disconnected from its own WAG's main body that ALSO touches a different
+WAG — touching only open terrain is fine and left alone), and
+``_reassign_dominated_cells`` (3+ strictly-orthogonal neighbours from one
+other WAG, even without full enclosure). The first two override
+``max_buildings`` — there is no better option for a landlocked or
+stranded-next-to-another-WAG piece; the third still respects it, a softer
+preference rather than a structural necessity. Priority, in order: hitting
+``target_buildings`` exactly is sacrificed first; walkability and not
+fragmenting into tiny/stray groups wins.
 """
 
 from __future__ import annotations
@@ -357,19 +376,41 @@ def _bfs_adjacency(
         barriers_3857,
     )
 
-    # ---- Always-on, again: the top-up pass's own reach-based merges can unify
-    # what were separate surrounding clusters into one, newly exposing an
-    # enclosure that wasn't visible before they merged (a cell whose neighbours
-    # spanned 2+ clusters pre-top-up, now spanning just the 1 merged one). ----
-    clusters_with_seed = _absorb_enclosed_clusters(clusters_with_seed, adjacency, geoms_3857)
-
-    # ---- Always-on: reassign any work area with 3+ strictly-orthogonal
-    # neighbours dominated by one other WAG — the passes above can still leave
-    # a cell mostly-but-not-fully boxed in by a different group (or max_buildings
-    # blocked a true enclosure's merge above); this is that cleanup. ----
-    clusters_with_seed = _reassign_dominated_cells(
-        clusters_with_seed, by_id, geoms_3857, wa_ids, tree, resolved_max, barriers_3857
-    )
+    # ---- Always-on shape-sanity loop, run to a fixed point. The top-up pass
+    # above is allowed to reach across genuinely empty terrain (its whole
+    # point, for sparse rural areas) — but that can leave the merged-in piece
+    # geometrically disconnected from the rest of its new WAG, and each of the
+    # fixes below can expose new work for the others (e.g. dissolving an
+    # enclave can suddenly leave some other cell dominated), so they're
+    # iterated together rather than run once in a fixed order:
+    #
+    #   1. _absorb_enclosed_clusters   — a cluster 100% boxed in by ONE other.
+    #   2. _reassign_isolated_pieces   — a piece disconnected from its own
+    #      WAG's main body that ALSO touches (edge or corner) a different
+    #      WAG — the "gap-reached piece happens to land next to someone
+    #      else's territory" artifact. A disconnected piece touching only
+    #      open terrain is left alone (that's the whole point of reaching
+    #      across a real gap) — only touching another WAG is the problem.
+    #   3. _reassign_dominated_cells   — 3+ strictly-orthogonal neighbours
+    #      from one other WAG, even without full enclosure.
+    #
+    # (1) and (2) override max_buildings — a landlocked or stranded-next-to-
+    # another-WAG piece has no better option. (3) still respects it — it's a
+    # softer preference, not a structural necessity. This ordering matches
+    # priority: exact target_buildings is the first thing sacrificed;
+    # walkability and not fragmenting into tiny/stray groups wins.
+    for _round in range(10):
+        before = frozenset(frozenset(cells) for _seed, cells in clusters_with_seed)
+        clusters_with_seed = _absorb_enclosed_clusters(clusters_with_seed, adjacency, geoms_3857)
+        clusters_with_seed = _reassign_isolated_pieces_touching_other_wags(
+            clusters_with_seed, geoms_3857, wa_ids, tree, barriers_3857
+        )
+        clusters_with_seed = _reassign_dominated_cells(
+            clusters_with_seed, by_id, geoms_3857, wa_ids, tree, resolved_max, barriers_3857
+        )
+        after = frozenset(frozenset(cells) for _seed, cells in clusters_with_seed)
+        if before == after:
+            break
 
     # ---- assign labels ("{WARD-prefix-}group-N", N restarting at 1 per ward — see
     # _ward_numbered_labels). Prefix comes from each cluster's SURVIVING seed's ward
@@ -630,7 +671,10 @@ def _top_up_undersized_clusters(
         crosses_other_cluster."""
         rec = active[recipient_id]
         best = None  # (dist, donor_id, is_adjacent)
-        for wid in rec["cells"]:
+        # Sorted (not raw set/hash) order so an exact distance tie always
+        # resolves to the same donor across runs, not whichever the current
+        # process's string-hash randomization happens to visit first.
+        for wid in sorted(rec["cells"]):
             geom = geoms_3857[wid]
             for idx in tree.query(geom.buffer(max_reach_m), predicate="intersects"):
                 nb = wa_ids[idx]
@@ -645,7 +689,7 @@ def _top_up_undersized_clusters(
                 is_adjacent = nb in adjacency.get(wid, [])
                 if not is_adjacent and crosses_other_cluster(wid, nb, {recipient_id, donor_id}):
                     continue
-                if best is None or dist < best[0]:
+                if best is None or (dist, donor_id) < (best[0], best[1]):
                     best = (dist, donor_id, is_adjacent)
         return best[1:] if best else None
 
@@ -685,10 +729,14 @@ def _top_up_undersized_clusters(
             # ---- steal cells from this donor, closest-to-recipient first ----
             took_any = False
             while recipient["total"] < min_buildings:
-                boundary = [c for c in donor["cells"] if has_safe_link(c, recipient["cells"])]
+                # sorted(): donor["cells"] is a set — iterate deterministically so
+                # an exact distance tie always picks the same cell across runs.
+                boundary = [c for c in sorted(donor["cells"]) if has_safe_link(c, recipient["cells"])]
                 if not boundary:
                     break
-                boundary.sort(key=lambda c: min(geoms_3857[c].distance(geoms_3857[r]) for r in recipient["cells"]))
+                boundary.sort(
+                    key=lambda c: (min(geoms_3857[c].distance(geoms_3857[r]) for r in recipient["cells"]), c)
+                )
                 took = False
                 for c in boundary:
                     b = building_count(c)
@@ -803,7 +851,9 @@ def _reassign_dominated_cells(
                     tally[other_cid] = tally.get(other_cid, 0) + 1
             if not tally:
                 continue
-            best_cid, best_count = max(tally.items(), key=lambda kv: kv[1])
+            # Deterministic tie-break (lowest cluster id wins a count tie) —
+            # matches the same pattern used in the other shape-sanity passes.
+            best_cid, best_count = max(tally.items(), key=lambda kv: (kv[1], -kv[0]))
             if best_count < 3 or total(best_cid) + building_count(wid) > max_buildings:
                 continue
             active[cid].remove(wid)
@@ -815,6 +865,132 @@ def _reassign_dominated_cells(
                 del active[cid]
                 del seeds[cid]
             changed = True
+    return [(seeds[cid], active[cid]) for cid in active]
+
+
+# ---- Always-on: reassign disconnected pieces that touch another WAG --------
+
+
+def _reassign_isolated_pieces_touching_other_wags(
+    clusters_with_seed: list[tuple[str, list[str]]],
+    geoms_3857: dict[str, object],
+    wa_ids: list[str],
+    tree,
+    barriers_3857=None,
+) -> list[tuple[str, list[str]]]:
+    """Within each WAG, split its cells into connected pieces (linked by
+    touching each other — a real shared edge OR just a corner) and leave the
+    LARGEST piece alone (the main body — it's expected to touch its literal
+    neighbours along an ordinary shared border, which is normal and must not
+    trigger anything). Any OTHER (smaller, disconnected-from-the-main-body)
+    piece is fine to keep existing under this WAG's label if it only touches
+    open/unclaimed terrain — that's the whole point of the min_buildings
+    top-up pass being allowed to reach across a genuine gap. But if that
+    disconnected piece ALSO touches (edge or corner) a cell from a DIFFERENT
+    WAG, it can't stay under its current label — a piece cut off from its own
+    group while sitting right against (or diagonally against) another group's
+    territory reads as "this actually belongs to whichever WAG it's touching."
+    Move the whole piece there (the foreign WAG it touches the most cells of,
+    ties broken by cluster id).
+
+    Overrides max_buildings, like ``_absorb_enclosed_clusters``: a piece
+    stranded next to a different WAG is a worse outcome than a modest
+    overshoot — matching the priority that walkability/non-fragmentation
+    outranks hitting the building target exactly.
+
+    Runs unconditionally, iterated together with the other shape-sanity
+    passes (see the loop in ``_bfs_adjacency``) — resolving one piece can
+    change another WAG's own connectivity, exposing further work."""
+    if len(clusters_with_seed) < 2:
+        return clusters_with_seed
+
+    from shapely.geometry import LineString
+
+    def crosses_barrier(a: str, b: str) -> bool:
+        if barriers_3857 is None:
+            return False
+        return barriers_3857.intersects(
+            LineString([geoms_3857[a].centroid.coords[0], geoms_3857[b].centroid.coords[0]])
+        )
+
+    # "Touches at all" — edge or corner — independent of buffer_distance_m,
+    # so a "diagonal" touch counts here even though it wouldn't for the
+    # strictly-orthogonal _reassign_dominated_cells above.
+    touch_adjacency: dict[str, list[str]] = {wid: [] for wid in wa_ids}
+    for wid in wa_ids:
+        geom = geoms_3857[wid]
+        for idx in tree.query(geom, predicate="intersects"):
+            nb = wa_ids[idx]
+            if nb != wid and not crosses_barrier(wid, nb):
+                touch_adjacency[wid].append(nb)
+
+    active: dict[int, list[str]] = {}
+    seeds: dict[int, str] = {}
+    cell_owner: dict[str, int] = {}
+    for cid, (seed, cells) in enumerate(clusters_with_seed):
+        active[cid] = list(cells)
+        seeds[cid] = seed
+        for w in cells:
+            cell_owner[w] = cid
+
+    def connected_pieces(cid: int) -> list[list[str]]:
+        # Iterate candidate start cells in SORTED (not raw set/hash) order so the
+        # discovered pieces — and therefore which one wins size ties below — are
+        # reproducible across runs/processes, not dependent on Python's per-process
+        # string-hash randomization (which set() iteration order rides on).
+        remaining = set(active[cid])
+        pieces = []
+        for start in sorted(active[cid]):
+            if start not in remaining:
+                continue
+            piece = []
+            stack = [start]
+            remaining.discard(start)
+            while stack:
+                cur = stack.pop()
+                piece.append(cur)
+                for nb in touch_adjacency.get(cur, []):
+                    if nb in remaining:
+                        remaining.discard(nb)
+                        stack.append(nb)
+            pieces.append(piece)
+        return pieces
+
+    changed = True
+    rounds = 0
+    while changed and rounds < 20:
+        changed = False
+        rounds += 1
+        for cid in list(active.keys()):
+            if cid not in active or len(active[cid]) <= 1:
+                continue
+            pieces = connected_pieces(cid)
+            if len(pieces) <= 1:
+                continue  # this WAG is fully connected internally already
+            # Largest first; ties broken by lowest cell id, deterministically
+            # (see connected_pieces — this doesn't ride on hash randomization).
+            pieces.sort(key=lambda p: (-len(p), min(p)))
+            for piece in pieces[1:]:  # every piece except the main body
+                tally: dict[int, int] = {}
+                for c in piece:
+                    for nb in touch_adjacency.get(c, []):
+                        other_cid = cell_owner.get(nb)
+                        if other_cid is not None and other_cid != cid:
+                            tally[other_cid] = tally.get(other_cid, 0) + 1
+                if not tally:
+                    continue  # touches only open terrain — stays part of cid
+                best_cid = max(tally.items(), key=lambda kv: (kv[1], -kv[0]))[0]
+                for w in piece:
+                    active[cid].remove(w)
+                active[best_cid].extend(piece)
+                for w in piece:
+                    cell_owner[w] = best_cid
+                if seeds[cid] in piece:
+                    seeds[cid] = active[cid][0] if active[cid] else None
+                changed = True
+            if not active[cid]:
+                del active[cid]
+                del seeds[cid]
     return [(seeds[cid], active[cid]) for cid in active]
 
 
