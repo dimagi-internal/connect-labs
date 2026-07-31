@@ -10,14 +10,25 @@
   border-collapse: collapse;
   font-size: 13px;
 }
-/* Headers ride with the scroll.
-   A 28-row consignment table put any scrolled reader in front of eight
-   unlabelled columns — "900 cartons", "900", "Jul 14, 2026", "Delivered" — with
-   nothing on screen saying what any of them was. The offset is the shell's own
-   sticky topbar height, so a header parks just under it rather than behind it. */
+/* Sticky, to the WRAP's scrollport — offset zero, and the zero matters.
+
+   Every .data-table sits inside .table-wrap, and overflow-x: auto makes the
+   wrap a scroll container, which makes it the sticky element's scrollport.
+   A topbar-height offset here (the original "headers ride with the page
+   scroll" intent) therefore never engaged against the page at all: it parked
+   the header row 54px INTO every table, painting it over the first data rows
+   and swallowing their clicks — an Open-round button that could not be
+   pressed, an Award button the same. Relative to the wrap, which never
+   scrolls vertically, top: 0 is simply the header's natural position.
+
+   The 28-row-consignment-table finding that motivated the offset (scrolled
+   readers facing unlabelled columns) is therefore STILL OPEN — a real fix
+   needs the wrap itself to own vertical scrolling (max-height + overflow-y)
+   or an unwrapped table, both of which are layout decisions, not offsets.
+   See docs/walkthroughs/oes-product-backlog.md. */
 .data-table th {
   position: sticky;
-  top: calc(var(--oes-topbar-h) + 1px);
+  top: 0;
   z-index: 2;
   background: var(--oes-panel);
   text-align: left;
@@ -29,13 +40,6 @@
   padding: 8px 10px;
   border-bottom: 1px solid var(--oes-line);
   white-space: nowrap;
-}
-/* Inside a modal the scroll container is .modal-body, which has no topbar —
-   the 54px offset above parked the header row mid-table there, floating over
-   the first data rows and swallowing their clicks (an Award button that could
-   never be pressed). Stick to the top of the modal's own scrollport instead. */
-.modal .data-table th {
-  top: 0;
 }
 .data-table th.sortable {
   cursor: pointer;
