@@ -129,8 +129,8 @@ scenes:
   ai_quality: Only Nigerian nodes and consignments appear; the scoping is evidently server-side rather
     than a filter control.
 - id: coverage-by-district-not-tonnage-delivered
-  concept_claim: Coverage measured against caseload distinguishes a large delivery into a large caseload
-    from a small one into a small caseload, which tonnage cannot.
+  concept_claim: Coverage measured against caseload tells apart two deliveries of the same size into
+    different caseloads, which tonnage cannot.
   url: /supply/
   show: The Coverage by district card on the government view — Borno at IPC 5 with its caseload, the courses
     actually delivered, the coverage percent and the children still uncovered, beside Yobe which has received
@@ -145,9 +145,9 @@ scenes:
     note: how this caseload was estimated
   - kind: hold
     seconds: 1.6
-  impressive_because: A large delivery into a large caseload and a small delivery into a small one look
-    identical in tonnes. With the caseload as the denominator they do not, and that difference is where
-    the state puts its own resources.
+  impressive_because: Two deliveries of the same size into different caseloads look identical in tonnes.
+    With the caseload as the denominator they do not, and that difference is where the state puts its
+    own resources.
   ai_quality: Coverage is computed over a stated window; every district carries the source note for its
     caseload.
 - id: the-number-everyone-quotes-tested

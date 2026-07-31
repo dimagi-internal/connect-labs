@@ -161,6 +161,22 @@
 .bar-value {
   text-align: right;
   font-weight: 600;
+  white-space: nowrap;
+}
+/* Keys for the two series in a stock bar. The pale in-transit fill had no
+   legend at all, so a site holding nothing drew a half-full bar next to a
+   printed 0 and a reader had no way to learn why. */
+.bar-swatch {
+  width: 18px;
+  height: 7px;
+  border-radius: 999px;
+  display: inline-block;
+}
+.bar-swatch.on-hand {
+  background: var(--oes-accent);
+}
+.bar-swatch.pending {
+  background: rgba(13, 122, 95, 0.3);
 }
 
 /* ---------- toast ---------- */

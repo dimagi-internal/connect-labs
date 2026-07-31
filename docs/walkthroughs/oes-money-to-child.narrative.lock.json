@@ -92,7 +92,7 @@
         }
       ],
       "id": "coverage-by-district-not-tonnage-delivered",
-      "narrative": "Volume delivered cannot answer the question Hauwa has. A large delivery into a large caseload and a small delivery into a small one look identical in tonnes. With the caseload as the denominator, this district is covered to ninety-one percent of need and this one — which received more cartons — sits at thirty-four, with thirty-one thousand children still uncovered. That is where the state puts its own resources, and it is the same figure that justifies the next appropriation.",
+      "narrative": "Volume delivered cannot answer the question Hauwa has. Two deliveries of the same size into different caseloads look identical in tonnes. With the caseload as the denominator, this district is covered to ninety-one percent of need and this one — which received more cartons — sits at thirty-four, with thirty-one thousand children still uncovered. That is where the state puts its own resources, and it is the same figure that justifies the next appropriation.",
       "persona": "hauwa",
       "provenance": "S4",
       "title": "Coverage by district, not tonnage delivered"
