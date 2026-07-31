@@ -380,3 +380,70 @@
   color: var(--oes-ink-soft);
   opacity: 0.55;
 }
+
+/* The frozen-versus-live comparison, on ONE grid.
+   The heading paragraphs and the table columns sat on different grids, so
+   "Frozen at submission" and the AS SUBMITTED column it labels were ~180px
+   apart and the live column shifted ~76px left of its own heading — which
+   breaks the left-is-frozen / right-is-live spatial contract the panel is
+   entirely built on. Identical percentages on both, and a divider so the
+   boundary between the two columns is visible rather than inferred. */
+.frozen-live-grid {
+  display: grid;
+  grid-template-columns: 24% 38% 38%;
+  gap: 0 10px;
+}
+.frozen-live-grid > :nth-child(3) {
+  border-left: 1px solid var(--oes-line);
+  padding-left: 10px;
+}
+.frozen-live-table .data-table {
+  table-layout: fixed;
+}
+.frozen-live-table .data-table th:nth-child(1),
+.frozen-live-table .data-table td:nth-child(1) {
+  width: 24%;
+}
+.frozen-live-table .data-table th:nth-child(2),
+.frozen-live-table .data-table td:nth-child(2) {
+  width: 38%;
+}
+.frozen-live-table .data-table th:nth-child(3),
+.frozen-live-table .data-table td:nth-child(3) {
+  width: 38%;
+  border-left: 1px solid var(--oes-line);
+}
+.snapshot-stamp {
+  margin: 0 0 10px;
+}
+.snapshot-stamp code {
+  font-size: 11px;
+}
+
+/* Filters that say what they filter.
+   Three bare native selects read as "All categories / All countries / Any
+   expiry" with no field name above them, so which axis each governed was only
+   discoverable by opening it — and they were the app's one place using
+   unstyled OS controls. */
+.filter-field {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.filter-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  color: var(--oes-ink-soft);
+}
+/* The filtered count is the answer the screen exists to give, so it is set as
+   one — it previously sat at ordinary card-title weight. */
+.registry-answer {
+  font-weight: 500;
+}
+.registry-count {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}

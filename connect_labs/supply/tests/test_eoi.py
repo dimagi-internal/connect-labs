@@ -269,3 +269,57 @@ def test_the_seeded_registry_records_a_reviewer_for_every_qualification():
         if qualification_dict(q)["granted_by"] is None
     ]
     assert missing == [], f"qualifications with no recorded reviewer: {missing}"
+
+
+def test_a_closed_round_reports_what_it_decided():
+    """A closed round rendered a bare em-dash with 14 applications behind it.
+
+    The count alone says a round happened; the breakdown says what it decided,
+    which is what makes the row something other than a dead end for every
+    decision it holds.
+    """
+    from django.core.management import call_command
+
+    from connect_labs.supply.serializers import round_dict
+
+    call_command("seed_supply_demo", "--reset")
+    closed = EOIRound.objects.filter(status=EOIRound.Status.CLOSED).first()
+    assert closed is not None, "the seeded world needs a closed round"
+
+    row = round_dict(closed)
+    breakdown = row["submission_breakdown"]
+    assert set(breakdown) == {"submitted", "qualified", "rejected"}
+    # Every application is accounted for, or the breakdown is a second,
+    # disagreeing count of the same thing.
+    assert sum(breakdown.values()) == row["submission_count"]
+    assert breakdown["qualified"] + breakdown["rejected"] > 0
+
+
+def test_the_review_payload_reaches_decided_applications_not_only_pending_ones():
+    """The rounds table counted 8 applications beside a queue showing 4.
+
+    `review_queue` is deliberately a worklist and holds only what awaits a
+    decision — true, unstated, and indistinguishable from an inconsistency. The
+    surface needs the decided ones too before it can explain the gap.
+    """
+    from django.core.management import call_command
+
+    from connect_labs.supply.api.bootstrap import _staff_world
+    from connect_labs.supply.decorators import Actor
+    from connect_labs.supply.models import StaffRole
+
+    call_command("seed_supply_demo", "--reset")
+    # Whichever staff role is granted eoi_review — asked of the permission
+    # matrix rather than hardcoded, so the test does not pin a role name.
+    from connect_labs.supply.rbac import ROLE_PERMS
+
+    reviewer_roles = [r for r, perms in ROLE_PERMS.items() if "eoi_review" in perms]
+    staff = StaffRole.objects.filter(role__in=reviewer_roles).select_related("user").first()
+    assert staff is not None, f"the seeded world needs one of {reviewer_roles}"
+
+    world = _staff_world(Actor(staff.user, staff.role, None))
+    assert len(world["eoi_submissions"]) == EOISubmission.objects.count()
+    assert len(world["review_queue"]) < len(
+        world["eoi_submissions"]
+    ), "the queue must be a strict subset, or there is no gap to explain"
+    assert any(s["status"] != "submitted" for s in world["eoi_submissions"])

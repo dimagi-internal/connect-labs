@@ -80,6 +80,13 @@ def round_dict(rnd):
         "closes_at": rnd.closes_at.isoformat() if rnd.closes_at else None,
         "status": rnd.status,
         "submission_count": rnd.submissions.count(),
+        # What became of them. A closed round rendered a bare em-dash in its
+        # action column with 14 applications behind it — the outcome of every one
+        # of them unreachable from the table that counted them. The count alone
+        # says a round happened; the breakdown says what it decided.
+        "submission_breakdown": {
+            status: rnd.submissions.filter(status=status).count() for status in ("submitted", "qualified", "rejected")
+        },
     }
 
 
