@@ -1096,3 +1096,42 @@ def test_no_plan_is_covered_by_stock_that_has_not_arrived():
             f"on_hand={on_hand} required={required} was called covered on the strength "
             f"of {inbound} cartons that arrive after the distribution"
         )
+
+
+def test_discharge_breakdown_separates_discharged_from_still_in_treatment():
+    """`children_observed` is the DISCHARGED population, so only discharged
+    outcomes may be expressed as a share of it.
+
+    The funder page rendered a "Discharge outcome" table whose Share column
+    divided every row by `children_observed` = 79 (64 recovered + 10 defaulted +
+    3 transferred + 2 non-response). Those four total a correct 100.0%. A fifth
+    row put the 55 children still IN TREATMENT over the same 79 for 69.6%, so
+    the column summed to **169.6%** — on the one card whose subtitle promises
+    "two numbers, two methods, reported side by side", and two blocks below a
+    sentence saying those children "count on neither side".
+
+    Pinned server-side because the fix is in the UI and the UI needs the
+    population boundary to be a stated, stable property.
+    """
+    from django.core.management import call_command
+
+    call_command("seed_supply_demo", "--reset")
+    summary = coverage.courses_versus_recoveries()
+    breakdown = summary["discharge_breakdown"]
+    observed = summary["children_observed"]
+
+    discharged = {k: v for k, v in breakdown.items() if k != "in_treatment"}
+    assert sum(discharged.values()) == observed, (
+        "children_observed must equal the discharged rows exactly, or a share of "
+        f"it is meaningless: rows {sum(discharged.values())} vs observed {observed}"
+    )
+
+    share_total = sum(v / observed * 100 for v in discharged.values())
+    assert abs(share_total - 100.0) < 0.11, f"discharged shares total {share_total:.1f}%, not 100%"
+
+    # And the in-treatment cohort is genuinely outside it — the thing the UI must
+    # not fold in.
+    in_treatment = breakdown.get("in_treatment", 0)
+    if in_treatment:
+        assert summary["children_in_treatment"] == in_treatment
+        assert in_treatment + observed == sum(breakdown.values())
