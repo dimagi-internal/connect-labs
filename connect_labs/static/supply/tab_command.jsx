@@ -445,6 +445,10 @@ function CommandTab({ ctx }) {
           , not against a single month. Hover a district for how its caseload
           was estimated. All figures in this environment are synthetic.
         </p>
+        {/* The verdict the pill colours encode, stated so it can be argued
+            with — this card renders the same coverageTone bands the funder and
+            government surfaces do, and stated the rule on neither. */}
+        <p className="muted small method-note">{COVERAGE_BANDS}</p>
       </Card>
 
       <Card

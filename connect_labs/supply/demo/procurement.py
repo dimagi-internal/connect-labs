@@ -23,7 +23,13 @@ from ..models import (
     SupplierOrg,
 )
 from .demand import demand_summary, reset_demand, seed_demand
-from .execution import backdate_awards_to_precede_execution, execution_summary, reset_execution, seed_execution
+from .execution import (
+    backdate_awards_to_precede_execution,
+    execution_summary,
+    reset_execution,
+    seed_execution,
+    settle_future_dated_arrivals,
+)
 from .organisations import _seed_orgs, _seed_staff, _seed_supplier_login
 from .solicitations import (
     _seed_awarded_rfp,
@@ -73,6 +79,9 @@ class ProcurementSeeder:
         # run's clock, so without this the world opens with consignments dated
         # months before the contract that paid for them.
         backdate_awards_to_precede_execution()
+        # ...and for the same reason, at the same point: nothing may claim to
+        # have arrived on a date that has not happened yet.
+        settle_future_dated_arrivals()
 
         return {
             "suppliers": SupplierOrg.objects.count(),

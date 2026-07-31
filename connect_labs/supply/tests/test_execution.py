@@ -311,6 +311,41 @@ def test_no_consignment_is_dated_before_the_contract_that_paid_for_it():
     assert offenders == [], "consignments predating their own award:\n  " + "\n  ".join(offenders)
 
 
+def test_nothing_claims_to_have_arrived_on_a_day_that_has_not_happened():
+    """A future-dated "Delivered" row is a control failure, not a rounding issue.
+
+    Savanna Nutrients' 15,000 cartons into Maiduguri showed Jul 31 under a
+    Delivered chip while today was the 30th — and that single row carried 92% of
+    Borno's reported coverage, so the figure a whole scene rests on was sourced
+    from an arrival that had not occurred.
+
+    The world is authored around a moving today, which is exactly why this is a
+    property over the seeded world rather than a fix to one row: the offending
+    date was not wrong when it was written, it became wrong as today caught up
+    with it, and it will do so again.
+    """
+    from django.core.management import call_command
+    from django.utils import timezone
+
+    from connect_labs.supply.models.execution import Shipment
+
+    call_command("seed_supply_demo", "--reset")
+    today = timezone.localdate()
+
+    offenders = []
+    landed = (Shipment.Status.DELIVERED, Shipment.Status.CONFIRMED)
+    for shipment in Shipment.objects.filter(status__in=landed):
+        for field in ("delivered_at", "departed_at", "eta"):
+            moment = getattr(shipment, field, None)
+            if moment and timezone.localtime(moment).date() > today:
+                offenders.append(
+                    f"{shipment.reference} is {shipment.status} but "
+                    f"{field} is {timezone.localtime(moment).date()} (today {today})"
+                )
+
+    assert offenders == [], "arrivals recorded in the future:\n  " + "\n  ".join(offenders)
+
+
 def test_a_contract_does_not_start_before_it_was_awarded():
     from django.core.management import call_command
     from django.utils import timezone

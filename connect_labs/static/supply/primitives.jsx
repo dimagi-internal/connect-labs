@@ -4,13 +4,27 @@
 
 const { useState, useEffect, useMemo, useCallback, useRef } = React;
 
-function Page({ title, lede, actions, children }) {
+/* `asOf` stamps the page with the instant its figures describe.
+
+   No surface carried one, while rows carried dates of Jul 26 / Jul 30 / Jul 31 /
+   ETA Aug 2. An auditor cannot cite a disbursement or a coverage figure without
+   knowing what moment it was true of — and the absence is exactly what let a
+   consignment dated Jul 31 sit there marked "Delivered" on the 30th without
+   anything on the screen contradicting it. With the stamp present, a
+   future-dated row is self-evidently wrong instead of merely unnoticed. */
+function Page({ title, lede, actions, asOf, children }) {
   return (
     <div className="page">
       <div className="page-head">
         <div>
           <h1>{title}</h1>
           {lede ? <p className="page-lede">{lede}</p> : null}
+          {asOf ? (
+            <p className="page-asof muted small">
+              Figures as of {formatDate(asOf)}. Anything dated later has not
+              happened yet.
+            </p>
+          ) : null}
         </div>
         {actions ? <div className="page-actions">{actions}</div> : null}
       </div>
@@ -97,6 +111,30 @@ function coverageTone(pct) {
   return 'bad';
 }
 
+/* The banding rule above, in words, for the card that uses it.
+
+   Colour is a verdict, and this product's whole thesis is that a verdict must be
+   stated so it can be challenged. These pills coloured 0% and 34% red, 67.6%
+   amber and 91% green against a threshold written down nowhere on any surface —
+   an interpretation stamped on the measure with no way to contest it. Any card
+   that renders a coverageTone pill states this rule beside it. */
+const COVERAGE_BANDS =
+  'Bands: below 50% red, 50–79% amber, 80–100% green, above 100% marked as ' +
+  'over-positioned rather than as a success — more stock than the caseload ' +
+  'needs is a question about where it should have gone, not an achievement.';
+
+/* A national rate as a true ratio of the national sums.
+
+   Averaging the rows' own percentages weights a small district equally with a
+   large one — it would give Gombe's 91% the same say as Borno's 34% across five
+   times the caseload. */
+function nationalPercent(rows, numeratorKey) {
+  const caseload = rows.reduce((n, r) => n + (r.caseload || 0), 0);
+  if (!caseload) return '—';
+  const top = rows.reduce((n, r) => n + (r[numeratorKey] || 0), 0);
+  return `${Math.round((top / caseload) * 1000) / 10}%`;
+}
+
 function InfoNote({ label, text }) {
   const [open, setOpen] = useState(false);
   return (
@@ -176,7 +214,25 @@ function EmptyState({ title, hint }) {
   );
 }
 
-function DataTable({ columns, rows, empty, emptyHint, rowKey, onRowClick }) {
+/* A column may declare `total: (rows) => node` to render a footer cell.
+   `totalsLabel` names the row in the first column that declares no total.
+
+   Two separate findings needed this. A funder adding the DISBURSED column by
+   hand got $547k against a $546k headline — every cell was rounded to the
+   nearest thousand independently, so the column of roundings did not sum to the
+   rounding of the sum, on a page whose subject is reconciliation. And the
+   coverage card, whose stated job is "where do I put my own resources", made
+   the reader add three rows to learn the national figure. Both are the same
+   omission: a table that invites addition should do the addition. */
+function DataTable({
+  columns,
+  rows,
+  empty,
+  emptyHint,
+  rowKey,
+  onRowClick,
+  totalsLabel,
+}) {
   const [sort, setSort] = useState({ key: null, dir: 1 });
 
   const sorted = useMemo(() => {
@@ -246,6 +302,21 @@ function DataTable({ columns, rows, empty, emptyHint, rowKey, onRowClick }) {
             </tr>
           ))}
         </tbody>
+        {columns.some((c) => c.total) ? (
+          <tfoot>
+            <tr className="totals-row">
+              {columns.map((col, i) => (
+                <td key={col.key}>
+                  {col.total
+                    ? col.total(rows)
+                    : i === 0
+                    ? totalsLabel || 'Total'
+                    : null}
+                </td>
+              ))}
+            </tr>
+          </tfoot>
+        ) : null}
       </table>
     </div>
   );

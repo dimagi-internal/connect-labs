@@ -94,6 +94,40 @@ def backdate_awards_to_precede_execution():
             Contract.objects.filter(pk=contract.pk).update(starts_on=awarded_on)
 
 
+def settle_future_dated_arrivals():
+    """Nothing may be recorded as already arrived on a date that has not come.
+
+    Called from the seeder's top level for the same reason the award backdating
+    is: ``seed_demand`` stamps arrivals of its own after ``seed_execution`` has
+    run, so a check inside either half sees only part of the world.
+
+    The world is authored around a moving today — ETAs are written as offsets so
+    the demo opens mid-flight — and one consignment landed on the wrong side of
+    it: Savanna Nutrients' 15,000 cartons into Maiduguri showed ``Jul 31`` under
+    a ``Delivered`` chip while today was the 30th. An auditor reads a
+    future-dated completion as a control failure, not a rounding issue, and that
+    single row carried 92% of Borno's reported coverage.
+
+    The date moves rather than the status. Flipping it to in-transit would be the
+    other honest repair, but it would drop Borno's coverage from 34% to 3% and
+    silently invalidate a figure three narratives quote out loud — so the
+    conservative fix is to say it arrived a day ago instead of tomorrow, which is
+    what the rest of the world already assumes.
+    """
+    today = timezone.localdate()
+    landed = (Shipment.Status.DELIVERED, Shipment.Status.CONFIRMED)
+    for shipment in Shipment.objects.filter(status__in=landed):
+        stamps = {}
+        for field in ("delivered_at", "departed_at", "eta"):
+            value = getattr(shipment, field, None)
+            if value and timezone.localtime(value).date() > today:
+                # A day back, so an arrival is never stamped later than the
+                # despatch it followed once both are clamped to the same ceiling.
+                stamps[field] = timezone.make_aware(datetime.combine(today - timedelta(days=1), time(11, 0)))
+        if stamps:
+            Shipment.objects.filter(pk=shipment.pk).update(**stamps)
+
+
 def _seed_nodes(orgs):
     nodes = {}
     for index, (name, kind, country, lon, lat, owner_name) in enumerate(NODES):

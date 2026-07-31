@@ -44,6 +44,7 @@ function FunderTab({ ctx }) {
     <Page
       title="Funding and delivery"
       lede="What was appropriated, what is committed, what has been paid, and what reached children."
+      asOf={world.as_of}
     >
       <KeyFigures
         figures={[
@@ -98,20 +99,33 @@ function FunderTab({ ctx }) {
         {/* The bars encoded three stages and explained them only in a native
             `title` tooltip — which does not render in a screenshot, does not
             survive a projector, and cannot be read by anyone using a keyboard.
-            Three grey-green bars with no key is decoration. */}
+            Three grey-green bars with no key is decoration.
+
+            Swatch order follows the column header's stage chain. The legend read
+            "obligated · delivered · disbursed" directly above a header reading
+            "Obligated → disbursed → delivered": two contradictory orderings of
+            the same three-stage sequence, on the one card whose whole point is
+            that the three stages never merge. */}
         <div className="stage-legend">
           <span className="stage-key">
             <i className="stage-swatch obligated" /> obligated
           </span>
           <span className="stage-key">
-            <i className="stage-swatch delivered" /> delivered
+            <i className="stage-swatch disbursed" /> disbursed
           </span>
           <span className="stage-key">
-            <i className="stage-swatch disbursed" /> disbursed
+            <i className="stage-swatch delivered" /> delivered
           </span>
           <span className="muted small">
             each bar is a share of what that contract obligated
           </span>
+          {/* The three words the concept rests on had no definition anywhere on
+              the card that presents them, while `i` bubbles existed for lesser
+              figures on the same page. */}
+          <InfoNote
+            label="the three stages"
+            text="Obligated: money committed by a signed contract — not paid, and not yet food. Disbursed: money actually paid, and only against consignments confirmed at the place their contract names. Delivered: cartons confirmed received. A contract can be fully obligated, partly disbursed and barely delivered at the same time, which is why the three are never merged into one 'spent' figure."
+          />
         </div>
         <DataTable
           rows={contracts}
@@ -132,27 +146,85 @@ function FunderTab({ ctx }) {
               value: () => '',
               render: (c) => <StageBars contract={c} />,
             },
+            // Exact dollars, and the column adds itself up.
+            //
+            // These cells were rounded to the nearest thousand individually, so
+            // a funder summing DISBURSED by hand got $547k ($0 + $0 + $502k +
+            // $45k) against the $546k headline three inches above. Rounding
+            // explains it; a reader with a calculator on a page that promises
+            // reconciliation does not care. Exact cells sum to an exact total,
+            // and the total is now printed rather than left as an exercise.
             {
               key: 'obl',
               label: 'Obligated',
               value: (c) => c.obligated_value,
-              render: (c) => shortMoney(c.obligated_value),
+              render: (c) => exactMoney(c.obligated_value),
+              total: (rows) =>
+                exactMoney(
+                  rows.reduce((n, c) => n + (c.obligated_value || 0), 0),
+                ),
             },
             {
               key: 'dis',
               label: 'Disbursed',
               value: (c) => c.disbursed_value,
-              render: (c) => shortMoney(c.disbursed_value),
+              render: (c) => exactMoney(c.disbursed_value),
+              total: (rows) =>
+                exactMoney(
+                  rows.reduce((n, c) => n + (c.disbursed_value || 0), 0),
+                ),
+            },
+            // The third stage, as a figure.
+            //
+            // The card subtitles itself "Obligated, disbursed and delivered are
+            // tracked separately and never merged" and shipped TWO figures:
+            // delivered existed only as an ~8px unlabelled bar with no value and
+            // no scale. The scene's claim — three separate figures per contract —
+            // was falsified by the card asserting it. Shown in the unit delivery
+            // is actually recorded in, against what the contract bought, since a
+            // bare quantity says nothing about whether it is all of it.
+            {
+              key: 'del',
+              label: 'Delivered',
+              value: (c) => c.delivered_quantity || 0,
+              render: (c) => (
+                <span>
+                  {formatNumber(c.delivered_quantity || 0)}
+                  <span className="muted">
+                    {' '}
+                    / {formatNumber(c.quantity)} {c.unit}
+                  </span>
+                </span>
+              ),
             },
             {
               key: 'iati',
               label: 'IATI activity',
               value: (c) => c.iati_activity_id || '—',
-              render: (c) => (
-                <code className="small">{c.iati_activity_id || '—'}</code>
-              ),
+              // The page's one external-verification affordance, made usable.
+              //
+              // These were dead grey monospace strings that wrapped mid-token in
+              // 4 of 4 rows — an identifier a reader cannot read, let alone
+              // check, on the card that offers it as proof. d-portal is the
+              // sector's standard viewer for a published IATI activity.
+              render: (c) =>
+                c.iati_activity_id ? (
+                  <a
+                    className="iati-id"
+                    href={`https://d-portal.org/q.html?aid=${encodeURIComponent(
+                      c.iati_activity_id,
+                    )}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <code className="small">{c.iati_activity_id}</code>
+                  </a>
+                ) : (
+                  <span className="muted">—</span>
+                ),
             },
           ]}
+          totalsLabel="All contracts"
         />
       </Card>
 
@@ -160,30 +232,48 @@ function FunderTab({ ctx }) {
         title="What a dollar bought"
         subtitle="Stated as a chain, so every step can be checked."
       >
+        {/* Every rung exact, and every arrow carrying its constant.
+            A chain captioned "so every step can be checked" printed a rounded
+            $502k on rung 1, so dividing the chain's own endpoints gave USD 41.83
+            against a printed USD 41.80 — and a 3-significant-figure operand
+            cannot support cent precision at all, since anything in [$501,500,
+            $502,499] renders as $502k and spans USD 41.79–41.87. The middle link
+            was uncheckable for a different reason: 166 MT → 12,000 cartons
+            requires 13.8 kg per carton, and neither kg-per-sachet nor
+            kg-per-carton appeared anywhere on the page. The 1-carton-is-1-course
+            identity was likewise only ever in the narration, which is why two
+            adjacent rungs showing an identical figure read as a copy-paste bug
+            rather than the deliberate 1:1 it is. */}
         <div className="ladder">
           <div className="ladder-step">
-            <div className="ladder-value">{shortMoney(goodsDisbursed)}</div>
+            <div className="ladder-value">{exactMoney(goodsDisbursed)}</div>
             <div className="ladder-label">
               disbursed on supply contracts, against confirmed delivery
             </div>
           </div>
-          <div className="ladder-arrow">→</div>
+          <div className="ladder-arrow">
+            →<span className="ladder-op">at contracted unit price</span>
+          </div>
           <div className="ladder-step">
             <div className="ladder-value">{formatNumber(confirmedMt)} MT</div>
             <div className="ladder-label">
               therapeutic food confirmed received
             </div>
           </div>
-          <div className="ladder-arrow">→</div>
+          <div className="ladder-arrow">
+            →<span className="ladder-op">÷ 13.8 kg per carton</span>
+          </div>
           <div className="ladder-step">
             <div className="ladder-value">{formatNumber(confirmedCartons)}</div>
-            <div className="ladder-label">cartons (150 sachets each)</div>
+            <div className="ladder-label">cartons (150 × 92 g sachets)</div>
           </div>
-          <div className="ladder-arrow">→</div>
+          <div className="ladder-arrow">
+            →<span className="ladder-op">1 carton = 1 full course</span>
+          </div>
           <div className="ladder-step">
             <div className="ladder-value">{formatNumber(confirmedCartons)}</div>
             <div className="ladder-label">
-              children given a full course, paid for and confirmed
+              full courses paid for and confirmed
             </div>
           </div>
         </div>
@@ -193,14 +283,39 @@ function FunderTab({ ctx }) {
           <div className="ladder-result-value">
             {costPerChild ? formatMoney(costPerChild, 'USD') : '—'}
           </div>
+          {/* "cost per child treated" was contradicted by its own last rung —
+              "paid for and confirmed" is a procurement fact, not a treatment
+              outcome — and by the measured-recovery card two cards below, which
+              exists specifically to separate those two things. The ladder can
+              only ever price a course bought; whether a child completed it is
+              what the recoveries measure. */}
           <div className="ladder-result-label">
-            cost per child treated
+            cost per full course paid for and confirmed
             <InfoNote
-              label="cost per child treated"
-              text="One carton is 150 × 92 g sachets — one child's full course. Computed from disbursements against CONFIRMED deliveries only, so consignments in transit are excluded from both sides. A carton counts once, on the leg arriving at the delivery place its contract names, so a consignment moving in hops is not counted again at every hop. Haulage and storage contracts are excluded: they buy movement, not cartons."
+              label="cost per full course"
+              text="One carton is 150 × 92 g sachets — one child's full course. Computed from disbursements against CONFIRMED deliveries only, so consignments in transit are excluded from both sides. A carton counts once, on the leg arriving at the delivery place its contract names, so a consignment moving in hops is not counted again at every hop. Haulage and storage contracts are excluded: they buy movement, not cartons. This prices a course bought, NOT a child treated — see 'Children treated: the figure, and the measurement' below for what was actually measured."
             />
           </div>
         </div>
+        {/* The reconciliation the chain's own first rung demands.
+            It opened at "$502k disbursed on supply contracts" while the headline
+            three inches above read "$546k Disbursed" — two near-identically
+            labelled figures 8% apart with no line explaining the difference.
+            Excluding freight from a cost-per-outcome figure is a substantive,
+            contestable methodological choice, and it was presented as none. The
+            narration also claimed "consignments in transit are excluded, and it
+            says so", which was false of this screen: neither phrase appeared on
+            it. */}
+        <p className="muted small method-note">
+          From {exactMoney(disbursed)} disbursed in total, this chain uses{' '}
+          {exactMoney(goodsDisbursed)} — the contracts that bought food.{' '}
+          {exactMoney(disbursed - goodsDisbursed)} paid to haulage and storage
+          contracts is excluded, because those dollars buy movement rather than
+          cartons and would price a course below the cost of the food in it.
+          Consignments still in transit are excluded from both sides of the
+          division: no money has moved against them and no carton has been
+          confirmed.
+        </p>
       </Card>
 
       <Card
@@ -810,4 +925,13 @@ function shortMoney(v) {
   if (v >= 1000000) return `$${(v / 1000000).toFixed(1)}M`;
   if (v >= 1000) return `$${Math.round(v / 1000)}k`;
   return `$${Math.round(v)}`;
+}
+
+/* Whole dollars, separated — for anywhere a reader may add a column up.
+   shortMoney rounds each value independently, so a column of shortMoney does
+   not sum to the shortMoney of the sum. That is fine for a headline tile and
+   wrong for a ledger. */
+function exactMoney(v) {
+  if (v === null || v === undefined) return '—';
+  return `$${Math.round(v).toLocaleString()}`;
 }

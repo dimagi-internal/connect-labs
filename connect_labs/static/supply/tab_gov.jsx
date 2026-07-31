@@ -59,6 +59,7 @@ function GovTab({ ctx }) {
     <Page
       title={`${countryLabel(country)} — supply overview`}
       lede="Commodities entering and moving within the country, and the caseload they are meant to cover."
+      asOf={world.as_of}
     >
       <KeyFigures
         figures={[
@@ -227,6 +228,8 @@ function GovTab({ ctx }) {
                 // anything printed or projected. It is the estimate every
                 // coverage figure on this page divides by, so it cannot be
                 // hover-only.
+                total: (rows) =>
+                  formatNumber(rows.reduce((n, r) => n + (r.caseload || 0), 0)),
                 render: (r) => (
                   <span className="cell-with-note">
                     {formatNumber(r.caseload)}
@@ -244,6 +247,10 @@ function GovTab({ ctx }) {
                 label: 'Courses delivered',
                 value: (r) => r.courses_delivered,
                 render: (r) => formatNumber(r.courses_delivered),
+                total: (rows) =>
+                  formatNumber(
+                    rows.reduce((n, r) => n + (r.courses_delivered || 0), 0),
+                  ),
               },
               {
                 key: 'coverage',
@@ -256,6 +263,7 @@ function GovTab({ ctx }) {
                 // missing companion figure sits beside it.
                 label: 'Supply positioned',
                 value: (r) => r.coverage_percent || 0,
+                total: (rows) => nationalPercent(rows, 'courses_delivered'),
                 render: (r) =>
                   r.coverage_percent === null ? (
                     <Badge tone="muted">no data</Badge>
@@ -270,6 +278,7 @@ function GovTab({ ctx }) {
                 key: 'dispensed',
                 label: 'Reached a child',
                 value: (r) => r.dispensed_percent || 0,
+                total: (rows) => nationalPercent(rows, 'courses_dispensed'),
                 render: (r) =>
                   r.dispensed_percent === null ? (
                     <Badge tone="muted">no data</Badge>
@@ -284,8 +293,23 @@ function GovTab({ ctx }) {
                 label: 'Children still uncovered',
                 value: (r) => r.uncovered_children,
                 render: (r) => formatNumber(r.uncovered_children),
+                // The national figure a ministry official is here for.
+                //
+                // It was computable from the three rows shown and left as
+                // arithmetic for the reader, on the card whose stated use is
+                // "where do I put my own state resources". A table that invites
+                // addition should do the addition — and the totals are computed
+                // from the unrounded rows, so the national percentages are true
+                // ratios of the national sums rather than averages of the rows'
+                // percentages, which would weight Gombe's 91% equally with
+                // Borno's 34% across five times the caseload.
+                total: (rows) =>
+                  formatNumber(
+                    rows.reduce((n, r) => n + (r.uncovered_children || 0), 0),
+                  ),
               },
             ]}
+            totalsLabel="National"
           />
         ) : (
           <EmptyState
@@ -319,6 +343,11 @@ function GovTab({ ctx }) {
           only courses a site recorded handing out. Food in a warehouse is not
           treatment, so the two are reported apart rather than merged.
         </p>
+        {/* The verdict the colours encode, stated so it can be argued with.
+            These pills coloured 0% and 34% red and 91% green against a threshold
+            written down nowhere, on the one product whose entire thesis is that
+            an interpretation must be stated to be challenged. */}
+        <p className="muted small method-note">{COVERAGE_BANDS}</p>
       </Card>
     </Page>
   );
