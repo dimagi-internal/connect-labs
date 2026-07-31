@@ -11,6 +11,7 @@ Key optimizations:
 4. Uses FieldComputation with custom extractors - leverages analysis pipeline infrastructure
 """
 
+import hashlib
 import logging
 import time
 from collections.abc import Callable
@@ -39,6 +40,11 @@ _SESSION_OPP_CACHE_TTL = 60 * 60 * 6  # 6 hours
 # Hard ceiling on how many opportunity scopes one lookup will probe. Each probe is
 # a remote round-trip, so this bounds the worst case of a cache miss.
 _SESSION_SEARCH_OPP_LIMIT = 1000
+# How long a caller remembers that a sweep found nothing. Short, because unlike
+# a hit this is not an immutable fact — it can change the moment the caller is
+# granted access to another opportunity — but long enough that a polling page
+# cannot re-run the fan-out on every request. See #1060.
+_SESSION_MISS_CACHE_TTL = 60 * 5  # 5 minutes
 
 
 def _session_opp_cache_key(session_id: int) -> str:
@@ -49,6 +55,23 @@ def _session_opp_cache_key(session_id: int) -> str:
     still carries the caller's own token and is re-authorized server-side.
     """
     return f"audit:session-opp:{session_id}"
+
+
+def _session_miss_cache_key(session_id: int, access_token: str) -> str:
+    """Cache key for "this caller's sweep found nothing".
+
+    Namespaced PER CALLER, unlike the location memo above, and that asymmetry is
+    the point. Where a session lives is the same fact for everybody; whether a
+    sweep can find it is not — the sweep only ever probes the caller's OWN
+    opportunities. Caching a miss globally would hide a session from the people
+    who can see it as soon as one person who can't went looking.
+
+    The token is hashed rather than stored: cache keys end up in Redis and in
+    logs, and a bearer token has no business in either. A token rotation just
+    costs one extra sweep.
+    """
+    caller = hashlib.sha256(access_token.encode()).hexdigest()[:16]
+    return f"audit:session-miss:{session_id}:{caller}"
 
 
 def _coerce_int(value) -> int | None:
@@ -1193,14 +1216,25 @@ class AuditDataAccess(BaseDataAccess):
            immutable, so it is memoised and the common case is one request.
         2. **Ambient scope**, for the ordinary "viewing a session in the
            opportunity that owns it" case.
-        3. **A bounded sweep** of the caller's other opportunities, whose
-           result is then memoised so nobody pays for it twice.
+        3. **A bounded sweep** of the caller's other opportunities. Both
+           outcomes are memoised — the hit globally (where a record lives is
+           the same fact for everyone), the miss per caller and briefly (a
+           sweep only probes the caller's OWN opportunities, so "not found" is
+           a statement about their access, not about the session).
 
         The sweep is what caused the 2026-07-29 incident: it was running per
         page-open with no memoisation and a fresh client — and therefore a
         fresh TLS handshake — per candidate opportunity, at ~700 requests/min
         against production Connect. It now reuses one pooled connection and
         runs at most once per session id per TTL.
+
+        Memoising only the *hit* was not enough, and #1060 caught the rest on
+        2026-07-30: 23,445 scoped probes in a day, peaking ~1,370/min, one
+        session swept 447 times. A sweep that failed cached nothing and so
+        re-ran in full on the very next request, and a caller who could not
+        read the remembered opportunity evicted that shared entry for everyone
+        else. Both are fixed here; between them they are why this endpoint kept
+        re-paying a cost #1037 had already been written to remove.
 
         Only the session's LOCATION is ever cached, never the record itself.
         Every fetch still goes to the server with the caller's own token and
@@ -1214,19 +1248,36 @@ class AuditDataAccess(BaseDataAccess):
             session = self._fetch_session(session_id, opportunity_id=remembered_opp_id)
             if session:
                 return session
-            # Stale (deleted or re-scoped) — forget it and fall through to a re-resolve.
-            cache.delete(cache_key)
+            # Fall through to a re-resolve, but do NOT evict the memo here. This
+            # miss is per-caller: the entry is shared across users, and a user
+            # who simply lacks access to the remembered opportunity gets None
+            # too. Evicting on that let one unauthorized reader wipe the memo
+            # for everyone who could use it, and two people on the same session
+            # then thrashed it — each re-sweep repopulating, the other evicting.
+            # A genuine relocation still self-heals: a successful resolve below
+            # overwrites the entry, and it expires on its own regardless.
 
         session = self._fetch_session(session_id)
         if session:
             self._remember_session_location(session_id, session)
             return session
 
+        # A sweep that finds nothing used to memoise nothing, so an unresolvable
+        # session re-ran the entire fan-out on every single request — 23,445
+        # scoped probes/day against production Connect by 2026-07-30 (#1060).
+        miss_key = _session_miss_cache_key(session_id, self.access_token)
+        if cache.get(miss_key):
+            return None
+
         try:
-            return self._sweep_opportunities_for_session(session_id, skip=remembered_opp_id)
+            found = self._sweep_opportunities_for_session(session_id, skip=remembered_opp_id)
         except Exception:
             logger.debug("Cross-opportunity session search failed for session %s", session_id, exc_info=True)
             return None
+
+        if found is None:
+            cache.set(miss_key, True, _SESSION_MISS_CACHE_TTL)
+        return found
 
     def _fetch_session(self, session_id: int, opportunity_id: int | None = None) -> AuditSessionRecord | None:
         """One round-trip for a session by id, optionally under an explicit scope."""
