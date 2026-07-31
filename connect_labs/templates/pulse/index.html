@@ -122,6 +122,33 @@
     identities, but they do show partner organisation names alongside their
     delivery volumes and per-service rates.
   </p>
+
+  {# Creating a link is the riskiest action here, so the form states what the #}
+  {# link will expose next to the button that creates it.                     #}
+  <form method="post" class="bg-white rounded-lg shadow-sm p-4 mb-4 flex flex-wrap gap-3 items-end">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="create">
+    <div>
+      <label class="block text-xs text-gray-500 mb-1" for="link-layout">Display</label>
+      <select id="link-layout" name="layout" class="border-gray-300 rounded-md text-sm">
+        {% for slug, meta in layouts.items %}
+          <option value="{{ slug }}">{{ meta.label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="flex-grow min-w-48">
+      <label class="block text-xs text-gray-500 mb-1" for="link-label">Who it's for</label>
+      <input id="link-label" type="text" name="label" placeholder="e.g. Gates, Sept review"
+             class="w-full border-gray-300 rounded-md text-sm">
+    </div>
+    <label class="flex items-center gap-2 text-sm text-gray-700 pb-2">
+      <input type="checkbox" name="anonymise_partners" class="rounded border-gray-300">
+      Anonymise partners
+    </label>
+    <button type="submit" class="button button-md bg-brand-indigo hover:bg-brand-deep-purple text-white">
+      Create link
+    </button>
+  </form>
   <div class="bg-white rounded-lg shadow-sm overflow-hidden">
     <div class="overflow-x-auto">
       <table class="w-full text-sm">
@@ -132,6 +159,7 @@
             <th class="px-3 py-2 font-medium">Partner names</th>
             <th class="px-3 py-2 font-medium">Views</th>
             <th class="px-3 py-2 font-medium">Link</th>
+            <th class="px-3 py-2 font-medium text-right">Actions</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-gray-100">
@@ -139,14 +167,40 @@
           <tr>
             <td class="px-3 py-2">{{ t.label|default:"—" }}</td>
             <td class="px-3 py-2"><code class="bg-gray-100 px-1 py-0.5 rounded text-gray-800">{{ t.layout_slug }}</code></td>
-            <td class="px-3 py-2 text-gray-600">{% if t.show_partner_names %}shown{% else %}anonymised{% endif %}</td>
+            <td class="px-3 py-2">
+              {% if t.show_partner_names %}
+                <span class="inline-block bg-amber-100 text-amber-800 text-xs px-2 py-0.5 rounded">shown</span>
+              {% else %}
+                <span class="inline-block bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded">anonymised</span>
+              {% endif %}
+            </td>
             <td class="px-3 py-2 text-gray-600">{{ t.view_count }}</td>
             <td class="px-3 py-2 text-xs">
-              <a class="text-brand-indigo hover:underline" href="{% url 'pulse:public' t.token %}">{% url 'pulse:public' t.token %}</a>
+              <a class="text-brand-indigo hover:underline break-all" href="{% url 'pulse:public' t.token %}">{% url 'pulse:public' t.token %}</a>
+            </td>
+            <td class="px-3 py-2">
+              <div class="flex gap-2 justify-end">
+                <form method="post">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="partner_names">
+                  <input type="hidden" name="token" value="{{ t.token }}">
+                  <input type="hidden" name="show" value="{% if t.show_partner_names %}off{% else %}on{% endif %}">
+                  <button type="submit" class="text-xs text-brand-indigo hover:underline whitespace-nowrap">
+                    {% if t.show_partner_names %}Hide partners{% else %}Show partners{% endif %}
+                  </button>
+                </form>
+                {# Revoking is irreversible for the recipient — the link dies. #}
+                <form method="post" onsubmit="return confirm('Revoke this link? Anyone holding the URL loses access immediately.')">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="revoke">
+                  <input type="hidden" name="token" value="{{ t.token }}">
+                  <button type="submit" class="text-xs text-red-600 hover:underline">Revoke</button>
+                </form>
+              </div>
             </td>
           </tr>
           {% empty %}
-          <tr><td colspan="5" class="px-3 py-6 text-center text-gray-400 text-sm">No public links yet.</td></tr>
+          <tr><td colspan="6" class="px-3 py-6 text-center text-gray-400 text-sm">No public links yet.</td></tr>
           {% endfor %}
         </tbody>
       </table>

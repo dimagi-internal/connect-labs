@@ -12,9 +12,10 @@ from __future__ import annotations
 
 import secrets
 
+from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import Http404
-from django.shortcuts import render
+from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.views import View
 
@@ -60,7 +61,72 @@ def _display_context(layout: str, *, public: bool, show_partner_names: bool = Tr
 
 
 class PulseIndexView(LoginRequiredMixin, View):
-    """Layout picker plus ingest status and link management."""
+    """Layout picker plus ingest status and link management.
+
+    Links are created and revoked here rather than from a shell. Handing someone
+    an unauthenticated URL to production delivery data is the riskiest thing
+    this app does, and it belongs somewhere that can show, at the moment of
+    doing it, what the link exposes and how to take it back.
+    """
+
+    def post(self, request):
+        action = request.POST.get("action", "")
+
+        if action == "create":
+            layout = request.POST.get("layout", DEFAULT_LAYOUT)
+            if layout not in LAYOUTS:
+                messages.error(request, f"Unknown layout {layout!r}.")
+                return redirect("pulse:index")
+            token = mint_public_token(
+                request.user,
+                label=request.POST.get("label", "").strip(),
+                layout=layout,
+                # Absent checkbox means names are shown, which is the more
+                # disclosing branch -- so it is stated back in the message
+                # rather than left to be discovered.
+                show_partner_names=not request.POST.get("anonymise_partners"),
+            )
+            if token.show_partner_names:
+                messages.warning(
+                    request,
+                    f"Created a {LAYOUTS[layout]['label']} link. Anyone with the URL sees partner "
+                    "organisation names, their delivery volumes and per-service rates. No "
+                    "beneficiary or worker identities. Use “Anonymise partners” to withhold names.",
+                )
+            else:
+                messages.success(request, f"Created a {LAYOUTS[layout]['label']} link with partner names withheld.")
+
+        elif action == "revoke":
+            n = PulsePublicToken.objects.filter(token=request.POST.get("token", ""), revoked=False).update(
+                revoked=True
+            )
+            messages.success(
+                request,
+                "Link revoked — that URL now 404s, indistinguishably from one that never existed."
+                if n
+                else "That link was already revoked.",
+            )
+
+        elif action == "partner_names":
+            show = request.POST.get("show") == "on"
+            n = PulsePublicToken.objects.filter(token=request.POST.get("token", ""), revoked=False).update(
+                show_partner_names=show
+            )
+            if n:
+                messages.success(
+                    request,
+                    "Link now names partner organisations."
+                    if show
+                    else "Partner names withheld on that link — it now shows descriptors instead.",
+                )
+            else:
+                messages.error(request, "No live link with that token.")
+
+        else:
+            messages.error(request, "Unknown action.")
+
+        # Redirect after POST so a refresh cannot mint a second link.
+        return redirect("pulse:index")
 
     def get(self, request):
         from connect_labs.pulse.api import _ingest_state
