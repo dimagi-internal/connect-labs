@@ -109,8 +109,12 @@ scenes:
   - kind: click
     target: css:tr:has-text('OES Supply Base 2026-B') button:has-text('Open round')
     note: and OPENED, on camera — the lifecycle transition that starts collecting interest
+  # The transition is a POST + world refresh against the deployed host; a 1s
+  # hold snapshotted the row still reading Draft with the create-toast up.
+  - kind: wait_for
+    target: css:tr:has-text('OES Supply Base 2026-B') .chip:has-text('Open')
   - kind: hold
-    seconds: 1.0
+    seconds: 1.2
   - kind: snapshot
     note: 'the canonical frame: the round the viewer watched Ada declare, open in the table with its four category pills'
   - kind: hold
