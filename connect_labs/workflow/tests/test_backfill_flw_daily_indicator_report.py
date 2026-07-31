@@ -175,6 +175,75 @@ def test_backfill_replace_existing_deletes_only_matching_period_runs(
 
 
 @pytest.mark.django_db
+@mock.patch(f"{MODPATH}.run_default")
+@mock.patch(f"{MODPATH}.WorkflowDataAccess")
+@mock.patch(f"{MODPATH}.get_valid_cchq_access_token")
+@mock.patch(f"{MODPATH}.get_valid_access_token")
+def test_backfill_end_date_anchors_the_window_instead_of_yesterday(
+    mock_get_token, mock_get_cchq_token, MockWDA, mock_run_default
+):
+    """--end-date lets a later backfill reach further back without re-touching
+    the more-recent days an earlier (no --end-date) backfill already covered."""
+    User.objects.create(username="wouter", email="wvink@dimagi.com")
+    mock_get_token.return_value = "connect-tok"
+    mock_get_cchq_token.return_value = "cchq-tok"
+
+    fetch_instance = mock.Mock()
+    fetch_instance.get_definition.return_value = _make_definition()
+    MockWDA.return_value = fetch_instance
+    mock_run_default.return_value = {"opportunities": {}, "date": "x"}
+
+    out = StringIO()
+    call_command(
+        COMMAND,
+        "--definition",
+        "8061",
+        "--program",
+        "176",
+        "--owner-email",
+        "wvink@dimagi.com",
+        "--days",
+        "40",
+        "--end-date",
+        "2026-07-16",
+        stdout=out,
+    )
+
+    assert mock_run_default.call_count == 40
+    windows = [call.kwargs["window"] for call in mock_run_default.call_args_list]
+    # run_default derives its period_start from the END of the window (see
+    # test_run_default_splits_by_opportunity_and_completes_each_run), so that's
+    # what determines the WAT calendar day each backfilled run is tagged with.
+    period_ends = sorted(w[1].date().isoformat() for w in windows)
+    assert period_ends[0] == "2026-06-07"
+    assert period_ends[-1] == "2026-07-16"
+
+
+@pytest.mark.django_db
+@mock.patch(f"{MODPATH}.get_valid_cchq_access_token")
+@mock.patch(f"{MODPATH}.WorkflowDataAccess")
+@mock.patch(f"{MODPATH}.get_valid_access_token")
+def test_backfill_raises_on_malformed_end_date(mock_get_token, MockWDA, mock_get_cchq_token):
+    User.objects.create(username="wouter", email="wvink@dimagi.com")
+    mock_get_token.return_value = "connect-tok"
+    mock_get_cchq_token.return_value = "cchq-tok"
+    MockWDA.return_value.get_definition.return_value = _make_definition()
+
+    with pytest.raises(CommandError, match="--end-date must be YYYY-MM-DD"):
+        call_command(
+            COMMAND,
+            "--definition",
+            "8061",
+            "--program",
+            "176",
+            "--owner-email",
+            "wvink@dimagi.com",
+            "--end-date",
+            "not-a-date",
+        )
+
+
+@pytest.mark.django_db
 @mock.patch(f"{MODPATH}.get_valid_cchq_access_token")
 @mock.patch(f"{MODPATH}.WorkflowDataAccess")
 @mock.patch(f"{MODPATH}.get_valid_access_token")
