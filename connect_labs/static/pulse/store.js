@@ -37,6 +37,7 @@
       this.opts = Object.assign({}, DEFAULTS, options || {});
       this.mode = this.opts.mode;
       this.program = this.opts.program || null;
+      this.org = this.opts.org || null;
       this.speed = this.opts.speed;
       this.playing = true;
 
@@ -113,21 +114,28 @@
 
     /* Every read has to carry the filter. A single endpoint that forgot it
        would mix another programme's services into a filtered view, which is
-       worse than not filtering at all. */
+       worse than not filtering at all.
+     *
+       The token rides along too. Partner names are decided server-side and
+       default to withheld, so a public link minted to show partners has to say
+       which link it is on every call — the page cannot grant itself that. */
     _url(path, params) {
       const u = new URLSearchParams(params || {});
       if (this.program) u.set('program', this.program);
+      if (this.org) u.set('org', this.org);
+      if (this.opts.token) u.set('token', this.opts.token);
       const q = u.toString();
       return `${this.opts.base}${path}${q ? '?' + q : ''}`;
     }
 
     /* Re-fetch EVERYTHING. The headline figures are server-side aggregates, so
        a filter that only redrew the map would leave whole-estate totals above
-       one programme's points. */
-    async setProgram(programId) {
-      const next = programId || null;
-      if (next === this.program) return;
-      this.program = next;
+       one programme's points.
+     *
+       Programme and partner share this path rather than each owning a copy:
+       they compose server-side, and two near-identical reset routines would
+       drift until one of them forgot to clear the cursor. */
+    async _applyFilter() {
       if (this._livePollTimer) clearInterval(this._livePollTimer);
       this._heldLive.length = 0;
       this.events = [];
@@ -139,7 +147,21 @@
       await this.refreshSummary();
       if (this.mode === 'replay') await this.loadReplayWindow();
       else await this.startLive();
-      this.emit('control', { program: this.program });
+      this.emit('control', { program: this.program, org: this.org });
+    }
+
+    async setProgram(programId) {
+      const next = programId || null;
+      if (next === this.program) return;
+      this.program = next;
+      await this._applyFilter();
+    }
+
+    async setOrg(orgSlug) {
+      const next = orgSlug || null;
+      if (next === this.org) return;
+      this.org = next;
+      await this._applyFilter();
     }
 
     async loadReplayWindow(hours) {

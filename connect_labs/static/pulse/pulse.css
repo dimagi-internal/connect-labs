@@ -953,6 +953,247 @@
   border-radius: 2px;
 }
 
+/* ── partner card ────────────────────────────────────────────────────────
+   A dossier that belongs to a PLACE. It is positioned over the map at the
+   partner's own geography and tethered there by a leader line, so the answer
+   to "who delivers here" is spatial rather than a row in a table somewhere
+   else on screen.
+
+   Everything here is `transform`/`opacity` only. The card floats above a
+   canvas repainting at 60fps under it, so animating layout properties would
+   fight the ignition loop for the same frames. */
+.pulse-partner {
+  position: absolute;
+  z-index: 6;
+  width: 268px;
+  padding: 11px 13px 12px;
+  border: 1px solid rgba(142, 161, 255, 0.34);
+  border-radius: 5px;
+  /* Layered, not flat: a lit top edge and an inner rim read as glass over the
+     map rather than as an opaque box sitting on it. */
+  background: linear-gradient(
+    165deg,
+    rgba(29, 21, 83, 0.93) 0%,
+    rgba(12, 7, 46, 0.95) 60%,
+    rgba(8, 4, 42, 0.96) 100%
+  );
+  box-shadow:
+    0 18px 44px -12px rgba(0, 0, 0, 0.82),
+    0 0 0 1px rgba(8, 4, 42, 0.6),
+    inset 0 1px 0 rgba(174, 190, 255, 0.16);
+  backdrop-filter: blur(9px) saturate(1.25);
+  -webkit-backdrop-filter: blur(9px) saturate(1.25);
+  pointer-events: none;
+  transform-origin: var(--ox, 0%) var(--oy, 100%);
+  animation: partner-in 260ms cubic-bezier(0.16, 0.86, 0.3, 1) both;
+}
+.pulse-partner[data-leaving='1'] {
+  animation: partner-out 190ms ease-in both;
+}
+@keyframes partner-in {
+  from {
+    opacity: 0;
+    transform: scale(0.9) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+@keyframes partner-out {
+  to {
+    opacity: 0;
+    transform: scale(0.97) translateY(3px);
+  }
+}
+
+/* The tether. Drawn as a rotated 1px rule from the card to the anchor point,
+   with a lit dot on the point itself, so the card visibly refers to somewhere
+   on the map instead of hovering unattached. */
+.pulse-tether {
+  position: absolute;
+  z-index: 5;
+  height: 1px;
+  transform-origin: 0 50%;
+  background: linear-gradient(
+    90deg,
+    rgba(254, 175, 49, 0.62),
+    rgba(254, 175, 49, 0.06)
+  );
+  pointer-events: none;
+  animation: tether-in 240ms ease-out both;
+}
+.pulse-tether::after {
+  content: '';
+  position: absolute;
+  left: -3px;
+  top: -3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--light);
+  box-shadow: 0 0 10px 2px rgba(254, 175, 49, 0.55);
+}
+@keyframes tether-in {
+  from {
+    opacity: 0;
+    transform: scaleX(0.2) rotate(var(--rot, 0deg));
+  }
+}
+
+.pulse-partner-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+.pulse-partner-name {
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--ink);
+}
+.pulse-partner-where {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--brand-sky);
+  white-space: nowrap;
+}
+.pulse-partner-funder {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  color: var(--ink-3);
+  margin-bottom: 9px;
+}
+.pulse-partner-funder b {
+  color: var(--ink-2);
+  font-weight: 500;
+}
+
+.pulse-partner-figs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 10px;
+  margin-bottom: 10px;
+}
+.pulse-partner-figs > div {
+  min-width: 0;
+}
+.pulse-partner-figs .pf-l {
+  display: block;
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin-bottom: 1px;
+}
+.pulse-partner-figs .pf-v {
+  font-variant-numeric: tabular-nums;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--ink);
+}
+.pulse-partner-figs .pf-v.gold {
+  color: var(--light);
+}
+.pulse-partner-figs .pf-v small {
+  font-size: 11px;
+  opacity: 0.75;
+  margin-right: 1px;
+}
+
+/* 26 weeks of delivery, from the works spine — deep history is the point, so
+   the axis says how far back it reaches rather than leaving it implied. */
+.pulse-partner-spark {
+  display: flex;
+  align-items: flex-end;
+  gap: 1.5px;
+  height: 34px;
+  margin-bottom: 3px;
+}
+.pulse-partner-spark i {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 1px;
+  border-radius: 1px 1px 0 0;
+  background: linear-gradient(
+    180deg,
+    rgba(254, 175, 49, 0.95),
+    rgba(184, 125, 28, 0.35)
+  );
+}
+/* The trailing week is incomplete by definition. Hatched rather than dropped:
+   dropping it makes a live trend look stopped, and leaving it solid makes
+   every trend look like it fell off a cliff. */
+.pulse-partner-spark i[data-partial='1'] {
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(254, 175, 49, 0.5) 0 2px,
+    rgba(254, 175, 49, 0.12) 2px 4px
+  );
+}
+.pulse-partner-axis {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 0.07em;
+  color: var(--ink-3);
+}
+
+.pulse-partner-mix {
+  display: flex;
+  height: 4px;
+  margin: 9px 0 5px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: var(--rule-soft);
+}
+.pulse-partner-mix i {
+  min-width: 0;
+}
+.pulse-partner-mixkey {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 9px;
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 0.05em;
+  color: var(--ink-2);
+}
+.pulse-partner-mixkey span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.pulse-partner-mixkey i {
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
+  flex: none;
+}
+
+/* Says what the card is standing on. An inexact map match has to be visible:
+   a partner whose geography is only partly attributable would otherwise read
+   as a partner who only works there. */
+.pulse-partner-note {
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px solid var(--rule-soft);
+  font-family: var(--mono);
+  font-size: 8.5px;
+  line-height: 1.45;
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before {

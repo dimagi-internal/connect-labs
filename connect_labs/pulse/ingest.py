@@ -56,6 +56,7 @@ from connect_labs.pulse.models import (
     PulseGridCell,
     PulseIngestHealth,
     PulseOpportunity,
+    PulseOrganization,
     PulseProgram,
     PulseScalar,
     PulseWork,
@@ -100,6 +101,21 @@ def refresh_opportunities(client) -> dict:
     opps = payload.get("opportunities") or []
 
     program_org = {p["id"]: p.get("organization") or "" for p in programs if p.get("id") is not None}
+
+    # Mirror the partners themselves. This payload has always carried
+    # ["id", "slug", "name", "funder"] per org and only its length was read, so
+    # the sole org identity downstream was a slug -- see PulseOrganization.
+    for o in orgs:
+        slug = (o.get("slug") or "").strip()
+        if not slug:
+            continue
+        PulseOrganization.objects.update_or_create(
+            slug=slug[:120],
+            defaults={
+                "name": (o.get("name") or "")[:300],
+                "funder_slug": (o.get("funder") or "")[:120],
+            },
+        )
 
     # Mirror the programmes themselves. Previously this payload was read only
     # for org slugs, and its `name` and `delivery_type` were dropped -- which is
