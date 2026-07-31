@@ -69,11 +69,15 @@ def test_seed_world_shape():
     assert not Qualification.objects.filter(org__country="SD", category="rutf").exists()
 
     assert EOIRound.objects.filter(status=EOIRound.Status.CLOSED).count() == 1
-    assert EOIRound.objects.filter(status=EOIRound.Status.OPEN).count() == 1
+    # Deliberately NO open round: the walkthrough's scenes create one on
+    # camera (Ada declares it, Amina applies, Tomas decides). A pre-seeded
+    # open round made those narrated acts unperformable — the round existed
+    # before its own declaration. The decided history lives on 2026-A.
+    assert not EOIRound.objects.filter(status=EOIRound.Status.OPEN).exists()
 
-    open_round = EOIRound.objects.get(status=EOIRound.Status.OPEN)
-    statuses = set(open_round.submissions.values_list("status", flat=True))
-    assert statuses == {"draft", "submitted", "qualified", "rejected"}
+    closed_round = EOIRound.objects.get(status=EOIRound.Status.CLOSED)
+    statuses = set(closed_round.submissions.values_list("status", flat=True))
+    assert statuses == {"qualified"}
 
     # a live solicitation mid-flight, and one fully awarded
     live = RFP.objects.get(title="RUTF Northeast Nigeria Q3 2026")

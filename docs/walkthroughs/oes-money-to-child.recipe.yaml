@@ -140,9 +140,12 @@ scenes:
     target: css:.card:has-text('Coverage by district')
   - kind: hold
     seconds: 2.6
-  - kind: hover
-    target: css:tr:has-text('Borno') span[title]
-    note: how this caseload was estimated
+  # The provenance moved off a native title= hover (OS-rendered, invisible in a
+  # capture) onto the product's own InfoNote button — so the estimate's source
+  # is now OPENED on camera and stays readable through the hold.
+  - kind: click
+    target: css:.card:has-text('Coverage by district') tr:has-text('Borno') .infonote-btn
+    note: how this caseload was estimated — opened on camera, not a hover
   - kind: hold
     seconds: 1.6
   impressive_because: Two deliveries of the same size into different caseloads look identical in tonnes.
