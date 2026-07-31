@@ -140,16 +140,20 @@ scenes:
   - kind: click
     target: css:.modal-close
     note: close the consignment — scene 4 ends inside it
+  # The card has outgrown one viewport — footer-anchored scrolling now clips
+  # the title and header row off the TOP, leaving unlabelled integer columns
+  # (the judged frame's exact failure). Anchor the head instead: title, header
+  # row and the top districts in frame; the method gets its own on-camera beat.
   - kind: scroll_to
-    target: css:.card:has-text('Requirement from caseload') .method-note
-    note: this card's own method note, which is the LAST thing in it. Scrolling to the card
-      aligns its top and leaves the table hanging off the bottom; scrolling to a row in the
-      middle decapitated the headers, so the payoff column rendered as an unlabelled integer
-      column and 660 requirement was indistinguishable from 660 gap; and `tr:last-child`
-      resolved into the pipeline table above it. Aligning the footer pulls the whole card —
-      title, headers and every district — up into one viewport.
+    target: css:.card:has-text('Requirement from caseload') .card-head
   - kind: hold
-    seconds: 4.2
+    seconds: 2.2
+    note: the caseload card — headers and districts labelled, the coverage figures readable
+  - kind: click
+    target: css:.card:has-text('Requirement from caseload') tr:has-text('Borno') .infonote-btn
+    note: where that estimate comes from — the method, opened on camera rather than asserted
+  - kind: hold
+    seconds: 2.4
   impressive_because: With a denominator, delivery stops being tonnage and becomes coverage. Volume alone
     could never distinguish a large delivery into a small caseload from a small delivery into a huge one.
   ai_quality: Every district carries a source note for its caseload; coverage is bounded by a stated window
@@ -171,6 +175,14 @@ scenes:
   - kind: hold
     seconds: 2.4
     note: how this row was ranked
+  # The closing narration is about the expiry-risk row — cartons expiring where
+  # the caseload is too small — and the card was never framed while it was
+  # spoken.
+  - kind: scroll_to
+    target: css:.exception:has-text('expire before they can be used')
+  - kind: hold
+    seconds: 2.0
+    note: the expiry-risk exception, framed when the narration reaches it
   - kind: scroll_to
     target: css:.card:has-text('Weeks of cover')
   - kind: hold
