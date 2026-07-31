@@ -34,7 +34,9 @@ class FakeSession:
         self.id = id
         self.opportunity_id = opportunity_id
         self.data = {"opportunity_id": opportunity_id}
-        self._storage_opportunity_id = storage_opportunity_id if storage_opportunity_id is not None else opportunity_id
+        # Public, matching AuditSessionRecord: callers addressing the API read
+        # this rather than reaching through _storage_record for it.
+        self.storage_opportunity_id = storage_opportunity_id if storage_opportunity_id is not None else opportunity_id
 
 
 @pytest.fixture(autouse=True)
@@ -51,7 +53,7 @@ def _clear_cache():
 def _storage_record_reads_the_fake():
     """Point _storage_record at FakeSession's storage id."""
     with patch("connect_labs.audit.data_access._storage_record") as m:
-        m.side_effect = lambda s: MagicMock(opportunity_id=s._storage_opportunity_id)
+        m.side_effect = lambda s: MagicMock(opportunity_id=s.storage_opportunity_id)
         yield m
 
 
