@@ -319,9 +319,18 @@ function TwoFiguresAndTheGap({ outcomes, records }) {
     non_response: 'Non-response',
     in_treatment: 'Still in treatment',
   };
+  // A child still in treatment has no discharge outcome, so it cannot be a row
+  // in a table headed "Discharge outcome" whose Share column divides by the
+  // number DISCHARGED. It was: children_observed is 79 (64 recovered + 10
+  // defaulted + 3 transferred + 2 non-response), the four real rows summed to a
+  // correct 100.0%, and a fifth row put 55 in-treatment children over the same
+  // 79 for 69.6% — so the column totalled 169.6%. The card two blocks above
+  // already states these children "count on neither side"; the table then
+  // counted them anyway.
   const rows = Object.entries(breakdown)
-    .filter(([, n]) => n > 0)
+    .filter(([status, n]) => n > 0 && status !== 'in_treatment')
     .map(([status, n]) => ({ status, label: labels[status] || status, n }));
+  const stillInTreatment = breakdown.in_treatment || 0;
 
   return (
     <Card
@@ -410,7 +419,7 @@ function TwoFiguresAndTheGap({ outcomes, records }) {
             },
             {
               key: 'pct',
-              label: 'Share',
+              label: 'Share of discharged',
               value: (r) => r.n,
               render: (r) =>
                 outcomes.children_observed
@@ -420,10 +429,21 @@ function TwoFiguresAndTheGap({ outcomes, records }) {
           ]}
         />
       ) : null}
+      {stillInTreatment ? (
+        <p className="muted small">
+          {formatNumber(stillInTreatment)} further children are still in
+          treatment and so have no discharge outcome yet. They are not in the
+          table above, and not in the {formatNumber(outcomes.children_observed)}{' '}
+          it is a share of — a course that has not finished cannot be counted as
+          recovered or as a failure.
+        </p>
+      ) : null}
       <p className="muted small method-note">
-        Treatment outcomes in this environment are synthetic, seeded against the
-        Sphere performance thresholds for severe acute malnutrition programmes
-        (recovery above 75%, defaulting below 15%).
+        Shares are of the {formatNumber(outcomes.children_observed)} children
+        discharged, so they total 100%. Treatment outcomes in this environment
+        are synthetic, seeded against the Sphere performance thresholds for
+        severe acute malnutrition programmes (recovery above 75%, defaulting
+        below 15%).
       </p>
     </Card>
   );
