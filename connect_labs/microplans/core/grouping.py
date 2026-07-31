@@ -58,8 +58,9 @@ new work for the others): ``_absorb_enclosed_clusters`` (a cluster 100% boxed
 in by ONE other cluster), ``_reassign_isolated_pieces_touching_other_wags`` (a
 piece disconnected from its own WAG's main body that ALSO touches a different
 WAG — touching only open terrain is fine and left alone), and
-``_reassign_dominated_cells`` (3+ strictly-orthogonal neighbours from one
-other WAG, even without full enclosure). The first two override
+``_reassign_dominated_cells`` (more strictly-orthogonal neighbours from other
+WAGs combined than from its own — even split across several different WAGs,
+none individually a majority — with no full enclosure). The first two override
 ``max_buildings`` — there is no better option for a landlocked or
 stranded-next-to-another-WAG piece; the third still respects it, a softer
 preference rather than a structural necessity. Priority, in order: hitting
@@ -391,8 +392,10 @@ def _bfs_adjacency(
     #      else's territory" artifact. A disconnected piece touching only
     #      open terrain is left alone (that's the whole point of reaching
     #      across a real gap) — only touching another WAG is the problem.
-    #   3. _reassign_dominated_cells   — 3+ strictly-orthogonal neighbours
-    #      from one other WAG, even without full enclosure.
+    #   3. _reassign_dominated_cells   — strictly-orthogonal neighbours from
+    #      OTHER WAGs combined outnumber those from its OWN, even split
+    #      across several different WAGs with no single majority, and even
+    #      without full enclosure.
     #
     # (1) and (2) override max_buildings — a landlocked or stranded-next-to-
     # another-WAG piece has no better option. (3) still respects it — it's a
@@ -774,18 +777,26 @@ def _reassign_dominated_cells(
     max_buildings: int,
     barriers_3857=None,
 ) -> list[tuple[str, list[str]]]:
-    """A work area with 3+ STRICTLY orthogonal neighbours (a real shared
+    """A work area whose STRICTLY orthogonal neighbours (a real shared
     boundary edge — not just within the adjacency buffer, and independent of
-    whatever buffer_distance_m is configured) belonging to one other WAG is
-    locally dominated by that group, even when it isn't fully enclosed on
-    every side (see _absorb_enclosed_clusters for that stricter case). Move it
-    there, as long as doing so doesn't push the receiving group over
-    max_buildings.
+    whatever buffer_distance_m is configured) include MORE from OTHER WAGs
+    (combined, regardless of how many different WAGs they're split across)
+    than from its OWN WAG is locally outnumbered — even without a single
+    other WAG holding a 3+ majority, and even without full enclosure (see
+    _absorb_enclosed_clusters for that stricter case). Move it to whichever
+    other WAG it borders the most, as long as: (a) doing so doesn't push the
+    receiving group over max_buildings, and (b) the move actually resolves the
+    imbalance — i.e. after moving, the cell's new "own" count (neighbours in
+    its new WAG) must exceed its new "foreign" count (every WAG it borders
+    that isn't the new one, including its OLD one). Requiring an actual
+    improvement — not just picking the least-bad option — is what stops a cell
+    at a symmetric meeting point of 3+ WAGs (nowhere it could move would ever
+    fix the imbalance) from endlessly flipping between neighbours each round.
 
     Runs unconditionally, AFTER the min_buildings top-up pass — that pass's
     own reach-based merges (deliberately allowed to bridge real sparse gaps,
-    per the original min_buildings design) are the likely source of a
-    dominated-but-not-enclosed cell in denser layouts, where a generous
+    per the original min_buildings design) are the likely source of an
+    outnumbered-but-not-enclosed cell in denser layouts, where a generous
     max_reach_m spans several WAG-widths rather than one genuine gap. Phase-1
     clustering alone can also produce this on its own, independent of the
     top-up pass being enabled at all.
@@ -844,17 +855,30 @@ def _reassign_dominated_cells(
             cid = cell_owner[wid]
             if cid not in active or wid not in active[cid]:
                 continue  # already moved earlier this round
+            own = 0
             tally: dict[int, int] = {}
             for nb in edge_adjacency.get(wid, []):
                 other_cid = cell_owner.get(nb)
-                if other_cid is not None and other_cid != cid:
+                if other_cid is None:
+                    continue
+                if other_cid == cid:
+                    own += 1
+                else:
                     tally[other_cid] = tally.get(other_cid, 0) + 1
-            if not tally:
-                continue
+            foreign_total = sum(tally.values())
+            if foreign_total <= own:
+                continue  # not outnumbered — leave it alone
             # Deterministic tie-break (lowest cluster id wins a count tie) —
             # matches the same pattern used in the other shape-sanity passes.
             best_cid, best_count = max(tally.items(), key=lambda kv: (kv[1], -kv[0]))
-            if best_count < 3 or total(best_cid) + building_count(wid) > max_buildings:
+            # The move must actually resolve the imbalance: after moving, the
+            # OLD "own" neighbours become foreign too, alongside every other
+            # WAG the cell borders that isn't the new one.
+            new_own = best_count
+            new_foreign = foreign_total - best_count + own
+            if new_foreign >= new_own:
+                continue  # no single neighbour actually fixes this — leave it
+            if total(best_cid) + building_count(wid) > max_buildings:
                 continue
             active[cid].remove(wid)
             active[best_cid].append(wid)
