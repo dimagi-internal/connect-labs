@@ -92,6 +92,12 @@ scenes:
       scene is about and the least readable text on the page; the method now sits behind an
       "i" on that line. A bare .method-note also matched a later card and scrolled the frame
       onto the closing scene's payoff.
+  # The scene is titled "with its method on screen" — so the method must BE on
+  # screen: the "i" is opened on camera rather than left as an unopened 10px
+  # affordance the trace never touches.
+  - kind: click
+    target: css:.card:has-text('What a dollar bought') .ladder-result-label .infonote-btn
+    note: the method, opened on camera — the conversion, the exclusions, and what the figure does not claim
   - kind: hold
     seconds: 2.4
     note: the method, in the same frame as the number

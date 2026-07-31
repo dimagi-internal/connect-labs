@@ -46,6 +46,14 @@ scenes:
     target: css:.keyfigures
   - kind: hold
     seconds: 2.0
+  # The narration reaches "then tenders drawn from it" while the Solicitations
+  # panel sat clipped to a header row plus half a line, its only live row six
+  # rows below the fold. Frame the second stage when the words arrive at it.
+  - kind: scroll_to
+    target: css:.card:has-text('Solicitations')
+  - kind: hold
+    seconds: 1.8
+    note: the tenders drawn from the registry — the second of the two stages, framed when the narration names it
   impressive_because: Two stages — expression of interest into a registry, then tenders drawn from it
     — is how UNICEF and WFP actually buy this commodity, and it exists because tendering from cold takes
     longer than a famine gives you.
@@ -55,13 +63,56 @@ scenes:
   concept_claim: Declaring the categories up front makes every application arrive in the same comparable
     shape rather than as free-form attachments.
   url: /supply/
-  show: The EOI rounds tab — the open round with its declared categories (RUTF, therapeutic milk, road
-    transport, warehousing) and its open and close dates.
+  show: The EOI rounds tab — Ada creates the round on camera, naming it and ticking the four categories
+    (RUTF, therapeutic milk, road transport, warehousing), then opens it, so the round in the table is
+    the one the viewer watched her declare.
+  # The act is performed, not narrated over a pre-existing record. The seeder
+  # deliberately does NOT create the open round (see demo/solicitations.py) —
+  # two judges independently flagged this scene as narrating a declaring act
+  # the trace never performed, over a round that pre-existed its declaration.
   actions:
   - kind: click
     target: css:.navitem:has-text('EOI rounds')
   - kind: wait_for
-    target: css:.data-table
+    target: css:.page
+  - kind: click
+    target: css:button:has-text('New round')
+  - kind: wait_for
+    target: css:.modal
+  - kind: fill
+    target: css:.modal .field:has-text('Title') input
+    value: OES Supply Base 2026-B
+    note: Ada names the round
+  - kind: click
+    target: css:.modal .check-row:has-text('RUTF')
+    note: and declares what they are collecting interest in — category one
+  - kind: click
+    target: css:.modal .check-row:has-text('Therapeutic milk')
+  - kind: click
+    target: css:.modal .check-row:has-text('Road transport')
+  - kind: click
+    target: css:.modal .check-row:has-text('Warehousing')
+  - kind: fill
+    target: css:.modal .field:has-text('Closes') input
+    value: '2026-08-18'
+    note: the window applications must land in
+  - kind: hold
+    seconds: 1.2
+    note: the declaration, complete, before it is committed
+  - kind: click
+    target: css:.modal button:has-text('Create')
+  - kind: wait_for
+    target: css:.toast
+  - kind: hold
+    seconds: 1.2
+    note: created as a draft — declaring and opening are two acts
+  - kind: click
+    target: css:tr:has-text('OES Supply Base 2026-B') button:has-text('Open round')
+    note: and OPENED, on camera — the lifecycle transition that starts collecting interest
+  - kind: hold
+    seconds: 1.0
+  - kind: snapshot
+    note: 'the canonical frame: the round the viewer watched Ada declare, open in the table with its four category pills'
   - kind: hold
     seconds: 2.0
   impressive_because: Because the categories are declared up front, every application arrives in the same
@@ -72,10 +123,14 @@ scenes:
   concept_claim: The profile a supplier is judged on is frozen at submission, so a later edit to their
     live paperwork cannot change what the reviewer assessed.
   url: /supply/
-  show: Amina's side at Savanna Nutrients — the expression of interest she submitted, opened to the
-    "What the reviewer is assessing" panel, where the profile frozen at submission sits beside the live
-    profile as it stands today and the UNICEF RUTF approval she has since renewed is marked "changed
-    since".
+  show: Amina's side at Savanna Nutrients — she applies to the round on camera, declaring capacity,
+    regions and lead time, submits (freezing her profile onto the submission), then renews the UNICEF
+    RUTF approval — and the "What the reviewer is assessing" panel shows the frozen column staying put
+    while the live one moves, with the renewed certificate marked "changed since".
+  # The whole freeze property, produced in front of the viewer: apply → submit
+  # (snapshot taken) → edit the live profile → the two columns visibly disagree.
+  # Previously the scene held camera moves over an application submitted by the
+  # seeder, and the divergence was staged behind the seed too.
   actions:
   - kind: wait_for
     target: css:.page
@@ -83,22 +138,87 @@ scenes:
     target: css:.navitem:has-text('Expressions of interest')
   - kind: wait_for
     target: css:.data-table
+  - kind: click
+    target: css:.card:has-text('Open rounds') tr:has-text('OES Supply Base 2026-B') button:has-text('Apply')
+    note: the round Ada just opened, on Amina's side
+  - kind: wait_for
+    target: css:.modal
+  - kind: click
+    target: css:.modal .check-row:has-text('RUTF')
+    note: applying under RUTF
+  - kind: click
+    target: css:.modal .check-row:has-text('Therapeutic milk')
+    note: and therapeutic milk — where the evidence will prove thin
+  - kind: click
+    target: css:.modal button:has-text('Continue')
+  - kind: fill
+    target: css:.modal .commit-block:has-text('RUTF') .field:has-text('Capacity') input
+    value: 20,000 cartons per month
+    note: capacity, as the narration says she declares
+  - kind: fill
+    target: css:.modal .commit-block:has-text('RUTF') .field:has-text('Regions served') input
+    value: NG, BF
+    note: the regions they can reach
+  - kind: fill
+    target: css:.modal .commit-block:has-text('RUTF') .field:has-text('Lead time') input
+    value: '21'
+    note: and lead time per category
   - kind: hold
-    seconds: 1.4
+    seconds: 1.2
+  - kind: click
+    target: css:.modal button:has-text('Continue')
+  - kind: scroll_to
+    target: css:.modal .notice
+  - kind: hold
+    seconds: 1.8
+    note: what submission does — a copy of the profile is frozen onto the application
+  - kind: click
+    target: css:.modal button:has-text('Submit application')
+  - kind: wait_for
+    target: css:.toast
+  - kind: hold
+    seconds: 1.2
+    note: submitted — the snapshot is taken at this moment
+  - kind: click
+    target: css:.navitem:has-text('Organisation')
+    note: now the live profile moves — Amina renews the certificate
+  - kind: wait_for
+    target: css:.page
+  - kind: click
+    target: css:button:has-text('Add certification')
+  - kind: wait_for
+    target: css:.modal
+  - kind: fill
+    target: css:.modal .field:has-text('Certification type') input
+    value: UNICEF RUTF approval
+  - kind: fill
+    target: css:.modal .field:has-text('Issuer') input
+    value: UNICEF Supply Division (renewed)
+  - kind: fill
+    target: css:.modal .field:has-text('Expiry date') input
+    value: '2028-07-31'
+  - kind: click
+    target: css:.modal button:has-text('Add')
+  - kind: wait_for
+    target: css:.toast
+  - kind: hold
+    seconds: 1.0
+    note: the live profile has changed. The frozen snapshot has not.
+  - kind: click
+    target: css:.navitem:has-text('Expressions of interest')
+  - kind: wait_for
+    target: css:.data-table
   - kind: click
     target: css:.card:has-text('Your applications') tr:has-text('OES Supply Base 2026-B')
-    note: the 2026-B application, which is the one Tomas reviews in the next scene. This
-      opened 2026-A — a different, already-qualified submission from March with different
-      capacity and lead-time figures — so the profile the viewer watched freeze was not the
-      profile the reviewer then assessed, and the numbers changed between consecutive frames.
-      Invisible per scene; both judges caught it only in sequence.
   - kind: wait_for
     target: css:.modal
   - kind: scroll_to
     target: css:.modal .card:has-text('What the reviewer is assessing')
+  - kind: snapshot
+    note: 'the canonical frame: frozen beside live, the renewal she just made marked "changed since", and the left column did not move'
   - kind: hold
     seconds: 3.0
-    note: frozen beside live — the certificate renewed since is marked, and the left column did not move
+    note: frozen beside live — the certificate renewed moments ago is marked, and the left column did not move
   impressive_because: If Savanna updates a certificate next week the live profile changes and the snapshot
     does not, so the decision stays reconstructable a year from now. That is the property an inspector
     general asks about first.
@@ -140,6 +260,9 @@ scenes:
     seconds: 2.4
     note: two different answers for one supplier, and the date the pass expires beside the one that carries
       it
+  - kind: snapshot
+    note: 'the canonical frame is the decision state — both verdicts set, the expiry on screen — not the
+      aftermath after the modal closed'
   - kind: click
     target: css:.modal button:has-text('Record decision')
     note: RECORD it. Qualify and Reject only set local state — the POST fires from this button
@@ -182,6 +305,20 @@ scenes:
   - kind: hold
     seconds: 2.6
     note: the count in the card title moves with the filters; this is the answer Ada acts on
+  # A third of the voiceover is about expiry and lapse, and the third filter was
+  # never touched — the expiry mechanism the screen exists to demonstrate had no
+  # on-camera exercise at all.
+  - kind: select
+    target: css:.filter-row .filter-field:nth-of-type(3) select
+    value: '90'
+    note: and the expiry filter — who lapses out of this answer within ninety days
+  - kind: hold
+    seconds: 1.4
+  - kind: hover
+    target: css:.page-head h1
+    note: park the cursor clear of the table so no expiry date is occluded on the closing frame
+  - kind: hold
+    seconds: 1.6
   impressive_because: The registry is not a list somebody maintains — it is the set of live qualifications,
     so it is current by construction. A lapsed certification drops a supplier out without anyone remembering
     to remove them.
@@ -201,6 +338,18 @@ scenes:
     target: css:.data-table
   - kind: scroll_to
     target: css:tr:has-text('RUTF Northeast Nigeria Q3 2026')
+  # NOT rescripted as an on-camera publish, deliberately. The narrated act
+  # ("Ada publishes a solicitation") cannot be performed coherently: scenes 7-8
+  # award this tender from priced, technically-scored bids, and bids need days
+  # a fresh publication cannot have — publishing a duplicate on camera would
+  # put two identical solicitations in the list and re-create the substituted-
+  # record defect the judges caught before. The supplier-side absence beat needs
+  # a mid-scene persona switch, which requires dev-login — a hard 403 on prod
+  # by design. Both fixes fork the narrative itself; parked for the
+  # concept_change gate.
+  - kind: hover
+    target: css:.page-head h1
+    note: park the cursor clear of the row so no lot quantity is occluded during the hold
   - kind: hold
     seconds: 3.4
     note: the lots are on the row — 60,000 to Maiduguri, spoken and readable without opening anything
@@ -308,6 +457,13 @@ scenes:
     target: css:.card:has-text('Pipeline by corridor')
   - kind: hold
     seconds: 1.6
+  - kind: hover
+    target: css:.card:has-text('Pipeline by corridor') tr:has-text('OES-C-2026-NG2')
+    note: the row in context — the contract this award produced, visible IN the pipeline table before
+      the modal covers it. The viewer previously never saw the row-in-context-to-record relation the
+      narration depends on.
+  - kind: hold
+    seconds: 1.4
   - kind: click
     target: css:.card:has-text('Pipeline by corridor') tr:has-text('OES-C-2026-NG2')
     note: the contract THIS award produced, not the earlier Q2 one on the same corridor. Awarding
@@ -316,9 +472,17 @@ scenes:
       independently caught the substitution.
   - kind: wait_for
     target: css:.modal
+  # The closing beat lands on the funding envelope and the IATI id — content
+  # that exists — rather than on the delivery schedule, which on a contract
+  # created moments ago is honestly and necessarily empty.
+  - kind: scroll_to
+    target: css:.modal .card:has-text('Drawn against')
+  - kind: snapshot
+    note: 'the canonical frame: the named funding envelope and the IATI activity identifier the contract
+      is obligated against'
   - kind: hold
     seconds: 3.2
-    note: the funding envelope, the IATI activity id, and the consignments it is moving on
+    note: the funding envelope and the IATI activity id the award is carried out against
   impressive_because: 'Almost every procurement system stops at the award, which is why nobody can trace
     a dollar to a carton. This is the midpoint: from here the same record is what the supply chain moves
     against.'
