@@ -122,13 +122,22 @@ scenes:
     note: Hauwa opens her own country view
   - kind: wait_for
     target: css:.data-table
+  # Two beats, and neither scrolls the PAGE sideways: scroll_to on the wide
+  # .data-table itself horizontally scrolled the document, clipping the app
+  # title and the left rail out of every frame from here to the end of the arc.
+  # The page head carries the scope ('Nigeria — supply overview' + the KPI
+  # band); the wrap is the table's own scroll container and sits inside the
+  # content column, so targeting it keeps x at zero.
   - kind: scroll_to
-    target: css:.data-table
-    note: waiting for the table is not framing it. The consignment list IS the proof of
-      server-side scoping, and it sat entirely below the fold while half the frame was the
-      empty map panel.
+    target: css:.page-head
   - kind: hold
-    seconds: 2.6
+    seconds: 1.6
+    note: the scope, stated — Nigeria's own view, and its national figures
+  - kind: scroll_to
+    target: css:.card:has-text('Who is delivering what, where') .card-head
+    note: the consignment list IS the proof of server-side scoping — framed with its header row
+  - kind: hold
+    seconds: 2.4
     note: Nigeria only — the rest was never in the payload
   impressive_because: The first question a government counterpart asks about a shared dashboard is what
     else it can see, and "the browser hides it" is not an answer that survives contact.

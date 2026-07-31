@@ -208,9 +208,13 @@ scenes:
     target: css:.card:has-text('From a batch to the children it treated')
   - kind: hold
     seconds: 1.6
+  # A MATURE batch, not last week's. The Monguno row opened LOT2609B — two
+  # weeks old, every child still In Treatment, '0 of 16 recovered' printed in
+  # bold while the narration said 'Recovered'. LOT2504A (May 1, Gwoza, 22
+  # recorded outcomes) is the batch whose children have had the months a
+  # recovery takes; the table itself sorts outcome-recorded batches first.
   - kind: click
-    target: css:.card:has-text('From a batch to the children it treated') tr:has-text('Monguno Nutrition
-      Centre')
+    target: css:.card:has-text('From a batch to the children it treated') tr:has-text('LOT2504A')
   - kind: wait_for
     target: css:.outcome-list
   - kind: hold
