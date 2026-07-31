@@ -229,22 +229,22 @@ The **FLW Daily Indicator Report** is a daily early-warning view for Program 176
 
 ### What it shows
 
-Each day, ten indicators are computed automatically for every FLW. The summary view presents a **14-day table** — one row per FLW, one column per day — where each cell contains a single "investigate today?" flag. At a glance you can see which workers have had concerns on which days without reading through raw numbers.
+Each day, twelve indicators are computed automatically for every FLW. The summary view presents a **14-day table** — one row per FLW, one column per day — where each cell contains a single "investigate today?" flag. At a glance you can see which workers have had concerns on which days without reading through raw numbers.
 
-The ten indicators are:
+Each indicator column header shows an **(i)** icon. Hover over it to read a plain-English description of exactly what the indicator checks and what would cause it to flag — so you can understand any concern without having to ask someone else.
+
+The twelve indicators are:
 
 | Indicator | What it checks |
 |---|---|
-| **Form volume vs. work-area building count** | Whether the number of forms submitted is plausible given the number of buildings in the FLW's assigned area |
+| **Households per building** | Whether the number of distinct households registered in the FLW's work area exceeds 5 per building — a signal they may have recorded implausibly many separate households for the area's size |
 | **Oversized households** | Whether any households recorded an unusually high number of members |
 | **Rushed back-to-back visits** | Whether consecutive visits were completed too quickly to have been conducted properly |
 | **Vaccine-response rate** | Whether the proportion of positive vaccine responses is within an expected range |
 | **GPS camping** | Whether the FLW's GPS coordinates cluster in one spot across multiple visits, suggesting they did not travel to households |
 | **Implausible travel speed** | Whether the distance between consecutive GPS points implies movement faster than is physically possible |
-| **Duplicate household phone numbers** | Whether the same phone number appears across multiple households |
-| **Duplicate child names** | Whether the same child name appears multiple times in a way that suggests copied entries |
+| **Duplicate child names across households** | Whether the same child name appears across multiple households in a pattern that suggests copied entries |
+| **Duplicate child ages across households** | Whether the same date of birth appears under different households in a pattern unlikely to occur naturally |
 | **Straight-lining on yes/no questions** | Whether a FLW answered two specific yes/no questions identically across every visit on a given day |
 | **MUAC value repetition** | Whether the same MUAC measurement was recorded across multiple children in a pattern unlikely to occur naturally |
-
-!!! note "Form volume vs. building count requires a CommCare connection"
-    The **Form volume vs. work-area building count** indicator compares each FLW's daily form submissions against the number of buildings in their assigned area. This figure is pulled directly from CommCare, so it only populates when the report runs with a valid CommCare connection
+| **
