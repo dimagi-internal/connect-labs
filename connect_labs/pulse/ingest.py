@@ -208,6 +208,36 @@ def refresh_opportunity_countries() -> int:
     return updated
 
 
+def resync_service_slugs() -> int:
+    """Push each opportunity's delivery type onto the rows that denormalise it.
+
+    ``service_slug`` is copied onto every event and work at ingest, so changing
+    how it is derived only affects rows written afterwards. Taking delivery type
+    from Connect instead of a name regex therefore fixed nothing on its own:
+    1,009,206 works already carried the regex's answer, and 186,632 of them --
+    Early Childhood Development, mostly -- stayed in the "Service delivery"
+    bucket on a funder's screen.
+
+    Same shape as the country backfill above, and for the same reason: a
+    derived value that lives on historical rows has to be pushed, not just
+    computed differently going forward.
+
+    Cheap to re-run: each update is scoped to rows that actually disagree, so a
+    steady state does nothing.
+    """
+    updated = 0
+    for opp in PulseOpportunity.objects.exclude(service_slug=""):
+        for model in (PulseWork, PulseEvent):
+            updated += (
+                model.objects.filter(opportunity_id=opp.opportunity_id)
+                .exclude(service_slug=opp.service_slug)
+                .update(service_slug=opp.service_slug)
+            )
+    if updated:
+        logger.info("[pulse] resynced service_slug on %s rows", updated)
+    return updated
+
+
 def sample_opportunity_countries(client, limit: int = 600) -> int:
     """Give historical opportunities a country from a single sampled visit.
 

@@ -519,8 +519,18 @@
         const o = document.createElement('option');
         o.value = String(p.id);
         // Connect's own programme name, verbatim. Nothing invented in labs.
-        o.textContent = p.name;
-        o.title = `${p.service_label} · ${nf.format(p.visits)} services`;
+        // Say which programmes are dormant in the menu, rather than letting
+        // someone select one and be shown an empty map with no stated reason.
+        o.textContent = p.recent_events
+          ? p.name
+          : `${p.name} — no recent delivery`;
+        o.title = `${p.service_label} · ${nf.format(
+          p.visits,
+        )} services all-time · ${
+          p.recent_events
+            ? nf.format(p.recent_events) + ' in the last 30 days'
+            : 'none in the last 30 days'
+        }`;
         sel.appendChild(o);
       }
       menuBuilt = true;
