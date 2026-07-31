@@ -330,3 +330,14 @@
   font-variant-numeric: tabular-nums;
   margin-top: 1px;
 }
+
+/* A figure with its provenance reachable beside it. Replaces a native `title`
+   attribute, which has no touch path, no keyboard path, nothing for a screen
+   reader, and is invisible in anything printed or projected — on the estimate
+   every coverage figure divides by. */
+.cell-with-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}

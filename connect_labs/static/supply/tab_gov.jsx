@@ -143,11 +143,17 @@ function GovTab({ ctx }) {
                 deliversToChildren(s) ? (
                   formatNumber(s.quantity)
                 ) : (
-                  <span
-                    className="muted"
-                    title="A storage point serves no caseload of its own; these cartons are counted where they reach a district."
-                  >
+                  // Same reason as the caseload cell: a dash that means
+                  // something needs to say what, reachably. On a native `title`
+                  // the explanation for why a consignment contributes nothing to
+                  // coverage was hover-only — so a reader with a keyboard, a
+                  // touchscreen, a screen reader or a printout just saw a blank.
+                  <span className="cell-with-note muted">
                     —
+                    <InfoNote
+                      label="why this consignment shows no courses"
+                      text="A storage point serves no caseload of its own; these cartons are counted where they reach a district."
+                    />
                   </span>
                 ),
             },
@@ -187,10 +193,15 @@ function GovTab({ ctx }) {
             columns={[
               {
                 key: 'district',
-                label: 'District',
+                // adm1 is the FIRST administrative level — Borno, Yobe, Kassala
+                // are states and regions, not districts. Labelling them
+                // "District" invited a reader to compare these caseloads against
+                // district-level figures they might have from elsewhere, which
+                // are a level finer and an order of magnitude smaller.
+                label: 'State / region',
                 value: (r) => r.adm1_name,
                 render: (r) => (
-                  <span title={r.source_note}>
+                  <span>
                     {r.adm1_name}{' '}
                     <Badge
                       tone={
@@ -210,7 +221,23 @@ function GovTab({ ctx }) {
                 key: 'caseload',
                 label: 'Children needing treatment',
                 value: (r) => r.caseload,
-                render: (r) => formatNumber(r.caseload),
+                // The provenance of the denominator, reachable. It used to ride
+                // on the row's native `title` attribute — no touch path, no
+                // keyboard path, nothing for a screen reader, and invisible in
+                // anything printed or projected. It is the estimate every
+                // coverage figure on this page divides by, so it cannot be
+                // hover-only.
+                render: (r) => (
+                  <span className="cell-with-note">
+                    {formatNumber(r.caseload)}
+                    {r.source_note ? (
+                      <InfoNote
+                        label={`the ${r.adm1_name} caseload`}
+                        text={r.source_note}
+                      />
+                    ) : null}
+                  </span>
+                ),
               },
               {
                 key: 'delivered',
@@ -226,16 +253,9 @@ function GovTab({ ctx }) {
                   r.coverage_percent === null ? (
                     <Badge tone="muted">no data</Badge>
                   ) : (
-                    <Badge
-                      tone={
-                        r.coverage_percent >= 80
-                          ? 'good'
-                          : r.coverage_percent >= 50
-                          ? 'warn'
-                          : 'bad'
-                      }
-                    >
+                    <Badge tone={coverageTone(r.coverage_percent)}>
                       {r.coverage_percent}%
+                      {r.coverage_percent > 100 ? ' · over' : ''}
                     </Badge>
                   ),
               },

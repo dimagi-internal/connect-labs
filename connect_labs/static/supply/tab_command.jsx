@@ -112,7 +112,13 @@ function CommandTab({ ctx }) {
       <div className={`command-split ${mapAvailable() ? '' : 'no-map'}`}>
         <Card
           title="Exceptions"
-          subtitle="Ranked by the children behind each one, not by tonnage."
+          // The caption has to name the horizon, because the horizon is what
+          // actually orders the list. "Ranked by the children behind each one"
+          // alone reads as a promise the order then appears to break: a
+          // 907-child expiry due in December sits below a 47-child row due next
+          // week, and only the expanded derivation explains why. The rule was
+          // right and unstated, which is indistinguishable from wrong.
+          subtitle="Ranked by the children behind each one — those inside the next 30 days first, since that is the window a decision today can still change — never by tonnage."
           className="exception-panel"
         >
           {exceptions.length ? (
@@ -329,10 +335,15 @@ function CommandTab({ ctx }) {
             columns={[
               {
                 key: 'district',
-                label: 'District',
+                // adm1 is the FIRST administrative level — Borno, Yobe, Kassala
+                // are states and regions, not districts. Labelling them
+                // "District" invited a reader to compare these caseloads against
+                // district-level figures they might have from elsewhere, which
+                // are a level finer and an order of magnitude smaller.
+                label: 'State / region',
                 value: (r) => r.adm1_name,
                 render: (r) => (
-                  <span title={r.source_note}>
+                  <span>
                     {r.adm1_name}{' '}
                     <Badge
                       tone={
@@ -352,7 +363,23 @@ function CommandTab({ ctx }) {
                 key: 'caseload',
                 label: 'Requirement (children)',
                 value: (r) => r.caseload,
-                render: (r) => formatNumber(r.caseload),
+                // The provenance of the denominator, reachable. It used to ride
+                // on the row's native `title` attribute — no touch path, no
+                // keyboard path, nothing for a screen reader, and invisible in
+                // anything printed or projected. It is the estimate every
+                // coverage figure on this page divides by, so it cannot be
+                // hover-only.
+                render: (r) => (
+                  <span className="cell-with-note">
+                    {formatNumber(r.caseload)}
+                    {r.source_note ? (
+                      <InfoNote
+                        label={`the ${r.adm1_name} caseload`}
+                        text={r.source_note}
+                      />
+                    ) : null}
+                  </span>
+                ),
               },
               {
                 key: 'delivered',
@@ -368,16 +395,9 @@ function CommandTab({ ctx }) {
                   r.coverage_percent === null ? (
                     <Badge tone="muted">no data</Badge>
                   ) : (
-                    <Badge
-                      tone={
-                        r.coverage_percent >= 80
-                          ? 'good'
-                          : r.coverage_percent >= 50
-                          ? 'warn'
-                          : 'bad'
-                      }
-                    >
+                    <Badge tone={coverageTone(r.coverage_percent)}>
                       {r.coverage_percent}%
+                      {r.coverage_percent > 100 ? ' · over' : ''}
                     </Badge>
                   ),
               },

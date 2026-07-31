@@ -82,6 +82,21 @@ function KeyFigures({ figures }) {
 
    The method has to be REACHABLE, not shouted. It lives behind an "i" the
    reader opens when they want to check, which is exactly when they want it. */
+/* The coverage banding, in ONE place.
+
+   Three surfaces rendered `>= 80 ? good : >= 50 ? warn : bad` independently, and
+   all three painted over-delivery the same green as near-complete cover — so a
+   district at 145.8% of need and one at 91% read as the same outcome, on the one
+   axis where this product editorialises. Over 100% is a positioning question, not
+   a success, so it gets its own neutral tone. */
+function coverageTone(pct) {
+  if (pct === null || pct === undefined) return 'muted';
+  if (pct > 100) return 'accent';
+  if (pct >= 80) return 'good';
+  if (pct >= 50) return 'warn';
+  return 'bad';
+}
+
 function InfoNote({ label, text }) {
   const [open, setOpen] = useState(false);
   return (
