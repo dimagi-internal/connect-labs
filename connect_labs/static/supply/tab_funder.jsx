@@ -232,22 +232,25 @@ function FunderTab({ ctx }) {
               },
               {
                 key: 'coverage',
-                label: 'Coverage',
+                label: 'Coverage of need',
                 value: (r) => r.coverage_percent || 0,
                 render: (r) =>
                   r.coverage_percent === null ? (
                     <Badge tone="muted">no data</Badge>
                   ) : (
-                    <Badge
-                      tone={
-                        r.coverage_percent >= 80
-                          ? 'good'
-                          : r.coverage_percent >= 50
-                          ? 'warn'
-                          : 'bad'
-                      }
-                    >
+                    // The thresholds are 80 and 50, and until now they were
+                    // nowhere on the screen — the one place this product
+                    // editorialises did it against a rule the reader could not
+                    // see. Stated in the column's own note below.
+                    //
+                    // Over 100% is NOT "better than good": it is more courses
+                    // delivered than the caseload needs, which is a positioning
+                    // question, not a success. Painting 145.8% the same green as
+                    // 91% told a funder that over-supply into one district and
+                    // near-complete cover in another were the same outcome.
+                    <Badge tone={coverageTone(r.coverage_percent)}>
                       {r.coverage_percent}%
+                      {r.coverage_percent > 100 ? ' · over' : ''}
                     </Badge>
                   ),
               },
@@ -265,6 +268,14 @@ function FunderTab({ ctx }) {
             hint="Coverage cannot be reported without a denominator."
           />
         )}
+        <p className="muted small method-note">
+          Coverage is courses delivered against the district's SAM caseload —
+          SAM being severe acute malnutrition, the condition this food treats.
+          Banding: at or above 80% reads covered, 50–79% partial, below 50%
+          thin. Above 100% is marked <em>over</em> rather than green: more
+          courses have been delivered than the caseload calls for, which is a
+          positioning question and not a better outcome than 91%.
+        </p>
       </Card>
 
       {/* The measured half comes LAST, after the coverage table.
