@@ -158,7 +158,7 @@ class TestEcdLabelling:
     def test_an_unmapped_delivery_type_shows_its_code_not_a_guess(self):
         from connect_labs.pulse.normalize import service_label
 
-        assert service_label("ivp") == "IVP"
+        assert service_label("xyz") == "XYZ"
         assert service_label("") == "Unclassified"
 
 
@@ -249,11 +249,36 @@ class TestServiceLabels:
         assert service_label("") == "Unclassified"
         assert service_label("other") == "Unclassified"
 
-    def test_unconfirmed_slugs_render_as_codes_not_guesses(self):
+    def test_every_delivery_type_in_use_has_a_confirmed_name(self):
+        """All twelve types Connect actually uses are now named. The check is
+        kept as a list rather than a loop over SERVICE_LABELS so a NEW slug
+        appearing upstream fails here instead of quietly rendering as a code on
+        a funder's screen."""
         from connect_labs.pulse.normalize import service_label
 
-        for slug in ("ivp", "hhs", "wellme", "malaria", "ace"):
-            assert service_label(slug) == slug.upper()
+        expected = {
+            "chc": "Child Health Campaign",
+            "ecd": "Early childhood development",
+            "mbw": "Mother Baby Wellness",
+            "kmc": "Kangaroo Mother Care",
+            "readers": "Readers Distribution",
+            "malaria": "Malaria",
+            "ivp": "Infant Vaccine Promotion",
+            "hhs": "Household Safety Check",
+            "wellme": "Worker Wellbeing",
+            "nutrition": "Nutrition",
+            "interview": "Interviews",
+            "ace": "ACE",
+        }
+        for slug, label in expected.items():
+            assert service_label(slug) == label
+
+    def test_a_slug_nobody_has_named_still_renders_as_a_code(self):
+        """The fallback has to survive: Connect can add a delivery type at any
+        time, and a guess would be worse than a visible code."""
+        from connect_labs.pulse.normalize import service_label
+
+        assert service_label("brand-new-thing") == "BRAND-NEW-THING"
 
 
 @pytest.mark.django_db
