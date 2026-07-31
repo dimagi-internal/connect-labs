@@ -36,7 +36,6 @@ from .solicitations import (
     _seed_closed_round,
     _seed_corridor_awards,
     _seed_live_rfp,
-    _seed_open_round,
     _seed_split_award_rfp,
 )
 
@@ -61,7 +60,8 @@ class ProcurementSeeder:
         # A closed round first: it is what populated the registry the live
         # solicitations then draw their bidders from.
         _seed_closed_round(rng, orgs, staff)
-        _seed_open_round(rng, orgs, staff)
+        # No open round is seeded — the walkthrough creates it on camera.
+        # See the comment where _seed_open_round used to live (solicitations.py).
         _seed_live_rfp(rng, orgs, staff)
         _seed_awarded_rfp(rng, orgs, staff)
         _seed_split_award_rfp(rng, orgs, staff)

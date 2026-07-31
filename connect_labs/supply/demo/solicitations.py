@@ -23,16 +23,7 @@ from ..models import (
     StaffRole,
 )
 from ..serializers import org_dict
-from .data import (
-    AWARDED_RFP,
-    CLOSED_ROUND,
-    CORRIDOR_AWARDS,
-    LIVE_RFP,
-    OPEN_ROUND,
-    SPLIT_AWARD_LOTS,
-    SPLIT_AWARD_RFP,
-    TODAY,
-)
+from .data import AWARDED_RFP, CLOSED_ROUND, CORRIDOR_AWARDS, LIVE_RFP, SPLIT_AWARD_LOTS, SPLIT_AWARD_RFP, TODAY
 
 # Seed timestamps hang off a single reference point so a rerun reproduces the
 # same world rather than drifting with the clock.
@@ -199,104 +190,26 @@ def _seed_closed_round(rng, orgs, staff):
     return rnd
 
 
-def _seed_open_round(rng, orgs, staff):
-    rnd, _ = EOIRound.objects.update_or_create(
-        title=OPEN_ROUND,
-        defaults={
-            "brief": (
-                "Second-wave prequalification: expanding the supplier base for the 2026-27 "
-                "response, with emphasis on in-country manufacture and Sudan corridor capacity."
-            ),
-            "categories": ["rutf", "therapeutic_milk", "transport", "warehousing"],
-            "opens_at": TODAY - timedelta(days=21),
-            "closes_at": TODAY + timedelta(days=18),
-            "status": EOIRound.Status.OPEN,
-        },
-    )
-
-    names = list(orgs.keys())
-    # 2 drafts, 4 awaiting review, 1 qualified, 1 rejected — every status on screen.
-    #
-    # Savanna heads the queue and applies for TWO categories, which is what lets
-    # the fourth scene of oes-supply-base happen at all: Tomas deciding per
-    # category on camera, qualifying the ready-to-use therapeutic food and
-    # declining the therapeutic milk, where Savanna has no plant and the
-    # evidence is thin. One supplier, two different answers is the whole claim,
-    # and a submission that only ever asked for one thing cannot carry it.
-    # (winner org, status, categories — None means the org's own categories)
-    plan = [
-        (names[0], EOISubmission.Status.SUBMITTED, ["rutf", "therapeutic_milk"]),
-        (names[14], EOISubmission.Status.DRAFT, None),
-        (names[15], EOISubmission.Status.DRAFT, None),
-        (names[1], EOISubmission.Status.SUBMITTED, None),
-        (names[6], EOISubmission.Status.SUBMITTED, None),
-        (names[11], EOISubmission.Status.SUBMITTED, None),
-        (names[3], EOISubmission.Status.QUALIFIED, None),
-        (names[12], EOISubmission.Status.REJECTED, None),
-    ]
-
-    for name, status, category_override in plan:
-        org = orgs[name]
-        categories = category_override or org.categories_hint
-        submitted_at = (
-            None if status == EOISubmission.Status.DRAFT else timezone.now() - timedelta(days=rng.randint(2, 16))
-        )
-        sub, _ = EOISubmission.objects.update_or_create(
-            org=org,
-            round=rnd,
-            defaults={
-                "categories": categories,
-                "commitments": _commitments(categories, rng),
-                "status": status,
-                "submitted_at": submitted_at,
-                "profile_snapshot": (
-                    None if status == EOISubmission.Status.DRAFT else org_dict(org, include_qualifications=False)
-                ),
-            },
-        )
-        if status in (EOISubmission.Status.QUALIFIED, EOISubmission.Status.REJECTED) and not sub.reviews.exists():
-            verdict = "qualify" if status == EOISubmission.Status.QUALIFIED else "reject"
-            EOIReview.objects.create(
-                submission=sub,
-                # A named reviewer, not None. The registry now shows who granted
-                # each qualification, and "not recorded" against most of the
-                # roster reads as the product failing to capture it rather than
-                # as this seeder having been lazy.
-                reviewer=staff[StaffRole.Role.REVIEWER],
-                decisions={c: verdict for c in categories},
-                notes=(
-                    "Existing qualification extended."
-                    if verdict == "qualify"
-                    else "Insufficient certification evidence for this round."
-                ),
-            )
-
-    _diverge_live_profile_from_its_snapshots(orgs)
-
-
-def _diverge_live_profile_from_its_snapshots(orgs):
-    """Renew a certificate AFTER the applications that froze a copy of it.
-
-    The frozen snapshot is the property the narrative claims an inspector
-    general asks about first, and on a world where nothing has changed since
-    submission it is unfalsifiable: a reader cannot tell a frozen copy from a
-    second render of the live record. So the demo world contains one supplier
-    whose live profile has genuinely moved on — Savanna renewed its UNICEF RUTF
-    approval after applying — and the two columns visibly disagree.
-
-    Runs LAST, after every snapshot in both rounds is taken, so it is the live
-    row that moves and the frozen ones that do not. That ordering is the whole
-    point and is why this is a function rather than four lines up there.
-    """
-    savanna = orgs.get("Savanna Nutrients Ltd")
-    if savanna is None:
-        return
-    cert = savanna.certifications.filter(cert_type="UNICEF RUTF approval").first()
-    if cert is None:
-        return
-    cert.expiry_date = TODAY + timedelta(days=730)
-    cert.issuer = "UNICEF Supply Division (renewed)"
-    cert.save(update_fields=["expiry_date", "issuer"])
+# There is deliberately NO seeded open EOI round.
+#
+# The supply-base walkthrough's second, third and fourth scenes are Ada
+# CREATING and opening the round on camera, Amina applying to it on camera
+# (freezing her profile), and Tomas deciding that fresh application per
+# category. When this seeder pre-created "OES Supply Base 2026-B" — open,
+# with eight submissions already in it — none of those narrated acts could
+# actually be performed: the round pre-existed its own declaration, the
+# application pre-dated the round's opening, and two judges independently
+# flagged every scene as narrating an act the trace never performs.
+#
+# The same reasoning removed the seeded live-profile divergence (Savanna's
+# UNICEF RUTF approval renewed post-snapshot): with the application now made
+# on camera, a pre-renewed certificate would be captured INTO the frozen
+# snapshot and the two columns could never disagree. Amina renews the
+# certificate on camera instead, after submitting, so the frozen/live split
+# is produced in front of the viewer rather than staged behind the seed.
+#
+# The closed 2026-A round above keeps the registry, the closed-round history
+# and every decided status; only the in-flight round is left for the camera.
 
 
 def _seed_corridor_awards(orgs, staff):
