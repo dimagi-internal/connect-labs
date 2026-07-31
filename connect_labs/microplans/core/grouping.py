@@ -336,7 +336,8 @@ def _bfs_adjacency(
     # (every one of its neighbours belongs to that one group) should never stay
     # its own separate group, regardless of size or whether the min_buildings
     # top-up pass below is even enabled. ----
-    clusters = _absorb_enclosed_clusters(clusters, adjacency, geoms_3857)
+    enclosed_fixed = _absorb_enclosed_clusters([(c[0], c) for c in clusters], adjacency, geoms_3857)
+    clusters = [cells for _seed, cells in enclosed_fixed]
 
     # ---- Phase 2 (optional): top up any cluster under min_buildings by merging/
     # stealing from a nearby neighbour, before labels are assigned. ----
@@ -354,6 +355,20 @@ def _bfs_adjacency(
         resolved_max,
         resolved_reach,
         barriers_3857,
+    )
+
+    # ---- Always-on, again: the top-up pass's own reach-based merges can unify
+    # what were separate surrounding clusters into one, newly exposing an
+    # enclosure that wasn't visible before they merged (a cell whose neighbours
+    # spanned 2+ clusters pre-top-up, now spanning just the 1 merged one). ----
+    clusters_with_seed = _absorb_enclosed_clusters(clusters_with_seed, adjacency, geoms_3857)
+
+    # ---- Always-on: reassign any work area with 3+ strictly-orthogonal
+    # neighbours dominated by one other WAG — the passes above can still leave
+    # a cell mostly-but-not-fully boxed in by a different group (or max_buildings
+    # blocked a true enclosure's merge above); this is that cleanup. ----
+    clusters_with_seed = _reassign_dominated_cells(
+        clusters_with_seed, by_id, geoms_3857, wa_ids, tree, resolved_max, barriers_3857
     )
 
     # ---- assign labels ("{WARD-prefix-}group-N", N restarting at 1 per ward — see
@@ -413,10 +428,10 @@ def _bfs_single_cluster(
 
 
 def _absorb_enclosed_clusters(
-    clusters: list[list[str]],
+    clusters_with_seed: list[tuple[str, list[str]]],
     adjacency: dict[str, list[str]],
     geoms_3857: dict[str, object],
-) -> list[list[str]]:
+) -> list[tuple[str, list[str]]]:
     """Merge any cluster that geometrically FILLS A HOLE in another cluster's
     territory into it — i.e. every side of it is boxed in by that one other
     cluster, with no exposed edge to open/unclaimed terrain or a third group.
@@ -424,6 +439,13 @@ def _absorb_enclosed_clusters(
     there is no other valid destination for a landlocked cluster; the
     alternative is a WAG map where a lone work area (or a few) sits stranded
     inside another group's territory.
+
+    Takes/returns the same ``[(seed_cell_id, [cell_ids...]), ...]`` shape as
+    ``_top_up_undersized_clusters`` so it can run both BEFORE that pass (fixing
+    enclosures already present in phase-1's raw output) and AFTER it (the
+    top-up pass's own reach-based merges can unify what were separate
+    surrounding clusters into one, newly exposing an enclosure that wasn't
+    visible before they merged — see the call sites in ``_bfs_adjacency``).
 
     Being adjacent to only ONE other cluster ("touches exactly one neighbour")
     is NOT enough on its own — that's also true of any ordinary small WAG that
@@ -446,8 +468,8 @@ def _absorb_enclosed_clusters(
     Repeats until stable: resolving one enclave can expose another (an enclave
     inside what was itself an enclave), each resolution shrinks the cluster
     count by one, so this always terminates."""
-    if len(clusters) < 2:
-        return clusters
+    if len(clusters_with_seed) < 2:
+        return clusters_with_seed
 
     from shapely.geometry import Polygon
     from shapely.ops import unary_union
@@ -462,10 +484,13 @@ def _absorb_enclosed_clusters(
                     return True
         return False
 
-    active: dict[int, list[str]] = {cid: list(cluster) for cid, cluster in enumerate(clusters)}
+    active: dict[int, list[str]] = {}
+    seeds: dict[int, str] = {}
     cell_owner: dict[str, int] = {}
-    for cid, cluster in active.items():
-        for w in cluster:
+    for cid, (seed, cells) in enumerate(clusters_with_seed):
+        active[cid] = list(cells)
+        seeds[cid] = seed
+        for w in cells:
             cell_owner[w] = cid
 
     changed = True
@@ -486,14 +511,14 @@ def _absorb_enclosed_clusters(
             (other_id,) = neighbour_owners
             if not fills_a_hole(cells, active[other_id]):
                 continue  # only touches one neighbour, but isn't actually boxed in
-            # The surrounding cluster's own identity survives — its cells stay
-            # first in the list so it remains the seed for ward-prefix labeling.
+            # The surrounding cluster's own identity survives as the seed.
             active[other_id] = active[other_id] + cells
             for w in cells:
                 cell_owner[w] = other_id
             del active[cid]
+            del seeds[cid]
             changed = True
-    return list(active.values())
+    return [(seeds[cid], active[cid]) for cid in active]
 
 
 # ---- Phase-2 top-up: fix undersized clusters (#26) ----------------------------
@@ -687,6 +712,110 @@ def _top_up_undersized_clusters(
                 exhausted.add(donor_id)
 
     return [(rec["seed"], sorted(rec["cells"])) for rec in active.values()]
+
+
+# ---- Always-on: fix locally-dominated cells ----------------------------------
+
+
+def _reassign_dominated_cells(
+    clusters_with_seed: list[tuple[str, list[str]]],
+    by_id: dict[str, dict],
+    geoms_3857: dict[str, object],
+    wa_ids: list[str],
+    tree,
+    max_buildings: int,
+    barriers_3857=None,
+) -> list[tuple[str, list[str]]]:
+    """A work area with 3+ STRICTLY orthogonal neighbours (a real shared
+    boundary edge — not just within the adjacency buffer, and independent of
+    whatever buffer_distance_m is configured) belonging to one other WAG is
+    locally dominated by that group, even when it isn't fully enclosed on
+    every side (see _absorb_enclosed_clusters for that stricter case). Move it
+    there, as long as doing so doesn't push the receiving group over
+    max_buildings.
+
+    Runs unconditionally, AFTER the min_buildings top-up pass — that pass's
+    own reach-based merges (deliberately allowed to bridge real sparse gaps,
+    per the original min_buildings design) are the likely source of a
+    dominated-but-not-enclosed cell in denser layouts, where a generous
+    max_reach_m spans several WAG-widths rather than one genuine gap. Phase-1
+    clustering alone can also produce this on its own, independent of the
+    top-up pass being enabled at all.
+
+    Iterates to a fixed point (bounded — moving one cell can change the count
+    for its own neighbours, so a change can ripple, but each round processes
+    every cell once and a plan-sized number of rounds is always enough)."""
+    if len(clusters_with_seed) < 2:
+        return clusters_with_seed
+
+    from shapely import get_dimensions
+    from shapely.geometry import LineString
+
+    def building_count(wid: str) -> int:
+        return int(by_id[wid].get("building_count", 0))
+
+    def crosses_barrier(a: str, b: str) -> bool:
+        if barriers_3857 is None:
+            return False
+        return barriers_3857.intersects(
+            LineString([geoms_3857[a].centroid.coords[0], geoms_3857[b].centroid.coords[0]])
+        )
+
+    # Strict edge-adjacency: a real shared boundary segment (dimension >= 1 —
+    # touching along a line, not just at a corner point), independent of
+    # buffer_distance_m entirely, so this rule means the same thing regardless
+    # of whatever adjacency buffer happens to be configured.
+    edge_adjacency: dict[str, list[str]] = {wid: [] for wid in wa_ids}
+    for wid in wa_ids:
+        geom = geoms_3857[wid]
+        for idx in tree.query(geom, predicate="intersects"):
+            nb = wa_ids[idx]
+            if nb == wid:
+                continue
+            if get_dimensions(geom.intersection(geoms_3857[nb])) >= 1 and not crosses_barrier(wid, nb):
+                edge_adjacency[wid].append(nb)
+
+    active: dict[int, list[str]] = {}
+    seeds: dict[int, str] = {}
+    cell_owner: dict[str, int] = {}
+    for cid, (seed, cells) in enumerate(clusters_with_seed):
+        active[cid] = list(cells)
+        seeds[cid] = seed
+        for w in cells:
+            cell_owner[w] = cid
+
+    def total(cid: int) -> int:
+        return sum(building_count(w) for w in active[cid])
+
+    changed = True
+    rounds = 0
+    while changed and rounds < 50:
+        changed = False
+        rounds += 1
+        for wid in list(cell_owner.keys()):
+            cid = cell_owner[wid]
+            if cid not in active or wid not in active[cid]:
+                continue  # already moved earlier this round
+            tally: dict[int, int] = {}
+            for nb in edge_adjacency.get(wid, []):
+                other_cid = cell_owner.get(nb)
+                if other_cid is not None and other_cid != cid:
+                    tally[other_cid] = tally.get(other_cid, 0) + 1
+            if not tally:
+                continue
+            best_cid, best_count = max(tally.items(), key=lambda kv: kv[1])
+            if best_count < 3 or total(best_cid) + building_count(wid) > max_buildings:
+                continue
+            active[cid].remove(wid)
+            active[best_cid].append(wid)
+            cell_owner[wid] = best_cid
+            if seeds[cid] == wid:
+                seeds[cid] = active[cid][0] if active[cid] else None
+            if not active[cid]:
+                del active[cid]
+                del seeds[cid]
+            changed = True
+    return [(seeds[cid], active[cid]) for cid in active]
 
 
 def _pair(a: str, b: str) -> tuple:
