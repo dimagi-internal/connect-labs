@@ -23,7 +23,7 @@ from ..models import (
     SupplierOrg,
 )
 from .demand import demand_summary, reset_demand, seed_demand
-from .execution import execution_summary, reset_execution, seed_execution
+from .execution import backdate_awards_to_precede_execution, execution_summary, reset_execution, seed_execution
 from .organisations import _seed_orgs, _seed_staff, _seed_supplier_login
 from .solicitations import (
     _seed_awarded_rfp,
@@ -66,6 +66,13 @@ class ProcurementSeeder:
         # Demand last: the caseload rows key off the nodes execution just
         # wrote, and the outcome cohorts hang off real delivered batches.
         seed_demand(rng, orgs, nodes)
+
+        # Now that every shipment exists — including the earlier, already-
+        # despatched consignments demand adds — pull each award back to before
+        # the deliveries it authorised. auto_now_add stamps awards with the seed
+        # run's clock, so without this the world opens with consignments dated
+        # months before the contract that paid for them.
+        backdate_awards_to_precede_execution()
 
         return {
             "suppliers": SupplierOrg.objects.count(),

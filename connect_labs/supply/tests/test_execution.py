@@ -266,3 +266,64 @@ def test_token_label_required_and_scoped_to_own_org(ops):
 def test_staff_have_no_token_management(admin_client):
     client, _user = admin_client
     assert client.get("/supply/api/tokens/").status_code == 403
+
+
+def test_no_consignment_is_dated_before_the_contract_that_paid_for_it():
+    """An award cannot postdate the deliveries it authorised.
+
+    `Award.awarded_at` is `auto_now_add`, so every award is stamped with the
+    moment the seeder ran, while shipment dates are authored in the past — the
+    demo world has to open mid-flight with deliveries already made. That put
+    thirty consignments before the contract that paid for them: SHP-2026-0805
+    dated 23 April against a contract awarded 31 July, and a *delivered*
+    consignment under a contract awarded eleven days later.
+
+    It regenerated on every reseed, and in a demo whose subject is auditable
+    procurement it is the most damaging detail on the screen. Pinned as a
+    property over the whole world, because the fix reconciles against real dates
+    and so has to keep holding as the seed data moves.
+    """
+    from django.core.management import call_command
+    from django.utils import timezone
+
+    from connect_labs.supply.models.execution import Contract
+
+    call_command("seed_supply_demo", "--reset")
+
+    def as_date(value):
+        return timezone.localtime(value).date() if hasattr(value, "tzinfo") else value
+
+    offenders = []
+    for contract in Contract.objects.select_related("award").prefetch_related("shipments"):
+        if contract.award is None:
+            continue
+        awarded_on = as_date(contract.award.awarded_at)
+        for shipment in contract.shipments.all():
+            for field in ("departed_at", "eta"):
+                moment = getattr(shipment, field, None)
+                if moment and as_date(moment) < awarded_on:
+                    offenders.append(
+                        f"{contract.reference} awarded {awarded_on} but "
+                        f"{shipment.reference}.{field} is {as_date(moment)}"
+                    )
+
+    assert offenders == [], "consignments predating their own award:\n  " + "\n  ".join(offenders)
+
+
+def test_a_contract_does_not_start_before_it_was_awarded():
+    from django.core.management import call_command
+    from django.utils import timezone
+
+    from connect_labs.supply.models.execution import Contract
+
+    call_command("seed_supply_demo", "--reset")
+
+    bad = []
+    for contract in Contract.objects.select_related("award"):
+        if contract.award is None or not contract.starts_on:
+            continue
+        awarded_on = timezone.localtime(contract.award.awarded_at).date()
+        if contract.starts_on < awarded_on:
+            bad.append(f"{contract.reference} starts {contract.starts_on}, awarded {awarded_on}")
+
+    assert bad == [], "contracts starting before their award:\n  " + "\n  ".join(bad)
