@@ -5,8 +5,10 @@ from __future__ import annotations
 from connect_labs.microplans.core.grouping import (
     GroupingConfig,
     _absorb_enclosed_clusters,
+    _merge_tiny_wags_into_nearest_wag,
     _reassign_dominated_cells,
     _reassign_isolated_pieces_touching_other_wags,
+    _reassign_isolated_wa_to_nearest_wag,
     group_work_areas,
 )
 
@@ -998,3 +1000,274 @@ class TestReassignIsolatedPiecesTouchingOtherWags:
         result = _reassign_isolated_pieces_touching_other_wags(clusters_with_seed, geoms, wa_ids, tree, barrier)
         groups = {frozenset(cells) for _seed, cells in result}
         assert groups == {frozenset(["O1", "OX"]), frozenset(["RED"])}
+
+
+class TestReassignIsolatedWaToNearestWag:
+    """A work area with NO neighbours at all within buffer_distance_m (a true
+    geographic island — nothing else within reach, not just nothing from its
+    own WAG) re-homes to whichever WAG is actually nearest, within
+    max_reach_m and with room under max_buildings — even exceeding
+    target_buildings, since for a lone stranded cell "closest walkable WAG"
+    beats "under its own target." """
+
+    # Every WAG anchor below (A1, B1, C1, ...) gets a real touching companion
+    # cell (A2, B2, C2, ...) so IT isn't also a lone island under test — these
+    # tests must isolate X's behaviour alone, not incidentally exercise other
+    # islands shuffling around in the same pass.
+
+    def test_isolated_wa_moves_to_the_truly_nearest_wag(self):
+        from shapely.geometry import box
+
+        geoms = {
+            "X": box(-0.5, -0.5, 0.5, 0.5),
+            "A1": box(99.5, 99.5, 100.5, 100.5),  # X's current WAG — far away
+            "A2": box(100.5, 99.5, 101.5, 100.5),  # touches A1 — not an island
+            "B1": box(4.5, 4.5, 5.5, 5.5),  # a different, much closer WAG
+            "B2": box(5.5, 4.5, 6.5, 5.5),  # touches B1 — not an island
+        }
+        wa_ids = list(geoms.keys())
+        by_id = {w: {"building_count": 10} for w in wa_ids}
+        adjacency = {"X": [], "A1": ["A2"], "A2": ["A1"], "B1": ["B2"], "B2": ["B1"]}
+        clusters_with_seed = [("A1", ["X", "A1", "A2"]), ("B1", ["B1", "B2"])]
+        result = _reassign_isolated_wa_to_nearest_wag(
+            clusters_with_seed, by_id, geoms, wa_ids, adjacency, 1000, 1000, None
+        )
+        groups = {frozenset(cells) for _seed, cells in result}
+        assert groups == {frozenset(["A1", "A2"]), frozenset(["B1", "B2", "X"])}
+
+    def test_skips_a_full_wag_for_the_next_nearest_with_room(self):
+        from shapely.geometry import box
+
+        geoms = {
+            "X": box(-0.5, -0.5, 0.5, 0.5),
+            "A1": box(99.5, 99.5, 100.5, 100.5),
+            "A2": box(100.5, 99.5, 101.5, 100.5),
+            "B1": box(4.5, 4.5, 5.5, 5.5),  # nearest, but already at the ceiling
+            "B2": box(5.5, 4.5, 6.5, 5.5),
+            "C1": box(9.5, 9.5, 10.5, 10.5),  # next-nearest, has room
+            "C2": box(10.5, 9.5, 11.5, 10.5),
+        }
+        wa_ids = list(geoms.keys())
+        by_id = {w: {"building_count": 10} for w in wa_ids}
+        by_id["B1"] = {"building_count": 990}  # B1+B2 already totals the ceiling
+        adjacency = {
+            "X": [],
+            "A1": ["A2"],
+            "A2": ["A1"],
+            "B1": ["B2"],
+            "B2": ["B1"],
+            "C1": ["C2"],
+            "C2": ["C1"],
+        }
+        clusters_with_seed = [("A1", ["X", "A1", "A2"]), ("B1", ["B1", "B2"]), ("C1", ["C1", "C2"])]
+        result = _reassign_isolated_wa_to_nearest_wag(
+            clusters_with_seed, by_id, geoms, wa_ids, adjacency, 1000, 1000, None
+        )
+        groups = {frozenset(cells) for _seed, cells in result}
+        assert groups == {frozenset(["A1", "A2"]), frozenset(["B1", "B2"]), frozenset(["C1", "C2", "X"])}
+
+    def test_bounded_by_max_reach_m(self):
+        from shapely.geometry import box
+
+        geoms = {
+            "X": box(-0.5, -0.5, 0.5, 0.5),
+            "A1": box(99.5, 99.5, 100.5, 100.5),
+            "A2": box(100.5, 99.5, 101.5, 100.5),
+            "B1": box(4.5, 4.5, 5.5, 5.5),  # nearer, but beyond max_reach_m
+            "B2": box(5.5, 4.5, 6.5, 5.5),
+        }
+        wa_ids = list(geoms.keys())
+        by_id = {w: {"building_count": 10} for w in wa_ids}
+        adjacency = {"X": [], "A1": ["A2"], "A2": ["A1"], "B1": ["B2"], "B2": ["B1"]}
+        clusters_with_seed = [("A1", ["X", "A1", "A2"]), ("B1", ["B1", "B2"])]
+        result = _reassign_isolated_wa_to_nearest_wag(
+            clusters_with_seed, by_id, geoms, wa_ids, adjacency, 1000, max_reach_m=1, barriers_3857=None
+        )
+        x_group = next(cells for _seed, cells in result if "X" in cells)
+        assert x_group == ["X", "A1", "A2"]  # unchanged — B1 is out of reach
+
+    def test_non_isolated_wa_is_never_touched(self):
+        # X has a REAL neighbour (a true phase-1 adjacency-graph edge to A1) —
+        # even though a different WAG sits geometrically closer, this pass must
+        # leave X alone entirely; reassigning WAs that DO have neighbours is the
+        # shape-sanity loop's job, not this one's. B1 also gets a companion so
+        # IT isn't a lone island either — nothing in this dataset is isolated,
+        # so the whole pass must be a complete no-op.
+        from shapely.geometry import box
+
+        geoms = {
+            "X": box(0, 0, 1, 1),
+            "A1": box(1, 0, 2, 1),  # touching X — a real phase-1 neighbour
+            "B1": box(0.5, 1, 1.5, 2),  # geometrically closer, irrelevant here
+            "B2": box(1.5, 1, 2.5, 2),  # touches B1 — not an island
+        }
+        wa_ids = list(geoms.keys())
+        by_id = {w: {"building_count": 10} for w in wa_ids}
+        adjacency = {"X": ["A1"], "A1": ["X"], "B1": ["B2"], "B2": ["B1"]}
+        clusters_with_seed = [("A1", ["X", "A1"]), ("B1", ["B1", "B2"])]
+        result = _reassign_isolated_wa_to_nearest_wag(
+            clusters_with_seed, by_id, geoms, wa_ids, adjacency, 1000, 1000, None
+        )
+        groups = {frozenset(cells) for _seed, cells in result}
+        assert groups == {frozenset(["X", "A1"]), frozenset(["B1", "B2"])}
+
+    def test_barrier_blocks_the_nearest_falls_to_next(self):
+        from shapely.geometry import LineString, box
+        from shapely.prepared import prep
+
+        geoms = {
+            "X": box(-0.5, -0.5, 0.5, 0.5),
+            "A1": box(99.5, 99.5, 100.5, 100.5),
+            "A2": box(100.5, 99.5, 101.5, 100.5),
+            "B1": box(4.5, -0.5, 5.5, 0.5),  # nearest (due east), but barrier-blocked
+            "B2": box(5.5, -0.5, 6.5, 0.5),
+            "C1": box(-0.5, 5.5, 0.5, 6.5),  # farther (due north), reachable
+            "C2": box(-0.5, 6.5, 0.5, 7.5),
+        }
+        wa_ids = list(geoms.keys())
+        by_id = {w: {"building_count": 10} for w in wa_ids}
+        adjacency = {
+            "X": [],
+            "A1": ["A2"],
+            "A2": ["A1"],
+            "B1": ["B2"],
+            "B2": ["B1"],
+            "C1": ["C2"],
+            "C2": ["C1"],
+        }
+        clusters_with_seed = [("A1", ["X", "A1", "A2"]), ("B1", ["B1", "B2"]), ("C1", ["C1", "C2"])]
+        # A short barrier straddling the X->B1 (eastward) line but nowhere near
+        # the X->C1 (northward) line.
+        barrier = prep(LineString([(2, -2), (2, 2)]))
+        result = _reassign_isolated_wa_to_nearest_wag(
+            clusters_with_seed, by_id, geoms, wa_ids, adjacency, 1000, 1000, barrier
+        )
+        groups = {frozenset(cells) for _seed, cells in result}
+        assert groups == {frozenset(["A1", "A2"]), frozenset(["B1", "B2"]), frozenset(["C1", "C2", "X"])}
+
+
+class TestMergeTinyWagsIntoNearestWag:
+    """Any WAG whose total building count is still under TINY_WAG_THRESHOLD
+    merges wholesale into its single nearest other WAG within max_reach_m, as
+    long as that WAG is under target_buildings and the merge fits under
+    max_buildings — otherwise the tiny WAG is left stranded rather than
+    searched further."""
+
+    def test_tiny_wag_merges_into_the_nearest_under_target_wag(self):
+        from shapely.geometry import box
+
+        geoms = {
+            "T1": box(0, 0, 1, 1),
+            "T2": box(1, 0, 2, 1),  # tiny WAG, combined 20 buildings
+            "N1": box(3, 0, 4, 1),  # nearest, under target
+            "F1": box(100, 0, 101, 1),  # far away, irrelevant
+        }
+        wa_ids = list(geoms.keys())
+        by_id = {w: {"building_count": 10} for w in wa_ids}
+        by_id["N1"] = {"building_count": 50}
+        by_id["F1"] = {"building_count": 50}
+        clusters_with_seed = [("T1", ["T1", "T2"]), ("N1", ["N1"]), ("F1", ["F1"])]
+        result = _merge_tiny_wags_into_nearest_wag(
+            clusters_with_seed, by_id, geoms, target_buildings=200, max_buildings=1000, max_reach_m=1000
+        )
+        groups = {frozenset(cells) for _seed, cells in result}
+        assert groups == {frozenset(["N1", "T1", "T2"]), frozenset(["F1"])}
+
+    def test_stranded_when_nearest_wag_already_at_or_over_target(self):
+        from shapely.geometry import box
+
+        geoms = {
+            "T1": box(0, 0, 1, 1),
+            "T2": box(1, 0, 2, 1),
+            "N1": box(3, 0, 4, 1),  # nearest, but already at target
+        }
+        wa_ids = list(geoms.keys())
+        by_id = {w: {"building_count": 10} for w in wa_ids}
+        by_id["N1"] = {"building_count": 200}
+        clusters_with_seed = [("T1", ["T1", "T2"]), ("N1", ["N1"])]
+        result = _merge_tiny_wags_into_nearest_wag(
+            clusters_with_seed, by_id, geoms, target_buildings=200, max_buildings=1000, max_reach_m=1000
+        )
+        groups = {frozenset(cells) for _seed, cells in result}
+        assert groups == {frozenset(["T1", "T2"]), frozenset(["N1"])}  # left stranded
+
+    def test_blocked_by_max_buildings_ceiling(self):
+        from shapely.geometry import box
+
+        geoms = {
+            "T1": box(0, 0, 1, 1),
+            "T2": box(1, 0, 2, 1),  # 20 buildings total
+            "N1": box(3, 0, 4, 1),  # under target, but combined would breach max
+        }
+        wa_ids = list(geoms.keys())
+        by_id = {w: {"building_count": 10} for w in wa_ids}
+        by_id["N1"] = {"building_count": 190}
+        clusters_with_seed = [("T1", ["T1", "T2"]), ("N1", ["N1"])]
+        # N1 (190) is under target (200) but 190 + 20 = 210 > max (200).
+        result = _merge_tiny_wags_into_nearest_wag(
+            clusters_with_seed, by_id, geoms, target_buildings=200, max_buildings=200, max_reach_m=1000
+        )
+        groups = {frozenset(cells) for _seed, cells in result}
+        assert groups == {frozenset(["T1", "T2"]), frozenset(["N1"])}
+
+    def test_bounded_by_max_reach_m(self):
+        from shapely.geometry import box
+
+        geoms = {
+            "T1": box(0, 0, 1, 1),
+            "T2": box(1, 0, 2, 1),
+            "N1": box(3, 0, 4, 1),  # otherwise-eligible, but beyond max_reach_m
+        }
+        wa_ids = list(geoms.keys())
+        by_id = {w: {"building_count": 10} for w in wa_ids}
+        by_id["N1"] = {"building_count": 50}
+        clusters_with_seed = [("T1", ["T1", "T2"]), ("N1", ["N1"])]
+        result = _merge_tiny_wags_into_nearest_wag(
+            clusters_with_seed, by_id, geoms, target_buildings=200, max_buildings=1000, max_reach_m=0.5
+        )
+        groups = {frozenset(cells) for _seed, cells in result}
+        assert groups == {frozenset(["T1", "T2"]), frozenset(["N1"])}  # out of reach
+
+    def test_barrier_blocks_the_nearest_falls_to_next(self):
+        from shapely.geometry import LineString, box
+        from shapely.prepared import prep
+
+        geoms = {
+            "T1": box(0, 0, 1, 1),
+            "T2": box(1, 0, 2, 1),
+            "N1": box(3, 0, 4, 1),  # nearest, but barrier-blocked
+            "N2": box(0, 3, 1, 4),  # farther, reachable
+        }
+        wa_ids = list(geoms.keys())
+        by_id = {w: {"building_count": 10} for w in wa_ids}
+        by_id["N1"] = {"building_count": 50}
+        by_id["N2"] = {"building_count": 50}
+        clusters_with_seed = [("T1", ["T1", "T2"]), ("N1", ["N1"]), ("N2", ["N2"])]
+        barrier = prep(LineString([(2.5, -2), (2.5, 2)]))  # blocks the eastward path to N1 only
+        result = _merge_tiny_wags_into_nearest_wag(
+            clusters_with_seed,
+            by_id,
+            geoms,
+            target_buildings=200,
+            max_buildings=1000,
+            max_reach_m=1000,
+            barriers_3857=barrier,
+        )
+        groups = {frozenset(cells) for _seed, cells in result}
+        assert groups == {frozenset(["N1"]), frozenset(["N2", "T1", "T2"])}
+
+    def test_two_mutually_tiny_wags_merge_into_each_other(self):
+        from shapely.geometry import box
+
+        geoms = {
+            "T1": box(0, 0, 1, 1),
+            "S1": box(2, 0, 3, 1),  # another tiny WAG, close by
+        }
+        wa_ids = list(geoms.keys())
+        by_id = {w: {"building_count": 10} for w in wa_ids}
+        clusters_with_seed = [("T1", ["T1"]), ("S1", ["S1"])]
+        result = _merge_tiny_wags_into_nearest_wag(
+            clusters_with_seed, by_id, geoms, target_buildings=200, max_buildings=1000, max_reach_m=1000
+        )
+        assert len(result) == 1
+        assert set(result[0][1]) == {"T1", "S1"}

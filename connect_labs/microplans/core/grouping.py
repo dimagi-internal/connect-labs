@@ -66,6 +66,30 @@ stranded-next-to-another-WAG piece; the third still respects it, a softer
 preference rather than a structural necessity. Priority, in order: hitting
 ``target_buildings`` exactly is sacrificed first; walkability and not
 fragmenting into tiny/stray groups wins.
+
+Final mop-up, added 2026-07
+----------------------------
+Two more passes run once each, after the shape-sanity loop above has settled,
+neither iterated back into it:
+
+  1. ``_reassign_isolated_wa_to_nearest_wag`` — a work area with NO neighbours
+     at all within ``buffer_distance_m`` (a true geographic island, left as
+     its own phase-1 singleton) can still end up inside some WAG via the
+     min_buildings top-up pass reaching across a real gap — but top-up picks
+     whichever undersized WAG needs the cells, not necessarily the truly
+     closest one. This pass re-homes every such island to whichever WAG is
+     actually nearest to it, as long as that WAG has room under
+     ``max_buildings`` — happily exceeding ``target_buildings`` to do so,
+     since for a lone stranded cell "which WAG is it a short walk from" beats
+     "which WAG is under its target."
+  2. ``_merge_tiny_wags_into_nearest_wag`` — any WAG left under
+     ``TINY_WAG_THRESHOLD`` (an absolute floor, independent of whatever
+     ``min_buildings`` is configured) merges wholesale into its single
+     nearest other WAG, provided that WAG is still under ``target_buildings``
+     and the merge fits under ``max_buildings``. If the nearest WAG is
+     already at/over target, the tiny WAG is left stranded rather than
+     searched further — better a known small leftover than a merge into
+     something increasingly far away.
 """
 
 from __future__ import annotations
@@ -80,6 +104,11 @@ from dataclasses import dataclass
 DEFAULT_TARGET_SIZE = 30
 DEFAULT_TARGET_BUILDINGS = 200
 DEFAULT_BUFFER_DISTANCE_M = 100
+
+# Absolute floor for the final tiny-WAG mop-up (see _merge_tiny_wags_into_nearest),
+# independent of whatever min_buildings is configured — a WAG this small is a
+# planning artifact regardless of the user's own target.
+TINY_WAG_THRESHOLD = 50
 
 VALID_STRATEGIES = ("bbox", "bfs_adjacency", "barrier_aware")
 
@@ -414,6 +443,24 @@ def _bfs_adjacency(
         after = frozenset(frozenset(cells) for _seed, cells in clusters_with_seed)
         if before == after:
             break
+
+    # ---- Final mop-up, each run once (not iterated back into the loop above).
+    # Both are bounded by the SAME resolved_reach as the top-up pass — a lone
+    # island or a tiny leftover WAG should only reach as far as min_buildings's
+    # own max_reach_m already allows, never arbitrarily far (two small, genuinely
+    # separate villages a country apart must never merge just because both
+    # happen to be small):
+    #   1. a truly isolated work area (no neighbours at all, not just none in its
+    #      own WAG) re-homes to whichever WAG is actually nearest, over max_buildings
+    #      headroom rather than wherever the top-up pass happened to place it.
+    #   2. any WAG still under TINY_WAG_THRESHOLD merges into its nearest other WAG,
+    #      if that WAG has room under both target_buildings and max_buildings.
+    clusters_with_seed = _reassign_isolated_wa_to_nearest_wag(
+        clusters_with_seed, by_id, geoms_3857, wa_ids, adjacency, resolved_max, resolved_reach, barriers_3857
+    )
+    clusters_with_seed = _merge_tiny_wags_into_nearest_wag(
+        clusters_with_seed, by_id, geoms_3857, target_buildings, resolved_max, resolved_reach, barriers_3857
+    )
 
     # ---- assign labels ("{WARD-prefix-}group-N", N restarting at 1 per ward — see
     # _ward_numbered_labels). Prefix comes from each cluster's SURVIVING seed's ward
@@ -1020,6 +1067,193 @@ def _reassign_isolated_pieces_touching_other_wags(
             if not active[cid]:
                 del active[cid]
                 del seeds[cid]
+    return [(seeds[cid], active[cid]) for cid in active]
+
+
+# ---- Final mop-up: re-home truly isolated work areas -------------------------
+
+
+def _reassign_isolated_wa_to_nearest_wag(
+    clusters_with_seed: list[tuple[str, list[str]]],
+    by_id: dict[str, dict],
+    geoms_3857: dict[str, object],
+    wa_ids: list[str],
+    adjacency: dict[str, list],
+    max_buildings: int,
+    max_reach_m: float,
+    barriers_3857=None,
+) -> list[tuple[str, list[str]]]:
+    """A work area with NO neighbours at all within ``buffer_distance_m`` (using
+    the SAME phase-1 ``adjacency`` graph BFS clustered over — not touch-adjacency,
+    not any other pass's notion of "neighbour") is a true geographic island: it was
+    its own phase-1 singleton, and if it ended up inside a WAG at all, that's only
+    because the min_buildings top-up pass reached across empty terrain to whichever
+    undersized WAG needed cells — not necessarily the WAG actually closest to it.
+
+    Re-homes every such island to whichever WAG is nearest by straight-line distance
+    (from the island to the closest cell of that WAG), among WAGs within
+    ``max_reach_m`` that also have room under ``max_buildings`` — deliberately
+    allowed to exceed ``target_buildings``, since for a lone stranded cell "closest
+    walkable WAG" matters more than "under its target." The ``max_reach_m`` bound
+    matters just as much: without it, a genuinely remote island with nothing
+    actually nearby would get dragged into whichever WAG is merely LEAST far,
+    however many kilometres that is. A WAG with no eligible destination within
+    reach at all is left exactly where it was.
+
+    Runs once, after the shape-sanity loop has settled — moving an island can't
+    change any OTHER island's isolation (islands don't touch anything, by
+    definition), so there's nothing here that needs iterating to a fixed point."""
+    if len(clusters_with_seed) < 2:
+        return clusters_with_seed
+
+    from shapely.geometry import LineString
+
+    def building_count(wid: str) -> int:
+        return int(by_id[wid].get("building_count", 0))
+
+    def crosses_barrier(a: str, b: str) -> bool:
+        if barriers_3857 is None:
+            return False
+        return barriers_3857.intersects(
+            LineString([geoms_3857[a].centroid.coords[0], geoms_3857[b].centroid.coords[0]])
+        )
+
+    active: dict[int, list[str]] = {}
+    seeds: dict[int, str] = {}
+    cell_owner: dict[str, int] = {}
+    for cid, (seed, cells) in enumerate(clusters_with_seed):
+        active[cid] = list(cells)
+        seeds[cid] = seed
+        for w in cells:
+            cell_owner[w] = cid
+
+    def total(cid: int) -> int:
+        return sum(building_count(w) for w in active[cid])
+
+    # Sorted (not raw set) so processing order — and thus which WAG wins a
+    # max_buildings headroom tie — is identical across runs.
+    islands = sorted(wid for wid in wa_ids if not adjacency.get(wid))
+    for wid in islands:
+        cid = cell_owner.get(wid)
+        if cid is None or cid not in active or wid not in active[cid]:
+            continue  # already moved earlier in this pass
+        own_geom = geoms_3857[wid]
+        # Every other cell, nearest first — the first cell we see belonging to a
+        # given WAG is necessarily that WAG's closest cell to this island.
+        others = sorted(
+            (w for w in wa_ids if w != wid and not crosses_barrier(wid, w)),
+            key=lambda w: (own_geom.distance(geoms_3857[w]), w),
+        )
+        seen_wags: set[int] = set()
+        best_cid = None
+        for w in others:
+            if own_geom.distance(geoms_3857[w]) > max_reach_m:
+                break  # sorted ascending — everything from here is even farther
+            other_cid = cell_owner.get(w)
+            if other_cid is None or other_cid in seen_wags:
+                continue
+            seen_wags.add(other_cid)
+            headroom_total = total(other_cid) - (building_count(wid) if other_cid == cid else 0)
+            if headroom_total + building_count(wid) <= max_buildings:
+                best_cid = other_cid
+                break
+        if best_cid is None or best_cid == cid:
+            continue
+        active[cid].remove(wid)
+        active[best_cid].append(wid)
+        cell_owner[wid] = best_cid
+        if seeds[cid] == wid:
+            seeds[cid] = active[cid][0] if active[cid] else None
+        if not active[cid]:
+            del active[cid]
+            del seeds[cid]
+    return [(seeds[cid], active[cid]) for cid in active]
+
+
+# ---- Final mop-up: merge WAGs left under an absolute tiny-size floor ---------
+
+
+def _merge_tiny_wags_into_nearest_wag(
+    clusters_with_seed: list[tuple[str, list[str]]],
+    by_id: dict[str, dict],
+    geoms_3857: dict[str, object],
+    target_buildings: int,
+    max_buildings: int,
+    max_reach_m: float,
+    barriers_3857=None,
+) -> list[tuple[str, list[str]]]:
+    """Any WAG whose total building count is still under ``TINY_WAG_THRESHOLD`` —
+    an absolute floor, independent of whatever ``min_buildings`` the top-up pass
+    used — merges wholesale into its single nearest other WAG within
+    ``max_reach_m`` (by straight-line distance between the two closest cells), as
+    long as that WAG is still under ``target_buildings`` and the merge fits under
+    ``max_buildings``. The ``max_reach_m`` bound is what keeps two small but
+    genuinely separate WAGs — say, two distinct villages a country apart — from
+    merging just because both happen to be small; nothing within reach at all
+    behaves exactly like "nearest WAG doesn't qualify" below. If the nearest WAG
+    doesn't qualify, the tiny WAG is left exactly where it is rather than
+    searched further — a known small leftover beats a merge into whichever WAG
+    happens to be next, however far.
+
+    Runs once, last — smallest-total-first, deterministic tie-break by seed id,
+    so a merge can only ever make some OTHER WAG bigger, never create a new
+    tiny one, meaning there's nothing to iterate to a fixed point here either."""
+    if len(clusters_with_seed) < 2:
+        return clusters_with_seed
+
+    from shapely.geometry import LineString
+
+    def building_count(wid: str) -> int:
+        return int(by_id[wid].get("building_count", 0))
+
+    def crosses_barrier(a: str, b: str) -> bool:
+        if barriers_3857 is None:
+            return False
+        return barriers_3857.intersects(
+            LineString([geoms_3857[a].centroid.coords[0], geoms_3857[b].centroid.coords[0]])
+        )
+
+    active: dict[int, list[str]] = {}
+    seeds: dict[int, str] = {}
+    cell_owner: dict[str, int] = {}
+    for cid, (seed, cells) in enumerate(clusters_with_seed):
+        active[cid] = list(cells)
+        seeds[cid] = seed
+        for w in cells:
+            cell_owner[w] = cid
+
+    def total(cid: int) -> int:
+        return sum(building_count(w) for w in active[cid])
+
+    order = sorted(active.keys(), key=lambda cid: (total(cid), seeds[cid]))
+    for cid in order:
+        if cid not in active or total(cid) >= TINY_WAG_THRESHOLD:
+            continue
+        best = None  # (dist, other_cid)
+        for wid in sorted(active[cid]):
+            geom = geoms_3857[wid]
+            for other_wid, other_cid in cell_owner.items():
+                if other_cid == cid or crosses_barrier(wid, other_wid):
+                    continue
+                dist = geom.distance(geoms_3857[other_wid])
+                if dist > max_reach_m:
+                    continue
+                if best is None or (dist, other_cid) < (best[0], best[1]):
+                    best = (dist, other_cid)
+        if best is None:
+            continue  # nothing reachable within max_reach_m
+        _, nearest_cid = best
+        if total(nearest_cid) >= target_buildings:
+            continue  # nearest is already at/over target — leave it stranded
+        if total(nearest_cid) + total(cid) > max_buildings:
+            continue
+        if total(cid) > total(nearest_cid):
+            seeds[nearest_cid] = seeds[cid]
+        active[nearest_cid].extend(active[cid])
+        for w in active[cid]:
+            cell_owner[w] = nearest_cid
+        del active[cid]
+        del seeds[cid]
     return [(seeds[cid], active[cid]) for cid in active]
 
 
