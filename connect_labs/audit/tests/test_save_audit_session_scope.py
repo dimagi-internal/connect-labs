@@ -21,8 +21,8 @@ the redundant, mis-scoped re-fetch never happens.
 Watch the storage/target distinction. AuditSessionRecord.opportunity_id is a
 property over data["opportunity_id"] (the opportunity being AUDITED); the
 LabsRecord's real storage scope arrives as the top-level api_data field and is
-stashed in _opportunity_id_from_api. Scoping and payload-building must both
-use the storage value, so these fixtures set the two independently.
+exposed as storage_opportunity_id. Scoping and payload-building must both use
+the storage value, so these fixtures set the two independently.
 """
 
 from unittest.mock import patch

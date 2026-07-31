@@ -85,22 +85,17 @@ def _coerce_int(value) -> int | None:
 def _storage_record(session: AuditSessionRecord) -> LocalLabsRecord:
     """Plain LocalLabsRecord view of an audit session's STORAGE metadata.
 
-    ``AuditSessionRecord`` overrides ``opportunity_id`` with a property over
-    ``data["opportunity_id"]`` — the opportunity being *audited* — which
-    shadows the LabsRecord's own storage scope (the field the production API
-    filters and writes by). The class's setter stashes the real value in
-    ``_opportunity_id_from_api``, and until now nothing read it back.
+    ``AuditSessionRecord.opportunity_id`` is the opportunity being *audited*;
+    ``storage_opportunity_id`` is the scope the production API files, filters
+    and writes by. See the block comment on that class for why both exist.
 
-    Handing the raw proxy to ``update_record`` would therefore be wrong twice
-    over: it reads ``current.opportunity_id`` both to decide scope and to
-    build the write payload, so a session whose audit target differs from its
-    storage opportunity would get silently *moved* to the target opp. Build a
-    storage-truth record instead.
+    Handing the raw proxy to ``update_record`` would be wrong twice over: it
+    reads ``current.opportunity_id`` both to decide scope and to build the
+    write payload, so a session whose audit subject differs from its storage
+    opportunity would get silently *moved*. Build a storage-truth record
+    instead.
     """
-    storage_opp_id = getattr(session, "_opportunity_id_from_api", None)
-    if storage_opp_id is None:
-        # Older/local records may only carry the data-level value.
-        storage_opp_id = session.opportunity_id
+    storage_opp_id = session.storage_opportunity_id
 
     return LocalLabsRecord(
         {
@@ -1294,13 +1289,12 @@ class AuditDataAccess(BaseDataAccess):
     ) -> None:
         """Memoise where a session actually lives, read off the record itself.
 
-        Uses ``_storage_record`` because ``AuditSessionRecord.opportunity_id``
-        is a property over ``data["opportunity_id"]`` — the opportunity being
-        *audited*, not the storage scope the API filters by. ``found_under`` is
-        the scope the fetch succeeded under, used when the record carries no
-        storage opportunity of its own.
+        Reads ``storage_opportunity_id`` — where the record is FILED — not
+        ``opportunity_id``, which on this class is the opportunity being
+        *audited*. ``found_under`` is the scope the fetch succeeded under, used
+        when the record carries no storage opportunity of its own.
         """
-        storage_opp_id = _coerce_int(_storage_record(session).opportunity_id)
+        storage_opp_id = _coerce_int(session.storage_opportunity_id)
         if storage_opp_id is None:
             storage_opp_id = found_under
         if storage_opp_id is not None:

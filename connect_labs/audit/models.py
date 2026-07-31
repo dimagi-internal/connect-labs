@@ -80,17 +80,83 @@ class AuditSessionRecord(LocalLabsRecord):
         """List of UserVisit IDs to audit."""
         return self.data.get("visit_ids", [])
 
+    # ------------------------------------------------------------------
+    # An audit session carries TWO opportunities. Keep them apart.
+    #
+    #   storage_opportunity_id — where the RECORD is filed. The production
+    #       export API authorizes, filters, and writes by this one. Comes
+    #       from the API envelope (``api_data["opportunity_id"]``).
+    #   opportunity_id         — what the audit is ABOUT: the opportunity
+    #       whose visits are under review. Lives in the payload
+    #       (``data["opportunity_id"]``) and is what the UI displays.
+    #
+    # They are equal for a session created while a single opportunity is
+    # selected — the overwhelmingly common case, and why this went eight
+    # months without anyone noticing. They diverge under program scope, and
+    # every incident below is that divergence meeting code that assumed one
+    # name meant one thing: #933 (workflow scope), #1012 ("Complete Review"
+    # failed with a generic error for real reviewers), #1037 (54 minutes at
+    # 100% CPU and ~700 req/min against production Connect), #1060/#1074
+    # (23,445 scoped probes in a day).
+    #
+    # `opportunity_id` deliberately still shadows the base class's storage
+    # value, because ~10 call sites across views, templates and workflow
+    # templates read it for DISPLAY and mean the audit target. What changed
+    # is that the storage value is no longer hidden behind a private
+    # `_opportunity_id_from_api` that nothing was expected to read: it has a
+    # name, a docstring, and tests. Reach for `storage_opportunity_id`
+    # whenever you are addressing the API rather than describing the audit.
+    # ------------------------------------------------------------------
+
     @property
     def opportunity_id(self):
-        """Primary opportunity ID for this audit session (the audit target, not Labs storage)."""
+        """The opportunity this audit is ABOUT (its subject) — NOT where it is stored.
+
+        For the scope the production API files and authorizes this record
+        under, use :attr:`storage_opportunity_id`.
+        """
         return self.data.get("opportunity_id")
 
     @opportunity_id.setter
     def opportunity_id(self, value):
-        """Allow setting opportunity_id from LocalLabsRecord.__init__."""
-        # LocalLabsRecord.__init__ tries to set this from api_data
-        # We intercept it here and store in internal attribute
-        object.__setattr__(self, "_opportunity_id_from_api", value)
+        """Absorb ``LocalLabsRecord.__init__``'s assignment of the STORAGE scope.
+
+        The base constructor runs ``self.opportunity_id = api_data["opportunity_id"]``,
+        which is the storage scope. Because the getter above is the audit
+        subject, that write is routed to :attr:`storage_opportunity_id`'s
+        backing field rather than being allowed to overwrite the subject.
+        """
+        object.__setattr__(self, "_storage_opportunity_id", value)
+
+    @property
+    def storage_opportunity_id(self):
+        """The opportunity this RECORD IS FILED UNDER — the scope the API uses.
+
+        Use this for anything addressed to the production API: fetching by
+        id, choosing a scoped client, or building a write payload. Using
+        :attr:`opportunity_id` for those is what silently relocated sessions
+        and drove the cross-opportunity sweep.
+
+        Falls back to the audit subject for records built without an API
+        envelope (locally constructed or older fixtures), where the two are
+        the same by construction.
+        """
+        value = getattr(self, "_storage_opportunity_id", None)
+        return self.data.get("opportunity_id") if value is None else value
+
+    def to_api_dict(self):
+        """Serialize for the API, filing the record under its STORAGE scope.
+
+        The inherited implementation emits ``self.opportunity_id``, which on
+        this class is the audit SUBJECT — so a session whose two opportunities
+        differ would be written back under the wrong scope, i.e. moved. No
+        caller in the audit app hits that path today; this override means one
+        cannot be introduced by accident. The subject is untouched: it rides
+        along inside ``data``.
+        """
+        payload = super().to_api_dict()
+        payload["opportunity_id"] = self.storage_opportunity_id
+        return payload
 
     @property
     def opportunity_name(self):
