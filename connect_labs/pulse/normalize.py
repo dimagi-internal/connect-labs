@@ -89,6 +89,32 @@ _SERVICE_PATTERNS: list[tuple[re.Pattern, str, str]] = [
 SERVICE_LABELS = {slug: label for _, slug, label in _SERVICE_PATTERNS}
 SERVICE_LABELS["other"] = "Service delivery"
 
+# Connect's `delivery_type` values, which are what actually categorise work now
+# that programmes are read properly. Only entries whose meaning is unambiguous
+# get prose here: an invented expansion of a slug would read as authoritative
+# on a funder's screen while being a guess, which is the failure this app keeps
+# finding. Anything unmapped falls back to the slug in caps -- visibly a code,
+# so nobody mistakes it for a considered label.
+SERVICE_LABELS.update(
+    {
+        "chc": "Community health case",
+        "ecd": "Early childhood development",
+        "mbw": "Mother & baby wellness",
+        "kmc": "Kangaroo Mother Care",
+        "readers": "Reading assessment",
+        "nutrition": "Nutrition",
+        "interview": "Interviews",
+    }
+)
+
+
+def service_label(slug: str | None) -> str:
+    """Display text for a delivery type, without inventing one."""
+    if not slug:
+        return SERVICE_LABELS["other"]
+    return SERVICE_LABELS.get(slug) or slug.upper()
+
+
 # Flag keys as they appear inside the export's flag_reason blob, mapped to
 # language a non-engineer can read.
 FLAG_LABELS = {
@@ -150,6 +176,23 @@ def country_for(lat: float | None, lon: float | None) -> str:
         if lat_lo <= lat <= lat_hi and lon_lo <= lon <= lon_hi:
             return code
     return ""
+
+
+# Programmes whose name says they are not real delivery. Kept deliberately
+# narrow: a "[PARTNER]" bracket prefix is a naming convention across genuine
+# programmes ("[RUWOYD] CHC Mapping"), so matching on brackets would hide 2/3
+# of the real portfolio. Only explicit words count.
+_TEST_PROGRAM = re.compile(r"\b(test|demo|sandbox|dummy|trial|smoke|e2e)\b", re.I)
+
+
+def looks_like_test(program_name: str | None) -> bool:
+    """Whether a programme is internal scaffolding rather than delivery.
+
+    Used to keep the programme filter honest: these carry real visit counts
+    (one has 9,035) so they cannot be spotted by volume, and a funder picking
+    "[TEST 02] Dimagi-GW CHC Program" out of a menu is a bad moment.
+    """
+    return bool(_TEST_PROGRAM.search(program_name or ""))
 
 
 def service_slug_for(opportunity_name: str | None) -> str:
