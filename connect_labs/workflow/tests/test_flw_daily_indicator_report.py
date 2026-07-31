@@ -46,8 +46,8 @@ def test_run_default_splits_by_opportunity_and_completes_each_run(MockWDA, mock_
 
     in_window = "2026-07-20T08:00:00Z"
     hsd_rows = [
-        _visit_row(1001, "alice", in_window),
-        _visit_row(1001, "alice", "2026-07-20T09:00:00Z"),
+        _visit_row(1001, "alice", in_window, hh_case_id="hh-alice-1"),
+        _visit_row(1001, "alice", "2026-07-20T09:00:00Z", hh_case_id="hh-alice-2"),
         _visit_row(1002, "bob", in_window),
     ]
 
@@ -94,14 +94,14 @@ def test_run_default_splits_by_opportunity_and_completes_each_run(MockWDA, mock_
     assert len(flws_1001) == 1
     assert flws_1001[0]["username"] == "alice"
     assert flws_1001[0]["total_forms"] == 2
-    assert flws_1001[0]["avg_forms_per_building"]["max_ratio"] == 0.4  # 2 forms / 5 buildings
+    assert flws_1001[0]["households_per_building"]["max_ratio"] == 0.4  # 2 households / 5 buildings
 
     opp_instances[1002].complete_run.assert_called_once()
     snapshot_1002 = opp_instances[1002].complete_run.call_args.args[1]
     flws_1002 = snapshot_1002["state"]["flw_daily_indicators"]["flws"]
     assert len(flws_1002) == 1
     assert flws_1002[0]["username"] == "bob"
-    assert flws_1002[0]["avg_forms_per_building"]["max_ratio"] == 0.5  # 1 form / 2 buildings
+    assert flws_1002[0]["households_per_building"]["max_ratio"] == 0.5  # 1 household / 2 buildings
 
 
 @mock.patch(FETCH_CCHQ_CASES_PATH)
@@ -135,7 +135,7 @@ def test_run_default_degrades_gracefully_when_cchq_fetch_fails(MockWDA, mock_fet
     snapshot = opp_instance.complete_run.call_args.args[1]
     flws = snapshot["state"]["flw_daily_indicators"]["flws"]
     assert flws[0]["total_forms"] == 1
-    assert flws[0]["avg_forms_per_building"]["max_ratio"] is None
+    assert flws[0]["households_per_building"]["max_ratio"] is None
 
 
 @mock.patch(FETCH_CCHQ_CASES_PATH)
