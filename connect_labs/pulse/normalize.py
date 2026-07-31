@@ -108,6 +108,16 @@ SERVICE_LABELS.update(
         "readers": "Readers Distribution",
         "ecd": "Early childhood development",
         "kmc": "Kangaroo Mother Care",
+        "ivp": "Infant Vaccine Promotion",
+        "malaria": "Malaria",
+        "hhs": "Household Safety Check",
+        "wellme": "Worker Wellbeing",
+        "nutrition": "Nutrition",
+        "interview": "Interviews",
+        # Our own tooling's programmes rather than field delivery. Named as it
+        # is because that is what it is called; it should stop appearing here
+        # once those programmes are cleaned up on the Connect side.
+        "ace": "ACE",
     }
 )
 
