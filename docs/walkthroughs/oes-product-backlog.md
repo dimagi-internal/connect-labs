@@ -1,5 +1,34 @@
 # OES supply — product-defect backlog
 
+> **Status, 31 July 2026.** Seven batches (PRs #1081, #1082, #1084, #1085, #1086,
+> #1087, #1088) closed the substantive product findings below. **49 fixes were
+> verified against the deployed app** at `labs.connect.dimagi.com` after a
+> programmatic reseed, with zero console errors; `pytest connect_labs/supply` is
+> at **238 passed**, up from 228, with 11 new regression tests.
+>
+> What is INTENTIONALLY still open here:
+>
+> - **Demo-craft findings**, which read as product findings in this file but are
+>   not. Anything tagged `act-claimed-not-performed` is a *recipe* defect — the
+>   narration describes an act the action_trace never performs — and is fixed by
+>   rescripting a scene, not by changing `/supply/`. Same for
+>   `canonical-frame-is-the-aftermath` and the cursor-occlusion notes.
+> - **Layout/visual-hierarchy findings** that are a designer's taste call rather
+>   than a defect: flat table typography, empty lower thirds, rail heights, two
+>   button styles in one column. Several were partly addressed where they
+>   coincided with a correctness problem; the rest want a human's eye.
+> - **One genuinely forked decision**: whether coverage should MEAN reached-a-child
+>   rather than supply-positioned. #1081 renamed the metric and added the missing
+>   companion figure — the least destructive honest option, moving no existing
+>   figure — rather than changing the numerator, which would silently invalidate
+>   figures three narratives quote out loud. See that PR's description.
+>
+> **Verify before fixing.** Several entries below were already fixed when this
+> file was written, and three more were fixed while working it. Check the finding
+> against current code AND a fresh render first — §AG of the narrative-set review
+> is the cautionary example, having listed four defects as open when three were
+> already closed.
+
 Every PRODUCT finding the three judge harvests produced, deduplicated on
 (arc, scene, dimension, detail). **Narrative-independent**: each of these is true
 for any user of
