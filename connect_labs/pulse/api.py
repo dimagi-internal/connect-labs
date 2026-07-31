@@ -308,6 +308,29 @@ class SummaryView(View):
             to_orgs=Sum("usd_to_org"),
             works=Count("id"),
         )
+        # The headline figure is everything verified delivery has moved: the
+        # worker's payout AND the delivery organisation's share. Showing only
+        # the worker side understated the platform by 47% on real data -- the
+        # org share is $422,889 against the workers' $480,144, not a rounding
+        # error.
+        #
+        # These two are ADDITIVE, which is the one thing worth being sure of
+        # before summing them -- an inclusive figure would double-count. Two
+        # independent confirmations from Connect's own source
+        # (opportunity/utils/completed_work.py):
+        #
+        #   1. They are computed from separate payment-unit fields --
+        #      `approved_count * payment_unit.amount` for the worker,
+        #      `approved_count * payment_unit.org_amount` for the org.
+        #   2. Connect's invoice generator defines the billed total as exactly
+        #      this sum: `"total_amount_usd": flw_usd + org_usd`.
+        #
+        # So this is not our interpretation of the money; it is the arithmetic
+        # Connect invoices on. Note org_amount is only set for *managed*
+        # opportunities, so `to_orgs` covers a subset of the portfolio -- which
+        # is why the split stays on screen beside the total rather than being
+        # folded away into one number.
+        total_paid = float(money["to_workers"] or 0) + float(money["to_orgs"] or 0)
         approved_works = sc["works"].filter(status="approved").count()
         by_work_status = {
             row["status"]: row["n"] for row in sc["works"].values("status").annotate(n=Count("id")).order_by("-n")
@@ -318,13 +341,15 @@ class SummaryView(View):
                 "name": COUNTRY_NAMES.get(row["country"], row["country"]),
                 "works": row["n"],
                 "usd": float(row["usd"] or 0),
+                "usd_org": float(row["usd_org"] or 0),
+                "usd_total": float(row["usd"] or 0) + float(row["usd_org"] or 0),
             }
             for row in sc["works"]
             .exclude(country="")
             .values("country")
-            .annotate(n=Count("id"), usd=Sum("usd_to_worker"))
-            .order_by("-usd")
+            .annotate(n=Count("id"), usd=Sum("usd_to_worker"), usd_org=Sum("usd_to_org"))
         ]
+        money_by_country.sort(key=lambda r: -r["usd_total"])
         # Country comes from the opportunity, and Connect leaves it blank on
         # most of them -- `pulse_backfill --countries` resolves it by sampling a
         # visit's GPS, but any opportunity with no ingested visit stays blank.
@@ -333,11 +358,14 @@ class SummaryView(View):
         # Report the remainder instead: a consumer can then say what the
         # breakdown covers rather than implying it covers everything.
         country_usd = sum(r["usd"] for r in money_by_country)
+        country_total = sum(r["usd_total"] for r in money_by_country)
         country_works = sum(r["works"] for r in money_by_country)
         money_country_unattributed = {
             "works": (money["works"] or 0) - country_works,
             "usd": float(money["to_workers"] or 0) - country_usd,
             "usd_share": (country_usd / float(money["to_workers"]) if money["to_workers"] else 0),
+            "usd_total": total_paid - country_total,
+            "usd_total_share": (country_total / total_paid if total_paid else 0),
         }
         # Rate per service is VOLUME-WEIGHTED, computed from money actually
         # accrued over approved work. Averaging each opportunity's own rate
@@ -351,7 +379,16 @@ class SummaryView(View):
                 "works": row["n"],
                 "approved": row["approved"],
                 "usd": float(row["usd"] or 0),
+                "usd_org": float(row["usd_org"] or 0),
+                "usd_total": float(row["usd"] or 0) + float(row["usd_org"] or 0),
+                # Worker payout per approved unit -- what the unit-economics
+                # card ranks. The all-in figure per unit is total_rate.
                 "rate": (float(row["usd"] or 0) / row["approved"]) if row["approved"] else None,
+                "total_rate": (
+                    (float(row["usd"] or 0) + float(row["usd_org"] or 0)) / row["approved"]
+                    if row["approved"]
+                    else None
+                ),
             }
             for row in sc["works"]
             .exclude(service_slug="")
@@ -360,9 +397,11 @@ class SummaryView(View):
                 n=Count("id"),
                 approved=Count("id", filter=Q(status="approved")),
                 usd=Sum("usd_to_worker"),
+                usd_org=Sum("usd_to_org"),
             )
-            .order_by("-usd")[:12]
         ]
+        money_by_service.sort(key=lambda r: -r["usd_total"])
+        money_by_service = money_by_service[:12]
 
         return JsonResponse(
             {
@@ -383,11 +422,13 @@ class SummaryView(View):
                 "money": {
                     "to_workers": float(money["to_workers"] or 0),
                     "to_orgs": float(money["to_orgs"] or 0),
+                    "total_paid": total_paid,
                     "works": money["works"] or 0,
                     "approved_works": approved_works,
                     "usd_per_approved_work": (
                         float(money["to_workers"] or 0) / approved_works if approved_works else 0
                     ),
+                    "total_per_approved_work": (total_paid / approved_works if approved_works else 0),
                     "by_work_status": by_work_status,
                     "by_country": money_by_country,
                     "by_country_unattributed": money_country_unattributed,

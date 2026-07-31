@@ -15,7 +15,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from connect_labs.pulse import ingest
-from connect_labs.pulse.models import PulseEvent, PulseIngestHealth, PulseOpportunity, PulseScalar
+from connect_labs.pulse.models import PulseEvent, PulseIngestHealth, PulseOpportunity, PulseScalar, PulseWork
 
 
 def make_event(vid, *, field_ts=None, status="approved", usd="0.70", flagged=False, country="NG"):
@@ -133,6 +133,100 @@ class TestIngestHonesty:
     def test_events_endpoint_also_reports_ingest_state(self, client, populated):
         """Cards that only poll events must be able to tell they're stale too."""
         assert "ingest" in client.get(reverse("pulse:api_events")).json()
+
+
+def make_work(key, *, service="mbw", country="NG", status="approved", worker="1.00", org="0.50"):
+    return PulseWork.objects.create(
+        work_key=f"{key:0>64}",
+        opportunity_id=765,
+        service_slug=service,
+        country=country,
+        status=status,
+        created_ts=timezone.now(),
+        usd_to_worker=worker,
+        usd_to_org=org,
+    )
+
+
+@pytest.mark.django_db
+class TestMoneyTotals:
+    """Money out the door means BOTH streams.
+
+    The works spine records a worker payout and an org payout on every unit of
+    approved work. A headline built from ``usd_to_worker`` alone understates
+    what verified delivery moved by the whole org share — on real data a
+    comparable amount of money, not a rounding error — so every money figure
+    the display leads with must be the sum, with the split still visible.
+    """
+
+    def test_headline_is_workers_plus_orgs(self, client, populated):
+        """The two streams are ADDITIVE, not nested.
+
+        Verified against Connect's own source rather than assumed: the worker
+        figure is `approved_count * payment_unit.amount` and the org figure is
+        `approved_count * payment_unit.org_amount` — separate fields — and
+        Connect's invoice generator bills `total_amount_usd = flw_usd +
+        org_usd`. Had they been nested, this sum would double-count and the
+        headline would be wrong in the safest-looking way possible.
+        """
+        make_work(1, worker="1.00", org="0.50")
+        make_work(2, worker="2.00", org="1.00")
+
+        m = client.get(reverse("pulse:api_summary")).json()["money"]
+        assert m["to_workers"] == 3.0
+        assert m["to_orgs"] == 1.5
+        assert m["total_paid"] == 4.5
+
+    def test_the_split_survives_beside_the_total(self, client, populated):
+        """The total must never replace the split.
+
+        `to_orgs` is only populated for *managed* opportunities, so the total
+        covers a subset differently from the worker figure. A funder reading one
+        blended number could not tell how much reached the worker, which is the
+        claim this screen exists to make."""
+        make_work(1, worker="1.00", org="0.50")
+
+        m = client.get(reverse("pulse:api_summary")).json()["money"]
+        assert m["to_workers"] and m["to_orgs"] and m["total_paid"]
+
+    def test_cost_per_service_has_an_all_in_figure(self, client, populated):
+        make_work(1, worker="1.00", org="0.50")
+        make_work(2, worker="1.00", org="0.50")
+        make_work(3, status="pending", worker="0.00", org="0.00")
+
+        m = client.get(reverse("pulse:api_summary")).json()["money"]
+        assert m["approved_works"] == 2
+        assert m["usd_per_approved_work"] == 1.0
+        assert m["total_per_approved_work"] == 1.5
+
+    def test_service_breakdown_carries_both_streams(self, client, populated):
+        make_work(1, service="mbw", worker="1.00", org="0.50")
+        make_work(2, service="kmc", worker="0.10", org="4.00")
+
+        rows = {r["service"]: r for r in client.get(reverse("pulse:api_summary")).json()["money"]["by_service"]}
+        assert rows["mbw"]["usd"] == 1.0
+        assert rows["mbw"]["usd_org"] == 0.5
+        assert rows["mbw"]["usd_total"] == 1.5
+        assert rows["kmc"]["usd_total"] == 4.1
+        assert rows["kmc"]["total_rate"] == 4.1
+
+    def test_breakdowns_rank_on_the_total_not_the_worker_share(self, client, populated):
+        """A service can be org-heavy (KMC's payment units span visits). Ranking
+        on the worker share alone would bury it below smaller programmes."""
+        make_work(1, service="mbw", country="NG", worker="1.00", org="0.00")
+        make_work(2, service="kmc", country="UG", worker="0.10", org="4.00")
+
+        data = client.get(reverse("pulse:api_summary")).json()["money"]
+        assert [r["service"] for r in data["by_service"]] == ["kmc", "mbw"]
+        assert [r["country"] for r in data["by_country"]] == ["UG", "NG"]
+
+    def test_country_coverage_note_reconciles_against_the_total(self, client, populated):
+        make_work(1, country="NG", worker="1.00", org="0.50")
+        make_work(2, country="", worker="2.00", org="1.00")  # country never resolved
+
+        cov = client.get(reverse("pulse:api_summary")).json()["money"]["by_country_unattributed"]
+        assert cov["usd_total"] == 3.0
+        assert cov["usd_total_share"] == pytest.approx(1.5 / 4.5)
 
 
 @pytest.mark.django_db
