@@ -63,7 +63,12 @@ def org_dict(org, include_qualifications=True):
         "contact_email": org.contact_email,
         "gln": org.gln,
         "gs1_company_prefix": org.gs1_company_prefix,
-        "certifications": [certification_dict(c) for c in org.certifications.all().order_by("cert_type")],
+        # cert_type alone leaves same-type rows (a renewal beside the original)
+        # in UNDEFINED database order, and the frozen-vs-live panel's per-type
+        # last-wins dedupe then shows the original or the renewal by coin flip.
+        # id breaks the tie by insertion order, so the newest certificate of a
+        # type deterministically represents the live profile.
+        "certifications": [certification_dict(c) for c in org.certifications.all().order_by("cert_type", "id")],
     }
     if include_qualifications:
         data["qualifications"] = [qualification_dict(q) for q in org.qualifications.all().order_by("category")]
