@@ -396,8 +396,11 @@
         $('totalpaid').textContent = usdCompact(totalPaid);
         $('approved').textContent = nf.format(m.approved_works || 0);
 
-        // Accrued vs paid: the gap is the float between a worker earning and a
-        // worker being paid, which is the number a funder actually asks about.
+        // Both figures are ACCRUED — earned against approved work — not
+        // disbursed. `PulseWork.payment_date` records when money actually left
+        // and is indexed, but nothing reads it yet, so this card cannot say how
+        // much of the total has landed. Worth stating because "Earned by
+        // frontline workers" invites being read as money already in a hand.
         const steps = [
           [
             'Earned by frontline workers',
