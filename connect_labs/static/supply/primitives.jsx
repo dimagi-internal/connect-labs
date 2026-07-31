@@ -173,17 +173,28 @@ function InfoNote({ label, text }) {
   // table wrap, not just the document.
   useEffect(() => {
     if (!open) return undefined;
+    // A short grace period on the SCROLL dismissal only.
+    //
+    // Opening the note can itself produce a scroll event — the browser settling
+    // a just-clicked control into view, or a map beside it finishing layout and
+    // resizing — and an ungraced listener therefore closed the note in the same
+    // tick it opened, so a method deliberately opened on camera rendered as
+    // nothing at all. Scene boundaries are seconds apart, so this window is far
+    // too short to let a note survive one, which is what the dismissal is for.
+    // Escape and an outside click are deliberate acts and are never graced.
+    const openedAt = Date.now();
+    const closeOnScroll = () => {
+      if (Date.now() - openedAt > 400) setOpen(false);
+    };
     const close = () => setOpen(false);
     const onKey = (ev) => {
       if (ev.key === 'Escape') setOpen(false);
     };
-    window.addEventListener('scroll', close, true);
-    window.addEventListener('resize', close);
+    window.addEventListener('scroll', closeOnScroll, true);
     document.addEventListener('click', close);
     document.addEventListener('keydown', onKey);
     return () => {
-      window.removeEventListener('scroll', close, true);
-      window.removeEventListener('resize', close);
+      window.removeEventListener('scroll', closeOnScroll, true);
       document.removeEventListener('click', close);
       document.removeEventListener('keydown', onKey);
     };

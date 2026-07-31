@@ -222,11 +222,20 @@ scenes:
   # narration names (the courses delivered, the recovered-of-discharged pair, the
   # observed rate, the defaulters and transfers) behind the thing the scene had
   # just opened. The modal is the payoff BEAT; the card is the frame.
-  - kind: scroll_to
-    target: css:.card:has-text('Children treated') .data-table
   - kind: snapshot
-    note: 'the canonical frame: two figures with two methods side by side, and every discharge
-      category beneath them including the zeroes'
+    note: 'the canonical frame: the two figures, two methods, side by side and never reconciled
+      into one'
+  - kind: hold
+    seconds: 1.6
+  # The discharge breakdown gets its OWN framed beat rather than sharing the
+  # canonical frame. The card is taller than a viewport, so a single scroll that
+  # tries to hold both leaves whichever is second below the fold — the previous
+  # take asked for both and captured only the figures, so the narration's
+  # "defaulters and inpatient transfers shown alongside" landed on a frame that
+  # did not contain them. The LAST row is the scroll target, because scrolling to
+  # the table itself is a no-op once its first rows are already in view.
+  - kind: scroll_to
+    target: css:.card:has-text('Children treated') tr:has-text('Non-response')
   - kind: hold
     seconds: 2.6
     note: every discharge category, including the zeroes — the Sphere band the sector grades on
