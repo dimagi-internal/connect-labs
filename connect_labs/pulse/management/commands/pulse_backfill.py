@@ -84,6 +84,7 @@ class Command(BaseCommand):
             self._run("fold to grid", lambda: ingest.fold_events_to_grid()["folded"])
 
         ingest.refresh_opportunity_countries()
+        ingest.resync_service_slugs()
         ingest.rebuild_rollups(since=timezone.now() - timezone.timedelta(days=options["days"]))
         self._report()
 

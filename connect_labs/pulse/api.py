@@ -222,7 +222,16 @@ def _program_menu():
         .filter(visits__gt=0)
     )
     by_id = {r["program_id"]: r for r in rows}
+    # Stored events are the retention window, not all history. Most of the
+    # largest programmes by lifetime volume finished months ago, so ordering on
+    # lifetime alone puts a blank map at the top of the menu -- picking "[Batch
+    # 04] Dimagi-GiveWell CHC Program", 547,474 services, currently yields no
+    # points at all because none of them are recent.
     programs = PulseProgram.objects.filter(program_id__in=by_id, is_test=False)
+    recent = {
+        r["program_id"]: r["n"]
+        for r in PulseEvent.objects.exclude(program_id=None).values("program_id").annotate(n=Count("id"))
+    }
     menu = [
         {
             "id": p.program_id,
@@ -231,10 +240,14 @@ def _program_menu():
             "service_label": service_label(p.delivery_type),
             "opportunities": by_id[p.program_id]["opps"],
             "visits": by_id[p.program_id]["visits"],
+            # Lets the menu say which programmes are currently delivering
+            # rather than letting someone discover it by selecting one.
+            "recent_events": recent.get(p.program_id, 0),
         }
         for p in programs
     ]
-    menu.sort(key=lambda m: -m["visits"])
+    # Currently-delivering programmes first, each group by lifetime volume.
+    menu.sort(key=lambda m: (-(1 if m["recent_events"] else 0), -m["visits"]))
     return menu
 
 

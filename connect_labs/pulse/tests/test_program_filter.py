@@ -160,3 +160,54 @@ class TestEcdLabelling:
 
         assert service_label("ivp") == "IVP"
         assert service_label("") == "Service delivery"
+
+
+@pytest.mark.django_db
+class TestMenuOrdering:
+    """Stored events are a 30-day window; lifetime volume is all history.
+
+    Ordering on lifetime alone put the largest DORMANT programme at the top of
+    the menu — on prod, "[Batch 04] Dimagi-GiveWell CHC Program" with 547,474
+    services and not one point on the map, because none of them are recent.
+    """
+
+    def test_currently_delivering_programmes_come_first(self, client, two_programmes):
+        # A huge programme that finished: big lifetime, no events.
+        PulseProgram.objects.create(program_id=5, name="Finished Big", delivery_type="chc")
+        PulseOpportunity.objects.create(
+            opportunity_id=500, name="old", program_id=5, service_slug="chc", lifetime_visit_count=999_999
+        )
+
+        menu = summary(client)["programs"]
+        assert menu[0]["name"] != "Finished Big", "a dormant programme leads the menu"
+        assert menu[-1]["name"] == "Finished Big"
+        assert menu[0]["recent_events"] > 0
+
+    def test_menu_reports_recent_volume_so_dormancy_is_visible(self, client, two_programmes):
+        by_name = {m["name"]: m for m in summary(client)["programs"]}
+        assert by_name["ECD Nigeria 2025"]["recent_events"] == 40
+
+
+@pytest.mark.django_db
+class TestServiceResync:
+    def test_changing_derivation_pushes_onto_stored_rows(self, two_programmes):
+        """service_slug is denormalised onto every event and work at ingest, so
+        deriving it differently fixes nothing on its own — 186,632 works stayed
+        in the 'Service delivery' bucket on prod after the delivery-type change.
+        """
+        from connect_labs.pulse import ingest
+
+        PulseWork.objects.filter(opportunity_id=100).update(service_slug="other")
+        PulseEvent.objects.filter(opportunity_id=100).update(service_slug="other")
+
+        assert ingest.resync_service_slugs() > 0
+
+        assert not PulseWork.objects.filter(opportunity_id=100, service_slug="other").exists()
+        assert not PulseEvent.objects.filter(opportunity_id=100, service_slug="other").exists()
+        assert PulseWork.objects.filter(opportunity_id=100, service_slug="ecd").count() == 40
+
+    def test_is_a_no_op_once_everything_agrees(self, two_programmes):
+        from connect_labs.pulse import ingest
+
+        ingest.resync_service_slugs()
+        assert ingest.resync_service_slugs() == 0

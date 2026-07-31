@@ -52,8 +52,18 @@ def poll_cheap_tier(rate_sample_limit: int = 25) -> dict:
         # has to be derived after events land rather than during the sync.
         countries = ingest.refresh_opportunity_countries()
 
+        # Delivery type is denormalised onto stored rows, so a change in how it
+        # is derived has to be pushed to history as well as applied going
+        # forward. No-ops once everything agrees.
+        services = ingest.resync_service_slugs()
+
         ingest.record_success(TIER_CHEAP)
-        return {"scope": scope, "rates_refreshed": rated, "countries_set": countries}
+        return {
+            "scope": scope,
+            "rates_refreshed": rated,
+            "countries_set": countries,
+            "services_resynced": services,
+        }
     except PulseAuthError as exc:
         # The expired-refresh-token case. Must be loud: this is the failure that
         # otherwise looks exactly like "no new data".
