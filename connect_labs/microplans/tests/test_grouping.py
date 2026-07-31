@@ -798,6 +798,45 @@ class TestReassignDominatedCells:
         groups = {frozenset(cells) for _seed, cells in result}
         assert groups == {frozenset(["X", "W", "N"]), frozenset(["S", "E", "SE"])}
 
+    def test_moves_when_result_is_a_tie_not_just_a_majority(self):
+        # Real screenshot from live testing: X has 1 own neighbour (G, which
+        # has its own companion G2 so G isn't a lone singleton) and 3 foreign
+        # neighbours split 2-and-1 across two different WAGs (P: north+west,
+        # bridged into one WAG via P_NW; B: east, with its own companion so
+        # it isn't a lone singleton either). Moving to P (the 2-count
+        # majority) would leave X at a 2-own/2-foreign TIE, not an outright
+        # majority — this must still be treated as a real improvement over
+        # the original 1-own/3-foreign split and allowed through, since a tie
+        # is itself a stable rest state (ties never re-trigger a move).
+        from shapely.geometry import box
+        from shapely.strtree import STRtree
+
+        geoms = {
+            "X": box(1, 1, 2, 2),
+            "G": box(1, 0, 2, 1),
+            "G2": box(1, -1, 2, 0),
+            "P_N": box(1, 2, 2, 3),
+            "P_W": box(0, 1, 1, 2),
+            "P_NW": box(0, 2, 1, 3),
+            "B_E": box(2, 1, 3, 2),
+            "B_E2": box(3, 1, 4, 2),
+        }
+        wa_ids = list(geoms.keys())
+        tree = STRtree([geoms[w] for w in wa_ids])
+        by_id = {w: {"building_count": 10} for w in wa_ids}
+        clusters_with_seed = [
+            ("G", ["X", "G", "G2"]),
+            ("P_N", ["P_N", "P_W", "P_NW"]),
+            ("B_E", ["B_E", "B_E2"]),
+        ]
+        result = _reassign_dominated_cells(clusters_with_seed, by_id, geoms, wa_ids, tree, 1000, None)
+        groups = {frozenset(cells) for _seed, cells in result}
+        assert groups == {
+            frozenset(["G", "G2"]),
+            frozenset(["P_N", "P_NW", "P_W", "X"]),
+            frozenset(["B_E", "B_E2"]),
+        }
+
     def test_blocked_by_max_buildings_ceiling(self):
         from shapely.strtree import STRtree
 
