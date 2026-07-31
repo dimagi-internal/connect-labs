@@ -153,13 +153,13 @@ class TestEcdLabelling:
         name regex had no `ecd` pattern."""
         names = {s["name"] for s in summary(client)["money"]["by_service"]}
         assert "Early childhood development" in names
-        assert "Service delivery" not in names
+        assert "Unclassified" not in names
 
     def test_an_unmapped_delivery_type_shows_its_code_not_a_guess(self):
         from connect_labs.pulse.normalize import service_label
 
         assert service_label("ivp") == "IVP"
-        assert service_label("") == "Service delivery"
+        assert service_label("") == "Unclassified"
 
 
 @pytest.mark.django_db
@@ -193,7 +193,7 @@ class TestServiceResync:
     def test_changing_derivation_pushes_onto_stored_rows(self, two_programmes):
         """service_slug is denormalised onto every event and work at ingest, so
         deriving it differently fixes nothing on its own — 186,632 works stayed
-        in the 'Service delivery' bucket on prod after the delivery-type change.
+        in the unclassified bucket on prod after the delivery-type change.
         """
         from connect_labs.pulse import ingest
 
@@ -211,3 +211,46 @@ class TestServiceResync:
 
         ingest.resync_service_slugs()
         assert ingest.resync_service_slugs() == 0
+
+
+class TestServiceLabels:
+    """These strings are what a funder reads above the numbers.
+
+    Connect publishes `delivery_type` as a slug and no display text, so every
+    label is a decision made here. The first set was written from the slugs
+    alone and three were wrong — `chc` is the Child Health Campaign, not a
+    "community health case"; `readers` is Readers Distribution, not a reading
+    assessment. Wrong labels do not look uncertain, so they sat above correct
+    figures indefinitely. Confirmed names are pinned here.
+    """
+
+    def test_confirmed_names_are_exact(self):
+        from connect_labs.pulse.normalize import service_label
+
+        assert service_label("chc") == "Child Health Campaign"
+        assert service_label("readers") == "Readers Distribution"
+        assert service_label("mbw") == "Mother Baby Wellness"
+
+    def test_the_regex_fallback_agrees_with_the_delivery_type_labels(self):
+        """The name regex still labels the 168 opportunities whose programme has
+        no delivery type. If it disagrees, the same work is named two ways
+        depending on which path found it."""
+        from connect_labs.pulse.normalize import _SERVICE_PATTERNS, service_label
+
+        for _pattern, slug, label in _SERVICE_PATTERNS:
+            assert label == service_label(slug), f"{slug} is labelled two different ways"
+
+    def test_an_absent_delivery_type_is_named_as_absent(self):
+        """`other` means Connect published no delivery type for the programme —
+        168 opportunities and ~46k units of work. "Service delivery" read like a
+        category rather than the absence of one."""
+        from connect_labs.pulse.normalize import service_label
+
+        assert service_label("") == "Unclassified"
+        assert service_label("other") == "Unclassified"
+
+    def test_unconfirmed_slugs_render_as_codes_not_guesses(self):
+        from connect_labs.pulse.normalize import service_label
+
+        for slug in ("ivp", "hhs", "wellme", "malaria", "ace"):
+            assert service_label(slug) == slug.upper()

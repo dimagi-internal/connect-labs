@@ -77,35 +77,44 @@ COUNTRY_NAMES = {
 # operational ("KMC - UG - PIPN - P1 - Apr 26"); these are not.
 _SERVICE_PATTERNS: list[tuple[re.Pattern, str, str]] = [
     (re.compile(r"^KMC\b|kangaroo|कंगारू", re.I), "kmc", "Kangaroo Mother Care"),
-    (re.compile(r"mother baby wellness", re.I), "mbw", "Mother & baby wellness"),
-    (re.compile(r"\breaders\b", re.I), "readers", "Reading assessment"),
+    (re.compile(r"mother baby wellness", re.I), "mbw", "Mother Baby Wellness"),
+    (re.compile(r"\breaders\b", re.I), "readers", "Readers Distribution"),
     (re.compile(r"back to school", re.I), "b2s", "Back-to-school enrolment"),
     (re.compile(r"malaria rdt", re.I), "rdt", "Malaria rapid test"),
     (re.compile(r"^ITN\b|bednet", re.I), "itn", "Bednet distribution"),
     (re.compile(r"poverty targeting", re.I), "poverty", "Household poverty survey"),
-    (re.compile(r"chc\b", re.I), "chc", "Community health case"),
+    (re.compile(r"chc\b", re.I), "chc", "Child Health Campaign"),
 ]
 
 SERVICE_LABELS = {slug: label for _, slug, label in _SERVICE_PATTERNS}
-SERVICE_LABELS["other"] = "Service delivery"
 
-# Connect's `delivery_type` values, which are what actually categorise work now
-# that programmes are read properly. Only entries whose meaning is unambiguous
-# get prose here: an invented expansion of a slug would read as authoritative
-# on a funder's screen while being a guess, which is the failure this app keeps
-# finding. Anything unmapped falls back to the slug in caps -- visibly a code,
-# so nobody mistakes it for a considered label.
+# Connect's `delivery_type` values. Connect publishes the slug and no display
+# text, so every string here is a decision about what a funder reads.
+#
+# The first version of this table was written from the slugs alone and three of
+# them were simply wrong -- `chc` is the Child Health Campaign, not a "community
+# health case"; `readers` is Readers Distribution, not a reading assessment;
+# `mbw` is Mother Baby Wellness. They were confidently displayed above the
+# correct numbers for as long as this ran, which is the failure mode of an
+# invented label: it does not look uncertain.
+#
+# So names here are only the ones confirmed by someone who knows the
+# programmes. Everything else falls through to the slug in caps, which is
+# visibly a code and cannot be mistaken for a considered label.
 SERVICE_LABELS.update(
     {
-        "chc": "Community health case",
+        "chc": "Child Health Campaign",
+        "mbw": "Mother Baby Wellness",
+        "readers": "Readers Distribution",
         "ecd": "Early childhood development",
-        "mbw": "Mother & baby wellness",
         "kmc": "Kangaroo Mother Care",
-        "readers": "Reading assessment",
-        "nutrition": "Nutrition",
-        "interview": "Interviews",
     }
 )
+
+# No delivery_type on the programme at all -- 168 opportunities, ~46k units of
+# work. Connect does not say what they are, so neither do we: "Service
+# delivery" read like a category rather than the absence of one.
+SERVICE_LABELS["other"] = "Unclassified"
 
 
 def service_label(slug: str | None) -> str:
