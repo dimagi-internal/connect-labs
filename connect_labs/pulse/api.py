@@ -164,9 +164,7 @@ def _program_scope(request):
     # withholding the *name* from a response whose shape is "this named
     # partner's commercial performance" protects nothing.
     org_raw = (request.GET.get("org") or "").strip()
-    org = (
-        PulseOrganization.objects.filter(slug=org_raw).first() if org_raw and _partner_names_allowed(request) else None
-    )
+    org = _resolve_org(org_raw) if org_raw and _partner_names_allowed(request) else None
 
     events = PulseEvent.objects.all()
     works = PulseWork.objects.all()
@@ -236,6 +234,63 @@ def _scope_for(sc):
         else opps.exclude(program_id=None).values("program_id").distinct().count(),
         "orgs": opps.exclude(org_slug="").values("org_slug").distinct().count(),
     }
+
+
+class _UnnamedOrg:
+    """A delivery partner Connect will not name to the polling account.
+
+    ``opp_org_program_list`` scopes its ``organizations`` list to the orgs the
+    poller is a **member** of, while returning every opportunity under a
+    programme those orgs *manage* -- which is delivered by other partners
+    entirely. Measured on labs prod: 74 distinct partners deliver the work, 10
+    of them are named, and the other 64 carry **92.2% of all services**.
+
+    So most partners are visible only as a slug, and there is no endpoint that
+    will give up their names -- ``OpportunitySerializer`` also emits
+    ``organization`` as a slug.
+
+    The slug is shown verbatim and flagged ``named: False``. It is deliberately
+    **not** de-slugified: mechanical title-casing reads plausibly and is wrong
+    exactly where it matters, turning the real "C-WINS DGw" into "C Wins Dgw"
+    and "EHA Clinics REACH" into "Eha Clinics Reach". A visible identifier
+    cannot be mistaken for a considered name; a mangled name can.
+
+    Hiding them instead was the worse option: a Partner menu of ten small
+    partners, omitting the ones doing 92% of the delivery, would look complete.
+    """
+
+    named = False
+    funder_slug = ""
+
+    def __init__(self, slug: str):
+        self.slug = slug
+
+    @property
+    def display_name(self) -> str:
+        return self.slug
+
+
+def _delivery_partner_slugs() -> set:
+    """Every org slug that actually appears on an opportunity.
+
+    The authoritative set of delivery partners, which is a superset of the orgs
+    Connect names for us -- see ``_UnnamedOrg``.
+    """
+    return set(PulseOpportunity.objects.exclude(org_slug="").values_list("org_slug", flat=True).distinct())
+
+
+def _resolve_org(slug: str):
+    """A partner by slug, named if Connect told us the name.
+
+    Resolving only against ``PulseOrganization`` would silently ignore the
+    filter for 64 of 74 partners -- selecting one would leave the whole
+    portfolio on screen under that partner's name, which is the worst available
+    outcome: a filter that appears to work and does not.
+    """
+    row = PulseOrganization.objects.filter(slug=slug).first()
+    if row is not None:
+        return row
+    return _UnnamedOrg(slug) if slug in _delivery_partner_slugs() else None
 
 
 def _partner_names_allowed(request) -> bool:
@@ -355,8 +410,15 @@ def _org_menu(request):
     }
     spark_of = _weekly_spark_by_org()
 
+    # Built from who actually DELIVERS, with names joined on where Connect gave
+    # us one. Iterating PulseOrganization instead would list only the 10
+    # partners the poller is a member of and omit the 64 doing 92% of the work
+    # -- see _UnnamedOrg.
+    named_of = {o.slug: o for o in PulseOrganization.objects.filter(slug__in=by_slug)}
+
     menu = []
-    for org in PulseOrganization.objects.filter(slug__in=by_slug):
+    for slug in by_slug:
+        org = named_of.get(slug) or _UnnamedOrg(slug)
         country = country_of.get(org.slug, "")
         m = money_of.get(org.slug) or {}
         worker = float(m.get("usd") or 0)
@@ -367,6 +429,10 @@ def _org_menu(request):
             {
                 "slug": org.slug,
                 "name": org.display_name,
+                # Whether that name is Connect's or just the slug standing in
+                # for one. The display marks the difference rather than letting
+                # an identifier pass as a considered name.
+                "named": bool(getattr(org, "named", False)),
                 "funder": org.funder_slug,
                 "country": country,
                 "opportunities": by_slug[org.slug]["opps"],
@@ -701,6 +767,7 @@ class SummaryView(View):
                     {
                         "slug": sc["org"].slug,
                         "name": sc["org"].display_name,
+                        "named": bool(getattr(sc["org"], "named", False)),
                         "funder": sc["org"].funder_slug,
                     }
                     if sc["org"] is not None

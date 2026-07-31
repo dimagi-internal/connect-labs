@@ -580,9 +580,10 @@
           opt.value = o.slug;
           // Connect's own partner name, verbatim. Say which partners are
           // dormant rather than letting someone pick one and get a blank map.
+          const label = o.named === false ? `${o.name} (identifier)` : o.name;
           opt.textContent = o.recent_events
-            ? o.name
-            : `${o.name} — no recent delivery`;
+            ? label
+            : `${label} — no recent delivery`;
           opt.title = `${nf.format(o.visits)} services all-time · ${nf.format(
             o.opportunities,
           )} opportunities${o.funder ? ' · funded by ' + o.funder : ''}`;
@@ -748,7 +749,9 @@
         store.lastGrid.exact === false;
       return (
         `<div class="pulse-partner-head">
-           <span class="pulse-partner-name">${r.name}</span>
+           <span class="pulse-partner-name"${
+             r.named === false ? ' data-slug="1"' : ''
+           }>${r.name}</span>
            ${where ? `<span class="pulse-partner-where">${where}</span>` : ''}
          </div>` +
         (r.funder
@@ -773,6 +776,11 @@
              <div class="pulse-partner-axis"><span>26 weeks ago</span><span>this week</span></div>`
           : '') +
         mix(r) +
+        (r.named === false
+          ? `<div class="pulse-partner-note">Connect does not publish this
+               partner's name to the polling account, so this is their
+               identifier rather than their name.</div>`
+          : '') +
         (inexact
           ? `<div class="pulse-partner-note">Some of this partner's work sits
                outside a programme, so the lit geography under this card is

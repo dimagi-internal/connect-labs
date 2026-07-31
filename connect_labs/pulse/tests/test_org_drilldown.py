@@ -223,6 +223,94 @@ class TestOrgMenu:
 
 
 @pytest.mark.django_db
+class TestPartnersConnectWillNotName:
+    """Most delivery partners have no name available, and must still work.
+
+    ``opp_org_program_list`` scopes its ``organizations`` list to the orgs the
+    poller is a *member* of, while returning every opportunity under a programme
+    those orgs *manage* — delivered by other partners entirely. Measured on labs
+    prod: 74 partners deliver, 10 are named, and the other 64 carry **92.2% of
+    all services**. No export endpoint will give up those names.
+
+    So the slug stands in, flagged, and the drill-down still reaches them.
+    Listing only the named ten would have looked complete while omitting almost
+    all the delivery.
+    """
+
+    @pytest.fixture
+    def unnamed_partner(self, portfolio):
+        # Delivers real work; has no PulseOrganization row, exactly like the 64.
+        PulseOpportunity.objects.create(
+            opportunity_id=50,
+            name="Big delivery",
+            org_slug="janna-health-foundation",
+            program_id=10,
+            country="NG",
+            lifetime_visit_count=65_777,
+            is_active=True,
+        )
+        PulseWork.objects.create(
+            work_key="b" * 64,
+            opportunity_id=50,
+            program_id=10,
+            org_slug="janna-health-foundation",
+            status="approved",
+            created_ts=timezone.now(),
+            service_slug="chc",
+            country="NG",
+            usd_to_worker="4.00",
+            usd_to_org="2.00",
+        )
+        return "janna-health-foundation"
+
+    def test_an_unnamed_partner_is_still_offered(self, viewer, unnamed_partner):
+        row = next(o for o in summary(viewer)["orgs"] if o["slug"] == unnamed_partner)
+        assert row["visits"] == 65_777
+
+    def test_its_slug_stands_in_and_is_flagged_as_not_a_name(self, viewer, unnamed_partner):
+        row = next(o for o in summary(viewer)["orgs"] if o["slug"] == unnamed_partner)
+        assert row["name"] == "janna-health-foundation"
+        assert row["named"] is False
+
+    def test_the_slug_is_never_prettified_into_a_guess(self, viewer, portfolio):
+        """Title-casing reads plausibly and is wrong where it matters: the real
+        names behind these slugs are "C-WINS DGw" and "EHA Clinics REACH", which
+        mechanical de-slugification renders as "C Wins Dgw" and "Eha Clinics
+        Reach". A visible identifier cannot be mistaken for a considered name."""
+        PulseOpportunity.objects.create(
+            opportunity_id=51,
+            name="Acronym partner",
+            org_slug="eha-clinics-reach",
+            program_id=10,
+            lifetime_visit_count=91_071,
+        )
+        row = next(o for o in summary(viewer)["orgs"] if o["slug"] == "eha-clinics-reach")
+        assert row["name"] == "eha-clinics-reach"
+        assert "Eha" not in row["name"]
+
+    def test_a_named_partner_is_flagged_as_named(self, viewer, portfolio):
+        row = next(o for o in summary(viewer)["orgs"] if o["slug"] == "connect-nigeria")
+        assert row["named"] is True
+        assert row["name"] == "Connect Nigeria"
+
+    def test_selecting_an_unnamed_partner_actually_filters(self, viewer, unnamed_partner):
+        """The bug this guards: resolving the filter only against
+        PulseOrganization returned None for 64 of 74 partners, so the filter was
+        silently ignored and the whole portfolio stayed on screen under that
+        partner's name — a filter that appears to work and does not."""
+        data = summary(viewer, org=unnamed_partner)
+        assert data["org"] is not None
+        assert data["org"]["named"] is False
+        assert data["scope"]["opportunities"] == 1
+        assert data["scope"]["lifetime_visits"] == 65_777
+        assert data["money"]["total_paid"] == pytest.approx(6.0)
+
+    def test_a_slug_that_delivers_nothing_is_still_refused(self, viewer, portfolio):
+        """Accepting any string would make the filter a way to probe for slugs."""
+        assert summary(viewer, org="not-a-partner-at-all")["org"] is None
+
+
+@pytest.mark.django_db
 class TestPartnerNamesFailClosed:
     """The API is unauthenticated, so the default has to be deny.
 
