@@ -143,11 +143,16 @@ RENDER_CODE = r"""function WorkflowUI({ definition, workers }) {
     }, [effectiveEndDate]);
 
     var earliestNeeded = dayColumns[0];
+    var latestNeeded = dayColumns[dayColumns.length - 1];
 
     var rows = React.useMemo(function () {
         var rowMap = {};
         state.days.forEach(function (d) {
-            if (!d.date || d.date < earliestNeeded) return; // outside the FETCH_DAYS buffer window we care about
+            // Outside the selected window on EITHER side -- both bounds matter:
+            // without the upper one, picking an older reference date would still
+            // pull in FLWs from newer data (their row would appear with every
+            // cell empty), since only the lower bound was ever checked here.
+            if (!d.date || d.date < earliestNeeded || d.date > latestNeeded) return;
             (d.flws || []).forEach(function (f) {
                 var rk = d.opportunity_id + "::" + f.username;
                 if (!rowMap[rk]) {
@@ -163,7 +168,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, workers }) {
                 var nameB = nameMap[b.username] || b.username;
                 return nameA.localeCompare(nameB);
             });
-    }, [state.days, earliestNeeded, nameMap]);
+    }, [state.days, earliestNeeded, latestNeeded, nameMap]);
 
     var _lloFilter = React.useState("__all__");
     var lloFilter = _lloFilter[0];
@@ -177,7 +182,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, workers }) {
 
     var lloOptions = React.useMemo(function () {
         var seen = {};
-        rows.forEach(function (r) { seen[r.opportunity_id] = oppNames[r.opportunity_id] || ("Opportunity " + r.opportunity_id); });
+        rows.forEach(function (r) { seen[r.opportunity_id] = lloName(oppNames[r.opportunity_id]) || ("Opportunity " + r.opportunity_id); });
         return Object.keys(seen).map(Number).map(function (id) { return { value: id, label: seen[id] }; })
             .sort(function (a, b) { return a.label.localeCompare(b.label); });
     }, [rows, oppNames]);
@@ -226,7 +231,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, workers }) {
 
             <div className="bg-white rounded-lg border p-4 flex flex-wrap gap-4 items-center">
                 <div>
-                    <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Week Ending</div>
+                    <div className="text-xs font-semibold text-gray-500 uppercase mb-1">14-Day Window Ending</div>
                     <input
                         type="date"
                         className="border rounded px-2 py-1 text-sm"
@@ -301,7 +306,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, workers }) {
                                                 </button>
                                             </td>
                                             <td className="px-3 py-2 border-b border-gray-100 text-gray-500 whitespace-nowrap">
-                                                {oppNames[row.opportunity_id] || ("Opp #" + row.opportunity_id)}
+                                                {lloName(oppNames[row.opportunity_id]) || ("Opp #" + row.opportunity_id)}
                                             </td>
                                             {dayColumns.map(function (d) {
                                                 var cell = cellInfo(row.byDate[d], THRESHOLDS);
@@ -463,6 +468,15 @@ function cellInfo(flw, thresholds) {
     return anyTripped
         ? { text: "●", cls: "text-red-600 font-bold text-base", title: "Flagged — expand row for which indicator(s) tripped" }
         : { text: "○", cls: "text-green-600 text-base", title: "OK — no indicator over threshold" };
+}
+
+// This program's opportunity names all follow "<LLO>-PRE-RCT Connect-CHC 2026"
+// (e.g. "EHA-PRE-RCT Connect-CHC 2026"); the short LLO code is everything
+// before the first hyphen. Falls back to the full name if it doesn't match
+// that shape, so this degrades gracefully rather than mangling anything.
+function lloName(oppName) {
+    if (!oppName) return oppName;
+    return oppName.split("-")[0];
 }
 
 function formatShortDate(isoDate) {
