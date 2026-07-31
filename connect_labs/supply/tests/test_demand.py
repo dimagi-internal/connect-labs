@@ -3,6 +3,7 @@
 Everything here is a claim one of the four OES narratives makes out loud. If a
 test in this file fails, a scene is lying.
 """
+from datetime import date
 from decimal import Decimal
 
 import pytest
@@ -1024,3 +1025,74 @@ def test_an_expiry_row_names_the_node_the_cartons_must_LEAVE():
     for kind, row in rows.items():
         if kind != "Expiry risk":
             assert row["reallocation_role"] == "target", f"{kind} should pull cartons toward its node"
+
+
+def test_cover_state_ignores_cartons_still_in_transit():
+    """The rule the calendar has to render: inbound does NOT cover this day.
+
+    `cartons_inbound` is what is still on the road AFTER the distribution date, so
+    a truck arriving Friday cannot cover Tuesday. The grid used to print it as
+    "+141" beside the on-hand figure, under a legend saying a cell is short "when
+    the second number is below the first" — so Biu read "0 on hand +141" for 103
+    children in red, and Askira "38 on hand +94" for 65 in amber. Both look
+    covered if you add, which is what the plus sign asked you to do.
+
+    Pinned here because the fix is in the UI, and the UI can only be written
+    correctly against a server rule that is stated and stable.
+    """
+    from connect_labs.supply.serializers.demand import distribution_plan_dict
+
+    class _Site:
+        name = "Biu Nutrition Centre"
+
+    class _Plan:
+        id = 1
+        site_id = 1
+        site = _Site()
+        scheduled_for = date(2026, 8, 4)
+        expected_children = 103
+        cartons_required = 103
+        note = ""
+
+    # Nothing on hand, plenty on the road: uncovered, however large inbound is.
+    out = distribution_plan_dict(_Plan(), inbound_cartons=141, on_hand=0)
+    assert out["state"] == "uncovered"
+    assert out["cartons_inbound"] == 141, "still reported, for planning context"
+
+    # Some on hand, short of requirement, more arriving later: at risk, not covered.
+    out = distribution_plan_dict(_Plan(), inbound_cartons=94, on_hand=38)
+    assert out["state"] == "at_risk"
+
+    # Enough on hand: covered, with or without anything inbound.
+    assert distribution_plan_dict(_Plan(), inbound_cartons=0, on_hand=103)["state"] == "covered"
+    assert distribution_plan_dict(_Plan(), inbound_cartons=500, on_hand=103)["state"] == "covered"
+
+
+def test_no_plan_is_covered_by_stock_that_has_not_arrived():
+    """The invariant, stated as one property over the whole seeded world."""
+    from django.core.management import call_command
+
+    from connect_labs.supply.models.demand import DistributionPlan  # noqa: F401
+    from connect_labs.supply.serializers.demand import distribution_plan_dict
+
+    call_command("seed_supply_demo", "--reset")
+
+    class _S:
+        name = "x"
+
+    class _P:
+        id = 1
+        site_id = 1
+        site = _S()
+        scheduled_for = date(2026, 8, 4)
+        note = ""
+
+    for on_hand, inbound, required in ((0, 999, 100), (10, 999, 100), (99, 1, 100)):
+        p = _P()
+        p.expected_children = required
+        p.cartons_required = required
+        state = distribution_plan_dict(p, inbound_cartons=inbound, on_hand=on_hand)["state"]
+        assert state != "covered", (
+            f"on_hand={on_hand} required={required} was called covered on the strength "
+            f"of {inbound} cartons that arrive after the distribution"
+        )
