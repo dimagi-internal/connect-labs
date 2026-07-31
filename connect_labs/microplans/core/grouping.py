@@ -785,13 +785,18 @@ def _reassign_dominated_cells(
     other WAG holding a 3+ majority, and even without full enclosure (see
     _absorb_enclosed_clusters for that stricter case). Move it to whichever
     other WAG it borders the most, as long as: (a) doing so doesn't push the
-    receiving group over max_buildings, and (b) the move actually resolves the
-    imbalance — i.e. after moving, the cell's new "own" count (neighbours in
-    its new WAG) must exceed its new "foreign" count (every WAG it borders
-    that isn't the new one, including its OLD one). Requiring an actual
-    improvement — not just picking the least-bad option — is what stops a cell
-    at a symmetric meeting point of 3+ WAGs (nowhere it could move would ever
-    fix the imbalance) from endlessly flipping between neighbours each round.
+    receiving group over max_buildings, and (b) the move doesn't leave it
+    still outnumbered — i.e. after moving, the cell's new "own" count
+    (neighbours in its new WAG) must be AT LEAST its new "foreign" count
+    (every WAG it borders that isn't the new one, including its OLD one). A
+    resulting tie is allowed through (moving from 1-own/3-foreign split
+    2-and-1 across two other WAGs to a 2-own/2-foreign tie is a genuine
+    improvement, and a tie is itself a stable rest state this function never
+    re-flags) — only a move that would still leave it a strict minority is
+    rejected. Requiring at least parity — not just picking the least-bad
+    option — is what stops a cell at a symmetric meeting point of 3+ WAGs
+    (nowhere it could move would ever reach parity) from endlessly flipping
+    between neighbours each round.
 
     Runs unconditionally, AFTER the min_buildings top-up pass — that pass's
     own reach-based merges (deliberately allowed to bridge real sparse gaps,
@@ -876,8 +881,8 @@ def _reassign_dominated_cells(
             # WAG the cell borders that isn't the new one.
             new_own = best_count
             new_foreign = foreign_total - best_count + own
-            if new_foreign >= new_own:
-                continue  # no single neighbour actually fixes this — leave it
+            if new_foreign > new_own:
+                continue  # still outnumbered even after moving — leave it
             if total(best_cid) + building_count(wid) > max_buildings:
                 continue
             active[cid].remove(wid)
