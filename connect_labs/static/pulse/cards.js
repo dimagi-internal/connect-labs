@@ -20,10 +20,15 @@
       minimumFractionDigits: d,
       maximumFractionDigits: d,
     });
+  /* Compact money, for aggregate TOTALS only — never a per-unit rate, which
+     needs its cents and uses `usd`. Sub-$1k totals round to whole dollars so a
+     ranked list cannot mix scales: India's $196.24 beside Nigeria's $460k read
+     as a broken cell on the wall display, not as a small programme. */
   const usdCompact = (v) => {
     const n = Number(v || 0);
     if (n >= 1e6) return '$' + (n / 1e6).toFixed(2) + 'M';
     if (n >= 1e3) return '$' + Math.round(n / 1e3) + 'k';
+    if (n >= 1) return '$' + nf.format(Math.round(n));
     return usd(n);
   };
 
