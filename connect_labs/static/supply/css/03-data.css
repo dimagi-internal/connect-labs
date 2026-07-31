@@ -30,6 +30,13 @@
   border-bottom: 1px solid var(--oes-line);
   white-space: nowrap;
 }
+/* Inside a modal the scroll container is .modal-body, which has no topbar —
+   the 54px offset above parked the header row mid-table there, floating over
+   the first data rows and swallowing their clicks (an Award button that could
+   never be pressed). Stick to the top of the modal's own scrollport instead. */
+.modal .data-table th {
+  top: 0;
+}
 .data-table th.sortable {
   cursor: pointer;
   user-select: none;
