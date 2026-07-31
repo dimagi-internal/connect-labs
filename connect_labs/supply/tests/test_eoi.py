@@ -171,6 +171,31 @@ def test_admin_creates_and_transitions_round(admin_client):
     assert _post(client, f"/supply/api/eoi/rounds/{rid}/transition/", {"status": "draft"}).status_code == 400
 
 
+def test_round_created_with_dates_serializes_back(admin_client):
+    """The browser sends opens_at/closes_at as ISO strings. Passing them raw
+    into objects.create() left str on the in-memory instance and the response
+    serializer's .isoformat() 500ed — on the very request that created the
+    row, so the round landed in the DB while the caller saw a failure."""
+    client, _user = admin_client
+    resp = _post(
+        client,
+        "/supply/api/eoi/rounds/",
+        {"title": "Dated round", "categories": ["rutf"], "opens_at": None, "closes_at": "2026-08-18"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["round"]["closes_at"] == "2026-08-18"
+
+
+def test_round_rejects_malformed_date(admin_client):
+    client, _user = admin_client
+    resp = _post(
+        client,
+        "/supply/api/eoi/rounds/",
+        {"title": "Bad date", "categories": ["rutf"], "closes_at": "18/08/2026"},
+    )
+    assert resp.status_code == 400
+
+
 def test_supplier_round_list_shows_open_only(supplier_client):
     client, _member = supplier_client
     open_round = f.EOIRoundFactory(status=EOIRound.Status.OPEN)
