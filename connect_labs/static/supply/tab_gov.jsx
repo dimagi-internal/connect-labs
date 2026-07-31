@@ -380,6 +380,24 @@ function StockByNode({ nodes, shipments }) {
   const max = Math.max(...rows.map((r) => r.landed + r.inbound), 1);
   return (
     <div className="bar-list">
+      {/* A reader saw a half-full bar labelled zero.
+          Damaturu printed 0 while drawing a pale bar to ~50% of the track — its
+          10,000-carton in-transit consignment on a 20,000 scale — with that
+          quantity printed nowhere, no legend separating the pale fill from the
+          solid one, and no unit or scale on the axis. The pale series is now
+          legended and carries its own figure, so the bar and the number agree
+          about what they describe. */}
+      <div className="stage-legend">
+        <span className="stage-key">
+          <i className="bar-swatch on-hand" /> on hand
+        </span>
+        <span className="stage-key">
+          <i className="bar-swatch pending" /> in transit
+        </span>
+        <span className="muted small">
+          cartons · full track is {formatNumber(max)}
+        </span>
+      </div>
       {rows.map((r) => (
         <div className="bar-row" key={r.node.id}>
           <div className="bar-label">{r.node.name}</div>
@@ -396,7 +414,12 @@ function StockByNode({ nodes, shipments }) {
               }}
             />
           </div>
-          <div className="bar-value">{formatNumber(r.landed)}</div>
+          <div className="bar-value">
+            {formatNumber(r.landed)}
+            {r.inbound ? (
+              <span className="muted"> + {formatNumber(r.inbound)} due</span>
+            ) : null}
+          </div>
         </div>
       ))}
     </div>

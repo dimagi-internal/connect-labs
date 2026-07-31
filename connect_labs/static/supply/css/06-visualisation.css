@@ -208,10 +208,18 @@
   font-variant-numeric: tabular-nums;
   opacity: 0.92;
 }
-/* A band too thin to hold its own text labels itself from outside, in ink
-   rather than in white, so the smallest flow stays the most legible one. */
+/* Every band labels itself from outside now, in ink rather than white.
+   Sizing a name to fit inside a band whose height comes from the data is what
+   forced 'FY2026 Emergency Food S…' and, for the smallest flow, a label lying
+   across a ribbon. Reserved gutters cannot collide with ribbons, which run
+   between the columns. */
 .sankey-label-outside {
+  fill: var(--oes-ink);
+  font-weight: 600;
+}
+.sankey-label-outside.sankey-value {
   fill: var(--oes-ink-soft);
+  font-weight: 700;
 }
 
 .ladder {

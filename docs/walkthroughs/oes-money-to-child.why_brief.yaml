@@ -98,8 +98,8 @@ spine:
   evidence: []
   rationale: 'For a government this is the actionable number: it tells them where
     to put their own resources. For a funder it is the number that justifies the next
-    appropriation. Volume delivered answers neither question, because a large delivery
-    into a small caseload and a small delivery into a huge one look identical in tonnes.'
+    appropriation. Volume delivered answers neither question, because two deliveries
+    of the same size into different caseloads look identical in tonnes.'
 - id: S5
   claim: 'Children treated stops being a division sum: a delivered batch can be followed
     to the distributions it fed and to one child''s MUAC climbing out of the red.'
