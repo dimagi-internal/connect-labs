@@ -668,7 +668,7 @@ def fold_events_to_grid(before=None, batch: int = 5000) -> dict:
     while True:
         rows = list(
             PulseEvent.objects.filter(field_ts__lt=cutoff).values(
-                "id", "lat", "lon", "country", "field_ts", "service_slug", "status", "flagged"
+                "id", "lat", "lon", "country", "field_ts", "service_slug", "status", "flagged", "program_id"
             )[:batch]
         )
         if not rows:
@@ -678,7 +678,12 @@ def fold_events_to_grid(before=None, batch: int = 5000) -> dict:
         for row in rows:
             if row["lat"] is None or row["lon"] is None:
                 continue
-            key = (int(round(row["lat"] * 100)), int(round(row["lon"] * 100)), row["service_slug"] or "")
+            key = (
+                int(round(row["lat"] * 100)),
+                int(round(row["lon"] * 100)),
+                row["service_slug"] or "",
+                row["program_id"],
+            )
             cell = cells.setdefault(
                 key,
                 {
@@ -686,6 +691,7 @@ def fold_events_to_grid(before=None, batch: int = 5000) -> dict:
                     "approved_n": 0,
                     "flagged_n": 0,
                     "country": row["country"] or "",
+                    "program_id": row["program_id"],
                     "first": row["field_ts"],
                     "last": row["field_ts"],
                 },
@@ -701,10 +707,10 @@ def fold_events_to_grid(before=None, batch: int = 5000) -> dict:
                 cell["last"] = row["field_ts"]
 
         with transaction.atomic():
-            for (lat_q, lon_q, service_slug), data in cells.items():
+            for (lat_q, lon_q, service_slug, program_id), data in cells.items():
                 existing = (
                     PulseGridCell.objects.select_for_update()
-                    .filter(lat_q=lat_q, lon_q=lon_q, service_slug=service_slug)
+                    .filter(lat_q=lat_q, lon_q=lon_q, service_slug=service_slug, program_id=program_id)
                     .first()
                 )
                 if existing is None:
@@ -712,6 +718,7 @@ def fold_events_to_grid(before=None, batch: int = 5000) -> dict:
                         lat_q=lat_q,
                         lon_q=lon_q,
                         service_slug=service_slug,
+                        program_id=program_id,
                         country=data["country"],
                         n=data["n"],
                         approved_n=data["approved_n"],
