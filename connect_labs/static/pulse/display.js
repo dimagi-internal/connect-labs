@@ -509,7 +509,23 @@
   store.on('clock', paintStatus);
   store.on('control', paintStatus);
 
+  let menuBuilt = false;
   store.on('summary', (s) => {
+    const sel = $('#prog-filter');
+    // Built once: the menu is the same list under every filter, and rebuilding
+    // it inside its own change handler would reset the control mid-interaction.
+    if (sel && !menuBuilt && Array.isArray(s.programs)) {
+      for (const p of s.programs) {
+        const o = document.createElement('option');
+        o.value = String(p.id);
+        // Connect's own programme name, verbatim. Nothing invented in labs.
+        o.textContent = p.name;
+        o.title = `${p.service_label} · ${nf.format(p.visits)} services`;
+        sel.appendChild(o);
+      }
+      menuBuilt = true;
+      if (store.program) sel.value = String(store.program);
+    }
     const scope = s.scope || {};
     $('#s-opp').textContent = nf.format(scope.opportunities || 0);
     $('#s-prog').textContent = nf.format(scope.programs || 0);
@@ -525,7 +541,9 @@
   /* ═══ grid (the map's geography) ════════════════════════════════ */
   async function loadGrid() {
     try {
-      const res = await fetch(`${CFG.base}/api/grid/?limit=40000`);
+      const q0 = new URLSearchParams({ limit: '40000' });
+      if (store.program) q0.set('program', store.program);
+      const res = await fetch(`${CFG.base}/api/grid/?${q0}`);
       if (!res.ok) throw new Error(res.status);
       const payload = await res.json();
       const q = payload.quantum || 100;
@@ -563,6 +581,28 @@
        The button is disabled while switching: startLive() and
        loadReplayWindow() are both async, and a double-click would run two
        loads whose events interleave. */
+    const sel = $('#prog-filter');
+    if (sel) {
+      sel.addEventListener('change', async () => {
+        const val = sel.value ? Number(sel.value) : null;
+        sel.disabled = true;
+        try {
+          await store.setProgram(val);
+          // The density layer is a separate fetch and has to follow the filter
+          // too, or the map keeps the whole estate's geography under one
+          // programme's points.
+          await loadGrid();
+          setFocus(focus, true);
+        } catch (err) {
+          console.error('[pulse] programme filter failed', err);
+        } finally {
+          sel.disabled = false;
+          paintTransport();
+          paintStatus();
+        }
+      });
+    }
+
     $('#btn-mode').addEventListener('click', async () => {
       const btn = $('#btn-mode');
       const next = store.mode === 'live' ? 'replay' : 'live';

@@ -56,10 +56,17 @@ from connect_labs.pulse.models import (
     PulseGridCell,
     PulseIngestHealth,
     PulseOpportunity,
+    PulseProgram,
     PulseScalar,
     PulseWork,
 )
-from connect_labs.pulse.normalize import is_on_map, parse_location, service_slug_for, visit_to_event_fields
+from connect_labs.pulse.normalize import (
+    is_on_map,
+    looks_like_test,
+    parse_location,
+    service_slug_for,
+    visit_to_event_fields,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -94,12 +101,37 @@ def refresh_opportunities(client) -> dict:
 
     program_org = {p["id"]: p.get("organization") or "" for p in programs if p.get("id") is not None}
 
+    # Mirror the programmes themselves. Previously this payload was read only
+    # for org slugs, and its `name` and `delivery_type` were dropped -- which is
+    # why service categorisation was a regex over opportunity names.
+    program_delivery: dict[int, str] = {}
+    for p in programs:
+        pid = p.get("id")
+        if pid is None:
+            continue
+        delivery = (p.get("delivery_type") or "").strip()
+        program_delivery[pid] = delivery
+        pname = p.get("name") or ""
+        PulseProgram.objects.update_or_create(
+            program_id=pid,
+            defaults={
+                "name": pname[:300],
+                "delivery_type": delivery[:48],
+                "org_slug": (p.get("organization") or "")[:120],
+                "currency": (p.get("currency") or "")[:8],
+                "is_test": looks_like_test(pname),
+            },
+        )
+
     seen = 0
     for row in opps:
         opp_id = row.get("id")
         if opp_id is None:
             continue
         name = row.get("name") or ""
+        # Connect's own delivery_type wins; the name regex is the fallback for
+        # an opportunity whose programme has none set.
+        delivery = program_delivery.get(row.get("program")) or ""
         PulseOpportunity.objects.update_or_create(
             opportunity_id=opp_id,
             defaults={
@@ -109,7 +141,7 @@ def refresh_opportunities(client) -> dict:
                 "is_active": bool(row.get("is_active")),
                 "end_date": row.get("end_date") or None,
                 "lifetime_visit_count": row.get("visit_count") or 0,
-                "service_slug": service_slug_for(name),
+                "service_slug": delivery[:48] or service_slug_for(name),
             },
         )
         seen += 1

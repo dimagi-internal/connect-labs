@@ -20,6 +20,7 @@
 
   const DEFAULTS = {
     base: '/labs/pulse',
+    program: null,
     mode: 'replay',
     speed: 240,
     replayHours: 48,
@@ -35,6 +36,7 @@
     constructor(options) {
       this.opts = Object.assign({}, DEFAULTS, options || {});
       this.mode = this.opts.mode;
+      this.program = this.opts.program || null;
       this.speed = this.opts.speed;
       this.playing = true;
 
@@ -98,7 +100,7 @@
     }
 
     async refreshSummary() {
-      const res = await fetch(`${this.opts.base}/api/summary/`, {
+      const res = await fetch(this._url('/api/summary/'), {
         headers: { Accept: 'application/json' },
       });
       if (!res.ok) throw new Error(`summary ${res.status}`);
@@ -109,9 +111,40 @@
       return this.summary;
     }
 
+    /* Every read has to carry the filter. A single endpoint that forgot it
+       would mix another programme's services into a filtered view, which is
+       worse than not filtering at all. */
+    _url(path, params) {
+      const u = new URLSearchParams(params || {});
+      if (this.program) u.set('program', this.program);
+      const q = u.toString();
+      return `${this.opts.base}${path}${q ? '?' + q : ''}`;
+    }
+
+    /* Re-fetch EVERYTHING. The headline figures are server-side aggregates, so
+       a filter that only redrew the map would leave whole-estate totals above
+       one programme's points. */
+    async setProgram(programId) {
+      const next = programId || null;
+      if (next === this.program) return;
+      this.program = next;
+      if (this._livePollTimer) clearInterval(this._livePollTimer);
+      this._heldLive.length = 0;
+      this.events = [];
+      this.recent.length = 0;
+      this.cursor = null;
+      this.counts = { total: 0, verified: 0, usd: 0, flagged: 0 };
+      this.emit('counts', this.counts);
+      this.emit('backfill', {});
+      await this.refreshSummary();
+      if (this.mode === 'replay') await this.loadReplayWindow();
+      else await this.startLive();
+      this.emit('control', { program: this.program });
+    }
+
     async loadReplayWindow(hours) {
       const h = hours || this.opts.replayHours;
-      const res = await fetch(`${this.opts.base}/api/replay/?hours=${h}`);
+      const res = await fetch(this._url('/api/replay/', { hours: h }));
       if (!res.ok) throw new Error(`replay ${res.status}`);
       const payload = await res.json();
 
@@ -136,8 +169,8 @@
       const poll = async () => {
         try {
           const url = this.cursor
-            ? `${this.opts.base}/api/events/?since=${this.cursor}`
-            : `${this.opts.base}/api/events/?limit=200`;
+            ? this._url('/api/events/', { since: this.cursor })
+            : this._url('/api/events/', { limit: 200 });
           const res = await fetch(url);
           if (!res.ok) throw new Error(`events ${res.status}`);
           const payload = await res.json();

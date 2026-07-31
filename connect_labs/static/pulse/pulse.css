@@ -223,6 +223,32 @@
   cursor: progress;
 }
 
+.pulse-progfilter {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.pulse-progfilter select {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  padding: 4px 8px;
+  max-width: 260px;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background: var(--panel);
+  color: var(--ink);
+  cursor: pointer;
+}
+.pulse-progfilter select:focus-visible {
+  outline: 2px solid var(--light);
+  outline-offset: 1px;
+}
+.pulse-progfilter select:disabled {
+  opacity: 0.55;
+  cursor: progress;
+}
+
 .pulse-bar-spacer {
   flex: 1;
 }
@@ -1009,6 +1035,13 @@
   .pulse-transport-top button {
     padding: 5px 8px;
     font-size: 9px;
+  }
+  .pulse-progfilter {
+    width: 100%;
+  }
+  .pulse-progfilter select {
+    flex: 1;
+    max-width: none;
   }
 
   .pulse-kpi {

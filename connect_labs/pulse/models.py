@@ -54,6 +54,41 @@ TIER_INTERVALS_SECONDS = {
 }
 
 
+class PulseProgram(models.Model):
+    """Connect's own programmes — the grouping a funder actually asks about.
+
+    Arrives in the same ``opp_org_program_list`` response as the opportunities,
+    and was previously read only to derive an org slug. It carries two things
+    worth keeping:
+
+    ``name`` is presentable as-is ("ECD Nigeria 2025"), so a programme filter
+    needs no labels invented in labs.
+
+    ``delivery_type`` is Connect's service taxonomy — ``ecd``, ``chc``, ``mbw``,
+    ``readers``, ``kmc``. Pulse used to infer that by regex over opportunity
+    *names*, which had no pattern for ``ecd`` and so filed 163,473 Early
+    Childhood Development visits — the largest delivery type on the platform —
+    under the generic "Service delivery" bucket. Taking the field Connect
+    already publishes removes the guess.
+    """
+
+    program_id = models.IntegerField(unique=True, db_index=True)
+    name = models.CharField(max_length=300, blank=True)
+    delivery_type = models.CharField(max_length=48, blank=True, db_index=True)
+    org_slug = models.CharField(max_length=120, blank=True)
+    currency = models.CharField(max_length=8, blank=True)
+
+    # Programmes named as tests are excluded from the filter menu. Computed at
+    # ingest rather than at query time so the rule is applied in one place and
+    # is inspectable in the DB.
+    is_test = models.BooleanField(default=False, db_index=True)
+
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        return f"{self.name or self.program_id} ({self.delivery_type or '—'})"
+
+
 class PulseOpportunity(models.Model):
     """Cheap-tier mirror of an opportunity's display + rate metadata.
 

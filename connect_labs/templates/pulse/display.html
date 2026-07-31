@@ -39,6 +39,15 @@ would put a "Connect Labs" navigation bar above a funder-facing screen.
         <button id="btn-mode" type="button">Go live</button>
       </div>
 
+      {# Populated from the summary payload, so the menu can never offer a #}
+      {# programme the server would refuse to scope to.                    #}
+      <label class="pulse-progfilter">
+        <span class="pulse-lbl">Programme</span>
+        <select id="prog-filter" aria-label="Filter by programme">
+          <option value="">All programmes</option>
+        </select>
+      </label>
+
       <div class="pulse-bar-spacer"></div>
 
       <div class="pulse-scope">
