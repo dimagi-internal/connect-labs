@@ -160,7 +160,14 @@ const STATUS_TONES = {
   in_transit: 'info',
   planned: 'neutral',
   delivered: 'good',
-  confirmed: 'accent',
+  // Confirmed is the state that decides which rows count.
+  //
+  // It rendered as chip-accent — rgba(13,122,95,0.14) on accent-dark — beside
+  // delivered's chip-good at #dcfce7 on #166534. Two pale greens, and the
+  // distinction between them is which consignments a coverage figure and a
+  // disbursement are allowed to include. `verified` is a filled chip, so the
+  // stronger state looks stronger rather than looking like the same state.
+  confirmed: 'verified',
   draft: 'neutral',
   open: 'good',
   closed: 'neutral',
@@ -296,7 +303,11 @@ function DataTable({
             >
               {columns.map((col) => (
                 <td key={col.key}>
-                  {col.render ? col.render(row) : col.value(row)}
+                  {/* `sorted`, not `rows`: a renderer that compares against its
+                      neighbour (see repeatsAbove) has to see the order actually
+                      on screen, or it subdues the wrong cells the moment a
+                      reader sorts by a different column. */}
+                  {col.render ? col.render(row, i, sorted) : col.value(row)}
                 </td>
               ))}
             </tr>
@@ -320,6 +331,16 @@ function DataTable({
       </table>
     </div>
   );
+}
+
+/* True when this row's value repeats the row above it, in the CURRENT order.
+
+   A value repeated down 18 rows is noise that reads as one block; subduing the
+   repeat restores the row boundaries without removing anything, so the cell
+   stays copyable and stays correct when the table is re-sorted. */
+function repeatsAbove(rows, index, pick) {
+  if (!rows || index <= 0) return false;
+  return pick(rows[index - 1]) === pick(rows[index]);
 }
 
 function Modal({ title, children, onClose, footer, wide }) {

@@ -50,6 +50,9 @@ function GovTab({ ctx }) {
     (n, r) => n + (r.courses_delivered || 0),
     0,
   );
+  // The denominator the headline row was missing, off the same rows as the
+  // table below so the tile and the table cannot disagree.
+  const nationalCaseload = coverage.reduce((n, r) => n + (r.caseload || 0), 0);
   const inbound = shipments.filter((s) => s.status === 'in_transit');
   const warehouses = nodes.filter(
     (n) => n.kind === 'warehouse' || n.kind === 'distribution_hub',
@@ -61,19 +64,35 @@ function GovTab({ ctx }) {
       lede="Commodities entering and moving within the country, and the caseload they are meant to cover."
       asOf={world.as_of}
     >
+      {/* Two tiles printed the identical integer under near-identical labels —
+          "25,863 Cartons delivered into districts" and "25,863 Courses
+          delivered". Honest, since a carton IS a course, but it spent half the
+          headline row restating one number on a page that did not carry the
+          figure a ministry is actually here for: national coverage of its own
+          need. One tile states the identity; the freed slot carries the
+          figure. */}
       <KeyFigures
         figures={[
           {
-            label: 'Cartons delivered into districts',
+            label: 'Courses delivered into districts',
             value: formatNumber(delivered),
-            hint: `${Math.round(
+            hint: `${formatNumber(delivered)} cartons = ${formatNumber(
+              delivered,
+            )} full courses · ${Math.round(
               (delivered * 150 * 92) / 1000000,
-            )} MT · counted once, where each crossed a district boundary`,
+            )} MT, counted once where each crossed a district boundary`,
           },
           {
-            label: 'Courses delivered',
-            value: formatNumber(delivered),
-            hint: 'one carton is one full course',
+            label: 'Supply positioned, nationally',
+            value:
+              nationalCaseload > 0
+                ? `${Math.round((delivered / nationalCaseload) * 1000) / 10}%`
+                : '—',
+            hint: `against ${formatNumber(
+              nationalCaseload,
+            )} children needing treatment`,
+            method:
+              "Courses confirmed into the country's districts against the SAM caseload summed over the response window. Counts stock that has arrived, including stock still held in a district hub — the per-district table below reports what reached a child separately.",
           },
           { label: 'Consignments inbound', value: inbound.length },
           {
@@ -105,58 +124,73 @@ function GovTab({ ctx }) {
           rowKey={(s) => s.id}
           empty="No consignments recorded for this country."
           columns={[
+            // PARTNER and COMMODITY repeated one identical string down 18 rows,
+            // eating about 35% of the width and turning 28 distinct consignments
+            // into one visual block. A repeat is subdued rather than removed —
+            // a sorted table can be re-sorted, so the value has to stay in the
+            // cell and stay copyable.
             {
               key: 'partner',
               label: 'Partner',
               value: (s) => s.contract.org_name,
+              render: (s, i, rows) => (
+                <span
+                  className={
+                    repeatsAbove(rows, i, (r) => r.contract.org_name)
+                      ? 'repeat-value'
+                      : ''
+                  }
+                >
+                  {s.contract.org_name}
+                </span>
+              ),
             },
             {
               key: 'commodity',
               label: 'Commodity',
               value: (s) => s.contract.category,
-              render: (s) => categoryLabel(s.contract.category),
+              render: (s, i, rows) => (
+                <span
+                  className={
+                    repeatsAbove(rows, i, (r) => r.contract.category)
+                      ? 'repeat-value'
+                      : ''
+                  }
+                >
+                  {categoryLabel(s.contract.category)}
+                </span>
+              ),
             },
             {
               key: 'dest',
               label: 'Destination',
               value: (s) => s.destination.name,
             },
+            // Quantity carries the conversion, so one column does one job.
+            //
+            // COURSES ON ARRIVAL restated QUANTITY verbatim on 27 of 28 rows and
+            // was an unexplained dash on the 28th — a whole column spent
+            // repeating the column beside it. A carton IS a course, so the
+            // identity belongs in the quantity header, and the reason a storage
+            // point contributes no coverage belongs beside the destination that
+            // is one.
             {
               key: 'qty',
               label: 'Quantity',
               value: (s) => s.quantity,
-              render: (s) => `${formatNumber(s.quantity)} ${s.unit}`,
-            },
-            // Only a leg that ends where children are treated covers any.
-            //
-            // This column restated every consignment's carton count as
-            // "children covered", so a warehouse-to-warehouse transfer into
-            // Kano was credited with covering 20,000 children and a
-            // consignment still on the road was credited with covering
-            // anybody at all. A storage point serves no caseload — that is
-            // precisely why it carries no district — so the honest cell is a
-            // dash, and the row's cartons are already in the column beside it.
-            {
-              key: 'children',
-              label: 'Courses on arrival',
-              value: (s) => (deliversToChildren(s) ? s.quantity : -1),
-              render: (s) =>
-                deliversToChildren(s) ? (
-                  formatNumber(s.quantity)
-                ) : (
-                  // Same reason as the caseload cell: a dash that means
-                  // something needs to say what, reachably. On a native `title`
-                  // the explanation for why a consignment contributes nothing to
-                  // coverage was hover-only — so a reader with a keyboard, a
-                  // touchscreen, a screen reader or a printout just saw a blank.
-                  <span className="cell-with-note muted">
-                    —
-                    <InfoNote
-                      label="why this consignment shows no courses"
-                      text="A storage point serves no caseload of its own; these cartons are counted where they reach a district."
-                    />
-                  </span>
-                ),
+              render: (s) => (
+                <span>
+                  {formatNumber(s.quantity)} {s.unit}
+                  {s.unit === 'cartons' && !deliversToChildren(s) ? (
+                    <span className="cell-with-note muted">
+                      <InfoNote
+                        label="why this consignment covers no district"
+                        text="This leg ends at a storage point, which serves no caseload of its own. These cartons are counted towards coverage where they reach a district, not here — so the consignment is real and its contribution to coverage is zero."
+                      />
+                    </span>
+                  ) : null}
+                </span>
+              ),
             },
             {
               key: 'when',
@@ -201,21 +235,31 @@ function GovTab({ ctx }) {
                 // are a level finer and an order of magnitude smaller.
                 label: 'State / region',
                 value: (r) => r.adm1_name,
+              },
+              // IPC phase is its own fact, in its own column.
+              //
+              // Glued into the name string it read as part of the name, and it
+              // rendered inconsistently within three rows: IPC 4 and IPC 5 got
+              // filled pills while IPC 3 was bare grey text, so the row a reader
+              // is meant to compare against looked like it carried no
+              // classification at all. Phase 3 is still a crisis classification;
+              // "muted" is a claim about the datum, not about its absence.
+              {
+                key: 'ipc',
+                label: 'IPC phase',
+                value: (r) => r.ipc_phase,
                 render: (r) => (
-                  <span>
-                    {r.adm1_name}{' '}
-                    <Badge
-                      tone={
-                        r.ipc_phase >= 5
-                          ? 'bad'
-                          : r.ipc_phase >= 4
-                          ? 'warn'
-                          : 'muted'
-                      }
-                    >
-                      IPC {r.ipc_phase}
-                    </Badge>
-                  </span>
+                  <Badge
+                    tone={
+                      r.ipc_phase >= 5
+                        ? 'bad'
+                        : r.ipc_phase >= 4
+                        ? 'warn'
+                        : 'info'
+                    }
+                  >
+                    IPC {r.ipc_phase}
+                  </Badge>
                 ),
               },
               {
@@ -250,6 +294,31 @@ function GovTab({ ctx }) {
                 total: (rows) =>
                   formatNumber(
                     rows.reduce((n, r) => n + (r.courses_delivered || 0), 0),
+                  ),
+              },
+              // What is on the road, which decides where a state sends its own.
+              //
+              // Yobe read as abandoned — 0 delivered, 0%, 18,960 uncovered —
+              // while the same page showed 10,000 cartons In transit to Damaturu
+              // with an ETA three days out: 53% of Yobe's entire need. Omitting
+              // the pipeline was the single most decision-distorting gap on the
+              // card whose stated use is deciding where to put state resources.
+              {
+                key: 'transit',
+                label: 'On the road',
+                value: (r) => r.courses_in_transit || 0,
+                render: (r) =>
+                  r.courses_in_transit ? (
+                    <span>
+                      {formatNumber(r.courses_in_transit)}
+                      <span className="muted"> · {r.in_transit_percent}%</span>
+                    </span>
+                  ) : (
+                    <span className="muted">—</span>
+                  ),
+                total: (rows) =>
+                  formatNumber(
+                    rows.reduce((n, r) => n + (r.courses_in_transit || 0), 0),
                   ),
               },
               {
@@ -332,8 +401,9 @@ function GovTab({ ctx }) {
                 coverage[0].window_from,
               )}`
             : 'response window'}
-          , not against a single month. Hover a district name for how its
-          caseload was estimated. All figures in this environment are synthetic.
+          , not against a single month. The <em>i</em> beside each caseload
+          gives the method it was estimated by. All figures in this environment
+          are synthetic.
         </p>
         <p className="muted small method-note">
           Two questions, not one. <strong>Supply positioned</strong> is courses

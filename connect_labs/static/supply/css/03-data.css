@@ -10,7 +10,16 @@
   border-collapse: collapse;
   font-size: 13px;
 }
+/* Headers ride with the scroll.
+   A 28-row consignment table put any scrolled reader in front of eight
+   unlabelled columns — "900 cartons", "900", "Jul 14, 2026", "Delivered" — with
+   nothing on screen saying what any of them was. The offset is the shell's own
+   sticky topbar height, so a header parks just under it rather than behind it. */
 .data-table th {
+  position: sticky;
+  top: calc(var(--oes-topbar-h) + 1px);
+  z-index: 2;
+  background: var(--oes-panel);
   text-align: left;
   font-size: 11px;
   text-transform: uppercase;
@@ -104,6 +113,13 @@
 .chip-accent {
   background: rgba(13, 122, 95, 0.14);
   color: var(--oes-accent-dark);
+}
+/* Arrived AND verified at the place the contract names — the state a coverage
+   figure and a disbursement are allowed to count. Filled, because it was
+   previously a pale green a reader could not tell from `delivered`'s. */
+.chip-verified {
+  background: var(--oes-accent-dark, #0b5f49);
+  color: #fff;
 }
 
 .pill-row {
@@ -355,4 +371,12 @@
   align-items: center;
   gap: 4px;
   font-variant-numeric: tabular-nums;
+}
+
+/* A value that repeats the row above it. Present, selectable and correct — just
+   not shouting. Eighteen identical strings down two columns turned 28 distinct
+   consignments into one visual block. */
+.repeat-value {
+  color: var(--oes-ink-soft);
+  opacity: 0.55;
 }

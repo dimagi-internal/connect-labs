@@ -918,7 +918,13 @@ function Sankey({ appropriations, contracts }) {
             // most important figure on a funding chart was wrong by an order of
             // magnitude on a 5-second read, with the correction only in small
             // grey caption text below.
-            const lines = wrapLabel(n.label, 26, 2);
+            // Three lines for a gutter column, two for the middle one.
+            // "FY2026 Emergency Food Security — Horn of Africa & Sahel" needs
+            // three at this width and was still losing its last two words to an
+            // ellipsis — the appropriation name is the entity the card's claim is
+            // about. The gutters have the vertical room; the middle column's
+            // labels ride above their band and would collide with the band above.
+            const lines = wrapLabel(n.label, 26, ci === 1 ? 2 : 3);
             const figure =
               ci === 0
                 ? `${shortMoney(n.value)} obligated of ${shortMoney(
