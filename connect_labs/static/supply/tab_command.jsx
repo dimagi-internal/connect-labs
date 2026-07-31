@@ -442,8 +442,9 @@ function CommandTab({ ctx }) {
           {coverage[0] && coverage[0].window_months
             ? `${coverage[0].window_months}-month response window`
             : 'response window'}
-          , not against a single month. Hover a district for how its caseload
-          was estimated. All figures in this environment are synthetic.
+          , not against a single month. The <em>i</em> beside each caseload
+          gives the method it was estimated by. All figures in this environment
+          are synthetic.
         </p>
         {/* The verdict the pill colours encode, stated so it can be argued
             with — this card renders the same coverageTone bands the funder and

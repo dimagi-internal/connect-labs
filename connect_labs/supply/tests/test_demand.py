@@ -75,6 +75,53 @@ def test_coverage_is_delivery_against_need_not_volume():
     assert rows[BORNO]["uncovered_children"] == 6_600
 
 
+def test_a_district_awaiting_a_consignment_does_not_read_as_abandoned():
+    """The pipeline is on the card, or the card sends resources to the wrong place.
+
+    Yobe read 0 delivered, 0% of need and 18,960 children uncovered while 10,000
+    cartons were in transit to Damaturu with an ETA three days out — 53% of
+    Yobe's entire need. A ministry official using this card to decide where to
+    send state resources would have sent them to the one district about to be
+    supplied.
+
+    In transit is reported SEPARATELY from delivered, never added to it: a carton
+    on a lorry has covered nobody, and merging the two would be the same error
+    the positioned/reached split exists to prevent.
+    """
+    CaseloadEstimateFactory(adm1_code=YOBE, adm1_name="Yobe", children_sam=10_000)
+    hub = SupplyNodeFactory(kind="distribution_hub", adm1_code=YOBE, country="NG")
+    contract = ContractFactory(org=SupplierOrgFactory())
+    Shipment.objects.create(
+        contract=contract,
+        reference="SHP-ONROAD",
+        origin=SupplyNodeFactory(kind="port", adm1_code=""),
+        destination=hub,
+        quantity=Decimal(5_300),
+        status=Shipment.Status.IN_TRANSIT,
+    )
+
+    row = {r["adm1_code"]: r for r in coverage.coverage_by_district()}[YOBE]
+    assert row["courses_delivered"] == 0, "nothing has arrived"
+    assert row["coverage_percent"] == 0, "and nothing may be credited as arrived"
+    assert row["courses_in_transit"] == 5_300
+    assert row["in_transit_percent"] == pytest.approx(53.0, abs=0.1)
+    # The uncovered figure still counts only what has NOT arrived, because a
+    # lorry three days out has treated nobody today.
+    assert row["uncovered_children"] == 10_000
+
+
+def test_coverage_rows_lead_with_the_largest_uncovered_caseload():
+    """Ordered by the quantity a ministry allocates against.
+
+    Ascending coverage led with Yobe at 0%, which reads as the worst problem;
+    Borno had 31,833 children uncovered against Yobe's 18,960.
+    """
+    CaseloadEstimateFactory(adm1_code=BORNO, adm1_name="Borno", children_sam=10_000)
+    CaseloadEstimateFactory(adm1_code=YOBE, adm1_name="Yobe", children_sam=1_000)
+    rows = coverage.coverage_by_district()
+    assert [r["adm1_name"] for r in rows] == ["Borno", "Yobe"]
+
+
 def test_every_coverage_row_carries_its_source_note():
     CaseloadEstimateFactory(adm1_code=BORNO, source_note="method goes here")
     rows = coverage.coverage_by_district()

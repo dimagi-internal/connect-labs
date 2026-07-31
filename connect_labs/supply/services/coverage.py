@@ -47,6 +47,34 @@ def _delivered_cartons_by_district(country=None):
     return {r["destination__adm1_code"]: int(r["cartons"] or 0) for r in rows}
 
 
+def _in_transit_cartons_by_district(country=None):
+    """Cartons on the road to each district, and not yet counted anywhere else.
+
+    Omitting the pipeline was the single most decision-distorting gap on the
+    coverage card. Yobe read as abandoned — 0 delivered, 0% of need, 18,960
+    children uncovered — while the same page showed 10,000 cartons In transit to
+    Damaturu with an ETA three days out, which is 53% of Yobe's entire need. A
+    ministry official reading that card to decide where to send their own
+    resources would have sent them to the one district about to be supplied.
+
+    Same boundary-crossing rule as the delivered figure, so the two columns are
+    comparable and a leg redistributed inside a district is not counted as new
+    supply arriving.
+    """
+    qs = (
+        Shipment.objects.filter(
+            status__in=[Shipment.Status.PLANNED, Shipment.Status.IN_TRANSIT],
+            unit="cartons",
+        )
+        .exclude(destination__adm1_code="")
+        .exclude(origin__adm1_code=F("destination__adm1_code"))
+    )
+    if country:
+        qs = qs.filter(destination__country=country)
+    rows = qs.values("destination__adm1_code").annotate(cartons=Sum("quantity"))
+    return {r["destination__adm1_code"]: int(r["cartons"] or 0) for r in rows}
+
+
 def _dispensed_cartons_by_district(country=None):
     """Cartons a site actually HANDED OUT, per district.
 
@@ -117,6 +145,7 @@ def coverage_by_district(country=None, month=None):
     """
     delivered = _delivered_cartons_by_district(country=country)
     dispensed = _dispensed_cartons_by_district(country=country)
+    in_transit = _in_transit_cartons_by_district(country=country)
     per_district = _requirement_by_district(country=country, month=month)
 
     rows = []
@@ -147,12 +176,26 @@ def coverage_by_district(country=None, month=None):
                     if requirement
                     else None
                 ),
+                # What is on the road. Without it Yobe read as abandoned while
+                # 53% of its need was three days from arriving.
+                "courses_in_transit": gs1.cartons_to_children(in_transit.get(adm1_code, 0)),
+                "in_transit_percent": (
+                    round((gs1.cartons_to_children(in_transit.get(adm1_code, 0)) / requirement) * 100, 1)
+                    if requirement
+                    else None
+                ),
                 "uncovered_children": max(requirement - courses, 0),
                 "surplus_children": max(courses - requirement, 0),
                 "source_note": estimate.source_note,
             }
         )
-    return sorted(rows, key=lambda r: (r["coverage_percent"] is None, r["coverage_percent"] or 0))
+    # Ordered by the number the reader is here to act on.
+    #
+    # Ascending coverage put Yobe's 0% first, which reads as the worst problem;
+    # Borno has 31,833 children uncovered against Yobe's 18,960. Children still
+    # uncovered is the quantity a ministry allocates against, and every column
+    # remains sortable, so nothing is lost by leading with it.
+    return sorted(rows, key=lambda r: -r["uncovered_children"])
 
 
 def coverage_by_country(month=None):
