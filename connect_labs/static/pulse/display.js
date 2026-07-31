@@ -461,6 +461,19 @@
     );
   }
 
+  /* Speeds pace replay only — in live mode the clock is wall time and there is
+     nothing to speed up, so they are hidden rather than left there doing
+     nothing. */
+  function paintTransport() {
+    const live = store.mode === 'live';
+    $('#btn-mode').textContent = live ? 'Replay' : 'Go live';
+    $('#btn-mode').title = live
+      ? 'Switch back to the replay window'
+      : 'Follow services as they arrive';
+    const speeds = $('#speed-controls');
+    if (speeds) speeds.hidden = live;
+  }
+
   /* ═══ status bar ════════════════════════════════════════════════ */
   function paintStatus() {
     const mode = $('#mode'),
@@ -540,7 +553,30 @@
       }),
     );
     $('#btn-play').addEventListener('click', () => {
-      $('#btn-play').textContent = store.toggle() ? 'Pause' : 'Play';
+      const playing = store.toggle();
+      $('#btn-play').textContent = playing ? 'Pause' : 'Play';
+      $('#btn-play').setAttribute('aria-label', playing ? 'Pause' : 'Play');
+    });
+
+    /* Live and replay are different sources, not a display preference, so the
+       switch reloads from the server rather than reinterpreting what is held.
+       The button is disabled while switching: startLive() and
+       loadReplayWindow() are both async, and a double-click would run two
+       loads whose events interleave. */
+    $('#btn-mode').addEventListener('click', async () => {
+      const btn = $('#btn-mode');
+      const next = store.mode === 'live' ? 'replay' : 'live';
+      btn.disabled = true;
+      btn.textContent = next === 'live' ? 'Going live…' : 'Loading replay…';
+      try {
+        await store.setMode(next);
+      } catch (err) {
+        console.error('[pulse] mode switch failed', err);
+      } finally {
+        btn.disabled = false;
+        paintTransport();
+        paintStatus();
+      }
     });
     $$('[data-speed]').forEach((b) =>
       b.addEventListener('click', () => {
@@ -587,6 +623,7 @@
     await loadGrid();
     await store.start();
     setAct(0);
+    paintTransport();
     paintStatus();
   }
 

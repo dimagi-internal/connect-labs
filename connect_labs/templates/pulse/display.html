@@ -31,6 +31,14 @@ would put a "Connect Labs" navigation bar above a funder-facing screen.
         <i class="pulse-dot"></i><span id="mode-text">Connecting…</span>
       </div>
 
+      {# Transport sits with the clock it acts on, rather than at the far edge #}
+      {# of the screen. "Go live" switches the source; pause freezes whichever #}
+      {# source is running, so someone can stop and point at a frame.          #}
+      <div class="pulse-transport-top">
+        <button id="btn-play" type="button" aria-label="Pause">Pause</button>
+        <button id="btn-mode" type="button">Go live</button>
+      </div>
+
       <div class="pulse-bar-spacer"></div>
 
       <div class="pulse-scope">
@@ -93,8 +101,9 @@ would put a "Connect Labs" navigation bar above a funder-facing screen.
       </div>
       <div class="pulse-tick-rows" id="ticker"></div>
       <div class="pulse-transport">
-        <div class="pulse-controls">
-          <button id="btn-play">Pause</button>
+        {# Speeds only pace replay, so they live with the timeline. Pause and #}
+        {# the live/replay switch moved up beside the clock they refer to.    #}
+        <div class="pulse-controls" id="speed-controls">
           <button data-speed="60">60&times;</button>
           <button data-speed="240">240&times;</button>
           <button data-speed="900">900&times;</button>

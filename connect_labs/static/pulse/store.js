@@ -42,6 +42,8 @@
       this.events = [];
       this.fields = [];
       this.cursor = null;
+      // Live arrivals that landed while paused, flushed in order on resume.
+      this._heldLive = [];
 
       this.clock = null;
       this.windowStart = null;
@@ -148,7 +150,12 @@
             this._decode(row, payload.fields),
           );
           if (payload.cursor) this.cursor = payload.cursor;
-          for (const ev of fresh) this._deliver(ev);
+          // Paused in live mode holds arrivals rather than dropping them: the
+          // point of pausing a wall display is to stop and point at a frame,
+          // and losing the services that landed while you talked would make
+          // the totals disagree with the ticker on resume.
+          if (this.playing) for (const ev of fresh) this._deliver(ev);
+          else this._heldLive.push(...fresh);
         } catch (err) {
           console.error('[pulse] live poll failed', err);
           this.ingest = Object.assign({}, this.ingest, {
@@ -269,6 +276,10 @@
 
     toggle() {
       this.playing = !this.playing;
+      if (this.playing && this._heldLive.length) {
+        const held = this._heldLive.splice(0);
+        for (const ev of held) this._deliver(ev);
+      }
       this.emit('control', { playing: this.playing });
       return this.playing;
     }
@@ -277,6 +288,9 @@
       if (mode === this.mode) return;
       if (this._livePollTimer) clearInterval(this._livePollTimer);
       this.mode = mode;
+      // Anything held from a previous live session is stale once the source
+      // changes; the replay window reloads from the server regardless.
+      this._heldLive.length = 0;
       if (mode === 'replay') await this.loadReplayWindow();
       else await this.startLive();
       this.emit('control', { mode });
