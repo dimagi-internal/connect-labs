@@ -280,14 +280,16 @@ def test_a_partner_raised_row_says_so_and_a_derived_one_does_not():
     assert "org_name" not in rows["Short receipt"]
 
 
-def test_no_recommended_action_names_a_verb_the_row_cannot_reach():
-    """Half of one recommendation had no control anywhere on the screen.
+def test_a_row_recommending_expedite_names_the_consignment_the_button_needs():
+    """Every verb in a recommendation has a control on the row.
 
-    A late row read "Expedite the consignment, or reallocate from a node holding
-    surplus" beside exactly two buttons: Open and Reallocate. Expediting is real
-    and it happens by recording a despatch event against the consignment, which
-    is where Open leads — so the prose has to name that route rather than a verb
-    with no affordance.
+    This test used to enforce the opposite compromise: the Expedite control did
+    not exist, so it required any "expedite" prose to name the Open route
+    instead. The endpoint, service and action kind existed the whole time — the
+    rewording matched a limitation that was not real. Now the control exists,
+    the sentence says the plain thing, and the server-side precondition for the
+    button is what gets pinned: a row recommending an expedite must carry the
+    shipment_id the control acts on.
     """
     CaseloadEstimateFactory(adm1_code=BORNO, children_sam=4330)
     site = SupplyNodeFactory(kind="delivery_point", adm1_code=BORNO)
@@ -302,8 +304,58 @@ def test_no_recommended_action_names_a_verb_the_row_cannot_reach():
 
     for row in exceptions.build_queue():
         action = (row.get("action") or "").lower()
-        if "expedit" in action:
-            assert "open" in action, f"{row['kind']} recommends expediting without naming the route: {action!r}"
+        if "expedite the consignment" in action:
+            assert row.get("shipment_id"), f"{row['kind']} recommends expediting a consignment it does not name"
+
+
+def test_an_expedite_answers_its_own_consignments_row_and_no_other():
+    """A chase is recorded against a shipment, so it answers exactly that row.
+
+    The reallocation case taught this once at node level: a decision that
+    correctly changes no figure still has to show up on the row it answers, or
+    the queue cannot demonstrate its own central claim. An expedite on some
+    other lorry into the same hub answers nothing.
+    """
+    from datetime import timedelta
+
+    from connect_labs.supply.models import Milestone
+    from connect_labs.supply.services import actions
+
+    CaseloadEstimateFactory(adm1_code=BORNO, children_sam=4330)
+    site = SupplyNodeFactory(kind="delivery_point", adm1_code=BORNO, name="Kukawa")
+    contract = ContractFactory(org=SupplierOrgFactory())
+
+    def late_shipment(reference):
+        shipment = Shipment.objects.create(
+            contract=contract,
+            reference=reference,
+            origin=SupplyNodeFactory(kind="port", adm1_code=""),
+            destination=site,
+            quantity=Decimal(900),
+            status=Shipment.Status.IN_TRANSIT,
+        )
+        Milestone.objects.create(
+            shipment=shipment,
+            node=site,
+            kind=Milestone.Kind.ARRIVE,
+            planned_at=timezone.now() - timedelta(days=9),
+            estimated_at=timezone.now() + timedelta(days=2),
+        )
+        return shipment
+
+    chased = late_shipment("SHP-CHASED")
+    ignored = late_shipment("SHP-IGNORED")
+
+    actions.expedite(actor="ops@oes.example", shipment=chased, rationale="port strike cleared; carrier can move")
+
+    rows = {r["shipment_id"]: r for r in exceptions.build_queue() if r.get("shipment_id")}
+    assert rows[chased.id]["answered_by"], "the chased consignment's row must read as answered"
+    assert "escalated with the carrier" in rows[chased.id]["answered_by"]["effect"]
+    assert rows[ignored.id]["answered_by"] is None, "a chase on one lorry answers nothing about another"
+    # Answered sinks below unanswered whatever the figures — the queue's
+    # question is "what has nobody done anything about".
+    ordering = [r.get("shipment_id") for r in exceptions.build_queue()]
+    assert ordering.index(ignored.id) < ordering.index(chased.id)
 
 
 def test_a_resolved_signal_leaves_the_queue():

@@ -29,6 +29,7 @@ function CommandTab({ ctx }) {
   const [selected, setSelected] = useState(null);
   const [openContract, setOpenContract] = useState(null);
   const [reallocatingFor, setReallocatingFor] = useState(null);
+  const [expeditingFor, setExpeditingFor] = useState(null);
   const [openShipmentId, setOpenShipmentId] = useState(null);
 
   // Split the cover table: somewhere with stock has a run-dry date, somewhere
@@ -247,6 +248,25 @@ function CommandTab({ ctx }) {
                       offered one, so the single sentence that tells the reader
                       what to do about a row was the only thing on the card
                       they could not act on. */}
+                  {/* The verb the recommendation opens with, wired at last.
+                      The endpoint, service and action kind existed the whole
+                      time; only the control was missing, and an earlier fix
+                      reworded the sentence to match the gap instead of closing
+                      it. Same secondary weight as Reallocate — both commit. */}
+                  {e.shipment_id &&
+                  !e.answered_by &&
+                  /expedite/i.test(e.action || '') &&
+                  supplyCan(world.role, 'actions', 'create') ? (
+                    <span
+                      className="btn btn-sm btn-secondary"
+                      onClick={(ev) => {
+                        ev.stopPropagation();
+                        setExpeditingFor(e);
+                      }}
+                    >
+                      Expedite {e.shipment_reference}
+                    </span>
+                  ) : null}
                   {e.node_id &&
                   !e.answered_by &&
                   /reallocate/i.test(e.action || '') &&
@@ -580,6 +600,14 @@ function CommandTab({ ctx }) {
         />
       ) : null}
 
+      {expeditingFor ? (
+        <ExpediteModal
+          ctx={ctx}
+          exception={expeditingFor}
+          onClose={() => setExpeditingFor(null)}
+        />
+      ) : null}
+
       {reallocatingFor ? (
         <ReallocateModal
           ctx={ctx}
@@ -757,6 +785,73 @@ function ContractDetailModal({ contract, onClose }) {
    what it could spare without dropping below its own threshold — because a
    reallocation that solves one stockout by causing another is not a decision
    anybody would defend afterwards. */
+/* Chase one consignment, on the record.
+
+   An expedite moves no stock and changes no figure — the cartons are exactly
+   where they were. What it creates is the append-only decision record the rest
+   of this screen is built on: who chased which consignment, when, and why. The
+   rationale is required by the service, so the form says so up front instead of
+   letting a submit bounce. */
+function ExpediteModal({ ctx, exception, onClose }) {
+  const { act } = ctx;
+  const [rationale, setRationale] = useState('');
+  const ready = rationale.trim().length > 0;
+  return (
+    <Modal
+      title={`Expedite ${exception.shipment_reference}`}
+      onClose={onClose}
+      footer={
+        <React.Fragment>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="btn"
+            disabled={ctx.busy || !ready}
+            onClick={() =>
+              act(
+                () =>
+                  supplyPost(
+                    `/supply/api/actions/expedite/${exception.shipment_id}/`,
+                    { rationale: rationale.trim() },
+                  ),
+                `${exception.shipment_reference} escalated with the carrier.`,
+                // act() swallows errors and returns null; closing
+                // unconditionally would dismiss a failure worth retrying.
+              ).then((result) => {
+                if (result) onClose();
+              })
+            }
+          >
+            Record the expedite
+          </button>
+        </React.Fragment>
+      }
+    >
+      <p>
+        {exception.what}
+        {exception.why ? ` ${exception.why}` : ''}
+      </p>
+      <p className="muted small">
+        Expediting records the decision to chase this consignment with the
+        carrier. It moves no stock and changes no figure — the row stays in the
+        queue as answered until the cartons actually land.
+      </p>
+      <FormRow
+        label="Why this consignment, now"
+        hint="Required — a decision with no stated reason cannot be defended later."
+      >
+        <textarea
+          rows={3}
+          value={rationale}
+          onChange={(ev) => setRationale(ev.target.value)}
+        />
+      </FormRow>
+    </Modal>
+  );
+}
+
 function ReallocateModal({ ctx, exception, surplus, cover, onClose, nodes }) {
   // An expiry row names the node the cartons must leave, not the node they
   // must reach — it is the one exception kind whose subject is holding TOO
