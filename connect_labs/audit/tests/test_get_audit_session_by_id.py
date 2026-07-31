@@ -55,12 +55,12 @@ def _storage_record_reads_the_fake():
         yield m
 
 
-def _data_access(main_client, opportunity_id=1973):
+def _data_access(main_client, opportunity_id=1973, access_token="fake"):
     with patch("connect_labs.workflow.data_access.LabsRecordAPIClient") as MockAPI:
         MockAPI.return_value = main_client
         from connect_labs.audit.data_access import AuditDataAccess
 
-        return AuditDataAccess(access_token="fake", opportunity_id=opportunity_id)
+        return AuditDataAccess(access_token=access_token, opportunity_id=opportunity_id)
 
 
 class TestGetAuditSessionById:
@@ -175,3 +175,103 @@ class TestGetAuditSessionById:
 
         assert da.get_audit_session(9) is found
         assert cache.get(_session_opp_cache_key(9)) == 1976
+
+
+class TestSweepDoesNotRepeatOnMiss:
+    """The 2026-07-30 fan-out (#1060 comment): #1037 memoised only the HIT.
+
+    Measured over the 24h to 2026-07-30, still on production: 23,445 scoped
+    ``GET /export/labs_record/?id=...&opportunity_id=...`` calls, peaking around
+    1,370 requests/minute, with session 7234 swept 447 times. Two defects, both
+    of which make a single session re-run the whole fan-out indefinitely.
+    """
+
+    def _never_found(self):
+        client = MagicMock()
+        client.get_record_by_id.return_value = None
+        return client
+
+    def test_failed_sweep_is_not_repeated_for_the_same_caller(self):
+        """Defect 1: a sweep that finds nothing memoises nothing, so it re-runs forever."""
+        main_client = self._never_found()
+        da = _data_access(main_client)
+        da.search_opportunities = MagicMock(return_value=[{"id": i} for i in range(100, 140)])
+
+        assert da.get_audit_session(7234) is None
+        assert main_client.get_record_by_id.call_count > 10, "precondition: the first call really does sweep"
+
+        main_client.get_record_by_id.reset_mock()
+        da.search_opportunities.reset_mock()
+
+        assert da.get_audit_session(7234) is None
+        da.search_opportunities.assert_not_called()
+        assert main_client.get_record_by_id.call_count <= 2, (
+            f"a caller that already failed to resolve this session re-swept "
+            f"({main_client.get_record_by_id.call_count} requests) instead of "
+            f"remembering the miss"
+        )
+
+    def test_miss_memo_is_per_caller_not_global(self):
+        """One caller's miss must not blind a colleague who CAN see the session.
+
+        The sweep enumerates *the caller's own* opportunities, so "not found" is
+        a fact about that caller's access, not about the session. Caching it
+        globally would hide a session from everyone the moment one unauthorized
+        user looked for it.
+        """
+        da_blind = _data_access(self._never_found(), access_token="token-blind")
+        da_blind.search_opportunities = MagicMock(return_value=[{"id": 1976}])
+        assert da_blind.get_audit_session(9) is None
+
+        found = FakeSession(id=9, opportunity_id=1976)
+        seeing_client = MagicMock()
+        seeing_client.get_record_by_id.side_effect = lambda sid, **kw: (
+            found if kw.get("opportunity_id") == 1976 else None
+        )
+        da_seeing = _data_access(seeing_client, access_token="token-seeing")
+        da_seeing.search_opportunities = MagicMock(return_value=[{"id": 1976}])
+
+        assert da_seeing.get_audit_session(9) is found
+
+    def test_unauthorized_caller_does_not_evict_the_shared_memo(self):
+        """Defect 2: the memo is shared, but was evicted on a per-caller auth failure.
+
+        The location memo is keyed on session id alone — deliberately, since a
+        session's storage opportunity is the same fact for everybody. But a
+        caller who cannot read that opportunity gets None and used to
+        ``cache.delete`` the shared entry, so a user with no access could evict
+        the memo for the users who do. Two people on the same session then
+        thrash it: each re-sweep repopulates, the other evicts.
+        """
+        from django.core.cache import cache
+
+        from connect_labs.audit.data_access import _session_opp_cache_key
+
+        cache.set(_session_opp_cache_key(9), 1976, 300)
+
+        da_blind = _data_access(self._never_found(), access_token="token-blind")
+        da_blind.search_opportunities = MagicMock(return_value=[{"id": 1976}])
+
+        assert da_blind.get_audit_session(9) is None
+        assert cache.get(_session_opp_cache_key(9)) == 1976, (
+            "a caller who cannot see the remembered opportunity evicted the memo " "for everyone else"
+        )
+
+    def test_a_real_relocation_still_self_heals(self):
+        """Not evicting must not strand a genuinely moved session on a stale memo."""
+        from django.core.cache import cache
+
+        from connect_labs.audit.data_access import _session_opp_cache_key
+
+        cache.set(_session_opp_cache_key(9), 4242, 300)  # where it used to live
+
+        found = FakeSession(id=9, opportunity_id=1976)
+        main_client = MagicMock()
+        main_client.get_record_by_id.side_effect = lambda sid, **kw: (
+            found if kw.get("opportunity_id") == 1976 else None
+        )
+        da = _data_access(main_client)
+        da.search_opportunities = MagicMock(return_value=[{"id": 1976}])
+
+        assert da.get_audit_session(9) is found
+        assert cache.get(_session_opp_cache_key(9)) == 1976, "the memo should re-point to the new home"
