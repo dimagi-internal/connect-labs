@@ -46,6 +46,11 @@ scenes:
     target: css:.keyfigures
   - kind: hold
     seconds: 2.0
+  # The canonical frame is the overview itself — page title and the full KPI
+  # row settled at the top. Snapshotting after the Solicitations scroll left
+  # the dashboard header sliced mid-card in the scored frame.
+  - kind: snapshot
+    note: 'the canonical frame: the whole console at rest — the registry-health figures and the queues, before any scroll'
   # The narration reaches "then tenders drawn from it" while the Solicitations
   # panel sat clipped to a header row plus half a line, its only live row six
   # rows below the fold. Frame the second stage when the words arrive at it.
@@ -205,8 +210,10 @@ scenes:
     target: css:.modal button:has-text('Add')
   - kind: wait_for
     target: css:.toast
+  # Long enough for the confirmation toast to expire before the payoff frame —
+  # it lingered into the canonical shot of the comparison panel twice.
   - kind: hold
-    seconds: 1.0
+    seconds: 4.0
     note: the live profile has changed. The frozen snapshot has not.
   - kind: click
     target: css:.navitem:has-text('Expressions of interest')
@@ -401,11 +408,15 @@ scenes:
   - kind: hold
     seconds: 2.4
     note: Maiduguri — Savanna first on price at 42.29, technical 91
+  # The whole card, not just its head: the narrated payoff is the REVERSAL —
+  # Faso first AND Savanna dropped to second — and the head-targeted scroll
+  # left everything below Djibo's first row out of the closing frame. The
+  # four-row card fits a viewport whole.
   - kind: scroll_to
-    target: css:.modal .card:has-text('20,000 cartons RUTF delivered to Djibo') .card-head
+    target: css:.modal .card:has-text('20,000 cartons RUTF delivered to Djibo')
   - kind: hold
     seconds: 2.6
-    note: Djibo — Faso NutriWorks first at 41.85, and Savanna drops to second
+    note: Djibo — Faso NutriWorks first at 41.85, and Savanna drops to second, on screen together
   impressive_because: The leader on the Maiduguri lot is not the leader on Djibo, which is exactly the
     information a per-tender comparison would have hidden.
   ai_quality: Two distinct price leaders are actually visible in the data, not asserted in a caption.
@@ -438,6 +449,13 @@ scenes:
     note: Djibo to Faso — a different plant on a different corridor
   - kind: wait_for
     target: css:.toast
+  - kind: hold
+    seconds: 2.6
+  # Frame the full Djibo card for the close — all rows plus the awarded badge —
+  # and give the toast time to expire so it does not sit over the table in the
+  # canonical frame.
+  - kind: scroll_to
+    target: css:.modal .card:has-text('20,000 cartons RUTF delivered to Djibo')
   - kind: hold
     seconds: 2.4
     note: two corridors, two suppliers, one tender — awarded on camera
