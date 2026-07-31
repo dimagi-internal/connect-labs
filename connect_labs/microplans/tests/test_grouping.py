@@ -1017,6 +1017,7 @@ class TestReassignIsolatedWaToNearestWag:
 
     def test_isolated_wa_moves_to_the_truly_nearest_wag(self):
         from shapely.geometry import box
+        from shapely.strtree import STRtree
 
         geoms = {
             "X": box(-0.5, -0.5, 0.5, 0.5),
@@ -1026,17 +1027,19 @@ class TestReassignIsolatedWaToNearestWag:
             "B2": box(5.5, 4.5, 6.5, 5.5),  # touches B1 — not an island
         }
         wa_ids = list(geoms.keys())
+        tree = STRtree([geoms[w] for w in wa_ids])
         by_id = {w: {"building_count": 10} for w in wa_ids}
         adjacency = {"X": [], "A1": ["A2"], "A2": ["A1"], "B1": ["B2"], "B2": ["B1"]}
         clusters_with_seed = [("A1", ["X", "A1", "A2"]), ("B1", ["B1", "B2"])]
         result = _reassign_isolated_wa_to_nearest_wag(
-            clusters_with_seed, by_id, geoms, wa_ids, adjacency, 1000, 1000, None
+            clusters_with_seed, by_id, geoms, wa_ids, adjacency, tree, 1000, 1000, None
         )
         groups = {frozenset(cells) for _seed, cells in result}
         assert groups == {frozenset(["A1", "A2"]), frozenset(["B1", "B2", "X"])}
 
     def test_skips_a_full_wag_for_the_next_nearest_with_room(self):
         from shapely.geometry import box
+        from shapely.strtree import STRtree
 
         geoms = {
             "X": box(-0.5, -0.5, 0.5, 0.5),
@@ -1048,6 +1051,7 @@ class TestReassignIsolatedWaToNearestWag:
             "C2": box(10.5, 9.5, 11.5, 10.5),
         }
         wa_ids = list(geoms.keys())
+        tree = STRtree([geoms[w] for w in wa_ids])
         by_id = {w: {"building_count": 10} for w in wa_ids}
         by_id["B1"] = {"building_count": 990}  # B1+B2 already totals the ceiling
         adjacency = {
@@ -1061,13 +1065,14 @@ class TestReassignIsolatedWaToNearestWag:
         }
         clusters_with_seed = [("A1", ["X", "A1", "A2"]), ("B1", ["B1", "B2"]), ("C1", ["C1", "C2"])]
         result = _reassign_isolated_wa_to_nearest_wag(
-            clusters_with_seed, by_id, geoms, wa_ids, adjacency, 1000, 1000, None
+            clusters_with_seed, by_id, geoms, wa_ids, adjacency, tree, 1000, 1000, None
         )
         groups = {frozenset(cells) for _seed, cells in result}
         assert groups == {frozenset(["A1", "A2"]), frozenset(["B1", "B2"]), frozenset(["C1", "C2", "X"])}
 
     def test_bounded_by_max_reach_m(self):
         from shapely.geometry import box
+        from shapely.strtree import STRtree
 
         geoms = {
             "X": box(-0.5, -0.5, 0.5, 0.5),
@@ -1077,11 +1082,12 @@ class TestReassignIsolatedWaToNearestWag:
             "B2": box(5.5, 4.5, 6.5, 5.5),
         }
         wa_ids = list(geoms.keys())
+        tree = STRtree([geoms[w] for w in wa_ids])
         by_id = {w: {"building_count": 10} for w in wa_ids}
         adjacency = {"X": [], "A1": ["A2"], "A2": ["A1"], "B1": ["B2"], "B2": ["B1"]}
         clusters_with_seed = [("A1", ["X", "A1", "A2"]), ("B1", ["B1", "B2"])]
         result = _reassign_isolated_wa_to_nearest_wag(
-            clusters_with_seed, by_id, geoms, wa_ids, adjacency, 1000, max_reach_m=1, barriers_3857=None
+            clusters_with_seed, by_id, geoms, wa_ids, adjacency, tree, 1000, max_reach_m=1, barriers_3857=None
         )
         x_group = next(cells for _seed, cells in result if "X" in cells)
         assert x_group == ["X", "A1", "A2"]  # unchanged — B1 is out of reach
@@ -1094,6 +1100,7 @@ class TestReassignIsolatedWaToNearestWag:
         # IT isn't a lone island either — nothing in this dataset is isolated,
         # so the whole pass must be a complete no-op.
         from shapely.geometry import box
+        from shapely.strtree import STRtree
 
         geoms = {
             "X": box(0, 0, 1, 1),
@@ -1102,11 +1109,12 @@ class TestReassignIsolatedWaToNearestWag:
             "B2": box(1.5, 1, 2.5, 2),  # touches B1 — not an island
         }
         wa_ids = list(geoms.keys())
+        tree = STRtree([geoms[w] for w in wa_ids])
         by_id = {w: {"building_count": 10} for w in wa_ids}
         adjacency = {"X": ["A1"], "A1": ["X"], "B1": ["B2"], "B2": ["B1"]}
         clusters_with_seed = [("A1", ["X", "A1"]), ("B1", ["B1", "B2"])]
         result = _reassign_isolated_wa_to_nearest_wag(
-            clusters_with_seed, by_id, geoms, wa_ids, adjacency, 1000, 1000, None
+            clusters_with_seed, by_id, geoms, wa_ids, adjacency, tree, 1000, 1000, None
         )
         groups = {frozenset(cells) for _seed, cells in result}
         assert groups == {frozenset(["X", "A1"]), frozenset(["B1", "B2"])}
@@ -1114,6 +1122,7 @@ class TestReassignIsolatedWaToNearestWag:
     def test_barrier_blocks_the_nearest_falls_to_next(self):
         from shapely.geometry import LineString, box
         from shapely.prepared import prep
+        from shapely.strtree import STRtree
 
         geoms = {
             "X": box(-0.5, -0.5, 0.5, 0.5),
@@ -1125,6 +1134,7 @@ class TestReassignIsolatedWaToNearestWag:
             "C2": box(-0.5, 6.5, 0.5, 7.5),
         }
         wa_ids = list(geoms.keys())
+        tree = STRtree([geoms[w] for w in wa_ids])
         by_id = {w: {"building_count": 10} for w in wa_ids}
         adjacency = {
             "X": [],
@@ -1140,7 +1150,7 @@ class TestReassignIsolatedWaToNearestWag:
         # the X->C1 (northward) line.
         barrier = prep(LineString([(2, -2), (2, 2)]))
         result = _reassign_isolated_wa_to_nearest_wag(
-            clusters_with_seed, by_id, geoms, wa_ids, adjacency, 1000, 1000, barrier
+            clusters_with_seed, by_id, geoms, wa_ids, adjacency, tree, 1000, 1000, barrier
         )
         groups = {frozenset(cells) for _seed, cells in result}
         assert groups == {frozenset(["A1", "A2"]), frozenset(["B1", "B2"]), frozenset(["C1", "C2", "X"])}
@@ -1155,6 +1165,7 @@ class TestMergeTinyWagsIntoNearestWag:
 
     def test_tiny_wag_merges_into_the_nearest_under_target_wag(self):
         from shapely.geometry import box
+        from shapely.strtree import STRtree
 
         geoms = {
             "T1": box(0, 0, 1, 1),
@@ -1163,18 +1174,20 @@ class TestMergeTinyWagsIntoNearestWag:
             "F1": box(100, 0, 101, 1),  # far away, irrelevant
         }
         wa_ids = list(geoms.keys())
+        tree = STRtree([geoms[w] for w in wa_ids])
         by_id = {w: {"building_count": 10} for w in wa_ids}
         by_id["N1"] = {"building_count": 50}
         by_id["F1"] = {"building_count": 50}
         clusters_with_seed = [("T1", ["T1", "T2"]), ("N1", ["N1"]), ("F1", ["F1"])]
         result = _merge_tiny_wags_into_nearest_wag(
-            clusters_with_seed, by_id, geoms, target_buildings=200, max_buildings=1000, max_reach_m=1000
+            clusters_with_seed, by_id, geoms, wa_ids, tree, target_buildings=200, max_buildings=1000, max_reach_m=1000
         )
         groups = {frozenset(cells) for _seed, cells in result}
         assert groups == {frozenset(["N1", "T1", "T2"]), frozenset(["F1"])}
 
     def test_stranded_when_nearest_wag_already_at_or_over_target(self):
         from shapely.geometry import box
+        from shapely.strtree import STRtree
 
         geoms = {
             "T1": box(0, 0, 1, 1),
@@ -1182,17 +1195,19 @@ class TestMergeTinyWagsIntoNearestWag:
             "N1": box(3, 0, 4, 1),  # nearest, but already at target
         }
         wa_ids = list(geoms.keys())
+        tree = STRtree([geoms[w] for w in wa_ids])
         by_id = {w: {"building_count": 10} for w in wa_ids}
         by_id["N1"] = {"building_count": 200}
         clusters_with_seed = [("T1", ["T1", "T2"]), ("N1", ["N1"])]
         result = _merge_tiny_wags_into_nearest_wag(
-            clusters_with_seed, by_id, geoms, target_buildings=200, max_buildings=1000, max_reach_m=1000
+            clusters_with_seed, by_id, geoms, wa_ids, tree, target_buildings=200, max_buildings=1000, max_reach_m=1000
         )
         groups = {frozenset(cells) for _seed, cells in result}
         assert groups == {frozenset(["T1", "T2"]), frozenset(["N1"])}  # left stranded
 
     def test_blocked_by_max_buildings_ceiling(self):
         from shapely.geometry import box
+        from shapely.strtree import STRtree
 
         geoms = {
             "T1": box(0, 0, 1, 1),
@@ -1200,18 +1215,20 @@ class TestMergeTinyWagsIntoNearestWag:
             "N1": box(3, 0, 4, 1),  # under target, but combined would breach max
         }
         wa_ids = list(geoms.keys())
+        tree = STRtree([geoms[w] for w in wa_ids])
         by_id = {w: {"building_count": 10} for w in wa_ids}
         by_id["N1"] = {"building_count": 190}
         clusters_with_seed = [("T1", ["T1", "T2"]), ("N1", ["N1"])]
         # N1 (190) is under target (200) but 190 + 20 = 210 > max (200).
         result = _merge_tiny_wags_into_nearest_wag(
-            clusters_with_seed, by_id, geoms, target_buildings=200, max_buildings=200, max_reach_m=1000
+            clusters_with_seed, by_id, geoms, wa_ids, tree, target_buildings=200, max_buildings=200, max_reach_m=1000
         )
         groups = {frozenset(cells) for _seed, cells in result}
         assert groups == {frozenset(["T1", "T2"]), frozenset(["N1"])}
 
     def test_bounded_by_max_reach_m(self):
         from shapely.geometry import box
+        from shapely.strtree import STRtree
 
         geoms = {
             "T1": box(0, 0, 1, 1),
@@ -1219,11 +1236,12 @@ class TestMergeTinyWagsIntoNearestWag:
             "N1": box(3, 0, 4, 1),  # otherwise-eligible, but beyond max_reach_m
         }
         wa_ids = list(geoms.keys())
+        tree = STRtree([geoms[w] for w in wa_ids])
         by_id = {w: {"building_count": 10} for w in wa_ids}
         by_id["N1"] = {"building_count": 50}
         clusters_with_seed = [("T1", ["T1", "T2"]), ("N1", ["N1"])]
         result = _merge_tiny_wags_into_nearest_wag(
-            clusters_with_seed, by_id, geoms, target_buildings=200, max_buildings=1000, max_reach_m=0.5
+            clusters_with_seed, by_id, geoms, wa_ids, tree, target_buildings=200, max_buildings=1000, max_reach_m=0.5
         )
         groups = {frozenset(cells) for _seed, cells in result}
         assert groups == {frozenset(["T1", "T2"]), frozenset(["N1"])}  # out of reach
@@ -1231,6 +1249,7 @@ class TestMergeTinyWagsIntoNearestWag:
     def test_barrier_blocks_the_nearest_falls_to_next(self):
         from shapely.geometry import LineString, box
         from shapely.prepared import prep
+        from shapely.strtree import STRtree
 
         geoms = {
             "T1": box(0, 0, 1, 1),
@@ -1239,6 +1258,7 @@ class TestMergeTinyWagsIntoNearestWag:
             "N2": box(0, 3, 1, 4),  # farther, reachable
         }
         wa_ids = list(geoms.keys())
+        tree = STRtree([geoms[w] for w in wa_ids])
         by_id = {w: {"building_count": 10} for w in wa_ids}
         by_id["N1"] = {"building_count": 50}
         by_id["N2"] = {"building_count": 50}
@@ -1248,6 +1268,8 @@ class TestMergeTinyWagsIntoNearestWag:
             clusters_with_seed,
             by_id,
             geoms,
+            wa_ids,
+            tree,
             target_buildings=200,
             max_buildings=1000,
             max_reach_m=1000,
@@ -1258,16 +1280,18 @@ class TestMergeTinyWagsIntoNearestWag:
 
     def test_two_mutually_tiny_wags_merge_into_each_other(self):
         from shapely.geometry import box
+        from shapely.strtree import STRtree
 
         geoms = {
             "T1": box(0, 0, 1, 1),
             "S1": box(2, 0, 3, 1),  # another tiny WAG, close by
         }
         wa_ids = list(geoms.keys())
+        tree = STRtree([geoms[w] for w in wa_ids])
         by_id = {w: {"building_count": 10} for w in wa_ids}
         clusters_with_seed = [("T1", ["T1"]), ("S1", ["S1"])]
         result = _merge_tiny_wags_into_nearest_wag(
-            clusters_with_seed, by_id, geoms, target_buildings=200, max_buildings=1000, max_reach_m=1000
+            clusters_with_seed, by_id, geoms, wa_ids, tree, target_buildings=200, max_buildings=1000, max_reach_m=1000
         )
         assert len(result) == 1
         assert set(result[0][1]) == {"T1", "S1"}
