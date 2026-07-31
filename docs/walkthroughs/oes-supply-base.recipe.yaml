@@ -399,8 +399,13 @@ scenes:
     target: css:tr:has-text('RUTF Northeast Nigeria Q4 2026') button:has-text('Edit lots')
   - kind: wait_for
     target: css:.modal
+  # `.card-head`, not a bare `.modal` descendant: the button that OPENS the lot
+  # form and the button that SUBMITS it are both labelled "Add lot", and the
+  # submit sits in the nested modal's footer. An unscoped selector matched both,
+  # picked the opener, and clicked a control the new overlay had already
+  # covered — which failed the action and cascaded through scenes 7, 8 and 9.
   - kind: click
-    target: css:.modal button:has-text('Add lot')
+    target: css:.modal .card-head button:has-text('Add lot')
   - kind: wait_for
     target: css:.modal .field:has-text('Description') input
   - kind: fill
@@ -421,8 +426,10 @@ scenes:
     value: '2026-09-15'
   - kind: hold
     seconds: 1.2
+  # The lot form's own submit, in the nested modal's footer. The solicitation
+  # detail modal has no footer, so this is unambiguous.
   - kind: click
-    target: css:.modal button:has-text('Add lot')
+    target: css:.modal-foot button:has-text('Add lot')
   - kind: wait_for
     target: css:.toast
   - kind: hold
