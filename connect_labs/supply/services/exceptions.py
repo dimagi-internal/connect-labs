@@ -115,19 +115,15 @@ def late_exceptions(contracts=None, as_of=None):
                         )
                     )
                 ),
-                # Every verb here has to have a control on the row.
-                #
-                # This read "Expedite the consignment, or reallocate from a node
-                # holding surplus" beside exactly two buttons — Open and
-                # Reallocate — so half the recommendation had no affordance
-                # anywhere on the screen. Expediting is real, and it happens by
-                # recording a despatch event against the consignment, which is
-                # what Open leads to; saying so turns a dead half-sentence into
-                # the route it always was.
-                "action": (
-                    "Reallocate from a node holding surplus, or open the consignment "
-                    "to record an expedited despatch."
-                ),
+                # Every verb here has a control on the row — the rule cuts the
+                # other way now. This once read "Expedite the consignment, or
+                # reallocate from a node holding surplus" beside exactly two
+                # buttons, Open and Reallocate, so the sentence was reworded to
+                # stop promising expedite. That was the wrong branch of the fix:
+                # the expedite endpoint, service and action kind existed the
+                # whole time and only the control was missing. The control
+                # exists, so the sentence says the plain thing again.
+                "action": "Expedite the consignment, or reallocate from a node holding surplus.",
                 "derivation": (
                     f"{delay:.0f} days late against "
                     f"{node_cover['weeks_of_cover'] if node_cover else 0} weeks of cover; "
@@ -269,10 +265,7 @@ def partner_signal_exceptions(as_of=None):
                 "action": (
                     "Closed by the reallocation that answered it."
                     if action
-                    else (
-                        "Reallocate from a node holding surplus, or open the next "
-                        "consignment to record an expedited despatch."
-                    )
+                    else "Reallocate from a node holding surplus, or expedite the next consignment."
                 ),
                 "derivation": (
                     f"Reported by {signal.org.legal_name} on {signal.raised_on:%-d %B} "
@@ -311,6 +304,28 @@ def _answered_nodes():
     return answered
 
 
+def _expedited_shipments():
+    """Consignments somebody has already chased, keyed by shipment.
+
+    The reallocation case above taught this lesson once: a decision that
+    leaves the underlying figures unchanged (correctly — the cartons are not
+    there yet) also left the queue unable to show that the decision happened.
+    An expedite is the same shape one level down. It is recorded against a
+    SHIPMENT rather than a node, so a late row is answered by an expedite on
+    exactly its own consignment — an expedite on some other lorry into the
+    same hub answers nothing.
+    """
+    chased = {}
+    actions = SupplyAction.objects.filter(kind=SupplyAction.Kind.EXPEDITE, shipment__isnull=False).select_related(
+        "shipment"
+    )
+    for action in actions:
+        if action.shipment.status == Shipment.Status.CONFIRMED:
+            continue  # it arrived; the chase is history, not an answer
+        chased.setdefault(action.shipment_id, action)
+    return chased
+
+
 def build_queue(contracts=None, as_of=None):
     """Every exception, ranked by the children who go without SOONEST.
 
@@ -339,13 +354,16 @@ def build_queue(contracts=None, as_of=None):
         + partner_signal_exceptions(as_of=as_of)
     )
     answered = _answered_nodes()
+    expedited = _expedited_shipments()
     for row in rows:
         # Everything that is not an expiry row names the node that NEEDS
         # cartons, so a reallocation raised from it moves stock toward it.
         row.setdefault("reallocation_role", "target")
         row["children_at_risk_soon"] = _children_within_horizon(row, as_of=as_of)
         row["decision_horizon_days"] = DECISION_HORIZON_DAYS
-        action = answered.get(row.get("node_id"))
+        # A shipment-level answer outranks a node-level one because it is the
+        # more specific claim: this exact consignment has been chased.
+        action = expedited.get(row.get("shipment_id")) or answered.get(row.get("node_id"))
         row["answered_by"] = (
             {
                 "action_id": action.id,
