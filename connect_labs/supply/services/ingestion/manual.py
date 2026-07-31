@@ -13,6 +13,29 @@ from ..org_actions import ActionError
 from ._core import capture_event, node_by_gln, normalise_biz_step, parse_event_time
 
 
+def assert_may_report(org, shipment):
+    """Raise unless ``org`` is a party to this consignment.
+
+    A consignment has two parties with something to report — the supplier that
+    despatched it, and the organisation that receives it at its own site — and
+    only the despatching one was permitted. That made the receiving partner's
+    whole capture surface unusable: "Record the count" posted, the service
+    refused it as somebody else's shipment, and the narrated act of a
+    storekeeper counting cartons off a truck could not be performed by the
+    storekeeper.
+
+    Receipt authority follows NODE OWNERSHIP, which is the same rule the
+    partner's own site list and cover figures are scoped by, so it cannot drift
+    from them.
+    """
+    if shipment.contract.org_id == org.id:
+        return
+    destination_owner_id = getattr(shipment.destination, "owner_id", None)
+    if destination_owner_id is not None and destination_owner_id == org.id:
+        return
+    raise ActionError("shipment does not belong to your organisation")
+
+
 def capture_checkin(org, payload):
     """A phone-app confirmation: consignment reference, place, what happened.
 
@@ -56,8 +79,7 @@ def record_manual_event(org, shipment, payload):
     append-only log, same derived state — only the source tier differs, so the
     provenance of hand-keyed data stays visible everywhere it is shown.
     """
-    if shipment.contract.org_id != org.id:
-        raise ActionError("shipment does not belong to your organisation")
+    assert_may_report(org, shipment)
 
     biz_step = normalise_biz_step(payload.get("biz_step"))
     node = None
@@ -98,8 +120,7 @@ def record_manual_event(org, shipment, payload):
 
 def confirm_delivery(org, shipment, quantity=None, note=""):
     """Portal-tier confirmation that closes out a delivered shipment."""
-    if shipment.contract.org_id != org.id:
-        raise ActionError("shipment does not belong to your organisation")
+    assert_may_report(org, shipment)
     if shipment.status == Shipment.Status.PLANNED:
         raise ActionError("shipment has not departed yet")
 

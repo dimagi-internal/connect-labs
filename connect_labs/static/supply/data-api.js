@@ -127,6 +127,7 @@ function daysBetweenLabel(iso, asOfIso) {
   const days = Math.round((now - then) / 86400000);
   if (days === 0) return 'today';
   if (days === 1) return 'yesterday';
+  if (days === -1) return 'tomorrow';
   if (days < 0) return `in ${-days} days`;
   return `${days} days ago`;
 }

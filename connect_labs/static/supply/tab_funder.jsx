@@ -85,15 +85,9 @@ function FunderTab({ ctx }) {
         ]}
       />
 
-      {/* Three stages named, because three are drawn.
-          The subtitle promised "appropriation → partner → country → commodity
-          delivered" over a diagram with three node columns and no commodity
-          stage — and a reader cannot verify "reconciles at every stage" for a
-          stage that is not there. Naming what is rendered is the honest half of
-          the fix; drawing a fourth column is a feature, not a correction. */}
       <Card
         title="Where the money went"
-        subtitle="Appropriation → partner → country. Every stage reconciles, and each envelope's own outflow is checked."
+        subtitle="Appropriation → contract → country → commodity. Every stage reconciles, and each envelope's own outflow is checked."
       >
         <Sankey appropriations={appropriations} contracts={contracts} />
       </Card>
@@ -193,12 +187,16 @@ function FunderTab({ ctx }) {
               key: 'del',
               label: 'Delivered',
               value: (c) => c.delivered_quantity || 0,
+              // total_quantity, which the serializer actually sends. Reading
+              // c.quantity rendered "N / — cartons" in every row: a ratio with
+              // a missing denominator on the card that promises three checkable
+              // stages.
               render: (c) => (
-                <span>
+                <span className="nowrap">
                   {formatNumber(c.delivered_quantity || 0)}
                   <span className="muted">
                     {' '}
-                    / {formatNumber(c.quantity)} {c.unit}
+                    / {formatNumber(c.total_quantity)} {c.unit}
                   </span>
                 </span>
               ),
@@ -303,24 +301,17 @@ function FunderTab({ ctx }) {
             />
           </div>
         </div>
-        {/* The reconciliation the chain's own first rung demands.
-            It opened at "$502k disbursed on supply contracts" while the headline
-            three inches above read "$546k Disbursed" — two near-identically
-            labelled figures 8% apart with no line explaining the difference.
-            Excluding freight from a cost-per-outcome figure is a substantive,
-            contestable methodological choice, and it was presented as none. The
-            narration also claimed "consignments in transit are excluded, and it
-            says so", which was false of this screen: neither phrase appeared on
-            it. */}
+        {/* The reconciliation the chain's own first rung demands — ONE
+            sentence on the face. The full rationale for both exclusions lives
+            in the "cost per full course" note above; printing it here too made
+            the disclosure model half-executed: the same exclusions stated
+            twice, once on the face and once behind the `i`. */}
         <p className="muted small method-note">
           From {exactMoney(disbursed)} disbursed in total, this chain uses{' '}
-          {exactMoney(goodsDisbursed)} — the contracts that bought food.{' '}
-          {exactMoney(disbursed - goodsDisbursed)} paid to haulage and storage
-          contracts is excluded, because those dollars buy movement rather than
-          cartons and would price a course below the cost of the food in it.
-          Consignments still in transit are excluded from both sides of the
-          division: no money has moved against them and no carton has been
-          confirmed.
+          {exactMoney(goodsDisbursed)} — the contracts that bought food;{' '}
+          {exactMoney(disbursed - goodsDisbursed)} paid to haulage and storage,
+          and every consignment still in transit, are excluded (the <em>i</em>{' '}
+          above states why).
         </p>
       </Card>
 
@@ -415,12 +406,15 @@ function FunderTab({ ctx }) {
           &ldquo;is the food there&rdquo;. <strong>Reached a child</strong>{' '}
           counts only courses a site recorded handing out. The two are far apart
           on purpose: food in a warehouse is not treatment, and a figure that
-          merges them cannot tell a funder which problem they have. Banding for
-          both: at or above 80% covered, 50–79% partial, below 50% thin. Above
-          100% positioned is marked <em>over</em> rather than green — more
-          courses than the caseload calls for is a positioning question, not a
-          better outcome than 91%.
+          merges them cannot tell a funder which problem they have.
         </p>
+        {/* The shared banding component, not a third hand-written wording of
+            the same rule. This paragraph used to end with its own version —
+            "at or above 80% covered" against the command centre's "80–100%
+            green" — so the two surfaces stated the same thresholds in two
+            different shapes and a reader comparing them could not tell whether
+            the rule or the wording differed. */}
+        <CoverageBandsNote />
       </Card>
 
       {/* The measured half comes LAST, after the coverage table.
@@ -467,6 +461,19 @@ function TwoFiguresAndTheGap({ outcomes, records }) {
     seen.add(r.batch_lot);
     batches.push(r);
   });
+  // The batch the reader is invited to follow is the one whose sample can
+  // actually show the arc the drill exists for — a child discharged as
+  // recovered. Record order is arrival order, so the first batch was the most
+  // recent one: a fortnight old, every child still in treatment, and the modal
+  // opened on "0 of N recovered" under an invitation to watch someone recover.
+  // A mature batch demonstrates the mechanism; recency demonstrates nothing.
+  const recoveredCount = (r) =>
+    (r.outcomes || []).filter((o) => o.discharge_status === 'recovered').length;
+  batches.sort(
+    (a, b) =>
+      recoveredCount(b) - recoveredCount(a) ||
+      (b.outcomes || []).length - (a.outcomes || []).length,
+  );
   const breakdown = outcomes.discharge_breakdown || {};
   // Fixed order, and every discharge category present whatever its count.
   //
@@ -659,10 +666,22 @@ function StageBars({ contract }) {
   const deliveredValue =
     (contract.delivered_quantity || 0) * (contract.unit_price || 0);
   const pct = (v) => (obligated ? Math.min(100, (v / obligated) * 100) : 0);
+  // Bars in the order the column header states — obligated, then disbursed,
+  // then delivered. They rendered obligated/delivered/disbursed under a header
+  // reading "Obligated → disbursed → delivered": two contradictory orderings
+  // of the same three-stage sequence, on the one card whose whole point is
+  // that the three stages never merge. A zero stage still draws its empty
+  // track, so every row has three bars in the same positions.
   return (
     <div className="stage-bars">
       <div className="stage-bar" title={`Obligated ${shortMoney(obligated)}`}>
         <div className="stage-fill obligated" style={{ width: '100%' }} />
+      </div>
+      <div className="stage-bar" title={`Disbursed ${shortMoney(disbursed)}`}>
+        <div
+          className="stage-fill disbursed"
+          style={{ width: `${pct(disbursed)}%` }}
+        />
       </div>
       <div
         className="stage-bar"
@@ -671,12 +690,6 @@ function StageBars({ contract }) {
         <div
           className="stage-fill delivered"
           style={{ width: `${pct(deliveredValue)}%` }}
-        />
-      </div>
-      <div className="stage-bar" title={`Disbursed ${shortMoney(disbursed)}`}>
-        <div
-          className="stage-fill disbursed"
-          style={{ width: `${pct(disbursed)}%` }}
         />
       </div>
     </div>
@@ -729,22 +742,27 @@ function wrapLabel(text, maxChars, maxLines) {
 }
 
 function Sankey({ appropriations, contracts }) {
-  const colWidth = 130;
+  const colWidth = 118;
   const gutter = 200;
-  const width = gutter * 2 + colWidth * 3 + 240;
-  const gap = 12;
+  // Four node columns with three ribbon channels between them. The middle
+  // columns label to the RIGHT of their band (over the ribbon channel, with a
+  // halo — see below), so each channel needs enough width for a name.
+  const channel = 170;
+  const width = gutter * 2 + colWidth * 4 + channel * 3;
+  const gap = 30;
   // Tall enough that no band has to fall back to an unreadable sliver: three
   // stacked bands each need room for a name and a figure.
-  const height = Math.max(300, contracts.length * 74 + 90);
+  const height = Math.max(320, contracts.length * 84 + 90);
   // The gaps between stacked bands have to come OUT of the height the bands
   // are scaled into, not be added on top of it. Scaling the bands to fill the
   // whole box and then inserting a gap between each pair pushed the last band
   // past the bottom edge, which clipped the smallest contract in the diagram —
   // and the smallest contract is the one most likely to be the interesting one.
   const bandCount = Math.max(
-    appropriations.length,
-    new Set(contracts.map((c) => c.org_name)).size,
+    appropriations.length + 1,
+    contracts.length,
     new Set(contracts.map((c) => c.destination_country)).size,
+    new Set(contracts.map((c) => c.category)).size,
     1,
   );
   const MIN_BAND = 18;
@@ -753,11 +771,11 @@ function Sankey({ appropriations, contracts }) {
   const appropriated = appropriations.reduce((n, a) => n + a.amount, 0) || 1;
 
   // What each envelope has actually committed. The diagram traces OBLIGATED
-  // dollars through partner to country, so the first column has to be drawn in
-  // the same currency as the other two: it was drawn in appropriated dollars
-  // while they were drawn in obligated ones, and about 93% of the height
-  // evaporated between the first column and the second on a card whose caption
-  // promises the flow conserves.
+  // dollars through contract to country to commodity, so the first column has
+  // to be drawn in the same currency as the other three: it was drawn in
+  // appropriated dollars while they were drawn in obligated ones, and about
+  // 93% of the height evaporated between the first column and the second on a
+  // card whose caption promises the flow conserves.
   //
   // The unobligated balance is REPORTED below rather than drawn. Drawn to
   // scale it is 93% of the diagram and every contract band collapses — Blue
@@ -773,7 +791,21 @@ function Sankey({ appropriations, contracts }) {
   const total = contracts.reduce((n, c) => n + c.obligated_value, 0) || 1;
   const scale = (v) => (v / total) * drawable;
 
-  // column 1: appropriations, column 2: partners, column 3: countries
+  // Value that cannot be hung on an envelope gets its OWN band in the first
+  // column rather than a footnote. Excluding it silently un-conserves the
+  // diagram — the columns to its right sum to more than the sources shown —
+  // which is the exact property the card claims to rule out.
+  const UNATTRIBUTED_GREY = '#94a3b8';
+  const unattributed = contracts.filter(
+    (c) => !appropriations.find((a) => a.id === c.appropriation_id),
+  );
+  const unattributedTotal = unattributed.reduce(
+    (n, c) => n + c.obligated_value,
+    0,
+  );
+
+  // column 1: appropriations (+ the unattributable band), column 2: contracts,
+  // column 3: countries, column 4: commodities
   let y1 = 24;
   const approvals = appropriations.map((a, i) => {
     const committed = obligatedByAppropriation[`a${a.id}`] || 0;
@@ -790,21 +822,45 @@ function Sankey({ appropriations, contracts }) {
     y1 += h + gap;
     return node;
   });
-  const colourFor = (appropriationId) => {
-    const found = approvals.find((a) => a.id === `a${appropriationId}`);
-    return found ? found.colour : '#64748b';
+  if (unattributedTotal > 0) {
+    const h = Math.max(MIN_BAND, scale(unattributedTotal));
+    approvals.push({
+      id: 'a-unattributed',
+      label: 'Not attributable to an envelope',
+      value: unattributedTotal,
+      envelope: null,
+      colour: UNATTRIBUTED_GREY,
+      y: y1,
+      h,
+    });
+    y1 += h + gap;
+  }
+  const sourceNodeFor = (c) =>
+    approvals.find((a) => a.id === `a${c.appropriation_id}`) ||
+    approvals.find((a) => a.id === 'a-unattributed');
+  const colourFor = (c) => {
+    const node = sourceNodeFor(c);
+    return node ? node.colour : UNATTRIBUTED_GREY;
   };
 
-  const residualTotal = Math.max(0, appropriated - total);
+  const residualTotal = Math.max(0, appropriated - (total - unattributedTotal));
 
-  const byPartner = {};
-  contracts.forEach((c) => {
-    byPartner[c.org_name] = (byPartner[c.org_name] || 0) + c.obligated_value;
-  });
+  // The second column is the CONTRACTS themselves, one band each, labelled by
+  // the partner holding them. The narration walks appropriation → contract →
+  // country → commodity; aggregating by partner here merged two contracts held
+  // by the same organisation into one band, so a viewer could not follow one
+  // contract through the flow.
   let y2 = 24;
-  const partners = Object.entries(byPartner).map(([name, value]) => {
-    const h = Math.max(MIN_BAND, scale(value));
-    const node = { id: `p${name}`, label: name, value, y: y2, h };
+  const contractNodes = contracts.map((c) => {
+    const h = Math.max(MIN_BAND, scale(c.obligated_value));
+    const node = {
+      id: `k${c.id}`,
+      label: c.org_name,
+      sub: c.reference,
+      value: c.obligated_value,
+      y: y2,
+      h,
+    };
     y2 += h + gap;
     return node;
   });
@@ -822,45 +878,61 @@ function Sankey({ appropriations, contracts }) {
     return node;
   });
 
+  const byCategory = {};
+  contracts.forEach((c) => {
+    byCategory[c.category] = (byCategory[c.category] || 0) + c.obligated_value;
+  });
+  let y4 = 24;
+  const commodities = Object.entries(byCategory).map(([key, value]) => {
+    const h = Math.max(MIN_BAND, scale(value));
+    const node = { id: `g${key}`, label: categoryLabel(key), value, y: y4, h };
+    y4 += h + gap;
+    return node;
+  });
+
   // Each contract is linked to ITS OWN appropriation. Attributing everything
   // to the first envelope would make the diagram stop conserving as soon as
   // there is more than one — the exact failure that makes a funding Sankey
   // untrustworthy.
   //
-  // Every ribbon carries the colour of the envelope it draws on, through BOTH
+  // Every ribbon carries the colour of the envelope it draws on, through ALL
   // hops. No ribbon was tinted or valued, so the one relationship the diagram
   // exists to express — this contract drew on THAT envelope — could only be
   // back-solved by arithmetic coincidence ($1.9M + $872k + $128k = $2.9M).
   const links = [];
   contracts.forEach((c) => {
-    const partner = partners.find((p) => p.label === c.org_name);
+    const contractNode = contractNodes.find((k) => k.id === `k${c.id}`);
     const country = countries.find(
       (x) => x.label === countryLabel(c.destination_country),
     );
-    const approp = approvals.find((a) => a.id === `a${c.appropriation_id}`);
-    const colour = colourFor(c.appropriation_id);
-    if (approp && partner)
+    const commodity = commodities.find((g) => g.id === `g${c.category}`);
+    const source = sourceNodeFor(c);
+    const colour = colourFor(c);
+    if (source && contractNode)
       links.push({
-        from: approp,
-        to: partner,
+        from: source,
+        to: contractNode,
         value: c.obligated_value,
         colour,
         col: 0,
       });
-    if (partner && country)
+    if (contractNode && country)
       links.push({
-        from: partner,
+        from: contractNode,
         to: country,
         value: c.obligated_value,
         colour,
         col: 1,
       });
+    if (country && commodity)
+      links.push({
+        from: country,
+        to: commodity,
+        value: c.obligated_value,
+        colour,
+        col: 2,
+      });
   });
-
-  // Anything not attributable to an envelope is reported, not silently dropped.
-  const unattributed = contracts.filter(
-    (c) => !approvals.find((a) => a.id === `a${c.appropriation_id}`),
-  );
 
   // The check that actually TESTS the claim.
   //
@@ -878,11 +950,7 @@ function Sankey({ appropriations, contracts }) {
   });
   const envelopesOk = envelopeChecks.filter((c) => c.ok).length;
 
-  const colX = [
-    gutter,
-    gutter + (colWidth * 3 + 240 - colWidth) / 2,
-    width - gutter - colWidth,
-  ];
+  const colX = [0, 1, 2, 3].map((i) => gutter + i * (colWidth + channel));
 
   return (
     <div className="sankey-wrap">
@@ -905,12 +973,19 @@ function Sankey({ appropriations, contracts }) {
             />
           );
         })}
-        {[approvals, partners, countries].map((col, ci) =>
+        {[approvals, contractNodes, countries, commodities].map((col, ci) =>
           col.map((n) => {
-            // Labels sit in the gutters for the outer columns and above the band
-            // for the middle one, so a name never has to fit inside a band whose
-            // height is set by the data — which is what forced truncation and,
-            // for the smallest flow, a label overlaying a ribbon.
+            // Labels sit in the gutters for the outer columns, so a name never
+            // has to fit inside a band whose height is set by the data — which
+            // is what forced truncation and, for the smallest flow, a label
+            // overlaying a ribbon.
+            //
+            // The two MIDDLE columns label to the RIGHT of their band, centred
+            // on it, over the ribbon channel — with a white halo (see
+            // .sankey-label-halo) so the text survives whatever ribbon runs
+            // beneath it. Labels used to ride ABOVE their band, where with more
+            // than one band per column they landed ON the band stacked above —
+            // white-adjacent grey on dark navy, unreadable and clipped.
             //
             // An appropriation node states its slice AND its envelope. Labelled
             // with the slice alone, "FY2026 Emergency Food S… $2.9M" reads as the
@@ -918,32 +993,23 @@ function Sankey({ appropriations, contracts }) {
             // most important figure on a funding chart was wrong by an order of
             // magnitude on a 5-second read, with the correction only in small
             // grey caption text below.
-            // Three lines for a gutter column, two for the middle one.
-            // "FY2026 Emergency Food Security — Horn of Africa & Sahel" needs
-            // three at this width and was still losing its last two words to an
-            // ellipsis — the appropriation name is the entity the card's claim is
-            // about. The gutters have the vertical room; the middle column's
-            // labels ride above their band and would collide with the band above.
-            const lines = wrapLabel(n.label, 26, ci === 1 ? 2 : 3);
+            const middleCol = ci === 1 || ci === 2;
+            const lines = middleCol
+              ? wrapLabel(n.label, 24, 1)
+              : wrapLabel(n.label, 26, 3);
+            if (middleCol && n.sub) lines.push(n.sub);
             const figure =
               ci === 0
-                ? `${shortMoney(n.value)} obligated of ${shortMoney(
-                    n.envelope,
-                  )}`
+                ? n.envelope === null
+                  ? `${shortMoney(n.value)} obligated`
+                  : `${shortMoney(n.value)} obligated of ${shortMoney(
+                      n.envelope,
+                    )}`
                 : shortMoney(n.value);
             const centre = n.y + n.h / 2;
-            const middleCol = ci === 1;
-            const anchor = ci === 2 ? 'start' : middleCol ? 'middle' : 'end';
-            const textX =
-              ci === 2
-                ? colX[ci] + colWidth + 12
-                : middleCol
-                ? colX[ci] + colWidth / 2
-                : colX[ci] - 12;
-            // Middle-column labels ride above their band; outer ones centre on it.
-            const firstY = middleCol
-              ? n.y - 8 - (lines.length - 1) * 13
-              : centre - ((lines.length + 1) * 13) / 2 + 13;
+            const anchor = ci === 0 ? 'end' : 'start';
+            const textX = ci === 0 ? colX[ci] - 12 : colX[ci] + colWidth + 10;
+            const firstY = centre - ((lines.length + 1) * 13) / 2 + 13;
             return (
               <g key={n.id}>
                 <rect
@@ -959,7 +1025,9 @@ function Sankey({ appropriations, contracts }) {
                     key={li}
                     x={textX}
                     y={firstY + li * 13}
-                    className="sankey-label sankey-label-outside"
+                    className={`sankey-label sankey-label-outside${
+                      middleCol ? ' sankey-label-halo' : ''
+                    }`}
                     textAnchor={anchor}
                   >
                     {line}
@@ -968,7 +1036,9 @@ function Sankey({ appropriations, contracts }) {
                 <text
                   x={textX}
                   y={firstY + lines.length * 13}
-                  className="sankey-label sankey-label-outside sankey-value"
+                  className={`sankey-label sankey-label-outside sankey-value${
+                    middleCol ? ' sankey-label-halo' : ''
+                  }`}
                   textAnchor={anchor}
                 >
                   {figure}
@@ -987,14 +1057,14 @@ function Sankey({ appropriations, contracts }) {
         {shortMoney(appropriated)} appropriated is not yet under contract.
         <InfoNote
           label="the funding diagram"
-          text="Widths are proportional to obligated dollars on one scale across all three columns, so each column sums to the same total. Every partner's inflow equals the sum of its contracts, and every country's inflow equals the sum of the contracts delivering there. The first column shows what each envelope has COMMITTED alongside the envelope's own size — the unobligated balance is reported rather than drawn, because at true scale it is most of the diagram and every contract band collapses below a pixel. The per-envelope check is the one that matters: a column total is preserved even if every contract were attributed to the wrong envelope, whereas an envelope's own outflow is not."
+          text="Widths are proportional to obligated dollars on one scale across all four columns, so each column sums to the same total. Every contract band equals its own obligated value, every country's inflow equals the sum of the contracts delivering there, and every commodity's inflow equals the sum of the contracts that bought it. The first column shows what each envelope has COMMITTED alongside the envelope's own size — the unobligated balance is reported rather than drawn, because at true scale it is most of the diagram and every contract band collapses below a pixel. Value that cannot be attributed to an envelope is drawn as its own grey band rather than excluded, so the diagram still conserves. The per-envelope check is the one that matters: a column total is preserved even if every contract were attributed to the wrong envelope, whereas an envelope's own outflow is not."
         />
         {unattributed.length
           ? ` ${unattributed.length} contract${
               unattributed.length === 1 ? '' : 's'
             } could not be attributed to an appropriation and ${
               unattributed.length === 1 ? 'is' : 'are'
-            } excluded from this diagram.`
+            } drawn as the grey band rather than excluded.`
           : ''}
       </div>
     </div>

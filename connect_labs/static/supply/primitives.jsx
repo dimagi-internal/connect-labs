@@ -123,6 +123,23 @@ const COVERAGE_BANDS =
   'over-positioned rather than as a success — more stock than the caseload ' +
   'needs is a question about where it should have gone, not an achievement.';
 
+/* The banding rule as a legend line with its reasoning one click away.
+
+   Printed in full it was one of two dense grey paragraphs stacked under the
+   table, and the pair of them read as small print nobody finishes — which is
+   the failure mode a disclosure model exists to avoid. The thresholds are the
+   part a reader needs while looking at a pill; why over-positioning is not a
+   success is the part they need only if they disagree. */
+function CoverageBandsNote() {
+  return (
+    <p className="muted small method-note">
+      Bands: below 50% red · 50–79% amber · 80–100% green · above 100%{' '}
+      <em>over</em>
+      <InfoNote label="the coverage bands" text={COVERAGE_BANDS} />
+    </p>
+  );
+}
+
 /* A national rate as a true ratio of the national sums.
 
    Averaging the rows' own percentages weights a small district equally with a
@@ -137,6 +154,13 @@ function nationalPercent(rows, numeratorKey) {
 
 function InfoNote({ label, text }) {
   const [open, setOpen] = useState(false);
+  // Fixed-position coordinates, computed from the trigger when it opens.
+  // The popover was absolutely positioned inside the card, and .card clips
+  // (overflow: hidden) — so a method note opened near a card's bottom edge cut
+  // its own text mid-sentence, on the one element whose job is to carry the
+  // method in full. position: fixed escapes every clipping ancestor; the note
+  // closes on toggle, so it does not need to track scrolling.
+  const [pos, setPos] = useState(null);
   return (
     <span className="infonote">
       <button
@@ -146,12 +170,30 @@ function InfoNote({ label, text }) {
         aria-expanded={open}
         onClick={(ev) => {
           ev.stopPropagation();
+          if (!open) {
+            const r = ev.currentTarget.getBoundingClientRect();
+            const width = Math.min(320, window.innerWidth * 0.74);
+            setPos({
+              top: r.bottom + 6,
+              left: Math.max(
+                8,
+                Math.min(r.left - 8, window.innerWidth - width - 12),
+              ),
+            });
+          }
           setOpen(!open);
         }}
       >
         i
       </button>
-      {open ? <span className="infonote-body">{text}</span> : null}
+      {open && pos ? (
+        <span
+          className="infonote-body"
+          style={{ position: 'fixed', top: pos.top, left: pos.left }}
+        >
+          {text}
+        </span>
+      ) : null}
     </span>
   );
 }
@@ -239,8 +281,19 @@ function DataTable({
   rowKey,
   onRowClick,
   totalsLabel,
+  defaultSort,
+  rowClass,
 }) {
-  const [sort, setSort] = useState({ key: null, dir: 1 });
+  // A declared default sort renders its caret from the first paint, so the
+  // order a reader is looking at is attributable. Without one, a table arrived
+  // in whatever order the payload happened to be built in and the headers
+  // claimed no ordering at all — which reads as unordered, not as "sorted by
+  // the thing you would expect".
+  const [sort, setSort] = useState(
+    defaultSort
+      ? { key: defaultSort.key, dir: defaultSort.dir || 1 }
+      : { key: null, dir: 1 },
+  );
 
   const sorted = useMemo(() => {
     if (!sort.key) return rows;
@@ -299,7 +352,9 @@ function DataTable({
             <tr
               key={rowKey ? rowKey(row) : i}
               onClick={onRowClick ? () => onRowClick(row) : undefined}
-              className={onRowClick ? 'clickable' : ''}
+              className={`${onRowClick ? 'clickable' : ''}${
+                rowClass ? ` ${rowClass(row)}` : ''
+              }`.trim()}
             >
               {columns.map((col) => (
                 <td key={col.key}>

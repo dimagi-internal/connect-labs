@@ -1,4 +1,5 @@
 """Session-authenticated execution endpoints (supplier ops + staff oversight)."""
+from django.db.models import Q
 from django.http import JsonResponse
 
 from .. import audit
@@ -20,12 +21,37 @@ def contracts(request):
     return JsonResponse({"contracts": [contract_dict(c, include_shipments=True) for c in qs]})
 
 
+def _reportable_shipment(org, shipment_id):
+    """A shipment this org is entitled to record events against.
+
+    Two parties touch a consignment and both have something to report: the
+    SUPPLIER holding the contract despatches it, and the RECEIVING organisation
+    counts it off the truck at its own site.
+
+    Only the first was ever allowed. Every write endpoint scoped on
+    ``contract__org``, so an implementing partner pressing "Record the count" on
+    their own Receiving screen got a flat 404 — the affordance was on the page,
+    the endpoint refused it, and the whole inversion this surface exists for (the
+    ground reporting upward) could not actually be performed. The receiving party
+    is authorised for legs terminating at a node their organisation owns, and
+    nothing else.
+    """
+    return Shipment.objects.filter(id=shipment_id).filter(Q(contract__org=org) | Q(destination__owner=org)).first()
+
+
 @require_perm("execution", "view")
 def shipment_detail(request, shipment_id):
     actor = request.supply_actor
     qs = Shipment.objects.select_related("contract__org", "origin", "destination")
     if actor.role == "supplier":
         qs = qs.filter(contract__org=actor.org)
+    elif actor.role == "partner":
+        # A partner reads the legs that touch their OWN nodes, not every leg in
+        # the network. Only "supplier" was scoped, so a partner could fetch any
+        # consignment in the world by id — including another organisation's
+        # plant-to-warehouse movements — which is the same over-share their site
+        # list is deliberately scoped against two endpoints away.
+        qs = qs.filter(Q(destination__owner=actor.org) | Q(origin__owner=actor.org))
     shipment = qs.filter(id=shipment_id).first()
     if shipment is None:
         return JsonResponse({"error": "not found"}, status=404)
@@ -39,7 +65,7 @@ def confirm_delivery(request, shipment_id):
     if request.method != "POST":
         return JsonResponse({"error": "method not allowed"}, status=405)
     org = request.supply_actor.org
-    shipment = Shipment.objects.filter(id=shipment_id, contract__org=org).first()
+    shipment = _reportable_shipment(org, shipment_id)
     if shipment is None:
         return JsonResponse({"error": "not found"}, status=404)
     body = json_body(request)
@@ -56,7 +82,7 @@ def checkin(request, shipment_id):
     if request.method != "POST":
         return JsonResponse({"error": "method not allowed"}, status=405)
     org = request.supply_actor.org
-    shipment = Shipment.objects.filter(id=shipment_id, contract__org=org).first()
+    shipment = _reportable_shipment(org, shipment_id)
     if shipment is None:
         return JsonResponse({"error": "not found"}, status=404)
     body = dict(json_body(request))
@@ -95,7 +121,7 @@ def record_event(request, shipment_id):
     if request.method != "POST":
         return JsonResponse({"error": "method not allowed"}, status=405)
     org = request.supply_actor.org
-    shipment = Shipment.objects.filter(id=shipment_id, contract__org=org).first()
+    shipment = _reportable_shipment(org, shipment_id)
     if shipment is None:
         return JsonResponse({"error": "not found"}, status=404)
     event, _created = ingestion.record_manual_event(org, shipment, json_body(request))

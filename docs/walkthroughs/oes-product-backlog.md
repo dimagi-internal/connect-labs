@@ -1,5 +1,75 @@
 # OES supply — product-defect backlog
 
+> **Status, 31 July 2026 (third update — the three parked narrative forks are
+> RESOLVED, and every PRODUCT finding from the second judge pass is closed).**
+>
+> Jon lifted the concept_change gate ("I don't need to review any concept changes
+> that you think are better, just make them"), so the three forks the previous
+> pass parked are now decided and built:
+>
+> - **supply-base scene 6 — publish on camera.** Resolved by publishing a
+>   DIFFERENT tender. Ada creates, lots and publishes the Q4 call on camera;
+>   scenes 7-8 go on awarding the mature Q3 tender, which needs bid history a
+>   fresh publication cannot have. Narration rewritten; scene 7 now names the
+>   switch out loud. The supplier-side ABSENCE beat is still not filmed (it needs
+>   a mid-scene persona switch via dev-login, a hard 403 on prod) — instead
+>   eligibility is shown from the publisher's side as a positive artifact, the new
+>   qualified-supplier count.
+> - **partner-pipeline scene 2 — narrated examples vs the seeded world.**
+>   Resolved toward the WORLD, not the script: the seeded grid was measured and
+>   the narration rewritten to the cells it actually renders (Monguno covered on
+>   900 against 548 booked; Askira amber at 38 with 94 arriving *after*; Biu
+>   uncovered). The rendered world turned out to teach the subtler point better
+>   than the script did — an amber cell with a lorry on the way, where adding the
+>   two figures gives the opposite of the truth.
+> - **partner-pipeline scene 4 — record the count on camera.** The seeder no
+>   longer pre-creates the discrepancy. `SHP-2026-0930` is seeded delivered and
+>   UNCOUNTED, the storekeeper records 840 against its 900-carton advice on
+>   camera, and the app's own `_reconcile_receipt` raises the 60-short
+>   discrepancy in front of the viewer.
+> - **money-to-child scene 2 — the fourth stage and the unattributable band.**
+>   Resolved by BUILDING them rather than re-narrating: the Sankey is now four
+>   columns (appropriation → contract → country → commodity), value that cannot
+>   be hung on an envelope is drawn as its own grey band instead of being
+>   excluded in a footnote, and middle-column labels carry a white halo over the
+>   ribbon channel.
+>
+> **Making those acts real flushed out three more latent product bugs** — the
+> same pattern as the previous cycle, and the reason act-fidelity is worth the
+> effort:
+>
+> - **A receiving partner could not record a receipt at their own site.** Every
+>   execution write endpoint scoped shipments on `contract__org`, so "Record the
+>   count" on the partner's own Receiving screen returned a flat 404 and the
+>   inversion that surface exists for could not be performed. Receipt authority
+>   now follows NODE OWNERSHIP (`_reportable_shipment` /
+>   `ingestion.assert_may_report`), the same rule the partner's site list and
+>   cover figures are scoped by.
+> - **A short receipt banked the ADVISED quantity, not the counted one.**
+>   `cover._event_cartons` recognised `cartons` and `EA` but not `CT` — which is
+>   what the EPCIS path, the hand-keyed webform and the execution seeder all
+>   write — so a CT row summed to zero and the zero then fell back to
+>   `shipment.quantity`. A site that received 840 against a 900 advice reported
+>   **900 on hand**, contradicting the discrepancy raised from the very same
+>   event, on the one screen whose thesis is that the count beside the pallets is
+>   the figure of record. The execution seeder's own short leg was mis-banked the
+>   same way, so command-centre stock figures were wrong too.
+> - **A partner could read any consignment in the network by id.** Only the
+>   `supplier` role was scoped in `shipment_detail`; `partner` was not.
+>
+> Plus the qualification-term drift the backlog had listed as an open `options`
+> item: the term is now **18 calendar months** on both sides (it was 540 days on
+> the server and a separate 540-day preview in the browser, both described on
+> screen as "18 months"), and a pass granted off a certificate that lapses first
+> carries a `verify_at` re-verification date instead of silently outliving its own
+> evidence.
+>
+> `pytest connect_labs/supply` is at **252 passed**, up from 246, with 8 new
+> regression tests (the CT/short-receipt trio, the on-camera receipt trio, and the
+> calendar-month + re-verification pair).
+>
+> **Nothing is parked for the gate any more.**
+
 > **Status, 31 July 2026 (second update — post act-fidelity cycle).** Since the
 > banner below was written, four more product PRs landed and deployed:
 >

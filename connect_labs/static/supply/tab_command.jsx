@@ -199,9 +199,16 @@ function CommandTab({ ctx }) {
                       the road, and until they land the children behind it are
                       still at risk. Rendering both as "done" would claim the
                       invariant the rest of this screen exists to keep. */}
+                  {/* The status pill sits on its own line, not as the first
+                      token of the sentence beside it. Set inline, "Closed" read
+                      as the subject of "the reallocation moved 900 cartons…" —
+                      a chip pressed into service as a word. */}
                   {e.resolved_by ? (
                     <div className="exception-answered">
-                      <Badge tone="good">Closed</Badge> {e.resolved_by.effect}
+                      <div className="exception-answered-head">
+                        <Badge tone="good">Closed</Badge>
+                      </div>
+                      {e.resolved_by.effect}
                       <div className="muted small">
                         {e.resolved_by.rationale}
                       </div>
@@ -213,13 +220,23 @@ function CommandTab({ ctx }) {
                     </div>
                   ) : e.answered_by ? (
                     <div className="exception-answered">
-                      <Badge tone="good">Answered</Badge> {e.answered_by.effect}
+                      <div className="exception-answered-head">
+                        <Badge tone="good">Answered</Badge>
+                      </div>
+                      {e.answered_by.effect}
                       <div className="muted small">
                         {e.answered_by.rationale}
                       </div>
                     </div>
                   ) : (
-                    <div className="exception-action">→ {e.action}</div>
+                    <div
+                      className={`exception-action${
+                        e.monitor_only ? ' monitor-only' : ''
+                      }`}
+                    >
+                      {e.monitor_only ? 'Monitor · ' : '→ '}
+                      {e.action}
+                    </div>
                   )}
                   {/* A late row names a consignment and could not open it.
                       The milestone rail (planned / estimated / actual kept
@@ -253,8 +270,14 @@ function CommandTab({ ctx }) {
                       time; only the control was missing, and an earlier fix
                       reworded the sentence to match the gap instead of closing
                       it. Same secondary weight as Reallocate — both commit. */}
+                  {/* A monitor-only row offers no commit control. Its own
+                      sentence says no action is needed; putting Expedite and
+                      Reallocate on it anyway contradicts that in the loudest
+                      element on the card. Open stays — reading the consignment
+                      is exactly what "watch it" means. */}
                   {e.shipment_id &&
                   !e.answered_by &&
+                  !e.monitor_only &&
                   /expedite/i.test(e.action || '') &&
                   supplyCan(world.role, 'actions', 'create') ? (
                     <span
@@ -269,6 +292,7 @@ function CommandTab({ ctx }) {
                   ) : null}
                   {e.node_id &&
                   !e.answered_by &&
+                  !e.monitor_only &&
                   /reallocate/i.test(e.action || '') &&
                   supplyCan(world.role, 'actions', 'create') ? (
                     <span
@@ -318,7 +342,7 @@ function CommandTab({ ctx }) {
           subtitle="Flows follow real road and sea corridors."
           className="map-panel"
         >
-          <FlowMap nodes={nodes} shipments={shipments} height={560} />
+          <FlowMap nodes={nodes} shipments={shipments} fill />
         </Card>
       </div>
 
@@ -482,25 +506,24 @@ function CommandTab({ ctx }) {
             hint="Coverage cannot be reported without a denominator."
           />
         )}
-        {/* The window, stated. This said "monthly SAM caseload" while the
-            denominator is the caseload summed across the response window, so
-            the stated method was about four times off — in a card whose whole
-            claim is that a contract quantity and a requirement are different
-            things and both can be checked. */}
+        {/* One legend line, with the method behind the `i`.
+            Two dense grey paragraphs stacked under the table read as small
+            print — on the card whose claim is that every figure carries its
+            method. The window is the load-bearing half (the denominator is the
+            caseload summed across the response window, not a single month);
+            the rest is available on demand. */}
         <p className="muted small method-note">
-          Coverage is courses delivered divided by the district's SAM caseload
-          summed over the{' '}
+          Courses delivered ÷ SAM caseload over the{' '}
           {coverage[0] && coverage[0].window_months
             ? `${coverage[0].window_months}-month response window`
             : 'response window'}
-          , not against a single month. The <em>i</em> beside each caseload
-          gives the method it was estimated by. All figures in this environment
-          are synthetic.
+          . All figures synthetic.
+          <InfoNote
+            label="this coverage figure"
+            text="Coverage is courses delivered divided by the district's SAM caseload summed over the whole response window, not against a single month — a monthly denominator would overstate coverage roughly fourfold. The 'i' beside each caseload gives the method that caseload was estimated by, so the denominator can be checked as well as the numerator. Every figure in this environment is synthetic."
+          />
         </p>
-        {/* The verdict the pill colours encode, stated so it can be argued
-            with — this card renders the same coverageTone bands the funder and
-            government surfaces do, and stated the rule on neither. */}
-        <p className="muted small method-note">{COVERAGE_BANDS}</p>
+        <CoverageBandsNote />
       </Card>
 
       <Card
@@ -648,6 +671,19 @@ function ContractDetailModal({ contract, onClose }) {
     <Modal wide title={contract.reference} onClose={onClose}>
       <div className="detail-head">
         <StatusChip status={contract.status} />
+        {/* The immutability the narration asserts, as a fact on the screen.
+            "The award is immutable" had no on-screen correlate at all — the
+            reader was asked to take the load-bearing property of the whole
+            procurement chain on the voiceover's word. */}
+        {contract.awarded_at ? (
+          <span className="cell-with-note">
+            <Badge tone="verified">Awarded · locked</Badge>
+            <InfoNote
+              label="the locked award"
+              text="The award this contract carries out is a closed decision: the winning supplier, the quantity and the unit price were fixed when the lot was awarded and cannot be edited afterwards. Changing any of them means a new award. The contract is the mutable part — consignments, milestones and disbursements accumulate against it — which is why the two are separate records."
+            />
+          </span>
+        ) : null}
         <span className="muted">
           {contract.org_name} · {contract.destination},{' '}
           {countryLabel(contract.destination_country)}
@@ -676,8 +712,17 @@ function ContractDetailModal({ contract, onClose }) {
             </div>
             <div>
               <span className="muted small">Appropriation</span>
+              {/* The fiscal year, once. Every seeded appropriation title opens
+                  with its own FY token, so appending the field rendered
+                  "FY2026 Emergency Food Security — … · FY2026". */}
               <div>
-                {appropriation.title} · {appropriation.fiscal_year}
+                {appropriation.title}
+                {appropriation.fiscal_year &&
+                !String(appropriation.title || '').includes(
+                  String(appropriation.fiscal_year),
+                )
+                  ? ` · ${appropriation.fiscal_year}`
+                  : ''}
               </div>
             </div>
             <div>
@@ -698,11 +743,12 @@ function ContractDetailModal({ contract, onClose }) {
               <span className="muted small">Disbursed</span>
               <div>
                 {formatMoney(contract.disbursed_value, contract.currency)}
-                <span className="muted small">
-                  {' '}
-                  · against confirmed delivery only
-                </span>
               </div>
+              {/* The qualifier as a normal secondary caption on its own line.
+                  Trailing the figure in 11px muted caps it read as a cramped
+                  annotation on the number rather than the substantive
+                  restriction it is. */}
+              <div className="kv-caption">against confirmed delivery only</div>
             </div>
             <div>
               <span className="muted small">Unit price</span>

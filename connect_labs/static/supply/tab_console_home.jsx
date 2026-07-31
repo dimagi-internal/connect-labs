@@ -81,10 +81,20 @@ function ConsoleHome({ ctx }) {
               liveRfps.length === 1 ? '' : 's'
             }`,
           },
+          // One fact, not two. "0 open" over a hint reading "1 total" read as
+          // two unrelated numbers a reader had to subtract to understand; the
+          // interesting content is the disposition of every round there is.
           {
-            label: 'Open EOI rounds',
-            value: openRounds.length,
-            hint: `${rounds.length} total`,
+            label: 'EOI rounds',
+            value: openRounds.length
+              ? `${openRounds.length} open`
+              : 'none open',
+            hint:
+              rounds.length - openRounds.length
+                ? `${rounds.length - openRounds.length} closed · ${
+                    rounds.length
+                  } in total`
+                : `${rounds.length} in total`,
           },
         ]}
       />
@@ -145,10 +155,14 @@ function ConsoleHome({ ctx }) {
       </div>
 
       {rfps.length ? (
-        <Card title="Solicitations">
+        <Card
+          title="Solicitations"
+          subtitle="Soonest bid deadline first — the tender whose window closes next is the one with a decision attached."
+        >
           <DataTable
             rows={rfps}
             rowKey={(r) => r.id}
+            defaultSort={{ key: 'deadline', dir: 1 }}
             columns={[
               { key: 'title', label: 'Solicitation', value: (r) => r.title },
               {

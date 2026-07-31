@@ -161,6 +161,20 @@
   cursor: pointer;
   font-weight: 600;
 }
+/* A recorded score is a figure, not a call to action. Rendered in the same
+   accent green as the "Score" prompt beside it, a 60 and a 91 read as equally
+   good — decorative colour on the column that is meant to counterbalance
+   price. */
+.score-value {
+  color: var(--oes-ink);
+}
+/* The winning bid, marked in the table and not only in the card header. */
+.data-table tr.row-awarded > td {
+  background: var(--oes-ok-bg, rgba(16, 122, 87, 0.08));
+}
+.data-table tr.row-awarded > td:first-child {
+  box-shadow: inset 3px 0 0 var(--oes-accent);
+}
 .spacer {
   flex: 1;
 }
@@ -351,6 +365,40 @@
   background: rgba(176, 32, 42, 0.1);
   border-color: rgba(176, 32, 42, 0.4);
 }
+/* The colour key, inline at the calendar's head. Chips reuse the exact cell
+   colours, so the legend cannot drift from the grid it explains. */
+.week-legend {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 11.5px;
+  color: var(--oes-ink-soft);
+  margin-bottom: 8px;
+}
+.week-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.week-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  display: inline-block;
+}
+.week-swatch.covered {
+  background: rgba(16, 122, 87, 0.22);
+  border: 1px solid rgba(16, 122, 87, 0.5);
+}
+.week-swatch.at_risk {
+  background: rgba(180, 118, 12, 0.24);
+  border: 1px solid rgba(180, 118, 12, 0.55);
+}
+.week-swatch.uncovered {
+  background: rgba(176, 32, 42, 0.22);
+  border: 1px solid rgba(176, 32, 42, 0.55);
+}
 .week-cell-children {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
@@ -407,6 +455,18 @@
 .frozen-live-grid > :nth-child(3) {
   border-left: 1px solid var(--oes-line);
   padding-left: 10px;
+  /* The live column's paragraph ran flush to the divider on its right, so the
+     text touched the rule that separates it from nothing. */
+  padding-right: 10px;
+}
+/* The row label for the description row, in the gutter the table's first
+   column occupies. It was an empty div, so the panel's first row had a dead
+   24% of width beside a paragraph that read as unlabelled. */
+.frozen-live-row-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--oes-ink-soft);
+  padding-top: 2px;
 }
 .frozen-live-table .data-table {
   table-layout: fixed;

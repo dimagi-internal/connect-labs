@@ -56,6 +56,14 @@
 .modal-body {
   padding: 18px;
   overflow-y: auto;
+  /* The modal body is its own scrollport, so a card scrolled to inside it lands
+     flush against the modal header. scroll-margin-top on .modal .card only
+     works for scrollIntoView with a block alignment the caller controls;
+     scroll-padding-top on the SCROLL CONTAINER is honoured by
+     scrollIntoViewIfNeeded too, which is what Playwright drives — the case
+     that clipped a card mid-height in three consecutive renders. */
+  scroll-padding-top: 14px;
+  scroll-padding-bottom: 14px;
 }
 .modal-foot {
   display: flex;
@@ -263,9 +271,19 @@ textarea:disabled {
 .kv-grid > div {
   min-width: 0;
 }
-.kv-grid .muted.small {
+/* DIRECT children only — this is the field LABEL rule. Unscoped it also caught
+   any qualifier rendered inside a field's value, so "· against confirmed
+   delivery only" came out as tiny uppercase tracking-out caps, reading as a
+   second label rather than as the substantive restriction on the figure. */
+.kv-grid > div > .muted.small:first-child {
   display: block;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   margin-bottom: 2px;
+}
+/* A qualifier ON a field's value: normal secondary caption, under the figure. */
+.kv-caption {
+  font-size: 12px;
+  color: var(--oes-ink-soft);
+  margin-top: 2px;
 }

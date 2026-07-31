@@ -110,16 +110,51 @@ function RFPDetailModal({ ctx, rfp, canAward, canManage, onClose }) {
                 ) : null
               }
             >
+              {/* The scoring basis, once per lot, on demand. The Technical
+                  column carried a bare number out of 100 with no definition
+                  anywhere on the screen that ranks by it. */}
+              <p className="muted small">
+                Ranked by unit price; the technical score is the counterweight.
+                <InfoNote
+                  label="the technical score"
+                  text="A reviewer's assessment of the bid's technical response out of 100 — plant capability, quality-assurance regime, packaging and labelling compliance, and the credibility of the stated lead time. Where more than one reviewer has scored a bid, the figure is their mean. It is recorded separately from price so that a cheap bid from a weak plant and an expensive bid from a strong one can be told apart; the award decision weighs both, and every lot must be fully scored before it can be awarded."
+                />
+              </p>
               <DataTable
                 rows={entry.lot_bids}
                 rowKey={(b) => b.id}
+                rowClass={(b) =>
+                  entry.lot.awarded_org === b.org_name ? 'row-awarded' : ''
+                }
                 empty="No submitted bids on this lot."
                 columns={[
                   { key: 'rank', label: '#', value: (b) => b.price_rank },
-                  { key: 'org', label: 'Supplier', value: (b) => b.org_name },
                   {
+                    key: 'org',
+                    label: 'Supplier',
+                    value: (b) => b.org_name,
+                    // The winner, marked in its own row. An awarded lot said so
+                    // only in the card header, so a reader looking at the table
+                    // could not tell which of four rows had won it — on the
+                    // frame the award scene closes on.
+                    render: (b) => (
+                      <span>
+                        {b.org_name}
+                        {entry.lot.awarded_org === b.org_name ? (
+                          <Badge tone="accent">Awarded</Badge>
+                        ) : null}
+                      </span>
+                    ),
+                  },
+                  {
+                    // The basis, in the header. "Unit price" over a figure like
+                    // 42.29 leaves a reader to guess whether it is per carton,
+                    // per kilo or per sachet — on the column the whole
+                    // comparison ranks by.
                     key: 'price',
-                    label: 'Unit price',
+                    label: `Unit price / ${
+                      entry.lot.unit === 'cartons' ? 'carton' : entry.lot.unit
+                    }`,
                     value: (b) => b.unit_price,
                     render: (b) => formatMoney(b.unit_price, b.currency),
                   },
@@ -144,6 +179,11 @@ function RFPDetailModal({ ctx, rfp, canAward, canManage, onClose }) {
                     key: 'tech',
                     label: 'Technical',
                     value: (b) => b.avg_technical_score,
+                    // Neutral ink, not accent green. A 91 and a 60 rendered in
+                    // the same green read as "both fine" on the column that is
+                    // supposed to be the counterweight to price — colour that
+                    // carries no information on a figure that decides an award
+                    // is worse than no colour.
                     render: (b) =>
                       b.avg_technical_score === null ||
                       b.avg_technical_score === undefined ? (
@@ -157,10 +197,11 @@ function RFPDetailModal({ ctx, rfp, canAward, canManage, onClose }) {
                       ) : (
                         <button
                           type="button"
-                          className="btn-link score"
+                          className="btn-link score score-value"
                           onClick={() => setScoring(b)}
                         >
                           {b.avg_technical_score}
+                          <span className="muted small"> / 100</span>
                         </button>
                       ),
                   },

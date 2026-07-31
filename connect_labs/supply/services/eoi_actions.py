@@ -11,7 +11,14 @@ from ..models import Category, EOIReview, EOIRound, EOISubmission, Qualification
 from ..serializers import org_dict
 from .org_actions import ActionError
 
-QUALIFICATION_TERM_DAYS = 540  # ~18 months
+# The term a pass carries, in CALENDAR months.
+#
+# It used to be 540 days, described everywhere — including on screen — as "18
+# months". Those are different dates: 18 x 30 days from 22 July 2026 is 22
+# January 2028, the calendar answer is 31 January. A rule stated in months and
+# computed in days is a rule a supplier can dispute, on the one figure that
+# decides whether they are in the registry.
+QUALIFICATION_TERM_MONTHS = 18
 
 ROUND_TRANSITIONS = {
     EOIRound.Status.DRAFT: {EOIRound.Status.OPEN},
@@ -20,6 +27,44 @@ ROUND_TRANSITIONS = {
 }
 
 VALID_CATEGORIES = {c.value for c in Category}
+
+
+def add_months(start, months):
+    """``start`` plus ``months`` calendar months, clamped to the month's length.
+
+    31 August + 6 months is 28/29 February, not 3 March. Python has no stdlib
+    month arithmetic and this is the only place the app needs it.
+    """
+    month_index = start.month - 1 + months
+    year = start.year + month_index // 12
+    month = month_index % 12 + 1
+    # The last day of the target month, so 31 -> 30 or 28/29 rather than rolling
+    # into the next month.
+    if month == 12:
+        next_month_first = date(year + 1, 1, 1)
+    else:
+        next_month_first = date(year, month + 1, 1)
+    last_day = (next_month_first - timedelta(days=1)).day
+    return date(year, month, min(start.day, last_day))
+
+
+def earliest_certificate_expiry(snapshot):
+    """The soonest certificate expiry in an assessed profile snapshot, or None.
+
+    Read off the SNAPSHOT rather than the live profile: the question is what the
+    reviewer was looking at when they granted the pass, and the live profile can
+    have moved since (that being the property the freeze exists to protect).
+    """
+    expiries = []
+    for cert in (snapshot or {}).get("certifications") or []:
+        raw = cert.get("expiry_date")
+        if not raw:
+            continue
+        try:
+            expiries.append(date.fromisoformat(str(raw)[:10]))
+        except (TypeError, ValueError):
+            continue
+    return min(expiries) if expiries else None
 
 
 def parse_iso_date(data, field):
@@ -123,6 +168,12 @@ def review_submission(reviewer, sub, decisions, notes=""):
     EOIReview.objects.create(submission=sub, reviewer=reviewer, decisions=decisions, notes=notes)
 
     granted = date.today()
+    expires = add_months(granted, QUALIFICATION_TERM_MONTHS)
+    # A pass that outlives a certificate it was granted against carries the date
+    # that certificate lapses, so the registry can say so instead of quietly
+    # answering "qualified" off expired evidence.
+    cert_expiry = earliest_certificate_expiry(sub.profile_snapshot)
+    verify_at = cert_expiry if (cert_expiry and cert_expiry < expires) else None
     qualified = [cat for cat, verdict in decisions.items() if verdict == "qualify"]
     for category in sorted(qualified):
         Qualification.objects.update_or_create(
@@ -131,7 +182,8 @@ def review_submission(reviewer, sub, decisions, notes=""):
             defaults={
                 "source_submission": sub,
                 "granted_at": granted,
-                "expires_at": granted + timedelta(days=QUALIFICATION_TERM_DAYS),
+                "expires_at": expires,
+                "verify_at": verify_at,
                 "status": Qualification.Status.ACTIVE,
             },
         )

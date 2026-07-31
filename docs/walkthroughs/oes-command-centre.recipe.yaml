@@ -248,11 +248,22 @@ scenes:
     note: the closed row itself, not the top of the list. Closing it sinks it to the BOTTOM
       of a queue that ranks by what nobody has acted on, so scrolling to the container
       framed the rows this scene is not about and left its own payoff below the fold.
+  - kind: snapshot
+    note: 'the canonical frame: the closed row carrying the actor, the effect and the recorded reason'
   - kind: hold
-    seconds: 3.2
+    seconds: 2.6
     note: the signal is marked Closed with the actor, the effect and the recorded reason on the row,
-      it has sunk to the bottom of a queue that asks what nobody has acted on, and the headline has
-      dropped by its eighty-seven children
+      and it has sunk to the bottom of a queue that asks what nobody has acted on
+  # The headline drop is a narrated CONSEQUENCE and it was never framed — the
+  # closing line is about the figure at the top of the page stopping counting
+  # its eighty-seven children, over a frame containing only the row at the
+  # bottom. The KPI strip has to be in shot when the words arrive at it.
+  - kind: scroll_to
+    target: css:.keyfigures
+  - kind: hold
+    seconds: 3.0
+    note: and the headline stops counting its eighty-seven children — the figure moves because a
+      decision was taken, which is the whole reason it is derived rather than typed
   impressive_because: This is the only exception in the product that genuinely closes, and it closes
     against the report that opened it — the loop the previous scene started, completed on camera. A
     derived row can only be ANSWERED, because cartons on the road are not cartons on a shelf; the

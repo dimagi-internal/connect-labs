@@ -116,7 +116,7 @@
         }
       ],
       "id": "a-solicitation-reaches-only-qualified-suppliers",
-      "narrative": "Ada publishes a solicitation carrying concrete lots — sixty thousand cartons of RUTF into Maiduguri by the fifteenth of September. It is visible only to suppliers holding a live qualification in a matching category, and that is decided on the server: an unqualified supplier's page never receives the solicitation at all, rather than being shown it with the button hidden. It prevents the ordinary embarrassment of an ineligible bid that has to be excluded by hand after the fact.",
+      "narrative": "Ada publishes the next solicitation on camera. She names it, ticks the category that decides who receives it, gives it one concrete lot — sixty thousand cartons of ready-to-use therapeutic food into Maiduguri — and publishes. The row then states the reach the registry just bought her: the suppliers holding a live qualification in a matching category, the one qualified minutes ago among them. That reach is enforced on the server when the payload is built, so an unqualified supplier's page never receives the solicitation at all rather than being shown it with the button hidden. It prevents the ordinary embarrassment of an ineligible bid that has to be excluded by hand after the fact.",
       "persona": "ada",
       "provenance": "S3",
       "title": "A solicitation reaches only qualified suppliers"
@@ -130,7 +130,7 @@
         }
       ],
       "id": "bids-priced-and-scored-lot-by-lot",
-      "narrative": "Suppliers price each lot separately, and Ada compares them the same way: rows ranked by price with the reviewer's technical score beside each one. The leader on the Maiduguri lot is not the leader on Djibo, which is exactly the information a per-tender comparison would have hidden.",
+      "narrative": "Next quarter's call has just gone out; last quarter's is the one carrying bids, and that is the one Ada is deciding today. Suppliers price each lot separately, and she compares them the same way: rows ranked by price with the reviewer's technical score beside each one. The leader on the Maiduguri lot is not the leader on Djibo, which is exactly the information a per-tender comparison would have hidden.",
       "persona": "ada",
       "provenance": "S4",
       "title": "Bids priced and scored lot by lot"
@@ -170,5 +170,5 @@
     }
   ],
   "slug": "oes-supply-base",
-  "version": 2
+  "version": 3
 }

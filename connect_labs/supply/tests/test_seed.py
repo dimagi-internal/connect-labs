@@ -122,8 +122,10 @@ def test_seed_execution_world():
     # 15 corridor consignments; 10 delivered into Komadugu's sites (a partner
     # site holds stock only if something actually delivered to it) plus an
     # earlier, since-consumed wave of 10 so cohorts exist that have had time to
-    # finish a course; and 2 still on the road for the calendar's inbound column.
-    assert Shipment.objects.count() == 39
+    # finish a course; 2 still on the road for the calendar's inbound column;
+    # and 1 delivered-but-UNCOUNTED into Monguno, which is what the partner
+    # narrative's storekeeper counts on camera (see demand._awaiting_count_leg).
+    assert Shipment.objects.count() == 40
 
     # every ingestion tier is represented, so the demo shows the real gradient
     tiers = set(SupplyEvent.objects.values_list("source_tier", flat=True))

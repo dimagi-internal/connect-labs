@@ -421,15 +421,34 @@ function NewRoundModal({ ctx, onClose }) {
   );
 }
 
-/* Mirrors QUALIFICATION_TERM_DAYS in services/eoi_actions.py. Shown, not
-   enforced — the server stamps the real date; this is what the reviewer is
-   told they are about to grant. */
-const QUALIFICATION_TERM_DAYS = 540;
+/* Mirrors QUALIFICATION_TERM_MONTHS in services/eoi_actions.py. Shown, not
+   enforced — the server stamps the real date; this is what the reviewer is told
+   they are about to grant, so the two have to agree.
+
+   CALENDAR months, matching the server. The preview added 540 days while the
+   rule on the same card said "18 months": 18 x 30 days from 22 July 2026 is
+   22 January 2028 and the calendar answer is the 31st, so the date shown to the
+   reviewer was up to nine days off the date actually stored. */
+const QUALIFICATION_TERM_MONTHS = 18;
 
 function qualificationExpiry() {
-  const d = new Date();
-  d.setDate(d.getDate() + QUALIFICATION_TERM_DAYS);
-  return d.toISOString().slice(0, 10);
+  const now = new Date();
+  const target = new Date(
+    now.getFullYear(),
+    now.getMonth() + QUALIFICATION_TERM_MONTHS,
+    1,
+  );
+  // Clamp to the target month's length, so 31 August + 18 months is the end of
+  // February rather than rolling into March.
+  const lastDay = new Date(
+    target.getFullYear(),
+    target.getMonth() + 1,
+    0,
+  ).getDate();
+  target.setDate(Math.min(now.getDate(), lastDay));
+  const month = String(target.getMonth() + 1).padStart(2, '0');
+  const day = String(target.getDate()).padStart(2, '0');
+  return `${target.getFullYear()}-${month}-${day}`;
 }
 
 function ReviewModal({ ctx, submission, onClose }) {
@@ -550,13 +569,22 @@ function ReviewModal({ ctx, submission, onClose }) {
                     is derived from. "18 months" is a rule; a roster is only
                     current if somebody can see when this particular supplier
                     falls off it, and that is a date. */}
+                {/* PROSPECTIVE, because nothing has been granted yet. Qualify
+                    and Reject only set local state — the POST fires from
+                    "Record decision" — and the row asserted "qualified until
+                    22 January 2028" in the present tense over an organisation
+                    that was not qualified at all until the button below was
+                    pressed. */}
                 {decisions[cat] === 'qualify' ? (
                   <div className="muted small">
-                    qualified until {formatDate(qualificationExpiry())}
+                    will be qualified until {formatDate(qualificationExpiry())},
+                    once recorded
                   </div>
                 ) : null}
                 {decisions[cat] === 'reject' ? (
-                  <div className="muted small">no qualification granted</div>
+                  <div className="muted small">
+                    will be declined — no qualification granted
+                  </div>
                 ) : null}
               </div>
               <div className="decision-buttons">

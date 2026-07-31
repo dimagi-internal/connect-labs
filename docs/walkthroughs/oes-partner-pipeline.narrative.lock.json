@@ -48,7 +48,7 @@
         }
       ],
       "id": "inbound-supply-in-the-calendar-they-plan-in",
-      "narrative": "A shipment table sorted by arrival date is a supplier's view of the world. Zara's unit of planning is a distribution day, at a named site, with a known number of children expected — so that is the frame the inbound supply is shown in. Next Tuesday at Monguno needs eight hundred cartons for the children booked in; the consignment covering it is on the road and reads as covered. The Thursday distribution at Kukawa reads as at risk, and the one after it has nothing assigned to it at all. That is information Zara can act on, in the shape they already think in.",
+      "narrative": "A shipment table sorted by arrival date is a supplier's view of the world. Zara's unit of planning is a distribution day, at a named site, with a known number of children expected — so that is the frame the inbound supply is shown in. Monguno has five hundred and forty-eight children booked and nine hundred cartons on hand: covered. Askira has fifty-nine booked against thirty-eight cartons, and ninety-four more are on the road — arriving after that distribution, so they do not cover it. That is why a cell can be amber with a lorry already on the way, and why adding the two numbers together would tell Zara the opposite of the truth. Biu has a hundred children booked and nothing on hand at all. Three states, on the grid, in the shape they already think in.",
       "persona": "zara",
       "provenance": "S1",
       "title": "Inbound supply, in the calendar they plan in"
@@ -76,7 +76,7 @@
         }
       ],
       "id": "the-storekeeper-counts-it-and-the-short-count-is-evidence",
-      "narrative": "When the truck reaches Monguno, the storekeeper counts what came off it and records the receipt from a phone. The advice said nine hundred cartons; eight hundred and forty arrived. That difference becomes a discrepancy the moment it is recorded, and it is raised by the person standing next to the pallets. A shortfall asserted from a capital city is a dispute. The same shortfall recorded at the loading bay against the despatch advice is evidence — and it is labelled as hand-keyed, because it was.",
+      "narrative": "A truck has reached Monguno and nobody has counted it yet, so the consignment sits on Zara's receiving screen waiting for a number. The storekeeper counts what came off it and records the receipt: the advice said nine hundred cartons, and eight hundred and forty are on the floor. The discrepancy does not have to be raised — it exists the moment the count is recorded, because the app reconciles the count against the despatch advice itself. And it is recorded by the person standing next to the pallets, at the store, which is what the record says. A shortfall asserted from a capital city is a dispute. The same shortfall counted at the loading bay against the advice that was sent with the truck is evidence.",
       "persona": "zara",
       "provenance": "S3",
       "title": "The storekeeper counts it, and the short count is evidence"
@@ -116,5 +116,5 @@
     }
   ],
   "slug": "oes-partner-pipeline",
-  "version": 2
+  "version": 4
 }

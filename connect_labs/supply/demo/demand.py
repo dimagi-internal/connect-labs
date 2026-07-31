@@ -101,6 +101,20 @@ INBOUND_SITES = ["Biu Nutrition Centre", "Askira Nutrition Centre"]
 
 # The site whose consignment arrives short, and by how much. Monguno and the
 # 900/840 split are what the partner narrative's receipt scene actually says.
+#
+# The discrepancy is NO LONGER SEEDED. Scene 4's narration is a storekeeper
+# counting cartons off a truck — "the storekeeper counts what came off it and
+# records the receipt" — and a pre-created discrepancy meant that act was
+# described over a record that already existed before the camera started. So the
+# seeder now leaves this consignment DELIVERED AND UNCOUNTED: the Receiving
+# screen offers "Record the count", the walkthrough records 840 against a
+# 900-carton advice on camera, and the app's own reconciliation
+# (services/ingestion/_core._reconcile_receipt) raises the 60-short discrepancy
+# in front of the viewer.
+#
+# The command centre's discrepancy queue does NOT depend on this one — the
+# execution seeder shorts its own leg (see demo/execution.py, index == 8) — so
+# that narrative is unaffected by the count moving on camera.
 SHORT_RECEIPT_SITE = "Monguno Nutrition Centre"
 
 # Last-mile legs that leave the hub with a despatch advice rather than a phone
@@ -163,11 +177,12 @@ def seed_partner_stock(rng, nodes, sites):
         cartons = int(round(weekly * weeks))
         if cartons <= 0:
             continue
-        # The consignment the narration speaks about is the size the narration
-        # says it is. Sizing it from the burn rate like every other site left
-        # the advice reading 3,192 cartons twelve rows above a discrepancy
-        # panel reading 900 — the one screen whose subject is reconciliation,
-        # unable to reconcile itself.
+        # Monguno's historical leg is pinned to a round 900 and reconciles
+        # CLEANLY. The short count it used to carry has moved to a separate
+        # consignment that the storekeeper counts on camera (see
+        # _awaiting_count_leg) — this one is the stock Monguno is actually
+        # holding when the calendar scene renders, and the narration reads its
+        # figure off the grid.
         if name == SHORT_RECEIPT_SITE:
             cartons = SHORT_RECEIPT_DESPATCHED
 
@@ -226,19 +241,10 @@ def seed_partner_stock(rng, nodes, sites):
                 "biz_step": SupplyEvent.BizStep.RECEIVING,
                 "event_time": arrived,
                 "read_point": site,
-                # What the storekeeper COUNTED, which at the short-receipt site
-                # is not what the advice said. Recording the advised quantity
-                # here and then recording the counted one again as the short
-                # receipt banked both: Monguno held 4,032 cartons against a
-                # 3,192-carton consignment, and its weeks of cover were derived
-                # from the sum.
-                "quantity_list": [
-                    {
-                        "gtin": "",
-                        "quantity": (SHORT_RECEIPT_RECEIVED if name == SHORT_RECEIPT_SITE else cartons),
-                        "uom": "cartons",
-                    }
-                ],
+                # What the storekeeper counted — the advised quantity, since
+                # every historical leg now reconciles. The one that does NOT is
+                # counted on camera against its own advice.
+                "quantity_list": [{"gtin": "", "quantity": cartons, "uom": "cartons"}],
                 "source_tier": (SupplyEvent.SourceTier.ASN if by_advice else SupplyEvent.SourceTier.CHECKIN),
             },
         )
@@ -323,17 +329,17 @@ def seed_partner_stock(rng, nodes, sites):
             status=Shipment.Status.CONFIRMED, delivered_at=prior_arrived
         )
 
-        # One consignment arrives short, at the site the narration names, with
-        # the figures the narration speaks. The partner narrative's scene 4 is
-        # about a storekeeper counting 840 cartons off a truck whose advice
-        # said 900 — and until a deterministic check compared the narration to
-        # the captured page text, no discrepancy existed anywhere on the
-        # partner's surface at all. Four LLM judges and three iterations had
-        # not caught it, because none of them was looking at that scene.
-        if name == SHORT_RECEIPT_SITE:
-            _short_receipt(shipment, site, contract, arrived)
-
         written.append(shipment)
+
+    # The consignment whose count has NOT been taken yet.
+    #
+    # Scene 4's narrated act is the storekeeper counting cartons off a truck and
+    # recording the receipt. That act needs something left to count: with every
+    # leg already reconciled and the discrepancy pre-created, the scene was
+    # camera moves over a record that existed before the camera did.
+    awaiting = _awaiting_count_leg(nodes, sites, contract, now)
+    if awaiting is not None:
+        written.append(awaiting)
 
     # And a few consignments still on the road. The partner surface's own
     # subtitle promises "inbound supply against the distributions you have
@@ -470,35 +476,74 @@ def _seed_partner_user(partner, email):
     return user
 
 
-def _short_receipt(shipment, site, contract, arrived):
-    """A receipt that does not reconcile, raised by the receiving partner.
+def _awaiting_count_leg(nodes, sites, contract, now):
+    """A consignment that has ARRIVED but whose count has not been recorded.
 
-    The count is what the storekeeper recorded; the difference against the
-    despatch advice becomes the Discrepancy. Written through the same shapes
-    the ingestion tiers use, so it is the app's own reconciliation rather than
-    a fixture bolted beside it.
+    This is what scene 4 acts on. It is delivered, so the Receiving screen
+    offers "Record the count"; it has NO receiving event, so nothing has been
+    banked into stock and the calendar and cover figures are untouched by its
+    existence — which is also the honest reading, since a consignment nobody has
+    counted is not yet stock anyone can plan against.
+
+    It carries a real despatch advice (``asn_reference``), because the narration's
+    evidentiary point is a hand count reconciled AGAINST an advice. Counting 840
+    against this 900 on camera is what raises the discrepancy, through
+    ``ingestion._reconcile_receipt`` rather than a seeded fixture.
     """
-    from ..models import Discrepancy, SupplyEvent
+    from ..models import Milestone, Shipment
 
-    # The receipt itself was already written by the caller, recording the
-    # counted quantity. Writing a second inbound event here banked the cartons
-    # twice. This only raises the discrepancy against that receipt.
-    event = SupplyEvent.objects.filter(
-        shipment=shipment, biz_step=SupplyEvent.BizStep.RECEIVING, read_point=site
-    ).first()
-    Discrepancy.objects.update_or_create(
-        shipment=shipment,
+    site = sites.get(SHORT_RECEIPT_SITE)
+    hub = nodes.get("Maiduguri Distribution Hub")
+    if site is None or hub is None or contract is None:
+        return None
+
+    # NOT SHP-2026-09xx: that range is the per-site historical legs, and index 9
+    # is Monguno's own (the sites are walked in alphabetical order), so reusing
+    # it would update_or_create straight over the consignment that supplies the
+    # stock the calendar scene reads.
+    reference = "SHP-2026-0930"
+    departed = now - timedelta(days=2)
+    arrived = now - timedelta(hours=5)
+    shipment, _ = Shipment.objects.update_or_create(
+        reference=reference,
         defaults={
-            "event": event,
-            "expected_quantity": Decimal(SHORT_RECEIPT_DESPATCHED),
-            "received_quantity": Decimal(SHORT_RECEIPT_RECEIVED),
-            "note": (
-                "Counted off the truck at the loading bay against the despatch "
-                "advice. Recorded from a phone by the receiving storekeeper."
-            ),
-            "status": Discrepancy.Status.OPEN,
+            "contract": contract,
+            "origin": hub,
+            "destination": site,
+            "quantity": SHORT_RECEIPT_DESPATCHED,
+            "unit": "cartons",
+            "departed_at": departed,
+            "eta": arrived,
+            "asn_reference": f"ASN-{reference[-8:]}",
+            "status": Shipment.Status.DELIVERED,
+            "delivered_at": arrived,
         },
     )
+    ShipmentLine.objects.update_or_create(
+        shipment=shipment,
+        batch_lot="LOT2609C",
+        defaults={
+            "gtin": gs1.make_gtin("629123", 409),
+            "quantity": SHORT_RECEIPT_DESPATCHED,
+            "unit": "cartons",
+            "expiry_date": (now + timedelta(days=300)).date(),
+        },
+    )
+    # Departure and arrival are recorded; the COUNT is not. The milestone rail
+    # has to show the truck arriving, or the row reads as still on the road and
+    # the storekeeper has nothing to count.
+    for kind, node, when, sequence in (
+        (Milestone.Kind.DEPART, hub, departed, 0),
+        (Milestone.Kind.ARRIVE, site, arrived, 1),
+    ):
+        Milestone.objects.update_or_create(
+            shipment=shipment,
+            node=node,
+            kind=kind,
+            sequence=sequence,
+            defaults={"planned_at": when, "estimated_at": when, "actual_at": when},
+        )
+    return shipment
 
 
 def seed_distribution_plans(rng, partner, sites):

@@ -31,10 +31,30 @@ function RFPsTab({ ctx }) {
             { key: 'title', label: 'Solicitation', value: (r) => r.title },
             {
               key: 'cats',
-              label: 'Categories',
+              label: 'Visible to',
               sortable: false,
               value: () => '',
-              render: (r) => <CategoryPills categories={r.categories} />,
+              // The reach of a published solicitation, on the page of the person
+              // who published it. Server-side eligibility was completely
+              // invisible here: the row showed categories and lots, and the
+              // number of suppliers that will ever receive the call — the whole
+              // point of qualifying a registry first — appeared nowhere.
+              render: (r) => (
+                <span>
+                  <CategoryPills categories={r.categories} />
+                  <span className="cell-with-note muted small">
+                    {r.eligible_supplier_count === 1
+                      ? '1 qualified supplier'
+                      : `${formatNumber(
+                          r.eligible_supplier_count || 0,
+                        )} qualified suppliers`}
+                    <InfoNote
+                      label="who receives this solicitation"
+                      text="Organisations holding a live qualification in at least one of this solicitation's categories. Eligibility is applied when the supplier's payload is built, so anyone outside that set never receives the solicitation at all — they are not shown it with the bid button hidden. The count moves on its own as qualifications lapse."
+                    />
+                  </span>
+                </span>
+              ),
             },
             {
               key: 'countries',

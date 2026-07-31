@@ -131,8 +131,20 @@ scenes:
   - kind: scroll_to
     target: css:.page-head
   - kind: hold
-    seconds: 1.6
-    note: the scope, stated — Nigeria's own view, and its national figures
+    seconds: 1.4
+  # The scope marker itself, opened. "Scoped to Nigeria" is a claim about a
+  # filter applied off-screen, and a screenshot cannot distinguish a scoped
+  # payload from a page that happens to hold less. The chip's own note states
+  # where the boundary was drawn and that nothing on the page widens it.
+  - kind: click
+    target: css:.page-actions .infonote-btn
+    note: the scope marker, opened on camera — the one artifact that can carry a server-side claim
+  - kind: hold
+    seconds: 3.0
+    note: applied at source, from this account's own country assignment
+  - kind: click
+    target: css:.page-actions .infonote-btn
+    note: closed, so it does not sit over the table in the frames that follow
   - kind: scroll_to
     target: css:.card:has-text('Who is delivering what, where') .card-head
     note: the consignment list IS the proof of server-side scoping — framed with its header row
@@ -176,8 +188,15 @@ scenes:
     the observed recovery rate and the discharge breakdown beneath, and one delivered batch followed through
     to a child's MUAC series climbing out of the red.
   actions:
+  # An explicit settle on the funder page before anything is framed. The scene
+  # opened on the PREVIOUS persona's scroll position, so its first frame was
+  # stale Nigeria-view state under funder narration.
   - kind: wait_for
     target: css:.page
+  - kind: wait_for
+    target: css:.two-figures
+  - kind: hold
+    seconds: 1.2
   - kind: scroll_to
     target: css:.card:has-text('Children treated')
   - kind: hold
@@ -187,6 +206,16 @@ scenes:
     target: css:.two-figures
   - kind: hold
     seconds: 1.8
+  # The discharge table the narration names — defaulters and inpatient
+  # transfers "shown alongside" — was never scrolled into frame, so the beat
+  # about the Sphere band landed on the tiles above it.
+  - kind: scroll_to
+    target: css:.card:has-text('Children treated') .data-table
+  - kind: hold
+    seconds: 2.6
+    note: every discharge category, including the zeroes — the Sphere band the sector grades on
+  - kind: scroll_to
+    target: css:.figure-drill
   - kind: click
     target: css:.figure-drill button
     note: follow the batch to the children behind the gap. The endpoint and the chart both
@@ -194,10 +223,19 @@ scenes:
       human image in this narrative had no route to the funder who narrates it.
   - kind: wait_for
     target: css:.modal
+  - kind: wait_for
+    target: css:.outcome-row
+  - kind: hold
+    seconds: 1.4
+  # The focused child leads the list and is the one with the largest climb; the
+  # batch is now selected for having recorded recoveries in it (see
+  # tab_funder.TwoFiguresAndTheGap), so the narrated "out of the red" has a
+  # series that actually crosses 125 mm.
+  - kind: snapshot
+    note: 'the canonical frame: one child''s arm circumference climbing out of the red, with the
+      sample size stated beside it rather than a rate implied from it'
   - kind: hold
     seconds: 3.2
-    note: one child's arm circumference climbing out of the red, with the sample size stated
-      beside it rather than a rate implied from it
   impressive_because: '"Children treated" is almost always cartons divided by a treatment factor — arithmetic
     presented as an outcome. The gap between that and a measured recovery is the most useful thing on
     the screen, and a funder who can see it is being told the truth.'
