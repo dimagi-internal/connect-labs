@@ -115,10 +115,24 @@ RENDER_CODE = r"""function WorkflowUI({ definition, workers }) {
 
     // "Yesterday" in Africa/Lagos (UTC+1, no DST) -- matches flw_daily_indicator_report's
     // own definition of the calendar day a run covers, since today's report hasn't run yet.
-    var dayColumns = React.useMemo(function () {
+    // This is the default LAST column when the user hasn't picked a reference date below.
+    var autoEndDate = React.useMemo(function () {
         var now = new Date();
         var watNow = new Date(now.getTime() + 60 * 60 * 1000);
         var end = new Date(Date.UTC(watNow.getUTCFullYear(), watNow.getUTCMonth(), watNow.getUTCDate() - 1));
+        return end.toISOString().slice(0, 10);
+    }, []);
+
+    // Reference-date filter: the user picks a single date (e.g. a Sunday) and
+    // the grid always shows a FIXED-size window of NUM_DAYS days ending on that
+    // date -- the column count never changes, only which days it covers.
+    var _endDate = React.useState(null); // null = use autoEndDate (today's default)
+    var endDate = _endDate[0];
+    var setEndDate = _endDate[1];
+    var effectiveEndDate = endDate || autoEndDate;
+
+    var dayColumns = React.useMemo(function () {
+        var end = new Date(effectiveEndDate + "T00:00:00Z");
         var days = [];
         for (var i = NUM_DAYS - 1; i >= 0; i--) {
             var d = new Date(end);
@@ -126,7 +140,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, workers }) {
             days.push(d.toISOString().slice(0, 10));
         }
         return days;
-    }, []);
+    }, [effectiveEndDate]);
 
     var earliestNeeded = dayColumns[0];
 
@@ -211,6 +225,16 @@ RENDER_CODE = r"""function WorkflowUI({ definition, workers }) {
             </div>
 
             <div className="bg-white rounded-lg border p-4 flex flex-wrap gap-4 items-center">
+                <div>
+                    <div className="text-xs font-semibold text-gray-500 uppercase mb-1">Week Ending</div>
+                    <input
+                        type="date"
+                        className="border rounded px-2 py-1 text-sm"
+                        value={effectiveEndDate}
+                        max={autoEndDate}
+                        onChange={function (e) { setEndDate(e.target.value || null); }}
+                    />
+                </div>
                 <div>
                     <div className="text-xs font-semibold text-gray-500 uppercase mb-1">LLO</div>
                     <select
@@ -412,7 +436,7 @@ function indicatorDetailsForDay(flw, thresholds) {
             return {
                 key: def.key,
                 label: def.label,
-                value: evaluable ? (totalForms + " forms / " + spanMin + "min") : null,
+                value: evaluable ? (spanMin + " min") : null,
                 threshold: thresholdDisplayFor(def, thresholds),
                 evaluable: evaluable,
                 tripped: isTripped,
@@ -454,44 +478,66 @@ function formatShortDate(isoDate) {
 function InfoTooltip({ text }) {
     // Native title= doesn't render reliably inside this iframe/component context
     // (same gotcha the trend dashboard hit building workflow 4593's metric
-    // tooltips) -- use a custom hover popover positioned via getBoundingClientRect
-    // instead. See flw_audit_trend_dashboard.py's own InfoTooltip for precedent.
+    // tooltips). An earlier version of this popover rendered as a React child
+    // positioned via `position: fixed`, but inside this table's sticky/
+    // overflow-x-auto columns, `position: fixed` descendants get trapped in the
+    // sticky ancestor's own stacking context and painted UNDER later rows'
+    // sticky cells -- only a sliver of the popup peeked out. Rendering the
+    // popup as a plain DOM node appended directly to document.body sidesteps
+    // that entirely: it's a body-level sibling of the table, so it always
+    // paints on top, and its position is clamped to the viewport so it's never
+    // cut off at the right edge either.
     if (!text) return null;
-    var _open = React.useState(false);
-    var open = _open[0];
-    var setOpen = _open[1];
     var iconRef = React.useRef(null);
-    var _pos = React.useState({ top: 0, left: 0 });
-    var pos = _pos[0];
-    var setPos = _pos[1];
+    var elRef = React.useRef(null);
+
+    function removeEl() {
+        if (elRef.current) {
+            elRef.current.remove();
+            elRef.current = null;
+        }
+    }
 
     function show() {
-        if (iconRef.current) {
-            var rect = iconRef.current.getBoundingClientRect();
-            setPos({ top: rect.bottom + 6, left: rect.left });
-        }
-        setOpen(true);
+        removeEl();
+        if (!iconRef.current) return;
+        var rect = iconRef.current.getBoundingClientRect();
+        var width = 280;
+        var el = document.createElement("div");
+        el.textContent = text;
+        el.style.position = "fixed";
+        el.style.zIndex = "9999";
+        el.style.maxWidth = width + "px";
+        el.style.background = "#111827";
+        el.style.color = "#fff";
+        el.style.fontSize = "12px";
+        el.style.fontWeight = "400";
+        el.style.textTransform = "none";
+        el.style.borderRadius = "4px";
+        el.style.padding = "6px 8px";
+        el.style.boxShadow = "0 4px 10px rgba(0,0,0,0.3)";
+        el.style.pointerEvents = "none";
+        el.style.top = (rect.bottom + 6) + "px";
+        var left = rect.left;
+        var maxLeft = window.innerWidth - width - 10;
+        if (left > maxLeft) left = Math.max(10, maxLeft);
+        el.style.left = left + "px";
+        document.body.appendChild(el);
+        elRef.current = el;
     }
-    function hide() { setOpen(false); }
+
+    React.useEffect(function () {
+        return removeEl;
+    }, []);
 
     return (
-        <span className="relative inline-block ml-1 align-middle">
-            <span
-                ref={iconRef}
-                onMouseEnter={show}
-                onMouseLeave={hide}
-                className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-gray-200 text-gray-600 text-[10px] font-bold cursor-help"
-            >
-                i
-            </span>
-            {open && (
-                <span
-                    style={{ position: "fixed", top: pos.top, left: pos.left, zIndex: 50, maxWidth: "280px" }}
-                    className="bg-gray-900 text-white text-xs rounded px-2 py-1.5 shadow-lg normal-case font-normal"
-                >
-                    {text}
-                </span>
-            )}
+        <span
+            ref={iconRef}
+            onMouseEnter={show}
+            onMouseLeave={removeEl}
+            className="relative inline-flex items-center justify-center w-4 h-4 ml-1 align-middle rounded-full bg-gray-200 text-gray-600 text-[10px] font-bold cursor-help"
+        >
+            i
         </span>
     );
 }

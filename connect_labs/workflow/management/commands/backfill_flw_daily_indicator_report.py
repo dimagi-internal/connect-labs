@@ -1,10 +1,16 @@
 """One-off backfill for the flw_daily_indicator_report template's daily runs.
 
-Computes and completes one WorkflowRun per opportunity, per day, for the N
-most recent completed WAT (Africa/Lagos, UTC+1) calendar days before now --
-reusing run_default verbatim (imported directly, not reimplemented) so
-backfilled runs and future scheduler-fired runs use identical logic. Mirrors
-backfill_flw_weekly_audit_report.py at daily instead of weekly granularity.
+Computes and completes one WorkflowRun per opportunity, per day, for N
+completed WAT (Africa/Lagos, UTC+1) calendar days ending on --end-date
+(default: yesterday WAT) -- reusing run_default verbatim (imported directly,
+not reimplemented) so backfilled runs and future scheduler-fired runs use
+identical logic. Mirrors backfill_flw_weekly_audit_report.py at daily instead
+of weekly granularity.
+
+--end-date lets a later backfill reach further back in time without redoing
+days an earlier backfill already covered, e.g. first `--days 14` covers the
+most recent 14 days, then a later `--days 40 --end-date <15-days-ago>` fills
+in the older gap behind it.
 
 Mints its Connect access token from the given owner's persisted
 UserConnectToken (get_valid_access_token), the same mechanism
@@ -27,10 +33,13 @@ against production, e.g.:
 
     backfill_flw_daily_indicator_report --definition 8061 --program 176 \\
         --owner-email wvink@dimagi.com --days 14 --replace-existing
+
+    backfill_flw_daily_indicator_report --definition 8061 --program 176 \\
+        --owner-email wvink@dimagi.com --days 40 --end-date 2026-07-16
 """
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from django.core.management.base import BaseCommand, CommandError
 
@@ -59,7 +68,15 @@ class Command(BaseCommand):
             "--days",
             type=int,
             default=14,
-            help="Number of most-recent completed WAT calendar days to backfill (default 14).",
+            help="Number of completed WAT calendar days to backfill, ending on --end-date (default 14).",
+        )
+        parser.add_argument(
+            "--end-date",
+            type=str,
+            default=None,
+            help="ISO date (YYYY-MM-DD, WAT calendar day) for the most recent day to backfill "
+            "(default: yesterday WAT). Use with --days to target an explicit older range, e.g. "
+            "--end-date 2026-07-16 --days 40, without re-touching more-recent days already backfilled.",
         )
         parser.add_argument(
             "--replace-existing",
@@ -115,17 +132,23 @@ class Command(BaseCommand):
         if definition is None:
             raise CommandError(f"Definition {options['definition']} not found under program {options['program']}")
 
-        now = datetime.now(timezone.utc)
-        today_wat = (now + WAT_OFFSET).date()
-        yesterday_wat_midnight_utc = (
-            datetime(today_wat.year, today_wat.month, today_wat.day, tzinfo=timezone.utc)
-            - WAT_OFFSET
-            - timedelta(days=1)
+        if options["end_date"]:
+            try:
+                end_date_wat = date.fromisoformat(options["end_date"])
+            except ValueError:
+                raise CommandError(f"--end-date must be YYYY-MM-DD, got {options['end_date']!r}")
+        else:
+            now = datetime.now(timezone.utc)
+            today_wat = (now + WAT_OFFSET).date()
+            end_date_wat = today_wat - timedelta(days=1)
+
+        end_date_midnight_utc = (
+            datetime(end_date_wat.year, end_date_wat.month, end_date_wat.day, tzinfo=timezone.utc) - WAT_OFFSET
         )
 
         days = options["days"]
         for i in range(days):
-            window_start = yesterday_wat_midnight_utc - timedelta(days=i)
+            window_start = end_date_midnight_utc - timedelta(days=i)
             window_end = window_start + timedelta(days=1)
             period_start_iso = window_start.date().isoformat()
 
