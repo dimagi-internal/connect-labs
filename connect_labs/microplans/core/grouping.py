@@ -456,10 +456,18 @@ def _bfs_adjacency(
     #   2. any WAG still under TINY_WAG_THRESHOLD merges into its nearest other WAG,
     #      if that WAG has room under both target_buildings and max_buildings.
     clusters_with_seed = _reassign_isolated_wa_to_nearest_wag(
-        clusters_with_seed, by_id, geoms_3857, wa_ids, adjacency, resolved_max, resolved_reach, barriers_3857
+        clusters_with_seed, by_id, geoms_3857, wa_ids, adjacency, tree, resolved_max, resolved_reach, barriers_3857
     )
     clusters_with_seed = _merge_tiny_wags_into_nearest_wag(
-        clusters_with_seed, by_id, geoms_3857, target_buildings, resolved_max, resolved_reach, barriers_3857
+        clusters_with_seed,
+        by_id,
+        geoms_3857,
+        wa_ids,
+        tree,
+        target_buildings,
+        resolved_max,
+        resolved_reach,
+        barriers_3857,
     )
 
     # ---- assign labels ("{WARD-prefix-}group-N", N restarting at 1 per ward — see
@@ -1079,6 +1087,7 @@ def _reassign_isolated_wa_to_nearest_wag(
     geoms_3857: dict[str, object],
     wa_ids: list[str],
     adjacency: dict[str, list],
+    tree,
     max_buildings: int,
     max_reach_m: float,
     barriers_3857=None,
@@ -1138,17 +1147,22 @@ def _reassign_isolated_wa_to_nearest_wag(
         if cid is None or cid not in active or wid not in active[cid]:
             continue  # already moved earlier in this pass
         own_geom = geoms_3857[wid]
-        # Every other cell, nearest first — the first cell we see belonging to a
-        # given WAG is necessarily that WAG's closest cell to this island.
-        others = sorted(
-            (w for w in wa_ids if w != wid and not crosses_barrier(wid, w)),
-            key=lambda w: (own_geom.distance(geoms_3857[w]), w),
-        )
+        # Only candidates within max_reach_m (via the spatial index, not a scan
+        # of the whole dataset), nearest first — the first cell we see
+        # belonging to a given WAG is necessarily that WAG's closest cell here.
+        candidates = []
+        for idx in tree.query(own_geom.buffer(max_reach_m), predicate="intersects"):
+            w = wa_ids[idx]
+            if w == wid:
+                continue
+            dist = own_geom.distance(geoms_3857[w])
+            if dist > max_reach_m or crosses_barrier(wid, w):
+                continue
+            candidates.append((dist, w))
+        candidates.sort(key=lambda t: (t[0], t[1]))
         seen_wags: set[int] = set()
         best_cid = None
-        for w in others:
-            if own_geom.distance(geoms_3857[w]) > max_reach_m:
-                break  # sorted ascending — everything from here is even farther
+        for _dist, w in candidates:
             other_cid = cell_owner.get(w)
             if other_cid is None or other_cid in seen_wags:
                 continue
@@ -1177,6 +1191,8 @@ def _merge_tiny_wags_into_nearest_wag(
     clusters_with_seed: list[tuple[str, list[str]]],
     by_id: dict[str, dict],
     geoms_3857: dict[str, object],
+    wa_ids: list[str],
+    tree,
     target_buildings: int,
     max_buildings: int,
     max_reach_m: float,
@@ -1232,8 +1248,10 @@ def _merge_tiny_wags_into_nearest_wag(
         best = None  # (dist, other_cid)
         for wid in sorted(active[cid]):
             geom = geoms_3857[wid]
-            for other_wid, other_cid in cell_owner.items():
-                if other_cid == cid or crosses_barrier(wid, other_wid):
+            for idx in tree.query(geom.buffer(max_reach_m), predicate="intersects"):
+                other_wid = wa_ids[idx]
+                other_cid = cell_owner.get(other_wid)
+                if other_cid is None or other_cid == cid or crosses_barrier(wid, other_wid):
                     continue
                 dist = geom.distance(geoms_3857[other_wid])
                 if dist > max_reach_m:
