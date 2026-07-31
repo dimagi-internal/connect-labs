@@ -205,6 +205,20 @@ def test_supplier_round_list_shows_open_only(supplier_client):
     assert ids == [open_round.id]
 
 
+def test_renewed_certification_wins_the_live_column(supplier_client):
+    """Two certs of one type (a renewal beside the original) must serialize in
+    insertion order, so the frozen-vs-live panel's per-type last-wins dedupe
+    deterministically shows the renewal. cert_type-only ordering left the tie
+    in undefined database order — the live column showed the original or the
+    renewal by coin flip, and the walkthrough's divergence beat flickered."""
+    client, member = supplier_client
+    f.CertificationFactory(org=member.org, cert_type="UNICEF RUTF approval", issuer="UNICEF Supply Division")
+    f.CertificationFactory(org=member.org, cert_type="UNICEF RUTF approval", issuer="UNICEF Supply Division (renewed)")
+    body = client.get("/supply/api/bootstrap/").json()
+    same_type = [c for c in body["org"]["certifications"] if c["cert_type"] == "UNICEF RUTF approval"]
+    assert [c["issuer"] for c in same_type] == ["UNICEF Supply Division", "UNICEF Supply Division (renewed)"]
+
+
 def test_registry_filters(admin_client):
     client, _user = admin_client
     ng = f.SupplierOrgFactory(legal_name="Savanna Nutrients", country="NG")
