@@ -22,6 +22,33 @@ def _qualify(org, category="rutf", days=400):
     )
 
 
+def test_rfp_and_lot_created_with_dates_serialize_back(admin_client):
+    """Same class as the round-create 500: an ISO date string passed raw into
+    objects.create() blew up the response serializer's .isoformat()."""
+    client, _user = admin_client
+    resp = _post(
+        client,
+        "/supply/api/rfps/",
+        {"title": "Dated tender", "categories": ["rutf"], "countries": ["NG"], "bid_deadline": "2026-09-01"},
+    )
+    assert resp.status_code == 200
+    rid = resp.json()["rfp"]["id"]
+    resp = _post(
+        client,
+        f"/supply/api/rfps/{rid}/lots/",
+        {
+            "description": "1,000 cartons RUTF delivered to Maiduguri",
+            "category": "rutf",
+            "quantity": 1000,
+            "unit": "cartons",
+            "delivery_country": "NG",
+            "delivery_place": "Maiduguri",
+            "delivery_deadline": "2026-10-01",
+        },
+    )
+    assert resp.status_code == 200
+
+
 def test_unqualified_org_cannot_see_or_bid(supplier_client):
     client, member = supplier_client
     rfp = f.RFPFactory(categories=["rutf"], status=RFP.Status.PUBLISHED)

@@ -11,6 +11,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from ..models import RFP, Appropriation, Award, Bid, BidScore, Category, Contract, Lot, LotBid, Qualification
+from .eoi_actions import parse_iso_date
 from .org_actions import ActionError
 
 VALID_CATEGORIES = {c.value for c in Category}
@@ -58,7 +59,7 @@ def create_rfp(user, data):
         brief=(data.get("brief") or "").strip(),
         categories=categories,
         countries=[c.upper() for c in (data.get("countries") or [])],
-        bid_deadline=data.get("bid_deadline") or None,
+        bid_deadline=parse_iso_date(data, "bid_deadline"),
         created_by=user,
     )
 
@@ -81,7 +82,7 @@ def add_lot(rfp, data):
         unit=(data.get("unit") or "cartons").strip(),
         delivery_country=(data.get("delivery_country") or "").upper(),
         delivery_place=(data.get("delivery_place") or "").strip(),
-        delivery_deadline=data.get("delivery_deadline") or None,
+        delivery_deadline=parse_iso_date(data, "delivery_deadline"),
     )
 
 

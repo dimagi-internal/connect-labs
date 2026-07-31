@@ -22,6 +22,20 @@ ROUND_TRANSITIONS = {
 VALID_CATEGORIES = {c.value for c in Category}
 
 
+def parse_iso_date(data, field):
+    """A date off the JSON wire, or None. Passing the raw string through to
+    objects.create() leaves a str on the in-memory instance, and the
+    serializer's .isoformat() then 500s on the very request that created the
+    row — the row lands in the DB and the caller sees only "Request failed"."""
+    value = data.get(field) or None
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except (TypeError, ValueError):
+        raise ActionError(f"{field} must be ISO format (YYYY-MM-DD)")
+
+
 def create_round(user, data):
     title = (data.get("title") or "").strip()
     if not title:
@@ -34,8 +48,8 @@ def create_round(user, data):
         title=title,
         brief=(data.get("brief") or "").strip(),
         categories=categories,
-        opens_at=data.get("opens_at") or None,
-        closes_at=data.get("closes_at") or None,
+        opens_at=parse_iso_date(data, "opens_at"),
+        closes_at=parse_iso_date(data, "closes_at"),
         created_by=user,
     )
 
