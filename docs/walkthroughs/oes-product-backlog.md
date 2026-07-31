@@ -1,5 +1,33 @@
 # OES supply — product-defect backlog
 
+> **Status, 31 July 2026 (second update — post act-fidelity cycle).** Since the
+> banner below was written, four more product PRs landed and deployed:
+>
+> - **#1093 + #1096** — sticky table headers never rode the scroll: `.table-wrap`'s
+>   `overflow-x: auto` made the wrap the sticky scrollport, so the topbar offset
+>   parked every header row 54px INTO its table, over row one, eating clicks
+>   (an Open-round and an Award button among them). Offset removed; the original
+>   sticky-header finding is REOPENED below (see the money-to-child scene 4 entry).
+> - **#1095** — creating a round/tender/lot with dates 500ed on its own success
+>   response (raw ISO strings on the in-memory instance broke `.isoformat()`),
+>   silently stacking orphan rows per retry.
+> - **#1097** — a renewed certificate won the frozen-vs-live panel's live column
+>   by coin flip (`cert_type`-only ordering left same-type ties in undefined
+>   database order).
+> - **#1094** — the seeder no longer pre-creates the open EOI round, its
+>   submissions, or the post-snapshot certificate renewal: the walkthrough now
+>   performs those acts on camera (Ada declares and opens 2026-B, Amina applies
+>   and renews, Tomas decides), which is what surfaced #1095 and #1097.
+>
+> A fresh dual-judge pass over all four re-rendered arcs (runs
+> `oes-*-2026-07-31-*`, verdicts + 52 routed findings in each run dir's
+> `verdict-concept.yaml` / `design_findings.json`) produced a new tranche of
+> PRODUCT findings, appended at the end of this file, and three narrative-level
+> forks that are deliberately parked for the concept_change gate (supply-base
+> scene 6's publish act; partner-pipeline scene 2's narrated examples vs the
+> seeded calendar and scene 4's record-the-count act; money-to-child scene 2's
+> narrated fourth stage / unattributable band).
+
 > **Status, 31 July 2026.** Seven batches (PRs #1081, #1082, #1084, #1085, #1086,
 > #1087, #1088) closed the substantive product findings below. **49 fixes were
 > verified against the deployed app** at `labs.connect.dimagi.com` after a
@@ -564,3 +592,74 @@ Multiple product-side presentation gaps in one frame: the left rail's panel back
 Cross-scene data-coherence note (orchestrator observation, corroborated by the scene-6 judge's 'the hero row's LOTS cell mixes units'): road-transport lots are denominated two different ways in the same list. 'Sudan Corridor Logistics 2026' (category Road transport) carries '40,000 cartons -> Khartoum', while the Q3 tender's road-transport lot carries '6 truck-months -> Maiduguri'. The prior fix that made the Sudan lot read 'cartons' is applied and consistent within that row, but it now reads as a haulage tender priced per carton beside a haulage lot priced per truck-month, and the row gives no lot-to-category mapping — the very attribute eligibility is decided on.
 
 
+
+## 31 July judge pass — new PRODUCT findings (mechanical unless noted)
+
+Harvested from oes-supply-base-2026-07-31-003, oes-partner-pipeline-2026-07-31-001,
+oes-command-centre-2026-07-31-001, oes-money-to-child-2026-07-31-001. Full detail
+with per-scene routing in each run dir's `design_findings.json`. Scripting-level
+findings were fixed in the recipes the same day and are not repeated here.
+
+### money-to-child · Sankey labels unreadable · mechanical
+
+Partner names and amounts ('$2.0M', '$1.9M', '$872k', '$128k') render directly on
+the dark navy nodes — effectively unreadable and partially clipped, in the funding
+chart's load-bearing middle column.
+
+**Proposed fix:** contrast-safe labels inside the node (white on dark) or offset
+clear of the rectangle with collision avoidance.
+
+### money-to-child · InfoNote popover truncates its own method · mechanical
+
+The cost-per-child method popover clips its text mid-sentence ('…CONFIRMED
+deliveries only, so') with no expand affordance, while occluding the paragraph
+beneath it — the scene's hero disclosure is illegible at the moment it opens.
+
+**Proposed fix:** size the infonote body to content (drop/raise max-height) and
+offset it below its trigger line.
+
+### money-to-child · DELIVERED renders 'N / — cartons' · mechanical
+
+All four contract rows show a ratio with a missing denominator.
+
+**Proposed fix:** populate the contracted-carton denominator, or render a plain
+count until it exists. Also draw the per-contract stage bars in the labeled
+OBLIGATED → DISBURSED → DELIVERED order with empty tracks for zero stages.
+
+### supply-base · qualification arithmetic · options
+
+'18 months' grants Jan 22 2028 from Jul 31 2026 (540 days, not calendar months →
+Jan 31), and the pass silently outlives the UNICEF certificate it visibly rests
+on (expires Jul 4 2027). Pick: calendar-month arithmetic, and either cap the
+expiry at the load-bearing certificate's or flag re-verification at cert expiry.
+
+### supply-base · pre-commit decision phrasing · mechanical
+
+The decision row asserts 'qualified until Jan 22, 2028' in the present tense
+before Record decision commits. Phrase prospectively until committed.
+
+### supply-base · eligibility is invisible · mechanical
+
+Server-side solicitation scoping has no positive artifact: add a per-solicitation
+'Visible to N qualified suppliers (RUTF)' indicator with an 'i' defining the rule.
+
+### command-centre · small-copy cluster · mechanical
+
+'1 days behind' (twice); the top exception card repeats its children count
+verbatim in title and sub-line; partner-shortfall recommendation names expedite
+with no expedite affordance on that card type; absorbed-delay cards recommend
+actions their own text says are unnecessary; the same fact in two date formats on
+adjacent lines; IPC legend still occludes the Mapbox attribution; dead white band
+under the network map.
+
+### partner-pipeline · calendar legend and criteria · mechanical
+
+The covered/at-risk/uncovered color key lives at the end of a prose paragraph
+below the fold, and the amber-vs-red criterion is undefined on screen. Inline
+three-chip legend on the card header; define the bands; move prose to 'i'.
+
+### partner-pipeline · MUAC chart row consistency · mechanical
+
+Band labels, visit-count and delta annotations render on the highlighted row
+only; sparklines carry no time axis; '2 visits over 1 week' wraps one word per
+line; the last row clips mid-badge.
