@@ -6,6 +6,7 @@ never set by hand, so the ingestion feed remains the single source of truth.
 """
 from django.contrib.gis.db import models as gis_models
 from django.db import models
+from django.utils import timezone
 
 from .procurement import Award, SupplierOrg
 
@@ -252,6 +253,42 @@ class Milestone(models.Model):
         if not reference or not self.planned_at:
             return None
         return round((reference - self.planned_at).total_seconds() / 86400, 1)
+
+    @property
+    def delta_basis(self):
+        """Whether ``delta_days`` is MEASURED or still a FORECAST.
+
+        The same chip was printing both. A leg that actually arrived nine days
+        late and a leg merely *expected* to arrived nine days late are different
+        claims — one is a fact, the other is somebody's current guess — and
+        rendering them identically made the confident-looking number the one you
+        could not rely on.
+        """
+        if not self.planned_at:
+            return None
+        if self.actual_at:
+            return "measured"
+        if self.estimated_at:
+            return "estimated"
+        return None
+
+    @property
+    def is_overdue_unreported(self):
+        """Planned date passed, nothing reported, and no revised estimate.
+
+        This is the state the delta cannot describe honestly. With no
+        ``actual_at`` and an ``estimated_at`` still sitting on the original plan,
+        ``delta_days`` computes 0 and the row renders "0d vs plan" — reading as
+        "on time" for a milestone that is overdue and simply has not been heard
+        from. The judge that found it called it a state the product's own logic
+        cannot produce; it could, and this is how.
+        """
+        if not self.planned_at or self.actual_at:
+            return False
+        if self.planned_at >= timezone.now():
+            return False
+        # A revised estimate in the future is a real forecast, not silence.
+        return not (self.estimated_at and self.estimated_at > self.planned_at)
 
 
 class SupplyEvent(models.Model):

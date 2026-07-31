@@ -34,6 +34,11 @@ def milestone_dict(milestone):
         "estimated_at": milestone.estimated_at.isoformat() if milestone.estimated_at else None,
         "actual_at": milestone.actual_at.isoformat() if milestone.actual_at else None,
         "delta_days": milestone.delta_days,
+        # Whether that delta is a fact or a forecast, and whether the milestone
+        # is simply overdue and unheard-from. Rendering all three the same way
+        # made "0d vs plan" appear on a leg that was late and silent.
+        "delta_basis": milestone.delta_basis,
+        "overdue_unreported": milestone.is_overdue_unreported,
     }
 
 
