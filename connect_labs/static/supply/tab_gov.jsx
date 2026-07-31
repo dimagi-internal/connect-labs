@@ -247,7 +247,14 @@ function GovTab({ ctx }) {
               },
               {
                 key: 'coverage',
-                label: 'Coverage of need',
+                // "Coverage of need" reads as children reached. It is not: the
+                // numerator is everything confirmed INTO the district, including
+                // stock still sitting in a district hub — 93% of it on the seeded
+                // world, with Gombe and Kassala both reading 91% while zero
+                // cartons had been handed to a child. The figure is genuinely
+                // useful; the words were wrong, so the words changed and the
+                // missing companion figure sits beside it.
+                label: 'Supply positioned',
                 value: (r) => r.coverage_percent || 0,
                 render: (r) =>
                   r.coverage_percent === null ? (
@@ -256,6 +263,19 @@ function GovTab({ ctx }) {
                     <Badge tone={coverageTone(r.coverage_percent)}>
                       {r.coverage_percent}%
                       {r.coverage_percent > 100 ? ' · over' : ''}
+                    </Badge>
+                  ),
+              },
+              {
+                key: 'dispensed',
+                label: 'Reached a child',
+                value: (r) => r.dispensed_percent || 0,
+                render: (r) =>
+                  r.dispensed_percent === null ? (
+                    <Badge tone="muted">no data</Badge>
+                  ) : (
+                    <Badge tone={coverageTone(r.dispensed_percent)}>
+                      {r.dispensed_percent}%
                     </Badge>
                   ),
               },
@@ -290,6 +310,14 @@ function GovTab({ ctx }) {
             : 'response window'}
           , not against a single month. Hover a district name for how its
           caseload was estimated. All figures in this environment are synthetic.
+        </p>
+        <p className="muted small method-note">
+          Two questions, not one. <strong>Supply positioned</strong> is courses
+          confirmed into the district against its SAM caseload — severe acute
+          malnutrition — and counts stock that has arrived, including stock
+          still held in a district hub. <strong>Reached a child</strong> counts
+          only courses a site recorded handing out. Food in a warehouse is not
+          treatment, so the two are reported apart rather than merged.
         </p>
       </Card>
     </Page>

@@ -232,7 +232,11 @@ function FunderTab({ ctx }) {
               },
               {
                 key: 'coverage',
-                label: 'Coverage of need',
+                // See services/coverage._dispensed_cartons_by_district: the
+                // numerator includes stock still in a district hub, which on the
+                // seeded world is 93% of it. Gombe and Kassala both read 91%
+                // while zero cartons had reached a child.
+                label: 'Supply positioned',
                 value: (r) => r.coverage_percent || 0,
                 render: (r) =>
                   r.coverage_percent === null ? (
@@ -255,6 +259,19 @@ function FunderTab({ ctx }) {
                   ),
               },
               {
+                key: 'dispensed',
+                label: 'Reached a child',
+                value: (r) => r.dispensed_percent || 0,
+                render: (r) =>
+                  r.dispensed_percent === null ? (
+                    <Badge tone="muted">no data</Badge>
+                  ) : (
+                    <Badge tone={coverageTone(r.dispensed_percent)}>
+                      {r.dispensed_percent}%
+                    </Badge>
+                  ),
+              },
+              {
                 key: 'uncovered',
                 label: 'Still uncovered',
                 value: (r) => r.uncovered_children,
@@ -269,12 +286,19 @@ function FunderTab({ ctx }) {
           />
         )}
         <p className="muted small method-note">
-          Coverage is courses delivered against the district's SAM caseload —
-          SAM being severe acute malnutrition, the condition this food treats.
-          Banding: at or above 80% reads covered, 50–79% partial, below 50%
-          thin. Above 100% is marked <em>over</em> rather than green: more
-          courses have been delivered than the caseload calls for, which is a
-          positioning question and not a better outcome than 91%.
+          Two different questions, side by side.{' '}
+          <strong>Supply positioned</strong> is courses confirmed into the
+          country against its SAM caseload — SAM being severe acute
+          malnutrition, the condition this food treats. It counts stock that has
+          arrived, including stock still held in a district hub, so it answers
+          &ldquo;is the food there&rdquo;. <strong>Reached a child</strong>{' '}
+          counts only courses a site recorded handing out. The two are far apart
+          on purpose: food in a warehouse is not treatment, and a figure that
+          merges them cannot tell a funder which problem they have. Banding for
+          both: at or above 80% covered, 50–79% partial, below 50% thin. Above
+          100% positioned is marked <em>over</em> rather than green — more
+          courses than the caseload calls for is a positioning question, not a
+          better outcome than 91%.
         </p>
       </Card>
 

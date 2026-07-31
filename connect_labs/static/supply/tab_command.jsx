@@ -389,7 +389,10 @@ function CommandTab({ ctx }) {
               },
               {
                 key: 'coverage',
-                label: 'Coverage',
+                // Not "Coverage": the numerator is everything confirmed INTO the
+                // district, hub stock included — 93% of it on the seeded world.
+                // See services/coverage._dispensed_cartons_by_district.
+                label: 'Supply positioned',
                 value: (r) => r.coverage_percent || 0,
                 render: (r) =>
                   r.coverage_percent === null ? (
@@ -398,6 +401,19 @@ function CommandTab({ ctx }) {
                     <Badge tone={coverageTone(r.coverage_percent)}>
                       {r.coverage_percent}%
                       {r.coverage_percent > 100 ? ' · over' : ''}
+                    </Badge>
+                  ),
+              },
+              {
+                key: 'dispensed',
+                label: 'Reached a child',
+                value: (r) => r.dispensed_percent || 0,
+                render: (r) =>
+                  r.dispensed_percent === null ? (
+                    <Badge tone="muted">no data</Badge>
+                  ) : (
+                    <Badge tone={coverageTone(r.dispensed_percent)}>
+                      {r.dispensed_percent}%
                     </Badge>
                   ),
               },

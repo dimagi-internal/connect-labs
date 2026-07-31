@@ -1135,3 +1135,53 @@ def test_discharge_breakdown_separates_discharged_from_still_in_treatment():
     if in_treatment:
         assert summary["children_in_treatment"] == in_treatment
         assert in_treatment + observed == sum(breakdown.values())
+
+
+def test_coverage_reports_supply_positioned_and_reached_separately():
+    """ "Coverage of need" counted stock sitting in a district hub.
+
+    The numerator is everything confirmed INTO a district, which includes cartons
+    that have arrived and not moved. On the seeded world that was 54,255 of the
+    58,251 courses the figure divided by — 93% — and four of five districts showed
+    substantial "coverage of need" with literally zero cartons handed to a child.
+    Gombe and Kassala both read 91%.
+
+    The computation is useful and unchanged; what changed is that it no longer
+    claims to be the other thing, and the other thing is now reported beside it.
+    """
+    CaseloadEstimateFactory(adm1_code=BORNO, adm1_name="Borno", children_sam=10_000)
+    hub = SupplyNodeFactory(kind="distribution_hub", adm1_code=BORNO, country="NG")
+    site = SupplyNodeFactory(kind="delivery_point", adm1_code=BORNO, country="NG")
+    _delivered_shipment(hub, 5_000, reference="SHP-POSITIONED")
+
+    rows = {r["adm1_code"]: r for r in coverage.coverage_by_district()}
+    row = rows[BORNO]
+    # Positioned: it arrived.
+    assert row["courses_delivered"] == 5_000
+    assert row["coverage_percent"] == pytest.approx(50.0, abs=0.5)
+    # Reached: nothing has been handed out yet, and the row says so rather than
+    # letting the positioned figure stand in for it.
+    assert row["courses_dispensed"] == 0
+    assert row["dispensed_percent"] == 0.0
+
+    # Hand some out, and only the second figure moves.
+    partner = PartnerOrgFactory()
+    DistributionRecordFactory(org=partner, site=site, cartons_dispensed=2_000, children_served=2_000)
+    rows = {r["adm1_code"]: r for r in coverage.coverage_by_district()}
+    row = rows[BORNO]
+    assert row["courses_delivered"] == 5_000, "positioned must not change when stock moves onward"
+    assert row["courses_dispensed"] == 2_000
+    assert row["dispensed_percent"] == pytest.approx(20.0, abs=0.5)
+
+
+def test_reached_never_exceeds_positioned_in_the_seeded_world():
+    """A sanity property: you cannot hand out more than arrived."""
+    from django.core.management import call_command
+
+    call_command("seed_supply_demo", "--reset")
+    for row in coverage.coverage_by_district():
+        assert row["courses_dispensed"] <= row["courses_delivered"], (
+            f"{row['adm1_name']} dispensed {row['courses_dispensed']} of " f"{row['courses_delivered']} positioned"
+        )
+    for row in coverage.coverage_by_country():
+        assert row["courses_dispensed"] <= row["courses_delivered"]

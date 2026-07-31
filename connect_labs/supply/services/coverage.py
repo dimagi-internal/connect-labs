@@ -47,6 +47,33 @@ def _delivered_cartons_by_district(country=None):
     return {r["destination__adm1_code"]: int(r["cartons"] or 0) for r in rows}
 
 
+def _dispensed_cartons_by_district(country=None):
+    """Cartons a site actually HANDED OUT, per district.
+
+    The companion the coverage figure never had. ``_delivered_cartons_by_district``
+    counts what crossed into a district and was confirmed there — which includes
+    everything sitting in a district hub, undistributed. On the seeded world that
+    is 54,255 of the 58,251 courses coverage divides by: **93%**. Four of five
+    districts showed substantial "coverage of need" with literally zero cartons
+    dispensed, Gombe and Kassala both reading 91%.
+
+    That is a real and useful number — supply positioned against need is exactly
+    what a control tower wants to know — but it is not the number the words
+    "coverage of need" promise, and a funder reading the two together has no way
+    to tell them apart unless both are on the screen.
+    """
+    from ..models import DistributionRecord
+
+    qs = DistributionRecord.objects.select_related("site")
+    if country:
+        qs = qs.filter(site__country=country)
+    out = {}
+    for record in qs.exclude(site__adm1_code=""):
+        code = record.site.adm1_code
+        out[code] = out.get(code, 0) + float(record.cartons_dispensed or 0)
+    return {k: int(v) for k, v in out.items()}
+
+
 def _requirement_by_district(country=None, month=None):
     """Children needing treatment per district, summed over the response window.
 
@@ -89,6 +116,7 @@ def coverage_by_district(country=None, month=None):
     render identically.
     """
     delivered = _delivered_cartons_by_district(country=country)
+    dispensed = _dispensed_cartons_by_district(country=country)
     per_district = _requirement_by_district(country=country, month=month)
 
     rows = []
@@ -111,6 +139,14 @@ def coverage_by_district(country=None, month=None):
                 "delivered_cartons": cartons,
                 "courses_delivered": courses,
                 "coverage_percent": percent,
+                # What actually reached a child, so the positioned figure above
+                # can never be read as this one by accident.
+                "courses_dispensed": gs1.cartons_to_children(dispensed.get(adm1_code, 0)),
+                "dispensed_percent": (
+                    round((gs1.cartons_to_children(dispensed.get(adm1_code, 0)) / requirement) * 100, 1)
+                    if requirement
+                    else None
+                ),
                 "uncovered_children": max(requirement - courses, 0),
                 "surplus_children": max(courses - requirement, 0),
                 "source_note": estimate.source_note,
@@ -125,10 +161,17 @@ def coverage_by_country(month=None):
     for row in coverage_by_district(month=month):
         bucket = per_country.setdefault(
             row["country"],
-            {"country": row["country"], "caseload": 0, "courses_delivered": 0, "districts": 0},
+            {
+                "country": row["country"],
+                "caseload": 0,
+                "courses_delivered": 0,
+                "courses_dispensed": 0,
+                "districts": 0,
+            },
         )
         bucket["caseload"] += row["caseload"]
         bucket["courses_delivered"] += row["courses_delivered"]
+        bucket["courses_dispensed"] += row["courses_dispensed"]
         bucket["districts"] += 1
         bucket["window_months"] = max(bucket.get("window_months", 0), row["window_months"])
     out = []
@@ -137,6 +180,7 @@ def coverage_by_country(month=None):
         bucket["coverage_percent"] = round((bucket["courses_delivered"] / caseload) * 100, 1) if caseload else None
         bucket["uncovered_children"] = max(caseload - bucket["courses_delivered"], 0)
         bucket["surplus_children"] = max(bucket["courses_delivered"] - caseload, 0)
+        bucket["dispensed_percent"] = round((bucket["courses_dispensed"] / caseload) * 100, 1) if caseload else None
         out.append(bucket)
     return sorted(out, key=lambda r: r["coverage_percent"] or 0)
 
