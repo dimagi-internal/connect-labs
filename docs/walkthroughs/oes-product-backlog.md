@@ -797,6 +797,27 @@ running after every one:
   snapshotted the table; money s6 snapshotted inside the batch modal, which
   covers the card carrying every figure the narration names.
 
+### Verified in-frame, 31 July 2026 (final render of the cycle)
+
+Not asserted from the diff — checked against the captured page text of every
+scene of all four arcs, after deploy:
+
+| Regression | Check | Result |
+|---|---|---|
+| Popover survived scene boundaries | caseload note present in scenes after the one opening it | renders in exactly the scene that OPENS it (command-centre 5, money 5) and **nowhere after** |
+| Document scrolled sideways | full wordmark present in every frame | **no clipped frame in any arc** |
+| Payoff captured before it happened | cc s5 method / cc s8 headline / money s4 scope marker in their canonical frames | **all present** |
+
+The popover check is the one worth keeping: it has to fail in BOTH directions.
+Dismissing on any scroll fixed the leak and broke the deliberate on-camera open
+(the settle that opening produces counts as a scroll), which the first
+verification pass caught. The 400ms grace satisfies both, and this table is the
+evidence — a code diff cannot show it.
+
+Final render: 297/297 actions ok across the four arcs; narrated-numbers,
+data-fidelity and duplicate-frames pass on every arc; 200 preflight targets
+resolve.
+
 ### STILL OPEN — highest value first
 
 These are real and unfixed. Several are design decisions rather than defects.
