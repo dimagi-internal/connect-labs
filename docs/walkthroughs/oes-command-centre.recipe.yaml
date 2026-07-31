@@ -55,8 +55,11 @@ scenes:
   url: /supply/
   show: The Sudan corridor's contract opened to its delivery schedule, every consignment carrying how it
     is known — EPCIS from a plant, a despatch advice, or a driver's phone check-in — so the picture says
-    where it is bright and where it is thin. (The network map is the natural home for this and renders
-    blank without a Mapbox token, so the tier is shown where it is legible instead.)
+    where it is bright and where it is thin. (The delivery schedule is chosen over the network map because
+    a per-consignment tier is a column of labels, which a table carries and a map of dots does not. The
+    map renders fine — this note used to claim it went blank without a Mapbox token, which was false on
+    every instance that has one, and routed the scene around a working surface for a stated reason that
+    did not hold.)
   actions:
   - kind: scroll_to
     target: css:.card:has-text('Pipeline by corridor')

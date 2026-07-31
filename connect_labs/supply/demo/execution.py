@@ -7,7 +7,7 @@ The event history is deliberately spread across ingestion tiers, mirroring the
 real capability gradient: the Kano plant emits EPCIS, despatches arrive as
 despatch advices, and the Port Sudan corridor arrives as sparse check-ins.
 """
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 
 from django.contrib.gis.geos import LineString, Point
 from django.utils import timezone
@@ -46,6 +46,52 @@ def seed_execution(rng, orgs, staff):
         return nodes, contracts
     _seed_shipments(rng, nodes, contracts)
     return nodes, contracts
+
+
+def backdate_awards_to_precede_execution():
+    """An award cannot be dated after the deliveries it authorised.
+
+    Called from the seeder's top level AFTER both halves have run, not from
+    ``seed_execution``: ``seed_demand`` adds each site an earlier, already-despatched
+    consignment, so running this at the end of execution reconciled against only
+    two thirds of the shipments and left twenty rows still predating their award.
+
+    ``Award.awarded_at`` is ``auto_now_add``, so every award is stamped with the
+    moment the seeder ran — while shipment ETAs are authored in the past, because
+    the demo world has to open mid-flight with deliveries already made. The result
+    was thirty shipments dated before the contract that paid for them: SHP-2026-0805
+    showed an ETA of 23 April against a contract awarded 31 July, and a *delivered*
+    consignment sat under a contract awarded eleven days later.
+
+    In a demo whose subject is auditable procurement that is the most damaging
+    possible detail, and it regenerated itself on every reseed.
+
+    Runs after shipments exist, so it can reconcile against real dates rather than
+    a guess: each award moves to a day before the earliest thing its contract
+    already did. ``auto_now_add`` ignores assignment, hence ``update()``.
+    """
+    for award in Award.objects.select_related("contract").all():
+        contract = getattr(award, "contract", None)
+        if contract is None:
+            continue
+        moments = []
+        for shipment in contract.shipments.all():
+            for value in (shipment.departed_at, shipment.eta):
+                if value:
+                    moments.append(timezone.localtime(value).date())
+        if contract.starts_on:
+            moments.append(contract.starts_on)
+        if not moments:
+            continue
+        earliest = min(moments)
+        # A day clear of the first movement: an award signed the same morning a
+        # lorry left reads as backdated paperwork, which is the impression this
+        # is here to avoid.
+        awarded_on = earliest - timedelta(days=1)
+        stamp = timezone.make_aware(datetime.combine(awarded_on, time(9, 0)))
+        Award.objects.filter(pk=award.pk).update(awarded_at=stamp)
+        if contract.starts_on and contract.starts_on < awarded_on:
+            Contract.objects.filter(pk=contract.pk).update(starts_on=awarded_on)
 
 
 def _seed_nodes(orgs):
