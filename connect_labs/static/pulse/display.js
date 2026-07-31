@@ -271,8 +271,9 @@
       {
         card: 'money',
         eyebrow: 'The cost',
-        title: 'The money reaches the person who did the work.',
-        note: "Measured from approved work, not budgeted — and paid to a worker's phone, not a sub-grantee.",
+        title:
+          'The money reaches both sides of delivery — the worker and the local organisation.',
+        note: "Measured from approved work, not budgeted — paid to a worker's phone and to the organisation running the programme, with no sub-grantee chain in between.",
         focus: 'ng',
       },
       {
@@ -304,12 +305,12 @@
            constant cannot be spotted by eye, so titles quoting a number are
            functions of the summary and unquote themselves when it is absent. */
         title: (s) =>
-          s?.money?.to_workers
+          s?.money?.total_paid || s?.money?.to_workers
             ? `${usd(
-                s.money.to_workers,
+                s.money.total_paid || s.money.to_workers,
                 0,
-              )} has reached frontline workers, one verified service at a time.`
-            : 'Money reaches frontline workers, one verified service at a time.',
+              )} has gone out through verified delivery — to workers and the organisations they deliver for.`
+            : 'Money goes out through verified delivery — to workers and the organisations they deliver for.',
         note: 'Every dollar here was earned by a specific unit of approved work — not allocated, not budgeted.',
         focus: 'world',
       },

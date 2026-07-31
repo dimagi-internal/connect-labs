@@ -126,8 +126,8 @@
       },
       {
         key: 'paid',
-        label: 'Paid to frontline workers',
-        sub: 'all-time, measured from approved work',
+        label: 'Paid out for verified delivery',
+        sub: 'workers + delivery organisations · all-time',
       },
       {
         key: 'live',
@@ -137,19 +137,22 @@
       {
         key: 'cps',
         label: 'Cost per verified service',
-        sub: 'to the worker · blended',
+        sub: 'workers + delivery orgs · blended',
       },
     ];
     root.innerHTML = '';
     const nodes = {};
+    const subs = {};
     for (const c of cells) {
       const cell = el('div', 'kpi-cell');
       cell.appendChild(el('span', 'pulse-lbl', c.label));
       const val = el('div', 'kpi-val num' + (c.gold ? ' gold' : ''), '—');
       cell.appendChild(val);
-      cell.appendChild(el('div', 'kpi-sub', c.sub));
+      const sub = el('div', 'kpi-sub', c.sub);
+      cell.appendChild(sub);
       root.appendChild(cell);
       nodes[c.key] = val;
+      subs[c.key] = sub;
     }
 
     // The all-time total is a *running* figure: it starts from the last synced
@@ -174,12 +177,29 @@
       const nextBaseline = scope.lifetime_visits || 0;
       const first = baseline === 0;
       baseline = nextBaseline;
-      paidBaseline = money.to_workers || 0;
+      // The headline is everything verified delivery moved: the worker payout
+      // plus the delivery organisation's share. The split lives in the sub so
+      // the big number cannot be misread as workers-only.
+      paidBaseline = money.total_paid || money.to_workers || 0;
       // A fresh server figure already includes what we counted locally.
       delivered = 0;
       paidLive = 0;
+      if (money.to_orgs) {
+        subs.paid.textContent =
+          usdCompact(money.to_workers || 0) +
+          ' workers · ' +
+          usdCompact(money.to_orgs) +
+          ' delivery orgs';
+      }
+      // Blended over BOTH streams — what one verified service actually costs
+      // the funder, not just the worker's share of it.
       nodes.cps.innerHTML =
-        '<small>$</small>' + (money.usd_per_approved_work || 0).toFixed(2);
+        '<small>$</small>' +
+        (
+          money.total_per_approved_work ||
+          money.usd_per_approved_work ||
+          0
+        ).toFixed(2);
       if (first) countUp(nodes.services, baseline, renderTotals);
       else renderTotals();
       nodes.paid.innerHTML =
@@ -190,6 +210,8 @@
 
     store.on('event', (ev) => {
       delivered += 1;
+      // Live events carry only the worker's rate; the org share catches up on
+      // the next summary refresh. Slightly under is better than invented.
       if (ev.status === 'approved' && ev.usd) paidLive += ev.usd;
       renderTotals();
     });
@@ -345,18 +367,20 @@
   /* ── act 2 · money ────────────────────────────────────────────── */
   define('money', 'Money', (root, store) => {
     root.innerHTML = `
-      <p class="act-lede">The money reaches the person who did the work — no sub-grantee chain,
-        no per-diem. <b data-x="approved">—</b> units of approved work have paid out so far.</p>
+      <p class="act-lede"><b data-x="totalpaid">—</b> has gone out through verified service
+        delivery — to the worker who delivered it and the local organisation running the
+        programme. No sub-grantee chain, no per-diem: <b data-x="approved">—</b> approved
+        units of work, each paying both sides of delivery.</p>
       <div class="sect">
         <span class="pulse-lbl">Where the money went</span>
         <div class="flow" data-x="flow"></div>
       </div>
       <div class="sect">
-        <span class="pulse-lbl">Paid to workers, by country</span>
+        <span class="pulse-lbl">Paid out, by country</span>
         <div class="rank" data-x="bycountry"></div>
       </div>
       <div class="sect">
-        <span class="pulse-lbl">Paid to workers, by service</span>
+        <span class="pulse-lbl">Paid out, by service</span>
         <div class="rank" data-x="byservice"></div>
       </div>`;
     const $ = (n) => root.querySelector(`[data-x="${n}"]`);
@@ -366,12 +390,14 @@
       'summary',
       (s) => {
         const m = s.money || {};
+        const toWorkers = m.to_workers || 0;
+        const toOrgs = m.to_orgs || 0;
+        const totalPaid = m.total_paid || toWorkers + toOrgs;
+        $('totalpaid').textContent = usdCompact(totalPaid);
         $('approved').textContent = nf.format(m.approved_works || 0);
 
         // Accrued vs paid: the gap is the float between a worker earning and a
         // worker being paid, which is the number a funder actually asks about.
-        const toWorkers = m.to_workers || 0;
-        const toOrgs = m.to_orgs || 0;
         const steps = [
           [
             'Earned by frontline workers',
@@ -402,36 +428,47 @@
           )
           .join('');
 
+        /* Ranked bars are the TOTAL that went out — worker + org — because the
+           section asks "where did the money go", not "where did one of the two
+           streams go". Old summaries lack usd_total; fall back to the worker
+           figure rather than rendering zeros. */
+        const totalOf = (r) => (r.usd_total != null ? r.usd_total : r.usd || 0);
         const renderRank = (node, rows, keyName) => {
           if (!rows || !rows.length) {
             node.innerHTML = '<p class="act-lede">No data yet.</p>';
             return;
           }
-          const mx = rows[0].usd || 1;
+          const mx = totalOf(rows[0]) || 1;
           node.innerHTML = rows
             .map(
               (r) => `
           <div class="rrow"><span class="rn">${r[keyName]}</span>
-            <span class="rv">${usdCompact(r.usd)}</span>
-            <span class="rb"><i style="width:${((r.usd / mx) * 100).toFixed(
-              1,
-            )}%;background:var(--light-dim)"></i></span></div>`,
+            <span class="rv">${usdCompact(totalOf(r))}</span>
+            <span class="rb"><i style="width:${(
+              (totalOf(r) / mx) *
+              100
+            ).toFixed(1)}%;background:var(--light-dim)"></i></span></div>`,
             )
             .join('');
         };
         renderRank($('bycountry'), m.by_country, 'name');
-        /* by_service reconciles to to_workers; by_country does not, because
+        /* by_service reconciles to the totals; by_country does not, because
            Connect leaves country blank on most opportunities. Say what the
            breakdown covers rather than letting three full-width bars imply
            they are the whole portfolio. */
         const cov = m.by_country_unattributed;
-        if (cov && cov.usd > 0 && cov.usd_share < 0.98) {
+        const covRemainder =
+          cov && (cov.usd_total != null ? cov.usd_total : cov.usd);
+        const covShare =
+          cov &&
+          (cov.usd_total_share != null ? cov.usd_total_share : cov.usd_share);
+        if (cov && covRemainder > 0 && covShare < 0.98) {
           $('bycountry').insertAdjacentHTML(
             'beforeend',
             `<div class="flow-note">Covers ${usdCompact(
-              m.to_workers - cov.usd,
+              totalPaid - covRemainder,
             )} of ${usdCompact(
-              m.to_workers,
+              totalPaid,
             )} — country not recorded for the rest.</div>`,
           );
         }
@@ -532,9 +569,9 @@
   /* ── unit economics ───────────────────────────────────────────── */
   define('unitecon', 'Unit economics', (root, store) => {
     root.innerHTML = `
-      <p class="act-lede">The blended figure is <b data-x="blended">—</b> per verified service.
-        But a blended figure hides the thing a funder should actually see: these are
-        different jobs, priced differently.</p>
+      <p class="act-lede">A verified service costs <b data-x="blended">—</b> all-in —
+        <b data-x="workershare">—</b> of it straight to the worker. But a blended figure hides
+        the thing a funder should actually see: these are different jobs, priced differently.</p>
       <div class="sect">
         <div class="pairs">
           <div><span class="pulse-lbl">Cheapest service</span><div class="pv num ok" data-x="lo">—</div><div class="kpi-sub" data-x="loname">—</div></div>
@@ -557,7 +594,10 @@
       'summary',
       (s) => {
         const m = s.money || {};
-        $('blended').textContent = usd(m.usd_per_approved_work || 0);
+        $('blended').textContent = usd(
+          m.total_per_approved_work || m.usd_per_approved_work || 0,
+        );
+        $('workershare').textContent = usd(m.usd_per_approved_work || 0);
 
         // Volume-weighted, straight from money accrued over approved work --
         // NOT the mean of each opportunity's rate. Averaging per opportunity
