@@ -666,80 +666,169 @@ class TestAbsorbEnclosedClusters:
 
 
 class TestReassignDominatedCells:
-    """A work area with 3+ STRICTLY orthogonal (real shared-edge, not just
-    within the adjacency buffer) neighbours from one other WAG is locally
-    dominated by it, even without being fully enclosed — move it there,
-    subject to the receiving group's max_buildings ceiling and barriers."""
+    """A work area whose combined STRICTLY orthogonal (real shared-edge, not
+    just within the adjacency buffer) neighbours from OTHER WAGs outnumber
+    its neighbours from its OWN WAG is locally dominated — even when the
+    foreign side is split across several different WAGs rather than one —
+    and moves to whichever foreign WAG it borders most, subject to the
+    receiving group's max_buildings ceiling, barriers, and requiring that
+    the move actually resolve the imbalance (so a cell sitting at a
+    symmetric multi-WAG meeting point, where no single neighbour can absorb
+    it outright, is left alone rather than flip-flopping)."""
 
     @staticmethod
-    def _plus_shape():
-        # X in the middle, N/E/S/W around it (a "+" of 5 unit cells).
+    def _ring_dominated():
+        # X has one real same-WAG neighbour (W, which has its own companion
+        # W2 so W isn't a lone singleton) and a self-connected 5-cell "ring"
+        # of a different WAG touching its other three sides — 1 own vs 3
+        # foreign, a clean majority.
         from shapely.geometry import box
 
         return {
             "X": box(1, 1, 2, 2),
-            "N": box(1, 2, 2, 3),
-            "E": box(2, 1, 3, 2),
-            "S": box(1, 0, 2, 1),
             "W": box(0, 1, 1, 2),
+            "W2": box(-1, 1, 0, 2),
+            "R10": box(1, 0, 2, 1),  # south of X
+            "R21": box(2, 1, 3, 2),  # east of X
+            "R12": box(1, 2, 2, 3),  # north of X
+            "R20": box(2, 0, 3, 1),  # bridges R10-R21
+            "R22": box(2, 2, 3, 3),  # bridges R21-R12
         }
 
     def test_dominated_cell_moves_to_the_majority_neighbour(self):
         from shapely.strtree import STRtree
 
-        geoms = self._plus_shape()
+        geoms = self._ring_dominated()
         wa_ids = list(geoms.keys())
         tree = STRtree([geoms[w] for w in wa_ids])
         by_id = {w: {"building_count": 10} for w in wa_ids}
-        # X touches N/E/S (one WAG) on 3 sides, W (another) on just 1.
-        clusters_with_seed = [("W", ["X", "W"]), ("N", ["N", "E", "S"])]
+        ring = ["R10", "R21", "R12", "R20", "R22"]
+        clusters_with_seed = [("W", ["X", "W", "W2"]), ("R10", ring)]
         result = _reassign_dominated_cells(clusters_with_seed, by_id, geoms, wa_ids, tree, 1000, None)
         x_group = next(cells for _seed, cells in result if "X" in cells)
-        assert set(x_group) == {"N", "E", "S", "X"}
+        assert set(x_group) == {"X", *ring}
+        w_group = next(cells for _seed, cells in result if "W" in cells)
+        assert set(w_group) == {"W", "W2"}  # left behind, correctly untouched
 
-    def test_two_of_four_is_not_dominant_stays_put(self):
+    def test_multi_wag_split_still_dominates(self):
+        # The user's actual screenshots: X's foreign neighbours are split
+        # across THREE different single-cell WAGs (1 each), none individually
+        # reaching the old "3+ from one WAG" bar, but 3 combined > 1 own.
+        from shapely.geometry import box
         from shapely.strtree import STRtree
 
-        geoms = self._plus_shape()
+        geoms = {
+            "X": box(1, 1, 2, 2),
+            "W": box(0, 1, 1, 2),
+            "W2": box(-1, 1, 0, 2),
+            "S": box(1, 0, 2, 1),
+            "E": box(2, 1, 3, 2),
+            "N": box(1, 2, 2, 3),
+        }
         wa_ids = list(geoms.keys())
         tree = STRtree([geoms[w] for w in wa_ids])
         by_id = {w: {"building_count": 10} for w in wa_ids}
-        # X touches N/E (one WAG) on 2 sides, S/W (another) on 2 — a tie, not
-        # a majority either way, so nothing moves.
-        clusters_with_seed = [("W", ["X", "W", "S"]), ("N", ["N", "E"])]
+        clusters_with_seed = [("W", ["X", "W", "W2"]), ("S", ["S"]), ("E", ["E"]), ("N", ["N"])]
+        result = _reassign_dominated_cells(clusters_with_seed, by_id, geoms, wa_ids, tree, 1000, None)
+        # Each foreign singleton is itself locally dominated by X (0 own vs 1
+        # foreign) so they all fold together into one group with X.
+        assert len(result) == 1
+        assert set(result[0][1]) == {"X", "W", "W2", "S", "E", "N"}
+
+    def test_true_symmetric_meeting_point_is_stable(self):
+        # A genuine 4-way meeting point: X has 1 own neighbour (W) and 3
+        # foreign neighbours (N, E, S), each from a DIFFERENT WAG and each
+        # with its own companion cell (so none is a lone singleton that would
+        # get pulled in on its own). No single foreign WAG can absorb X
+        # without leaving it still outnumbered by the other two, so the move
+        # is blocked and nothing changes — this is the oscillation-prevention
+        # safeguard the user's 4-WAG screenshot (yellow/red/blue/purple) needs.
+        from shapely.geometry import box
+        from shapely.strtree import STRtree
+
+        geoms = {
+            "X": box(1, 1, 2, 2),
+            "W": box(0, 1, 1, 2),
+            "N": box(1, 2, 2, 3),
+            "N2": box(1, 3, 2, 4),
+            "E": box(2, 1, 3, 2),
+            "E2": box(3, 1, 4, 2),
+            "S": box(1, 0, 2, 1),
+            "S2": box(1, -1, 2, 0),
+        }
+        wa_ids = list(geoms.keys())
+        tree = STRtree([geoms[w] for w in wa_ids])
+        by_id = {w: {"building_count": 10} for w in wa_ids}
+        clusters_with_seed = [
+            ("W", ["X", "W"]),
+            ("N", ["N", "N2"]),
+            ("E", ["E", "E2"]),
+            ("S", ["S", "S2"]),
+        ]
         result = _reassign_dominated_cells(clusters_with_seed, by_id, geoms, wa_ids, tree, 1000, None)
         groups = {frozenset(cells) for _seed, cells in result}
-        assert groups == {frozenset(["X", "W", "S"]), frozenset(["N", "E"])}
+        assert groups == {
+            frozenset(["X", "W"]),
+            frozenset(["N", "N2"]),
+            frozenset(["E", "E2"]),
+            frozenset(["S", "S2"]),
+        }
+
+    def test_tied_neighbours_stays_put(self):
+        # X: own = W + N (2, only linked via X). foreign = S + E, bridged
+        # into one connected WAG via SE (2). A tie either way, so nothing
+        # moves — same intent as the old "two of four" test, now expressed
+        # through the total-count rule instead of a single-WAG count.
+        from shapely.geometry import box
+        from shapely.strtree import STRtree
+
+        geoms = {
+            "X": box(1, 1, 2, 2),
+            "W": box(0, 1, 1, 2),
+            "N": box(1, 2, 2, 3),
+            "S": box(1, 0, 2, 1),
+            "E": box(2, 1, 3, 2),
+            "SE": box(2, 0, 3, 1),
+        }
+        wa_ids = list(geoms.keys())
+        tree = STRtree([geoms[w] for w in wa_ids])
+        by_id = {w: {"building_count": 10} for w in wa_ids}
+        clusters_with_seed = [("W", ["X", "W", "N"]), ("S", ["S", "E", "SE"])]
+        result = _reassign_dominated_cells(clusters_with_seed, by_id, geoms, wa_ids, tree, 1000, None)
+        groups = {frozenset(cells) for _seed, cells in result}
+        assert groups == {frozenset(["X", "W", "N"]), frozenset(["S", "E", "SE"])}
 
     def test_blocked_by_max_buildings_ceiling(self):
         from shapely.strtree import STRtree
 
-        geoms = self._plus_shape()
+        geoms = self._ring_dominated()
         wa_ids = list(geoms.keys())
         tree = STRtree([geoms[w] for w in wa_ids])
         by_id = {w: {"building_count": 10} for w in wa_ids}
-        by_id.update({w: {"building_count": 500} for w in ("N", "E", "S")})
-        clusters_with_seed = [("W", ["X", "W"]), ("N", ["N", "E", "S"])]
-        # Receiving group already totals 1500; +X's 10 = 1510 > max=1505.
-        result = _reassign_dominated_cells(clusters_with_seed, by_id, geoms, wa_ids, tree, 1505, None)
+        ring = ["R10", "R21", "R12", "R20", "R22"]
+        by_id.update({w: {"building_count": 500} for w in ring})
+        clusters_with_seed = [("W", ["X", "W", "W2"]), ("R10", ring)]
+        # Receiving group already totals 2500; +X's 10 = 2510 > max=2505.
+        result = _reassign_dominated_cells(clusters_with_seed, by_id, geoms, wa_ids, tree, 2505, None)
         x_group = next(cells for _seed, cells in result if "X" in cells)
-        assert x_group == ["X", "W"]  # unchanged — the ceiling blocked the move
+        assert x_group == ["X", "W", "W2"]  # unchanged — the ceiling blocked the move
 
     def test_barrier_blocks_reassignment(self):
         from shapely.geometry import LineString
         from shapely.prepared import prep
         from shapely.strtree import STRtree
 
-        geoms = self._plus_shape()
+        geoms = self._ring_dominated()
         wa_ids = list(geoms.keys())
         tree = STRtree([geoms[w] for w in wa_ids])
         by_id = {w: {"building_count": 10} for w in wa_ids}
-        clusters_with_seed = [("W", ["X", "W"]), ("N", ["N", "E", "S"])]
-        # A barrier running right through X's row blocks all 3 links to N/E/S.
+        ring = ["R10", "R21", "R12", "R20", "R22"]
+        clusters_with_seed = [("W", ["X", "W", "W2"]), ("R10", ring)]
+        # A barrier running right through X's row blocks all links to the ring.
         barrier = prep(LineString([(0, 1.5), (5, 1.5)]))
         result = _reassign_dominated_cells(clusters_with_seed, by_id, geoms, wa_ids, tree, 1000, barrier)
         x_group = next(cells for _seed, cells in result if "X" in cells)
-        assert x_group == ["X", "W"]
+        assert x_group == ["X", "W", "W2"]
 
 
 class TestReassignIsolatedPiecesTouchingOtherWags:
