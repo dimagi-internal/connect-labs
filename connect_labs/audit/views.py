@@ -19,15 +19,17 @@ from datetime import timezone as _stdlib_timezone
 import httpx
 from django.conf import settings
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.db import connection, transaction
 from django.http import HttpResponse, JsonResponse
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
+from django.utils.decorators import method_decorator
 from django.views.generic import DetailView, TemplateView, View
 from django_tables2 import SingleTableView
 
 from connect_labs.audit.analysis_config import extract_additional_case_info, extract_images_with_question_ids
-from connect_labs.audit.data_access import AuditDataAccess
+from connect_labs.audit.data_access import AuditDataAccess, ImageDownloadError
 from connect_labs.audit.models import AuditSessionRecord
 from connect_labs.audit.tables import AuditTable
 from connect_labs.labs import s3_export
@@ -1108,8 +1110,29 @@ class VisitClusterExportCSVView(LoginRequiredMixin, View):
             data_access.close()
 
 
+@method_decorator(transaction.non_atomic_requests, name="dispatch")
 class ExperimentAuditImageConnectView(LoginRequiredMixin, View):
-    """Serve audit visit images from Connect API (no CommCare HQ)"""
+    """Serve audit visit images from Connect API (no CommCare HQ).
+
+    Connection discipline — see #1060. This is a read-only blob proxy: it writes
+    nothing to the labs DB, and the bulk audit grid fires one request per image
+    tile, so a single page open puts tens-to-hundreds of these in flight at once.
+
+    Django's ASGI handler opens a ``ThreadSensitiveContext`` per request, so each
+    concurrent request gets its own thread and therefore its own thread-local DB
+    connection; ``ATOMIC_REQUESTS = True`` then pins that connection inside an
+    open transaction for the whole request. Left alone, every in-flight image
+    request holds a Postgres connection slot for the duration of a multi-second
+    fetch against production Connect. On 2026-07-30 that exhausted the server's
+    slots, and the requests that arrived next died in ``CsrfViewMiddleware``
+    trying to load their session — a 500 raised upstream of this view, which is
+    why the ``except`` below never saw them.
+
+    So: no ATOMIC_REQUESTS transaction, and the connection goes back to the pool
+    before the upstream fetch starts. Django reopens it lazily if anything later
+    in the request needs it (the audit-trail middleware's post-response flush
+    does), so the release is transparent to callers.
+    """
 
     def get(self, request, opp_id, blob_id):
         from connect_labs.labs.synthetic.image_server import SyntheticImageServer
@@ -1118,38 +1141,51 @@ class ExperimentAuditImageConnectView(LoginRequiredMixin, View):
         if SyntheticImageServer.is_synthetic_blob(blob_id) and get_synthetic_opp(opp_id):
             return self._serve_synthetic_image(blob_id)
 
+        data_access = AuditDataAccess(opportunity_id=opp_id, request=request)
         try:
-            data_access = AuditDataAccess(opportunity_id=opp_id, request=request)
-            try:
-                image_content = data_access.download_image_from_connect(blob_id, opp_id)
-                response = HttpResponse(image_content, content_type="image/jpeg")
-                disposition = 'inline; filename="' + blob_id + '.jpg"'
-                response["Content-Disposition"] = disposition
-                # Blobs are immutable, so let the browser cache a fetched image and
-                # avoid re-hitting the proxy on every re-render / grid resize.
-                response["Cache-Control"] = "private, max-age=3600"
-                return response
-            finally:
-                data_access.close()
-        except Exception as e:
-            import traceback
+            # Everything that needs the labs DB (auth, session, the synthetic
+            # registry lookup above) has already run. Hand the connection back
+            # before the slow part so a grid of images cannot pin one slot each.
+            connection.close()
+            image_content = data_access.download_image_from_connect(blob_id, opp_id)
+        except ImageDownloadError as e:
+            if e.status_code == 404:
+                # The blob genuinely is not there. Ordinary and uninteresting.
+                logger.warning("Audit image %s not found upstream (opp=%s)", blob_id, opp_id)
+                return HttpResponse("Image not found", status=404)
+            logger.exception("Audit image fetch failed for blob_id=%s opp_id=%s", blob_id, opp_id)
+            return HttpResponse("Image temporarily unavailable", status=502)
+        except Exception:
+            # A real fault. Report it as one — reporting these as "404 Image not
+            # found" is what kept this endpoint's failures invisible.
+            logger.exception("Audit image fetch failed for blob_id=%s opp_id=%s", blob_id, opp_id)
+            return HttpResponse("Image temporarily unavailable", status=502)
+        finally:
+            data_access.close()
 
-            print(f"[ERROR] Image fetch failed for blob_id={blob_id}, opp_id={opp_id}")
-            print(f"[ERROR] {traceback.format_exc()}")
-            return HttpResponse(f"Image not found: {e}", status=404)
+        response = HttpResponse(image_content, content_type="image/jpeg")
+        response["Content-Disposition"] = 'inline; filename="' + blob_id + '.jpg"'
+        # Blobs are immutable, so let the browser cache a fetched image and
+        # avoid re-hitting the proxy on every re-render / grid resize.
+        response["Cache-Control"] = "private, max-age=3600"
+        return response
 
     def _serve_synthetic_image(self, blob_id: str):
         from connect_labs.labs.synthetic.image_server import get_image_server
 
         try:
+            # Same reasoning as the Connect path: the Drive fetch below is slow
+            # network I/O and must not hold a connection slot while it runs.
+            connection.close()
             data = get_image_server().get_image(blob_id)
             if data:
                 response = HttpResponse(data, content_type="image/jpeg")
                 response["Content-Disposition"] = f'inline; filename="{blob_id}.jpg"'
                 response["Cache-Control"] = "private, max-age=3600"
                 return response
-        except Exception as e:
-            logger.warning("Failed to serve synthetic image %s: %s", blob_id, e)
+        except Exception:
+            logger.exception("Failed to serve synthetic image %s", blob_id)
+            return HttpResponse("Synthetic image unavailable", status=502)
         return HttpResponse("Synthetic image not found", status=404)
 
 
