@@ -85,7 +85,7 @@ function PartnerTab({ ctx }) {
               ? 'inbound supply falls short of what is booked in'
               : 'every planned day is covered',
             method:
-              'A planned distribution is covered when the cartons projected to be on hand that day — including consignments scheduled to land by then — reach the children booked in for it.',
+              'A planned distribution is covered when the cartons on hand that day reach the children booked in for it. On hand means opening stock plus every consignment that lands on or before that day, less what earlier distributions spent. Cartons still in transit on the day arrive too late to cover it and are not counted — a distribution can be short with a lorry already on the way.',
           },
           {
             // Counts what is OPEN, and now says so. The label read
@@ -762,13 +762,21 @@ function DistributionWeekGrid({ plans }) {
                     </div>
                     <div className="week-cell-stock">
                       {formatNumber(plan.cartons_on_hand)} on hand
-                      {plan.cartons_inbound ? (
-                        <span className="muted">
-                          {' '}
-                          +{formatNumber(plan.cartons_inbound)}
-                        </span>
-                      ) : null}
                     </div>
+                    {/* NOT "+141". cartons_inbound is what is still on the road
+                        AFTER this day (see serializers/demand.distribution_plan_dict),
+                        so it deliberately does not cover this distribution — and
+                        rendering it with a plus sign, beside the number that IS
+                        the coverage basis, under a legend saying a cell is short
+                        "when the second number is below the first", invited
+                        exactly the addition that contradicts the colour. Biu read
+                        "0 on hand +141" for 103 children in red; Askira "38 on
+                        hand +94" for 65 in amber. Both look fine if you add. */}
+                    {plan.cartons_inbound ? (
+                      <div className="week-cell-later muted">
+                        {formatNumber(plan.cartons_inbound)} arrives after
+                      </div>
+                    ) : null}
                   </td>
                 );
               })}
@@ -777,11 +785,15 @@ function DistributionWeekGrid({ plans }) {
         </tbody>
       </table>
       <p className="muted small method-note">
-        Each cell is the children booked in that day and the cartons projected
-        to be on hand for them. One carton is one child's full course, so a cell
-        is short exactly when the second number is below the first. Green is
-        covered, amber at risk, red uncovered; an empty cell is a day with no
-        distribution planned.
+        Each cell is the children booked in that day and the cartons on hand for
+        them — opening stock plus every consignment that lands on or before that
+        day, minus what earlier distributions already spent. One carton is one
+        child's full course, so a cell is short exactly when the stock figure is
+        below the children figure. Cartons still in transit are shown as
+        &ldquo;arrives after&rdquo;: they land later than this distribution and
+        so do not cover it, which is why a cell can be red with a lorry on the
+        way. Green is covered, amber at risk, red uncovered; an empty cell is a
+        day with no distribution planned.
       </p>
     </div>
   );

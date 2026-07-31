@@ -319,3 +319,14 @@
   font-variant-numeric: tabular-nums;
   margin-top: 1px;
 }
+/* Cartons still in transit on the day of the distribution. Rendered as its own
+   subordinate line rather than "+N" beside the on-hand figure: it arrives AFTER
+   this day and so does not cover it, and the plus sign invited an addition that
+   contradicted the cell's own colour. */
+.week-cell-later {
+  font-size: 10px;
+  font-style: italic;
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+  margin-top: 1px;
+}
