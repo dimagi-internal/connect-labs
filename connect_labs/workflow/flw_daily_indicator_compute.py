@@ -9,7 +9,7 @@ per opportunity per FLW per day.
 Field expectations on each visit row (already extracted by the `hsd_visits`
 pipeline schema — see the template file for the exact FieldComputation paths):
     username, opportunity_id, form_display_name, muac_cm, hh_case_id,
-    child_case_id, wa_caseid, household_phone, child_name, normalized_lat,
+    child_case_id, childs_dob, wa_caseid, child_name, normalized_lat,
     normalized_lon, time_start, time_end, received_any_vaccine,
     dw_child_unwell_today, diarrhea_last_month
 
@@ -147,21 +147,36 @@ def compute_flw_daily_indicators(visits: list[dict], wa_building_counts: dict[st
 
     total_forms = len(parsed)
 
-    # --- #2 avg forms per building, grouped by work area ---
-    forms_by_wa: dict[str, int] = defaultdict(int)
+    # --- #2 households registered per building, grouped by work area ---
+    # Distinct households, not raw form count -- a single large household
+    # visited many times (many children) shouldn't look like over-coverage of
+    # the work area the way a form-count ratio would.
+    households_by_wa: dict[str, set] = defaultdict(set)
     for r in parsed:
         wa = r.get("wa_caseid")
-        if wa:
-            forms_by_wa[wa] += 1
+        hh = r.get("hh_case_id")
+        if wa and hh:
+            households_by_wa[wa].add(hh)
     by_wa = []
     max_ratio = None
-    for wa, count in forms_by_wa.items():
+    for wa, households in households_by_wa.items():
         building_count = wa_building_counts.get(wa)
-        ratio = (count / building_count) if building_count else None
-        by_wa.append({"wa_caseid": wa, "forms": count, "building_count": building_count, "ratio": _round(ratio)})
+        ratio = (len(households) / building_count) if building_count else None
+        by_wa.append(
+            {"wa_caseid": wa, "households": len(households), "building_count": building_count, "ratio": _round(ratio)}
+        )
         if ratio is not None and (max_ratio is None or ratio > max_ratio):
             max_ratio = ratio
-    avg_forms_per_building = {"max_ratio": _round(max_ratio), "by_wa": by_wa}
+    households_per_building = {"max_ratio": _round(max_ratio), "by_wa": by_wa}
+
+    # --- daily span: first visit's start to last visit's end, for the
+    # "30+ visits compressed into <=1hr" indicator (workflow 2 applies both
+    # cutoffs; this just reports the raw span) ---
+    daily_span_minutes = None
+    if parsed:
+        daily_span_minutes = _round(
+            (max(r["_time_end"] for r in parsed) - parsed[0]["_time_start"]).total_seconds() / 60.0
+        )
 
     # --- #3 households with HOUSEHOLD_CHILD_COUNT_THRESHOLD+ distinct children ---
     children_by_hh: dict[str, set] = defaultdict(set)
@@ -204,22 +219,25 @@ def compute_flw_daily_indicators(visits: list[dict], wa_building_counts: dict[st
         largest = _largest_gps_cluster_size(gps_points, CAMPING_CLUSTER_RADIUS_M)
         camping_pct_largest_cluster = _round(largest / camping_forms_count * 100.0)
 
-    # --- #8 duplicate household phone / child name reused across different households ---
-    phone_to_hhs: dict[str, set] = defaultdict(set)
+    # --- #8/#9 duplicate child name / age (DOB) reused across different households ---
+    # Same-household repeats don't count (e.g. legitimate twins/siblings) --
+    # only a name or DOB turning up under two or more DIFFERENT household IDs,
+    # matching flw_audit_compute.py's own duplicate_child_count convention
+    # (same-DOB-across-households, not same-DOB-within-household).
     name_to_hhs: dict[str, set] = defaultdict(set)
+    dob_to_hhs: dict[str, set] = defaultdict(set)
     for r in parsed:
         hh = r.get("hh_case_id")
         if not hh:
             continue
-        phone = (r.get("household_phone") or "").strip()
-        if phone:
-            phone_to_hhs[phone].add(hh)
         name = (r.get("child_name") or "").strip().lower()
         if name:
             name_to_hhs[name].add(hh)
-    duplicate_count = sum(1 for hhs in phone_to_hhs.values() if len(hhs) > 1) + sum(
-        1 for hhs in name_to_hhs.values() if len(hhs) > 1
-    )
+        dob = (r.get("childs_dob") or "").strip()
+        if dob:
+            dob_to_hhs[dob].add(hh)
+    duplicate_child_names_count = sum(1 for hhs in name_to_hhs.values() if len(hhs) > 1)
+    duplicate_child_ages_count = sum(1 for hhs in dob_to_hhs.values() if len(hhs) > 1)
 
     # --- #9 straight-lining on dw_child_unwell_today / diarrhea_last_month ---
     dw_pct, dw_n = _mode_share_with_n([r.get("dw_child_unwell_today") for r in parsed])
@@ -238,7 +256,8 @@ def compute_flw_daily_indicators(visits: list[dict], wa_building_counts: dict[st
 
     return {
         "total_forms": total_forms,
-        "avg_forms_per_building": avg_forms_per_building,
+        "daily_span_minutes": daily_span_minutes,
+        "households_per_building": households_per_building,
         "households_4plus_children_count": households_4plus_children_count,
         "gap_lt_2min_count": gap_lt_2min_count,
         "vaccine_yes_pct": vaccine_yes_pct,
@@ -246,7 +265,8 @@ def compute_flw_daily_indicators(visits: list[dict], wa_building_counts: dict[st
         "camping_pct_largest_cluster": camping_pct_largest_cluster,
         "camping_forms_count": camping_forms_count,
         "travel_speed_violation_count": travel_speed_violation_count,
-        "duplicate_count": duplicate_count,
+        "duplicate_child_names_count": duplicate_child_names_count,
+        "duplicate_child_ages_count": duplicate_child_ages_count,
         "straight_line_pct": straight_line_pct,
         "straight_line_forms_count": straight_line_forms_count,
         "muac_repetition_pct": muac_repetition_pct,

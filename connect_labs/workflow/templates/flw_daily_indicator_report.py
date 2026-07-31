@@ -1,7 +1,7 @@
 """FLW Daily Indicator Report — Program 176 (CHC PRE-RCT Nigeria).
 
 Workflow 1 of a two-workflow pair (see flw_daily_indicator_table.py, "Workflow
-2"). Computes a fixed set of 10 daily fraud/data-quality indicators per
+2"). Computes a fixed set of 12 daily fraud/data-quality indicators per
 opportunity per FLW per calendar day, from raw "Health Service Delivery" form
 submissions plus each work area's CommCare HQ case (for building counts) --
 not the threshold/flag logic or the table itself, just the computed RAW
@@ -16,13 +16,12 @@ both computes the day's indicators AND completes the run in one atomic pass
 (there's no human "Mark Run Complete" click in this template's lifecycle).
 
 Data sources: a connect_csv pipeline reading "Health Service Delivery" form
-submissions (same shape as flw_weekly_audit_report.py's hsd_visits, plus 4
-extra fields this report needs: household_phone, child_name,
-dw_child_unwell_today, diarrhea_last_month), and a cchq_cases pipeline over
-work-area cases (for building_count, indicator #2's denominator). This is a
-NEW pipeline, not a reuse of the weekly report's hsd_visits pipeline --
-that one is live under the shipped weekly report and doesn't need these
-fields.
+submissions (same shape as flw_weekly_audit_report.py's hsd_visits, plus extra
+fields this report needs: childs_dob, child_name, dw_child_unwell_today,
+diarrhea_last_month), and a cchq_cases pipeline over work-area cases (for
+building_count, indicator #2's denominator). This is a NEW pipeline, not a
+reuse of the weekly report's hsd_visits pipeline -- that one is live under the
+shipped weekly report and doesn't need these fields.
 """
 from __future__ import annotations
 
@@ -76,17 +75,16 @@ PIPELINE_SCHEMAS = [
                     "description": "'yes'/'no' -- whether the child received a vaccine this visit.",
                 },
                 {
-                    "name": "household_phone",
-                    "path": "form.additional_case_info.household_phone",
-                    "aggregation": "first",
-                    "description": "Often blank on repeat visits to an already-registered household -- "
-                    "populated on the visit that registers the household, which is exactly when "
-                    "duplicate-phone fraud detection needs it.",
-                },
-                {
                     "name": "child_name",
                     "path": "form.additional_case_info.child_name",
                     "aggregation": "first",
+                },
+                {
+                    "name": "childs_dob",
+                    "path": "form.additional_case_info.childs_dob",
+                    "aggregation": "first",
+                    "description": "Used for the duplicate-child-age indicator -- the same DOB turning up "
+                    "under two or more different households the same day.",
                 },
                 {
                     "name": "dw_child_unwell_today",
@@ -109,7 +107,7 @@ PIPELINE_SCHEMAS = [
         "alias": "work_areas",
         "name": "CHC Work Areas (Building Counts)",
         "description": "One row per work-area case (CommCare HQ case_type=work-area), for the "
-        "avg-forms-per-building indicator's denominator.",
+        "households-per-building indicator's denominator.",
         "schema": {
             "data_source": {"type": "cchq_cases", "case_type": "work-area"},
             "grouping_key": "entity_id",
@@ -188,14 +186,16 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, view }) {
                     <thead className="bg-gray-50">
                         <tr>
                             <th className="px-3 py-2 text-left font-semibold">FLW</th>
-                            <th className="px-3 py-2 text-right font-semibold">Forms</th>
-                            <th className="px-3 py-2 text-right font-semibold">Max Forms/Building</th>
+                            <th className="px-3 py-2 text-right font-semibold">HSD Forms</th>
+                            <th className="px-3 py-2 text-right font-semibold">Daily Span (min)</th>
+                            <th className="px-3 py-2 text-right font-semibold">Peak HHs/Building</th>
                             <th className="px-3 py-2 text-right font-semibold">HHs w/ 4+ Children</th>
                             <th className="px-3 py-2 text-right font-semibold">Gaps &lt;2min</th>
                             <th className="px-3 py-2 text-right font-semibold">% Vaccine Yes</th>
                             <th className="px-3 py-2 text-right font-semibold">% in Largest Cluster</th>
                             <th className="px-3 py-2 text-right font-semibold">Speed Violations</th>
-                            <th className="px-3 py-2 text-right font-semibold">Duplicates</th>
+                            <th className="px-3 py-2 text-right font-semibold">Dup. Names</th>
+                            <th className="px-3 py-2 text-right font-semibold">Dup. Ages</th>
                             <th className="px-3 py-2 text-right font-semibold">MUAC Repetition %</th>
                         </tr>
                     </thead>
@@ -205,13 +205,15 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, view }) {
                                 <tr key={f.username || i}>
                                     <td className="px-3 py-2 font-mono text-xs">{f.username}</td>
                                     <td className="px-3 py-2 text-right">{f.total_forms}</td>
-                                    <td className="px-3 py-2 text-right">{f.avg_forms_per_building.max_ratio}</td>
+                                    <td className="px-3 py-2 text-right">{f.daily_span_minutes}</td>
+                                    <td className="px-3 py-2 text-right">{f.households_per_building.max_ratio}</td>
                                     <td className="px-3 py-2 text-right">{f.households_4plus_children_count}</td>
                                     <td className="px-3 py-2 text-right">{f.gap_lt_2min_count}</td>
                                     <td className="px-3 py-2 text-right">{f.vaccine_yes_pct}</td>
                                     <td className="px-3 py-2 text-right">{f.camping_pct_largest_cluster}</td>
                                     <td className="px-3 py-2 text-right">{f.travel_speed_violation_count}</td>
-                                    <td className="px-3 py-2 text-right">{f.duplicate_count}</td>
+                                    <td className="px-3 py-2 text-right">{f.duplicate_child_names_count}</td>
+                                    <td className="px-3 py-2 text-right">{f.duplicate_child_ages_count}</td>
                                     <td className="px-3 py-2 text-right">{f.muac_repetition_pct}</td>
                                 </tr>
                             );

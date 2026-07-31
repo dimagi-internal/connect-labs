@@ -11,7 +11,7 @@ def _visit(time_start, time_end=None, **overrides):
         "wa_caseid": "wa-1",
         "hh_case_id": "hh-1",
         "child_case_id": f"child-{time_start}",
-        "household_phone": None,
+        "childs_dob": None,
         "child_name": None,
         "normalized_lat": "12.0",
         "normalized_lon": "9.0",
@@ -43,25 +43,41 @@ def test_total_forms_counts_every_visit():
     assert result["total_forms"] == 2
 
 
-def test_avg_forms_per_building_ratio():
+def test_households_per_building_ratio_counts_distinct_households_not_forms():
     visits = [
-        _visit("2026-07-20T08:00:00Z", wa_caseid="wa-1", child_case_id="c1"),
-        _visit("2026-07-20T08:10:00Z", wa_caseid="wa-1", child_case_id="c2"),
-        _visit("2026-07-20T08:20:00Z", wa_caseid="wa-2", child_case_id="c3"),
+        # wa-1: 2 forms but only 1 distinct household -> households=1, not 2
+        _visit("2026-07-20T08:00:00Z", wa_caseid="wa-1", hh_case_id="hh-a", child_case_id="c1"),
+        _visit("2026-07-20T08:10:00Z", wa_caseid="wa-1", hh_case_id="hh-a", child_case_id="c2"),
+        # wa-2: 1 form, 1 household
+        _visit("2026-07-20T08:20:00Z", wa_caseid="wa-2", hh_case_id="hh-b", child_case_id="c3"),
     ]
     result = compute_flw_daily_indicators(visits, wa_building_counts={"wa-1": 1.0, "wa-2": 10.0})
-    by_wa = {row["wa_caseid"]: row for row in result["avg_forms_per_building"]["by_wa"]}
-    assert by_wa["wa-1"]["forms"] == 2
-    assert by_wa["wa-1"]["ratio"] == 2.0  # 2 forms / 1 building
-    assert by_wa["wa-2"]["ratio"] == 0.1  # 1 form / 10 buildings
-    assert result["avg_forms_per_building"]["max_ratio"] == 2.0
+    by_wa = {row["wa_caseid"]: row for row in result["households_per_building"]["by_wa"]}
+    assert by_wa["wa-1"]["households"] == 1
+    assert by_wa["wa-1"]["ratio"] == 1.0  # 1 household / 1 building
+    assert by_wa["wa-2"]["ratio"] == 0.1  # 1 household / 10 buildings
+    assert result["households_per_building"]["max_ratio"] == 1.0
 
 
-def test_avg_forms_per_building_missing_building_count_is_none():
+def test_households_per_building_missing_building_count_is_none():
     visits = [_visit("2026-07-20T08:00:00Z", wa_caseid="wa-unknown")]
     result = compute_flw_daily_indicators(visits, wa_building_counts={})
-    assert result["avg_forms_per_building"]["max_ratio"] is None
-    assert result["avg_forms_per_building"]["by_wa"][0]["ratio"] is None
+    assert result["households_per_building"]["max_ratio"] is None
+    assert result["households_per_building"]["by_wa"][0]["ratio"] is None
+
+
+def test_daily_span_minutes_spans_first_start_to_last_end():
+    visits = [
+        _visit("2026-07-20T08:00:00Z", time_end="2026-07-20T08:05:00Z", child_case_id="c1"),
+        _visit("2026-07-20T08:50:00Z", time_end="2026-07-20T09:00:00Z", child_case_id="c2"),
+    ]
+    result = compute_flw_daily_indicators(visits)
+    assert result["daily_span_minutes"] == 60.0
+
+
+def test_daily_span_minutes_is_none_with_no_visits():
+    result = compute_flw_daily_indicators([])
+    assert result["daily_span_minutes"] is None
 
 
 def test_households_with_4plus_children_counted():
@@ -141,30 +157,46 @@ def test_travel_speed_violation_flags_implausible_speed():
     assert result["travel_speed_violation_count"] == 1
 
 
-def test_duplicate_count_flags_shared_phone_and_shared_child_name_across_households():
+def test_duplicate_child_names_count_flags_shared_name_across_households():
     visits = [
-        _visit(
-            "2026-07-20T08:00:00Z", hh_case_id="hh-a", child_case_id="a1", household_phone="0800", child_name="Amina"
-        ),
-        _visit(
-            "2026-07-20T08:10:00Z", hh_case_id="hh-b", child_case_id="b1", household_phone="0800", child_name="Bello"
-        ),
-        _visit(
-            "2026-07-20T08:20:00Z", hh_case_id="hh-c", child_case_id="c1", household_phone="0900", child_name="AMINA"
-        ),
+        _visit("2026-07-20T08:00:00Z", hh_case_id="hh-a", child_case_id="a1", child_name="Amina"),
+        _visit("2026-07-20T08:10:00Z", hh_case_id="hh-b", child_case_id="b1", child_name="Bello"),
+        _visit("2026-07-20T08:20:00Z", hh_case_id="hh-c", child_case_id="c1", child_name="AMINA"),
     ]
     result = compute_flw_daily_indicators(visits)
-    # 1 duplicate phone (0800 across hh-a/hh-b) + 1 duplicate child name (amina across hh-a/hh-c, case-insensitive)
-    assert result["duplicate_count"] == 2
+    # "amina" (case-insensitive) appears under hh-a and hh-c -> 1 duplicate
+    assert result["duplicate_child_names_count"] == 1
 
 
-def test_duplicate_count_ignores_repeats_within_the_same_household():
+def test_duplicate_child_names_count_ignores_repeats_within_the_same_household():
     visits = [
-        _visit("2026-07-20T08:00:00Z", hh_case_id="hh-a", child_case_id="a1", household_phone="0800"),
-        _visit("2026-07-20T08:10:00Z", hh_case_id="hh-a", child_case_id="a2", household_phone="0800"),
+        _visit("2026-07-20T08:00:00Z", hh_case_id="hh-a", child_case_id="a1", child_name="Amina"),
+        _visit("2026-07-20T08:10:00Z", hh_case_id="hh-a", child_case_id="a2", child_name="Amina"),
     ]
     result = compute_flw_daily_indicators(visits)
-    assert result["duplicate_count"] == 0
+    assert result["duplicate_child_names_count"] == 0
+
+
+def test_duplicate_child_ages_count_flags_shared_dob_across_households():
+    visits = [
+        _visit("2026-07-20T08:00:00Z", hh_case_id="hh-a", child_case_id="a1", childs_dob="2024-01-01"),
+        _visit("2026-07-20T08:10:00Z", hh_case_id="hh-b", child_case_id="b1", childs_dob="2024-01-01"),
+        _visit("2026-07-20T08:20:00Z", hh_case_id="hh-c", child_case_id="c1", childs_dob="2023-06-15"),
+    ]
+    result = compute_flw_daily_indicators(visits)
+    assert result["duplicate_child_ages_count"] == 1
+
+
+def test_duplicate_child_ages_count_ignores_repeats_within_the_same_household():
+    """Same DOB within one household is a plausible real case (e.g. twins) --
+    only cross-household DOB collisions count, mirroring flw_audit_compute.py's
+    own duplicate_child_count convention."""
+    visits = [
+        _visit("2026-07-20T08:00:00Z", hh_case_id="hh-a", child_case_id="a1", childs_dob="2024-01-01"),
+        _visit("2026-07-20T08:10:00Z", hh_case_id="hh-a", child_case_id="a2", childs_dob="2024-01-01"),
+    ]
+    result = compute_flw_daily_indicators(visits)
+    assert result["duplicate_child_ages_count"] == 0
 
 
 def test_straight_lining_pct_and_min_forms_gate():

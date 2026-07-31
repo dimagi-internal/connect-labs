@@ -7,11 +7,15 @@ WorkflowRun per opportunity per day) via a dedicated read-only API endpoint
 row per FLW, one column per day, a single 0/1 "investigate today" flag per
 cell. Clicking an FLW's name expands an inline detail table -- same day
 columns as the row above it, one row per indicator -- showing every one of
-the 10 raw indicator values alongside its threshold, with over-threshold
+the 12 raw indicator values alongside its threshold, with over-threshold
 values highlighted, so it's immediately clear WHICH indicator(s) tripped the
-flag on which day.
+flag on which day. Each indicator label has an (i) hover tooltip with a full
+description (see INDICATOR_DEFS' `description` field) -- a small
+InfoTooltip popover, not the native `title=` attribute, mirroring
+flw_audit_trend_dashboard.py's own workaround for native title= not
+rendering reliably inside this runner's iframe context.
 
-All 9 evaluated indicators' thresholds live in the THRESHOLDS constant below
+All 12 evaluated indicators' thresholds live in the THRESHOLDS constant below
 (indicator #1, total forms, is informational only and never trips the flag)
 -- by design, per the user's explicit requirement that thresholds be tunable
 here without touching or recomputing Workflow 1's history. Retuning a
@@ -34,7 +38,7 @@ DEFINITION = {
     "description": (
         "Program 176 (CHC PRE-RCT Nigeria) 14-day per-FLW daily indicator grid, sourced from the "
         "FLW Daily Indicator Report's saved daily snapshots. One 0/1 flag per FLW per day; expand a "
-        "row to see all 10 indicators + thresholds for every day and exactly which ones tripped."
+        "row to see all 12 indicators + thresholds for every day and exactly which ones tripped."
     ),
     "version": 1,
     "templateType": "flw_daily_indicator_table",
@@ -52,19 +56,22 @@ RENDER_CODE = r"""function WorkflowUI({ definition, workers }) {
     var NUM_DAYS = 14;
     var FETCH_DAYS = 18; // small buffer past 14 for schedule/timezone slack
 
-    // Thresholds for the 9 evaluated indicators (indicator #1, total forms, is
+    // Thresholds for the 12 evaluated indicators (indicator #1, total forms, is
     // informational only and never trips the flag). These are the ONLY place
     // thresholds live -- retune here, no changes to Workflow 1 needed.
     var THRESHOLDS = {
-        avg_forms_per_building: 10,   // flag if max forms/building ratio >= this
-        households_4plus_children: 2, // flag if count > this
-        gap_lt_2min: 15,              // flag if count >= this
-        vaccine_yes_pct: 50,          // flag if % received_any_vaccine=yes < this
-        camping_pct: 80,              // flag if % of forms in largest GPS cluster >= this
-        travel_speed_violation: 2,    // flag if count of implausible-speed gaps >= this
-        duplicate: 2,                 // flag if duplicate HH phone/child name count >= this
-        straight_line_pct: 95,        // flag if either straight-lining field's mode share >= this
-        muac_repetition_pct: 30,      // flag if MUAC value repetition % >= this
+        households_per_building: 5,          // flag if any WA's households/building ratio > this
+        households_4plus_children: 2,        // flag if count > this
+        gap_lt_2min: 15,                      // flag if count >= this
+        vaccine_yes_pct: 50,                  // flag if % received_any_vaccine=yes < this
+        camping_pct: 80,                      // flag if % of forms in largest GPS cluster >= this
+        travel_speed_violation: 2,            // flag if count of implausible-speed gaps >= this
+        duplicate_child_names: 2,             // flag if count >= this
+        duplicate_child_ages: 2,              // flag if count >= this
+        straight_line_pct: 95,                // flag if either straight-lining field's mode share >= this
+        muac_repetition_pct: 30,              // flag if MUAC value repetition % >= this
+        min_forms_for_compression: 30,        // "30+ visits" half of the compression check
+        max_span_minutes_for_compression: 60, // "<=1hr" half of the compression check
     };
 
     var oppNames = React.useMemo(function () {
@@ -299,23 +306,68 @@ RENDER_CODE = r"""function WorkflowUI({ definition, workers }) {
     );
 }
 
-// Every one of the 10 daily indicators, in display order. `path` reaches into
+// Every one of the 12 daily indicators, in display order. `path` reaches into
 // a Workflow-1 per-FLW indicator dict (dot-notated); `thresholdKey` looks up
 // THRESHOLDS (null for indicator #1, which never trips). `direction`
 // determines the trip comparison: "gte" (>= threshold), "gt" (> threshold),
-// or "lt" (< threshold).
+// or "lt" (< threshold). `description` is the full explanation shown in the
+// (i) hover tooltip next to the indicator's label. The last entry (`custom:
+// true`) needs BOTH total_forms and daily_span_minutes at once, so it's
+// handled as a special case in indicatorDetailsForDay/thresholdDisplayFor
+// rather than via path/thresholdKey/direction.
 var INDICATOR_DEFS = [
-    { key: "total_forms", label: "Total Forms", path: "total_forms", thresholdKey: null, direction: null },
-    { key: "avg_forms_per_building", label: "Max Forms/Building", path: "avg_forms_per_building.max_ratio", thresholdKey: "avg_forms_per_building", direction: "gte" },
-    { key: "households_4plus_children", label: "HHs w/ 4+ Children", path: "households_4plus_children_count", thresholdKey: "households_4plus_children", direction: "gt" },
-    { key: "gap_lt_2min", label: "Visits <2min Apart", path: "gap_lt_2min_count", thresholdKey: "gap_lt_2min", direction: "gte" },
-    { key: "vaccine_yes_pct", label: "% Vaccine Yes", path: "vaccine_yes_pct", thresholdKey: "vaccine_yes_pct", direction: "lt" },
-    { key: "camping_pct", label: "% in Largest GPS Cluster (Camping)", path: "camping_pct_largest_cluster", thresholdKey: "camping_pct", direction: "gte" },
-    { key: "travel_speed_violation", label: "Implausible Travel-Speed Gaps", path: "travel_speed_violation_count", thresholdKey: "travel_speed_violation", direction: "gte" },
-    { key: "duplicate", label: "Duplicate HH Phone / Child Name", path: "duplicate_count", thresholdKey: "duplicate", direction: "gte" },
-    { key: "straight_line_dw", label: "Straight-Line % (Child Unwell Today)", path: "straight_line_pct.dw_child_unwell_today", thresholdKey: "straight_line_pct", direction: "gte" },
-    { key: "straight_line_diarrhea", label: "Straight-Line % (Diarrhea Last Month)", path: "straight_line_pct.diarrhea_last_month", thresholdKey: "straight_line_pct", direction: "gte" },
-    { key: "muac_repetition_pct", label: "MUAC Repetition %", path: "muac_repetition_pct", thresholdKey: "muac_repetition_pct", direction: "gte" },
+    {
+        key: "total_forms", label: "HSD Forms Submitted", path: "total_forms", thresholdKey: null, direction: null,
+        description: "Total number of Health Service Delivery (HSD) forms this FLW submitted this day. Shown for context only — never contributes to the flag.",
+    },
+    {
+        key: "households_per_building", label: "Peak Households per Building", path: "households_per_building.max_ratio", thresholdKey: "households_per_building", direction: "gt",
+        description: "The highest households-registered ÷ buildings-in-work-area ratio, across every work area this FLW visited this day. Flags a single work area being visited far more than its building count would justify.",
+    },
+    {
+        key: "households_4plus_children", label: "Large Households (4+ Under-5s)", path: "households_4plus_children_count", thresholdKey: "households_4plus_children", direction: "gt",
+        description: "Number of households visited this day where 4 or more distinct children under 5 were registered. Encountering that many large households in one day is uncommon.",
+    },
+    {
+        key: "gap_lt_2min", label: "Rushed Visits (<2 min Apart)", path: "gap_lt_2min_count", thresholdKey: "gap_lt_2min", direction: "gte",
+        description: "Number of times two consecutive HSD forms were submitted less than 2 minutes apart — a possible sign of rushing through or fabricating visits.",
+    },
+    {
+        key: "vaccine_yes_pct", label: "% Children Vaccinated", path: "vaccine_yes_pct", thresholdKey: "vaccine_yes_pct", direction: "lt",
+        description: "Share of this day's HSD forms where the child was recorded as having received any vaccine. An unusually low share can mean the vaccination step isn't being done.",
+    },
+    {
+        key: "camping_pct", label: "Camping % (Same-Spot Visits)", path: "camping_pct_largest_cluster", thresholdKey: "camping_pct", direction: "gte",
+        description: "Share of this day's GPS-tagged forms submitted within about 30 meters of each other. A high share suggests the FLW stayed in one place rather than moving between households.",
+    },
+    {
+        key: "travel_speed_violation", label: "Implausible Travel-Speed Gaps", path: "travel_speed_violation_count", thresholdKey: "travel_speed_violation", direction: "gte",
+        description: "Number of consecutive visit pairs where the distance and time between them imply travel faster than 15 km/h — faster than realistic on foot between households.",
+    },
+    {
+        key: "duplicate_child_names", label: "Duplicate Child Names Across Households", path: "duplicate_child_names_count", thresholdKey: "duplicate_child_names", direction: "gte",
+        description: "Number of child names that appear under more than one household visited this day (case-insensitive) — may indicate a fabricated or reused identity.",
+    },
+    {
+        key: "duplicate_child_ages", label: "Duplicate Child Ages Across Households", path: "duplicate_child_ages_count", thresholdKey: "duplicate_child_ages", direction: "gte",
+        description: "Number of child dates of birth that appear under more than one household visited this day. Two unrelated households having a child with the exact same birth date is uncommon.",
+    },
+    {
+        key: "straight_line_dw", label: "Straight-Lining: Child Unwell Today", path: "straight_line_pct.dw_child_unwell_today", thresholdKey: "straight_line_pct", direction: "gte",
+        description: "Share of this day's forms with the identical answer to “Does your child have breathing difficulty, vomiting, diarrhea, or high body temperature today?” A near-unanimous answer across different children is an unlikely coincidence.",
+    },
+    {
+        key: "straight_line_diarrhea", label: "Straight-Lining: Diarrhea Last Month", path: "straight_line_pct.diarrhea_last_month", thresholdKey: "straight_line_pct", direction: "gte",
+        description: "Share of this day's forms with the identical answer to “Did your child have diarrhea in the last month?” — same straight-lining concern, different question.",
+    },
+    {
+        key: "muac_repetition_pct", label: "MUAC Value Repetition %", path: "muac_repetition_pct", thresholdKey: "muac_repetition_pct", direction: "gte",
+        description: "Share of this day's MUAC (arm circumference) measurements that are the exact same value. Real measurements vary child to child; high repetition suggests numbers may be reused rather than actually measured.",
+    },
+    {
+        key: "visits_compressed_1hr", label: "30+ Visits Compressed Into ≤60min", custom: true, // gitleaks:allow (not a secret -- an indicator key string)
+        description: "Flags when this FLW claims 30 or more visits in a day AND the time from the first visit's start to the last visit's end is 1 hour or less — a volume of work that's implausible to complete in that short a span.",
+    },
 ];
 
 function getByPath(obj, path) {
@@ -336,10 +388,36 @@ function tripped(value, threshold, direction) {
     return false;
 }
 
+// The one compound indicator (30+ visits AND <=1hr span) needs both
+// total_forms and daily_span_minutes at once -- can't be expressed as a
+// single path/threshold/direction triple like every other indicator.
+function thresholdDisplayFor(def, thresholds) {
+    if (def.custom) {
+        return thresholds.min_forms_for_compression + "+ forms & ≤" + thresholds.max_span_minutes_for_compression + "min";
+    }
+    return def.thresholdKey ? thresholds[def.thresholdKey] : null;
+}
+
 // Computes every indicator's {value, threshold, evaluable, tripped} for one
 // FLW-day, plus whether ANY of them tripped (indicator #1 never contributes).
 function indicatorDetailsForDay(flw, thresholds) {
     return INDICATOR_DEFS.map(function (def) {
+        if (def.custom) {
+            var totalForms = flw ? flw.total_forms : null;
+            var spanMin = flw ? flw.daily_span_minutes : null;
+            var evaluable = totalForms != null && spanMin != null;
+            var isTripped = evaluable
+                && totalForms >= thresholds.min_forms_for_compression
+                && spanMin <= thresholds.max_span_minutes_for_compression;
+            return {
+                key: def.key,
+                label: def.label,
+                value: evaluable ? (totalForms + " forms / " + spanMin + "min") : null,
+                threshold: thresholdDisplayFor(def, thresholds),
+                evaluable: evaluable,
+                tripped: isTripped,
+            };
+        }
         var value = flw ? getByPath(flw, def.path) : null;
         var threshold = def.thresholdKey ? thresholds[def.thresholdKey] : null;
         var evaluable = value != null;
@@ -373,6 +451,51 @@ function formatShortDate(isoDate) {
     return months[month] + " " + day;
 }
 
+function InfoTooltip({ text }) {
+    // Native title= doesn't render reliably inside this iframe/component context
+    // (same gotcha the trend dashboard hit building workflow 4593's metric
+    // tooltips) -- use a custom hover popover positioned via getBoundingClientRect
+    // instead. See flw_audit_trend_dashboard.py's own InfoTooltip for precedent.
+    if (!text) return null;
+    var _open = React.useState(false);
+    var open = _open[0];
+    var setOpen = _open[1];
+    var iconRef = React.useRef(null);
+    var _pos = React.useState({ top: 0, left: 0 });
+    var pos = _pos[0];
+    var setPos = _pos[1];
+
+    function show() {
+        if (iconRef.current) {
+            var rect = iconRef.current.getBoundingClientRect();
+            setPos({ top: rect.bottom + 6, left: rect.left });
+        }
+        setOpen(true);
+    }
+    function hide() { setOpen(false); }
+
+    return (
+        <span className="relative inline-block ml-1 align-middle">
+            <span
+                ref={iconRef}
+                onMouseEnter={show}
+                onMouseLeave={hide}
+                className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-gray-200 text-gray-600 text-[10px] font-bold cursor-help"
+            >
+                i
+            </span>
+            {open && (
+                <span
+                    style={{ position: "fixed", top: pos.top, left: pos.left, zIndex: 50, maxWidth: "280px" }}
+                    className="bg-gray-900 text-white text-xs rounded px-2 py-1.5 shadow-lg normal-case font-normal"
+                >
+                    {text}
+                </span>
+            )}
+        </span>
+    );
+}
+
 function ExpandedFlwDetail({ row, dayColumns, thresholds }) {
     // Transposed from the main grid's own orientation: here, days are the
     // COLUMNS (matching the day columns directly above this expanded row) and
@@ -402,12 +525,14 @@ function ExpandedFlwDetail({ row, dayColumns, thresholds }) {
                 </thead>
                 <tbody className="divide-y">
                     {INDICATOR_DEFS.map(function (def) {
+                        var thresholdDisplay = thresholdDisplayFor(def, thresholds);
                         return (
                             <tr key={def.key}>
                                 <td className="sticky left-0 bg-white px-2 py-1.5 font-medium text-gray-700 whitespace-nowrap">
                                     {def.label}
-                                    {def.thresholdKey && (
-                                        <span className="text-gray-400 font-normal"> (thr: {thresholds[def.thresholdKey]})</span>
+                                    <InfoTooltip text={def.description} />
+                                    {thresholdDisplay != null && (
+                                        <span className="text-gray-400 font-normal"> (thr: {thresholdDisplay})</span>
                                     )}
                                 </td>
                                 {dayColumns.map(function (d) {
@@ -439,7 +564,7 @@ TEMPLATE = {
     "description": (
         "Program 176 (CHC PRE-RCT Nigeria) 14-day per-FLW daily indicator grid, sourced from the "
         "FLW Daily Indicator Report's saved daily snapshots. One 0/1 flag per FLW per day; expand a "
-        "row to see all 10 indicators + thresholds for every day and exactly which ones tripped."
+        "row to see all 12 indicators + thresholds for every day and exactly which ones tripped."
     ),
     "icon": "fa-table-cells",
     "color": "indigo",
