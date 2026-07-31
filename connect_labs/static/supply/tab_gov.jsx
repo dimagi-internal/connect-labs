@@ -387,7 +387,7 @@ function GovTab({ ctx }) {
               },
               {
                 key: 'uncovered',
-                label: 'Children still uncovered',
+                label: 'Children with no supply positioned',
                 value: (r) => r.uncovered_children,
                 render: (r) => formatNumber(r.uncovered_children),
                 // The national figure a ministry official is here for.

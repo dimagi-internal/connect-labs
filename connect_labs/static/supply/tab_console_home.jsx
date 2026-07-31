@@ -128,30 +128,42 @@ function ConsoleHome({ ctx }) {
           )}
         </Card>
 
-        <Card title="Applications awaiting review">
-          <DataTable
-            rows={queue}
-            rowKey={(s) => s.id}
-            empty="The review queue is clear."
-            columns={[
-              { key: 'org', label: 'Supplier', value: (s) => s.org_name },
-              { key: 'round', label: 'Round', value: (s) => s.round_title },
-              {
-                key: 'cats',
-                label: 'Categories',
-                sortable: false,
-                value: () => '',
-                render: (s) => <CategoryPills categories={s.categories} />,
-              },
-              {
-                key: 'submitted',
-                label: 'Waiting since',
-                value: (s) => s.submitted_at,
-                render: (s) => formatDate(s.submitted_at),
-              },
-            ]}
-          />
-        </Card>
+        {/* A clear queue states itself in one line, not in a 150px card.
+            Empty, this was the largest panel on the establishing screen — two
+            thirds of the width holding the single sentence "The review queue is
+            clear." — which pushed the Solicitations table, and with it the only
+            live tender, below the fold on the frame that is supposed to answer
+            "what is in flight today". */}
+        {queue.length ? (
+          <Card title="Applications awaiting review">
+            <DataTable
+              rows={queue}
+              rowKey={(s) => s.id}
+              empty="The review queue is clear."
+              columns={[
+                { key: 'org', label: 'Supplier', value: (s) => s.org_name },
+                { key: 'round', label: 'Round', value: (s) => s.round_title },
+                {
+                  key: 'cats',
+                  label: 'Categories',
+                  sortable: false,
+                  value: () => '',
+                  render: (s) => <CategoryPills categories={s.categories} />,
+                },
+                {
+                  key: 'submitted',
+                  label: 'Waiting since',
+                  value: (s) => s.submitted_at,
+                  render: (s) => formatDate(s.submitted_at),
+                },
+              ]}
+            />
+          </Card>
+        ) : (
+          <p className="muted small queue-clear">
+            No applications awaiting review.
+          </p>
+        )}
       </div>
 
       {rfps.length ? (
@@ -169,7 +181,7 @@ function ConsoleHome({ ctx }) {
                 key: 'status',
                 label: 'Status',
                 value: (r) => r.status,
-                render: (r) => <StatusChip status={r.status} />,
+                render: (r) => <SolicitationStatusChip rfp={r} />,
               },
               { key: 'lots', label: 'Lots', value: (r) => r.lots.length },
               {

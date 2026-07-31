@@ -48,7 +48,7 @@
         }
       ],
       "id": "inbound-supply-in-the-calendar-they-plan-in",
-      "narrative": "A shipment table sorted by arrival date is a supplier's view of the world. Zara's unit of planning is a distribution day, at a named site, with a known number of children expected — so that is the frame the inbound supply is shown in. Monguno has five hundred and forty-eight children booked and nine hundred cartons on hand: covered. Askira has fifty-nine booked against thirty-eight cartons, and ninety-four more are on the road — arriving after that distribution, so they do not cover it. That is why a cell can be amber with a lorry already on the way, and why adding the two numbers together would tell Zara the opposite of the truth. Biu has a hundred children booked and nothing on hand at all. Three states, on the grid, in the shape they already think in.",
+      "narrative": "A shipment table sorted by arrival date is a supplier's view of the world. Zara's unit of planning is a distribution day, at a named site, with a known number of children expected — so that is the frame the inbound supply is shown in. Dikwa has two hundred and ninety children booked and sixteen hundred cartons on hand: covered. Askira has fifty-nine booked against thirty-eight cartons, and ninety-four more are on the road — arriving after that distribution, so they do not cover it. That is why a cell can be amber with a lorry already on the way, and why adding the two numbers together would tell Zara the opposite of the truth. Biu has a hundred children booked and nothing on hand at all. Three states, on the grid, in the shape they already think in.",
       "persona": "zara",
       "provenance": "S1",
       "title": "Inbound supply, in the calendar they plan in"
@@ -109,12 +109,12 @@
         }
       ],
       "id": "from-a-batch-to-the-child-who-recovered",
-      "narrative": "Komadugu's own workers already screen every child they treat, and that record and the supply record have never been the same chain. Joined up, they are. Zara opens a batch that arrived last month and follows it forward — to the distributions it supplied, to the children admitted on it, and to one child whose arm circumference climbs across their visits out of red, through yellow, into green. Recovered. This is the linkage the funding standards describe and the sector achieves as far as the contract and then abandons. The last mile here is synthetic and says so; the point is that both ends of it already exist and can be held as one record.",
+      "narrative": "Komadugu's own workers screen the children they admit, and that record and the supply record have never been the same chain. Joined up, they are. Zara opens a batch that arrived in April and follows it forward — to the distribution it supplied, to the children admitted on it, and to one child whose arm circumference climbs across their visits out of red, through yellow, into green. Recovered. The card states its own base rather than hiding it: outcomes are recorded for twenty-two of the two hundred and eighteen children this batch fed, and it says in as many words that a rate from twenty-two children is not the batch's recovery rate. This is the linkage the funding standards describe and the sector achieves as far as the contract and then abandons. The last mile here is synthetic and says so; the point is that both ends of it already exist and can be held as one record.",
       "persona": "zara",
       "provenance": "S5",
       "title": "From a batch to the child who recovered"
     }
   ],
   "slug": "oes-partner-pipeline",
-  "version": 4
+  "version": 5
 }

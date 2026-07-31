@@ -34,8 +34,16 @@ function FunderTab({ ctx }) {
   // chain, so every step can be checked". The first thing a reader checks is
   // the first and last rung against each other, and it did not hold.
   const confirmedCartons = goods.reduce((n, c) => n + c.confirmed_quantity, 0);
-  const confirmedMt = Math.round((confirmedCartons * 150 * 92) / 1000000);
-  const deliveredMt = Math.round((deliveredCartons * 150 * 92) / 1000000);
+  // ONE decimal, because the ladder has to reproduce itself.
+  //
+  // Rounded to whole tonnes the chain stopped dividing: 166 MT / 13.8 kg per
+  // carton is 12,029, and the next rung read 12,000. An auditor doing the
+  // arithmetic printed on the arrows got a different answer from the screen, on
+  // the one card whose entire claim is that every step can be checked. 12,000 x
+  // 13.8 kg is 165.6 MT, so 165.6 is the figure that closes the loop.
+  const oneDp = (n) => Math.round(n * 10) / 10;
+  const confirmedMt = oneDp((confirmedCartons * 13.8) / 1000);
+  const deliveredMt = oneDp((deliveredCartons * 13.8) / 1000);
   const costPerChild = confirmedCartons
     ? goodsDisbursed / confirmedCartons
     : null;
@@ -385,7 +393,7 @@ function FunderTab({ ctx }) {
               },
               {
                 key: 'uncovered',
-                label: 'Still uncovered',
+                label: 'No supply positioned',
                 value: (r) => r.uncovered_children,
                 render: (r) => formatNumber(r.uncovered_children),
               },

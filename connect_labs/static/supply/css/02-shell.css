@@ -108,6 +108,15 @@
 
 .content {
   flex: 1;
+  /* A flex item defaults to min-width: auto, so it refuses to shrink below its
+     content's intrinsic width — a wide table therefore grew this column, grew
+     the shell, and scrolled the whole DOCUMENT sideways. That took the app
+     wordmark and the left nav off the left edge ("eration End Starvation") on
+     every frame of the funder surface, and `.table-wrap { overflow-x: auto }`
+     could not help, because the wrap was never the thing being constrained.
+     min-width: 0 lets this column stay viewport-width and hands the horizontal
+     scrolling back to the table's own wrap, where it belongs. */
+  min-width: 0;
   padding: 24px 28px 60px;
   max-width: 1400px;
   position: relative;

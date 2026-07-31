@@ -158,9 +158,37 @@ function InfoNote({ label, text }) {
   // The popover was absolutely positioned inside the card, and .card clips
   // (overflow: hidden) — so a method note opened near a card's bottom edge cut
   // its own text mid-sentence, on the one element whose job is to carry the
-  // method in full. position: fixed escapes every clipping ancestor; the note
-  // closes on toggle, so it does not need to track scrolling.
+  // method in full. position: fixed escapes every clipping ancestor.
   const [pos, setPos] = useState(null);
+
+  // ...but a fixed popover is pinned to the VIEWPORT, so it does not travel
+  // with the content it explains. Left open, it floats over whatever the reader
+  // scrolls to next — a note about Borno's caseload sat over an unrelated
+  // expiry row three screens later, and over the closing sentence of a
+  // walkthrough, still asserting a derivation for figures it had nothing to do
+  // with. An explainer that outlives its subject is worse than no explainer.
+  //
+  // So: any scroll dismisses it, as does Escape or a click anywhere else.
+  // Capture-phase scroll listening catches scrolling inside a modal body or a
+  // table wrap, not just the document.
+  useEffect(() => {
+    if (!open) return undefined;
+    const close = () => setOpen(false);
+    const onKey = (ev) => {
+      if (ev.key === 'Escape') setOpen(false);
+    };
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    document.addEventListener('click', close);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+      document.removeEventListener('click', close);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
   return (
     <span className="infonote">
       <button
@@ -173,8 +201,24 @@ function InfoNote({ label, text }) {
           if (!open) {
             const r = ev.currentTarget.getBoundingClientRect();
             const width = Math.min(320, window.innerWidth * 0.74);
+            // Flip above the trigger when there is not room below it.
+            //
+            // Anchored below unconditionally, a note opened on a figure near the
+            // foot of its card spilled a couple of hundred pixels into the NEXT
+            // card and sat on live data — a caseload method covering the two
+            // coverage percentages it was meant to explain, and a cost-per-course
+            // method covering the table beneath it. An explainer that destroys
+            // the figures around it is worse than one that has to be scrolled to.
+            //
+            // The height is not known until it renders, so this uses the
+            // stylesheet's max-height as the worst case; the note is at most
+            // that tall, so a flip decided on it never spills either way.
+            const MAX_H = 300;
+            const below = window.innerHeight - r.bottom - 12;
+            const flip = below < MAX_H && r.top > below;
             setPos({
-              top: r.bottom + 6,
+              top: flip ? undefined : r.bottom + 6,
+              bottom: flip ? window.innerHeight - r.top + 6 : undefined,
               left: Math.max(
                 8,
                 Math.min(r.left - 8, window.innerWidth - width - 12),
@@ -189,7 +233,13 @@ function InfoNote({ label, text }) {
       {open && pos ? (
         <span
           className="infonote-body"
-          style={{ position: 'fixed', top: pos.top, left: pos.left }}
+          style={{
+            position: 'fixed',
+            top: pos.top,
+            bottom: pos.bottom,
+            left: pos.left,
+          }}
+          onClick={(ev) => ev.stopPropagation()}
         >
           {text}
         </span>
@@ -248,6 +298,32 @@ function StatusChip({ status, label }) {
       {label || STATUS_LABELS[status] || status}
     </span>
   );
+}
+
+/* A published tender whose bid deadline has passed is not still collecting bids.
+   It rendered as "Published" indefinitely — a tender three days past its own
+   deadline reading as open, which is the first thing an auditor queries. The
+   lifecycle field is untouched (bidding closing is a date passing, not a
+   transition somebody makes); this is the display deriving what the date already
+   says, the same way "late" is derived elsewhere in this app. */
+function SolicitationStatusChip({ rfp }) {
+  const closed =
+    rfp.status === 'published' &&
+    rfp.bid_deadline &&
+    daysUntil(rfp.bid_deadline) !== null &&
+    daysUntil(rfp.bid_deadline) < 0;
+  if (closed) {
+    return (
+      <span className="cell-with-note">
+        <span className="chip chip-info">Bidding closed</span>
+        <InfoNote
+          label="this status"
+          text="The solicitation is published and its bid deadline has passed, so it is no longer collecting bids — it is waiting on evaluation and award. The underlying record is still Published; bidding closing is a date passing rather than a decision anybody takes, so it is derived here rather than stored."
+        />
+      </span>
+    );
+  }
+  return <StatusChip status={rfp.status} />;
 }
 
 function Badge({ children, tone }) {

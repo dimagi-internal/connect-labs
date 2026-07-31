@@ -733,3 +733,114 @@ three-chip legend on the card header; define the bands; move prose to 'i'.
 Band labels, visit-count and delta annotations render on the highlighted row
 only; sparklines carry no time axis; '2 visits over 1 week' wraps one word per
 line; the last row clips mid-badge.
+
+---
+
+## Fourth judge pass (31 July 2026, post-fork-resolution) — 29 scenes, four independent judges
+
+Every arc performed every narrated act (296/296 actions ok) and every
+deterministic lens passed, so this pass reached a deeper class of finding than
+the previous ones. **The rubric was also run harder than the third pass** (each
+judge was told to list at least eight candidate flaws per scene and to start
+from 3), so per-scene numbers are NOT comparable with the third pass's — what is
+comparable is that none of the third pass's fixed findings were re-reported.
+
+### FIXED IN THIS ROUND
+
+Three of them were regressions introduced by the previous round's own fixes,
+which is the honest cost of that round and the reason a judge pass is worth
+running after every one:
+
+- **The method popover outlived its subject.** Making it `position: fixed` (to
+  stop `.card`'s `overflow: hidden` clipping its text) pinned it to the
+  VIEWPORT, so a note opened in one scene floated over the next three — in the
+  command-centre arc a note about Borno's caseload sat over an unrelated expiry
+  row and then over the closing sentence of the whole narrative. Now dismissed
+  by any scroll, Escape, or outside click.
+- **The popover covered the data below it.** Anchored below its trigger
+  unconditionally, a note opened near a card's foot spilled into the next card
+  and hid the very figures it explained. Now flips above when there is no room.
+- **The page scrolled sideways.** `.content` is a flex item, so its default
+  `min-width: auto` let a wide table grow the column, grow the shell, and scroll
+  the DOCUMENT — taking the wordmark and left nav off the left edge of every
+  funder frame ("eration End Starvation"), and letting the map bleed over the
+  sticky header. `min-width: 0` hands horizontal scrolling back to the table's
+  own wrap. One root cause behind roughly a dozen reported symptoms.
+- **The unit ladder did not reproduce itself.** 166 MT / 13.8 kg = 12,029, and
+  the next rung read 12,000 — on the card whose whole claim is that every step
+  can be checked. Now one decimal (165.6 MT), so the division closes.
+- **The caseload method did not reach its own number.** The note stated the
+  formula and stopped, evaluating to the MONTHLY caseload while the cell beside
+  it showed the caseload summed over the response window. It now evaluates
+  explicitly and says which figure it evaluates to.
+- **"Still uncovered" contradicted "Reached a child".** The column is
+  requirement minus POSITIONED supply, so it read as a treatment gap while the
+  column two places left said 7.9% had reached a child. Renamed on all three
+  surfaces to "Children with no supply positioned".
+- **A past-deadline tender read as open.** A solicitation three days past its
+  bid deadline still showed "Published". Now derives "Bidding closed" from the
+  date, leaving the lifecycle field alone.
+- **An empty review queue ate the fold.** Two judges flagged it independently:
+  the largest panel on the establishing screen held one sentence, pushing the
+  only live tender below the fold. Collapses to one line when clear.
+- **Narration vs render, four places.** command-centre s2 named three ingestion
+  tiers and a Port Sudan-to-El Fasher leg; the screen shows four legs all
+  reading "Phone check-in" and no such leg — re-narrated to the honest worst-case
+  corridor, which is a stronger scene. partner s2's covered exemplar (Monguno)
+  was row 10, below the fold — now Dikwa, which is in frame. partner s6 called a
+  batch that arrived in April "last month" and claimed workers "screen every
+  child" while the card's own caveat says outcomes exist for 22 of 218 — the
+  product was more honest than the voiceover, now corrected to match it.
+- **Three canonical frames were captured before their payoff.** command-centre
+  s8 snapshotted the closed row and only then scrolled to the headline the
+  closing line is about; money s4 opened the scope marker, closed it, then
+  snapshotted the table; money s6 snapshotted inside the batch modal, which
+  covers the card carrying every figure the narration names.
+
+### STILL OPEN — highest value first
+
+These are real and unfixed. Several are design decisions rather than defects.
+
+1. **No lapse view in the registry** (supply-base s5, `redesign`). The claim is
+   "a lapsed certification drops a supplier out without anyone maintaining a
+   list", and a registry that by construction excludes lapsed suppliers cannot
+   show it. Needs a "Lapsed since" view naming supplier, category, lapse date and
+   the certificate that expired — the artifact an inspector would ask for.
+2. **Server-side eligibility still cannot be proven on screen** (supply-base s6).
+   A count cannot distinguish server filtering from CSS hiding. The honest proof
+   is the supplier-side absence, which needs a mid-scene persona switch
+   (dev-login, 403 on prod by design). Also: the reach count does not MOVE when a
+   qualification is granted, because the supplier was already qualified in the
+   seed — either seed them unqualified so the count increments on camera, or stop
+   implying the count moved.
+3. **Per-category evidence blocks are missing** (supply-base s3/s4). A decline
+   rests on an absence, and an absence is invisible: therapeutic milk has no
+   commitment block at all, so the reject cannot be defended from the screen. An
+   explicit "no capacity declared, no plant listed, no approval on file" block is
+   far stronger than a blank. Reviewer notes should also be required on a reject.
+4. **Qualify and Reject render the same green** (supply-base s4). Two opposite
+   verdicts, identical colour — the "one supplier, two answers" contrast is
+   visually erased on the frame that exists to make it.
+5. **The exception queue cannot be read as a ranking** (command-centre s1).
+   Roughly 1.5 cards fit the viewport at ~215px each, and there is no rank
+   ordinal or magnitude encoding, so the ordering is implicit. A compact two-line
+   row would show four or five at once.
+6. **The event log has one entry** (command-centre s4). "Append-only, derived
+   status" cannot be demonstrated by a single row, and the loudest element on the
+   card is a write button. Needs a consignment with real history, including one
+   entry superseding another.
+7. **The map draws no flows on the government view** (money s4) and its only
+   marker sits on Lagos while every destination is north-east.
+8. **MUAC charts are individually auto-scaled** (money s6, partner s6), so five
+   different trajectories render as five near-identical curves — which defeats
+   the only reason to stack them. Needs a shared y-domain and a real axis.
+9. **Three delivery totals on one page** (money s1): 47,000 cartons in the table,
+   33,000 "under contract", 58,251 on the closing card, with no bridging note.
+10. **Award records carry no rationale, approver or reference** (supply-base s8),
+    and losing bidders get no explicit "not awarded" state.
+11. **Projector-test failures are systemic**: in-chart labels at 7-8px, field
+    labels at 9-11px uppercase grey, method notes at 11px. The figures that
+    carry each claim are consistently the smallest text in frame.
+12. **The seeded world has visible repeats** — each site's two consignments carry
+    identical carton counts, and 0 of 14 applications were ever rejected, which
+    reads as a rubber stamp on the screen that sets up the review scenes.
