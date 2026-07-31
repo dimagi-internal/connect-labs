@@ -1334,3 +1334,14 @@
     display: none;
   }
 }
+
+/* A partner Connect will not name to the polling account, shown as its slug.
+   Rendered in the telemetry register rather than the display register, so an
+   identifier cannot be mistaken for a considered name. See _UnnamedOrg. */
+.pulse-partner-name[data-slug='1'] {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--ink-2);
+}

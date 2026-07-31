@@ -120,6 +120,13 @@ class PulseOrganization(models.Model):
 
     updated_at = models.DateTimeField(auto_now=True)
 
+    # A row existing here means Connect named this partner to us. Most partners
+    # have no row -- the export scopes its organizations list to the poller's
+    # memberships -- and are represented by ``api._UnnamedOrg``, which sets this
+    # False. Declared here so both stand-ins answer the same question and the
+    # display can mark the difference. Not a field: it is true of the class.
+    named = True
+
     def __str__(self) -> str:
         return f"{self.name or self.slug}"
 
