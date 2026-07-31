@@ -89,6 +89,50 @@ class PulseProgram(models.Model):
         return f"{self.name or self.program_id} ({self.delivery_type or '—'})"
 
 
+class PulseOrganization(models.Model):
+    """The delivery partners — who actually runs the work.
+
+    Arrives in the same ``opp_org_program_list`` response as the opportunities
+    and programmes, which published ``["id", "slug", "name", "funder"]`` per org
+    all along. Pulse read ``len(organizations)`` for a headline count and threw
+    the rows away, so the only org identity anywhere downstream was the
+    ``org_slug`` denormalised onto events and works.
+
+    That is the same omission ``PulseProgram`` documents above, and it has the
+    same consequence: a slug is not a name. Drilling into "connect-nigeria"
+    puts an internal identifier on a funder's screen, and title-casing it in
+    labs would be inventing a label -- the failure the ``SERVICE_LABELS``
+    comment exists to prevent. Connect knows these names; we just have to keep
+    them.
+
+    ``funder`` is kept because on a funder-facing display "who else backs this
+    partner" is a question the screen can now answer for free.
+    """
+
+    # Keyed on slug, not on Connect's numeric id: the slug is what ingest
+    # denormalises onto every event and work row, so it is the only join key
+    # pulse actually uses. Carrying the numeric id as well would be an unused
+    # unique column that ingest could crash on -- two orgs with no id upstream
+    # would collide on the same default.
+    slug = models.CharField(max_length=120, unique=True, db_index=True)
+    name = models.CharField(max_length=300, blank=True)
+    funder_slug = models.CharField(max_length=120, blank=True)
+
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        return f"{self.name or self.slug}"
+
+    @property
+    def display_name(self) -> str:
+        """Never blank: falls back to the slug rather than rendering nothing.
+
+        A partner with no name upstream should read as its identifier, which is
+        at least true, instead of as an empty cell that looks like a bug.
+        """
+        return self.name or self.slug
+
+
 class PulseOpportunity(models.Model):
     """Cheap-tier mirror of an opportunity's display + rate metadata.
 
@@ -136,7 +180,9 @@ class PulseEvent(models.Model):
     connect_visit_id = models.BigIntegerField(unique=True, db_index=True)
     opportunity_id = models.IntegerField(db_index=True)
     program_id = models.IntegerField(null=True, blank=True, db_index=True)
-    org_slug = models.CharField(max_length=120, blank=True)
+    # Indexed for the same reason program_id is: the partner filter selects on
+    # it directly and the partner menu groups by it, both over the whole table.
+    org_slug = models.CharField(max_length=120, blank=True, db_index=True)
 
     # field_ts = when the service happened; sync_ts = when Connect received it.
     # These differ by a median of 9 minutes and a p90 of ~3 hours because the
@@ -192,7 +238,8 @@ class PulseWork(models.Model):
     work_key = models.CharField(max_length=64, unique=True, db_index=True)
     opportunity_id = models.IntegerField(db_index=True)
     program_id = models.IntegerField(null=True, blank=True, db_index=True)
-    org_slug = models.CharField(max_length=120, blank=True)
+    # Indexed: money per partner groups by this across every row of the spine.
+    org_slug = models.CharField(max_length=120, blank=True, db_index=True)
 
     worker_hash = models.CharField(max_length=64, blank=True)
     payment_unit_id = models.IntegerField(null=True, blank=True)

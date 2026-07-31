@@ -48,6 +48,16 @@ would put a "Connect Labs" navigation bar above a funder-facing screen.
         </select>
       </label>
 
+      {# Partners are only listed for a caller entitled to name them, so this   #}
+      {# control hides itself when the summary comes back with an empty list    #}
+      {# rather than rendering an empty menu on an anonymised link.             #}
+      <label class="pulse-progfilter" id="org-filter-wrap" hidden>
+        <span class="pulse-lbl">Partner</span>
+        <select id="org-filter" aria-label="Filter by delivery partner">
+          <option value="">All partners</option>
+        </select>
+      </label>
+
       <div class="pulse-bar-spacer"></div>
 
       <div class="pulse-scope">
@@ -129,7 +139,10 @@ would put a "Connect Labs" navigation bar above a funder-facing screen.
       base: "/labs/pulse",
       layout: "{{ layout|escapejs }}",
       isPublic: {{ is_public|yesno:"true,false" }},
-      showPartnerNames: {{ show_partner_names|yesno:"true,false" }}
+      showPartnerNames: {{ show_partner_names|yesno:"true,false" }},
+      {# The API decides entitlement, so it needs to know which link this is. #}
+      {# Absent on the authenticated view, where the session speaks for it.   #}
+      token: "{{ public_token|default:''|escapejs }}"
     };
     window.MAPBOX_TOKEN = "{{ mapbox_token|escapejs }}";
   </script>

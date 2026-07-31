@@ -28,7 +28,9 @@ from connect_labs.pulse.models import (
     PulseGridCell,
     PulseIngestHealth,
     PulseOpportunity,
+    PulseOrganization,
     PulseProgram,
+    PulsePublicToken,
     PulseRollup,
     PulseScalar,
     PulseWork,
@@ -131,7 +133,7 @@ EVENT_FIELDS = [
 
 
 def _program_scope(request):
-    """Resolve ``?program=<id>`` into the querysets every card is drawn from.
+    """Resolve ``?program=<id>`` / ``?org=<slug>`` into the querysets every card is drawn from.
 
     Filtering has to happen HERE rather than in the page: the headline figures
     are server-side aggregates over the whole estate, so a client that hid rows
@@ -142,6 +144,11 @@ def _program_scope(request):
     ``PulseEvent``, ``PulseWork`` and ``PulseOpportunity`` all carry an indexed
     ``program_id``. ``PulseRollup`` keys on opportunity, so it filters through
     one. ``PulseGridCell`` carries neither -- see ``grid_service`` below.
+
+    Org and programme compose rather than override: an org filter narrows to
+    that partner, and a programme filter on top narrows to their work on that
+    programme. Making one silently clear the other would let the two controls
+    disagree about what the screen is showing.
     """
     raw = (request.GET.get("program") or "").strip()
     program = None
@@ -151,11 +158,32 @@ def _program_scope(request):
         except ValueError:
             program = None
 
+    # The partner filter is only honoured for a caller entitled to partner
+    # identity. Scoping to `?org=connect-nigeria` would hand an anonymised
+    # caller that partner's volumes and rates keyed to a name they supplied --
+    # withholding the *name* from a response whose shape is "this named
+    # partner's commercial performance" protects nothing.
+    org_raw = (request.GET.get("org") or "").strip()
+    org = (
+        PulseOrganization.objects.filter(slug=org_raw).first() if org_raw and _partner_names_allowed(request) else None
+    )
+
     events = PulseEvent.objects.all()
     works = PulseWork.objects.all()
     opps = PulseOpportunity.objects.all()
     rollups = PulseRollup.objects.all()
     grid_service = None
+
+    if org is not None:
+        # org_slug is denormalised onto all three spines at ingest, so the
+        # partner filter needs no join. Rollups key on opportunity, same as the
+        # programme path.
+        events = events.filter(org_slug=org.slug)
+        works = works.filter(org_slug=org.slug)
+        opps = opps.filter(org_slug=org.slug)
+        rollups = rollups.filter(
+            opportunity_id__in=PulseOpportunity.objects.filter(org_slug=org.slug).values("opportunity_id")
+        )
 
     if program is not None:
         pid = program.program_id
@@ -172,6 +200,7 @@ def _program_scope(request):
 
     return {
         "program": program,
+        "org": org,
         "events": events,
         "works": works,
         "opps": opps,
@@ -189,7 +218,7 @@ def _scope_for(sc):
     inferred poller and the head-sliced replay -- a true number answering a
     question nobody asked.
     """
-    if sc["program"] is None:
+    if sc["program"] is None and sc["org"] is None:
         row = PulseScalar.objects.filter(key="scope").first()
         return row.value if row else {}
 
@@ -199,9 +228,198 @@ def _scope_for(sc):
         "opportunities": agg["n"] or 0,
         "active_opportunities": opps.filter(is_active=True).count(),
         "lifetime_visits": agg["visits"] or 0,
-        "programs": 1,
+        # A programme is one programme; a partner may run several. Counting the
+        # distinct programmes in scope keeps the header honest under either
+        # filter and under both at once.
+        "programs": 1
+        if sc["program"] is not None
+        else opps.exclude(program_id=None).values("program_id").distinct().count(),
         "orgs": opps.exclude(org_slug="").values("org_slug").distinct().count(),
     }
+
+
+def _partner_names_allowed(request) -> bool:
+    """Whether this response may name delivery partners. **Fails closed.**
+
+    A public link can be minted with ``show_partner_names=False``, and
+    ``PulsePublicToken`` has always documented what that means: the page renders
+    partners "as descriptors ('a partner in northern Nigeria') instead of
+    names". That promise was never implemented -- the flag reached
+    ``window.PULSE_CONFIG`` and no card read it -- which was harmless only while
+    nothing on screen carried partner identity.
+
+    Enforced HERE rather than in the page, because **this read API is
+    unauthenticated**: a clean ``curl`` of ``/labs/pulse/api/summary/`` returns
+    200 with the full payload, which it has to, since a public token page has no
+    session and its JS still needs to call it. So a client that merely *hid* the
+    names would still have been sent them, and an anonymised link's holder could
+    read them out of the network tab -- or simply drop the token and ask again.
+
+    Hence the default is **deny**, not allow. Partner names require positive
+    authorisation: a labs session, or a token minted to permit them. An
+    anonymous caller gets exactly what it gets today, which is a payload with no
+    partner identity in it -- so nothing that works now breaks, and naming a
+    partner becomes something someone has to be entitled to.
+    """
+    if getattr(request, "user", None) is not None and request.user.is_authenticated:
+        return True
+    raw = (request.GET.get("token") or "").strip()
+    if not raw:
+        return False
+    token = PulsePublicToken.objects.filter(token=raw).first()
+    return bool(token and token.is_usable and token.show_partner_names)
+
+
+def _org_label(org, *, country: str = "", allowed: bool = True, index: int = 0) -> str:
+    """A partner's name, or the anonymous stand-in used in its place.
+
+    Anonymised partners still need to be told apart -- a filter menu of twenty
+    identical "a partner in Nigeria" entries is unusable -- so the stand-in
+    carries a stable index over the menu's deterministic order. The index is an
+    arbitrary label, not a derived identifier: it says "these are different
+    partners" without saying who either of them is.
+    """
+    if allowed:
+        return org.display_name if hasattr(org, "display_name") else (org.name or org.slug)
+    where = COUNTRY_NAMES.get(country, "")
+    return f"Partner {index} · {where}" if where else f"Partner {index}"
+
+
+def _org_menu(request):
+    """Partners offered in the filter, largest delivery first.
+
+    Empty for a caller not entitled to partner identity. A menu is a list of
+    named partners; there is no version of it that both offers the drill-down
+    and withholds who the partners are, because "Partner 3 · Nigeria, CHC, 3
+    opportunities, $640k" is re-identifiable from a couple of public facts.
+    Anonymised links therefore lose this control rather than get a leaky
+    version of it, and ``_program_scope`` ignores ``?org=`` for them too.
+
+    Mirrors ``_program_menu``'s hygiene, because the same two traps apply: an
+    org with no ingested delivery resolves to a blank screen, and an org whose
+    only work is internal scaffolding should not be offered to a funder. The
+    latter is judged by the org's programmes rather than by its own name --
+    Connect marks test *programmes*, not test orgs.
+    """
+    if not _partner_names_allowed(request):
+        return []
+
+    # Scaffolding is excluded by dropping test *opportunities* at the source,
+    # rather than by asking whether the org owns a non-test programme.
+    #
+    # Those are not the same question, and the difference matters: under
+    # Connect's managed model a programme belongs to the *managing* org while the
+    # opportunities under it belong to the *delivering* partners. So
+    # `PulseProgram.org_slug` is the manager, `PulseOpportunity.org_slug` is who
+    # actually did the work, and judging a partner by the programmes it owns
+    # would have hidden almost every real delivery partner -- they own none.
+    #
+    # Filtering the opportunities also fixes the volume: a partner's menu entry
+    # now counts real delivery only, so a test programme's 9,035 visits cannot
+    # inflate it, and an org whose only work is a test falls out for free by
+    # summing to zero.
+    test_pids = set(PulseProgram.objects.filter(is_test=True).values_list("program_id", flat=True))
+    real_opps = PulseOpportunity.objects.exclude(org_slug="").exclude(program_id__in=test_pids)
+
+    rows = (
+        real_opps.values("org_slug")
+        .annotate(visits=Sum("lifetime_visit_count"), opps=Count("id"))
+        .filter(visits__gt=0)
+    )
+    by_slug = {r["org_slug"]: r for r in rows}
+    if not by_slug:
+        return []
+
+    recent = {
+        r["org_slug"]: r["n"]
+        for r in PulseEvent.objects.exclude(org_slug="").values("org_slug").annotate(n=Count("id"))
+    }
+    # Modal country per partner, so the menu can say where a partner works.
+    country_of = {r["org_slug"]: r["country"] for r in real_opps.exclude(country="").values("org_slug", "country")}
+
+    # Money and delivery per partner, carried on the menu row rather than
+    # fetched when one is pointed at. The card this feeds appears on hover, and a
+    # request per hover would put a query behind a mouse movement -- so each row
+    # arrives complete enough to draw the whole card. Two grouped queries against
+    # the now-indexed org_slug, both bounded by the number of partners.
+    money_of = {
+        r["org_slug"]: r
+        for r in PulseWork.objects.exclude(org_slug="")
+        .values("org_slug")
+        .annotate(
+            works=Count("id"),
+            approved=Count("id", filter=Q(status="approved")),
+            usd=Sum("usd_to_worker"),
+            usd_org=Sum("usd_to_org"),
+        )
+    }
+    spark_of = _weekly_spark_by_org()
+
+    menu = []
+    for org in PulseOrganization.objects.filter(slug__in=by_slug):
+        country = country_of.get(org.slug, "")
+        m = money_of.get(org.slug) or {}
+        worker = float(m.get("usd") or 0)
+        org_share = float(m.get("usd_org") or 0)
+        approved = m.get("approved") or 0
+        works = m.get("works") or 0
+        menu.append(
+            {
+                "slug": org.slug,
+                "name": org.display_name,
+                "funder": org.funder_slug,
+                "country": country,
+                "opportunities": by_slug[org.slug]["opps"],
+                "visits": by_slug[org.slug]["visits"],
+                "recent_events": recent.get(org.slug, 0),
+                "works": works,
+                "approved": approved,
+                # Share of this partner's work that survived the checks. The
+                # denominator is every unit they submitted, not just the paid
+                # ones, or the figure would be 100% for everybody.
+                "approval_rate": (approved / works) if works else None,
+                "usd": worker,
+                "usd_org": org_share,
+                "usd_total": worker + org_share,
+                "rate": ((worker + org_share) / approved) if approved else None,
+                "spark": spark_of.get(org.slug, []),
+            }
+        )
+    menu.sort(key=lambda m: (-(1 if m["recent_events"] else 0), -m["visits"]))
+    return menu
+
+
+def _weekly_spark_by_org() -> dict:
+    """A fixed-length weekly delivery series per partner, oldest bucket first.
+
+    Padded to ``WEEKLY_WEEKS`` slots with zeroes for the weeks a partner did
+    nothing, so every partner's sparkline shares one x-axis. Without the
+    padding a partner active for three weeks and one active for six months
+    would draw the same width of chart, which makes a new partner look
+    established and an ending one look continuous.
+    """
+    from django.db.models.functions import TruncWeek
+
+    now = timezone.now()
+    start = (now - timedelta(weeks=WEEKLY_WEEKS - 1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    start = start - timedelta(days=start.weekday())
+
+    rows = (
+        PulseWork.objects.exclude(org_slug="")
+        .filter(created_ts__gte=start)
+        .annotate(bucket=TruncWeek("created_ts"))
+        .values("org_slug", "bucket")
+        .annotate(n=Count("id"))
+    )
+    out: dict[str, list[int]] = {}
+    for r in rows:
+        if r["bucket"] is None:
+            continue
+        idx = int((r["bucket"] - start).days // 7)
+        if not (0 <= idx < WEEKLY_WEEKS):
+            continue
+        out.setdefault(r["org_slug"], [0] * WEEKLY_WEEKS)[idx] = r["n"]
+    return out
 
 
 def _program_menu():
@@ -247,6 +465,67 @@ def _program_menu():
     # Currently-delivering programmes first, each group by lifetime volume.
     menu.sort(key=lambda m: (-(1 if m["recent_events"] else 0), -m["visits"]))
     return menu
+
+
+WEEKLY_WEEKS = 26
+
+
+def _weekly_series(sc):
+    """Weekly delivery and money for the current scope, from the works spine.
+
+    **Not from the rollups.** Rollups aggregate ``PulseEvent``, which is capped
+    at ``PULSE_EVENT_RETENTION_DAYS`` (30) -- so anything drawn from them is a
+    one-month window whatever axis label sits under it, and "performance over
+    time" over 30 days is a month, not a trend.
+
+    ``PulseWork`` is the spine that carries full history (~53 B/row, no form
+    JSON, which is why all 1.65M visits' worth fits in ~87 MB), so a partner's
+    trajectory over half a year costs one grouped query against an indexed
+    ``created_ts``.
+
+    Returns whole weeks only, oldest first. The current partial week is included
+    and flagged, because dropping it makes a live trend look like it stopped and
+    keeping it unmarked makes every trend look like it just fell off a cliff.
+    """
+    from django.db.models.functions import TruncWeek
+
+    since = timezone.now() - timedelta(weeks=WEEKLY_WEEKS)
+    rows = (
+        sc["works"]
+        .filter(created_ts__gte=since)
+        .annotate(bucket=TruncWeek("created_ts"))
+        .values("bucket")
+        .annotate(
+            works=Count("id"),
+            approved=Count("id", filter=Q(status="approved")),
+            usd=Sum("usd_to_worker"),
+            usd_org=Sum("usd_to_org"),
+        )
+        .order_by("bucket")
+    )
+    out = []
+    for r in rows:
+        if r["bucket"] is None:
+            continue
+        worker = float(r["usd"] or 0)
+        org = float(r["usd_org"] or 0)
+        out.append(
+            {
+                "t": int(r["bucket"].timestamp()),
+                "works": r["works"],
+                "approved": r["approved"],
+                "usd": worker,
+                "usd_org": org,
+                "usd_total": worker + org,
+            }
+        )
+    # Flag the trailing partial week rather than letting it read as a collapse.
+    if out:
+        week_start = timezone.now() - timedelta(days=timezone.now().weekday())
+        cutoff = int(week_start.replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
+        for row in out:
+            row["partial"] = row["t"] >= cutoff
+    return out
 
 
 class SummaryView(View):
@@ -418,7 +697,18 @@ class SummaryView(View):
                     if program
                     else None
                 ),
+                "org": (
+                    {
+                        "slug": sc["org"].slug,
+                        "name": sc["org"].display_name,
+                        "funder": sc["org"].funder_slug,
+                    }
+                    if sc["org"] is not None
+                    else None
+                ),
                 "programs": _program_menu(),
+                "orgs": _org_menu(request),
+                "weekly": _weekly_series(sc),
                 "money": {
                     "to_workers": float(money["to_workers"] or 0),
                     "to_orgs": float(money["to_orgs"] or 0),
@@ -471,6 +761,20 @@ def _grid_for(sc):
     response says which of the two it gave you.
     """
     cells = PulseGridCell.objects.all()
+
+    # A partner has no column on the cell, but it owns programmes and cells key
+    # on programme -- so the accumulated geography narrows through that. It is
+    # only as complete as the org's programme coverage: an opportunity with no
+    # programme folded a null-programme cell, which cannot be attributed back to
+    # a partner. Declared as inexact rather than quietly under-drawn, the same
+    # way the programme path declares its legacy cells.
+    if sc["org"] is not None:
+        pids = list(sc["opps"].exclude(program_id=None).values_list("program_id", flat=True).distinct())
+        cells = cells.filter(program_id__in=pids) if pids else cells.none()
+        unattributed = sc["opps"].filter(program_id=None).exists()
+        if sc["program"] is None:
+            return cells, not unattributed
+
     if sc["program"] is None:
         return cells, True
 

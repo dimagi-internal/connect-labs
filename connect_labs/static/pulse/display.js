@@ -13,12 +13,13 @@
   const $ = (s) => document.querySelector(s);
   const $$ = (s) => Array.from(document.querySelectorAll(s));
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const { nf, usd } = window.PulseCards.helpers;
+  const { nf, usd, usdCompact } = window.PulseCards.helpers;
 
   const store = new window.PulseStore({
     base: CFG.base,
     mode: 'replay',
     speed: 240,
+    token: CFG.token || null,
   });
 
   /* ═══ map ═══════════════════════════════════════════════════════
@@ -222,6 +223,8 @@
       cx.fill();
     }
     cx.globalCompositeOperation = 'source-over';
+
+    Partners.tick(ts);
   }
 
   function initBasemap() {
@@ -239,9 +242,11 @@
     // Any view change invalidates the projected density layer.
     m.on('move', () => {
       baseDirty = true;
+      Partners.reposition();
     });
     m.on('zoom', () => {
       baseDirty = true;
+      Partners.reposition();
     });
     m.on('resize', () => {
       size();
@@ -445,6 +450,28 @@
 
   function setFocus(k, immediate) {
     focus = k;
+    /* Pointing at the map surfaces whoever delivers there. The listener is on
+       the map section, not on #sky — #sky is pointer-events:none so that Mapbox
+       keeps its own pan and zoom, and .pulse-map shares its exact box, so the
+       offsets already match what proj() returns. */
+    const mapBox = $('.pulse-map');
+    if (mapBox) {
+      let hoverRaf = 0;
+      mapBox.addEventListener('mousemove', (e) => {
+        // Coalesced to one lookup per frame: the handler walks every lit cell,
+        // and mousemove fires far faster than the display repaints.
+        if (hoverRaf) return;
+        const r = mapBox.getBoundingClientRect();
+        const px = e.clientX - r.left,
+          py = e.clientY - r.top;
+        hoverRaf = requestAnimationFrame(() => {
+          hoverRaf = 0;
+          Partners.hover(px, py);
+        });
+      });
+      mapBox.addEventListener('mouseleave', () => Partners.leave());
+    }
+
     $$('.pulse-focus button').forEach((b) =>
       b.setAttribute('aria-pressed', b.dataset.focus === k),
     );
@@ -511,6 +538,7 @@
   store.on('control', paintStatus);
 
   let menuBuilt = false;
+  let orgMenuBuilt = false;
   store.on('summary', (s) => {
     const sel = $('#prog-filter');
     // Built once: the menu is the same list under every filter, and rebuilding
@@ -537,6 +565,34 @@
       menuBuilt = true;
       if (store.program) sel.value = String(store.program);
     }
+    const orgSel = $('#org-filter');
+    const orgWrap = $('#org-filter-wrap');
+    if (orgSel && orgWrap && !orgMenuBuilt && Array.isArray(s.orgs)) {
+      // An empty list means this caller may not name partners (an anonymised
+      // public link). Hide the control rather than offering a menu with nothing
+      // in it, which reads as a broken filter instead of a withheld one.
+      if (!s.orgs.length) {
+        orgWrap.hidden = true;
+      } else {
+        orgWrap.hidden = false;
+        for (const o of s.orgs) {
+          const opt = document.createElement('option');
+          opt.value = o.slug;
+          // Connect's own partner name, verbatim. Say which partners are
+          // dormant rather than letting someone pick one and get a blank map.
+          opt.textContent = o.recent_events
+            ? o.name
+            : `${o.name} — no recent delivery`;
+          opt.title = `${nf.format(o.visits)} services all-time · ${nf.format(
+            o.opportunities,
+          )} opportunities${o.funder ? ' · funded by ' + o.funder : ''}`;
+          orgSel.appendChild(opt);
+        }
+        orgMenuBuilt = true;
+        if (store.org) orgSel.value = store.org;
+      }
+    }
+
     const scope = s.scope || {};
     $('#s-opp').textContent = nf.format(scope.opportunities || 0);
     $('#s-prog').textContent = nf.format(scope.programs || 0);
@@ -552,9 +608,11 @@
   /* ═══ grid (the map's geography) ════════════════════════════════ */
   async function loadGrid() {
     try {
-      const q0 = new URLSearchParams({ limit: '40000' });
-      if (store.program) q0.set('program', store.program);
-      const res = await fetch(`${CFG.base}/api/grid/?${q0}`);
+      // Built by the store, not by hand: this fetch has to carry whatever the
+      // store is filtered to. A local copy of the query string silently missed
+      // the partner filter and left the whole estate's geography under one
+      // partner's points -- the same defect the programme filter already fixed.
+      const res = await fetch(store._url('/api/grid/', { limit: '40000' }));
       if (!res.ok) throw new Error(res.status);
       const payload = await res.json();
       const q = payload.quantum || 100;
@@ -572,6 +630,287 @@
       console.error('[pulse] grid load failed', err);
     }
   }
+
+  /* ═══ partner cards ═════════════════════════════════════════════
+     A partner dossier that belongs to a PLACE: positioned over the map at the
+     partner's own geography and tethered there, so "who delivers here" is
+     answered spatially instead of in a table somewhere else on screen.
+
+     Every card is drawn from the partner's row in the summary payload, which
+     already carries its money, approval rate and 26-week series. That is
+     deliberate — the card appears on hover, and fetching per partner would put
+     a network request behind a mouse movement.                              */
+  const Partners = (() => {
+    const layer = $('.pulse-map');
+    let card = null;
+    let tether = null;
+    let pinned = null; // slug the user asked to keep up
+    let showing = null; // slug currently drawn
+    let cycleAt = 0;
+
+    const rows = () => (store.summary && store.summary.orgs) || [];
+    const row = (slug) => rows().find((o) => o.slug === slug) || null;
+
+    /* Where a partner is, in lat/lon.
+     *
+     * Their density cells are the honest answer, but the loaded cells are only
+     * this partner's when the display is filtered to them. Unfiltered, fall
+     * back to the modal country the payload reports — a country centroid is
+     * coarse but it is never *wrong* in the way averaging every partner's
+     * cells together would be. */
+    const COUNTRY_AT = {
+      NG: [10.2, 8.3],
+      KE: [-0.4, 37.0],
+      UG: [1.3, 32.4],
+      IN: [22.0, 79.0],
+      CD: [-3.4, 23.0],
+      LR: [6.5, -9.4],
+      SL: [8.5, -11.8],
+      TZ: [-6.2, 35.0],
+      ML: [17.4, -3.9],
+    };
+
+    function where(r) {
+      if (store.org === r.slug && cells.length) {
+        let la = 0,
+          lo = 0,
+          w = 0;
+        for (const c of cells) {
+          la += c.lat * c.n;
+          lo += c.lon * c.n;
+          w += c.n;
+        }
+        if (w) return [la / w, lo / w];
+      }
+      return COUNTRY_AT[r.country] || null;
+    }
+
+    function spark(r) {
+      const s = r.spark || [];
+      if (!s.length) return '';
+      const max = Math.max(...s, 1);
+      // The final bucket is the current week and is incomplete by definition.
+      const last = s.length - 1;
+      return s
+        .map(
+          (v, i) =>
+            `<i style="height:${Math.max((v / max) * 100, v ? 3 : 0).toFixed(
+              1,
+            )}%" ${i === last ? 'data-partial="1"' : ''}></i>`,
+        )
+        .join('');
+    }
+
+    function mix(r) {
+      // Service mix is only known for the partner the display is scoped to —
+      // by_service is a property of the current filter, not of a menu row. So
+      // the strip appears when it can be true and is absent otherwise, rather
+      // than showing the whole portfolio's mix under one partner's name.
+      if (store.org !== r.slug) return '';
+      const svc = (store.summary?.money?.by_service || []).filter(
+        (x) => x.usd_total > 0,
+      );
+      if (!svc.length) return '';
+      const total = svc.reduce((a, b) => a + b.usd_total, 0) || 1;
+      const PAL = ['var(--c-1)', 'var(--c-2)', 'var(--c-3)', 'var(--c-4)'];
+      const top = svc.slice(0, 4);
+      return (
+        `<div class="pulse-partner-mix">` +
+        top
+          .map(
+            (x, i) =>
+              `<i style="flex:${x.usd_total} 0 0;background:${
+                PAL[i % 4]
+              }"></i>`,
+          )
+          .join('') +
+        `</div><div class="pulse-partner-mixkey">` +
+        top
+          .map(
+            (x, i) =>
+              `<span><i style="background:${PAL[i % 4]}"></i>${
+                x.name
+              } ${Math.round((x.usd_total / total) * 100)}%</span>`,
+          )
+          .join('') +
+        `</div>`
+      );
+    }
+
+    function html(r) {
+      const pct = (v) => (v == null ? '—' : Math.round(v * 100) + '%');
+      const where = r.country
+        ? (store.summary?.labels?.countries || {})[r.country] || r.country
+        : '';
+      const inexact =
+        store.org === r.slug &&
+        store.lastGrid &&
+        store.lastGrid.exact === false;
+      return (
+        `<div class="pulse-partner-head">
+           <span class="pulse-partner-name">${r.name}</span>
+           ${where ? `<span class="pulse-partner-where">${where}</span>` : ''}
+         </div>` +
+        (r.funder
+          ? `<div class="pulse-partner-funder">funded by <b>${r.funder}</b></div>`
+          : `<div class="pulse-partner-funder">${nf.format(
+              r.opportunities,
+            )} opportunit${r.opportunities === 1 ? 'y' : 'ies'}</div>`) +
+        `<div class="pulse-partner-figs">
+           <div><span class="pf-l">Paid out</span>
+                <div class="pf-v gold">${usdCompact(r.usd_total)}</div></div>
+           <div><span class="pf-l">Per service</span>
+                <div class="pf-v">${
+                  r.rate == null ? '—' : usd(r.rate)
+                }</div></div>
+           <div><span class="pf-l">Services</span>
+                <div class="pf-v">${nf.format(r.visits)}</div></div>
+           <div><span class="pf-l">Approved</span>
+                <div class="pf-v">${pct(r.approval_rate)}</div></div>
+         </div>` +
+        (r.spark && r.spark.length
+          ? `<div class="pulse-partner-spark">${spark(r)}</div>
+             <div class="pulse-partner-axis"><span>26 weeks ago</span><span>this week</span></div>`
+          : '') +
+        mix(r) +
+        (inexact
+          ? `<div class="pulse-partner-note">Some of this partner's work sits
+               outside a programme, so the lit geography under this card is
+               partial.</div>`
+          : '')
+      );
+    }
+
+    function clear() {
+      if (card) {
+        const dying = card;
+        dying.dataset.leaving = '1';
+        setTimeout(() => dying.remove(), 200);
+      }
+      if (tether) tether.remove();
+      card = tether = null;
+      showing = null;
+    }
+
+    /* Place the card near the anchor but always fully on screen, and put it on
+       whichever side has room. A card that runs off the edge of a wall display
+       is worse than one on the unexpected side. */
+    function place(x, y) {
+      const w = 268,
+        pad = 14;
+      const right = x + 26 + w < W - pad;
+      const cx0 = right ? x + 26 : x - 26 - w;
+      const cy0 = Math.min(Math.max(y - 96, pad), Math.max(H - 250, pad));
+      card.style.left =
+        Math.round(Math.min(Math.max(cx0, pad), W - w - pad)) + 'px';
+      card.style.top = Math.round(cy0) + 'px';
+      card.style.setProperty('--ox', right ? '0%' : '100%');
+      card.style.setProperty('--oy', '50%');
+
+      const ax = right ? cx0 : cx0 + w;
+      const ay = cy0 + 96;
+      const dx = x - ax,
+        dy = y - ay;
+      const len = Math.hypot(dx, dy);
+      const rot = (Math.atan2(dy, dx) * 180) / Math.PI;
+      tether.style.left = ax + 'px';
+      tether.style.top = ay + 'px';
+      tether.style.width = Math.round(len) + 'px';
+      tether.style.transform = `rotate(${rot.toFixed(2)}deg)`;
+      tether.style.setProperty('--rot', `${rot.toFixed(2)}deg`);
+    }
+
+    function show(slug) {
+      const r = row(slug);
+      if (!r) return clear();
+      const at = where(r);
+      if (!at) return clear();
+      const [x, y] = proj(at[0], at[1]);
+      if (!isFinite(x) || x < -200 || x > W + 200) return clear();
+
+      if (showing !== slug) {
+        clear();
+        tether = document.createElement('div');
+        tether.className = 'pulse-tether';
+        card = document.createElement('div');
+        card.className = 'pulse-partner';
+        card.innerHTML = html(r);
+        layer.appendChild(tether);
+        layer.appendChild(card);
+        showing = slug;
+      } else {
+        card.innerHTML = html(r);
+      }
+      place(x, y);
+    }
+
+    /* Keep the card locked to its point through pans, zooms and act changes —
+       it is anchored to geography, so it has to move when the geography does. */
+    function reposition() {
+      if (!showing) return;
+      const r = row(showing);
+      const at = r && where(r);
+      if (!at) return clear();
+      const [x, y] = proj(at[0], at[1]);
+      if (!isFinite(x)) return;
+      place(x, y);
+    }
+
+    /* Nearest partner to a screen point, via the country of the nearest lit
+       cell. Cheap, and it means pointing at Kano surfaces whoever works in
+       Kano rather than whoever happens to be first in the menu. */
+    function nearest(px, py) {
+      let best = null,
+        bd = Infinity;
+      for (const c of cells) {
+        const [x, y] = proj(c.lat, c.lon);
+        const d = (x - px) ** 2 + (y - py) ** 2;
+        if (d < bd) {
+          bd = d;
+          best = c;
+        }
+      }
+      if (!best || bd > 120 * 120) return null;
+      const here = rows().filter((o) => o.country === best.country);
+      if (!here.length) return null;
+      return here[0].slug; // rows are already ordered by delivery
+    }
+
+    return {
+      pin(slug) {
+        pinned = slug;
+        show(slug);
+      },
+      unpin() {
+        pinned = null;
+        clear();
+      },
+      hover(px, py) {
+        if (pinned) return;
+        const slug = nearest(px, py);
+        if (!slug) return clear();
+        show(slug);
+      },
+      leave() {
+        if (!pinned) clear();
+      },
+      reposition,
+      /* Unattended surfacing: with nothing selected and nobody pointing, walk
+         the partners who are delivering now. A wall display should show this
+         off by itself rather than waiting for a cursor that never arrives. */
+      tick(now) {
+        if (pinned || !rows().length) return;
+        if (now - cycleAt < 7000) return;
+        cycleAt = now;
+        const live = rows().filter((o) => o.recent_events > 0);
+        const pool = live.length ? live : rows().slice(0, 6);
+        if (!pool.length) return clear();
+        const i = Math.floor(now / 7000) % pool.length;
+        show(pool[i].slug);
+      },
+      showing: () => showing,
+    };
+  })();
 
   /* ═══ controls ══════════════════════════════════════════════════ */
   function wireControls() {
@@ -608,6 +947,28 @@
           console.error('[pulse] programme filter failed', err);
         } finally {
           sel.disabled = false;
+          paintTransport();
+          paintStatus();
+        }
+      });
+    }
+
+    const orgSel = $('#org-filter');
+    if (orgSel) {
+      orgSel.addEventListener('change', async () => {
+        orgSel.disabled = true;
+        try {
+          await store.setOrg(orgSel.value || null);
+          await loadGrid();
+          setFocus(focus, true);
+          // Pin the selected partner's card. Selecting one is a request to
+          // look at it, so it stays up rather than waiting to be pointed at.
+          if (store.org) Partners.pin(store.org);
+          else Partners.unpin();
+        } catch (err) {
+          console.error('[pulse] partner filter failed', err);
+        } finally {
+          orgSel.disabled = false;
           paintTransport();
           paintStatus();
         }
