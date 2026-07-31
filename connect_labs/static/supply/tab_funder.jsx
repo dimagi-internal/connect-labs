@@ -347,8 +347,26 @@ function TwoFiguresAndTheGap({ outcomes, records }) {
     batches.push(r);
   });
   const breakdown = outcomes.discharge_breakdown || {};
+  // Fixed order, and every discharge category present whatever its count.
+  //
+  // Sphere grades a SAM programme on three rates — recovery, defaulting and
+  // DEATH — and the table cited that standard while carrying no mortality row
+  // at all, because rows were filtered to n > 0 and no deaths are seeded. The
+  // one omitted category is the one whose absence can only ever raise the
+  // recovery share, which a paediatric nutrition clinician spots on sight. Zero
+  // is the informative value here: "no deaths recorded" can be checked, whereas
+  // a missing row is indistinguishable from a programme that does not count
+  // them. Explicit order rather than dict order, which does not survive JSON.
+  const DISCHARGE_ORDER = [
+    'recovered',
+    'died',
+    'defaulted',
+    'transferred',
+    'non_response',
+  ];
   const labels = {
     recovered: 'Recovered',
+    died: 'Died',
     defaulted: 'Defaulted',
     transferred: 'Transferred to inpatient care',
     non_response: 'Non-response',
@@ -362,9 +380,11 @@ function TwoFiguresAndTheGap({ outcomes, records }) {
   // 79 for 69.6% — so the column totalled 169.6%. The card two blocks above
   // already states these children "count on neither side"; the table then
   // counted them anyway.
-  const rows = Object.entries(breakdown)
-    .filter(([status, n]) => n > 0 && status !== 'in_treatment')
-    .map(([status, n]) => ({ status, label: labels[status] || status, n }));
+  const rows = DISCHARGE_ORDER.map((status) => ({
+    status,
+    label: labels[status] || status,
+    n: breakdown[status] || 0,
+  }));
   const stillInTreatment = breakdown.in_treatment || 0;
 
   return (
@@ -405,6 +425,23 @@ function TwoFiguresAndTheGap({ outcomes, records }) {
             {formatNumber(outcomes.children_in_treatment)} more are still in
             treatment and count on neither side.
           </p>
+          {/* The base, in the batch modal's own plain register.
+              The modal says "6 of the 314 children this batch fed — a rate from
+              6 children carries a wide interval". This tile put 79 discharged
+              children next to 58,251 courses and stated no cohort, no site
+              count and no share, so a reader had no way to know the measured
+              figure rests on a fraction of a percent of the delivered one. */}
+          {outcomes.children_total ? (
+            <p className="muted small">
+              Observed on {formatNumber(outcomes.children_total)} children at{' '}
+              {outcomes.sites_observed}{' '}
+              {outcomes.sites_observed === 1 ? 'site' : 'sites'}
+              {outcomes.observed_share_of_courses
+                ? ` — ${outcomes.observed_share_of_courses}% of the courses delivered`
+                : ''}
+              . A rate from a base this small carries a wide interval.
+            </p>
+          ) : null}
         </div>
         <div className="figure-block figure-gap">
           <div className="figure-value">
@@ -419,17 +456,22 @@ function TwoFiguresAndTheGap({ outcomes, records }) {
           <p className="muted small">Sphere expects above 75%.</p>
         </div>
       </div>
+      {/* Say what the link does, not what to conclude from it.
+          It read "The gap is the finding, and it is followable: follow batch …"
+          — an interpretive verdict stamped on an evidence artifact, telling the
+          reader what to think about two figures the card deliberately leaves
+          unreconciled. The two figures sitting side by side ARE the finding; a
+          caption asserting so does the reader's work for them. The 81% tile's
+          "Sphere expects above 75%" inside an `i` is the right pattern:
+          available on demand, not editorialised on the face. */}
       {batches.length ? (
         <div className="figure-drill">
-          <span className="muted small">
-            The gap is the finding, and it is followable:{' '}
-          </span>
           <button
             type="button"
             className="btn-link"
             onClick={() => setOpenBatch(batches[0])}
           >
-            follow batch {batches[0].batch_lot} to the children it treated
+            Follow batch {batches[0].batch_lot} to the children it treated
           </button>
         </div>
       ) : null}
@@ -473,12 +515,18 @@ function TwoFiguresAndTheGap({ outcomes, records }) {
           recovered or as a failure.
         </p>
       ) : null}
+      {/* All three Sphere rates, since the card invokes the standard.
+          The footnote cited recovery and defaulting and omitted the death rate —
+          the one criterion the table also had no row for. Quoting two thirds of
+          a standard on the screen that grades itself against it lets the
+          omission read as the standard's shape rather than the card's. */}
       <p className="muted small method-note">
         Shares are of the {formatNumber(outcomes.children_observed)} children
         discharged, so they total 100%. Treatment outcomes in this environment
         are synthetic, seeded against the Sphere performance thresholds for
-        severe acute malnutrition programmes (recovery above 75%, defaulting
-        below 15%).
+        severe acute malnutrition programmes — recovery above 75%, death rate
+        below 10%, defaulting below 15%. Every discharge category is listed
+        whatever its count, so a zero is visible as a zero.
       </p>
     </Card>
   );

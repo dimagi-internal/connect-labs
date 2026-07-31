@@ -609,9 +609,16 @@ function MuacSeries({ child, focused, onFocus }) {
         <Badge tone={child.discharge_status === 'recovered' ? 'good' : 'warn'}>
           {child.discharge_label}
         </Badge>
+        {/* "2 visits over 1 weeks" — in the most-looked-at text in the modal,
+            since it only renders on the focused row. */}
         {focused ? (
           <span className="muted small">
-            {series.length} visits over {series.length - 1} weeks
+            {series.length} {series.length === 1 ? 'visit' : 'visits'}
+            {series.length > 1
+              ? ` over ${series.length - 1} ${
+                  series.length - 1 === 1 ? 'week' : 'weeks'
+                }`
+              : ''}
           </span>
         ) : null}
       </div>

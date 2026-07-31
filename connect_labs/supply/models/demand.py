@@ -252,6 +252,14 @@ class ChildOutcome(models.Model):
     class Discharge(models.TextChoices):
         RECOVERED = "recovered"
         DEFAULTED = "defaulted"
+        # The outcome whose absence can only ever flatter the recovery share.
+        #
+        # Sphere grades a SAM programme on three rates and the death rate is one
+        # of them, so a discharge table without the category cannot be checked
+        # against the standard it cites. It renders at zero rather than being
+        # omitted: "no deaths recorded" is a finding, whereas a missing row is
+        # indistinguishable from a programme that does not count them.
+        DIED = "died"
         TRANSFERRED = "transferred", "Transferred to inpatient care"
         NON_RESPONSE = "non_response"
         IN_TREATMENT = "in_treatment"
