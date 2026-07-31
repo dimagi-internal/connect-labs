@@ -65,14 +65,26 @@ function RFPsTab({ ctx }) {
                   '—'
                 ),
             },
+            // A bare "0 / 4" sat beside STATUS: Published — two undefined
+            // completion affordances on one row, competing to tell the reader how
+            // far along the tender is, neither saying what it counted. A ratio
+            // needs its noun.
             {
               key: 'awarded',
-              label: 'Awarded',
+              label: 'Lots awarded',
               value: (r) => r.lots.filter((l) => l.awarded_org).length,
-              render: (r) =>
-                `${r.lots.filter((l) => l.awarded_org).length} / ${
-                  r.lots.length
-                }`,
+              render: (r) => {
+                const awarded = r.lots.filter((l) => l.awarded_org).length;
+                return (
+                  <span>
+                    {awarded} of {r.lots.length}
+                    <span className="muted">
+                      {' '}
+                      {r.lots.length === 1 ? 'lot' : 'lots'}
+                    </span>
+                  </span>
+                );
+              },
             },
             {
               key: 'status',

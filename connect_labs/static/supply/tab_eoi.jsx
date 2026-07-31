@@ -364,7 +364,13 @@ function SubmissionDetailModal({ submission, live, onClose }) {
           <EmptyState title="No commitments recorded." />
         )}
       </Card>
-      {snap ? <ProfileSnapshotComparison snap={snap} live={live} /> : null}
+      {snap ? (
+        <ProfileSnapshotComparison
+          snap={snap}
+          live={live}
+          submission={submission}
+        />
+      ) : null}
     </Modal>
   );
 }
@@ -376,7 +382,7 @@ function SubmissionDetailModal({ submission, live, onClose }) {
    the mechanism exists to remove. Shown side by side, with the rows that differ
    marked, the property is visible rather than asserted — and if nothing has
    changed yet the panel says so plainly instead of implying it has. */
-function ProfileSnapshotComparison({ snap, live }) {
+function ProfileSnapshotComparison({ snap, live, submission }) {
   const snapCerts = snap.certifications || [];
   const liveCerts = (live && live.certifications) || [];
   const byType = (list) =>
@@ -404,7 +410,31 @@ function ProfileSnapshotComparison({ snap, live }) {
       title="What the reviewer is assessing"
       subtitle="The profile frozen at submission, beside the live profile as it stands today."
     >
-      <div className="review-split">
+      {/* The freeze needed an object, not just a behaviour.
+          The mechanism the whole flow depends on had no representation on screen
+          — no snapshot identity, no recorded-at distinct from the submission
+          date, nothing a reader could point at — so "frozen" was a claim the
+          panel made about itself. */}
+      {submission ? (
+        <p className="snapshot-stamp muted small">
+          Profile snapshot <code>#{submission.id}</code> recorded{' '}
+          {formatDate(submission.submitted_at)}
+          <InfoNote
+            label="the profile snapshot"
+            text="A copy of the organisation profile is written at the moment of submission and is never updated. Editing the live profile afterwards cannot reach it, which is why a reviewer's decision can be reconstructed later against exactly what was in front of them. The right-hand column below is the live profile and is the only one that moves."
+          />
+        </p>
+      ) : null}
+      {/* Headings and table on ONE grid.
+          The paragraph columns and the table columns sat on different grids —
+          "Frozen at submission" at x~155 against the table's AS SUBMITTED at
+          x~335, with the live column shifted ~76px left — which breaks the
+          left-is-frozen / right-is-live spatial contract the panel is entirely
+          built on, and the two diff columns were unequal widths. A leading
+          spacer matching the table's first column, identical percentages on
+          both, and a divider so the boundary is visible. */}
+      <div className="frozen-live-grid">
+        <div />
         <div>
           <div className="muted small">Frozen at submission</div>
           <p className="muted">{snap.description || 'No description.'}</p>
@@ -416,47 +446,53 @@ function ProfileSnapshotComparison({ snap, live }) {
           </p>
         </div>
       </div>
-      <DataTable
-        rows={types.map((t) => ({
-          id: t,
-          cert_type: t,
-          frozen: snapByType[t],
-          current: liveByType[t],
-          differs: changed.includes(t),
-        }))}
-        rowKey={(r) => r.id}
-        empty="No certifications were on file."
-        columns={[
-          { key: 'type', label: 'Certification', value: (r) => r.cert_type },
-          {
-            key: 'frozen',
-            label: 'As submitted',
-            sortable: false,
-            value: () => '',
-            render: (r) => certRow(r.frozen),
-          },
-          {
-            key: 'current',
-            label: 'Live today',
-            sortable: false,
-            value: () => '',
-            render: (r) =>
-              r.differs ? (
-                <span>
-                  {certRow(r.current)} <Badge tone="warn">changed since</Badge>
-                </span>
-              ) : (
-                certRow(r.current)
-              ),
-          },
-        ]}
-      />
+      <div className="frozen-live-table">
+        <DataTable
+          rows={types.map((t) => ({
+            id: t,
+            cert_type: t,
+            frozen: snapByType[t],
+            current: liveByType[t],
+            differs: changed.includes(t),
+          }))}
+          rowKey={(r) => r.id}
+          empty="No certifications were on file."
+          columns={[
+            { key: 'type', label: 'Certification', value: (r) => r.cert_type },
+            {
+              key: 'frozen',
+              label: 'As submitted',
+              sortable: false,
+              value: () => '',
+              render: (r) => certRow(r.frozen),
+            },
+            {
+              key: 'current',
+              label: 'Live today',
+              sortable: false,
+              value: () => '',
+              render: (r) =>
+                r.differs ? (
+                  <span>
+                    {certRow(r.current)}{' '}
+                    <Badge tone="warn">changed since</Badge>
+                  </span>
+                ) : (
+                  certRow(r.current)
+                ),
+            },
+          ]}
+        />
+      </div>
+      {/* The count, not the conclusion. This asserted "editing the profile
+          cannot reach it" on the face; that claim is the mechanism's, and it now
+          lives in the snapshot stamp's own `i` where a reader can ask for it. */}
       <p className="muted small method-note">
         {changed.length
           ? `${changed.length} certification${
               changed.length === 1 ? ' has' : 's have'
-            } changed since this application was submitted. The reviewer's decision was made against the left-hand column, and editing the profile cannot reach it.`
-          : 'Nothing has changed since submission. If it does, only the right-hand column moves.'}
+            } changed since this application was submitted. The reviewer assessed the left-hand column.`
+          : 'Nothing has changed since submission.'}
       </p>
     </Card>
   );

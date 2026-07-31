@@ -43,34 +43,59 @@ function RegistryTab({ ctx }) {
       title="Supplier registry"
       lede="Organisations holding live qualifications. Solicitations are issued from this registry."
     >
+      {/* The filtered result, as a sentence a reader can repeat.
+          The load-bearing number sat at ordinary card-title weight, and the three
+          filters were unlabelled native OS selects inconsistent with the app's
+          own control language — so a reader could not tell what each dropdown
+          governed without opening it, and the answer they came for did not look
+          like an answer. */}
       <Card
-        title={`${rows.length} qualified ${
-          rows.length === 1 ? 'supplier' : 'suppliers'
-        }`}
+        title={
+          <span className="registry-answer">
+            <strong className="registry-count">{rows.length}</strong>{' '}
+            {rows.length === 1 ? 'supplier' : 'suppliers'} qualified
+            {filters.category
+              ? ` for ${categoryLabel(filters.category)}`
+              : ' across all categories'}
+            {filters.country ? ` in ${countryLabel(filters.country)}` : ''}
+            {filters.expiring
+              ? `, with a qualification expiring within ${filters.expiring} days`
+              : ''}
+          </span>
+        }
         actions={
           <div className="filter-row">
-            <select value={filters.category} onChange={change('category')}>
-              <option value="">All categories</option>
-              {SUPPLY_CATEGORIES.map((c) => (
-                <option key={c.key} value={c.key}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
-            <select value={filters.country} onChange={change('country')}>
-              <option value="">All countries</option>
-              {countries.map((c) => (
-                <option key={c} value={c}>
-                  {countryLabel(c)}
-                </option>
-              ))}
-            </select>
-            <select value={filters.expiring} onChange={change('expiring')}>
-              <option value="">Any expiry</option>
-              <option value="30">Expiring in 30 days</option>
-              <option value="60">Expiring in 60 days</option>
-              <option value="90">Expiring in 90 days</option>
-            </select>
+            <label className="filter-field">
+              <span className="filter-label">Category</span>
+              <select value={filters.category} onChange={change('category')}>
+                <option value="">All categories</option>
+                {SUPPLY_CATEGORIES.map((c) => (
+                  <option key={c.key} value={c.key}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="filter-field">
+              <span className="filter-label">Country</span>
+              <select value={filters.country} onChange={change('country')}>
+                <option value="">All countries</option>
+                {countries.map((c) => (
+                  <option key={c} value={c}>
+                    {countryLabel(c)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="filter-field">
+              <span className="filter-label">Expiry</span>
+              <select value={filters.expiring} onChange={change('expiring')}>
+                <option value="">Any expiry</option>
+                <option value="30">Expiring in 30 days</option>
+                <option value="60">Expiring in 60 days</option>
+                <option value="90">Expiring in 90 days</option>
+              </select>
+            </label>
           </div>
         }
       >

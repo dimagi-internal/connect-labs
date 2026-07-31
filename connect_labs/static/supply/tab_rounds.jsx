@@ -3,8 +3,13 @@ function RoundsTab({ ctx }) {
   const canManage = supplyCan(world.role, 'rounds', 'manage');
   const [creating, setCreating] = useState(false);
   const [reviewing, setReviewing] = useState(null);
+  const [viewingRound, setViewingRound] = useState(null);
+  const [closingRound, setClosingRound] = useState(null);
   const rounds = world.rounds || [];
   const queue = world.review_queue || [];
+  const allSubmissions = world.eoi_submissions || [];
+  // The two counts on this page were 8 and 4 with nothing explaining the gap.
+  const totalApplications = allSubmissions.length || queue.length;
 
   return (
     <Page
@@ -22,9 +27,17 @@ function RoundsTab({ ctx }) {
         ) : null
       }
     >
+      {/* "APPLICATIONS 8" sat in the Rounds table below a queue showing four
+          rows, with nothing on the page reconciling the two. The queue is a
+          worklist — it holds only what is still awaiting a decision — and that
+          was true and unstated, which reads exactly like an inconsistency. */}
       <Card
         title="Review queue"
-        subtitle="Applications are assessed against the profile frozen at submission."
+        subtitle={`Applications are assessed against the profile frozen at submission.${
+          totalApplications > queue.length
+            ? ` Showing the ${queue.length} awaiting a decision, of ${totalApplications} received — the decided ones are on their round below.`
+            : ''
+        }`}
       >
         <DataTable
           rows={queue}
@@ -90,6 +103,25 @@ function RoundsTab({ ctx }) {
                 key: 'subs',
                 label: 'Applications',
                 value: (r) => r.submission_count,
+                render: (r) => {
+                  const b = r.submission_breakdown || {};
+                  const decided = (b.qualified || 0) + (b.rejected || 0);
+                  return (
+                    <span>
+                      {formatNumber(r.submission_count)}
+                      {decided ? (
+                        <span className="muted">
+                          {' '}
+                          · {b.qualified || 0} qualified, {b.rejected || 0}{' '}
+                          rejected
+                        </span>
+                      ) : null}
+                      {b.submitted ? (
+                        <span className="muted"> · {b.submitted} pending</span>
+                      ) : null}
+                    </span>
+                  );
+                },
               },
               {
                 key: 'status',
@@ -124,26 +156,30 @@ function RoundsTab({ ctx }) {
                     );
                   }
                   if (r.status === 'open') {
+                    // Closing stops suppliers applying and cannot be undone from
+                    // this screen, and it was a single unguarded click styled
+                    // SOFTER than the benign "Review" beside it — the reversible
+                    // action shouted and the irreversible one whispered.
                     return (
                       <button
                         type="button"
                         className="btn btn-secondary btn-sm"
-                        onClick={() =>
-                          act(
-                            () =>
-                              supplyPost(
-                                `/supply/api/eoi/rounds/${r.id}/transition/`,
-                                { status: 'closed' },
-                              ),
-                            'Round closed.',
-                          )
-                        }
+                        onClick={() => setClosingRound(r)}
                       >
-                        Close
+                        Close round…
                       </button>
                     );
                   }
-                  return <span className="muted">—</span>;
+                  // A closed round held 14 applications behind a bare em-dash.
+                  return (
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-ghost"
+                      onClick={() => setViewingRound(r)}
+                    >
+                      View applications
+                    </button>
+                  );
                 },
               },
             ]}
@@ -161,7 +197,138 @@ function RoundsTab({ ctx }) {
           onClose={() => setReviewing(null)}
         />
       ) : null}
+      {viewingRound ? (
+        <RoundApplicationsModal
+          round={viewingRound}
+          submissions={allSubmissions.filter(
+            (s) => s.round_id === viewingRound.id,
+          )}
+          onOpen={(s) => {
+            setViewingRound(null);
+            setReviewing(s);
+          }}
+          onClose={() => setViewingRound(null)}
+        />
+      ) : null}
+      {closingRound ? (
+        <ConfirmCloseRoundModal
+          ctx={ctx}
+          round={closingRound}
+          onClose={() => setClosingRound(null)}
+        />
+      ) : null}
     </Page>
+  );
+}
+
+/* Every application a round attracted, with what was decided about it.
+
+   The count was in the table and the outcomes were nowhere: a closed round
+   rendered a bare em-dash beside "14", so fourteen decisions were unreachable
+   from the surface that counted them. */
+function RoundApplicationsModal({ round, submissions, onOpen, onClose }) {
+  return (
+    <Modal title={`${round.title} — applications`} onClose={onClose} wide>
+      <DataTable
+        rows={submissions}
+        rowKey={(s) => s.id}
+        empty="This round attracted no applications."
+        emptyHint="Nothing was submitted before it closed."
+        onRowClick={onOpen}
+        columns={[
+          { key: 'org', label: 'Supplier', value: (s) => s.org_name },
+          {
+            key: 'country',
+            label: 'Country',
+            value: (s) => s.org_country,
+            render: (s) => countryLabel(s.org_country),
+          },
+          {
+            key: 'cats',
+            label: 'Applied for',
+            sortable: false,
+            value: () => '',
+            render: (s) => <CategoryPills categories={s.categories} />,
+          },
+          {
+            key: 'submitted',
+            label: 'Submitted',
+            value: (s) => s.submitted_at,
+            render: (s) => formatDate(s.submitted_at),
+          },
+          {
+            key: 'status',
+            label: 'Outcome',
+            value: (s) => s.status,
+            render: (s) => <StatusChip status={s.status} />,
+          },
+        ]}
+      />
+      <p className="muted small method-note">
+        Each row opens the application as it was assessed — against the profile
+        frozen at submission, not the supplier's profile today.
+      </p>
+    </Modal>
+  );
+}
+
+/* Closing a round stops suppliers applying, and it was one unguarded click.
+
+   It also sat in softer treatment than the benign "Review" in the row above,
+   so the irreversible control was the quieter one. The confirmation states what
+   closing prevents rather than asking "are you sure". */
+function ConfirmCloseRoundModal({ ctx, round, onClose }) {
+  const { act } = ctx;
+  const pending = (round.submission_breakdown || {}).submitted || 0;
+  return (
+    <Modal
+      title={`Close ${round.title}?`}
+      onClose={onClose}
+      footer={
+        <React.Fragment>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>
+            Keep it open
+          </button>
+          <button
+            type="button"
+            className="btn"
+            disabled={ctx.busy}
+            onClick={() =>
+              act(
+                () =>
+                  supplyPost(`/supply/api/eoi/rounds/${round.id}/transition/`, {
+                    status: 'closed',
+                  }),
+                'Round closed.',
+                // `act` swallows the error and returns null, so closing
+                // unconditionally would dismiss the dialog on a failure the
+                // reader might want to retry from.
+              ).then((result) => {
+                if (result) onClose();
+              })
+            }
+          >
+            Close the round
+          </button>
+        </React.Fragment>
+      }
+    >
+      <p>
+        Closing stops suppliers submitting new applications to this round. It
+        cannot be reopened from this screen.
+      </p>
+      <p className="muted small">
+        {round.submission_count
+          ? `${round.submission_count} application${
+              round.submission_count === 1 ? '' : 's'
+            } already received are unaffected${
+              pending
+                ? `, and the ${pending} awaiting a decision stay in the review queue.`
+                : '.'
+            }`
+          : 'No applications have been received, so nothing is preserved by closing later.'}
+      </p>
+    </Modal>
   );
 }
 

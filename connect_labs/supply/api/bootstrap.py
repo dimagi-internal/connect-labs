@@ -204,6 +204,15 @@ def _staff_world(actor):
             .order_by("submitted_at")
         )
         world["review_queue"] = [submission_dict(s) for s in queue]
+        # Every application, so a closed round is not a dead end.
+        #
+        # `review_queue` is deliberately only the SUBMITTED ones — it is a
+        # worklist. But the rounds table counted 8 applications beside a queue
+        # showing 4, and offered no route to the other 4 or to any decided
+        # application at all.
+        world["eoi_submissions"] = [
+            submission_dict(s) for s in EOISubmission.objects.select_related("round", "org").order_by("-submitted_at")
+        ]
     if "registry" in ROLE_PERMS.get(role, {}):
         rows = {}
         for qual in eoi_actions.live_qualifications():
