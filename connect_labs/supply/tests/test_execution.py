@@ -6,6 +6,7 @@ shipment, the same events and the same derived state — only the recorded
 source tier differs, so hand-entered data is never disguised as a system feed.
 """
 import json
+from datetime import timedelta
 
 import pytest
 
@@ -327,3 +328,56 @@ def test_a_contract_does_not_start_before_it_was_awarded():
             bad.append(f"{contract.reference} starts {contract.starts_on}, awarded {awarded_on}")
 
     assert bad == [], "contracts starting before their award:\n  " + "\n  ".join(bad)
+
+
+def test_a_milestone_delta_says_whether_it_is_measured_or_a_forecast():
+    """A leg that DID arrive nine days late and one merely expected to are
+    different claims, and the same chip rendered both."""
+    from django.utils import timezone
+
+    from connect_labs.supply.models.execution import Milestone
+
+    planned = timezone.now() - timedelta(days=10)
+
+    measured = Milestone(planned_at=planned, actual_at=planned + timedelta(days=9))
+    assert measured.delta_days == 9.0
+    assert measured.delta_basis == "measured"
+    assert measured.is_overdue_unreported is False
+
+    forecast = Milestone(planned_at=planned, estimated_at=planned + timedelta(days=9))
+    assert forecast.delta_days == 9.0
+    assert forecast.delta_basis == "estimated"
+
+    unknown = Milestone(planned_at=planned)
+    assert unknown.delta_days is None
+    assert unknown.delta_basis is None
+
+
+def test_an_overdue_milestone_with_nothing_reported_does_not_read_as_on_time():
+    """The state that produced "0d vs plan" on a late, silent leg.
+
+    Planned date passed, no actual, and an estimate still sitting on the original
+    plan: delta_days computes 0 and the row rendered a confident "0d vs plan" for
+    a milestone that was overdue and simply had not been heard from.
+    """
+    from django.utils import timezone
+
+    from connect_labs.supply.models.execution import Milestone
+
+    planned = timezone.now() - timedelta(days=6)
+
+    silent = Milestone(planned_at=planned, estimated_at=planned)
+    assert silent.delta_days == 0.0, "the misleading delta is still computed…"
+    assert silent.is_overdue_unreported is True, "…but the row must not present it as on time"
+
+    # A genuinely revised estimate is a forecast, not silence.
+    revised = Milestone(planned_at=planned, estimated_at=timezone.now() + timedelta(days=2))
+    assert revised.is_overdue_unreported is False
+
+    # Arrived is arrived, however late.
+    arrived = Milestone(planned_at=planned, actual_at=timezone.now())
+    assert arrived.is_overdue_unreported is False
+
+    # A milestone not yet due is not overdue.
+    future = Milestone(planned_at=timezone.now() + timedelta(days=3))
+    assert future.is_overdue_unreported is False

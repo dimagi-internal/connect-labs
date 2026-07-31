@@ -120,12 +120,28 @@ function ShipmentDetail({ ctx, shipmentId, onClose }) {
                     {m.actual_at ? formatDate(m.actual_at) : '—'}
                   </span>
                 </div>
-                {m.delta_days !== null && m.delta_days !== undefined ? (
+                {/* A measured variance and a forecast are different claims, and
+                    this chip used to render them identically — so a leg that HAD
+                    arrived nine days late and one merely expected to looked the
+                    same. Worse, a milestone whose planned date had passed with
+                    nothing reported and no revised estimate computed a delta of
+                    zero and read "0d vs plan": confidently on time, for a leg
+                    that was overdue and silent. */}
+                {m.overdue_unreported ? (
+                  <div className="rail-delta late">
+                    overdue · nothing reported since{' '}
+                    {m.planned_at ? formatDate(m.planned_at) : 'the plan'}
+                  </div>
+                ) : m.delta_days !== null && m.delta_days !== undefined ? (
                   <div
-                    className={`rail-delta ${m.delta_days > 0 ? 'late' : ''}`}
+                    className={`rail-delta ${m.delta_days > 0 ? 'late' : ''}${
+                      m.delta_basis === 'estimated' ? ' forecast' : ''
+                    }`}
                   >
+                    {m.delta_basis === 'estimated' ? 'expected ' : ''}
                     {m.delta_days > 0 ? '+' : ''}
                     {m.delta_days}d vs plan
+                    {m.delta_basis === 'estimated' ? ' (estimate)' : ''}
                   </div>
                 ) : null}
               </div>

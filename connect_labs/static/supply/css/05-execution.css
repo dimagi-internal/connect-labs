@@ -137,3 +137,11 @@
   font-size: 13px;
   padding: 6px 9px;
 }
+
+/* A forecast variance, visually subordinate to a measured one. The same chip
+   used to render both, so somebody's current estimate looked exactly as solid
+   as a recorded arrival. */
+.rail-delta.forecast {
+  font-style: italic;
+  opacity: 0.8;
+}
