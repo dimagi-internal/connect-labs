@@ -165,11 +165,9 @@ def _program_scope(request):
         rollups = rollups.filter(
             opportunity_id__in=PulseOpportunity.objects.filter(program_id=pid).values("opportunity_id")
         )
-        # Historic density cells predate programme attribution and their source
-        # events are deleted, so they cannot be resolved to a programme. Their
-        # delivery type survives on service_slug, which is the closest honest
-        # filter: the map narrows to the right kind of work even where it
-        # cannot narrow to the exact programme.
+        # Cells now carry program_id, so density narrows exactly like the
+        # points do. Cells folded before that are null and fall back to
+        # delivery type -- see _grid_for.
         grid_service = program.delivery_type or None
 
     return {
@@ -417,6 +415,33 @@ class SummaryView(View):
         )
 
 
+def _grid_for(sc):
+    """Density cells for the current scope, and whether the match is exact.
+
+    Cells key on programme now, so a filtered map narrows its accumulated
+    geography the same way its points do. Cells folded before that carry a null
+    programme and can only be matched on delivery type -- which is why a
+    Nigeria-only programme could light up Cameroon and DR Congo beside a header
+    reading "COUNTRIES 1".
+
+    Those legacy cells are re-derivable rather than lost: the events they came
+    from always carried program_id, the fold just never selected it, and visits
+    can be re-fetched from Connect. Until that runs they stand in, and the
+    response says which of the two it gave you.
+    """
+    cells = PulseGridCell.objects.all()
+    if sc["program"] is None:
+        return cells, True
+
+    pid = sc["program"].program_id
+    exact = cells.filter(program_id=pid)
+    if exact.exists():
+        return exact, True
+    if sc["grid_service"]:
+        return cells.filter(service_slug=sc["grid_service"], program_id=None), False
+    return cells.none(), False
+
+
 class GridView(View):
     """The historical map layer: anonymous ~1 km cells.
 
@@ -429,29 +454,26 @@ class GridView(View):
     def get(self, request):
         limit = min(int(request.GET.get("limit", 20000)), 60000)
         sc = _program_scope(request)
-        cells = PulseGridCell.objects.all()
-        if sc["grid_service"]:
-            cells = cells.filter(service_slug=sc["grid_service"])
+        cells, exact = _grid_for(sc)
         cells = cells.order_by("-n")[:limit]
 
         rows = [
-            [c.lat_q, c.lon_q, c.n, c.approved_n, c.flagged_n, c.country or None, c.service_slug or None]
+            [c.lat_q, c.lon_q, c.n, c.approved_n, c.flagged_n, c.country or None, c.service_slug or None, c.program_id]
             for c in cells
         ]
         return JsonResponse(
             {
-                "fields": ["lat_q", "lon_q", "n", "approved_n", "flagged_n", "country", "service"],
+                "fields": ["lat_q", "lon_q", "n", "approved_n", "flagged_n", "country", "service", "program_id"],
                 # Cells are quantised to 1/100 degree; divide to get coordinates.
                 "quantum": 100,
                 "cells": rows,
                 "total_points": sum(r[2] for r in rows),
                 "truncated": len(rows) >= limit,
-                # Cells carry a delivery type, not a programme id: they are
-                # built by folding visit rows that are then deleted, so a cell
-                # predating this cannot be resolved to the programme that made
-                # it. Filtering narrows to the right KIND of work; the caller
-                # is told so rather than being left to assume exactness.
-                "filtered_by": sc["grid_service"],
+                # Whether the density shown is this programme's own history or
+                # a delivery-type approximation standing in for cells folded
+                # before programme attribution existed.
+                "filtered_by": (sc["program"].program_id if exact and sc["program"] else sc["grid_service"]),
+                "exact": exact,
             }
         )
 

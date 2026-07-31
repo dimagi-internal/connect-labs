@@ -254,3 +254,66 @@ class TestServiceLabels:
 
         for slug in ("ivp", "hhs", "wellme", "malaria", "ace"):
             assert service_label(slug) == slug.upper()
+
+
+@pytest.mark.django_db
+class TestGridProgrammeAttribution:
+    """Density has to narrow with the filter, not just the points.
+
+    Before this, cells keyed on (lat, lon, service_slug) only, so a map filtered
+    to a Nigeria programme still glowed across Cameroon and DR Congo — every
+    cell of that delivery type, anywhere — beside a header reading
+    "COUNTRIES 1".
+    """
+
+    def test_folding_records_the_programme(self, two_programmes):
+        from connect_labs.pulse import ingest
+        from connect_labs.pulse.models import PulseGridCell
+
+        old = timezone.now() - timedelta(days=400)
+        PulseEvent.objects.filter(opportunity_id=100).update(field_ts=old)
+        ingest.fold_events_to_grid()
+
+        cells = PulseGridCell.objects.exclude(program_id=None)
+        assert cells.exists(), "fold dropped the programme it was given"
+        assert set(cells.values_list("program_id", flat=True)) == {1}
+
+    def test_two_programmes_in_one_place_stay_separate(self, two_programmes):
+        """Same coordinates, different programmes — they must not merge into one
+        cell, or filtering could never separate them again."""
+        from connect_labs.pulse import ingest
+        from connect_labs.pulse.models import PulseGridCell
+
+        old = timezone.now() - timedelta(days=400)
+        PulseEvent.objects.update(field_ts=old, lat=11.0, lon=7.6)
+        ingest.fold_events_to_grid()
+
+        at_point = PulseGridCell.objects.filter(lat_q=1100, lon_q=760)
+        assert at_point.count() >= 2
+        assert len(set(at_point.values_list("program_id", flat=True))) >= 2
+
+    def test_filtered_grid_prefers_exact_cells(self, client, two_programmes):
+        from connect_labs.pulse import ingest
+
+        old = timezone.now() - timedelta(days=400)
+        PulseEvent.objects.update(field_ts=old)
+        ingest.fold_events_to_grid()
+
+        d = client.get(reverse("pulse:api_grid"), {"program": 1}).json()
+        assert d["exact"] is True
+        assert {c[7] for c in d["cells"]} == {1}
+
+    def test_legacy_cells_fall_back_and_say_so(self, client, two_programmes):
+        """Cells folded before attribution existed carry a null programme. They
+        stand in until a regrid, and the response must not claim exactness."""
+        from connect_labs.pulse.models import PulseGridCell
+
+        PulseGridCell.objects.update(program_id=None)
+        d = client.get(reverse("pulse:api_grid"), {"program": 1}).json()
+        assert d["exact"] is False
+        assert d["filtered_by"] == "ecd"
+        assert all(c[6] == "ecd" for c in d["cells"])
+
+    def test_unfiltered_grid_is_exact_by_definition(self, client, two_programmes):
+        d = client.get(reverse("pulse:api_grid")).json()
+        assert d["exact"] is True

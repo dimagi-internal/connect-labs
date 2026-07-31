@@ -239,6 +239,14 @@ class PulseGridCell(models.Model):
     country = models.CharField(max_length=2, blank=True, db_index=True)
     service_slug = models.CharField(max_length=48, blank=True)
 
+    # Part of the cell key, so filtering the map by programme narrows the
+    # accumulated geography as well as the live points. The events being folded
+    # always carried this; the fold simply never selected it, which left the
+    # density layer showing every programme's history under one programme's
+    # header -- a map glowing across four countries beside "COUNTRIES 1".
+    # Nullable for cells folded before this existed.
+    program_id = models.IntegerField(null=True, blank=True, db_index=True)
+
     n = models.IntegerField(default=0)
     # Kept per cell so the historical map can show *quality*, not just volume —
     # a cell with a high flag ratio is a story a bare count can't tell.
@@ -249,7 +257,7 @@ class PulseGridCell(models.Model):
     last_ts = models.DateTimeField(null=True, blank=True, db_index=True)
 
     class Meta:
-        unique_together = [("lat_q", "lon_q", "service_slug")]
+        unique_together = [("lat_q", "lon_q", "service_slug", "program_id")]
         indexes = [models.Index(fields=["country", "n"])]
 
     def __str__(self) -> str:

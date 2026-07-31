@@ -210,7 +210,17 @@ class TestGridFold:
         assert cell.first_ts < cell.last_ts
 
     def test_grid_holds_no_beneficiary_level_detail(self):
-        """The whole point: a cell cannot be resolved back to a household."""
+        """The whole point: a cell cannot be resolved back to a household.
+
+        `program_id` was added deliberately so a filtered map narrows its
+        density as well as its points. It does not weaken this: a programme
+        spans dozens of opportunities and hundreds of thousands of services, so
+        knowing "these 412 services in this ~1.1 km cell belonged to ECD
+        Nigeria 2025" is coarser than the delivery type already stored, not
+        finer. Anything that narrowed toward a household — an opportunity id, a
+        worker, a timestamp per point — would not belong here, which is what
+        this list exists to enforce.
+        """
         self._event(1, 11.0330133, 7.6380900, 60)
         ingest.fold_events_to_grid()
         fields = {f.name for f in PulseGridCell._meta.get_fields()}
@@ -225,6 +235,7 @@ class TestGridFold:
             "flagged_n",
             "first_ts",
             "last_ts",
+            "program_id",
         }
         cell = PulseGridCell.objects.get()
         # Binned to ~1.1km, so the original coordinate is not recoverable.
