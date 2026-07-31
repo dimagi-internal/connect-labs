@@ -3,6 +3,7 @@
 Everything here is a claim one of the four OES narratives makes out loud. If a
 test in this file fails, a scene is lying.
 """
+import json
 from datetime import date
 from decimal import Decimal
 
@@ -391,6 +392,91 @@ def test_a_recorded_action_cannot_be_rewritten_or_deleted():
 
 
 # --- the partner surface ----------------------------------------------------
+
+
+def test_the_seeded_world_leaves_one_consignment_awaiting_its_count(client):
+    """Scene 4's narrated act needs something left to count.
+
+    The Monguno short receipt used to be seeded complete — discrepancy and all —
+    so the scene described a storekeeper counting cartons over a record that
+    existed before the camera did. The consignment is now delivered and
+    uncounted, which is what puts "Record the count" on the row.
+    """
+    call_command("seed_supply_demo")
+    awaiting = Shipment.objects.get(reference="SHP-2026-0930")
+
+    assert awaiting.status == Shipment.Status.DELIVERED
+    assert awaiting.destination.name == "Monguno Nutrition Centre"
+    # A real despatch advice, because the narration's evidentiary point is a hand
+    # count reconciled AGAINST an advice.
+    assert awaiting.asn_reference
+    assert float(awaiting.quantity) == 900
+    # Nothing counted, so nothing banked and no discrepancy yet.
+    assert not SupplyEvent.objects.filter(shipment=awaiting, biz_step=SupplyEvent.BizStep.RECEIVING).exists()
+    assert not Discrepancy.objects.filter(shipment=awaiting).exists()
+    # And the arrival IS recorded — otherwise the row reads as still on the road.
+    assert awaiting.milestones.filter(actual_at__isnull=False).count() == 2
+
+
+def test_recording_the_count_on_camera_raises_the_sixty_carton_discrepancy(client):
+    """The exact act scene 4 performs, through the exact endpoint it drives.
+
+    The discrepancy is DERIVED from the count by the app's own reconciliation
+    rather than seeded, so this test is what stops the scene silently going back
+    to narrating a pre-existing record.
+    """
+    call_command("seed_supply_demo")
+    client.post("/supply/login/", {"email": "zara@komadugu.example", "password": "oes-demo-2026"})
+    awaiting = Shipment.objects.get(reference="SHP-2026-0930")
+    site = awaiting.destination
+    stock_before = float(cover.stock_on_hand(site))
+
+    resp = client.post(
+        f"/supply/api/shipments/{awaiting.id}/events/",
+        data=json.dumps(
+            {
+                "biz_step": "receiving",
+                "node_id": site.id,
+                "quantity": 840,
+                "batch_lot": "LOT2609C",
+                "note": "Counted off the truck at the loading bay against the despatch advice.",
+            }
+        ),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200, resp.content
+
+    discrepancy = Discrepancy.objects.get(shipment=awaiting)
+    assert float(discrepancy.expected_quantity) == 900
+    assert float(discrepancy.received_quantity) == 840
+    assert float(discrepancy.shortfall) == 60
+    assert discrepancy.status == Discrepancy.Status.OPEN
+    # The count is what banks the cartons, so stock moves by what was COUNTED
+    # and not by what was advised.
+    assert float(cover.stock_on_hand(site)) == stock_before + 840
+    # And it lands on the partner's own discrepancy card.
+    body = client.get("/supply/api/bootstrap/").json()
+    refs = {d["shipment_reference"] for d in body["discrepancies"]}
+    assert "SHP-2026-0930" in refs
+
+
+def test_the_calendar_is_untouched_by_an_uncounted_consignment(client):
+    """A consignment nobody has counted is not stock anyone can plan against.
+
+    It is delivered, so it is not "on the road" either — it must contribute to
+    neither side, or the calendar would promise Monguno cartons no record says
+    it holds.
+    """
+    call_command("seed_supply_demo")
+    client.post("/supply/login/", {"email": "zara@komadugu.example", "password": "oes-demo-2026"})
+    body = client.get("/supply/api/bootstrap/").json()
+
+    monguno = [p for p in body["distribution_plans"] if p["site_name"] == "Monguno Nutrition Centre"]
+    assert monguno
+    first = monguno[0]
+    # The 900 from its historical leg, not 1,740.
+    assert first["cartons_on_hand"] == 900
+    assert first["state"] == "covered"
 
 
 def test_a_partner_sees_only_their_own_sites(client):

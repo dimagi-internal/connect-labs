@@ -434,7 +434,10 @@ function ProfileSnapshotComparison({ snap, live, submission }) {
           spacer matching the table's first column, identical percentages on
           both, and a divider so the boundary is visible. */}
       <div className="frozen-live-grid">
-        <div />
+        {/* The row's own label, in the gutter the table's first column holds.
+            It was an empty spacer, so the panel's first row spent a quarter of
+            its width on nothing beside two unlabelled paragraphs. */}
+        <div className="frozen-live-row-label">Description</div>
         <div>
           <div className="muted small">Frozen at submission</div>
           <p className="muted">{snap.description || 'No description.'}</p>

@@ -4,6 +4,7 @@ from datetime import date, timedelta
 import pytest
 
 from connect_labs.supply.models import EOIRound, EOISubmission, Qualification
+from connect_labs.supply.services.eoi_actions import add_months, submit_submission
 
 from . import factories as f
 
@@ -102,8 +103,62 @@ def test_review_qualify_creates_qualifications(admin_client):
     quals = Qualification.objects.filter(org=org).order_by("category")
     assert [q.category for q in quals] == ["rutf", "transport"]
     assert all(q.status == Qualification.Status.ACTIVE for q in quals)
-    assert all(q.expires_at == q.granted_at + timedelta(days=540) for q in quals)
+    # 18 CALENDAR months, which is what the rule says on screen. The term was
+    # 540 days, so the stated rule and the computed date disagreed by up to
+    # nine days on the figure that decides whether a supplier is in the
+    # registry.
+    assert all(q.expires_at == add_months(q.granted_at, 18) for q in quals)
     assert all(q.source_submission_id == sub.id for q in quals)
+
+
+def test_qualification_term_is_calendar_months_not_540_days():
+    """31 August + 18 months is 28/29 February, not 3 March."""
+    assert add_months(date(2026, 7, 22), 18) == date(2028, 1, 22)
+    # Clamped to the shorter target month rather than rolling into the next one.
+    assert add_months(date(2026, 8, 31), 6) == date(2027, 2, 28)
+    assert add_months(date(2024, 8, 31), 6) == date(2025, 2, 28)
+    # A December start crosses the year boundary in the month-length lookup.
+    assert add_months(date(2026, 6, 30), 6) == date(2026, 12, 30)
+
+
+def test_qualification_flags_reverification_when_it_outlives_its_certificate(admin_client):
+    """A pass granted off a certificate that lapses first says so.
+
+    Without this the registry answered "qualified" for the months between the
+    certificate expiring and the pass expiring — off evidence that had lapsed,
+    with nothing on screen to show it.
+    """
+    client, _user = admin_client
+    org = f.SupplierOrgFactory()
+    # Expires well inside an 18-month term.
+    cert_expiry = date.today() + timedelta(days=200)
+    f.CertificationFactory(org=org, cert_type="UNICEF RUTF approval", expiry_date=cert_expiry)
+    rnd = f.EOIRoundFactory(categories=["rutf"])
+    sub = f.EOISubmissionFactory(org=org, round=rnd, categories=["rutf"], status=EOISubmission.Status.DRAFT)
+    # Freeze the profile the way submission does, so the snapshot carries the cert.
+    submit_submission(sub)
+
+    resp = _post(
+        client,
+        f"/supply/api/eoi/submissions/{sub.id}/review/",
+        {"decisions": {"rutf": "qualify"}},
+    )
+    assert resp.status_code == 200
+
+    qual = Qualification.objects.get(org=org, category="rutf")
+    assert qual.expires_at == add_months(qual.granted_at, 18)
+    assert qual.verify_at == cert_expiry
+
+
+def test_qualification_carries_no_verify_date_when_certificates_outlast_it(admin_client):
+    client, _user = admin_client
+    org = f.SupplierOrgFactory()
+    f.CertificationFactory(org=org, cert_type="ISO 22000", expiry_date=date.today() + timedelta(days=2000))
+    rnd = f.EOIRoundFactory(categories=["rutf"])
+    sub = f.EOISubmissionFactory(org=org, round=rnd, categories=["rutf"], status=EOISubmission.Status.DRAFT)
+    submit_submission(sub)
+    _post(client, f"/supply/api/eoi/submissions/{sub.id}/review/", {"decisions": {"rutf": "qualify"}})
+    assert Qualification.objects.get(org=org, category="rutf").verify_at is None
 
 
 def test_review_partial_qualify(admin_client):

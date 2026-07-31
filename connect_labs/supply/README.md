@@ -84,13 +84,21 @@ regardless of which half X lives in.
 submit, a **snapshot of the org profile is frozen onto the submission** —
 reviewers assess that snapshot, never the live profile, so a supplier editing
 their profile afterwards cannot change what was judged. A passing `EOIReview`
-stamps `Qualification` rows onto the _org_, per category, with an expiry. The
-set of live qualifications **is** the supplier registry.
+stamps `Qualification` rows onto the _org_, per category, with an expiry — **18
+calendar months** (`QUALIFICATION_TERM_MONTHS`, via `add_months`, which clamps to
+the target month's length). A pass granted against a certificate that lapses
+before the pass itself does carries `verify_at`, the date that certificate runs
+out, so the registry can say the pass outlives its own evidence instead of
+quietly answering "qualified" off an expired document. The term is deliberately
+NOT truncated to the certificate: not every certificate in a profile is
+load-bearing for every category, so that call belongs to a reviewer. The set of
+live qualifications **is** the supplier registry.
 
 An `RFP` carries `Lot`s. A supplier sees an RFP only while holding a live
 qualification in one of its categories — `rfp_actions.org_can_bid` is the single
-source of truth for that. Bids are per-lot (`LotBid`), scored by reviewers
-(`BidScore`), and awarded lot by lot (`Award`).
+source of truth for that, and `serializers.eligible_supplier_count` reports the
+size of that set on the publisher's own screen. Bids are per-lot (`LotBid`),
+scored by reviewers (`BidScore`), and awarded lot by lot (`Award`).
 
 **Execution.** An `Award` is the immutable decision; a `Contract` is the
 container that carries it out, drawing against an `Appropriation`. `Shipment`s
@@ -101,7 +109,25 @@ GTIN, batch/lot and expiry.
 `SupplyEvent` log and never set by hand.** That is the load-bearing invariant of
 this app. `Milestone` keeps planned / estimated / actual as three separate
 timestamps (DCSA's PLN/EST/ACT), so "late" is a real measurement rather than a
-vibe. A receipt that does not reconcile raises a `Discrepancy`.
+vibe. A receipt that does not reconcile raises a `Discrepancy`, derived by
+`ingestion._reconcile_receipt` from the recorded count against the advised
+quantity — never seeded, and never asserted separately from the count that
+produced it.
+
+**Two parties may report on a consignment**, and both do: the supplier holding
+the contract despatches it, and the organisation that OWNS the destination node
+counts it in. That second half is what makes the implementing-partner surface an
+inversion rather than a read-only copy, and it is enforced in one place —
+`ingestion.assert_may_report`, with `api.execution._reportable_shipment` as its
+query-level twin — so receipt authority cannot drift from the node ownership the
+partner's site list and cover figures are already scoped by.
+
+**Cartons are counted from the event's own quantity rows**, and `CT` is a carton
+(see `cover._CARTON_UOMS`; the EPCIS path, the hand-keyed webform and the
+execution seeder all write `CT`, the demand seeder writes `cartons`). The
+shipment's advised quantity is a FALLBACK for an event that carried no quantity
+row at all — the lowest ingestion tier is a reference and a place — and never a
+substitute for a row that says zero.
 
 **Demand.** The third stage, and the denominator the other two lack. A
 `CaseloadEstimate` says how many severely malnourished children a district is

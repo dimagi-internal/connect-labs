@@ -103,38 +103,79 @@ scenes:
   concept_claim: A receipt recorded at the loading bay against the despatch advice raises the discrepancy
     as evidence from the person holding the cartons, labelled hand-keyed.
   url: /supply/
-  show: 'The Receiving tab — the partner''s own capture surface: the consignments arriving at their eleven
-    sites, each marked with how it was reported, the ones still awaiting a count, and the short count
-    already raised — 900 advised against 840 counted, and the 60 children behind the difference.'
+  show: 'The Receiving tab — the partner''s own capture surface. A consignment has arrived at Monguno
+    and is awaiting a count; the storekeeper records 840 against its 900-carton despatch advice on
+    camera, and the 60-carton discrepancy appears as a consequence of the count rather than as a record
+    that was already there.'
+  # The count is PERFORMED. The seeder no longer pre-creates this discrepancy
+  # (see demo/demand._awaiting_count_leg): SHP-2026-0930 is delivered and
+  # uncounted, so the act the narration describes is the act that produces the
+  # record. The reconciliation is the app's own — ingestion._reconcile_receipt
+  # compares the recorded count against the shipment's advised quantity — so the
+  # 60 short is derived in front of the viewer, not typed by the recipe.
   actions:
   - kind: click
     target: css:.navitem:has-text('Receiving')
   - kind: wait_for
     target: css:.keyfigures
   - kind: hold
-    seconds: 1.6
-    note: what is inbound to their own sites, and how each was reported
+    seconds: 1.8
+    note: one consignment awaiting a count — the tile says so before the act
   - kind: scroll_to
-    target: css:.card:has-text('Arriving at your sites') tr:has-text('SHP-2026-0909')
-    note: the counted row itself, so the provenance chip the narration calls out ("entered by
-      hand" against "despatch advice") and the REPORTED BY header are both in frame. The scene
-      used to jump straight to the short-count card, which carries no provenance at all, so the
-      punchline was argued over a frame that did not contain it.
+    target: css:.card:has-text('Arriving at your sites') tr:has-text('SHP-2026-0930')
+    note: the row itself, so the REPORTED BY provenance chip and the awaiting-count state are
+      both in frame before the count is taken
+  - kind: hold
+    seconds: 1.8
+  - kind: click
+    target: css:tr:has-text('SHP-2026-0930') button:has-text('Record the count')
+  - kind: wait_for
+    target: css:.modal
+  - kind: hold
+    seconds: 1.6
+    note: the consignment as advised — 900 cartons, on a real despatch advice
+  - kind: click
+    target: css:.modal button:has-text('Record an event')
+  - kind: wait_for
+    target: css:.modal .field:has-text('What happened') select
+  - kind: select
+    target: css:.modal .field:has-text('What happened') select
+    value: receiving
+    note: a receipt, which is the event that reconciles
+  - kind: fill
+    target: css:.modal .field:has-text('Quantity') input
+    value: '840'
+    note: what the storekeeper actually counted off the truck
+  - kind: fill
+    target: css:.modal textarea
+    value: Counted off the truck at the loading bay against the despatch advice.
+  - kind: hold
+    seconds: 1.4
+    note: the count, before it is committed
+  - kind: click
+    target: css:.modal button:has-text('Record event')
+  - kind: wait_for
+    target: css:.toast
   - kind: hold
     seconds: 2.0
+    note: recorded — and the shortfall exists from this moment, derived rather than asserted
+  - kind: click
+    target: css:.modal-close
+  - kind: wait_for
+    target: css:.keyfigures
   - kind: scroll_to
-    target: css:.card:has-text('Short counts you have raised')
+    target: css:.card:has-text('Receiving discrepancies you have reported')
+  - kind: snapshot
+    note: 'the canonical frame: the discrepancy the count just produced — 900 advised, 840 counted,
+      60 short — with when and where it was counted beside it'
   - kind: hold
     seconds: 3.0
-    note: the REPORTED BY column and the short count in one frame — three consignments
-      arrived on a despatch advice and the rest as a phone call, and the one that came up
-      60 short says which it was. Opening the consignment modal here covered the column
-      that carries the whole claim, so it does not.
-  impressive_because: A shortfall asserted from a capital city is a dispute. The same shortfall recorded
-    at the loading bay against the despatch advice is evidence — and it is labelled hand-keyed, because
-    it was.
-  ai_quality: The provenance marker is visible; the form posts the same payload as the machine-to-machine
-    tier rather than a parallel shape.
+    note: 900 advised, 840 counted, 60 short, and the provenance of the count on the same row
+  impressive_because: A shortfall asserted from a capital city is a dispute. The same shortfall counted
+    at the loading bay against the advice that travelled with the truck is evidence — and the record
+    carries who counted it and where.
+  ai_quality: The discrepancy is computed by the app's own reconciliation from the count entered on
+    camera, not seeded; the webform posts the same payload as the machine-to-machine tier.
 - id: zara-raises-a-shortfall-and-the-centre-answers
   concept_claim: A partner raises a shortfall from their own screen and it enters the central queue ranked
     by the children behind it, marked as partner-raised.

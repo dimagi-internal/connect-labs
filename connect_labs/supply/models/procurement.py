@@ -130,6 +130,18 @@ class Qualification(models.Model):
     source_submission = models.ForeignKey(EOISubmission, null=True, on_delete=models.SET_NULL, related_name="+")
     granted_at = models.DateField()
     expires_at = models.DateField()
+    # The date a certification the pass RESTS ON runs out, when that falls
+    # before the pass's own expiry.
+    #
+    # An 18-month qualification granted off a snapshot containing a UNICEF RUTF
+    # approval expiring in nine months silently outlived its own evidence: the
+    # registry went on answering "yes, qualified" for nine months after the
+    # document behind that answer had lapsed. Truncating the term to the
+    # certificate would be wrong too — not every certificate in a profile is
+    # load-bearing for every category — so the pass keeps its term and carries
+    # the date it needs re-verifying by, which is a fact a reviewer can act on
+    # rather than a silent assumption.
+    verify_at = models.DateField(null=True, blank=True)
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.ACTIVE)
 
     class Meta:

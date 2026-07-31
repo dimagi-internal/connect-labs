@@ -333,7 +333,12 @@ function MapUnavailable({ shipments }) {
   );
 }
 
-function FlowMap({ nodes, shipments, focusCountry, height }) {
+/* ``fill`` lets the map take its container's height instead of a fixed pixel
+   count. The command centre puts the map beside a taller worklist, and a grid
+   cell stretches to the tallest row — so a 560px map inside a 660px cell left
+   a hundred-pixel band of dead white under it, in frame on three consecutive
+   scenes. A fixed height cannot know what it is sitting next to. */
+function FlowMap({ nodes, shipments, focusCountry, height, fill }) {
   const containerRef = useRef(null);
   const [showIpc, setShowIpc] = useState(true);
   const { ready } = useFlowMap({
@@ -349,7 +354,10 @@ function FlowMap({ nodes, shipments, focusCountry, height }) {
   }
 
   return (
-    <div className="flowmap-wrap" style={{ height: height || 520 }}>
+    <div
+      className={`flowmap-wrap${fill ? ' fill' : ''}`}
+      style={fill ? undefined : { height: height || 520 }}
+    >
       <div ref={containerRef} className="flowmap" />
       {!ready ? <div className="flowmap-loading">Loading map…</div> : null}
       <div className="flowmap-controls">

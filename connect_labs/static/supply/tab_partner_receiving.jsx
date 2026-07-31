@@ -171,9 +171,14 @@ function PartnerReceivingTab({ ctx }) {
         />
       </Card>
 
+      {/* Objective title and subtitle. "Short counts you have raised" sat two
+          cards from the partner page's "Shortfalls you have raised" — two
+          near-identical titles for different concepts — and the subtitle was a
+          verdict sentence stamped on the card face. The provenance columns and
+          the `i` carry what the sentence was asserting. */}
       <Card
-        title="Short counts you have raised"
-        subtitle="A shortfall asserted from a spreadsheet is an opinion. This one was counted beside the pallets."
+        title="Receiving discrepancies you have reported"
+        subtitle="Each row is a count taken at the door, recorded against the consignment's despatch advice."
       >
         <DataTable
           rows={openDiscrepancies}
@@ -184,6 +189,21 @@ function PartnerReceivingTab({ ctx }) {
               key: 'ship',
               label: 'Consignment',
               value: (d) => d.shipment_reference,
+            },
+            {
+              key: 'counted_on',
+              label: 'Counted',
+              value: (d) => d.created_at || '',
+              render: (d) => (
+                <span className="nowrap">
+                  {d.created_at ? formatDate(d.created_at) : '—'}
+                  <span className="muted small"> · at the store</span>
+                  <InfoNote
+                    label="this count"
+                    text="Recorded by the receiving storekeeper at the door, against the consignment's despatch advice — not asserted later from a spreadsheet. The count taken beside the pallets is the figure of record; the discrepancy exists from the moment it is recorded."
+                  />
+                </span>
+              ),
             },
             {
               key: 'advised',

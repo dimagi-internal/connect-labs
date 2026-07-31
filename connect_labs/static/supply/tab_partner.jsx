@@ -287,14 +287,22 @@ function PartnerTab({ ctx }) {
                 key: 'status',
                 label: 'Status',
                 value: (s) => s.status,
+                // Capitalised like every sibling chip on the page — a
+                // lowercase 'open' beside 'Resolved' read as a different kind
+                // of state rather than a different value of the same one.
                 render: (s) => (
                   <Badge tone={s.status === 'resolved' ? 'good' : 'warn'}>
-                    {s.status}
+                    {s.status.charAt(0).toUpperCase() + s.status.slice(1)}
                   </Badge>
                 ),
               },
             ]}
           />
+          <p className="muted small method-note">
+            One carton is one child's full course, so a shortfall estimated from
+            the children booked in reads the same figure in both columns — the
+            two diverge when a physical count sets the cartons.
+          </p>
         </Card>
       ) : null}
 
@@ -583,19 +591,23 @@ function MuacSeries({ child, focused, onFocus }) {
   // used to be drawn 96px tall against 56 for the rest — the same millimetre
   // domain, but 2.5px/mm against 1.4px/mm, so the child the reader is looking
   // at climbed more steeply than the others purely because it was selected.
-  // Focus now adds information (the visit count, the labelled thresholds),
-  // not vertical exaggeration.
   const height = 68;
   const lo = 95;
   const hi = 135;
   const x = (i) => (i / Math.max(series.length - 1, 1)) * width;
-  const y = (mm) => height - ((mm - lo) / (hi - lo)) * height;
+  // Clamped to the drawn domain. A measurement outside [95, 135] mm computed a
+  // y past the SVG edge, so that child's line visibly detached from the bands
+  // it is read against — the series looked mis-registered rather than extreme.
+  const y = (mm) =>
+    height - ((Math.min(hi, Math.max(lo, mm)) - lo) / (hi - lo)) * height;
   const path = series
     .map(
       (m, i) =>
         `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${y(m.muac_mm).toFixed(1)}`,
     )
     .join(' ');
+  const firstDate = series[0].date;
+  const lastDate = series[series.length - 1].date;
 
   return (
     <div
@@ -609,18 +621,18 @@ function MuacSeries({ child, focused, onFocus }) {
         <Badge tone={child.discharge_status === 'recovered' ? 'good' : 'warn'}>
           {child.discharge_label}
         </Badge>
-        {/* "2 visits over 1 weeks" — in the most-looked-at text in the modal,
-            since it only renders on the focused row. */}
-        {focused ? (
-          <span className="muted small">
-            {series.length} {series.length === 1 ? 'visit' : 'visits'}
-            {series.length > 1
-              ? ` over ${series.length - 1} ${
-                  series.length - 1 === 1 ? 'week' : 'weeks'
-                }`
-              : ''}
-          </span>
-        ) : null}
+        {/* Every row states its base. Visit count only on the focused row left
+            the other twelve series as unqualified lines — a reader comparing
+            two children could not tell a two-point interpolation from a
+            twelve-visit record without clicking each one. */}
+        <span className="muted small">
+          {series.length} {series.length === 1 ? 'visit' : 'visits'}
+          {series.length > 1
+            ? ` over ${series.length - 1} ${
+                series.length - 1 === 1 ? 'week' : 'weeks'
+              }`
+            : ''}
+        </span>
       </div>
       <svg viewBox={`0 0 ${width} ${height}`} className="muac-spark">
         {/* The red / amber / green bands a MUAC series is read against. */}
@@ -649,16 +661,30 @@ function MuacSeries({ child, focused, onFocus }) {
             thing carrying the clinical meaning. */}
         <line x1="0" x2={width} y1={y(115)} y2={y(115)} className="muac-rule" />
         <line x1="0" x2={width} y1={y(125)} y2={y(125)} className="muac-rule" />
-        {focused ? (
-          <>
-            <text x="2" y={y(125) - 2} className="muac-rule-label">
-              125 mm · recovered
-            </text>
-            <text x="2" y={y(115) - 2} className="muac-rule-label">
-              115 mm · severe
-            </text>
-          </>
-        ) : null}
+        {/* Thresholds labelled on EVERY row, not only the focused one — the
+            bands carry the entire clinical claim, and eleven unlabelled rows
+            under one labelled row read as decoration rather than the same
+            scale repeated. */}
+        <text x="2" y={y(125) - 2} className="muac-rule-label">
+          125 mm · recovered
+        </text>
+        <text x="2" y={y(115) - 2} className="muac-rule-label">
+          115 mm · severe
+        </text>
+        {/* The time axis the sparkline lacked: when the series starts and
+            ends. Without dates a twelve-week recovery and a two-week snapshot
+            drew as the same line. */}
+        <text x="2" y={height - 3} className="muac-axis-label">
+          {formatDate(firstDate)}
+        </text>
+        <text
+          x={width - 2}
+          y={height - 3}
+          className="muac-axis-label"
+          textAnchor="end"
+        >
+          {formatDate(lastDate)}
+        </text>
         <path d={path} className="muac-line" />
         {/* One marker per visit — a bare line reads as a two-point
             interpolation, which is not what "across their visits" claims. */}
@@ -746,6 +772,26 @@ function DistributionWeekGrid({ plans }) {
 
   return (
     <div className="week-grid-wrap">
+      {/* The colour semantics, ON the calendar rather than in a prose
+          paragraph below the fold. Amber and red were undefined at the point
+          of use: a viewer reading the grid had to scroll past it to learn
+          what the difference between the two failure colours was. */}
+      <div className="week-legend">
+        <span className="week-key">
+          <i className="week-swatch covered" /> covered — stock on the day meets
+          the children booked
+        </span>
+        <span className="week-key">
+          <i className="week-swatch at_risk" /> at risk — some stock, below need
+        </span>
+        <span className="week-key">
+          <i className="week-swatch uncovered" /> uncovered — nothing on hand
+        </span>
+        <InfoNote
+          label="the calendar"
+          text="Each cell is the children booked in that day and the cartons on hand for them — opening stock plus every consignment that lands on or before that day, minus what earlier distributions already spent. One carton is one child's full course, so a cell is short exactly when the stock figure is below the children figure. Cartons still in transit are shown as 'arrives after': they land later than this distribution and so do not cover it, which is why a cell can be red with a lorry on the way. An empty cell is a day with no distribution planned."
+        />
+      </div>
       <table className="week-grid">
         <thead>
           <tr>
@@ -791,17 +837,6 @@ function DistributionWeekGrid({ plans }) {
           ))}
         </tbody>
       </table>
-      <p className="muted small method-note">
-        Each cell is the children booked in that day and the cartons on hand for
-        them — opening stock plus every consignment that lands on or before that
-        day, minus what earlier distributions already spent. One carton is one
-        child's full course, so a cell is short exactly when the stock figure is
-        below the children figure. Cartons still in transit are shown as
-        &ldquo;arrives after&rdquo;: they land later than this distribution and
-        so do not cover it, which is why a cell can be red with a lorry on the
-        way. Green is covered, amber at risk, red uncovered; an empty cell is a
-        day with no distribution planned.
-      </p>
     </div>
   );
 }

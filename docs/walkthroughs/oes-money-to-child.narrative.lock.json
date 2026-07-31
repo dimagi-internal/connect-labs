@@ -64,7 +64,7 @@
         }
       ],
       "id": "cost-per-child-with-its-method-on-screen",
-      "narrative": "Dale needs one number for a briefing and needs it to survive being questioned. The ladder runs dollars to metric tonnes to cartons to children, and the conversion is written next to it: one carton is a hundred and fifty sachets, which is one child's full course of treatment. Cost per child is computed from disbursements against confirmed deliveries only — consignments in transit are excluded, and it says so. A reader who can see that can see exactly what the figure claims and what it does not. That is what makes it a number you can argue with, rather than one you either accept or discard. It is also the same conversion the command centre's requirement-from-caseload column uses, from one constant in gs1.py, so the two screens cannot quietly disagree.",
+      "narrative": "Dale needs one number for a briefing and needs it to survive being questioned. The ladder runs dollars to metric tonnes to cartons to full courses, and every conversion is written on the arrow between the rungs: one carton is a hundred and fifty ninety-two-gram sachets, which is one child's full course of treatment. What it prices is a course bought and confirmed — not a child treated, and the label says so, because the measured half of that question is the last card on this page. Cost per course is computed from disbursements against confirmed deliveries only; consignments in transit are excluded from both sides of the division, and haulage contracts are excluded because those dollars buy movement rather than cartons. A reader who can see all of that can see exactly what the figure claims and what it does not. That is what makes it a number you can argue with, rather than one you either accept or discard.",
       "persona": "dale",
       "provenance": "S2",
       "title": "Cost per child, with its method on screen"
@@ -78,7 +78,7 @@
         }
       ],
       "id": "nigerias-own-view-scoped-on-the-server",
-      "narrative": "Hauwa coordinates Nigeria's response and gets a version of this scoped to Nigeria — the flows entering and moving within the country, and nothing else. That filter is applied when the payload is built, on the server, so another country's consignments never reach the page at all. It matters because the first question a government counterpart asks about a shared dashboard is what else it can see, and \"the browser hides it\" is not an answer that survives contact.",
+      "narrative": "The same money, from the other end of it. Dale's view is a funder's; this is the one a government counterpart gets, so the persona changes with it — Hauwa coordinates Nigeria's response, and her page is scoped to Nigeria. The flows entering and moving within the country, and nothing else. The scope marker says where the boundary was drawn, and the filter behind it is applied when the payload is built, on the server, so another country's consignments never reach the page at all. It matters because the first question a government counterpart asks about a shared dashboard is what else it can see, and “the browser hides it” is not an answer that survives contact.",
       "persona": "hauwa",
       "provenance": "S3",
       "title": "Nigeria's own view, scoped on the server"
@@ -118,5 +118,5 @@
     }
   ],
   "slug": "oes-money-to-child",
-  "version": 2
+  "version": 3
 }

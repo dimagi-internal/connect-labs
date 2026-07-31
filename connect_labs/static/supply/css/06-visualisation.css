@@ -38,9 +38,13 @@
   font-size: 12px;
 }
 
+/* Top-left, not bottom-left: Mapbox puts its logo and attribution along the
+   bottom edge, and the legend sat on top of them. Attribution is a licence
+   condition, not decoration — it cannot be the thing that gives way. The
+   layer toggle owns the top-right corner, so the two never meet. */
 .ipc-legend {
   position: absolute;
-  bottom: 10px;
+  top: 10px;
   left: 10px;
   background: rgba(255, 255, 255, 0.94);
   border-radius: 8px;
@@ -139,12 +143,34 @@
   color: var(--oes-accent-dark);
   font-weight: 500;
 }
+/* A row whose delay is absorbed reads as an observation, not an instruction —
+   the same weight as the "→ do this" line told the reader to spend a decision
+   on the one row the ranking had just proved needs none. */
+.exception-action.monitor-only {
+  color: var(--oes-ink-soft);
+  font-weight: 400;
+  font-style: italic;
+}
 .exception .btn {
   margin-top: 8px;
   display: inline-block;
 }
+/* The map fills its cell. It sits in a grid row whose height is set by the
+   worklist beside it, so a fixed-height map left a band of dead white under
+   itself whenever the queue was the taller of the two. */
+.map-panel {
+  display: flex;
+  flex-direction: column;
+}
 .map-panel .card-body {
   padding: 0;
+  flex: 1;
+  min-height: 0;
+}
+.flowmap-wrap.fill {
+  height: 100%;
+  /* Enough that the map is still a map if the queue is short. */
+  min-height: 460px;
 }
 
 .bar-fill-pending {
@@ -220,6 +246,16 @@
 .sankey-label-outside.sankey-value {
   fill: var(--oes-ink-soft);
   font-weight: 700;
+}
+/* Middle-column labels sit over the ribbon channel, not in a reserved gutter,
+   so they carry a white halo: painted stroke first, fill on top. Ink on a
+   32%-opacity ribbon without the halo is readable; ink on two overlapping
+   ribbons is not, and which case a label lands in depends on the data. */
+.sankey-label-halo {
+  stroke: #fff;
+  stroke-width: 3px;
+  paint-order: stroke;
+  stroke-linejoin: round;
 }
 
 .ladder {
@@ -324,8 +360,11 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-height: 420px;
+  max-height: 460px;
   overflow-y: auto;
+  /* Breathing room under the last row, so the scroll cut does not land
+     mid-badge in a settled frame. */
+  padding-bottom: 6px;
 }
 .outcome-row {
   display: grid;
@@ -348,9 +387,16 @@
   align-items: center;
   gap: 8px;
   font-size: 12px;
-  flex-wrap: nowrap;
+  /* The visit-count span renders on every row now. Let it take its own line
+     under the ID + badge as one unbroken phrase — nowrap on the whole flex
+     line squeezed it into the column's leftover width, where "2 visits over
+     1 week" broke one word per line. */
+  flex-wrap: wrap;
 }
 .outcome-id > strong {
+  white-space: nowrap;
+}
+.outcome-id > .muted.small {
   white-space: nowrap;
 }
 .outcome-figures {
@@ -457,6 +503,13 @@
   font-size: 7px;
   fill: rgba(16, 24, 40, 0.55);
 }
+/* First and last visit dates, anchored to the sparkline's bottom corners —
+   the time axis the series lacked. */
+.muac-axis-label {
+  font-size: 7px;
+  fill: rgba(16, 24, 40, 0.45);
+  font-variant-numeric: tabular-nums;
+}
 /* One marker per visit — a bare line reads as a two-point interpolation. */
 .muac-point {
   fill: var(--oes-ink, #101828);
@@ -494,6 +547,11 @@
 }
 .exception-answered .muted {
   margin-top: 2px;
+}
+/* The status chip on its own line. Inline, it read as the first word of the
+   sentence after it ("Closed the reallocation moved 900 cartons…"). */
+.exception-answered-head {
+  margin-bottom: 3px;
 }
 
 /* The unit ladder's conclusion, at the size of a conclusion.

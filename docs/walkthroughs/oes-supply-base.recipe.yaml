@@ -345,37 +345,118 @@ scenes:
   concept_claim: Eligibility is enforced when the payload is built, so an unqualified supplier never receives
     the solicitation rather than seeing it with a hidden button.
   url: /supply/
-  show: 'Ada''s solicitations list, where every call carries its lots on the row: sixty thousand cartons
-    of RUTF into Maiduguri, twenty thousand into Djibo, thirty-five thousand into Damaturu — the concrete
-    quantities the narration speaks, on the page of the person who published them, and the categories
-    that decide which suppliers ever receive it.'
+  show: 'Ada publishes the next solicitation on camera — created, given its lot of sixty thousand cartons
+    of RUTF into Maiduguri, then published — and the row it lands on states the reach the registry just
+    bought her: the suppliers holding a live qualification in a matching category, the one qualified
+    minutes ago among them.'
+  # The publish is PERFORMED. It was the arc's last narrated-but-not-performed
+  # act, held over a row the seeder made and marked Published.
+  #
+  # The fork the previous pass parked was "publishing on camera is impossible
+  # because scenes 7-8 need mature priced bids". That is true of THIS tender and
+  # only this tender — the resolution is to publish a DIFFERENT one. Ada
+  # publishes the Q4 call here; scenes 7-8 go on awarding the mature Q3 tender,
+  # which is what a procurement officer's week actually looks like: last
+  # quarter's tender is at award while next quarter's goes out. Scene 7's
+  # narration now names the switch out loud rather than leaving it to be
+  # inferred.
+  #
+  # The supplier-side absence beat is still not filmed — it needs a mid-scene
+  # persona switch, which requires dev-login, a hard 403 on prod by design.
+  # Instead the eligibility rule is shown from the publisher's side, where it is
+  # a positive fact on screen (the qualified-supplier count and its `i`) rather
+  # than an absence that a screenshot cannot distinguish from a bug.
   actions:
   - kind: click
     target: css:.navitem:has-text('Solicitations')
   - kind: wait_for
     target: css:.data-table
+  - kind: click
+    target: css:button:has-text('New solicitation')
+  - kind: wait_for
+    target: css:.modal
+  - kind: fill
+    target: css:.modal .field:has-text('Title') input
+    value: RUTF Northeast Nigeria Q4 2026
+    note: Ada names the call
+  - kind: click
+    target: css:.modal .check-row:has-text('RUTF')
+    note: and the category that decides who ever receives it
+  - kind: fill
+    target: css:.modal .field:has-text('Countries') input
+    value: NG
+  - kind: fill
+    target: css:.modal .field:has-text('Bid deadline') input
+    value: '2026-09-04'
+  - kind: click
+    target: css:.modal button:has-text('Create')
+  - kind: wait_for
+    target: css:.toast
+  - kind: hold
+    seconds: 1.2
+    note: created as a draft — a call with no lots buys nothing
+  - kind: click
+    target: css:tr:has-text('RUTF Northeast Nigeria Q4 2026') button:has-text('Edit lots')
+  - kind: wait_for
+    target: css:.modal
+  - kind: click
+    target: css:.modal button:has-text('Add lot')
+  - kind: wait_for
+    target: css:.modal .field:has-text('Description') input
+  - kind: fill
+    target: css:.modal .field:has-text('Description') input
+    value: 60,000 cartons RUTF delivered to Maiduguri
+    note: the concrete lot the narration speaks
+  - kind: fill
+    target: css:.modal .field:has-text('Quantity') input
+    value: '60000'
+  - kind: fill
+    target: css:.modal .field:has-text('Delivery country') input
+    value: NG
+  - kind: fill
+    target: css:.modal .field:has-text('Delivery place') input
+    value: Maiduguri
+  - kind: fill
+    target: css:.modal .field:has-text('Delivery deadline') input
+    value: '2026-09-15'
+  - kind: hold
+    seconds: 1.2
+  - kind: click
+    target: css:.modal button:has-text('Add lot')
+  - kind: wait_for
+    target: css:.toast
+  - kind: hold
+    seconds: 1.6
+    note: the lot, on the draft
+  - kind: click
+    target: css:.modal-close
+  - kind: wait_for
+    target: css:.data-table
+  - kind: click
+    target: css:tr:has-text('RUTF Northeast Nigeria Q4 2026') button:has-text('Publish')
+    note: PUBLISHED — the act the narration names, performed
+  # The published chip is what proves the transition landed; a fixed hold
+  # snapshotted the row still reading Draft on a slow prod round-trip.
+  - kind: wait_for
+    target: css:tr:has-text('RUTF Northeast Nigeria Q4 2026') .chip:has-text('Published')
+  - kind: hold
+    seconds: 1.4
   - kind: scroll_to
-    target: css:tr:has-text('RUTF Northeast Nigeria Q3 2026')
-  # NOT rescripted as an on-camera publish, deliberately. The narrated act
-  # ("Ada publishes a solicitation") cannot be performed coherently: scenes 7-8
-  # award this tender from priced, technically-scored bids, and bids need days
-  # a fresh publication cannot have — publishing a duplicate on camera would
-  # put two identical solicitations in the list and re-create the substituted-
-  # record defect the judges caught before. The supplier-side absence beat needs
-  # a mid-scene persona switch, which requires dev-login — a hard 403 on prod
-  # by design. Both fixes fork the narrative itself; parked for the
-  # concept_change gate.
+    target: css:tr:has-text('RUTF Northeast Nigeria Q4 2026')
   - kind: hover
     target: css:.page-head h1
-    note: park the cursor clear of the row so no lot quantity is occluded during the hold
+    note: park the cursor clear of the row so neither the lot nor the reach figure is occluded
+  - kind: snapshot
+    note: 'the canonical frame: the call the viewer watched Ada publish, its lot on the row, and the
+      count of qualified suppliers it reaches'
   - kind: hold
-    seconds: 3.4
-    note: the lots are on the row — 60,000 to Maiduguri, spoken and readable without opening anything
+    seconds: 3.2
+    note: the reach the registry bought — enforced when the payload is built, not hidden in the styling
   impressive_because: 'Eligibility is decided on the server: an unqualified supplier''s page never receives
     the solicitation at all, rather than being shown it with the button hidden. It prevents the ordinary
     embarrassment of an ineligible bid excluded by hand after the fact.'
-  ai_quality: Lot quantities and delivery places are concrete; the eligibility rule is enforced in the
-    payload, not the styling.
+  ai_quality: The published row is the one just created on camera; the qualified-supplier count is computed
+    from live qualifications by the same rule that gates the supplier payload, not typed.
 - id: bids-priced-and-scored-lot-by-lot
   concept_claim: Pricing per lot surfaces a different leader on each corridor — information a per-tender
     comparison cannot show.

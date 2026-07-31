@@ -56,6 +56,103 @@ def test_stock_on_hand_is_receipts_minus_despatches():
     assert cover.stock_on_hand(node) == Decimal("5300")
 
 
+def test_a_ct_quantity_row_is_counted_as_cartons():
+    """CT is what the EPCIS path and the hand-keyed webform actually write.
+
+    Only "cartons" and "EA" were recognised, so a CT row summed to zero — and a
+    zero total then fell back to the shipment's ADVISED quantity. A short
+    receipt therefore banked the full advice: 840 counted against a 900 advice
+    reported 900 on hand, contradicting the discrepancy raised from the same
+    event.
+    """
+    node = SupplyNodeFactory(name="CT Hub", kind=SupplyNode.Kind.DISTRIBUTION_HUB, adm1_code=BORNO)
+    SupplyEvent.objects.create(
+        biz_step=SupplyEvent.BizStep.RECEIVING,
+        event_time=timezone.now(),
+        read_point=node,
+        quantity_list=[{"gtin": "1", "quantity": 840, "uom": "CT"}],
+        source_tier=SupplyEvent.SourceTier.PORTAL,
+    )
+    assert cover.stock_on_hand(node) == Decimal("840")
+
+
+def test_a_short_receipt_banks_what_was_counted_not_what_was_advised():
+    org = SupplierOrgFactory()
+    contract = ContractFactory(org=org)
+    origin = SupplyNodeFactory(name="Origin hub", kind=SupplyNode.Kind.DISTRIBUTION_HUB)
+    node = SupplyNodeFactory(name="Short site", kind=SupplyNode.Kind.DELIVERY_POINT, adm1_code=BORNO)
+    shipment = Shipment.objects.create(
+        reference="SHP-TEST-SHORT",
+        contract=contract,
+        origin=origin,
+        destination=node,
+        quantity=900,
+        unit="cartons",
+        eta=timezone.now(),
+    )
+    SupplyEvent.objects.create(
+        shipment=shipment,
+        biz_step=SupplyEvent.BizStep.RECEIVING,
+        event_time=timezone.now(),
+        read_point=node,
+        quantity_list=[{"gtin": "1", "quantity": 840, "uom": "CT"}],
+        source_tier=SupplyEvent.SourceTier.PORTAL,
+    )
+    assert cover.stock_on_hand(node) == Decimal("840")
+
+
+def test_an_explicit_zero_receipt_does_not_bank_the_whole_consignment():
+    """A row saying zero is a measurement, not a missing value.
+
+    The fallback fired on a summed zero rather than on the absence of any row,
+    so a receipt recording that nothing came off the truck credited the site
+    with the entire advised consignment.
+    """
+    org = SupplierOrgFactory()
+    contract = ContractFactory(org=org)
+    origin = SupplyNodeFactory(name="Origin hub 2", kind=SupplyNode.Kind.DISTRIBUTION_HUB)
+    node = SupplyNodeFactory(name="Empty truck site", kind=SupplyNode.Kind.DELIVERY_POINT, adm1_code=BORNO)
+    shipment = Shipment.objects.create(
+        reference="SHP-TEST-ZERO",
+        contract=contract,
+        origin=origin,
+        destination=node,
+        quantity=500,
+        unit="cartons",
+        eta=timezone.now(),
+    )
+    SupplyEvent.objects.create(
+        shipment=shipment,
+        biz_step=SupplyEvent.BizStep.RECEIVING,
+        event_time=timezone.now(),
+        read_point=node,
+        quantity_list=[{"gtin": "1", "quantity": 0, "uom": "CT"}],
+        source_tier=SupplyEvent.SourceTier.PORTAL,
+    )
+    assert cover.stock_on_hand(node) == Decimal("0")
+    # ...while a check-in that carried no quantity row at all still falls back,
+    # because the lowest tier is a reference and a place.
+    bare_site = SupplyNodeFactory(name="Bare checkin site", kind=SupplyNode.Kind.DELIVERY_POINT, adm1_code=BORNO)
+    bare = Shipment.objects.create(
+        reference="SHP-TEST-BARE",
+        contract=contract,
+        origin=origin,
+        destination=bare_site,
+        quantity=300,
+        unit="cartons",
+        eta=timezone.now(),
+    )
+    SupplyEvent.objects.create(
+        shipment=bare,
+        biz_step=SupplyEvent.BizStep.RECEIVING,
+        event_time=timezone.now(),
+        read_point=bare_site,
+        quantity_list=[],
+        source_tier=SupplyEvent.SourceTier.CHECKIN,
+    )
+    assert cover.stock_on_hand(bare_site) == Decimal("300")
+
+
 def test_a_node_with_no_district_has_no_cover():
     """A port sits on the route but is answerable for no children."""
     port = SupplyNodeFactory(name="Port", kind=SupplyNode.Kind.PORT, adm1_code="")

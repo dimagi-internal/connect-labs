@@ -38,6 +38,10 @@ def qualification_dict(qual):
         "category": qual.category,
         "granted_at": qual.granted_at.isoformat(),
         "expires_at": qual.expires_at.isoformat(),
+        # Set when a certificate the pass was granted against lapses first, so
+        # the registry can show that the pass outlives its own evidence rather
+        # than answering "qualified" off an expired document.
+        "verify_at": qual.verify_at.isoformat() if qual.verify_at else None,
         "status": qual.status,
         # Who signed it off. None when the record predates a named reviewer —
         # rendered as an explicit gap rather than a blank, because "unknown" is
@@ -128,6 +132,35 @@ def lot_dict(lot):
     }
 
 
+def eligible_supplier_count(rfp):
+    """How many organisations this solicitation is visible to, right now.
+
+    Eligibility is enforced when the supplier payload is built, which is the
+    right place for it and completely invisible on screen: the publisher's list
+    showed a title, some categories and some lots, and the reach of the thing
+    they had just published — the property the whole two-stage design exists for
+    — could not be read anywhere. A count of orgs holding a live qualification
+    in a matching category is that reach, computed from the same rule
+    ``rfp_actions.org_can_bid`` applies.
+    """
+    from datetime import date
+
+    from ..models import Qualification
+
+    if not rfp.categories:
+        return 0
+    return (
+        Qualification.objects.filter(
+            status=Qualification.Status.ACTIVE,
+            expires_at__gte=date.today(),
+            category__in=rfp.categories,
+        )
+        .values("org_id")
+        .distinct()
+        .count()
+    )
+
+
 def rfp_dict(rfp, include_lots=True):
     data = {
         "id": rfp.id,
@@ -137,6 +170,7 @@ def rfp_dict(rfp, include_lots=True):
         "countries": rfp.countries,
         "bid_deadline": rfp.bid_deadline.isoformat() if rfp.bid_deadline else None,
         "status": rfp.status,
+        "eligible_supplier_count": eligible_supplier_count(rfp),
     }
     if include_lots:
         data["lots"] = [lot_dict(lot) for lot in rfp.lots.all().order_by("id")]

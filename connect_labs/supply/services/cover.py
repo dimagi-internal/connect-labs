@@ -53,22 +53,43 @@ _INBOUND_STEPS = (SupplyEvent.BizStep.RECEIVING,)
 _OUTBOUND_STEPS = (SupplyEvent.BizStep.DEPARTING, SupplyEvent.BizStep.LOADING)
 
 
+# Every way this app spells "cartons" on a quantity row.
+#
+# CT is the GS1 / UN-ECE Rec 20 code for a carton and is what the EPCIS capture
+# path, the hand-keyed webform and the execution seeder all write; "cartons" is
+# what the demand seeder writes. Only the latter two spellings were recognised,
+# so a CT row counted as ZERO — and because a zero total fell back to the
+# shipment's ADVISED quantity, a receipt that came up short banked the full
+# advised amount. A site that received 840 cartons against a 900-carton advice
+# reported 900 on hand, on the one screen whose thesis is that the count taken
+# beside the pallets is the figure of record. The discrepancy was raised
+# correctly and then contradicted by the stock figure derived from the same
+# event.
+_CARTON_UOMS = {"", "ct", "cartons", "carton", "ea", "each"}
+
+
 def _event_cartons(event):
     """Cartons on an event, from its EPCIS quantity list.
 
-    Falls back to the shipment quantity when a check-in carried no explicit
-    quantity list — the lowest tier is a consignment reference and a place, and
+    Falls back to the shipment quantity only when the event carried NO quantity
+    row at all — the lowest tier is a consignment reference and a place, and
     treating that as zero would silently under-count exactly the corridors that
-    matter most.
+    matter most. A row that explicitly says zero is a measurement and is
+    respected as one; falling back on a summed zero let an empty truck bank a
+    full consignment.
     """
     total = Decimal("0")
+    counted_any = False
     for row in event.quantity_list or []:
-        if row.get("uom") in (None, "", "cartons", "EA"):
-            try:
-                total += Decimal(str(row.get("quantity") or 0))
-            except (TypeError, ValueError):
-                continue
-    if total == 0 and event.shipment is not None and event.shipment.unit == "cartons":
+        uom = row.get("uom")
+        if str(uom or "").strip().lower() not in _CARTON_UOMS:
+            continue
+        try:
+            total += Decimal(str(row.get("quantity") or 0))
+        except (TypeError, ValueError):
+            continue
+        counted_any = True
+    if not counted_any and event.shipment is not None and event.shipment.unit == "cartons":
         return Decimal(str(event.shipment.quantity))
     return total
 

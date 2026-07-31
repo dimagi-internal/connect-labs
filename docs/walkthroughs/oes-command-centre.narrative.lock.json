@@ -92,7 +92,7 @@
         }
       ],
       "id": "the-caseload-underneath-the-map",
-      "narrative": "Until now the famine-phase colouring under the map has been context. Ada adds the caseload behind it — how many severely malnourished children each district is expected to have this month, and where that estimate comes from. With a denominator, delivery stops being tonnage and becomes coverage: this district is at ninety-one percent of need, this one at thirty-four, and here are the children with no carton assigned to them. Volume delivered could never distinguish a large delivery into a small caseload from a small delivery into a huge one.",
+      "narrative": "Until now the famine-phase colouring under the map has been context. The caseload sits behind it — how many severely malnourished children each district is expected to have across the response window — and every one of those estimates carries the method that produced it, one click away on the row itself. With a denominator, delivery stops being tonnage and becomes coverage: this district is at ninety-one percent of need, this one at thirty-four, and here are the children with no carton assigned to them. Volume delivered could never distinguish a large delivery into a small caseload from a small delivery into a huge one.",
       "persona": "ada",
       "provenance": "S4",
       "title": "The caseload underneath the map"
@@ -156,5 +156,5 @@
     }
   ],
   "slug": "oes-command-centre",
-  "version": 2
+  "version": 3
 }

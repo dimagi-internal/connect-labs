@@ -186,7 +186,28 @@ function RegistryDetailModal({ row, onClose }) {
             key: 'expires',
             label: 'Expires',
             value: (q) => q.expires_at,
-            render: (q) => <ExpiryChip iso={q.expires_at} />,
+            // A pass that outlives a certificate it was granted against says
+            // so. An 18-month qualification resting on an approval that lapses
+            // in nine used to keep answering "qualified" for the nine months
+            // after its own evidence expired, with nothing on screen to show
+            // it — the registry's whole claim is that it is current by
+            // construction.
+            render: (q) => (
+              <span>
+                <ExpiryChip iso={q.expires_at} />
+                {q.verify_at ? (
+                  <span className="cell-with-note">
+                    <Badge tone="warn">
+                      re-verify {formatDate(q.verify_at)}
+                    </Badge>
+                    <InfoNote
+                      label="re-verification"
+                      text="A certification this pass was granted against expires on this date, before the pass itself does. The pass keeps its full term — not every certificate in a profile is load-bearing for every category, so truncating it automatically would be a judgment the product should not make silently — but it needs a reviewer to confirm the evidence still stands by then."
+                    />
+                  </span>
+                ) : null}
+              </span>
+            ),
           },
           // Two dates alone make the eligibility judgment visible but not
           // defensible: the question after "is it live" is always "who decided

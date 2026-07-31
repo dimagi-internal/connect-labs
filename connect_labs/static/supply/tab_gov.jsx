@@ -63,6 +63,22 @@ function GovTab({ ctx }) {
       title={`${countryLabel(country)} — supply overview`}
       lede="Commodities entering and moving within the country, and the caseload they are meant to cover."
       asOf={world.as_of}
+      actions={
+        // Server-side scoping is invisible by construction — the other
+        // countries' consignments are absent, and an absence looks identical to
+        // a page that simply has less data on it. The claim "another country's
+        // consignments never reach the page at all" needs something on the page
+        // that says where the boundary was drawn and who drew it.
+        <span className="cell-with-note">
+          <Badge tone="verified">Scope: {countryLabel(country)}</Badge>
+          <InfoNote
+            label="this scope"
+            text={`Applied at source. The payload that built this page was filtered to ${countryLabel(
+              country,
+            )} on the server, from this account's own country assignment — so consignments, contracts and caseloads for every other country are not present in the browser at all, rather than present and hidden. There is no control on this page that widens it, because widening it would mean a different payload.`}
+          />
+        </span>
+      }
     >
       {/* Two tiles printed the identical integer under near-identical labels —
           "25,863 Cartons delivered into districts" and "25,863 Courses
@@ -124,6 +140,18 @@ function GovTab({ ctx }) {
           rowKey={(s) => s.id}
           empty="No consignments recorded for this country."
           columns={[
+            // The consignment's own reference leads the row. Two consignments
+            // on the same lane at adjacent lifecycle stages — one Delivered,
+            // one Confirmed — rendered as identical partner/commodity/
+            // destination/quantity rows, which read as a duplicate-row bug
+            // rather than two real consignments. The identifier is the fact
+            // that tells them apart.
+            {
+              key: 'ref',
+              label: 'Consignment',
+              value: (s) => s.reference,
+              render: (s) => <code className="small">{s.reference}</code>,
+            },
             // PARTNER and COMMODITY repeated one identical string down 18 rows,
             // eating about 35% of the width and turning 28 distinct consignments
             // into one visual block. A repeat is subdued rather than removed —
@@ -406,18 +434,15 @@ function GovTab({ ctx }) {
           are synthetic.
         </p>
         <p className="muted small method-note">
-          Two questions, not one. <strong>Supply positioned</strong> is courses
-          confirmed into the district against its SAM caseload — severe acute
-          malnutrition — and counts stock that has arrived, including stock
-          still held in a district hub. <strong>Reached a child</strong> counts
-          only courses a site recorded handing out. Food in a warehouse is not
-          treatment, so the two are reported apart rather than merged.
+          Two questions, not one: <strong>supply positioned</strong> is what has
+          arrived, <strong>reached a child</strong> is what a site recorded
+          handing out.
+          <InfoNote
+            label="the two coverage columns"
+            text="Supply positioned is courses confirmed into the district against its SAM caseload — severe acute malnutrition — and counts stock that has arrived, including stock still held in a district hub, so it answers 'is the food there'. Reached a child counts only courses a site recorded handing out. Food in a warehouse is not treatment, so the two are reported apart rather than merged: a figure that merges them cannot tell a government counterpart which of the two problems they have."
+          />
         </p>
-        {/* The verdict the colours encode, stated so it can be argued with.
-            These pills coloured 0% and 34% red and 91% green against a threshold
-            written down nowhere, on the one product whose entire thesis is that
-            an interpretation must be stated to be challenged. */}
-        <p className="muted small method-note">{COVERAGE_BANDS}</p>
+        <CoverageBandsNote />
       </Card>
     </Page>
   );

@@ -52,6 +52,17 @@ def _children_within_horizon(row, as_of):
     return at_risk if due <= as_of + timedelta(days=DECISION_HORIZON_DAYS) else 0
 
 
+def _days(n):
+    """``6 days`` / ``1 day`` — a count with a unit that agrees with it.
+
+    Every day-count on this screen went through an f-string with a hardcoded
+    plural, so a one-day delay read "1 days behind plan" on the highest-ranked
+    card in the product.
+    """
+    n = int(round(n))
+    return f"{n} day" if n == 1 else f"{n} days"
+
+
 def _late_shipments(contracts=None):
     qs = Shipment.objects.exclude(status=Shipment.Status.CONFIRMED).select_related("destination", "contract__org")
     if contracts is not None:
@@ -90,20 +101,18 @@ def late_exceptions(contracts=None, as_of=None):
                 "node_name": destination.name,
                 "children_at_risk": at_risk,
                 "by_date": node_cover["stockout_on"] if node_cover else None,
-                # Every row in one unit, INCLUDING the ones that come to zero.
-                # A row that fell back to "SHP-2026-0402 is 6 days behind plan"
-                # left the queue arguing in two units at once, and quietly threw
-                # away the best evidence the ranking produces: that a 6-day
-                # delay can sit below a 1-day one because the destination is
-                # holding enough stock to cover it. Said out loud, that is the
-                # whole case for ranking on children instead of on lateness.
+                # ``what`` states the PHYSICAL fact in its own unit; the row's
+                # children figure is rendered once, by the risk line beneath it.
+                # Both used to say "N children lose a full course", so the
+                # highest-ranked card in the product printed its own headline
+                # number twice, three lines apart, in the same words.
                 "what": (
-                    f"{at_risk:,} children lose a full course at {destination.name}"
+                    f"{shipment.reference} is {_days(delay)} late into {destination.name}"
                     if at_risk
-                    else f"No children go without at {destination.name}, despite {delay:.0f} days late"
+                    else f"No children go without at {destination.name}, despite being {_days(delay)} late"
                 ),
                 "why": (
-                    f"{shipment.reference} is {delay:.0f} days behind the plan it was awarded "
+                    f"{shipment.reference} is {_days(delay)} behind the plan it was awarded "
                     f"against, moving {shipment.origin.name} to {destination.name}."
                     + (
                         ""
@@ -115,17 +124,22 @@ def late_exceptions(contracts=None, as_of=None):
                         )
                     )
                 ),
-                # Every verb here has a control on the row — the rule cuts the
-                # other way now. This once read "Expedite the consignment, or
-                # reallocate from a node holding surplus" beside exactly two
-                # buttons, Open and Reallocate, so the sentence was reworded to
-                # stop promising expedite. That was the wrong branch of the fix:
-                # the expedite endpoint, service and action kind existed the
-                # whole time and only the control was missing. The control
-                # exists, so the sentence says the plain thing again.
-                "action": "Expedite the consignment, or reallocate from a node holding surplus.",
+                # A row that costs nobody a course is not a worklist item.
+                #
+                # It recommended "expedite the consignment, or reallocate from a
+                # node holding surplus" over its own sentence saying the delay
+                # is absorbed before anybody misses a course — so the queue
+                # advised spending a decision on the one row it had just proved
+                # needs none. Ranking on children and then prescribing action
+                # regardless throws away what the ranking bought.
+                "monitor_only": not at_risk,
+                "action": (
+                    "Expedite the consignment, or reallocate from a node holding surplus."
+                    if at_risk
+                    else "No action needed — the destination absorbs this delay. Watch it in case the delay grows."
+                ),
                 "derivation": (
-                    f"{delay:.0f} days late against "
+                    f"{_days(delay)} late against "
                     f"{node_cover['weeks_of_cover'] if node_cover else 0} weeks of cover; "
                     f"the days after the store runs dry x the admission rate."
                 ),
@@ -229,6 +243,19 @@ def partner_signal_exceptions(as_of=None):
         action = signal.resolved_by_action if signal.status == ShortfallSignal.Status.RESOLVED else None
         if action is not None and (as_of - action.created_at.date()).days > RESOLVED_SIGNAL_VISIBLE_DAYS:
             continue
+        # The next consignment already heading for this site, if there is one.
+        #
+        # The recommendation named two paths — reallocate OR expedite — and the
+        # row carried no shipment, so only Reallocate could ever render. Naming
+        # the inbound consignment wires the second verb instead of deleting it:
+        # a site running dry with a lorry already on the road is exactly the
+        # case where expediting that lorry is the cheaper answer.
+        next_inbound = (
+            Shipment.objects.filter(destination_id=signal.site_id)
+            .exclude(status__in=[Shipment.Status.CONFIRMED, Shipment.Status.DELIVERED])
+            .order_by("eta")
+            .first()
+        )
         rows.append(
             {
                 "key": f"signal-{signal.id}",
@@ -257,15 +284,24 @@ def partner_signal_exceptions(as_of=None):
                 "raised_on": signal.raised_on.isoformat(),
                 "children_at_risk": signal.children_affected,
                 "by_date": signal.needed_by.isoformat(),
-                "what": (
-                    f"{signal.children_affected:,} children at {signal.site.name} " f"by {signal.needed_by:%-d %B}"
-                ),
+                # Only where the expedite verb has a consignment to act on.
+                "shipment_id": next_inbound.id if (next_inbound and not action) else None,
+                "shipment_reference": next_inbound.reference if (next_inbound and not action) else None,
+                # The physical fact, in cartons. It read "N children at SITE by
+                # 4 September" while the risk line beneath it read "N children
+                # lose a full course by 4 Sep" — the same fact twice, on
+                # adjacent lines, in two different date formats.
+                "what": f"{int(signal.cartons_short):,} cartons short at {signal.site.name}",
                 "why": signal.note
                 or f"{signal.org.legal_name} reported a shortfall of {int(signal.cartons_short):,} cartons.",
                 "action": (
                     "Closed by the reallocation that answered it."
                     if action
-                    else "Reallocate from a node holding surplus, or expedite the next consignment."
+                    else (
+                        f"Reallocate from a node holding surplus, or expedite {next_inbound.reference}."
+                        if next_inbound
+                        else "Reallocate from a node holding surplus — nothing is currently inbound to expedite."
+                    )
                 ),
                 "derivation": (
                     f"Reported by {signal.org.legal_name} on {signal.raised_on:%-d %B} "
