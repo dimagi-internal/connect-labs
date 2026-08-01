@@ -224,7 +224,7 @@
     }
     cx.globalCompositeOperation = 'source-over';
 
-    Partners.tick(ts);
+    Partners.tick(ts, ts - lastInteractionAt);
   }
 
   function initBasemap() {
@@ -450,28 +450,6 @@
 
   function setFocus(k, immediate) {
     focus = k;
-    /* Pointing at the map surfaces whoever delivers there. The listener is on
-       the map section, not on #sky — #sky is pointer-events:none so that Mapbox
-       keeps its own pan and zoom, and .pulse-map shares its exact box, so the
-       offsets already match what proj() returns. */
-    const mapBox = $('.pulse-map');
-    if (mapBox) {
-      let hoverRaf = 0;
-      mapBox.addEventListener('mousemove', (e) => {
-        // Coalesced to one lookup per frame: the handler walks every lit cell,
-        // and mousemove fires far faster than the display repaints.
-        if (hoverRaf) return;
-        const r = mapBox.getBoundingClientRect();
-        const px = e.clientX - r.left,
-          py = e.clientY - r.top;
-        hoverRaf = requestAnimationFrame(() => {
-          hoverRaf = 0;
-          Partners.hover(px, py);
-        });
-      });
-      mapBox.addEventListener('mouseleave', () => Partners.leave());
-    }
-
     $$('.pulse-focus button').forEach((b) =>
       b.setAttribute('aria-pressed', b.dataset.focus === k),
     );
@@ -910,21 +888,39 @@
         pinned = null;
         clear();
       },
-      hover(px, py) {
-        if (pinned) return;
-        const slug = nearest(px, py);
-        if (!slug) return clear();
-        show(slug);
+      /* Is there a partner under this point? Used only to set the cursor, so
+         the map can advertise that it is clickable without anything appearing.
+         Showing a card on mousemove reads as the display twitching: a card
+         arrives, you did not ask for it, and nothing says what it refers to. */
+      at(px, py) {
+        return nearest(px, py);
       },
-      leave() {
-        if (!pinned) clear();
+      /* Explicit inspect. Clicking the same partner again releases it, so the
+         gesture that opened the card also closes it. */
+      toggleAt(px, py) {
+        const slug = nearest(px, py);
+        if (!slug) {
+          if (pinned) this.unpin();
+          return null;
+        }
+        if (pinned === slug) {
+          this.unpin();
+          return null;
+        }
+        this.pin(slug);
+        return slug;
       },
       reposition,
-      /* Unattended surfacing: with nothing selected and nobody pointing, walk
-         the partners who are delivering now. A wall display should show this
-         off by itself rather than waiting for a cursor that never arrives. */
-      tick(now) {
+      /* The unattended tour. A wall display with nobody in front of it should
+         still show the portfolio off, but it must never compete with someone
+         who is actually driving -- `idleFor` is how long since the last real
+         interaction, and the tour only runs once the room has gone quiet. */
+      tick(now, idleFor) {
         if (pinned || !rows().length) return;
+        if (idleFor < IDLE_BEFORE_TOUR) {
+          if (showing) clear();
+          return;
+        }
         if (now - cycleAt < 7000) return;
         cycleAt = now;
         const live = rows().filter((o) => o.recent_events > 0);
@@ -937,10 +933,70 @@
     };
   })();
 
+  /* How long the pointer has to be still before the display starts touring
+     partners by itself. Long enough that it never interrupts someone reading
+     the screen, short enough that an unattended wall display gets there. */
+  const IDLE_BEFORE_TOUR = 45000;
+  let lastInteractionAt = 0;
+
   /* ═══ controls ══════════════════════════════════════════════════ */
   function wireControls() {
+    /* Inspecting a partner is a CLICK, not a hover.
+     *
+       Surfacing a card on mousemove meant a dossier appeared whenever the
+       pointer crossed the map -- you had not asked for it, nothing said what it
+       referred to, and because the unattended tour drew the same card, there was
+       no way to tell whether the display was answering you or talking to itself.
+       A click is unambiguous, and clicking the same partner again closes it.
+
+       The listener lives on the map section rather than on #sky, which is
+       pointer-events:none so Mapbox keeps its own pan and zoom; .pulse-map
+       shares that exact box, so the offsets already match what proj() returns.
+
+       Registered here, once. It previously sat inside setFocus(), which runs on
+       every focus change and every filter change -- so the handlers accumulated,
+       and by the fourth programme switch a single mouse move was doing the
+       cell-walk four times. */
+    const mapBox = $('.pulse-map');
+    if (mapBox) {
+      const atPointer = (e) => {
+        const r = mapBox.getBoundingClientRect();
+        return [e.clientX - r.left, e.clientY - r.top];
+      };
+
+      let cursorRaf = 0;
+      mapBox.addEventListener('mousemove', (e) => {
+        lastInteractionAt = performance.now();
+        // Only ever sets the cursor. Coalesced to one lookup per frame, because
+        // the hit test walks every lit cell and mousemove outruns the repaint.
+        if (cursorRaf) return;
+        const [px, py] = atPointer(e);
+        cursorRaf = requestAnimationFrame(() => {
+          cursorRaf = 0;
+          mapBox.dataset.overPartner = Partners.at(px, py) ? '1' : '';
+        });
+      });
+
+      mapBox.addEventListener('click', (e) => {
+        lastInteractionAt = performance.now();
+        const [px, py] = atPointer(e);
+        const slug = Partners.toggleAt(px, py);
+        // Keep the Partner menu honest about what is on screen.
+        const sel = $('#org-filter');
+        if (sel && !slug && !store.org) sel.value = '';
+      });
+
+      // Esc dismisses, matching every other transient panel.
+      document.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape') return;
+        lastInteractionAt = performance.now();
+        if (!store.org) Partners.unpin();
+      });
+    }
+
     $$('.pulse-focus button').forEach((b) =>
       b.addEventListener('click', () => {
+        lastInteractionAt = performance.now();
         setFocus(b.dataset.focus);
         autoCycle = false;
       }),
