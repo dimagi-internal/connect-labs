@@ -112,8 +112,26 @@ def _next_15_september(today=None):
     return date(today.year if today <= date(today.year, 9, 15) else today.year + 1, 9, 15)
 
 
-def _commitments(categories, rng):
-    regions = {"NG": "NG, SD", "ET": "ET, DJ", "BF": "BF, ML", "SD": "SD", "DJ": "DJ, ET"}
+# Where a supplier in each country plausibly reaches: its own market first,
+# then the neighbour its corridor already runs to.
+#
+# This table always existed and was never keyed — every commitment was written
+# with `regions.get("NG")`, so all fourteen suppliers claimed Nigeria and Sudan
+# whatever continent they were on, and an Ethiopian manufacturer served neither
+# Ethiopia nor anywhere near it. The bug was invisible while the field was
+# collected and never displayed; surfacing regions in the registry is what made
+# a Burkina Faso search return nothing while a Burkinabé plant sat in the
+# registry.
+_REGIONS_BY_COUNTRY = {
+    "NG": "NG, BF",
+    "ET": "ET, DJ",
+    "BF": "BF, NG",
+    "SD": "SD, ET",
+    "DJ": "DJ, ET",
+}
+
+
+def _commitments(categories, rng, country="NG"):
     out = {}
     for cat in categories:
         out[cat] = {
@@ -124,7 +142,7 @@ def _commitments(categories, rng):
                 if cat == "transport"
                 else f"{rng.randrange(1, 9) * 1000:,} pallet positions"
             ),
-            "regions": regions.get("NG"),
+            "regions": _REGIONS_BY_COUNTRY.get((country or "").upper(), country or "NG"),
             "lead_time_days": rng.choice([14, 21, 28, 35]),
             "notes": "",
         }
@@ -157,7 +175,7 @@ def _seed_closed_round(rng, orgs, staff):
             round=rnd,
             defaults={
                 "categories": categories,
-                "commitments": _commitments(categories, rng),
+                "commitments": _commitments(categories, rng, country=org.country),
                 "status": EOISubmission.Status.QUALIFIED,
                 "submitted_at": timezone.now() - timedelta(days=rng.randint(130, 175)),
             },

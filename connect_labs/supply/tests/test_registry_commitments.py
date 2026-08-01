@@ -93,3 +93,44 @@ def test_a_supplier_serving_elsewhere_is_absent_from_its_own_country_when_it_sai
 
     assert [q.org.legal_name for q in eoi_actions.live_qualifications(country="SD")] == ["Export Only Ltd"]
     assert eoi_actions.live_qualifications(country="ET") == []
+
+
+def test_the_seeded_world_puts_suppliers_where_they_actually_are():
+    """A supplier serves its own country, whatever else it reaches.
+
+    Every seeded commitment was written with a hardcoded lookup, so all fourteen
+    suppliers claimed Nigeria and Sudan whatever continent they were on — an
+    Ethiopian plant served neither Ethiopia nor anywhere near it. The field was
+    collected and never displayed, so nothing caught it until the registry began
+    surfacing regions and a Burkina Faso search came back empty with a Burkinabé
+    plant sitting in the registry.
+    """
+    from django.core.management import call_command
+
+    from connect_labs.supply.models import Qualification
+
+    call_command("seed_supply_demo")
+
+    checked = 0
+    for qual in Qualification.objects.select_related("org", "source_submission"):
+        regions = eoi_actions.served_regions(qual)
+        if not regions:
+            continue
+        checked += 1
+        assert (
+            qual.org.country in regions
+        ), f"{qual.org.legal_name} ({qual.org.country}) serves {regions} — not its own country"
+    assert checked >= 10, "the seeded world must carry commitments to check"
+
+
+def test_every_seeded_country_is_reachable_through_the_registry():
+    """A country with a plant in it must not return an empty search."""
+    from django.core.management import call_command
+
+    from connect_labs.supply.models import SupplierOrg
+
+    call_command("seed_supply_demo")
+    countries = {o.country for o in SupplierOrg.objects.all() if o.country}
+    for country in sorted(countries):
+        found = eoi_actions.live_qualifications(country=country)
+        assert found, f"no supplier answers a {country} search, yet {country} has organisations in it"
