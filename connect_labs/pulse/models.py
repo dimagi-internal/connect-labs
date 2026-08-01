@@ -208,7 +208,9 @@ class PulseEvent(models.Model):
     review_status = models.CharField(max_length=24, blank=True)
 
     service_slug = models.CharField(max_length=48, blank=True)
-    worker_hash = models.CharField(max_length=64, blank=True)
+    # Indexed: the worker roster on a partner window groups by this across the
+    # whole table, and a worker window selects on it directly.
+    worker_hash = models.CharField(max_length=64, blank=True, db_index=True)
     usd_to_worker = models.DecimalField(max_digits=12, decimal_places=4, null=True, blank=True)
 
     class Meta:
@@ -248,7 +250,9 @@ class PulseWork(models.Model):
     # Indexed: money per partner groups by this across every row of the spine.
     org_slug = models.CharField(max_length=120, blank=True, db_index=True)
 
-    worker_hash = models.CharField(max_length=64, blank=True)
+    # Indexed for the same reason as on PulseEvent: money per worker groups by
+    # this over every row of the spine.
+    worker_hash = models.CharField(max_length=64, blank=True, db_index=True)
     payment_unit_id = models.IntegerField(null=True, blank=True)
     service_slug = models.CharField(max_length=48, blank=True)
     # Denormalised from the opportunity (works carry no GPS of their own) so

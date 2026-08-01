@@ -273,6 +273,19 @@
         oppName(ev.opportunity_id).split(/[-·(]/)[0].trim() ||
         'Service';
 
+      /* Which partner delivered this. The feed is the other way into a
+         partner window, and it is the one place you see a partner change from
+         row to row -- the map only shows where, not who. */
+      const orgs = store.summary?.orgs || [];
+      const o = orgs.find((x) => x.slug === ev.org_slug);
+      const orgSlug = o ? o.slug : '';
+      const orgLabel = o ? o.partner || o.name : '—';
+      const orgTitle = o
+        ? `${o.partner || o.name}${
+            o.partner && o.partner !== o.name ? ' · workspace ' + o.name : ''
+          } — click to open`
+        : 'Partner not available on this link';
+
       const node = el('div', 'trow');
       node.innerHTML =
         `<span class="t-time">${new Date(ev.field_ts * 1000)
@@ -281,11 +294,21 @@
           .replace('T', ' ')}</span>` +
         `<span class="t-place">${town.t}<em>${town.c}</em></span>` +
         `<span class="t-svc">${svc}</span>` +
+        `<span class="t-org" data-org="${orgSlug}" title="${orgTitle}">${orgLabel}</span>` +
         `<span><span class="chip" data-s="${state}">${stateTxt}</span></span>` +
         `<span class="t-worker">${(ev.worker || '').slice(0, 6)}…</span>` +
         `<span class="t-usd">${ev.usd ? usd(ev.usd) : '—'}</span>`;
       return node;
     }
+
+    /* Delegated, so it survives rows being replaced continuously — binding per
+       row would attach a listener to every arrival for as long as the display
+       runs. */
+    root.addEventListener('click', (e) => {
+      const cell = e.target.closest('.t-org[data-org]');
+      if (!cell || !cell.dataset.org || !global.PulseWindows) return;
+      global.PulseWindows.openPartner(store, cell.dataset.org);
+    });
 
     store.on('event', (ev) => {
       root.prepend(row(ev));

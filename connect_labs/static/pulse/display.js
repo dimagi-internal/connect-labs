@@ -224,7 +224,9 @@
     }
     cx.globalCompositeOperation = 'source-over';
 
-    Partners.tick(ts, ts - lastInteractionAt);
+    // A window is modal — the tour must not keep swapping cards behind it.
+    if (!(window.PulseWindows && window.PulseWindows.isOpen()))
+      Partners.tick(ts, ts - lastInteractionAt);
   }
 
   function initBasemap() {
@@ -838,6 +840,16 @@
         card = document.createElement('div');
         card.className = 'pulse-partner';
         card.innerHTML = html(r);
+        /* The card is a summary; clicking it opens the full record. It has to
+           opt back into pointer events to be clickable at all — the class sets
+           pointer-events:none so a card can never swallow a map drag. */
+        card.style.pointerEvents = 'auto';
+        card.style.cursor = 'pointer';
+        card.title = "Click for this partner's full record";
+        card.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (window.PulseWindows) window.PulseWindows.openPartner(store, slug);
+        });
         layer.appendChild(tether);
         layer.appendChild(card);
         showing = slug;
