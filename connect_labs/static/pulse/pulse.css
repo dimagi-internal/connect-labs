@@ -1639,8 +1639,10 @@
   text-align: right;
 }
 /* A quality column reads faster as a bar than as a number, but the number
-   stays: a bar alone cannot be quoted. */
-.pulse-bar {
+   stays: a bar alone cannot be quoted.
+   NOT `.pulse-bar` -- that is the top status bar, and naming this one the same
+   silently restyled the whole header as a 46x4px meter. */
+.pulse-meter {
   display: inline-block;
   width: 46px;
   height: 4px;
@@ -1650,15 +1652,15 @@
   vertical-align: middle;
   overflow: hidden;
 }
-.pulse-bar i {
+.pulse-meter i {
   display: block;
   height: 100%;
   background: var(--ok);
 }
-.pulse-bar i[data-low='1'] {
+.pulse-meter i[data-low='1'] {
   background: var(--warn);
 }
-.pulse-bar i[data-low='2'] {
+.pulse-meter i[data-low='2'] {
   background: var(--crit);
 }
 
