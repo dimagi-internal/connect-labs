@@ -560,3 +560,112 @@ class TestStylesheetStructuralClasses:
         block = re.search(r"(?m)^\.pulse-bar\s*\{([^}]*)\}", src).group(1)
         assert "display: flex" in block
         assert "grid-area: bar" in block
+
+
+class TestTopBarFitsAndTickerAligns:
+    """Two regressions the stylesheet can be checked for directly.
+
+    The bar's content needs ~1580px at full size, so every laptop narrower than
+    1600 clipped its right-hand end — the scope figures first, then the filters.
+    Nothing errored; the controls were simply off-screen.
+
+    Separately, the responsive ticker grid still declared six columns after a
+    seventh (Partner) was added to the base grid, so below 1180px every cell
+    landed one column left of its heading.
+    """
+
+    def _css(self):
+        from pathlib import Path as P
+
+        from django.conf import settings
+
+        return (P(settings.APPS_DIR) / "static" / "pulse" / "pulse.css").read_text()
+
+    def _cols(self, block):
+        import re
+
+        m = re.search(r"grid-template-columns:([^;]+);", block)
+        return len(m.group(1).split()) if m else 0
+
+    # The seven cells a ticker row renders, in order. The outcome cell carries
+    # no class of its own, so it is named here rather than detected.
+    CELLS = ["t-time", "t-place", "t-svc", "t-org", "(outcome)", "t-worker", "t-usd"]
+
+    def _tracks(self, block):
+        """Grid tracks, treating `minmax(0, 1fr)` as the single track it is."""
+        import re
+
+        m = re.search(r"grid-template-columns:([^;]+);", block)
+        if not m:
+            return None
+        text, depth, token, out = m.group(1).strip(), 0, "", []
+        for ch in text:
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+            if ch.isspace() and depth == 0:
+                if token:
+                    out.append(token)
+                    token = ""
+            else:
+                token += ch
+        if token:
+            out.append(token)
+        return out
+
+    def test_every_ticker_grid_accounts_for_every_cell(self):
+        """A row renders seven cells, and each layout has to account for all of
+        them: a track per visible cell, plus a zero-width track for any hidden
+        cell it chose to keep a slot for.
+
+        Both idioms are in use — the 1180px layout keeps seven tracks and zeroes
+        the worker's, the 900px layout drops the tracks it hides. What is never
+        valid is a track count that matches neither, which is what happened when
+        a Partner cell was added and only the base grid was updated: every cell
+        below 1180px landed one column left of its heading.
+        """
+        import re
+
+        src = re.sub(r"/\*.*?\*/", "", self._css(), flags=re.DOTALL)
+        # Split into the base stylesheet plus each media block.
+        chunks = [("base", src.split("@media")[0])]
+        for m in re.finditer(r"@media([^{]*)\{(.*?)\n\}", src, flags=re.DOTALL):
+            chunks.append((m.group(1).strip(), m.group(2)))
+
+        checked = 0
+        for label, chunk in chunks:
+            for block in re.findall(r"\.pulse-tick-head,\s*\.trow\s*\{([^}]*)\}", chunk):
+                tracks = self._tracks(block)
+                if tracks is None:
+                    continue
+                zeroed = sum(1 for t in tracks if t in ("0", "0px"))
+                hidden = sum(
+                    1
+                    for cell in self.CELLS
+                    if re.search(r"\." + re.escape(cell) + r"\b[^{}]*\{[^}]*display:\s*none", chunk)
+                )
+                visible = len(self.CELLS) - hidden
+                assert len(tracks) - zeroed == visible, (
+                    f"[{label}] ticker grid declares {len(tracks)} tracks ({zeroed} zero-width) "
+                    f"for {visible} visible cells. Every cell lands under the wrong heading."
+                )
+                checked += 1
+        assert checked >= 2, "expected the base grid and at least one responsive override"
+
+    def test_the_bar_can_shrink_on_a_narrow_laptop(self):
+        """`min-width: 0` is what lets a flex child shrink below its content.
+        Without it the bar cannot fit 1440 or 1280 no matter what else changes."""
+        import re
+
+        src = re.sub(r"/\*.*?\*/", "", self._css(), flags=re.DOTALL)
+        block = re.search(r"(?m)^\.pulse-progfilter\s*\{([^}]*)\}", src).group(1)
+        assert "min-width: 0" in block
+
+    def test_there_is_a_breakpoint_above_the_common_laptop_widths(self):
+        """1440 and 1280 are the widths this actually broke on, so the first
+        step down has to sit above them rather than at the old 1180."""
+        import re
+
+        widths = [int(w) for w in re.findall(r"@media\s*\(max-width:\s*(\d+)px\)", self._css())]
+        assert any(1180 < w for w in widths), f"no breakpoint above 1180px: {sorted(widths)}"

@@ -227,6 +227,12 @@
   display: flex;
   align-items: center;
   gap: 7px;
+  /* Shrinkable: the bar carries two of these plus the clock, transport and
+     scope figures, which together need ~1580px. Without min-width:0 a flex
+     child will not shrink below its content, so below 1600px the right-hand
+     end of the bar was simply clipped off-screen. */
+  min-width: 0;
+  flex: 0 1 auto;
 }
 .pulse-progfilter select {
   font-family: var(--mono);
@@ -234,6 +240,8 @@
   letter-spacing: 0.06em;
   padding: 4px 8px;
   max-width: 260px;
+  min-width: 0;
+  flex: 1 1 auto;
   border: 1px solid var(--rule);
   border-radius: 3px;
   background: var(--panel);
@@ -1203,17 +1211,44 @@
   }
 }
 
+/* The bar's content needs ~1580px at full size, so it overflowed every laptop
+   narrower than 1600 and the scope figures fell off the right edge. Tighten
+   rather than hide: the clock, transport and both filters are the controls, and
+   a control you cannot see is a control you do not have. */
+@media (max-width: 1560px) {
+  .pulse-bar {
+    gap: 12px;
+  }
+  .pulse-progfilter select {
+    max-width: 168px;
+  }
+  .pulse-scope {
+    gap: 12px;
+  }
+}
+
 @media (max-width: 1180px) {
   .pulse-shell {
     grid-template-columns: 200px minmax(0, 1fr) 288px;
   }
+  /* Seven columns, matching the base grid. This override still declared six
+     after the Partner column was added, so every cell below 1180px landed one
+     column to the left of its heading. */
   .pulse-tick-head,
   .trow {
-    grid-template-columns: 88px 108px minmax(0, 1fr) 104px 0 72px;
+    grid-template-columns: 88px 100px minmax(0, 1fr) 122px 104px 0 72px;
   }
   .t-worker,
   .h-worker {
     display: none;
+  }
+  /* The select keeps its aria-label, so dropping the visible caption costs
+     nothing to a screen reader and buys back ~120px. */
+  .pulse-progfilter .pulse-lbl {
+    display: none;
+  }
+  .pulse-progfilter select {
+    max-width: 136px;
   }
 }
 
@@ -1240,7 +1275,11 @@
   .trow {
     grid-template-columns: 84px 1fr 100px 66px;
   }
+  /* The partner name is long and this layout has four columns; it goes with
+     service and worker rather than pushing every cell out from under its
+     heading. The map card is still a way into a partner window here. */
   .t-svc,
+  .t-org,
   .t-worker,
   .h-svc,
   .h-worker {
