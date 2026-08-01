@@ -1345,3 +1345,26 @@
   letter-spacing: 0.02em;
   color: var(--ink-2);
 }
+
+/* The map advertises that a partner is inspectable, rather than proving it by
+   opening a card you did not ask for. Set on mousemove; nothing else changes
+   until you actually click. */
+.pulse-map[data-over-partner='1'] {
+  cursor: pointer;
+}
+
+/* Says the map is clickable at all. Sits with the legend rather than over the
+   geography, and steps aside once a card is up — by then the affordance has
+   done its job. */
+.pulse-maphint {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+.pulse-maphint b {
+  color: var(--ink-2);
+  font-weight: 500;
+}

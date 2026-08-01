@@ -101,6 +101,8 @@ would put a "Connect Labs" navigation bar above a funder-facing screen.
           <span><i style="background:var(--warn)"></i>Flagged for review</span>
           <span><i style="background:var(--crit)"></i>Rejected</span>
         </div>
+        {# Discoverability: without this the click target is invisible. #}
+        <div class="pulse-maphint" id="maphint"><b>Click</b> a lit area to inspect the partner delivering there</div>
         <div class="pulse-privacy">
           Household coordinates are never shown below town scale. No beneficiary
           names or phone numbers appear on this screen.
