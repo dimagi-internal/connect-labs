@@ -515,3 +515,48 @@ class TestPhoneLayout:
         css = self._css()
         phone = css[css.index("@media (max-width: 620px)") :]
         assert "display: none" not in phone.split(".pulse-privacy")[1].split("}")[0]
+
+
+class TestStylesheetStructuralClasses:
+    """The classes that own the page's layout must be defined exactly once.
+
+    A partner-window meter was added as ``.pulse-bar`` — which is already the
+    top status bar. Being later in the file it won, and the whole header was
+    restyled as a 46x4px progress meter: the clock, Pause, Go live, both filters
+    and the scope figures were crushed to ~10px and overlapped each other.
+
+    Nothing failed. The elements were present, ``visible``, opacity 1 — only
+    their box was wrong, which no assertion about markup would have caught.
+    These names are the grid-area owners, so redefining one silently destroys
+    the shell.
+    """
+
+    STRUCTURAL = ["pulse-shell", "pulse-bar", "pulse-kpi", "pulse-map", "pulse-act", "pulse-tick"]
+
+    def _css(self):
+        from pathlib import Path as P
+
+        from django.conf import settings
+
+        return (P(settings.APPS_DIR) / "static" / "pulse" / "pulse.css").read_text()
+
+    def test_each_structural_class_is_defined_once(self):
+        import re
+
+        src = re.sub(r"/\*.*?\*/", "", self._css(), flags=re.DOTALL)
+        for name in self.STRUCTURAL:
+            hits = re.findall(r"(?m)^\." + re.escape(name) + r"\s*\{", src)
+            assert len(hits) == 1, (
+                f".{name} is defined {len(hits)} times as a bare class rule. It owns page "
+                "layout, so a second definition silently restyles the shell — this is exactly "
+                "how the top bar became a 46px progress meter."
+            )
+
+    def test_the_top_bar_is_still_a_flex_row(self):
+        """Pins the property that was clobbered, not just the selector count."""
+        import re
+
+        src = re.sub(r"/\*.*?\*/", "", self._css(), flags=re.DOTALL)
+        block = re.search(r"(?m)^\.pulse-bar\s*\{([^}]*)\}", src).group(1)
+        assert "display: flex" in block
+        assert "grid-area: bar" in block

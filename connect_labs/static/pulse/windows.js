@@ -216,7 +216,7 @@
                          <td class="rw-num">${nf.format(w.works)}</td>
                          <td class="rw-num">${pct(
                            w.approval_rate,
-                         )}<span class="pulse-bar"><i data-low="${lvl}" style="width:${(
+                         )}<span class="pulse-meter"><i data-low="${lvl}" style="width:${(
                            (w.approval_rate || 0) * 100
                          ).toFixed(0)}%"></i></span></td>
                          <td class="rw-num">${pct(w.flag_rate)}</td>
