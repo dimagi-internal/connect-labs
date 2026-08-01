@@ -308,3 +308,111 @@ def courses_versus_recoveries(country=None):
             "their methods rather than reconciled into one."
         ),
     }
+
+
+# ---------------------------------------------------------------------------
+# Contracted against required — the signal that should change the NEXT tender
+#
+# The app has both halves of this comparison and has never made it. Partners
+# raise shortfalls, the centre reallocates, the trucks move — and nothing ever
+# concludes "we under-contracted for Borno this quarter". So the same district
+# runs short again next quarter, and the procurement cycle that could have
+# prevented it never hears about it.
+#
+# Coverage measures what ARRIVED against what is needed. This measures what was
+# BOUGHT against what is needed, which is a procurement question rather than a
+# logistics one: reallocation cannot fix a shortfall that was never purchased.
+# ---------------------------------------------------------------------------
+
+
+def _contracted_cartons_by_district(country=None):
+    """Cartons a contract commits to a district, whether or not they have moved.
+
+    Attributed by the DELIVERY PLACE its lot names, resolved to the district
+    through the node serving that place — the same join coverage uses for
+    arrivals, so the two figures are comparable by construction rather than by
+    coincidence.
+    """
+    from ..models import Contract, SupplyNode
+
+    nodes = SupplyNode.objects.exclude(adm1_code="")
+    if country:
+        nodes = nodes.filter(country=country)
+    district_by_place = {}
+    for node in nodes:
+        district_by_place.setdefault(node.name.split(" ")[0].lower(), node.adm1_code)
+
+    totals = {}
+    contracts = Contract.objects.select_related("award__lot").all()
+    for contract in contracts:
+        lot = getattr(getattr(contract, "award", None), "lot", None)
+        if lot is None or contract.unit != "cartons":
+            continue
+        if country and lot.delivery_country != country:
+            continue
+        # A haulage contract buys movement, not cartons into a district.
+        if not contract.buys_goods:
+            continue
+        key = (lot.delivery_place or "").split(" ")[0].lower()
+        adm1 = district_by_place.get(key)
+        if not adm1:
+            continue
+        totals[adm1] = totals.get(adm1, 0) + float(contract.total_quantity or 0)
+    return totals
+
+
+def procurement_gap(country=None, month=None):
+    """Per district: what the caseload requires, what has been bought, the gap.
+
+    A positive gap is a purchasing decision nobody has taken yet — and unlike a
+    coverage gap, no reallocation can close it, because the cartons do not exist
+    under any contract.
+    """
+    contracted = _contracted_cartons_by_district(country=country)
+    per_district = _requirement_by_district(country=country, month=month)
+
+    rows = []
+    for adm1_code, agg in per_district.items():
+        estimate = agg["latest"]
+        requirement = agg["requirement"]
+        # One carton is one full course, so the requirement in children IS the
+        # requirement in cartons — the identity the whole app is denominated in.
+        required_cartons = float(requirement)
+        bought = float(contracted.get(adm1_code, 0))
+        gap = max(required_cartons - bought, 0.0)
+        rows.append(
+            {
+                "adm1_code": adm1_code,
+                "adm1_name": estimate.adm1_name,
+                "country": estimate.country,
+                "ipc_phase": estimate.ipc_phase,
+                "window_months": agg["months"],
+                "required_cartons": round(required_cartons),
+                "contracted_cartons": round(bought),
+                "gap_cartons": round(gap),
+                "children_unbought": round(gap),
+                "contracted_percent": (round((bought / required_cartons) * 100, 1) if required_cartons else None),
+                "method": (
+                    "Contracted is the quantity every supply contract commits to this district's "
+                    "delivery places, whether or not it has shipped. Required is the district's SAM "
+                    "caseload summed across the response window, at one carton per full course. The "
+                    "gap is what nobody has bought yet — a reallocation cannot close it, because "
+                    "those cartons do not exist under any contract."
+                ),
+            }
+        )
+    rows.sort(key=lambda r: -r["gap_cartons"])
+    return rows
+
+
+def procurement_gap_summary(country=None, month=None):
+    """The gap as one figure, for the dashboard that decides the next tender."""
+    rows = procurement_gap(country=country, month=month)
+    short = [r for r in rows if r["gap_cartons"] > 0]
+    return {
+        "districts": rows,
+        "districts_short": len(short),
+        "districts_total": len(rows),
+        "gap_cartons": sum(r["gap_cartons"] for r in short),
+        "worst": short[0] if short else None,
+    }

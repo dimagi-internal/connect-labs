@@ -193,14 +193,61 @@ def review_submission(reviewer, sub, decisions, notes=""):
     return sub
 
 
+def commitment_for(qualification):
+    """What the supplier committed to for THIS category, from the frozen application.
+
+    Capacity, regions served and lead time are captured per category at EOI and
+    then were never surfaced again — so the registry could show a name, a country
+    and an expiry date, and could not answer the question it exists for ("who can
+    supply RUTF to north-east Nigeria today"). The data was always there; only
+    the read was missing.
+
+    Read off the submission the decision was made against, so a supplier editing
+    their profile afterwards cannot change what the registry reports — the same
+    property the frozen snapshot gives the reviewer.
+    """
+    submission = qualification.source_submission
+    if submission is None:
+        return {}
+    return (submission.commitments or {}).get(qualification.category) or {}
+
+
+def served_regions(qualification):
+    """ISO-2 codes this supplier committed to serving for this category.
+
+    Tolerates both shapes the app produces: a list from the API contract, and a
+    comma-separated string from the web form.
+    """
+    raw = commitment_for(qualification).get("regions")
+    if not raw:
+        return []
+    if isinstance(raw, str):
+        parts = [p.strip() for p in raw.replace(";", ",").split(",")]
+    else:
+        parts = [str(p).strip() for p in raw]
+    return [p.upper() for p in parts if p]
+
+
 def live_qualifications(category=None, country=None, expiring_within_days=None):
     """The registry query — only live qualifications ever count."""
     today = date.today()
-    qs = Qualification.objects.select_related("org").filter(status=Qualification.Status.ACTIVE, expires_at__gte=today)
+    qs = Qualification.objects.select_related("org", "source_submission").filter(
+        status=Qualification.Status.ACTIVE, expires_at__gte=today
+    )
     if category:
         qs = qs.filter(category=category)
-    if country:
-        qs = qs.filter(org__country=country.upper())
     if expiring_within_days:
         qs = qs.filter(expires_at__lte=today + timedelta(days=int(expiring_within_days)))
-    return qs.order_by("org__legal_name", "category")
+    qs = qs.order_by("org__legal_name", "category")
+
+    if country:
+        # Match on where the supplier can DELIVER, not only where its head
+        # office is. Filtering on head office answered a different question from
+        # the one the screen asks: a Kano plant that serves Burkina Faso
+        # disappeared from a Burkina search, and an Addis head office that
+        # serves nowhere near Ethiopia's north stayed in. Head office still
+        # counts — a supplier that named no regions is not thereby excluded from
+        # its own country — but the committed regions decide it.
+        wanted = country.upper()
+        qs = [q for q in qs if wanted in served_regions(q) or (not served_regions(q) and q.org.country == wanted)]
+    return qs

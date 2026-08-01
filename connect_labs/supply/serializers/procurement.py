@@ -33,6 +33,12 @@ def qualification_dict(qual):
         # review supersedes the one before it.
         review = submission.reviews.order_by("-id").first()
     reviewer = getattr(review, "reviewer", None)
+    # Imported here rather than at module scope: services import serializers
+    # (org_dict is what submission freezes), so a top-level import would close
+    # the cycle.
+    from ..services import eoi_actions
+
+    commitment = eoi_actions.commitment_for(qual)
     return {
         "id": qual.id,
         "category": qual.category,
@@ -43,6 +49,17 @@ def qualification_dict(qual):
         # than answering "qualified" off an expired document.
         "verify_at": qual.verify_at.isoformat() if qual.verify_at else None,
         "status": qual.status,
+        # What this supplier actually committed to, for THIS category.
+        #
+        # Captured at EOI, frozen onto the submission, and then dropped on the
+        # floor: the registry showed a name, a country and two dates, so the
+        # question it exists to answer — who can supply this commodity, to this
+        # place, in time — could not be answered from it. Reading it off the
+        # frozen submission means a later profile edit cannot change what the
+        # registry reports.
+        "capacity": commitment.get("capacity") or None,
+        "regions_served": eoi_actions.served_regions(qual),
+        "lead_time_days": commitment.get("lead_time_days") or None,
         # Who signed it off. None when the record predates a named reviewer —
         # rendered as an explicit gap rather than a blank, because "unknown" is
         # itself the finding an auditor would write up.

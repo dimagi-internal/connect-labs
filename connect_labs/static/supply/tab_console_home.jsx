@@ -166,6 +166,8 @@ function ConsoleHome({ ctx }) {
         )}
       </div>
 
+      <UnboughtRequirement gap={world.procurement_gap} />
+
       {rfps.length ? (
         <Card
           title="Solicitations"
@@ -204,5 +206,128 @@ function ConsoleHome({ ctx }) {
         </Card>
       ) : null}
     </Page>
+  );
+}
+
+/* What nobody has bought yet — the signal that should shape the next tender.
+
+   Everything else on this dashboard is about solicitations in flight. This is
+   about the one that has not been written: the district whose caseload nobody
+   has purchased against. It is deliberately NOT a coverage figure. Coverage
+   asks whether cartons arrived, and a reallocation can move that. This asks
+   whether anybody bought them, and no reallocation can conjure cartons that
+   exist under no contract — the only instrument that closes this gap is a
+   tender.
+
+   Partners have been raising shortfalls and the centre has been answering them
+   one truck at a time, with nothing carrying the pattern back to procurement.
+   This is that carry. */
+function UnboughtRequirement({ gap }) {
+  if (!gap || !gap.districts || !gap.districts.length) return null;
+  const short = gap.districts.filter((d) => d.gap_cartons > 0);
+  return (
+    <Card
+      title="Requirement nobody has bought"
+      subtitle="Contracted volume against the caseload each district has to treat. A reallocation cannot close this gap — only a tender can."
+    >
+      <KeyFigures
+        figures={[
+          {
+            label: 'Courses not under contract',
+            value: formatNumber(gap.gap_cartons),
+            lead: true,
+            tone: gap.gap_cartons ? 'at-risk' : 'ok',
+            hint: gap.districts_short
+              ? `across ${gap.districts_short} of ${gap.districts_total} districts`
+              : 'every district is fully contracted',
+            method: gap.districts[0].method,
+          },
+          {
+            label: 'Worst district',
+            value: gap.worst ? gap.worst.adm1_name : '—',
+            hint: gap.worst
+              ? `${formatNumber(
+                  gap.worst.gap_cartons,
+                )} courses short of its caseload`
+              : 'nothing outstanding',
+          },
+        ]}
+      />
+      {short.length ? (
+        <DataTable
+          rows={short}
+          rowKey={(d) => d.adm1_code}
+          defaultSort={{ key: 'gap', dir: -1 }}
+          columns={[
+            {
+              key: 'district',
+              label: 'District',
+              value: (d) => d.adm1_name,
+              render: (d) => (
+                <span>
+                  {d.adm1_name}{' '}
+                  <Badge
+                    tone={
+                      d.ipc_phase >= 5
+                        ? 'bad'
+                        : d.ipc_phase >= 4
+                        ? 'warn'
+                        : 'muted'
+                    }
+                  >
+                    IPC {d.ipc_phase}
+                  </Badge>
+                </span>
+              ),
+            },
+            {
+              key: 'required',
+              label: 'Required (courses)',
+              value: (d) => d.required_cartons,
+              render: (d) => (
+                <span className="nowrap">
+                  {formatNumber(d.required_cartons)}
+                  <span className="muted small">
+                    {' '}
+                    · {d.window_months}-month window
+                  </span>
+                </span>
+              ),
+            },
+            {
+              key: 'bought',
+              label: 'Under contract',
+              value: (d) => d.contracted_cartons,
+              render: (d) => (
+                <span className="nowrap">
+                  {formatNumber(d.contracted_cartons)}
+                  {d.contracted_percent !== null ? (
+                    <span className="muted small">
+                      {' '}
+                      · {d.contracted_percent}%
+                    </span>
+                  ) : null}
+                </span>
+              ),
+            },
+            {
+              key: 'gap',
+              label: 'Not bought',
+              value: (d) => d.gap_cartons,
+              render: (d) => (
+                <Badge tone={d.gap_cartons ? 'bad' : 'good'}>
+                  {formatNumber(d.gap_cartons)}
+                </Badge>
+              ),
+            },
+          ]}
+        />
+      ) : (
+        <EmptyState
+          title="Every district's caseload is under contract."
+          hint="Shortfalls from here are delivery problems, not purchasing ones."
+        />
+      )}
+    </Card>
   );
 }

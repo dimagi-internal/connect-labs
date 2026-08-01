@@ -607,3 +607,11 @@
 .stage-swatch.disbursed {
   background: var(--oes-accent);
 }
+
+/* The batch behind an expiry warning, and where it can still be used. */
+.exception-batch {
+  margin: 2px 0 5px;
+}
+.exception-batch code {
+  font-size: 11px;
+}

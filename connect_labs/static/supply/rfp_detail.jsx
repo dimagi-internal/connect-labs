@@ -206,6 +206,24 @@ function RFPDetailModal({ ctx, rfp, canAward, canManage, onClose }) {
                       ),
                   },
                   {
+                    // What this supplier actually DID last time.
+                    //
+                    // The award used to be decided on price and a typed
+                    // technical score, while the app quietly recorded — for
+                    // every consignment each of these bidders moved — whether
+                    // it arrived when it said and reconciled when it landed.
+                    // None of it reached this screen, so a bid 3% cheaper from
+                    // a supplier who has been eleven days late twice looked
+                    // exactly like one from a supplier who delivered clean.
+                    key: 'perf',
+                    label: 'Delivered record',
+                    value: (b) =>
+                      b.performance && b.performance.on_time_rate !== null
+                        ? b.performance.on_time_rate
+                        : -1,
+                    render: (b) => <DeliveredRecord perf={b.performance} />,
+                  },
+                  {
                     key: 'act',
                     label: '',
                     sortable: false,
@@ -454,5 +472,56 @@ function ScoreModal({ ctx, lotBid, onClose, onScored }) {
         />
       </FormRow>
     </Modal>
+  );
+}
+
+/* A supplier's delivered record, beside the price it is being weighed against.
+
+   Deliberately NOT a score. Price and technical score are already two numbers
+   competing for one decision, and a third composite would invite the reader to
+   add them up — which is exactly the judgement this column exists to inform
+   rather than replace. It shows what happened and how much of it there is, and
+   leaves the weighing to the officer who has to sign the award.
+
+   A supplier with no history says so. Reading "no record" as a perfect record
+   is the failure mode that makes performance data dangerous rather than
+   useful. */
+function DeliveredRecord({ perf }) {
+  if (!perf) return <span className="muted">—</span>;
+  if (!perf.has_record) {
+    return (
+      <span className="cell-with-note muted small">
+        No prior delivery
+        <InfoNote label="this supplier's record" text={perf.basis} />
+      </span>
+    );
+  }
+  // Below the evidence floor the counts stand alone: a rate from one arrival
+  // is arithmetically true and operationally worthless.
+  const rate = perf.on_time_rate;
+  const tone =
+    rate === null ? 'muted' : rate >= 90 ? 'good' : rate >= 70 ? 'warn' : 'bad';
+  return (
+    <span className="delivered-record">
+      {rate === null ? (
+        <Badge tone="muted">
+          {perf.late ? `${perf.late} late` : 'on time'} of {perf.arrivals}
+        </Badge>
+      ) : (
+        <Badge tone={tone}>{rate}% on time</Badge>
+      )}
+      <span className="cell-with-note muted small">
+        {perf.arrivals} arrival{perf.arrivals === 1 ? '' : 's'}
+        {perf.late
+          ? ` · mean ${perf.mean_days_late}d late, worst ${perf.worst_days_late}d`
+          : ''}
+        {perf.short_receipts
+          ? ` · ${perf.short_receipts} short (${formatNumber(
+              Math.round(perf.cartons_short),
+            )} cartons)`
+          : ''}
+        <InfoNote label="this delivered record" text={perf.basis} />
+      </span>
+    </span>
   );
 }

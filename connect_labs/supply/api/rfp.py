@@ -4,7 +4,7 @@ from .. import audit
 from ..decorators import current_actor, require_perm
 from ..models import RFP, Bid, Lot, LotBid
 from ..serializers import bid_dict, lot_bid_dict, lot_dict, rfp_dict
-from ..services import rfp_actions
+from ..services import performance, rfp_actions
 from ..services.org_actions import ActionError
 from .common import handle_action_errors, json_body
 
@@ -147,12 +147,24 @@ def comparison(request, rfp_id):
     rfp = _get_rfp_or_404(rfp_id)
     if rfp is None:
         return JsonResponse({"error": "not found"}, status=404)
+    # Every bidder's DELIVERED record, in one pass.
+    #
+    # This is the loop the product used to leave open: the app records whether
+    # each supplier's consignments arrived when they said and reconciled when
+    # they landed, and none of it reached the screen where the next award is
+    # decided. A bid three percent cheaper from a supplier who has been eleven
+    # days late twice is a different proposition, and the officer signing it
+    # could not see the difference.
+    bidder_ids = {lot_bid.bid.org_id for lot in rfp.lots.all() for lot_bid in rfp_actions.lot_comparison(lot)}
+    performance_by_bidder = performance.performance_by_org(bidder_ids)
+
     lots = []
     for lot in rfp.lots.all().order_by("id"):
         rows = []
         for rank, lot_bid in enumerate(rfp_actions.lot_comparison(lot), start=1):
             row = lot_bid_dict(lot_bid, include_scores=True)
             row["price_rank"] = rank
+            row["performance"] = performance_by_bidder.get(lot_bid.bid.org_id)
             rows.append(row)
         # Who still has no technical score. The client disables Award and says
         # why, rather than offering a button the server will refuse.

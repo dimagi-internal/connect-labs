@@ -33,7 +33,7 @@ from decimal import Decimal
 from django.db.models import Q
 
 from .. import gs1
-from ..models import WEEKS_PER_MONTH, CaseloadEstimate, ShipmentLine, SupplyEvent, SupplyNode
+from ..models import WEEKS_PER_MONTH, CaseloadEstimate, Shipment, ShipmentLine, SupplyEvent, SupplyNode
 
 
 def demand_serving_nodes():
@@ -334,3 +334,222 @@ def expiry_risk(node, as_of=None, month=None, horizon_days=180):
         "expires_on": soonest.isoformat() if soonest else None,
         "children_equivalent": gs1.cartons_to_children(int(at_risk)),
     }
+
+
+# ---------------------------------------------------------------------------
+# Forward projection — what the network looks like if nobody acts
+#
+# Everything above this line is present tense: what is on hand, what is late,
+# who is short today. That is a worklist, and a worklist cannot answer the
+# question a pipeline call actually opens with — "if we do nothing for a
+# fortnight, where are we?" The inputs have always been here: stock derived
+# from the event log, a burn rate derived from the caseload, and consignments
+# with ETAs already on the road. Only the arithmetic was missing.
+#
+# The projection is deliberately PIPELINE-AWARE. Weeks of cover divides stock by
+# burn and ignores the lorry arriving on Thursday, which is right for "what am I
+# holding" and wrong for "when do I run dry" — a node with three days of stock
+# and a consignment landing tomorrow is not about to run out, and ranking it as
+# though it were spends attention that belongs somewhere else.
+# ---------------------------------------------------------------------------
+
+# How far ahead the projection runs. A month is roughly two chances to act on a
+# corridor whose reallocations take about a week to land.
+PROJECTION_HORIZON_DAYS = 30
+
+
+def _inbound_arrivals(node, as_of):
+    """(date, cartons) for every consignment still on the road to ``node``.
+
+    Delivered and confirmed consignments are excluded: their cartons are already
+    in the event log, so counting them again would bank the same stock twice.
+    """
+    rows = []
+    for shipment in Shipment.objects.filter(
+        destination=node,
+        unit="cartons",
+        status__in=[Shipment.Status.PLANNED, Shipment.Status.IN_TRANSIT],
+    ):
+        eta = shipment.eta.date() if shipment.eta else None
+        if eta is None:
+            continue
+        rows.append((max(eta, as_of), float(shipment.quantity)))
+    return sorted(rows)
+
+
+def projection_for_node(node, as_of=None, horizon_days=PROJECTION_HORIZON_DAYS, month=None):
+    """Walk ``node``'s balance forward a day at a time, landing inbound as it arrives.
+
+    Returns None for a node with no caseload behind it — a port cannot run dry,
+    because nothing there is owed to anybody.
+    """
+    as_of = as_of or date.today()
+    burn = float(weekly_burn(node, month=month))
+    if burn <= 0:
+        return None
+    daily = burn / 7.0
+    balance = float(stock_on_hand(node))
+    arrivals = _inbound_arrivals(node, as_of)
+
+    dry_on = None
+    children_missed = 0.0
+    # A day that BEGINS with nothing on the shelf is the first dry day. Running
+    # the test after the day's consumption made a site whose stock lands exactly
+    # on zero at close of play read as dry that same morning — a day early, on
+    # the figure the whole projection exists to produce.
+    #
+    # EPSILON, not zero: the balance is a float walked down in sevenths, so a
+    # store that empties exactly reaches -1e-13 rather than 0 and would trip the
+    # comparison one day early for purely arithmetic reasons.
+    epsilon = 1e-6
+    for offset in range(horizon_days):
+        day = as_of + timedelta(days=offset)
+        for eta, qty in arrivals:
+            if eta == day:
+                balance += qty
+        if balance <= epsilon:
+            if dry_on is None:
+                dry_on = day
+            # A carton not on the shelf is a course not given. Children missed
+            # accrues per dry day, which is the unit every other figure on the
+            # command centre is already denominated in.
+            children_missed += daily
+            balance = 0.0
+        else:
+            balance -= daily
+            if balance < 0:
+                children_missed += -balance
+                balance = 0.0
+
+    horizon_end = as_of + timedelta(days=horizon_days - 1)
+    inbound_total = sum(q for _e, q in arrivals if _e <= horizon_end)
+    return {
+        "node_id": node.id,
+        "node_name": node.name,
+        "adm1_code": node.adm1_code,
+        "stock_on_hand": float(stock_on_hand(node)),
+        "weekly_burn": round(burn, 1),
+        "inbound_cartons": round(inbound_total),
+        "inbound_consignments": len([1 for e, _q in arrivals if e <= horizon_end]),
+        "dry_on": dry_on.isoformat() if dry_on else None,
+        "days_until_dry": (dry_on - as_of).days if dry_on else None,
+        "children_missed": int(round(children_missed)),
+        "horizon_days": horizon_days,
+        "as_of": as_of.isoformat(),
+        "method": (
+            "Stock on hand walked forward one day at a time at the site's own burn rate, "
+            "landing every consignment already on the road on its ETA. A site with three days "
+            "of stock and a lorry arriving tomorrow does not run dry; weeks of cover, which "
+            "ignores the lorry, says it does. Children missed is one child per carton not on "
+            "the shelf on the day it was needed."
+        ),
+    }
+
+
+def network_projection(as_of=None, horizon_days=PROJECTION_HORIZON_DAYS, month=None):
+    """Every demand-serving node's projection, soonest-dry first.
+
+    The head of this list is the answer to "what happens if nobody acts", which
+    is a different — and earlier — question than "what is wrong right now".
+    """
+    as_of = as_of or date.today()
+    rows = []
+    for node in demand_serving_nodes():
+        row = projection_for_node(node, as_of=as_of, horizon_days=horizon_days, month=month)
+        if row is not None:
+            rows.append(row)
+    rows.sort(key=lambda r: (r["days_until_dry"] is None, r["days_until_dry"], -r["children_missed"]))
+    dry = [r for r in rows if r["dry_on"]]
+    return {
+        "as_of": as_of.isoformat(),
+        "horizon_days": horizon_days,
+        "nodes": rows,
+        "nodes_dry": len(dry),
+        "nodes_total": len(rows),
+        "children_missed": sum(r["children_missed"] for r in dry),
+        "first_dry_on": dry[0]["dry_on"] if dry else None,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Shelf life — the batches behind an expiry warning, and where they should go
+#
+# ``expiry_risk`` above detects the loss and stops. It reports a number of
+# cartons and the soonest date, and a supply officer reading it cannot act:
+# they do not know WHICH batch, and they do not know where it could go instead.
+# RUTF has a real shelf life, so first-expired-first-out is an operational
+# discipline rather than a nicety — and the app already stores an expiry date
+# per ShipmentLine, so both answers are one join away.
+# ---------------------------------------------------------------------------
+
+
+def shelf_life_profile(node, as_of=None, horizon_days=365):
+    """Batches held at ``node``, soonest expiry first.
+
+    FEFO order — the sequence a store should despatch in, and the sequence an
+    expiry warning has to be read in to be actionable.
+    """
+    as_of = as_of or date.today()
+    lines = (
+        ShipmentLine.objects.filter(
+            Q(shipment__destination=node),
+            shipment__status__in=("delivered", "confirmed"),
+            expiry_date__isnull=False,
+            expiry_date__lte=as_of + timedelta(days=horizon_days),
+        )
+        .select_related("shipment")
+        .order_by("expiry_date")
+    )
+    rows = []
+    for line in lines:
+        days_left = (line.expiry_date - as_of).days
+        rows.append(
+            {
+                "batch_lot": line.batch_lot,
+                "gtin": line.gtin,
+                "cartons": float(line.quantity),
+                "expiry_date": line.expiry_date.isoformat(),
+                "days_left": days_left,
+                "shipment_reference": line.shipment.reference,
+                "expired": days_left <= 0,
+            }
+        )
+    return rows
+
+
+def fefo_destination(node, cartons, expires_on, as_of=None, month=None):
+    """Where surplus at ``node`` could go and still be used before it expires.
+
+    Ranked by need — thinnest cover first — and filtered to nodes that can
+    actually consume the quantity in the time left. A suggestion that moves
+    stock somewhere it will expire anyway is worse than no suggestion, because
+    it launders the loss into somebody else's store.
+    """
+    as_of = as_of or date.today()
+    if isinstance(expires_on, str):
+        expires_on = date.fromisoformat(expires_on[:10])
+    days_left = (expires_on - as_of).days
+    if days_left <= 0:
+        return None
+
+    best = None
+    for candidate in demand_serving_nodes().exclude(id=node.id):
+        burn = float(weekly_burn(candidate, month=month))
+        if burn <= 0:
+            continue
+        consumable = burn * (days_left / 7.0)
+        if consumable < cartons:
+            continue
+        row = cover_for_node(candidate, as_of=as_of, month=month)
+        if row is None:
+            continue
+        weeks = row["weeks_of_cover"]
+        if best is None or weeks < best["weeks_of_cover"]:
+            best = {
+                "node_id": candidate.id,
+                "node_name": candidate.name,
+                "weeks_of_cover": weeks,
+                "can_consume": int(consumable),
+                "days_left": days_left,
+            }
+    return best
