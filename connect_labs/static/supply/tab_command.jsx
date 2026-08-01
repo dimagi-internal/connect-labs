@@ -175,6 +175,24 @@ function CommandTab({ ctx }) {
                     </div>
                   ) : null}
                   <div className="exception-why">{e.why}</div>
+                  {/* The batch, named. An expiry warning a store officer
+                      cannot pick stock against is a warning they cannot act
+                      on — and the app has stored an expiry date per
+                      consignment line all along. */}
+                  {e.batch_lot ? (
+                    <div className="exception-batch muted small">
+                      Batch <code>{e.batch_lot}</code> · {e.batch_days_left} day
+                      {e.batch_days_left === 1 ? '' : 's'} of shelf life
+                      {e.fefo_destination ? (
+                        <>
+                          {' '}
+                          · {e.fefo_destination.node_name} holds{' '}
+                          {e.fefo_destination.weeks_of_cover} weeks and can
+                          consume it
+                        </>
+                      ) : null}
+                    </div>
+                  ) : null}
                   {selected === e.key && e.derivation ? (
                     <div className="exception-derivation">
                       How this was ranked: {e.derivation}
@@ -525,6 +543,8 @@ function CommandTab({ ctx }) {
         </p>
         <CoverageBandsNote />
       </Card>
+
+      <IfNobodyActs projection={world.projection} />
 
       <Card
         title="Weeks of cover"
@@ -1118,4 +1138,117 @@ function TierBadge({ tier }) {
   const label = TIER_LABELS[tier] || 'Unreported';
   const tone = tier === 'epcis' ? 'good' : tier === 'asn' ? 'info' : 'warn';
   return <Badge tone={tone}>{label}</Badge>;
+}
+
+/* The forecast, kept visually apart from the worklist above it.
+
+   Every other card on this screen is present tense: what is short now, what is
+   late now, who is thin now. That is a worklist, and a worklist cannot answer
+   the question a pipeline call actually opens with — do nothing for a month,
+   and where are we? The distinction matters enough to state on the card: these
+   nodes are not short today, which is exactly why they are not in the queue
+   above, and exactly why they are the ones a decision taken today can still
+   help.
+
+   It is pipeline-aware, which is the whole reason it disagrees with weeks of
+   cover. Weeks of cover divides stock by burn and ignores the consignment
+   arriving on Thursday — right for "what am I holding", wrong for "when do I
+   run dry". */
+function IfNobodyActs({ projection }) {
+  if (!projection || !projection.nodes || !projection.nodes.length) return null;
+  const dry = projection.nodes.filter((n) => n.dry_on);
+  return (
+    <Card
+      title={`If nobody acts — the next ${projection.horizon_days} days`}
+      subtitle="Stock walked forward at each site's own burn rate, landing every consignment already on the road on its ETA. This is a forecast, not a worklist: a site here is not short today."
+    >
+      <KeyFigures
+        figures={[
+          {
+            label: 'Sites that run dry',
+            value: `${projection.nodes_dry} of ${projection.nodes_total}`,
+            lead: true,
+            tone: projection.nodes_dry ? 'critical' : 'ok',
+            hint: projection.first_dry_on
+              ? `first on ${formatDate(projection.first_dry_on)}`
+              : 'nothing runs dry inside the horizon',
+            method:
+              "Stock on hand from the event log, drawn down at the site's own weekly burn, with every planned and in-transit consignment landed on its ETA. Delivered consignments are excluded because their cartons are already in the stock figure — counting them again would quietly push every date out.",
+          },
+          {
+            label: 'Children who miss a course',
+            value: formatNumber(projection.children_missed),
+            tone: projection.children_missed ? 'at-risk' : 'ok',
+            hint: 'if nothing is decided',
+            method:
+              'One child per carton not on the shelf on the day it was needed, accrued across every dry day in the horizon. The same unit the exception queue ranks in, so a forecast and a present-tense row can be weighed against each other.',
+          },
+        ]}
+      />
+      {dry.length ? (
+        <DataTable
+          rows={dry}
+          rowKey={(r) => r.node_id}
+          defaultSort={{ key: 'when', dir: 1 }}
+          columns={[
+            { key: 'node', label: 'Site', value: (r) => r.node_name },
+            {
+              key: 'when',
+              label: 'Runs dry',
+              value: (r) => r.days_until_dry,
+              render: (r) => (
+                <span className="nowrap">
+                  {formatDate(r.dry_on)}
+                  <span className="muted small">
+                    {' '}
+                    · {r.days_until_dry} day{r.days_until_dry === 1 ? '' : 's'}
+                  </span>
+                </span>
+              ),
+            },
+            {
+              key: 'stock',
+              label: 'On hand',
+              value: (r) => r.stock_on_hand,
+              render: (r) => formatNumber(Math.round(r.stock_on_hand)),
+            },
+            {
+              // Named explicitly, because this column is the reason the date
+              // differs from weeks of cover. A reader comparing the two cards
+              // has to be able to see what the projection knows that the other
+              // one does not.
+              key: 'inbound',
+              label: 'Already on the road',
+              value: (r) => r.inbound_cartons,
+              render: (r) =>
+                r.inbound_cartons ? (
+                  <span className="nowrap">
+                    {formatNumber(r.inbound_cartons)}
+                    <span className="muted small">
+                      {' '}
+                      · {r.inbound_consignments} consignment
+                      {r.inbound_consignments === 1 ? '' : 's'}
+                    </span>
+                  </span>
+                ) : (
+                  <span className="muted">nothing inbound</span>
+                ),
+            },
+            {
+              key: 'missed',
+              label: 'Children who miss a course',
+              value: (r) => r.children_missed,
+              render: (r) => formatNumber(r.children_missed),
+            },
+          ]}
+        />
+      ) : (
+        <EmptyState
+          title="Nothing runs dry inside the horizon."
+          hint="Every site's stock and inbound consignments cover its burn rate for the whole window."
+        />
+      )}
+      <p className="muted small method-note">{projection.nodes[0].method}</p>
+    </Card>
+  );
 }

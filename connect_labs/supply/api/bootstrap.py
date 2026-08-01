@@ -226,6 +226,14 @@ def _staff_world(actor):
         world["rounds"] = [round_dict(r) for r in EOIRound.objects.all().order_by("-created_at")]
     if "rfps" in ROLE_PERMS.get(role, {}):
         world["rfps"] = [rfp_dict(r) for r in RFP.objects.prefetch_related("lots").all().order_by("-created_at")]
+        # What has NOT been bought, per district.
+        #
+        # The shortfalls partners raise, and the reallocations the centre makes
+        # in response, never reached the procurement cycle that could stop the
+        # next one happening. Coverage answers "did it arrive"; this answers
+        # "did anyone buy it", and no reallocation can close a gap in cartons
+        # that exist under no contract.
+        world["procurement_gap"] = coverage.procurement_gap_summary(country=gov_country)
     if "execution" in ROLE_PERMS.get(role, {}):
         contracts = Contract.objects.select_related("award__lot", "org").prefetch_related(
             "shipments__origin", "shipments__destination", "shipments__milestones__node"
@@ -262,6 +270,15 @@ def _staff_world(actor):
         # Severity lives on the server so the ranking is testable and so the
         # partner surface and this queue cannot disagree about the same node.
         world["exceptions"] = exceptions.build_queue()
+        # And what the network looks like if NOBODY acts on any of them.
+        #
+        # The queue is present tense — what is wrong now. A pipeline call opens
+        # with the other question: do nothing for a month, and where are we? The
+        # inputs were all here (stock from the event log, burn from the caseload,
+        # consignments already on the road with ETAs); only the arithmetic was
+        # missing, so the centre could rank today's problems and not see next
+        # week's coming.
+        world["projection"] = cover.network_projection()
         # The queue's own advice is "reallocate from a node holding surplus".
         # Naming which nodes those are, and how much each could spare without
         # dropping below its own threshold, is what turns that sentence into

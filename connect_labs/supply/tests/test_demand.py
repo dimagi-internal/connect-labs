@@ -1290,7 +1290,26 @@ def test_an_expiry_row_names_the_node_the_cartons_must_LEAVE():
     expiry = rows.get("Expiry risk")
     assert expiry is not None, "the demo needs an expiry-risk row for this to be checkable"
     assert expiry["reallocation_role"] == "source"
-    assert "surplus" in expiry["action"].lower()
+
+    # The advice moves stock OUT, and now names what to move and where.
+    #
+    # This used to assert the word "surplus" — the right property, checked
+    # against the vaguest sentence that could carry it. The row now names the
+    # batch (a store officer cannot pick stock without one) and the destination
+    # (they cannot move it without one), so the test asserts those instead: a
+    # named batch, and a receiving node that is emphatically not the node
+    # holding the surplus.
+    assert expiry["batch_lot"], "an expiry warning with no batch cannot be picked against"
+    assert expiry["batch_lot"] in expiry["action"]
+    destination = expiry["fefo_destination"]
+    if destination:
+        assert destination["node_name"] != expiry["node_name"]
+        assert destination["node_name"] in expiry["action"]
+        # And it must be able to actually consume the stock in the time left,
+        # or the advice merely launders the loss into somebody else's store.
+        assert destination["can_consume"] >= expiry["children_at_risk"]
+    else:
+        assert "loss is already committed" in expiry["action"]
 
     for kind, row in rows.items():
         if kind != "Expiry risk":

@@ -518,3 +518,14 @@
   font-weight: 700;
   letter-spacing: -0.02em;
 }
+
+/* A supplier's delivered record: the verdict chip, then the evidence under it. */
+.delivered-record {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: flex-start;
+}
+.delivered-record .muted.small {
+  line-height: 1.35;
+}

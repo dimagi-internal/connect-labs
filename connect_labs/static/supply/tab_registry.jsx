@@ -128,6 +128,70 @@ function RegistryTab({ ctx }) {
                 />
               ),
             },
+            // The three facts that make this a decision rather than a lookup.
+            //
+            // Every one of these was captured at EOI, frozen onto the
+            // submission the reviewer assessed, and then never read again — so
+            // the registry could tell you a supplier exists and not whether they
+            // can reach the place you need, at the volume you need, in time.
+            // "Who can supply RUTF to north-east Nigeria today" was unanswerable
+            // from the screen built to answer it.
+            {
+              key: 'serves',
+              label: 'Serves',
+              sortable: false,
+              value: () => '',
+              render: (r) => {
+                const regions = Array.from(
+                  new Set(
+                    r.qualifications.flatMap((q) => q.regions_served || []),
+                  ),
+                );
+                if (!regions.length)
+                  return <span className="muted">not stated</span>;
+                return (
+                  <span className="nowrap">
+                    {regions.map(countryLabel).join(', ')}
+                  </span>
+                );
+              },
+            },
+            {
+              key: 'capacity',
+              label: 'Capacity',
+              sortable: false,
+              value: () => '',
+              render: (r) => {
+                const caps = r.qualifications
+                  .map((q) => q.capacity)
+                  .filter(Boolean);
+                return caps.length ? (
+                  <span>{caps[0]}</span>
+                ) : (
+                  <span className="muted">not stated</span>
+                );
+              },
+            },
+            {
+              key: 'lead',
+              label: 'Lead time',
+              value: (r) => {
+                const times = r.qualifications
+                  .map((q) => q.lead_time_days)
+                  .filter((n) => n);
+                return times.length ? Math.min(...times) : 9999;
+              },
+              render: (r) => {
+                const times = r.qualifications
+                  .map((q) => q.lead_time_days)
+                  .filter((n) => n);
+                return times.length ? (
+                  <span className="nowrap">{Math.min(...times)} days</span>
+                ) : (
+                  <span className="muted">not stated</span>
+                );
+              },
+            },
             {
               key: 'expiry',
               label: 'Earliest expiry',

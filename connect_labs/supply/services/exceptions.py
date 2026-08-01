@@ -186,6 +186,16 @@ def expiry_exceptions(as_of=None):
         risk = cover.expiry_risk(node, as_of=as_of)
         if risk is None:
             continue
+        # WHICH batch, and where it could still be used.
+        #
+        # The row reported a quantity and a date and stopped, which is a loss
+        # detected rather than a loss managed: a store officer cannot pick stock
+        # off a shelf without a batch number, and cannot move it without
+        # somewhere to move it to. Both were one join away — the app has stored
+        # an expiry date per consignment line all along.
+        profile = cover.shelf_life_profile(node, as_of=as_of)
+        soonest_batch = profile[0] if profile else None
+        destination = cover.fefo_destination(node, risk["cartons_at_risk"], risk["expires_on"], as_of=as_of)
         rows.append(
             {
                 "key": f"expiry-{node.id}",
@@ -194,6 +204,10 @@ def expiry_exceptions(as_of=None):
                 "tone": "warn",
                 "node_id": node.id,
                 "node_name": node.name,
+                "batch_lot": soonest_batch["batch_lot"] if soonest_batch else None,
+                "batch_expires_on": soonest_batch["expiry_date"] if soonest_batch else None,
+                "batch_days_left": soonest_batch["days_left"] if soonest_batch else None,
+                "fefo_destination": destination,
                 # This row's node is the SOURCE of the move it advises, not the
                 # destination. Every other exception names a node that needs
                 # cartons; this one names a node holding more than it can use
@@ -208,8 +222,29 @@ def expiry_exceptions(as_of=None):
                 "why": (
                     f"Stock at {node.name} exceeds what the caseload it serves can consume "
                     f"before {risk['expires_on']}."
+                    + (
+                        f" Soonest batch {soonest_batch['batch_lot']} expires "
+                        f"{soonest_batch['expiry_date']}, {_days(soonest_batch['days_left'])} from now."
+                        if soonest_batch
+                        else ""
+                    )
                 ),
-                "action": "Reallocate the surplus to a node with cover below plan.",
+                # Name the destination, or say plainly that there is not one.
+                # "Reallocate to a node with cover below plan" reads as advice
+                # until you try to follow it and discover the product knows
+                # which node that is and did not say.
+                "action": (
+                    f"Move batch {soonest_batch['batch_lot']} to {destination['node_name']}, which holds "
+                    f"{destination['weeks_of_cover']} weeks of cover and can consume it with "
+                    f"{_days(destination['days_left'])} to spare."
+                    if destination and soonest_batch
+                    else (
+                        "Reallocate the surplus to a node with cover below plan."
+                        if destination
+                        else "No node can consume this quantity before it expires — the loss is already "
+                        "committed, and the lesson belongs in the next contract's quantity."
+                    )
+                ),
                 "derivation": (
                     "Cartons held at the node minus what its weekly burn can consume " "before the batch expiry date."
                 ),
