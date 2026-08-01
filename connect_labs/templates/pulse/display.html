@@ -102,7 +102,7 @@ would put a "Connect Labs" navigation bar above a funder-facing screen.
           <span><i style="background:var(--crit)"></i>Rejected</span>
         </div>
         {# Discoverability: without this the click target is invisible. #}
-        <div class="pulse-maphint" id="maphint"><b>Click</b> a lit area to inspect the partner delivering there</div>
+        <div class="pulse-maphint" id="maphint"><b>Click</b> a lit area, or a partner in the feed, to open its record</div>
         <div class="pulse-privacy">
           Household coordinates are never shown below town scale. No beneficiary
           names or phone numbers appear on this screen.
@@ -117,7 +117,9 @@ would put a "Connect Labs" navigation bar above a funder-facing screen.
         <span class="pulse-lbl">Field time</span>
         <span class="pulse-lbl">Nearest town</span>
         <span class="pulse-lbl h-svc">Service</span>
+        <span class="pulse-lbl">Partner</span>
         <span class="pulse-lbl">Outcome</span>
+        <span class="pulse-lbl">Worker</span>
         <span class="pulse-lbl" style="text-align:right">To worker</span>
       </div>
       <div class="pulse-tick-rows" id="ticker"></div>
@@ -152,6 +154,7 @@ would put a "Connect Labs" navigation bar above a funder-facing screen.
   <script src="{% static 'maps/connect_map.js' %}"></script>
   <script src="{% static 'pulse/store.js' %}"></script>
   <script src="{% static 'pulse/cards.js' %}"></script>
+  <script src="{% static 'pulse/windows.js' %}"></script>
   <script src="{% static 'pulse/display.js' %}"></script>
 </body>
 </html>

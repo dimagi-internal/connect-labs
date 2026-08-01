@@ -15,7 +15,7 @@ from __future__ import annotations
 import math
 from datetime import timedelta
 
-from django.db.models import Count, Q, Sum
+from django.db.models import Count, Max, Q, Sum
 from django.http import JsonResponse
 from django.utils import timezone
 from django.views import View
@@ -99,8 +99,14 @@ def _ingest_state() -> dict:
     }
 
 
-def _event_row(e: PulseEvent) -> list:
-    """Compact positional encoding — these ship thousands at a time."""
+def _event_row(e: PulseEvent, partners: bool = False) -> list:
+    """Compact positional encoding — these ship thousands at a time.
+
+    ``partners`` carries the delivering org so the feed can name who delivered
+    each service and open their record. Withheld for a caller not entitled to
+    partner identity, for the same reason the partner menu is: a per-event org
+    slug would hand an anonymised link the partner breakdown one row at a time.
+    """
     return [
         e.connect_visit_id,
         int(e.field_ts.timestamp()),
@@ -114,6 +120,7 @@ def _event_row(e: PulseEvent) -> list:
         e.service_slug or None,
         e.worker_hash[:6] or None,
         float(e.usd_to_worker) if e.usd_to_worker is not None else None,
+        (e.org_slug or None) if partners else None,
     ]
 
 
@@ -130,6 +137,7 @@ EVENT_FIELDS = [
     "service_slug",
     "worker",
     "usd",
+    "org_slug",
 ]
 
 
@@ -906,6 +914,7 @@ class EventsView(View):
     def get(self, request):
         since = request.GET.get("since")
         limit = min(int(request.GET.get("limit", 500)), MAX_EVENTS)
+        partners = _partner_names_allowed(request)
 
         qs = _program_scope(request)["events"].order_by("connect_visit_id")
         if since:
@@ -913,15 +922,15 @@ class EventsView(View):
         else:
             qs = qs.order_by("-connect_visit_id")[:limit]
             rows = sorted(qs, key=lambda e: e.connect_visit_id)
-            return JsonResponse(_events_payload(rows))
+            return JsonResponse(_events_payload(rows, partners))
 
-        return JsonResponse(_events_payload(list(qs[:limit])))
+        return JsonResponse(_events_payload(list(qs[:limit]), partners))
 
 
-def _events_payload(rows) -> dict:
+def _events_payload(rows, partners: bool = False) -> dict:
     return {
         "fields": EVENT_FIELDS,
-        "events": [_event_row(e) for e in rows],
+        "events": [_event_row(e, partners) for e in rows],
         "cursor": rows[-1].connect_visit_id if rows else None,
         "ingest": _ingest_state(),
     }
@@ -943,6 +952,7 @@ class ReplayView(View):
         start = end - timedelta(hours=hours)
 
         sc = _program_scope(request)
+        partners = _partner_names_allowed(request)
         qs = sc["events"].filter(field_ts__gte=start, field_ts__lte=end)
 
         # Sample ACROSS the window rather than taking its head. Slicing an
@@ -990,7 +1000,7 @@ class ReplayView(View):
         return JsonResponse(
             {
                 "fields": EVENT_FIELDS,
-                "events": [_event_row(e) for e in rows],
+                "events": [_event_row(e, partners) for e in rows],
                 "window": {"from": start.isoformat(), "to": end.isoformat(), "hours": hours, "basis": "field_ts"},
                 # A sample is not a truncation, and conflating them would let the
                 # display claim completeness it does not have. Both are declared.
@@ -999,5 +1009,259 @@ class ReplayView(View):
                 "sample_stride": stride,
                 "matched": total,
                 "ingest": _ingest_state(),
+            }
+        )
+
+
+# ---------------------------------------------------------------------------
+# Drill-down: a partner, and the workers inside it
+# ---------------------------------------------------------------------------
+#
+# These are on-demand rather than folded into `summary`, because summary is
+# polled continuously by every open display and these answer a question nobody
+# has asked until they click.
+#
+# **Workers are opaque.** Connect's export publishes `username` already hashed
+# (`985770f1bf2079f58119`), so a worker here is an anonymous identifier with a
+# delivery record attached -- there is no name or phone anywhere in Pulse to
+# show, by construction. That is what makes a per-worker view safe to put on a
+# funder screen at all.
+
+WORKER_ROSTER_LIMIT = 250
+
+
+def _worker_roster(sc) -> list:
+    """Every worker who has delivered inside the current scope.
+
+    Money and volume come from the works spine, which carries full history;
+    recency, flags and geography come from events, which are the rolling
+    retention window. Neither alone answers "who delivers for this partner and
+    how are they doing".
+    """
+    money = {
+        r["worker_hash"]: r
+        for r in sc["works"]
+        .exclude(worker_hash="")
+        .values("worker_hash")
+        .annotate(
+            works=Count("id"),
+            approved=Count("id", filter=Q(status="approved")),
+            usd=Sum("usd_to_worker"),
+        )
+    }
+    recent = {
+        r["worker_hash"]: r
+        for r in sc["events"]
+        .exclude(worker_hash="")
+        .values("worker_hash")
+        .annotate(
+            events=Count("id"),
+            flagged=Count("id", filter=Q(flagged=True)),
+            last_ts=Max("field_ts"),
+        )
+    }
+    country_of = {
+        r["worker_hash"]: r["country"]
+        for r in sc["events"].exclude(worker_hash="").exclude(country="").values("worker_hash", "country")
+    }
+
+    rows = []
+    for h in set(money) | set(recent):
+        m = money.get(h) or {}
+        e = recent.get(h) or {}
+        works = m.get("works") or 0
+        approved = m.get("approved") or 0
+        events = e.get("events") or 0
+        flagged = e.get("flagged") or 0
+        rows.append(
+            {
+                # Truncated the same way the ticker truncates it: enough to tell
+                # two workers apart on screen, and never the whole identifier.
+                "worker": h[:6],
+                "worker_full": h,
+                "works": works,
+                "approved": approved,
+                "approval_rate": (approved / works) if works else None,
+                "events": events,
+                "flagged": flagged,
+                "flag_rate": (flagged / events) if events else None,
+                "usd": float(m.get("usd") or 0),
+                "country": country_of.get(h, ""),
+                "last_ts": int(e["last_ts"].timestamp()) if e.get("last_ts") else None,
+            }
+        )
+    rows.sort(key=lambda r: (-(r["last_ts"] or 0), -r["works"]))
+    return rows[:WORKER_ROSTER_LIMIT]
+
+
+class PartnerView(View):
+    """Everything a partner window shows, for one partner.
+
+    Entitlement is the same as the partner menu's: this is a named partner's
+    commercial and quality record, so an anonymised link cannot have it.
+    """
+
+    def get(self, request):
+        if not _partner_names_allowed(request):
+            return JsonResponse({"error": "not_authorised"}, status=403)
+
+        sc = _program_scope(request)
+        org = sc["org"]
+        if org is None:
+            return JsonResponse({"error": "unknown_partner"}, status=404)
+
+        partner = resolve_partner(org.slug, org.display_name if org.named else "")
+        works = sc["works"]
+        agg = works.aggregate(
+            works=Count("id"),
+            approved=Count("id", filter=Q(status="approved")),
+            usd=Sum("usd_to_worker"),
+            usd_org=Sum("usd_to_org"),
+        )
+        worker = float(agg["usd"] or 0)
+        org_share = float(agg["usd_org"] or 0)
+        approved = agg["approved"] or 0
+
+        roster = _worker_roster(sc)
+        return JsonResponse(
+            {
+                "generated_at": timezone.now().isoformat(),
+                "ingest": _ingest_state(),
+                "partner": {
+                    "slug": org.slug,
+                    "workspace": org.display_name,
+                    "name": partner["parent"] or org.display_name,
+                    "named": bool(partner["parent"]) or bool(getattr(org, "named", False)),
+                    "funder": getattr(org, "funder_slug", ""),
+                    "evidence": partner["why"],
+                },
+                "scope": _scope_for(sc),
+                "money": {
+                    "to_workers": worker,
+                    "to_orgs": org_share,
+                    "total_paid": worker + org_share,
+                    "works": agg["works"] or 0,
+                    "approved_works": approved,
+                    "rate": ((worker + org_share) / approved) if approved else None,
+                },
+                "by_status": {
+                    r["status"]: r["n"] for r in works.values("status").annotate(n=Count("id")).order_by("-n")
+                },
+                "by_service": [
+                    {
+                        "service": r["service_slug"],
+                        "name": service_label(r["service_slug"]),
+                        "works": r["n"],
+                        "usd": float(r["usd"] or 0),
+                    }
+                    for r in works.exclude(service_slug="")
+                    .values("service_slug")
+                    .annotate(n=Count("id"), usd=Sum("usd_to_worker"))
+                    .order_by("-n")[:8]
+                ],
+                "weekly": _weekly_series(sc),
+                "workers": roster,
+                "worker_count": len(roster),
+                "workers_truncated": len(roster) >= WORKER_ROSTER_LIMIT,
+            }
+        )
+
+
+class WorkerView(View):
+    """One worker's delivery record.
+
+    The identifier is Connect's own hash. Callers pass the truncated form the
+    rest of the UI shows, so the lookup is a prefix match -- and a prefix that
+    matches more than one worker is refused rather than silently answered with
+    whichever came first, which would blend two people's records.
+    """
+
+    def get(self, request):
+        if not _partner_names_allowed(request):
+            return JsonResponse({"error": "not_authorised"}, status=403)
+
+        raw = (request.GET.get("w") or "").strip()
+        if not raw:
+            return JsonResponse({"error": "no_worker"}, status=400)
+
+        sc = _program_scope(request)
+        matches = list(
+            sc["events"].filter(worker_hash__startswith=raw).values_list("worker_hash", flat=True).distinct()[:3]
+        ) or list(sc["works"].filter(worker_hash__startswith=raw).values_list("worker_hash", flat=True).distinct()[:3])
+        if not matches:
+            return JsonResponse({"error": "unknown_worker"}, status=404)
+        if len(matches) > 1:
+            return JsonResponse({"error": "ambiguous_worker", "candidates": len(matches)}, status=409)
+
+        full = matches[0]
+        events = sc["events"].filter(worker_hash=full)
+        works = sc["works"].filter(worker_hash=full)
+
+        agg = works.aggregate(
+            works=Count("id"),
+            approved=Count("id", filter=Q(status="approved")),
+            usd=Sum("usd_to_worker"),
+        )
+        ev = events.aggregate(n=Count("id"), flagged=Count("id", filter=Q(flagged=True)), last_ts=Max("field_ts"))
+
+        from django.db.models.functions import TruncWeek
+
+        weekly = [
+            {
+                "t": int(r["bucket"].timestamp()),
+                "works": r["n"],
+                "usd": float(r["usd"] or 0),
+            }
+            for r in works.filter(created_ts__gte=timezone.now() - timedelta(weeks=WEEKLY_WEEKS))
+            .annotate(bucket=TruncWeek("created_ts"))
+            .values("bucket")
+            .annotate(n=Count("id"), usd=Sum("usd_to_worker"))
+            .order_by("bucket")
+            if r["bucket"] is not None
+        ]
+
+        return JsonResponse(
+            {
+                "generated_at": timezone.now().isoformat(),
+                "worker": raw[:6],
+                "org": sc["org"].slug if sc["org"] is not None else "",
+                "totals": {
+                    "works": agg["works"] or 0,
+                    "approved": agg["approved"] or 0,
+                    "approval_rate": ((agg["approved"] or 0) / agg["works"]) if agg["works"] else None,
+                    "usd": float(agg["usd"] or 0),
+                    "events": ev["n"] or 0,
+                    "flagged": ev["flagged"] or 0,
+                    "flag_rate": ((ev["flagged"] or 0) / ev["n"]) if ev["n"] else None,
+                    "last_ts": int(ev["last_ts"].timestamp()) if ev.get("last_ts") else None,
+                },
+                "by_status": {
+                    r["status"]: r["n"] for r in works.values("status").annotate(n=Count("id")).order_by("-n")
+                },
+                "by_flag": {
+                    r["flag_type"]: r["n"]
+                    for r in events.exclude(flag_type="").values("flag_type").annotate(n=Count("id")).order_by("-n")
+                },
+                "by_service": [
+                    {"service": r["service_slug"], "name": service_label(r["service_slug"]), "works": r["n"]}
+                    for r in works.exclude(service_slug="")
+                    .values("service_slug")
+                    .annotate(n=Count("id"))
+                    .order_by("-n")[:6]
+                ],
+                "weekly": weekly,
+                # Same shape and same town-scale treatment the ticker already
+                # applies; adds no exposure beyond what /api/events/ returns.
+                "recent": [
+                    {
+                        "t": int(e.field_ts.timestamp()),
+                        "lat": round(e.lat, 4) if e.lat is not None else None,
+                        "lon": round(e.lon, 4) if e.lon is not None else None,
+                        "status": e.status,
+                        "flag": e.flag_type or None,
+                        "service": e.service_slug or None,
+                    }
+                    for e in events.order_by("-field_ts")[:60]
+                ],
             }
         )

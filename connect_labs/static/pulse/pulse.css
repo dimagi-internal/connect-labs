@@ -762,7 +762,7 @@
 .pulse-tick-head,
 .trow {
   display: grid;
-  grid-template-columns: 94px 128px minmax(0, 1fr) 116px 96px 82px;
+  grid-template-columns: 94px 116px minmax(0, 1fr) 150px 112px 74px 78px;
   gap: 14px;
 }
 .pulse-tick-head {
@@ -1367,4 +1367,345 @@
 .pulse-maphint b {
   color: var(--ink-2);
   font-weight: 500;
+}
+
+/* ── drill-down windows ──────────────────────────────────────────────────
+   A partner window, and a worker window stacked on top of it. Both are
+   overlays on the live display rather than separate pages: the map keeps
+   running underneath, the figures keep updating, and closing returns you to
+   exactly the frame you left. */
+.pulse-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(4, 2, 20, 0.62);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  animation: scrim-in 180ms ease-out both;
+}
+@keyframes scrim-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.pulse-win {
+  position: fixed;
+  z-index: 41;
+  top: 4vh;
+  left: 50%;
+  width: min(1080px, 92vw);
+  max-height: 92vh;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(142, 161, 255, 0.34);
+  border-radius: 7px;
+  background: linear-gradient(
+    168deg,
+    rgba(29, 21, 83, 0.97) 0%,
+    rgba(12, 7, 46, 0.985) 55%,
+    rgba(8, 4, 42, 0.99) 100%
+  );
+  box-shadow:
+    0 40px 90px -20px rgba(0, 0, 0, 0.9),
+    inset 0 1px 0 rgba(174, 190, 255, 0.16);
+  animation: win-in 220ms cubic-bezier(0.16, 0.86, 0.3, 1) both;
+}
+/* The worker window sits ON the partner window, deliberately offset so the
+   one underneath stays visible — you are inside a partner, looking at one of
+   its workers, and the stack should say so. */
+.pulse-win[data-depth='2'] {
+  top: 9vh;
+  width: min(880px, 88vw);
+  max-height: 84vh;
+  z-index: 43;
+}
+.pulse-scrim[data-depth='2'] {
+  z-index: 42;
+  background: rgba(4, 2, 20, 0.5);
+}
+@keyframes win-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(14px) scale(0.985);
+  }
+}
+
+.pulse-win-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px 18px 13px;
+  border-bottom: 1px solid var(--rule);
+  flex: none;
+}
+.pulse-win-title {
+  min-width: 0;
+  flex: 1;
+}
+.pulse-win-title h2 {
+  margin: 0 0 3px;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+  color: var(--ink);
+}
+.pulse-win-title h2[data-slug='1'] {
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+.pulse-win-sub {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.pulse-win-sub b {
+  color: var(--brand-sky);
+  font-weight: 500;
+}
+.pulse-win-close {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 6px 11px;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background: var(--panel);
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: all 0.18s;
+}
+.pulse-win-close:hover {
+  color: var(--ink);
+  border-color: var(--ink-3);
+}
+.pulse-win-close:focus-visible {
+  outline: 2px solid var(--light);
+  outline-offset: 1px;
+}
+
+.pulse-win-body {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 15px 18px 18px;
+  min-height: 0;
+}
+
+.pulse-win-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+  gap: 1px;
+  background: var(--rule-soft);
+  border: 1px solid var(--rule-soft);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+.pulse-win-kpis > div {
+  background: var(--panel);
+  padding: 11px 13px;
+}
+.pulse-win-kpis .wk-l {
+  display: block;
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin-bottom: 3px;
+}
+.pulse-win-kpis .wk-v {
+  font-variant-numeric: tabular-nums;
+  font-size: 21px;
+  font-weight: 600;
+  line-height: 1.05;
+  color: var(--ink);
+}
+.pulse-win-kpis .wk-v.gold {
+  color: var(--light);
+}
+.pulse-win-kpis .wk-v small {
+  font-size: 13px;
+  opacity: 0.75;
+}
+
+.pulse-win-sect {
+  margin-bottom: 16px;
+}
+.pulse-win-sect > .pulse-lbl {
+  display: block;
+  margin-bottom: 7px;
+}
+
+/* Weekly delivery, taller than the card's sparkline because this window has
+   the room to make a trend readable rather than merely present. */
+.pulse-win-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 92px;
+  padding: 6px 8px;
+  border: 1px solid var(--rule-soft);
+  border-radius: 4px;
+  background: rgba(8, 4, 42, 0.5);
+}
+.pulse-win-chart i {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 1px;
+  border-radius: 1px 1px 0 0;
+  background: linear-gradient(
+    180deg,
+    rgba(254, 175, 49, 0.95),
+    rgba(184, 125, 28, 0.3)
+  );
+  transition: height 0.4s ease;
+}
+.pulse-win-chart i[data-partial='1'] {
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(254, 175, 49, 0.5) 0 2px,
+    rgba(254, 175, 49, 0.12) 2px 4px
+  );
+}
+
+/* Worker roster. A table because it is a table — sortable columns of like
+   quantities, which a card grid would only make harder to compare. */
+.pulse-roster {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+.pulse-roster th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  text-align: left;
+  padding: 7px 9px;
+  font-family: var(--mono);
+  font-size: 8.5px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  background: var(--panel-2);
+  border-bottom: 1px solid var(--rule);
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+}
+.pulse-roster th:hover {
+  color: var(--ink-2);
+}
+.pulse-roster th[aria-sort]:not([aria-sort='none'])::after {
+  content: '▾';
+  margin-left: 4px;
+  color: var(--light);
+}
+.pulse-roster th[aria-sort='ascending']::after {
+  content: '▴';
+}
+.pulse-roster td {
+  padding: 7px 9px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+  border-bottom: 1px solid var(--rule-soft);
+  white-space: nowrap;
+}
+.pulse-roster tbody tr {
+  cursor: pointer;
+  transition: background 0.14s;
+}
+.pulse-roster tbody tr:hover {
+  background: rgba(142, 161, 255, 0.09);
+}
+.pulse-roster tbody tr:focus-visible {
+  outline: 2px solid var(--light);
+  outline-offset: -2px;
+}
+.pulse-roster .rw-id {
+  font-family: var(--mono);
+  color: var(--ink);
+}
+.pulse-roster .rw-num {
+  text-align: right;
+}
+/* A quality column reads faster as a bar than as a number, but the number
+   stays: a bar alone cannot be quoted. */
+.pulse-bar {
+  display: inline-block;
+  width: 46px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--rule-soft);
+  margin-left: 7px;
+  vertical-align: middle;
+  overflow: hidden;
+}
+.pulse-bar i {
+  display: block;
+  height: 100%;
+  background: var(--ok);
+}
+.pulse-bar i[data-low='1'] {
+  background: var(--warn);
+}
+.pulse-bar i[data-low='2'] {
+  background: var(--crit);
+}
+
+.pulse-win-note {
+  font-family: var(--mono);
+  font-size: 9px;
+  line-height: 1.5;
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+  margin-top: 10px;
+}
+.pulse-win-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.pulse-win-live i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ok);
+  animation: pulse-breathe 1.9s ease-in-out infinite;
+}
+
+/* The ticker's partner column — the other way into a partner window. */
+.t-org {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--brand-sky);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.t-org:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+
+@media (max-width: 900px) {
+  .pulse-win {
+    top: 2vh;
+    width: 96vw;
+    max-height: 96vh;
+  }
+  .pulse-win[data-depth='2'] {
+    top: 5vh;
+    width: 94vw;
+  }
 }

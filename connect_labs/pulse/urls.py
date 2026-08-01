@@ -10,6 +10,9 @@ urlpatterns = [
     path("api/events/", api.EventsView.as_view(), name="api_events"),
     path("api/replay/", api.ReplayView.as_view(), name="api_replay"),
     path("api/grid/", api.GridView.as_view(), name="api_grid"),
+    # Drill-down, fetched on click rather than polled with the summary.
+    path("api/partner/", api.PartnerView.as_view(), name="api_partner"),
+    path("api/worker/", api.WorkerView.as_view(), name="api_worker"),
     # Authenticated views.
     path("", views.PulseIndexView.as_view(), name="index"),
     path("v/<slug:layout>/", views.PulseDisplayView.as_view(), name="display"),
