@@ -38,6 +38,7 @@
       this.mode = this.opts.mode;
       this.program = this.opts.program || null;
       this.org = this.opts.org || null;
+      this.service = this.opts.service || null;
       this.speed = this.opts.speed;
       this.playing = true;
 
@@ -161,6 +162,13 @@
       const next = orgSlug || null;
       if (next === this.org) return;
       this.org = next;
+      await this._applyFilter();
+    }
+
+    async setService(slug) {
+      const next = slug || null;
+      if (next === this.service) return;
+      this.service = next;
       await this._applyFilter();
     }
 

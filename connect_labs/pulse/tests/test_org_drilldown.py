@@ -59,6 +59,7 @@ def portfolio(db, settings, django_user_model):
         program_id=10,
         country="NG",
         lifetime_visit_count=1000,
+        service_slug="chc",
         is_active=True,
     )
     PulseOpportunity.objects.create(
@@ -68,6 +69,7 @@ def portfolio(db, settings, django_user_model):
         program_id=10,
         country="NG",
         lifetime_visit_count=500,
+        service_slug="chc",
         is_active=True,
     )
     PulseOpportunity.objects.create(
@@ -77,6 +79,7 @@ def portfolio(db, settings, django_user_model):
         program_id=20,
         country="UG",
         lifetime_visit_count=300,
+        service_slug="kmc",
         is_active=True,
     )
 
@@ -462,3 +465,66 @@ class TestOrgGridNarrowing:
             lifetime_visit_count=5,
         )
         assert viewer.get(reverse("pulse:api_grid"), {"org": "connect-nigeria"}).json()["exact"] is False
+
+
+@pytest.mark.django_db
+class TestServiceFilter:
+    """Filtering by delivery type — Connect's own service taxonomy.
+
+    A different axis from ``program``: a programme is one funder's engagement,
+    a delivery type is the kind of work. "All the Kangaroo Mother Care on the
+    platform" spans many programmes and many partners, and before this was only
+    answerable by reading a breakdown rather than by narrowing to it.
+    """
+
+    def test_narrows_every_spine(self, viewer, portfolio):
+        data = summary(viewer, service="chc")
+        assert data["service"]["slug"] == "chc"
+        assert data["service"]["name"] == "Child Health Campaign"
+        assert data["stored"]["events"] == 2
+        assert data["money"]["works"] == 2
+
+    def test_a_filtered_header_is_recomputed(self, viewer, portfolio):
+        """Same rule as the other two filters: leaving the whole estate's
+        figures above one delivery type is a true number answering a question
+        nobody asked."""
+        assert summary(viewer)["scope"]["opportunities"] == 501
+        assert summary(viewer, service="kmc")["scope"]["opportunities"] == 1
+
+    def test_composes_with_partner_and_programme(self, viewer, portfolio):
+        """Three filters, one intersection. If any silently cleared another the
+        controls would disagree about what is on screen."""
+        both = summary(viewer, service="kmc", org="connect-nigeria")
+        assert both["stored"]["events"] == 0
+        assert both["service"]["slug"] == "kmc"
+        assert both["org"]["slug"] == "connect-nigeria"
+
+    def test_an_unknown_type_is_ignored_not_an_error(self, viewer, portfolio):
+        data = summary(viewer, service="not-a-service")
+        assert data["service"] is None
+        assert data["scope"]["opportunities"] == 501
+
+    def test_the_menu_only_offers_types_with_delivery(self, viewer, portfolio):
+        """SERVICE_LABELS carries more names than there is work for; offering
+        one with nothing behind it resolves to a blank screen."""
+        slugs = {v["slug"] for v in summary(viewer)["services"]}
+        assert "chc" in slugs and "kmc" in slugs
+        assert "readers" not in slugs  # labelled, but no delivery in this fixture
+
+    def test_the_menu_is_available_without_partner_entitlement(self, client, portfolio):
+        """A delivery type is a category, not a partner identity, so an
+        anonymised link keeps this control even though it loses the partner
+        one."""
+        data = summary(client)
+        assert data["orgs"] == []
+        assert {v["slug"] for v in data["services"]}
+
+    def test_the_map_narrows_exactly_for_a_delivery_type(self, viewer, portfolio):
+        """Cells key on service_slug directly, so unlike the partner filter
+        nothing here is inferred and the match is exact."""
+        PulseGridCell.objects.create(lat_q=1100, lon_q=760, service_slug="chc", program_id=10, n=9, country="NG")
+        PulseGridCell.objects.create(lat_q=-100, lon_q=3000, service_slug="kmc", program_id=20, n=4, country="UG")
+
+        res = viewer.get(reverse("pulse:api_grid"), {"service": "chc"}).json()
+        assert len(res["cells"]) == 1
+        assert res["exact"] is True

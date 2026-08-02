@@ -39,6 +39,15 @@ would put a "Connect Labs" navigation bar above a funder-facing screen.
         <button id="btn-mode" type="button">Go live</button>
       </div>
 
+      {# Connect's delivery taxonomy — a different axis from Programme: a #}
+      {# programme is one engagement, a delivery type is the kind of work. #}
+      <label class="pulse-progfilter">
+        <span class="pulse-lbl">Service</span>
+        <select id="svc-filter" aria-label="Filter by delivery type">
+          <option value="">All services</option>
+        </select>
+      </label>
+
       {# Populated from the summary payload, so the menu can never offer a #}
       {# programme the server would refuse to scope to.                    #}
       <label class="pulse-progfilter">
