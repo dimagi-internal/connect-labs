@@ -135,6 +135,20 @@ would put a "Connect Labs" navigation bar above a funder-facing screen.
       <div class="pulse-transport">
         {# Speeds only pace replay, so they live with the timeline. Pause and #}
         {# the live/replay switch moved up beside the clock they refer to.    #}
+        {# Drag on the histogram to hold the replay window open over a chosen #}
+        {# stretch. Without it the loop is whatever span the data occupies.    #}
+        <div class="pulse-brush">
+          <div class="pulse-brush-track" id="brush" role="slider"
+               aria-label="Replay range" tabindex="0"
+               aria-valuetext="Full window">
+            <div class="pulse-brush-bars" id="brush-bars"></div>
+            <div class="pulse-brush-sel" id="brush-sel" hidden></div>
+            <div class="pulse-brush-head" id="brush-head" hidden></div>
+          </div>
+          <span class="pulse-brush-read" id="brush-read">Full window</span>
+          <button class="pulse-brush-clear" id="brush-clear" type="button" hidden>Clear</button>
+        </div>
+
         <div class="pulse-controls" id="speed-controls">
           <button data-speed="60">60&times;</button>
           <button data-speed="240">240&times;</button>

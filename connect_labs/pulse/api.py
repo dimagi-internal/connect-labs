@@ -13,8 +13,10 @@ green badge over data that stopped arriving on Tuesday. ``summary`` returns
 from __future__ import annotations
 
 import math
-from datetime import timedelta
+from datetime import datetime, timedelta
+from datetime import timezone as dt_timezone
 
+from django.conf import settings
 from django.db.models import Count, Max, Q, Sum
 from django.http import JsonResponse
 from django.utils import timezone
@@ -611,6 +613,25 @@ def _program_menu():
 WEEKLY_WEEKS = 26
 
 
+def _activity_strip(sc, hours: int = 24 * 30) -> list:
+    """Hourly delivery across the retention window, for the range picker.
+
+    Drawn from the rollups, which exist precisely so no card scans raw events.
+    Its purpose is discovery: a partner with two visits all week should LOOK
+    like that before anyone drags a range over it, rather than after.
+    """
+    since = timezone.now() - timedelta(hours=hours)
+    return [
+        {"t": int(r["bucket_hour"].timestamp()), "n": r["n"]}
+        for r in sc["rollups"]
+        .filter(bucket_hour__gte=since)
+        .values("bucket_hour")
+        .annotate(n=Sum("n"))
+        .order_by("bucket_hour")
+        if r["bucket_hour"] is not None
+    ]
+
+
 def _weekly_series(sc):
     """Weekly delivery and money for the current scope, from the works spine.
 
@@ -853,6 +874,8 @@ class SummaryView(View):
                 "services": _service_menu(),
                 "orgs": _org_menu(request),
                 "weekly": _weekly_series(sc),
+                "activity": _activity_strip(sc),
+                "retention_days": getattr(settings, "PULSE_EVENT_RETENTION_DAYS", 30),
                 "money": {
                     "to_workers": float(money["to_workers"] or 0),
                     "to_orgs": float(money["to_orgs"] or 0),
@@ -1011,10 +1034,30 @@ class ReplayView(View):
     """
 
     def get(self, request):
-        hours = min(int(request.GET.get("hours", DEFAULT_REPLAY_HOURS)), 24 * 14)
         limit = min(int(request.GET.get("limit", MAX_EVENTS)), MAX_EVENTS)
-        end = timezone.now()
-        start = end - timedelta(hours=hours)
+
+        # An explicit range wins over the rolling one. The rolling window only
+        # bounds the QUERY -- the loop a viewer actually sees is the span
+        # between the first and last event that came back, so a partner with two
+        # visits ten minutes apart loops over ten minutes however many hours
+        # were asked for. Being able to name the range is the only way to say
+        # "show me the whole of Tuesday" when Tuesday is mostly empty.
+        raw_from = (request.GET.get("from") or "").strip()
+        raw_to = (request.GET.get("to") or "").strip()
+        start = end = None
+        if raw_from and raw_to:
+            try:
+                start = datetime.fromtimestamp(int(raw_from), tz=dt_timezone.utc)
+                end = datetime.fromtimestamp(int(raw_to), tz=dt_timezone.utc)
+            except (TypeError, ValueError, OSError, OverflowError):
+                start = end = None
+            if start and end and end <= start:
+                start = end = None
+        if start is None:
+            hours = min(int(request.GET.get("hours", DEFAULT_REPLAY_HOURS)), 24 * 14)
+            end = timezone.now()
+            start = end - timedelta(hours=hours)
+        hours = max((end - start).total_seconds() / 3600.0, 0.0)
 
         sc = _program_scope(request)
         partners = _partner_names_allowed(request)
