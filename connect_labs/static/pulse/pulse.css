@@ -1866,3 +1866,154 @@
     display: none;
   }
 }
+
+/* ── opportunities inside a partner window ───────────────────────────────
+   A partner is not one thing: on real data they run between one and
+   ninety-one engagements, and a window that renders both the same answers
+   "how is this partner doing" without ever saying "at what".
+
+   One opportunity renders as a statement, several as a selectable grid. A
+   list of one is chrome around a fact. */
+.pulse-opp-solo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 14px;
+  padding: 11px 13px;
+  border: 1px solid var(--rule-soft);
+  border-radius: 4px;
+  background: rgba(8, 4, 42, 0.5);
+}
+.pulse-opp-solo .os-name {
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  flex: 1 1 100%;
+  min-width: 0;
+}
+.pulse-opp-solo .os-f {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  color: var(--ink-3);
+}
+.pulse-opp-solo .os-f b {
+  color: var(--ink-2);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.pulse-opp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(224px, 1fr));
+  gap: 8px;
+}
+.pulse-opp {
+  padding: 9px 11px 8px;
+  border: 1px solid var(--rule-soft);
+  border-radius: 4px;
+  background: rgba(8, 4, 42, 0.5);
+  cursor: pointer;
+  transition:
+    border-color 0.16s,
+    background 0.16s;
+  min-width: 0;
+}
+.pulse-opp:hover {
+  border-color: var(--ink-3);
+  background: rgba(23, 17, 77, 0.6);
+}
+.pulse-opp:focus-visible {
+  outline: 2px solid var(--light);
+  outline-offset: 1px;
+}
+.pulse-opp[aria-pressed='true'] {
+  border-color: var(--light);
+  background: rgba(254, 175, 49, 0.09);
+}
+.pulse-opp-name {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--ink);
+  /* Opportunity names are operational and long ("KMC - UG - PIPN - P1 - Apr
+     26"); two lines then ellipsis keeps the grid even without inventing a
+     shorter name for something Connect already named. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-bottom: 4px;
+  min-height: 2.5em;
+}
+.pulse-opp-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin-bottom: 7px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.pulse-opp-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--idle);
+}
+.pulse-opp-dot[data-live='1'] {
+  background: var(--ok);
+  box-shadow: 0 0 6px 1px rgba(53, 179, 157, 0.5);
+}
+.pulse-opp-figs {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 6px;
+}
+.pulse-opp-figs > div {
+  min-width: 0;
+}
+.pulse-opp-figs .of-l {
+  display: block;
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.pulse-opp-figs .of-v {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.pulse-opp-figs .of-v.gold {
+  color: var(--light);
+}
+.pulse-opp-spark {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  height: 18px;
+}
+.pulse-opp-spark i {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 1px;
+  border-radius: 1px 1px 0 0;
+  background: var(--light-dim);
+}
+.pulse-opp-spark i[data-partial='1'] {
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(254, 175, 49, 0.45) 0 2px,
+    rgba(254, 175, 49, 0.1) 2px 4px
+  );
+}

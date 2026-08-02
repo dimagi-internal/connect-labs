@@ -137,6 +137,122 @@
     return res.json();
   }
 
+  /* One engagement reads as a statement; several read as a grid you can pick
+     from. Rendering a single opportunity as a one-row list is chrome around a
+     fact, and rendering ninety-one as a paragraph is unreadable — the partner
+     window has to do both, because real partners span that whole range. */
+  function opportunities(d, selected) {
+    const rows = d.opportunities || [];
+    if (!rows.length) return '';
+
+    const spark = (o) => {
+      const v = o.spark || [];
+      if (!v.length) return '';
+      const max = Math.max(...v, 1);
+      const last = v.length - 1;
+      return (
+        '<div class="pulse-opp-spark">' +
+        v
+          .map(
+            (n, i) =>
+              '<i style="height:' +
+              (n ? Math.max((n / max) * 100, 6).toFixed(1) : 0) +
+              '%"' +
+              (i === last ? ' data-partial="1"' : '') +
+              '></i>',
+          )
+          .join('') +
+        '</div>'
+      );
+    };
+
+    const where = (o) =>
+      [
+        o.service_name,
+        (store.summary?.labels?.countries || {})[o.country] || o.country,
+      ]
+        .filter(Boolean)
+        .join(' \u00b7 ');
+
+    if (rows.length === 1) {
+      const o = rows[0];
+      return (
+        '<div class="pulse-win-sect"><span class="pulse-lbl">Its opportunity</span>' +
+        '<div class="pulse-opp-solo">' +
+        '<span class="os-name">' +
+        esc(o.name) +
+        '</span>' +
+        '<span class="os-f">' +
+        esc(where(o)) +
+        '</span>' +
+        '<span class="os-f">services <b>' +
+        nf.format(o.visits) +
+        '</b></span>' +
+        '<span class="os-f">paid <b>' +
+        usdCompact(o.usd_total) +
+        '</b></span>' +
+        '<span class="os-f">approved <b>' +
+        pct(o.approval_rate) +
+        '</b></span>' +
+        '<span class="os-f">workers <b>' +
+        nf.format(o.workers) +
+        '</b></span>' +
+        '<span class="os-f">' +
+        (o.active
+          ? 'active'
+          : 'ended' + (o.end_date ? ' ' + esc(o.end_date) : '')) +
+        ' \u00b7 last delivery ' +
+        esc(ago(o.last_ts)) +
+        '</span>' +
+        '</div></div>'
+      );
+    }
+
+    return (
+      '<div class="pulse-win-sect"><span class="pulse-lbl">' +
+      nf.format(rows.length) +
+      ' opportunities \u00b7 click one to narrow this window' +
+      (selected ? ' \u00b7 showing one' : '') +
+      '</span>' +
+      '<div class="pulse-opp-grid">' +
+      rows
+        .map(
+          (o) =>
+            '<div class="pulse-opp" role="button" tabindex="0" data-opp="' +
+            o.id +
+            '" aria-pressed="' +
+            (selected === o.id ? 'true' : 'false') +
+            '" title="' +
+            esc(o.name) +
+            '">' +
+            '<div class="pulse-opp-name">' +
+            esc(o.name) +
+            '</div>' +
+            '<div class="pulse-opp-meta">' +
+            '<i class="pulse-opp-dot" data-live="' +
+            (o.last_ts ? '1' : '0') +
+            '"></i>' +
+            esc(where(o)) +
+            '</div>' +
+            '<div class="pulse-opp-figs">' +
+            '<div><span class="of-l">Services</span><span class="of-v">' +
+            nf.format(o.visits) +
+            '</span></div>' +
+            '<div><span class="of-l">Paid</span><span class="of-v gold">' +
+            usdCompact(o.usd_total) +
+            '</span></div>' +
+            '<div><span class="of-l">Appr</span><span class="of-v">' +
+            pct(o.approval_rate) +
+            '</span></div>' +
+            '</div>' +
+            spark(o) +
+            '</div>',
+        )
+        .join('') +
+      '</div></div>'
+    );
+  }
+
   /* ── partner window ──────────────────────────────────────────────── */
   function openPartner(store, slug) {
     const depth = 0;
@@ -144,6 +260,8 @@
     stack.push(win);
 
     let sort = { key: 'last_ts', dir: -1 };
+    // Which engagement the window is narrowed to, if any.
+    let selectedOpp = null;
 
     const paint = (d) => {
       const p = d.partner || {};
@@ -184,8 +302,11 @@
           ['Units of work', nf.format(m.works || 0)],
           ['Workers', nf.format(d.worker_count || 0)],
         ]) +
+        opportunities(d, selectedOpp) +
         `<div class="pulse-win-sect">
-           <span class="pulse-lbl">Delivery, last 26 weeks</span>
+           <span class="pulse-lbl">Delivery, last 26 weeks${
+             selectedOpp ? ' · this opportunity' : ''
+           }</span>
            ${chart(d.weekly || [], (x) => x.works)}
          </div>` +
         `<div class="pulse-win-sect">
@@ -250,6 +371,25 @@
           paint(win.last);
         }),
       );
+      /* Selecting an engagement re-fetches rather than filtering what is
+         held: the roster, the chart and the KPIs are all server-side
+         aggregates, so a client-side filter would leave the partner's totals
+         above one opportunity's workers. */
+      const pick = (el2) => {
+        const id = Number(el2.dataset.opp);
+        selectedOpp = selectedOpp === id ? null : id;
+        load();
+      };
+      win.body.querySelectorAll('.pulse-opp[data-opp]').forEach((el2) => {
+        el2.addEventListener('click', () => pick(el2));
+        el2.addEventListener('keydown', (ev) => {
+          if (ev.key === 'Enter' || ev.key === ' ') {
+            ev.preventDefault();
+            pick(el2);
+          }
+        });
+      });
+
       const open = (tr) =>
         openWorker(store, tr.dataset.w, p.slug, p.name || p.slug);
       win.body
@@ -267,7 +407,9 @@
 
     const load = async () => {
       try {
-        const d = await fetchJSON(store, '/api/partner/', { org: slug });
+        const params = { org: slug };
+        if (selectedOpp) params.opportunity = selectedOpp;
+        const d = await fetchJSON(store, '/api/partner/', params);
         win.last = d;
         paint(d);
       } catch (err) {

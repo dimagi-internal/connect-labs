@@ -45,6 +45,10 @@ def partner(db, settings, django_user_model):
         org_slug="janna-health",
         program_id=10,
         country="NG",
+        # Ingest always sets a service_slug (Connect's delivery_type, falling
+        # back to a name regex), so a fixture without one is not a mirror of
+        # what production stores.
+        service_slug="chc",
         lifetime_visit_count=500,
         is_active=True,
     )
@@ -200,3 +204,82 @@ class TestDrilldownFailsClosed:
         res = client.get(reverse("pulse:api_partner"), {"org": partner, "token": token.token})
         assert res.status_code == 200
         assert res.json()["worker_count"] == 2
+
+
+@pytest.mark.django_db
+class TestOpportunityBreakdown:
+    """A partner is not one thing.
+
+    On real data partners run between one and ninety-one opportunities, and the
+    window rendered both identically — answering "how is this partner doing"
+    without ever saying "at what".
+    """
+
+    @pytest.fixture
+    def second_opp(self, partner):
+        now = timezone.now()
+        PulseOpportunity.objects.create(
+            opportunity_id=2,
+            name="KMC UG - P2",
+            org_slug="janna-health",
+            program_id=10,
+            country="UG",
+            service_slug="kmc",
+            lifetime_visit_count=90,
+            is_active=False,
+        )
+        PulseWork.objects.create(
+            work_key="c" * 64,
+            opportunity_id=2,
+            program_id=10,
+            org_slug="janna-health",
+            worker_hash="cccc3333" + "0" * 8,
+            status="approved",
+            created_ts=now,
+            service_slug="kmc",
+            country="UG",
+            usd_to_worker="3.00",
+            usd_to_org="1.50",
+        )
+        return partner
+
+    def test_a_single_opportunity_partner_still_lists_it(self, viewer, partner):
+        rows = viewer.get(reverse("pulse:api_partner"), {"org": partner}).json()["opportunities"]
+        assert len(rows) == 1
+        assert rows[0]["name"] == "CHC NG"
+
+    def test_each_opportunity_carries_its_own_figures(self, viewer, second_opp):
+        rows = {
+            o["id"]: o for o in viewer.get(reverse("pulse:api_partner"), {"org": second_opp}).json()["opportunities"]
+        }
+        assert rows[1]["works"] == 6 and rows[1]["service_name"] == "Child Health Campaign"
+        assert rows[2]["works"] == 1 and rows[2]["service_name"] == "Kangaroo Mother Care"
+        assert rows[2]["usd_total"] == pytest.approx(4.5)
+        assert rows[2]["active"] is False
+
+    def test_opportunity_names_are_connects_own_verbatim(self, viewer, second_opp):
+        """Shortening one in labs would invent a name for something Connect and
+        the partner both already call something."""
+        names = {
+            o["name"] for o in viewer.get(reverse("pulse:api_partner"), {"org": second_opp}).json()["opportunities"]
+        }
+        assert names == {"CHC NG", "KMC UG - P2"}
+
+    def test_selecting_one_narrows_the_whole_window(self, viewer, second_opp):
+        """The roster, chart and KPIs are server-side aggregates, so selecting
+        an engagement has to re-scope them — a client-side filter would leave
+        the partner's totals sitting above one opportunity's workers."""
+        data = viewer.get(reverse("pulse:api_partner"), {"org": second_opp, "opportunity": 2}).json()
+        assert data["money"]["works"] == 1
+        assert data["money"]["total_paid"] == pytest.approx(4.5)
+        assert {w["worker"] for w in data["workers"]} == {"cccc33"}
+
+    def test_an_unknown_opportunity_is_ignored_not_an_error(self, viewer, second_opp):
+        data = viewer.get(reverse("pulse:api_partner"), {"org": second_opp, "opportunity": 99999}).json()
+        assert data["money"]["works"] == 7
+
+    def test_currently_delivering_opportunities_come_first(self, viewer, second_opp):
+        """Same ordering rule as the partner and programme menus, so "recent"
+        means one thing across the app."""
+        rows = viewer.get(reverse("pulse:api_partner"), {"org": second_opp}).json()["opportunities"]
+        assert rows[0]["last_ts"] is not None

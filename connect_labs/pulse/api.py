@@ -188,6 +188,14 @@ def _program_scope(request):
     service_raw = (request.GET.get("service") or "").strip().lower()
     service = service_raw if service_raw in SERVICE_LABELS else ""
 
+    # A single opportunity. Composes like the rest, and is what a partner
+    # window uses when one of its engagements is selected -- a partner with 91
+    # of them is not one thing, and the roster underneath has to follow.
+    opp_raw = (request.GET.get("opportunity") or "").strip()
+    opportunity = None
+    if opp_raw.isdigit():
+        opportunity = PulseOpportunity.objects.filter(opportunity_id=int(opp_raw)).first()
+
     events = PulseEvent.objects.all()
     works = PulseWork.objects.all()
     opps = PulseOpportunity.objects.all()
@@ -204,6 +212,13 @@ def _program_scope(request):
         rollups = rollups.filter(
             opportunity_id__in=PulseOpportunity.objects.filter(org_slug=org.slug).values("opportunity_id")
         )
+
+    if opportunity is not None:
+        oid = opportunity.opportunity_id
+        events = events.filter(opportunity_id=oid)
+        works = works.filter(opportunity_id=oid)
+        opps = opps.filter(opportunity_id=oid)
+        rollups = rollups.filter(opportunity_id=oid)
 
     if service:
         events = events.filter(service_slug=service)
@@ -231,6 +246,7 @@ def _program_scope(request):
         "program": program,
         "org": org,
         "service": service,
+        "opportunity": opportunity,
         "events": events,
         "works": works,
         "opps": opps,
@@ -248,7 +264,7 @@ def _scope_for(sc):
     inferred poller and the head-sliced replay -- a true number answering a
     question nobody asked.
     """
-    if sc["program"] is None and sc["org"] is None and not sc["service"]:
+    if sc["program"] is None and sc["org"] is None and not sc["service"] and sc["opportunity"] is None:
         row = PulseScalar.objects.filter(key="scope").first()
         return row.value if row else {}
 
@@ -440,7 +456,7 @@ def _org_menu(request):
             usd_org=Sum("usd_to_org"),
         )
     }
-    spark_of = _weekly_spark_by_org()
+    spark_of = _weekly_spark_by()
 
     # Built from who actually DELIVERS, with names joined on where Connect gave
     # us one. Iterating PulseOrganization instead would list only the 10
@@ -496,8 +512,8 @@ def _org_menu(request):
     return menu
 
 
-def _weekly_spark_by_org() -> dict:
-    """A fixed-length weekly delivery series per partner, oldest bucket first.
+def _weekly_spark_by(field: str = "org_slug", qs=None) -> dict:
+    """A fixed-length weekly delivery series per group, oldest bucket first.
 
     Padded to ``WEEKLY_WEEKS`` slots with zeroes for the weeks a partner did
     nothing, so every partner's sparkline shares one x-axis. Without the
@@ -511,21 +527,21 @@ def _weekly_spark_by_org() -> dict:
     start = (now - timedelta(weeks=WEEKLY_WEEKS - 1)).replace(hour=0, minute=0, second=0, microsecond=0)
     start = start - timedelta(days=start.weekday())
 
+    base = PulseWork.objects.all() if qs is None else qs
     rows = (
-        PulseWork.objects.exclude(org_slug="")
-        .filter(created_ts__gte=start)
+        base.filter(created_ts__gte=start)
         .annotate(bucket=TruncWeek("created_ts"))
-        .values("org_slug", "bucket")
+        .values(field, "bucket")
         .annotate(n=Count("id"))
     )
-    out: dict[str, list[int]] = {}
+    out: dict = {}
     for r in rows:
-        if r["bucket"] is None:
+        if r["bucket"] is None or r[field] in (None, ""):
             continue
         idx = int((r["bucket"] - start).days // 7)
         if not (0 <= idx < WEEKLY_WEEKS):
             continue
-        out.setdefault(r["org_slug"], [0] * WEEKLY_WEEKS)[idx] = r["n"]
+        out.setdefault(r[field], [0] * WEEKLY_WEEKS)[idx] = r["n"]
     return out
 
 
@@ -1202,6 +1218,84 @@ def _worker_roster(sc) -> list:
     return rows[:WORKER_ROSTER_LIMIT]
 
 
+def _opportunity_roster(sc) -> list:
+    """The partner's engagements, one row each.
+
+    A partner is not one thing. On real data they run anywhere from one
+    opportunity to ninety-one, and a window that renders both identically
+    answers "how is this partner doing" without ever saying "at what".
+
+    Volume and money come from the works spine; recency and worker count from
+    events. `lifetime_visits` comes off the opportunity itself, which Connect
+    keeps current for free, so it survives the event retention window that the
+    other two figures are bounded by.
+    """
+    money = {
+        r["opportunity_id"]: r
+        for r in sc["works"]
+        .values("opportunity_id")
+        .annotate(
+            works=Count("id"),
+            approved=Count("id", filter=Q(status="approved")),
+            usd=Sum("usd_to_worker"),
+            usd_org=Sum("usd_to_org"),
+        )
+    }
+    live = {
+        r["opportunity_id"]: r
+        for r in sc["events"]
+        .values("opportunity_id")
+        .annotate(
+            events=Count("id"),
+            flagged=Count("id", filter=Q(flagged=True)),
+            workers=Count("worker_hash", distinct=True),
+            last_ts=Max("field_ts"),
+        )
+    }
+    spark_of = _weekly_spark_by("opportunity_id", qs=sc["works"])
+
+    rows = []
+    for opp in sc["opps"]:
+        m = money.get(opp.opportunity_id) or {}
+        e = live.get(opp.opportunity_id) or {}
+        works = m.get("works") or 0
+        approved = m.get("approved") or 0
+        events = e.get("events") or 0
+        worker = float(m.get("usd") or 0)
+        org_share = float(m.get("usd_org") or 0)
+        rows.append(
+            {
+                "id": opp.opportunity_id,
+                # Opportunity names are operational ("KMC - UG - PIPN - P1 -
+                # Apr 26") and shown verbatim: it is what the partner and
+                # Connect both call it, and shortening it in labs would invent
+                # a name for something that already has one.
+                "name": opp.name or f"Opportunity {opp.opportunity_id}",
+                "service": opp.service_slug,
+                "service_name": service_label(opp.service_slug),
+                "country": opp.country,
+                "active": bool(opp.is_active),
+                "end_date": opp.end_date.isoformat() if opp.end_date else None,
+                "visits": opp.lifetime_visit_count or 0,
+                "works": works,
+                "approved": approved,
+                "approval_rate": (approved / works) if works else None,
+                "flagged": e.get("flagged") or 0,
+                "flag_rate": ((e.get("flagged") or 0) / events) if events else None,
+                "workers": e.get("workers") or 0,
+                "usd": worker,
+                "usd_total": worker + org_share,
+                "rate": ((worker + org_share) / approved) if approved else None,
+                "last_ts": int(e["last_ts"].timestamp()) if e.get("last_ts") else None,
+                "spark": spark_of.get(opp.opportunity_id, []),
+            }
+        )
+    # Delivering now first, then by lifetime volume -- the same ordering rule
+    # the partner and programme menus use, so "recent" means one thing.
+    rows.sort(key=lambda r: (-(1 if r["last_ts"] else 0), -r["visits"]))
+    return rows
+
+
 class PartnerView(View):
     """Everything a partner window shows, for one partner.
 
@@ -1268,6 +1362,7 @@ class PartnerView(View):
                     .order_by("-n")[:8]
                 ],
                 "weekly": _weekly_series(sc),
+                "opportunities": _opportunity_roster(sc),
                 "workers": roster,
                 "worker_count": len(roster),
                 "workers_truncated": len(roster) >= WORKER_ROSTER_LIMIT,
