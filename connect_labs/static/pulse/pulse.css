@@ -1762,3 +1762,107 @@
     width: 94vw;
   }
 }
+
+/* ── replay range brush ──────────────────────────────────────────────────
+   A histogram of when delivery actually happened, with a draggable window
+   over it. The histogram is the point: a partner with two visits all week
+   should LOOK like that before anyone drags a range, not after. Without it
+   the loop silently becomes whatever span the data happens to occupy — ten
+   minutes, for a partner with two visits ten minutes apart. */
+.pulse-brush {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.pulse-brush-track {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 90px;
+  height: 26px;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background: rgba(8, 4, 42, 0.55);
+  cursor: crosshair;
+  overflow: hidden;
+  touch-action: none;
+}
+.pulse-brush-bars {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  padding: 2px;
+}
+.pulse-brush-bars i {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 1px;
+  background: var(--light-dim);
+  border-radius: 1px 1px 0 0;
+}
+/* Hours with no delivery at all are drawn as a floor rather than as nothing,
+   so an empty stretch reads as measured emptiness and not as a gap in the
+   chart. */
+.pulse-brush-bars i[data-empty='1'] {
+  min-height: 1px;
+  background: var(--rule);
+}
+.pulse-brush-sel {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(254, 175, 49, 0.16);
+  border-left: 2px solid var(--light);
+  border-right: 2px solid var(--light);
+  pointer-events: none;
+}
+/* Where the replay clock is inside the chosen range. */
+.pulse-brush-head {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--ink);
+  opacity: 0.85;
+  pointer-events: none;
+}
+.pulse-brush-read {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+.pulse-brush-read b {
+  color: var(--ink-2);
+  font-weight: 500;
+}
+.pulse-brush-clear {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 4px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background: var(--panel);
+  color: var(--ink-2);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.pulse-brush-clear:hover {
+  color: var(--ink);
+  border-color: var(--ink-3);
+}
+.pulse-brush-clear[hidden] {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .pulse-brush-read {
+    display: none;
+  }
+}

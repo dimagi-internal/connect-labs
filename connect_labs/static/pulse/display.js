@@ -227,6 +227,7 @@
     // A window is modal — the tour must not keep swapping cards behind it.
     if (!(window.PulseWindows && window.PulseWindows.isOpen()))
       Partners.tick(ts, ts - lastInteractionAt);
+    Brush.tick();
   }
 
   function initBasemap() {
@@ -607,6 +608,7 @@
     $('#s-prog').textContent = nf.format(scope.programs || 0);
     $('#s-cty').textContent = (s.money?.by_country || []).length || '—';
     paintActTitle();
+    Brush.paint(s);
   });
 
   store.on('event', ignite);
@@ -972,6 +974,159 @@
      the screen, short enough that an unattended wall display gets there. */
   const IDLE_BEFORE_TOUR = 45000;
   let lastInteractionAt = 0;
+
+  /* ═══ replay range brush ══════════════════════════
+     Drag a window over a histogram of when delivery actually happened.
+
+     This exists because the replay loop is DERIVED, not configured: the store
+     paces between the first and last event it received, so a partner with two
+     visits ten minutes apart loops over ten minutes however many hours were
+     requested. The histogram makes that legible before you drag, and the drag
+     lets you hold the window open over a chosen stretch instead.           */
+  const Brush = (() => {
+    const track = $('#brush');
+    const bars = $('#brush-bars');
+    const sel = $('#brush-sel');
+    const head = $('#brush-head');
+    const read = $('#brush-read');
+    const clear = $('#brush-clear');
+    if (!track) return { paint() {}, tick() {} };
+
+    let span = null; // [fromEpoch, toEpoch] the histogram covers
+    let drag = null;
+
+    const fmt = (ts) => {
+      const d = new Date(ts * 1000);
+      return (
+        String(d.getUTCMonth() + 1).padStart(2, '0') +
+        '-' +
+        String(d.getUTCDate()).padStart(2, '0') +
+        ' ' +
+        String(d.getUTCHours()).padStart(2, '0') +
+        ':' +
+        String(d.getUTCMinutes()).padStart(2, '0')
+      );
+    };
+    const dur = (a, b) => {
+      const h = (b - a) / 3600;
+      if (h < 1) return Math.max(1, Math.round(h * 60)) + 'm';
+      if (h < 48) return h.toFixed(h < 10 ? 1 : 0) + 'h';
+      return (h / 24).toFixed(1) + 'd';
+    };
+    const atX = (clientX) => {
+      const r = track.getBoundingClientRect();
+      const f = Math.min(Math.max((clientX - r.left) / r.width, 0), 1);
+      return span[0] + (span[1] - span[0]) * f;
+    };
+    const toPct = (ts) =>
+      (((ts - span[0]) / (span[1] - span[0])) * 100).toFixed(3) + '%';
+
+    function paintSelection() {
+      const r = store.range;
+      if (!span) return;
+      if (!r) {
+        sel.hidden = true;
+        clear.hidden = true;
+        read.textContent = 'Full window';
+        track.setAttribute('aria-valuetext', 'Full window');
+        return;
+      }
+      sel.hidden = false;
+      clear.hidden = false;
+      sel.style.left = toPct(r[0]);
+      sel.style.width =
+        (((r[1] - r[0]) / (span[1] - span[0])) * 100).toFixed(3) + '%';
+      const label =
+        fmt(r[0]) + ' \u2192 ' + fmt(r[1]) + ' \u00b7 ' + dur(r[0], r[1]);
+      read.innerHTML = '<b>' + label + '</b> UTC';
+      track.setAttribute('aria-valuetext', label);
+    }
+
+    async function commit(a, b) {
+      if (Math.abs(b - a) < 60) return; // a click, not a drag
+      try {
+        await store.setRange(Math.min(a, b), Math.max(a, b));
+      } catch (err) {
+        console.error('[pulse] range select failed', err);
+      }
+      paintSelection();
+      paintTransport();
+      paintStatus();
+    }
+
+    track.addEventListener('pointerdown', (e) => {
+      if (!span) return;
+      track.setPointerCapture(e.pointerId);
+      drag = { from: atX(e.clientX), to: atX(e.clientX) };
+    });
+    track.addEventListener('pointermove', (e) => {
+      if (!drag || !span) return;
+      drag.to = atX(e.clientX);
+      sel.hidden = false;
+      const a = Math.min(drag.from, drag.to);
+      const b = Math.max(drag.from, drag.to);
+      sel.style.left = toPct(a);
+      sel.style.width =
+        (((b - a) / (span[1] - span[0])) * 100).toFixed(3) + '%';
+      read.innerHTML =
+        '<b>' + fmt(a) + ' \u2192 ' + fmt(b) + '</b> \u00b7 ' + dur(a, b);
+    });
+    const end = () => {
+      if (!drag) return;
+      const d = drag;
+      drag = null;
+      commit(d.from, d.to);
+    };
+    track.addEventListener('pointerup', end);
+    track.addEventListener('pointercancel', end);
+    clear.addEventListener('click', async () => {
+      await store.setRange(null, null);
+      paintSelection();
+      paintTransport();
+      paintStatus();
+    });
+
+    return {
+      /* Redrawn from the summary, which carries hourly activity across the
+         whole retention window -- not just the replay window, or you could
+         never drag to a period the current loop excludes. */
+      paint(s2) {
+        const a = (s2 && s2.activity) || [];
+        if (!a.length) {
+          bars.innerHTML = '';
+          span = null;
+          return;
+        }
+        const now = Math.floor(Date.now() / 1000);
+        span = [a[0].t, Math.max(a[a.length - 1].t + 3600, now)];
+        const byHour = new Map(a.map((x) => [Math.floor(x.t / 3600), x.n]));
+        const h0 = Math.floor(span[0] / 3600);
+        const h1 = Math.floor(span[1] / 3600);
+        const max = Math.max(...a.map((x) => x.n), 1);
+        let html = '';
+        for (let h = h0; h <= h1; h++) {
+          const n = byHour.get(h) || 0;
+          html +=
+            '<i style="height:' +
+            (n ? Math.max((n / max) * 100, 6).toFixed(1) : 0) +
+            '%"' +
+            (n ? '' : ' data-empty="1"') +
+            '></i>';
+        }
+        bars.innerHTML = html;
+        paintSelection();
+      },
+      /* The playhead, so the brush doubles as the transport scrubber. */
+      tick() {
+        if (!span || !store.clock) {
+          head.hidden = true;
+          return;
+        }
+        head.hidden = false;
+        head.style.left = toPct(store.clock);
+      },
+    };
+  })();
 
   /* ═══ controls ══════════════════════════════════════════════════ */
   function wireControls() {

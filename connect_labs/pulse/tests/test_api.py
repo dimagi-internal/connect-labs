@@ -669,3 +669,52 @@ class TestTopBarFitsAndTickerAligns:
 
         widths = [int(w) for w in re.findall(r"@media\s*\(max-width:\s*(\d+)px\)", self._css())]
         assert any(1180 < w for w in widths), f"no breakpoint above 1180px: {sorted(widths)}"
+
+
+@pytest.mark.django_db
+class TestReplayRange:
+    """Choosing the replay window explicitly.
+
+    The loop a viewer sees is DERIVED, not configured: the store paces between
+    the first and last event it received, so a partner with two visits ten
+    minutes apart loops over ten minutes however many hours were requested.
+    An explicit range is the only way to hold the window open over a quiet
+    stretch — and the server has to honour it exactly, or the same collapse
+    happens again one layer down.
+    """
+
+    def test_an_explicit_range_is_honoured(self, client, populated):
+        now = timezone.now()
+        make_event(700, field_ts=now - timedelta(days=6))
+        frm = int((now - timedelta(days=7)).timestamp())
+        to = int((now - timedelta(days=5)).timestamp())
+
+        data = client.get(reverse("pulse:api_replay"), {"from": frm, "to": to}).json()
+        ids = [r[0] for r in data["events"]]
+        assert 700 in ids
+        # Events inside the default rolling window but outside the range are out.
+        assert 1 not in ids
+
+    def test_the_declared_window_matches_what_was_asked_for(self, client, populated):
+        now = timezone.now()
+        frm = int((now - timedelta(hours=6)).timestamp())
+        to = int((now - timedelta(hours=2)).timestamp())
+        w = client.get(reverse("pulse:api_replay"), {"from": frm, "to": to}).json()["window"]
+        assert w["hours"] == pytest.approx(4, abs=0.05)
+
+    def test_a_reversed_range_falls_back_rather_than_returning_nothing(self, client, populated):
+        now = int(timezone.now().timestamp())
+        data = client.get(reverse("pulse:api_replay"), {"from": now, "to": now - 3600}).json()
+        assert data["events"], "a nonsense range should degrade to the rolling window"
+
+    def test_a_malformed_range_falls_back(self, client, populated):
+        data = client.get(reverse("pulse:api_replay"), {"from": "banana", "to": "pear"}).json()
+        assert data["events"]
+
+    def test_summary_carries_an_activity_strip_for_the_picker(self, client, populated):
+        """The picker is brushed over this. Without it you would be dragging a
+        range across an empty axis with no idea where the work is."""
+        data = client.get(reverse("pulse:api_summary")).json()
+        assert data["activity"], "expected hourly activity across the retention window"
+        assert {"t", "n"} <= set(data["activity"][0])
+        assert data["retention_days"] >= 1

@@ -39,6 +39,8 @@
       this.program = this.opts.program || null;
       this.org = this.opts.org || null;
       this.service = this.opts.service || null;
+      // [fromEpoch, toEpoch] when a range is pinned, else null.
+      this.range = this.opts.range || null;
       this.speed = this.opts.speed;
       this.playing = true;
 
@@ -165,6 +167,16 @@
       await this._applyFilter();
     }
 
+    /* Pin or clear the replay range. Reloads rather than reslicing what is
+       held: the server samples ACROSS the requested window, so a different
+       window is a different sample and not a subset of this one. */
+    async setRange(from, to) {
+      const ok = from && to && to > from;
+      this.range = ok ? [Math.floor(from), Math.floor(to)] : null;
+      await this.loadReplayWindow();
+      this.emit('range', this.range);
+    }
+
     async setService(slug) {
       const next = slug || null;
       if (next === this.service) return;
@@ -172,9 +184,17 @@
       await this._applyFilter();
     }
 
+    /* Replay an explicit range when one is pinned, otherwise the rolling
+       window. The rolling window only bounds the QUERY -- the loop a viewer
+       actually sees is the span between the first and last event returned, so
+       sparse data collapses it to minutes. Naming the range is the only way to
+       hold a window open across a quiet period. */
     async loadReplayWindow(hours) {
       const h = hours || this.opts.replayHours;
-      const res = await fetch(this._url('/api/replay/', { hours: h }));
+      const params = this.range
+        ? { from: this.range[0], to: this.range[1] }
+        : { hours: h };
+      const res = await fetch(this._url('/api/replay/', params));
       if (!res.ok) throw new Error(`replay ${res.status}`);
       const payload = await res.json();
 
@@ -186,8 +206,14 @@
       this.ingest = payload.ingest || this.ingest;
 
       if (this.events.length) {
-        this.windowStart = this.events[0].field_ts;
-        this.windowEnd = this.events[this.events.length - 1].field_ts;
+        /* With a pinned range the window IS the range, not the span of what
+           came back. That is the point: two visits ten minutes apart inside a
+           chosen day replay across the day, with the quiet hours collapsed by
+           the dead-air rule, instead of looping every few seconds. */
+        this.windowStart = this.range ? this.range[0] : this.events[0].field_ts;
+        this.windowEnd = this.range
+          ? this.range[1]
+          : this.events[this.events.length - 1].field_ts;
         // Open partway in, so the display never greets a viewer with zeroes.
         this._seek(0.42);
       }
