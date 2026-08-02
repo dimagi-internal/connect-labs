@@ -519,6 +519,7 @@
 
   let menuBuilt = false;
   let orgMenuBuilt = false;
+  let svcMenuBuilt = false;
   store.on('summary', (s) => {
     const sel = $('#prog-filter');
     // Built once: the menu is the same list under every filter, and rebuilding
@@ -545,6 +546,27 @@
       menuBuilt = true;
       if (store.program) sel.value = String(store.program);
     }
+    const svcSel = $('#svc-filter');
+    if (svcSel && !svcMenuBuilt && Array.isArray(s.services)) {
+      for (const v of s.services) {
+        const opt = document.createElement('option');
+        opt.value = v.slug;
+        // Same "no recent delivery" wording as the other menus, so the phrase
+        // means one thing across all three controls.
+        opt.textContent = v.recent_events
+          ? v.name
+          : v.name + ' \u2014 no recent delivery';
+        opt.title =
+          nf.format(v.visits) +
+          ' services all-time \u00b7 ' +
+          nf.format(v.opportunities) +
+          ' opportunities';
+        svcSel.appendChild(opt);
+      }
+      svcMenuBuilt = true;
+      if (store.service) svcSel.value = store.service;
+    }
+
     const orgSel = $('#org-filter');
     const orgWrap = $('#org-filter-wrap');
     if (orgSel && orgWrap && !orgMenuBuilt && Array.isArray(s.orgs)) {
@@ -1040,6 +1062,26 @@
           console.error('[pulse] programme filter failed', err);
         } finally {
           sel.disabled = false;
+          paintTransport();
+          paintStatus();
+        }
+      });
+    }
+
+    const svcCtl = $('#svc-filter');
+    if (svcCtl) {
+      svcCtl.addEventListener('change', async () => {
+        svcCtl.disabled = true;
+        try {
+          await store.setService(svcCtl.value || null);
+          // The density layer is a separate fetch and has to follow the filter
+          // too. Here it narrows exactly: cells carry service_slug.
+          await loadGrid();
+          setFocus(focus, true);
+        } catch (err) {
+          console.error('[pulse] service filter failed', err);
+        } finally {
+          svcCtl.disabled = false;
           paintTransport();
           paintStatus();
         }

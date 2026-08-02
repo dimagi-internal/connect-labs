@@ -1215,15 +1215,27 @@
    narrower than 1600 and the scope figures fell off the right edge. Tighten
    rather than hide: the clock, transport and both filters are the controls, and
    a control you cannot see is a control you do not have. */
-@media (max-width: 1560px) {
+@media (max-width: 1760px) {
   .pulse-bar {
-    gap: 12px;
+    gap: 13px;
   }
   .pulse-progfilter select {
-    max-width: 168px;
+    max-width: 176px;
   }
   .pulse-scope {
-    gap: 12px;
+    gap: 13px;
+  }
+}
+
+@media (max-width: 1440px) {
+  .pulse-bar {
+    gap: 10px;
+  }
+  .pulse-progfilter select {
+    max-width: 132px;
+  }
+  .pulse-scope {
+    gap: 10px;
   }
 }
 
@@ -1248,7 +1260,7 @@
     display: none;
   }
   .pulse-progfilter select {
-    max-width: 136px;
+    max-width: 116px;
   }
 }
 

@@ -175,6 +175,17 @@ def _program_scope(request):
     org_raw = (request.GET.get("org") or "").strip()
     org = _resolve_org(org_raw) if org_raw and _partner_names_allowed(request) else None
 
+    # Delivery type -- Connect's own service taxonomy (chc, ecd, kmc, ...), which
+    # is a different axis from `program`: a programme is one funder's engagement,
+    # a delivery type is the kind of work. "All the Kangaroo Mother Care on the
+    # platform" spans many programmes and many partners, and was previously only
+    # answerable by reading a breakdown rather than by narrowing to it.
+    #
+    # Not gated: a delivery type is a category, not a partner identity, so an
+    # anonymised link can use it.
+    service_raw = (request.GET.get("service") or "").strip().lower()
+    service = service_raw if service_raw in SERVICE_LABELS else ""
+
     events = PulseEvent.objects.all()
     works = PulseWork.objects.all()
     opps = PulseOpportunity.objects.all()
@@ -192,6 +203,15 @@ def _program_scope(request):
             opportunity_id__in=PulseOpportunity.objects.filter(org_slug=org.slug).values("opportunity_id")
         )
 
+    if service:
+        events = events.filter(service_slug=service)
+        works = works.filter(service_slug=service)
+        opps = opps.filter(service_slug=service)
+        rollups = rollups.filter(
+            opportunity_id__in=PulseOpportunity.objects.filter(service_slug=service).values("opportunity_id")
+        )
+        grid_service = service
+
     if program is not None:
         pid = program.program_id
         events = events.filter(program_id=pid)
@@ -208,6 +228,7 @@ def _program_scope(request):
     return {
         "program": program,
         "org": org,
+        "service": service,
         "events": events,
         "works": works,
         "opps": opps,
@@ -225,7 +246,7 @@ def _scope_for(sc):
     inferred poller and the head-sliced replay -- a true number answering a
     question nobody asked.
     """
-    if sc["program"] is None and sc["org"] is None:
+    if sc["program"] is None and sc["org"] is None and not sc["service"]:
         row = PulseScalar.objects.filter(key="scope").first()
         return row.value if row else {}
 
@@ -504,6 +525,42 @@ def _weekly_spark_by_org() -> dict:
             continue
         out.setdefault(r["org_slug"], [0] * WEEKLY_WEEKS)[idx] = r["n"]
     return out
+
+
+def _service_menu():
+    """Delivery types offered in the filter, largest first.
+
+    Built from what has actually been delivered rather than from
+    ``SERVICE_LABELS``, so the menu can never offer a type that resolves to an
+    empty screen -- the table carries 17 labels and only 12 have any work
+    against them.
+
+    Counts come from opportunities (lifetime, free) and events (recent), the
+    same pair the programme menu uses, so "no recent delivery" means the same
+    thing in both menus.
+    """
+    rows = (
+        PulseOpportunity.objects.exclude(service_slug="")
+        .values("service_slug")
+        .annotate(visits=Sum("lifetime_visit_count"), opps=Count("id"))
+        .filter(visits__gt=0)
+    )
+    recent = {
+        r["service_slug"]: r["n"]
+        for r in PulseEvent.objects.exclude(service_slug="").values("service_slug").annotate(n=Count("id"))
+    }
+    menu = [
+        {
+            "slug": r["service_slug"],
+            "name": service_label(r["service_slug"]),
+            "opportunities": r["opps"],
+            "visits": r["visits"],
+            "recent_events": recent.get(r["service_slug"], 0),
+        }
+        for r in rows
+    ]
+    menu.sort(key=lambda m: (-(1 if m["recent_events"] else 0), -m["visits"]))
+    return menu
 
 
 def _program_menu():
@@ -791,7 +848,9 @@ class SummaryView(View):
                     if sc["org"] is not None
                     else None
                 ),
+                "service": ({"slug": sc["service"], "name": service_label(sc["service"])} if sc["service"] else None),
                 "programs": _program_menu(),
+                "services": _service_menu(),
                 "orgs": _org_menu(request),
                 "weekly": _weekly_series(sc),
                 "money": {
@@ -846,6 +905,12 @@ def _grid_for(sc):
     response says which of the two it gave you.
     """
     cells = PulseGridCell.objects.all()
+
+    # Unlike the partner filter, this one is exact: cells key on service_slug
+    # directly, so the accumulated geography narrows the same way the live
+    # points do with nothing inferred.
+    if sc["service"]:
+        cells = cells.filter(service_slug=sc["service"])
 
     # A partner has no column on the cell, but it owns programmes and cells key
     # on programme -- so the accumulated geography narrows through that. It is

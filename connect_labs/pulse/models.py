@@ -153,7 +153,9 @@ class PulseOpportunity(models.Model):
     org_slug = models.CharField(max_length=120, blank=True)
     program_id = models.IntegerField(null=True, blank=True, db_index=True)
     country = models.CharField(max_length=2, blank=True)
-    service_slug = models.CharField(max_length=48, blank=True)
+    # Indexed: the delivery-type filter selects on it across every spine,
+    # and the type menu groups by it.
+    service_slug = models.CharField(max_length=48, blank=True, db_index=True)
 
     is_active = models.BooleanField(default=False)
     end_date = models.DateField(null=True, blank=True)
@@ -207,7 +209,9 @@ class PulseEvent(models.Model):
     flag_type = models.CharField(max_length=48, blank=True)
     review_status = models.CharField(max_length=24, blank=True)
 
-    service_slug = models.CharField(max_length=48, blank=True)
+    # Indexed: the delivery-type filter selects on it across every spine,
+    # and the type menu groups by it.
+    service_slug = models.CharField(max_length=48, blank=True, db_index=True)
     # Indexed: the worker roster on a partner window groups by this across the
     # whole table, and a worker window selects on it directly.
     worker_hash = models.CharField(max_length=64, blank=True, db_index=True)
@@ -254,7 +258,9 @@ class PulseWork(models.Model):
     # this over every row of the spine.
     worker_hash = models.CharField(max_length=64, blank=True, db_index=True)
     payment_unit_id = models.IntegerField(null=True, blank=True)
-    service_slug = models.CharField(max_length=48, blank=True)
+    # Indexed: the delivery-type filter selects on it across every spine,
+    # and the type menu groups by it.
+    service_slug = models.CharField(max_length=48, blank=True, db_index=True)
     # Denormalised from the opportunity (works carry no GPS of their own) so
     # money can be grouped by country without a join on every card.
     country = models.CharField(max_length=2, blank=True, db_index=True)
@@ -295,7 +301,9 @@ class PulseGridCell(models.Model):
     lat_q = models.IntegerField()  # round(lat * 100) — ~1.1 km
     lon_q = models.IntegerField()
     country = models.CharField(max_length=2, blank=True, db_index=True)
-    service_slug = models.CharField(max_length=48, blank=True)
+    # Indexed: the delivery-type filter selects on it across every spine,
+    # and the type menu groups by it.
+    service_slug = models.CharField(max_length=48, blank=True, db_index=True)
 
     # Part of the cell key, so filtering the map by programme narrows the
     # accumulated geography as well as the live points. The events being folded
