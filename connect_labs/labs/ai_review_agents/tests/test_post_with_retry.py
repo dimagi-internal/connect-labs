@@ -110,6 +110,49 @@ def test_falls_back_to_computed_backoff_on_unparseable_retry_after(monkeypatch):
     assert sleeps == [2.0]
 
 
+def test_falls_back_to_computed_backoff_on_negative_retry_after(monkeypatch):
+    """float("-1") parses without raising, but time.sleep(-1) raises
+    ValueError -- a malformed/hostile header must never reach time.sleep()
+    unvalidated."""
+    monkeypatch.setattr(base.random, "uniform", lambda a, b: 1.0)
+    sleeps = []
+    monkeypatch.setattr(base.time, "sleep", lambda s: sleeps.append(s))
+    client = MagicMock()
+    client.post.side_effect = [_response(429, headers={"Retry-After": "-1"}), _response(200)]
+
+    post_with_retry(client, "http://x/classify", json={}, backoff_seconds=2.0)
+
+    assert sleeps == [2.0]
+
+
+def test_falls_back_to_computed_backoff_on_nan_retry_after(monkeypatch):
+    """float("nan") parses without raising, but time.sleep(nan) raises
+    ValueError."""
+    monkeypatch.setattr(base.random, "uniform", lambda a, b: 1.0)
+    sleeps = []
+    monkeypatch.setattr(base.time, "sleep", lambda s: sleeps.append(s))
+    client = MagicMock()
+    client.post.side_effect = [_response(429, headers={"Retry-After": "nan"}), _response(200)]
+
+    post_with_retry(client, "http://x/classify", json={}, backoff_seconds=2.0)
+
+    assert sleeps == [2.0]
+
+
+def test_falls_back_to_computed_backoff_on_infinite_retry_after(monkeypatch):
+    """float("inf") parses without raising, and time.sleep(inf) wouldn't
+    raise either -- it would just block forever. Must fall back instead."""
+    monkeypatch.setattr(base.random, "uniform", lambda a, b: 1.0)
+    sleeps = []
+    monkeypatch.setattr(base.time, "sleep", lambda s: sleeps.append(s))
+    client = MagicMock()
+    client.post.side_effect = [_response(429, headers={"Retry-After": "inf"}), _response(200)]
+
+    post_with_retry(client, "http://x/classify", json={}, backoff_seconds=2.0)
+
+    assert sleeps == [2.0]
+
+
 def test_logs_a_warning_on_each_retry(monkeypatch):
     monkeypatch.setattr(base.time, "sleep", lambda s: None)
     client = MagicMock()

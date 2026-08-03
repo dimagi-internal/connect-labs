@@ -6,6 +6,7 @@ AI review agents must implement.
 """
 
 import logging
+import math
 import random
 import time
 from abc import ABC, abstractmethod
@@ -70,7 +71,14 @@ def post_with_retry(client, url, *, json, max_retries=3, backoff_seconds=2.0, lo
             wait = None
             if retry_after is not None:
                 try:
-                    wait = float(retry_after)
+                    parsed = float(retry_after)
+                    # float() accepts "-1"/"nan"/"inf" without raising, but
+                    # time.sleep() rejects negative/NaN outright and would
+                    # block forever on inf -- a malformed or hostile header
+                    # value must fall back to the computed backoff, not
+                    # reach time.sleep() unvalidated.
+                    if math.isfinite(parsed) and parsed >= 0:
+                        wait = parsed
                 except ValueError:
                     wait = None
             if wait is None:
