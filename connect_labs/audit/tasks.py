@@ -19,6 +19,7 @@ from connect_labs.audit.data_access import (
     create_mock_request,
     is_audit_creation_cancelled,
 )
+from connect_labs.audit.duplicate_detection import run_duplicate_detection
 from connect_labs.audit.models import AI_NOTES_JOIN_SEP
 from connect_labs.audit.visit_clustering import build_flw_visit_clusters
 from connect_labs.utils.celery import set_task_progress
@@ -779,6 +780,7 @@ def run_audit_creation(
     # build_flw_visit_clusters actually filters visits with -- keep both in sync
     # if these keys are ever renamed.
     audit_criteria = AuditCriteria.from_dict(criteria)
+    enable_duplicate_detection = bool(criteria.get("enable_duplicate_detection"))
     granularity = criteria.get("granularity", "combined")
     audit_type = audit_criteria.audit_type
 
@@ -812,6 +814,8 @@ def run_audit_creation(
     total_stages = 3 if needs_visit_fetch else 2
     if has_ai_agent:
         total_stages += 1  # Add AI review stage
+    if enable_duplicate_detection:
+        total_stages += 1  # Add duplicate-detection stage
 
     set_task_progress(
         self,
@@ -1079,6 +1083,7 @@ def run_audit_creation(
         # (flw_opportunity_ids) isn't opportunities[0].
         opp_names_by_id = {o["id"]: o.get("name") for o in opportunities}
 
+        dup_detection_targets = []
         if is_per_flw:
             # Create one session per FLW
             # If flw_visit_ids is provided, use it; otherwise group from extracted images
@@ -1147,6 +1152,23 @@ def run_audit_creation(
                     visit_clusters=flw_clusters,
                     has_ai_reviewer=has_ai_agent,
                 )
+
+                if enable_duplicate_detection and flw_clusters:
+                    blob_meta_by_id = {}
+                    for vid_str, imgs in flw_images.items():
+                        for img in imgs:
+                            bid = img.get("blob_id")
+                            if bid:
+                                blob_meta_by_id[bid] = {"visit_id": int(vid_str), "question_id": img.get("question_id", "")}
+                    dup_detection_targets.append(
+                        {
+                            "session": session,
+                            "data_access": flw_data_access,
+                            "opp_id": flw_opp_id,
+                            "clusters": flw_clusters,
+                            "blob_meta_by_id": blob_meta_by_id,
+                        }
+                    )
 
                 sessions_created.append(
                     {
@@ -1291,6 +1313,56 @@ def run_audit_creation(
 
             current_stage += 1
 
+        # =========================================================================
+        # STAGE 5 (optional): Duplicate Detection
+        # =========================================================================
+        dup_detection_results = None
+        if enable_duplicate_detection and dup_detection_targets:
+            msg = f"Stage {current_stage}/{total_stages}: Checking for duplicates..."
+            set_task_progress(
+                self, msg, current_stage=current_stage, total_stages=total_stages, stage_name="Duplicate Detection"
+            )
+            _update_job_progress(
+                data_access,
+                task_id,
+                username,
+                status="running",
+                current_stage=current_stage,
+                total_stages=total_stages,
+                stage_name="Duplicate Detection",
+                message=msg,
+            )
+
+            _dd_stage = current_stage
+
+            def on_dup_detection_progress(processed, total, message):
+                set_task_progress(
+                    self,
+                    f"Stage {_dd_stage}/{total_stages}: {message}",
+                    current_stage=_dd_stage,
+                    total_stages=total_stages,
+                    stage_name="Duplicate Detection",
+                    processed=processed,
+                    total=total,
+                )
+                _relay(processed, total, f"Duplicate detection · {message}")
+
+            try:
+                dup_detection_results = run_duplicate_detection(
+                    dup_detection_targets,
+                    get_signed_url=lambda blob_id, oid: _data_access_for_opp(oid).get_attachment_signed_url(
+                        blob_id, oid
+                    ),
+                    progress_callback=on_dup_detection_progress,
+                    cancel_key=cancel_key,
+                )
+                logger.info(f"[AuditCreation] Duplicate detection complete: {dup_detection_results}")
+            except Exception as e:
+                logger.warning(f"[AuditCreation] Duplicate detection failed (non-fatal): {e}")
+                dup_detection_results = {"error": str(e)}
+
+            current_stage += 1
+
         # Mark complete
         result = {
             "success": True,
@@ -1301,6 +1373,8 @@ def run_audit_creation(
         }
         if ai_review_results:
             result["ai_review"] = ai_review_results
+        if dup_detection_results:
+            result["duplicate_detection"] = dup_detection_results
 
         set_task_progress(
             self,
