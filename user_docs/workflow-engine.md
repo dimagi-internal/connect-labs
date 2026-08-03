@@ -223,20 +223,34 @@ Program managers can update a case's status directly from the workflow view. Sta
 
 ---
 
-## FLW Daily Indicator Report (CHC PRE-RCT Nigeria)
+## Weekly Dual-Track Image Audit
 
-The **FLW Daily Indicator Report** is a daily early-warning view for Program 176 (CHC PRE-RCT Nigeria). It sits alongside the existing weekly audit report and is designed to surface data-quality concerns the next day rather than waiting up to two weeks for the weekly cycle to confirm a problem.
+The Weekly Dual-Track Image Audit workflow reviews photos submitted by field workers using two independent tracks: AI classifiers that examine each image, and visit clustering that groups visits by time and location to spot suspicious patterns. Both tracks feed into the AI summary and bulk assessment tools.
 
-### What it shows
+### Opportunities & image types tile — choosing AI classifiers per path
 
-Each day, twelve indicators are computed automatically for every FLW. The summary view presents a **14-day table** — one row per FLW, one column per day — where each cell contains a single "investigate today?" flag. At a glance you can see which workers have had concerns on which days without reading through raw numbers.
+The **Opportunities & image types** tile lets you choose, for each image path, which AI classifiers should review it. The three available classifiers are:
 
-Only **7 of the 12 indicators** roll up into the main grid's red flag: **Peak Households per Building**, **Large Households**, **% Children Vaccinated**, **Camping % (Same-Spot Visits)**, **Duplicate Child Names**, **Duplicate Child Ages**, and **MUAC Value Repetition %**. These are the indicators where a tripped threshold reliably signals something worth investigating regardless of local context. The remaining indicators still compute and can highlight a tripped state in the expanded detail view, but they appear in orange rather than red — they are either informational or can be triggered by legitimate field conditions, so they do not flag an FLW on their own in the main grid.
+| Classifier | What it checks |
+|---|---|
+| **Hyperzoom** | Whether the photo appears to have been taken with abnormal digital zoom, which can indicate a photo was not taken in the field |
+| **MUAC Mismatch** | Whether the MUAC tape reading visible in the image is inconsistent with the value recorded in the form |
+| **KMC Scale Comparison** | Whether the scale used in a KMC (Kangaroo Mother Care) weight check matches expected equipment |
 
-Use the **14-Day Window Ending** date picker at the top of the table to view any past 14-day window. By default the table shows the most recent 14 days, but you can select an earlier end date to review historical periods without re-running anything. The table shows only FLWs who have activity within the selected 14-day window — if you pick an older end date, workers whose activity falls entirely outside that window will not appear, rather than showing as rows with empty cells.
+Each image path shows a row of checkboxes — one per classifier. Tick the classifiers you want applied to that path. Checkboxes that do not apply to a given image type are greyed out and cannot be selected, so you will only ever see relevant options for each path.
 
-The **LLO** column and filter show a short LLO code (for example, **EHA**) rather than the full opportunity name, since all opportunity names in this program follow a predictable pattern and the short code is easier to scan and filter by.
+!!! note "Existing configurations are unaffected"
+    Any image path you have not explicitly changed keeps behaving exactly as it did before this option was introduced. You do not need to review or re-save existing setups unless you want to change which classifiers run.
 
-Each indicator column header shows an **(i)** icon. Hover over it to read a plain-English description of exactly what the indicator checks and what would cause it to flag — so you can understand any concern without having to ask someone else.
+### Visit Clustering tile — Duplicate Detection
 
-###
+The **Visit Clustering** tile groups visits that are close together in time and location, which can indicate a worker submitted multiple records from the same spot. Within this tile there is now an option labelled **Send groupings to the Duplicate Detection API**.
+
+When this option is turned on:
+
+- Each group of clustered visits is checked against an image-similarity service to identify photos that appear to be copies of one another.
+- Confirmed duplicates are flagged in the AI summary so reviewers can see them alongside other findings.
+- If a photo in a confirmed duplicate pair has not yet been reviewed, it is pre-tagged **Duplicate/Fake** in bulk assessment automatically — so the most clear-cut cases are already sorted when a reviewer opens the queue.
+
+!!! note "A reviewer's own tag is never overwritten"
+    If

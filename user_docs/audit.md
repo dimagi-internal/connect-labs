@@ -113,8 +113,18 @@ Instead of tracks being set up in advance, you can now configure them directly i
 
 - For each opportunity, tick checkboxes to select which CommCare image fields belong to that track — the same image-type picker used in the standard wizard.
 - Each track is labelled **Track A** and **Track B** by default. You can rename these to whatever is meaningful for your program — for example, **MUAC** and **Other** — and the labels will carry through to the session and any exported CSVs.
+- **Per-path AI classifiers** — in the **Opportunities & image types** tile, each image path now has its own set of AI classifier checkboxes: **Hyperzoom**, **MUAC Mismatch**, and **KMC Scale Comparison**. Tick the classifiers you want to run on each path. Checkboxes that do not apply to a given image type are greyed out automatically, so there is no risk of running the wrong check on the wrong photo type. Any image path you have not changed keeps behaving exactly as before — existing configurations are unaffected.
 - The **MUAC OverZoom** AI reviewer automatically follows whichever track contains an image path with "muac" in the name, regardless of how you have named the tracks or which track that path ends up in. You do not need to manually reassign it if you reorganise your tracks.
 - The **MUAC Reading Match** AI reviewer is also available for MUAC tape photos in this workflow. It compares each photo against the manually-entered MUAC value (in cm) using the same ML vision service used for KMC scale readings. You can run both **MUAC OverZoom** and **MUAC Reading Match** on the same image type in the same session — each check produces its own distinct badge on the image tile ("Hyperzoomed" or "MUAC Mismatch (strict tolerance)"), so it is clear at a glance which check flagged an image. The manually-entered MUAC reading is shown on the tile the same way the KMC scale reading already is.
+
+**Visit Clustering and Duplicate Detection:**
+
+The Visit Clustering tile includes an additional option: **Send groupings to the Duplicate Detection API**. When you turn this on, each grouping of visits already identified as close together in time and/or location is checked against an image-similarity service. Images that are confirmed as near-duplicates are:
+
+- Flagged in the AI summary for the session.
+- Pre-tagged **Duplicate/Fake** in the bulk assessment view, if no one has reviewed that photo yet. A verdict already set by a human or AI reviewer is never overwritten.
+
+Leave this option unticked if you only want the standard time-and-location grouping without the additional image-similarity check.
 
 **Stopping a run in progress:**
 
@@ -160,17 +170,4 @@ The bulk assessment page header identifies the field worker being reviewed. For 
 
     If an image was flagged by the **Image De-duplication** check, it receives a **Duplicate** tag on its tile. Images are sorted in the bulk assessment view so that suspected duplicates appear together in groups, making it straightforward to compare them and confirm or reject each flag. You can still assess flagged images normally using Pass, Fail, or Duplicate/Fake — the tag is informational and does not lock in a verdict.
 
-    If an image's visit was flagged by Visit Clustering as part of a duplicate grouping, **Duplicate/Fake** is pre-selected automatically when the bulk assessment page opens. This only applies to images with no verdict yet — any image already reviewed by a human or AI keeps its existing verdict.
-
-    If a photo was already given a verdict in an earlier completed audit session, it shows an **Audited** badge on the image tile — for example, **Audited: Passed**, **Audited: Failed**, or **Audited: Dup·Fake**. Hover over the badge to see the date of the earlier audit. This badge only reflects *other* completed audits, not the current session. You can still assess the image normally — the badge is informational only.
-
-    Add optional notes to any image, then move to the next. Your progress saves automatically.
-
-    !!! warning "Resuming a session across multiple sittings"
-        It is safe to review images, save, and come back later to continue. Assessments and notes made in an earlier sitting are preserved when you save again — nothing is overwritten. If you encounter a session where earlier verdicts appear to have reverted to Pending, those images will need to be re-reviewed, as the data from the affected saves cannot be recovered.
-
-    The **#** link on each image tile opens the original visit record directly in Connect. This link is correct for all sessions, including those created previously.
-
-=== "AI-Assisted Review"
-
-    Before you start, click **Run AI Review** to have AI pre-screen all images in the session. AI review processes multiple images at the same time — throughput has been increased so that image-heavy batches complete roughly twice
+    If an image's visit was flagged by Visit Clustering as part of a duplicate grouping, **Duplicate/Fake** is pre-selected automatically when the bulk assessment page opens. If the **Send groupings to the Duplicate Detection API** option was also enabled and the image-similarity check confirmed the image as a duplicate, it is likewise pre-tagged **Duplicate/Fake**. In both cases, pre-tagging
