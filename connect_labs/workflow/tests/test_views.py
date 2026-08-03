@@ -498,6 +498,94 @@ class TestUpdateAuditBatchConfigView:
             response = UpdateAuditBatchConfigView.as_view()(request, definition_id=1)
             assert response.status_code == 404
 
+    def test_accepts_valid_classifiers_and_round_trips(self, dimagi_user, rf: RequestFactory):
+        import json
+
+        request = self._request(
+            rf,
+            dimagi_user,
+            {
+                "per_opp": {
+                    "700": {
+                        "muac_image_paths": ["muac_group/muac_photo"],
+                        "rest_image_paths": [],
+                        "classifiers": {"muac_group/muac_photo": ["hyperzoom", "muac_mismatch"]},
+                    }
+                }
+            },
+        )
+
+        with patch("connect_labs.workflow.views.WorkflowDataAccess") as MockWDA:
+            mock_wda = MagicMock()
+            MockWDA.return_value = mock_wda
+            mock_wda.get_definition.return_value = MagicMock(data={"config": {"audit_batch": {"per_opp": {}}}})
+            mock_wda.update_definition.return_value = MagicMock(
+                data={
+                    "config": {
+                        "audit_batch": {
+                            "per_opp": {
+                                "700": {
+                                    "muac_image_paths": ["muac_group/muac_photo"],
+                                    "rest_image_paths": [],
+                                    "classifiers": {"muac_group/muac_photo": ["hyperzoom", "muac_mismatch"]},
+                                }
+                            }
+                        }
+                    }
+                }
+            )
+
+            from connect_labs.workflow.views import UpdateAuditBatchConfigView
+
+            response = UpdateAuditBatchConfigView.as_view()(request, definition_id=1)
+
+            assert response.status_code == 200
+            payload = json.loads(response.content)
+            assert payload["audit_batch"]["per_opp"]["700"]["classifiers"] == {
+                "muac_group/muac_photo": ["hyperzoom", "muac_mismatch"]
+            }
+
+    def test_rejects_classifiers_not_a_dict(self, dimagi_user, rf: RequestFactory):
+        import json
+
+        request = self._request(
+            rf, dimagi_user, {"per_opp": {"700": {"muac_image_paths": [], "classifiers": ["hyperzoom"]}}}
+        )
+
+        from connect_labs.workflow.views import UpdateAuditBatchConfigView
+
+        response = UpdateAuditBatchConfigView.as_view()(request, definition_id=1)
+        assert response.status_code == 400
+        assert "classifiers" in json.loads(response.content)["error"]
+
+    def test_rejects_classifiers_value_not_a_list(self, dimagi_user, rf: RequestFactory):
+        import json
+
+        request = self._request(
+            rf, dimagi_user, {"per_opp": {"700": {"muac_image_paths": [], "classifiers": {"path": "hyperzoom"}}}}
+        )
+
+        from connect_labs.workflow.views import UpdateAuditBatchConfigView
+
+        response = UpdateAuditBatchConfigView.as_view()(request, definition_id=1)
+        assert response.status_code == 400
+        assert "classifiers" in json.loads(response.content)["error"]
+
+    def test_rejects_unknown_classifier_key(self, dimagi_user, rf: RequestFactory):
+        import json
+
+        request = self._request(
+            rf,
+            dimagi_user,
+            {"per_opp": {"700": {"muac_image_paths": [], "classifiers": {"path": ["not_a_real_classifier"]}}}},
+        )
+
+        from connect_labs.workflow.views import UpdateAuditBatchConfigView
+
+        response = UpdateAuditBatchConfigView.as_view()(request, definition_id=1)
+        assert response.status_code == 400
+        assert "classifiers" in json.loads(response.content)["error"]
+
 
 class TestCompleteRunTemplateFallback:
     """complete_run_api recovers a missing config.templateType from the
