@@ -63,7 +63,15 @@
               (valueOf(d) / max) * 100,
               valueOf(d) ? 2 : 0,
             ).toFixed(1)}%"${
-              d.partial || i === last ? ' data-partial="1"' : ''
+              // Trust the server's flag when the series carries one. OR-ing
+              // `i === last` over it hatches a COMPLETED week as incomplete
+              // every Monday morning, before any work has landed in the new
+              // week. Flagless series (the per-partner and per-opportunity
+              // sparks are plain counts) are padded to end at the current week,
+              // so there the last bucket genuinely is the partial one.
+              ('partial' in d ? d.partial : i === last)
+                ? ' data-partial="1"'
+                : ''
             } title="${nf.format(valueOf(d))}"></i>`,
         )
         .join('') +
