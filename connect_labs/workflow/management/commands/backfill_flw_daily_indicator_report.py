@@ -47,7 +47,7 @@ from connect_labs.labs.connect_tokens import ConnectTokenError, get_valid_access
 from connect_labs.labs.integrations.commcare.cchq_tokens import CCHQTokenError, get_valid_cchq_access_token
 from connect_labs.users.models import User
 from connect_labs.workflow.data_access import WorkflowDataAccess
-from connect_labs.workflow.flw_audit_compute import WAT_OFFSET
+from connect_labs.workflow.flw_audit_compute import WAT_OFFSET, wat_date
 from connect_labs.workflow.templates.flw_daily_indicator_report import run_default
 
 
@@ -150,7 +150,11 @@ class Command(BaseCommand):
         for i in range(days):
             window_start = end_date_midnight_utc - timedelta(days=i)
             window_end = window_start + timedelta(days=1)
-            period_start_iso = window_start.date().isoformat()
+            # Must match what run_default itself tags the created run's period_start
+            # with (wat_date(window_start), NOT window_start's raw UTC date) -- using
+            # the wrong one here made --replace-existing silently delete the day
+            # BEFORE the one actually being (re)created, on every single call.
+            period_start_iso = wat_date(window_start)
 
             if options["replace_existing"]:
                 deleted = self._delete_existing_runs_for_period(
