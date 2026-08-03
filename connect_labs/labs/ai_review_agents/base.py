@@ -6,6 +6,7 @@ AI review agents must implement.
 """
 
 import logging
+import time
 from abc import ABC, abstractmethod
 
 from django.conf import settings
@@ -17,6 +18,32 @@ class AIReviewAgentError(Exception):
     """Base exception for AI review agent errors."""
 
     pass
+
+
+def post_with_retry(client, url, *, json, max_retries=3, backoff_seconds=2.0, logger=None):
+    """POST with retry-on-429 (linear backoff: 2s, 4s, 6s by default).
+
+    The MUAC OverZoom / MUAC Match / Scale Validation classifiers share one
+    gateway that returns 429 both when genuinely busy and during a cold
+    start -- both conditions typically clear within seconds, so a short
+    retry recovers automatically instead of permanently erroring the image
+    (previously: a single 429 was treated as terminal, with no retry at all).
+
+    Returns the last response received, which may still be a 429 if every
+    retry was exhausted -- callers check response.status_code exactly as
+    they did before this helper existed.
+    """
+    response = None
+    for attempt in range(max_retries + 1):
+        response = client.post(url, json=json)
+        if response.status_code != 429:
+            return response
+        if attempt < max_retries:
+            wait = backoff_seconds * (attempt + 1)
+            if logger:
+                logger.warning(f"Rate limited (429) on attempt {attempt + 1}/{max_retries + 1}, retrying in {wait}s")
+            time.sleep(wait)
+    return response
 
 
 class BaseAIReviewAgent(ABC):

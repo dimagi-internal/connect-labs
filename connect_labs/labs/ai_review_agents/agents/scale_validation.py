@@ -17,7 +17,7 @@ import base64
 import httpx
 from django.conf import settings
 
-from connect_labs.labs.ai_review_agents.base import AIReviewAgentError, BaseAIReviewAgent
+from connect_labs.labs.ai_review_agents.base import AIReviewAgentError, BaseAIReviewAgent, post_with_retry
 from connect_labs.labs.ai_review_agents.registry import register
 from connect_labs.labs.ai_review_agents.types import ReviewContext, ReviewResult
 
@@ -163,13 +163,15 @@ class ScaleValidationAgent(BaseAIReviewAgent):
         try:
             encoded_image = base64.b64encode(image_bytes).decode("utf-8")
 
-            response = self.http_client.post(
+            response = post_with_retry(
+                self.http_client,
                 f"{self.api_url}/predict",
                 json={"image": encoded_image, "reading": reading},
+                logger=self.logger,
             )
 
             if response.status_code == 429:
-                return ReviewResult.error("Rate limited - service busy or starting up. Try again later.")
+                return ReviewResult.error("Rate limited - service busy or starting up. Retried, still unavailable.")
 
             response.raise_for_status()
             result = response.json()

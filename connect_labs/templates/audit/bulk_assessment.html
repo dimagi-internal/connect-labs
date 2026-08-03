@@ -343,15 +343,19 @@
                get aiNotes() { return assessment.ai_notes || ''; },
                set aiNotes(v) { assessment.ai_notes = v; },
                get aiConfidence() { return typeof assessment.ai_confidence === 'number' ? assessment.ai_confidence : null; },
+               // Duplicate-grouping membership is independent of ai_result/result (see the
+               // Potential Duplicate banner below) -- group_id can legitimately be 0, so
+               // test for null/undefined, not falsy.
+               get hasDuplicateBanner() { return assessment.duplicate_group !== null && assessment.duplicate_group !== undefined; },
                // Short form for the compact top badge -- strips a trailing '(...)' detail so the
                // fuller AI Result section below is the only place that shows it.
                get aiNotesShort() { return (this.aiNotes || '').replace(/\s*\([^)]*\)\s*$/, ''); },
                get aiClassLabel() {
                  if (!this.aiResult) return '';
-                 // Error notes are internal/config detail (e.g. a missing API key) --
-                 // not useful to an auditor per image, so show a generic label instead
-                 // of the raw exception text.
-                 if (this.aiResult === 'error') return 'Error';
+                 // Show the actual error (rate-limited, connection error, etc.) so an
+                 // auditor knows whether it's worth retrying -- falls back to a plain
+                 // "Error" only on the rare assessment with no captured message at all.
+                 if (this.aiResult === 'error') return this.aiNotes || 'Error';
                  return this.aiNotes || (this.aiResult === 'match' ? 'Passed' : 'Failed');
                },
                updateResult(newResult) {
@@ -419,11 +423,15 @@
                 <i class="fa-solid fa-rotate-right mr-1"></i>Retry
               </button>
             </div>
-            <!-- AI Result Badge - Top Left (only for failures/errors; passes are shown in the tile footer) -->
-            <div class="absolute top-2 left-2"
+            <!-- AI Result Badge - Top Left (only for failures/errors; passes are shown in the tile footer).
+                 max-w + the span's own whitespace-normal/break-words keeps a long label (a
+                 rate-limit message, a verbose classifier note) wrapping onto multiple lines
+                 inside the tile instead of overrunning its right edge. -->
+            <div class="absolute left-2 max-w-[85%]"
+                 :class="hasDuplicateBanner ? 'top-7' : 'top-2'"
                  x-show="aiResult && aiResult !== 'match'"
                  x-transition>
-              <span class="px-2 py-1 rounded text-xs font-bold text-white"
+              <span class="inline-block px-2 py-1 rounded text-xs font-bold text-white whitespace-normal break-words"
                     :class="{
                       'bg-blue-500': aiResult === 'match',
                       'bg-red-500': aiResult === 'no_match',
@@ -432,11 +440,22 @@
                 <i class="fa-solid fa-robot mr-1"></i>
                 <span x-show="aiResult === 'match'">Match</span>
                 <span x-show="aiResult === 'no_match'" x-text="aiNotesShort || 'No Match'"></span>
-                <span x-show="aiResult === 'error'">Error</span>
+                <span x-show="aiResult === 'error'" x-text="aiNotes || 'Error'"></span>
               </span>
             </div>
+            <!-- Potential Duplicate Banner - full width across the top, independent of
+                 result/ai_result: a duplicate grouping is orthogonal information (does
+                 this image share content with another?), not a pass/fail/duplicate_fake
+                 verdict, so it must stay visible even when the human result is "fail"
+                 from a real classifier flag rather than "duplicate_fake". -->
+            <div x-show="hasDuplicateBanner"
+                 class="absolute top-0 inset-x-0 z-10 bg-purple-600/90 text-white text-[10px] font-semibold text-center py-0.5"
+                 x-transition>
+              <i class="fa-solid fa-clone mr-1"></i>Potential Duplicate
+            </div>
             <!-- Human Result Badge - Top Right -->
-            <div class="absolute top-2 right-2"
+            <div class="absolute right-2"
+                 :class="hasDuplicateBanner ? 'top-7' : 'top-2'"
                  x-show="result"
                  x-transition>
               <span class="px-2 py-1 rounded text-xs font-bold text-white"
@@ -529,7 +548,7 @@
                           'text-orange-700': aiResult === 'no_match',
                           'text-gray-600': aiResult === 'error'
                         }"
-                        x-text="aiResult === 'match' ? 'Match' : (aiResult === 'no_match' ? ((aiNotes || 'No Match') + (aiConfidence !== null ? ': confidence ' + aiConfidence.toFixed(3) : '')) : 'Error')"></span>
+                        x-text="aiResult === 'match' ? 'Match' : (aiResult === 'no_match' ? ((aiNotes || 'No Match') + (aiConfidence !== null ? ': confidence ' + aiConfidence.toFixed(3) : '')) : (aiNotes || 'Error'))"></span>
                 </div>
               </div>
             </template>

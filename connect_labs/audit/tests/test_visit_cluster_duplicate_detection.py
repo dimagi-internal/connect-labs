@@ -71,6 +71,39 @@ def test_mark_duplicate_never_overwrites_existing_human_result():
     assert session.data["visit_results"]["111"]["assessments"]["a"]["ai_result"] == "no_match"
 
 
+def test_mark_duplicate_preserves_a_real_classifier_fail_but_still_records_the_group():
+    """A genuine classifier flag (e.g. MUAC Mismatch, auto-applied as "fail"
+    during AI review, which always runs before duplicate detection) must keep
+    winning the human result -- "fail" takes precedence over "duplicate_fake".
+    The image is still recorded as part of the grouping (duplicate_group set)
+    so the review UI's independent "Potential Duplicate" banner still shows;
+    only the human result itself is left alone."""
+    session = _session(
+        {
+            "111": {
+                "assessments": {
+                    "a": {
+                        "question_id": "form/muac",
+                        "result": "fail",
+                        "notes": "",
+                        "ai_result": "no_match",
+                        "ai_notes": "MUAC Mismatch (strict tolerance)",
+                    }
+                }
+            }
+        }
+    )
+    blob_meta = {"a": {"visit_id": 111, "question_id": "form/muac"}}
+
+    _mark_duplicate(session, blob_meta, "a", group_id=2)
+
+    assessment = session.data["visit_results"]["111"]["assessments"]["a"]
+    assert assessment["result"] == "fail"
+    assert assessment["duplicate_group"] == 2
+    assert "Potential Duplicate" in assessment["ai_notes"]
+    assert "MUAC Mismatch (strict tolerance)" in assessment["ai_notes"]
+
+
 def test_mark_duplicate_appends_to_existing_ai_notes_without_duplicating_label():
     session = _session(
         {
@@ -98,17 +131,27 @@ def test_mark_duplicate_appends_to_existing_ai_notes_without_duplicating_label()
     assert session.data["visit_results"]["111"]["assessments"]["a"]["ai_notes"] == "Hyperzoomed; Potential Duplicate"
 
 
-def test_mark_duplicate_inherits_flag_potential_duplicates_unconditional_ai_result_overwrite():
-    """AuditSessionRecord.flag_potential_duplicate (PR #1070) unconditionally
-    sets ai_result="no_match", even over a prior "error" -- a known, already
-    flagged (CodeRabbit nitpick on #1070) limitation this module inherits by
-    delegating to that method rather than re-implementing its own merge. Pins
-    the current (inherited) behavior honestly rather than silently dropping
-    coverage; revisit if/when #1070's own method is tightened."""
+def test_mark_duplicate_overwrites_ai_result_and_discards_stale_error_notes():
+    """AuditSessionRecord.flag_potential_duplicate still sets ai_result="no_match"
+    over a prior "error" (a rate-limited classifier call, say) -- the image IS a
+    duplicate regardless. But the stale error text is now DISCARDED rather than
+    merged into ai_notes: a CodeRabbit nitpick on #1070 flagged that merging
+    a prior non-flag verdict's notes let raw error/pass text leak into
+    get_assessment_stats().ai_flags_by_label as if it were a real classifier
+    flag (fixed in flag_potential_duplicate; this module inherits the fix by
+    delegating to that method rather than re-implementing its own merge)."""
     session = _session(
         {
             "111": {
-                "assessments": {"a": {"question_id": "form/muac", "result": None, "notes": "", "ai_result": "error"}}
+                "assessments": {
+                    "a": {
+                        "question_id": "form/muac",
+                        "result": None,
+                        "notes": "",
+                        "ai_result": "error",
+                        "ai_notes": "Rate limited - service busy or starting up. Try again later.",
+                    }
+                }
             }
         }
     )
@@ -116,7 +159,9 @@ def test_mark_duplicate_inherits_flag_potential_duplicates_unconditional_ai_resu
 
     _mark_duplicate(session, blob_meta, "a", group_id=0)
 
-    assert session.data["visit_results"]["111"]["assessments"]["a"]["ai_result"] == "no_match"
+    assessment = session.data["visit_results"]["111"]["assessments"]["a"]
+    assert assessment["ai_result"] == "no_match"
+    assert assessment["ai_notes"] == "Potential Duplicate"
 
 
 def test_mark_duplicate_returns_false_for_unknown_blob():
@@ -181,6 +226,40 @@ def test_calls_api_once_per_grouping_and_flags_returned_ids():
     assert session.data["visit_results"]["111"]["assessments"]["a"]["result"] == "duplicate_fake"
     assert session.data["visit_results"]["112"]["assessments"]["b"]["result"] == "duplicate_fake"
     assert "113" not in session.data["visit_results"]
+
+
+def test_persists_the_raw_api_response_per_grouping_even_when_empty():
+    """The raw /detect_duplicates response must survive past this call --
+    previously it was discarded the instant assign_group_ids collapsed it into
+    flags, so a later "why wasn't X flagged?" investigation had nothing to
+    read back. Persisted even for a grouping where the API found nothing
+    (empty list), since "checked, found no duplicates" is itself useful to
+    distinguish from "never checked"."""
+    session = _session()
+    clusters = [
+        {"group_id": "g1", "visit_ids": [111, 112], "image_count": 2, "image_ids": ["a", "b"]},
+        {"group_id": "g2", "visit_ids": [113, 114], "image_count": 2, "image_ids": ["c", "d"]},
+    ]
+    blob_meta = {
+        "a": {"visit_id": 111, "question_id": "form/muac"},
+        "b": {"visit_id": 112, "question_id": "form/muac"},
+        "c": {"visit_id": 113, "question_id": "form/other"},
+        "d": {"visit_id": 114, "question_id": "form/other"},
+    }
+    client = Mock()
+    client.detect.side_effect = [[["a", "b"]], []]
+    data_access = Mock()
+
+    run_grouping_duplicate_detection(
+        [_target(session, clusters, blob_meta, data_access=data_access)],
+        get_signed_url=lambda bid, oid: f"https://x/{bid}",
+        client=client,
+    )
+
+    raw = session.data["visit_cluster_duplicate_detection"]
+    assert raw["g1"] == [["a", "b"]]
+    assert raw["g2"] == []
+    data_access.save_audit_session.assert_called_once_with(session)
     data_access.save_audit_session.assert_called_once_with(session)
 
 

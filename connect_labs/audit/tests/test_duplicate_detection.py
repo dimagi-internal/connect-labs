@@ -232,6 +232,52 @@ def test_flag_is_idempotent_on_label():
     assert session.get_assessments(10)["a"]["ai_notes"] == "Potential Duplicate"
 
 
+def test_flag_discards_stale_pass_label_instead_of_merging():
+    """A classifier PASS ("Not Hyperzoomed") no longer applies once ai_result
+    flips to "no_match" here -- merging it in used to leak the pass-label into
+    get_assessment_stats().ai_flags_by_label as if it were a real flag."""
+    session = _session({})
+    session.set_assessment(
+        visit_id=10,
+        blob_id="a",
+        question_id="form/muac_photo",
+        result=None,
+        notes="",
+        ai_result="match",
+        ai_notes="Not Hyperzoomed",
+    )
+    session.flag_potential_duplicate(visit_id=10, blob_id="a", question_id="form/muac_photo", group_id=0)
+
+    assessment = session.get_assessments(10)["a"]
+    assert assessment["ai_result"] == "no_match"
+    assert assessment["ai_notes"] == "Potential Duplicate"
+
+    stats = session.get_assessment_stats()
+    assert "Not Hyperzoomed" not in stats["ai_flags_by_label"]
+    assert stats["ai_flags_by_label"]["Potential Duplicate"] == 1
+
+
+def test_flag_discards_stale_error_text_instead_of_merging():
+    """A rate-limited (or otherwise errored) classifier call no longer applies
+    once ai_result flips to "no_match" here -- merging the raw error message
+    in used to leak it into ai_flags_by_label as if it were a real flag."""
+    session = _session({})
+    session.set_assessment(
+        visit_id=10,
+        blob_id="a",
+        question_id="form/muac_photo",
+        result=None,
+        notes="",
+        ai_result="error",
+        ai_notes="Rate limited - service busy or starting up. Try again later.",
+    )
+    session.flag_potential_duplicate(visit_id=10, blob_id="a", question_id="form/muac_photo", group_id=0)
+
+    assessment = session.get_assessments(10)["a"]
+    assert assessment["ai_result"] == "no_match"
+    assert assessment["ai_notes"] == "Potential Duplicate"
+
+
 # --------------------------------------------------------------------------- #
 # run_duplicate_detection (batching + cap + writeback)
 # --------------------------------------------------------------------------- #

@@ -307,7 +307,7 @@ describe('aiFlagsSummary', () => {
         },
       },
     });
-    expect(aiFlagsSummary(s)).toBe('7 Hyperzoomed, 2 MUAC Mismatch');
+    expect(aiFlagsSummary(s)).toBe('7 Hyperzoomed / 2 MUAC Mismatch');
   });
 
   it('buckets ai_flags_unlabeled as "other" instead of hiding the whole breakdown', () => {
@@ -330,7 +330,7 @@ describe('aiFlagsSummary', () => {
         ai_flags_unlabeled: 3,
       },
     });
-    expect(aiFlagsSummary(s)).toBe('7 Hyperzoomed, 2 MUAC Mismatch, 3 other');
+    expect(aiFlagsSummary(s)).toBe('7 Hyperzoomed / 2 MUAC Mismatch / 3 other');
   });
 
   it('does not fabricate an "other" bucket when one image co-fails two reviewers', () => {
@@ -353,7 +353,24 @@ describe('aiFlagsSummary', () => {
         ai_flags_unlabeled: 0,
       },
     });
-    expect(aiFlagsSummary(s)).toBe('6 Hyperzoomed, 1 MUAC Mismatch');
+    expect(aiFlagsSummary(s)).toBe('6 Hyperzoomed / 1 MUAC Mismatch');
+  });
+
+  it('renders the compact "X / Y / Z" form across classifier + duplicate labels', () => {
+    const s = session({
+      assessment_stats: {
+        pass: 0,
+        fail: 0,
+        ai_match: 0,
+        ai_no_match: 11,
+        ai_flags_by_label: {
+          'MUAC Mismatch (strict tolerance)': 2,
+          Hyperzoomed: 4,
+          'Potential Duplicate': 5,
+        },
+      },
+    });
+    expect(aiFlagsSummary(s)).toBe('2 MUAC Mismatch / 4 Hyperzoomed / 5 Potential Duplicate');
   });
 
   it('falls back to the untrimmed label when stripping "(...)" would leave nothing', () => {

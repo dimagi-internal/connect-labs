@@ -49,9 +49,9 @@
     return (s && s.visit_clusters && s.visit_clusters.length) || 0;
   }
   // Short "(within 10 min, 10m)"-style description of the visit-clustering
-  // filter actually used for this session -- shown next to the "N Duplicate
-  // Grouping(s)" badge so a reviewer knows what time/distance thresholds
-  // produced the groupings, without going to look up the run's config.
+  // filter actually used for this session -- shown next to the "N Visit
+  // Cluster(s)" badge so a reviewer knows what time/distance thresholds
+  // produced the clusters, without going to look up the run's config.
   // Empty string when neither criterion was enabled for this session.
   function visitClusteringSummary(s) {
     var vc = (s && s.visit_clustering_used) || {};
@@ -116,7 +116,7 @@
     if (unlabeled > 0) {
       parts.push(unlabeled + ' other');
     }
-    return parts.join(', ');
+    return parts.join(' / ');
   }
 
   // Group sessions by opportunity → field worker → { muac, rest }.
@@ -215,7 +215,7 @@
   }
 
   // ── One compact audit line: status + images + pass/fail/pending + AI ──────
-  // Self-manages its own "expanded" state for the Duplicate Groupings panel via
+  // Self-manages its own "expanded" state for the Visit Clusters panel via
   // a tiny wrapper component (needs React.useState, unlike the rest of this file's
   // stateless helpers).
   function makeAuditLine(React) {
@@ -314,7 +314,7 @@
                   'px-2 py-0.5 rounded bg-purple-50 text-purple-700 hover:bg-purple-100 font-medium whitespace-nowrap',
               },
               clusters.length +
-                ' Duplicate Grouping' +
+                ' Visit Cluster' +
                 (clusters.length === 1 ? '' : 's'),
             )
           : null,
@@ -350,38 +350,52 @@
                 // reviewer can actually cross-reference a grouping against
                 // the tiles they're looking at.
                 var visitIds = c.visit_ids || [];
+                // Label + download link on their own row; visit ids as individual
+                // wrapping chips on the row below -- a long grouping (8+ images)
+                // used to render as one unbroken bracketed string that could run
+                // past the panel's edge instead of wrapping.
                 return h(
                   'div',
-                  {
-                    key: c.group_id,
-                    className: 'flex flex-wrap items-center gap-x-2 gap-y-1',
-                  },
+                  { key: c.group_id, className: 'space-y-1' },
                   h(
-                    'span',
-                    {
-                      className: 'font-medium text-gray-600 whitespace-nowrap',
-                    },
-                    'Group ' + (i + 1) + ' — ' + c.image_count + ' images',
+                    'div',
+                    { className: 'flex items-center gap-2 flex-wrap' },
+                    h(
+                      'span',
+                      {
+                        className: 'font-medium text-gray-600 whitespace-nowrap',
+                      },
+                      'Cluster ' + (i + 1) + ' — ' + c.image_count + ' images',
+                    ),
+                    h(
+                      'a',
+                      {
+                        href:
+                          '/audit/api/' +
+                          s.id +
+                          '/visit-clusters/' +
+                          c.group_id +
+                          '/export.csv',
+                        title: 'Download CSV',
+                        className: 'text-blue-500 hover:text-blue-700',
+                      },
+                      h('i', { className: 'fa-solid fa-download' }),
+                    ),
                   ),
                   h(
-                    'span',
-                    { className: 'text-gray-500 font-mono break-words' },
-                    '[' + visitIds.join(', ') + ']',
-                  ),
-                  h(
-                    'a',
-                    {
-                      href:
-                        '/audit/api/' +
-                        s.id +
-                        '/visit-clusters/' +
-                        c.group_id +
-                        '/export.csv',
-                      title: 'Download CSV',
-                      className:
-                        'text-blue-500 hover:text-blue-700 whitespace-nowrap',
-                    },
-                    h('i', { className: 'fa-solid fa-download' }),
+                    'div',
+                    { className: 'flex flex-wrap gap-1 pl-1' },
+                    visitIds.map(function (vid) {
+                      return h(
+                        'span',
+                        {
+                          key: vid,
+                          className:
+                            'font-mono text-gray-500 bg-gray-100 rounded px-1',
+                        },
+                        '#' + vid,
+                      );
+                    }),
                   ),
                 );
               }),
