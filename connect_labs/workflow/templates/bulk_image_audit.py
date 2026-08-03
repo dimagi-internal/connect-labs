@@ -3,6 +3,15 @@ Bulk Image Audit Workflow Template.
 
 Single-opportunity image review with per-FLW pass/fail summary.
 Image types are discovered dynamically from Connect blob data.
+
+AI Review Agent config (in RENDER_CODE): a checkbox per applicable classifier
+-- scale_validation ("KMC Scale Comparison"), muac_overzoom ("MUAC OverZoom"),
+muac_match ("MUAC Mismatch") -- any combination can run independently on the
+same audit. Built as an image_audits list ([{image_path, reviewers: [...]}])
+consumed by connect_labs.audit.ai_review_config.build_review_config via the
+shared ExperimentAuditCreateAsyncAPIView / run_audit_creation (no template-
+specific backend code needed). See weekly_dual_track_audit.py for the same
+per-path-classifier pattern applied to a different template.
 """
 
 DEFINITION = {
@@ -78,24 +87,57 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
     );
 
     // ── AI Review Agent state ────────────────────────────────────────────────
-    const [selectedAiAgent, setSelectedAiAgent] = React.useState(
-        instance.state?.config?.ai_agent_id || ''
-    );
-    // Which AI verdicts the auditor wants pre-tagged automatically (by action key).
-    // Empty = "flag only": the AI badges every image but pre-tags nothing, leaving
+    // Checkboxes, not a single-select dropdown -- any combination of
+    // applicable agents can run independently on the same image path (see
+    // connect_labs.audit.tasks._combine_reviewer_results for how multiple
+    // reviewers on one image get combined).
+    const [selectedAiAgents, setSelectedAiAgents] = React.useState(() => {
+        if (instance.state?.config?.ai_agent_ids) return instance.state.config.ai_agent_ids;
+        if (instance.state?.config?.ai_agent_id) return [instance.state.config.ai_agent_id]; // legacy single-select config
+        return [];
+    });
+    // Which AI verdicts the auditor wants pre-tagged automatically, PER agent
+    // (by action key) -- {agent_id: [key, ...]}. Scoped per-agent because
+    // action keys aren't unique across agents (e.g. both scale_validation and
+    // muac_match use "fail_unmatched"), so a flat list would conflate them
+    // once more than one agent can be selected at once. Empty per-agent list
+    // = "flag only": the AI badges every image but pre-tags nothing, leaving
     // every result for the human to decide (still one-click bulk-appliable in review).
-    const [aiAutoApplyActions, setAiAutoApplyActions] = React.useState(
-        instance.state?.config?.ai_auto_apply_actions || []
-    );
+    const [aiAutoApplyActionsByAgent, setAiAutoApplyActionsByAgent] = React.useState(() => {
+        if (instance.state?.config?.ai_auto_apply_actions_by_agent) {
+            return instance.state.config.ai_auto_apply_actions_by_agent;
+        }
+        if (instance.state?.config?.ai_agent_id && instance.state?.config?.ai_auto_apply_actions) {
+            return { [instance.state.config.ai_agent_id]: instance.state.config.ai_auto_apply_actions }; // legacy
+        }
+        return {};
+    });
+
+    // Manually-entered reading fields these two comparison agents need to
+    // check a photo against -- the SAME known CommCare question paths the
+    // Weekly Dual-Track Image Audit template hardcodes (MUAC_READING_FIELD /
+    // KMC_WEIGHT_READING_FIELD in weekly_dual_track_audit.py), since this
+    // template runs against the same MUAC/KMC form structure. Not
+    // user-configurable here -- see muac_picture_audit.py for the (larger-
+    // scope) generic form-field picker if a different form structure is ever
+    // needed for these agents.
+    const MUAC_READING_FIELD = 'muac_group/muac_display_group_2/muac_colour_display/soliciter_muac_cm';
+    const KMC_WEIGHT_READING_FIELD = 'child_weight_visit';
 
     // Catalog of each agent's verdicts. Mirrors the agents' `result_actions`
     // (the backend remains authoritative); the UI only needs a label + the human
     // result each verdict pre-tags so the auditor can opt verdicts in or out.
+    // `comparisonField`, when present, is threaded into the reviewer's
+    // `config.comparison_field` -- both scale_validation and muac_match
+    // default to requires_reading=True with no fallback, so without this
+    // every image assigned to them is silently skipped (see
+    // connect_labs.audit.tasks._reading_for / _fetch_and_review).
     const AI_AGENTS = {
         scale_validation: {
-            label: 'Scale Image Validation',
+            label: 'KMC Scale Comparison',
             desc: 'Validates weight readings against scale images using ML vision.',
             requiresImageType: 'weight',
+            comparisonField: KMC_WEIGHT_READING_FIELD,
             actions: [
                 { key: 'pass_matched', label: 'readings that match the scale', human_result: 'pass' },
                 { key: 'fail_unmatched', label: 'readings that do NOT match the scale', human_result: 'fail' },
@@ -109,28 +151,63 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
                 { key: 'fail_overzoomed', label: 'photos flagged as hyperzoomed', human_result: 'fail' },
             ],
         },
+        muac_match: {
+            label: 'MUAC Mismatch',
+            desc: 'Flags MUAC photos whose photographed reading does not match the value entered on the form.',
+            requiresImageType: 'muac',
+            comparisonField: MUAC_READING_FIELD,
+            actions: [
+                { key: 'fail_unmatched', label: 'readings that do NOT match the photo', human_result: 'fail' },
+            ],
+        },
     };
 
-    // Reset agent selection when image types change and the agent is no longer applicable
-    React.useEffect(() => {
-        if (!selectedAiAgent) return;
-        const selectedTypes = imageQuestions.filter(q => selectedImageTypeIds.includes(q.id));
-        const hasWeight = selectedTypes.some(q => /weight/i.test(q.id));
-        const hasMuac = selectedTypes.some(q => /muac/i.test(q.id));
-        if (selectedAiAgent === 'scale_validation' && !hasWeight) setSelectedAiAgent('');
-        if (selectedAiAgent === 'muac_overzoom' && !hasMuac) setSelectedAiAgent('');
-    }, [selectedImageTypeIds, selectedAiAgent]);
+    // Single source of truth for "does this agent apply to this image type" --
+    // used by the cleanup effect below, the payload builder (reviewersForType),
+    // and the checkbox render, so the three can't silently disagree about
+    // scoping. An unrecognized requiresImageType applies to NOTHING (fail
+    // closed) rather than everything.
+    const agentAppliesToType = (agentId, typeId) => {
+        const req = AI_AGENTS[agentId]?.requiresImageType;
+        if (req === 'weight') return /weight/i.test(typeId);
+        if (req === 'muac') return /muac/i.test(typeId);
+        return false;
+    };
 
-    // When the agent changes, drop any selected verdicts that don't belong to it.
+    // Drop selected agents (and their per-agent auto-apply choices) when
+    // image types change and they're no longer applicable -- mirrors the
+    // single-select version's behavior of resetting verdicts on every agent
+    // change, generalized to multiple simultaneously-selected agents.
     React.useEffect(() => {
-        const validKeys = (AI_AGENTS[selectedAiAgent]?.actions || []).map(a => a.key);
-        setAiAutoApplyActions(prev => prev.filter(k => validKeys.includes(k)));
-    }, [selectedAiAgent]);
-
-    const toggleAutoApplyAction = (key) => {
-        setAiAutoApplyActions(prev =>
-            prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
+        const selectedTypeIds = imageQuestions
+            .filter(q => selectedImageTypeIds.includes(q.id))
+            .map(q => q.id);
+        const stillApplies = agentId => selectedTypeIds.some(id => agentAppliesToType(agentId, id));
+        setSelectedAiAgents(prev => prev.filter(stillApplies));
+        setAiAutoApplyActionsByAgent(prev =>
+            Object.fromEntries(Object.entries(prev).filter(([agentId]) => stillApplies(agentId)))
         );
+    }, [selectedImageTypeIds]);
+
+    const toggleAiAgent = (agentId) => {
+        setSelectedAiAgents(prev =>
+            prev.includes(agentId) ? prev.filter(a => a !== agentId) : [...prev, agentId]
+        );
+        // Unchecking an agent resets its verdicts -- re-checking it later
+        // starts from "flag only" again rather than reusing a stale choice.
+        setAiAutoApplyActionsByAgent(prev => {
+            if (!(agentId in prev)) return prev;
+            const { [agentId]: _dropped, ...rest } = prev;
+            return rest;
+        });
+    };
+
+    const toggleAutoApplyAction = (agentId, key) => {
+        setAiAutoApplyActionsByAgent(prev => {
+            const current = prev[agentId] || [];
+            const next = current.includes(key) ? current.filter(k => k !== key) : [...current, key];
+            return { ...prev, [agentId]: next };
+        });
     };
 
     // ── Date helpers ─────────────────────────────────────────────────────────
@@ -364,6 +441,30 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
 
         const selectedTypes = imageQuestions.filter(q => selectedImageTypeIds.includes(q.id));
 
+        // Reviewer(s) applicable to one image type -- an agent only attaches
+        // to types matching its requiresImageType (agentAppliesToType above),
+        // so e.g. checking both MUAC OverZoom and KMC Scale Comparison only
+        // ever puts OverZoom on muac-type images and Scale Comparison on
+        // weight-type images. This scoping is enforced HERE only --
+        // connect_labs.audit.ai_review_config.build_review_config (the
+        // shared backend consumer) wires up whatever image_path/agent_id
+        // pairs it's handed with no server-side applicability check, unlike
+        // weekly_dual_track_audit.py's _classifier_applies.
+        const reviewersForType = (t) => selectedAiAgents
+            .filter(agentId => agentAppliesToType(agentId, t.id))
+            .map(agentId => {
+                const comparisonField = AI_AGENTS[agentId]?.comparisonField;
+                return {
+                    agent_id: agentId,
+                    ...(comparisonField ? { config: { comparison_field: comparisonField } } : {}),
+                    auto_apply_actions: aiAutoApplyActionsByAgent[agentId] || [],
+                };
+            });
+        const imageAudits = selectedTypes.map(t => ({
+            image_path: t.path,
+            reviewers: reviewersForType(t),
+        }));
+
         const config = {
             selected_opps: selectedOpps,
             image_questions: imageQuestions,
@@ -377,8 +478,8 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
             threshold: threshold,
             date_preset: datePreset,
             exclude_prior_audited: excludePriorAudited,
-            ai_agent_id: selectedAiAgent || null,
-            ai_auto_apply_actions: selectedAiAgent ? aiAutoApplyActions : [],
+            ai_agent_ids: selectedAiAgents,
+            ai_auto_apply_actions_by_agent: aiAutoApplyActionsByAgent,
         };
 
         setIsRunning(true);
@@ -404,10 +505,7 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
             sample_percentage: samplePct,
             exclude_prior_audited: excludePriorAudited,
             detect_duplicates: detectDuplicates,
-            related_fields: selectedTypes.map(t => ({
-                image_path: t.path,
-                filter_by_image: true,
-            })),
+            // related_fields is derived by run_audit_creation from image_audits below.
         };
 
         try {
@@ -415,8 +513,8 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
                 opportunities: selectedOpps,
                 criteria,
                 workflow_run_id: instance.id,
-                ai_agent_id: selectedAiAgent || undefined,
-                ai_auto_apply_actions: selectedAiAgent ? aiAutoApplyActions : undefined,
+                image_audits: imageAudits,
+                context_fields: null,
             });
 
             if (result.success && result.task_id) {
@@ -982,18 +1080,15 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
 
             {/* AI Review Agent */}
             {(() => {
-                const selTypes = imageQuestions.filter(q => selectedImageTypeIds.includes(q.id));
-                const available = {
-                    weight: selTypes.some(q => /weight/i.test(q.id)),
-                    muac: selTypes.some(q => /muac/i.test(q.id)),
-                };
+                const selTypeIds = imageQuestions
+                    .filter(q => selectedImageTypeIds.includes(q.id))
+                    .map(q => q.id);
                 const agentOpts = Object.entries(AI_AGENTS)
-                    .filter(([id, a]) => available[a.requiresImageType])
+                    .filter(([id]) => selTypeIds.some(typeId => agentAppliesToType(id, typeId)))
                     .map(([id, a]) => ({ v: id, l: a.label, desc: a.desc }));
                 if (agentOpts.length === 0) return null;
-                const agentInfo = agentOpts.find(a => a.v === selectedAiAgent);
-                const agentActions = AI_AGENTS[selectedAiAgent]?.actions || [];
                 const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+                const activeAgentIds = selectedAiAgents.filter(id => agentOpts.some(a => a.v === id));
                 return (
                     <div>
                         <h3 className="text-sm font-medium text-gray-700 mb-3">
@@ -1001,52 +1096,60 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
                             AI Review Agent
                         </h3>
                         <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 space-y-3">
-                            <select
-                                value={selectedAiAgent}
-                                onChange={e => setSelectedAiAgent(e.target.value)}
-                                className="border border-gray-300 rounded px-3 py-2 text-sm w-full md:w-auto"
-                            >
-                                <option value="">None – Skip AI review</option>
+                            <div className="space-y-2">
                                 {agentOpts.map(a => (
-                                    <option key={a.v} value={a.v}>{a.l}</option>
+                                    <label key={a.v}
+                                        className="flex items-start gap-2 text-sm text-gray-700 cursor-pointer">
+                                        <input type="checkbox"
+                                            checked={selectedAiAgents.includes(a.v)}
+                                            onChange={() => toggleAiAgent(a.v)}
+                                            className="rounded border-gray-300 mt-0.5" />
+                                        <span className="font-medium">{a.l}</span>
+                                    </label>
                                 ))}
-                            </select>
-                            {agentInfo && (
-                                <p className="text-sm text-purple-700 bg-purple-50 px-3 py-2 rounded">
-                                    {agentInfo.desc}
-                                </p>
-                            )}
-                            {agentActions.length > 0 && (
-                                <div className="pt-1">
-                                    <p className="text-sm font-medium text-gray-700 mb-1">
-                                        Auto-tag results before I review
-                                    </p>
-                                    <p className="text-xs text-gray-500 mb-2">
-                                        By default the AI only <span className="font-medium">flags</span> images
-                                        — it never sets a Pass/Fail until you do. Tick a verdict below to let the
-                                        AI pre-tag it automatically. You can still bulk-apply any verdict with one
-                                        click while reviewing.
-                                    </p>
-                                    <div className="space-y-1">
-                                        {agentActions.map(act => (
-                                            <label key={act.key}
-                                                className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                                                <input type="checkbox"
-                                                    checked={aiAutoApplyActions.includes(act.key)}
-                                                    onChange={() => toggleAutoApplyAction(act.key)}
-                                                    className="rounded border-gray-300" />
-                                                <span>
-                                                    Automatically mark <span className="font-medium">{act.label}</span> as
-                                                    <span className={'ml-1 font-semibold ' +
-                                                        (act.human_result === 'fail' ? 'text-red-600' : 'text-green-600')}>
-                                                        {cap(act.human_result)}
-                                                    </span>
-                                                </span>
-                                            </label>
-                                        ))}
+                            </div>
+                            {activeAgentIds.map(agentId => {
+                                const agentInfo = agentOpts.find(a => a.v === agentId);
+                                const agentActions = AI_AGENTS[agentId]?.actions || [];
+                                return (
+                                    <div key={agentId} className="pt-2 border-t border-gray-200">
+                                        <p className="text-sm text-purple-700 bg-purple-50 px-3 py-2 rounded">
+                                            <span className="font-semibold">{agentInfo.l}:</span> {agentInfo.desc}
+                                        </p>
+                                        {agentActions.length > 0 && (
+                                            <div className="pt-1">
+                                                <p className="text-sm font-medium text-gray-700 mb-1">
+                                                    Auto-tag {agentInfo.l} results before I review
+                                                </p>
+                                                <p className="text-xs text-gray-500 mb-2">
+                                                    By default the AI only <span className="font-medium">flags</span> images
+                                                    — it never sets a Pass/Fail until you do. Tick a verdict below to let the
+                                                    AI pre-tag it automatically. You can still bulk-apply any verdict with one
+                                                    click while reviewing.
+                                                </p>
+                                                <div className="space-y-1">
+                                                    {agentActions.map(act => (
+                                                        <label key={act.key}
+                                                            className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                                                            <input type="checkbox"
+                                                                checked={(aiAutoApplyActionsByAgent[agentId] || []).includes(act.key)}
+                                                                onChange={() => toggleAutoApplyAction(agentId, act.key)}
+                                                                className="rounded border-gray-300" />
+                                                            <span>
+                                                                Automatically mark <span className="font-medium">{act.label}</span> as
+                                                                <span className={'ml-1 font-semibold ' +
+                                                                    (act.human_result === 'fail' ? 'text-red-600' : 'text-green-600')}>
+                                                                    {cap(act.human_result)}
+                                                                </span>
+                                                            </span>
+                                                        </label>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
-                                </div>
-                            )}
+                                );
+                            })}
                         </div>
                     </div>
                 );
@@ -1062,7 +1165,7 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
                         'rounded-lg hover:bg-blue-700 disabled:bg-gray-400 font-medium'}
                 >
                     <i className="fa-solid fa-play mr-2"></i>
-                    {selectedAiAgent ? 'Create Review with AI' : 'Create Review'}
+                    {selectedAiAgents.length > 0 ? 'Create Review with AI' : 'Create Review'}
                 </button>
                 {selectedImageTypeIds.length === 0 && !imageQuestionsLoading &&
                     imageQuestions.length > 0 && !imageQuestionsError && (
