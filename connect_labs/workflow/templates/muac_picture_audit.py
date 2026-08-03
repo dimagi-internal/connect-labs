@@ -354,6 +354,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
     const [auditTag, setAuditTag] = React.useState('muac');
     const [auditPassThreshold, setAuditPassThreshold] = React.useState(100);
     const [excludePriorAudited, setExcludePriorAudited] = React.useState(false);
+    const [detectDuplicates, setDetectDuplicates] = React.useState(false);
     const [isRunning, setIsRunning] = React.useState(false);
     const [progress, setProgress] = React.useState(null);
     const [jobError, setJobError] = React.useState(null);
@@ -428,6 +429,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
             tag: auditTag,
             pass_threshold: Number(auditPassThreshold),
             exclude_prior_audited: excludePriorAudited,
+            detect_duplicates: detectDuplicates,
             selected_flw_user_ids: selectedFlwUserIds,
         };
         const opportunities = selectedOppIds.map(oid => ({ id: oid, name: oppLabel(oid) }));
@@ -873,6 +875,13 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                     <label className="flex items-center gap-2 text-sm text-gray-700">
                         <input type="checkbox" checked={excludePriorAudited} onChange={e => setExcludePriorAudited(e.target.checked)} className="w-4 h-4" />
                         Exclude images already audited in a completed session
+                    </label>
+                    <label className="flex items-start gap-2 text-sm text-gray-700">
+                        <input type="checkbox" checked={detectDuplicates} onChange={e => setDetectDuplicates(e.target.checked)} className="w-4 h-4 mt-0.5" />
+                        <span>
+                            Detect duplicate photos
+                            <span className="block text-xs text-gray-500">Flags images that appear to share the same subject across a worker's visits, batched per day (max 40 images/day). Flagged images show a "Potential Duplicate" badge and are grouped together for review.</span>
+                        </span>
                     </label>
 
                     <button onClick={handleCreate}
