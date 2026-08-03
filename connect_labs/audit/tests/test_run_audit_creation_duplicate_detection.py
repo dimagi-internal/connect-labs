@@ -85,7 +85,7 @@ def test_run_duplicate_detection_called_with_session_targets_when_enabled(monkey
             "cancelled": False,
         }
     )
-    monkeypatch.setattr(tasks, "run_visit_cluster_duplicate_detection", fake_run_dd, raising=False)
+    monkeypatch.setattr(tasks, "run_grouping_duplicate_detection", fake_run_dd, raising=False)
 
     result = _run(_criteria(enable_duplicate_detection=True), fake_da, monkeypatch)
 
@@ -126,7 +126,7 @@ def test_get_signed_url_passed_to_run_duplicate_detection_resolves_via_data_acce
         captured["url"] = get_signed_url("a", 1973)
         return {"groupings_checked": 0, "groupings_skipped": 0, "images_flagged": 0, "errors": 0, "cancelled": False}
 
-    monkeypatch.setattr(tasks, "run_visit_cluster_duplicate_detection", fake_run_dd, raising=False)
+    monkeypatch.setattr(tasks, "run_grouping_duplicate_detection", fake_run_dd, raising=False)
 
     _run(_criteria(enable_duplicate_detection=True), fake_da, monkeypatch)
 
@@ -142,7 +142,7 @@ def test_run_duplicate_detection_not_called_when_flag_is_false(monkeypatch):
         created_sessions=created_sessions,
     )
     fake_run_dd = MagicMock()
-    monkeypatch.setattr(tasks, "run_visit_cluster_duplicate_detection", fake_run_dd, raising=False)
+    monkeypatch.setattr(tasks, "run_grouping_duplicate_detection", fake_run_dd, raising=False)
 
     result = _run(_criteria(enable_duplicate_detection=False), fake_da, monkeypatch)
 
@@ -162,7 +162,7 @@ def test_run_duplicate_detection_not_called_when_no_clusters_computed(monkeypatc
         created_sessions=created_sessions,
     )
     fake_run_dd = MagicMock()
-    monkeypatch.setattr(tasks, "run_visit_cluster_duplicate_detection", fake_run_dd, raising=False)
+    monkeypatch.setattr(tasks, "run_grouping_duplicate_detection", fake_run_dd, raising=False)
 
     result = _run(
         {

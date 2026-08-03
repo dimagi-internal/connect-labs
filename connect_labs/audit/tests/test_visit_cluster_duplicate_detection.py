@@ -11,7 +11,7 @@ behavior layered on top of PR #1070's flag-only method, not persistence.
 from unittest.mock import Mock
 
 from connect_labs.audit.models import AuditSessionRecord
-from connect_labs.audit.visit_cluster_duplicate_detection import _mark_duplicate, run_duplicate_detection
+from connect_labs.audit.visit_cluster_duplicate_detection import _mark_duplicate, run_grouping_duplicate_detection
 
 
 def _session(visit_results=None, opportunity_id=1973):
@@ -27,9 +27,9 @@ def _session(visit_results=None, opportunity_id=1973):
 
 
 def _target(session, clusters, blob_meta_by_id, opp_id=1973, data_access=None):
-    """run_duplicate_detection re-fetches via data_access.get_audit_session()
+    """run_grouping_duplicate_detection re-fetches via data_access.get_audit_session()
     rather than mutating `session` directly (see the docstring on
-    run_duplicate_detection) -- default get_audit_session to hand back the
+    run_grouping_duplicate_detection) -- default get_audit_session to hand back the
     SAME session object, so tests that aren't specifically modeling a stale-
     vs-fresh mismatch (see test_run_duplicate_detection_preserves...) behave
     as if nothing else touched the session between creation and this stage."""
@@ -125,7 +125,7 @@ def test_mark_duplicate_returns_false_for_unknown_blob():
     assert session.data["visit_results"] == {}
 
 
-# ── run_duplicate_detection ──────────────────────────────────────────────
+# ── run_grouping_duplicate_detection ──────────────────────────────────────────────
 
 
 def test_skips_groupings_with_fewer_than_two_images():
@@ -134,7 +134,7 @@ def test_skips_groupings_with_fewer_than_two_images():
     blob_meta = {"a": {"visit_id": 111, "question_id": "form/muac"}}
     client = Mock()
 
-    result = run_duplicate_detection(
+    result = run_grouping_duplicate_detection(
         [_target(session, clusters, blob_meta)], get_signed_url=lambda bid, oid: f"https://x/{bid}", client=client
     )
 
@@ -165,7 +165,7 @@ def test_calls_api_once_per_grouping_and_flags_returned_ids():
     client.detect.side_effect = [[["a", "b"]], []]
     data_access = Mock()
 
-    result = run_duplicate_detection(
+    result = run_grouping_duplicate_detection(
         [_target(session, clusters, blob_meta, data_access=data_access)],
         get_signed_url=lambda bid, oid: f"https://x/{bid}",
         client=client,
@@ -198,7 +198,7 @@ def test_overlapping_response_groups_are_merged_into_one_component():
     client = Mock()
     client.detect.return_value = [["a", "b"], ["b", "c"]]
 
-    result = run_duplicate_detection(
+    result = run_grouping_duplicate_detection(
         [_target(session, clusters, blob_meta)], get_signed_url=lambda bid, oid: f"https://x/{bid}", client=client
     )
 
@@ -221,7 +221,7 @@ def test_skips_blobs_whose_signed_url_lookup_fails():
             return None  # simulates the endpoint 404ing pre-deploy
         return f"https://x/{blob_id}"
 
-    result = run_duplicate_detection(
+    result = run_grouping_duplicate_detection(
         [_target(session, clusters, blob_meta)], get_signed_url=flaky_signed_url, client=client
     )
 
@@ -248,7 +248,7 @@ def test_one_failed_grouping_does_not_stop_the_rest():
     client = Mock()
     client.detect.side_effect = [DuplicateDetectionError("boom"), [["c", "d"]]]
 
-    result = run_duplicate_detection(
+    result = run_grouping_duplicate_detection(
         [_target(session, clusters, blob_meta)], get_signed_url=lambda bid, oid: f"https://x/{bid}", client=client
     )
 
@@ -275,7 +275,7 @@ def test_non_duplicate_detection_error_from_api_call_does_not_propagate():
     # from inside detect() -- not a DuplicateDetectionError. Caught broadly.
     client.detect.side_effect = [ValueError("bad json"), [["c", "d"]]]
 
-    result = run_duplicate_detection(
+    result = run_grouping_duplicate_detection(
         [_target(session, clusters, blob_meta)], get_signed_url=lambda bid, oid: f"https://x/{bid}", client=client
     )
 
@@ -307,7 +307,7 @@ def test_cancellation_stops_before_next_target():
     orig = vcdd_module.is_audit_creation_cancelled
     vcdd_module.is_audit_creation_cancelled = fake_cancelled
     try:
-        result = run_duplicate_detection(
+        result = run_grouping_duplicate_detection(
             [_target(session_a, clusters, blob_meta), _target(session_b, clusters, blob_meta)],
             get_signed_url=lambda bid, oid: f"https://x/{bid}",
             client=client,
@@ -335,7 +335,7 @@ def test_progress_callback_receives_processed_and_total():
     client.detect.return_value = []
     seen = []
 
-    run_duplicate_detection(
+    run_grouping_duplicate_detection(
         [_target(session, clusters, blob_meta)],
         get_signed_url=lambda bid, oid: f"https://x/{bid}",
         client=client,
@@ -385,7 +385,7 @@ def test_run_duplicate_detection_preserves_ai_review_results_written_after_creat
     data_access = Mock()
     data_access.get_audit_session.return_value = fresh_session
 
-    result = run_duplicate_detection(
+    result = run_grouping_duplicate_detection(
         [
             {
                 "session": stale_session_at_creation_time,
@@ -425,7 +425,7 @@ def test_caps_images_per_grouping_and_counts_the_rest():
     client = Mock()
     client.detect.return_value = []
 
-    result = run_duplicate_detection(
+    result = run_grouping_duplicate_detection(
         [_target(session, clusters, blob_meta)],
         get_signed_url=lambda bid, oid: f"https://x/{bid}",
         client=client,
@@ -450,7 +450,7 @@ def test_default_image_cap_reads_from_shared_settings(settings):
     client = Mock()
     client.detect.return_value = []
 
-    result = run_duplicate_detection(
+    result = run_grouping_duplicate_detection(
         [_target(session, clusters, blob_meta)], get_signed_url=lambda bid, oid: f"https://x/{bid}", client=client
     )
 

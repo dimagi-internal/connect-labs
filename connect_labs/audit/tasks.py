@@ -20,9 +20,7 @@ from connect_labs.audit.data_access import (
     is_audit_creation_cancelled,
 )
 from connect_labs.audit.models import AI_NOTES_JOIN_SEP
-from connect_labs.audit.visit_cluster_duplicate_detection import (
-    run_duplicate_detection as run_visit_cluster_duplicate_detection,
-)
+from connect_labs.audit.visit_cluster_duplicate_detection import run_grouping_duplicate_detection
 from connect_labs.audit.visit_clustering import build_flw_visit_clusters
 from connect_labs.utils.celery import set_task_progress
 from connect_labs.utils.progress_relays import _RELAYS as AUDIT_PROGRESS_RELAYS  # noqa: F401  (back-compat alias)
@@ -1480,7 +1478,7 @@ def run_audit_creation(
                 _relay(processed, total, f"Duplicate detection · {message}")
 
             try:
-                dup_detection_results = run_visit_cluster_duplicate_detection(
+                dup_detection_results = run_grouping_duplicate_detection(
                     dup_detection_targets,
                     get_signed_url=lambda blob_id, oid: _data_access_for_opp(oid).get_attachment_signed_url(
                         blob_id, oid
@@ -1547,8 +1545,8 @@ def run_audit_creation(
             completion_message += f" · {duplicate_note}"
         if dd_note:
             completion_message += f" · {dd_note}"
-        # Distinct key from Clayton's result["duplicate_detection"] (PR #1070,
-        # day/FLW/type-bucketed) -- these are two independent optional stages
+        # Distinct key from PR #1070's result["duplicate_detection"]
+        # (day/FLW/type-bucketed) -- these are two independent optional stages
         # gated by different criteria flags, never the same data.
         if dup_detection_results:
             result["visit_cluster_duplicate_detection"] = dup_detection_results

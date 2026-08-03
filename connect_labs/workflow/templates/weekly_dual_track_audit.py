@@ -273,11 +273,12 @@ DEFINITION = {
     ],
     "config": {
         "audit_batch": {
-            # PR #771 per-image-type model, extended: the muac_overzoom and
-            # muac_match AI reviewers attach per-PATH (any path containing
-            # "muac"), not per-track — see _reviewers_for_path. "name" is a
-            # purely cosmetic display label the user can rename; it has no
-            # effect on which images get AI-reviewed.
+            # PR #771 per-image-type model, extended: classifier attachment is
+            # checkbox-driven per path (see _reviewers_for_path /
+            # _default_classifiers_for_path), not per-track and not automatic
+            # substring matching. "name" is a purely cosmetic display label
+            # the user can rename; it has no effect on which images get
+            # AI-reviewed.
             "track_a": {"tag": "muac", "sample_percentage": 100, "name": "MUAC"},
             "track_b": {"tag": "rest", "sample_percentage": 10, "name": "Other"},
             "per_opp": {},  # { "<opp_id>": {"muac_image_paths": [...], "rest_image_paths": [...], "classifiers": {"<path>": ["hyperzoom", ...]}} }
@@ -1019,9 +1020,11 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                         <div>
                             <span className="text-sm text-gray-700">Send groupings to the Duplicate Detection API</span>
                             <p className="text-xs text-gray-500 mt-0.5">
-                                Checks every image already in a grouping above (from any selected image path,
-                                either track) against the Duplicate Detection service. Confirmed duplicates are
-                                flagged in the AI summary and pre-tagged Duplicate/Fake in bulk assessment
+                                Checks every image already in a grouping above, across whichever image paths
+                                are selected for that track, against the Duplicate Detection service. Track A
+                                and Track B are separate audits, so groupings never span across tracks -- this
+                                setting applies independently to each track's own audit. Confirmed duplicates
+                                are flagged in the AI summary and pre-tagged Duplicate/Fake in bulk assessment
                                 (existing manual tags are never overwritten). Requires at least one of the
                                 groupings above to be enabled.
                             </p>

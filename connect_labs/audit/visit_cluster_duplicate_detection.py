@@ -5,8 +5,11 @@ external Duplicate Detection API and writes back which images were confirmed
 duplicates.
 
 Runs once per grouping, across every image in it regardless of which image
-path/track it came from -- the only filter is whatever the Visit Clustering
-tile's time/distance parameters already produced.
+path it came from -- the only filter is whatever the Visit Clustering tile's
+time/distance parameters already produced. Scoped to a single track's own
+audit: Track A and Track B are separate run_audit_creation invocations (see
+weekly_dual_track_audit.py's job handler), each with its own independently-
+computed clusters, so a grouping never spans across tracks.
 
 Reuses the shared DuplicateDetectionClient / DuplicateDetectionError /
 assign_group_ids from connect_labs.audit.duplicate_detection (PR #1070's
@@ -23,6 +26,7 @@ import logging
 from django.conf import settings
 
 from connect_labs.audit.data_access import is_audit_creation_cancelled
+from connect_labs.audit.duplicate_detection import DEFAULT_MAX_IMAGES_PER_DAY as DEFAULT_MAX_IMAGES_PER_GROUPING
 from connect_labs.audit.duplicate_detection import DuplicateDetectionClient, assign_group_ids
 
 logger = logging.getLogger(__name__)
@@ -32,12 +36,12 @@ logger = logging.getLogger(__name__)
 # lookup failed for one of its blobs (see get_signed_url).
 _MIN_IMAGES_TO_CHECK = 2
 
-# Same cap as PR #1070's day/FLW/type-bucketed detection (connect_labs.audit.
-# duplicate_detection) -- a visit-clustering grouping can chain transitively
-# over many consecutive visits, so without a cap one grouping could send an
-# unbounded, all-or-nothing POST against a long-running (180s-timeout)
-# endpoint. Reuses the SAME setting rather than inventing a second knob.
-DEFAULT_MAX_IMAGES_PER_GROUPING = 40
+# Same cap, same fallback default, as PR #1070's day/FLW/type-bucketed
+# detection (connect_labs.audit.duplicate_detection) -- a visit-clustering
+# grouping can chain transitively over many consecutive visits, so without a
+# cap one grouping could send an unbounded, all-or-nothing POST against a
+# long-running (180s-timeout) endpoint. Imports the constant rather than
+# re-declaring it, so the two can't silently drift apart.
 
 
 def _mark_duplicate(session, blob_meta_by_id, blob_id, group_id) -> bool:
@@ -48,6 +52,13 @@ def _mark_duplicate(session, blob_meta_by_id, blob_id, group_id) -> bool:
     "duplicate_fake" when the assessment is still untouched, never overwriting
     a manual verdict. Returns False (no-op) if blob_id isn't one of this
     session's known images.
+
+    Note: `group_id` shares a single `assessment["duplicate_group"]` field
+    with PR #1070's day/FLW/type-bucketed detection, which uses its own,
+    unrelated component-index space. If a session were ever processed by
+    BOTH stages (they're gated by different criteria flags and target
+    different templates today, so this doesn't happen in practice), whichever
+    stage ran last would overwrite the other's group id for a shared blob.
     """
     meta = blob_meta_by_id.get(blob_id)
     if not meta:
@@ -61,7 +72,7 @@ def _mark_duplicate(session, blob_meta_by_id, blob_id, group_id) -> bool:
     return True
 
 
-def run_duplicate_detection(
+def run_grouping_duplicate_detection(
     targets,
     *,
     get_signed_url,
