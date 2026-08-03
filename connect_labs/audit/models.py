@@ -357,6 +357,26 @@ class AuditSessionRecord(LocalLabsRecord):
             existing_labels.append(DUPLICATE_FLAG_LABEL)
         assessment["ai_notes"] = AI_NOTES_JOIN_SEP.join(existing_labels)
 
+    def flag_potential_duplicate_and_tag(self, visit_id: int, blob_id: str, question_id: str, group_id: int):
+        """Like flag_potential_duplicate, but ALSO auto-tags the human `result`
+        as "duplicate_fake" when the assessment is still untouched -- never
+        overwriting an existing manual verdict.
+
+        A second, opt-in version of the flag-only method above: some callers
+        (the dual-track workflow's visit-clustering-grouping detection, see
+        connect_labs.audit.visit_cluster_duplicate_detection) want a confirmed
+        duplicate to show up already tagged in bulk assessment, not just
+        flagged in the AI summary. Kept as a distinct method rather than a
+        parameter on flag_potential_duplicate because this is likely to become
+        a per-run, user-configurable choice (flag-only vs. flag-and-tag) rather
+        than a fixed per-caller behavior.
+        """
+        self.flag_potential_duplicate(visit_id, blob_id, question_id, group_id)
+        visit_key = str(visit_id)
+        assessment = self.data["visit_results"][visit_key]["assessments"][blob_id]
+        if not assessment.get("result"):
+            assessment["result"] = "duplicate_fake"
+
     def clear_assessment(self, visit_id: int, blob_id: str):
         """
         Remove an assessment entry for an image.

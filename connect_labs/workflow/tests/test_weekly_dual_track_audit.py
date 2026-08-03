@@ -667,6 +667,7 @@ def test_definition_pins_visit_clustering_defaults():
         "time_gap_minutes": 10,
         "enable_distance": False,
         "distance_meters": 10,
+        "enable_duplicate_detection": False,
     }
 
 
@@ -795,3 +796,267 @@ def test_reviewer_assignment_is_per_path_not_per_track():
             ],
         }
     ]
+
+
+class TestClassifierGating:
+    def test_hyperzoom_and_muac_mismatch_apply_only_to_muac_paths(self):
+        from connect_labs.workflow.templates.weekly_dual_track_audit import _classifier_applies
+
+        assert _classifier_applies("hyperzoom", "muac_group/muac_photo") is True
+        assert _classifier_applies("muac_mismatch", "MUAC_Group/photo") is True
+        assert _classifier_applies("hyperzoom", "form/house_photo") is False
+        assert _classifier_applies("muac_mismatch", "") is False
+
+    def test_kmc_scale_requires_exact_case_sensitive_path_match(self):
+        from connect_labs.workflow.templates.weekly_dual_track_audit import _classifier_applies
+
+        assert _classifier_applies("kmc_scale", "anthropometric/upload_weight_image") is True
+        assert _classifier_applies("kmc_scale", "Anthropometric/Upload_Weight_Image") is False
+        assert _classifier_applies("kmc_scale", "form/house_photo") is False
+
+    def test_unknown_classifier_key_never_applies(self):
+        from connect_labs.workflow.templates.weekly_dual_track_audit import _classifier_applies
+
+        assert _classifier_applies("not_a_real_classifier", "muac_group/muac_photo") is False
+
+    def test_default_classifiers_for_path_matches_legacy_muac_only_behavior(self):
+        from connect_labs.workflow.templates.weekly_dual_track_audit import _default_classifiers_for_path
+
+        assert _default_classifiers_for_path("muac_group/muac_photo") == ["hyperzoom", "muac_mismatch"]
+        assert _default_classifiers_for_path("form/house_photo") == []
+        assert _default_classifiers_for_path(None) == []
+
+    def test_explicit_empty_classifier_list_means_no_reviewers_even_on_a_muac_path(self):
+        """A user who explicitly unchecked both boxes on a muac path must get
+        NO reviewers -- distinct from a path that was never touched at all
+        (which falls back to the legacy default)."""
+        from connect_labs.workflow.templates.weekly_dual_track_audit import _reviewers_for_path
+
+        assert _reviewers_for_path("muac_group/muac_photo", {"muac_group/muac_photo": []}) == []
+
+    def test_explicit_selection_of_a_subset_is_honored(self):
+        from connect_labs.workflow.templates.weekly_dual_track_audit import MUAC_OVERZOOM_REVIEWER, _reviewers_for_path
+
+        assert _reviewers_for_path("muac_group/muac_photo", {"muac_group/muac_photo": ["hyperzoom"]}) == [
+            MUAC_OVERZOOM_REVIEWER
+        ]
+
+    def test_kmc_scale_selection_only_attaches_on_the_exact_weight_path(self):
+        from connect_labs.workflow.templates.weekly_dual_track_audit import KMC_SCALE_REVIEWER, _reviewers_for_path
+
+        assert _reviewers_for_path(
+            "anthropometric/upload_weight_image", {"anthropometric/upload_weight_image": ["kmc_scale"]}
+        ) == [KMC_SCALE_REVIEWER]
+        # Selected but doesn't apply to this path -- server-side gating drops it.
+        assert _reviewers_for_path("form/other_photo", {"form/other_photo": ["kmc_scale"]}) == []
+
+    def test_path_absent_from_classifiers_dict_falls_back_to_default(self):
+        """A dict that has entries for OTHER paths but not this one still
+        falls back per-path -- distinct from a whole-dict None."""
+        from connect_labs.workflow.templates.weekly_dual_track_audit import (
+            MUAC_MATCH_REVIEWER,
+            MUAC_OVERZOOM_REVIEWER,
+            _reviewers_for_path,
+        )
+
+        assert _reviewers_for_path("muac_group/muac_photo", {"form/other_photo": ["kmc_scale"]}) == [
+            MUAC_OVERZOOM_REVIEWER,
+            MUAC_MATCH_REVIEWER,
+        ]
+
+
+def test_image_audits_threads_classifiers_per_path():
+    from connect_labs.workflow.templates.weekly_dual_track_audit import KMC_SCALE_REVIEWER, _image_audits
+
+    result = _image_audits(
+        ["anthropometric/upload_weight_image", "form/house"],
+        {"anthropometric/upload_weight_image": ["kmc_scale"]},
+    )
+    assert result == [
+        {"image_path": "anthropometric/upload_weight_image", "reviewers": [KMC_SCALE_REVIEWER]},
+        {"image_path": "form/house", "reviewers": []},
+    ]
+
+
+def test_build_track_audit_calls_reads_per_opp_classifiers():
+    from connect_labs.workflow.templates.weekly_dual_track_audit import KMC_SCALE_REVIEWER
+
+    calls = build_track_audit_calls(
+        opportunity_ids=[101],
+        opp_names={"101": "Opp A"},
+        per_opp={
+            "101": {
+                "muac_image_paths": ["anthropometric/upload_weight_image"],
+                "rest_image_paths": [],
+                "classifiers": {"anthropometric/upload_weight_image": ["kmc_scale"]},
+            }
+        },
+        track_a=TRACK_A,
+        track_b=TRACK_B,
+        window_start="2026-06-22",
+        window_end="2026-06-28",
+        username="nm1",
+        workflow_run_id=555,
+    )
+    assert calls[0]["image_audits"] == [
+        {"image_path": "anthropometric/upload_weight_image", "reviewers": [KMC_SCALE_REVIEWER]}
+    ]
+
+
+def test_build_track_audit_calls_threads_enable_duplicate_detection():
+    calls = build_track_audit_calls(
+        opportunity_ids=[101],
+        opp_names={"101": "Opp A"},
+        per_opp={"101": {"muac_image_paths": ["form.muac"]}},
+        track_a=TRACK_A,
+        track_b=TRACK_B,
+        window_start="2026-06-22",
+        window_end="2026-06-28",
+        username="nm1",
+        workflow_run_id=555,
+        enable_duplicate_detection=True,
+    )
+    assert calls[0]["criteria"]["enable_duplicate_detection"] is True
+
+
+def test_build_track_audit_calls_omits_enable_duplicate_detection_when_not_provided():
+    calls = build_track_audit_calls(
+        opportunity_ids=[101],
+        opp_names={"101": "Opp A"},
+        per_opp={"101": {"muac_image_paths": ["form.muac"]}},
+        track_a=TRACK_A,
+        track_b=TRACK_B,
+        window_start="2026-06-22",
+        window_end="2026-06-28",
+        username="nm1",
+        workflow_run_id=555,
+    )
+    assert "enable_duplicate_detection" not in calls[0]["criteria"]
+
+
+def test_definition_pins_duplicate_detection_default_off():
+    from connect_labs.workflow.templates.weekly_dual_track_audit import DEFINITION
+
+    assert DEFINITION["config"]["audit_batch"]["visit_clustering"]["enable_duplicate_detection"] is False
+
+
+def test_handler_applies_duplicate_detection_flag_from_job_payload():
+    from connect_labs.workflow.job_handlers import weekly_dual_track_audit as h
+
+    run = _fake_run({"window_start": "2026-06-22", "window_end": "2026-06-28"})
+    eager = mock.Mock()
+    eager.result = {"sessions": [1]}
+
+    with (
+        mock.patch.object(h, "WorkflowDataAccess") as WDA,
+        mock.patch.object(h, "run_audit_creation") as rac,
+    ):
+        wda = WDA.return_value
+        wda.get_run.return_value = run
+        wda.get_definition.return_value = _fake_definition()
+        rac.apply.return_value = eager
+
+        h.weekly_dual_track_audit_create(
+            {
+                "run_id": 555,
+                "opportunity_id": 101,
+                "window_start": "2026-06-22",
+                "window_end": "2026-06-28",
+                "enable_duplicate_detection": True,
+            },
+            access_token="tok",
+        )
+
+    for c in rac.apply.call_args_list:
+        assert c.kwargs["kwargs"]["criteria"]["enable_duplicate_detection"] is True
+
+
+def test_handler_falls_back_to_persisted_duplicate_detection_flag():
+    from connect_labs.workflow.job_handlers import weekly_dual_track_audit as h
+
+    run = _fake_run({"window_start": "2026-06-22", "window_end": "2026-06-28", "enable_duplicate_detection": True})
+    eager = mock.Mock()
+    eager.result = {"sessions": [1]}
+
+    with (
+        mock.patch.object(h, "WorkflowDataAccess") as WDA,
+        mock.patch.object(h, "run_audit_creation") as rac,
+    ):
+        wda = WDA.return_value
+        wda.get_run.return_value = run
+        wda.get_definition.return_value = _fake_definition()
+        rac.apply.return_value = eager
+
+        h.weekly_dual_track_audit_create({"run_id": 555, "opportunity_id": 101}, access_token="tok")
+
+    for c in rac.apply.call_args_list:
+        assert c.kwargs["kwargs"]["criteria"]["enable_duplicate_detection"] is True
+
+
+def test_handler_persists_duplicate_detection_flag_onto_run_state():
+    from connect_labs.workflow.job_handlers import weekly_dual_track_audit as h
+
+    run = _fake_run({"window_start": "2026-06-22", "window_end": "2026-06-28"})
+    eager = mock.Mock()
+    eager.result = {"sessions": [1]}
+
+    with (
+        mock.patch.object(h, "WorkflowDataAccess") as WDA,
+        mock.patch.object(h, "run_audit_creation") as rac,
+    ):
+        wda = WDA.return_value
+        wda.get_run.return_value = run
+        wda.get_definition.return_value = _fake_definition()
+        rac.apply.return_value = eager
+
+        h.weekly_dual_track_audit_create(
+            {
+                "run_id": 555,
+                "opportunity_id": 101,
+                "window_start": "2026-06-22",
+                "window_end": "2026-06-28",
+                "enable_duplicate_detection": True,
+            },
+            access_token="tok",
+        )
+
+    written = wda.update_run_state.call_args[0][1]
+    assert written["enable_duplicate_detection"] is True
+
+
+def test_render_code_includes_per_path_classifier_checkboxes():
+    from connect_labs.workflow.templates import get_template
+
+    rc = get_template("weekly_dual_track_audit")["render_code"]
+    assert "'hyperzoom'" in rc
+    assert "'muac_mismatch'" in rc
+    assert "'kmc_scale'" in rc
+    assert "AI Classifiers" in rc
+    assert "classifiersByOpp" in rc
+
+
+def test_render_code_includes_duplicate_detection_toggle():
+    from connect_labs.workflow.templates import get_template
+
+    rc = get_template("weekly_dual_track_audit")["render_code"]
+    assert "enableDuplicateDetection" in rc
+    assert "enable_duplicate_detection" in rc
+    assert "Duplicate Detection API" in rc
+
+
+def test_render_code_resets_duplicate_detection_when_clustering_disabled():
+    """A stale checked-but-greyed-out Duplicate Detection box must not survive
+    once both clustering gates are turned off -- it would otherwise still
+    ride the job payload and render as "enabled" with nothing to check."""
+    from connect_labs.workflow.templates import get_template
+
+    rc = get_template("weekly_dual_track_audit")["render_code"]
+    assert "setEnableDuplicateDetection(false)" in rc
+    assert "!enableTimeGap && !enableDistance && enableDuplicateDetection" in rc
+
+
+def test_render_code_view_only_summary_mentions_duplicate_detection_when_enabled():
+    from connect_labs.workflow.templates import get_template
+
+    rc = get_template("weekly_dual_track_audit")["render_code"]
+    assert "Duplicate Detection enabled" in rc

@@ -32,6 +32,7 @@ from connect_labs.workflow.data_access import PipelineCacheMiss, PipelineDataAcc
 from connect_labs.workflow.templates import TEMPLATES
 from connect_labs.workflow.templates import create_workflow_from_template as create_from_template
 from connect_labs.workflow.templates import template_supports_default_run
+from connect_labs.workflow.templates.weekly_dual_track_audit import CLASSIFIER_KEYS
 
 logger = logging.getLogger(__name__)
 
@@ -4830,6 +4831,25 @@ class UpdateAuditBatchConfigView(LoginRequiredMixin, View):
                 for paths_key in ("muac_image_paths", "rest_image_paths"):
                     if paths_key in cfg and not isinstance(cfg[paths_key], list):
                         return JsonResponse({"error": f"per_opp[{key}].{paths_key} must be a list"}, status=400)
+                if "classifiers" in cfg:
+                    classifiers = cfg["classifiers"]
+                    if not isinstance(classifiers, dict):
+                        return JsonResponse({"error": f"per_opp[{key}].classifiers must be an object"}, status=400)
+                    for path, keys in classifiers.items():
+                        if not isinstance(keys, list) or not all(isinstance(k, str) for k in keys):
+                            return JsonResponse(
+                                {"error": f"per_opp[{key}].classifiers[{path}] must be a list of strings"},
+                                status=400,
+                            )
+                        unknown = set(keys) - CLASSIFIER_KEYS
+                        if unknown:
+                            return JsonResponse(
+                                {
+                                    "error": f"per_opp[{key}].classifiers[{path}] has unknown classifier(s): "
+                                    f"{sorted(unknown)}"
+                                },
+                                status=400,
+                            )
 
             user_opp_ids = {
                 int(o["id"]) for o in (get_org_data(request) or {}).get("opportunities", []) if o.get("id") is not None

@@ -83,6 +83,9 @@ def weekly_dual_track_audit_create(job_config: dict, access_token: str, progress
         time_gap_minutes = job_config.get("time_gap_minutes", state.get("time_gap_minutes"))
         enable_distance = job_config.get("enable_distance", state.get("enable_distance"))
         distance_meters = job_config.get("distance_meters", state.get("distance_meters"))
+        enable_duplicate_detection = job_config.get(
+            "enable_duplicate_detection", state.get("enable_duplicate_detection")
+        )
 
         calls = build_track_audit_calls(
             opportunity_ids=definition.data.get("opportunity_ids") or [opportunity_id],
@@ -101,6 +104,7 @@ def weekly_dual_track_audit_create(job_config: dict, access_token: str, progress
             time_gap_minutes=time_gap_minutes,
             enable_distance=enable_distance,
             distance_meters=distance_meters,
+            enable_duplicate_detection=enable_duplicate_detection,
         )
 
         from connect_labs.utils.progress_relays import pop_relay, register_relay
@@ -173,6 +177,7 @@ def weekly_dual_track_audit_create(job_config: dict, access_token: str, progress
                 "time_gap_minutes": time_gap_minutes,
                 "enable_distance": enable_distance,
                 "distance_meters": distance_meters,
+                "enable_duplicate_detection": enable_duplicate_detection,
             },
         )
     finally:

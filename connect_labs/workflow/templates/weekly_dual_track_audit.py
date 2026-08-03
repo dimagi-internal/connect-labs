@@ -2,13 +2,18 @@
 
 Each weekly run creates, per FLW, two audits per opportunity — Track A and
 Track B, user-named slots each pinned to their own set of image paths (see
-_image_audits). Any path containing "muac" (in either track) gets both the
-muac_overzoom and muac_match AI agents attached, running independently of
-each other; any other path is human-reviewed only.
+_image_audits). Per-path AI classifiers (Hyperzoom, MUAC Mismatch, KMC Scale
+Comparison) are user-selectable checkboxes in the "Opportunities & image
+types" tile, gated server-side by _classifier_applies; a path with no
+explicit saved selection falls back to _default_classifiers_for_path
+(preserving the pre-checkbox automatic muac-substring behavior). Duplicate
+Detection is a separate, non-per-path classifier wired through Visit
+Clustering — see connect_labs.audit.visit_cluster_duplicate_detection.
 
 The per-opp image paths and track config live on the workflow DEFINITION
 (instance config); the batch window lives in run state. See
-docs/superpowers/specs/2026-06-30-audit-program-report-design.md.
+docs/superpowers/specs/2026-06-30-audit-program-report-design.md and
+docs/superpowers/specs/2026-07-30-dual-track-audit-classifiers-design.md.
 """
 
 from connect_labs.audit.data_access import AuditDataAccess
@@ -35,25 +40,71 @@ MUAC_MATCH_REVIEWER = {
     "auto_apply_actions": ["fail_unmatched"],
 }
 
+# Verbatim from audit_with_ai_review.py's (the "Weekly KMC Audit with AI
+# Review" template) legacy relatedFields wiring — the scale_validation agent
+# compares this reading field against a photo at this exact image path.
+KMC_WEIGHT_IMAGE_PATH = "anthropometric/upload_weight_image"
+KMC_WEIGHT_READING_FIELD = "child_weight_visit"
 
-def _reviewers_for_path(path):
-    """Both MUAC AI reviewers attach to any image path whose name contains
-    'muac' (case-insensitive) — independent of which track (A/B) the path is
-    pinned under, and independent of whatever display name the user gives
-    that track. The two run independently of each other and are scored
-    independently (see connect_labs.audit.tasks._combine_reviewer_results):
-    MUAC OverZoom flags unusable framing, MUAC Match flags a reading that
-    doesn't match the photo. Any other path gets no AI reviewer (human-only)."""
-    if "muac" not in (path or "").lower():
-        return []
-    return [MUAC_OVERZOOM_REVIEWER, MUAC_MATCH_REVIEWER]
+KMC_SCALE_REVIEWER = {
+    "agent_id": "scale_validation",
+    "config": {"comparison_field": KMC_WEIGHT_READING_FIELD},
+    "auto_apply_actions": ["fail_unmatched"],
+}
+
+# Per-path classifier checkboxes (see the "Opportunities & image types" tile
+# in RENDER_CODE) — each opportunity's DEFINITION.config.audit_batch.per_opp
+# entry may carry a "classifiers" map: {"<path>": ["hyperzoom", ...]}.
+CLASSIFIER_SPECS = {
+    "hyperzoom": MUAC_OVERZOOM_REVIEWER,
+    "muac_mismatch": MUAC_MATCH_REVIEWER,
+    "kmc_scale": KMC_SCALE_REVIEWER,
+}
+CLASSIFIER_KEYS = frozenset(CLASSIFIER_SPECS)
 
 
-def _image_audits(paths):
+def _classifier_applies(key, path):
+    """Server-side gating — the actual enforcement point regardless of what
+    the (advisory-only) frontend checkbox state sent. Hyperzoom/MUAC
+    Mismatch require "muac" in the path name (case-insensitive); KMC Scale
+    Comparison requires an EXACT (case-sensitive) match to the weight-image
+    path used by the Weekly KMC Audit with AI Review template."""
+    if key in ("hyperzoom", "muac_mismatch"):
+        return "muac" in (path or "").lower()
+    if key == "kmc_scale":
+        return path == KMC_WEIGHT_IMAGE_PATH
+    return False
+
+
+def _default_classifiers_for_path(path):
+    """Classifiers implied for a path with no explicit saved selection —
+    preserves the pre-checkbox automatic behavior (every muac path got both
+    MUAC reviewers, unconditionally) so a legacy/never-resaved config keeps
+    working exactly as before. kmc_scale never defaults on (it's new — no
+    legacy behavior to preserve). Mirrored in RENDER_CODE's own
+    defaultClassifiersForPath; keep both in sync if this ever changes."""
+    return ["hyperzoom", "muac_mismatch"] if "muac" in (path or "").lower() else []
+
+
+def _reviewers_for_path(path, classifiers=None):
+    """Reviewer specs for one image path, resolved from its saved classifier
+    selection (DEFINITION.config.audit_batch.per_opp[<opp_id>].classifiers)
+    — independent of which track (A/B) the path is pinned under. A path
+    absent from `classifiers` (or `classifiers` entirely falsy/None) falls
+    back to _default_classifiers_for_path, so legacy/never-resaved configs
+    keep behaving exactly as before checkboxes existed. Every selected key
+    is re-validated against _classifier_applies here regardless of what was
+    saved — this is the actual enforcement point, not just the UI's greyed-
+    out checkboxes."""
+    keys = (classifiers or {}).get(path, _default_classifiers_for_path(path))
+    return [CLASSIFIER_SPECS[k] for k in keys if k in CLASSIFIER_SPECS and _classifier_applies(k, path)]
+
+
+def _image_audits(paths, classifiers=None):
     """One image_audits entry per pinned image path, each with its own
     per-path reviewer(s) (see _reviewers_for_path) — the PR #771 per-image-type
     model. See connect_labs/audit/ai_review_config.build_review_config."""
-    return [{"image_path": p, "reviewers": _reviewers_for_path(p)} for p in paths or []]
+    return [{"image_path": p, "reviewers": _reviewers_for_path(p, classifiers)} for p in paths or []]
 
 
 def build_track_audit_calls(
@@ -74,6 +125,7 @@ def build_track_audit_calls(
     time_gap_minutes=None,
     enable_distance=None,
     distance_meters=None,
+    enable_duplicate_detection=None,
 ):
     """Build the per-opp, per-track run_audit_creation kwargs for one weekly batch.
 
@@ -95,11 +147,12 @@ def build_track_audit_calls(
         key = str(opp_id)
         cfg = per_opp.get(key, {})
         name = opp_names.get(key, "")
+        classifiers = cfg.get("classifiers")
         for track, paths in (
             (track_a, cfg.get("muac_image_paths")),
             (track_b, cfg.get("rest_image_paths")),
         ):
-            image_audits = _image_audits(paths)
+            image_audits = _image_audits(paths, classifiers)
             if not image_audits:
                 continue
             criteria = {
@@ -125,6 +178,8 @@ def build_track_audit_calls(
                 criteria["enable_distance"] = enable_distance
             if distance_meters is not None:
                 criteria["distance_meters"] = distance_meters
+            if enable_duplicate_detection is not None:
+                criteria["enable_duplicate_detection"] = enable_duplicate_detection
             calls.append(
                 {
                     "username": username,
@@ -218,20 +273,22 @@ DEFINITION = {
     ],
     "config": {
         "audit_batch": {
-            # PR #771 per-image-type model, extended: the muac_overzoom and
-            # muac_match AI reviewers attach per-PATH (any path containing
-            # "muac"), not per-track — see _reviewers_for_path. "name" is a
-            # purely cosmetic display label the user can rename; it has no
-            # effect on which images get AI-reviewed.
+            # PR #771 per-image-type model, extended: classifier attachment is
+            # checkbox-driven per path (see _reviewers_for_path /
+            # _default_classifiers_for_path), not per-track and not automatic
+            # substring matching. "name" is a purely cosmetic display label
+            # the user can rename; it has no effect on which images get
+            # AI-reviewed.
             "track_a": {"tag": "muac", "sample_percentage": 100, "name": "MUAC"},
             "track_b": {"tag": "rest", "sample_percentage": 10, "name": "Other"},
-            "per_opp": {},  # { "<opp_id>": {"muac_image_paths": [...], "rest_image_paths": [...]} }
+            "per_opp": {},  # { "<opp_id>": {"muac_image_paths": [...], "rest_image_paths": [...], "classifiers": {"<path>": ["hyperzoom", ...]}} }
             "opp_names": {},  # { "<opp_id>": "Opp display name" }
             "visit_clustering": {
                 "enable_time_gap": False,
                 "time_gap_minutes": 10,
                 "enable_distance": False,
                 "distance_meters": 10,
+                "enable_duplicate_detection": False,
             },
         }
     },
@@ -276,6 +333,40 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
         });
         return init;
     });
+
+    // Per-path AI classifiers — see CLASSIFIER_SPECS / _classifier_applies /
+    // _default_classifiers_for_path in weekly_dual_track_audit.py. appliesTo()
+    // here is cosmetic (drives which checkboxes render greyed-out); the server
+    // re-validates every selection regardless.
+    const CLASSIFIERS = [
+        { key: 'hyperzoom', label: 'Hyperzoom', appliesTo: p => /muac/i.test(p || '') },
+        { key: 'muac_mismatch', label: 'MUAC Mismatch', appliesTo: p => /muac/i.test(p || '') },
+        { key: 'kmc_scale', label: 'KMC Scale Comparison', appliesTo: p => p === 'anthropometric/upload_weight_image' },
+    ];
+    // Mirrors _default_classifiers_for_path — preserves the pre-checkbox
+    // automatic behavior for any path that's never been explicitly saved.
+    const defaultClassifiersForPath = (path) => (/muac/i.test(path || '') ? ['hyperzoom', 'muac_mismatch'] : []);
+
+    const [classifiersByOpp, setClassifiersByOpp] = React.useState(() => {
+        const init = {};
+        oppIds.forEach(oid => {
+            const key = String(oid);
+            init[key] = (perOpp[key] || {}).classifiers || {};
+        });
+        return init;
+    });
+    const effectiveClassifiers = (oppKey, path) => {
+        const forOpp = classifiersByOpp[oppKey] || {};
+        return Object.prototype.hasOwnProperty.call(forOpp, path) ? forOpp[path] : defaultClassifiersForPath(path);
+    };
+    const toggleClassifier = (oppKey, path, clsKey) => {
+        setClassifiersByOpp(prev => {
+            const oppMap = { ...(prev[oppKey] || {}) };
+            const current = effectiveClassifiers(oppKey, path);
+            oppMap[path] = current.includes(clsKey) ? current.filter(k => k !== clsKey) : [...current, clsKey];
+            return { ...prev, [oppKey]: oppMap };
+        });
+    };
 
     React.useEffect(() => {
         oppIds.forEach(oid => {
@@ -322,7 +413,10 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
         oppIds.forEach(oid => {
             const key = String(oid);
             const sel = selectedPathsByOpp[key] || { trackA: [], trackB: [] };
-            per_opp[key] = { muac_image_paths: sel.trackA, rest_image_paths: sel.trackB };
+            const selectedPaths = Array.from(new Set([...sel.trackA, ...sel.trackB]));
+            const classifiers = {};
+            selectedPaths.forEach(path => { classifiers[path] = effectiveClassifiers(key, path); });
+            per_opp[key] = { muac_image_paths: sel.trackA, rest_image_paths: sel.trackB, classifiers };
         });
         try {
             const res = await fetch('/labs/workflow/api/' + instance.definition_id + '/audit-batch-config/', {
@@ -415,6 +509,17 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
     const [distanceMeters, setDistanceMeters] = React.useState(
         runState.distance_meters != null ? runState.distance_meters
             : (clustering.distance_meters != null ? clustering.distance_meters : 10));
+    const [enableDuplicateDetection, setEnableDuplicateDetection] = React.useState(
+        runState.enable_duplicate_detection != null ? !!runState.enable_duplicate_detection : !!clustering.enable_duplicate_detection);
+    // Keep this in sync with the checkbox's disabled state below: a stale
+    // "true" left over from before the user turned off both clustering gates
+    // must not survive, or it gets sent in the job payload and rendered as
+    // "enabled" in the view-only summary with no groupings to ever check.
+    React.useEffect(() => {
+        if (!enableTimeGap && !enableDistance && enableDuplicateDetection) {
+            setEnableDuplicateDetection(false);
+        }
+    }, [enableTimeGap, enableDistance]);
     const cleanupRef = React.useRef(null);
     React.useEffect(() => () => { if (cleanupRef.current) cleanupRef.current(); }, []);
 
@@ -523,6 +628,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                 time_gap_minutes: Number(timeGapMinutes),
                 enable_distance: enableDistance,
                 distance_meters: Number(distanceMeters),
+                enable_duplicate_detection: enableDuplicateDetection,
             });
         } catch (e) {
             setIsRunning(false); setJobError('Failed to start job: ' + (e.message || e)); return;
@@ -631,7 +737,8 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                                 enableTimeGap ? `within ${timeGapMinutes} min` : null,
                                 enableDistance ? `within ${distanceMeters}m` : null,
                             ].filter(Boolean).join(' and ')
-                            : 'not applied'}.
+                            : 'not applied'}
+                        {enableDuplicateDetection ? ' · Duplicate Detection enabled' : ''}.
                     </p>
                 </div>
             )}
@@ -712,9 +819,9 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                         <p className="text-xs text-gray-500 mb-4">
                             Pick which image path(s) each track audits, per opportunity. Track A is
                             required — at least one path must be selected for every opportunity below.
-                            Track B is optional; leave it empty to skip it for an opportunity. Any
-                            selected path containing "muac" is automatically reviewed by the MUAC
-                            overzoom AI agent, regardless of which track it's in.
+                            Track B is optional; leave it empty to skip it for an opportunity. Each
+                            selected path can independently opt into AI classifiers below — greyed-out
+                            classifiers don't apply to that path's image type.
                         </p>
                         <div className="flex gap-6 items-end flex-wrap mb-4">
                             <div>
@@ -785,6 +892,39 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                                             {renderColumn('trackA', trackAName)}
                                             {renderColumn('trackB', trackBName)}
                                         </div>
+                                        {(() => {
+                                            const selectedPaths = Array.from(new Set([...(sel.trackA || []), ...(sel.trackB || [])]));
+                                            if (!selectedPaths.length) return null;
+                                            return (
+                                                <div className="mt-3 pt-3 border-t border-gray-100">
+                                                    <div className="text-xs font-medium text-gray-600 mb-2">AI Classifiers</div>
+                                                    <div className="space-y-2">
+                                                        {selectedPaths.map(path => {
+                                                            const active = effectiveClassifiers(key, path);
+                                                            return (
+                                                                <div key={path} className="flex items-center flex-wrap gap-x-4 gap-y-1 text-xs">
+                                                                    <span className="font-mono text-gray-700 w-full sm:w-auto">{path}</span>
+                                                                    {CLASSIFIERS.map(c => {
+                                                                        const applies = c.appliesTo(path);
+                                                                        return (
+                                                                            <label key={c.key}
+                                                                                className={'flex items-center gap-1 ' + (applies ? 'text-gray-700' : 'text-gray-300')}>
+                                                                                <input type="checkbox"
+                                                                                    checked={applies && active.includes(c.key)}
+                                                                                    disabled={!applies || isRunning || instance.status === 'completed'}
+                                                                                    onChange={() => toggleClassifier(key, path, c.key)}
+                                                                                    className="h-3.5 w-3.5" />
+                                                                                {c.label}
+                                                                            </label>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })()}
                                         {sel.trackA.length === 0 && (
                                             <div className="mt-2 text-xs text-amber-600">
                                                 <i className="fa-solid fa-triangle-exclamation mr-1"></i>
@@ -880,6 +1020,24 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                             disabled={!enableDistance || isRunning || instance.status === 'completed'}
                             className="border border-gray-300 rounded px-2 py-1 text-sm w-20 disabled:bg-gray-100" />
                         <span className="text-sm text-gray-700">meters of each other (by GPS location)</span>
+                    </div>
+                    <div className="flex items-start gap-3 pt-2 border-t border-gray-100">
+                        <input type="checkbox" checked={enableDuplicateDetection}
+                            onChange={e => setEnableDuplicateDetection(e.target.checked)}
+                            disabled={(!enableTimeGap && !enableDistance) || isRunning || instance.status === 'completed'}
+                            className="w-4 h-4 mt-0.5" />
+                        <div>
+                            <span className="text-sm text-gray-700">Send groupings to the Duplicate Detection API</span>
+                            <p className="text-xs text-gray-500 mt-0.5">
+                                Checks every image already in a grouping above, across whichever image paths
+                                are selected for that track, against the Duplicate Detection service. Track A
+                                and Track B are separate audits, so groupings never span across tracks -- this
+                                setting applies independently to each track's own audit. Confirmed duplicates
+                                are flagged in the AI summary and pre-tagged Duplicate/Fake in bulk assessment
+                                (existing manual tags are never overwritten). Requires at least one of the
+                                groupings above to be enabled.
+                            </p>
+                        </div>
                     </div>
                 </div>
             </div>
