@@ -310,7 +310,7 @@
           ['Units of work', nf.format(m.works || 0)],
           ['Workers', nf.format(d.worker_count || 0)],
         ]) +
-        opportunities(store, d, selectedOpp) +
+        opportunities(store, d, d.selected_opportunity ?? selectedOpp) +
         `<div class="pulse-win-sect">
            <span class="pulse-lbl">Delivery, last 26 weeks${
              selectedOpp ? ' · this opportunity' : ''

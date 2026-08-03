@@ -283,3 +283,55 @@ class TestOpportunityBreakdown:
         means one thing across the app."""
         rows = viewer.get(reverse("pulse:api_partner"), {"org": second_opp}).json()["opportunities"]
         assert rows[0]["last_ts"] is not None
+
+
+@pytest.mark.django_db
+class TestSelectingAnOpportunityIsNotAOneWayDoor:
+    """Selecting an engagement must not remove the way out of it.
+
+    The figures narrow; the list of what you can narrow to does not. Scoping
+    the engagement list as well collapsed the grid to the single card you had
+    just picked — so there was no way back to the partner and no way across to
+    any of its other opportunities.
+    """
+
+    @pytest.fixture
+    def two_opps(self, partner):
+        PulseOpportunity.objects.create(
+            opportunity_id=2,
+            name="KMC UG - P2",
+            org_slug="janna-health",
+            program_id=10,
+            country="UG",
+            service_slug="kmc",
+            lifetime_visit_count=90,
+        )
+        PulseWork.objects.create(
+            work_key="d" * 64,
+            opportunity_id=2,
+            program_id=10,
+            org_slug="janna-health",
+            worker_hash="dddd4444" + "0" * 8,
+            status="approved",
+            created_ts=timezone.now(),
+            service_slug="kmc",
+            country="UG",
+            usd_to_worker="3.00",
+            usd_to_org="1.50",
+        )
+        return partner
+
+    def test_the_full_list_survives_selecting_one(self, viewer, two_opps):
+        data = viewer.get(reverse("pulse:api_partner"), {"org": two_opps, "opportunity": 2}).json()
+        assert len(data["opportunities"]) == 2, "the other engagement must stay reachable"
+
+    def test_the_figures_still_narrow(self, viewer, two_opps):
+        data = viewer.get(reverse("pulse:api_partner"), {"org": two_opps, "opportunity": 2}).json()
+        assert data["money"]["works"] == 1
+        assert {w["worker"] for w in data["workers"]} == {"dddd44"}
+
+    def test_the_response_names_which_one_is_selected(self, viewer, two_opps):
+        """The card cannot show a pressed state without being told which."""
+        data = viewer.get(reverse("pulse:api_partner"), {"org": two_opps, "opportunity": 2}).json()
+        assert data["selected_opportunity"] == 2
+        assert viewer.get(reverse("pulse:api_partner"), {"org": two_opps}).json()["selected_opportunity"] is None
