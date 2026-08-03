@@ -370,7 +370,9 @@ describe('aiFlagsSummary', () => {
         },
       },
     });
-    expect(aiFlagsSummary(s)).toBe('2 MUAC Mismatch / 4 Hyperzoomed / 5 Potential Duplicate');
+    expect(aiFlagsSummary(s)).toBe(
+      '2 MUAC Mismatch / 4 Hyperzoomed / 5 Potential Duplicate',
+    );
   });
 
   it('falls back to the untrimmed label when stripping "(...)" would leave nothing', () => {

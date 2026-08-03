@@ -34,7 +34,9 @@ class AIReviewAgentError(Exception):
 # and reveals nothing internal, so it stays specific.
 GATEWAY_RATE_LIMITED_MESSAGE = "Rate limited - service busy or starting up. Retried, still unavailable."
 GATEWAY_UNREACHABLE_MESSAGE = "Could not reach the AI classifier service. Try again."
-GATEWAY_ERROR_MESSAGE = "AI classifier service returned an error. Try again, or contact an administrator if this persists."
+GATEWAY_ERROR_MESSAGE = (
+    "AI classifier service returned an error. Try again, or contact an administrator if this persists."
+)
 GATEWAY_UNEXPECTED_RESPONSE_MESSAGE = "AI classifier service returned an unexpected response."
 GATEWAY_NOT_CONFIGURED_MESSAGE = "AI classifier service is not configured. Contact an administrator."
 

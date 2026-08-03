@@ -366,7 +366,8 @@
                     h(
                       'span',
                       {
-                        className: 'font-medium text-gray-600 whitespace-nowrap',
+                        className:
+                          'font-medium text-gray-600 whitespace-nowrap',
                       },
                       'Cluster ' + (i + 1) + ' — ' + c.image_count + ' images',
                     ),

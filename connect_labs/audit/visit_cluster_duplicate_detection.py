@@ -160,9 +160,7 @@ def run_grouping_duplicate_detection(
             # tasks.py's result["visit_cluster_duplicate_detection"] (the run
             # summary counters -- groupings_checked/errors/etc.), which is an
             # unrelated shape that happens to share the module's name.
-            raw_groups_store: dict[str, list] = session.data.setdefault(
-                "visit_cluster_duplicate_detection_raw", {}
-            )
+            raw_groups_store: dict[str, list] = session.data.setdefault("visit_cluster_duplicate_detection_raw", {})
 
             for i, cluster in enumerate(target["clusters"]):
                 if i > 0 and cancel_key and is_audit_creation_cancelled(cancel_key):
