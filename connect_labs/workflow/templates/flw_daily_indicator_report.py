@@ -1,7 +1,7 @@
 """FLW Daily Indicator Report — Program 176 (CHC PRE-RCT Nigeria).
 
 Workflow 1 of a two-workflow pair (see flw_daily_indicator_table.py, "Workflow
-2"). Computes a fixed set of 12 daily fraud/data-quality indicators per
+2"). Computes a fixed set of daily fraud/data-quality indicators per
 opportunity per FLW per calendar day, from raw "Health Service Delivery" form
 submissions plus each work area's CommCare HQ case (for building counts) --
 not the threshold/flag logic or the table itself, just the computed RAW
@@ -187,13 +187,13 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, view }) {
                         <tr>
                             <th className="px-3 py-2 text-left font-semibold">FLW</th>
                             <th className="px-3 py-2 text-right font-semibold">HSD Forms</th>
+                            <th className="px-3 py-2 text-right font-semibold">Unique Work Areas</th>
                             <th className="px-3 py-2 text-right font-semibold">Daily Span (min)</th>
                             <th className="px-3 py-2 text-right font-semibold">Peak HHs/Building</th>
                             <th className="px-3 py-2 text-right font-semibold">HHs w/ 4+ Children</th>
                             <th className="px-3 py-2 text-right font-semibold">Gaps &lt;2min</th>
                             <th className="px-3 py-2 text-right font-semibold">% Vaccine Yes</th>
-                            <th className="px-3 py-2 text-right font-semibold">% in Largest Cluster</th>
-                            <th className="px-3 py-2 text-right font-semibold">Speed Violations</th>
+                            <th className="px-3 py-2 text-right font-semibold">GPS Repeat %</th>
                             <th className="px-3 py-2 text-right font-semibold">Dup. Names</th>
                             <th className="px-3 py-2 text-right font-semibold">Dup. Ages</th>
                             <th className="px-3 py-2 text-right font-semibold">MUAC Repetition %</th>
@@ -205,13 +205,13 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, view }) {
                                 <tr key={f.username || i}>
                                     <td className="px-3 py-2 font-mono text-xs">{f.username}</td>
                                     <td className="px-3 py-2 text-right">{f.total_forms}</td>
+                                    <td className="px-3 py-2 text-right">{f.unique_work_areas_count}</td>
                                     <td className="px-3 py-2 text-right">{f.daily_span_minutes}</td>
                                     <td className="px-3 py-2 text-right">{f.households_per_building.max_ratio}</td>
                                     <td className="px-3 py-2 text-right">{f.households_4plus_children_count}</td>
                                     <td className="px-3 py-2 text-right">{f.gap_lt_2min_count}</td>
                                     <td className="px-3 py-2 text-right">{f.vaccine_yes_pct}</td>
-                                    <td className="px-3 py-2 text-right">{f.camping_pct_largest_cluster}</td>
-                                    <td className="px-3 py-2 text-right">{f.travel_speed_violation_count}</td>
+                                    <td className="px-3 py-2 text-right">{f.camping_repeat_pct}</td>
                                     <td className="px-3 py-2 text-right">{f.duplicate_child_names_count}</td>
                                     <td className="px-3 py-2 text-right">{f.duplicate_child_ages_count}</td>
                                     <td className="px-3 py-2 text-right">{f.muac_repetition_pct}</td>
