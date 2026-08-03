@@ -974,9 +974,7 @@ def test_handler_applies_duplicate_detection_flag_from_job_payload():
 def test_handler_falls_back_to_persisted_duplicate_detection_flag():
     from connect_labs.workflow.job_handlers import weekly_dual_track_audit as h
 
-    run = _fake_run(
-        {"window_start": "2026-06-22", "window_end": "2026-06-28", "enable_duplicate_detection": True}
-    )
+    run = _fake_run({"window_start": "2026-06-22", "window_end": "2026-06-28", "enable_duplicate_detection": True})
     eager = mock.Mock()
     eager.result = {"sessions": [1]}
 

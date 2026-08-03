@@ -1244,7 +1244,10 @@ def run_audit_creation(
                         for img in imgs:
                             bid = img.get("blob_id")
                             if bid:
-                                blob_meta_by_id[bid] = {"visit_id": int(vid_str), "question_id": img.get("question_id", "")}
+                                blob_meta_by_id[bid] = {
+                                    "visit_id": int(vid_str),
+                                    "question_id": img.get("question_id", ""),
+                                }
                     dup_detection_targets.append(
                         {
                             "session": session,

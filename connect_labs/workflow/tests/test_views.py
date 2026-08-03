@@ -547,9 +547,7 @@ class TestUpdateAuditBatchConfigView:
 
             saved_data = mock_wda.update_definition.call_args[0][1]
             saved_per_opp = saved_data["config"]["audit_batch"]["per_opp"]
-            assert saved_per_opp["700"]["classifiers"] == {
-                "muac_group/muac_photo": ["hyperzoom", "muac_mismatch"]
-            }
+            assert saved_per_opp["700"]["classifiers"] == {"muac_group/muac_photo": ["hyperzoom", "muac_mismatch"]}
 
     def test_rejects_classifiers_not_a_dict(self, dimagi_user, rf: RequestFactory):
         import json

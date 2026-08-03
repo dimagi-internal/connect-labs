@@ -11,10 +11,7 @@ behavior layered on top of PR #1070's flag-only method, not persistence.
 from unittest.mock import Mock
 
 from connect_labs.audit.models import AuditSessionRecord
-from connect_labs.audit.visit_cluster_duplicate_detection import (
-    _mark_duplicate,
-    run_duplicate_detection,
-)
+from connect_labs.audit.visit_cluster_duplicate_detection import _mark_duplicate, run_duplicate_detection
 
 
 def _session(visit_results=None, opportunity_id=1973):
@@ -101,7 +98,11 @@ def test_mark_duplicate_inherits_flag_potential_duplicates_unconditional_ai_resu
     the current (inherited) behavior honestly rather than silently dropping
     coverage; revisit if/when #1070's own method is tightened."""
     session = _session(
-        {"111": {"assessments": {"a": {"question_id": "form/muac", "result": None, "notes": "", "ai_result": "error"}}}}
+        {
+            "111": {
+                "assessments": {"a": {"question_id": "form/muac", "result": None, "notes": "", "ai_result": "error"}}
+            }
+        }
     )
     blob_meta = {"a": {"visit_id": 111, "question_id": "form/muac"}}
 
@@ -130,7 +131,13 @@ def test_skips_groupings_with_fewer_than_two_images():
     )
 
     client.detect.assert_not_called()
-    assert result == {"groupings_checked": 0, "groupings_skipped": 1, "images_flagged": 0, "errors": 0, "cancelled": False}
+    assert result == {
+        "groupings_checked": 0,
+        "groupings_skipped": 1,
+        "images_flagged": 0,
+        "errors": 0,
+        "cancelled": False,
+    }
 
 
 def test_calls_api_once_per_grouping_and_flags_returned_ids():

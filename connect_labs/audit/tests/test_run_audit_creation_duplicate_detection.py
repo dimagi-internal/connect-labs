@@ -76,7 +76,15 @@ def test_run_duplicate_detection_called_with_session_targets_when_enabled(monkey
         created_sessions=created_sessions,
     )
 
-    fake_run_dd = MagicMock(return_value={"groupings_checked": 1, "groupings_skipped": 0, "images_flagged": 0, "errors": 0, "cancelled": False})
+    fake_run_dd = MagicMock(
+        return_value={
+            "groupings_checked": 1,
+            "groupings_skipped": 0,
+            "images_flagged": 0,
+            "errors": 0,
+            "cancelled": False,
+        }
+    )
     monkeypatch.setattr(tasks, "run_visit_cluster_duplicate_detection", fake_run_dd, raising=False)
 
     result = _run(_criteria(enable_duplicate_detection=True), fake_da, monkeypatch)
@@ -87,7 +95,9 @@ def test_run_duplicate_detection_called_with_session_targets_when_enabled(monkey
     assert len(targets) == 1
     target = targets[0]
     assert target["opp_id"] == 1973
-    assert target["clusters"] == [{"group_id": "g1", "visit_ids": [111, 112], "image_count": 2, "image_ids": ["a", "b"]}]
+    assert target["clusters"] == [
+        {"group_id": "g1", "visit_ids": [111, 112], "image_count": 2, "image_ids": ["a", "b"]}
+    ]
     assert target["blob_meta_by_id"] == {
         "a": {"visit_id": 111, "question_id": "form/muac"},
         "b": {"visit_id": 112, "question_id": "form/muac"},
