@@ -16,9 +16,11 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from datetime import timedelta
 
 import pandas as pd
 from django.db import IntegrityError, transaction
+from django.utils import timezone
 from shapely.geometry.base import BaseGeometry
 
 from connect_labs.microplans.core import overture
@@ -53,6 +55,12 @@ MAX_AREA_KM2 = 20000.0
 # (DuckDB has no statement_timeout; a true time bound / per-user rate limit would
 # need an interrupt thread and is left as follow-up.)
 MAX_BUILDING_ROWS = 1_000_000
+
+# A cached area re-fetches from scratch once its footprints are this old, even
+# though the geometry/release key hasn't changed — Overture republishes buildings
+# periodically (new construction, corrected footprints) and a ward re-surveyed
+# months later shouldn't silently keep serving a stale snapshot forever.
+FOOTPRINT_CACHE_MAX_AGE = timedelta(days=7)
 
 
 def _area_cache_key(wkt: str) -> str:
@@ -143,11 +151,19 @@ def fetch_buildings(
 
     cached = FootprintArea.objects.filter(area_hash=area_hash).first()
     if cached is not None:
-        df = pd.DataFrame(list(cached.buildings.values(*cols)), columns=cols)
-        logger.info("microplans footprints cache hit (%s, %d buildings)", area_hash[:12], len(df))
-        return _apply_filters(df, sources=sources, min_confidence=min_confidence)
+        age = timezone.now() - cached.created_at
+        if age <= FOOTPRINT_CACHE_MAX_AGE:
+            df = pd.DataFrame(list(cached.buildings.values(*cols)), columns=cols)
+            logger.info("microplans footprints cache hit (%s, %d buildings)", area_hash[:12], len(df))
+            return _apply_filters(df, sources=sources, min_confidence=min_confidence)
+        # Stale — same area/release, but old enough that Overture may have moved on
+        # (new construction, corrected footprints). Drop it and fall through to a
+        # full re-fetch below, exactly like a genuine first-seen area.
+        logger.info("microplans footprints cache stale (%s, age=%s) — refetching", area_hash[:12], age)
+        cached.delete()  # cascades to this area's FootprintBuilding rows
 
-    # Miss: fetch every building once (confidence-agnostic) and persist as rows.
+    # Miss (either a genuinely new area, or a stale cache entry just cleared above):
+    # fetch every building once (confidence-agnostic) and persist as rows.
     # Always pull the polygon from Overture so the cache is review-ready; pipelines
     # that don't need it just don't read the column.
     df_all = _query_overture(area, min_confidence=None)
