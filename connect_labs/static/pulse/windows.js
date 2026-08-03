@@ -48,6 +48,10 @@
   /* A stack, so a worker window opens ON a partner window and closing it
      returns to the partner rather than to the map. */
   const stack = [];
+  // What the address bar should say. Kept beside the stack rather than
+  // derived from the DOM, because a window mid-refresh has no stable
+  // title to read back.
+  let openState = { partner: null, opportunity: null, worker: null };
 
   function chart(series, valueOf) {
     if (!series || !series.length)
@@ -95,6 +99,9 @@
   }
 
   function close(depth) {
+    if (depth === 0)
+      openState = { partner: null, opportunity: null, worker: null };
+    else openState.worker = null;
     while (stack.length > depth) {
       const win = stack.pop();
       clearInterval(win.timer);
@@ -262,14 +269,14 @@
   }
 
   /* ── partner window ──────────────────────────────────────────────── */
-  function openPartner(store, slug) {
+  function openPartner(store, slug, preselectOpp) {
     const depth = 0;
     const win = frame(depth, 'Loading…', '', false);
     stack.push(win);
 
     let sort = { key: 'last_ts', dir: -1 };
     // Which engagement the window is narrowed to, if any.
-    let selectedOpp = null;
+    let selectedOpp = preselectOpp || null;
 
     const paint = (d) => {
       const p = d.partner || {};
@@ -386,6 +393,8 @@
       const pick = (el2) => {
         const id = Number(el2.dataset.opp);
         selectedOpp = selectedOpp === id ? null : id;
+        openState.opportunity = selectedOpp;
+        if (typeof onChange === 'function') onChange();
         load();
       };
       win.body.querySelectorAll('.pulse-opp[data-opp]').forEach((el2) => {
@@ -561,10 +570,20 @@
     }
   });
 
+  // Set by display.js so the address bar can follow what is open.
+  let onChange = null;
+
   global.PulseWindows = {
     openPartner,
     openWorker,
     close: () => close(0),
     isOpen: () => stack.length > 0,
+    /* What a shareable URL should describe. Null fields are simply omitted by
+       the caller, so a partner window with nothing selected produces
+       `?org=solina` rather than `?org=solina&opp=&worker=`. */
+    state: () => (stack.length ? { ...openState } : null),
+    onChange(fn) {
+      onChange = fn;
+    },
   };
 })(window);

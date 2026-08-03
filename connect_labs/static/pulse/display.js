@@ -1208,6 +1208,7 @@
         sel.disabled = true;
         try {
           await store.setProgram(val);
+          Url.write();
           // The density layer is a separate fetch and has to follow the filter
           // too, or the map keeps the whole estate's geography under one
           // programme's points.
@@ -1229,6 +1230,7 @@
         svcCtl.disabled = true;
         try {
           await store.setService(svcCtl.value || null);
+          Url.write();
           // The density layer is a separate fetch and has to follow the filter
           // too. Here it narrows exactly: cells carry service_slug.
           await loadGrid();
@@ -1249,6 +1251,7 @@
         orgSel.disabled = true;
         try {
           await store.setOrg(orgSel.value || null);
+          Url.write();
           await loadGrid();
           setFocus(focus, true);
           // Pin the selected partner's card. Selecting one is a request to
@@ -1307,6 +1310,79 @@
   }
 
   /* ═══ go ════════════════════════════════════════════════════════ */
+  /* ═══ shareable URL ═════════════════════════════════
+     The address bar is the display's state, so a link can be pasted into a
+     message and open on exactly what the sender was looking at.
+
+     Filters use the same names the API does (`service`, `program`, `org`), so
+     a URL someone builds by hand behaves the way the API docs would suggest.
+     `org` both scopes the display and opens that partner's window -- sharing a
+     partner means sharing its record, not a filtered map you then have to
+     click into.
+
+     replaceState, not pushState: this runs on wall displays that re-filter
+     themselves for minutes at a time, and every act change would otherwise
+     become a history entry nobody asked for. The URL stays current and
+     shareable; the back button stays the way out of the page.               */
+  const Url = (() => {
+    const read = () => new URLSearchParams(location.search);
+
+    function write() {
+      const q = read();
+      // The public-link token lives in the PATH, so anything already in the
+      // query belongs to us -- except params we do not own, which are left be.
+      const set = (k, v) => (v ? q.set(k, String(v)) : q.delete(k));
+      set('service', store.service);
+      set('program', store.program);
+      set('org', store.org);
+      const open = window.PulseWindows && window.PulseWindows.state();
+      set('partner', open && open.partner);
+      set('opp', open && open.opportunity);
+      set('worker', open && open.worker);
+      const qs = q.toString();
+      history.replaceState(null, '', location.pathname + (qs ? '?' + qs : ''));
+    }
+
+    async function apply() {
+      const q = read();
+      const service = q.get('service');
+      const program = q.get('program');
+      const org = q.get('org');
+
+      // Set them on the store directly and load ONCE, rather than calling three
+      // setters that would each re-fetch everything in turn.
+      store.service = service || null;
+      store.program = program ? Number(program) : null;
+      store.org = org || null;
+      if (service || program || org) {
+        await store.refreshSummary();
+        await loadGrid();
+        const svc = $('#svc-filter'),
+          prog = $('#prog-filter'),
+          o = $('#org-filter');
+        if (svc) svc.value = store.service || '';
+        if (prog) prog.value = store.program ? String(store.program) : '';
+        if (o) o.value = store.org || '';
+      }
+
+      // A shared partner link opens the record, not just a filtered map.
+      const partner = q.get('partner') || org;
+      if (partner && window.PulseWindows) {
+        const opp = q.get('opp');
+        window.PulseWindows.openPartner(
+          store,
+          partner,
+          opp ? Number(opp) : null,
+        );
+        const worker = q.get('worker');
+        if (worker)
+          window.PulseWindows.openWorker(store, worker, partner, partner);
+      }
+    }
+
+    return { apply, write };
+  })();
+
   async function boot() {
     buildActPanel();
     wireControls();
@@ -1324,6 +1400,10 @@
     requestAnimationFrame(paint);
     await loadGrid();
     await store.start();
+    // The address bar follows whatever window is opened from here on.
+    if (window.PulseWindows) window.PulseWindows.onChange(Url.write);
+    await Url.apply();
+    Url.write();
     setAct(0);
     paintTransport();
     paintStatus();

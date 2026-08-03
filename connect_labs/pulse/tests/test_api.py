@@ -718,3 +718,57 @@ class TestReplayRange:
         assert data["activity"], "expected hourly activity across the retention window"
         assert {"t", "n"} <= set(data["activity"][0])
         assert data["retention_days"] >= 1
+
+
+class TestShareableUrlContract:
+    """A pasted Pulse link has to open on what the sender was looking at.
+
+    The page reads its state from the query string using the SAME names the API
+    uses, so a URL built by hand behaves the way the API would suggest. These
+    check the contract from the page side, since the params are consumed in JS.
+
+    Every assertion below runs against a source form with whitespace collapsed
+    AND quote style normalised. Three earlier versions of these tests failed on
+    nothing but prettier — first a wrapped call, then single vs double quotes.
+    A formatter reflowing a line is not a regression, and a test that says it is
+    trains people to ignore it.
+    """
+
+    def _js(self):
+        import re
+        from pathlib import Path as P
+
+        from django.conf import settings
+
+        src = (P(settings.APPS_DIR) / "static" / "pulse" / "display.js").read_text()
+        return re.sub(r"\s+", "", src).replace("'", '"')
+
+    def test_the_page_reads_every_filter_it_can_apply(self):
+        src = self._js()
+        for param in ("service", "program", "org"):
+            assert f'q.get("{param}")' in src, f"{param} is not read from the URL"
+
+    def test_a_partner_link_opens_the_record_not_just_a_filtered_map(self):
+        """Sharing a partner means sharing its dossier. `org` scopes the display
+        AND opens the window, so a recipient does not have to know to click."""
+        src = self._js()
+        assert 'constpartner=q.get("partner")||org;' in src
+        assert "openPartner(store,partner" in src
+
+    def test_a_link_can_land_on_one_engagement_and_one_worker(self):
+        src = self._js()
+        assert 'q.get("opp")' in src
+        assert 'q.get("worker")' in src
+
+    def test_the_url_is_replaced_not_pushed(self):
+        """This runs on wall displays that re-filter for minutes at a time.
+        pushState would make every act change a history entry, and bury the way
+        out of the page under dozens of them."""
+        src = self._js()
+        assert "history.replaceState" in src
+        assert "history.pushState" not in src
+
+    def test_absent_state_is_removed_from_the_url_rather_than_left_blank(self):
+        """Otherwise closing a window leaves `?worker=` behind and the next
+        person to copy the link shares a broken one."""
+        assert "q.delete(k)" in self._js()
