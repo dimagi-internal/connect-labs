@@ -271,6 +271,14 @@ def run_workflow_job(
             "job_type": job_type,
             "status": "running",
             "started_at": datetime.now().isoformat(),
+            # _update_job_state MERGES onto whatever active_job already holds
+            # (workflow/tasks.py:_update_job_state) -- without resetting
+            # updated_at here too, a fresh job on a run whose PREVIOUS job's
+            # heartbeat went stale hours ago would inherit that stale
+            # timestamp, and active_job_age_seconds (workflow/views.py) prefers
+            # updated_at over the (correctly fresh) started_at -- reporting a
+            # brand-new job as an immediate zombie.
+            "updated_at": datetime.now().isoformat(),
             "current_stage": 1,
             "total_stages": total_stages,
             "stage_name": "Loading pipeline data" if needs_pipeline_stage else "Processing",
@@ -389,7 +397,13 @@ def run_workflow_job(
 
         set_task_progress(self, stage_msg, **extra_meta)
 
-        # Update job state with progress
+        # Update job state with progress. updated_at is the heartbeat
+        # connect_labs.workflow.views.active_job_age_seconds reads for
+        # staleness -- refreshing it on every tick means a job that's still
+        # genuinely working (even one whose handler fans out into other Celery
+        # calls, like weekly_dual_track_audit_create's per-track
+        # run_audit_creation) never falsely reads as dead just for running
+        # longer than the staleness window.
         _update_job_state(
             run_id,
             access_token,
@@ -397,6 +411,12 @@ def run_workflow_job(
             {
                 "processed": processed,
                 "total": total,
+                # Naive, matching started_at/completed_at/failed_at below --
+                # active_job_age_seconds (connect_labs/workflow/views.py)
+                # subtracts this against another naive datetime.now(); mixing
+                # in an aware timestamp here would raise there and silently
+                # disable staleness detection (age becomes None).
+                "updated_at": datetime.now().isoformat(),
             },
             program_id=program_id,
         )
