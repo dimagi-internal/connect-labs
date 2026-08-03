@@ -20,6 +20,8 @@ docs/superpowers/specs/2026-07-30-dual-track-audit-classifiers-design.md.
 
 import logging
 
+from django.conf import settings
+
 from connect_labs.audit.data_access import is_audit_creation_cancelled
 from connect_labs.audit.duplicate_detection import DuplicateDetectionClient, assign_group_ids
 
@@ -29,6 +31,13 @@ logger = logging.getLogger(__name__)
 # because the grouping itself only had 1 image, or because a signed-URL
 # lookup failed for one of its blobs (see get_signed_url).
 _MIN_IMAGES_TO_CHECK = 2
+
+# Same cap as PR #1070's day/FLW/type-bucketed detection (connect_labs.audit.
+# duplicate_detection) -- a visit-clustering grouping can chain transitively
+# over many consecutive visits, so without a cap one grouping could send an
+# unbounded, all-or-nothing POST against a long-running (180s-timeout)
+# endpoint. Reuses the SAME setting rather than inventing a second knob.
+DEFAULT_MAX_IMAGES_PER_GROUPING = 40
 
 
 def _mark_duplicate(session, blob_meta_by_id, blob_id, group_id) -> bool:
@@ -59,6 +68,7 @@ def run_duplicate_detection(
     client=None,
     progress_callback=None,
     cancel_key=None,
+    max_images_per_grouping=None,
 ) -> dict:
     """
     Args:
@@ -79,6 +89,12 @@ def run_duplicate_detection(
             counts groupings across all targets.
         cancel_key: cooperative-cancellation key checked between targets and
             between groupings (see is_audit_creation_cancelled).
+        max_images_per_grouping: cap on how many images from one grouping are
+            sent in a single API call (defaults to the shared
+            settings.DUPLICATE_DETECTION_MAX_IMAGES_PER_DAY, same as PR
+            #1070's day/FLW/type-bucketed detection). A grouping over the cap
+            still runs, just on its first N images -- the rest are counted
+            into "skipped_over_limit", never silently dropped.
 
     For each target session, for each of its groupings with >= 2 resolvable
     images: bundle them into one API call (one call per grouping). The
@@ -87,11 +103,18 @@ def run_duplicate_detection(
     in a component of size >= 2 gets flagged. A grouping whose API call fails
     is logged and skipped -- never raises.
 
-    Returns {"groupings_checked", "groupings_skipped", "images_flagged", "errors", "cancelled"}.
+    Returns {"groupings_checked", "groupings_skipped", "skipped_over_limit",
+    "images_flagged", "errors", "cancelled"}.
     """
     client = client or DuplicateDetectionClient()
+    max_images_per_grouping = (
+        max_images_per_grouping
+        if max_images_per_grouping is not None
+        else getattr(settings, "DUPLICATE_DETECTION_MAX_IMAGES_PER_DAY", DEFAULT_MAX_IMAGES_PER_GROUPING)
+    )
     groupings_checked = 0
     groupings_skipped = 0
+    skipped_over_limit = 0
     images_flagged = 0
     errors = 0
     cancelled = False
@@ -128,6 +151,14 @@ def run_duplicate_detection(
 
                 processed += 1
                 image_ids = cluster.get("image_ids") or []
+                if len(image_ids) > max_images_per_grouping:
+                    dropped = len(image_ids) - max_images_per_grouping
+                    logger.info(
+                        f"[DuplicateDetection] Grouping {cluster.get('group_id')} has {len(image_ids)} images; "
+                        f"capping at {max_images_per_grouping} ({dropped} skipped)"
+                    )
+                    image_ids = image_ids[:max_images_per_grouping]
+                    skipped_over_limit += dropped
 
                 images_payload = []
                 if len(image_ids) >= _MIN_IMAGES_TO_CHECK:
@@ -184,6 +215,7 @@ def run_duplicate_detection(
     return {
         "groupings_checked": groupings_checked,
         "groupings_skipped": groupings_skipped,
+        "skipped_over_limit": skipped_over_limit,
         "images_flagged": images_flagged,
         "errors": errors,
         "cancelled": cancelled,

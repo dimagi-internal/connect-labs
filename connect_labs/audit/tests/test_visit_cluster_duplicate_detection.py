@@ -142,6 +142,7 @@ def test_skips_groupings_with_fewer_than_two_images():
     assert result == {
         "groupings_checked": 0,
         "groupings_skipped": 1,
+        "skipped_over_limit": 0,
         "images_flagged": 0,
         "errors": 0,
         "cancelled": False,
@@ -412,3 +413,45 @@ def test_run_duplicate_detection_preserves_ai_review_results_written_after_creat
     # The new duplicate flags landed alongside it, not instead of it.
     assert saved_session.data["visit_results"]["111"]["assessments"]["a"]["result"] == "duplicate_fake"
     assert saved_session.data["visit_results"]["112"]["assessments"]["b"]["result"] == "duplicate_fake"
+
+
+def test_caps_images_per_grouping_and_counts_the_rest():
+    """A grouping over the cap still runs (on its first N images) rather than
+    being skipped outright -- the excess is counted, never silently dropped."""
+    session = _session()
+    image_ids = [f"img{i}" for i in range(5)]
+    clusters = [{"group_id": "g1", "visit_ids": [111, 112], "image_count": 5, "image_ids": image_ids}]
+    blob_meta = {bid: {"visit_id": 111, "question_id": "form/muac"} for bid in image_ids}
+    client = Mock()
+    client.detect.return_value = []
+
+    result = run_duplicate_detection(
+        [_target(session, clusters, blob_meta)],
+        get_signed_url=lambda bid, oid: f"https://x/{bid}",
+        client=client,
+        max_images_per_grouping=3,
+    )
+
+    client.detect.assert_called_once()
+    sent_ids = {img["id"] for img in client.detect.call_args[0][0]}
+    assert sent_ids == {"img0", "img1", "img2"}
+    assert result["skipped_over_limit"] == 2
+    assert result["groupings_checked"] == 1
+
+
+def test_default_image_cap_reads_from_shared_settings(settings):
+    """Uses the SAME setting as PR #1070's day/FLW/type-bucketed detection
+    (connect_labs.audit.duplicate_detection) rather than a second knob."""
+    settings.DUPLICATE_DETECTION_MAX_IMAGES_PER_DAY = 2
+    session = _session()
+    image_ids = ["img0", "img1", "img2"]
+    clusters = [{"group_id": "g1", "visit_ids": [111], "image_count": 3, "image_ids": image_ids}]
+    blob_meta = {bid: {"visit_id": 111, "question_id": "form/muac"} for bid in image_ids}
+    client = Mock()
+    client.detect.return_value = []
+
+    result = run_duplicate_detection(
+        [_target(session, clusters, blob_meta)], get_signed_url=lambda bid, oid: f"https://x/{bid}", client=client
+    )
+
+    assert result["skipped_over_limit"] == 1

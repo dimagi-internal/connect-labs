@@ -1519,9 +1519,34 @@ def run_audit_creation(
                 duplicate_note = duplicate_results.get("note") or ""
         if duplicate_note:
             result["duplicate_detection_note"] = duplicate_note
+
+        # Same idea for the visit-clustering-grouping stage -- otherwise its
+        # outcome is only visible by drilling into result[...], and with the
+        # external endpoint not deployed yet, the expected first-run outcome
+        # (every grouping skipped for a missing signed URL) would otherwise
+        # look identical to a normal "nothing to check" run.
+        dd_note = ""
+        if dup_detection_results:
+            if dup_detection_results.get("error"):
+                dd_note = f"Visit-cluster duplicate detection failed: {dup_detection_results['error']}"
+            else:
+                dd_warnings = []
+                if dup_detection_results.get("errors"):
+                    dd_warnings.append(f"{dup_detection_results['errors']} grouping(s) failed the duplicate check")
+                if dup_detection_results.get("groupings_skipped"):
+                    dd_warnings.append(f"{dup_detection_results['groupings_skipped']} grouping(s) skipped")
+                if dup_detection_results.get("skipped_over_limit"):
+                    dd_warnings.append(f"{dup_detection_results['skipped_over_limit']} image(s) skipped over the cap")
+                if dd_warnings:
+                    dd_note = "Visit-cluster duplicate detection: " + "; ".join(dd_warnings) + "."
+        if dd_note:
+            result["visit_cluster_duplicate_detection_note"] = dd_note
+
         completion_message = "Audit creation complete"
         if duplicate_note:
             completion_message += f" · {duplicate_note}"
+        if dd_note:
+            completion_message += f" · {dd_note}"
         # Distinct key from Clayton's result["duplicate_detection"] (PR #1070,
         # day/FLW/type-bucketed) -- these are two independent optional stages
         # gated by different criteria flags, never the same data.
