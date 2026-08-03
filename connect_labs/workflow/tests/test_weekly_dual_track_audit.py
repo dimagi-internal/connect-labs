@@ -1024,3 +1024,30 @@ def test_handler_persists_duplicate_detection_flag_onto_run_state():
 
     written = wda.update_run_state.call_args[0][1]
     assert written["enable_duplicate_detection"] is True
+
+
+def test_render_code_includes_per_path_classifier_checkboxes():
+    from connect_labs.workflow.templates import get_template
+
+    rc = get_template("weekly_dual_track_audit")["render_code"]
+    assert "'hyperzoom'" in rc
+    assert "'muac_mismatch'" in rc
+    assert "'kmc_scale'" in rc
+    assert "AI Classifiers" in rc
+    assert "classifiersByOpp" in rc
+
+
+def test_render_code_includes_duplicate_detection_toggle():
+    from connect_labs.workflow.templates import get_template
+
+    rc = get_template("weekly_dual_track_audit")["render_code"]
+    assert "enableDuplicateDetection" in rc
+    assert "enable_duplicate_detection" in rc
+    assert "Duplicate Detection API" in rc
+
+
+def test_render_code_view_only_summary_mentions_duplicate_detection_when_enabled():
+    from connect_labs.workflow.templates import get_template
+
+    rc = get_template("weekly_dual_track_audit")["render_code"]
+    assert "Duplicate Detection enabled" in rc

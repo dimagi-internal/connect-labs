@@ -333,6 +333,40 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
         return init;
     });
 
+    // Per-path AI classifiers — see CLASSIFIER_SPECS / _classifier_applies /
+    // _default_classifiers_for_path in weekly_dual_track_audit.py. appliesTo()
+    // here is cosmetic (drives which checkboxes render greyed-out); the server
+    // re-validates every selection regardless.
+    const CLASSIFIERS = [
+        { key: 'hyperzoom', label: 'Hyperzoom', appliesTo: p => /muac/i.test(p || '') },
+        { key: 'muac_mismatch', label: 'MUAC Mismatch', appliesTo: p => /muac/i.test(p || '') },
+        { key: 'kmc_scale', label: 'KMC Scale Comparison', appliesTo: p => p === 'anthropometric/upload_weight_image' },
+    ];
+    // Mirrors _default_classifiers_for_path — preserves the pre-checkbox
+    // automatic behavior for any path that's never been explicitly saved.
+    const defaultClassifiersForPath = (path) => (/muac/i.test(path || '') ? ['hyperzoom', 'muac_mismatch'] : []);
+
+    const [classifiersByOpp, setClassifiersByOpp] = React.useState(() => {
+        const init = {};
+        oppIds.forEach(oid => {
+            const key = String(oid);
+            init[key] = (perOpp[key] || {}).classifiers || {};
+        });
+        return init;
+    });
+    const effectiveClassifiers = (oppKey, path) => {
+        const forOpp = classifiersByOpp[oppKey] || {};
+        return Object.prototype.hasOwnProperty.call(forOpp, path) ? forOpp[path] : defaultClassifiersForPath(path);
+    };
+    const toggleClassifier = (oppKey, path, clsKey) => {
+        setClassifiersByOpp(prev => {
+            const oppMap = { ...(prev[oppKey] || {}) };
+            const current = effectiveClassifiers(oppKey, path);
+            oppMap[path] = current.includes(clsKey) ? current.filter(k => k !== clsKey) : [...current, clsKey];
+            return { ...prev, [oppKey]: oppMap };
+        });
+    };
+
     React.useEffect(() => {
         oppIds.forEach(oid => {
             const key = String(oid);
@@ -378,7 +412,10 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
         oppIds.forEach(oid => {
             const key = String(oid);
             const sel = selectedPathsByOpp[key] || { trackA: [], trackB: [] };
-            per_opp[key] = { muac_image_paths: sel.trackA, rest_image_paths: sel.trackB };
+            const selectedPaths = Array.from(new Set([...sel.trackA, ...sel.trackB]));
+            const classifiers = {};
+            selectedPaths.forEach(path => { classifiers[path] = effectiveClassifiers(key, path); });
+            per_opp[key] = { muac_image_paths: sel.trackA, rest_image_paths: sel.trackB, classifiers };
         });
         try {
             const res = await fetch('/labs/workflow/api/' + instance.definition_id + '/audit-batch-config/', {
@@ -471,6 +508,8 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
     const [distanceMeters, setDistanceMeters] = React.useState(
         runState.distance_meters != null ? runState.distance_meters
             : (clustering.distance_meters != null ? clustering.distance_meters : 10));
+    const [enableDuplicateDetection, setEnableDuplicateDetection] = React.useState(
+        runState.enable_duplicate_detection != null ? !!runState.enable_duplicate_detection : !!clustering.enable_duplicate_detection);
     const cleanupRef = React.useRef(null);
     React.useEffect(() => () => { if (cleanupRef.current) cleanupRef.current(); }, []);
 
@@ -579,6 +618,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                 time_gap_minutes: Number(timeGapMinutes),
                 enable_distance: enableDistance,
                 distance_meters: Number(distanceMeters),
+                enable_duplicate_detection: enableDuplicateDetection,
             });
         } catch (e) {
             setIsRunning(false); setJobError('Failed to start job: ' + (e.message || e)); return;
@@ -687,7 +727,8 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                                 enableTimeGap ? `within ${timeGapMinutes} min` : null,
                                 enableDistance ? `within ${distanceMeters}m` : null,
                             ].filter(Boolean).join(' and ')
-                            : 'not applied'}.
+                            : 'not applied'}
+                        {enableDuplicateDetection ? ' · Duplicate Detection enabled' : ''}.
                     </p>
                 </div>
             )}
@@ -768,9 +809,9 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                         <p className="text-xs text-gray-500 mb-4">
                             Pick which image path(s) each track audits, per opportunity. Track A is
                             required — at least one path must be selected for every opportunity below.
-                            Track B is optional; leave it empty to skip it for an opportunity. Any
-                            selected path containing "muac" is automatically reviewed by the MUAC
-                            overzoom AI agent, regardless of which track it's in.
+                            Track B is optional; leave it empty to skip it for an opportunity. Each
+                            selected path can independently opt into AI classifiers below — greyed-out
+                            classifiers don't apply to that path's image type.
                         </p>
                         <div className="flex gap-6 items-end flex-wrap mb-4">
                             <div>
@@ -841,6 +882,39 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                                             {renderColumn('trackA', trackAName)}
                                             {renderColumn('trackB', trackBName)}
                                         </div>
+                                        {(() => {
+                                            const selectedPaths = Array.from(new Set([...(sel.trackA || []), ...(sel.trackB || [])]));
+                                            if (!selectedPaths.length) return null;
+                                            return (
+                                                <div className="mt-3 pt-3 border-t border-gray-100">
+                                                    <div className="text-xs font-medium text-gray-600 mb-2">AI Classifiers</div>
+                                                    <div className="space-y-2">
+                                                        {selectedPaths.map(path => {
+                                                            const active = effectiveClassifiers(key, path);
+                                                            return (
+                                                                <div key={path} className="flex items-center flex-wrap gap-x-4 gap-y-1 text-xs">
+                                                                    <span className="font-mono text-gray-700 w-full sm:w-auto">{path}</span>
+                                                                    {CLASSIFIERS.map(c => {
+                                                                        const applies = c.appliesTo(path);
+                                                                        return (
+                                                                            <label key={c.key}
+                                                                                className={'flex items-center gap-1 ' + (applies ? 'text-gray-700' : 'text-gray-300')}>
+                                                                                <input type="checkbox"
+                                                                                    checked={applies && active.includes(c.key)}
+                                                                                    disabled={!applies || isRunning || instance.status === 'completed'}
+                                                                                    onChange={() => toggleClassifier(key, path, c.key)}
+                                                                                    className="h-3.5 w-3.5" />
+                                                                                {c.label}
+                                                                            </label>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })()}
                                         {sel.trackA.length === 0 && (
                                             <div className="mt-2 text-xs text-amber-600">
                                                 <i className="fa-solid fa-triangle-exclamation mr-1"></i>
@@ -936,6 +1010,22 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                             disabled={!enableDistance || isRunning || instance.status === 'completed'}
                             className="border border-gray-300 rounded px-2 py-1 text-sm w-20 disabled:bg-gray-100" />
                         <span className="text-sm text-gray-700">meters of each other (by GPS location)</span>
+                    </div>
+                    <div className="flex items-start gap-3 pt-2 border-t border-gray-100">
+                        <input type="checkbox" checked={enableDuplicateDetection}
+                            onChange={e => setEnableDuplicateDetection(e.target.checked)}
+                            disabled={(!enableTimeGap && !enableDistance) || isRunning || instance.status === 'completed'}
+                            className="w-4 h-4 mt-0.5" />
+                        <div>
+                            <span className="text-sm text-gray-700">Send groupings to the Duplicate Detection API</span>
+                            <p className="text-xs text-gray-500 mt-0.5">
+                                Checks every image already in a grouping above (from any selected image path,
+                                either track) against the Duplicate Detection service. Confirmed duplicates are
+                                flagged in the AI summary and pre-tagged Duplicate/Fake in bulk assessment
+                                (existing manual tags are never overwritten). Requires at least one of the
+                                groupings above to be enabled.
+                            </p>
+                        </div>
                     </div>
                 </div>
             </div>
