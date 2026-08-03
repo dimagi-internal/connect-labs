@@ -420,12 +420,45 @@ class TestWeeklySeries:
         weeks = summary(viewer, org="living-goods")["weekly"]
         assert sum(w["works"] for w in weeks) == 1
 
-    def test_the_trailing_partial_week_is_flagged_not_dropped(self, client, portfolio):
-        """Dropping it makes a live trend look stopped; leaving it unmarked makes
-        every trend look like it fell off a cliff."""
+    def test_a_bucket_in_the_current_week_is_flagged_partial(self, client, portfolio):
+        """Dropping the running week makes a live trend look stopped; leaving it
+        unmarked makes every trend look like it fell off a cliff.
+
+        Asserted against the CURRENT week explicitly rather than against "the
+        last bucket". Those differ: on a Monday before any work has landed, the
+        newest bucket is last week's and is genuinely complete. A test that
+        assumed the trailing bucket is always partial passed six days a week and
+        failed on the seventh — and the client had the same assumption baked in,
+        hatching a finished week as unfinished every Monday morning."""
+        now = timezone.now()
+        PulseWork.objects.create(
+            work_key="w" * 64,
+            opportunity_id=1,
+            program_id=10,
+            org_slug="connect-nigeria",
+            status="approved",
+            created_ts=now,
+            service_slug="chc",
+            country="NG",
+            usd_to_worker="1.00",
+            usd_to_org="0.50",
+        )
+        # A completed week, far enough back to be its own bucket.
+        PulseWork.objects.create(
+            work_key="v" * 64,
+            opportunity_id=1,
+            program_id=10,
+            org_slug="connect-nigeria",
+            status="approved",
+            created_ts=now - timedelta(weeks=3),
+            service_slug="chc",
+            country="NG",
+            usd_to_worker="1.00",
+            usd_to_org="0.50",
+        )
         weeks = summary(client)["weekly"]
-        assert weeks[-1]["partial"] is True
-        assert any(w["partial"] is False for w in weeks) or len(weeks) == 1
+        assert weeks[-1]["partial"] is True, "the running week must be marked"
+        assert weeks[0]["partial"] is False, "a completed week must not be"
 
 
 @pytest.mark.django_db
