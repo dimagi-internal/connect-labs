@@ -2,13 +2,18 @@
 
 Each weekly run creates, per FLW, two audits per opportunity — Track A and
 Track B, user-named slots each pinned to their own set of image paths (see
-_image_audits). Any path containing "muac" (in either track) gets both the
-muac_overzoom and muac_match AI agents attached, running independently of
-each other; any other path is human-reviewed only.
+_image_audits). Per-path AI classifiers (Hyperzoom, MUAC Mismatch, KMC Scale
+Comparison) are user-selectable checkboxes in the "Opportunities & image
+types" tile, gated server-side by _classifier_applies; a path with no
+explicit saved selection falls back to _default_classifiers_for_path
+(preserving the pre-checkbox automatic muac-substring behavior). Duplicate
+Detection is a separate, non-per-path classifier wired through Visit
+Clustering — see connect_labs.audit.duplicate_detection.
 
 The per-opp image paths and track config live on the workflow DEFINITION
 (instance config); the batch window lives in run state. See
-docs/superpowers/specs/2026-06-30-audit-program-report-design.md.
+docs/superpowers/specs/2026-06-30-audit-program-report-design.md and
+docs/superpowers/specs/2026-07-30-dual-track-audit-classifiers-design.md.
 """
 
 from connect_labs.audit.data_access import AuditDataAccess
@@ -35,25 +40,71 @@ MUAC_MATCH_REVIEWER = {
     "auto_apply_actions": ["fail_unmatched"],
 }
 
+# Verbatim from audit_with_ai_review.py's (the "Weekly KMC Audit with AI
+# Review" template) legacy relatedFields wiring — the scale_validation agent
+# compares this reading field against a photo at this exact image path.
+KMC_WEIGHT_IMAGE_PATH = "anthropometric/upload_weight_image"
+KMC_WEIGHT_READING_FIELD = "child_weight_visit"
 
-def _reviewers_for_path(path):
-    """Both MUAC AI reviewers attach to any image path whose name contains
-    'muac' (case-insensitive) — independent of which track (A/B) the path is
-    pinned under, and independent of whatever display name the user gives
-    that track. The two run independently of each other and are scored
-    independently (see connect_labs.audit.tasks._combine_reviewer_results):
-    MUAC OverZoom flags unusable framing, MUAC Match flags a reading that
-    doesn't match the photo. Any other path gets no AI reviewer (human-only)."""
-    if "muac" not in (path or "").lower():
-        return []
-    return [MUAC_OVERZOOM_REVIEWER, MUAC_MATCH_REVIEWER]
+KMC_SCALE_REVIEWER = {
+    "agent_id": "scale_validation",
+    "config": {"comparison_field": KMC_WEIGHT_READING_FIELD},
+    "auto_apply_actions": ["fail_unmatched"],
+}
+
+# Per-path classifier checkboxes (see the "Opportunities & image types" tile
+# in RENDER_CODE) — each opportunity's DEFINITION.config.audit_batch.per_opp
+# entry may carry a "classifiers" map: {"<path>": ["hyperzoom", ...]}.
+CLASSIFIER_SPECS = {
+    "hyperzoom": MUAC_OVERZOOM_REVIEWER,
+    "muac_mismatch": MUAC_MATCH_REVIEWER,
+    "kmc_scale": KMC_SCALE_REVIEWER,
+}
+CLASSIFIER_KEYS = frozenset(CLASSIFIER_SPECS)
 
 
-def _image_audits(paths):
+def _classifier_applies(key, path):
+    """Server-side gating — the actual enforcement point regardless of what
+    the (advisory-only) frontend checkbox state sent. Hyperzoom/MUAC
+    Mismatch require "muac" in the path name (case-insensitive); KMC Scale
+    Comparison requires an EXACT (case-sensitive) match to the weight-image
+    path used by the Weekly KMC Audit with AI Review template."""
+    if key in ("hyperzoom", "muac_mismatch"):
+        return "muac" in (path or "").lower()
+    if key == "kmc_scale":
+        return path == KMC_WEIGHT_IMAGE_PATH
+    return False
+
+
+def _default_classifiers_for_path(path):
+    """Classifiers implied for a path with no explicit saved selection —
+    preserves the pre-checkbox automatic behavior (every muac path got both
+    MUAC reviewers, unconditionally) so a legacy/never-resaved config keeps
+    working exactly as before. kmc_scale never defaults on (it's new — no
+    legacy behavior to preserve). Mirrored in RENDER_CODE's own
+    defaultClassifiersForPath; keep both in sync if this ever changes."""
+    return ["hyperzoom", "muac_mismatch"] if "muac" in (path or "").lower() else []
+
+
+def _reviewers_for_path(path, classifiers=None):
+    """Reviewer specs for one image path, resolved from its saved classifier
+    selection (DEFINITION.config.audit_batch.per_opp[<opp_id>].classifiers)
+    — independent of which track (A/B) the path is pinned under. A path
+    absent from `classifiers` (or `classifiers` entirely falsy/None) falls
+    back to _default_classifiers_for_path, so legacy/never-resaved configs
+    keep behaving exactly as before checkboxes existed. Every selected key
+    is re-validated against _classifier_applies here regardless of what was
+    saved — this is the actual enforcement point, not just the UI's greyed-
+    out checkboxes."""
+    keys = (classifiers or {}).get(path, _default_classifiers_for_path(path))
+    return [CLASSIFIER_SPECS[k] for k in keys if k in CLASSIFIER_SPECS and _classifier_applies(k, path)]
+
+
+def _image_audits(paths, classifiers=None):
     """One image_audits entry per pinned image path, each with its own
     per-path reviewer(s) (see _reviewers_for_path) — the PR #771 per-image-type
     model. See connect_labs/audit/ai_review_config.build_review_config."""
-    return [{"image_path": p, "reviewers": _reviewers_for_path(p)} for p in paths or []]
+    return [{"image_path": p, "reviewers": _reviewers_for_path(p, classifiers)} for p in paths or []]
 
 
 def build_track_audit_calls(
@@ -74,6 +125,7 @@ def build_track_audit_calls(
     time_gap_minutes=None,
     enable_distance=None,
     distance_meters=None,
+    enable_duplicate_detection=None,
 ):
     """Build the per-opp, per-track run_audit_creation kwargs for one weekly batch.
 
@@ -95,11 +147,12 @@ def build_track_audit_calls(
         key = str(opp_id)
         cfg = per_opp.get(key, {})
         name = opp_names.get(key, "")
+        classifiers = cfg.get("classifiers")
         for track, paths in (
             (track_a, cfg.get("muac_image_paths")),
             (track_b, cfg.get("rest_image_paths")),
         ):
-            image_audits = _image_audits(paths)
+            image_audits = _image_audits(paths, classifiers)
             if not image_audits:
                 continue
             criteria = {
@@ -125,6 +178,8 @@ def build_track_audit_calls(
                 criteria["enable_distance"] = enable_distance
             if distance_meters is not None:
                 criteria["distance_meters"] = distance_meters
+            if enable_duplicate_detection is not None:
+                criteria["enable_duplicate_detection"] = enable_duplicate_detection
             calls.append(
                 {
                     "username": username,
@@ -232,6 +287,7 @@ DEFINITION = {
                 "time_gap_minutes": 10,
                 "enable_distance": False,
                 "distance_meters": 10,
+                "enable_duplicate_detection": False,
             },
         }
     },
