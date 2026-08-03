@@ -237,4 +237,6 @@ Use the **14-Day Window Ending** date picker at the top of the table to view any
 
 The **LLO** column and filter show a short LLO code (for example, **EHA**) rather than the full opportunity name, since all opportunity names in this program follow a predictable pattern and the short code is easier to scan and filter by.
 
-Each indicator column header shows an **(i)** icon. Hover over it to read a plain-English description of exactly what the indicator checks and what would cause it to flag — so you can understand any concern without having to ask someone else. The tooltip
+Each indicator column header shows an **(i)** icon. Hover over it to read a plain-English description of exactly what the indicator checks and what would cause it to flag — so you can understand any concern without having to ask someone else.
+
+###
