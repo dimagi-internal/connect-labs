@@ -141,7 +141,7 @@
      from. Rendering a single opportunity as a one-row list is chrome around a
      fact, and rendering ninety-one as a paragraph is unreadable — the partner
      window has to do both, because real partners span that whole range. */
-  function opportunities(d, selected) {
+  function opportunities(store, d, selected) {
     const rows = d.opportunities || [];
     if (!rows.length) return '';
 
@@ -302,7 +302,7 @@
           ['Units of work', nf.format(m.works || 0)],
           ['Workers', nf.format(d.worker_count || 0)],
         ]) +
-        opportunities(d, selectedOpp) +
+        opportunities(store, d, selectedOpp) +
         `<div class="pulse-win-sect">
            <span class="pulse-lbl">Delivery, last 26 weeks${
              selectedOpp ? ' · this opportunity' : ''
