@@ -943,19 +943,23 @@
     drawSamplingOverlay();
   }
   function chip(label, value, hint) {
-    // A KPI tile: small uppercase label over a large display-font figure. value/hint
-    // may carry plan/territory data — escape before innerHTML.
-    return `<div class="border border-gray-200 rounded-lg px-3 py-2 bg-white" title="${esc(
-      hint || '',
-    )}">
+    // A KPI tile: small uppercase label (with an info icon carrying the full
+    // explanation as a native tooltip — same dotted-underline pattern as the
+    // sample-config hints above the map) over a large display-font figure.
+    return `<div class="border border-gray-200 rounded-lg px-3 py-2 bg-white">
       <div class="text-[9.5px] uppercase tracking-wide text-gray-400 font-semibold">${esc(
         label,
-      )}</div>
+      )}${
+        hint
+          ? ` <span class="kpi-info" title="${esc(hint)}">&#9432;</span>`
+          : ''
+      }</div>
       <div class="text-[18px] font-extrabold tracking-tight text-gray-900 tabular-nums" style="font-family:'Bricolage Grotesque','Work Sans',sans-serif">${esc(
         value,
       )}</div></div>`;
   }
   function renderKpis(k) {
+    lastKpis = k; // so a breakdown-table sort click can re-render without a re-fetch
     const p = k.plan || {};
     const balLabel = p.has_population ? 'Pop imbalance' : 'Bldg imbalance';
     const balVal = p.has_population
@@ -971,39 +975,47 @@
       chip(
         'Worst travel',
         (p.max_spread_km ?? 0) + ' km',
-        'Largest FLW territory diameter — the minimax objective',
+        'The single longest distance between any two work areas within the same group — the worst-case walk in the whole plan (not an average).',
       ),
       chip(
         'Mean travel',
         (p.mean_spread_km ?? 0) + ' km',
-        'Mean FLW territory diameter (±std ' + (p.std_spread_km ?? 0) + ')',
+        'The average of that same "longest distance within a group" measure, across every group (±' +
+          (p.std_spread_km ?? 0) +
+          ' std deviation).',
       ),
       chip(
         balLabel,
         balVal == null ? '—' : balVal + ' %',
-        '(max − min) / target × 100',
+        '(biggest group’s total − smallest group’s total) ÷ average group total × 100 — how lopsided group sizes are relative to the average. Over 100% means the size gap between your biggest and smallest group exceeds the average group size itself.',
       ),
       chip(
         p.has_population ? 'Pop std' : 'Bldg std',
         (p.has_population ? p.pop_std : p.building_std) ?? '—',
-        'Std of per-FLW ' + (p.has_population ? 'population' : 'buildings'),
+        'Standard deviation of ' +
+          (p.has_population ? 'population' : 'building') +
+          ' totals across groups — same idea as imbalance (how uneven group sizes are), but in raw ' +
+          (p.has_population ? 'people' : 'buildings') +
+          ', and less swayed by a single extreme group.',
       ),
       chip(
         'Coverage',
         (k.coverage_pct ?? 100) + ' %',
-        'Active buildings / (active + excluded)',
+        'Share of all buildings in the ward that made it into the active plan: active buildings ÷ (active + excluded buildings) × 100.',
       ),
       chip(
         'Excluded',
         (k.excluded ? k.excluded.count : 0) + ' areas',
-        (k.excluded ? k.excluded.buildings : 0) + ' buildings dropped',
+        'Work areas explicitly marked Excluded — dropped from every other metric on this panel. (' +
+          (k.excluded ? k.excluded.buildings : 0) +
+          ' buildings sit in those excluded areas.)',
       ),
       chip(
         k.dimension === 'worker' ? 'Workers' : 'Groups',
         p.territory_count ?? 0,
         k.dimension === 'worker'
-          ? ''
-          : 'No workers assigned yet — metrics shown by group',
+          ? 'Number of distinct workers with assigned work areas.'
+          : 'Number of distinct work-area groups (WAGs). Switches to counting workers once any are assigned.',
       ),
     ].join('');
     const flwDim = $('flw-dim');
@@ -1021,7 +1033,16 @@
     if (flwPopCol) flwPopCol.style.display = showPop ? '' : 'none';
     const flwBody = $('flw-body');
     if (!flwBody) return;
-    flwBody.innerHTML = (k.territories || [])
+    const territories = (k.territories || []).slice();
+    const flwGetter = FLW_SORT_GETTERS[flwSortKey] || FLW_SORT_GETTERS.name;
+    territories.sort((a, b) => {
+      const va = flwGetter(a),
+        vb = flwGetter(b);
+      if (va < vb) return -1 * flwSortDir;
+      if (va > vb) return 1 * flwSortDir;
+      return 0;
+    });
+    flwBody.innerHTML = territories
       .map(
         (t) =>
           `<tr class="border-b"><td class="p-1.5 font-medium">${esc(
@@ -1040,6 +1061,13 @@
         <td class="p-1.5">${t.spread_km}</td></tr>`,
       )
       .join('');
+    // Sort indicators on the breakdown table's head (mirrors the WA table).
+    document.querySelectorAll('.flw-th').forEach((th) => {
+      const active = th.dataset.flwSort === flwSortKey;
+      th.classList.toggle('is-sorted', active);
+      const ind = th.querySelector('.sort-ind');
+      if (ind) ind.textContent = active ? (flwSortDir === 1 ? '↑' : '↓') : '';
+    });
   }
   function renderSummary(s) {
     const row = (label, val) =>
@@ -1118,6 +1146,19 @@
     building_count: (w) => Number(w.building_count || 0),
     expected_visit_count: (w) => Number(w.expected_visit_count || 0),
     status: (w) => String(w.status || ''),
+  };
+
+  // ---- sort state for the per-group/per-worker breakdown table ----
+  let flwSortKey = 'name';
+  let flwSortDir = 1;
+  let lastKpis = null; // re-render on a new sort click without re-fetching
+  const FLW_SORT_GETTERS = {
+    name: (t) => String(t.name || ''),
+    work_areas: (t) => Number(t.work_areas || 0),
+    buildings: (t) => Number(t.buildings || 0),
+    population: (t) => Number(t.population || 0),
+    expected_visits: (t) => Number(t.expected_visits || 0),
+    spread_km: (t) => Number(t.spread_km || 0),
   };
 
   // In the planning phase every active area is "UNASSIGNED" — the execution
@@ -1286,6 +1327,18 @@
       renderTable();
     });
   });
+  // Same pattern for the per-group/per-worker breakdown table.
+  document.querySelectorAll('.flw-th').forEach((th) => {
+    th.addEventListener('click', () => {
+      const k = th.dataset.flwSort;
+      if (flwSortKey === k) flwSortDir = -flwSortDir;
+      else {
+        flwSortKey = k;
+        flwSortDir = 1;
+      }
+      if (lastKpis) renderKpis(lastKpis);
+    });
+  });
 
   // Select/deselect every cell whose work_area_group matches `name`.
   // Partial state (some-but-not-all selected) promotes to all-selected first
@@ -1411,6 +1464,19 @@
     if (gsel) {
       e.stopPropagation();
       toggleGroupSelect(gsel.dataset.groupSel);
+      return;
+    }
+    // Click on the group NAME specifically → filter the map + table to this
+    // group, same as clicking a row in the Workers/Groups sidebar list. Also
+    // sits inside [data-group-toggle], so it's caught first (before the
+    // collapse-toggle fallback below) and doesn't also collapse the row.
+    const gn = e.target.closest('.gn');
+    if (gn) {
+      const gnHdr = gn.closest('[data-group-toggle]');
+      if (gnHdr) {
+        if (colorDim !== 'group') setColorDim('group');
+        setActiveDim(gnHdr.dataset.groupToggle);
+      }
       return;
     }
     // Click on any other part of the group header row → toggle collapse.
