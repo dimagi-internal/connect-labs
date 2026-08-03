@@ -231,16 +231,10 @@ The **FLW Daily Indicator Report** is a daily early-warning view for Program 176
 
 Each day, twelve indicators are computed automatically for every FLW. The summary view presents a **14-day table** — one row per FLW, one column per day — where each cell contains a single "investigate today?" flag. At a glance you can see which workers have had concerns on which days without reading through raw numbers.
 
+Only **7 of the 12 indicators** roll up into the main grid's red flag: **Peak Households per Building**, **Large Households**, **% Children Vaccinated**, **Camping % (Same-Spot Visits)**, **Duplicate Child Names**, **Duplicate Child Ages**, and **MUAC Value Repetition %**. These are the indicators where a tripped threshold reliably signals something worth investigating regardless of local context. The remaining indicators still compute and can highlight a tripped state in the expanded detail view, but they appear in orange rather than red — they are either informational or can be triggered by legitimate field conditions, so they do not flag an FLW on their own in the main grid.
+
 Use the **14-Day Window Ending** date picker at the top of the table to view any past 14-day window. By default the table shows the most recent 14 days, but you can select an earlier end date to review historical periods without re-running anything. The table shows only FLWs who have activity within the selected 14-day window — if you pick an older end date, workers whose activity falls entirely outside that window will not appear, rather than showing as rows with empty cells.
 
 The **LLO** column and filter show a short LLO code (for example, **EHA**) rather than the full opportunity name, since all opportunity names in this program follow a predictable pattern and the short code is easier to scan and filter by.
 
-Each indicator column header shows an **(i)** icon. Hover over it to read a plain-English description of exactly what the indicator checks and what would cause it to flag — so you can understand any concern without having to ask someone else. The tooltip text is always fully visible regardless of where the column falls in the wide, horizontally-scrollable table.
-
-The twelve indicators are:
-
-| Indicator | What it checks |
-|---|---|
-| **Households per building** | Whether the number of distinct households registered in the FLW's work area exceeds 5 per building — a signal they may have recorded implausibly many separate households for the area's size |
-| **Oversized households** | Whether any households recorded an unusually high number of members |
-| **Rushed back-to-back visits** | Whether consecutive visits were completed too quickly to have been conducted properly. The cell shows the total elapsed minutes for the compressed visit sequence — the number of forms submitted
+Each indicator column header shows an **(i)** icon. Hover over it to read a plain-English description of exactly what the indicator checks and what would cause it to flag — so you can understand any concern without having to ask someone else. The tooltip
