@@ -183,11 +183,6 @@ class AuditCriteria:
     count_across_all: int = 100
     sample_percentage: int = 100
     selected_flw_user_ids: list[str] | None = None
-    # Cap the run to the first N FLWs found in the window (sorted by username
-    # for determinism), resolved by run_audit_creation into selected_flw_user_ids
-    # before extraction/AI review run -- lets a large batch be run against just
-    # a handful of FLWs without waiting on the full window's worth of API calls.
-    max_flws: int | None = None
     # Filter to specific deliver unit type(s) — derived from form.@name in form_json,
     # since Connect never exposes a deliver-unit name, only the numeric FK id.
     deliver_unit_types: list[str] | None = None
@@ -247,7 +242,6 @@ class AuditCriteria:
             count_across_all=data.get("count_across_all") or data.get("countAcrossAll", 100),
             sample_percentage=data.get("sample_percentage") or data.get("samplePercentage", 100),
             selected_flw_user_ids=data.get("selected_flw_user_ids") or data.get("selected_usernames", []),
-            max_flws=data.get("max_flws") or data.get("maxFlws"),
             deliver_unit_types=deliver_unit_types,
             visit_statuses=visit_statuses,
             related_fields=related_fields or None,

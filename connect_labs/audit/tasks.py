@@ -992,32 +992,9 @@ def run_audit_creation(
                 # Relay to the program-creator row so it glides during fetch, too.
                 _relay(processed, total, "Creating audits · fetching visits")
 
-            if audit_criteria.max_flws:
-                # Resolve max_flws into a concrete username list up front: fetch visit
-                # rows (cheap, SQL-only -- unlike the extraction/AI-review stages this
-                # doesn't touch CommCare/S3), pick the first N usernames found (sorted
-                # for determinism), then narrow to just their visits. Everything after
-                # this point sees the same flat visit_ids list it always has.
-                visit_ids, visits_for_flw_cap = data_access.get_visit_ids_for_audit(
-                    opportunity_ids,
-                    criteria=audit_criteria,
-                    progress_callback=on_visit_fetch_progress,
-                    return_visits=True,
-                )
-                selected_usernames = sorted({v["username"] for v in visits_for_flw_cap if v.get("username")})[
-                    : audit_criteria.max_flws
-                ]
-                visit_ids = [
-                    v["id"] for v in visits_for_flw_cap if v.get("username") in selected_usernames and v.get("id")
-                ]
-                logger.info(
-                    f"[AuditCreation] max_flws={audit_criteria.max_flws}: capped to "
-                    f"{len(selected_usernames)} FLWs, {len(visit_ids)} visits"
-                )
-            else:
-                visit_ids = data_access.get_visit_ids_for_audit(
-                    opportunity_ids, criteria=audit_criteria, progress_callback=on_visit_fetch_progress
-                )
+            visit_ids = data_access.get_visit_ids_for_audit(
+                opportunity_ids, criteria=audit_criteria, progress_callback=on_visit_fetch_progress
+            )
             logger.info(f"[AuditCreation] Fetched {len(visit_ids)} visit IDs")
 
             current_stage += 1

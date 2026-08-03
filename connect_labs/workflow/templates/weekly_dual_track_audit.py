@@ -126,7 +126,7 @@ def build_track_audit_calls(
     enable_distance=None,
     distance_meters=None,
     enable_duplicate_detection=None,
-    max_flws=None,
+    selected_flw_user_ids=None,
 ):
     """Build the per-opp, per-track run_audit_creation kwargs for one weekly batch.
 
@@ -139,9 +139,14 @@ def build_track_audit_calls(
     which visits are audited (deliver unit type, visit status) and how the
     resulting audit's overall_result is decided (pass threshold), same as the
     Django creation wizard. ``enable_time_gap``/``time_gap_minutes``/``enable_distance``/``distance_meters`` (visit clustering) are applied identically to every track's criteria when provided.
-    ``max_flws``, when provided, caps every track's criteria to the first N FLWs
-    found in the window (see ``AuditCriteria.max_flws``) — lets a run be scoped
-    to a handful of field workers instead of the whole opportunity.
+    ``selected_flw_user_ids``, when provided, is stamped onto every track's
+    criteria identically -- the caller (the ``weekly_dual_track_audit_create``
+    job handler) resolves a "max FLWs" cap into this EXACT username list
+    ONCE, unsampled, before calling this function, so every opp/track call
+    scopes to the same field workers rather than each independently deriving
+    its own (possibly different, possibly sample-percentage-skewed) set. This
+    is ``AuditCriteria.selected_flw_user_ids`` -- the existing SQL-pushdown
+    FLW filter (see ``connect_labs.audit.data_access``), not a new mechanism.
     ``AuditCriteria.from_dict`` (in
     ``connect_labs.audit.data_access``) already understands these keys, so no
     changes were needed to ``run_audit_creation`` itself.
@@ -184,8 +189,8 @@ def build_track_audit_calls(
                 criteria["distance_meters"] = distance_meters
             if enable_duplicate_detection is not None:
                 criteria["enable_duplicate_detection"] = enable_duplicate_detection
-            if max_flws is not None:
-                criteria["max_flws"] = max_flws
+            if selected_flw_user_ids is not None:
+                criteria["selected_flw_user_ids"] = selected_flw_user_ids
             calls.append(
                 {
                     "username": username,
@@ -494,10 +499,6 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
     const [jobError, setJobError] = React.useState(null);
     const [taskId, setTaskId] = React.useState(null);
     const [isCancelling, setIsCancelling] = React.useState(false);
-    // A create job whose worker died mid-batch (e.g. a deploy cutover) never
-    // writes a terminal status, so active_job stays 'running' forever. We detect
-    // that on reconnect (see below) and surface it here instead of spinning.
-    const [staleJob, setStaleJob] = React.useState(false);
     // Per-run sampling rates — default to the pinned config, adjustable before create.
     const [muacSample, setMuacSample] = React.useState(trackA.sample_percentage != null ? trackA.sample_percentage : 100);
     const [otherSample, setOtherSample] = React.useState(trackB.sample_percentage != null ? trackB.sample_percentage : 10);
@@ -584,62 +585,30 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
     // it. If we come back while it's still working, re-attach the progress
     // stream instead of showing a stale idle state.
     //
-    // A full batch (extraction + AI review + duplicate detection across both
-    // tracks) routinely runs 15-20+ minutes — CloudWatch shows several recent
-    // successful runs north of 20 minutes. The `active_job` embedded in THIS
-    // page load is only a snapshot from render time: if the job finished (or
-    // failed) after that snapshot was taken -- or this tab sat backgrounded/
-    // discarded across the job's real runtime -- the embedded snapshot still
-    // reads 'running' even though the server has since recorded a terminal
-    // status. run_workflow_job writes active_job.status = completed/failed
-    // unconditionally when its own try/except resolves (see
-    // connect_labs/workflow/tasks.py), with no dependency on a live browser
-    // connection, so re-fetching the run's CURRENT state before judging
-    // anything stale reflects reality even when the embedded snapshot doesn't.
-    //
-    // Only if a FRESH check still says 'running' past the staleness window do
-    // we treat it as a genuine zombie (the worker was killed mid-batch -- a
-    // deploy cutover, a crash -- and never got to write a terminal status;
-    // Celery can't disambiguate a dead/expired task from a queued one, both
-    // report PENDING, so attaching the progress stream would "reconnect"
-    // eternally). 45 minutes gives real long-tail runs headroom while still
-    // catching an actual zombie in a reasonable time.
-    const STALE_JOB_MS = 45 * 60 * 1000;
+    // Staleness is judged SERVER-SIDE, not here: job_status_snapshot /
+    // JOB_STALE_SECONDS (connect_labs/workflow/views.py) is the one
+    // authoritative gate, checked fresh on every poll against a heartbeat
+    // that refreshes on every progress tick (see progress_callback in
+    // connect_labs/workflow/tasks.py) — not a one-time page-load snapshot, and
+    // not a wall-clock cap on total job duration. So reconnecting here is just
+    // re-attaching the poller; attachStream's onComplete/onError already
+    // handle whatever the first real poll response says (still running,
+    // completed, failed, or a genuine zombie the server itself detected), via
+    // actions.streamJobProgress passing instance.id as run_id specifically so
+    // the server can make that call. An earlier version of this effect tried
+    // to pre-judge staleness client-side (comparing a browser Date.now() against
+    // a server-naive timestamp, plus a live re-fetch) -- both redundant with
+    // this server-side check and an independent source of bugs (a timezone-
+    // dependent age computation, and a race where the fetch could resolve
+    // after the user had already started a new job). Reconnecting
+    // unconditionally and trusting the existing poll response avoids both.
     React.useEffect(() => {
-        const embedded = instance.state?.active_job;
-        if (!(embedded && embedded.status === 'running' && embedded.job_id)) return;
-
-        const scopeQs = instance.opportunity_id ? ('?opportunity_id=' + instance.opportunity_id)
-            : (instance.program_id ? ('?program_id=' + instance.program_id) : '');
-
-        const judge = (active) => {
-            if (!active || active.status !== 'running' || !active.job_id) {
-                // The server has since recorded a terminal status -- trust it
-                // over the page-load snapshot instead of assuming a zombie.
-                if (active && active.status === 'completed') {
-                    setProgress({ status: 'completed' });
-                    refreshSessions();
-                } else if (active && active.status === 'failed') {
-                    setJobError(active.error || 'Job failed');
-                }
-                return;
-            }
-            const startedMs = active.started_at ? Date.parse(active.started_at) : NaN;
-            const age = isNaN(startedMs) ? Infinity : (Date.now() - startedMs);
-            if (age > STALE_JOB_MS) {
-                setStaleJob(true); // confirmed still 'running' by a FRESH check, and past the window — zombie
-                return;
-            }
-            setIsRunning(true);
-            setTaskId(active.job_id);
-            setProgress({ status: 'running', message: 'Reconnecting to the running job…' });
-            attachStream(active.job_id);
-        };
-
-        fetch('/labs/workflow/api/run/' + instance.id + '/' + scopeQs)
-            .then(res => res.ok ? res.json() : Promise.reject(new Error('fetch failed')))
-            .then(data => judge(data.run?.state?.active_job))
-            .catch(() => judge(embedded)); // re-fetch failed -- fall back to the embedded snapshot
+        const active = instance.state?.active_job;
+        if (!(active && active.status === 'running' && active.job_id)) return;
+        setIsRunning(true);
+        setTaskId(active.job_id);
+        setProgress({ status: 'running', message: 'Reconnecting to the running job…' });
+        attachStream(active.job_id);
     }, []); // once on mount
 
     // ── Create handler ────────────────────────────────────────────────────────
@@ -648,7 +617,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
     //    3) stream progress, 4) reload the created sessions on completion.
     const handleCreate = async () => {
         if (!startDate || !endDate || isRunning || instance.status === 'completed') return;
-        setIsRunning(true); setJobError(null); setStaleJob(false);
+        setIsRunning(true); setJobError(null);
         setProgress({ status: 'starting', message: 'Submitting to the server…' });
 
         // No run-state write from the render: the window travels in the job
@@ -1149,13 +1118,6 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                 {jobError && (
                     <div className="mt-4 bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-700">
                         <i className="fa-solid fa-circle-exclamation mr-2"></i>{jobError}
-                    </div>
-                )}
-                {staleJob && !isRunning && (
-                    <div className="mt-4 bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-800">
-                        <i className="fa-solid fa-triangle-exclamation mr-2"></i>
-                        The previous audit run didn't finish — the server job stopped before completing, so no
-                        audits were created. Click <strong>Create audits</strong> to run it again.
                     </div>
                 )}
                 {progress && progress.status === 'completed' && !isRunning && (

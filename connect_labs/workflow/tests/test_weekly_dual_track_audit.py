@@ -934,7 +934,32 @@ def test_build_track_audit_calls_omits_enable_duplicate_detection_when_not_provi
     assert "enable_duplicate_detection" not in calls[0]["criteria"]
 
 
-def test_build_track_audit_calls_threads_max_flws():
+def test_build_track_audit_calls_threads_selected_flw_user_ids_identically_to_every_call():
+    """selected_flw_user_ids is resolved ONCE by the caller and must land on
+    every opp/track call unchanged -- this is what makes both tracks (and
+    every opportunity) audit the SAME field workers, unlike a per-call cap
+    that each call would resolve independently."""
+    calls = build_track_audit_calls(
+        opportunity_ids=[101, 102],
+        opp_names={"101": "Opp A", "102": "Opp B"},
+        per_opp={
+            "101": {"muac_image_paths": ["form.muac"], "rest_image_paths": ["form.house"]},
+            "102": {"muac_image_paths": ["form.muac"]},
+        },
+        track_a=TRACK_A,
+        track_b=TRACK_B,
+        window_start="2026-06-22",
+        window_end="2026-06-28",
+        username="nm1",
+        workflow_run_id=555,
+        selected_flw_user_ids=["flwA", "flwB"],
+    )
+    assert len(calls) == 3  # 2 tracks for opp 101, 1 track for opp 102
+    for call in calls:
+        assert call["criteria"]["selected_flw_user_ids"] == ["flwA", "flwB"]
+
+
+def test_build_track_audit_calls_omits_selected_flw_user_ids_when_not_provided():
     calls = build_track_audit_calls(
         opportunity_ids=[101],
         opp_names={"101": "Opp A"},
@@ -945,24 +970,8 @@ def test_build_track_audit_calls_threads_max_flws():
         window_end="2026-06-28",
         username="nm1",
         workflow_run_id=555,
-        max_flws=1,
     )
-    assert calls[0]["criteria"]["max_flws"] == 1
-
-
-def test_build_track_audit_calls_omits_max_flws_when_not_provided():
-    calls = build_track_audit_calls(
-        opportunity_ids=[101],
-        opp_names={"101": "Opp A"},
-        per_opp={"101": {"muac_image_paths": ["form.muac"]}},
-        track_a=TRACK_A,
-        track_b=TRACK_B,
-        window_start="2026-06-22",
-        window_end="2026-06-28",
-        username="nm1",
-        workflow_run_id=555,
-    )
-    assert "max_flws" not in calls[0]["criteria"]
+    assert "selected_flw_user_ids" not in calls[0]["criteria"]
 
 
 def test_definition_pins_duplicate_detection_default_off():
@@ -1055,6 +1064,148 @@ def test_handler_persists_duplicate_detection_flag_onto_run_state():
     assert written["enable_duplicate_detection"] is True
 
 
+def test_coerce_max_flws_accepts_positive_numbers_and_numeric_strings():
+    from connect_labs.workflow.job_handlers.weekly_dual_track_audit import _coerce_max_flws
+
+    assert _coerce_max_flws(1) == 1
+    assert _coerce_max_flws(3) == 3
+    assert _coerce_max_flws("2") == 2
+    assert _coerce_max_flws(2.9) == 2  # a JS Number() can send a float; truncate, don't crash
+
+
+def test_coerce_max_flws_treats_invalid_input_as_no_cap():
+    """A bad input must never behave WORSE than an uncapped run -- e.g. a stray
+    negative must not become a `[:-N]` slice that silently drops the LAST N
+    FLWs instead of capping to the first N."""
+    from connect_labs.workflow.job_handlers.weekly_dual_track_audit import _coerce_max_flws
+
+    assert _coerce_max_flws(None) is None
+    assert _coerce_max_flws("") is None
+    assert _coerce_max_flws("not-a-number") is None
+    assert _coerce_max_flws(0) is None
+    assert _coerce_max_flws(-2) is None
+
+
+def test_handler_resolves_max_flws_into_selected_flw_user_ids_shared_across_every_call():
+    """The cap must be resolved ONCE (from an unsampled fetch) and land
+    identically on every opp/track call -- not derived independently per call,
+    which could diverge between Track A's 100% sample and Track B's 10%."""
+    from connect_labs.workflow.job_handlers import weekly_dual_track_audit as h
+
+    run = _fake_run({"window_start": "2026-06-22", "window_end": "2026-06-28"})
+    eager = mock.Mock()
+    eager.result = {"sessions": [1]}
+
+    with (
+        mock.patch.object(h, "WorkflowDataAccess") as WDA,
+        mock.patch.object(h, "AuditDataAccess") as ADA,
+        mock.patch.object(h, "run_audit_creation") as rac,
+    ):
+        wda = WDA.return_value
+        wda.get_run.return_value = run
+        wda.get_definition.return_value = _fake_definition()
+        rac.apply.return_value = eager
+        ada = ADA.return_value
+        ada.get_visit_ids_for_audit.return_value = (
+            [101, 102, 103],
+            [
+                {"id": 101, "username": "flwB"},
+                {"id": 102, "username": "flwA"},
+                {"id": 103, "username": "flwC"},
+            ],
+        )
+
+        h.weekly_dual_track_audit_create(
+            {"run_id": 555, "opportunity_id": 101, "max_flws": 2}, access_token="tok"
+        )
+
+    # Unsampled discovery: the resolution query must not inherit either
+    # track's sample_percentage.
+    discovery_criteria = ada.get_visit_ids_for_audit.call_args.kwargs["criteria"]
+    assert discovery_criteria.sample_percentage == 100
+
+    assert rac.apply.call_count == 4  # 2 opps (101, 102 from _fake_definition) x 2 tracks
+    for c in rac.apply.call_args_list:
+        assert c.kwargs["kwargs"]["criteria"]["selected_flw_user_ids"] == ["flwA", "flwB"]  # sorted, first 2
+    ada.close.assert_called_once()
+
+
+def test_handler_skips_flw_resolution_when_max_flws_not_set():
+    from connect_labs.workflow.job_handlers import weekly_dual_track_audit as h
+
+    run = _fake_run({"window_start": "2026-06-22", "window_end": "2026-06-28"})
+    eager = mock.Mock()
+    eager.result = {"sessions": [1]}
+
+    with (
+        mock.patch.object(h, "WorkflowDataAccess") as WDA,
+        mock.patch.object(h, "AuditDataAccess") as ADA,
+        mock.patch.object(h, "run_audit_creation") as rac,
+    ):
+        wda = WDA.return_value
+        wda.get_run.return_value = run
+        wda.get_definition.return_value = _fake_definition()
+        rac.apply.return_value = eager
+
+        h.weekly_dual_track_audit_create({"run_id": 555, "opportunity_id": 101}, access_token="tok")
+
+    ADA.assert_not_called()
+    for c in rac.apply.call_args_list:
+        assert "selected_flw_user_ids" not in c.kwargs["kwargs"]["criteria"]
+
+
+def test_handler_falls_back_to_persisted_max_flws():
+    from connect_labs.workflow.job_handlers import weekly_dual_track_audit as h
+
+    run = _fake_run({"window_start": "2026-06-22", "window_end": "2026-06-28", "max_flws": 1})
+    eager = mock.Mock()
+    eager.result = {"sessions": [1]}
+
+    with (
+        mock.patch.object(h, "WorkflowDataAccess") as WDA,
+        mock.patch.object(h, "AuditDataAccess") as ADA,
+        mock.patch.object(h, "run_audit_creation") as rac,
+    ):
+        wda = WDA.return_value
+        wda.get_run.return_value = run
+        wda.get_definition.return_value = _fake_definition()
+        rac.apply.return_value = eager
+        ada = ADA.return_value
+        ada.get_visit_ids_for_audit.return_value = ([101], [{"id": 101, "username": "flwA"}])
+
+        h.weekly_dual_track_audit_create({"run_id": 555, "opportunity_id": 101}, access_token="tok")
+
+    for c in rac.apply.call_args_list:
+        assert c.kwargs["kwargs"]["criteria"]["selected_flw_user_ids"] == ["flwA"]
+
+
+def test_handler_persists_max_flws_onto_run_state():
+    from connect_labs.workflow.job_handlers import weekly_dual_track_audit as h
+
+    run = _fake_run({"window_start": "2026-06-22", "window_end": "2026-06-28"})
+    eager = mock.Mock()
+    eager.result = {"sessions": [1]}
+
+    with (
+        mock.patch.object(h, "WorkflowDataAccess") as WDA,
+        mock.patch.object(h, "AuditDataAccess") as ADA,
+        mock.patch.object(h, "run_audit_creation") as rac,
+    ):
+        wda = WDA.return_value
+        wda.get_run.return_value = run
+        wda.get_definition.return_value = _fake_definition()
+        rac.apply.return_value = eager
+        ada = ADA.return_value
+        ada.get_visit_ids_for_audit.return_value = ([101], [{"id": 101, "username": "flwA"}])
+
+        h.weekly_dual_track_audit_create(
+            {"run_id": 555, "opportunity_id": 101, "max_flws": 1}, access_token="tok"
+        )
+
+    written = wda.update_run_state.call_args[0][1]
+    assert written["max_flws"] == 1
+
+
 def test_render_code_includes_per_path_classifier_checkboxes():
     from connect_labs.workflow.templates import get_template
 
@@ -1093,35 +1244,21 @@ def test_render_code_view_only_summary_mentions_duplicate_detection_when_enabled
     assert "Duplicate Detection enabled" in rc
 
 
-def test_render_code_raises_stale_job_threshold_to_45_minutes():
+def test_render_code_reconnects_unconditionally_without_a_client_side_staleness_gate():
+    """Staleness is judged server-side (job_status_snapshot / JOB_STALE_SECONDS
+    in connect_labs/workflow/views.py) against a heartbeat that refreshes on
+    every progress tick -- not by this template pre-judging a page-load
+    snapshot. A prior version computed age client-side (Date.parse() against a
+    server-naive timestamp -- timezone-dependent) and re-fetched run state
+    before deciding whether to attach the stream; both are gone. The reconnect
+    effect just attaches the poller whenever the embedded snapshot says
+    'running', and lets the first real poll response report the truth."""
     from connect_labs.workflow.templates import get_template
 
     rc = get_template("weekly_dual_track_audit")["render_code"]
-    assert "const STALE_JOB_MS = 45 * 60 * 1000;" in rc
-
-
-def test_render_code_refetches_run_state_before_judging_staleness():
-    """A page-load snapshot of active_job can be stale (the job finished, or
-    this tab sat backgrounded across the run) -- staleness must be judged
-    against a FRESH fetch of the run's current state, not the embedded one,
-    with the embedded snapshot only used as a fallback if that fetch fails."""
-    from connect_labs.workflow.templates import get_template
-
-    rc = get_template("weekly_dual_track_audit")["render_code"]
-    assert "fetch('/labs/workflow/api/run/' + instance.id + '/' + scopeQs)" in rc
-    assert "judge(data.run?.state?.active_job)" in rc
-    assert ".catch(() => judge(embedded))" in rc
-
-
-def test_render_code_trusts_fresh_terminal_status_over_stale_snapshot():
-    """If the fresh fetch shows the job already completed/failed, that must
-    win over the embedded 'running' snapshot instead of assuming a zombie --
-    and a freshly-discovered completion must reload sessions so the created
-    audits actually show up."""
-    from connect_labs.workflow.templates import get_template
-
-    rc = get_template("weekly_dual_track_audit")["render_code"]
-    assert "active.status === 'completed'" in rc
-    assert "active.status === 'failed'" in rc
-    reconnect_effect = rc.split("const judge = (active) => {")[1].split("fetch('/labs/workflow/api/run/'")[0]
-    assert "refreshSessions();" in reconnect_effect
+    assert "STALE_JOB_MS" not in rc
+    assert "staleJob" not in rc
+    assert "const judge" not in rc
+    reconnect_effect = rc.split("Reconnect to a still-running job")[1].split("── Create handler")[0]
+    assert "const active = instance.state?.active_job;" in reconnect_effect
+    assert "attachStream(active.job_id);" in reconnect_effect

@@ -13,12 +13,67 @@ be threaded into WorkflowDataAccess or a program-owned run's get_run() 404s.
 
 import logging
 
-from connect_labs.audit.data_access import is_audit_creation_cancelled
+from connect_labs.audit.data_access import (
+    AuditCriteria,
+    AuditDataAccess,
+    create_mock_request,
+    is_audit_creation_cancelled,
+)
 from connect_labs.audit.tasks import run_audit_creation
 from connect_labs.workflow.data_access import WorkflowDataAccess
 from connect_labs.workflow.tasks import register_job_handler
 
 logger = logging.getLogger(__name__)
+
+
+def _coerce_max_flws(value):
+    """Coerce a max_flws input to a positive int, or None (no cap) if it's
+    missing, non-numeric, or not positive. This field's whole purpose is a
+    safe way to shrink a run for faster iteration, so a bad input (a decimal,
+    a negative, a stray string) falls back to "no cap" rather than crashing
+    the task or -- worse -- silently truncating from the wrong end (a naive
+    ``[:max_flws]`` slice with a negative value would drop the LAST N FLWs
+    instead of capping to the first N)."""
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        return None
+    return n if n >= 1 else None
+
+
+def _resolve_flw_cap(access_token, opportunity_ids, window_start, window_end, max_flws):
+    """Resolve max_flws into a concrete, sorted username list ONCE across
+    every opportunity in the batch, from an UNSAMPLED visit fetch.
+
+    This runs before build_track_audit_calls / the per-call loop specifically
+    so every opp x track call in the batch gets the SAME selected_flw_user_ids
+    -- otherwise each call would independently derive its own first-N-usernames
+    from its OWN filtered visit set, which could differ: Track A (100% sample)
+    and Track B (10% sample, by default) can see different FLWs in their
+    respective samples, and get_visit_ids_for_audit already applies
+    sample_percentage server-side before any caller sees the visit list. An
+    unsampled (sample_percentage=100) discovery fetch, resolved once, avoids
+    both the per-track divergence and the sampling-order dependency.
+
+    Returns the resolved usernames via the SAME AuditCriteria.selected_flw_user_ids
+    pushdown filter every other FLW-scoping caller already uses (see
+    connect_labs.audit.data_access), not a new mechanism.
+    """
+    data_access = AuditDataAccess(
+        opportunity_id=opportunity_ids[0], request=create_mock_request(access_token, opportunity_ids[0])
+    )
+    try:
+        _, visits = data_access.get_visit_ids_for_audit(
+            opportunity_ids,
+            criteria=AuditCriteria(
+                audit_type="date_range", start_date=window_start, end_date=window_end, sample_percentage=100
+            ),
+            return_visits=True,
+        )
+    finally:
+        data_access.close()
+    usernames = sorted({v["username"] for v in visits if v.get("username")})
+    return usernames[:max_flws]
 
 
 @register_job_handler("weekly_dual_track_audit_create")
@@ -86,10 +141,24 @@ def weekly_dual_track_audit_create(job_config: dict, access_token: str, progress
         enable_duplicate_detection = job_config.get(
             "enable_duplicate_detection", state.get("enable_duplicate_detection")
         )
-        max_flws = job_config.get("max_flws", state.get("max_flws"))
+        max_flws = _coerce_max_flws(job_config.get("max_flws", state.get("max_flws")))
+        opportunity_ids = definition.data.get("opportunity_ids") or [opportunity_id]
+
+        selected_flw_user_ids = None
+        if max_flws:
+            selected_flw_user_ids = _resolve_flw_cap(
+                access_token, opportunity_ids, window_start, window_end, max_flws
+            )
+            logger.info(
+                "[WeeklyDualTrackAudit] run %s: max_flws=%d resolved to %d FLW(s): %s",
+                run_id,
+                max_flws,
+                len(selected_flw_user_ids),
+                selected_flw_user_ids,
+            )
 
         calls = build_track_audit_calls(
-            opportunity_ids=definition.data.get("opportunity_ids") or [opportunity_id],
+            opportunity_ids=opportunity_ids,
             opp_names=batch.get("opp_names", {}),
             per_opp=batch.get("per_opp", {}),
             track_a=track_a,
@@ -106,7 +175,7 @@ def weekly_dual_track_audit_create(job_config: dict, access_token: str, progress
             enable_distance=enable_distance,
             distance_meters=distance_meters,
             enable_duplicate_detection=enable_duplicate_detection,
-            max_flws=max_flws,
+            selected_flw_user_ids=selected_flw_user_ids,
         )
 
         from connect_labs.utils.progress_relays import pop_relay, register_relay
