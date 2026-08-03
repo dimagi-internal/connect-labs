@@ -1450,7 +1450,11 @@ def run_audit_creation(
         if enable_duplicate_detection and dup_detection_targets:
             msg = f"Stage {current_stage}/{total_stages}: Checking for duplicates..."
             set_task_progress(
-                self, msg, current_stage=current_stage, total_stages=total_stages, stage_name="Duplicate Detection"
+                self,
+                msg,
+                current_stage=current_stage,
+                total_stages=total_stages,
+                stage_name="Visit-Cluster Duplicate Detection",
             )
             _update_job_progress(
                 data_access,
@@ -1459,7 +1463,7 @@ def run_audit_creation(
                 status="running",
                 current_stage=current_stage,
                 total_stages=total_stages,
-                stage_name="Duplicate Detection",
+                stage_name="Visit-Cluster Duplicate Detection",
                 message=msg,
             )
 
@@ -1471,7 +1475,7 @@ def run_audit_creation(
                     f"Stage {_dd_stage}/{total_stages}: {message}",
                     current_stage=_dd_stage,
                     total_stages=total_stages,
-                    stage_name="Duplicate Detection",
+                    stage_name="Visit-Cluster Duplicate Detection",
                     processed=processed,
                     total=total,
                 )
@@ -1529,6 +1533,8 @@ def run_audit_creation(
                 dd_note = f"Visit-cluster duplicate detection failed: {dup_detection_results['error']}"
             else:
                 dd_warnings = []
+                if dup_detection_results.get("cancelled"):
+                    dd_warnings.append("stopped by user before all groupings were checked")
                 if dup_detection_results.get("errors"):
                     dd_warnings.append(f"{dup_detection_results['errors']} grouping(s) failed the duplicate check")
                 if dup_detection_results.get("groupings_skipped"):

@@ -1044,6 +1044,17 @@ def test_render_code_includes_duplicate_detection_toggle():
     assert "Duplicate Detection API" in rc
 
 
+def test_render_code_resets_duplicate_detection_when_clustering_disabled():
+    """A stale checked-but-greyed-out Duplicate Detection box must not survive
+    once both clustering gates are turned off -- it would otherwise still
+    ride the job payload and render as "enabled" with nothing to check."""
+    from connect_labs.workflow.templates import get_template
+
+    rc = get_template("weekly_dual_track_audit")["render_code"]
+    assert "setEnableDuplicateDetection(false)" in rc
+    assert "!enableTimeGap && !enableDistance && enableDuplicateDetection" in rc
+
+
 def test_render_code_view_only_summary_mentions_duplicate_detection_when_enabled():
     from connect_labs.workflow.templates import get_template
 

@@ -85,7 +85,7 @@ def test_run_duplicate_detection_called_with_session_targets_when_enabled(monkey
             "cancelled": False,
         }
     )
-    monkeypatch.setattr(tasks, "run_grouping_duplicate_detection", fake_run_dd, raising=False)
+    monkeypatch.setattr(tasks, "run_grouping_duplicate_detection", fake_run_dd)
 
     result = _run(_criteria(enable_duplicate_detection=True), fake_da, monkeypatch)
 
@@ -126,7 +126,7 @@ def test_get_signed_url_passed_to_run_duplicate_detection_resolves_via_data_acce
         captured["url"] = get_signed_url("a", 1973)
         return {"groupings_checked": 0, "groupings_skipped": 0, "images_flagged": 0, "errors": 0, "cancelled": False}
 
-    monkeypatch.setattr(tasks, "run_grouping_duplicate_detection", fake_run_dd, raising=False)
+    monkeypatch.setattr(tasks, "run_grouping_duplicate_detection", fake_run_dd)
 
     _run(_criteria(enable_duplicate_detection=True), fake_da, monkeypatch)
 
@@ -142,7 +142,7 @@ def test_run_duplicate_detection_not_called_when_flag_is_false(monkeypatch):
         created_sessions=created_sessions,
     )
     fake_run_dd = MagicMock()
-    monkeypatch.setattr(tasks, "run_grouping_duplicate_detection", fake_run_dd, raising=False)
+    monkeypatch.setattr(tasks, "run_grouping_duplicate_detection", fake_run_dd)
 
     result = _run(_criteria(enable_duplicate_detection=False), fake_da, monkeypatch)
 
@@ -162,7 +162,7 @@ def test_run_duplicate_detection_not_called_when_no_clusters_computed(monkeypatc
         created_sessions=created_sessions,
     )
     fake_run_dd = MagicMock()
-    monkeypatch.setattr(tasks, "run_grouping_duplicate_detection", fake_run_dd, raising=False)
+    monkeypatch.setattr(tasks, "run_grouping_duplicate_detection", fake_run_dd)
 
     result = _run(
         {
@@ -181,3 +181,40 @@ def test_run_duplicate_detection_not_called_when_no_clusters_computed(monkeypatc
 
     fake_run_dd.assert_not_called()
     assert "visit_cluster_duplicate_detection" not in result
+
+
+def test_cancelled_visit_cluster_duplicate_detection_surfaces_in_completion_message(monkeypatch):
+    """A user cancelling mid-stage must be visible in the run's completion
+    message, not just in result[...] -- otherwise a partial check looks
+    identical to a normal completed run. Mirrors the sibling AI-review
+    stage's own cancellation note."""
+    created_sessions = []
+    fake_da = _fake_data_access(
+        visit_ids=[111, 112],
+        all_visit_images={
+            "111": [{"blob_id": "a", "name": "a.jpg", "question_id": "form/muac", "username": "flw1"}],
+            "112": [{"blob_id": "b", "name": "b.jpg", "question_id": "form/muac", "username": "flw1"}],
+        },
+        meta_visits=[
+            {"id": "111", "visit_date": "2026-06-22T10:00:00Z", "location": None},
+            {"id": "112", "visit_date": "2026-06-22T10:05:00Z", "location": None},
+        ],
+        created_sessions=created_sessions,
+    )
+
+    fake_run_dd = MagicMock(
+        return_value={
+            "groupings_checked": 0,
+            "groupings_skipped": 0,
+            "skipped_over_limit": 0,
+            "images_flagged": 0,
+            "errors": 0,
+            "cancelled": True,
+        }
+    )
+    monkeypatch.setattr(tasks, "run_grouping_duplicate_detection", fake_run_dd)
+
+    result = _run(_criteria(enable_duplicate_detection=True), fake_da, monkeypatch)
+
+    note = result["visit_cluster_duplicate_detection_note"]
+    assert "stopped by user before all groupings were checked" in note

@@ -511,6 +511,15 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
             : (clustering.distance_meters != null ? clustering.distance_meters : 10));
     const [enableDuplicateDetection, setEnableDuplicateDetection] = React.useState(
         runState.enable_duplicate_detection != null ? !!runState.enable_duplicate_detection : !!clustering.enable_duplicate_detection);
+    // Keep this in sync with the checkbox's disabled state below: a stale
+    // "true" left over from before the user turned off both clustering gates
+    // must not survive, or it gets sent in the job payload and rendered as
+    // "enabled" in the view-only summary with no groupings to ever check.
+    React.useEffect(() => {
+        if (!enableTimeGap && !enableDistance && enableDuplicateDetection) {
+            setEnableDuplicateDetection(false);
+        }
+    }, [enableTimeGap, enableDistance]);
     const cleanupRef = React.useRef(null);
     React.useEffect(() => () => { if (cleanupRef.current) cleanupRef.current(); }, []);
 
