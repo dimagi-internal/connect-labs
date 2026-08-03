@@ -9,6 +9,7 @@ from django.core.management.base import CommandError
 from connect_labs.labs.connect_tokens import ConnectTokenError
 from connect_labs.labs.integrations.commcare.cchq_tokens import CCHQTokenError
 from connect_labs.users.models import User
+from connect_labs.workflow.flw_audit_compute import wat_date
 
 COMMAND = "backfill_flw_daily_indicator_report"
 MODPATH = "connect_labs.workflow.management.commands.backfill_flw_daily_indicator_report"
@@ -146,7 +147,11 @@ def test_backfill_replace_existing_deletes_only_matching_period_runs(
     fetch_instance.delete_run.assert_not_called()
 
     windows = [call.kwargs["window"] for call in mock_run_default.call_args_list]
-    stale_period = windows[0][0].date().isoformat()  # the first day's own window_start
+    # Must match what run_default itself tags the created run's period_start with
+    # (wat_date(window_start), a WAT-adjusted calendar date) -- NOT window_start's
+    # own raw UTC date, which is a day earlier and was this test's original (buggy)
+    # fixture, masking the real bug this now guards against.
+    stale_period = wat_date(windows[0][0])
 
     stale_run = mock.Mock(id=555, opportunity_id=1973, data={"period_start": stale_period})
     other_run = mock.Mock(id=556, opportunity_id=1976, data={"period_start": "1999-01-01"})  # different day
@@ -172,6 +177,57 @@ def test_backfill_replace_existing_deletes_only_matching_period_runs(
     fetch_instance.delete_run.assert_any_call(555, delete_linked=True)
     assert mock.call(556, delete_linked=True) not in fetch_instance.delete_run.call_args_list
     assert "Deleted stale run 555" in out2.getvalue()
+
+
+@pytest.mark.django_db
+@mock.patch(f"{MODPATH}.run_default")
+@mock.patch(f"{MODPATH}.WorkflowDataAccess")
+@mock.patch(f"{MODPATH}.get_valid_cchq_access_token")
+@mock.patch(f"{MODPATH}.get_valid_access_token")
+def test_backfill_replace_existing_deletes_the_day_being_recreated_not_the_day_before(
+    mock_get_token, mock_get_cchq_token, MockWDA, mock_run_default
+):
+    """Regression test: --replace-existing must match/delete the SAME calendar
+    day run_default is about to (re)create -- wat_date(window_start), a
+    WAT-adjusted date. A stale run tagged with window_start's own raw UTC date
+    (one day earlier) is a DIFFERENT, still-valid day's run and must survive."""
+    User.objects.create(username="wouter", email="wvink@dimagi.com")
+    mock_get_token.return_value = "connect-tok"
+    mock_get_cchq_token.return_value = "cchq-tok"
+    mock_run_default.return_value = {"opportunities": {}, "date": "x"}
+
+    fetch_instance = mock.Mock()
+    fetch_instance.get_definition.return_value = _make_definition()
+    MockWDA.return_value = fetch_instance
+
+    call_command(
+        COMMAND, "--definition", "8061", "--program", "176", "--owner-email", "wvink@dimagi.com", "--days", "1"
+    )
+    window_start = mock_run_default.call_args.kwargs["window"][0]
+    correct_period = wat_date(window_start)
+    wrong_period = window_start.date().isoformat()  # the pre-fix (buggy) value -- must NOT be touched
+    assert correct_period != wrong_period
+
+    correct_day_run = mock.Mock(id=111, opportunity_id=1973, data={"period_start": correct_period})
+    wrong_day_run = mock.Mock(id=222, opportunity_id=1973, data={"period_start": wrong_period})
+    fetch_instance.list_runs.return_value = [correct_day_run, wrong_day_run]
+
+    mock_run_default.reset_mock()
+    call_command(
+        COMMAND,
+        "--definition",
+        "8061",
+        "--program",
+        "176",
+        "--owner-email",
+        "wvink@dimagi.com",
+        "--days",
+        "1",
+        "--replace-existing",
+    )
+
+    fetch_instance.delete_run.assert_any_call(111, delete_linked=True)
+    assert mock.call(222, delete_linked=True) not in fetch_instance.delete_run.call_args_list
 
 
 @pytest.mark.django_db
