@@ -63,6 +63,9 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
     const [excludePriorAudited, setExcludePriorAudited] = React.useState(
         instance.state?.config?.exclude_prior_audited ?? false
     );
+    const [detectDuplicates, setDetectDuplicates] = React.useState(
+        instance.state?.config?.detect_duplicates ?? false
+    );
 
     // ── Dynamic image type state ─────────────────────────────────────────────
     const [imageQuestions, setImageQuestions] = React.useState(
@@ -400,6 +403,7 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
             count_per_opp: auditMode === 'last_n_per_opp' ? lastNCount : null,
             sample_percentage: samplePct,
             exclude_prior_audited: excludePriorAudited,
+            detect_duplicates: detectDuplicates,
             related_fields: selectedTypes.map(t => ({
                 image_path: t.path,
                 filter_by_image: true,
@@ -948,6 +952,16 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
                            checked={excludePriorAudited}
                            onChange={e => setExcludePriorAudited(e.target.checked)} />
                     Exclude images already audited in a completed session
+                </label>
+                <label className="flex items-start gap-2 text-sm text-gray-700 mt-2">
+                    <input type="checkbox"
+                           className="mt-0.5"
+                           checked={detectDuplicates}
+                           onChange={e => setDetectDuplicates(e.target.checked)} />
+                    <span>
+                        Detect duplicate photos
+                        <span className="block text-xs text-gray-500">Flags images that appear to share the same subject across a worker's visits, batched per day (max 40 images/day). Flagged images show a "Potential Duplicate" badge and group together for review.</span>
+                    </span>
                 </label>
             </div>
 

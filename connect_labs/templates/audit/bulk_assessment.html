@@ -5,6 +5,14 @@
 <div class="max-w-full mx-auto px-4" x-data="bulkAssessmentInterface()"
      @update-assessment="handleAssessmentUpdate($event.detail)"
      @save-notes="handleNotesUpdate($event.detail)">
+  {% if duplicate_detection_note %}
+  <!-- Duplicate-detection warning: shown only when some images were skipped or a
+       detect call failed for this session (see AuditSessionRecord.data.duplicate_detection_summary). -->
+  <div class="flex items-start gap-2 p-3 mb-4 rounded-lg bg-amber-50 border border-amber-300 text-amber-800 text-sm">
+    <i class="fa-solid fa-triangle-exclamation mt-0.5"></i>
+    <span>{{ duplicate_detection_note }}</span>
+  </div>
+  {% endif %}
   <!-- Header and Controls -->
   <div class="flex gap-4 h-32 items-center p-4 profile-bg bg-brand-indigo rounded-2xl mb-4">
     <!-- Session Info -->

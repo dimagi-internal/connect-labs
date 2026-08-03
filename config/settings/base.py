@@ -587,6 +587,14 @@ SCALE_VALIDATION_API_URL = env(
 )
 SCALE_VALIDATION_API_KEY = env("SCALE_VALIDATION_API_KEY", default="")
 
+# Duplicate-photo detection assessment
+# ------------------------------------------------------------------------------
+# Uses the SAME gateway host + key as scale validation (POST /detect_duplicates).
+# The detector fetches images by presigned URL from Connect's
+# /export/opportunity/<opp>/attachment_signed_url/ exporter, minted just-in-time.
+# Hard cap on images sent per (FLW, day, photo-type) detection call.
+DUPLICATE_DETECTION_MAX_IMAGES_PER_DAY = env.int("DUPLICATE_DETECTION_MAX_IMAGES_PER_DAY", default=40)
+
 # Chatbot Widget Settings
 CHATBOT_ID = env("CHATBOT_ID", default="")
 CHATBOT_EMBED_KEY = env("CHATBOT_EMBED_KEY", default="")

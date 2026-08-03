@@ -337,6 +337,9 @@ class ExperimentBulkAssessmentView(LoginRequiredMixin, DetailView):
                 "workflow_run_id": session.workflow_run_id,
                 "pass_threshold": self.request.GET.get("threshold", "80"),
                 "is_muac_picture_audit_workflow": _is_muac_picture_audit_session(session, self.request),
+                # Non-empty only when this session's duplicate detection partially
+                # failed/skipped -- rendered as a banner at the top of the page.
+                "duplicate_detection_note": (session.data.get("duplicate_detection_summary") or {}).get("note", ""),
             }
         )
 
@@ -764,6 +767,7 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
                             "ai_result": assessment_data.get("ai_result", ""),
                             "ai_notes": assessment_data.get("ai_notes", ""),
                             "ai_confidence": assessment_data.get("ai_confidence"),
+                            "duplicate_group": assessment_data.get("duplicate_group"),
                         }
                     )
                     seen_blob_ids.add(blob_id)
@@ -807,6 +811,7 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
                             "ai_result": assessment_data.get("ai_result", ""),
                             "ai_notes": assessment_data.get("ai_notes", ""),
                             "ai_confidence": assessment_data.get("ai_confidence"),
+                            "duplicate_group": assessment_data.get("duplicate_group"),
                         }
                     )
 
@@ -863,7 +868,19 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
                 assessment["user_id"] = user_id
                 assessment["user_visit_id"] = user_visit_id
 
-            all_assessments.sort(key=lambda a: a.get("visit_date_sort") or "")
+            # Cluster potential-duplicate images adjacently so reviewers can eyeball
+            # them together: within each day, images sharing a duplicate_group sort
+            # together (by group index), ahead of ungrouped images; everything else
+            # stays chronological. duplicate_group can be 0, so test for None, not
+            # truthiness.
+            def _assessment_sort_key(a):
+                vds = a.get("visit_date_sort") or ""
+                day = vds[:10]
+                grp = a.get("duplicate_group")
+                grp_key = grp if isinstance(grp, int) else 10**9
+                return (day, grp_key, vds)
+
+            all_assessments.sort(key=_assessment_sort_key)
 
             # All filtering happens client-side now
             total_assessments = len(all_assessments)
