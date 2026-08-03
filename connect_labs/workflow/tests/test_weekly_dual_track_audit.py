@@ -934,6 +934,37 @@ def test_build_track_audit_calls_omits_enable_duplicate_detection_when_not_provi
     assert "enable_duplicate_detection" not in calls[0]["criteria"]
 
 
+def test_build_track_audit_calls_threads_max_flws():
+    calls = build_track_audit_calls(
+        opportunity_ids=[101],
+        opp_names={"101": "Opp A"},
+        per_opp={"101": {"muac_image_paths": ["form.muac"]}},
+        track_a=TRACK_A,
+        track_b=TRACK_B,
+        window_start="2026-06-22",
+        window_end="2026-06-28",
+        username="nm1",
+        workflow_run_id=555,
+        max_flws=1,
+    )
+    assert calls[0]["criteria"]["max_flws"] == 1
+
+
+def test_build_track_audit_calls_omits_max_flws_when_not_provided():
+    calls = build_track_audit_calls(
+        opportunity_ids=[101],
+        opp_names={"101": "Opp A"},
+        per_opp={"101": {"muac_image_paths": ["form.muac"]}},
+        track_a=TRACK_A,
+        track_b=TRACK_B,
+        window_start="2026-06-22",
+        window_end="2026-06-28",
+        username="nm1",
+        workflow_run_id=555,
+    )
+    assert "max_flws" not in calls[0]["criteria"]
+
+
 def test_definition_pins_duplicate_detection_default_off():
     from connect_labs.workflow.templates.weekly_dual_track_audit import DEFINITION
 
@@ -1060,3 +1091,37 @@ def test_render_code_view_only_summary_mentions_duplicate_detection_when_enabled
 
     rc = get_template("weekly_dual_track_audit")["render_code"]
     assert "Duplicate Detection enabled" in rc
+
+
+def test_render_code_raises_stale_job_threshold_to_45_minutes():
+    from connect_labs.workflow.templates import get_template
+
+    rc = get_template("weekly_dual_track_audit")["render_code"]
+    assert "const STALE_JOB_MS = 45 * 60 * 1000;" in rc
+
+
+def test_render_code_refetches_run_state_before_judging_staleness():
+    """A page-load snapshot of active_job can be stale (the job finished, or
+    this tab sat backgrounded across the run) -- staleness must be judged
+    against a FRESH fetch of the run's current state, not the embedded one,
+    with the embedded snapshot only used as a fallback if that fetch fails."""
+    from connect_labs.workflow.templates import get_template
+
+    rc = get_template("weekly_dual_track_audit")["render_code"]
+    assert "fetch('/labs/workflow/api/run/' + instance.id + '/' + scopeQs)" in rc
+    assert "judge(data.run?.state?.active_job)" in rc
+    assert ".catch(() => judge(embedded))" in rc
+
+
+def test_render_code_trusts_fresh_terminal_status_over_stale_snapshot():
+    """If the fresh fetch shows the job already completed/failed, that must
+    win over the embedded 'running' snapshot instead of assuming a zombie --
+    and a freshly-discovered completion must reload sessions so the created
+    audits actually show up."""
+    from connect_labs.workflow.templates import get_template
+
+    rc = get_template("weekly_dual_track_audit")["render_code"]
+    assert "active.status === 'completed'" in rc
+    assert "active.status === 'failed'" in rc
+    reconnect_effect = rc.split("const judge = (active) => {")[1].split("fetch('/labs/workflow/api/run/'")[0]
+    assert "refreshSessions();" in reconnect_effect

@@ -126,6 +126,7 @@ def build_track_audit_calls(
     enable_distance=None,
     distance_meters=None,
     enable_duplicate_detection=None,
+    max_flws=None,
 ):
     """Build the per-opp, per-track run_audit_creation kwargs for one weekly batch.
 
@@ -138,6 +139,9 @@ def build_track_audit_calls(
     which visits are audited (deliver unit type, visit status) and how the
     resulting audit's overall_result is decided (pass threshold), same as the
     Django creation wizard. ``enable_time_gap``/``time_gap_minutes``/``enable_distance``/``distance_meters`` (visit clustering) are applied identically to every track's criteria when provided.
+    ``max_flws``, when provided, caps every track's criteria to the first N FLWs
+    found in the window (see ``AuditCriteria.max_flws``) — lets a run be scoped
+    to a handful of field workers instead of the whole opportunity.
     ``AuditCriteria.from_dict`` (in
     ``connect_labs.audit.data_access``) already understands these keys, so no
     changes were needed to ``run_audit_creation`` itself.
@@ -180,6 +184,8 @@ def build_track_audit_calls(
                 criteria["distance_meters"] = distance_meters
             if enable_duplicate_detection is not None:
                 criteria["enable_duplicate_detection"] = enable_duplicate_detection
+            if max_flws is not None:
+                criteria["max_flws"] = max_flws
             calls.append(
                 {
                     "username": username,
@@ -495,6 +501,10 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
     // Per-run sampling rates — default to the pinned config, adjustable before create.
     const [muacSample, setMuacSample] = React.useState(trackA.sample_percentage != null ? trackA.sample_percentage : 100);
     const [otherSample, setOtherSample] = React.useState(trackB.sample_percentage != null ? trackB.sample_percentage : 10);
+    // Cap the run to the first N field workers found in the window (blank = all).
+    // Scopes every downstream stage -- extraction and AI review only run for the
+    // selected FLWs, not the full window -- so a run against one FLW finishes fast.
+    const [maxFlws, setMaxFlws] = React.useState(runState.max_flws != null ? runState.max_flws : '');
     // Visit Clustering (optional 3rd filter) — the job handler persists whatever
     // was actually used onto run state (enable_time_gap, etc.), so a reopened
     // run shows ITS OWN params, not the pinned template default.
@@ -574,28 +584,62 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
     // it. If we come back while it's still working, re-attach the progress
     // stream instead of showing a stale idle state.
     //
-    // Guard against ZOMBIE jobs: if the worker is killed mid-batch (a deploy
-    // cutover, a crash) the job never writes a terminal status, so active_job
-    // stays 'running' forever. Celery can't disambiguate a dead/expired task
-    // from a queued one — both report PENDING — so attaching the progress stream
-    // would "reconnect" eternally (the exact stuck-spinner symptom). Trust
-    // active_job.started_at instead: a real batch finishes in minutes, so a
-    // 'running' flag older than the staleness window is dead. Surface it and let
-    // the user re-create rather than spin.
-    const STALE_JOB_MS = 15 * 60 * 1000;
+    // A full batch (extraction + AI review + duplicate detection across both
+    // tracks) routinely runs 15-20+ minutes — CloudWatch shows several recent
+    // successful runs north of 20 minutes. The `active_job` embedded in THIS
+    // page load is only a snapshot from render time: if the job finished (or
+    // failed) after that snapshot was taken -- or this tab sat backgrounded/
+    // discarded across the job's real runtime -- the embedded snapshot still
+    // reads 'running' even though the server has since recorded a terminal
+    // status. run_workflow_job writes active_job.status = completed/failed
+    // unconditionally when its own try/except resolves (see
+    // connect_labs/workflow/tasks.py), with no dependency on a live browser
+    // connection, so re-fetching the run's CURRENT state before judging
+    // anything stale reflects reality even when the embedded snapshot doesn't.
+    //
+    // Only if a FRESH check still says 'running' past the staleness window do
+    // we treat it as a genuine zombie (the worker was killed mid-batch -- a
+    // deploy cutover, a crash -- and never got to write a terminal status;
+    // Celery can't disambiguate a dead/expired task from a queued one, both
+    // report PENDING, so attaching the progress stream would "reconnect"
+    // eternally). 45 minutes gives real long-tail runs headroom while still
+    // catching an actual zombie in a reasonable time.
+    const STALE_JOB_MS = 45 * 60 * 1000;
     React.useEffect(() => {
-        const active = instance.state?.active_job;
-        if (!(active && active.status === 'running' && active.job_id)) return;
-        const startedMs = active.started_at ? Date.parse(active.started_at) : NaN;
-        const age = isNaN(startedMs) ? Infinity : (Date.now() - startedMs);
-        if (age > STALE_JOB_MS) {
-            setStaleJob(true); // zombie — do not reconnect
-            return;
-        }
-        setIsRunning(true);
-        setTaskId(active.job_id);
-        setProgress({ status: 'running', message: 'Reconnecting to the running job…' });
-        attachStream(active.job_id);
+        const embedded = instance.state?.active_job;
+        if (!(embedded && embedded.status === 'running' && embedded.job_id)) return;
+
+        const scopeQs = instance.opportunity_id ? ('?opportunity_id=' + instance.opportunity_id)
+            : (instance.program_id ? ('?program_id=' + instance.program_id) : '');
+
+        const judge = (active) => {
+            if (!active || active.status !== 'running' || !active.job_id) {
+                // The server has since recorded a terminal status -- trust it
+                // over the page-load snapshot instead of assuming a zombie.
+                if (active && active.status === 'completed') {
+                    setProgress({ status: 'completed' });
+                    refreshSessions();
+                } else if (active && active.status === 'failed') {
+                    setJobError(active.error || 'Job failed');
+                }
+                return;
+            }
+            const startedMs = active.started_at ? Date.parse(active.started_at) : NaN;
+            const age = isNaN(startedMs) ? Infinity : (Date.now() - startedMs);
+            if (age > STALE_JOB_MS) {
+                setStaleJob(true); // confirmed still 'running' by a FRESH check, and past the window — zombie
+                return;
+            }
+            setIsRunning(true);
+            setTaskId(active.job_id);
+            setProgress({ status: 'running', message: 'Reconnecting to the running job…' });
+            attachStream(active.job_id);
+        };
+
+        fetch('/labs/workflow/api/run/' + instance.id + '/' + scopeQs)
+            .then(res => res.ok ? res.json() : Promise.reject(new Error('fetch failed')))
+            .then(data => judge(data.run?.state?.active_job))
+            .catch(() => judge(embedded)); // re-fetch failed -- fall back to the embedded snapshot
     }, []); // once on mount
 
     // ── Create handler ────────────────────────────────────────────────────────
@@ -624,6 +668,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                 window_end: endDate,
                 muac_sample_percentage: Number(muacSample),
                 other_sample_percentage: Number(otherSample),
+                max_flws: maxFlws === '' ? null : Number(maxFlws),
                 enable_time_gap: enableTimeGap,
                 time_gap_minutes: Number(timeGapMinutes),
                 enable_distance: enableDistance,
@@ -980,6 +1025,17 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                                 disabled={isRunning || instance.status === 'completed'}
                                 className="border border-gray-300 rounded px-3 py-2 text-sm w-20" />
                             <span className="text-xs text-gray-400">% of remaining images</span>
+                        </div>
+                    </div>
+                    <div>
+                        <label className="block text-xs text-gray-500 mb-1">Field workers</label>
+                        <div className="flex items-center gap-2">
+                            <input type="number" min="1" value={maxFlws}
+                                onChange={e => setMaxFlws(e.target.value)}
+                                disabled={isRunning || instance.status === 'completed'}
+                                placeholder="All"
+                                className="border border-gray-300 rounded px-3 py-2 text-sm w-20" />
+                            <span className="text-xs text-gray-400">first N found in the window (blank = all)</span>
                         </div>
                     </div>
                 </div>
