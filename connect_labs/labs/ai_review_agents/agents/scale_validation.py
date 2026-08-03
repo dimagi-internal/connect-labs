@@ -17,7 +17,15 @@ import base64
 import httpx
 from django.conf import settings
 
-from connect_labs.labs.ai_review_agents.base import AIReviewAgentError, BaseAIReviewAgent
+from connect_labs.labs.ai_review_agents.base import (
+    GATEWAY_ERROR_MESSAGE,
+    GATEWAY_NOT_CONFIGURED_MESSAGE,
+    GATEWAY_RATE_LIMITED_MESSAGE,
+    GATEWAY_UNREACHABLE_MESSAGE,
+    AIReviewAgentError,
+    BaseAIReviewAgent,
+    post_with_retry,
+)
 from connect_labs.labs.ai_review_agents.registry import register
 from connect_labs.labs.ai_review_agents.types import ReviewContext, ReviewResult
 
@@ -149,7 +157,7 @@ class ScaleValidationAgent(BaseAIReviewAgent):
 
         # Check API key
         if not self.api_key:
-            return ReviewResult.error("SCALE_VALIDATION_API_KEY not configured")
+            return ReviewResult.error(GATEWAY_NOT_CONFIGURED_MESSAGE)
 
         # Get image - prefer "scale" key, fall back to first available
         image_bytes = context.get_image("scale")
@@ -163,13 +171,15 @@ class ScaleValidationAgent(BaseAIReviewAgent):
         try:
             encoded_image = base64.b64encode(image_bytes).decode("utf-8")
 
-            response = self.http_client.post(
+            response = post_with_retry(
+                self.http_client,
                 f"{self.api_url}/predict",
                 json={"image": encoded_image, "reading": reading},
+                logger=self.logger,
             )
 
             if response.status_code == 429:
-                return ReviewResult.error("Rate limited - service busy or starting up. Try again later.")
+                return ReviewResult.error(GATEWAY_RATE_LIMITED_MESSAGE)
 
             response.raise_for_status()
             result = response.json()
@@ -190,11 +200,11 @@ class ScaleValidationAgent(BaseAIReviewAgent):
             except Exception:
                 error_detail = e.response.text
             self.logger.error(f"Scale validation API error: {error_detail}")
-            return ReviewResult.error(f"API error: {error_detail}")
+            return ReviewResult.error(GATEWAY_ERROR_MESSAGE)
 
         except httpx.HTTPError as e:
             self.logger.error(f"Scale validation connection error: {e}")
-            return ReviewResult.error(f"Connection error: {e}")
+            return ReviewResult.error(GATEWAY_UNREACHABLE_MESSAGE)
 
     def validate_reading(self, image_bytes: bytes, reading: str) -> dict:
         """
