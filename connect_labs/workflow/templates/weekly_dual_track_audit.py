@@ -280,7 +280,7 @@ DEFINITION = {
             # effect on which images get AI-reviewed.
             "track_a": {"tag": "muac", "sample_percentage": 100, "name": "MUAC"},
             "track_b": {"tag": "rest", "sample_percentage": 10, "name": "Other"},
-            "per_opp": {},  # { "<opp_id>": {"muac_image_paths": [...], "rest_image_paths": [...]} }
+            "per_opp": {},  # { "<opp_id>": {"muac_image_paths": [...], "rest_image_paths": [...], "classifiers": {"<path>": ["hyperzoom", ...]}} }
             "opp_names": {},  # { "<opp_id>": "Opp display name" }
             "visit_clustering": {
                 "enable_time_gap": False,

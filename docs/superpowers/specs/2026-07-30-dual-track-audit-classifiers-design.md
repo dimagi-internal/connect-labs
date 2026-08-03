@@ -3,6 +3,22 @@
 Status: approved, implementation in progress (2026-07-30). Ships to `main` for a
 Monday 2026-08-03 PR — see "External dependency timing" below.
 
+**2026-08-03 update — superseded module names.** PR #1070 ("Add duplication
+check to audits") merged to `main` the same day this spec was written,
+implementing an independent, differently-designed Duplicate Detection feature
+(day/FLW/photo-type-bucketed, for `bulk_image_audit.py`/`muac_picture_audit.py`)
+under the exact module path this spec assumed for the dual-track feature
+(`connect_labs/audit/duplicate_detection.py`). The dual-track implementation
+below was consolidated onto #1070's code rather than duplicating it: the
+module described here now lives at
+`connect_labs/audit/visit_cluster_duplicate_detection.py`, its API client is
+`connect_labs.audit.duplicate_detection.DuplicateDetectionClient` (method
+`.detect()`, not `.detect_duplicates()`), and the standalone
+`connect_labs/labs/integrations/duplicate_detection/api_client.py` module
+this spec describes was deleted (never shipped). The design/behavior sections
+below are otherwise accurate; only the file/module names in the "Backend"
+subsections are stale.
+
 ## Problem
 
 `weekly_dual_track_audit.py` (the "Weekly Dual-Track Image Audit" workflow
