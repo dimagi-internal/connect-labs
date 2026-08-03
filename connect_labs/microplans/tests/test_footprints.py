@@ -7,8 +7,11 @@ sampling and coverage)."""
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 import pandas as pd
 import pytest
+from django.utils import timezone
 from shapely.geometry import box
 
 from connect_labs.microplans.core import footprints
@@ -57,6 +60,52 @@ def test_miss_fetches_once_then_hits_from_postgres(monkeypatch):
     assert calls["n"] == 1  # _query_overture NOT called again
     assert len(df2) == 4
     assert FootprintArea.objects.count() == 1  # no duplicate area
+
+
+def test_stale_cache_refetches_and_replaces(monkeypatch):
+    area = box(3.0, 6.0, 3.05, 6.05)
+    calls = {"n": 0}
+
+    def fake_query(a, min_confidence=None):
+        calls["n"] += 1
+        return _fake_buildings()
+
+    monkeypatch.setattr(footprints, "_query_overture", fake_query)
+
+    footprints.fetch_buildings(area, min_confidence=None)
+    assert calls["n"] == 1
+    fa = FootprintArea.objects.get()
+    # Backdate past the cache's max age (bypasses auto_now_add via .update(),
+    # which issues a plain SQL UPDATE rather than going through model save()).
+    stale_at = timezone.now() - footprints.FOOTPRINT_CACHE_MAX_AGE - timedelta(days=1)
+    FootprintArea.objects.filter(pk=fa.pk).update(created_at=stale_at)
+
+    df2 = footprints.fetch_buildings(area, min_confidence=None)
+    assert calls["n"] == 2  # stale — re-fetched instead of reusing the old rows
+    assert len(df2) == 4
+    # Replaced, not duplicated: still exactly one area row, but a new one.
+    assert FootprintArea.objects.count() == 1
+    assert FootprintArea.objects.get().pk != fa.pk
+
+
+def test_fresh_cache_within_max_age_is_not_refetched(monkeypatch):
+    area = box(3.0, 6.0, 3.05, 6.05)
+    calls = {"n": 0}
+
+    def fake_query(a, min_confidence=None):
+        calls["n"] += 1
+        return _fake_buildings()
+
+    monkeypatch.setattr(footprints, "_query_overture", fake_query)
+
+    footprints.fetch_buildings(area, min_confidence=None)
+    assert calls["n"] == 1
+    fa = FootprintArea.objects.get()
+    fresh_at = timezone.now() - footprints.FOOTPRINT_CACHE_MAX_AGE + timedelta(hours=1)
+    FootprintArea.objects.filter(pk=fa.pk).update(created_at=fresh_at)
+
+    footprints.fetch_buildings(area, min_confidence=None)
+    assert calls["n"] == 1  # still within max age — cache honored, no re-fetch
 
 
 def test_confidence_filter_applies_to_google_keeps_sourceless(monkeypatch):
