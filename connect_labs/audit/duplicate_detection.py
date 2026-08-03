@@ -13,10 +13,7 @@ import logging
 
 from connect_labs.audit.data_access import is_audit_creation_cancelled
 from connect_labs.audit.models import AI_NOTES_JOIN_SEP
-from connect_labs.labs.integrations.duplicate_detection.api_client import (
-    DuplicateDetectionClient,
-    DuplicateDetectionError,
-)
+from connect_labs.labs.integrations.duplicate_detection.api_client import DuplicateDetectionClient
 
 logger = logging.getLogger(__name__)
 
@@ -142,7 +139,7 @@ def run_duplicate_detection(
 
             try:
                 result = client.detect_duplicates(images_payload)
-            except DuplicateDetectionError as exc:
+            except Exception as exc:
                 logger.warning(
                     f"[DuplicateDetection] API call failed for grouping {cluster.get('group_id')} "
                     f"(session {session.id}): {exc}"

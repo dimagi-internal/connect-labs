@@ -217,6 +217,33 @@ def test_one_failed_grouping_does_not_stop_the_rest():
     assert session.data["visit_results"]["113"]["assessments"]["c"]["result"] == "duplicate_fake"
 
 
+def test_non_duplicate_detection_error_from_api_call_does_not_propagate():
+    session = FakeSession()
+    clusters = [
+        {"group_id": "g1", "visit_ids": [111, 112], "image_count": 2, "image_ids": ["a", "b"]},
+        {"group_id": "g2", "visit_ids": [113, 114], "image_count": 2, "image_ids": ["c", "d"]},
+    ]
+    blob_meta = {
+        "a": {"visit_id": 111, "question_id": "form/muac"},
+        "b": {"visit_id": 112, "question_id": "form/muac"},
+        "c": {"visit_id": 113, "question_id": "form/other"},
+        "d": {"visit_id": 114, "question_id": "form/other"},
+    }
+    client = Mock()
+    # A malformed-but-200 response would surface as a raw json.JSONDecodeError
+    # (or similar) from inside detect_duplicates -- not a DuplicateDetectionError.
+    client.detect_duplicates.side_effect = [ValueError("bad json"), {"groups": [["c", "d"]]}]
+
+    result = run_duplicate_detection(
+        [_target(session, clusters, blob_meta)], get_signed_url=lambda bid, oid: f"https://x/{bid}", client=client
+    )
+
+    assert result["errors"] == 1
+    assert result["groupings_checked"] == 1
+    assert result["images_flagged"] == 2
+    assert session.data["visit_results"]["113"]["assessments"]["c"]["result"] == "duplicate_fake"
+
+
 def test_cancellation_stops_before_next_target():
     session_a = FakeSession()
     session_b = FakeSession()
