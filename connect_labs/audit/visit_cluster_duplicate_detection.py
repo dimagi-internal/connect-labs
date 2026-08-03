@@ -94,73 +94,76 @@ def run_duplicate_detection(
     total_groupings = sum(len(t["clusters"]) for t in targets)
     processed = 0
 
-    for target in targets:
-        if cancel_key and is_audit_creation_cancelled(cancel_key):
-            cancelled = True
-            break
-
-        session = target["session"]
-        opp_id = target["opp_id"]
-        blob_meta_by_id = target["blob_meta_by_id"]
-        session_updated = False
-
-        for i, cluster in enumerate(target["clusters"]):
-            if i > 0 and cancel_key and is_audit_creation_cancelled(cancel_key):
+    try:
+        for target in targets:
+            if cancel_key and is_audit_creation_cancelled(cancel_key):
                 cancelled = True
                 break
 
-            processed += 1
-            image_ids = cluster.get("image_ids") or []
+            session = target["session"]
+            opp_id = target["opp_id"]
+            blob_meta_by_id = target["blob_meta_by_id"]
+            session_updated = False
 
-            images_payload = []
-            if len(image_ids) >= _MIN_IMAGES_TO_CHECK:
-                for blob_id in image_ids:
-                    try:
-                        url = get_signed_url(blob_id, opp_id)
-                    except Exception as exc:
-                        logger.warning(f"[DuplicateDetection] Failed to get signed URL for {blob_id}: {exc}")
-                        url = None
-                    if url:
-                        images_payload.append({"id": blob_id, "url": url})
+            for i, cluster in enumerate(target["clusters"]):
+                if i > 0 and cancel_key and is_audit_creation_cancelled(cancel_key):
+                    cancelled = True
+                    break
 
-            if len(images_payload) < _MIN_IMAGES_TO_CHECK:
-                groupings_skipped += 1
+                processed += 1
+                image_ids = cluster.get("image_ids") or []
+
+                images_payload = []
+                if len(image_ids) >= _MIN_IMAGES_TO_CHECK:
+                    for blob_id in image_ids:
+                        try:
+                            url = get_signed_url(blob_id, opp_id)
+                        except Exception as exc:
+                            logger.warning(f"[DuplicateDetection] Failed to get signed URL for {blob_id}: {exc}")
+                            url = None
+                        if url:
+                            images_payload.append({"id": blob_id, "url": url})
+
+                if len(images_payload) < _MIN_IMAGES_TO_CHECK:
+                    groupings_skipped += 1
+                    if progress_callback:
+                        progress_callback(processed, total_groupings, "Checking for duplicates...")
+                    continue
+
+                try:
+                    groups = client.detect(images_payload)
+                except Exception as exc:
+                    logger.warning(
+                        f"[DuplicateDetection] API call failed for grouping {cluster.get('group_id')} "
+                        f"(session {session.id}): {exc}"
+                    )
+                    errors += 1
+                    if progress_callback:
+                        progress_callback(processed, total_groupings, "Checking for duplicates...")
+                    continue
+
+                groupings_checked += 1
+                blob_to_group = assign_group_ids(groups)
+                for blob_id, group_id in blob_to_group.items():
+                    if _mark_duplicate(session, blob_meta_by_id, blob_id, group_id):
+                        images_flagged += 1
+                        session_updated = True
+
                 if progress_callback:
-                    progress_callback(processed, total_groupings, "Checking for duplicates...")
-                continue
+                    progress_callback(
+                        processed, total_groupings, f"Checked {processed}/{total_groupings} groupings for duplicates"
+                    )
 
-            try:
-                groups = client.detect(images_payload)
-            except Exception as exc:
-                logger.warning(
-                    f"[DuplicateDetection] API call failed for grouping {cluster.get('group_id')} "
-                    f"(session {session.id}): {exc}"
-                )
-                errors += 1
-                if progress_callback:
-                    progress_callback(processed, total_groupings, "Checking for duplicates...")
-                continue
+            if session_updated:
+                try:
+                    target["data_access"].save_audit_session(session)
+                except Exception as exc:
+                    logger.warning(f"[DuplicateDetection] Failed to save session {session.id}: {exc}")
 
-            groupings_checked += 1
-            blob_to_group = assign_group_ids(groups)
-            for blob_id, group_id in blob_to_group.items():
-                if _mark_duplicate(session, blob_meta_by_id, blob_id, group_id):
-                    images_flagged += 1
-                    session_updated = True
-
-            if progress_callback:
-                progress_callback(
-                    processed, total_groupings, f"Checked {processed}/{total_groupings} groupings for duplicates"
-                )
-
-        if session_updated:
-            try:
-                target["data_access"].save_audit_session(session)
-            except Exception as exc:
-                logger.warning(f"[DuplicateDetection] Failed to save session {session.id}: {exc}")
-
-        if cancelled:
-            break
+            if cancelled:
+                break
+    finally:
+        client.close()
 
     return {
         "groupings_checked": groupings_checked,

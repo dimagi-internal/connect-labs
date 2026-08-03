@@ -8,7 +8,7 @@ types" tile, gated server-side by _classifier_applies; a path with no
 explicit saved selection falls back to _default_classifiers_for_path
 (preserving the pre-checkbox automatic muac-substring behavior). Duplicate
 Detection is a separate, non-per-path classifier wired through Visit
-Clustering — see connect_labs.audit.duplicate_detection.
+Clustering — see connect_labs.audit.visit_cluster_duplicate_detection.
 
 The per-opp image paths and track config live on the workflow DEFINITION
 (instance config); the batch window lives in run state. See
