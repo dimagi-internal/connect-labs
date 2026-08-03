@@ -343,10 +343,20 @@ class AuditSessionRecord(LocalLabsRecord):
         them in used to leak stale pass-labels ("Not Hyperzoomed", "MUAC Match")
         and raw error text ("Rate limited...") into ai_flags_by_label as if they
         were real flags, both on the per-image tile and the session summary.
+        ai_confidence is discarded alongside the notes in that case -- it belongs
+        to the same now-superseded verdict, and leaving it behind would pair a
+        stale confidence score with the new "Potential Duplicate" label.
 
         The human `result` is left untouched (flag-only). ``group_id`` is a
         connected-component index so the review UI can sort duplicates
         adjacently.
+
+        Depends on AI review having already run and written its verdict before
+        this is called (true today: Stage 4 always precedes the duplicate-
+        detection stages -- see visit_cluster_duplicate_detection.py and
+        duplicate_detection.py). If that ordering were ever reversed, a
+        genuine classifier fail would look identical to "never reviewed" here
+        and its label would be discarded instead of preserved.
         """
         from connect_labs.audit.duplicate_detection import DUPLICATE_FLAG_LABEL
 
@@ -356,16 +366,21 @@ class AuditSessionRecord(LocalLabsRecord):
         assessments = visit_result.setdefault("assessments", {})
         assessment = assessments.setdefault(blob_id, {"question_id": question_id, "result": None, "notes": ""})
 
-        was_already_flagged = assessment.get("ai_result") == "no_match"
+        # True only when a REAL classifier flag (not a pass, error, or unreviewed
+        # image) already occupies ai_result -- the one case whose label/confidence
+        # should survive being merged with the duplicate flag.
+        prior_review_was_a_flag = assessment.get("ai_result") == "no_match"
         assessment["question_id"] = question_id or assessment.get("question_id")
         assessment["ai_result"] = "no_match"
         assessment["duplicate_group"] = group_id
 
-        existing_labels = (
-            [label.strip() for label in (assessment.get("ai_notes") or "").split(AI_NOTES_JOIN_SEP) if label.strip()]
-            if was_already_flagged
-            else []
-        )
+        if prior_review_was_a_flag:
+            existing_labels = [
+                label.strip() for label in (assessment.get("ai_notes") or "").split(AI_NOTES_JOIN_SEP) if label.strip()
+            ]
+        else:
+            existing_labels = []
+            assessment.pop("ai_confidence", None)
         if DUPLICATE_FLAG_LABEL not in existing_labels:
             existing_labels.append(DUPLICATE_FLAG_LABEL)
         assessment["ai_notes"] = AI_NOTES_JOIN_SEP.join(existing_labels)

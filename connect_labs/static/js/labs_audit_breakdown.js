@@ -296,11 +296,14 @@
                     ? 'text-amber-600 font-medium'
                     : 'text-gray-500',
               },
+              // Parens (not another " / ") around the reviewed count -- aiFlagsSummary's
+              // own breakdown now joins with " / ", so a second " / " here would make
+              // "N reviewed" read as one more category in that same breakdown.
               'AI: ' +
                 aiFlagsSummary(s) +
-                ' / ' +
+                ' (' +
                 aiReviewedOf(s) +
-                ' reviewed',
+                ' reviewed)',
             )
           : h('span', { className: 'text-gray-300' }, 'no AI'),
         clusters.length > 0

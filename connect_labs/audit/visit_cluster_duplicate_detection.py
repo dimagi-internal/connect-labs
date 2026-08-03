@@ -154,6 +154,15 @@ def run_grouping_duplicate_detection(
             opp_id = target["opp_id"]
             blob_meta_by_id = target["blob_meta_by_id"]
             session_updated = False
+            # Raw /detect_duplicates responses, keyed by this grouping's own
+            # group_id -- mirrors duplicate_detection.py's raw_groups_store
+            # (keyed by question_id|day there). Named distinctly from
+            # tasks.py's result["visit_cluster_duplicate_detection"] (the run
+            # summary counters -- groupings_checked/errors/etc.), which is an
+            # unrelated shape that happens to share the module's name.
+            raw_groups_store: dict[str, list] = session.data.setdefault(
+                "visit_cluster_duplicate_detection_raw", {}
+            )
 
             for i, cluster in enumerate(target["clusters"]):
                 if i > 0 and cancel_key and is_audit_creation_cancelled(cancel_key):
@@ -201,15 +210,19 @@ def run_grouping_duplicate_detection(
                     continue
 
                 groupings_checked += 1
-                # Persist the raw API response, keyed by this visit-clustering
-                # grouping's own group_id -- mirrors duplicate_detection.py's
-                # raw_groups_store (keyed by question_id|day there) so a later
-                # investigation ("why wasn't X flagged as a duplicate?") can
-                # read back exactly what the detector returned for this
-                # grouping's manifest instead of it being discarded the moment
-                # assign_group_ids collapses it into flags.
-                session.data.setdefault("visit_cluster_duplicate_detection", {})[str(cluster.get("group_id"))] = groups
-                session_updated = True
+                # Persist the raw API response so a later investigation ("why
+                # wasn't X flagged as a duplicate?") can read back exactly
+                # what the detector returned for this grouping's manifest,
+                # instead of it being discarded the moment assign_group_ids
+                # collapses it into flags. A grouping with no group_id (should
+                # not happen in practice -- visit_clustering.py always assigns
+                # one -- but str(None) would otherwise collapse every such
+                # grouping into one colliding "None" key) is skipped rather
+                # than silently overwriting a previous entry.
+                group_key = cluster.get("group_id")
+                if group_key is not None:
+                    raw_groups_store[str(group_key)] = groups
+                    session_updated = True
                 blob_to_group = assign_group_ids(groups)
                 for blob_id, group_id in blob_to_group.items():
                     if _mark_duplicate(session, blob_meta_by_id, blob_id, group_id):

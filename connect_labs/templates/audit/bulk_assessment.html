@@ -354,7 +354,7 @@
                  if (!this.aiResult) return '';
                  // Show the actual error (rate-limited, connection error, etc.) so an
                  // auditor knows whether it's worth retrying -- falls back to a plain
-                 // "Error" only on the rare assessment with no captured message at all.
+                 // 'Error' only on the rare assessment with no captured message at all.
                  if (this.aiResult === 'error') return this.aiNotes || 'Error';
                  return this.aiNotes || (this.aiResult === 'match' ? 'Passed' : 'Failed');
                },
@@ -1561,6 +1561,14 @@ function bulkAssessmentInterface() {
       if (resultValue || notesValue || aiResult || aiNotes) {
         const existing = this.visitResults[visitKey].assessments[blobId] || {};
         this.visitResults[visitKey].assessments[blobId] = {
+          // Spread existing FIRST so fields this function doesn't know about
+          // (duplicate_group, ai_confidence) survive a save instead of being
+          // silently dropped -- this rebuild used to whitelist only the 5
+          // keys below, so the very first Pass/Fail click on a duplicate-
+          // flagged image erased its duplicate_group from what autoSave
+          // persists, and the "Potential Duplicate" banner (and the
+          // sort-adjacently behavior in views.py) would vanish on reload.
+          ...existing,
           question_id: questionId || existing.question_id || '',
           result: resultValue !== undefined ? resultValue : (existing.result || ''),
           notes: notesValue !== undefined ? notesValue : (existing.notes || ''),

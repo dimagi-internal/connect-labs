@@ -226,6 +226,7 @@ def test_calls_api_once_per_grouping_and_flags_returned_ids():
     assert session.data["visit_results"]["111"]["assessments"]["a"]["result"] == "duplicate_fake"
     assert session.data["visit_results"]["112"]["assessments"]["b"]["result"] == "duplicate_fake"
     assert "113" not in session.data["visit_results"]
+    data_access.save_audit_session.assert_called_once_with(session)
 
 
 def test_persists_the_raw_api_response_per_grouping_even_when_empty():
@@ -256,11 +257,35 @@ def test_persists_the_raw_api_response_per_grouping_even_when_empty():
         client=client,
     )
 
-    raw = session.data["visit_cluster_duplicate_detection"]
+    raw = session.data["visit_cluster_duplicate_detection_raw"]
     assert raw["g1"] == [["a", "b"]]
     assert raw["g2"] == []
     data_access.save_audit_session.assert_called_once_with(session)
-    data_access.save_audit_session.assert_called_once_with(session)
+
+
+def test_a_missing_group_id_is_never_persisted_as_the_string_none():
+    """str(None) would collapse every clusterless-group_id grouping into one
+    colliding "None" key, silently overwriting whichever ran last -- exactly
+    the kind of lost data this raw store exists to prevent. Skip persisting
+    rather than risk that collision (this should not happen in practice --
+    visit_clustering.py always assigns a group_id -- but the guard costs
+    nothing and the failure mode otherwise is silent data loss)."""
+    session = _session()
+    clusters = [{"visit_ids": [111, 112], "image_count": 2, "image_ids": ["a", "b"]}]  # no group_id key
+    blob_meta = {
+        "a": {"visit_id": 111, "question_id": "form/muac"},
+        "b": {"visit_id": 112, "question_id": "form/muac"},
+    }
+    client = Mock()
+    client.detect.return_value = [["a", "b"]]
+
+    run_grouping_duplicate_detection(
+        [_target(session, clusters, blob_meta)],
+        get_signed_url=lambda bid, oid: f"https://x/{bid}",
+        client=client,
+    )
+
+    assert "None" not in session.data.get("visit_cluster_duplicate_detection_raw", {})
 
 
 def test_overlapping_response_groups_are_merged_into_one_component():

@@ -257,6 +257,49 @@ def test_flag_discards_stale_pass_label_instead_of_merging():
     assert stats["ai_flags_by_label"]["Potential Duplicate"] == 1
 
 
+def test_flag_discards_stale_confidence_alongside_a_discarded_pass_label():
+    """ai_confidence belongs to the SAME verdict as ai_notes -- if the notes
+    are discarded because the prior review was a pass, the confidence score
+    from that pass must go with it. Otherwise the review UI pairs a stale
+    confidence with the new "Potential Duplicate" label (e.g. "Potential
+    Duplicate: confidence 0.970"), attributing a number to a detector that
+    reports no confidence of its own."""
+    session = _session({})
+    session.set_assessment(
+        visit_id=10,
+        blob_id="a",
+        question_id="form/muac_photo",
+        result=None,
+        notes="",
+        ai_result="match",
+        ai_notes="Not Hyperzoomed",
+        ai_confidence=0.97,
+    )
+    session.flag_potential_duplicate(visit_id=10, blob_id="a", question_id="form/muac_photo", group_id=0)
+
+    assert "ai_confidence" not in session.get_assessments(10)["a"]
+
+
+def test_flag_preserves_confidence_when_the_prior_verdict_was_a_real_flag():
+    """The inverse of the above: when the prior verdict WAS a real classifier
+    flag (ai_result already "no_match"), its confidence is meaningful context
+    for the now-also-duplicate image and must survive."""
+    session = _session({})
+    session.set_assessment(
+        visit_id=10,
+        blob_id="a",
+        question_id="form/muac_photo",
+        result=None,
+        notes="",
+        ai_result="no_match",
+        ai_notes="Hyperzoomed",
+        ai_confidence=0.88,
+    )
+    session.flag_potential_duplicate(visit_id=10, blob_id="a", question_id="form/muac_photo", group_id=0)
+
+    assert session.get_assessments(10)["a"]["ai_confidence"] == 0.88
+
+
 def test_flag_discards_stale_error_text_instead_of_merging():
     """A rate-limited (or otherwise errored) classifier call no longer applies
     once ai_result flips to "no_match" here -- merging the raw error message

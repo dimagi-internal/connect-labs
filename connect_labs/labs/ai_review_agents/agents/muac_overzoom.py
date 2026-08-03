@@ -22,7 +22,16 @@ import base64
 import httpx
 from django.conf import settings
 
-from connect_labs.labs.ai_review_agents.base import AIReviewAgentError, BaseAIReviewAgent, post_with_retry
+from connect_labs.labs.ai_review_agents.base import (
+    GATEWAY_ERROR_MESSAGE,
+    GATEWAY_NOT_CONFIGURED_MESSAGE,
+    GATEWAY_RATE_LIMITED_MESSAGE,
+    GATEWAY_UNEXPECTED_RESPONSE_MESSAGE,
+    GATEWAY_UNREACHABLE_MESSAGE,
+    AIReviewAgentError,
+    BaseAIReviewAgent,
+    post_with_retry,
+)
 from connect_labs.labs.ai_review_agents.registry import register
 from connect_labs.labs.ai_review_agents.types import ReviewContext, ReviewResult
 
@@ -141,7 +150,7 @@ class MUACOverzoomAgent(BaseAIReviewAgent):
             return ReviewResult.error("; ".join(validation_errors))
 
         if not self.api_key:
-            return ReviewResult.error("SCALE_VALIDATION_API_KEY not configured")
+            return ReviewResult.error(GATEWAY_NOT_CONFIGURED_MESSAGE)
 
         # Prefer "muac" key; fall back to first available image
         image_bytes = context.get_image("muac")
@@ -161,7 +170,7 @@ class MUACOverzoomAgent(BaseAIReviewAgent):
             )
 
             if response.status_code == 429:
-                return ReviewResult.error("Rate limited - service busy or starting up. Retried, still unavailable.")
+                return ReviewResult.error(GATEWAY_RATE_LIMITED_MESSAGE)
 
             response.raise_for_status()
             result = response.json()
@@ -198,7 +207,7 @@ class MUACOverzoomAgent(BaseAIReviewAgent):
                 return ReviewResult.failure(badge_label="Hyperzoomed", api_response=result)
 
             self.logger.warning(f"Unexpected MUAC overzoom API response: {result}")
-            return ReviewResult.error(f"Unexpected API response format: {result}")
+            return ReviewResult.error(GATEWAY_UNEXPECTED_RESPONSE_MESSAGE)
 
         except httpx.HTTPStatusError as e:
             error_detail = ""
@@ -208,8 +217,8 @@ class MUACOverzoomAgent(BaseAIReviewAgent):
             except Exception:
                 error_detail = e.response.text
             self.logger.error(f"MUAC overzoom API error: {error_detail}")
-            return ReviewResult.error(f"API error: {error_detail}")
+            return ReviewResult.error(GATEWAY_ERROR_MESSAGE)
 
         except httpx.HTTPError as e:
             self.logger.error(f"MUAC overzoom connection error: {e}")
-            return ReviewResult.error(f"Connection error: {e}")
+            return ReviewResult.error(GATEWAY_UNREACHABLE_MESSAGE)
