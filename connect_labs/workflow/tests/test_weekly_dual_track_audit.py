@@ -1115,9 +1115,7 @@ def test_handler_resolves_max_flws_into_selected_flw_user_ids_shared_across_ever
             ],
         )
 
-        h.weekly_dual_track_audit_create(
-            {"run_id": 555, "opportunity_id": 101, "max_flws": 2}, access_token="tok"
-        )
+        h.weekly_dual_track_audit_create({"run_id": 555, "opportunity_id": 101, "max_flws": 2}, access_token="tok")
 
     # Unsampled discovery: the resolution query must not inherit either
     # track's sample_percentage.
@@ -1198,9 +1196,7 @@ def test_handler_persists_max_flws_onto_run_state():
         ada = ADA.return_value
         ada.get_visit_ids_for_audit.return_value = ([101], [{"id": 101, "username": "flwA"}])
 
-        h.weekly_dual_track_audit_create(
-            {"run_id": 555, "opportunity_id": 101, "max_flws": 1}, access_token="tok"
-        )
+        h.weekly_dual_track_audit_create({"run_id": 555, "opportunity_id": 101, "max_flws": 1}, access_token="tok")
 
     written = wda.update_run_state.call_args[0][1]
     assert written["max_flws"] == 1

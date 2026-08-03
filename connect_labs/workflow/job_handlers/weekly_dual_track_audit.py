@@ -146,9 +146,7 @@ def weekly_dual_track_audit_create(job_config: dict, access_token: str, progress
 
         selected_flw_user_ids = None
         if max_flws:
-            selected_flw_user_ids = _resolve_flw_cap(
-                access_token, opportunity_ids, window_start, window_end, max_flws
-            )
+            selected_flw_user_ids = _resolve_flw_cap(access_token, opportunity_ids, window_start, window_end, max_flws)
             logger.info(
                 "[WeeklyDualTrackAudit] run %s: max_flws=%d resolved to %d FLW(s)",
                 run_id,
