@@ -242,15 +242,14 @@ Each image path shows a row of checkboxes — one per classifier. Tick the class
 !!! note "Existing configurations are unaffected"
     Any image path you have not explicitly changed keeps behaving exactly as it did before this option was introduced. You do not need to review or re-save existing setups unless you want to change which classifiers run.
 
-### Visit Clustering tile — Duplicate Detection
+### Bulk Image Audit — AI Review Agent
 
-The **Visit Clustering** tile groups visits that are close together in time and location, which can indicate a worker submitted multiple records from the same spot. Within this tile there is now an option labelled **Send groupings to the Duplicate Detection API**.
+The **AI Review Agent** section of the Bulk Image Audit lets you choose which AI classifiers run on the images in a review. Classifiers are now selected using **checkboxes**, so you can run any combination of applicable classifiers in a single review rather than picking just one.
 
-When this option is turned on:
+The three available classifiers are:
 
-- Each group of clustered visits is checked against an image-similarity service to identify photos that appear to be copies of one another.
-- Confirmed duplicates are flagged in the AI summary so reviewers can see them alongside other findings.
-- If a photo in a confirmed duplicate pair has not yet been reviewed, it is pre-tagged **Duplicate/Fake** in bulk assessment automatically — so the most clear-cut cases are already sorted when a reviewer opens the queue.
-
-!!! note "A reviewer's own tag is never overwritten"
-    If
+| Classifier | What it checks |
+|---|---|
+| **Hyperzoom** | Whether the photo appears to have been taken with abnormal digital zoom, which can indicate a photo was not taken in the field |
+| **MUAC Mismatch** | Whether the MUAC tape reading visible in the image is inconsistent with the value recorded in the form |
+| **KMC Scale Comparison** | Whether the scale used in a KMC weight check matches expected equipment |
