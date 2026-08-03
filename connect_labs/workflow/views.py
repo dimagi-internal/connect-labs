@@ -3679,9 +3679,10 @@ def active_job_age_seconds(active_job):
     if not reference:
         return None
     try:
-        return (datetime.now() - datetime.fromisoformat(reference)).total_seconds()
-    except Exception:
+        parsed = datetime.fromisoformat(reference)
+    except (ValueError, TypeError):
         return None
+    return (datetime.now() - parsed).total_seconds()
 
 
 # A running job whose active_job hasn't advanced (no heartbeat, see
@@ -3781,48 +3782,62 @@ class JobStatusStreamView(LoginRequiredMixin, View):
         # so Celery reports PENDING forever (our tasks don't push progress meta to
         # the result backend, so a live job is ALSO PENDING — the two are
         # indistinguishable from Celery alone). Without a bound, the poll loop below
-        # streams "running" eternally and the runner spins on "Reconnecting…". Two
-        # guards close that: (1) a run-state short-circuit — the run's own
-        # active_job carries the authoritative status + started_at, so on reconnect
-        # we can emit the real terminal event or detect a stale (dead) job up front;
-        # (2) a hard wall-clock backstop that terminates any non-terminal stream so
-        # it can never hang forever, even when no run_id is supplied.
+        # streams "running" eternally and the runner spins on "Reconnecting…". The
+        # run-state short-circuit — the run's own active_job carries the
+        # authoritative status + heartbeat — is re-checked periodically for the
+        # WHOLE life of the stream, not just once before the loop: reading it only
+        # up front meant a worker that died moments after the stream opened kept
+        # reporting "running" off decaying Celery meta until an unrelated
+        # wall-clock cap (previously a shorter, hardcoded 30 min, independent of
+        # JOB_STALE_SECONDS) finally cut it off -- the same
+        # divergent-duplicate-threshold bug this PR fixed for the poll transport,
+        # reintroduced here. RECHECK_INTERVAL_SECONDS throttles the re-fetch (it's
+        # a real API call) instead of doing it on every 0.5s tick.
         run_id = request.GET.get("run_id")
-        STALE_SECONDS = JOB_STALE_SECONDS
-        MAX_STREAM_SECONDS = 30 * 60
+        RECHECK_INTERVAL_SECONDS = 10
+        # Pure resource-safety backstop now (not a staleness judgment) -- must
+        # stay comfortably above JOB_STALE_SECONDS so it never cuts off a stream
+        # before the heartbeat-based check above would have already ended it.
+        MAX_STREAM_SECONDS = JOB_STALE_SECONDS + 30 * 60
 
-        def stream_progress():
-            task = AsyncResult(task_id)
-
-            # Reconnect short-circuit: trust the run's recorded outcome over Celery,
-            # whose result for a dead/expired task has decayed to PENDING.
-            active_job = read_active_job(request, run_id)
+        def _terminal_event(active_job):
+            """SSE event string if active_job reports a terminal/stale state,
+            else None. Shared between the pre-loop check and periodic re-checks
+            inside the loop so both apply the exact same rule."""
             aj_status = (active_job or {}).get("status")
             if aj_status == "completed":
                 # The client's onComplete reloads sessions from the API, so an empty
                 # results payload here is fine — it just unsticks the stream.
-                yield send_sse_event(
-                    "Complete!", data={"status": "completed", "results": active_job.get("results", {})}
+                return send_sse_event(
+                    "Complete!", data={"status": "completed", "results": (active_job or {}).get("results", {})}
                 )
-                return
             if aj_status == "cancelled":
-                yield send_sse_event("Cancelled", data={"status": "cancelled"})
-                return
+                return send_sse_event("Cancelled", data={"status": "cancelled"})
             if aj_status == "failed":
-                yield send_sse_event("Failed", error=active_job.get("error") or "Job did not complete")
-                return
+                return send_sse_event("Failed", error=(active_job or {}).get("error") or "Job did not complete")
             age = active_job_age_seconds(active_job)
-            if aj_status == "running" and age is not None and age > STALE_SECONDS:
-                yield send_sse_event(
+            if aj_status == "running" and age is not None and age > JOB_STALE_SECONDS:
+                return send_sse_event(
                     "Failed",
                     error=(
                         "The previous run didn't finish — the server job stopped before "
                         "completing. Re-create to try again."
                     ),
                 )
+            return None
+
+        def stream_progress():
+            task = AsyncResult(task_id)
+
+            # Reconnect short-circuit: trust the run's recorded outcome over Celery,
+            # whose result for a dead/expired task has decayed to PENDING.
+            terminal = _terminal_event(read_active_job(request, run_id))
+            if terminal is not None:
+                yield terminal
                 return
 
             stream_started = datetime.now()
+            last_recheck = stream_started
             while True:
                 task_meta = task._get_task_meta()
                 status = task_meta.get("status")
@@ -3867,6 +3882,18 @@ class JobStatusStreamView(LoginRequiredMixin, View):
                         meta.get("message", "Processing..."),
                         data=event_data,
                     )
+
+                # Re-check the run's authoritative active_job periodically (not
+                # every 0.5s tick -- it's a real API call) so a worker that dies
+                # mid-stream is caught by the SAME heartbeat-based rule the poll
+                # transport uses, not just at connection-open time.
+                now = datetime.now()
+                if (now - last_recheck).total_seconds() > RECHECK_INTERVAL_SECONDS:
+                    last_recheck = now
+                    terminal = _terminal_event(read_active_job(request, run_id))
+                    if terminal is not None:
+                        yield terminal
+                        break
 
                 # Hard backstop: a non-terminal task that outlives the max stream
                 # window is treated as dead so the runner can never hang forever.

@@ -150,11 +150,10 @@ def weekly_dual_track_audit_create(job_config: dict, access_token: str, progress
                 access_token, opportunity_ids, window_start, window_end, max_flws
             )
             logger.info(
-                "[WeeklyDualTrackAudit] run %s: max_flws=%d resolved to %d FLW(s): %s",
+                "[WeeklyDualTrackAudit] run %s: max_flws=%d resolved to %d FLW(s)",
                 run_id,
                 max_flws,
                 len(selected_flw_user_ids),
-                selected_flw_user_ids,
             )
 
         calls = build_track_audit_calls(
