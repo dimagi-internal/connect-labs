@@ -65,22 +65,29 @@
   .legend-row .lbl { color: #4b5563; }
 
   /* Sortable column headers — click to sort, click again to flip direction */
-  .wa-th { cursor: pointer; user-select: none; transition: background-color .12s; }
-  .wa-th:hover { background: #e5e7eb; }
-  .wa-th.is-sorted { color: #111827; font-weight: 600; }
+  .wa-th, .flw-th { cursor: pointer; user-select: none; transition: background-color .12s; }
+  .wa-th:hover, .flw-th:hover { background: #e5e7eb; }
+  .wa-th.is-sorted, .flw-th.is-sorted { color: #111827; font-weight: 600; }
   .sort-ind { color: #6b7280; font-size: 0.7rem; margin-left: 0.15rem; opacity: 0; }
-  .wa-th.is-sorted .sort-ind { opacity: 1; }
+  .wa-th.is-sorted .sort-ind, .flw-th.is-sorted .sort-ind { opacity: 1; }
 
   /* Group header rows: chevron + summary row that toggles its child work areas */
   .wa-group-hdr td { background: #f8fafc; font-weight: 500; color: #111827; padding: 0.4rem 0.5rem; border-top: 1px solid #e5e7eb; cursor: pointer; user-select: none; }
   .wa-group-hdr:hover td { background: #eef2f6; }
   .wa-group-hdr .chev { display: inline-block; width: 0.8rem; color: #6b7280; }
   .wa-group-hdr.is-collapsed .chev { color: #9ca3af; }
+  /* .gn (the group name) has its OWN click target — filters the map/table by
+     that group — separate from the rest of the row, which toggles collapse. */
   .wa-group-hdr .gn { font-family: ui-monospace, monospace; color: #3843d0; margin-right: 0.5rem; }
+  .wa-group-hdr .gn:hover { text-decoration: underline; }
   .wa-group-hdr .meta { color: #6b7280; font-weight: 400; font-size: 0.75rem; }
   .wa-group-hdr .gn-sw { display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 0.15rem; vertical-align: middle; margin-right: 0.4rem; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08); }
   .wa-group-hdr .ghdr-check { display: inline-block; margin-right: 0.35rem; cursor: pointer; }
   .wa-group-hdr .ghdr-check input { vertical-align: middle; }
+
+  /* Plan-metric info icons — dotted-underline "?" cue matching the sample-config
+     tooltips elsewhere on this page. */
+  .kpi-info { cursor: help; text-decoration: underline dotted; text-decoration-color: #9ca3af; text-underline-offset: 2px; }
 
   /* ===== v3 left-rail design language (ported from the approved /tmp/microplans-leftrail/v3.html mockup) =====
      Scoped to .mp-rail so it can't leak into the center column or table. Keeps every
@@ -724,20 +731,6 @@
       <p class="text-[10px] text-gray-400 mt-1">Click a <span id="dim-label2">worker</span> to filter the map &amp; table.</p>
     </section>
 
-    <!-- Per-worker / per-group breakdown (the detailed metrics table). -->
-    <section class="border-t border-gray-200 bg-white px-3 py-2 text-sm">
-      <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1" id="flw-section-title">Per-group breakdown</h2>
-      <div class="max-h-40 overflow-auto border border-gray-100 rounded">
-        <table class="min-w-full text-xs">
-          <thead class="bg-gray-50 sticky top-0"><tr class="text-left text-gray-500">
-            <th class="p-1.5" id="flw-dim">Group</th><th class="p-1.5">Work areas</th><th class="p-1.5">Buildings</th>
-            <th class="p-1.5" id="flw-pop-col">Population</th><th class="p-1.5">Expected visits</th><th class="p-1.5">Spread (km)</th>
-          </tr></thead>
-          <tbody id="flw-body"></tbody>
-        </table>
-      </div>
-    </section>
-
     <div class="border-t border-gray-200">
       <div class="flex items-center justify-between px-3 py-1.5 bg-gray-50 border-b border-gray-100">
         <span class="text-xs font-semibold text-gray-600 uppercase tracking-wide">Work areas</span>
@@ -759,6 +752,27 @@
         <tbody id="wa-body"></tbody>
       </table>
     </div>
+
+    <!-- Per-worker / per-group breakdown (the detailed metrics table) — sits below
+         the work-area table/groups list above, so selecting a group there and
+         reading its detailed row here reads top-to-bottom as "pick a group, then
+         see its numbers." -->
+    <section class="border-t border-gray-200 bg-white px-3 py-2 text-sm">
+      <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1" id="flw-section-title">Per-group breakdown</h2>
+      <div class="max-h-40 overflow-auto border border-gray-100 rounded">
+        <table class="min-w-full text-xs">
+          <thead class="bg-gray-50 sticky top-0"><tr class="text-left text-gray-500">
+            <th class="p-1.5 flw-th" data-flw-sort="name" id="flw-dim">Group <span class="sort-ind"></span></th>
+            <th class="p-1.5 flw-th" data-flw-sort="work_areas">Work areas <span class="sort-ind"></span></th>
+            <th class="p-1.5 flw-th" data-flw-sort="buildings">Buildings <span class="sort-ind"></span></th>
+            <th class="p-1.5 flw-th" data-flw-sort="population" id="flw-pop-col">Population <span class="sort-ind"></span></th>
+            <th class="p-1.5 flw-th" data-flw-sort="expected_visits">Expected visits <span class="sort-ind"></span></th>
+            <th class="p-1.5 flw-th" data-flw-sort="spread_km">Spread (km) <span class="sort-ind"></span></th>
+          </tr></thead>
+          <tbody id="flw-body"></tbody>
+        </table>
+      </div>
+    </section>
   </div>
 </div>
 {% endblock %}
