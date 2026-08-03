@@ -1296,6 +1296,23 @@ def _opportunity_roster(sc) -> list:
     return rows
 
 
+class _ReqWithParams:
+    """A request view with different GET params, for one re-scoped read.
+
+    ``_program_scope`` reads straight off ``request.GET``, so asking it a second
+    question -- "what would this scope be without the opportunity filter?" --
+    means handing it a request whose GET says so. Wrapping is safer than
+    mutating: ``request.GET`` is shared with everything downstream.
+    """
+
+    def __init__(self, request, params):
+        self._request = request
+        self.GET = params
+
+    def __getattr__(self, name):
+        return getattr(self._request, name)
+
+
 class PartnerView(View):
     """Everything a partner window shows, for one partner.
 
@@ -1325,6 +1342,15 @@ class PartnerView(View):
         approved = agg["approved"] or 0
 
         roster = _worker_roster(sc)
+
+        # The engagement list is built WITHOUT the opportunity filter applied.
+        # Scoping it too collapses the grid to the one you just picked, which
+        # takes away both the way back and the way to any other -- selecting
+        # became a one-way door. The figures narrow; the list of what you can
+        # narrow to does not.
+        unscoped = request.GET.copy()
+        unscoped.pop("opportunity", None)
+        sc_all = _program_scope(_ReqWithParams(request, unscoped))
         return JsonResponse(
             {
                 "generated_at": timezone.now().isoformat(),
@@ -1362,7 +1388,8 @@ class PartnerView(View):
                     .order_by("-n")[:8]
                 ],
                 "weekly": _weekly_series(sc),
-                "opportunities": _opportunity_roster(sc),
+                "opportunities": _opportunity_roster(sc_all),
+                "selected_opportunity": (sc["opportunity"].opportunity_id if sc["opportunity"] is not None else None),
                 "workers": roster,
                 "worker_count": len(roster),
                 "workers_truncated": len(roster) >= WORKER_ROSTER_LIMIT,
