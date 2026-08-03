@@ -6,21 +6,25 @@ WorkflowRun per opportunity per day) via a dedicated read-only API endpoint
 (api/flw-daily-indicator-history/) and displays them as a 14-day grid: one
 row per FLW, one column per day, a single 0/1 "investigate today" flag per
 cell. Clicking an FLW's name expands an inline detail table -- same day
-columns as the row above it, one row per indicator -- showing every one of
-the 12 raw indicator values alongside its threshold, with over-threshold
-values highlighted, so it's immediately clear WHICH indicator(s) tripped the
-flag on which day. Each indicator label has an (i) hover tooltip with a full
-description (see INDICATOR_DEFS' `description` field) -- a small
-InfoTooltip popover, not the native `title=` attribute, mirroring
-flw_audit_trend_dashboard.py's own workaround for native title= not
-rendering reliably inside this runner's iframe context.
+columns as the row above it, one row per indicator -- showing every raw
+indicator value alongside its threshold, with over-threshold values
+highlighted (red for indicators that contribute to the flag, orange for
+those that don't), so it's immediately clear WHICH indicator(s) tripped the
+flag on which day, and which merely warrant a look. Each indicator label has
+an (i) hover tooltip with a full description (see INDICATOR_DEFS'
+`description` field) -- a small InfoTooltip popover, not the native `title=`
+attribute, mirroring flw_audit_trend_dashboard.py's own workaround for
+native title= not rendering reliably inside this runner's iframe context.
 
-All 12 evaluated indicators' thresholds live in the THRESHOLDS constant below
-(indicator #1, total forms, is informational only and never trips the flag)
+All evaluated indicators' thresholds live in the THRESHOLDS constant below
 -- by design, per the user's explicit requirement that thresholds be tunable
 here without touching or recomputing Workflow 1's history. Retuning a
 threshold is a one-line render_code edit; it takes effect immediately on next
-page load, no backfill needed, since the raw values are already stored.
+page load, no backfill needed, since the raw values are already stored. Only
+indicators marked `contributes: true` in INDICATOR_DEFS roll up into the main
+grid's per-day flag; the rest (plus the two purely informational entries,
+HSD forms submitted and unique work areas visited) still compute and
+highlight their own tripped state, just not in red.
 
 No pipeline_schema: like flw_audit_trend_dashboard.py, this template never
 reads CommCare/Connect visit data directly -- everything comes from Workflow
@@ -38,7 +42,7 @@ DEFINITION = {
     "description": (
         "Program 176 (CHC PRE-RCT Nigeria) 14-day per-FLW daily indicator grid, sourced from the "
         "FLW Daily Indicator Report's saved daily snapshots. One 0/1 flag per FLW per day; expand a "
-        "row to see all 12 indicators + thresholds for every day and exactly which ones tripped."
+        "row to see every indicator + threshold for every day and exactly which ones tripped."
     ),
     "version": 1,
     "templateType": "flw_daily_indicator_table",
@@ -56,16 +60,16 @@ RENDER_CODE = r"""function WorkflowUI({ definition, workers }) {
     var NUM_DAYS = 14;
     var FETCH_DAYS = 18; // small buffer past 14 for schedule/timezone slack
 
-    // Thresholds for the 12 evaluated indicators (indicator #1, total forms, is
-    // informational only and never trips the flag). These are the ONLY place
-    // thresholds live -- retune here, no changes to Workflow 1 needed.
+    // Thresholds for the evaluated indicators (the informational entries --
+    // total forms and unique work areas -- never trip anything). These are
+    // the ONLY place thresholds live -- retune here, no changes to Workflow 1
+    // needed.
     var THRESHOLDS = {
         households_per_building: 5,          // flag if any WA's households/building ratio > this
         households_4plus_children: 2,        // flag if count > this
         gap_lt_2min: 15,                      // flag if count >= this
         vaccine_yes_pct: 50,                  // flag if % received_any_vaccine=yes < this
-        camping_pct: 80,                      // flag if % of forms in largest GPS cluster >= this
-        travel_speed_violation: 2,            // flag if count of implausible-speed gaps >= this
+        camping_repeat_pct: 80,               // flag if % of forms sharing the same exact GPS reading >= this
         duplicate_child_names: 2,             // flag if count >= this
         duplicate_child_ages: 2,              // flag if count >= this
         straight_line_pct: 95,                // flag if either straight-lining field's mode share >= this
@@ -335,12 +339,18 @@ RENDER_CODE = r"""function WorkflowUI({ definition, workers }) {
     );
 }
 
-// Every one of the 12 daily indicators, in display order. `path` reaches into
-// a Workflow-1 per-FLW indicator dict (dot-notated); `thresholdKey` looks up
-// THRESHOLDS (null for indicator #1, which never trips). `direction`
-// determines the trip comparison: "gte" (>= threshold), "gt" (> threshold),
-// or "lt" (< threshold). `description` is the full explanation shown in the
-// (i) hover tooltip next to the indicator's label. The last entry (`custom:
+// Every daily indicator, in display order. `path` reaches into a Workflow-1
+// per-FLW indicator dict (dot-notated); `thresholdKey` looks up THRESHOLDS
+// (null for the two purely informational entries, which never trip
+// anything). `direction` determines the trip comparison: "gte" (>=
+// threshold), "gt" (> threshold), or "lt" (< threshold). `contributes: true`
+// marks the indicators that roll up into the main grid's per-day red/green
+// flag; the rest still compute/show their own tripped state (highlighted
+// orange in the expanded detail view instead of red) but don't affect the
+// top-level flag -- either because they're informational, or because they're
+// judged too easily triggered by legitimate behavior to justify flagging an
+// FLW on their own. `description` is the full explanation shown in the (i)
+// hover tooltip next to the indicator's label. The last entry (`custom:
 // true`) needs BOTH total_forms and daily_span_minutes at once, so it's
 // handled as a special case in indicatorDetailsForDay/thresholdDisplayFor
 // rather than via path/thresholdKey/direction.
@@ -350,11 +360,15 @@ var INDICATOR_DEFS = [
         description: "Total number of Health Service Delivery (HSD) forms this FLW submitted this day. Shown for context only — never contributes to the flag.",
     },
     {
-        key: "households_per_building", label: "Peak Households per Building", path: "households_per_building.max_ratio", thresholdKey: "households_per_building", direction: "gt",
-        description: "The highest households-registered ÷ buildings-in-work-area ratio, across every work area this FLW visited this day. Flags a single work area being visited far more than its building count would justify.",
+        key: "unique_work_areas", label: "Unique Work Areas Visited", path: "unique_work_areas_count", thresholdKey: null, direction: null,
+        description: "Number of distinct work areas this FLW submitted forms in this day. Shown for context only — never contributes to the flag.",
     },
     {
-        key: "households_4plus_children", label: "Large Households (4+ Under-5s)", path: "households_4plus_children_count", thresholdKey: "households_4plus_children", direction: "gt",
+        key: "households_per_building", label: "Peak Households per Building", path: "households_per_building.max_ratio", thresholdKey: "households_per_building", direction: "gt", contributes: true,
+        description: "The highest households-registered ÷ buildings-in-work-area ratio, across every work area this FLW visited this day. Flags a work area where the number of distinct households registered is out of proportion to how many buildings it actually has.",
+    },
+    {
+        key: "households_4plus_children", label: "Large Households (4+ Under-5s)", path: "households_4plus_children_count", thresholdKey: "households_4plus_children", direction: "gt", contributes: true,
         description: "Number of households visited this day where 4 or more distinct children under 5 were registered. Encountering that many large households in one day is uncommon.",
     },
     {
@@ -362,40 +376,36 @@ var INDICATOR_DEFS = [
         description: "Number of times two consecutive HSD forms were submitted less than 2 minutes apart — a possible sign of rushing through or fabricating visits.",
     },
     {
-        key: "vaccine_yes_pct", label: "% Children Vaccinated", path: "vaccine_yes_pct", thresholdKey: "vaccine_yes_pct", direction: "lt",
+        key: "vaccine_yes_pct", label: "% Children Vaccinated", path: "vaccine_yes_pct", thresholdKey: "vaccine_yes_pct", direction: "lt", contributes: true,
         description: "Share of this day's HSD forms where the child was recorded as having received any vaccine. An unusually low share can mean the vaccination step isn't being done.",
     },
     {
-        key: "camping_pct", label: "Camping % (Same-Spot Visits)", path: "camping_pct_largest_cluster", thresholdKey: "camping_pct", direction: "gte",
-        description: "Share of this day's GPS-tagged forms submitted within about 30 meters of each other. A high share suggests the FLW stayed in one place rather than moving between households.",
+        key: "camping_repeat_pct", label: "Camping % (Same-Spot Visits)", path: "camping_repeat_pct", thresholdKey: "camping_repeat_pct", direction: "gte", contributes: true,
+        description: "Share of this day's GPS-tagged forms sharing the exact same recorded coordinate. Ordinary GPS noise means a device actually re-acquiring location on each form almost never returns the identical fix twice — repetition suggests the location wasn't really refreshed between forms.",
     },
     {
-        key: "travel_speed_violation", label: "Implausible Travel-Speed Gaps", path: "travel_speed_violation_count", thresholdKey: "travel_speed_violation", direction: "gte",
-        description: "Number of consecutive visit pairs where the distance and time between them imply travel faster than 15 km/h — faster than realistic on foot between households.",
-    },
-    {
-        key: "duplicate_child_names", label: "Duplicate Child Names Across Households", path: "duplicate_child_names_count", thresholdKey: "duplicate_child_names", direction: "gte",
+        key: "duplicate_child_names", label: "Duplicate Child Names Across Households", path: "duplicate_child_names_count", thresholdKey: "duplicate_child_names", direction: "gte", contributes: true,
         description: "Number of child names that appear under more than one household visited this day (case-insensitive) — may indicate a fabricated or reused identity.",
     },
     {
-        key: "duplicate_child_ages", label: "Duplicate Child Ages Across Households", path: "duplicate_child_ages_count", thresholdKey: "duplicate_child_ages", direction: "gte",
+        key: "duplicate_child_ages", label: "Duplicate Child Ages Across Households", path: "duplicate_child_ages_count", thresholdKey: "duplicate_child_ages", direction: "gte", contributes: true,
         description: "Number of child dates of birth that appear under more than one household visited this day. Two unrelated households having a child with the exact same birth date is uncommon.",
     },
     {
         key: "straight_line_dw", label: "Straight-Lining: Child Unwell Today", path: "straight_line_pct.dw_child_unwell_today", thresholdKey: "straight_line_pct", direction: "gte",
-        description: "Share of this day's forms with the identical answer to “Does your child have breathing difficulty, vomiting, diarrhea, or high body temperature today?” A near-unanimous answer across different children is an unlikely coincidence.",
+        description: "Share of this day's forms with the identical answer to “Does your child have breathing difficulty, vomiting, diarrhea, or high body temperature today?” A near-unanimous answer across different children is an unlikely coincidence — though genuinely high local prevalence can also produce this, so it's shown for context rather than flagged on its own.",
     },
     {
         key: "straight_line_diarrhea", label: "Straight-Lining: Diarrhea Last Month", path: "straight_line_pct.diarrhea_last_month", thresholdKey: "straight_line_pct", direction: "gte",
-        description: "Share of this day's forms with the identical answer to “Did your child have diarrhea in the last month?” — same straight-lining concern, different question.",
+        description: "Share of this day's forms with the identical answer to “Did your child have diarrhea in the last month?” — same straight-lining concern, different question, and the same caveat about genuinely high local prevalence.",
     },
     {
-        key: "muac_repetition_pct", label: "MUAC Value Repetition %", path: "muac_repetition_pct", thresholdKey: "muac_repetition_pct", direction: "gte",
+        key: "muac_repetition_pct", label: "MUAC Value Repetition %", path: "muac_repetition_pct", thresholdKey: "muac_repetition_pct", direction: "gte", contributes: true,
         description: "Share of this day's MUAC (arm circumference) measurements that are the exact same value. Real measurements vary child to child; high repetition suggests numbers may be reused rather than actually measured.",
     },
     {
-        key: "visits_compressed_1hr", label: "30+ Visits Compressed Into ≤60min", custom: true, // gitleaks:allow (not a secret -- an indicator key string)
-        description: "Flags when this FLW claims 30 or more visits in a day AND the time from the first visit's start to the last visit's end is 1 hour or less — a volume of work that's implausible to complete in that short a span.",
+        key: "visits_compressed_1hr", label: "Total Time Between First and Last Visit", custom: true, // gitleaks:allow (not a secret -- an indicator key string)
+        description: "Total elapsed time from this FLW's first visit of the day to their last. Shown alongside its threshold (30+ forms in that day AND a span of 60 minutes or less) as worth digging into, but doesn't contribute to the flag on its own.",
     },
 ];
 
@@ -427,8 +437,11 @@ function thresholdDisplayFor(def, thresholds) {
     return def.thresholdKey ? thresholds[def.thresholdKey] : null;
 }
 
-// Computes every indicator's {value, threshold, evaluable, tripped} for one
-// FLW-day, plus whether ANY of them tripped (indicator #1 never contributes).
+// Computes every indicator's {value, threshold, evaluable, tripped,
+// contributes} for one FLW-day. `contributes` mirrors the def's own flag --
+// only tripped indicators with contributes:true feed the main grid's per-day
+// red/green flag; the rest still report tripped (for orange highlighting)
+// but don't affect it.
 function indicatorDetailsForDay(flw, thresholds) {
     return INDICATOR_DEFS.map(function (def) {
         if (def.custom) {
@@ -445,6 +458,7 @@ function indicatorDetailsForDay(flw, thresholds) {
                 threshold: thresholdDisplayFor(def, thresholds),
                 evaluable: evaluable,
                 tripped: isTripped,
+                contributes: !!def.contributes,
             };
         }
         var value = flw ? getByPath(flw, def.path) : null;
@@ -457,6 +471,7 @@ function indicatorDetailsForDay(flw, thresholds) {
             threshold: threshold,
             evaluable: evaluable,
             tripped: def.thresholdKey ? tripped(value, threshold, def.direction) : false,
+            contributes: !!def.contributes,
         };
     });
 }
@@ -464,7 +479,7 @@ function indicatorDetailsForDay(flw, thresholds) {
 function cellInfo(flw, thresholds) {
     if (!flw) return { text: "—", cls: "text-gray-300", title: "No report for this day" };
     var details = indicatorDetailsForDay(flw, thresholds);
-    var anyTripped = details.some(function (d) { return d.tripped; });
+    var anyTripped = details.some(function (d) { return d.tripped && d.contributes; });
     return anyTripped
         ? { text: "●", cls: "text-red-600 font-bold text-base", title: "Flagged — expand row for which indicator(s) tripped" }
         : { text: "○", cls: "text-green-600 text-base", title: "OK — no indicator over threshold" };
@@ -602,7 +617,12 @@ function ExpandedFlwDetail({ row, dayColumns, thresholds }) {
                                     }
                                     var det = dayDetails.filter(function (x) { return x.key === def.key; })[0];
                                     var display = det.value == null ? "n/a" : det.value;
-                                    var cellCls = det.tripped ? "bg-red-50 text-red-700 font-semibold" : "text-gray-700";
+                                    // Tripped-but-non-contributing indicators are highlighted orange, not
+                                    // red -- they're worth a look but don't by themselves justify flagging
+                                    // this FLW the way a contributing indicator's red does.
+                                    var cellCls = det.tripped
+                                        ? (det.contributes ? "bg-red-50 text-red-700 font-semibold" : "bg-orange-50 text-orange-700 font-semibold")
+                                        : "text-gray-700";
                                     return (
                                         <td key={d} className={"px-2 py-1.5 text-center whitespace-nowrap " + cellCls}>
                                             {display}
@@ -624,7 +644,7 @@ TEMPLATE = {
     "description": (
         "Program 176 (CHC PRE-RCT Nigeria) 14-day per-FLW daily indicator grid, sourced from the "
         "FLW Daily Indicator Report's saved daily snapshots. One 0/1 flag per FLW per day; expand a "
-        "row to see all 12 indicators + thresholds for every day and exactly which ones tripped."
+        "row to see every indicator + threshold for every day and exactly which ones tripped."
     ),
     "icon": "fa-table-cells",
     "color": "indigo",

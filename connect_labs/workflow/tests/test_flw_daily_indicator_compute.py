@@ -43,6 +43,16 @@ def test_total_forms_counts_every_visit():
     assert result["total_forms"] == 2
 
 
+def test_unique_work_areas_count_counts_distinct_wa_caseid():
+    visits = [
+        _visit("2026-07-20T08:00:00Z", wa_caseid="wa-1", child_case_id="c1"),
+        _visit("2026-07-20T08:10:00Z", wa_caseid="wa-1", child_case_id="c2"),
+        _visit("2026-07-20T08:20:00Z", wa_caseid="wa-2", child_case_id="c3"),
+    ]
+    result = compute_flw_daily_indicators(visits)
+    assert result["unique_work_areas_count"] == 2
+
+
 def test_households_per_building_ratio_counts_distinct_households_not_forms():
     visits = [
         # wa-1: 2 forms but only 1 distinct household -> households=1, not 2
@@ -123,38 +133,29 @@ def test_vaccine_yes_pct_computed_at_min_forms():
     assert result["vaccine_yes_pct"] == 37.5
 
 
-def test_camping_all_visits_in_one_cluster_is_100pct():
+def test_camping_all_same_gps_reading_is_100pct():
     visits = _padded_rate_indicator_visits(normalized_lat="12.0", normalized_lon="9.0")
     result = compute_flw_daily_indicators(visits)
     assert result["camping_forms_count"] == MIN_FORMS_FOR_RATE_INDICATORS
-    assert result["camping_pct_largest_cluster"] == 100.0
+    assert result["camping_repeat_pct"] == 100.0
 
 
-def test_camping_one_outlier_reduces_largest_cluster_share():
-    visits = _padded_rate_indicator_visits(n=MIN_FORMS_FOR_RATE_INDICATORS)
-    # send the last visit ~111km away (1 degree latitude) -- clearly outside the 30m cluster radius
-    visits[-1]["normalized_lat"] = "13.0"
+def test_camping_one_different_gps_reading_reduces_repeat_pct():
+    visits = _padded_rate_indicator_visits(
+        n=MIN_FORMS_FOR_RATE_INDICATORS, normalized_lat="12.0", normalized_lon="9.0"
+    )
+    # one visit gets a distinct (even if nearby) reading -- an exact-match check,
+    # unlike the old cluster-radius one, doesn't care how far away it is.
+    visits[-1]["normalized_lat"] = "12.0001"
     result = compute_flw_daily_indicators(visits)
     n = MIN_FORMS_FOR_RATE_INDICATORS
-    assert result["camping_pct_largest_cluster"] == round((n - 1) / n * 100.0, 2)
+    assert result["camping_repeat_pct"] == round((n - 1) / n * 100.0, 2)
 
 
 def test_camping_below_min_forms_is_none():
     visits = _padded_rate_indicator_visits(n=3)
     result = compute_flw_daily_indicators(visits)
-    assert result["camping_pct_largest_cluster"] is None
-
-
-def test_travel_speed_violation_flags_implausible_speed():
-    visits = [
-        # ~111km apart (1 degree latitude) in 6 minutes -> ~1100 km/h, way over 15km/h
-        _visit("2026-07-20T08:00:00Z", child_case_id="c1", normalized_lat="12.0"),
-        _visit("2026-07-20T08:06:00Z", child_case_id="c2", normalized_lat="13.0"),
-        # same spot, 10 minutes later -> 0 km/h, no violation
-        _visit("2026-07-20T08:16:00Z", child_case_id="c3", normalized_lat="13.0"),
-    ]
-    result = compute_flw_daily_indicators(visits)
-    assert result["travel_speed_violation_count"] == 1
+    assert result["camping_repeat_pct"] is None
 
 
 def test_duplicate_child_names_count_flags_shared_name_across_households():

@@ -21,24 +21,20 @@ pass/fail flag. The OUTER, tunable "is this FLW worth investigating today"
 cutoffs live entirely in flw_daily_indicator_table.py's THRESHOLDS constant,
 so they can be retuned without recomputing (or even redeploying) this report.
 The few constants below are DEFINITIONAL (they describe what the metric IS —
-e.g. what counts as "the same GPS cluster" — not how suspicious a value has
-to be to flag someone) and intentionally live here, the same way
-flw_audit_compute.py bakes in its own near-duplicate/implausible-speed radii.
+e.g. what counts as a "large" household — not how suspicious a value has to
+be to flag someone) and intentionally live here, the same way
+flw_audit_compute.py bakes in its own near-duplicate radii.
 """
 from __future__ import annotations
 
 from collections import defaultdict
 from datetime import datetime, timezone
 
-from connect_labs.workflow.flw_audit_compute import haversine_meters
-
 MIN_FORMS_FOR_RATE_INDICATORS = 8
 
 # --- Definitional constants (what the metric measures, not the per-day cutoff) ---
 HOUSEHOLD_CHILD_COUNT_THRESHOLD = 4  # a household counts as "large" at 4+ children
 GAP_MINUTES_THRESHOLD = 2.0  # a form-to-form gap counts as "rushed" under 2 minutes
-CAMPING_CLUSTER_RADIUS_M = 30.0  # two visits count as "the same spot" within 30m
-IMPLIED_SPEED_MAX_KMH = 15.0  # a gap counts as an implausible-travel-speed violation over 15 km/h
 
 
 def _parse_dt(value) -> datetime | None:
@@ -81,45 +77,6 @@ def _mode_share_with_n(values) -> tuple[float | None, int]:
     return _round(max(counts.values()) / n * 100.0), n
 
 
-def _largest_gps_cluster_size(points: list[tuple[float | None, float | None]], radius_m: float) -> int:
-    """Largest single-linkage cluster among `points` (lat, lon) where an edge
-    connects any two points within `radius_m` of each other. O(n^2) via
-    union-find, which is fine for a single FLW's single-day visit count
-    (typically well under 40 points)."""
-    n = len(points)
-    if n == 0:
-        return 0
-    parent = list(range(n))
-
-    def find(i):
-        while parent[i] != i:
-            parent[i] = parent[parent[i]]
-            i = parent[i]
-        return i
-
-    def union(i, j):
-        ri, rj = find(i), find(j)
-        if ri != rj:
-            parent[ri] = rj
-
-    for i in range(n):
-        lat1, lon1 = points[i]
-        if lat1 is None or lon1 is None:
-            continue
-        for j in range(i + 1, n):
-            lat2, lon2 = points[j]
-            if lat2 is None or lon2 is None:
-                continue
-            d = haversine_meters(lat1, lon1, lat2, lon2)
-            if d is not None and d <= radius_m:
-                union(i, j)
-
-    sizes: dict = defaultdict(int)
-    for i in range(n):
-        sizes[find(i)] += 1
-    return max(sizes.values())
-
-
 def compute_flw_daily_indicators(visits: list[dict], wa_building_counts: dict[str, float] | None = None) -> dict:
     """Compute every Workflow-1 daily indicator for ONE FLW's visits on ONE day.
 
@@ -146,6 +103,7 @@ def compute_flw_daily_indicators(visits: list[dict], wa_building_counts: dict[st
     parsed.sort(key=lambda r: r["_time_start"])
 
     total_forms = len(parsed)
+    unique_work_areas_count = len({r.get("wa_caseid") for r in parsed if r.get("wa_caseid")})
 
     # --- #2 households registered per building, grouped by work area ---
     # Distinct households, not raw form count -- a single large household
@@ -189,18 +147,12 @@ def compute_flw_daily_indicators(visits: list[dict], wa_building_counts: dict[st
         1 for kids in children_by_hh.values() if len(kids) >= HOUSEHOLD_CHILD_COUNT_THRESHOLD
     )
 
-    # --- #4 gap < 2min, #7 implausible travel speed (both compare consecutive same-day visits) ---
+    # --- #4 gap < 2min (consecutive same-day visits) ---
     gap_lt_2min_count = 0
-    travel_speed_violation_count = 0
     for prev, curr in zip(parsed, parsed[1:]):
         gap_minutes = (curr["_time_start"] - prev["_time_end"]).total_seconds() / 60.0
         if gap_minutes < GAP_MINUTES_THRESHOLD:
             gap_lt_2min_count += 1
-        dist = haversine_meters(prev["_lat"], prev["_lon"], curr["_lat"], curr["_lon"])
-        if dist is not None:
-            hours = (curr["_time_start"] - prev["_time_start"]).total_seconds() / 3600.0
-            if hours > 0 and (dist / 1000.0) / hours > IMPLIED_SPEED_MAX_KMH:
-                travel_speed_violation_count += 1
 
     # --- #5 % received_any_vaccine == "yes" ---
     vaccine_answers = [r.get("received_any_vaccine") for r in parsed if r.get("received_any_vaccine") in ("yes", "no")]
@@ -211,13 +163,16 @@ def compute_flw_daily_indicators(visits: list[dict], wa_building_counts: dict[st
         else None
     )
 
-    # --- #6 camping: % of the day's GPS-tagged forms inside the largest cluster ---
-    gps_points = [(r["_lat"], r["_lon"]) for r in parsed if r["_lat"] is not None and r["_lon"] is not None]
-    camping_forms_count = len(gps_points)
-    camping_pct_largest_cluster = None
-    if camping_forms_count >= MIN_FORMS_FOR_RATE_INDICATORS:
-        largest = _largest_gps_cluster_size(gps_points, CAMPING_CLUSTER_RADIUS_M)
-        camping_pct_largest_cluster = _round(largest / camping_forms_count * 100.0)
+    # --- #6 camping: % of the day's GPS-tagged forms sharing the single most-
+    # repeated EXACT (lat, lon) reading. Ordinary GPS noise means a device
+    # that's actually re-acquiring location on each form almost never returns
+    # the identical fix twice -- repetition here means the location wasn't
+    # really refreshed (a cached/stale fix reused across forms), which is a
+    # tighter signal than "visits were merely near each other."
+    gps_values = [(r["_lat"], r["_lon"]) for r in parsed if r["_lat"] is not None and r["_lon"] is not None]
+    camping_repeat_pct, camping_forms_count = _mode_share_with_n(gps_values)
+    if camping_forms_count < MIN_FORMS_FOR_RATE_INDICATORS:
+        camping_repeat_pct = None
 
     # --- #8/#9 duplicate child name / age (DOB) reused across different households ---
     # Same-household repeats don't count (e.g. legitimate twins/siblings) --
@@ -256,15 +211,15 @@ def compute_flw_daily_indicators(visits: list[dict], wa_building_counts: dict[st
 
     return {
         "total_forms": total_forms,
+        "unique_work_areas_count": unique_work_areas_count,
         "daily_span_minutes": daily_span_minutes,
         "households_per_building": households_per_building,
         "households_4plus_children_count": households_4plus_children_count,
         "gap_lt_2min_count": gap_lt_2min_count,
         "vaccine_yes_pct": vaccine_yes_pct,
         "vaccine_forms_count": vaccine_forms_count,
-        "camping_pct_largest_cluster": camping_pct_largest_cluster,
+        "camping_repeat_pct": camping_repeat_pct,
         "camping_forms_count": camping_forms_count,
-        "travel_speed_violation_count": travel_speed_violation_count,
         "duplicate_child_names_count": duplicate_child_names_count,
         "duplicate_child_ages_count": duplicate_child_ages_count,
         "straight_line_pct": straight_line_pct,
