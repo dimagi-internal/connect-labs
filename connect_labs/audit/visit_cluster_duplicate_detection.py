@@ -66,6 +66,11 @@ def run_duplicate_detection(
             {"session": AuditSessionRecord, "data_access": AuditDataAccess,
              "opp_id": int, "clusters": [visit_clustering-shaped dicts],
              "blob_meta_by_id": {blob_id: {"visit_id": int, "question_id": str}}}.
+            "session" is used only for its .id -- this function re-fetches the
+            session via data_access.get_audit_session() before touching it, so
+            whatever the AI-review stage(s) already wrote/saved to it in the
+            meantime is preserved rather than clobbered by save_audit_session's
+            full-document replace.
         get_signed_url: callable(blob_id, opp_id) -> str | None. Resolves a
             world-readable URL for one blob; None means skip that blob.
         client: DuplicateDetectionClient instance (constructed lazily if
@@ -100,7 +105,18 @@ def run_duplicate_detection(
                 cancelled = True
                 break
 
-            session = target["session"]
+            data_access = target["data_access"]
+            # target["session"] is the object create_audit_session() returned at
+            # audit-creation time -- its visit_results is still {}. By the time
+            # this stage runs, the AI-review stage(s) have already re-fetched
+            # and saved their own writes to this session. save_audit_session()
+            # is a full-document replace, so mutating and saving the STALE
+            # object here would silently wipe every assessment those stages
+            # just wrote. Re-fetch fresh right before touching it.
+            session = data_access.get_audit_session(target["session"].id)
+            if not session:
+                logger.warning(f"[DuplicateDetection] Session {target['session'].id} not found -- skipping")
+                continue
             opp_id = target["opp_id"]
             blob_meta_by_id = target["blob_meta_by_id"]
             session_updated = False
@@ -156,7 +172,7 @@ def run_duplicate_detection(
 
             if session_updated:
                 try:
-                    target["data_access"].save_audit_session(session)
+                    data_access.save_audit_session(session)
                 except Exception as exc:
                     logger.warning(f"[DuplicateDetection] Failed to save session {session.id}: {exc}")
 

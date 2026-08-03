@@ -27,9 +27,17 @@ def _session(visit_results=None, opportunity_id=1973):
 
 
 def _target(session, clusters, blob_meta_by_id, opp_id=1973, data_access=None):
+    """run_duplicate_detection re-fetches via data_access.get_audit_session()
+    rather than mutating `session` directly (see the docstring on
+    run_duplicate_detection) -- default get_audit_session to hand back the
+    SAME session object, so tests that aren't specifically modeling a stale-
+    vs-fresh mismatch (see test_run_duplicate_detection_preserves...) behave
+    as if nothing else touched the session between creation and this stage."""
+    data_access = data_access or Mock()
+    data_access.get_audit_session.return_value = session
     return {
         "session": session,
-        "data_access": data_access or Mock(),
+        "data_access": data_access,
         "opp_id": opp_id,
         "clusters": clusters,
         "blob_meta_by_id": blob_meta_by_id,
@@ -334,3 +342,73 @@ def test_progress_callback_receives_processed_and_total():
     )
 
     assert seen[-1] == (2, 2)
+
+
+def test_run_duplicate_detection_preserves_ai_review_results_written_after_creation():
+    """Regression test for a data-loss bug: `target["session"]` is whatever
+    create_audit_session() returned at creation time (visit_results={}) --
+    by the time this stage runs, the AI-review stage has already re-fetched
+    and saved its OWN writes to the SAME session. save_audit_session() is a
+    full-document replace, so mutating and saving the stale creation-time
+    object here would silently wipe those AI-review results. This pins that
+    the fresh copy (from data_access.get_audit_session(), not the stale
+    `target["session"]`) is what actually gets mutated and saved."""
+    stale_session_at_creation_time = _session()  # visit_results={} -- as create_audit_session() left it
+
+    # What get_audit_session() would return by the time this stage runs --
+    # already carries an AI reviewer's write for a visit unrelated to the
+    # duplicate grouping below.
+    fresh_session = _session(
+        {
+            "999": {
+                "assessments": {
+                    "z": {
+                        "question_id": "form/muac",
+                        "result": "fail",
+                        "notes": "",
+                        "ai_result": "no_match",
+                        "ai_notes": "Hyperzoomed",
+                    }
+                }
+            }
+        }
+    )
+
+    clusters = [{"group_id": "g1", "visit_ids": [111, 112], "image_count": 2, "image_ids": ["a", "b"]}]
+    blob_meta = {
+        "a": {"visit_id": 111, "question_id": "form/muac"},
+        "b": {"visit_id": 112, "question_id": "form/muac"},
+    }
+    client = Mock()
+    client.detect.return_value = [["a", "b"]]
+    data_access = Mock()
+    data_access.get_audit_session.return_value = fresh_session
+
+    result = run_duplicate_detection(
+        [
+            {
+                "session": stale_session_at_creation_time,
+                "data_access": data_access,
+                "opp_id": 1973,
+                "clusters": clusters,
+                "blob_meta_by_id": blob_meta,
+            }
+        ],
+        get_signed_url=lambda bid, oid: f"https://x/{bid}",
+        client=client,
+    )
+
+    data_access.get_audit_session.assert_called_once_with(stale_session_at_creation_time.id)
+    assert result["images_flagged"] == 2
+
+    saved_session = data_access.save_audit_session.call_args[0][0]
+    assert saved_session is fresh_session  # mutated the FRESH object, not the stale one
+
+    # The AI reviewer's pre-existing write for visit 999 is untouched.
+    preserved = saved_session.data["visit_results"]["999"]["assessments"]["z"]
+    assert preserved["result"] == "fail"
+    assert preserved["ai_notes"] == "Hyperzoomed"
+
+    # The new duplicate flags landed alongside it, not instead of it.
+    assert saved_session.data["visit_results"]["111"]["assessments"]["a"]["result"] == "duplicate_fake"
+    assert saved_session.data["visit_results"]["112"]["assessments"]["b"]["result"] == "duplicate_fake"
