@@ -1623,6 +1623,27 @@ class AuditDataAccess(BaseDataAccess):
             raise ImageDownloadError(f"Failed to download image (HTTP {status})", status_code=status) from last_exc
         raise ImageDownloadError("Failed to download image due to a connection error") from last_exc
 
+    def get_attachment_signed_url(self, blob_id: str, opportunity_id: int) -> str | None:
+        """Resolve a world-readable, time-limited URL for blob_id via the
+        /export/opportunity/<id>/attachment_signed_url/ endpoint (commcare-connect
+        PR #1415) -- used by Duplicate Detection to hand images directly to the
+        external gateway instead of round-tripping bytes through labs.
+
+        Returns None (caller skips this blob) on any failure -- this endpoint
+        isn't live on prod Connect until PR #1415's deploy, so errors are
+        expected and logged rather than raised.
+        """
+        try:
+            response = self.http_client.get(
+                f"{self.production_url}/export/opportunity/{opportunity_id}/attachment_signed_url/",
+                params={"blob_id": blob_id},
+            )
+            response.raise_for_status()
+            return response.json().get("attachment_signed_url")
+        except httpx.HTTPError as e:
+            logger.warning(f"[Audit] Failed to get signed URL for blob_id={blob_id} opp={opportunity_id}: {e}")
+            return None
+
     def get_flw_names(self, opportunity_id: int | None = None) -> dict[str, str]:
         """
         Get FLW display names for the opportunity.
