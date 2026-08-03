@@ -938,3 +938,89 @@ def test_definition_pins_duplicate_detection_default_off():
     from connect_labs.workflow.templates.weekly_dual_track_audit import DEFINITION
 
     assert DEFINITION["config"]["audit_batch"]["visit_clustering"]["enable_duplicate_detection"] is False
+
+
+def test_handler_applies_duplicate_detection_flag_from_job_payload():
+    from connect_labs.workflow.job_handlers import weekly_dual_track_audit as h
+
+    run = _fake_run({"window_start": "2026-06-22", "window_end": "2026-06-28"})
+    eager = mock.Mock()
+    eager.result = {"sessions": [1]}
+
+    with (
+        mock.patch.object(h, "WorkflowDataAccess") as WDA,
+        mock.patch.object(h, "run_audit_creation") as rac,
+    ):
+        wda = WDA.return_value
+        wda.get_run.return_value = run
+        wda.get_definition.return_value = _fake_definition()
+        rac.apply.return_value = eager
+
+        h.weekly_dual_track_audit_create(
+            {
+                "run_id": 555,
+                "opportunity_id": 101,
+                "window_start": "2026-06-22",
+                "window_end": "2026-06-28",
+                "enable_duplicate_detection": True,
+            },
+            access_token="tok",
+        )
+
+    for c in rac.apply.call_args_list:
+        assert c.kwargs["kwargs"]["criteria"]["enable_duplicate_detection"] is True
+
+
+def test_handler_falls_back_to_persisted_duplicate_detection_flag():
+    from connect_labs.workflow.job_handlers import weekly_dual_track_audit as h
+
+    run = _fake_run(
+        {"window_start": "2026-06-22", "window_end": "2026-06-28", "enable_duplicate_detection": True}
+    )
+    eager = mock.Mock()
+    eager.result = {"sessions": [1]}
+
+    with (
+        mock.patch.object(h, "WorkflowDataAccess") as WDA,
+        mock.patch.object(h, "run_audit_creation") as rac,
+    ):
+        wda = WDA.return_value
+        wda.get_run.return_value = run
+        wda.get_definition.return_value = _fake_definition()
+        rac.apply.return_value = eager
+
+        h.weekly_dual_track_audit_create({"run_id": 555, "opportunity_id": 101}, access_token="tok")
+
+    for c in rac.apply.call_args_list:
+        assert c.kwargs["kwargs"]["criteria"]["enable_duplicate_detection"] is True
+
+
+def test_handler_persists_duplicate_detection_flag_onto_run_state():
+    from connect_labs.workflow.job_handlers import weekly_dual_track_audit as h
+
+    run = _fake_run({"window_start": "2026-06-22", "window_end": "2026-06-28"})
+    eager = mock.Mock()
+    eager.result = {"sessions": [1]}
+
+    with (
+        mock.patch.object(h, "WorkflowDataAccess") as WDA,
+        mock.patch.object(h, "run_audit_creation") as rac,
+    ):
+        wda = WDA.return_value
+        wda.get_run.return_value = run
+        wda.get_definition.return_value = _fake_definition()
+        rac.apply.return_value = eager
+
+        h.weekly_dual_track_audit_create(
+            {
+                "run_id": 555,
+                "opportunity_id": 101,
+                "window_start": "2026-06-22",
+                "window_end": "2026-06-28",
+                "enable_duplicate_detection": True,
+            },
+            access_token="tok",
+        )
+
+    written = wda.update_run_state.call_args[0][1]
+    assert written["enable_duplicate_detection"] is True
