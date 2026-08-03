@@ -106,3 +106,47 @@ describe('windows.js module load', () => {
     expect(SRC).toMatch(/PulseCards\.helpers/);
   });
 });
+
+describe('windows.js shareable state', () => {
+  it('exposes what is open, so the address bar can describe it', () => {
+    expect(SRC).toMatch(/state:\s*\(\)\s*=>/);
+    expect(SRC).toMatch(/onChange\(fn\)/);
+  });
+
+  it('reports nothing open before anything is opened', () => {
+    const cards = fs.readFileSync(path.join(here, 'cards.js'), 'utf8');
+    const doc = {
+      addEventListener() {},
+      createElement: () => ({
+        style: {},
+        dataset: {},
+        classList: { add() {} },
+      }),
+      querySelector: () => null,
+      querySelectorAll: () => [],
+    };
+    const win = { document: doc };
+    new Function('window', 'document', cards)(win, doc);
+    new Function('window', 'document', SRC)(win, doc);
+    // Null rather than an empty object: the URL writer omits absent fields, and
+    // an object of nulls would still read as "something is open".
+    expect(win.PulseWindows.state()).toBeNull();
+  });
+
+  it('accepts a preselected opportunity, so a link can land on one engagement', () => {
+    const flat = SRC.replace(/\s+/g, '');
+    expect(flat).toContain('functionopenPartner(store,slug,preselectOpp)');
+    expect(flat).toContain('selectedOpp=preselectOpp||null');
+  });
+
+  it('clears the whole open-state when the base window closes', () => {
+    // Closing the partner must not leave a worker or opportunity in the URL.
+    // Whitespace-normalised: these assert intent, and a reformat is not a
+    // regression — an earlier version of this test failed only because
+    // prettier moved the assignment onto its own line.
+    const flat = SRC.replace(/\s+/g, ' ');
+    expect(flat).toMatch(
+      /if \(depth === 0\) openState = \{ partner: null, opportunity: null, worker: null \};/,
+    );
+  });
+});
