@@ -69,6 +69,26 @@ Once saved, the workflow card shows a badge such as **⏱ Weekly** so you can se
 
 Scheduled runs use the same default run the workflow already supports, so nothing new needs to be configured on the workflow itself.
 
+### How the data window is chosen for each cadence
+
+For **Weekly Dual-Track Audits**, the cadence you choose affects which visits the scheduled run covers:
+
+| Cadence | Data window used |
+|---|---|
+| **Daily** | Yesterday only — each run audits the previous day's visits, so no day is audited twice |
+| **Weekdays (Mon–Fri)** | Yesterday only — same rolling-window behaviour as Daily |
+| **Weekly** | The standard week window the workflow is configured for — unchanged |
+| **Monthly** | The standard month window the workflow is configured for — unchanged |
+
+!!! note "Why Daily and Weekdays use a rolling yesterday window"
+    Before this change, scheduling a Weekly Dual-Track Audit to run daily caused the same fixed week to be re-audited on every fire, creating duplicate work. Daily and Weekdays cadences now automatically shift the window forward each day so each scheduled run covers only new visits.
+
+### Visit-clustering settings are honoured by scheduled runs
+
+If your Weekly Dual-Track Audit workflow has pinned visit-clustering settings — time-gap window, GPS distance threshold, or duplicate detection — those settings are now applied automatically whenever a scheduled run fires. Previously, scheduled runs ignored these settings entirely and only picked up whatever state was left over from the last manual run.
+
+No action is needed to enable this: if the settings are pinned on the workflow, they will be used. If you have not pinned any clustering settings, the workflow's defaults continue to apply as before.
+
 ### Managing all schedules (Connect Labs Admin)
 
 A dedicated **Scheduled Workflows** page in **Connect Labs Admin** lists every schedule across all users. For each entry you can see:
@@ -235,21 +255,4 @@ The **Opportunities & image types** tile lets you choose, for each image path, w
 |---|---|
 | **Hyperzoom** | Whether the photo appears to have been taken with abnormal digital zoom, which can indicate a photo was not taken in the field |
 | **MUAC Mismatch** | Whether the MUAC tape reading visible in the image is inconsistent with the value recorded in the form |
-| **KMC Scale Comparison** | Whether the scale used in a KMC (Kangaroo Mother Care) weight check matches expected equipment |
-
-Each image path shows a row of checkboxes — one per classifier. Tick the classifiers you want applied to that path. Checkboxes that do not apply to a given image type are greyed out and cannot be selected, so you will only ever see relevant options for each path.
-
-!!! note "Existing configurations are unaffected"
-    Any image path you have not explicitly changed keeps behaving exactly as it did before this option was introduced. You do not need to review or re-save existing setups unless you want to change which classifiers run.
-
-### Bulk Image Audit — AI Review Agent
-
-The **AI Review Agent** section of the Bulk Image Audit lets you choose which AI classifiers run on the images in a review. Classifiers are now selected using **checkboxes**, so you can run any combination of applicable classifiers in a single review rather than picking just one.
-
-The three available classifiers are:
-
-| Classifier | What it checks |
-|---|---|
-| **Hyperzoom** | Whether the photo appears to have been taken with abnormal digital zoom, which can indicate a photo was not taken in the field |
-| **MUAC Mismatch** | Whether the MUAC tape reading visible in the image is inconsistent with the value recorded in the form |
-| **KMC Scale Comparison** | Whether the scale used in a KMC weight check matches expected equipment |
+| **KM
