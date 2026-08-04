@@ -711,6 +711,27 @@
       <div id="kpi-strip" class="gap-2" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr))"></div>
     </section>
 
+    <!-- Per-worker / per-group breakdown (the detailed metrics table) — sits right
+         under Plan metrics, above both the Workers/Groups filter list and the
+         work-area table's own group rows, so the headline numbers are immediately
+         followed by the full group-by-group detail before any filtering/drill-down UI. -->
+    <section class="border-t border-gray-200 bg-white px-3 py-2 text-sm">
+      <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1" id="flw-section-title">Per-group breakdown</h2>
+      <div class="max-h-40 overflow-auto border border-gray-100 rounded">
+        <table class="min-w-full text-xs">
+          <thead class="bg-gray-50 sticky top-0"><tr class="text-left text-gray-500">
+            <th class="p-1.5 flw-th" data-flw-sort="name" id="flw-dim">Group <span class="sort-ind"></span></th>
+            <th class="p-1.5 flw-th" data-flw-sort="work_areas">Work areas <span class="sort-ind"></span></th>
+            <th class="p-1.5 flw-th" data-flw-sort="buildings">Buildings <span class="sort-ind"></span></th>
+            <th class="p-1.5 flw-th" data-flw-sort="population" id="flw-pop-col">Population <span class="sort-ind"></span></th>
+            <th class="p-1.5 flw-th" data-flw-sort="expected_visits">Expected visits <span class="sort-ind"></span></th>
+            <th class="p-1.5 flw-th" data-flw-sort="spread_km">Spread (km) <span class="sort-ind"></span></th>
+          </tr></thead>
+          <tbody id="flw-body"></tbody>
+        </table>
+      </div>
+    </section>
+
     {% comment %}
       The per-ward "Summary" panel was removed — its headline numbers live in Plan
       metrics above, and its by-ward breakdown is the planning table (below the map).
@@ -752,27 +773,6 @@
         <tbody id="wa-body"></tbody>
       </table>
     </div>
-
-    <!-- Per-worker / per-group breakdown (the detailed metrics table) — sits below
-         the work-area table/groups list above, so selecting a group there and
-         reading its detailed row here reads top-to-bottom as "pick a group, then
-         see its numbers." -->
-    <section class="border-t border-gray-200 bg-white px-3 py-2 text-sm">
-      <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1" id="flw-section-title">Per-group breakdown</h2>
-      <div class="max-h-40 overflow-auto border border-gray-100 rounded">
-        <table class="min-w-full text-xs">
-          <thead class="bg-gray-50 sticky top-0"><tr class="text-left text-gray-500">
-            <th class="p-1.5 flw-th" data-flw-sort="name" id="flw-dim">Group <span class="sort-ind"></span></th>
-            <th class="p-1.5 flw-th" data-flw-sort="work_areas">Work areas <span class="sort-ind"></span></th>
-            <th class="p-1.5 flw-th" data-flw-sort="buildings">Buildings <span class="sort-ind"></span></th>
-            <th class="p-1.5 flw-th" data-flw-sort="population" id="flw-pop-col">Population <span class="sort-ind"></span></th>
-            <th class="p-1.5 flw-th" data-flw-sort="expected_visits">Expected visits <span class="sort-ind"></span></th>
-            <th class="p-1.5 flw-th" data-flw-sort="spread_km">Spread (km) <span class="sort-ind"></span></th>
-          </tr></thead>
-          <tbody id="flw-body"></tbody>
-        </table>
-      </div>
-    </section>
   </div>
 </div>
 {% endblock %}
