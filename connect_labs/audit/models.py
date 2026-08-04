@@ -576,19 +576,31 @@ class AuditSessionRecord(LocalLabsRecord):
         duplicate-detection API actually confirmed a duplicate within it.
 
         A grouping being present at all only means the time/distance
-        parameters put its images in the same candidate set -- it is NOT
-        itself a duplicate verdict (see visit_cluster_duplicate_detection.py).
+        parameters (see connect_labs.audit.visit_clustering) put its images
+        in the same candidate set -- it is NOT itself a duplicate verdict.
         The real verdict is the raw API response persisted per-grouping in
-        ``visit_cluster_duplicate_detection_raw`` (keyed by group_id): a
-        non-empty list of groups means at least one image in this grouping
-        was confirmed a duplicate. Absent/empty means either "checked, found
-        nothing" or "never checked" -- both read as not-flagged here, since
-        the review UI only needs to distinguish "flagged" from "not flagged",
-        not those two from each other.
+        ``visit_cluster_duplicate_detection_raw`` (keyed by group_id, written
+        by connect_labs.audit.visit_cluster_duplicate_detection).
+
+        ``flagged`` is derived via the SAME collapse (``assign_group_ids``)
+        that decides which images actually get flagged -- not just "is the
+        raw list non-empty". The raw API response can name a lone id (a
+        size-1 "group") or a blob this session doesn't own; assign_group_ids
+        drops singletons and the per-image flagging step (_mark_duplicate)
+        silently skips unknown blobs, so a naive non-empty check could mark a
+        cluster "flagged" while zero of its images actually are. Absent/empty
+        means either "checked, found nothing" or "never checked" -- both read
+        as not-flagged here, since the review UI only needs to distinguish
+        "flagged" from "not flagged", not those two from each other.
         """
+        from connect_labs.audit.duplicate_detection import assign_group_ids
+
         raw_by_group = self.data.get("visit_cluster_duplicate_detection_raw", {})
         return [
-            {**cluster, "flagged": bool(raw_by_group.get(str(cluster.get("group_id"))))}
+            {
+                **cluster,
+                "flagged": bool(assign_group_ids(raw_by_group.get(str(cluster.get("group_id"))) or [])),
+            }
             for cluster in self.data.get("visit_clusters", [])
         ]
 
@@ -618,10 +630,13 @@ class AuditSessionRecord(LocalLabsRecord):
             "visit_clusters": self.get_visit_clusters_with_flag_status(),
             "has_ai_reviewer": self.data.get("has_ai_reviewer", False),
             # The clustering filter actually used to create THIS session (its
-            # own stored criteria), not the template's current/pinned default
-            # -- lets the duplicate-grouping UI tell a reviewer what params to
-            # expect without them having to go re-check the run's config.
-            # Named "_used" (not "visit_clustering", which the workflow
+            # own stored criteria), not the template's current/pinned default.
+            # NOTE: the FLW breakdown row stopped rendering this directly as of
+            # the duplicate-cluster review UI change (labs_audit_breakdown.js's
+            # visitClusteringSummary lost its only call site then) -- kept here
+            # as retained API surface for any future debug/detail view, not
+            # dead weight; visitClusteringSummary itself stays for the same
+            # reason. Named "_used" (not "visit_clustering", which the workflow
             # template's DEFINITION.config.audit_batch already uses for its
             # pinned, not-yet-run default) to avoid two same-named, different-
             # meaning structures in this codebase's audit-clustering feature.

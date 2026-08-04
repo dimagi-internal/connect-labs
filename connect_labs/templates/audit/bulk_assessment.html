@@ -348,50 +348,68 @@
                get isDuplicate() { return assessment.duplicate_group !== null && assessment.duplicate_group !== undefined; },
                // 'Duplicate w/ #<visit id>' -- the specific other image(s) this one
                // duplicates, resolved server-side (see
-               // visit_cluster_duplicate_detection.py's blobs_by_component). Empty
-               // string (not shown) for duplicates flagged before this field existed,
-               // or by PR #1070's day/FLW/type-bucketed detector, which doesn't
-               // compute counterparts.
+               // visit_cluster_duplicate_detection.py's _counterpart_visit_ids). Empty
+               // for duplicates flagged before this field existed, or by PR #1070's
+               // day/FLW/type-bucketed detector, which doesn't compute counterparts --
+               // isDuplicate falls back to the plain 'Potential Duplicate' label in
+               // that case (see aiResultSectionText / aiNotesShort below).
                get duplicateOfText() {
                  var ids = assessment.duplicate_of_visit_ids;
                  if (!ids || !ids.length) return '';
                  return 'Duplicate w/ ' + ids.map(function (v) { return '#' + v; }).join(', ');
                },
-               // ai_notes minus the 'Potential Duplicate' token (mirrors
-               // AI_NOTES_JOIN_SEP = '; ' client-side) -- shown alongside
-               // duplicateOfText so a real classifier fail (e.g. 'MUAC Mismatch')
-               // stays visible even when the same image is ALSO a confirmed
-               // duplicate, instead of duplicateOfText silently replacing it.
-               get nonDuplicateAiLabel() {
-                 return (this.aiNotes || '')
-                   .split('; ')
-                   .filter(function (label) { return label && label !== 'Potential Duplicate'; })
-                   .join('; ');
-               },
+               // ai_notes with the duplicate-detector's own label already removed --
+               // computed server-side (views.py's _non_duplicate_ai_label) so this
+               // template never needs its own copy of AI_NOTES_JOIN_SEP or
+               // DUPLICATE_FLAG_LABEL to re-derive it (a prior version split ai_notes
+               // client-side against hardcoded copies of both -- a silent-drift risk
+               // if either ever changed server-side with nothing to catch it).
+               get nonDuplicateAiLabel() { return assessment.non_duplicate_ai_label || ''; },
                // The AI Result Section's full text (below the image). Kept as one
                // getter rather than an inline ternary chain now that duplicate
                // cross-referencing adds another branch.
                get aiResultSectionText() {
-                 if (this.aiResult === 'match') return 'Match';
                  if (this.aiResult === 'error') return this.aiNotes || 'Error';
                  if (this.aiResult !== 'no_match') return '';
                  var parts = [];
                  if (this.nonDuplicateAiLabel) parts.push(this.nonDuplicateAiLabel);
-                 if (this.duplicateOfText) parts.push(this.duplicateOfText);
+                 if (this.duplicateOfText) {
+                   parts.push(this.duplicateOfText);
+                 } else if (this.isDuplicate) {
+                   // Flagged as a duplicate but no counterpart resolved (PR #1070's
+                   // detector, or a duplicate flagged before duplicate_of_visit_ids
+                   // existed) -- fall back to the plain label instead of silently
+                   // vanishing (this used to render 'No Match' here while the badge
+                   // above still said 'Potential Duplicate': the same tile
+                   // contradicting itself).
+                   parts.push('Potential Duplicate');
+                 }
                  if (!parts.length) parts.push('No Match');
                  var text = parts.join(' · ');
-                 // Confidence belongs to a real classifier verdict -- the duplicate
-                 // detector reports none (see flag_potential_duplicate discarding
-                 // stale confidence for the same reason), so only append it when
-                 // this image wasn't ALSO flagged as a duplicate.
-                 if (this.aiConfidence !== null && !this.duplicateOfText) {
+                 // Confidence belongs to a real classifier verdict, not the duplicate
+                 // flag (which reports none -- see flag_potential_duplicate discarding
+                 // stale confidence for the same reason). Keyed on nonDuplicateAiLabel
+                 // (is there a real verdict at all), not on isDuplicate/duplicateOfText,
+                 // so a combined 'MUAC Mismatch + duplicate' image still shows the
+                 // MUAC classifier's own preserved confidence.
+                 if (this.aiConfidence !== null && this.nonDuplicateAiLabel) {
                    text += ': confidence ' + this.aiConfidence.toFixed(3);
                  }
                  return text;
                },
                // Short form for the compact top badge -- strips a trailing '(...)' detail so the
-               // fuller AI Result section below is the only place that shows it.
-               get aiNotesShort() { return (this.aiNotes || '').replace(/\s*\([^)]*\)\s*$/, ''); },
+               // fuller AI Result section below is the only place that shows it. Operates on
+               // nonDuplicateAiLabel (the classifier-only portion), not the combined aiNotes --
+               // the trailing-paren regex only matches at the END of the string, so applying it
+               // to e.g. 'MUAC Mismatch (strict tolerance); Potential Duplicate' wouldn't strip
+               // anything (the parens are no longer trailing) and would leak the appended
+               // duplicate label's raw '; ' separator into the badge too.
+               get aiNotesShort() {
+                 if (this.nonDuplicateAiLabel) {
+                   return this.nonDuplicateAiLabel.replace(/\s*\([^)]*\)\s*$/, '');
+                 }
+                 return this.isDuplicate ? 'Potential Duplicate' : '';
+               },
                get aiClassLabel() {
                  if (!this.aiResult) return '';
                  // Show the actual error (rate-limited, connection error, etc.) so an
@@ -989,10 +1007,14 @@
             <span x-show="lightboxAssessment.child_name" class="text-[0.625rem]"><i class="fa-solid fa-child mr-1 text-gray-400"></i><span x-text="lightboxAssessment.child_name"></span></span>
             <span x-show="lightboxAssessment.childs_dob" class="text-[0.625rem]"><i class="fa-solid fa-cake-candles mr-1 text-gray-400"></i><span x-text="lightboxAssessment.childs_dob"></span></span>
             <span x-show="lightboxAssessment.household_name" class="text-[0.625rem]"><i class="fa-solid fa-house mr-1 text-gray-400"></i><span x-text="lightboxAssessment.household_name"></span></span>
-            <template x-if="lightboxAssessment.result">
+            <!-- Pass/Fail only -- matches the grid tile's Human Result Badge: a
+                 duplicate_fake/duplicate/fake result is not shown here either,
+                 for the same declutter reason (the Duplicate/Fake button itself
+                 still works from the grid tile behind this lightbox). -->
+            <template x-if="lightboxAssessment.result === 'pass' || lightboxAssessment.result === 'fail'">
               <span class="px-2 py-0.5 rounded text-xs font-bold"
-                    :class="{ 'bg-green-600 text-white': lightboxAssessment.result === 'pass', 'bg-red-600 text-white': lightboxAssessment.result === 'fail', 'bg-orange-500 text-white': ['duplicate_fake', 'duplicate', 'fake'].includes(lightboxAssessment.result) }"
-                    x-text="lightboxAssessment.result === 'duplicate_fake' ? 'DUPLICATE/FAKE' : lightboxAssessment.result.toUpperCase()"></span>
+                    :class="{ 'bg-green-600 text-white': lightboxAssessment.result === 'pass', 'bg-red-600 text-white': lightboxAssessment.result === 'fail' }"
+                    x-text="lightboxAssessment.result.toUpperCase()"></span>
             </template>
             <span x-show="lightboxAssessment.prior_audited"
                   class="px-2 py-0.5 rounded text-xs font-semibold text-white bg-slate-600"

@@ -29,7 +29,9 @@ def test_to_summary_dict_includes_visit_clusters():
     summary = record.to_summary_dict()
     # No visit_cluster_duplicate_detection_raw entry for g1 -- never checked,
     # so flagged defaults to False (same as "checked, found nothing").
-    assert summary["visit_clusters"] == [{"group_id": "g1", "visit_ids": [111, 112], "image_count": 4, "flagged": False}]
+    assert summary["visit_clusters"] == [
+        {"group_id": "g1", "visit_ids": [111, 112], "image_count": 4, "flagged": False}
+    ]
 
 
 def test_to_summary_dict_flags_a_cluster_the_api_confirmed_as_duplicate():
@@ -64,6 +66,38 @@ def test_to_summary_dict_flags_a_cluster_the_api_confirmed_as_duplicate():
     )
     clusters = {c["group_id"]: c["flagged"] for c in record.to_summary_dict()["visit_clusters"]}
     assert clusters == {"g1": True, "g2": False}
+
+
+def test_to_summary_dict_does_not_flag_a_cluster_whose_raw_response_is_only_singletons():
+    """A raw API response naming a lone id (e.g. [["a"]]) is a size-1 "group" --
+    assign_group_ids drops singletons (never a real duplicate pair), and the
+    per-image flagging step never flags anything from it either. flagged must
+    agree with that, not just check "is the raw list non-empty"."""
+    record = AuditSessionRecord(
+        {
+            "id": 5456,
+            "experiment": "audit",
+            "type": "AuditSession",
+            "opportunity_id": 1973,
+            "data": {
+                "title": "Aisha Ismail",
+                "tag": "muac",
+                "status": "in_progress",
+                "overall_result": None,
+                "opportunity_id": 1973,
+                "opportunity_name": "ISODAF",
+                "description": "",
+                "visit_ids": [111],
+                "visit_results": {},
+                "image_count": 1,
+                "flw_username": "flw1",
+                "visit_clusters": [{"group_id": "g1", "visit_ids": [111], "image_count": 1}],
+                "visit_cluster_duplicate_detection_raw": {"g1": [["a"]]},
+            },
+        }
+    )
+    clusters = {c["group_id"]: c["flagged"] for c in record.to_summary_dict()["visit_clusters"]}
+    assert clusters == {"g1": False}
 
 
 def test_to_summary_dict_defaults_visit_clusters_to_empty_list_when_absent():

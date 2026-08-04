@@ -49,9 +49,10 @@
     return (s && s.visit_clusters && s.visit_clusters.length) || 0;
   }
   // Short "(within 10 min, 10m)"-style description of the visit-clustering
-  // filter actually used for this session -- shown next to the "N Visit
-  // Cluster(s)" badge so a reviewer knows what time/distance thresholds
-  // produced the clusters, without going to look up the run's config.
+  // filter actually used for this session. NOT currently called from this
+  // file's own render (the FLW breakdown row dropped it as UI clutter --
+  // see AuditLine below) -- kept as a tested, exported pure helper (retained
+  // API surface, e.g. for a future debug/detail view), not dead weight.
   // Empty string when neither criterion was enabled for this session.
   function visitClusteringSummary(s) {
     var vc = (s && s.visit_clustering_used) || {};

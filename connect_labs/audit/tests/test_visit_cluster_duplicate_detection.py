@@ -259,6 +259,35 @@ def test_flagged_images_record_which_other_visit_they_duplicate():
     assert assessments_by_visit[113]["duplicate_of_visit_ids"] == [111, 112]
 
 
+def test_duplicate_of_visit_ids_never_names_its_own_visit():
+    """A visit-clustering grouping sends every image regardless of path, so
+    two images from the SAME visit routinely land in one API payload and can
+    be confirmed duplicates of each other. Excluding only the blob itself
+    (not the visit) would report a blob as duplicating its own visit."""
+    session = _session()
+    # Two blobs from visit 111 (e.g. two MUAC photos on the same visit), one
+    # blob from visit 112 -- all three confirmed as one duplicate component.
+    clusters = [{"group_id": "g1", "visit_ids": [111, 112], "image_count": 3, "image_ids": ["a", "a2", "b"]}]
+    blob_meta = {
+        "a": {"visit_id": 111, "question_id": "form/muac"},
+        "a2": {"visit_id": 111, "question_id": "form/muac"},
+        "b": {"visit_id": 112, "question_id": "form/muac"},
+    }
+    client = Mock()
+    client.detect.return_value = [["a", "a2", "b"]]
+
+    run_grouping_duplicate_detection(
+        [_target(session, clusters, blob_meta)],
+        get_signed_url=lambda bid, oid: f"https://x/{bid}",
+        client=client,
+    )
+
+    assessments = session.data["visit_results"]["111"]["assessments"]
+    assert assessments["a"]["duplicate_of_visit_ids"] == [112]
+    assert assessments["a2"]["duplicate_of_visit_ids"] == [112]
+    assert session.data["visit_results"]["112"]["assessments"]["b"]["duplicate_of_visit_ids"] == [111]
+
+
 def test_persists_the_raw_api_response_per_grouping_even_when_empty():
     """The raw /detect_duplicates response must survive past this call --
     previously it was discarded the instant assign_group_ids collapsed it into

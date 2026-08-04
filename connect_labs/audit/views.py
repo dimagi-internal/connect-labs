@@ -30,7 +30,7 @@ from django_tables2 import SingleTableView
 
 from connect_labs.audit.analysis_config import extract_additional_case_info, extract_images_with_question_ids
 from connect_labs.audit.data_access import AuditDataAccess, ImageDownloadError
-from connect_labs.audit.models import AuditSessionRecord
+from connect_labs.audit.models import AI_NOTES_JOIN_SEP, AuditSessionRecord
 from connect_labs.audit.tables import AuditTable
 from connect_labs.labs import s3_export
 from connect_labs.labs.analysis.data_access import fetch_opportunity_metadata, get_flw_names_for_opportunity
@@ -74,6 +74,21 @@ def _is_muac_picture_audit_session(session, request) -> bool:
     finally:
         wda.close()
     return bool(run and run.definition_id == MUAC_PICTURE_AUDIT_WORKFLOW_DEFINITION_ID)
+
+
+def _non_duplicate_ai_label(ai_notes: str) -> str:
+    """ai_notes with the duplicate-detector's own label removed, so the
+    review UI can show a real classifier verdict (e.g. "MUAC Mismatch") even
+    on an image that's ALSO a confirmed duplicate, without the client
+    re-implementing this split against hardcoded copies of AI_NOTES_JOIN_SEP
+    and DUPLICATE_FLAG_LABEL (a real drift risk: renaming either string
+    server-side would silently break a client-side re-parse with no test to
+    catch it).
+    """
+    from connect_labs.audit.duplicate_detection import DUPLICATE_FLAG_LABEL
+
+    labels = [label.strip() for label in (ai_notes or "").split(AI_NOTES_JOIN_SEP) if label.strip()]
+    return AI_NOTES_JOIN_SEP.join(label for label in labels if label != DUPLICATE_FLAG_LABEL)
 
 
 class ExperimentAuditCreateView(LoginRequiredMixin, TemplateView):
@@ -766,6 +781,7 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
                             "related_fields": metadata.get("related_fields", []),
                             "ai_result": assessment_data.get("ai_result", ""),
                             "ai_notes": assessment_data.get("ai_notes", ""),
+                            "non_duplicate_ai_label": _non_duplicate_ai_label(assessment_data.get("ai_notes", "")),
                             "ai_confidence": assessment_data.get("ai_confidence"),
                             "duplicate_group": assessment_data.get("duplicate_group"),
                             "duplicate_of_visit_ids": assessment_data.get("duplicate_of_visit_ids"),
@@ -811,6 +827,7 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
                             "opportunity_id": opportunity_id,
                             "ai_result": assessment_data.get("ai_result", ""),
                             "ai_notes": assessment_data.get("ai_notes", ""),
+                            "non_duplicate_ai_label": _non_duplicate_ai_label(assessment_data.get("ai_notes", "")),
                             "ai_confidence": assessment_data.get("ai_confidence"),
                             "duplicate_group": assessment_data.get("duplicate_group"),
                             "duplicate_of_visit_ids": assessment_data.get("duplicate_of_visit_ids"),
