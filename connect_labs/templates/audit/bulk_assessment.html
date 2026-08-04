@@ -367,6 +367,15 @@
                // client-side against hardcoded copies of both -- a silent-drift risk
                // if either ever changed server-side with nothing to catch it).
                get nonDuplicateAiLabel() { return assessment.non_duplicate_ai_label || ''; },
+               // True only for the COMBINED case -- a confirmed duplicate that's ALSO a
+               // real classifier fail (e.g. MUAC Mismatch). Gates the full-width
+               // 'Potential Duplicate' banner and the AI/Human badges' top-7 offset below
+               // -- single source of truth so the three can't drift out of sync the way a
+               // hand-duplicated condition could. A duplicate-ONLY image (isDuplicate true,
+               // nonDuplicateAiLabel empty) does NOT get the banner: its AI badge already
+               // reads 'Potential Duplicate' via aiNotesShort's own fallback, so showing
+               // the banner too would repeat the same label twice on one tile.
+               get showDuplicateBanner() { return this.isDuplicate && !!this.nonDuplicateAiLabel; },
                // The AI Result Section's full text (below the image). Kept as one
                // getter rather than an inline ternary chain now that duplicate
                // cross-referencing adds another branch.
@@ -485,14 +494,12 @@
                 <i class="fa-solid fa-rotate-right mr-1"></i>Retry
               </button>
             </div>
-            <!-- Potential Duplicate Banner - full-width, top of tile. Always shown
-                 alongside a classifier fail (never recolors it) -- product feedback from
-                 live testing: a MUAC Mismatch must stay red even when the same image is
-                 also a confirmed duplicate, so the duplicate signal gets its own
-                 always-additional banner instead of stealing the AI badge's color.
-                 Rendered before the AI/Human badges so it sits behind them in paint
-                 order and they can shift down (top-7) to avoid overlapping it. -->
-            <div x-show="isDuplicate"
+            <!-- Potential Duplicate Banner - full-width, top of tile. See
+                 showDuplicateBanner's own comment above for why this only applies to the
+                 combined case (duplicate + real classifier fail), not a duplicate-only
+                 image. Rendered before the AI/Human badges so it sits behind them in
+                 paint order and they can shift down (top-7) to avoid overlapping it. -->
+            <div x-show="showDuplicateBanner"
                  class="absolute top-0 inset-x-0 z-10 bg-orange-600/90 text-white text-[10px] font-semibold text-center py-0.5"
                  x-transition>
               <i class="fa-solid fa-clone mr-1"></i>Potential Duplicate
@@ -501,11 +508,13 @@
                  max-w + the span's own whitespace-normal/break-words keeps a long label (a
                  rate-limit message, a verbose classifier note) wrapping onto multiple lines
                  inside the tile instead of overrunning its right edge. Always red for
-                 no_match, even when this image is ALSO a confirmed duplicate -- the
-                 duplicate signal is carried by the banner above instead, so a classifier
-                 fail like MUAC Mismatch never gets recolored away from red. -->
+                 no_match, even in the combined case -- the duplicate signal is carried by
+                 the banner above then, so a classifier fail like MUAC Mismatch never gets
+                 recolored away from red. For a duplicate-ONLY image this badge IS the
+                 duplicate signal (aiNotesShort falls back to "Potential Duplicate"), so its
+                 top offset only shifts down when the banner above is also showing. -->
             <div class="absolute left-2 max-w-[85%]"
-                 :class="isDuplicate ? 'top-7' : 'top-2'"
+                 :class="showDuplicateBanner ? 'top-7' : 'top-2'"
                  x-show="aiResult && aiResult !== 'match'"
                  x-transition>
               <span class="inline-block px-2 py-1 rounded text-xs font-bold text-white whitespace-normal break-words"
@@ -523,9 +532,10 @@
             <!-- Human Result Badge - Top Right. Pass/Fail only -- a duplicate_fake/
                  duplicate/fake result is NOT shown here (the button below still shows
                  and still works); duplicate status is communicated by the banner above
-                 and the AI Result Section's "Duplicate w/ #..." text instead. -->
+                 (when also a real classifier fail), the AI badge (when duplicate-only),
+                 and the AI Result Section's "Duplicate w/ #..." text. -->
             <div class="absolute right-2"
-                 :class="isDuplicate ? 'top-7' : 'top-2'"
+                 :class="showDuplicateBanner ? 'top-7' : 'top-2'"
                  x-show="result === 'pass' || result === 'fail'"
                  x-transition>
               <span class="px-2 py-1 rounded text-xs font-bold text-white"
