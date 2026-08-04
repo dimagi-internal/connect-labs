@@ -321,13 +321,6 @@
                 (clusters.length === 1 ? '' : 's'),
             )
           : null,
-        clusters.length > 0 && visitClusteringSummary(s)
-          ? h(
-              'span',
-              { className: 'text-gray-400 whitespace-nowrap' },
-              '(' + visitClusteringSummary(s) + ')',
-            )
-          : null,
         h(
           'a',
           {
@@ -353,6 +346,21 @@
                 // reviewer can actually cross-reference a grouping against
                 // the tiles they're looking at.
                 var visitIds = c.visit_ids || [];
+                // A cluster being listed at all only means its images were
+                // CANDIDATES sent to the duplicate-detection API (they shared
+                // a time/GPS window) -- c.flagged (see
+                // AuditSessionRecord.get_visit_clusters_with_flag_status) is
+                // the real verdict: whether the API actually confirmed a
+                // duplicate among them. Most clusters check out clean, so
+                // only a flagged one gets the red "AI duplicates flagged"
+                // callout -- an unflagged cluster keeps the plain label.
+                var label = c.flagged
+                  ? 'Cluster ' +
+                    (i + 1) +
+                    ' — ' +
+                    c.image_count +
+                    ' images — AI duplicates flagged'
+                  : 'Cluster ' + (i + 1) + ' — ' + c.image_count + ' images';
                 // Label + download link on their own row; visit ids as individual
                 // wrapping chips on the row below -- a long grouping (8+ images)
                 // used to render as one unbroken bracketed string that could run
@@ -366,10 +374,11 @@
                     h(
                       'span',
                       {
-                        className:
-                          'font-medium text-gray-600 whitespace-nowrap',
+                        className: c.flagged
+                          ? 'font-medium text-red-600 whitespace-nowrap'
+                          : 'font-medium text-gray-600 whitespace-nowrap',
                       },
-                      'Cluster ' + (i + 1) + ' — ' + c.image_count + ' images',
+                      label,
                     ),
                     h(
                       'a',

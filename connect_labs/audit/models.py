@@ -327,7 +327,9 @@ class AuditSessionRecord(LocalLabsRecord):
 
         visit_result["assessments"][blob_id] = assessment
 
-    def flag_potential_duplicate(self, visit_id: int, blob_id: str, question_id: str, group_id: int):
+    def flag_potential_duplicate(
+        self, visit_id: int, blob_id: str, question_id: str, group_id: int, duplicate_of_visit_ids=None
+    ):
         """Non-destructively flag an image as a potential duplicate subject.
 
         Composes with any per-image AI review already written for this blob
@@ -349,7 +351,12 @@ class AuditSessionRecord(LocalLabsRecord):
 
         The human `result` is left untouched (flag-only). ``group_id`` is a
         connected-component index so the review UI can sort duplicates
-        adjacently.
+        adjacently. ``duplicate_of_visit_ids``, when the caller has it (see
+        run_grouping_duplicate_detection), is the OTHER visit(s) in this
+        image's connected component -- lets the review UI show which specific
+        image(s) this one duplicates, not just that it's in some grouping.
+        None for callers that don't compute it (e.g. PR #1070's day/FLW/type-
+        bucketed detector today).
 
         Depends on AI review having already run and written its verdict before
         this is called (true today: Stage 4 always precedes the duplicate-
@@ -373,6 +380,8 @@ class AuditSessionRecord(LocalLabsRecord):
         assessment["question_id"] = question_id or assessment.get("question_id")
         assessment["ai_result"] = "no_match"
         assessment["duplicate_group"] = group_id
+        if duplicate_of_visit_ids is not None:
+            assessment["duplicate_of_visit_ids"] = list(duplicate_of_visit_ids)
 
         if prior_review_was_a_flag:
             existing_labels = [
@@ -385,7 +394,9 @@ class AuditSessionRecord(LocalLabsRecord):
             existing_labels.append(DUPLICATE_FLAG_LABEL)
         assessment["ai_notes"] = AI_NOTES_JOIN_SEP.join(existing_labels)
 
-    def flag_potential_duplicate_and_tag(self, visit_id: int, blob_id: str, question_id: str, group_id: int):
+    def flag_potential_duplicate_and_tag(
+        self, visit_id: int, blob_id: str, question_id: str, group_id: int, duplicate_of_visit_ids=None
+    ):
         """Like flag_potential_duplicate, but ALSO auto-tags the human `result`
         as "duplicate_fake" when the assessment is still untouched -- never
         overwriting an existing manual verdict.
@@ -399,7 +410,7 @@ class AuditSessionRecord(LocalLabsRecord):
         a per-run, user-configurable choice (flag-only vs. flag-and-tag) rather
         than a fixed per-caller behavior.
         """
-        self.flag_potential_duplicate(visit_id, blob_id, question_id, group_id)
+        self.flag_potential_duplicate(visit_id, blob_id, question_id, group_id, duplicate_of_visit_ids)
         visit_key = str(visit_id)
         assessment = self.data["visit_results"][visit_key]["assessments"][blob_id]
         if not assessment.get("result"):
@@ -560,6 +571,27 @@ class AuditSessionRecord(LocalLabsRecord):
                     usernames.add(username)
         return len(usernames)
 
+    def get_visit_clusters_with_flag_status(self) -> list[dict]:
+        """Each stored visit-clustering grouping, annotated with whether the
+        duplicate-detection API actually confirmed a duplicate within it.
+
+        A grouping being present at all only means the time/distance
+        parameters put its images in the same candidate set -- it is NOT
+        itself a duplicate verdict (see visit_cluster_duplicate_detection.py).
+        The real verdict is the raw API response persisted per-grouping in
+        ``visit_cluster_duplicate_detection_raw`` (keyed by group_id): a
+        non-empty list of groups means at least one image in this grouping
+        was confirmed a duplicate. Absent/empty means either "checked, found
+        nothing" or "never checked" -- both read as not-flagged here, since
+        the review UI only needs to distinguish "flagged" from "not flagged",
+        not those two from each other.
+        """
+        raw_by_group = self.data.get("visit_cluster_duplicate_detection_raw", {})
+        return [
+            {**cluster, "flagged": bool(raw_by_group.get(str(cluster.get("group_id"))))}
+            for cluster in self.data.get("visit_clusters", [])
+        ]
+
     def to_summary_dict(self) -> dict:
         """
         Convert session to a summary dict for API responses.
@@ -583,7 +615,7 @@ class AuditSessionRecord(LocalLabsRecord):
             "workflow_run_id": self.workflow_run_id,
             "flw_username": self.flw_username,
             "flw_count": self.get_flw_count(),
-            "visit_clusters": self.data.get("visit_clusters", []),
+            "visit_clusters": self.get_visit_clusters_with_flag_status(),
             "has_ai_reviewer": self.data.get("has_ai_reviewer", False),
             # The clustering filter actually used to create THIS session (its
             # own stored criteria), not the template's current/pinned default

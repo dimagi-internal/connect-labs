@@ -343,10 +343,52 @@
                get aiNotes() { return assessment.ai_notes || ''; },
                set aiNotes(v) { assessment.ai_notes = v; },
                get aiConfidence() { return typeof assessment.ai_confidence === 'number' ? assessment.ai_confidence : null; },
-               // Duplicate-grouping membership is independent of ai_result/result (see the
-               // Potential Duplicate banner below) -- group_id can legitimately be 0, so
-               // test for null/undefined, not falsy.
-               get hasDuplicateBanner() { return assessment.duplicate_group !== null && assessment.duplicate_group !== undefined; },
+               // Duplicate-grouping membership is independent of ai_result/result --
+               // group_id can legitimately be 0, so test for null/undefined, not falsy.
+               get isDuplicate() { return assessment.duplicate_group !== null && assessment.duplicate_group !== undefined; },
+               // 'Duplicate w/ #<visit id>' -- the specific other image(s) this one
+               // duplicates, resolved server-side (see
+               // visit_cluster_duplicate_detection.py's blobs_by_component). Empty
+               // string (not shown) for duplicates flagged before this field existed,
+               // or by PR #1070's day/FLW/type-bucketed detector, which doesn't
+               // compute counterparts.
+               get duplicateOfText() {
+                 var ids = assessment.duplicate_of_visit_ids;
+                 if (!ids || !ids.length) return '';
+                 return 'Duplicate w/ ' + ids.map(function (v) { return '#' + v; }).join(', ');
+               },
+               // ai_notes minus the 'Potential Duplicate' token (mirrors
+               // AI_NOTES_JOIN_SEP = '; ' client-side) -- shown alongside
+               // duplicateOfText so a real classifier fail (e.g. 'MUAC Mismatch')
+               // stays visible even when the same image is ALSO a confirmed
+               // duplicate, instead of duplicateOfText silently replacing it.
+               get nonDuplicateAiLabel() {
+                 return (this.aiNotes || '')
+                   .split('; ')
+                   .filter(function (label) { return label && label !== 'Potential Duplicate'; })
+                   .join('; ');
+               },
+               // The AI Result Section's full text (below the image). Kept as one
+               // getter rather than an inline ternary chain now that duplicate
+               // cross-referencing adds another branch.
+               get aiResultSectionText() {
+                 if (this.aiResult === 'match') return 'Match';
+                 if (this.aiResult === 'error') return this.aiNotes || 'Error';
+                 if (this.aiResult !== 'no_match') return '';
+                 var parts = [];
+                 if (this.nonDuplicateAiLabel) parts.push(this.nonDuplicateAiLabel);
+                 if (this.duplicateOfText) parts.push(this.duplicateOfText);
+                 if (!parts.length) parts.push('No Match');
+                 var text = parts.join(' · ');
+                 // Confidence belongs to a real classifier verdict -- the duplicate
+                 // detector reports none (see flag_potential_duplicate discarding
+                 // stale confidence for the same reason), so only append it when
+                 // this image wasn't ALSO flagged as a duplicate.
+                 if (this.aiConfidence !== null && !this.duplicateOfText) {
+                   text += ': confidence ' + this.aiConfidence.toFixed(3);
+                 }
+                 return text;
+               },
                // Short form for the compact top badge -- strips a trailing '(...)' detail so the
                // fuller AI Result section below is the only place that shows it.
                get aiNotesShort() { return (this.aiNotes || '').replace(/\s*\([^)]*\)\s*$/, ''); },
@@ -426,15 +468,17 @@
             <!-- AI Result Badge - Top Left (only for failures/errors; passes are shown in the tile footer).
                  max-w + the span's own whitespace-normal/break-words keeps a long label (a
                  rate-limit message, a verbose classifier note) wrapping onto multiple lines
-                 inside the tile instead of overrunning its right edge. -->
-            <div class="absolute left-2 max-w-[85%]"
-                 :class="hasDuplicateBanner ? 'top-7' : 'top-2'"
+                 inside the tile instead of overrunning its right edge. Red-orange (not plain
+                 red) when this image is ALSO a confirmed duplicate -- distinguishes a
+                 duplicate flag from an ordinary classifier fail at a glance. -->
+            <div class="absolute left-2 top-2 max-w-[85%]"
                  x-show="aiResult && aiResult !== 'match'"
                  x-transition>
               <span class="inline-block px-2 py-1 rounded text-xs font-bold text-white whitespace-normal break-words"
                     :class="{
                       'bg-blue-500': aiResult === 'match',
-                      'bg-red-500': aiResult === 'no_match',
+                      'bg-orange-600': aiResult === 'no_match' && isDuplicate,
+                      'bg-red-500': aiResult === 'no_match' && !isDuplicate,
                       'bg-gray-500': aiResult === 'error'
                     }">
                 <i class="fa-solid fa-robot mr-1"></i>
@@ -443,32 +487,17 @@
                 <span x-show="aiResult === 'error'" x-text="aiNotes || 'Error'"></span>
               </span>
             </div>
-            <!-- Potential Duplicate Banner - full width across the top, independent of
-                 result/ai_result: a duplicate grouping is orthogonal information (does
-                 this image share content with another?), not a pass/fail/duplicate_fake
-                 verdict, so it must stay visible even when the human result is "fail"
-                 from a real classifier flag rather than "duplicate_fake". -->
-            <div x-show="hasDuplicateBanner"
-                 class="absolute top-0 inset-x-0 z-10 bg-purple-600/90 text-white text-[10px] font-semibold text-center py-0.5"
-                 x-transition>
-              <i class="fa-solid fa-clone mr-1"></i>Potential Duplicate
-            </div>
-            <!-- Human Result Badge - Top Right -->
-            <div class="absolute right-2"
-                 :class="hasDuplicateBanner ? 'top-7' : 'top-2'"
-                 x-show="result"
+            <!-- Human Result Badge - Top Right. Pass/Fail only -- a duplicate_fake/
+                 duplicate/fake result is NOT shown here (the button below still shows
+                 and still works); duplicate status is communicated by the AI badge
+                 above and the AI Result Section's "Duplicate w/ #..." text instead. -->
+            <div class="absolute right-2 top-2"
+                 x-show="result === 'pass' || result === 'fail'"
                  x-transition>
               <span class="px-2 py-1 rounded text-xs font-bold text-white"
-                    :class="{
-                      'bg-green-600': result === 'pass',
-                      'bg-red-600': result === 'fail',
-                      'bg-orange-500': ['duplicate_fake', 'duplicate', 'fake'].includes(result)
-                    }">
+                    :class="{ 'bg-green-600': result === 'pass', 'bg-red-600': result === 'fail' }">
                 <span x-show="result === 'pass'"><i class="fa-solid fa-check mr-1"></i>PASS</span>
                 <span x-show="result === 'fail'"><i class="fa-solid fa-times mr-1"></i>FAIL</span>
-                <span x-show="result === 'duplicate_fake'"><i class="fa-solid fa-exclamation mr-1"></i>DUPLICATE/FAKE</span>
-                <span x-show="result === 'duplicate'"><i class="fa-solid fa-exclamation mr-1"></i>DUPLICATE</span>
-                <span x-show="result === 'fake'"><i class="fa-solid fa-exclamation mr-1"></i>FAKE</span>
               </span>
             </div>
             <!-- Previously-audited badge - Bottom Left (top corners are used by the AI/human result badges) -->
@@ -548,7 +577,7 @@
                           'text-orange-700': aiResult === 'no_match',
                           'text-gray-600': aiResult === 'error'
                         }"
-                        x-text="aiResult === 'match' ? 'Match' : (aiResult === 'no_match' ? ((aiNotes || 'No Match') + (aiConfidence !== null ? ': confidence ' + aiConfidence.toFixed(3) : '')) : (aiNotes || 'Error'))"></span>
+                        x-text="aiResultSectionText"></span>
                 </div>
               </div>
             </template>
@@ -1562,12 +1591,12 @@ function bulkAssessmentInterface() {
         const existing = this.visitResults[visitKey].assessments[blobId] || {};
         this.visitResults[visitKey].assessments[blobId] = {
           // Spread existing FIRST so fields this function doesn't know about
-          // (duplicate_group, ai_confidence) survive a save instead of being
-          // silently dropped -- this rebuild used to whitelist only the 5
-          // keys below, so the very first Pass/Fail click on a duplicate-
-          // flagged image erased its duplicate_group from what autoSave
-          // persists, and the "Potential Duplicate" banner (and the
-          // sort-adjacently behavior in views.py) would vanish on reload.
+          // (duplicate_group, duplicate_of_visit_ids, ai_confidence) survive a
+          // save instead of being silently dropped -- this rebuild used to
+          // whitelist only the 5 keys below, so the very first Pass/Fail
+          // click on a duplicate-flagged image erased its duplicate_group
+          // from what autoSave persists, and the duplicate indicators (and
+          // the sort-adjacently behavior in views.py) would vanish on reload.
           ...existing,
           question_id: questionId || existing.question_id || '',
           result: resultValue !== undefined ? resultValue : (existing.result || ''),

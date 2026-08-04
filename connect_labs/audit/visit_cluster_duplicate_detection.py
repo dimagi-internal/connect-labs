@@ -44,7 +44,7 @@ _MIN_IMAGES_TO_CHECK = 2
 # re-declaring it, so the two can't silently drift apart.
 
 
-def _mark_duplicate(session, blob_meta_by_id, blob_id, group_id) -> bool:
+def _mark_duplicate(session, blob_meta_by_id, blob_id, group_id, duplicate_of_visit_ids=None) -> bool:
     """Merge a confirmed-duplicate verdict into blob_id's assessment via
     AuditSessionRecord.flag_potential_duplicate_and_tag -- flags it (the same
     "Potential Duplicate" label PR #1070 uses, so both detection paths show up
@@ -52,6 +52,10 @@ def _mark_duplicate(session, blob_meta_by_id, blob_id, group_id) -> bool:
     "duplicate_fake" when the assessment is still untouched, never overwriting
     a manual verdict. Returns False (no-op) if blob_id isn't one of this
     session's known images.
+
+    ``duplicate_of_visit_ids`` (the OTHER visit(s) in this blob's connected
+    component, resolved by the caller) lets the review UI say which specific
+    image this one duplicates, not just that it's part of some grouping.
 
     Note: `group_id` shares a single `assessment["duplicate_group"]` field
     with PR #1070's day/FLW/type-bucketed detection, which uses its own,
@@ -68,6 +72,7 @@ def _mark_duplicate(session, blob_meta_by_id, blob_id, group_id) -> bool:
         blob_id=blob_id,
         question_id=meta.get("question_id", ""),
         group_id=group_id,
+        duplicate_of_visit_ids=duplicate_of_visit_ids,
     )
     return True
 
@@ -222,8 +227,22 @@ def run_grouping_duplicate_detection(
                     raw_groups_store[str(group_key)] = groups
                     session_updated = True
                 blob_to_group = assign_group_ids(groups)
+                # Reverse the blob->component mapping so each blob can look up
+                # its OTHER component members -- lets the review UI say "this
+                # duplicates #1669121" instead of just "this is a duplicate".
+                blobs_by_component = {}
+                for blob_id, gid in blob_to_group.items():
+                    blobs_by_component.setdefault(gid, []).append(blob_id)
                 for blob_id, group_id in blob_to_group.items():
-                    if _mark_duplicate(session, blob_meta_by_id, blob_id, group_id):
+                    other_blob_ids = [b for b in blobs_by_component[group_id] if b != blob_id]
+                    duplicate_of_visit_ids = sorted(
+                        {
+                            blob_meta_by_id[b]["visit_id"]
+                            for b in other_blob_ids
+                            if b in blob_meta_by_id and "visit_id" in blob_meta_by_id[b]
+                        }
+                    )
+                    if _mark_duplicate(session, blob_meta_by_id, blob_id, group_id, duplicate_of_visit_ids):
                         images_flagged += 1
                         session_updated = True
 

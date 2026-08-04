@@ -768,6 +768,7 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
                             "ai_notes": assessment_data.get("ai_notes", ""),
                             "ai_confidence": assessment_data.get("ai_confidence"),
                             "duplicate_group": assessment_data.get("duplicate_group"),
+                            "duplicate_of_visit_ids": assessment_data.get("duplicate_of_visit_ids"),
                         }
                     )
                     seen_blob_ids.add(blob_id)
@@ -812,6 +813,7 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
                             "ai_notes": assessment_data.get("ai_notes", ""),
                             "ai_confidence": assessment_data.get("ai_confidence"),
                             "duplicate_group": assessment_data.get("duplicate_group"),
+                            "duplicate_of_visit_ids": assessment_data.get("duplicate_of_visit_ids"),
                         }
                     )
 

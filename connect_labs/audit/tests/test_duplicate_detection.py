@@ -232,6 +232,22 @@ def test_flag_is_idempotent_on_label():
     assert session.get_assessments(10)["a"]["ai_notes"] == "Potential Duplicate"
 
 
+def test_flag_stores_duplicate_of_visit_ids_when_provided():
+    session = _session({})
+    session.flag_potential_duplicate(
+        visit_id=10, blob_id="a", question_id="q", group_id=1, duplicate_of_visit_ids=[11, 12]
+    )
+    assert session.get_assessments(10)["a"]["duplicate_of_visit_ids"] == [11, 12]
+
+
+def test_flag_omits_duplicate_of_visit_ids_when_not_provided():
+    """Callers that don't compute counterparts (e.g. PR #1070's day/FLW/type-
+    bucketed detector today) shouldn't get a fabricated empty list."""
+    session = _session({})
+    session.flag_potential_duplicate(visit_id=10, blob_id="a", question_id="q", group_id=1)
+    assert "duplicate_of_visit_ids" not in session.get_assessments(10)["a"]
+
+
 def test_flag_discards_stale_pass_label_instead_of_merging():
     """A classifier PASS ("Not Hyperzoomed") no longer applies once ai_result
     flips to "no_match" here -- merging it in used to leak the pass-label into

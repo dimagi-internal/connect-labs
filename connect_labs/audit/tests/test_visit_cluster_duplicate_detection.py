@@ -229,6 +229,36 @@ def test_calls_api_once_per_grouping_and_flags_returned_ids():
     data_access.save_audit_session.assert_called_once_with(session)
 
 
+def test_flagged_images_record_which_other_visit_they_duplicate():
+    """Each flagged blob's assessment gets duplicate_of_visit_ids -- the OTHER
+    visit(s) in its connected component -- so the review UI can say "this
+    duplicates #112" instead of just "this is a duplicate"."""
+    session = _session()
+    clusters = [{"group_id": "g1", "visit_ids": [111, 112, 113], "image_count": 3, "image_ids": ["a", "b", "c"]}]
+    blob_meta = {
+        "a": {"visit_id": 111, "question_id": "form/muac"},
+        "b": {"visit_id": 112, "question_id": "form/muac"},
+        "c": {"visit_id": 113, "question_id": "form/muac"},
+    }
+    client = Mock()
+    client.detect.return_value = [["a", "b", "c"]]  # all three confirmed duplicates of each other
+
+    run_grouping_duplicate_detection(
+        [_target(session, clusters, blob_meta)],
+        get_signed_url=lambda bid, oid: f"https://x/{bid}",
+        client=client,
+    )
+
+    assessments_by_visit = {
+        111: session.data["visit_results"]["111"]["assessments"]["a"],
+        112: session.data["visit_results"]["112"]["assessments"]["b"],
+        113: session.data["visit_results"]["113"]["assessments"]["c"],
+    }
+    assert assessments_by_visit[111]["duplicate_of_visit_ids"] == [112, 113]
+    assert assessments_by_visit[112]["duplicate_of_visit_ids"] == [111, 113]
+    assert assessments_by_visit[113]["duplicate_of_visit_ids"] == [111, 112]
+
+
 def test_persists_the_raw_api_response_per_grouping_even_when_empty():
     """The raw /detect_duplicates response must survive past this call --
     previously it was discarded the instant assign_group_ids collapsed it into
