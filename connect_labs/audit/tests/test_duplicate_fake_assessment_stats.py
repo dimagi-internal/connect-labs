@@ -269,3 +269,25 @@ class TestToQuestionSummaryDict:
         session = _make_session({})
         summary = session.to_question_summary_dict()
         assert summary["pass_threshold"] == 100
+
+    def test_includes_full_assessment_stats_with_per_classifier_ai_labels(self):
+        """The opportunity-scoped sessions-summary endpoint is the only
+        one-call read of every session for an opportunity, so a per-day
+        per-classifier view depends on ai_flags_by_label riding along here.
+        by_question alone can't say WHICH classifier flagged an image."""
+        session = _make_session(
+            {
+                "v1": {
+                    "assessments": {
+                        "a": _ai_assessment("no_match", "MUAC OverZoom"),
+                        "b": _ai_assessment("no_match", "MUAC OverZoom; MUAC Match"),
+                        "c": _assessment("duplicate_fake"),
+                    }
+                },
+            }
+        )
+        summary = session.to_question_summary_dict()
+        stats = summary["assessment_stats"]
+        assert stats["ai_flags_by_label"] == {"MUAC OverZoom": 2, "MUAC Match": 1}
+        assert stats["ai_no_match"] == 2
+        assert stats["duplicate_fake"] == 1
