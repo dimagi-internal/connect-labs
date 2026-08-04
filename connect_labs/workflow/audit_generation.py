@@ -145,16 +145,18 @@ def clustering_overrides_for(definition):
 
     Mirrors the render's own guard (see its ``enableDuplicateDetection`` effect):
     duplicate detection has no groupings to check across when both clustering
-    gates are off, so a pinned config carrying that nonsensical combination is
-    corrected here rather than passed through.
+    gates are explicitly off, so a pinned config carrying that nonsensical
+    combination is corrected here rather than passed through. A gate key that's
+    simply ABSENT (not explicitly ``False``) is left alone — that's the
+    handler's state-fallback's call to make, not this function's.
     """
     batch = (definition.data.get("config") or {}).get("audit_batch") or {}
     visit_clustering = batch.get("visit_clustering") or {}
     overrides = {key: visit_clustering[key] for key in CLUSTERING_OVERRIDE_KEYS if key in visit_clustering}
     if (
-        overrides.get("enable_duplicate_detection")
-        and not overrides.get("enable_time_gap")
-        and not overrides.get("enable_distance")
+        overrides.get("enable_duplicate_detection") is True
+        and overrides.get("enable_time_gap") is False
+        and overrides.get("enable_distance") is False
     ):
         overrides["enable_duplicate_detection"] = False
     return overrides

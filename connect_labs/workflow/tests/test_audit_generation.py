@@ -404,6 +404,24 @@ def test_clustering_overrides_for_keeps_duplicate_detection_when_a_gate_is_on():
     assert clustering_overrides_for(d)["enable_duplicate_detection"] is True
 
 
+def test_clustering_overrides_for_leaves_duplicate_detection_when_gates_are_absent():
+    """A partial visit_clustering block that only sets enable_duplicate_detection
+    (the gate keys are simply absent, not explicitly False) must NOT be
+    corrected — an absent key means "let the handler's state-fallback decide",
+    which might resolve a gate to True from a prior run's state. Only an
+    EXPLICIT False on both gates is the nonsensical combination this guard
+    corrects."""
+    from connect_labs.workflow.audit_generation import clustering_overrides_for
+
+    d = _creator_def()
+    d.data["config"]["audit_batch"]["visit_clustering"] = {"enable_duplicate_detection": True}
+
+    overrides = clustering_overrides_for(d)
+    assert overrides["enable_duplicate_detection"] is True
+    assert "enable_time_gap" not in overrides
+    assert "enable_distance" not in overrides
+
+
 # ── Management command: run_workflow_default ──────────────────────────────────
 
 
