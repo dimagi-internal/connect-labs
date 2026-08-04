@@ -483,20 +483,33 @@
                 <i class="fa-solid fa-rotate-right mr-1"></i>Retry
               </button>
             </div>
+            <!-- Potential Duplicate Banner - full-width, top of tile. Always shown
+                 alongside a classifier fail (never recolors it) -- product feedback from
+                 live testing: a MUAC Mismatch must stay red even when the same image is
+                 also a confirmed duplicate, so the duplicate signal gets its own
+                 always-additional banner instead of stealing the AI badge's color.
+                 Rendered before the AI/Human badges so it sits behind them in paint
+                 order and they can shift down (top-7) to avoid overlapping it. -->
+            <div x-show="isDuplicate"
+                 class="absolute top-0 inset-x-0 z-10 bg-orange-600/90 text-white text-[10px] font-semibold text-center py-0.5"
+                 x-transition>
+              <i class="fa-solid fa-clone mr-1"></i>Potential Duplicate
+            </div>
             <!-- AI Result Badge - Top Left (only for failures/errors; passes are shown in the tile footer).
                  max-w + the span's own whitespace-normal/break-words keeps a long label (a
                  rate-limit message, a verbose classifier note) wrapping onto multiple lines
-                 inside the tile instead of overrunning its right edge. Red-orange (not plain
-                 red) when this image is ALSO a confirmed duplicate -- distinguishes a
-                 duplicate flag from an ordinary classifier fail at a glance. -->
-            <div class="absolute left-2 top-2 max-w-[85%]"
+                 inside the tile instead of overrunning its right edge. Always red for
+                 no_match, even when this image is ALSO a confirmed duplicate -- the
+                 duplicate signal is carried by the banner above instead, so a classifier
+                 fail like MUAC Mismatch never gets recolored away from red. -->
+            <div class="absolute left-2 max-w-[85%]"
+                 :class="isDuplicate ? 'top-7' : 'top-2'"
                  x-show="aiResult && aiResult !== 'match'"
                  x-transition>
               <span class="inline-block px-2 py-1 rounded text-xs font-bold text-white whitespace-normal break-words"
                     :class="{
                       'bg-blue-500': aiResult === 'match',
-                      'bg-orange-600': aiResult === 'no_match' && isDuplicate,
-                      'bg-red-500': aiResult === 'no_match' && !isDuplicate,
+                      'bg-red-500': aiResult === 'no_match',
                       'bg-gray-500': aiResult === 'error'
                     }">
                 <i class="fa-solid fa-robot mr-1"></i>
@@ -507,9 +520,10 @@
             </div>
             <!-- Human Result Badge - Top Right. Pass/Fail only -- a duplicate_fake/
                  duplicate/fake result is NOT shown here (the button below still shows
-                 and still works); duplicate status is communicated by the AI badge
-                 above and the AI Result Section's "Duplicate w/ #..." text instead. -->
-            <div class="absolute right-2 top-2"
+                 and still works); duplicate status is communicated by the banner above
+                 and the AI Result Section's "Duplicate w/ #..." text instead. -->
+            <div class="absolute right-2"
+                 :class="isDuplicate ? 'top-7' : 'top-2'"
                  x-show="result === 'pass' || result === 'fail'"
                  x-transition>
               <span class="px-2 py-1 rounded text-xs font-bold text-white"

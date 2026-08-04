@@ -367,6 +367,59 @@ def test_run_groups_by_flw_day_and_type_and_flags(monkeypatch):
 
 
 @override_settings(SCALE_VALIDATION_API_KEY="k")
+def test_run_flags_duplicate_of_visit_ids_for_other_visits(monkeypatch):
+    """Mirrors visit_cluster_duplicate_detection's
+    test_flagged_images_record_which_other_visit_they_duplicate: each flagged
+    blob's assessment should get duplicate_of_visit_ids -- the OTHER visit(s)
+    in its connected component -- not just a bare "Potential Duplicate" flag,
+    so the review UI can say "Duplicate w/ #101" instead of falling back to
+    the generic label."""
+    session = _session(
+        {
+            "100": [_img("a")],
+            "101": [_img("b")],
+            "102": [_img("c")],
+        }
+    )
+    monkeypatch.setattr(
+        "connect_labs.audit.duplicate_detection.get_signed_url",
+        lambda opp, blob, tok: f"https://signed/{blob}",
+    )
+    monkeypatch.setattr(DuplicateDetectionClient, "detect", lambda self, manifest: [["a", "b", "c"]])
+
+    run_duplicate_detection(session, access_token="tok")
+
+    assert session.get_assessments(100)["a"]["duplicate_of_visit_ids"] == [101, 102]
+    assert session.get_assessments(101)["b"]["duplicate_of_visit_ids"] == [100, 102]
+    assert session.get_assessments(102)["c"]["duplicate_of_visit_ids"] == [100, 101]
+
+
+@override_settings(SCALE_VALIDATION_API_KEY="k")
+def test_run_duplicate_of_visit_ids_never_names_its_own_visit(monkeypatch):
+    """Two images from the SAME visit can land in one batch (e.g. two photos
+    of the same subject taken on one visit) and be confirmed duplicates of
+    each other -- excluding only the blob itself (not the visit) would wrongly
+    report a blob as duplicating its own visit."""
+    session = _session(
+        {
+            "100": [_img("a"), _img("a2")],
+            "101": [_img("b")],
+        }
+    )
+    monkeypatch.setattr(
+        "connect_labs.audit.duplicate_detection.get_signed_url",
+        lambda opp, blob, tok: f"https://signed/{blob}",
+    )
+    monkeypatch.setattr(DuplicateDetectionClient, "detect", lambda self, manifest: [["a", "a2", "b"]])
+
+    run_duplicate_detection(session, access_token="tok")
+
+    assert session.get_assessments(100)["a"]["duplicate_of_visit_ids"] == [101]
+    assert session.get_assessments(100)["a2"]["duplicate_of_visit_ids"] == [101]
+    assert session.get_assessments(101)["b"]["duplicate_of_visit_ids"] == [100]
+
+
+@override_settings(SCALE_VALIDATION_API_KEY="k")
 def test_run_separates_distinct_days(monkeypatch):
     session = _session(
         {

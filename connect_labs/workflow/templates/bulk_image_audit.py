@@ -132,12 +132,20 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
     // default to requires_reading=True with no fallback, so without this
     // every image assigned to them is silently skipped (see
     // connect_labs.audit.tasks._reading_for / _fetch_and_review).
+    // `comparisonLabel`, when present, is threaded into `config.label` --
+    // without it, the review UI's related-fields box falls back to the raw
+    // CommCare field path instead of a clean display name (see
+    // connect_labs.audit.data_access._add_related_fields_to_images). Reuses
+    // the exact "MUAC Reading" string weekly_dual_track_audit.py's
+    // MUAC_MATCH_REVIEWER already sets, so both templates show identical
+    // labels for the same underlying field.
     const AI_AGENTS = {
         scale_validation: {
             label: 'KMC Scale Comparison',
             desc: 'Validates weight readings against scale images using ML vision.',
             requiresImageType: 'weight',
             comparisonField: KMC_WEIGHT_READING_FIELD,
+            comparisonLabel: 'Scale Weight Reading',
             actions: [
                 { key: 'pass_matched', label: 'readings that match the scale', human_result: 'pass' },
                 { key: 'fail_unmatched', label: 'readings that do NOT match the scale', human_result: 'fail' },
@@ -156,6 +164,7 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
             desc: 'Flags MUAC photos whose photographed reading does not match the value entered on the form.',
             requiresImageType: 'muac',
             comparisonField: MUAC_READING_FIELD,
+            comparisonLabel: 'MUAC Reading',
             actions: [
                 { key: 'fail_unmatched', label: 'readings that do NOT match the photo', human_result: 'fail' },
             ],
@@ -454,9 +463,12 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
             .filter(agentId => agentAppliesToType(agentId, t.id))
             .map(agentId => {
                 const comparisonField = AI_AGENTS[agentId]?.comparisonField;
+                const comparisonLabel = AI_AGENTS[agentId]?.comparisonLabel;
                 return {
                     agent_id: agentId,
-                    ...(comparisonField ? { config: { comparison_field: comparisonField } } : {}),
+                    ...(comparisonField
+                        ? { config: { comparison_field: comparisonField, label: comparisonLabel } }
+                        : {}),
                     auto_apply_actions: aiAutoApplyActionsByAgent[agentId] || [],
                 };
             });

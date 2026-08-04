@@ -209,6 +209,35 @@ def assign_group_ids(groups: list[list[str]]) -> dict[str, int]:
     return result
 
 
+def _blobs_by_component(blob_to_group: dict) -> dict:
+    """Reverse assign_group_ids' {blob_id: component_index} into
+    {component_index: [blob_id, ...]} -- lets each blob look up its OTHER
+    component members without re-deriving components from scratch."""
+    by_component: dict = {}
+    for blob_id, group_id in blob_to_group.items():
+        by_component.setdefault(group_id, []).append(blob_id)
+    return by_component
+
+
+def _counterpart_visit_ids(blob_id, component_blob_ids, blob_meta_by_id) -> list:
+    """The OTHER visit(s) in blob_id's connected component, as a sorted list
+    of visit_ids -- lets the review UI say "this duplicates #1669121" instead
+    of just "this is a duplicate".
+
+    Excludes by VISIT, not just by blob: a grouping can legitimately contain
+    more than one image from the same visit (e.g. two photos of the same
+    subject on one visit), so two images from the SAME visit can land in one
+    API payload and be confirmed duplicates of each other -- excluding only
+    blob_id itself would then report a blob as duplicating its own visit.
+    """
+    own_visit_id = blob_meta_by_id.get(blob_id, {}).get("visit_id")
+    other_visit_ids = {
+        blob_meta_by_id[b]["visit_id"] for b in component_blob_ids if b != blob_id and b in blob_meta_by_id
+    }
+    other_visit_ids.discard(own_visit_id)
+    return sorted(other_visit_ids)
+
+
 def build_duplicate_warnings(counts: dict, max_per_day: int | None = None) -> tuple[list[str], str]:
     """Build the human warnings list + note from a duplicate-detection summary.
 
@@ -420,15 +449,31 @@ def run_duplicate_detection(
             summary["groups_detected"] += len(groups)
 
             blob_to_group = assign_group_ids(groups)
+            by_component = _blobs_by_component(blob_to_group)
+            # _counterpart_visit_ids compares/sorts visit_id values as a set, so they
+            # must be a consistent type across the component -- by_blob's visit_id
+            # (from the visit_images dict's string keys, see
+            # _images_grouped_by_flw_type_and_day) is still a string at this point,
+            # while flag_potential_duplicate below is called with an int-cast
+            # visit_id. Cast here too, matching both that call and the sibling
+            # visit_cluster_duplicate_detection module's int-typed blob_meta_by_id
+            # convention, so duplicate_of_visit_ids is int-typed either way. Scoped
+            # to just the blobs assign_group_ids flagged as duplicates (not the
+            # whole batch) -- singleton images that never make it into a
+            # component don't need a visit_id at all here, and their visit_id
+            # need not even be castable to int.
+            blob_meta_for_dedup = {bid: {"visit_id": int(by_blob[bid]["visit_id"])} for bid in blob_to_group}
             for blob_id, group_id in blob_to_group.items():
                 img = by_blob.get(blob_id)
                 if not img:
                     continue
+                duplicate_of_visit_ids = _counterpart_visit_ids(blob_id, by_component[group_id], blob_meta_for_dedup)
                 session.flag_potential_duplicate(
                     visit_id=int(img["visit_id"]),
                     blob_id=blob_id,
                     question_id=question_id,
                     group_id=group_id,
+                    duplicate_of_visit_ids=duplicate_of_visit_ids,
                 )
                 summary["images_flagged"] += 1
 

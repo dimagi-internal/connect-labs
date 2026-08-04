@@ -12,12 +12,14 @@ weekly_dual_track_audit.py's job handler), each with its own independently-
 computed clusters, so a grouping never spans across tracks.
 
 Reuses the shared DuplicateDetectionClient / DuplicateDetectionError /
-assign_group_ids from connect_labs.audit.duplicate_detection (PR #1070's
-day/FLW/type-bucketed duplicate detection for bulk_image_audit and
-muac_picture_audit) rather than duplicating the API client. This module stays
-separate because it's a genuinely different grouping strategy serving a
-different template (weekly_dual_track_audit): one call per visit-clustering
-grouping here, vs. one call per (FLW, day, photo-type) bucket there. See
+assign_group_ids / _blobs_by_component / _counterpart_visit_ids from
+connect_labs.audit.duplicate_detection (PR #1070's day/FLW/type-bucketed
+duplicate detection for bulk_image_audit and muac_picture_audit) rather than
+duplicating the API client or the counterpart-visit-id resolution. This
+module stays separate because it's a genuinely different grouping strategy
+serving a different template (weekly_dual_track_audit): one call per
+visit-clustering grouping here, vs. one call per (FLW, day, photo-type)
+bucket there. See
 docs/superpowers/specs/2026-07-30-dual-track-audit-classifiers-design.md.
 """
 
@@ -27,7 +29,12 @@ from django.conf import settings
 
 from connect_labs.audit.data_access import is_audit_creation_cancelled
 from connect_labs.audit.duplicate_detection import DEFAULT_MAX_IMAGES_PER_DAY as DEFAULT_MAX_IMAGES_PER_GROUPING
-from connect_labs.audit.duplicate_detection import DuplicateDetectionClient, assign_group_ids
+from connect_labs.audit.duplicate_detection import (
+    DuplicateDetectionClient,
+    _blobs_by_component,
+    _counterpart_visit_ids,
+    assign_group_ids,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -42,35 +49,6 @@ _MIN_IMAGES_TO_CHECK = 2
 # cap one grouping could send an unbounded, all-or-nothing POST against a
 # long-running (180s-timeout) endpoint. Imports the constant rather than
 # re-declaring it, so the two can't silently drift apart.
-
-
-def _blobs_by_component(blob_to_group: dict) -> dict:
-    """Reverse assign_group_ids' {blob_id: component_index} into
-    {component_index: [blob_id, ...]} -- lets each blob look up its OTHER
-    component members without re-deriving components from scratch."""
-    by_component: dict = {}
-    for blob_id, group_id in blob_to_group.items():
-        by_component.setdefault(group_id, []).append(blob_id)
-    return by_component
-
-
-def _counterpart_visit_ids(blob_id, component_blob_ids, blob_meta_by_id) -> list:
-    """The OTHER visit(s) in blob_id's connected component, as a sorted list
-    of visit_ids -- lets the review UI say "this duplicates #1669121" instead
-    of just "this is a duplicate".
-
-    Excludes by VISIT, not just by blob: a visit-clustering grouping sends
-    every image in the window regardless of image path (module docstring),
-    so two images from the SAME visit routinely land in one API payload and
-    can be confirmed duplicates of each other -- excluding only blob_id
-    itself would then report a blob as duplicating its own visit.
-    """
-    own_visit_id = blob_meta_by_id.get(blob_id, {}).get("visit_id")
-    other_visit_ids = {
-        blob_meta_by_id[b]["visit_id"] for b in component_blob_ids if b != blob_id and b in blob_meta_by_id
-    }
-    other_visit_ids.discard(own_visit_id)
-    return sorted(other_visit_ids)
 
 
 def _mark_duplicate(session, blob_meta_by_id, blob_id, group_id, duplicate_of_visit_ids=None) -> bool:

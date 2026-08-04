@@ -79,7 +79,22 @@ def test_render_code_wires_comparison_field_for_reading_dependent_agents():
     assert "KMC_WEIGHT_READING_FIELD" in rc
     assert "'child_weight_visit'" in rc
     assert "comparisonField:" in rc
-    assert "config: { comparison_field: comparisonField }" in rc
+    assert "config: { comparison_field: comparisonField, label: comparisonLabel }" in rc
+
+
+def test_render_code_wires_comparison_label_for_reading_dependent_agents():
+    """Without a "label" alongside comparison_field, the review UI's
+    related-fields box falls back to the raw CommCare field path instead of a
+    clean display name (see connect_labs.audit.data_access's
+    _add_related_fields_to_images). muac_match must reuse the exact "MUAC
+    Reading" string weekly_dual_track_audit.py's MUAC_MATCH_REVIEWER already
+    sets, so both templates show identical labels for the same field."""
+    from connect_labs.workflow.templates import get_template
+
+    rc = get_template("bulk_image_audit")["render_code"]
+    assert "comparisonLabel:" in rc
+    assert "comparisonLabel: 'MUAC Reading'" in rc
+    assert "comparisonLabel: 'Scale Weight Reading'" in rc
 
 
 def test_render_code_reads_legacy_single_select_config_forward():
