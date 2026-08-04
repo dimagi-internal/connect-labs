@@ -347,10 +347,12 @@
                // group_id can legitimately be 0, so test for null/undefined, not falsy.
                get isDuplicate() { return assessment.duplicate_group !== null && assessment.duplicate_group !== undefined; },
                // 'Duplicate w/ #<visit id>' -- the specific other image(s) this one
-               // duplicates, resolved server-side (see
-               // visit_cluster_duplicate_detection.py's _counterpart_visit_ids). Empty
-               // for duplicates flagged before this field existed, or by PR #1070's
-               // day/FLW/type-bucketed detector, which doesn't compute counterparts --
+               // duplicates, resolved server-side by both detectors (see
+               // duplicate_detection.py's _counterpart_visit_ids, shared by the
+               // day/FLW/type-bucketed detector and visit_cluster_duplicate_detection.py).
+               // Empty for duplicates flagged before this field existed, or when every
+               // other image in the connected component turns out to share this blob's
+               // OWN visit (same-visit multi-photo duplicates, no other visit to name) --
                // isDuplicate falls back to the plain 'Potential Duplicate' label in
                // that case (see aiResultSectionText / aiNotesShort below).
                get duplicateOfText() {
@@ -376,12 +378,12 @@
                  if (this.duplicateOfText) {
                    parts.push(this.duplicateOfText);
                  } else if (this.isDuplicate) {
-                   // Flagged as a duplicate but no counterpart resolved (PR #1070's
-                   // detector, or a duplicate flagged before duplicate_of_visit_ids
-                   // existed) -- fall back to the plain label instead of silently
-                   // vanishing (this used to render 'No Match' here while the badge
-                   // above still said 'Potential Duplicate': the same tile
-                   // contradicting itself).
+                   // Flagged as a duplicate but no counterpart resolved (flagged
+                   // before duplicate_of_visit_ids existed, or every other image in
+                   // the component shares this blob's own visit) -- fall back to the
+                   // plain label instead of silently vanishing (this used to render
+                   // 'No Match' here while the badge above still said 'Potential
+                   // Duplicate': the same tile contradicting itself).
                    parts.push('Potential Duplicate');
                  }
                  if (!parts.length) parts.push('No Match');

@@ -135,10 +135,10 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
     // `comparisonLabel`, when present, is threaded into `config.label` --
     // without it, the review UI's related-fields box falls back to the raw
     // CommCare field path instead of a clean display name (see
-    // connect_labs.audit.data_access._add_related_fields_to_images). Reuses
-    // the exact "MUAC Reading" string weekly_dual_track_audit.py's
-    // MUAC_MATCH_REVIEWER already sets, so both templates show identical
-    // labels for the same underlying field.
+    // connect_labs.audit.data_access._add_related_fields_to_images). Both
+    // strings below are reused verbatim by weekly_dual_track_audit.py's
+    // MUAC_MATCH_REVIEWER / KMC_SCALE_REVIEWER, so the two templates show
+    // identical labels for the same underlying fields.
     const AI_AGENTS = {
         scale_validation: {
             label: 'KMC Scale Comparison',

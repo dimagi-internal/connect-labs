@@ -351,12 +351,12 @@ class AuditSessionRecord(LocalLabsRecord):
 
         The human `result` is left untouched (flag-only). ``group_id`` is a
         connected-component index so the review UI can sort duplicates
-        adjacently. ``duplicate_of_visit_ids``, when the caller has it (see
-        run_grouping_duplicate_detection), is the OTHER visit(s) in this
-        image's connected component -- lets the review UI show which specific
-        image(s) this one duplicates, not just that it's in some grouping.
-        None for callers that don't compute it (e.g. PR #1070's day/FLW/type-
-        bucketed detector today).
+        adjacently. ``duplicate_of_visit_ids``, when the caller has it (both
+        run_duplicate_detection and run_grouping_duplicate_detection compute
+        it today), is the OTHER visit(s) in this image's connected component
+        -- lets the review UI show which specific image(s) this one
+        duplicates, not just that it's in some grouping. None for duplicates
+        flagged before this field existed.
 
         Depends on AI review having already run and written its verdict before
         this is called (true today: Stage 4 always precedes the duplicate-
