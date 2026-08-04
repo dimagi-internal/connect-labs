@@ -241,8 +241,9 @@ def test_flag_stores_duplicate_of_visit_ids_when_provided():
 
 
 def test_flag_omits_duplicate_of_visit_ids_when_not_provided():
-    """Callers that don't compute counterparts (e.g. PR #1070's day/FLW/type-
-    bucketed detector today) shouldn't get a fabricated empty list."""
+    """A caller that omits duplicate_of_visit_ids entirely (e.g. a duplicate
+    flagged before this field existed, or every other image in the component
+    sharing this blob's own visit) shouldn't get a fabricated empty list."""
     session = _session({})
     session.flag_potential_duplicate(visit_id=10, blob_id="a", question_id="q", group_id=1)
     assert "duplicate_of_visit_ids" not in session.get_assessments(10)["a"]
@@ -364,6 +365,87 @@ def test_run_groups_by_flw_day_and_type_and_flags(monkeypatch):
     assert session.get_assessments(100)["a"]["duplicate_group"] == 0
     assert session.get_assessments(101)["b"]["duplicate_group"] == 0
     assert session.data["duplicate_detection"]["u1|form/muac_photo|2026-07-30"] == [["a", "b"]]
+
+
+@override_settings(SCALE_VALIDATION_API_KEY="k")
+def test_run_flags_duplicate_of_visit_ids_for_other_visits(monkeypatch):
+    """Mirrors visit_cluster_duplicate_detection's
+    test_flagged_images_record_which_other_visit_they_duplicate: each flagged
+    blob's assessment should get duplicate_of_visit_ids -- the OTHER visit(s)
+    in its connected component -- not just a bare "Potential Duplicate" flag,
+    so the review UI can say "Duplicate w/ #101" instead of falling back to
+    the generic label."""
+    session = _session(
+        {
+            "100": [_img("a")],
+            "101": [_img("b")],
+            "102": [_img("c")],
+        }
+    )
+    monkeypatch.setattr(
+        "connect_labs.audit.duplicate_detection.get_signed_url",
+        lambda opp, blob, tok: f"https://signed/{blob}",
+    )
+    monkeypatch.setattr(DuplicateDetectionClient, "detect", lambda self, manifest: [["a", "b", "c"]])
+
+    run_duplicate_detection(session, access_token="tok")
+
+    assert session.get_assessments(100)["a"]["duplicate_of_visit_ids"] == [101, 102]
+    assert session.get_assessments(101)["b"]["duplicate_of_visit_ids"] == [100, 102]
+    assert session.get_assessments(102)["c"]["duplicate_of_visit_ids"] == [100, 101]
+
+
+@override_settings(SCALE_VALIDATION_API_KEY="k")
+def test_run_duplicate_of_visit_ids_never_names_its_own_visit(monkeypatch):
+    """Two images from the SAME visit can land in one batch (e.g. two photos
+    of the same subject taken on one visit) and be confirmed duplicates of
+    each other -- excluding only the blob itself (not the visit) would wrongly
+    report a blob as duplicating its own visit."""
+    session = _session(
+        {
+            "100": [_img("a"), _img("a2")],
+            "101": [_img("b")],
+        }
+    )
+    monkeypatch.setattr(
+        "connect_labs.audit.duplicate_detection.get_signed_url",
+        lambda opp, blob, tok: f"https://signed/{blob}",
+    )
+    monkeypatch.setattr(DuplicateDetectionClient, "detect", lambda self, manifest: [["a", "a2", "b"]])
+
+    run_duplicate_detection(session, access_token="tok")
+
+    assert session.get_assessments(100)["a"]["duplicate_of_visit_ids"] == [101]
+    assert session.get_assessments(100)["a2"]["duplicate_of_visit_ids"] == [101]
+    assert session.get_assessments(101)["b"]["duplicate_of_visit_ids"] == [100]
+
+
+@override_settings(SCALE_VALIDATION_API_KEY="k")
+def test_run_survives_unknown_blob_id_in_detector_response(monkeypatch):
+    """A malformed/stale detector response can name a blob_id that was never
+    in this batch's manifest -- assign_group_ids has no way to validate the
+    detector's own response against what was actually sent. The flagging loop
+    already skips unknown blobs via by_blob.get(...), but the duplicate_of_
+    visit_ids lookup must skip them too rather than raising KeyError before
+    that check is ever reached, which would abort the whole batch."""
+    session = _session(
+        {
+            "100": [_img("a")],
+            "101": [_img("b")],
+        }
+    )
+    monkeypatch.setattr(
+        "connect_labs.audit.duplicate_detection.get_signed_url",
+        lambda opp, blob, tok: f"https://signed/{blob}",
+    )
+    # "ghost" was never part of the manifest sent to /detect_duplicates.
+    monkeypatch.setattr(DuplicateDetectionClient, "detect", lambda self, manifest: [["a", "b", "ghost"]])
+
+    summary = run_duplicate_detection(session, access_token="tok")
+
+    assert summary["images_flagged"] == 2
+    assert session.get_assessments(100)["a"]["duplicate_of_visit_ids"] == [101]
+    assert session.get_assessments(101)["b"]["duplicate_of_visit_ids"] == [100]
 
 
 @override_settings(SCALE_VALIDATION_API_KEY="k")

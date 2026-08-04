@@ -878,6 +878,23 @@ def test_image_audits_threads_classifiers_per_path():
     ]
 
 
+def test_kmc_scale_reviewer_label_reaches_related_fields():
+    """KMC_SCALE_REVIEWER's "label" (added to match bulk_image_audit.py's
+    comparisonLabel for the same field -- see MUAC_MATCH_REVIEWER's own
+    comment above) must reach the review UI's related-fields box via
+    build_review_config, not just sit unused on the reviewer config."""
+    from connect_labs.audit.ai_review_config import build_review_config
+    from connect_labs.workflow.templates.weekly_dual_track_audit import _image_audits
+
+    image_audits = _image_audits(
+        ["anthropometric/upload_weight_image"],
+        {"anthropometric/upload_weight_image": ["kmc_scale"]},
+    )
+    related_fields, _ = build_review_config(image_audits)
+    weight_rule = next(r for r in related_fields if r["field_path"] == "child_weight_visit")
+    assert weight_rule["label"] == "Scale Weight Reading"
+
+
 def test_build_track_audit_calls_reads_per_opp_classifiers():
     from connect_labs.workflow.templates.weekly_dual_track_audit import KMC_SCALE_REVIEWER
 

@@ -48,7 +48,10 @@ KMC_WEIGHT_READING_FIELD = "child_weight_visit"
 
 KMC_SCALE_REVIEWER = {
     "agent_id": "scale_validation",
-    "config": {"comparison_field": KMC_WEIGHT_READING_FIELD},
+    # "label" matches bulk_image_audit.py's comparisonLabel for the same field,
+    # so both templates show an identical clean label instead of one falling
+    # back to the raw field path (see MUAC_MATCH_REVIEWER's comment above).
+    "config": {"comparison_field": KMC_WEIGHT_READING_FIELD, "label": "Scale Weight Reading"},
     "auto_apply_actions": ["fail_unmatched"],
 }
 
