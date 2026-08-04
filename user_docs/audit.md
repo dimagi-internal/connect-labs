@@ -150,26 +150,35 @@ The **Muac Picture Audit** workflow is a full audit-creation tool scoped to the 
 
 All other steps — AI reviewer selection, pass threshold, exclude already-audited images, and so on — work the same way as described in the sections above.
 
+#### FLW Image Audit Table
+
+Program 176 (CHC PRE-RCT Nigeria) also has a dedicated **FLW Image Audit Table** that gives supervisors a quick overview of image quality across the workforce over the past 14 days.
+
+**Reading the grid:**
+
+- The table shows one row per field worker and one dot per day.
+- A day's dot turns **red** when either of the following is true for that worker on that day:
+    - Any single AI classifier flagged 3 or more of that day's images, or
+    - More than 3 images were marked fail, duplicate, or fake in total.
+- Days with no issues show a neutral dot.
+
+**Drilling down by classifier:**
+
+Clicking to expand a row breaks each red day down by the specific classifier that fired:
+
+- **MUAC Mismatch** — the MUAC Reading Match reviewer found the tape photo inconsistent with the recorded value.
+- **Hyperzoomed** — the MUAC OverZoom reviewer found the photo taken too close to read reliably.
+- **Potential Duplicate** — the duplicate detection check identified the image as a near-duplicate of another submission.
+
+The expanded view also shows the raw fail count and duplicate/fake count for the day alongside the per-classifier breakdown. Every cell in the expanded view links directly to that field worker's images for that day, so you can open the relevant bulk assessment view without having to search for it manually.
+
+!!! note "Earlier sessions"
+    Before this update, the table could show that images failed but displayed *"per-classifier AI split unavailable"* instead of naming the specific classifier. Sessions created from this point forward will always show the full per-classifier breakdown.
+
 ---
 
 ## Reviewing Images
 
 Once a session is created, open it to start the bulk assessment.
 
-The bulk assessment page header identifies the field worker being reviewed. For a **combined session** — a bulk image audit covering every field worker at once — the header shows **"All FLWs (N)"**, where N is the total number of field workers included, so it is clear the review spans the full group. For a session scoped to an individual field worker, the header shows that person's real display name as **FLW Name : `<name>`**.
-
-=== "Standard Review"
-
-    Images are shown one at a time alongside the related visit data — FLW name, visit date, and patient name.
-
-    Each image tile also shows the **entity ID** for the visit — for example, the specific child a home visit was recorded for. This appears below the question tag on the tile, marked with a child icon. The same information is shown next to the question tag when you open an image in the full-screen lightbox view. The entity ID is displayed in full (it wraps to a second line rather than being cut off with "..."), so you always see the complete identifier.
-
-    !!! tip "Older audit sessions"
-        Entity IDs are shown for all sessions, including those created before this feature was introduced. The page fetches any missing IDs automatically the first time you open an older session.
-
-    Each image has three assessment options:
-
-    - **Pass** and **Fail** appear side by side as before.
-    - **Duplicate/Fake** appears as a full-width button below Pass and Fail (shown in orange with an exclamation icon). Use this when an image appears to be a duplicate submission or a fabricated photo rather than a genuine field visit. The image card border, corner badge, and lightbox all use the same orange treatment when this option is selected.
-
-    If an image was flagged by the **Image De-duplication** check or the **Duplicate Detection
+The bulk assessment page header identifies the field worker being reviewed. For a **combined session** — a bulk image audit covering every field worker
