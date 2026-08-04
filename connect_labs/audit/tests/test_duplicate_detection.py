@@ -241,8 +241,9 @@ def test_flag_stores_duplicate_of_visit_ids_when_provided():
 
 
 def test_flag_omits_duplicate_of_visit_ids_when_not_provided():
-    """Callers that don't compute counterparts (e.g. PR #1070's day/FLW/type-
-    bucketed detector today) shouldn't get a fabricated empty list."""
+    """A caller that omits duplicate_of_visit_ids entirely (e.g. a duplicate
+    flagged before this field existed, or every other image in the component
+    sharing this blob's own visit) shouldn't get a fabricated empty list."""
     session = _session({})
     session.flag_potential_duplicate(visit_id=10, blob_id="a", question_id="q", group_id=1)
     assert "duplicate_of_visit_ids" not in session.get_assessments(10)["a"]
