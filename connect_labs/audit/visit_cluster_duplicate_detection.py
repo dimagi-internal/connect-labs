@@ -156,7 +156,7 @@ def run_grouping_duplicate_detection(
             session_updated = False
             # Raw /detect_duplicates responses, keyed by this grouping's own
             # group_id -- mirrors duplicate_detection.py's raw_groups_store
-            # (keyed by question_id|day there). Named distinctly from
+            # (keyed by username|question_id|day there). Named distinctly from
             # tasks.py's result["visit_cluster_duplicate_detection"] (the run
             # summary counters -- groupings_checked/errors/etc.), which is an
             # unrelated shape that happens to share the module's name.

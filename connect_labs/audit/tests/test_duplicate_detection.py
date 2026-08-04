@@ -327,7 +327,7 @@ def test_flag_discards_stale_error_text_instead_of_merging():
 
 
 @override_settings(SCALE_VALIDATION_API_KEY="k")
-def test_run_groups_by_day_and_type_and_flags(monkeypatch):
+def test_run_groups_by_flw_day_and_type_and_flags(monkeypatch):
     # Two visits, same FLW/day/type; detector groups both blobs together.
     session = _session(
         {
@@ -344,7 +344,7 @@ def test_run_groups_by_day_and_type_and_flags(monkeypatch):
     summary = run_duplicate_detection(session, access_token="tok")
 
     assert summary["images_flagged"] == 2
-    assert summary["days_processed"] == 1
+    assert summary["batches_processed"] == 1
     assert session.get_assessments(100)["a"]["duplicate_group"] == 0
     assert session.get_assessments(101)["b"]["duplicate_group"] == 0
     assert session.data["duplicate_detection"]["u1|form/muac_photo|2026-07-30"] == [["a", "b"]]
@@ -368,7 +368,7 @@ def test_run_separates_distinct_days(monkeypatch):
     monkeypatch.setattr(DuplicateDetectionClient, "detect", _detect)
     summary = run_duplicate_detection(session, access_token="tok")
 
-    assert summary["days_processed"] == 2
+    assert summary["batches_processed"] == 2
     # Each day is its own single-image batch.
     assert sorted(calls) == [["a"], ["b"]]
 
@@ -392,17 +392,17 @@ def test_run_caps_at_max_per_day(monkeypatch):
 
 
 @override_settings(SCALE_VALIDATION_API_KEY="k")
-def test_run_caps_per_flw_not_across_the_whole_day(monkeypatch):
+def test_run_caps_per_flw_not_per_day(monkeypatch):
     """The cap must apply PER FLW PER DAY, not to the combined total of every
     FLW's images for that type/day -- a combined/per-opp session's
     visit_images spans multiple FLWs, and each FLW is entitled to their own
     max_per_day allowance."""
+    # 5 FLWs, 49 images each, same day/type -- 245 total. This is a regression
+    # test for a real report that hit exactly this shape (245 images, 205
+    # "over the 40/day limit") under the old (question_id, day)-only key.
     session = _session(
         {
-            # 5 FLWs, 49 images each, same day/type -- 245 total, matching the
-            # real report this regresses (245 images, 205 over the 40/day cap
-            # under the old (question_id, day)-only key).
-            str(flw_idx * 100 + img_idx): [_img(f"u{flw_idx}-{img_idx}", username=f"u{flw_idx}")]
+            f"{flw_idx}-{img_idx}": [_img(f"u{flw_idx}-{img_idx}", username=f"u{flw_idx}")]
             for flw_idx in range(5)
             for img_idx in range(49)
         }
@@ -419,13 +419,13 @@ def test_run_caps_per_flw_not_across_the_whole_day(monkeypatch):
 
     # 5 separate FLW buckets, each capped at 40 -- not one combined 245-image
     # bucket capped at 40 total.
-    assert summary["days_processed"] == 5
+    assert summary["batches_processed"] == 5
     assert sorted(sizes) == [40, 40, 40, 40, 40]
     assert summary["skipped_over_limit"] == 5 * (49 - 40)  # 9 per FLW, 45 total -- not 205
 
 
 @override_settings(SCALE_VALIDATION_API_KEY="k")
-def test_run_one_flws_detect_failure_does_not_cost_another_flws_batch(monkeypatch):
+def test_run_detect_failure_isolated_to_one_flw(monkeypatch):
     """A failed /detect_duplicates call for one FLW's day-batch must not skip
     or fail any OTHER FLW's batch for the same type/day -- before the fix,
     multiple FLWs shared a single bucket, so one failure zeroed out every
@@ -441,15 +441,44 @@ def test_run_one_flws_detect_failure_does_not_cost_another_flws_batch(monkeypatc
     def _detect(self, manifest):
         if manifest[0]["id"] == "a":
             raise DuplicateDetectionError("boom")
-        return [["b"]]
+        return []  # flwB's batch ran fine; an empty result just means "no duplicates"
 
     monkeypatch.setattr(DuplicateDetectionClient, "detect", _detect)
     summary = run_duplicate_detection(session, access_token="tok")
 
     assert summary["detect_failures"] == 1
-    assert summary["images_flagged"] == 0  # flwB's single image isn't a duplicate of anything
-    assert summary["groups_detected"] == 1
-    assert session.data["duplicate_detection"]["flwB|form/muac_photo|2026-07-30"] == [["b"]]
+    assert summary["groups_detected"] == 0
+    # flwB's batch still ran and was stored -- unaffected by flwA's failure.
+    assert session.data["duplicate_detection"]["flwB|form/muac_photo|2026-07-30"] == []
+
+
+@override_settings(SCALE_VALIDATION_API_KEY="k")
+def test_run_stops_between_buckets_when_cancelled(monkeypatch):
+    """Per-FLW bucketing means a combined session can now make many more
+    sequential detect calls than before (one per FLW instead of one for the
+    whole session) -- cooperative cancellation must be checked between
+    buckets so a cancelled run doesn't have to finish them all first."""
+    session = _session(
+        {
+            "100": [_img("a", username="flwA")],
+            "101": [_img("b", username="flwB")],
+        }
+    )
+    monkeypatch.setattr("connect_labs.audit.duplicate_detection.get_signed_url", lambda opp, blob, tok: "https://s")
+    monkeypatch.setattr(
+        "connect_labs.audit.duplicate_detection.is_audit_creation_cancelled", lambda cancel_key: True
+    )
+    calls = []
+
+    def _detect(self, manifest):
+        calls.append(manifest)
+        return []
+
+    monkeypatch.setattr(DuplicateDetectionClient, "detect", _detect)
+    summary = run_duplicate_detection(session, access_token="tok", cancel_key="task-1")
+
+    assert summary["cancelled"] is True
+    assert calls == []  # cancelled before the first bucket's detect call
 
 
 @override_settings(SCALE_VALIDATION_API_KEY="k")
@@ -514,7 +543,7 @@ def test_build_duplicate_warnings_all_kinds():
     )
     assert len(warnings) == 4
     assert note.startswith("Duplicate detection completed with issues:")
-    assert "40/FLW/day limit" in note
+    assert "40 per FLW/day/photo-type limit" in note
 
 
 # --------------------------------------------------------------------------- #
@@ -533,11 +562,11 @@ class _FakeDataAccess:
 def test_run_summary_note_lists_every_failure_kind(monkeypatch):
     from connect_labs.audit import tasks
 
-    def _fake_run(session, access_token, progress_callback=None):
+    def _fake_run(session, access_token, progress_callback=None, cancel_key=None):
         return {
             "groups_detected": 0,
             "images_flagged": 0,
-            "days_processed": 1,
+            "batches_processed": 1,
             "skipped_over_limit": 3,
             "skipped_presign": 2,
             "detect_failures": 1,
@@ -550,16 +579,16 @@ def test_run_summary_note_lists_every_failure_kind(monkeypatch):
     assert totals["skipped_presign"] == 2
     assert totals["detect_failures"] == 1
     assert totals["skipped_over_limit"] == 3
-    assert "1 FLW/day batch(es) failed the duplicate check" in totals["note"]
+    assert "1 FLW/day/photo-type batch(es) failed the duplicate check" in totals["note"]
     assert "2 image(s) skipped due to presigned-URL errors" in totals["note"]
-    assert "40/FLW/day limit" in totals["note"]
+    assert "40 per FLW/day/photo-type limit" in totals["note"]
     assert len(totals["warnings"]) == 3
 
 
 def test_run_summary_note_counts_session_errors(monkeypatch):
     from connect_labs.audit import tasks
 
-    def _boom(session, access_token, progress_callback=None):
+    def _boom(session, access_token, progress_callback=None, cancel_key=None):
         raise RuntimeError("kaboom")
 
     monkeypatch.setattr("connect_labs.audit.duplicate_detection.run_duplicate_detection", _boom)
@@ -573,11 +602,11 @@ def test_run_summary_note_counts_session_errors(monkeypatch):
 def test_run_summary_note_empty_on_clean_run(monkeypatch):
     from connect_labs.audit import tasks
 
-    def _clean(session, access_token, progress_callback=None):
+    def _clean(session, access_token, progress_callback=None, cancel_key=None):
         return {
             "groups_detected": 1,
             "images_flagged": 2,
-            "days_processed": 1,
+            "batches_processed": 1,
             "skipped_over_limit": 0,
             "skipped_presign": 0,
             "detect_failures": 0,
@@ -589,3 +618,31 @@ def test_run_summary_note_empty_on_clean_run(monkeypatch):
 
     assert totals["note"] == ""
     assert totals["warnings"] == []
+
+
+def test_run_stops_between_sessions_when_cancelled(monkeypatch):
+    """cancel_key is checked between sessions too, not just between one
+    session's own buckets -- a cancelled run must not start a second
+    session's (potentially many, per-FLW) detect calls."""
+    from connect_labs.audit import tasks
+
+    calls = []
+
+    def _fake_run(session, access_token, progress_callback=None, cancel_key=None):
+        calls.append(session)
+        return {
+            "groups_detected": 0,
+            "images_flagged": 0,
+            "batches_processed": 1,
+            "skipped_over_limit": 0,
+            "skipped_presign": 0,
+            "detect_failures": 0,
+        }
+
+    monkeypatch.setattr("connect_labs.audit.duplicate_detection.run_duplicate_detection", _fake_run)
+    monkeypatch.setattr("connect_labs.audit.tasks.is_audit_creation_cancelled", lambda cancel_key: True)
+
+    totals = tasks._run_duplicate_detection_on_sessions(_FakeDataAccess(), [1, 2, 3], "tok", cancel_key="task-1")
+
+    assert calls == []  # cancelled before the first session
+    assert totals["sessions_processed"] == 0

@@ -696,6 +696,7 @@ def _run_duplicate_detection_on_sessions(
     session_ids: list[int],
     access_token: str,
     progress_callback=None,
+    cancel_key: str | None = None,
 ) -> dict:
     """Run group-level duplicate-photo detection on each session and persist.
 
@@ -713,6 +714,15 @@ def _run_duplicate_detection_on_sessions(
     op, and concurrent calls slow every request enough to be problematic. Modest
     incidental overlap is fine; deliberate parallel fan-out of the detect calls is
     not the intended model.
+
+    ``cancel_key``, when given, is checked between sessions and passed through
+    to run_duplicate_detection (which checks it between its own batches too).
+    Now that batches are per-FLW rather than per-combined-session, a large
+    combined session can make many more sequential (and individually slow --
+    up to DETECT_TIMEOUT each) detect calls than before, with no overall time
+    limit (CELERY_TASK_TIME_LIMIT is unset) -- cooperative cancellation is the
+    only way to stop this stage early. Mirrors the sibling
+    visit_cluster_duplicate_detection module's cancellation support.
     """
     from connect_labs.audit.duplicate_detection import build_duplicate_warnings, run_duplicate_detection
 
@@ -720,7 +730,7 @@ def _run_duplicate_detection_on_sessions(
         "sessions_processed": 0,
         "groups_detected": 0,
         "images_flagged": 0,
-        "days_processed": 0,
+        "batches_processed": 0,
         "skipped_over_limit": 0,
         "skipped_presign": 0,
         "detect_failures": 0,
@@ -728,6 +738,8 @@ def _run_duplicate_detection_on_sessions(
     }
     total = len(session_ids)
     for idx, session_id in enumerate(session_ids, start=1):
+        if cancel_key and is_audit_creation_cancelled(cancel_key):
+            break
         try:
             session = data_access.get_audit_session(session_id)
             if not session:
@@ -737,19 +749,21 @@ def _run_duplicate_detection_on_sessions(
                 if progress_callback:
                     progress_callback(_idx, total, m)
 
-            summary = run_duplicate_detection(session, access_token, progress_callback=_cb)
-            if summary.get("days_processed"):
+            summary = run_duplicate_detection(session, access_token, progress_callback=_cb, cancel_key=cancel_key)
+            if summary.get("batches_processed"):
                 data_access.save_audit_session(session)
             for key in (
                 "groups_detected",
                 "images_flagged",
-                "days_processed",
+                "batches_processed",
                 "skipped_over_limit",
                 "skipped_presign",
                 "detect_failures",
             ):
                 totals[key] += summary.get(key, 0)
             totals["sessions_processed"] += 1
+            if summary.get("cancelled"):
+                break
         except Exception as e:
             totals["session_errors"] += 1
             logger.warning(f"[DuplicateDetection] Failed to process session {session_id}: {e}")
@@ -1423,6 +1437,7 @@ def run_audit_creation(
                     data_access=data_access,
                     session_ids=[s["id"] for s in sessions_created],
                     access_token=access_token,
+                    cancel_key=cancel_key,
                     progress_callback=lambda p, t, m: (
                         set_task_progress(
                             self,

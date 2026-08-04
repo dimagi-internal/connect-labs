@@ -14,8 +14,9 @@ publicly-fetchable presigned URL via Connect's exporter
 these just-in-time, immediately before each ``/detect_duplicates`` call, because
 the presigned-URL TTL is short. A presign failure skips just that one image
 (it drops out of the manifest) and is counted into the run summary; a failed
-``/detect_duplicates`` call skips just that day-batch and is likewise counted, so
-partial failures are always surfaced (see ``run_duplicate_detection``'s summary).
+``/detect_duplicates`` call skips just that (FLW, day, type) batch and is
+likewise counted, so partial failures are always surfaced (see
+``run_duplicate_detection``'s summary).
 
 Recording is flag-only (non-destructive): each grouped image gets an AI flag
 labelled "Potential Duplicate" merged into its ``ai_notes`` plus a
@@ -26,6 +27,8 @@ import logging
 
 import httpx
 from django.conf import settings
+
+from connect_labs.audit.data_access import is_audit_creation_cancelled
 
 logger = logging.getLogger(__name__)
 
@@ -218,11 +221,13 @@ def build_duplicate_warnings(counts: dict, max_per_day: int | None = None) -> tu
         max_per_day = getattr(settings, "DUPLICATE_DETECTION_MAX_IMAGES_PER_DAY", DEFAULT_MAX_IMAGES_PER_DAY)
     warnings: list[str] = []
     if counts.get("detect_failures"):
-        warnings.append(f"{counts['detect_failures']} FLW/day batch(es) failed the duplicate check")
+        warnings.append(f"{counts['detect_failures']} FLW/day/photo-type batch(es) failed the duplicate check")
     if counts.get("skipped_presign"):
         warnings.append(f"{counts['skipped_presign']} image(s) skipped due to presigned-URL errors")
     if counts.get("skipped_over_limit"):
-        warnings.append(f"{counts['skipped_over_limit']} image(s) skipped over the {max_per_day}/FLW/day limit")
+        warnings.append(
+            f"{counts['skipped_over_limit']} image(s) skipped over the {max_per_day} per FLW/day/photo-type limit"
+        )
     if counts.get("session_errors"):
         warnings.append(f"{counts['session_errors']} session(s) errored during duplicate detection")
     note = ("Duplicate detection completed with issues: " + "; ".join(warnings) + ".") if warnings else ""
@@ -243,6 +248,15 @@ def _images_grouped_by_flw_type_and_day(session, image_paths: list[str] | None) 
     into a single (question_id, day) bucket, which then caps at max_per_day
     for the WHOLE group instead of per FLW, and a single failed detect call
     on that one merged bucket costs every FLW's images, not just one's.
+
+    TRADE-OFF: this also means two DIFFERENT FLWs submitting the same photo
+    (e.g. one physically sharing an image, or a supervisor distributing one
+    to multiple workers) can no longer be caught -- each FLW's images are only
+    ever compared against their own. The old (question_id, day)-only key could
+    catch that in principle, but in practice only compared whatever arbitrary
+    40-of-N images survived the cap, so it was unreliable anyway. If cross-FLW
+    duplicate detection is wanted, it needs to be a deliberate separate pass,
+    not a side effect of this key.
     """
     buckets: dict[tuple, list[dict]] = {}
     visit_images = session.data.get("visit_images", {})
@@ -267,6 +281,7 @@ def run_duplicate_detection(
     image_paths: list[str] | None = None,
     max_per_day: int | None = None,
     progress_callback=None,
+    cancel_key: str | None = None,
 ) -> dict:
     """Run per-(FLW, day, photo-type) duplicate detection on one audit session.
 
@@ -274,7 +289,7 @@ def run_duplicate_detection(
     responsible for persisting via ``data_access.save_audit_session``. Returns a
     summary dict for progress/logging.
 
-    CONCURRENCY -- INTENTIONALLY SEQUENTIAL: the day-batches below are processed
+    CONCURRENCY -- INTENTIONALLY SEQUENTIAL: the batches below are processed
     one at a time, and each ``/detect_duplicates`` call completes before the next
     starts. Do NOT fan these out (e.g. a ThreadPoolExecutor over buckets firing
     ~10 detect calls at once) even though the sibling AI-review path
@@ -285,25 +300,56 @@ def run_duplicate_detection(
 
     (Presigning WITHIN a batch may be parallelized if needed -- that's a different
     concern, kept short so signed-URL TTLs don't expire before the POST.)
+
+    ``cancel_key``, when given, is checked between buckets (see
+    ``is_audit_creation_cancelled``) -- this matters more now than it did
+    before per-FLW bucketing: a combined session spanning many FLWs now makes
+    one sequential, ~180s-timeout detect call PER FLW instead of one for the
+    whole session, so a large combined session's worth of buckets can take
+    much longer to run through, with no overall time limit
+    (CELERY_TASK_TIME_LIMIT is unset) -- cooperative cancellation is the only
+    way to stop it early. Mirrors the sibling
+    ``visit_cluster_duplicate_detection.run_grouping_duplicate_detection``.
     """
     if max_per_day is None:
         max_per_day = getattr(settings, "DUPLICATE_DETECTION_MAX_IMAGES_PER_DAY", DEFAULT_MAX_IMAGES_PER_DAY)
 
     buckets = _images_grouped_by_flw_type_and_day(session, image_paths)
+    # Any image whose visit had no recorded username falls back to a single
+    # shared "unknown" bucket in _images_grouped_by_flw_type_and_day -- which
+    # is exactly the cross-FLW merging this function exists to eliminate,
+    # just for the (expected to be rare) case of missing FLW attribution.
+    # Surfacing it here means a degenerate run is visible in the logs instead
+    # of silently looking like a normal FLW named "unknown".
+    unknown_count = sum(len(v) for (u, _, _), v in buckets.items() if u == "unknown")
+    if unknown_count:
+        logger.warning(
+            "[DuplicateDetection] %d image(s) had no username and were grouped into a shared "
+            "'unknown' bucket per type/day -- FLW isolation does not apply to them",
+            unknown_count,
+        )
     # Counters below drive the run-summary note. "skipped_*" record images the
-    # detector never got a verdict on; "detect_failures" records whole day-batches
-    # whose /detect_duplicates call failed. All are non-fatal -- work continues.
+    # detector never got a verdict on; "detect_failures" records whole
+    # (FLW, day, type) batches whose /detect_duplicates call failed. All are
+    # non-fatal -- work continues.
     summary = {
         "groups_detected": 0,
         "images_flagged": 0,
-        "days_processed": 0,
+        "batches_processed": 0,
         "skipped_over_limit": 0,  # images dropped by the max_per_day cap
         "skipped_presign": 0,  # images dropped because their presign failed
-        "detect_failures": 0,  # day-batches whose detect call did not succeed
+        "detect_failures": 0,  # batches whose detect call did not succeed
+        "cancelled": False,
     }
     if not buckets:
         return summary
 
+    # Write-only forensic data (nothing in this codebase reads it back today) --
+    # keyed "username|question_id|day" as of this fix; a session detected
+    # before it used "question_id|day" and setdefault() never migrates old
+    # entries, so re-running detection on a pre-fix session can leave both key
+    # shapes side by side. Harmless since nothing parses these keys, but worth
+    # knowing if this ever becomes a real forensic-read target.
     raw_groups_store: dict[str, list] = session.data.setdefault("duplicate_detection", {})
     client = DuplicateDetectionClient()
     processed = 0
@@ -311,7 +357,10 @@ def run_duplicate_detection(
         # Sequential on purpose -- one detect call at a time. See the docstring's
         # CONCURRENCY note before considering any parallel fan-out here.
         for (username, question_id, day), images in buckets.items():
-            summary["days_processed"] += 1
+            if cancel_key and is_audit_creation_cancelled(cancel_key):
+                summary["cancelled"] = True
+                break
+            summary["batches_processed"] += 1
             if len(images) > max_per_day:
                 dropped = len(images) - max_per_day
                 logger.info(
@@ -386,7 +435,7 @@ def run_duplicate_detection(
                 progress_callback(
                     processed,
                     len(buckets),
-                    f"Duplicate detection {processed}/{len(buckets)} day-batches "
+                    f"Duplicate detection {processed}/{len(buckets)} FLW/day batches "
                     f"({summary['images_flagged']} flagged)",
                 )
     finally:
