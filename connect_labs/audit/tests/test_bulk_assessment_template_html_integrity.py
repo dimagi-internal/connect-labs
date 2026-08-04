@@ -12,12 +12,10 @@ each time -- cheap enough to guard permanently instead.
 
 Single quotes inside these comments are always safe; double quotes are not.
 """
-from pathlib import Path
 from html.parser import HTMLParser
+from pathlib import Path
 
-TEMPLATE_PATH = (
-    Path(__file__).resolve().parents[3] / "connect_labs" / "templates" / "audit" / "bulk_assessment.html"
-)
+TEMPLATE_PATH = Path(__file__).resolve().parents[3] / "connect_labs" / "templates" / "audit" / "bulk_assessment.html"
 
 
 class _XDataCollector(HTMLParser):
