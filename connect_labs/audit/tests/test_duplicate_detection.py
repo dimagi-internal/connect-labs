@@ -465,9 +465,7 @@ def test_run_stops_between_buckets_when_cancelled(monkeypatch):
         }
     )
     monkeypatch.setattr("connect_labs.audit.duplicate_detection.get_signed_url", lambda opp, blob, tok: "https://s")
-    monkeypatch.setattr(
-        "connect_labs.audit.duplicate_detection.is_audit_creation_cancelled", lambda cancel_key: True
-    )
+    monkeypatch.setattr("connect_labs.audit.duplicate_detection.is_audit_creation_cancelled", lambda cancel_key: True)
     calls = []
 
     def _detect(self, manifest):
