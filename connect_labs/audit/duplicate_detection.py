@@ -220,6 +220,8 @@ def build_duplicate_warnings(counts: dict, max_per_day: int | None = None) -> tu
     if max_per_day is None:
         max_per_day = getattr(settings, "DUPLICATE_DETECTION_MAX_IMAGES_PER_DAY", DEFAULT_MAX_IMAGES_PER_DAY)
     warnings: list[str] = []
+    if counts.get("cancelled"):
+        warnings.append("stopped by user before all FLWs/batches were checked")
     if counts.get("detect_failures"):
         warnings.append(f"{counts['detect_failures']} FLW/day/photo-type batch(es) failed the duplicate check")
     if counts.get("skipped_presign"):

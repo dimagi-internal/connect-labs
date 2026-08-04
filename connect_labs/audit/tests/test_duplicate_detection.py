@@ -478,6 +478,9 @@ def test_run_stops_between_buckets_when_cancelled(monkeypatch):
     summary = run_duplicate_detection(session, access_token="tok", cancel_key="task-1")
 
     assert summary["cancelled"] is True
+    # Surfaced into the per-session banner, same as the AI-review and
+    # visit-cluster stages already do for their own cancellation.
+    assert "stopped by user" in session.data["duplicate_detection_summary"]["note"]
     assert calls == []  # cancelled before the first bucket's detect call
 
 
@@ -646,3 +649,7 @@ def test_run_stops_between_sessions_when_cancelled(monkeypatch):
 
     assert calls == []  # cancelled before the first session
     assert totals["sessions_processed"] == 0
+    # Surfaced into the run-level note -- run_audit_creation's completion
+    # message reads this the same way it already does for the AI-review and
+    # visit-cluster stages' own "stopped by user" cancellation notes.
+    assert "stopped by user" in totals["note"]

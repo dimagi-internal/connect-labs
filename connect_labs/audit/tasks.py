@@ -735,10 +735,12 @@ def _run_duplicate_detection_on_sessions(
         "skipped_presign": 0,
         "detect_failures": 0,
         "session_errors": 0,  # sessions that raised before finishing detection
+        "cancelled": False,
     }
     total = len(session_ids)
     for idx, session_id in enumerate(session_ids, start=1):
         if cancel_key and is_audit_creation_cancelled(cancel_key):
+            totals["cancelled"] = True
             break
         try:
             session = data_access.get_audit_session(session_id)
@@ -763,6 +765,7 @@ def _run_duplicate_detection_on_sessions(
                 totals[key] += summary.get(key, 0)
             totals["sessions_processed"] += 1
             if summary.get("cancelled"):
+                totals["cancelled"] = True
                 break
         except Exception as e:
             totals["session_errors"] += 1
