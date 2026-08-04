@@ -404,6 +404,101 @@ def test_run_default_defaults_window_to_last_week(monkeypatch):
     assert ws < we  # a concrete resolved window
 
 
+def test_run_default_daily_cadence_uses_yesterday_window(monkeypatch):
+    """A program-level schedule honors cadence too, same as the per-opp creator
+    — a Daily-cadence program schedule must not keep re-firing the same
+    last_week bucket every night."""
+    from connect_labs.workflow.templates import program_audit_creator as m
+    from connect_labs.workflow.templates import run_default_for_definition
+
+    captured = {}
+
+    def make_wda(access_token=None, opportunity_id=None, **_):
+        wda = mock.Mock()
+        wda.list_runs.return_value = []
+
+        def _create(def_id, *, opportunity_id=None, program_id=None, period_start, period_end, initial_state=None):
+            captured["window"] = (period_start, period_end)
+            return _run(9)
+
+        wda.create_run.side_effect = _create
+        return wda
+
+    monkeypatch.setattr(m, "WorkflowDataAccess", make_wda)
+    monkeypatch.setattr(m, "fan_out_generate", mock.Mock(return_value={"per_opp": {}}))
+
+    run_default_for_definition(_program_def(), access_token="t", cadence="daily")
+
+    ws, we = captured["window"]
+    assert ws == we  # a single rolling day, not the fixed weekly bucket
+
+
+def test_fan_out_merges_per_opp_clustering_overrides_with_uniform_criteria(monkeypatch):
+    """Each opp's OWN pinned visit_clustering config rides along with dispatch_batch,
+    merged with the (uniform, persisted) criteria_overrides — so a program-level
+    fan-out honors the same per-opp clustering settings the single-opp scheduled
+    path does, instead of silently dropping them."""
+    from connect_labs.workflow import audit_generation as ag
+    from connect_labs.workflow.templates import program_audit_creator as m
+
+    def make_wda(access_token=None, opportunity_id=None, **_):
+        wda = mock.Mock()
+        creator = _mock_creator(opportunity_id)
+        creator.data = {
+            "config": {
+                "audit_batch": {
+                    "visit_clustering": {
+                        "enable_time_gap": True,
+                        "time_gap_minutes": 4,
+                        "enable_distance": True,
+                        "distance_meters": 10,
+                        "enable_duplicate_detection": True,
+                    }
+                }
+            }
+        }
+        wda.get_definition.return_value = creator
+        wda.get_run.return_value = _run(700)
+        wda.update_run_state.side_effect = lambda rid, s: None
+        return wda
+
+    dispatch_calls = []
+
+    def fake_dispatch(defn, ws, we, *, access_token, sample_overrides=None, criteria_overrides=None):
+        dispatch_calls.append(criteria_overrides)
+        return {"run_id": defn.id + 1000, "task_id": "task-" + str(defn.id), "status": "running"}
+
+    monkeypatch.setattr(m, "WorkflowDataAccess", make_wda)
+    monkeypatch.setattr(ag, "dispatch_batch", fake_dispatch)
+
+    m.fan_out_generate(
+        definition=_program_def(),
+        run_id=700,
+        access_token="t",
+        window=("2026-06-21", "2026-06-27"),
+        criteria_overrides={"pass_threshold": 85},
+    )
+
+    assert dispatch_calls == [
+        {
+            "pass_threshold": 85,
+            "enable_time_gap": True,
+            "time_gap_minutes": 4,
+            "enable_distance": True,
+            "distance_meters": 10,
+            "enable_duplicate_detection": True,
+        },
+        {
+            "pass_threshold": 85,
+            "enable_time_gap": True,
+            "time_gap_minutes": 4,
+            "enable_distance": True,
+            "distance_meters": 10,
+            "enable_duplicate_detection": True,
+        },
+    ]
+
+
 # ── program-owned vs opp-owned run scope ─────────────────────────────────────
 
 
