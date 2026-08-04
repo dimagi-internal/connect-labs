@@ -88,13 +88,18 @@ def test_render_code_wires_comparison_label_for_reading_dependent_agents():
     clean display name (see connect_labs.audit.data_access's
     _add_related_fields_to_images). muac_match must reuse the exact "MUAC
     Reading" string weekly_dual_track_audit.py's MUAC_MATCH_REVIEWER already
-    sets, so both templates show identical labels for the same field."""
+    sets, so both templates show identical labels for the same field.
+
+    Binds each label to its own agent's object literal (not just anywhere in
+    the RENDER_CODE string) -- a swapped mapping (muac_match getting the scale
+    label or vice versa) would otherwise still pass."""
+    import re
+
     from connect_labs.workflow.templates import get_template
 
     rc = get_template("bulk_image_audit")["render_code"]
-    assert "comparisonLabel:" in rc
-    assert "comparisonLabel: 'MUAC Reading'" in rc
-    assert "comparisonLabel: 'Scale Weight Reading'" in rc
+    assert re.search(r"scale_validation:\s*\{[^}]*comparisonLabel:\s*'Scale Weight Reading'", rc)
+    assert re.search(r"muac_match:\s*\{[^}]*comparisonLabel:\s*'MUAC Reading'", rc)
 
 
 def test_render_code_reads_legacy_single_select_config_forward():

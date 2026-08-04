@@ -461,8 +461,16 @@ def run_duplicate_detection(
             # to just the blobs assign_group_ids flagged as duplicates (not the
             # whole batch) -- singleton images that never make it into a
             # component don't need a visit_id at all here, and their visit_id
-            # need not even be castable to int.
-            blob_meta_for_dedup = {bid: {"visit_id": int(by_blob[bid]["visit_id"])} for bid in blob_to_group}
+            # need not even be castable to int. Also guards against a
+            # malformed/stale detector response naming a blob_id that was
+            # never in this batch's manifest -- assign_group_ids has no way to
+            # validate the detector's own response, so blob_to_group can
+            # contain an id absent from by_blob; the flagging loop below
+            # already skips those via by_blob.get(...), so this dict must too
+            # rather than raising KeyError before that check is ever reached.
+            blob_meta_for_dedup = {
+                bid: {"visit_id": int(by_blob[bid]["visit_id"])} for bid in blob_to_group if bid in by_blob
+            }
             for blob_id, group_id in blob_to_group.items():
                 img = by_blob.get(blob_id)
                 if not img:

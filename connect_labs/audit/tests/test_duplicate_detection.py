@@ -420,6 +420,34 @@ def test_run_duplicate_of_visit_ids_never_names_its_own_visit(monkeypatch):
 
 
 @override_settings(SCALE_VALIDATION_API_KEY="k")
+def test_run_survives_unknown_blob_id_in_detector_response(monkeypatch):
+    """A malformed/stale detector response can name a blob_id that was never
+    in this batch's manifest -- assign_group_ids has no way to validate the
+    detector's own response against what was actually sent. The flagging loop
+    already skips unknown blobs via by_blob.get(...), but the duplicate_of_
+    visit_ids lookup must skip them too rather than raising KeyError before
+    that check is ever reached, which would abort the whole batch."""
+    session = _session(
+        {
+            "100": [_img("a")],
+            "101": [_img("b")],
+        }
+    )
+    monkeypatch.setattr(
+        "connect_labs.audit.duplicate_detection.get_signed_url",
+        lambda opp, blob, tok: f"https://signed/{blob}",
+    )
+    # "ghost" was never part of the manifest sent to /detect_duplicates.
+    monkeypatch.setattr(DuplicateDetectionClient, "detect", lambda self, manifest: [["a", "b", "ghost"]])
+
+    summary = run_duplicate_detection(session, access_token="tok")
+
+    assert summary["images_flagged"] == 2
+    assert session.get_assessments(100)["a"]["duplicate_of_visit_ids"] == [101]
+    assert session.get_assessments(101)["b"]["duplicate_of_visit_ids"] == [100]
+
+
+@override_settings(SCALE_VALIDATION_API_KEY="k")
 def test_run_separates_distinct_days(monkeypatch):
     session = _session(
         {
