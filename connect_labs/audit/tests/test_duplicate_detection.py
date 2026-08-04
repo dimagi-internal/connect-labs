@@ -347,7 +347,7 @@ def test_run_groups_by_day_and_type_and_flags(monkeypatch):
     assert summary["days_processed"] == 1
     assert session.get_assessments(100)["a"]["duplicate_group"] == 0
     assert session.get_assessments(101)["b"]["duplicate_group"] == 0
-    assert session.data["duplicate_detection"]["form/muac_photo|2026-07-30"] == [["a", "b"]]
+    assert session.data["duplicate_detection"]["u1|form/muac_photo|2026-07-30"] == [["a", "b"]]
 
 
 @override_settings(SCALE_VALIDATION_API_KEY="k")
@@ -389,6 +389,67 @@ def test_run_caps_at_max_per_day(monkeypatch):
     assert sizes == [40]
     # 50 images, cap 40 -> 10 skipped over the limit.
     assert summary["skipped_over_limit"] == 10
+
+
+@override_settings(SCALE_VALIDATION_API_KEY="k")
+def test_run_caps_per_flw_not_across_the_whole_day(monkeypatch):
+    """The cap must apply PER FLW PER DAY, not to the combined total of every
+    FLW's images for that type/day -- a combined/per-opp session's
+    visit_images spans multiple FLWs, and each FLW is entitled to their own
+    max_per_day allowance."""
+    session = _session(
+        {
+            # 5 FLWs, 49 images each, same day/type -- 245 total, matching the
+            # real report this regresses (245 images, 205 over the 40/day cap
+            # under the old (question_id, day)-only key).
+            str(flw_idx * 100 + img_idx): [_img(f"u{flw_idx}-{img_idx}", username=f"u{flw_idx}")]
+            for flw_idx in range(5)
+            for img_idx in range(49)
+        }
+    )
+    monkeypatch.setattr("connect_labs.audit.duplicate_detection.get_signed_url", lambda opp, blob, tok: "https://s")
+    sizes = []
+
+    def _detect(self, manifest):
+        sizes.append(len(manifest))
+        return []
+
+    monkeypatch.setattr(DuplicateDetectionClient, "detect", _detect)
+    summary = run_duplicate_detection(session, access_token="tok", max_per_day=40)
+
+    # 5 separate FLW buckets, each capped at 40 -- not one combined 245-image
+    # bucket capped at 40 total.
+    assert summary["days_processed"] == 5
+    assert sorted(sizes) == [40, 40, 40, 40, 40]
+    assert summary["skipped_over_limit"] == 5 * (49 - 40)  # 9 per FLW, 45 total -- not 205
+
+
+@override_settings(SCALE_VALIDATION_API_KEY="k")
+def test_run_one_flws_detect_failure_does_not_cost_another_flws_batch(monkeypatch):
+    """A failed /detect_duplicates call for one FLW's day-batch must not skip
+    or fail any OTHER FLW's batch for the same type/day -- before the fix,
+    multiple FLWs shared a single bucket, so one failure zeroed out every
+    FLW's images for that day."""
+    session = _session(
+        {
+            "100": [_img("a", username="flwA")],
+            "101": [_img("b", username="flwB")],
+        }
+    )
+    monkeypatch.setattr("connect_labs.audit.duplicate_detection.get_signed_url", lambda opp, blob, tok: "https://s")
+
+    def _detect(self, manifest):
+        if manifest[0]["id"] == "a":
+            raise DuplicateDetectionError("boom")
+        return [["b"]]
+
+    monkeypatch.setattr(DuplicateDetectionClient, "detect", _detect)
+    summary = run_duplicate_detection(session, access_token="tok")
+
+    assert summary["detect_failures"] == 1
+    assert summary["images_flagged"] == 0  # flwB's single image isn't a duplicate of anything
+    assert summary["groups_detected"] == 1
+    assert session.data["duplicate_detection"]["flwB|form/muac_photo|2026-07-30"] == [["b"]]
 
 
 @override_settings(SCALE_VALIDATION_API_KEY="k")
@@ -434,7 +495,7 @@ def test_run_counts_detect_failure(monkeypatch):
     assert summary["detect_failures"] == 1
     assert summary["images_flagged"] == 0
     # A failed batch is not recorded as a (false) empty result.
-    assert "form/muac_photo|2026-07-30" not in session.data.get("duplicate_detection", {})
+    assert "u1|form/muac_photo|2026-07-30" not in session.data.get("duplicate_detection", {})
 
 
 # --------------------------------------------------------------------------- #
@@ -453,7 +514,7 @@ def test_build_duplicate_warnings_all_kinds():
     )
     assert len(warnings) == 4
     assert note.startswith("Duplicate detection completed with issues:")
-    assert "40/day limit" in note
+    assert "40/FLW/day limit" in note
 
 
 # --------------------------------------------------------------------------- #
@@ -489,9 +550,9 @@ def test_run_summary_note_lists_every_failure_kind(monkeypatch):
     assert totals["skipped_presign"] == 2
     assert totals["detect_failures"] == 1
     assert totals["skipped_over_limit"] == 3
-    assert "1 day-batch(es) failed the duplicate check" in totals["note"]
+    assert "1 FLW/day batch(es) failed the duplicate check" in totals["note"]
     assert "2 image(s) skipped due to presigned-URL errors" in totals["note"]
-    assert "40/day limit" in totals["note"]
+    assert "40/FLW/day limit" in totals["note"]
     assert len(totals["warnings"]) == 3
 
 

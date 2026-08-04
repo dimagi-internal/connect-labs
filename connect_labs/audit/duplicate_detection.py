@@ -218,23 +218,31 @@ def build_duplicate_warnings(counts: dict, max_per_day: int | None = None) -> tu
         max_per_day = getattr(settings, "DUPLICATE_DETECTION_MAX_IMAGES_PER_DAY", DEFAULT_MAX_IMAGES_PER_DAY)
     warnings: list[str] = []
     if counts.get("detect_failures"):
-        warnings.append(f"{counts['detect_failures']} day-batch(es) failed the duplicate check")
+        warnings.append(f"{counts['detect_failures']} FLW/day batch(es) failed the duplicate check")
     if counts.get("skipped_presign"):
         warnings.append(f"{counts['skipped_presign']} image(s) skipped due to presigned-URL errors")
     if counts.get("skipped_over_limit"):
-        warnings.append(f"{counts['skipped_over_limit']} image(s) skipped over the {max_per_day}/day limit")
+        warnings.append(f"{counts['skipped_over_limit']} image(s) skipped over the {max_per_day}/FLW/day limit")
     if counts.get("session_errors"):
         warnings.append(f"{counts['session_errors']} session(s) errored during duplicate detection")
     note = ("Duplicate detection completed with issues: " + "; ".join(warnings) + ".") if warnings else ""
     return warnings, note
 
 
-def _images_grouped_by_type_and_day(session, image_paths: list[str] | None) -> dict:
-    """Bucket a session's images into ``{(question_id, day): [image_dict, ...]}``.
+def _images_grouped_by_flw_type_and_day(session, image_paths: list[str] | None) -> dict:
+    """Bucket a session's images into ``{(username, question_id, day): [image_dict, ...]}``.
 
     ``day`` is the ISO date prefix of each image's ``visit_date``. Images whose
     ``question_id`` is not in ``image_paths`` are skipped (None = keep all types,
     which is what the wizards already filter down to).
+
+    The key MUST include ``username``: a per-FLW session (one FLW's images
+    only) made this a no-op historically, but a combined/per-opp session's
+    ``visit_images`` spans every selected FLW -- without the username in the
+    key, one FLW's 30 images and another's 215 for the same type/day collapse
+    into a single (question_id, day) bucket, which then caps at max_per_day
+    for the WHOLE group instead of per FLW, and a single failed detect call
+    on that one merged bucket costs every FLW's images, not just one's.
     """
     buckets: dict[tuple, list[dict]] = {}
     visit_images = session.data.get("visit_images", {})
@@ -246,9 +254,10 @@ def _images_grouped_by_type_and_day(session, image_paths: list[str] | None) -> d
                 continue
             if image_paths is not None and question_id not in image_paths:
                 continue
+            username = image.get("username") or "unknown"
             day = (image.get("visit_date") or "")[:10] or "unknown"
             enriched = {**image, "visit_id": visit_id}
-            buckets.setdefault((question_id, day), []).append(enriched)
+            buckets.setdefault((username, question_id, day), []).append(enriched)
     return buckets
 
 
@@ -280,7 +289,7 @@ def run_duplicate_detection(
     if max_per_day is None:
         max_per_day = getattr(settings, "DUPLICATE_DETECTION_MAX_IMAGES_PER_DAY", DEFAULT_MAX_IMAGES_PER_DAY)
 
-    buckets = _images_grouped_by_type_and_day(session, image_paths)
+    buckets = _images_grouped_by_flw_type_and_day(session, image_paths)
     # Counters below drive the run-summary note. "skipped_*" record images the
     # detector never got a verdict on; "detect_failures" records whole day-batches
     # whose /detect_duplicates call failed. All are non-fatal -- work continues.
@@ -301,12 +310,13 @@ def run_duplicate_detection(
     try:
         # Sequential on purpose -- one detect call at a time. See the docstring's
         # CONCURRENCY note before considering any parallel fan-out here.
-        for (question_id, day), images in buckets.items():
+        for (username, question_id, day), images in buckets.items():
             summary["days_processed"] += 1
             if len(images) > max_per_day:
                 dropped = len(images) - max_per_day
                 logger.info(
-                    "[DuplicateDetection] %s on %s has %d images; capping at %d (%d skipped)",
+                    "[DuplicateDetection] %s / %s on %s has %d images; capping at %d (%d skipped)",
+                    username,
                     question_id,
                     day,
                     len(images),
@@ -346,7 +356,8 @@ def run_duplicate_detection(
             except DuplicateDetectionError as exc:
                 summary["detect_failures"] += 1
                 logger.error(
-                    "[DuplicateDetection] detect call failed for %s on %s (%d images): %s",
+                    "[DuplicateDetection] detect call failed for %s / %s on %s (%d images): %s",
+                    username,
                     question_id,
                     day,
                     len(manifest),
@@ -354,7 +365,7 @@ def run_duplicate_detection(
                 )
                 continue
 
-            raw_groups_store[f"{question_id}|{day}"] = groups
+            raw_groups_store[f"{username}|{question_id}|{day}"] = groups
             summary["groups_detected"] += len(groups)
 
             blob_to_group = assign_group_ids(groups)
