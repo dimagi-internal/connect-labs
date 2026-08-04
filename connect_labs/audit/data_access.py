@@ -196,9 +196,9 @@ class AuditCriteria:
     days_of_week: list[int] | None = None
     # Visit-clustering (duplicate-grouping) filter -- see connect_labs/audit/visit_clustering.py
     # for how these are actually applied. Read back later by
-    # AuditSessionRecord.to_summary_dict()'s visit_clustering_used field, so the FLW breakdown
-    # UI can show a reviewer what thresholds produced THIS session's groupings -- keep both
-    # readers in sync if these field names ever change.
+    # AuditSessionRecord.to_summary_dict()'s visit_clustering_used field (retained API surface;
+    # not currently rendered by the FLW breakdown UI -- see that field's own docstring) -- keep
+    # both readers in sync if these field names ever change.
     enable_time_gap: bool = False
     time_gap_minutes: int | None = None
     enable_distance: bool = False

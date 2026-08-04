@@ -49,9 +49,10 @@
     return (s && s.visit_clusters && s.visit_clusters.length) || 0;
   }
   // Short "(within 10 min, 10m)"-style description of the visit-clustering
-  // filter actually used for this session -- shown next to the "N Visit
-  // Cluster(s)" badge so a reviewer knows what time/distance thresholds
-  // produced the clusters, without going to look up the run's config.
+  // filter actually used for this session. NOT currently called from this
+  // file's own render (the FLW breakdown row dropped it as UI clutter --
+  // see AuditLine below) -- kept as a tested, exported pure helper (retained
+  // API surface, e.g. for a future debug/detail view), not dead weight.
   // Empty string when neither criterion was enabled for this session.
   function visitClusteringSummary(s) {
     var vc = (s && s.visit_clustering_used) || {};
@@ -321,13 +322,6 @@
                 (clusters.length === 1 ? '' : 's'),
             )
           : null,
-        clusters.length > 0 && visitClusteringSummary(s)
-          ? h(
-              'span',
-              { className: 'text-gray-400 whitespace-nowrap' },
-              '(' + visitClusteringSummary(s) + ')',
-            )
-          : null,
         h(
           'a',
           {
@@ -353,6 +347,21 @@
                 // reviewer can actually cross-reference a grouping against
                 // the tiles they're looking at.
                 var visitIds = c.visit_ids || [];
+                // A cluster being listed at all only means its images were
+                // CANDIDATES sent to the duplicate-detection API (they shared
+                // a time/GPS window) -- c.flagged (see
+                // AuditSessionRecord.get_visit_clusters_with_flag_status) is
+                // the real verdict: whether the API actually confirmed a
+                // duplicate among them. Most clusters check out clean, so
+                // only a flagged one gets the red "AI duplicates flagged"
+                // callout -- an unflagged cluster keeps the plain label.
+                var label = c.flagged
+                  ? 'Cluster ' +
+                    (i + 1) +
+                    ' — ' +
+                    c.image_count +
+                    ' images — AI duplicates flagged'
+                  : 'Cluster ' + (i + 1) + ' — ' + c.image_count + ' images';
                 // Label + download link on their own row; visit ids as individual
                 // wrapping chips on the row below -- a long grouping (8+ images)
                 // used to render as one unbroken bracketed string that could run
@@ -366,10 +375,11 @@
                     h(
                       'span',
                       {
-                        className:
-                          'font-medium text-gray-600 whitespace-nowrap',
+                        className: c.flagged
+                          ? 'font-medium text-red-600 whitespace-nowrap'
+                          : 'font-medium text-gray-600 whitespace-nowrap',
                       },
-                      'Cluster ' + (i + 1) + ' — ' + c.image_count + ' images',
+                      label,
                     ),
                     h(
                       'a',
