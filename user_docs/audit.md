@@ -172,4 +172,4 @@ The bulk assessment page header identifies the field worker being reviewed. For 
     - **Pass** and **Fail** appear side by side as before.
     - **Duplicate/Fake** appears as a full-width button below Pass and Fail (shown in orange with an exclamation icon). Use this when an image appears to be a duplicate submission or a fabricated photo rather than a genuine field visit. The image card border, corner badge, and lightbox all use the same orange treatment when this option is selected.
 
-    If an image was flagged by the **Image De-duplication** check, it receives a **
+    If an image was flagged by the **Image De-duplication** check or the **Duplicate Detection
