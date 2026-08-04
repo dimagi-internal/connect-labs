@@ -719,6 +719,15 @@ class AuditSessionRecord(LocalLabsRecord):
         Includes pass_threshold so callers don't need their own hardcoded
         cutoff — each session's own configured threshold is the source of
         truth for whether its images "passed" overall.
+
+        Also includes the full ``assessment_stats`` block (same shape
+        ``to_summary_dict`` returns). ``by_question`` alone cannot answer
+        "which AI classifier flagged this FLW today" -- only
+        ``get_assessment_stats``'s ``ai_flags_by_label`` carries the
+        per-classifier breakdown, and this opportunity-scoped endpoint is the
+        only way to read every session for an opportunity in one call. Without
+        it, a per-day-per-classifier view would have to enumerate workflow
+        runs and fan out one request per run (see WorkflowSessionsAPIView).
         """
         criteria = self.criteria or {}
         start_date = criteria.get("start_date")
@@ -737,4 +746,5 @@ class AuditSessionRecord(LocalLabsRecord):
             "completed_at": self.data.get("completed_at"),
             "pass_threshold": self.pass_threshold,
             "by_question": self.get_assessment_stats_by_question(),
+            "assessment_stats": self.get_assessment_stats(),
         }
