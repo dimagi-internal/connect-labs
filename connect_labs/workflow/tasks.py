@@ -854,7 +854,9 @@ def run_scheduled_workflow(schedule_id: int) -> dict:
         definition = da.get_definition(sched.definition_id)
         if definition is None:
             raise ValueError(f"definition {sched.definition_id} not found")
-        run_default_for_definition(definition, access_token=token, request=None, cchq_access_token=cchq_token)
+        run_default_for_definition(
+            definition, access_token=token, request=None, cchq_access_token=cchq_token, cadence=sched.cadence
+        )
         sched.last_status = WorkflowSchedule.STATUS_OK
         sched.last_error = ""
     except Exception as e:  # noqa: BLE001

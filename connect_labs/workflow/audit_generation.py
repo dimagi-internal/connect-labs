@@ -1,9 +1,21 @@
 """Audit-batch generation seam.
 
-Shared helpers for the ``weekly_dual_track_audit`` creator's default-run hook:
+Shared helpers for the ``weekly_dual_track_audit`` and ``program_audit_creator``
+default-run hooks:
 - ``resolve_window`` maps a preset (``last_week`` …) to inclusive ISO dates,
   mirroring the render's ``calculateDateRange`` so the UI and the no-UI
-  default-run path agree on what "last week" means.
+  default-run path agree on what "last week" means. ``yesterday`` has no
+  render-side equivalent — it exists only for ``window_preset_for_cadence``,
+  since the manual UI has no daily-cadence concept to derive it from.
+- ``window_preset_for_cadence`` maps a ``WorkflowSchedule`` cadence (see
+  ``connect_labs.workflow.schedules``) to the preset a scheduled default-run
+  should resolve when it wasn't given an explicit ``window`` — daily/weekdays
+  get a single rolling ``yesterday`` day instead of the fixed weekly bucket,
+  so a schedule firing every day doesn't re-audit the same week repeatedly.
+- ``sample_overrides_for`` / ``clustering_overrides_for`` extract a creator
+  definition's pinned sampling rates and visit-clustering settings, shared by
+  both the single-opp default-run and the program creator's per-opp fan-out
+  so a definition behaves identically whichever path fires it.
 - ``run_this_week_batch`` creates ONE fresh audit-batch run for a single
   ``weekly_dual_track_audit`` definition's opportunity and fires the batch job
   synchronously.
@@ -30,6 +42,7 @@ from __future__ import annotations
 import logging
 from datetime import date, timedelta
 
+from connect_labs.workflow import schedules
 from connect_labs.workflow.data_access import WorkflowDataAccess
 from connect_labs.workflow.tasks import run_workflow_job
 
@@ -47,7 +60,9 @@ def resolve_window(preset: str, today: date) -> tuple[str, str]:
     """
     dow = today.isoweekday() % 7  # JS getDay(): Sunday == 0
 
-    if preset == "last_week":
+    if preset == "yesterday":
+        start = end = today - timedelta(days=1)
+    elif preset == "last_week":
         this_sun = today - timedelta(days=dow)
         end = this_sun - timedelta(days=1)
         start = this_sun - timedelta(days=7)
@@ -70,6 +85,36 @@ def resolve_window(preset: str, today: date) -> tuple[str, str]:
     return start.isoformat(), end.isoformat()
 
 
+# Cadence -> window preset for scheduled default-runs that don't get an explicit
+# `window`. Keyed on connect_labs.workflow.schedules' plain cadence constants
+# (not connect_labs.labs.models.WorkflowSchedule) to avoid a Django-model import
+# in a module that templates without a schedule also use.
+_WINDOW_PRESET_BY_CADENCE = {
+    schedules.DAILY: "yesterday",
+    schedules.WEEKDAYS: "yesterday",
+    schedules.WEEKLY: "last_week",
+    schedules.MONTHLY: "last_month",
+}
+
+
+def window_preset_for_cadence(cadence):
+    """Resolve-window preset for a scheduled default-run's cadence.
+
+    ``cadence`` is ``None`` for a manual "Run now" / no-schedule call, which
+    resolves to ``"last_week"`` same as before this existed. An unrecognized
+    non-``None`` cadence also falls back to ``"last_week"`` but is logged —
+    silently drifting to the wrong window for a scheduling feature is worse
+    than a loud fallback.
+    """
+    if cadence is None:
+        return "last_week"
+    preset = _WINDOW_PRESET_BY_CADENCE.get(cadence)
+    if preset is None:
+        logger.warning("unmapped schedule cadence %r; defaulting window to last_week", cadence)
+        return "last_week"
+    return preset
+
+
 def sample_overrides_for(definition):
     """Extract the MUAC / Other sampling percentages from a creator definition's
     ``config.audit_batch`` (the same defaults the UI pre-fills)."""
@@ -82,6 +127,39 @@ def sample_overrides_for(definition):
     }
 
 
+CLUSTERING_OVERRIDE_KEYS = (
+    "enable_time_gap",
+    "time_gap_minutes",
+    "enable_distance",
+    "distance_meters",
+    "enable_duplicate_detection",
+)
+
+
+def clustering_overrides_for(definition):
+    """Extract the pinned visit-clustering / duplicate-detection settings from a
+    creator definition's ``config.audit_batch.visit_clustering`` — only the keys
+    actually present (a definition created before this block existed contributes
+    none, leaving the ``weekly_dual_track_audit_create`` handler's own
+    ``state``-fallback in charge).
+
+    Mirrors the render's own guard (see its ``enableDuplicateDetection`` effect):
+    duplicate detection has no groupings to check across when both clustering
+    gates are off, so a pinned config carrying that nonsensical combination is
+    corrected here rather than passed through.
+    """
+    batch = (definition.data.get("config") or {}).get("audit_batch") or {}
+    visit_clustering = batch.get("visit_clustering") or {}
+    overrides = {key: visit_clustering[key] for key in CLUSTERING_OVERRIDE_KEYS if key in visit_clustering}
+    if (
+        overrides.get("enable_duplicate_detection")
+        and not overrides.get("enable_time_gap")
+        and not overrides.get("enable_distance")
+    ):
+        overrides["enable_duplicate_detection"] = False
+    return overrides
+
+
 def create_batch_run(
     definition, window_start, window_end, *, access_token, sample_overrides=None, criteria_overrides=None
 ):
@@ -90,10 +168,14 @@ def create_batch_run(
     job_config)``. Shared by the eager (cron) path and the in-process, progress-
     relayed fan-out (program creator).
 
-    ``criteria_overrides`` (optional dict with ``pass_threshold``,
-    ``deliver_unit_types``, ``visit_statuses``) rides through job_config to the
-    ``weekly_dual_track_audit_create`` handler, which applies it to every
-    per-opp/per-track ``run_audit_creation`` call — see PR #884.
+    ``criteria_overrides`` (optional dict) rides through job_config to the
+    ``weekly_dual_track_audit_create`` handler as-is. Originally
+    ``pass_threshold``/``deliver_unit_types``/``visit_statuses`` (PR #884);
+    the default-run hook also uses it to carry the pinned
+    ``enable_time_gap``/``time_gap_minutes``/``enable_distance``/
+    ``distance_meters``/``enable_duplicate_detection`` visit-clustering
+    settings, since the handler already reads all of these keys straight off
+    ``job_config`` with a ``state`` fallback.
     """
     opp_id = definition.opportunity_id or definition.opportunity_ids[0]
     def_id = definition.id
@@ -122,7 +204,7 @@ def create_batch_run(
         # {muac_sample_percentage, other_sample_percentage}
         job_config.update(sample_overrides)
     if criteria_overrides:
-        # {pass_threshold, deliver_unit_types, visit_statuses}
+        # see create_batch_run's docstring above for what this carries
         job_config.update(criteria_overrides)
     return opp_id, run, job_config
 

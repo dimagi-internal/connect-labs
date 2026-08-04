@@ -42,6 +42,7 @@ def test_run_scheduled_workflow_success_records_ok():
     assert sched.last_status == WorkflowSchedule.STATUS_OK
     assert sched.last_run_at is not None
     run_default.assert_called_once()
+    assert run_default.call_args.kwargs["cadence"] == "daily"
     DA.assert_called_once_with(access_token="tok", opportunity_id=1237)
 
 
@@ -174,7 +175,9 @@ def test_run_scheduled_workflow_forwards_cchq_token_when_available():
 
     sched.refresh_from_db()
     assert sched.last_status == WorkflowSchedule.STATUS_OK
-    run_default.assert_called_once_with(mock.ANY, access_token="tok", request=None, cchq_access_token="cchq-tok")
+    run_default.assert_called_once_with(
+        mock.ANY, access_token="tok", request=None, cchq_access_token="cchq-tok", cadence="daily"
+    )
 
 
 @pytest.mark.django_db
@@ -200,4 +203,6 @@ def test_run_scheduled_workflow_missing_cchq_token_does_not_block_run():
 
     sched.refresh_from_db()
     assert sched.last_status == WorkflowSchedule.STATUS_OK
-    run_default.assert_called_once_with(mock.ANY, access_token="tok", request=None, cchq_access_token=None)
+    run_default.assert_called_once_with(
+        mock.ANY, access_token="tok", request=None, cchq_access_token=None, cadence="daily"
+    )

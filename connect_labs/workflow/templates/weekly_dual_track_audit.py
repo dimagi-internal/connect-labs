@@ -1196,38 +1196,40 @@ TEMPLATE["snapshot_inputs"] = {
 }
 
 
-def run_default(*, definition, access_token, request=None, window=None, **_):
-    """Default-run hook: create and fire this week's audit batch for the
-    definition's opportunity, with no UI.
+def run_default(*, definition, access_token, request=None, window=None, cadence=None, **_):
+    """Default-run hook: create and fire an audit batch for the definition's
+    opportunity, with no UI.
 
-    ``window`` defaults to ``resolve_window("last_week", today)``; the per-track
-    sampling rates come from the definition's ``config.audit_batch`` defaults
-    (the same values the UI pre-fills). Always creates a fresh run and fires it
-    (no reuse). Returns ``{"run_id", "sessions_created", "status"}``.
+    ``window`` defaults to a preset resolved from ``cadence`` via
+    ``window_preset_for_cadence`` (``"last_week"`` for a manual/no-schedule
+    call); the per-track sampling rates and visit-clustering /
+    duplicate-detection settings come from the definition's
+    ``config.audit_batch`` defaults (the same values the UI pre-fills).
+    Always creates a fresh run and fires it (no reuse). Returns
+    ``{"run_id", "sessions_created", "status"}``.
     """
     from datetime import date
 
-    from connect_labs.workflow.audit_generation import resolve_window, run_this_week_batch
+    from connect_labs.workflow.audit_generation import (
+        clustering_overrides_for,
+        resolve_window,
+        run_this_week_batch,
+        sample_overrides_for,
+        window_preset_for_cadence,
+    )
 
     if window is None:
-        window_start, window_end = resolve_window("last_week", date.today())
+        window_start, window_end = resolve_window(window_preset_for_cadence(cadence), date.today())
     else:
         window_start, window_end = window
-
-    batch = (definition.data.get("config") or {}).get("audit_batch") or {}
-    track_a = batch.get("track_a") or {}
-    track_b = batch.get("track_b") or {}
-    sample_overrides = {
-        "muac_sample_percentage": track_a.get("sample_percentage", 100),
-        "other_sample_percentage": track_b.get("sample_percentage", 10),
-    }
 
     return run_this_week_batch(
         definition,
         window_start,
         window_end,
         access_token=access_token,
-        sample_overrides=sample_overrides,
+        sample_overrides=sample_overrides_for(definition),
+        criteria_overrides=clustering_overrides_for(definition) or None,
     )
 
 

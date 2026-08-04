@@ -101,10 +101,11 @@ def fan_out_generate(
 
     Firing is an EXECUTION: for each targeted ``per_opp_instances`` entry it loads
     the per-opp creator definition (opp-scoped ``WorkflowDataAccess``) and
-    dispatches it via ``run_default_for_definition``, which always creates a fresh
-    per-opp run and fires its batch. The exact run it spawned is recorded into the
-    PROGRAM run's ``state.generation`` (per opp: ``run_id``, ``session_count``,
-    ``status``, ``order``) so "open run" points at the run this fire executed.
+    dispatches it via ``dispatch_batch`` (the same ``weekly_dual_track_audit_create``
+    job the per-opp workflow page runs), which always creates a fresh per-opp run
+    and fires its batch. The exact run it spawned is recorded into the PROGRAM
+    run's ``state.generation`` (per opp: ``run_id``, ``session_count``, ``status``,
+    ``order``) so "open run" points at the run this fire executed.
 
     Single-fire: a program run is fired ONCE. If ``state.generation`` is already
     populated and this is a full fan-out (``only_opportunity_id is None``), we do
@@ -116,12 +117,15 @@ def fan_out_generate(
     by this fire — persisted onto the PROGRAM run's state so a later per-opp
     re-run reuses the same filters. See PR #884 for these three filters'
     original (Django wizard) implementation; ``AuditCriteria.from_dict`` already
-    understands these keys unchanged.
+    understands these keys unchanged. Each per-opp creator's OWN pinned
+    visit-clustering settings (``clustering_overrides_for``) are merged in
+    per-opp on top of this — unlike the criteria filters, they aren't uniform
+    across the fan-out and aren't persisted onto the program run's state.
 
     Returns ``{"per_opp": {opp_id: result}, "generation", "window_start",
     "window_end"}``.
     """
-    from connect_labs.workflow.audit_generation import dispatch_batch, sample_overrides_for
+    from connect_labs.workflow.audit_generation import clustering_overrides_for, dispatch_batch, sample_overrides_for
 
     window_start, window_end = window if window else (None, None)
     criteria_overrides = criteria_overrides or {}
@@ -221,13 +225,17 @@ def fan_out_generate(
         # dispatched, so they run in PARALLEL (governed by the worker pool), and
         # each row polls its own task's status to glide. A reload reconnects because
         # the task_ids are persisted here.
+        # Clustering config is pinned per-opp (each creator_def has its own
+        # visit_clustering block), unlike criteria_overrides which is uniform
+        # across the whole fan-out — so it's merged in per-iteration here,
+        # same as sample_overrides_for above.
         dispatched = dispatch_batch(
             creator_def,
             window_start,
             window_end,
             access_token=access_token,
             sample_overrides=sample_overrides_for(creator_def),
-            criteria_overrides=criteria_overrides,
+            criteria_overrides={**criteria_overrides, **clustering_overrides_for(creator_def)},
         )
         per_opp[opp_id] = dispatched
         entry = {
@@ -251,19 +259,20 @@ def fan_out_generate(
 # =============================================================================
 
 
-def run_default(*, definition, run=None, access_token, request=None, window=None, **_):
+def run_default(*, definition, run=None, access_token, request=None, window=None, cadence=None, **_):
     """Default-run hook: generate the whole program's week with no UI.
 
-    Resolves the window (default ``last_week``), creates or reuses ONE PROGRAM
-    run for that window (idempotent per window, like the per-opp creator), then
-    fans out synchronously via ``fan_out_generate``. Returns its result.
+    Resolves the window (default ``last_week``, or per ``cadence`` — see
+    ``window_preset_for_cadence``), creates or reuses ONE PROGRAM run for that
+    window (idempotent per window, like the per-opp creator), then fans out
+    synchronously via ``fan_out_generate``. Returns its result.
     """
     from datetime import date
 
-    from connect_labs.workflow.audit_generation import resolve_window
+    from connect_labs.workflow.audit_generation import resolve_window, window_preset_for_cadence
 
     if window is None:
-        window_start, window_end = resolve_window("last_week", date.today())
+        window_start, window_end = resolve_window(window_preset_for_cadence(cadence), date.today())
     else:
         window_start, window_end = window
 

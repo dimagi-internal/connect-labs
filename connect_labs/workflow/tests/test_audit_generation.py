@@ -3,14 +3,17 @@
 Covers:
 - `run_default_for_definition` raises for a template that doesn't opt into
   default-run.
-- The `weekly_dual_track_audit` creator's `run_default` hook: creates a run +
-  fires the batch job when none exists for the window; idempotent (reuses an
-  existing run for the same window, doesn't re-fire).
-- `resolve_window("last_week", today)` (mirrors the render's calculateDateRange).
+- The `weekly_dual_track_audit` creator's `run_default` hook: always creates a
+  fresh run and fires the batch job (no reuse — see
+  `test_creator_run_default_always_creates_no_reuse`); the window it resolves
+  follows the schedule's cadence (`window_preset_for_cadence`); pinned
+  sampling / visit-clustering config rides through to job_config
+  (`sample_overrides_for` / `clustering_overrides_for`).
+- `resolve_window` presets, including `yesterday` and `last_month`.
+- The generic management command + API endpoint wrappers call the dispatcher.
 
 The program-wide fan-out (formerly on the `audit_par` report) now lives on the
 `program_audit_creator` template — see test_program_audit_creator.py.
-- The generic management command + API endpoint wrappers call the dispatcher.
 """
 
 import json
@@ -209,6 +212,196 @@ def test_resolve_window_unknown_preset_raises():
 
     with pytest.raises(ValueError):
         resolve_window("not_a_preset", date(2026, 7, 1))
+
+
+def test_resolve_window_yesterday():
+    from connect_labs.workflow.audit_generation import resolve_window
+
+    start, end = resolve_window("yesterday", date(2026, 7, 2))
+    assert start == "2026-07-01"
+    assert end == "2026-07-01"
+
+
+def test_resolve_window_last_month():
+    from connect_labs.workflow.audit_generation import resolve_window
+
+    start, end = resolve_window("last_month", date(2026, 7, 15))
+    assert start == "2026-06-01"
+    assert end == "2026-06-30"
+
+
+# ── window_preset_for_cadence ────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "cadence,expected_preset",
+    [
+        (None, "last_week"),
+        ("daily", "yesterday"),
+        ("weekdays", "yesterday"),
+        ("weekly", "last_week"),
+        ("monthly", "last_month"),
+        ("fortnightly", "last_week"),  # unrecognized non-None cadence: warn + fall back
+    ],
+)
+def test_window_preset_for_cadence(cadence, expected_preset):
+    from connect_labs.workflow.audit_generation import window_preset_for_cadence
+
+    assert window_preset_for_cadence(cadence) == expected_preset
+
+
+def test_window_preset_for_cadence_logs_on_unrecognized_cadence(caplog):
+    from connect_labs.workflow.audit_generation import window_preset_for_cadence
+
+    with caplog.at_level("WARNING"):
+        window_preset_for_cadence("fortnightly")
+
+    assert any("fortnightly" in record.message for record in caplog.records)
+
+
+# ── Creator run_default: cadence-derived window + clustering overrides ──────
+
+
+def _make_captured_window_wda(monkeypatch, module):
+    """Patch ``module.WorkflowDataAccess`` to capture the window create_run was
+    called with, returning the dict it writes into."""
+    captured = {}
+
+    def make_wda(access_token=None, opportunity_id=None, **_):
+        wda = mock.Mock()
+        wda.list_runs.return_value = []
+
+        def _create(def_id, *, opportunity_id=None, program_id=None, period_start, period_end, initial_state=None):
+            captured["window"] = (period_start, period_end)
+            return _run(9, None)
+
+        wda.create_run.side_effect = _create
+        return wda
+
+    monkeypatch.setattr(module, "WorkflowDataAccess", make_wda)
+    fake_job = mock.Mock()
+    fake_job.apply.return_value.result = {"sessions_created": 0}
+    fake_job.apply.return_value.successful.return_value = True
+    monkeypatch.setattr(module, "run_workflow_job", fake_job)
+    return captured
+
+
+@pytest.mark.parametrize(
+    "cadence,expected_preset",
+    [
+        (None, "last_week"),
+        ("daily", "yesterday"),
+        ("weekdays", "yesterday"),
+        ("weekly", "last_week"),
+        ("monthly", "last_month"),
+    ],
+)
+def test_creator_run_default_window_follows_cadence(monkeypatch, cadence, expected_preset):
+    """With no explicit window, the hook resolves the cadence-derived preset
+    (daily/weekdays -> a single rolling day; weekly/no-cadence -> last_week;
+    monthly -> last_month) rather than always using the fixed weekly bucket."""
+    from connect_labs.workflow import audit_generation as g
+    from connect_labs.workflow.templates import run_default_for_definition
+
+    captured = _make_captured_window_wda(monkeypatch, g)
+
+    run_default_for_definition(_creator_def(), access_token="t", cadence=cadence)
+
+    assert captured["window"] == g.resolve_window(expected_preset, date.today())
+
+
+def test_creator_run_default_passes_visit_clustering_criteria_overrides(monkeypatch):
+    """The pinned visit_clustering config (time-gap/distance/duplicate-detection)
+    rides through to job_config exactly like the sample percentages do."""
+    from connect_labs.workflow import audit_generation as g
+    from connect_labs.workflow.templates import run_default_for_definition
+
+    d = _creator_def()
+    d.data["config"]["audit_batch"]["visit_clustering"] = {
+        "enable_time_gap": True,
+        "time_gap_minutes": 4,
+        "enable_distance": True,
+        "distance_meters": 10,
+        "enable_duplicate_detection": True,
+    }
+
+    wda = mock.Mock()
+    wda.list_runs.return_value = []
+    wda.create_run.return_value = _run(1234, None)
+    monkeypatch.setattr(g, "WorkflowDataAccess", mock.Mock(return_value=wda))
+    fake_job = mock.Mock()
+    fake_job.apply.return_value.result = {"sessions_created": 5}
+    fake_job.apply.return_value.successful.return_value = True
+    monkeypatch.setattr(g, "run_workflow_job", fake_job)
+
+    run_default_for_definition(d, access_token="t", window=("2026-06-21", "2026-06-27"))
+
+    kw = fake_job.apply.call_args.kwargs["kwargs"]
+    assert kw["job_config"]["enable_time_gap"] is True
+    assert kw["job_config"]["time_gap_minutes"] == 4
+    assert kw["job_config"]["enable_distance"] is True
+    assert kw["job_config"]["distance_meters"] == 10
+    assert kw["job_config"]["enable_duplicate_detection"] is True
+
+
+def test_creator_run_default_no_visit_clustering_omits_criteria_overrides(monkeypatch):
+    """A definition with no pinned visit_clustering block at all (e.g. one
+    created before this feature existed — ``_creator_def()`` has no such block)
+    injects no clustering keys into job_config — the handler's own
+    state-fallback governs, unchanged from before this feature."""
+    from connect_labs.workflow import audit_generation as g
+    from connect_labs.workflow.templates import run_default_for_definition
+
+    wda = mock.Mock()
+    wda.list_runs.return_value = []
+    wda.create_run.return_value = _run(1234, None)
+    monkeypatch.setattr(g, "WorkflowDataAccess", mock.Mock(return_value=wda))
+    fake_job = mock.Mock()
+    fake_job.apply.return_value.result = {"sessions_created": 5}
+    fake_job.apply.return_value.successful.return_value = True
+    monkeypatch.setattr(g, "run_workflow_job", fake_job)
+
+    run_default_for_definition(_creator_def(), access_token="t", window=("2026-06-21", "2026-06-27"))
+
+    kw = fake_job.apply.call_args.kwargs["kwargs"]
+    for key in (
+        "enable_time_gap",
+        "time_gap_minutes",
+        "enable_distance",
+        "distance_meters",
+        "enable_duplicate_detection",
+    ):
+        assert key not in kw["job_config"]
+
+
+def test_clustering_overrides_for_forces_duplicate_detection_off_without_clustering():
+    """Mirrors the render's own guard: duplicate detection has no groupings to
+    check across when both clustering gates are off, so a pinned config
+    carrying that nonsensical combination is corrected rather than passed
+    through as-is."""
+    from connect_labs.workflow.audit_generation import clustering_overrides_for
+
+    d = _creator_def()
+    d.data["config"]["audit_batch"]["visit_clustering"] = {
+        "enable_time_gap": False,
+        "enable_distance": False,
+        "enable_duplicate_detection": True,
+    }
+
+    assert clustering_overrides_for(d)["enable_duplicate_detection"] is False
+
+
+def test_clustering_overrides_for_keeps_duplicate_detection_when_a_gate_is_on():
+    from connect_labs.workflow.audit_generation import clustering_overrides_for
+
+    d = _creator_def()
+    d.data["config"]["audit_batch"]["visit_clustering"] = {
+        "enable_time_gap": True,
+        "enable_distance": False,
+        "enable_duplicate_detection": True,
+    }
+
+    assert clustering_overrides_for(d)["enable_duplicate_detection"] is True
 
 
 # ── Management command: run_workflow_default ──────────────────────────────────
