@@ -766,9 +766,7 @@ def _run_duplicate_detection_on_sessions(
                 continue
 
             if session.data.get("dup_detection_complete"):
-                logger.info(
-                    f"[DuplicateDetection] Session {session_id} already processed — skipping (resumed run)"
-                )
+                logger.info(f"[DuplicateDetection] Session {session_id} already processed — skipping (resumed run)")
                 totals["sessions_processed"] += 1
                 continue
 
@@ -780,9 +778,7 @@ def _run_duplicate_detection_on_sessions(
                 try:
                     _da.save_audit_session(_session)
                 except Exception as _exc:
-                    logger.warning(
-                        f"[DuplicateDetection] Per-bucket save failed for session {_sid}: {_exc}"
-                    )
+                    logger.warning(f"[DuplicateDetection] Per-bucket save failed for session {_sid}: {_exc}")
 
             summary = run_duplicate_detection(
                 session, access_token, progress_callback=_cb, cancel_key=cancel_key, save_callback=_save_now
@@ -1223,13 +1219,9 @@ def run_audit_creation(
             search_opp_ids = opportunity_ids  # check every opp in this run
             for _oid in search_opp_ids:
                 try:
-                    existing_sessions.extend(
-                        _data_access_for_opp(_oid).get_sessions_by_workflow_run(workflow_run_id)
-                    )
+                    existing_sessions.extend(_data_access_for_opp(_oid).get_sessions_by_workflow_run(workflow_run_id))
                 except Exception as _exc:
-                    logger.warning(
-                        "[AuditCreation] resume check failed for opp %s: %s", _oid, _exc
-                    )
+                    logger.warning("[AuditCreation] resume check failed for opp %s: %s", _oid, _exc)
             # Deduplicate by id (a session may be returned by more than one opp scope).
             seen: set[int] = set()
             deduped = []

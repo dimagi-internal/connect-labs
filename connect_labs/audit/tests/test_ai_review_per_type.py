@@ -578,9 +578,7 @@ def test_session_with_ai_review_complete_is_skipped(patched_registry):
     session = _FakeSession(
         {
             "ai_review_complete": True,
-            "visit_images": {
-                "1": [{"blob_id": "blobA", "question_id": "form/photo_a", "related_fields": []}]
-            },
+            "visit_images": {"1": [{"blob_id": "blobA", "question_id": "form/photo_a", "related_fields": []}]},
         }
     )
     data_access = _FakeDataAccess(session)

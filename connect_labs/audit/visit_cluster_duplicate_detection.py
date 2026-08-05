@@ -164,13 +164,10 @@ def run_grouping_duplicate_detection(
                 logger.warning(f"[DuplicateDetection] Session {target['session'].id} not found -- skipping")
                 continue
             if session.data.get("visit_cluster_dup_detection_complete"):
-                logger.info(
-                    f"[DuplicateDetection] Session {session.id} already visit-cluster checked — skipping"
-                )
+                logger.info(f"[DuplicateDetection] Session {session.id} already visit-cluster checked — skipping")
                 continue
             opp_id = target["opp_id"]
             blob_meta_by_id = target["blob_meta_by_id"]
-            session_updated = False
             # Raw /detect_duplicates responses, keyed by this grouping's own
             # group_id -- mirrors duplicate_detection.py's raw_groups_store
             # (keyed by username|question_id|day there). Named distinctly from
@@ -237,7 +234,6 @@ def run_grouping_duplicate_detection(
                 group_key = cluster.get("group_id")
                 if group_key is not None:
                     raw_groups_store[str(group_key)] = groups
-                    session_updated = True
                 blob_to_group = assign_group_ids(groups)
                 blobs_by_component = _blobs_by_component(blob_to_group)
                 for blob_id, group_id in blob_to_group.items():
@@ -246,7 +242,6 @@ def run_grouping_duplicate_detection(
                     )
                     if _mark_duplicate(session, blob_meta_by_id, blob_id, group_id, duplicate_of_visit_ids):
                         images_flagged += 1
-                        session_updated = True
 
                 if progress_callback:
                     progress_callback(
