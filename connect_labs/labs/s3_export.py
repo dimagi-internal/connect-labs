@@ -303,9 +303,7 @@ def record_classifier_fails(rows: list[dict]) -> None:
                     "question_id": item.get("question_id") or "",
                     "classifier_id": item["classifier_id"],
                     "classifier_label": item.get("classifier_label") or "",
-                    "ai_confidence": (
-                        item.get("ai_confidence") if item.get("ai_confidence") is not None else ""
-                    ),
+                    "ai_confidence": (item.get("ai_confidence") if item.get("ai_confidence") is not None else ""),
                     "ai_implied_result": ai_implied_result,
                 }
             )

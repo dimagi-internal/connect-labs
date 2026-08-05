@@ -1023,9 +1023,7 @@ class ExperimentBulkAssessmentExportCSVView(LoginRequiredMixin, View):
                 # to str on both sides since assessment["visit_id"] is stored as an int.
                 xform_id_by_visit = {str(v["id"]): v.get("xform_id") for v in visits}
 
-            hq_link_base = (
-                resolve_hq_link_base(data_access.access_token, opportunity_id) if opportunity_id else None
-            )
+            hq_link_base = resolve_hq_link_base(data_access.access_token, opportunity_id) if opportunity_id else None
 
             response = HttpResponse(content_type="text/csv")
             response["Content-Disposition"] = f'attachment; filename="audit_{session_id}_images.csv"'
