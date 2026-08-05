@@ -60,7 +60,7 @@ class ScaleValidationAgent(BaseAIReviewAgent):
     """
 
     agent_id = "scale_validation"
-    name = "Scale Image Validation"
+    name = "Scale [Digital] Image Validation"
     description = "Validates weight readings against scale images using ML vision"
     result_actions = {
         "pass_matched": {
