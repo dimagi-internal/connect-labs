@@ -618,3 +618,62 @@ def test_default_image_cap_reads_from_shared_settings(settings):
     )
 
     assert result["skipped_over_limit"] == 1
+
+
+# ── completion-flag checkpointing ─────────────────────────────────────────────
+
+
+def test_session_with_completion_flag_is_skipped():
+    """A session flagged visit_cluster_dup_detection_complete must be skipped
+    so a worker-restart replay does not re-run its cluster detections."""
+    already_done = AuditSessionRecord(
+        {
+            "id": 99,
+            "experiment": "audit",
+            "type": "AuditSession",
+            "data": {"visit_results": {}, "visit_cluster_dup_detection_complete": True},
+        }
+    )
+    clusters = [{"group_id": "g1", "visit_ids": [111, 112], "image_count": 2, "image_ids": ["a", "b"]}]
+    blob_meta = {
+        "a": {"visit_id": 111, "question_id": "form/muac"},
+        "b": {"visit_id": 112, "question_id": "form/muac"},
+    }
+    client = Mock()
+    data_access = Mock()
+    data_access.get_audit_session.return_value = already_done
+
+    result = run_grouping_duplicate_detection(
+        [{"session": already_done, "data_access": data_access, "opp_id": 1973,
+          "clusters": clusters, "blob_meta_by_id": blob_meta}],
+        get_signed_url=lambda bid, oid: f"https://x/{bid}",
+        client=client,
+    )
+
+    client.detect.assert_not_called()
+    data_access.save_audit_session.assert_not_called()
+    assert result["groupings_checked"] == 0
+
+
+def test_completion_flag_written_to_session_after_processing():
+    """visit_cluster_dup_detection_complete is set on the session and persisted
+    so a subsequent restart can skip it."""
+    session = _session()
+    clusters = [{"group_id": "g1", "visit_ids": [111, 112], "image_count": 2, "image_ids": ["a", "b"]}]
+    blob_meta = {
+        "a": {"visit_id": 111, "question_id": "form/muac"},
+        "b": {"visit_id": 112, "question_id": "form/muac"},
+    }
+    client = Mock()
+    client.detect.return_value = []
+    data_access = Mock()
+    data_access.get_audit_session.return_value = session
+
+    run_grouping_duplicate_detection(
+        [_target(session, clusters, blob_meta, data_access=data_access)],
+        get_signed_url=lambda bid, oid: f"https://x/{bid}",
+        client=client,
+    )
+
+    saved_session = data_access.save_audit_session.call_args[0][0]
+    assert saved_session.data.get("visit_cluster_dup_detection_complete") is True

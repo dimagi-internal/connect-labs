@@ -406,6 +406,18 @@ def _run_ai_review_on_sessions(
                 logger.warning(f"[AIReview] Session {session_id} not found")
                 continue
 
+            if session.data.get("ai_review_complete"):
+                logger.info(f"[AIReview] Session {session_id} already reviewed — skipping (resumed run)")
+                skipped_count = session_image_counts.get(session_id, 0)
+                images_processed += skipped_count
+                if progress_callback:
+                    progress_callback(
+                        images_processed,
+                        total_images_to_review,
+                        f"Reviewed {images_processed}/{total_images_to_review} images (resumed)",
+                    )
+                continue
+
             # Get visit_images from session data
             # This contains the images and their related field data
             visit_images = session.data.get("visit_images", {})
@@ -640,22 +652,28 @@ def _run_ai_review_on_sessions(
                         logger.info(f"[AIReview] Cancelled mid-session {session_id} — stopping remaining images")
                         break
 
-            # Save session if we made any updates
-            if session_updated:
+            # Save when there are assessments to write OR when the session ran
+            # to completion (not cancelled) so a restart skips it entirely.
+            # The completion flag is only set when not cancelled mid-review so
+            # a restart can re-enter and finish any remaining images.
+            if session_updated or not cancelled:
                 try:
-                    # Debug: log the visit_results before saving
-                    visit_results = session.data.get("visit_results", {})
-                    assessment_count = sum(len(vr.get("assessments", {})) for vr in visit_results.values())
-                    logger.info(
-                        f"[AIReview] Saving session {session_id} with {assessment_count} assessments "
-                        f"in {len(visit_results)} visits"
-                    )
+                    if session_updated:
+                        visit_results = session.data.get("visit_results", {})
+                        assessment_count = sum(len(vr.get("assessments", {})) for vr in visit_results.values())
+                        logger.info(
+                            f"[AIReview] Saving session {session_id} with {assessment_count} assessments "
+                            f"in {len(visit_results)} visits"
+                        )
+                    else:
+                        logger.info(f"[AIReview] No assessments for session {session_id} — checkpointing")
+                    if not cancelled:
+                        session.data["ai_review_complete"] = True
                     data_access.save_audit_session(session)
-                    logger.info(f"[AIReview] Successfully saved AI results for session {session_id}")
+                    if session_updated:
+                        logger.info(f"[AIReview] Successfully saved AI results for session {session_id}")
                 except Exception as e:
                     logger.warning(f"[AIReview] Failed to save session {session_id}: {e}")
-            else:
-                logger.info(f"[AIReview] No updates to save for session {session_id}")
 
         except Exception as e:
             logger.warning(f"[AIReview] Failed to process session {session_id}: {e}")
@@ -747,13 +765,34 @@ def _run_duplicate_detection_on_sessions(
             if not session:
                 continue
 
+            if session.data.get("dup_detection_complete"):
+                logger.info(
+                    f"[DuplicateDetection] Session {session_id} already processed — skipping (resumed run)"
+                )
+                totals["sessions_processed"] += 1
+                continue
+
             def _cb(p, t, m, _idx=idx):
                 if progress_callback:
                     progress_callback(_idx, total, m)
 
-            summary = run_duplicate_detection(session, access_token, progress_callback=_cb, cancel_key=cancel_key)
-            if summary.get("batches_processed"):
-                data_access.save_audit_session(session)
+            def _save_now(_session=session, _da=data_access, _sid=session_id):
+                try:
+                    _da.save_audit_session(_session)
+                except Exception as _exc:
+                    logger.warning(
+                        f"[DuplicateDetection] Per-bucket save failed for session {_sid}: {_exc}"
+                    )
+
+            summary = run_duplicate_detection(
+                session, access_token, progress_callback=_cb, cancel_key=cancel_key, save_callback=_save_now
+            )
+            # Always save to capture the per-session summary written after the
+            # bucket loop. Only set the completion flag when not cancelled
+            # mid-bucket so a restart re-enters and finishes remaining buckets.
+            if not summary.get("cancelled"):
+                session.data["dup_detection_complete"] = True
+            data_access.save_audit_session(session)
             for key in (
                 "groups_detected",
                 "images_flagged",
@@ -1165,26 +1204,104 @@ def run_audit_creation(
         )
 
         sessions_created = []
+        dup_detection_targets = []
         session_title = criteria.get("title", "")
         session_tag = criteria.get("tag", "")
         session_pass_threshold = criteria.get("pass_threshold", 100)
 
+        # -------------------------------------------------------------------------
+        # RESUME: for workflow-triggered runs (stable workflow_run_id), detect
+        # sessions created by a previous attempt that crashed before finishing.
+        # If found, skip re-creation and let subsequent stages pick up from where
+        # they left off (each stage checks its own per-session completion flag).
+        # Direct/wizard runs (no workflow_run_id) have no stable run identity
+        # across re-triggers, so resume is skipped for those.
+        # -------------------------------------------------------------------------
+        resumed_from_existing = False
+        if workflow_run_id:
+            existing_sessions: list = []
+            search_opp_ids = opportunity_ids  # check every opp in this run
+            for _oid in search_opp_ids:
+                try:
+                    existing_sessions.extend(
+                        _data_access_for_opp(_oid).get_sessions_by_workflow_run(workflow_run_id)
+                    )
+                except Exception as _exc:
+                    logger.warning(
+                        "[AuditCreation] resume check failed for opp %s: %s", _oid, _exc
+                    )
+            # Deduplicate by id (a session may be returned by more than one opp scope).
+            seen: set[int] = set()
+            deduped = []
+            for s in existing_sessions:
+                if s.id not in seen:
+                    seen.add(s.id)
+                    deduped.append(s)
+            existing_sessions = deduped
+
+            if existing_sessions:
+                logger.info(
+                    "[AuditCreation] Resuming: found %d existing session(s) for workflow_run_id=%s"
+                    " — skipping session creation",
+                    len(existing_sessions),
+                    workflow_run_id,
+                )
+                sessions_created = [
+                    {
+                        "id": s.id,
+                        "title": s.data.get("title", ""),
+                        "visits": len(s.data.get("visit_ids", [])),
+                        "images": s.data.get("image_count", 0),
+                    }
+                    for s in existing_sessions
+                ]
+                if enable_duplicate_detection:
+                    for s in existing_sessions:
+                        if s.data.get("visit_clusters"):
+                            try:
+                                s_opp_id = int(s.data.get("opportunity_id") or opp_id)
+                                blob_meta_by_id = {
+                                    img["blob_id"]: {
+                                        "visit_id": int(vid_str),
+                                        "question_id": img.get("question_id", ""),
+                                    }
+                                    for vid_str, imgs in s.data.get("visit_images", {}).items()
+                                    for img in imgs
+                                    if img.get("blob_id")
+                                }
+                                dup_detection_targets.append(
+                                    {
+                                        "session": s,
+                                        "data_access": _data_access_for_opp(s_opp_id),
+                                        "opp_id": s_opp_id,
+                                        "clusters": s.data["visit_clusters"],
+                                        "blob_meta_by_id": blob_meta_by_id,
+                                    }
+                                )
+                            except (ValueError, KeyError, TypeError) as _exc:
+                                logger.warning(
+                                    "[AuditCreation] Skipping session %s in resume dup-detection rebuild: %s",
+                                    s.id,
+                                    _exc,
+                                )
+                resumed_from_existing = True
+
         # Fetch FLW display names for use in session titles
         flw_display_names = {}
-        try:
-            name_opp_ids = set(visits_by_opp) if is_multi_opp_per_flw else {opp_id}
-            for name_opp_id in name_opp_ids:
-                flw_display_names.update(_data_access_for_opp(name_opp_id).get_flw_names(name_opp_id))
-            logger.info(f"[AuditCreation] Loaded {len(flw_display_names)} FLW display names")
-        except Exception as e:
-            logger.warning(f"[AuditCreation] Failed to load FLW names, using usernames: {e}")
+        if not resumed_from_existing:
+            try:
+                name_opp_ids = set(visits_by_opp) if is_multi_opp_per_flw else {opp_id}
+                for name_opp_id in name_opp_ids:
+                    flw_display_names.update(_data_access_for_opp(name_opp_id).get_flw_names(name_opp_id))
+                logger.info(f"[AuditCreation] Loaded {len(flw_display_names)} FLW display names")
+            except Exception as e:
+                logger.warning(f"[AuditCreation] Failed to load FLW names, using usernames: {e}")
 
         # id -> name lookup for opportunity_name when a session's real opportunity
         # (flw_opportunity_ids) isn't opportunities[0].
         opp_names_by_id = {o["id"]: o.get("name") for o in opportunities}
 
-        dup_detection_targets = []
-        if is_per_flw:
+        if not resumed_from_existing and is_per_flw:
             # Create one session per FLW
             # If flw_visit_ids is provided, use it; otherwise group from extracted images
             if flw_visit_ids and selected_flw_user_ids:
@@ -1294,7 +1411,7 @@ def run_audit_creation(
                 _relay(idx + 1, total_flws, f"Creating audits · {idx + 1}/{total_flws} field workers")
 
             logger.info(f"[AuditCreation] Created {len(sessions_created)} per-FLW sessions")
-        elif not is_per_flw:
+        elif not resumed_from_existing and not is_per_flw:
             # Create single combined session
             opp_name = opportunities[0].get("name") if opportunities else ""
             combined_title = f"{opp_name} - {session_title}" if session_title else opp_name

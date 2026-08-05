@@ -313,6 +313,7 @@ def run_duplicate_detection(
     max_per_day: int | None = None,
     progress_callback=None,
     cancel_key: str | None = None,
+    save_callback=None,
 ) -> dict:
     """Run per-(FLW, day, photo-type) duplicate detection on one audit session.
 
@@ -341,6 +342,15 @@ def run_duplicate_detection(
     (CELERY_TASK_TIME_LIMIT is unset) -- cooperative cancellation is the only
     way to stop it early. Mirrors the sibling
     ``visit_cluster_duplicate_detection.run_grouping_duplicate_detection``.
+
+    ``save_callback``, when given, is called (no arguments) after each bucket's
+    results are written into ``session``. Lets the caller persist incremental
+    progress so a worker crash loses at most the current in-flight bucket rather
+    than the entire session's detection work. The callback must persist the exact
+    ``session`` object passed to this function -- ``session`` is mutated in place
+    by each bucket, so re-fetching inside the callback would lose in-progress
+    flags. The callback must NOT set ``dup_detection_complete``; that flag is
+    the caller's responsibility, set once after this function returns.
     """
     if max_per_day is None:
         max_per_day = getattr(settings, "DUPLICATE_DETECTION_MAX_IMAGES_PER_DAY", DEFAULT_MAX_IMAGES_PER_DAY)
@@ -493,6 +503,11 @@ def run_duplicate_detection(
                     f"Duplicate detection {processed}/{len(buckets)} FLW/day batches "
                     f"({summary['images_flagged']} flagged)",
                 )
+            if save_callback:
+                try:
+                    save_callback()
+                except Exception as _exc:
+                    logger.warning("[DuplicateDetection] per-bucket save failed: %s", _exc)
     finally:
         client.close()
 

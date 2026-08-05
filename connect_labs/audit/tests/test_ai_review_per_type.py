@@ -565,3 +565,57 @@ def test_legacy_single_agent_still_runs_on_all(patched_registry):
     )
 
     assert sorted(_MatchAgent.seen) == ["blobA", "blobB"]
+
+
+# --------------------------------------------------------------------------- #
+# ai_review_complete — per-session completion-flag checkpointing
+# --------------------------------------------------------------------------- #
+
+
+def test_session_with_ai_review_complete_is_skipped(patched_registry):
+    """A session flagged ai_review_complete must be skipped entirely so
+    a worker-restart replay does not redo already-reviewed sessions."""
+    session = _FakeSession(
+        {
+            "ai_review_complete": True,
+            "visit_images": {
+                "1": [{"blob_id": "blobA", "question_id": "form/photo_a", "related_fields": []}]
+            },
+        }
+    )
+    data_access = _FakeDataAccess(session)
+    ai_reviewers = {"form/photo_a": [{"agent_id": "agent_a", "auto_apply_actions": ["ok"]}]}
+
+    result = tasks._run_ai_review_on_sessions(
+        data_access=data_access,
+        session_ids=[10],
+        access_token="tok",
+        opp_id=42,
+        ai_reviewers=ai_reviewers,
+    )
+
+    assert _MatchAgent.seen == []  # review() never called for completed session
+    assert result["total_reviewed"] == 0
+
+
+def test_ai_review_complete_flag_set_after_successful_session(patched_registry):
+    """After a session's review completes, ai_review_complete is written so
+    a subsequent restart skips it."""
+    session = _FakeSession(
+        {"visit_images": {"1": [{"blob_id": "blobA", "question_id": "form/photo_a", "related_fields": []}]}}
+    )
+    saved = []
+
+    class _TrackingDataAccess(_FakeDataAccess):
+        def save_audit_session(self, s):
+            saved.append(dict(s.data))
+
+    tasks._run_ai_review_on_sessions(
+        data_access=_TrackingDataAccess(session),
+        session_ids=[10],
+        access_token="tok",
+        opp_id=42,
+        ai_reviewers={"form/photo_a": [{"agent_id": "agent_a", "auto_apply_actions": ["ok"]}]},
+    )
+
+    assert saved and saved[-1].get("ai_review_complete") is True

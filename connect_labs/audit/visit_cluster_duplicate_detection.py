@@ -163,6 +163,11 @@ def run_grouping_duplicate_detection(
             if not session:
                 logger.warning(f"[DuplicateDetection] Session {target['session'].id} not found -- skipping")
                 continue
+            if session.data.get("visit_cluster_dup_detection_complete"):
+                logger.info(
+                    f"[DuplicateDetection] Session {session.id} already visit-cluster checked — skipping"
+                )
+                continue
             opp_id = target["opp_id"]
             blob_meta_by_id = target["blob_meta_by_id"]
             session_updated = False
@@ -248,11 +253,15 @@ def run_grouping_duplicate_detection(
                         processed, total_groupings, f"Checked {processed}/{total_groupings} groupings for duplicates"
                     )
 
-            if session_updated:
-                try:
-                    data_access.save_audit_session(session)
-                except Exception as exc:
-                    logger.warning(f"[DuplicateDetection] Failed to save session {session.id}: {exc}")
+            # Save the session. Only set the completion flag when the cluster
+            # loop ran to completion -- if cancelled mid-session, leave the
+            # flag unset so a restart re-enters and finishes remaining clusters.
+            if not cancelled:
+                session.data["visit_cluster_dup_detection_complete"] = True
+            try:
+                data_access.save_audit_session(session)
+            except Exception as exc:
+                logger.warning(f"[DuplicateDetection] Failed to save session {session.id}: {exc}")
 
             if cancelled:
                 break
