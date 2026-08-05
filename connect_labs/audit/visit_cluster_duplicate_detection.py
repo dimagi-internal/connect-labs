@@ -30,11 +30,14 @@ from django.conf import settings
 from connect_labs.audit.data_access import is_audit_creation_cancelled
 from connect_labs.audit.duplicate_detection import DEFAULT_MAX_IMAGES_PER_DAY as DEFAULT_MAX_IMAGES_PER_GROUPING
 from connect_labs.audit.duplicate_detection import (
+    DUPLICATE_CLASSIFIER_ID,
+    DUPLICATE_FLAG_LABEL,
     DuplicateDetectionClient,
     _blobs_by_component,
     _counterpart_visit_ids,
     assign_group_ids,
 )
+from connect_labs.labs import s3_export
 
 logger = logging.getLogger(__name__)
 
@@ -144,6 +147,9 @@ def run_grouping_duplicate_detection(
 
     total_groupings = sum(len(t["clusters"]) for t in targets)
     processed = 0
+    # Collected across every target/grouping, written to S3 once at the end
+    # (see s3_export.record_classifier_fails) rather than once per flagged image.
+    classifier_fail_rows: list[dict] = []
 
     try:
         for target in targets:
@@ -242,6 +248,27 @@ def run_grouping_duplicate_detection(
                     if _mark_duplicate(session, blob_meta_by_id, blob_id, group_id, duplicate_of_visit_ids):
                         images_flagged += 1
                         session_updated = True
+                        meta = blob_meta_by_id.get(blob_id, {})
+                        classifier_fail_rows.append(
+                            {
+                                "session_id": session.id,
+                                "workflow_run_id": session.workflow_run_id,
+                                "opportunity_id": session.opportunity_id,
+                                "opportunity_name": session.opportunity_name,
+                                "visit_id": meta.get("visit_id"),
+                                "blob_id": blob_id,
+                                "question_id": meta.get("question_id", ""),
+                                "classifier_id": DUPLICATE_CLASSIFIER_ID,
+                                "classifier_label": DUPLICATE_FLAG_LABEL,
+                                "ai_confidence": None,
+                                # flag_potential_duplicate_and_tag auto-tags `result` as
+                                # "duplicate_fake" only when the assessment was untouched --
+                                # read back what actually landed rather than assuming it.
+                                "ai_implied_result": session.get_assessments(meta.get("visit_id"))
+                                .get(blob_id, {})
+                                .get("result"),
+                            }
+                        )
 
                 if progress_callback:
                     progress_callback(
@@ -258,6 +285,9 @@ def run_grouping_duplicate_detection(
                 break
     finally:
         client.close()
+
+    if classifier_fail_rows:
+        s3_export.record_classifier_fails(classifier_fail_rows)
 
     return {
         "groupings_checked": groupings_checked,

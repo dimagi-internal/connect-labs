@@ -29,6 +29,7 @@ import httpx
 from django.conf import settings
 
 from connect_labs.audit.data_access import is_audit_creation_cancelled
+from connect_labs.labs import s3_export
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,11 @@ DEFAULT_MAX_IMAGES_PER_DAY = 40
 # Label written into ai_notes for every image the detector groups. Splitting
 # ai_notes on AI_NOTES_JOIN_SEP recovers it in get_assessment_stats().
 DUPLICATE_FLAG_LABEL = "Potential Duplicate"
+
+# classifier_id used for classifier_fails.csv rows (see s3_export.record_classifier_fails)
+# -- the duplicate detector isn't a registered ai_review_agents.BaseAIReviewAgent, so it
+# has no agent_id of its own; this is the stand-in shared with visit_cluster_duplicate_detection.py.
+DUPLICATE_CLASSIFIER_ID = "duplicate_detector"
 
 
 def get_signed_url(opportunity_id: int, blob_id: str, access_token: str) -> str:
@@ -384,6 +390,9 @@ def run_duplicate_detection(
     raw_groups_store: dict[str, list] = session.data.setdefault("duplicate_detection", {})
     client = DuplicateDetectionClient()
     processed = 0
+    # Collected across every bucket, written to S3 once at the end (see
+    # s3_export.record_classifier_fails) rather than once per flagged image.
+    classifier_fail_rows: list[dict] = []
     try:
         # Sequential on purpose -- one detect call at a time. See the docstring's
         # CONCURRENCY note before considering any parallel fan-out here.
@@ -484,6 +493,22 @@ def run_duplicate_detection(
                     duplicate_of_visit_ids=duplicate_of_visit_ids,
                 )
                 summary["images_flagged"] += 1
+                classifier_fail_rows.append(
+                    {
+                        "session_id": session.id,
+                        "workflow_run_id": session.workflow_run_id,
+                        "opportunity_id": session.opportunity_id,
+                        "opportunity_name": session.opportunity_name,
+                        "visit_id": int(img["visit_id"]),
+                        "blob_id": blob_id,
+                        "question_id": question_id,
+                        "classifier_id": DUPLICATE_CLASSIFIER_ID,
+                        "classifier_label": DUPLICATE_FLAG_LABEL,
+                        "ai_confidence": None,
+                        # Duplicate flagging never auto-tags `result` (flag-only).
+                        "ai_implied_result": None,
+                    }
+                )
 
             processed += 1
             if progress_callback:
@@ -495,6 +520,9 @@ def run_duplicate_detection(
                 )
     finally:
         client.close()
+
+    if classifier_fail_rows:
+        s3_export.record_classifier_fails(classifier_fail_rows)
 
     # Stash a per-session summary + human note on the session so the bulk
     # assessment review screen (where the user lands after creation) can show a

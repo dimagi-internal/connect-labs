@@ -59,7 +59,7 @@ def _make_session():
 
 
 def test_export_csv_returns_one_row_per_image_in_the_group(labs_client, monkeypatch):
-    from connect_labs.audit import views
+    from connect_labs.audit import link_helpers, views
 
     session = _make_session()
 
@@ -86,7 +86,7 @@ def test_export_csv_returns_one_row_per_image_in_the_group(labs_client, monkeypa
 
     monkeypatch.setattr(views, "AuditDataAccess", FakeDataAccess)
     monkeypatch.setattr(
-        views,
+        link_helpers,
         "fetch_opportunity_metadata",
         lambda access_token, opportunity_id: {
             "cc_domain": "eha-clinics-reach",
@@ -134,7 +134,7 @@ def test_export_csv_degrades_gracefully_when_visit_batch_fetch_fails(labs_client
     """If the Connect API call backing get_visits_batch fails (timeout, 5xx, etc.), the
     export should still return a 200 CSV with blank GPS Location / Connect Visit URL
     cells rather than 500ing the whole request."""
-    from connect_labs.audit import views
+    from connect_labs.audit import link_helpers, views
 
     session = _make_session()
 
@@ -153,7 +153,7 @@ def test_export_csv_degrades_gracefully_when_visit_batch_fetch_fails(labs_client
 
     monkeypatch.setattr(views, "AuditDataAccess", FakeDataAccess)
     monkeypatch.setattr(
-        views,
+        link_helpers,
         "fetch_opportunity_metadata",
         lambda access_token, opportunity_id: {
             "cc_domain": "eha-clinics-reach",
