@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 WORKFLOW_RUNS_KEY = "audit_of_audits/workflow_runs.csv"
 AUDIT_SESSIONS_KEY = "audit_of_audits/audit_sessions.csv"
+CLASSIFIER_FAILS_KEY = "audit_of_audits/classifier_fails.csv"
 
 WORKFLOW_RUN_FIELDS = [
     "run_id",
@@ -65,6 +66,30 @@ AUDIT_SESSION_FIELDS = [
     "kpi_notes",
     "visit_count",
     "created_at",
+]
+
+CLASSIFIER_FAIL_FIELDS = [
+    "row_id",
+    "session_id",
+    "workflow_run_id",
+    "opportunity_id",
+    "opportunity_name",
+    "visit_id",
+    "blob_id",
+    "question_id",
+    "classifier_id",
+    "classifier_label",
+    "ai_confidence",
+    "ai_flagged_at",
+    "image_url",
+    "form_url",
+    "connect_url",
+    "ai_implied_result",
+    "human_result",
+    "human_notes",
+    "was_overridden",
+    "overridden_at",
+    "reviewed_by",
 ]
 
 
@@ -220,3 +245,143 @@ def upsert_audit_session(session) -> None:
 
     except Exception:
         logger.error("S3 export failed for audit session %s", session.id, exc_info=True)
+
+
+def record_classifier_fails(rows: list[dict]) -> None:
+    """Batch-upsert brand-new classifier-fail rows into classifier_fails.csv on S3.
+
+    Each item in ``rows`` must have: session_id, visit_id, blob_id, classifier_id,
+    and should have workflow_run_id, opportunity_id, opportunity_name, question_id,
+    classifier_label, ai_confidence, ai_implied_result (the auto-applied human_result
+    at flag time, or None for a flag-only classifier like the duplicate detector).
+
+    Re-running AI review or duplicate detection on an already-reviewed session must
+    not clobber human review data recorded by sync_classifier_fail_outcomes -- when a
+    row already exists, only its AI-facts fields (label/confidence/implied result) are
+    refreshed; human_result/human_notes/was_overridden/overridden_at/reviewed_by/URLs
+    are left untouched.
+
+    One S3 read-modify-write for the whole batch -- callers should collect every fail
+    for a run and call this once, not once per row.
+    """
+    if not rows:
+        return
+    bucket = _get_bucket()
+    if not bucket:
+        return
+
+    try:
+        s3 = _get_s3_client()
+        existing = _read_rows(s3, bucket, CLASSIFIER_FAILS_KEY, "row_id")
+        now = datetime.now(timezone.utc).isoformat()
+
+        for item in rows:
+            row_id = f"{item['session_id']}:{item['blob_id']}:{item['classifier_id']}"
+            ai_implied_result = item.get("ai_implied_result") or ""
+            prior = existing.get(row_id)
+            row = prior or {
+                "row_id": row_id,
+                "ai_flagged_at": now,
+                "image_url": "",
+                "form_url": "",
+                "connect_url": "",
+                "human_result": ai_implied_result,
+                "human_notes": "",
+                "was_overridden": "false",
+                "overridden_at": "",
+                "reviewed_by": "",
+            }
+            row.update(
+                {
+                    "row_id": row_id,
+                    "session_id": item["session_id"],
+                    "workflow_run_id": item.get("workflow_run_id") or "",
+                    "opportunity_id": item.get("opportunity_id") or "",
+                    "opportunity_name": item.get("opportunity_name") or "",
+                    "visit_id": item["visit_id"],
+                    "blob_id": item["blob_id"],
+                    "question_id": item.get("question_id") or "",
+                    "classifier_id": item["classifier_id"],
+                    "classifier_label": item.get("classifier_label") or "",
+                    "ai_confidence": (
+                        item.get("ai_confidence") if item.get("ai_confidence") is not None else ""
+                    ),
+                    "ai_implied_result": ai_implied_result,
+                }
+            )
+            existing[row_id] = row
+
+        _write_rows(s3, bucket, CLASSIFIER_FAILS_KEY, existing, CLASSIFIER_FAIL_FIELDS)
+
+    except Exception:
+        logger.error("S3 export failed for %d classifier fail row(s)", len(rows), exc_info=True)
+
+
+def sync_classifier_fail_outcomes(
+    session_id,
+    human_result_by_blob: dict,
+    human_notes_by_blob: dict,
+    url_by_blob: dict | None = None,
+    reviewed_by: str = "",
+) -> None:
+    """Update classifier_fails.csv rows for one session with the human's current
+    verdict/notes, flagging an override when the result differs from what's on
+    record. Also backfills image/form/Connect URLs the first time they're
+    available (each field is filled once and left alone after).
+
+    Args:
+        session_id: AuditSessionRecord id whose rows should be updated.
+        human_result_by_blob: {blob_id: current assessment result}, only for
+            blobs that have a result set.
+        human_notes_by_blob: {blob_id: current assessment notes free-text},
+            only for blobs that have notes.
+        url_by_blob: optional {blob_id: {"image_url", "form_url", "connect_url"}}.
+        reviewed_by: username of whoever triggered this save, stamped onto any
+            row whose human_result changes.
+
+    One S3 read-modify-write for the whole session; a no-op write (nothing
+    changed) skips the S3 PUT entirely.
+    """
+    bucket = _get_bucket()
+    if not bucket:
+        return
+
+    try:
+        s3 = _get_s3_client()
+        rows = _read_rows(s3, bucket, CLASSIFIER_FAILS_KEY, "row_id")
+        now = datetime.now(timezone.utc).isoformat()
+        session_id_str = str(session_id)
+        changed = False
+
+        for row in rows.values():
+            if row.get("session_id") != session_id_str:
+                continue
+            blob_id = row.get("blob_id")
+
+            new_result = human_result_by_blob.get(blob_id)
+            if new_result and new_result != row.get("human_result"):
+                row["human_result"] = new_result
+                row["was_overridden"] = "true"
+                row["overridden_at"] = now
+                if reviewed_by:
+                    row["reviewed_by"] = reviewed_by
+                changed = True
+
+            new_notes = human_notes_by_blob.get(blob_id, "")
+            if new_notes != row.get("human_notes", ""):
+                row["human_notes"] = new_notes
+                changed = True
+
+            if url_by_blob:
+                urls = url_by_blob.get(blob_id) or {}
+                for field in ("image_url", "form_url", "connect_url"):
+                    value = urls.get(field)
+                    if value and not row.get(field):
+                        row[field] = value
+                        changed = True
+
+        if changed:
+            _write_rows(s3, bucket, CLASSIFIER_FAILS_KEY, rows, CLASSIFIER_FAIL_FIELDS)
+
+    except Exception:
+        logger.error("S3 sync failed for classifier fail outcomes, session %s", session_id, exc_info=True)
