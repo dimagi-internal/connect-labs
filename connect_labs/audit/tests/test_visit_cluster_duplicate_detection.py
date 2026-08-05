@@ -631,6 +631,7 @@ def test_session_with_completion_flag_is_skipped():
             "id": 99,
             "experiment": "audit",
             "type": "AuditSession",
+            "opportunity_id": 1973,
             "data": {"visit_results": {}, "visit_cluster_dup_detection_complete": True},
         }
     )
@@ -644,8 +645,15 @@ def test_session_with_completion_flag_is_skipped():
     data_access.get_audit_session.return_value = already_done
 
     result = run_grouping_duplicate_detection(
-        [{"session": already_done, "data_access": data_access, "opp_id": 1973,
-          "clusters": clusters, "blob_meta_by_id": blob_meta}],
+        [
+            {
+                "session": already_done,
+                "data_access": data_access,
+                "opp_id": 1973,
+                "clusters": clusters,
+                "blob_meta_by_id": blob_meta,
+            }
+        ],
         get_signed_url=lambda bid, oid: f"https://x/{bid}",
         client=client,
     )

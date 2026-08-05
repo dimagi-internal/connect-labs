@@ -707,7 +707,13 @@ def test_session_with_dup_detection_complete_is_skipped(monkeypatch):
     from connect_labs.audit import tasks
 
     completed_session = AuditSessionRecord(
-        {"id": 1, "experiment": "audit", "type": "AuditSession", "data": {"dup_detection_complete": True}}
+        {
+            "id": 1,
+            "experiment": "audit",
+            "type": "AuditSession",
+            "opportunity_id": 1,
+            "data": {"dup_detection_complete": True},
+        }
     )
     da = _FakeDataAccess()
     da.get_audit_session = lambda sid: completed_session
@@ -716,8 +722,14 @@ def test_session_with_dup_detection_complete_is_skipped(monkeypatch):
 
     def _fake_run(session, access_token, progress_callback=None, cancel_key=None, save_callback=None):
         calls.append(session)
-        return {"groups_detected": 0, "images_flagged": 0, "batches_processed": 0,
-                "skipped_over_limit": 0, "skipped_presign": 0, "detect_failures": 0}
+        return {
+            "groups_detected": 0,
+            "images_flagged": 0,
+            "batches_processed": 0,
+            "skipped_over_limit": 0,
+            "skipped_presign": 0,
+            "detect_failures": 0,
+        }
 
     monkeypatch.setattr("connect_labs.audit.duplicate_detection.run_duplicate_detection", _fake_run)
 
@@ -739,8 +751,14 @@ def test_dup_detection_complete_flag_set_after_successful_session(monkeypatch):
             saved.append(dict(session.data))
 
     def _fake_run(session, access_token, progress_callback=None, cancel_key=None, save_callback=None):
-        return {"groups_detected": 0, "images_flagged": 0, "batches_processed": 1,
-                "skipped_over_limit": 0, "skipped_presign": 0, "detect_failures": 0}
+        return {
+            "groups_detected": 0,
+            "images_flagged": 0,
+            "batches_processed": 1,
+            "skipped_over_limit": 0,
+            "skipped_presign": 0,
+            "detect_failures": 0,
+        }
 
     monkeypatch.setattr("connect_labs.audit.duplicate_detection.run_duplicate_detection", _fake_run)
 
@@ -776,7 +794,7 @@ def test_build_duplicate_warnings_all_kinds():
 class _FakeDataAccess:
     def get_audit_session(self, sid):
         return AuditSessionRecord(
-            {"id": sid, "experiment": "audit", "type": "AuditSession", "data": {}}
+            {"id": sid, "experiment": "audit", "type": "AuditSession", "opportunity_id": 1, "data": {}}
         )
 
     def save_audit_session(self, session):
