@@ -352,7 +352,7 @@ def test_csv_export_resolves_xform_id_when_visit_batch_returns_string_ids(labs_c
     On a warm SQL cache, get_visits_batch returns visits with str ids
     (RawVisitCache.visit_id is a CharField) -- the lookup must normalize to str
     on both sides or it silently blanks the CommCareHQ Form URL column."""
-    from connect_labs.audit import views
+    from connect_labs.audit import link_helpers, views
 
     username = "26a4b2fb1c4d2f260c5e"
     session = _make_session(username)
@@ -383,7 +383,7 @@ def test_csv_export_resolves_xform_id_when_visit_batch_returns_string_ids(labs_c
 
     monkeypatch.setattr(views, "AuditDataAccess", FakeDataAccess)
     monkeypatch.setattr(
-        views,
+        link_helpers,
         "fetch_opportunity_metadata",
         lambda access_token, opportunity_id: {
             "cc_domain": "eha-clinics-reach",

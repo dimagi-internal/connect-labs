@@ -29,11 +29,13 @@ from django.views.generic import DetailView, TemplateView, View
 from django_tables2 import SingleTableView
 
 from connect_labs.audit.analysis_config import extract_additional_case_info, extract_images_with_question_ids
+from connect_labs.audit.classifier_fail_sync import sync_after_save
 from connect_labs.audit.data_access import AuditDataAccess, ImageDownloadError
+from connect_labs.audit.link_helpers import build_connect_visit_url, build_hq_form_url, resolve_hq_link_base
 from connect_labs.audit.models import AI_NOTES_JOIN_SEP, AuditSessionRecord
 from connect_labs.audit.tables import AuditTable
 from connect_labs.labs import s3_export
-from connect_labs.labs.analysis.data_access import fetch_opportunity_metadata, get_flw_names_for_opportunity
+from connect_labs.labs.analysis.data_access import get_flw_names_for_opportunity
 from connect_labs.labs.analysis.sse_streaming import CeleryTaskStreamView
 from connect_labs.labs.context import get_org_data
 from connect_labs.opportunity.models import VisitValidationStatus
@@ -396,6 +398,7 @@ class ExperimentSaveAuditView(LoginRequiredMixin, View):
 
                 # Save session (keeps status as in_progress)
                 session = data_access.save_audit_session(session)
+                sync_after_save(session, request, data_access)
 
                 # Calculate updated progress
                 progress_stats = session.get_progress_stats()
@@ -492,6 +495,7 @@ class ExperimentAuditCompleteView(LoginRequiredMixin, View):
                 session.data["completed_at"] = timezone.now().isoformat()
                 session = data_access.save_audit_session(session)
                 s3_export.upsert_audit_session(session)
+                sync_after_save(session, request, data_access)
 
                 # If this session belongs to a workflow run, complete the run
                 # once ALL of its linked sessions are completed. The run's
@@ -1019,7 +1023,7 @@ class ExperimentBulkAssessmentExportCSVView(LoginRequiredMixin, View):
                 # to str on both sides since assessment["visit_id"] is stored as an int.
                 xform_id_by_visit = {str(v["id"]): v.get("xform_id") for v in visits}
 
-            hq_link_base = self._resolve_hq_link_base(data_access, opportunity_id) if opportunity_id else None
+            hq_link_base = resolve_hq_link_base(data_access.access_token, opportunity_id) if opportunity_id else None
 
             response = HttpResponse(content_type="text/csv")
             response["Content-Disposition"] = f'attachment; filename="audit_{session_id}_images.csv"'
@@ -1027,27 +1031,11 @@ class ExperimentBulkAssessmentExportCSVView(LoginRequiredMixin, View):
             writer.writerow(["Filename", "Visit Date", "#", "CommCareHQ Form URL"])
             for assessment in assessments:
                 xform_id = xform_id_by_visit.get(str(assessment["visit_id"]))
-                form_url = f"{hq_link_base}/{xform_id}/" if hq_link_base and xform_id else ""
+                form_url = build_hq_form_url(hq_link_base, xform_id)
                 writer.writerow([assessment["filename"], assessment["visit_date"], assessment["visit_id"], form_url])
             return response
         finally:
             data_access.close()
-
-    @staticmethod
-    def _resolve_hq_link_base(data_access, opportunity_id):
-        """Return the CommCareHQ form_data base URL for an opportunity, or None if unresolvable."""
-        try:
-            metadata = fetch_opportunity_metadata(data_access.access_token, opportunity_id)
-        except Exception:
-            logger.exception(f"[Audit] Failed to resolve CommCareHQ domain for opportunity {opportunity_id}")
-            return None
-
-        domain = metadata.get("cc_domain")
-        if not domain:
-            return None
-        deliver_app = (metadata.get("raw") or {}).get("deliver_app") or {}
-        hq_server_url = (deliver_app.get("hq_server") or {}).get("url") or "https://www.commcarehq.org"
-        return f"{hq_server_url.rstrip('/')}/a/{domain}/reports/form_data"
 
 
 def _resolve_visit_cluster_group(data_access, request, session_id, group_id):
@@ -1105,11 +1093,8 @@ def _visit_cluster_rows(ctx):
         images = ctx["visit_images"].get(str(visit_id), [])
         user_id, user_visit_id = ctx["link_id_by_visit"].get(str(visit_id), (None, None))
         location = ctx["visit_location_by_id"].get(str(visit_id), "")
-        visit_url = (
-            f'{ctx["connect_url"]}/a/{ctx["org_slug"]}/opportunity/{ctx["opportunity_id"]}/user_visits/'
-            f"?user={user_id}&visit_id={user_visit_id}"
-            if ctx["org_slug"] and user_id and user_visit_id
-            else ""
+        visit_url = build_connect_visit_url(
+            ctx["connect_url"], ctx["org_slug"], ctx["opportunity_id"], user_id, user_visit_id
         )
         for image in images:
             rows.append(

@@ -22,6 +22,7 @@ from connect_labs.audit.data_access import (
 from connect_labs.audit.models import AI_NOTES_JOIN_SEP
 from connect_labs.audit.visit_cluster_duplicate_detection import run_grouping_duplicate_detection
 from connect_labs.audit.visit_clustering import build_flw_visit_clusters
+from connect_labs.labs import s3_export
 from connect_labs.utils.celery import set_task_progress
 from connect_labs.utils.progress_relays import _RELAYS as AUDIT_PROGRESS_RELAYS  # noqa: F401  (back-compat alias)
 from connect_labs.utils.progress_relays import get_relay
@@ -158,6 +159,14 @@ class FetchReviewOutcome(NamedTuple):
     ai_confidence: float | None
     human_result: str | None
     skipped: bool
+    # Individual no_match/error ReviewerVerdicts for this image, BEFORE
+    # _combine_reviewer_results collapses them into the single winning verdict
+    # above. Two independent reviewers (e.g. MUAC OverZoom + MUAC Match) can
+    # each fail the same image -- this is what lets the classifier-fail export
+    # (connect_labs/labs/s3_export.py's record_classifier_fails) write one row
+    # per failing classifier instead of one row for the merged outcome. Empty
+    # for images that were skipped or had no runnable reviewer.
+    fail_verdicts: tuple = ()
 
 
 def _combine_reviewer_results(
@@ -393,6 +402,10 @@ def _run_ai_review_on_sessions(
     total_skipped = 0
     images_processed = 0
     cancelled = False
+    # Collected across every session in this run, written to S3 once at the end
+    # (see connect_labs.labs.s3_export.record_classifier_fails) rather than once
+    # per row -- this is a training-data export, not part of the review flow.
+    classifier_fail_rows: list[dict] = []
 
     for session_id in session_ids:
         if cancel_key and is_audit_creation_cancelled(cancel_key):
@@ -585,8 +598,12 @@ def _run_ai_review_on_sessions(
                         per_agent_results = list(inner_pool.map(_run_one, runnable))
 
                 ai_result, ai_notes, ai_confidence, human_result = _combine_reviewer_results(per_agent_results)
+                # Only genuine classifier fails go to the training-data export -- an
+                # "error" verdict (rate limit, gateway hiccup) isn't an AI judgment
+                # about the image and would just be noise in classifier_fails.csv.
+                fail_verdicts = tuple(v for v in per_agent_results if v.ai_result == "no_match")
                 return FetchReviewOutcome(
-                    v_id, b_id, q_id, img_qid, ai_result, ai_notes, ai_confidence, human_result, False
+                    v_id, b_id, q_id, img_qid, ai_result, ai_notes, ai_confidence, human_result, False, fail_verdicts
                 )
 
             with ThreadPoolExecutor(max_workers=_MAX_CONCURRENT_IMAGES_PER_SESSION) as pool:
@@ -632,6 +649,26 @@ def _run_ai_review_on_sessions(
                             ai_confidence=outcome.ai_confidence,
                         )
                         session_updated = True
+
+                        # One training-data row per failing classifier -- two
+                        # independent reviewers (e.g. MUAC OverZoom + MUAC Match)
+                        # can each fail the same image, and each is its own row.
+                        for verdict in outcome.fail_verdicts:
+                            classifier_fail_rows.append(
+                                {
+                                    "session_id": session.id,
+                                    "workflow_run_id": session.workflow_run_id,
+                                    "opportunity_id": session.opportunity_id,
+                                    "opportunity_name": session.opportunity_name,
+                                    "visit_id": int(outcome.visit_id_str),
+                                    "blob_id": outcome.blob_id,
+                                    "question_id": outcome.question_id,
+                                    "classifier_id": verdict.agent_id,
+                                    "classifier_label": verdict.ai_notes,
+                                    "ai_confidence": verdict.ai_confidence,
+                                    "ai_implied_result": outcome.human_result,
+                                }
+                            )
 
                     if progress_callback:
                         progress_callback(
@@ -680,6 +717,9 @@ def _run_ai_review_on_sessions(
 
         if cancelled:
             break
+
+    if classifier_fail_rows:
+        s3_export.record_classifier_fails(classifier_fail_rows)
 
     logger.info(
         f"[AIReview] Complete: reviewed={total_reviewed}, "
