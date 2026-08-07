@@ -200,6 +200,53 @@ class TestDisambiguatedWardPrefixes:
         assert doka_labels == {f"DOK-group-{n}" for n in range(1, 4)}
         assert doka_dawa_labels == {f"DOKRI-group-{n}" for n in range(1, 4)}
 
+    def test_ward_numbered_labels_uses_table_lookup_when_available(self, monkeypatch):
+        # A table hit is used as-is (mocked here rather than depending on the
+        # real 5872-row table's exact codes, which could change on a future
+        # regeneration) — takes priority over the runtime fallback entirely.
+        from connect_labs.microplans.core import ward_codes as WC
+
+        def fake_lookup(state, lga, ward):
+            return {"Doka": "DOKTO", "Doka Dawa": "DOKRI"}.get(ward)
+
+        monkeypatch.setattr(WC, "lookup_ward_code", fake_lookup)
+        keys = [("Doka", i) for i in range(3)] + [("Doka Dawa", i) for i in range(3)]
+        labels = _ward_numbered_labels(
+            keys,
+            ward_lga={"Doka": "Tofa", "Doka Dawa": "Rimin Gado"},
+            ward_state={"Doka": "Kano", "Doka Dawa": "Kano"},
+        )
+        doka_labels = {labels[k] for k in keys if k[0] == "Doka"}
+        doka_dawa_labels = {labels[k] for k in keys if k[0] == "Doka Dawa"}
+        assert doka_labels == {f"DOKTO-group-{n}" for n in range(1, 4)}
+        assert doka_dawa_labels == {f"DOKRI-group-{n}" for n in range(1, 4)}
+
+    def test_ward_numbered_labels_falls_back_without_colliding_table_hits(self, monkeypatch):
+        # "Doka" hits the table ("DOKTO"); "Doka Dawa" misses (e.g. not in
+        # the reference data) and falls back to the runtime scheme — which
+        # must not land on "DOKTO" even though that's a plausible-looking
+        # candidate, since the table already claimed it.
+        from connect_labs.microplans.core import ward_codes as WC
+
+        monkeypatch.setattr(WC, "lookup_ward_code", lambda state, lga, ward: "DOKTO" if ward == "Doka" else None)
+        keys = [("Doka", 0), ("Doka Dawa", 0)]
+        labels = _ward_numbered_labels(
+            keys, ward_lga={"Doka Dawa": "Rimin Gado"}, ward_state={"Doka": "Kano", "Doka Dawa": "Kano"}
+        )
+        assert labels[("Doka", 0)] == "DOKTO-group-1"
+        assert labels[("Doka Dawa", 0)].split("-group-")[0] != "DOKTO"
+
+    def test_ward_numbered_labels_skips_table_lookup_without_ward_state(self):
+        # No ward_state passed at all -> table lookup is never attempted
+        # (short-circuited before any lookup call), pure runtime fallback —
+        # identical to behaviour before the table existed.
+        keys = [("Doka", i) for i in range(3)] + [("Doka Dawa", i) for i in range(3)]
+        labels = _ward_numbered_labels(keys, ward_lga={"Doka Dawa": "Rimin Gado"})
+        doka_labels = {labels[k] for k in keys if k[0] == "Doka"}
+        doka_dawa_labels = {labels[k] for k in keys if k[0] == "Doka Dawa"}
+        assert doka_labels == {f"DOK-group-{n}" for n in range(1, 4)}
+        assert doka_dawa_labels == {f"DOKRI-group-{n}" for n in range(1, 4)}
+
 
 class TestBfsAdjacency:
     def test_builds_contiguous_groups_capped_by_buildings(self):
