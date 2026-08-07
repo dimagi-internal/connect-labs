@@ -129,7 +129,9 @@ def _ward_prefix(ward: str | None) -> str:
     return letters[:3].upper()
 
 
-def _disambiguated_ward_prefixes(wards, ward_lga: dict[str, str] | None = None) -> dict[str, str]:
+def _disambiguated_ward_prefixes(
+    wards, ward_lga: dict[str, str] | None = None, preclaimed: set[str] | None = None
+) -> dict[str, str]:
     """Map each distinct ward name in ``wards`` to a short, UNIQUE uppercase
     prefix, so two different wards never collide into the same group-name
     prefix — confirmed in real production data: "Doka" and "Doka Dawa" both
@@ -157,8 +159,13 @@ def _disambiguated_ward_prefixes(wards, ward_lga: dict[str, str] | None = None) 
          stripping punctuation) — the last-resort guarantee.
 
     Empty/missing ward names are skipped entirely — the caller's ``.get(ward,
-    "")`` falls back to no prefix, matching ``_ward_prefix``'s own behaviour."""
-    claimed: dict[str, str] = {}  # prefix -> the ward that owns it
+    "")`` falls back to no prefix, matching ``_ward_prefix``'s own behaviour.
+
+    ``preclaimed`` seeds already-taken codes (e.g. from a precomputed
+    nationwide lookup table the caller checked first — see
+    ``core.ward_codes.lookup_ward_code``) so this runtime fallback never
+    picks a prefix that collides with one of those either."""
+    claimed: dict[str, str] = {code: "<preclaimed>" for code in (preclaimed or ())}
     assigned: dict[str, str] = {}
     for ward in sorted({w for w in wards if w}):
         letters = "".join(ch for ch in ward if ch.isalnum()).upper()
@@ -298,6 +305,7 @@ def _bbox_bucket(work_areas: list[dict], target_size: int) -> list[dict]:
     lat_span = max(lat_max - lat_min, 1e-9)
     bucket_keys = []
     ward_lga: dict[str, str] = {}
+    ward_state: dict[str, str] = {}
     for w, (lon, lat) in zip(work_areas, centroids):
         i = min(grid_n - 1, int((lat - lat_min) / lat_span * grid_n))
         j = min(grid_n - 1, int((lon - lon_min) / lon_span * grid_n))
@@ -305,28 +313,56 @@ def _bbox_bucket(work_areas: list[dict], target_size: int) -> list[dict]:
         ward = props.get("ward") or ""
         if ward and ward not in ward_lga:
             ward_lga[ward] = props.get("lga") or ""
+            ward_state[ward] = props.get("state") or ""
         bucket_keys.append((ward, i * grid_n + j))
-    labels = _ward_numbered_labels(bucket_keys, ward_lga)
+    labels = _ward_numbered_labels(bucket_keys, ward_lga, ward_state)
     for w, key in zip(work_areas, bucket_keys):
         w["work_area_group"] = labels[key]
     return work_areas
 
 
 def _ward_numbered_labels(
-    keys: list[tuple[str, object]], ward_lga: dict[str, str] | None = None
+    keys: list[tuple[str, object]],
+    ward_lga: dict[str, str] | None = None,
+    ward_state: dict[str, str] | None = None,
 ) -> dict[tuple[str, object], str]:
     """Assign each distinct ``(ward, bucket)`` key a label ``{WARD-}group-N``, where
     ``N`` restarts at 1 for every distinct ward (first-seen order) — so two wards'
     groups don't share a running count (``KAN-group-1, KAN-group-2, MAD-group-1``,
-    not ``..., MAD-group-3``). Ward PREFIXES are resolved once up front via
-    ``_disambiguated_ward_prefixes`` over every distinct ward in ``keys`` — not
-    each ward's raw ``_ward_prefix`` — so two different wards whose names
-    happen to share the same first 3 letters (e.g. "Doka" / "Doka Dawa", both
-    naturally "DOK") never end up with colliding label strings. ``ward_lga``
-    (optional ward -> LGA) lets a real collision disambiguate via the LGA
+    not ``..., MAD-group-3``).
+
+    Ward PREFIXES are resolved once up front, per distinct ward in ``keys``:
+    first a lookup against the precomputed nationwide ``core.ward_codes``
+    table (when ``ward_state`` is passed, so state+LGA+ward can be matched)
+    — a hit is guaranteed unique nationally, not just within this batch, so
+    it's used as-is. Any ward that misses the table (not in the reference
+    data, or the plan's own recorded ward/LGA spelling doesn't match GRID3's
+    canonical one — e.g. a local annotation like "Galinja (non-RCT)") falls
+    back to ``_disambiguated_ward_prefixes`` over the miss-ward set,
+    seeded with every code the table lookups already claimed so the runtime
+    fallback can't collide with those either. Without ``ward_state`` (or for
+    every miss), this is exactly the prior behaviour — two different wards
+    whose names happen to share the same first 3 letters (e.g. "Doka" /
+    "Doka Dawa", both naturally "DOK") never end up with colliding label
+    strings; ``ward_lga`` lets a real collision disambiguate via the LGA
     first (more meaningful than an arbitrary extra letter) before falling
-    back to growing the ward's own name — see ``_disambiguated_ward_prefixes``."""
-    prefixes = _disambiguated_ward_prefixes([key[0] for key in keys], ward_lga)
+    back to growing the ward's own name."""
+    from connect_labs.microplans.core.ward_codes import lookup_ward_code
+
+    distinct_wards = {key[0] for key in keys if key[0]}
+    prefixes: dict[str, str] = {}
+    preclaimed: set[str] = set()
+    misses = []
+    for ward in distinct_wards:
+        state = (ward_state or {}).get(ward, "")
+        code = lookup_ward_code(state, (ward_lga or {}).get(ward, ""), ward) if state else None
+        if code:
+            prefixes[ward] = code
+            preclaimed.add(code)
+        else:
+            misses.append(ward)
+    if misses:
+        prefixes.update(_disambiguated_ward_prefixes(misses, ward_lga, preclaimed))
     counters: dict[str, int] = {}
     labels: dict[tuple[str, object], str] = {}
     for key in keys:
@@ -561,13 +597,15 @@ def _bfs_adjacency(
     # name; see CONNECT_IMPORT_CONTRACT.md) ----
     cluster_keys = []
     ward_lga: dict[str, str] = {}
+    ward_state: dict[str, str] = {}
     for i, (seed, _cells) in enumerate(clusters_with_seed):
         props = by_id[seed].get("properties") or {}
         ward = props.get("ward") or ""
         if ward and ward not in ward_lga:
             ward_lga[ward] = props.get("lga") or ""
+            ward_state[ward] = props.get("state") or ""
         cluster_keys.append((ward, i))
-    labels = _ward_numbered_labels(cluster_keys, ward_lga)
+    labels = _ward_numbered_labels(cluster_keys, ward_lga, ward_state)
     for key, (_seed, cells) in zip(cluster_keys, clusters_with_seed):
         label = labels[key]
         for wid in cells:
