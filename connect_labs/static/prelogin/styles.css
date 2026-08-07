@@ -46,8 +46,9 @@
   );
   --grad-text: linear-gradient(90deg, #1a1f3a 0%, #2a368a 55%, #3a4fa0 100%);
   --grad-text-on-dark: linear-gradient(90deg, #ffffff 0%, #c0ceee 100%);
-  --sans: 'Work Sans', -apple-system, BlinkMacSystemFont, 'Helvetica Neue',
-    Arial, sans-serif;
+  --sans:
+    'Work Sans', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial,
+    sans-serif;
   --mono: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
   --radius: 14px;
   --radius-lg: 22px;
@@ -113,16 +114,16 @@
    Wrapped in :where() so its specificity is 0 — component-specific focus
    styles (header nav, compare toggle, skip link) still win. */
 :where(
-    a[href],
-    button,
-    [role='button'],
-    [role='tab'],
-    summary,
-    input,
-    select,
-    textarea,
-    [tabindex]
-  ):focus-visible {
+  a[href],
+  button,
+  [role='button'],
+  [role='tab'],
+  summary,
+  input,
+  select,
+  textarea,
+  [tabindex]
+):focus-visible {
   outline: 2px solid var(--mango);
   outline-offset: 2px;
 }
@@ -622,10 +623,8 @@ h3 em {
   content: '';
   position: absolute;
   inset: 0;
-  background-image: linear-gradient(
-      rgba(142, 161, 255, 0.06) 1px,
-      transparent 1px
-    ),
+  background-image:
+    linear-gradient(rgba(142, 161, 255, 0.06) 1px, transparent 1px),
     linear-gradient(90deg, rgba(142, 161, 255, 0.06) 1px, transparent 1px);
   background-size: 72px 72px;
   mask-image: radial-gradient(
@@ -944,7 +943,8 @@ h3 em {
   width: clamp(120px, 14vw, 180px);
   aspect-ratio: 1 / 1;
   border-radius: 50%;
-  background-image: url('images/field-photos/kmc/kmc-3.jpg'),
+  background-image:
+    url('images/field-photos/kmc/kmc-3.jpg'),
     linear-gradient(
       135deg,
       var(--step-deliver) 0%,
@@ -1520,10 +1520,8 @@ text.gap-node-label--frontline {
   content: '';
   position: absolute;
   inset: 0;
-  background-image: linear-gradient(
-      rgba(255, 255, 255, 0.04) 1px,
-      transparent 1px
-    ),
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
   background-size: 56px 56px;
   mask-image: radial-gradient(
@@ -1898,7 +1896,8 @@ text.gap-node-label--frontline {
   content: '';
   position: absolute;
   inset: 0;
-  background: radial-gradient(
+  background:
+    radial-gradient(
       circle at 20% 30%,
       rgba(255, 255, 255, 0.12) 0%,
       transparent 32%
@@ -1919,10 +1918,8 @@ text.gap-node-label--frontline {
   content: '';
   position: absolute;
   inset: 0;
-  background-image: linear-gradient(
-      rgba(255, 255, 255, 0.05) 1px,
-      transparent 1px
-    ),
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
   background-size: 32px 32px;
   pointer-events: none;
@@ -2167,10 +2164,8 @@ text.gap-node-label--frontline {
   content: '';
   position: absolute;
   inset: 0;
-  background-image: linear-gradient(
-      rgba(255, 255, 255, 0.04) 1px,
-      transparent 1px
-    ),
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
   background-size: 56px 56px;
   mask-image: radial-gradient(
@@ -4080,10 +4075,8 @@ footer.site-footer {
   content: '';
   position: absolute;
   inset: 0;
-  background-image: linear-gradient(
-      rgba(142, 161, 255, 0.06) 1px,
-      transparent 1px
-    ),
+  background-image:
+    linear-gradient(rgba(142, 161, 255, 0.06) 1px, transparent 1px),
     linear-gradient(90deg, rgba(142, 161, 255, 0.06) 1px, transparent 1px);
   background-size: 40px 40px;
   pointer-events: none;
@@ -5904,7 +5897,8 @@ footer.site-footer {
   aspect-ratio: 4 / 3;
   border-radius: 20px;
   /* Layered: actual image (if present) over a gradient placeholder */
-  background-image: url('images/field-photos/chc/chc-1.jpg'),
+  background-image:
+    url('images/field-photos/chc/chc-1.jpg'),
     linear-gradient(
       135deg,
       var(--step-deliver) 0%,
@@ -6470,7 +6464,8 @@ a.explore-card:hover {
   content: '';
   position: absolute;
   inset: 0;
-  background: radial-gradient(
+  background:
+    radial-gradient(
       ellipse 60% 80% at 20% 100%,
       rgba(255, 255, 255, 0.18),
       transparent 60%
@@ -6488,14 +6483,16 @@ a.explore-card:hover {
   max-width: 22ch;
 }
 .explore-panel.indigo {
-  background-image: url('images/field-photos/chc/chc-1.jpg'),
+  background-image:
+    url('images/field-photos/chc/chc-1.jpg'),
     linear-gradient(135deg, var(--indigo-deep) 0%, var(--indigo) 100%);
   background-size: cover;
   background-position: center 30%;
   background-repeat: no-repeat;
 }
 .explore-panel.sky {
-  background-image: url('images/field-photos/readers/readers-1.jpg'),
+  background-image:
+    url('images/field-photos/readers/readers-1.jpg'),
     linear-gradient(135deg, var(--indigo-deep) 0%, var(--indigo) 100%);
   background-size: cover;
   background-position: center;
@@ -6503,7 +6500,8 @@ a.explore-card:hover {
   color: #fff;
 }
 .explore-panel.ink {
-  background-image: url('images/field-photos/join-hero.jpg'),
+  background-image:
+    url('images/field-photos/join-hero.jpg'),
     linear-gradient(135deg, var(--ink) 0%, var(--ink-2) 100%);
   background-size: 165%, cover;
   background-position:
@@ -10546,7 +10544,10 @@ a.explore-card:hover {
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   padding: 30px 28px;
-  transition: border-color 0.15s, transform 0.15s, box-shadow 0.2s;
+  transition:
+    border-color 0.15s,
+    transform 0.15s,
+    box-shadow 0.2s;
 }
 .step-card:hover {
   border-color: var(--indigo);
@@ -10598,7 +10599,12 @@ a.explore-card:hover {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(120deg, rgba(10, 6, 32, 0.92) 0%, rgba(10, 6, 32, 0.72) 55%, rgba(10, 6, 32, 0.5) 100%);
+  background: linear-gradient(
+    120deg,
+    rgba(10, 6, 32, 0.92) 0%,
+    rgba(10, 6, 32, 0.72) 55%,
+    rgba(10, 6, 32, 0.5) 100%
+  );
 }
 .photo-band .wrap {
   position: relative;
@@ -10756,18 +10762,31 @@ a.explore-card:hover {
   content: '';
   position: absolute;
   inset: 0;
-  background: radial-gradient(ellipse 60% 50% at 100% 0%, rgba(255, 255, 255, 0.14), transparent 65%);
+  background: radial-gradient(
+    ellipse 60% 50% at 100% 0%,
+    rgba(255, 255, 255, 0.14),
+    transparent 65%
+  );
   pointer-events: none;
 }
 .donation-section::after {
   content: '';
   position: absolute;
   inset: 0;
-  background-image: linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
   background-size: 56px 56px;
-  mask-image: radial-gradient(ellipse at 50% 30%, rgba(0, 0, 0, 0.8), transparent 75%);
-  -webkit-mask-image: radial-gradient(ellipse at 50% 30%, rgba(0, 0, 0, 0.8), transparent 75%);
+  mask-image: radial-gradient(
+    ellipse at 50% 30%,
+    rgba(0, 0, 0, 0.8),
+    transparent 75%
+  );
+  -webkit-mask-image: radial-gradient(
+    ellipse at 50% 30%,
+    rgba(0, 0, 0, 0.8),
+    transparent 75%
+  );
   pointer-events: none;
 }
 .donation-section .wrap {
@@ -10832,12 +10851,17 @@ a.explore-card:hover {
   font-weight: 600;
   color: var(--ink-3);
   cursor: pointer;
-  transition: background-color 0.15s, color 0.15s, box-shadow 0.15s;
+  transition:
+    background-color 0.15s,
+    color 0.15s,
+    box-shadow 0.15s;
 }
 .frequency-toggle button.active {
   background: var(--paper-2);
   color: var(--indigo);
-  box-shadow: 0 1px 2px rgba(20, 16, 58, 0.06), 0 4px 12px -6px rgba(20, 16, 58, 0.18);
+  box-shadow:
+    0 1px 2px rgba(20, 16, 58, 0.06),
+    0 4px 12px -6px rgba(20, 16, 58, 0.18);
 }
 .recurring-options {
   display: none;
@@ -10858,7 +10882,10 @@ a.explore-card:hover {
   font-weight: 600;
   color: var(--ink-3);
   cursor: pointer;
-  transition: border-color 0.15s, color 0.15s, background-color 0.15s;
+  transition:
+    border-color 0.15s,
+    color 0.15s,
+    background-color 0.15s;
 }
 .recurring-options button.active {
   border-color: var(--indigo);
@@ -10879,7 +10906,10 @@ a.explore-card:hover {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  transition: border-color 0.15s, transform 0.15s, box-shadow 0.2s;
+  transition:
+    border-color 0.15s,
+    transform 0.15s,
+    box-shadow 0.2s;
 }
 .tier-card:hover {
   border-color: var(--indigo);
@@ -11038,7 +11068,9 @@ a.explore-card:hover {
   opacity: 0;
   transform: translateY(12px);
   pointer-events: none;
-  transition: opacity 0.25s ease, transform 0.25s ease;
+  transition:
+    opacity 0.25s ease,
+    transform 0.25s ease;
 }
 .sticky-cta.visible {
   opacity: 1;
