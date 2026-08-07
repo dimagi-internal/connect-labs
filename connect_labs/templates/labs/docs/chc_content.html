@@ -43,6 +43,13 @@
   h2{font-size:1.6rem; font-weight:600; padding-top:.4rem}
   h3{font-size:1.2rem; font-weight:600}
   h4{font-size:1.02rem; font-weight:600}
+  h5{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; font-size:.76rem;
+    letter-spacing:.1em; text-transform:uppercase; color:var(--muted); font-weight:700;
+    margin:1.4rem 0 .4rem}
+  code.copyable{cursor:pointer; border-style:dashed}
+  code.copyable:hover{background:var(--accent-soft); color:var(--accent-ink); border-color:var(--accent)}
+  code.copyable:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+  code.copyable.copied{background:var(--ok-soft); color:var(--ok); border-color:var(--ok); border-style:solid}
   p{margin:.4em 0 1em}
   a{color:var(--accent); text-decoration:none}
   a:hover{text-decoration:underline}
@@ -189,29 +196,57 @@
   .badge.ver{background:var(--chip); color:var(--muted); border:1px solid var(--line)}
   .badge.wip{background:var(--amber-soft); color:var(--amber); border:1px dashed var(--amber)}
 
-  /* Deprecated / inactive box */
-  .deprecated{
+  /* Deprecated / inactive box — collapsed by default */
+  details.deprecated{
     position:relative; border:2px dashed var(--muted); background:var(--chip);
-    border-radius:10px; padding:1.2rem 1.3rem 1.1rem; margin-top:.9rem;
+    border-radius:10px; padding:1.1rem 1.3rem; margin-top:1.2rem;
   }
-  .deprecated>.dep-tag{
+  details.deprecated[open]{padding-bottom:1.1rem}
+  details.deprecated>summary{
+    cursor:pointer; list-style:none; display:flex; flex-wrap:wrap;
+    align-items:baseline; gap:.2rem .7rem;
+  }
+  details.deprecated>summary::-webkit-details-marker{display:none}
+  details.deprecated>summary::before{
+    content:"\25B8"; color:var(--muted); font-weight:700; margin-right:.1rem;
+  }
+  details.deprecated[open]>summary::before{content:"\25BE"}
+  details.deprecated>summary h3,
+  details.deprecated>summary h4{margin:0}
+  details.deprecated>summary .why{
+    font-size:.85rem; color:var(--muted);
+  }
+  details.deprecated>summary .hint{
+    font-size:.7rem; letter-spacing:.09em; text-transform:uppercase; color:var(--muted);
+    border:1px solid var(--line); border-radius:999px; padding:.1rem .55rem; white-space:nowrap;
+  }
+  details.deprecated[open]>summary .hint::after{content:" \2014 collapse"}
+  details.deprecated>summary:hover .hint{border-color:var(--accent); color:var(--accent)}
+  details.deprecated>summary:focus-visible{outline:2px solid var(--accent); outline-offset:3px}
+  .dep-tag{
     position:absolute; top:-.75rem; right:1rem; background:var(--red); color:var(--bg);
     font-size:.7rem; font-weight:700; letter-spacing:.09em; text-transform:uppercase;
     border-radius:6px; padding:.18rem .65rem;
   }
-  .deprecated h3{margin-top:0}
 
   /* Proposed / not-yet-implemented box */
-  .proposed{
+  details.proposed{
     border:2px dashed var(--muted); background:var(--chip); border-radius:10px;
-    padding:1rem 1.3rem 1.1rem; margin:1.4rem 0;
+    padding:1rem 1.3rem; margin:1.4rem 0;
   }
-  .proposed>.proposed-tag{
-    display:inline-block; font-size:.7rem; letter-spacing:.09em; text-transform:uppercase;
+  details.proposed>summary{
+    cursor:pointer; list-style:none; display:flex; flex-wrap:wrap; align-items:baseline; gap:.2rem .7rem;
+  }
+  details.proposed>summary::-webkit-details-marker{display:none}
+  details.proposed>summary::before{content:"\25B8"; color:var(--muted); font-weight:700}
+  details.proposed[open]>summary::before{content:"\25BE"}
+  details.proposed>summary h4{margin:0}
+  details.proposed>summary:focus-visible{outline:2px solid var(--accent); outline-offset:3px}
+  .proposed-tag{
+    font-size:.7rem; letter-spacing:.09em; text-transform:uppercase;
     color:var(--muted); font-weight:700; border:1px solid var(--muted); border-radius:999px;
-    padding:.1rem .6rem; margin-bottom:.6rem;
+    padding:.1rem .6rem; white-space:nowrap;
   }
-  .proposed h4{margin-top:0}
 
   /* Code blocks */
   pre.codeblock{
@@ -233,11 +268,125 @@
   .defs .d span{display:block; font-size:.85rem; color:var(--muted); margin-top:.2rem}
 
   footer{border-top:1px solid var(--line); margin-top:3rem; padding-top:1.2rem; color:var(--muted); font-size:.82rem}
+
+  /* ── Microplanning animations (ported from the Microplanning deck) ───────
+     Everything is namespaced under .mp-anim. Cell colours are applied by
+     class, not by the script writing hex into fill/stroke, so the diagrams
+     re-theme with the page instead of freezing the deck's dark palette. */
+  .mp-anim{
+    --mp-canvas:#F2F6F3; --mp-canvas-line:var(--line); --mp-grid:#BAC7C0;
+    --mp-wag1:#0E7C66; --mp-wag2:#3A6EA5; --mp-wag3:#A96A12; --mp-wag4:#8250A8;
+    --mp-vis-fill:#F5D98B; --mp-vis-stroke:#C77B12;
+    background:var(--raise); border:1px solid var(--line); border-radius:10px;
+    padding:1rem 1rem .85rem; margin:1.4rem 0; box-shadow:var(--shadow);
+  }
+  @media (prefers-color-scheme: dark){
+    .mp-anim{
+      --mp-canvas:#0A100E; --mp-canvas-line:#24332D; --mp-grid:#3A4A43;
+      --mp-wag1:#3FD0A8; --mp-wag2:#5B9BD5; --mp-wag3:#EFB35C; --mp-wag4:#C48AE0;
+      --mp-vis-fill:#FFF9C4; --mp-vis-stroke:#F9A825;
+    }
+  }
+  :root[data-theme="dark"] .mp-anim{
+    --mp-canvas:#0A100E; --mp-canvas-line:#24332D; --mp-grid:#3A4A43;
+    --mp-wag1:#3FD0A8; --mp-wag2:#5B9BD5; --mp-wag3:#EFB35C; --mp-wag4:#C48AE0;
+    --mp-vis-fill:#FFF9C4; --mp-vis-stroke:#F9A825;
+  }
+  :root[data-theme="light"] .mp-anim{
+    --mp-canvas:#F2F6F3; --mp-canvas-line:var(--line); --mp-grid:#BAC7C0;
+    --mp-wag1:#0E7C66; --mp-wag2:#3A6EA5; --mp-wag3:#A96A12; --mp-wag4:#8250A8;
+    --mp-vis-fill:#F5D98B; --mp-vis-stroke:#C77B12;
+  }
+  .mp-anim .cap{
+    font-size:.78rem; color:var(--muted); text-transform:uppercase;
+    letter-spacing:.08em; margin-bottom:.6rem; font-weight:600;
+  }
+  .mp-viz{position:relative; max-width:540px; margin:0 auto}
+  .mp-svg{display:block; width:100%}
+  .mp-svg .canvas{fill:var(--mp-canvas); stroke:var(--mp-canvas-line)}
+  .mp-svg .compass{fill:var(--muted); font-size:10px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+
+  .mp-play{
+    position:absolute; top:42%; left:50%; transform:translate(-50%,-50%); z-index:3;
+    background:var(--accent); color:#fff; border:0; border-radius:999px;
+    padding:.55rem 1.3rem; font:inherit; font-size:.9rem; font-weight:600; cursor:pointer;
+    box-shadow:0 2px 12px rgba(28,40,35,.3); transition:opacity .3s;
+  }
+  .mp-play:hover{filter:brightness(1.07)}
+  .mp-play:focus-visible{outline:2px solid var(--accent); outline-offset:3px}
+  .mp-play.done{
+    position:static; transform:none; display:block; margin:.7rem auto 0;
+    background:transparent; color:var(--accent-ink); border:1px solid var(--accent);
+    padding:.25rem .9rem; font-size:.78rem; box-shadow:none;
+  }
+  .mp-play:disabled{opacity:0; pointer-events:none}
+  .mp-play.done:disabled{opacity:.4; pointer-events:none}
+
+  .mp-steps{display:flex; gap:.35rem; margin-top:.9rem; justify-content:center; flex-wrap:wrap}
+  .mp-steps span{
+    font-size:.68rem; letter-spacing:.05em; text-transform:uppercase; color:var(--muted);
+    border:1px solid var(--line); border-radius:999px; padding:.15rem .65rem;
+    transition:background .3s, color .3s, border-color .3s;
+  }
+  .mp-steps span.on{color:#fff; background:var(--accent); border-color:var(--accent); font-weight:700}
+
+  .mp-legend{
+    display:flex; flex-wrap:wrap; gap:.9rem; margin-top:.8rem; justify-content:center;
+    opacity:0; transition:opacity .6s;
+  }
+  .mp-legend.show{opacity:1}
+  .mp-legend span{font-size:.78rem; color:var(--muted); display:inline-flex; align-items:center; gap:.4rem}
+  .mp-legend i{width:.8rem; height:.8rem; border-radius:3px; display:inline-block}
+  .mp-legend i.w1{background:var(--mp-wag1)} .mp-legend i.w2{background:var(--mp-wag2)}
+  .mp-legend i.w3{background:var(--mp-wag3)} .mp-legend i.w4{background:var(--mp-wag4)}
+
+  /* Lifecycle diagram (ward → WA → WAG → FLW) */
+  .mp-svg #ward-outline,.mp-svg #ward-label{opacity:0; transition:opacity .8s}
+  .mp-svg #ward-outline.shown,.mp-svg #ward-label.shown{opacity:1}
+  .mp-svg #ward-outline{fill:none; stroke:var(--accent); stroke-width:1.6; stroke-dasharray:7 5}
+  .wa-cell{opacity:0; fill:none; fill-opacity:0; stroke:var(--mp-grid);
+    transition:opacity .45s, fill-opacity .7s, fill .7s, stroke .7s}
+  .wa-cell.shown{opacity:1}
+  .wa-cell.wag-1{fill:var(--mp-wag1); fill-opacity:.28; stroke:var(--mp-wag1)}
+  .wa-cell.wag-2{fill:var(--mp-wag2); fill-opacity:.28; stroke:var(--mp-wag2)}
+  .wa-cell.wag-3{fill:var(--mp-wag3); fill-opacity:.28; stroke:var(--mp-wag3)}
+  .wa-cell.wag-4{fill:var(--mp-wag4); fill-opacity:.28; stroke:var(--mp-wag4)}
+  .flw-label{opacity:0; transition:opacity .6s}
+  .flw-label.shown{opacity:1}
+  .flw-label rect{fill:var(--raise); stroke-width:1.4}
+  .flw-label.wag-1 rect{stroke:var(--mp-wag1)} .flw-label.wag-2 rect{stroke:var(--mp-wag2)}
+  .flw-label.wag-3 rect{stroke:var(--mp-wag3)} .flw-label.wag-4 rect{stroke:var(--mp-wag4)}
+  .flw-label text{fill:var(--ink); font-size:10.5px; font-weight:700}
+
+  /* Auto-WAG selection diagram */
+  .aw-cell{fill:none; fill-opacity:0; stroke:var(--mp-grid);
+    transition:fill .6s, stroke .6s, fill-opacity .6s}
+  .aw-cell.picked{fill:var(--accent); fill-opacity:.3; stroke:var(--accent)}
+  .aw-cell.visited{fill:var(--mp-vis-fill); fill-opacity:.45; stroke:var(--mp-vis-stroke)}
+  .aw-label{fill:var(--muted); font-size:10px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .aw-cent{opacity:0; fill:var(--accent); stroke:var(--mp-canvas); stroke-width:1.5;
+    transition:opacity .5s}
+  .aw-cent.shown{opacity:1}
+  .aw-line{opacity:0; stroke:var(--mp-grid); stroke-width:1.3; transition:opacity .5s}
+  .aw-line.shown{opacity:1}
+  .aw-line.win{stroke:var(--accent); stroke-width:2.2}
+  .aw-note{opacity:0; transition:opacity .5s}
+  .aw-note.shown{opacity:1}
+  .aw-note rect{fill:var(--raise); stroke:var(--accent); stroke-width:1.4}
+  .aw-note text{fill:var(--ink); font-size:9.5px; font-weight:700}
+  .aw-dist{opacity:0; fill:var(--muted); font-size:9px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace; transition:opacity .5s}
+  .aw-dist.shown{opacity:1}
+  .aw-dist.win{fill:var(--accent); font-weight:700}
+
+  /* The page-level reduced-motion rule kills transitions; the scripts also
+     collapse their timers, so each diagram lands on its final frame at once. */
+  @media (max-width:600px){ .mp-anim{padding:.75rem .6rem} }
 </style>
 
 <div class="topbar">
   <span class="word">Connect-<em style="color:var(--accent);font-style:normal">CHC</em> Docs</span>
-  <span class="badge wip">v0.2 · Draft</span>
+  <span class="badge wip">v0.3 · Draft</span>
   <select id="mobile-nav" aria-label="Jump to section">
     <option value="">Jump to…</option>
     <option value="#system-design">System Design (CCHQ App)</option>
@@ -253,7 +402,7 @@
   <div class="brand">
     <div class="word">Connect-<em>CHC</em></div>
     <div class="sub">System Documentation</div>
-    <div class="badges" style="margin-top:.5rem;margin-bottom:0"><span class="badge ver">v0.2</span><span class="badge wip">Draft / WIP</span></div>
+    <div class="badges" style="margin-top:.5rem;margin-bottom:0"><span class="badge ver">Doc v0.3</span><span class="badge wip">Draft / WIP</span></div>
   </div>
   <nav aria-label="Sections">
     <a class="nav-item" href="#system-design">1 · System Design (CCHQ App)</a>
@@ -273,12 +422,13 @@
     <a class="nav-sub" href="#wf-relearn">Relearn intervention</a>
     <a class="nav-sub" href="#wf-wag">WAG progression</a>
     <a class="nav-sub" href="#wf-autowag">Auto-WAG Selection</a>
-    <a class="nav-sub" href="#wf-workstart">Work Start Control</a>
+    <a class="nav-sub" href="#wf-workstart">Work Start Control (retired)</a>
     <a class="nav-item" href="#setup">3 · Setup Steps</a>
     <a class="nav-sub" href="#setup-streams">The three RCT opportunities</a>
     <a class="nav-sub" href="#setup-sequence">Setup sequence</a>
     <a class="nav-sub" href="#setup-task-types">Relearn task types</a>
     <a class="nav-sub" href="#setup-verification-rules">Verification rules</a>
+    <a class="nav-sub" href="#setup-microplan">Microplanning</a>
     <a class="nav-item" href="#faq">4 · FAQ</a>
     <a class="nav-item" href="#changelog">5 · Changelog</a>
   </nav>
@@ -289,7 +439,7 @@
 
 <div class="hero">
   <div class="eyebrow">Connect by Dimagi · Child Health Campaign</div>
-  <div class="badges"><span class="badge ver">v0.2</span><span class="badge wip">🚧 Draft · Work in Progress — not a released version</span></div>
+  <div class="badges"><span class="badge ver">Doc v0.3</span><span class="badge ver">Master app v1971</span><span class="badge wip">🚧 Draft · Work in Progress — not a released version</span></div>
   <h1>Connect-CHC System Documentation</h1>
   <p class="lede">How the CHC Deliver &amp; Learn apps work on CommCare HQ and CommCare Connect — the case architecture, the frontline worker workflow, program setup, and answers for every team. Based on the Connect-CHC System Design document (2026 design for the RCT, informed by the Jan 2026 Nigeria field visit).</p>
   <div class="ldvp">
@@ -345,10 +495,10 @@
     <h3>Modules &amp; forms</h3>
     <div class="table-wrap"><table>
       <tr><th>Module</th><th>Form</th><th>What it does</th></tr>
-      <tr><td rowspan="1">Household Management</td><td><b>Add HH &amp; Children</b></td><td>Verifies GPS location and confirms the FLW is inside a valid Work Area before data entry. Collects caregiver consent. Registers household info (head of household, contact details, number of U5 children) and each eligible child under 59 months (name, DOB, gender) with duplication checks at household and child level. DOB can be entered as a direct date or as year + month; today's date and age 0 are disallowed. Creates one <code>household</code> case and one <code>child</code> case per registered child.</td></tr>
+      <tr><td rowspan="1">Household Management</td><td><b>Add HH &amp; Children</b></td><td>Verifies GPS location and confirms the FLW is inside a valid Work Area before data entry. Collects caregiver consent. Registers household info (head of household, contact details, number of U5 children) and each eligible child under 59 months (name, DOB, gender) with duplication checks at household and child level. DOB can be entered as a direct date or as year + month; today's date and age 0 are disallowed. Creates one <code>household</code> case and one <code>child</code> case per registered child. A result group of check-in labels governs entry: <b>Outside Work Area</b> (blocked), <b>WA Inaccessible</b> — pending or approved request (blocked), <b>No Child WA</b> (blocked), a <b>rejected-request notice</b> (informational — the WA is workable), and <b>Inside Work Area</b> (proceed).</td></tr>
       <tr><td>Service Delivery Management</td><td><b>Health Service Delivery</b></td><td>Verifies GPS location inside a valid WA. Blocks the form if a complete delivery already exists for the child. Delivers <b>Deworming</b> (12–59 months, age-based dosage: 200mg for 12–24m, 400mg for 25–59m, with prior-dose and wellness checks), <b>MUAC screening</b> (0–59 months, colour-coded Green/Yellow/Red with referral for Yellow/Red and mandatory photo), <b>ORS &amp; Zinc</b> (all U5, with diarrhea screening and mandatory handover photo; <b>2 co-packs per child for the RCT</b>), and <b>Vaccine Counseling</b> (immunization history, vaccination-card photo, reasons if not vaccinated). Only the <b>MUAC and ORS photos are mandatory</b> — deworming and vaccination-card photos are optional. Shows an end-of-form summary of each service status and whether the visit qualifies as a complete, valid delivery. Updates the <code>child</code> and <code>work-area</code> cases.</td></tr>
-      <tr><td rowspan="2">Work Area Management</td><td><b>No Children Found</b></td><td>Requires explicit confirmation of intent. Verifies GPS inside the selected WA (15m leeway). Confirms the whole WA was visited and no eligible U5 child was found — blocks submission if children were found or prior delivery records exist. Records the reason (no visible structures, access denied, no households, no one home, no eligible children, time constraints, other) and captures a building photo as evidence (or a written explanation). Sets <code>hq_status_wa = visited</code> on submission (light yellow fill / orange point on the map).</td></tr>
-      <tr><td><b>Inaccessible WA</b></td><td>Verifies GPS (preferred 10m / minimum 15m, no positional expectation vs. the WA). Checks for an existing closure request and blocks if one is pending; allows resubmission only after rejection. Requires explicit confirmation with a warning that the request is irreversible. Collects a written reason; on submit sets <code>hq_status_wa = inaccessible_requested</code> (black point, no fill on the map) and hands the request to the NM/LLO team on Connect for review.</td></tr>
+      <tr><td rowspan="2">Work Area Management</td><td><b>No Children Found</b></td><td>Requires explicit confirmation of intent. Verifies GPS inside the selected WA (15m leeway). Confirms the whole WA was visited and no eligible U5 child was found — blocks submission if children were found or prior delivery records exist. Records the reason (no visible structures, access denied, no households, no one home, no eligible children, time constraints, other) and captures a building photo as evidence (or a written explanation). Entry is gated by <code>allow_filling_this_form</code>: available only when the WA is <b>fresh or inaccessible-rejected</b>, and blocked when it is already reported, has a pending/approved inaccessible request, or has any recorded activity (<code>delivered_visit_count &gt; 0</code> or <code>household_count &gt; 0</code> on the work-area case). On submission sets <code>hq_status_wa = visited</code> (light yellow fill / orange point on the map) and <code>filled_no_children_found_wa = 'yes'</code> on the work-area case — the marker the household form uses to block registration in no-children WAs.</td></tr>
+      <tr><td><b>Inaccessible WA</b></td><td>Verifies GPS (preferred 10m / minimum 15m, no positional expectation vs. the WA). Three labels govern entry: a <b>rejected-request notice</b> (informational — a previously rejected WA can be resubmitted), a <b>closure-request status</b> block when a request is pending or approved, and a <b>has-activity</b> block when the WA has registered households, delivered visits, or is already visited (this also stops re-filing on a rejected WA once a household has been registered there). Requires explicit confirmation with a warning that the request is irreversible. Collects a written reason; on submit sets <code>hq_status_wa = inaccessible_requested</code> (black point, no fill on the map) and hands the request to the NM/LLO team on Connect for review.</td></tr>
     </table></div>
     <div class="callout"><b>Registration &amp; delivery are deliberately split (chosen design: "Option 4")</b><p>One <b>Register HH &amp; Children</b> form creates the household and all child cases via a repeat group; a separate, simple <b>Child Service Delivery</b> form (case type <code>child</code>) records each delivery. One submission of the delivery form = one Deliver Unit for that child, which Connect handles cleanly, while the FLW's mental model stays "go to the household, do everything from there."</p></div>
 
@@ -407,7 +557,7 @@
       <tr><td><code>visited</code></td><td><span class="swatch" style="background:#FFF9C4"></span><code>#FFF9C4</code> light yellow</td><td><span class="swatch" style="background:#F9A825"></span><code>#F9A825</code> orange</td></tr>
       <tr><td><code>inaccessible_requested</code></td><td><span class="swatch" style="background:transparent"></span>No fill (<code>''</code>)</td><td><span class="swatch" style="background:#000000"></span><code>#000000</code> black</td></tr>
     </table></div>
-    <p style="font-size:.88rem;color:var(--muted)">Once a WA is already visited, its existing colours are kept — the colour assignment only fires on the status transition.</p>
+    <p style="font-size:.88rem;color:var(--muted)">Once a WA is already visited, its existing colours are kept — the colour assignment only fires on the status transition. That includes the <code>inaccessible_requested → visited</code> transition: when a household is registered on a <b>rejected</b>-inaccessible WA, the WA takes the visited colours (light yellow fill, orange point) like any other visited WA, replacing the black point.</p>
     <p>Two separate properties track WA state because CommCare HQ and Connect care about different lifecycles — HQ tracks whether the FLW has <i>worked in</i> a WA, Connect tracks whether <i>payable delivery</i> has happened there:</p>
     <div class="table-wrap"><table>
       <tr><th>Scenario</th><th><code>hq_status_wa</code> (HQ)</th><th><code>wa_status</code> (Connect)</th></tr>
@@ -419,9 +569,12 @@
       <tr><td>Inaccessible form filled by FLW</td><td>inaccessible_requested</td><td><span class="chip bad">REQUEST_FOR_INACCESSIBLE</span></td></tr>
       <tr><td>Inaccessible approved by NM/PM</td><td>inaccessible_requested</td><td><span class="chip neutral">INACCESSIBLE</span></td></tr>
       <tr><td>Inaccessible rejected by NM/PM</td><td>inaccessible_requested</td><td><span class="chip neutral">NOT_VISITED</span></td></tr>
+      <tr><td>Household registered on a <b>rejected</b>-inaccessible WA</td><td>visited</td><td><span class="chip neutral">NOT_VISITED</span></td></tr>
       <tr><td>Expected visits reached on Connect</td><td>visited (no change)</td><td><span class="chip ok">EXPECTED_VISIT_REACHED</span></td></tr>
     </table></div>
     <p style="font-size:.88rem;color:var(--muted)">Example of why they diverge: registering a household marks the WA <i>visited</i> for HQ but still <i>not visited</i> for Connect — only an actual child delivery flips Connect's status. Status updates from Connect (e.g. inaccessible review outcomes) sync back to HQ in realtime.</p>
+    <div class="callout warn"><b>The three-way inaccessible distinction — always read both properties</b><p><code>hq_status_wa</code> alone cannot tell a pending, approved, and rejected request apart — it stays <code>inaccessible_requested</code> in all three. The distinguishing signal is Connect's <code>wa_status</code>: <b>pending</b> = <code>REQUEST_FOR_INACCESSIBLE</code>, <b>approved</b> = <code>INACCESSIBLE</code>, <b>rejected</b> = <code>NOT_VISITED</code>. A <b>rejected</b> WA is workable — the FLW can register households there (it then flips to <i>visited</i> as in the row above). Any form condition that blocks on <code>hq_status_wa = 'inaccessible_requested'</code> alone will wrongly block rejected WAs.</p></div>
+    <p style="font-size:.88rem;color:var(--muted)"><code>EXPECTED_VISIT_REACHED</code> is informational on Connect only — it does <b>not</b> block the FLW: registration and delivery remain allowed after the expected visit count is reached.</p>
   </div>
 
   <div class="sub" id="sd-payment">
@@ -472,16 +625,16 @@
       <tr><th>Check</th><th>Where it runs</th><th>Logic</th><th>Enforcement</th></tr>
       <tr><td>Repeated child name in the same household</td><td>Repeat group of the Household form (<code>child_duplicate_check</code>)</td><td>A validation condition checks whether the child's name repeats within the household's registered children.</td><td><span class="chip bad">Blocks in app</span> — the FLW cannot register a same-name child in the same household.</td></tr>
       <tr><td>Same name + DOB child in the user's casedb</td><td>Hidden property <code>form.check_child_duplicate_casedb</code> in the HSD form</td><td>Calculates the count of repeating children (same name + DOB) minus 1; defaults to 0.</td><td><span class="chip warn">Connect verification flag</span> — configured on the opp to reject the visit.</td></tr>
-      <tr><td>Suspicious DOB gap between siblings</td><td><code>flag_child_for_dob_gap_suspicious</code> — calculated in the Household form, stored as a <b>child case property</b>; read in the HSD form as <code>form.check_dob_gap_suspicious_duplicate</code></td><td>Children in a household should be twins or have an age gap greater than 8 months; if neither, the flag is set to 1.</td><td><span class="chip warn">Connect verification flag</span> — configured on the opp to reject the visit.</td></tr>
+      <tr><td>Suspicious DOB gap between siblings</td><td><code>flag_child_for_dob_gap_suspicious</code> — calculated in the Household form, stored as a <b>child case property</b>; read in the HSD form as <code>form.check_dob_gap_suspicious_duplicate</code></td><td>Children in a household should be twins or have an age gap greater than 8 months; if neither, the flag is set to 1.</td><td><span class="chip neutral">Calculated, not used</span> — still computed and submitted, but <b>no longer configured as a verification rule</b>, so it has no effect on approval or payment.</td></tr>
     </table></div>
-    <div class="callout warn"><b>Setup requirement</b><p>Both HSD form values — <code>form.check_child_duplicate_casedb</code> and <code>form.check_dob_gap_suspicious_duplicate</code> — must be configured as <b>verification flags on the opportunity</b> at setup time, or the rejection rules will not fire on Connect.</p></div>
+    <div class="callout warn"><b>Setup requirement</b><p>Only <code>form.check_child_duplicate_casedb</code> is configured as a <b>verification flag on the opportunity</b> — it must be added at setup time or the rejection rule will not fire on Connect. <code>form.check_dob_gap_suspicious_duplicate</code> is <b>not</b> configured: it is still calculated by the app but is wired to nothing.</p></div>
 
     <div class="table-wrap"><table>
       <tr><th>Duplicate scenario</th><th>Where it's caught</th></tr>
       <tr><td>Same user re-registers a household</td><td>Blocked by app logic (within the same user's data).</td></tr>
       <tr><td>Same user registers a same-name child in the same household</td><td>Blocked in-app by the validation condition in the Household form's repeat group.</td></tr>
       <tr><td>Same name + DOB child anywhere in the user's casedb (e.g. in another household)</td><td>Flagged via <code>form.check_child_duplicate_casedb</code> in the HSD form; rejected by the Connect verification rule.</td></tr>
-      <tr><td>Implausibly close sibling DOBs (not twins, gap ≤ 8 months)</td><td>Flagged via <code>form.check_dob_gap_suspicious_duplicate</code> in the HSD form; rejected by the Connect verification rule.</td></tr>
+      <tr><td>Implausibly close sibling DOBs (not twins, gap ≤ 8 months)</td><td>Calculated as <code>form.check_dob_gap_suspicious_duplicate</code> in the HSD form, but <b>not caught</b> — no verification rule consumes it.</td></tr>
       <tr><td>Different users register the same household or child</td><td>Opp-level flags only — no in-app blocker.</td></tr>
     </table></div>
     <div class="callout warn"><b>Limitation of all dedupe checks — the casedb is user-scoped</b><p>Every check above runs against the casedb, which has <b>user-level ownership</b>: only households and children registered by the <b>current user</b> are visible to it. Example: FLW1 cannot register two children named Abhishek with DOB 02-04-2020 anywhere in the opportunity — the second is caught as a duplicate. But FLW1 and FLW2 can <b>each</b> register an Abhishek with DOB 02-04-2020, because neither can see the other's cases. Cross-user duplicates can only be caught at the platform level.</p></div>
@@ -555,7 +708,7 @@ flowchart TD
   G -- "Yes" --> H["Push notification on Connect:<br/>Learn finished, go to Deliver"]
   H --> I["View job status page →<br/>claim the job"]
   I --> J["Deliver app downloads"]
-  J --> K["Blocked at Welcome screen until<br/>allow_flw_to_start_delivery = 1<br/>and Work Areas are assigned"]
+  J --> K["Sync the app<br/>(advised at every start)"]
   K --> L["Submit Welcome to CHC form →<br/>first WAG set (north-west most)"]
       </pre>
     </div>
@@ -564,7 +717,7 @@ flowchart TD
       <li><b>Complete the learn modules.</b> The Learn app opens with an initial welcome form, then all learn modules are available. Every module must be finished; as module forms are submitted, progress is trackable by the FLW on the Connect menu and by the Network Manager on the Connect platform.</li>
       <li><b>Pass the assessment quiz.</b> When all modules are complete, the assessment quiz is enabled automatically: <b>20 questions, minimum 80 marks to pass (16 of 20 correct), unlimited attempts</b>.</li>
       <li><b>Claim the Deliver job.</b> On passing, the FLW gets a push notification on the Connect app that Learn is finished and they can go to Deliver. From the <b>view job status</b> page they claim the job, and the Deliver app downloads.</li>
-      <li><b>Wait for the go-ahead.</b> FLWs are advised to <b>sync the app whenever they start</b>. Initially they are blocked from starting — <code>allow_flw_to_start_delivery = 0</code> (see <a href="#wf-workstart">Work Start Control</a>). Once the PM allows the FLW to start and assigns their Work Areas, the FLW sees the <b>Welcome to CHC</b> form; submitting it sets their first WAG — the north-west most (see <a href="#wf-autowag">Auto-WAG Selection</a>).</li>
+      <li><b>Sync and start.</b> FLWs are advised to <b>sync the app whenever they start</b>. The FLW then sees the <b>Welcome to CHC</b> form; submitting it sets their first WAG — the north-west most (see <a href="#wf-autowag">Auto-WAG Selection</a>). Work Areas must be assigned for a WAG to resolve; the app no longer holds FLWs behind a wait screen (see <a href="#wf-workstart">Work Start Control — retired</a>).</li>
     </ol>
 
     <h4>Phase 2 — Field delivery (repeats per WA and WAG)</h4>
@@ -657,9 +810,13 @@ flowchart TD
   </div>
 
   <div class="sub" id="wf-wag">
-    <div class="deprecated">
-      <span class="dep-tag">Deprecated — not in use</span>
-      <h3>WAG progression (legacy)</h3>
+    <details class="deprecated">
+      <summary>
+        <span class="dep-tag">Deprecated — not in use</span>
+        <h3>WAG progression (legacy)</h3>
+        <span class="why">superseded by Auto-WAG Selection in v1949</span>
+        <span class="hint">click to expand</span>
+      </summary>
       <div class="callout warn"><b>Superseded from Master app version 1949</b><p>The "first WAG in the list" ordering described below is the legacy behavior and is <b>no longer active</b>. From version 1949 onward, the next WAG is chosen geographically by <a href="#wf-autowag">Auto-WAG Selection</a> — the list-based pick below remains only as its fallback when centroid data is missing.</p></div>
       <p>WAG ordering was handled <b>dynamically in the app</b> using WA statuses — no serial numbers are uploaded (the <code>wag_serial_number</code> upload approach was rejected because the number can only be known after clustering and assignment):</p>
       <ol>
@@ -668,7 +825,7 @@ flowchart TD
         <li>If the list is empty → the FLW sees "you are at the last WAG."</li>
       </ol>
       <p style="font-size:.88rem;color:var(--muted)">The WAG identifier lives on the work-area case as the <code>work_area_group</code> property (shown on Connect as "Work Area Group") — this part is still true for Auto-WAG Selection.</p>
-    </div>
+    </details>
   </div>
 
   <div class="sub" id="wf-autowag">
@@ -690,6 +847,33 @@ flowchart TD
       <li><b>What if map data is missing?</b> The app quietly falls back to the old way of picking a WAG, so no one is ever stuck without an assignment.</li>
     </ul>
     <div class="callout"><b>The FLW does not choose WAGs themselves</b><p>The app decides automatically. They only confirm the switch when they finish a WAG.</p></div>
+
+    <div class="mp-anim">
+      <div class="cap">Animation · first WAG, then nearest remaining</div>
+      <div class="mp-viz">
+        <svg id="awviz" class="mp-svg" viewBox="0 0 360 300" role="img"
+             aria-label="Animation: the app reads every assigned WAG centroid, assigns the north-west most as the first WAG, and once its work areas are visited assigns the nearest remaining WAG as the next.">
+          <rect class="canvas" x="0" y="0" width="360" height="300" rx="10"/>
+          <text class="compass" x="20" y="24">N ↑</text>
+          <text class="compass" x="20" y="38">W ←</text>
+          <g id="aw-clusters"></g>
+          <g id="aw-lines"></g>
+          <g id="aw-labels"></g>
+        </svg>
+        <button type="button" class="mp-play" id="awplay">▶ Play the selection</button>
+        <div class="mp-steps" id="awsteps">
+          <span data-s="1">1 · Read wag_centroids</span>
+          <span data-s="2">2 · North-west most = first</span>
+          <span data-s="3">3 · Current WAG completed</span>
+          <span data-s="4">4 · Nearest = next</span>
+        </div>
+      </div>
+      <p style="font-size:.82rem;color:var(--muted);margin:.8rem 0 0;text-align:center">
+        Four WAGs assigned to one FLW. Distances are illustrative — the app scores
+        the first WAG by <code>wag_lat − wag_lon</code> and the next by
+        <code>distance()</code> from the current WAG's centroid.
+      </p>
+    </div>
 
     <h4>How it works — technical explanation</h4>
     <p><b>Data prerequisites</b></p>
@@ -731,13 +915,19 @@ flowchart TD
   </div>
 
   <div class="sub" id="wf-workstart">
-    <h3>Work Start Control (<code>allow_flw_to_start_delivery</code>)</h3>
-    <p><span class="chip acc">Available from: Master app version 1938</span></p>
-    <p>Work Start Control gates whether an FLW can begin service delivery at all. The app reads the user property <code>allow_flw_to_start_delivery</code> on the FLW's mobile worker account: if the property is <b>missing or 0</b>, the app shows a wait message on the Welcome screen and blocks submission. Only when the property is set to <code>1</code> can the FLW start work.</p>
-    <div class="callout"><b>Who sets it, and when</b><p>The property is set to <code>1</code> per FLW from CommCare HQ by the <b>Dimagi delivery team</b>, after all locations (WAs/WAGs) in the microplan have been assigned to the users. This ensures no FLW accidentally starts work while the assignment process is still underway.</p></div>
+    <details class="deprecated">
+    <summary>
+      <span class="dep-tag">Retired — not in use</span>
+      <h3>Work Start Control (<code>allow_flw_to_start_delivery</code>)</h3>
+      <span class="why">introduced in v1938, removed in v1966 — FLWs no longer wait to be enabled</span>
+      <span class="hint">click to expand</span>
+    </summary>
+    <div class="callout warn"><b>No longer used</b><p>The work-start gate was removed in Master app version <b>1966</b>. FLWs no longer wait for the delivery team to enable them — there is no wait screen and no blocked submission. Work Area assignment remains the practical prerequisite for delivery, since without an assigned WAG no Work Area can resolve at check-in. The section below is kept for historical reference; existing accounts may still carry the property, but the app ignores it.</p></div>
+    <p>Work Start Control gated whether an FLW could begin service delivery at all. The app read the user property <code>allow_flw_to_start_delivery</code> on the FLW's mobile worker account: if the property was <b>missing or 0</b>, the app showed a wait message on the Welcome screen and blocked submission. Only when the property was set to <code>1</code> could the FLW start work.</p>
+    <div class="callout"><b>Who set it, and when</b><p>The property was set to <code>1</code> per FLW from CommCare HQ by the <b>Dimagi delivery team</b>, after all locations (WAs/WAGs) in the microplan had been assigned to the users — so that no FLW accidentally started work while the assignment process was still underway.</p></div>
 
-    <h4>What is being done right now?</h4>
-    <p>The property is currently set to <code>1</code> for multiple mobile workers using the <b>Bulk Upload</b> feature in CommCare HQ (<b>Users → Mobile Workers → Bulk Upload</b>):</p>
+    <h4>What was being done</h4>
+    <p>The property was set to <code>1</code> for multiple mobile workers using the <b>Bulk Upload</b> feature in CommCare HQ (<b>Users → Mobile Workers → Bulk Upload</b>):</p>
     <ol>
       <li>Download the mobile worker Excel file.</li>
       <li>Fill the value <code>1</code> in the <code>data: allow_flw_to_start_delivery</code> column for the target users.</li>
@@ -745,9 +935,11 @@ flowchart TD
     </ol>
     <p>This works, but it is manual, spreadsheet-based, and error-prone — there is a risk of editing the wrong rows or overwriting other user data in the sheet.</p>
 
-    <div class="proposed">
-    <span class="proposed-tag">Proposed — not implemented yet, under consideration</span>
-    <h4>What is the possible solution that can be tried to implement?</h4>
+    <details class="proposed">
+    <summary>
+      <h4>The API approach that was under consideration</h4>
+      <span class="proposed-tag">Was proposed — never implemented, now moot</span>
+    </summary>
     <p>Use the CommCare HQ <b>Mobile Worker Edit API</b> instead. This is a <b>manual, on-demand action performed by a Dimagi team member</b> whenever the property needs to be set — it is <b>not</b> an automated or scheduled process (no cron jobs, no scheduled scripts). The calls are executed at the time of the request, e.g. via curl, Postman, or a manually run helper.</p>
     <div class="table-wrap"><table>
       <tr><th>Aspect</th><th>Detail</th></tr>
@@ -765,15 +957,16 @@ flowchart TD
     <div class="callout danger"><b>Critical caution — fetch, merge, then PATCH</b><p>The <code>user_data</code> object should contain the user's <b>complete set of custom properties</b>. The Dimagi member must first fetch the user via <code>GET /api/v0.5/user/[user_id]/</code>, merge <code>"allow_flw_to_start_delivery": "1"</code> into the returned <code>user_data</code>, and send the merged object back — sending only the single property risks wiping out the user's other custom data.</p></div>
     <p><b>For multiple users:</b> retrieve user IDs via the User List API (<code>GET /api/v0.5/user/?limit=100</code>, paginating through results), then repeat the fetch–merge–PATCH steps for each target user. These calls are executed by the Dimagi member at the time of the request, not by any scheduled system.</p>
     <div class="callout warn"><b>Known limitation</b><p>The edit API does not support changing the default phone number — this does not affect this use case.</p></div>
-    <p style="font-size:.88rem;color:var(--muted)">Bulk Upload remains available as a fallback for very large one-time updates, but the API method is the recommended approach going forward.</p>
-    </div>
+    <p style="font-size:.88rem;color:var(--muted)">Bulk Upload remained the working method; the API approach was never adopted before the gate itself was removed.</p>
+    </details>
+    </details>
   </div>
 </section>
 
 <!-- ============================================================ -->
 <section id="setup">
   <div class="sec-head"><h2>Setup Steps</h2><span class="tag">Section 3</span></div>
-  <p>How a CHC RCT deployment is stood up — from CommCare HQ project spaces through Connect programs, opportunities, and microplanning to FLW launch. The RCT (August 2026) runs across <b>4 LLOs, ~100 FLWs per LLO, covering ~40 wards</b>.</p>
+  <p>How a CHC RCT deployment is stood up — from CommCare HQ project spaces through Connect programs, opportunities, and microplanning to FLW launch. The RCT (August 2026) runs across <b>4 LLOs, ~50 FLWs per LLO (~200 FLWs), covering ~40 wards</b>.</p>
 
   <div class="sub" id="setup-streams">
     <h3>The three RCT opportunities</h3>
@@ -782,13 +975,18 @@ flowchart TD
       <tr><th>Opportunity</th><th>Purpose</th><th>Scope</th></tr>
       <tr><td><b>Demo</b></td><td>The LLO trains FLWs: Personal ID sign-up, how the app works, the full workflow, demonstrated hands-on.</td><td>One location; training only.</td></tr>
       <tr><td><b>Practice visits</b></td><td>FLWs do actual, real service delivery in a small area <b>outside the RCT wards</b>.</td><td>A couple of visits per FLW.</td></tr>
-      <tr><td><b>Real (production)</b></td><td>Live RCT service delivery.</td><td>~100 FLWs per LLO × 4 LLOs; ~40 wards.</td></tr>
+      <tr><td><b>Real (production)</b></td><td>Live RCT service delivery.</td><td>~50 FLWs per LLO × 4 LLOs (~200 FLWs); ~40 wards.</td></tr>
     </table></div>
   </div>
 
   <div class="sub" id="setup-sequence">
-    <h3>Setup sequence <span class="badge wip" style="vertical-align:middle">🚧 WIP — not complete</span></h3>
-    <p style="font-size:.88rem;color:var(--muted)">This sequence is still being written up and reviewed — steps may be missing or change as the RCT deployment process is finalised.</p>
+    <h3>Setup sequence <span class="badge wip" style="vertical-align:middle">🚧 WIP — being written as the RCT is deployed</span></h3>
+    <p style="font-size:.88rem;color:var(--muted)">This is the sequence actually being followed for the August 2026 RCT deployment, recorded step by step as it happens. Steps marked <span class="chip warn">⏳ Pending</span> are not yet documented in detail.</p>
+    <div class="callout warn"><b>Next steps — still pending</b><p>One detail is outstanding and will be filled in once confirmed:</p>
+      <ul>
+        <li><b>Grid-generation tool link</b> — the link to Wouter's Labs tool used for microplanning grids (step 18).</li>
+      </ul>
+    </div>
     <ol class="steps">
       <li>
         <h4>Preparation</h4>
@@ -799,48 +997,177 @@ flowchart TD
         </ul>
       </li>
       <li>
-        <h4>Create the CommCare HQ project space</h4>
-        <p><b>4+1</b> structure: one project space per LLO plus one training space. Confirm the domain name, create the domain, and ensure admin rights for the delivery team.</p>
+        <h4>Create the CommCare HQ project space per LLO</h4>
+        <p>One project space per LLO (plus a training space). Confirm the domain name, create the domain, ensure admin rights for the delivery team, then <b>send it for a subscription update</b> (Connect subscription request via <code>accounts@dimagi.com</code>).</p>
       </li>
       <li>
-        <h4>Configure the project space (CCHQ Setup checklist)</h4>
-        <ul>
-          <li>Update the subscription; request Connect subscription via accounts@dimagi.com.</li>
-          <li>Via <b>linked domains</b> from the master space: feature flags (request via support@dimagi.com) and lookup tables (<code>post_assess</code> — see <a href="#sd-learn">Learn App &amp; quiz engine</a>).</li>
-          <li>Connection settings: CCHQ ↔ Connect (CCC) server connection + data forwarding; connection with OCS for the support bot.</li>
-          <li>OCS bot setup: 4 UCR expressions (Register User OCS, Trigger OCS Bot, Session Completion API, 24-hr expiry API) and 2 configurable form repeaters (OCS User Registration, Trigger Bot) — the repeaters can only be added <b>after the first push</b>, once the UCR expressions exist.</li>
-          <li>Payment Conditional Alert (Messaging → Conditional Alerts), created once per cohort/app.</li>
-          <li>Mobile worker <code>cohort_id</code> field — set per user once Learn is completed.</li>
-          <li>Update the program tracker for live programs.</li>
-        </ul>
+        <h4>Ask support to enable the feature flags</h4>
+        <p>Share the project space with <b>support@dimagi.com</b> to enable the flags — the full list lives in the <a href="https://docs.google.com/spreadsheets/d/1jz4lCsMrApBTo8j5nJu7O9lERlmCD-LMZ_zVpcZ3uY4/edit?gid=0#gid=0&amp;range=A73">feature flag sheet</a>. Four are required:</p>
+        <div class="table-wrap"><table>
+          <tr><th>Feature flag</th><th>What it is for</th></tr>
+          <tr><td><code class="copyable" tabindex="0" role="button">detail-list-tab-nodesets</code></td><td>Case-detail list tabs driven by nodesets.</td></tr>
+          <tr><td><code class="copyable" tabindex="0" role="button">CUSTOM_PROPERTIES</code></td><td>Custom app properties (the GPS auto-capture properties, quiz max-counts, etc.).</td></tr>
+          <tr><td>Integrate with generic APIs using UCR expressions (<code class="copyable" tabindex="0" role="button">expression_repeater</code>)</td><td>The configurable form repeaters used for the OCS bot forwarders.</td></tr>
+          <tr><td>Store named UCR expressions and filters in the database to be referenced elsewhere (<code class="copyable" tabindex="0" role="button">expression_registry</code>)</td><td>The named UCR expressions the forwarders reference by name.</td></tr>
+        </table></div>
+        <div class="callout"><b>Order matters</b><p>The OCS integration (step 11) cannot be built until <code>expression_repeater</code> and <code>expression_registry</code> are live in the space.</p></div>
       </li>
       <li>
-        <h4>Copy the apps from the master space</h4>
-        <p>Copy the latest Learn and Deliver apps down from <code>ccc-chc-master</code> to the project space via linked domains, <b>with proper naming</b>. App-level behavior — GPS settings, question bank, display conditions, dedupe logic — is maintained upstream on the master app (see <a href="#system-design">System Design</a>) and pushed to all downstream spaces.</p>
+        <h4>Publish the latest Learn app on the master space</h4>
+        <p>Release the current version on <code>ccc-chc-master</code> — <a href="https://www.commcarehq.org/a/ccc-chc-master/apps/view/6410308515904d5e925cc16f0b80638e/releases/">Learn app releases</a>.</p>
       </li>
       <li>
-        <h4>Create the program on Connect</h4>
-        <p>Create the program on the Dimagi CHC PM workspace and invite the organizations to it. The LLO creates <b>Personal IDs for all FLWs</b>.</p>
+        <h4>Publish the latest Deliver app on the master space</h4>
+        <p>Release the current version on <code>ccc-chc-master</code> — <a href="https://www.commcarehq.org/a/ccc-chc-master/apps/view/cd72e145f211ddd44ec648120f1b2d5c/">Deliver app</a>. App-level behaviour (GPS settings, question bank, display conditions, dedupe logic — see <a href="#system-design">System Design</a>) is maintained here and flows downstream.</p>
       </li>
       <li>
-        <h4>Create the opportunity</h4>
-        <ul>
-          <li>Opportunity name, <b>Deliver Units</b> (CHC Service Delivery — one paid unit per child served; No Children Found WA — pays one child-visit equivalent), <b>Payment Units</b>, and the list of users.</li>
-          <li>Per-LLO config fields: description, Learn app pass score, pay per org, pay per FLW, start &amp; end dates, and max daily / max total counts for HSD and NCF visits.</li>
-          <li>Test opportunities: identical details with a <code>[test]</code> prefix on the name and adjusted start/end dates.</li>
-        </ul>
+        <h4>Link each project space to Connect</h4>
+        <p>With the feature flags in place, connect the integration — follow <a href="https://dimagi.atlassian.net/wiki/spaces/connect/pages/2683405079/Run+Your+First+Connect+Opportunity">Run Your First Connect Opportunity</a> on Confluence. Three parts:</p>
+        <ol>
+          <li>Generate an API key.</li>
+          <li>Configure a new connection (CCHQ ↔ Connect / CCC servers).</li>
+          <li>Configure data forwarding.</li>
+        </ol>
+      </li>
+      <li id="setup-ocs">
+        <h4>Set up the OCS ↔ CommCare HQ chatbot integration</h4>
+        <p>Follow the <a href="https://dimagi.atlassian.net/wiki/spaces/connect/pages/3118104676/CCHQ-OCS+Integration+Guide">CCHQ-OCS Integration Guide</a> on Confluence, then generate an API key. The bot itself lives on Open Chat Studio: <a href="https://www.openchatstudio.com/a/Vaccine_Coach/chatbots/11255/#versions">CHC-RCT FLW Support Bot</a>.</p>
+        <div class="callout"><b>How the bot gets switched on for an FLW</b><p>Registration details are set in the <b>Learn app</b>: when the FLW submits Learn, the bot is enabled. Two forms drive it — <b>Learn App Overview &amp; Navigation Guide</b> registers the FLW with the bot, and <b>Get Started!</b> triggers it. The FLW then sees the bot in the Connect Messaging module (see <a href="#sd-learn">OCS support bot</a>).</p></div>
+
+        <h5>Named UCR expressions</h5>
+        <p>Add three named expressions under <b>Data → Filters and Expressions</b> (all of type <code>named_expression</code>). Once all three exist, the page lists <code>experiment_id</code>, <code>Register User OCS</code>, and <code>CHC Service Delivery Visit Form</code>.</p>
+        <div class="table-wrap"><table>
+          <tr><th>Name</th><th>Definition</th></tr>
+          <tr><td><code class="copyable" tabindex="0" role="button">experiment_id</code></td><td><pre class="codeblock"><code>{
+  "type": "constant",
+  "constant": "08b2cd75-a56d-4e6d-9eb7-a7160e67c0e8"
+}</code></pre></td></tr>
+          <tr><td><code class="copyable" tabindex="0" role="button">Register User OCS</code></td><td><pre class="codeblock"><code>{
+  "type": "dict",
+  "properties": {
+    "data": {
+      "type": "iterator",
+      "expressions": [
+        {
+          "type": "dict",
+          "properties": {
+            "data": { "type": "constant", "constant": {} },
+            "experiment": { "name": "experiment_id", "type": "named" }
+          }
+        }
+      ]
+    }
+  }
+}</code></pre></td></tr>
+          <tr><td><code class="copyable" tabindex="0" role="button">CHC Service Delivery Visit Form</code></td><td><pre class="codeblock"><code>{
+  "type": "dict",
+  "properties": {
+    "platform": "commcare_connect",
+    "experiment": { "name": "experiment_id", "type": "named" },
+    "identifier": {
+      "type": "jsonpath",
+      "jsonpath": "form.connect_id"
+    },
+    "prompt_text": "Ask the user how their visit was. Respond only with the message for the user."
+  }
+}</code></pre></td></tr>
+        </table></div>
+        <div class="callout warn"><b>The <code>experiment_id</code> constant is environment-specific</b><p>The value above is the one in use for this deployment; both other expressions reference it by name, so set it first.</p></div>
+
+        <h5>Connection settings</h5>
+        <p>Add the OCS connection (<b>Project Settings → Connection Settings</b>) named <b>OCS CHC Bot</b> — both forwarders below select it.</p>
+
+        <h5>Data forwarding — Configurable Form Repeaters</h5>
+        <p>Add two forwarders (<b>Project Settings → Data Forwarding → Configurable Form Repeater</b>). Both use connection <b>OCS CHC Bot</b>, method <b>POST</b>, and leave both response case action fields as <code>null</code>. The <code>xmlns</code> in each filter is what binds the forwarder to a specific form.</p>
+        <div class="table-wrap"><table>
+          <tr><th>Field</th><th>Forwarder 1 — user registration</th><th>Forwarder 2 — bot trigger</th></tr>
+          <tr><td>Name</td><td><code class="copyable" tabindex="0" role="button">CHC Master OCS User Registration</code></td><td><code class="copyable" tabindex="0" role="button">CHC OCS Master Trigger</code></td></tr>
+          <tr><td>URL template</td><td><code class="copyable" tabindex="0" role="button">/api/participants/</code></td><td><code class="copyable" tabindex="0" role="button">/api/trigger_bot</code></td></tr>
+          <tr><td>Configured filter — <code>xmlns</code></td><td><code class="copyable" tabindex="0" role="button">http://openrosa.org/formdesigner/welcome-chc-learn-app-v1</code></td><td><code class="copyable" tabindex="0" role="button">http://openrosa.org/formdesigner/D18F00CC-8DEB-4278-95B1-CCF9718EBFD5</code></td></tr>
+          <tr><td>Configured expression — named</td><td><code class="copyable" tabindex="0" role="button">Register User OCS</code></td><td><code class="copyable" tabindex="0" role="button">CHC Service Delivery Visit Form</code></td></tr>
+        </table></div>
+        <p>The configured filter takes this shape in both cases — only <code>property_value</code> differs:</p>
+        <pre class="codeblock"><code>{
+  "type": "boolean_expression",
+  "expression": {
+    "type": "property_name",
+    "property_name": "xmlns",
+    "datatype": null
+  },
+  "operator": "eq",
+  "property_value": "&lt;the xmlns from the table above&gt;",
+  "comment": null
+}</code></pre>
+        <p>And the configured expression simply names the UCR expression to build the payload:</p>
+        <pre class="codeblock"><code>{
+  "type": "named",
+  "name": "&lt;Register User OCS | CHC Service Delivery Visit Form&gt;"
+}</code></pre>
+        <div class="callout danger"><b>Build the expressions before the forwarders</b><p>A configurable form repeater can only reference a named expression that already exists in the space — add all three UCR expressions first, then create the forwarders.</p></div>
       </li>
       <li>
-        <h4>Raise the Jira ticket for feature enablement</h4>
-        <p>Send the opportunity URL to the tech team via a Jira ticket to enable the <b>microplanning</b> and <b>auditing</b> features on the opp.</p>
+        <h4>Copy, name and release the apps in each LLO space</h4>
+        <p>With OCS in place, copy the Learn and Deliver apps down from the master space as <b>linked apps</b>, rename them per the convention below, and <b>release</b> them.</p>
+        <h5>App naming convention</h5>
+        <p>Two apps per LLO space, named:</p>
+        <div class="table-wrap"><table>
+          <tr><th>App</th><th>Name</th></tr>
+          <tr><td>Deliver</td><td><code class="copyable" tabindex="0" role="button">CHC Deliver - NG - EHA - RCT - Aug 26</code></td></tr>
+          <tr><td>Learn</td><td><code class="copyable" tabindex="0" role="button">CHC Learn - NG - EHA - RCT - Aug 26</code></td></tr>
+        </table></div>
+        <p>The pattern, segment by segment:</p>
+        <div class="table-wrap"><table>
+          <tr><th>Segment</th><th>Value</th><th>Example</th></tr>
+          <tr><td>Programme prefix</td><td>Always <code>CHC</code></td><td>CHC</td></tr>
+          <tr><td>App type</td><td><code>Deliver</code> or <code>Learn</code></td><td>Deliver</td></tr>
+          <tr><td>Country</td><td>ISO country code</td><td>NG</td></tr>
+          <tr><td>LLO</td><td>The partner in this project space — EHA, JHF, ISODAF or SOLINA</td><td>EHA</td></tr>
+          <tr><td>Programme</td><td>The deployment</td><td>RCT</td></tr>
+          <tr><td>Cohort month</td><td>Month + 2-digit year</td><td>Aug 26</td></tr>
+        </table></div>
+        <p style="font-size:.88rem;color:var(--muted)">Note the app names use the short year (<code>Aug 26</code>) while the Connect programme name uses the full year (<code>CHC - NG - RCT - Aug 2026</code>).</p>
+      </li>
+      <li>
+        <h4>Copy the <code>post_assess</code> lookup table</h4>
+        <p>Copy <b>only</b> the quiz lookup table from the master space — <a href="https://www.commcarehq.org/a/ccc-chc-master/fixtures/edit_lookup_tables/">master lookup tables</a>, table name <code class="copyable" tabindex="0" role="button">post_assess</code>. See <a href="#sd-learn">Learn App &amp; quiz engine</a> for its structure and the rules that keep the randomiser working.</p>
+      </li>
+      <li>
+        <h4>Update the Program tracker</h4>
+        <p>Record the live program in the <a href="https://docs.google.com/spreadsheets/d/1_3JtvMNmZvZcyYgMSsyVOKxwxcOIP2wpEG-dsyS_6D0/edit?gid=961426180#gid=961426180">Program tracker</a>.</p>
+      </li>
+      <li>
+        <h4>Create the RCT program on Connect</h4>
+        <p>Created on the <b>Dimagi CHC PM</b> workspace (<code>DIMAGI-CHC-RCT</code>). The values used for the August 2026 RCT:</p>
+        <div class="table-wrap"><table>
+          <tr><th>Field</th><th>Value</th></tr>
+          <tr><td>Name *</td><td><code class="copyable" tabindex="0" role="button">CHC - NG - RCT - Aug 2026</code></td></tr>
+          <tr><td>Description *</td><td>The Connect CHC RCT (2026) program is targeted to provide CHC services to all children under 5 in the randomly selected 40 intervention wards across <b>Jigawa, Kano, Kaduna and Gombe</b>, and assess the coverage of services against the 40 control wards.</td></tr>
+          <tr><td>Delivery type *</td><td>Child Health Campaign</td></tr>
+          <tr><td>Budget *</td><td class="tnum">300,000,000</td></tr>
+          <tr><td>Currency *</td><td>NGN (Naira)</td></tr>
+          <tr><td>Country *</td><td>Nigeria</td></tr>
+          <tr><td>Start date *</td><td class="tnum">07/08/2026</td></tr>
+          <tr><td>End date *</td><td class="tnum">30/10/2026</td></tr>
+        </table></div>
+      </li>
+      <li>
+        <h4>Invite the organisations to the program</h4>
+        <p>Invite the LLO / Network Manager organisations to the program, then <b>wait for the invitations to be accepted</b> — opportunities cannot be created until an organisation has accepted.</p>
+        <div class="callout"><b>Personal IDs are already done</b><p>FLWs create their Personal ID themselves as part of the sign-up process — the LLOs complete this during the training session, so no action is needed here.</p></div>
+      </li>
+      <li>
+        <h4>Create the 4 opportunities for the real program</h4>
+        <p>Once the organisations have accepted, create <b>one opportunity per LLO</b> (4 in total). The per-LLO values — name, description, Learn app pass score, pay per org, pay per FLW, start &amp; end dates, and max daily / max total for HSD and NCF — are maintained in the <a href="https://docs.google.com/spreadsheets/d/15YsTnZMNO9v-Ihpu0yJfHopF7_j3aE8T7CiZqGu_44k/edit?gid=1350448470#gid=1350448470&amp;range=C22">opportunity config sheet</a>.</p>
+        <p>Each opportunity carries both <b>Deliver Units</b> — CHC Service Delivery (one paid unit per child served) and No Children Found WA (pays one child-visit equivalent) — plus its <b>Payment Units</b> and the list of users. Test opportunities use a <code>[test]</code> prefix with adjusted dates.</p>
+      </li>
+      <li>
+        <h4>Raise the interrupt ticket for feature enablement</h4>
+        <p>Send the opportunity URLs to <b>connect-tech</b> via an <b>interrupt ticket on Jira</b> to enable <b>microplanning</b>, <b>auditing</b> and the other CHC features on the new opportunities.</p>
       </li>
       <li id="setup-task-types">
         <h4>Configure the relearn task types on Connect</h4>
         <p>Done on the opportunity once it exists (<b>Task Types → New Task Type</b>). Each task type is what lets a reviewer push an FLW back through one forced-learn module — see <a href="#sd-relearn">Relearning module</a> and <a href="#wf-relearn">Relearn intervention</a>.</p>
-        <div class="callout">
-          <b>Task units sync hourly from CommCare HQ.</b>
-          <p>If the unit you need is not yet in the <b>Task unit</b> dropdown, the hourly sync has not picked up the app change — wait for it rather than working around it.</p>
-        </div>
+        <div class="callout"><b>Task units sync hourly from CommCare HQ</b><p>If the unit you need is not yet in the <b>Task unit</b> dropdown, the hourly sync has not picked up the app change — wait for it rather than working around it.</p></div>
         <p>The form has four fields:</p>
         <div class="table-wrap"><table>
           <tr><th>Field</th><th>What to enter</th></tr>
@@ -849,69 +1176,86 @@ flowchart TD
           <tr><td><b>Case property</b></td><td>The user property that is set when the task is assigned — the values in the table below.</td></tr>
           <tr><td><b>Description</b> *</td><td>Why the FLW is being sent back; shown with the task.</td></tr>
         </table></div>
-        <div class="callout danger">
-          <b>Case property is not marked required on Connect, but it is the field that makes the task work.</b>
-          <p>It carries the user property that is triggered when the task is assigned. Leave it empty and the task will save and can be assigned, but nothing is ever triggered on the phone — the FLW is never shown the module. If a task type is misconfigured, <b>archive it and do not recreate it</b>.</p>
-        </div>
+        <div class="callout danger"><b>Case property is not marked required on Connect, but it is the field that makes the task work</b><p>It carries the user property that is triggered when the task is assigned. Leave it empty and the task will save and can be assigned, but nothing is ever triggered on the phone — the FLW is never shown the module. If a task type is misconfigured, <b>use the edit feature</b> — added in a recent Connect update — rather than archiving and recreating. (Before edit existed, the guidance was to archive a broken task type and <b>not</b> recreate it; recreating caused problems.)</p></div>
         <p>One property per forced-learn module (click any value to copy it):</p>
         <div class="table-wrap"><table>
           <tr><th>Forced-learn module (Deliver app)</th><th>Case property</th></tr>
-          <tr><td>Service Delivery Guidelines</td><td><code class="copyable">trigger_forced_module_service_delivery_guidelines</code></td></tr>
-          <tr><td>How Your Work is Reviewed?</td><td><code class="copyable">trigger_forced_module_how_work_is_reviewed</code></td></tr>
-          <tr><td>Deworming Medicine</td><td><code class="copyable">trigger_forced_module_deworming</code></td></tr>
-          <tr><td>Vaccination Counseling</td><td><code class="copyable">trigger_forced_module_vaccination_counseling</code></td></tr>
-          <tr><td>MUAC Testing</td><td><code class="copyable">trigger_forced_module_muac_testing</code></td></tr>
-          <tr><td>ORS &amp; Zinc Distribution</td><td><code class="copyable">trigger_forced_module_ors_zinc</code></td></tr>
-          <tr><td>Capturing a Valid Image</td><td><code class="copyable">trigger_forced_module_capturing_a_valid_image</code></td></tr>
+          <tr><td>Service Delivery Guidelines</td><td><code class="copyable" tabindex="0" role="button">trigger_forced_module_service_delivery_guidelines</code></td></tr>
+          <tr><td>How Your Work is Reviewed?</td><td><code class="copyable" tabindex="0" role="button">trigger_forced_module_how_work_is_reviewed</code></td></tr>
+          <tr><td>Deworming Medicine</td><td><code class="copyable" tabindex="0" role="button">trigger_forced_module_deworming</code></td></tr>
+          <tr><td>Vaccination Counseling</td><td><code class="copyable" tabindex="0" role="button">trigger_forced_module_vaccination_counseling</code></td></tr>
+          <tr><td>MUAC Testing</td><td><code class="copyable" tabindex="0" role="button">trigger_forced_module_muac_testing</code></td></tr>
+          <tr><td>ORS &amp; Zinc Distribution</td><td><code class="copyable" tabindex="0" role="button">trigger_forced_module_ors_zinc</code></td></tr>
+          <tr><td>Capturing a Valid Image</td><td><code class="copyable" tabindex="0" role="button">trigger_forced_module_capturing_a_valid_image</code></td></tr>
         </table></div>
       </li>
       <li id="setup-verification-rules">
         <h4>Configure the verification rules</h4>
         <p>Configured on the opportunity after the task types, under <b>Verification Rules Configuration</b>. These are the automated checks that flag a visit for review.</p>
-
-        <h5 style="margin:1.1rem 0 .3rem">Working hours</h5>
+        <h5>Working hours</h5>
         <p>Visits submitted outside this window are flagged.</p>
         <div class="table-wrap"><table>
           <tr><th>Field</th><th>Value</th></tr>
-          <tr><td>Start Time</td><td><code class="copyable">07:00 AM</code></td></tr>
-          <tr><td>End Time</td><td><code class="copyable">06:00 PM</code></td></tr>
+          <tr><td>Start Time</td><td class="tnum">07:00 AM</td></tr>
+          <tr><td>End Time</td><td class="tnum">06:00 PM</td></tr>
         </table></div>
-
-        <h5 style="margin:1.1rem 0 .3rem">Form Validation Rules</h5>
-        <p>Add one rule per check with the <b>+</b> button. Both current rules apply to the <b>Service Delivery Unit</b> only — leave <i>No Children Work Area</i> unticked. See <a href="#sd-dedup">Deduplication</a> for what these checks do.</p>
+        <h5>Form Validation Rules</h5>
+        <p>Add one rule per check with the <b>+</b> button. The rule applies to the <b>Service Delivery Unit</b> only — leave <b>No Children Work Area</b> unticked. See <a href="#sd-dedup">Deduplication</a> for what the check does.</p>
         <div class="table-wrap"><table>
           <tr><th>Name</th><th>Question path</th><th>Question value</th><th>Deliver unit</th></tr>
-          <tr>
-            <td><code class="copyable">Duplicate Child Check</code></td>
-            <td><code class="copyable">form.check_child_duplicate_casedb</code></td>
-            <td><code class="copyable">0</code></td>
-            <td>Service Delivery Unit</td>
-          </tr>
-          <tr>
-            <td><code class="copyable">Suspicious DOB Gap</code></td>
-            <td><code class="copyable">form.check_dob_gap_suspicious_duplicate</code></td>
-            <td><code class="copyable">0</code></td>
-            <td>Service Delivery Unit</td>
-          </tr>
+          <tr><td>Duplicate Child Check</td><td><code class="copyable" tabindex="0" role="button">form.check_child_duplicate_casedb</code></td><td class="tnum">0</td><td>Service Delivery Unit</td></tr>
         </table></div>
-        <div class="callout warn">
-          <b><code>form.check_dob_gap_suspicious_duplicate</code> does not exist in every Deliver app.</b>
-          <p>It is present in the <b>RCT</b> Deliver apps but <b>not</b> in <code>[PRE-RCT] CHC Deliver App - EHA</code> (v12), where only <code>form.check_child_duplicate_casedb</code> is defined. Check the app the opportunity actually points at before adding the second rule — a rule on a question path the form does not contain can never evaluate. Both paths are calculations, so they are read from the submitted form, not answered by the FLW.</p>
-        </div>
+        <div class="callout warn"><b>Do not add a rule for the suspicious DOB gap</b><p><code>form.check_dob_gap_suspicious_duplicate</code> is <b>no longer configured as a verification rule</b>. The flag still exists in the Deliver app and is still calculated on submission, but it is not wired to anything — it has no effect on visit approval or payment. Leave it out of the opportunity config.</p></div>
+        <p style="font-size:.88rem;color:var(--muted)">The question path is a calculation, so it is read from the submitted form rather than answered by the FLW.</p>
       </li>
       <li>
         <h4>Invite the FLWs</h4>
         <p>The LLO invites FLWs to the opportunity. FLWs accept from the Connect menu, download the Learn app, and work through the learn modules (see <a href="#wf-daily">FLW end-to-end flow</a>, Phase 1).</p>
       </li>
-      <li>
+      <li id="setup-microplan">
         <h4>Microplanning — in parallel with Learn</h4>
+        <p>Microplanning cuts the ward into ~50m × 50m <b>Work Areas</b>, bundles adjacent
+        WAs into <b>Work Area Groups</b> sized for one worker, and assigns those groups to
+        FLWs — so every square of the ward has someone responsible for it.</p>
+
+        <div class="mp-anim">
+          <div class="cap">Animation · ward → work areas → work area groups → FLWs</div>
+          <div class="mp-viz">
+            <svg id="mapviz" class="mp-svg" viewBox="0 0 360 300" role="img"
+                 aria-label="Animation: a ward boundary is identified, divided into Work Area squares, the squares are coloured into four Work Area Groups, and each group is assigned to a frontline worker.">
+              <rect class="canvas" x="0" y="0" width="360" height="300" rx="10"/>
+              <path id="ward-outline" d="M16,52 L104,26 L238,32 L346,58 L348,168 L330,282 L118,290 L18,266 Z"/>
+              <text id="ward-label" class="compass" x="26" y="20">WARD BOUNDARY</text>
+              <g id="cells"></g>
+              <g id="flw-labels"></g>
+            </svg>
+            <button type="button" class="mp-play" id="playbtn">▶ Play the lifecycle</button>
+            <div class="mp-steps" id="animsteps">
+              <span data-s="1">1 · Identify ward</span>
+              <span data-s="2">2 · Create WAs</span>
+              <span data-s="3">3 · Group into WAGs</span>
+              <span data-s="4">4 · Assign to FLWs</span>
+            </div>
+            <div class="mp-legend" id="mp-legend">
+              <span><i class="w1"></i>WAG 1 · FLW 1</span>
+              <span><i class="w2"></i>WAG 2 · FLW 2</span>
+              <span><i class="w3"></i>WAG 3 · FLW 3</span>
+              <span><i class="w4"></i>WAG 4 · FLW 1</span>
+            </div>
+          </div>
+          <p style="font-size:.82rem;color:var(--muted);margin:.8rem 0 0;text-align:center">
+            An FLW can hold several WAGs and works one at a time — the order is decided by
+            <a href="#wf-autowag">Auto-WAG Selection</a>.
+          </p>
+        </div>
+
         <ul>
-          <li>Confirm the building data source and update the Python grid-generation code (GitHub repo).</li>
-          <li>Generate the grids — requires ward name, ward boundaries, and grid size (~50m × 50m WAs).</li>
+          <li>Confirm the building data source.</li>
+          <li>Generate the grids using <b>Wouter's Labs tool</b> <span class="chip warn">⏳ link pending</span> — requires ward name, ward boundaries, and grid size (~50m × 50m WAs). (Earlier rounds used the Python grid-generation code from the GitHub repo.)</li>
           <li>Upload the CSV on Connect microplanning (field template available on Connect).</li>
           <li>Run the clustering algorithm: <code>max_number_of_wa_in_wag = 50</code>, <code>max_count_of_building_in_wag = 200</code> — whichever hits first closes the WAG.</li>
           <li>Export the CSV, pivot it to check the distribution of WAs into WAGs, and manually recluster on the map for equitable distribution (merge singleton WAGs into larger neighbours; keep building counts per WAG roughly uniform).</li>
-          <li>Share the map with the LLO — areas to exclude, FLW assignment preferences — and get sign-off. <b>These steps are irreversible.</b></li>
+          <li>Re-group WAGs where needed, then share the map with the LLO — areas to exclude, FLW assignment preferences — and get sign-off. Once the microplan is uploaded, its WAs and WAGs <b>cannot be deleted or changed</b>; WAGs an FLW has not yet started can still be reassigned between FLWs.</li>
         </ul>
         <p>Case-property formats the app expects on the uploaded <code>work-area</code> cases:</p>
         <ul>
@@ -923,11 +1267,7 @@ flowchart TD
       </li>
       <li>
         <h4>Assign WAGs to the FLWs</h4>
-        <p>Complete the assignment on Connect. Meanwhile FLWs finishing Learn claim the Deliver job but stay blocked at the wait screen — <code>allow_flw_to_start_delivery = 0</code> (see <a href="#wf-workstart">Work Start Control</a>). This is deliberate: no FLW accidentally starts work during assignment.</p>
-      </li>
-      <li>
-        <h4>Unblock and launch</h4>
-        <p>Once all microplan locations are assigned, the Dimagi delivery team sets <code>allow_flw_to_start_delivery = 1</code> from the back end and asks the FLWs to <b>sync the app and start</b>.</p>
+        <p>Complete the assignment on Connect. FLWs who have finished Learn can claim the Deliver job and start as soon as their WAGs are assigned — the app no longer holds them behind a work-start gate, so assignment is what governs when useful work can begin (an FLW with no assigned WAG has no Work Area to check into).</p>
       </li>
       <li>
         <h4>Pre-launch sanity checks</h4>
@@ -976,8 +1316,14 @@ flowchart TD
     <details class="faq"><summary>What is the expected default value of <code>wa_status</code>?</summary><div class="body">
       <p>The Deliver app is designed to expect an <b>empty value</b> as the unvisited default. Uploads that set <code>NOT_STARTED</code> as the default break the workflow logic (the WAG-progression query and the No Children Found display condition both key off <code>wa_status = ''</code>).</p>
     </div></details>
-    <details class="faq"><summary>How is <code>allow_flw_to_start_delivery</code> set on user accounts?</summary><div class="body">
-      <p>Today via <b>Bulk Upload</b> in CommCare HQ (Users → Mobile Workers → Bulk Upload): download the mobile worker Excel, fill <code>1</code> in the <code>data: allow_flw_to_start_delivery</code> column for the target users, re-upload. A Mobile Worker Edit API method (fetch–merge–PATCH per user) is proposed but not yet in use. The property must be defined under Users → Edit User Fields first, and the value is the <b>string</b> <code>"1"</code>. See <a href="#wf-workstart">Work Start Control</a>.</p>
+    <details class="faq"><summary>How do forms distinguish a rejected inaccessible request from a pending or approved one?</summary><div class="body">
+      <p>Only by reading <b>both</b> status properties. <code>hq_status_wa</code> stays <code>inaccessible_requested</code> forever once a request is filed — approval and rejection never change it. Connect's <code>wa_status</code> carries the outcome: <code>REQUEST_FOR_INACCESSIBLE</code> (pending), <code>INACCESSIBLE</code> (approved), <code>NOT_VISITED</code> (rejected). A rejected WA is workable, so the reference blocking pattern is:</p>
+      <pre class="codeblock"><code>not(
+  current_hq_status_wa = 'inaccessible_requested'
+  and (current_wa_status = 'INACCESSIBLE'
+       or current_wa_status = 'REQUEST_FOR_INACCESSIBLE')
+)</code></pre>
+      <p>Any condition that blocks on <code>hq_status_wa = 'inaccessible_requested'</code> alone will wrongly block rejected WAs — this exact bug was fixed across the <b>Household</b>, <b>No Children Found</b>, and <b>Inaccessible WA</b> forms (August 2026). Related conventions: no-children detection uses the dedicated <code>filled_no_children_found_wa = 'yes'</code> work-area property, not the legacy check on <code>wa_checkout_remark != ''</code> (which over-matched); activity guards use the work-area counts <code>delivered_visit_count</code> and <code>household_count</code> as a status-independent backstop (written blank-safe: <code>not(count &gt; 0)</code>, so unset properties pass); conditionals in calculations use <code>cond()</code>; and label display conditions and their validation conditions stay exact mirrors so the UI and enforcement never disagree.</p>
     </div></details>
     <details class="faq"><summary>Why do WAG names with spaces break the app?</summary><div class="body">
       <p>Auto-WAG Selection and the Change WAG form build space-separated candidate lists and read them with <code>selected-at()</code> / <code>count-selected()</code>, which split on spaces — a name like "Rainer Valley-1" fragments into invalid items. Connect-generated WAG names are space-free and safe; manually uploaded names must avoid spaces. Workaround for an affected user: set <code>current_work_area_group</code> manually from HQ (do not use the Change WAG form — it shares the defect).</p>
@@ -1023,7 +1369,7 @@ flowchart TD
       </ul>
     </div></details>
     <details class="faq"><summary>Which verification flags should be configured on the opp?</summary><div class="body">
-      <p><b>Duplicates: yes</b> — configure rejection rules against two hidden values submitted by the HSD form: <code>form.check_child_duplicate_casedb</code> (&gt; 0 when a child with the same name + DOB already exists in the user's casedb) and <code>form.check_dob_gap_suspicious_duplicate</code> (1 when household children are neither twins nor more than 8 months apart). Both must be set up at opp-creation time or the rules won't fire. <b>Location distance: no</b> — the app's GPS checks already cover it. <b>Duration: optional</b> — if kept, set around 1 minute; GW9 data shows users complete forms very quickly.</p>
+      <p><b>Duplicates: yes</b> — one rule, against <code>form.check_child_duplicate_casedb</code> (&gt; 0 when a child with the same name + DOB already exists in the user's casedb), on the Service Delivery Unit only. It must be set up at opp-creation time or the rule won't fire. <b>Suspicious DOB gap: no longer used</b> — <code>form.check_dob_gap_suspicious_duplicate</code> is still calculated by the app but is not configured as a rule and has no effect. <b>Working hours:</b> 07:00 AM–06:00 PM; visits outside the window are flagged. <b>Location distance: no</b> — the app's GPS checks already cover it.</p>
     </div></details>
     <details class="faq"><summary>How should visit targets be planned?</summary><div class="body">
       <p>Use <b>saturation targets, not visit targets</b>, with buffer visits and time built in. Denominator estimates (Grid3 / Geopode / Overture building data all have significant weaknesses) should be treated as ±40%. Contract a lower payable-visit maximum and be prepared for substantially more (e.g. present 150k payable visits, prepare for 250k), with reaction mechanisms when camping (oversaturation of one spot) is observed.</p>
@@ -1043,7 +1389,7 @@ flowchart TD
       <p>Yes — the <b>No Children Found WA</b> deliver unit pays the equivalent of one child visit when an FLW properly reports a WA with no eligible U5 children (with reason and photo evidence). This recognizes effort in sparse areas, balanced against gaming risk: the form blocks submission if prior deliveries exist for that WA, and requires the FLW to confirm they covered the entire WA.</p>
     </div></details>
     <details class="faq"><summary>How do I review inaccessible Work Area requests?</summary><div class="body">
-      <p>On Connect, open <b>Review Inaccessible WAs</b>. You'll see workers with pending requests; expand a worker to list their requested WAs, click a WA for its details (reason, free-text explanation, mandatory photo, GPS, visit date), and approve or reject in the row — the review date auto-populates. Approve → the WA's Connect status becomes <i>INACCESSIBLE</i> and it counts as attended for WAG switching. Reject → only <code>wa_status</code> is sent back to HQ as <i>NOT_VISITED</i> (the recorded reason is kept), and the FLW is notified. Either way, <code>hq_status_wa</code> on the phone stays <i>inaccessible_requested</i> — the black map marker does not change. The review outcome syncs from Connect to HQ in <b>realtime</b>. FLWs cannot move to their next WAG until every WA in the group is resolved, so review requests promptly.</p>
+      <p>On Connect, open <b>Review Inaccessible WAs</b>. You'll see workers with pending requests; expand a worker to list their requested WAs, click a WA for its details (reason, free-text explanation, mandatory photo, GPS, visit date), and approve or reject in the row — the review date auto-populates. Approve → the WA's Connect status becomes <i>INACCESSIBLE</i> and it counts as attended for WAG switching. Reject → only <code>wa_status</code> is sent back to HQ as <i>NOT_VISITED</i> (the recorded reason is kept), and the FLW is notified; the WA becomes workable again — when the FLW arrives, the household form shows them a rejection notice and allows registration. Either way, <code>hq_status_wa</code> on the phone stays <i>inaccessible_requested</i> — the black map marker does not change. The review outcome syncs from Connect to HQ in <b>realtime</b>. FLWs cannot move to their next WAG until every WA in the group is resolved, so review requests promptly.</p>
     </div></details>
     <details class="faq"><summary>What do the map colours mean?</summary><div class="body">
       <p><b>No fill, no point</b> — not started. <b>Light yellow fill (#FFF9C4) / orange point (#F9A825)</b> — visited (a household was registered or the No Children WA form was filled). <b>Black point (#000000), no fill</b> — inaccessible requested; the marker stays black even after you approve or reject the request on Connect, because the HQ-side status never changes from <i>inaccessible_requested</i>.</p>
@@ -1062,8 +1408,8 @@ flowchart TD
     <details class="faq"><summary>Why does the app keep asking for my location?</summary><div class="body">
       <p>Your location proves you are inside your assigned Work Area — it's how every service is verified for payment. If you see <i>Improve Location Accuracy</i>, press <b>Record Location</b> and wait up to a minute, preferably outdoors with a clear sky view. Once accuracy is good enough the app tells you which Work Area you are in and lets you continue.</p>
     </div></details>
-    <details class="faq"><summary>The app says I have to wait and can't start delivery — why?</summary><div class="body">
-      <p>Delivery is switched on per FLW once your Work Areas have been assigned. Until then, the Welcome screen shows a wait message and blocks submission — this is expected while the assignment process finishes. Once the team enables you, <b>sync the app</b> and the Welcome to CHC form will appear; submitting it sets your first WAG. Syncing whenever you start is good practice anyway.</p>
+    <details class="faq"><summary>I have claimed the Deliver job — can I start straight away?</summary><div class="body">
+      <p>Yes. There is no waiting period and no approval step in the app: <b>sync the app</b>, submit the <b>Welcome to CHC</b> form, and your first Work Area Group is set automatically. If no Work Area Group appears, your Work Areas have not been assigned yet — tell your Network Manager. (Older builds held FLWs on a wait screen until the team enabled them; that gate was removed.)</p>
     </div></details>
     <details class="faq"><summary>How does the Learn assessment quiz work? What score do I need?</summary><div class="body">
       <p>The quiz unlocks automatically once you complete every learn module. It has <b>20 questions</b> and you need <b>80 marks — 16 of 20 correct — to pass</b>, with unlimited attempts. When you pass, you get a push notification on Connect that Learn is finished; go to the view job status page and claim the Deliver job. (A relearn quiz, if a task is assigned to you later, requires a full 100 to pass.)</p>
@@ -1095,7 +1441,7 @@ flowchart TD
       <p>Finish every Work Area in your current WAG — each WA must be delivered, reported as no-children, or approved as inaccessible. Then use <b>Request New WAG</b>; the app assigns your next group automatically. If a WA is stuck on a pending inaccessible request, your Network Manager needs to approve or reject it first.</p>
     </div></details>
     <details class="faq"><summary>What if I can't reach a Work Area at all?</summary><div class="body">
-      <p>Submit the <b>Inaccessible WA</b> request with the reason (flood, conflict, road damage, etc.), details, and a mandatory photo. <b>This is irreversible</b> — once submitted it cannot be withdrawn, and you can't submit it for a WA where you've already registered a household. Your Network Manager reviews it on Connect: approved means the WA counts as attended and you won't need to return (the marker on your map stays black); rejected means it returns to your list to visit. While a request is pending you cannot submit another one for that WA — and a pending request also blocks you from switching to your next WAG.</p>
+      <p>Submit the <b>Inaccessible WA</b> request with the reason (flood, conflict, road damage, etc.), details, and a mandatory photo. <b>This is irreversible</b> — once submitted it cannot be withdrawn, and you can't submit it for a WA where you've already registered a household. Your Network Manager reviews it on Connect: approved means the WA counts as attended and you won't need to return (the marker on your map stays black); rejected means it returns to your list to visit — when you arrive there, the household form shows a notice that your request was rejected and lets you register households normally. While a request is pending you cannot submit another one for that WA — and a pending request also blocks you from switching to your next WAG.</p>
     </div></details>
     <details class="faq"><summary>What consent do I need before registering a family?</summary><div class="body">
       <p>Read the caregiver consent statement and record their answer before proceeding. It covers participation, recording the child's basic details (name, age, sex, illness history), MUAC measurement, and giving ORS/Zinc and deworming medicine. The caregiver can refuse — and can revoke consent at any point during the intervention. If MUAC consent specifically is refused, record it; the visit can still be payable with that exemption documented.</p>
@@ -1175,13 +1521,21 @@ flowchart TD
     <tr><td class="tnum">1939</td><td>Jul 27</td><td>Support bot hidden from forms.</td></tr>
     <tr><td class="tnum">1946–1949</td><td>Jul 28</td><td><b>Auto-WAG Selection</b>: first WAG = north-west most; next WAG = closest by <code>wag_centroid</code>; follow-up logic fixes.</td></tr>
   </table></div>
+
+  <h3>August 2026 — launch fixes</h3>
+  <div class="table-wrap"><table>
+    <tr><th>Version</th><th>Date</th><th>Change</th></tr>
+    <tr><td class="tnum">1964</td><td>Aug 2026</td><td><b>Rejected-inaccessible WA workflow</b>: check-in labels and validations across the <b>Household</b>, <b>No Children Found</b>, and <b>Inaccessible WA</b> forms now distinguish rejected requests via the two-property pattern (<code>hq_status_wa</code> + Connect <code>wa_status</code>) — rejected WAs are workable again, pending and approved stay blocked. New <code>filled_no_children_found_wa</code> work-area case property replaces the <code>wa_checkout_remark</code>-based no-children detection. No Children form gated by <code>allow_filling_this_form</code> (fresh or rejected WAs only, with <code>delivered_visit_count</code> / <code>household_count</code> activity guards). Added "Previous Request Rejected" notice labels.</td></tr>
+    <tr><td class="tnum">1966</td><td>Aug 2026</td><td><b>INSIDE WORK AREA validation</b> mirrored to its display condition — removed the legacy <code>inaccessible_approved</code> and <code>wa_checkout_remark</code> checks that let the label show "you are inside" while validation silently blocked the FLW on a rejected WA. <b>Work Start Control removed</b>: the <code>allow_flw_to_start_delivery</code> gate is no longer used — FLWs no longer wait for the delivery team to enable them (see <a href="#wf-workstart">Work Start Control — retired</a>).</td></tr>
+    <tr><td class="tnum">1971</td><td>Aug 2026</td><td><b>WA status &amp; colour on rejected WAs</b>: the <code>new_hq_status_wa</code> calculation only flipped <i>blank</i> statuses to <code>visited</code>, so a rejected WA stayed <code>inaccessible_requested</code> after household registration (black marker retained, WAG switch still blocked). It now treats rejected the same as fresh → <code>visited</code>, and the boundary/point colour calculations apply the visited colours on that transition.</td></tr>
+  </table></div>
 </section>
 
 <footer>
   Source: <i>Connect-CHC System Design Document</i> (2025 legacy design + 2026 RCT design, March 2026). Related artifacts referenced in the source doc: form-workflow Google Sheet, system design diagrams, chatbot reference document, and test app links.<br>
   Master Deliver App (CHC RCT): <a href="https://www.commcarehq.org/a/ccc-chc-master/apps/view/cd72e145f211ddd44ec648120f1b2d5c/releases/">release change log on CommCare HQ (ccc-chc-master)</a>.<br>
   Setup Steps draw on the <i>Checklist | RCT Deployment Tasks</i> workbook (Deployment Checklist, CCHQ Setup, Microplanning, Connect Opp config sheets) plus the delivery team's current process.<br>
-  Document version <b>0.2</b> — draft, work in progress; not a released version.
+  Document version <b>0.3</b> — draft, work in progress; not a released version. Reflects master Deliver App build <b>1971</b> (August 2026); setup sequence recorded live during the RCT deployment.
 </footer>
 
 </div>
@@ -1237,6 +1591,22 @@ flowchart TD
     items.forEach(function(d){ d.classList.remove('hidden'); d.removeAttribute('open'); });
     empty.classList.remove('show');
   }
+  // Nav/hash links into a collapsed "not in use" section open it
+  function openTargetDetails(){
+    var id = location.hash.slice(1);
+    if(!id) return;
+    var el = document.getElementById(id);
+    if(!el) return;
+    el.querySelectorAll('details.deprecated, details.proposed').forEach(function(d){ d.open = true; });
+    var anc = el.closest('details');
+    while(anc){ anc.open = true; anc = anc.parentElement ? anc.parentElement.closest('details') : null; }
+  }
+  window.addEventListener('hashchange', openTargetDetails);
+  openTargetDetails();
+
+  // Click-to-copy on code.copyable is owned by the labs wrapper (chc.html), which
+  // has the execCommand / select-text fallbacks. Nothing to bind here.
+
   search.addEventListener('input', function(){
     var q = this.value.trim().toLowerCase();
     var sec = document.querySelector('section#faq');
@@ -1271,5 +1641,275 @@ flowchart TD
     };
     document.body.appendChild(s);
   }, 800);
+})();
+</script>
+<script>
+/* ===== Microplanning lifecycle: ward → WA → WAG → FLW (setup step) =====
+   Ported from the Microplanning deck. Cell state is driven by CSS classes
+   rather than hex written into fill/stroke, so the diagram follows the page
+   between light and dark. */
+(function(){
+  var SVGNS = 'http://www.w3.org/2000/svg';
+  var cellsG = document.getElementById('cells');
+  var labelsG = document.getElementById('flw-labels');
+  var playbtn = document.getElementById('playbtn');
+  if(!cellsG || !labelsG || !playbtn) return;
+
+  var pattern = [
+    "111122222...",
+    "111122222...",
+    "1111222233..",
+    "111.22223333",
+    "44..22333333",
+    "4444.3333333",
+    "44444.333...",
+    "4444........"
+  ];
+  var cellSize = 25, pitch = cellSize + 3, ox = 14, oy = 44;
+  var cells = [];
+  pattern.forEach(function(row, r){
+    for(var c = 0; c < row.length; c++){
+      var ch = row[c];
+      var rect = document.createElementNS(SVGNS,'rect');
+      rect.setAttribute('x', ox + c*pitch); rect.setAttribute('y', oy + r*pitch);
+      rect.setAttribute('width', cellSize); rect.setAttribute('height', cellSize);
+      rect.setAttribute('rx', 3);
+      rect.setAttribute('class', 'wa-cell');
+      cellsG.appendChild(rect);
+      cells.push({rect: rect, row: r, wag: ch === '.' ? null : ch});
+    }
+  });
+
+  /* WAG 1 & 4 → FLW 1; WAG 2 → FLW 2; WAG 3 → FLW 3 */
+  [
+    {x:70,  y:86,  wag:'1', text:'FLW 1'},
+    {x:182, y:100, wag:'2', text:'FLW 2'},
+    {x:266, y:170, wag:'3', text:'FLW 3'},
+    {x:70,  y:216, wag:'4', text:'FLW 1'}
+  ].forEach(function(l){
+    var grp = document.createElementNS(SVGNS,'g');
+    grp.setAttribute('class','flw-label wag-' + l.wag);
+    var pill = document.createElementNS(SVGNS,'rect');
+    pill.setAttribute('x', l.x-27); pill.setAttribute('y', l.y-11);
+    pill.setAttribute('width', 54); pill.setAttribute('height', 20); pill.setAttribute('rx', 10);
+    var txt = document.createElementNS(SVGNS,'text');
+    txt.setAttribute('x', l.x); txt.setAttribute('y', l.y+3);
+    txt.setAttribute('text-anchor','middle');
+    txt.textContent = l.text;
+    grp.appendChild(pill); grp.appendChild(txt);
+    labelsG.appendChild(grp);
+  });
+  var flwLabels = Array.prototype.slice.call(labelsG.children);
+
+  var ward = document.getElementById('ward-outline');
+  var wardLabel = document.getElementById('ward-label');
+  var legend = document.getElementById('mp-legend');
+  var stepChips = Array.prototype.slice.call(document.querySelectorAll('#animsteps span'));
+  var timers = [];
+  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function later(fn, ms){ timers.push(setTimeout(fn, reduced ? 0 : ms)); }
+  function markStep(n){ stepChips.forEach(function(s){ s.classList.toggle('on', +s.dataset.s === n); }); }
+
+  function resetAnim(){
+    timers.forEach(clearTimeout); timers = [];
+    ward.classList.remove('shown'); wardLabel.classList.remove('shown');
+    cells.forEach(function(c){ c.rect.setAttribute('class', 'wa-cell'); });
+    flwLabels.forEach(function(l){ l.classList.remove('shown'); });
+    legend.classList.remove('show');
+    stepChips.forEach(function(s){ s.classList.remove('on'); });
+  }
+
+  function play(){
+    resetAnim();
+    playbtn.disabled = true;
+    /* 1 — identify the ward */
+    later(function(){
+      markStep(1);
+      ward.classList.add('shown'); wardLabel.classList.add('shown');
+    }, 100);
+    /* 2 — create WAs (uncoloured grid, row by row) */
+    later(function(){
+      markStep(2);
+      cells.forEach(function(c){
+        later(function(){ c.rect.classList.add('shown'); }, c.row * 110);
+      });
+    }, 1100);
+    /* 3 — group into WAGs, one WAG at a time */
+    later(function(){
+      markStep(3);
+      ['1','2','3','4'].forEach(function(w, i){
+        later(function(){
+          cells.forEach(function(c){
+            if(c.wag === w) c.rect.classList.add('wag-' + w);
+          });
+        }, i * 350);
+      });
+    }, 2600);
+    /* 4 — assign WAGs to FLWs */
+    later(function(){
+      markStep(4);
+      flwLabels.forEach(function(l, i){
+        later(function(){ l.classList.add('shown'); }, i * 200);
+      });
+      legend.classList.add('show');
+      playbtn.disabled = false;
+      playbtn.textContent = '↺ Replay';
+      playbtn.classList.add('done');
+    }, 4500);
+  }
+  playbtn.addEventListener('click', play);
+})();
+
+/* ===== Auto-WAG Selection: north-west first, then nearest remaining ===== */
+(function(){
+  var NS = 'http://www.w3.org/2000/svg';
+  var clustersG = document.getElementById('aw-clusters');
+  var linesG = document.getElementById('aw-lines');
+  var labelsG = document.getElementById('aw-labels');
+  var play = document.getElementById('awplay');
+  if(!clustersG || !linesG || !labelsG || !play) return;
+
+  /* A north-west (first), B north-east, C south-east, D mid-south-west
+     (nearest to A, so it is picked next). */
+  var wags = [
+    {id:'A', cx:80,  cy:88,  label:'WAG A'},
+    {id:'B', cx:272, cy:78,  label:'WAG B'},
+    {id:'C', cx:284, cy:222, label:'WAG C'},
+    {id:'D', cx:132, cy:212, label:'WAG D'}
+  ];
+  var cellSize = 20, pitch = cellSize + 2;
+  var offsets = [[-1,-1],[0,-1],[1,-1],[-1,0],[0,0],[1,0],[-1,1],[0,1],[1,1]];
+  wags.forEach(function(w){
+    w.cells = [];
+    offsets.forEach(function(o){
+      var r = document.createElementNS(NS,'rect');
+      r.setAttribute('x', w.cx + o[0]*pitch - cellSize/2);
+      r.setAttribute('y', w.cy + o[1]*pitch - cellSize/2);
+      r.setAttribute('width', cellSize); r.setAttribute('height', cellSize);
+      r.setAttribute('rx', 3);
+      r.setAttribute('class','aw-cell');
+      clustersG.appendChild(r);
+      w.cells.push(r);
+    });
+    var t = document.createElementNS(NS,'text');
+    t.setAttribute('x', w.cx); t.setAttribute('y', w.cy + 2.1*pitch + 6);
+    t.setAttribute('text-anchor','middle');
+    t.setAttribute('class','aw-label');
+    t.textContent = w.label;
+    clustersG.appendChild(t);
+    var dot = document.createElementNS(NS,'circle');
+    dot.setAttribute('cx', w.cx); dot.setAttribute('cy', w.cy); dot.setAttribute('r', 4.5);
+    dot.setAttribute('class','aw-cent');
+    clustersG.appendChild(dot);
+    w.dot = dot;
+  });
+
+  function mkLine(x1,y1,x2,y2,win){
+    var l = document.createElementNS(NS,'line');
+    l.setAttribute('x1',x1); l.setAttribute('y1',y1); l.setAttribute('x2',x2); l.setAttribute('y2',y2);
+    if(!win) l.setAttribute('stroke-dasharray','4 4');
+    l.setAttribute('class','aw-line' + (win ? ' win' : ''));
+    linesG.appendChild(l);
+    return l;
+  }
+  function mkPill(x,y,text){
+    var g = document.createElementNS(NS,'g');
+    g.setAttribute('class','aw-note');
+    var pill = document.createElementNS(NS,'rect');
+    pill.setAttribute('x', x-34); pill.setAttribute('y', y-11);
+    pill.setAttribute('width', 68); pill.setAttribute('height', 20); pill.setAttribute('rx', 10);
+    var t = document.createElementNS(NS,'text');
+    t.setAttribute('x', x); t.setAttribute('y', y+3);
+    t.setAttribute('text-anchor','middle');
+    t.textContent = text;
+    g.appendChild(pill); g.appendChild(t);
+    labelsG.appendChild(g);
+    return g;
+  }
+  function mkDist(x,y,text,win){
+    var t = document.createElementNS(NS,'text');
+    t.setAttribute('x',x); t.setAttribute('y',y);
+    t.setAttribute('text-anchor','middle');
+    t.setAttribute('class','aw-dist' + (win ? ' win' : ''));
+    t.textContent = text;
+    labelsG.appendChild(t);
+    return t;
+  }
+
+  var A = wags[0], B = wags[1], C = wags[2], D = wags[3];
+  /* stage 2 — north-west scoring lines from the compass corner to each centroid */
+  var nwLines = wags.map(function(w){ return mkLine(30, 30, w.cx, w.cy, w === A); });
+  var firstPill = mkPill(A.cx, A.cy - 2.1*pitch - 12, 'FIRST WAG');
+  /* stage 4 — distance from the finished WAG to each remaining centroid */
+  var dAB = mkLine(A.cx, A.cy, B.cx, B.cy, false);
+  var dAC = mkLine(A.cx, A.cy, C.cx, C.cy, false);
+  var dAD = mkLine(A.cx, A.cy, D.cx, D.cy, true);
+  var tAB = mkDist((A.cx+B.cx)/2, (A.cy+B.cy)/2 - 6, '1.9 km', false);
+  var tAC = mkDist((A.cx+C.cx)/2 + 14, (A.cy+C.cy)/2, '2.4 km', false);
+  var tAD = mkDist((A.cx+D.cx)/2 - 24, (A.cy+D.cy)/2, '1.3 km ✓', true);
+  var nextPill = mkPill(D.cx + 2.1*pitch + 40, D.cy, 'NEXT WAG');
+
+  var chips = Array.prototype.slice.call(document.querySelectorAll('#awsteps span'));
+  var timers = [];
+  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function later(fn, ms){ timers.push(setTimeout(fn, reduced ? 0 : ms)); }
+  function markStep(n){ chips.forEach(function(s){ s.classList.toggle('on', +s.dataset.s === n); }); }
+
+  function reset(){
+    timers.forEach(clearTimeout); timers = [];
+    wags.forEach(function(w){
+      w.dot.classList.remove('shown');
+      w.cells.forEach(function(c){ c.setAttribute('class','aw-cell'); });
+    });
+    nwLines.concat([dAB,dAC,dAD]).forEach(function(l){ l.classList.remove('shown'); });
+    [tAB,tAC,tAD,firstPill,nextPill].forEach(function(e){ e.classList.remove('shown'); });
+    chips.forEach(function(s){ s.classList.remove('on'); });
+  }
+
+  function setWag(w, state){
+    w.cells.forEach(function(c){ c.setAttribute('class','aw-cell' + (state ? ' ' + state : '')); });
+  }
+
+  function run(){
+    reset();
+    play.disabled = true;
+    /* 1 — read every assigned WAG's centroid */
+    later(function(){
+      markStep(1);
+      wags.forEach(function(w, i){ later(function(){ w.dot.classList.add('shown'); }, i*180); });
+    }, 100);
+    /* 2 — the north-west most is the first WAG */
+    later(function(){
+      markStep(2);
+      nwLines.forEach(function(l, i){ later(function(){ l.classList.add('shown'); }, i*150); });
+      later(function(){
+        setWag(A, 'picked');
+        firstPill.classList.add('shown');
+      }, 800);
+    }, 1300);
+    /* 3 — every WA in the current WAG gets visited */
+    later(function(){
+      markStep(3);
+      nwLines.forEach(function(l){ l.classList.remove('shown'); });
+      A.cells.forEach(function(c, i){
+        later(function(){ c.setAttribute('class','aw-cell visited'); }, i*120);
+      });
+    }, 3200);
+    /* 4 — the nearest remaining centroid becomes the next WAG */
+    later(function(){
+      markStep(4);
+      [dAB,dAC,dAD].forEach(function(l, i){ later(function(){ l.classList.add('shown'); }, i*200); });
+      [tAB,tAC,tAD].forEach(function(t, i){ later(function(){ t.classList.add('shown'); }, i*200); });
+      later(function(){
+        setWag(D, 'picked');
+        nextPill.classList.add('shown');
+        play.disabled = false;
+        play.textContent = '↺ Replay';
+        play.classList.add('done');
+      }, 900);
+    }, 4800);
+  }
+  play.addEventListener('click', run);
 })();
 </script>

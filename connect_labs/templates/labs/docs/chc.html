@@ -483,6 +483,16 @@
     var code = e.target.closest && e.target.closest("#docs-body code.copyable");
     if (code) copyText(code.dataset.copy || code.textContent, code);
   });
+
+  // The doc marks these role="button" tabindex="0"; <code> does not synthesise a
+  // click from Enter/Space the way a real button does, so bind the keys too.
+  document.addEventListener("keydown", function (e) {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    var code = e.target.closest && e.target.closest("#docs-body code.copyable");
+    if (!code) return;
+    e.preventDefault();
+    copyText(code.dataset.copy || code.textContent, code);
+  });
 })();
 </script>
 {% endblock %}
