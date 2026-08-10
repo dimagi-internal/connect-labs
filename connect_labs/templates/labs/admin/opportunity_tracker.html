@@ -27,9 +27,13 @@
      the tab order and the accessibility tree, leaving keyboard/screen-reader
      users unable to reach any tab but whichever one the server pre-checked. */
   .ot-tab-input { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; clip: rect(0 0 0 0); clip-path: inset(50%); overflow: hidden; white-space: nowrap; }
-  .ot-tab-input:focus-visible ~ .ot-workspace .ot-tabbar label[for="ot-tab-opps"],
-  .ot-tab-input:focus-visible ~ .ot-workspace .ot-tabbar label[for="ot-tab-stats"],
-  .ot-tab-input:focus-visible ~ .ot-workspace .ot-tabbar label[for="ot-tab-country"] { outline: 2px solid #2563eb; outline-offset: 2px; }
+  /* Specific IDs, not the shared .ot-tab-input class -- like the :checked
+     rule below, so focusing one radio doesn't outline all three labels at
+     once (the class-based selector would match whichever radio has focus
+     without checking it's the one paired with that particular label). */
+  #ot-tab-opps:focus-visible ~ .ot-workspace .ot-tabbar label[for="ot-tab-opps"],
+  #ot-tab-stats:focus-visible ~ .ot-workspace .ot-tabbar label[for="ot-tab-stats"],
+  #ot-tab-country:focus-visible ~ .ot-workspace .ot-tabbar label[for="ot-tab-country"] { outline: 2px solid #2563eb; outline-offset: 2px; }
   .ot-tab-panel { display: none; }
   /* .ot-tabbar and .ot-panels are NOT direct siblings of the radios -- they're
      nested inside .ot-workspace's second column div. The general-sibling `~`
@@ -392,8 +396,13 @@
     let grid='',axisLabels='';
     for(let g=0;g<=4;g++){ const gv=maxY*g/4, gy=y(gv); grid+=`<line x1="${PAD.l}" x2="${W-PAD.r}" y1="${gy.toFixed(1)}" y2="${gy.toFixed(1)}" stroke="#eef0f2" stroke-width="1"/>`; axisLabels+=`<text x="${PAD.l-8}" y="${(gy+3).toFixed(1)}" text-anchor="end" font-size="10" fill="#9ca3af">${fmtK(gv)}</text>`; }
     let xLabels='';
+    // Dedupe via a Set: with n===1 (a single data point), every tick index
+    // computes to 0 regardless of t, which would otherwise stack the same
+    // date label on top of itself instead of rendering it once.
     const ticks=Math.min(6,n);
-    for(let t=0;t<=ticks;t++){ const i=Math.round((t/ticks)*(n-1)); xLabels+=`<text x="${x(i).toFixed(1)}" y="${H-8}" text-anchor="middle" font-size="10" fill="#9ca3af">${fmtDateShort(dates[i])}</text>`; }
+    const tickIndices = new Set();
+    for(let t=0;t<=ticks;t++){ tickIndices.add(Math.round((t/ticks)*(n-1))); }
+    tickIndices.forEach(i => { xLabels+=`<text x="${x(i).toFixed(1)}" y="${H-8}" text-anchor="middle" font-size="10" fill="#9ca3af">${fmtDateShort(dates[i])}</text>`; });
     let paths='';
     series.forEach(s=>{
       const dash = s.dashed ? 'stroke-dasharray="1,4" stroke-linecap="round"' : '';
