@@ -115,15 +115,12 @@ class OpportunityTrackerView(AdminRequiredMixin, TemplateView):
             filter_choices = opportunity_filter_choices()
             context["filter_choices"] = filter_choices
 
-            valid_delivery_types = {d["slug"] for d in filter_choices["delivery_types"]}
-            valid_countries = {c["code"] for c in filter_choices["countries"]}
-            valid_funders = set(filter_choices["funders"])
-            if delivery_type not in valid_delivery_types:
-                delivery_type = None
-            if country not in valid_countries:
-                country = None
-            if funder not in valid_funders:
-                funder = None
+            def _validated(value, valid_values):
+                return value if value in valid_values else None
+
+            delivery_type = _validated(delivery_type, {d["slug"] for d in filter_choices["delivery_types"]})
+            country = _validated(country, {c["code"] for c in filter_choices["countries"]})
+            funder = _validated(funder, set(filter_choices["funders"]))
             context["filters"].update(
                 {
                     "delivery_type": delivery_type or "",
