@@ -27,7 +27,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 from django.conf import settings
-from django.db.models import Count, Min, Sum
+from django.db.models import Count, Min, Q, Sum
 from django.db.models.functions import TruncDate, TruncMonth
 from django.utils import timezone
 
@@ -123,50 +123,59 @@ def opportunity_detail_rows(opportunities: list[PulseOpportunity]) -> list[dict]
     org_slugs = {o.org_slug for o in opportunities if o.org_slug}
     org_names = dict(PulseOrganization.objects.filter(slug__in=org_slugs).values_list("slug", "name"))
 
-    flw_counts = {
-        row["opportunity_id"]: row["n"]
-        for row in PulseWork.objects.filter(opportunity_id__in=opp_ids)
-        .exclude(worker_hash="")
+    # One grouped scan of PulseWork with conditional aggregates, instead of
+    # two separate ones for FLW count and paid amount -- both need the same
+    # opportunity_id grouping, just different filter conditions per column.
+    work_totals = (
+        PulseWork.objects.filter(opportunity_id__in=opp_ids)
         .values("opportunity_id")
-        .annotate(n=Count("worker_hash", distinct=True))
-    }
-
-    rollup_totals = (
-        PulseRollup.objects.filter(opportunity_id__in=opp_ids).values("opportunity_id", "status").annotate(n=Sum("n"))
+        .annotate(
+            flws=Count("worker_hash", distinct=True, filter=~Q(worker_hash="")),
+            # "Paid" here is accrued-to-worker (usd_to_worker with a payment
+            # date recorded), not a real opportunity_payment disbursement sum
+            # -- see the Known-gaps note in the plan. Flagged in the
+            # template, not hidden.
+            #
+            # Known narrow edge case, not handled: usd_to_worker and
+            # payment_date are independently nullable, so a row could have a
+            # payment_date but no dollar figure recorded. Sum() over an
+            # all-such group returns None, which reads as a real $0 below
+            # rather than "amount unknown" -- in practice every payment-dated
+            # row also carries an amount, so this is deliberately not
+            # special-cased further.
+            usd=Sum("usd_to_worker", filter=Q(payment_date__isnull=False)),
+            has_payment=Count("id", filter=Q(payment_date__isnull=False)),
+        )
     )
-    claimed, approved, pending = {}, {}, {}
-    for row in rollup_totals:
-        oid, n = row["opportunity_id"], row["n"] or 0
-        claimed[oid] = claimed.get(oid, 0) + n
-        if row["status"] == "approved":
-            approved[oid] = approved.get(oid, 0) + n
-        elif row["status"] == "pending":
-            pending[oid] = pending.get(oid, 0) + n
+    flw_counts, paid, has_payment_data = {}, {}, set()
+    for row in work_totals:
+        oid = row["opportunity_id"]
+        flw_counts[oid] = row["flws"]
+        paid[oid] = row["usd"]
+        if row["has_payment"]:
+            has_payment_data.add(oid)
 
+    # Likewise one grouped scan of PulseRollup with conditional Sums for
+    # claimed/approved/pending/approved-7d, instead of a by-status query plus
+    # a separate 7-day-windowed one.
     since_7d = timezone.now() - timedelta(days=7)
-    approved_7d = {
-        row["opportunity_id"]: row["n"] or 0
-        for row in PulseRollup.objects.filter(opportunity_id__in=opp_ids, status="approved", bucket_hour__gte=since_7d)
+    rollup_totals = (
+        PulseRollup.objects.filter(opportunity_id__in=opp_ids)
         .values("opportunity_id")
-        .annotate(n=Sum("n"))
-    }
-
-    # "Paid" here is accrued-to-worker (PulseWork.usd_to_worker with a payment
-    # date recorded), not a real opportunity_payment disbursement sum -- see
-    # the Known-gaps note in the plan. Flagged in the template, not hidden.
-    #
-    # Known narrow edge case, not handled: usd_to_worker and payment_date are
-    # independently nullable, so a row could have a payment_date but no
-    # dollar figure recorded. Sum() over an all-such group returns None,
-    # which reads as a real $0 below rather than "amount unknown" -- in
-    # practice every payment-dated row also carries an amount, so this is
-    # deliberately not special-cased further.
-    paid = {
-        row["opportunity_id"]: row["usd"]
-        for row in PulseWork.objects.filter(opportunity_id__in=opp_ids, payment_date__isnull=False)
-        .values("opportunity_id")
-        .annotate(usd=Sum("usd_to_worker"))
-    }
+        .annotate(
+            claimed=Sum("n"),
+            approved=Sum("n", filter=Q(status="approved")),
+            pending=Sum("n", filter=Q(status="pending")),
+            approved_7d=Sum("n", filter=Q(status="approved", bucket_hour__gte=since_7d)),
+        )
+    )
+    claimed, approved, pending, approved_7d = {}, {}, {}, {}
+    for row in rollup_totals:
+        oid = row["opportunity_id"]
+        claimed[oid] = row["claimed"] or 0
+        approved[oid] = row["approved"] or 0
+        pending[oid] = row["pending"] or 0
+        approved_7d[oid] = row["approved_7d"] or 0
 
     rows = [
         {
@@ -189,7 +198,7 @@ def opportunity_detail_rows(opportunities: list[PulseOpportunity]) -> list[dict]
             # opp has a payment_date at all. Without this, a real "$0 paid so
             # far" (has_payment_data=True) renders identically to "no payment
             # data exists yet" -- the template must tell those apart.
-            "has_payment_data": opp.opportunity_id in paid,
+            "has_payment_data": opp.opportunity_id in has_payment_data,
         }
         for opp in opportunities
     ]
@@ -215,16 +224,13 @@ def cohort_pivot(opportunities: list[PulseOpportunity]) -> dict:
     service_of = {o.opportunity_id: o.service_slug for o in opps}
     org_of = {o.opportunity_id: o.org_slug for o in opps}
 
+    # One grouped scan with a conditional Sum for the 7-day figure, instead
+    # of two separate queries differing only by that date cutoff.
     since_7d = timezone.now() - timedelta(days=7)
     visits_rows = (
         PulseRollup.objects.filter(status="approved", opportunity_id__in=opp_ids)
         .values("opportunity_id")
-        .annotate(n=Sum("n"))
-    )
-    visits_7d_rows = (
-        PulseRollup.objects.filter(status="approved", opportunity_id__in=opp_ids, bucket_hour__gte=since_7d)
-        .values("opportunity_id")
-        .annotate(n=Sum("n"))
+        .annotate(n=Sum("n"), n_7d=Sum("n", filter=Q(bucket_hour__gte=since_7d)))
     )
 
     cells: dict[tuple[str, str], dict] = {}
@@ -247,12 +253,9 @@ def cohort_pivot(opportunities: list[PulseOpportunity]) -> dict:
         oid = row["opportunity_id"]
         if oid not in country_of:
             continue
-        cell(oid)["visits"] += row["n"] or 0
-    for row in visits_7d_rows:
-        oid = row["opportunity_id"]
-        if oid not in country_of:
-            continue
-        cell(oid)["visits_7d"] += row["n"] or 0
+        c = cell(oid)
+        c["visits"] += row["n"] or 0
+        c["visits_7d"] += row["n_7d"] or 0
 
     countries = sorted({k[0] for k in cells})
     services = sorted({k[1] for k in cells})

@@ -81,6 +81,12 @@ class OpportunityTrackerView(AdminRequiredMixin, TemplateView):
             status = requested_status
         else:
             status = "Active"
+        # Raw values; validated against the actual choice lists just below,
+        # once filter_choices() is available -- an unrecognized delivery_type/
+        # country/funder (stale bookmark, renamed slug, typo) would otherwise
+        # silently match zero opportunities while every <select> defaults to
+        # "All", exactly the failure mode already guarded against for status
+        # and tab above.
         delivery_type = request.GET.get("delivery_type") or None
         country = request.GET.get("country") or None
         funder = request.GET.get("funder") or None
@@ -91,21 +97,40 @@ class OpportunityTrackerView(AdminRequiredMixin, TemplateView):
         # param (a stale bookmark or a future link using a different name).
         requested_tab = request.GET.get("tab", "opps")
         context["active_tab"] = requested_tab if requested_tab in ("opps", "stats", "country") else "opps"
+        # Safe defaults so a failure below still renders a usable (if partly
+        # empty) page rather than a 500. filters gets corrected values (if
+        # validation runs) or these raw ones if it never gets that far.
         context["filters"] = {
             "status": status,
             "delivery_type": delivery_type or "",
             "country": country or "",
             "funder": funder or "",
         }
-        # Safe defaults so a failure below still renders a usable (if partly
-        # empty) page rather than a 500.
         context["filter_choices"] = {"delivery_types": [], "countries": [], "funders": FUNDER_CHOICES}
         context["detail_rows"] = []
         context["pivot"] = None
         context["chart_data"] = {}
 
         try:
-            context["filter_choices"] = opportunity_filter_choices()
+            filter_choices = opportunity_filter_choices()
+            context["filter_choices"] = filter_choices
+
+            valid_delivery_types = {d["slug"] for d in filter_choices["delivery_types"]}
+            valid_countries = {c["code"] for c in filter_choices["countries"]}
+            valid_funders = set(filter_choices["funders"])
+            if delivery_type not in valid_delivery_types:
+                delivery_type = None
+            if country not in valid_countries:
+                country = None
+            if funder not in valid_funders:
+                funder = None
+            context["filters"].update(
+                {
+                    "delivery_type": delivery_type or "",
+                    "country": country or "",
+                    "funder": funder or "",
+                }
+            )
 
             # The Opportunities and Visit Stats tabs share one filter set
             # (delivery_type/country/funder) -- compute the matching opportunity
@@ -131,17 +156,25 @@ class OpportunityTrackerView(AdminRequiredMixin, TemplateView):
             country_scope_opps = (
                 opps if not country else filtered_opportunities(delivery_type=delivery_type, funder=funder)
             )
-            # A plain dict, not a pre-serialized JSON string: the template's
-            # `|json_script` filter does its own json.dumps (via
-            # DjangoJSONEncoder) -- serializing here first would make it
-            # double-encode, and the JS would parse a JSON *string* back out
-            # instead of the actual object.
-            context["chart_data"] = {
-                "runningVisits": running_visit_total(opp_ids),
-                "runningUsers": running_user_total(opp_ids),
-                "dailyVisitsUsers": daily_visits_and_users(opp_ids),
-                "countryBars": monthly_visits_by_country(country_scope_opps),
-            }
+            # Each chart is computed and assigned independently -- building
+            # these as one dict literal meant a single failing call (e.g. the
+            # last one) discarded every already-successful result along with
+            # it, since the whole literal has to finish before context gets
+            # updated. A plain dict, not a pre-serialized JSON string: the
+            # template's `|json_script` filter does its own json.dumps (via
+            # DjangoJSONEncoder) -- serializing here first would double-encode,
+            # and the JS would parse a JSON *string* back out instead of the
+            # actual object.
+            chart_data = {}
+            chart_data["runningVisits"] = self._safe_chart("runningVisits", running_visit_total, opp_ids, default=[])
+            chart_data["runningUsers"] = self._safe_chart("runningUsers", running_user_total, opp_ids, default=[])
+            chart_data["dailyVisitsUsers"] = self._safe_chart(
+                "dailyVisitsUsers", daily_visits_and_users, opp_ids, default=[]
+            )
+            chart_data["countryBars"] = self._safe_chart(
+                "countryBars", monthly_visits_by_country, country_scope_opps, default={"countries": [], "series": []}
+            )
+            context["chart_data"] = chart_data
         except Exception:
             # logger.exception (not .error) so the full traceback lands in
             # server logs -- the user-facing message stays generic on purpose
@@ -152,6 +185,15 @@ class OpportunityTrackerView(AdminRequiredMixin, TemplateView):
             messages.error(request, "Failed to load Opportunity Tracker data. Check the server logs for details.")
 
         return context
+
+    def _safe_chart(self, name, fn, *args, default):
+        """Compute one chart's data in isolation, so a failure here doesn't
+        discard the other three charts' already-successful results."""
+        try:
+            return fn(*args)
+        except Exception:
+            logger.exception(f"[OpportunityTracker] Failed to build chart data: {name}")
+            return default
 
 
 class RecordListView(AdminRequiredMixin, SingleTableView):
