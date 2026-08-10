@@ -33,6 +33,7 @@ from django.utils import timezone
 
 from connect_labs.pulse.models import PulseEvent, PulseOpportunity, PulseOrganization, PulseRollup, PulseWork
 from connect_labs.pulse.normalize import COUNTRY_NAMES, service_label
+from connect_labs.utils.datetime import get_month_series
 
 
 def country_label(code: str) -> str:
@@ -416,7 +417,13 @@ def monthly_visits_by_country(opportunities: list[PulseOpportunity], *, top_n=6)
         monthly.setdefault(m, {})
         monthly[m][country] = monthly[m].get(country, 0) + n
 
-    top_countries = [c for c, _ in sorted(totals_by_country.items(), key=lambda kv: -kv[1])[:top_n]]
+    sorted_countries = sorted(totals_by_country.items(), key=lambda kv: -kv[1])
+    top_countries = [c for c, _ in sorted_countries[:top_n]]
+    # Only a real long tail earns an "Other" slot -- with top_n covering every
+    # country already in scope, Other would sum to zero on every month and
+    # the chart's legend would show a phantom swatch with no bar segment.
+    has_other = len(sorted_countries) > len(top_countries)
+
     series = []
     # Every month from first to last observed, not just months that happen to
     # have an approved visit -- the chart positions bars by index, not by
@@ -425,9 +432,10 @@ def monthly_visits_by_country(opportunities: list[PulseOpportunity], *, top_n=6)
     for m in _month_range(monthly):
         month_values = monthly.get(m, {})
         values = {c: month_values.get(c, 0) for c in top_countries}
-        values["Other"] = sum(v for c, v in month_values.items() if c not in top_countries)
+        if has_other:
+            values["Other"] = sum(v for c, v in month_values.items() if c not in top_countries)
         series.append({"month": m, "values": values})
-    return {"countries": [*top_countries, "Other"], "series": series}
+    return {"countries": [*top_countries, "Other"] if has_other else top_countries, "series": series}
 
 
 def _month_range(monthly: dict[str, dict[str, int]]) -> list[str]:
@@ -437,8 +445,4 @@ def _month_range(monthly: dict[str, dict[str, int]]) -> list[str]:
     keys = sorted(monthly)
     start = date.fromisoformat(keys[0])
     end = date.fromisoformat(keys[-1])
-    months, cur = [], start
-    while cur <= end:
-        months.append(cur.isoformat())
-        cur = date(cur.year + (cur.month == 12), cur.month % 12 + 1, 1)
-    return months
+    return [d.isoformat() for d in get_month_series(start, end)]

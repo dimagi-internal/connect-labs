@@ -342,6 +342,20 @@ def test_monthly_visits_by_country_folds_long_tail_into_other(db):
     assert month["values"]["Other"] == 5  # Uganda folded in, not given its own slot
 
 
+def test_monthly_visits_by_country_omits_other_when_there_is_no_long_tail(db):
+    """Regression: with every country fitting inside top_n, there's no long
+    tail to fold in -- "Other" must not appear as a phantom, always-zero
+    legend entry with no corresponding bar segment."""
+    opp_ng = _make_opp(1, country="NG")
+    opp_ke = _make_opp(2, country="KE")
+    _make_rollup(1, status="approved", n=100)
+    _make_rollup(2, status="approved", n=50)
+
+    result = ot.monthly_visits_by_country([opp_ng, opp_ke], top_n=6)
+    assert result["countries"] == ["Nigeria", "Kenya"]
+    assert "Other" not in result["series"][0]["values"]
+
+
 def test_monthly_visits_by_country_fills_a_month_with_no_approved_visits(db):
     """Regression: the chart positions bars by index, not by date -- a month
     with zero approved visits must still get its own zero-valued slot, or its
