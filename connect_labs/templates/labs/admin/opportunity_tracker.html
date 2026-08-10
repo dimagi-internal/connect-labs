@@ -234,7 +234,7 @@
                     <td>{{ row.llo|default:"—" }}</td>
                     <td class="font-semibold">{{ row.name }}</td>
                     <td>{% if row.status == "Active" %}<span class="ot-pill active">Active</span>{% else %}<span class="ot-pill inactive">Inactive</span>{% endif %}</td>
-                    <td class="ot-muted">—</td>
+                    <td class="ot-muted">{{ row.start_date|default:"—" }}</td>
                     <td>{{ row.end_date|default:"—" }}</td>
                     <td class="num">{{ row.flws }}</td>
                     <td class="num">{{ row.visits_claimed }}</td>

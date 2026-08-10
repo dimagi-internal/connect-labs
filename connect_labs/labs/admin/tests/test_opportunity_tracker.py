@@ -490,3 +490,42 @@ def test_opportunity_tracker_other_tab_forms_preserve_status_and_country(client,
     assert resp.status_code == 200
     assert b'<input type="hidden" name="status" value="Active">' in resp.content
     assert b'<input type="hidden" name="country" value="NG">' in resp.content
+
+
+@override_settings(**LABS_SETTINGS)
+@pytest.mark.parametrize("param", ["delivery_type", "country", "funder"])
+def test_opportunity_tracker_unrecognized_filter_param_falls_back_to_unfiltered(client, dimagi_user, db, param):
+    """Regression: status/tab were guarded against unrecognized values, but
+    delivery_type/country/funder weren't -- a stale bookmark or renamed slug
+    would otherwise silently match zero opportunities while every <select>
+    still shows "All" selected, with no indication anything was filtered."""
+    _make_opp(1, name="Some Opp", service_slug="chc", country="NG")
+    client.force_login(dimagi_user)
+
+    resp = client.get(reverse("labs_admin:opportunity_tracker"), {param: "totally-bogus-value"})
+    assert resp.status_code == 200
+    assert b"Some Opp" in resp.content
+    assert resp.context["filters"][param] == ""  # corrected back to "All", not left on the bogus value
+
+
+@override_settings(**LABS_SETTINGS)
+def test_opportunity_tracker_one_failing_chart_does_not_discard_the_others(client, dimagi_user, db, monkeypatch):
+    """Regression: the four Visit Stats charts used to be built as one dict
+    literal, so a single failing call discarded three already-successful
+    results along with it."""
+    from connect_labs.labs.admin import views as admin_views
+
+    _make_opp(1, country="NG")
+    _make_rollup(1, status="approved", n=5)
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("simulated failure in one chart")
+
+    monkeypatch.setattr(admin_views, "monthly_visits_by_country", _boom)
+    client.force_login(dimagi_user)
+
+    resp = client.get(reverse("labs_admin:opportunity_tracker"))
+    assert resp.status_code == 200
+    chart_data = resp.context["chart_data"]
+    assert chart_data["runningVisits"]  # survived, despite countryBars failing
+    assert chart_data["countryBars"] == {"countries": [], "series": []}  # safe fallback, not missing entirely
