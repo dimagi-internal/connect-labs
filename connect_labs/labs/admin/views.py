@@ -128,7 +128,9 @@ class OpportunityTrackerView(AdminRequiredMixin, TemplateView):
             # not a filter dimension, so a country selected on another tab must
             # not collapse this breakdown to a single bar. Reuse `opps` when
             # there's no country filter to avoid a redundant identical query.
-            country_scope_opps = opps if not country else filtered_opportunities(delivery_type=delivery_type, funder=funder)
+            country_scope_opps = (
+                opps if not country else filtered_opportunities(delivery_type=delivery_type, funder=funder)
+            )
             # A plain dict, not a pre-serialized JSON string: the template's
             # `|json_script` filter does its own json.dumps (via
             # DjangoJSONEncoder) -- serializing here first would make it
@@ -1134,8 +1136,7 @@ class TaskManagerView(AdminRequiredMixin, TemplateView):
             # Query workflow runs that have active_job state
             # This gives us visibility into workflow-related tasks
             with connection.cursor() as cursor:
-                cursor.execute(
-                    """
+                cursor.execute("""
                     SELECT
                         id,
                         data->'state'->'active_job'->>'job_id' as task_id,
@@ -1150,8 +1151,7 @@ class TaskManagerView(AdminRequiredMixin, TemplateView):
                     WHERE data->'state'->'active_job'->>'job_id' IS NOT NULL
                     ORDER BY (data->'state'->'active_job'->>'started_at')::timestamp DESC NULLS LAST
                     LIMIT 50
-                """
-                )
+                """)
 
                 columns = [col[0] for col in cursor.description]
                 for row in cursor.fetchall():
