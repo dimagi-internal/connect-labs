@@ -170,6 +170,11 @@ def opportunity_detail_rows(opportunities: list[PulseOpportunity]) -> list[dict]
             "approved_7d": approved_7d.get(opp.opportunity_id, 0),
             "visits_pending": pending.get(opp.opportunity_id, 0),
             "amount_paid": float(paid.get(opp.opportunity_id) or 0),
+            # Distinct from amount_paid==0: whether any PulseWork row for this
+            # opp has a payment_date at all. Without this, a real "$0 paid so
+            # far" (has_payment_data=True) renders identically to "no payment
+            # data exists yet" -- the template must tell those apart.
+            "has_payment_data": opp.opportunity_id in paid,
         }
         for opp in opportunities
     ]

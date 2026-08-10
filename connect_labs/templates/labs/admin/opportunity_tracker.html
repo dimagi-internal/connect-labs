@@ -137,8 +137,11 @@
 
       <form method="get" class="ot-fg {% if active_tab == 'stats' %}active{% endif %}">
         <input type="hidden" name="tab" value="stats">
-        <!-- No status field here: these are all-time/cumulative charts, and
-             an opportunity that's since gone Inactive still did that history. -->
+        <!-- Carries the Status value forward so switching to this tab and
+             submitting a change here doesn't reset it on the Opportunities
+             tab -- Status has no visible control here because these charts
+             are all-time/cumulative and never filtered by it themselves. -->
+        <input type="hidden" name="status" value="{{ filters.status }}">
         <div class="ot-fg-title">Visit stats tab</div>
         <div class="ot-field"><label>Delivery Type</label>
           <select name="delivery_type" onchange="this.form.submit()">
@@ -162,8 +165,12 @@
 
       <form method="get" class="ot-fg {% if active_tab == 'country' %}active{% endif %}">
         <input type="hidden" name="tab" value="country">
-        <!-- No status or country field here: country is this chart's own
-             axis, not a filter -- selecting one would collapse it to a single bar. -->
+        <!-- Carries Status and Country forward for the SAME cross-tab-state
+             reason as above. Neither has a visible control on this tab:
+             Status doesn't apply to an all-time chart, and Country is this
+             chart's own axis -- selecting one would collapse it to one bar. -->
+        <input type="hidden" name="status" value="{{ filters.status }}">
+        <input type="hidden" name="country" value="{{ filters.country }}">
         <div class="ot-fg-title">Visits by country tab</div>
         <div class="ot-field"><label>Delivery Type</label>
           <select name="delivery_type" onchange="this.form.submit()">
@@ -219,7 +226,7 @@
                     <td class="num">{{ row.visits_approved }}</td>
                     <td class="num">{{ row.approved_7d }}</td>
                     <td class="num">{{ row.visits_pending }}</td>
-                    <td class="num">{% if row.amount_paid %}${{ row.amount_paid|floatformat:0 }}{% else %}<span class="ot-muted">n/a</span>{% endif %}</td>
+                    <td class="num">{% if row.has_payment_data %}${{ row.amount_paid|floatformat:0 }}{% else %}<span class="ot-muted">n/a</span>{% endif %}</td>
                   </tr>
                   {% empty %}
                   <tr><td colspan="15" class="text-center text-gray-400 py-6">No opportunities match these filters.</td></tr>
