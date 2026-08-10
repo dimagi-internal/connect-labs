@@ -21,12 +21,17 @@
   .ot-tab-label { font-size: 13px; font-weight: 600; padding: 7px 15px; border-radius: 7px; color: #6b7280; cursor: pointer; user-select: none; }
   .ot-tab-input { display: none; }
   .ot-tab-panel { display: none; }
-  #ot-tab-opps:checked ~ .ot-tabbar label[for="ot-tab-opps"],
-  #ot-tab-stats:checked ~ .ot-tabbar label[for="ot-tab-stats"],
-  #ot-tab-country:checked ~ .ot-tabbar label[for="ot-tab-country"] { background: #2563eb; color: #fff; }
-  #ot-tab-opps:checked ~ .ot-panels #ot-panel-opps,
-  #ot-tab-stats:checked ~ .ot-panels #ot-panel-stats,
-  #ot-tab-country:checked ~ .ot-panels #ot-panel-country { display: block; }
+  /* .ot-tabbar and .ot-panels are NOT direct siblings of the radios -- they're
+     nested inside .ot-workspace's second column div. The general-sibling `~`
+     combinator only matches same-parent siblings, so it has to pivot through
+     .ot-workspace (which genuinely IS the sibling) and then descend into it;
+     dropping that pivot silently made every rule below a no-op. */
+  #ot-tab-opps:checked ~ .ot-workspace .ot-tabbar label[for="ot-tab-opps"],
+  #ot-tab-stats:checked ~ .ot-workspace .ot-tabbar label[for="ot-tab-stats"],
+  #ot-tab-country:checked ~ .ot-workspace .ot-tabbar label[for="ot-tab-country"] { background: #2563eb; color: #fff; }
+  #ot-tab-opps:checked ~ .ot-workspace .ot-panels #ot-panel-opps,
+  #ot-tab-stats:checked ~ .ot-workspace .ot-panels #ot-panel-stats,
+  #ot-tab-country:checked ~ .ot-workspace .ot-panels #ot-panel-country { display: block; }
 
   .ot-panel { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; box-shadow: 0 1px 2px rgb(0 0 0 / 0.04); overflow: hidden; margin-bottom: 14px; }
   .ot-panel-head { padding: 13px 16px 9px; display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px; }

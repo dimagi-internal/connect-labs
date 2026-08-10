@@ -67,7 +67,20 @@ class OpportunityTrackerView(AdminRequiredMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         request = self.request
 
-        status = request.GET.get("status", "Active")
+        # Same "don't trust an unrecognized param" rule as `tab` below: a
+        # typo'd or stale-bookmarked value (e.g. ?status=active, lowercase)
+        # would otherwise silently match zero opportunities while the <select>
+        # renders with no option selected. Empty/missing means "all" (same
+        # empty-string-is-unfiltered convention as delivery_type/country/
+        # funder just below); anything else unrecognized falls back to the
+        # real default rather than either extreme.
+        requested_status = request.GET.get("status", "Active")
+        if requested_status in ("", "all"):
+            status = "all"
+        elif requested_status in ("Active", "Inactive"):
+            status = requested_status
+        else:
+            status = "Active"
         delivery_type = request.GET.get("delivery_type") or None
         country = request.GET.get("country") or None
         funder = request.GET.get("funder") or None
@@ -106,7 +119,7 @@ class OpportunityTrackerView(AdminRequiredMixin, TemplateView):
             # that further-narrowed list between themselves, so those two
             # panels can't disagree with each other).
             opps = filtered_opportunities(delivery_type=delivery_type, country=country, funder=funder)
-            opps_tab_opps = [o for o in opps if not status or status == "all" or status_for(o) == status]
+            opps_tab_opps = [o for o in opps if status == "all" or status_for(o) == status]
             opp_ids = [o.opportunity_id for o in opps]
 
             context["detail_rows"] = opportunity_detail_rows(opps_tab_opps)
