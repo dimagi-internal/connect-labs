@@ -72,7 +72,12 @@ class OpportunityTrackerView(AdminRequiredMixin, TemplateView):
         country = request.GET.get("country") or None
         funder = request.GET.get("funder") or None
 
-        context["active_tab"] = request.GET.get("tab", "opps")
+        # An unrecognized value would leave every tab radio unchecked and the
+        # CSS :checked selectors that show/hide .ot-tab-panel would all fail,
+        # rendering a blank page -- fall back to "opps" rather than trust the
+        # param (a stale bookmark or a future link using a different name).
+        requested_tab = request.GET.get("tab", "opps")
+        context["active_tab"] = requested_tab if requested_tab in ("opps", "stats", "country") else "opps"
         context["filters"] = {
             "status": status,
             "delivery_type": delivery_type or "",
