@@ -67,6 +67,10 @@
           "value": "3"
         },
         {
+          "name": "WEB_LIMIT_CONCURRENCY",
+          "value": "0"
+        },
+        {
           "name": "LABS_SYNTHETIC_STOCK_IMAGES_FOLDER_ID",
           "value": "1e-9rKzJAlyDerGhxCxBBxGLbxnnOllrp"
         },
