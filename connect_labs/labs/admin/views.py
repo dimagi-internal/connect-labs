@@ -149,13 +149,19 @@ class OpportunityTrackerView(AdminRequiredMixin, TemplateView):
 
             context["detail_rows"] = opportunity_detail_rows(opps_tab_opps)
             context["pivot"] = cohort_pivot(opps_tab_opps)
-            # Country is likewise not applied here: it's the chart's own axis,
-            # not a filter dimension, so a country selected on another tab must
-            # not collapse this breakdown to a single bar. Reuse `opps` when
-            # there's no country filter to avoid a redundant identical query.
-            country_scope_opps = (
-                opps if not country else filtered_opportunities(delivery_type=delivery_type, funder=funder)
-            )
+
+            def _country_bars():
+                # Country is likewise not applied here: it's the chart's own
+                # axis, not a filter dimension, so a country selected on
+                # another tab must not collapse this breakdown to a single
+                # bar. Reuse `opps` when there's no country filter to avoid a
+                # redundant identical query. This whole thunk runs inside
+                # _safe_chart below, so a failure in the re-query itself
+                # (not just in monthly_visits_by_country) doesn't blank the
+                # other three charts either.
+                scope = opps if not country else filtered_opportunities(delivery_type=delivery_type, funder=funder)
+                return monthly_visits_by_country(scope)
+
             # Each chart is computed and assigned independently -- building
             # these as one dict literal meant a single failing call (e.g. the
             # last one) discarded every already-successful result along with
@@ -172,7 +178,7 @@ class OpportunityTrackerView(AdminRequiredMixin, TemplateView):
                 "dailyVisitsUsers", daily_visits_and_users, opp_ids, default=[]
             )
             chart_data["countryBars"] = self._safe_chart(
-                "countryBars", monthly_visits_by_country, country_scope_opps, default={"countries": [], "series": []}
+                "countryBars", _country_bars, default={"countries": [], "series": []}
             )
             context["chart_data"] = chart_data
         except Exception:

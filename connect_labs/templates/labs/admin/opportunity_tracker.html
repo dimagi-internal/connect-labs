@@ -342,6 +342,28 @@
 {{ chart_data|json_script:"ot-chart-data" }}
 <script>
 (function(){
+  // Tab switching itself is pure client-side CSS (:checked radios, no page
+  // reload), but the sidebar's .ot-fg.active highlight was only ever
+  // computed server-side from active_tab -- so it went stale the moment
+  // someone clicked a different tab without submitting a filter. Keep it in
+  // sync directly.
+  const radios = document.querySelectorAll('.ot-tab-input');
+  const groups = document.querySelectorAll('.ot-fg');
+  function syncActiveFilterGroup(){
+    const checked = document.querySelector('.ot-tab-input:checked');
+    if (!checked) return;
+    const tab = checked.id.replace('ot-tab-', '');
+    groups.forEach(g => {
+      const tabField = g.querySelector('input[name="tab"]');
+      g.classList.toggle('active', !!tabField && tabField.value === tab);
+    });
+  }
+  radios.forEach(r => r.addEventListener('change', syncActiveFilterGroup));
+})();
+</script>
+
+<script>
+(function(){
   const dataEl = document.getElementById('ot-chart-data');
   if (!dataEl) return;
   const DATA = JSON.parse(dataEl.textContent);

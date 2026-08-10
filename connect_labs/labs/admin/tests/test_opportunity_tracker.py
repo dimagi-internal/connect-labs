@@ -543,3 +543,48 @@ def test_opportunity_tracker_one_failing_chart_does_not_discard_the_others(clien
     chart_data = resp.context["chart_data"]
     assert chart_data["runningVisits"]  # survived, despite countryBars failing
     assert chart_data["countryBars"] == {"countries": [], "series": []}  # safe fallback, not missing entirely
+
+
+@override_settings(**LABS_SETTINGS)
+def test_opportunity_tracker_country_rescope_failure_does_not_discard_other_charts(
+    client, dimagi_user, db, monkeypatch
+):
+    """Regression: the countryBars chart's own re-query for country_scope_opps
+    (built when a country filter is set) was outside _safe_chart's coverage,
+    so a failure there still blanked the other three charts too."""
+    from connect_labs.labs.admin import views as admin_views
+
+    _make_opp(1, country="NG")
+    _make_rollup(1, status="approved", n=5)
+
+    real_filtered_opportunities = admin_views.filtered_opportunities
+    calls = {"n": 0}
+
+    def _flaky(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] > 1:  # the first call builds `opps`; the second is the country re-scope
+            raise RuntimeError("simulated failure in the country re-scope query")
+        return real_filtered_opportunities(*args, **kwargs)
+
+    monkeypatch.setattr(admin_views, "filtered_opportunities", _flaky)
+    client.force_login(dimagi_user)
+
+    # country=NG forces the re-scope path (otherwise it just reuses `opps`).
+    resp = client.get(reverse("labs_admin:opportunity_tracker"), {"country": "NG"})
+    assert resp.status_code == 200
+    chart_data = resp.context["chart_data"]
+    assert chart_data["runningVisits"]  # survived, despite the country re-scope failing
+    assert chart_data["countryBars"] == {"countries": [], "series": []}
+
+
+def test_monthly_visits_by_country_buckets_blank_country_as_unknown(db):
+    """Regression: an opportunity with no country set must still be counted
+    (as "Unknown"), matching cohort_pivot's own choice -- dropping it would
+    make this chart's totals undercount relative to the pivot and the detail
+    table for the identical filtered set."""
+    opp = _make_opp(1, country="")
+    _make_rollup(1, status="approved", n=9)
+
+    result = ot.monthly_visits_by_country([opp])
+    assert result["countries"] == ["Unknown"]
+    assert result["series"][0]["values"]["Unknown"] == 9  # not silently dropped
