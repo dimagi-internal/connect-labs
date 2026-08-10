@@ -177,6 +177,21 @@ def test_detail_rows_amount_paid_only_counts_works_with_a_payment_date(db):
     rows = ot.opportunity_detail_rows([opp])
     row = next(r for r in rows if r["opportunity_id"] == 1)
     assert row["amount_paid"] == 5.0
+    assert row["has_payment_data"] is True
+
+
+def test_detail_rows_distinguishes_genuine_zero_paid_from_no_payment_data(db):
+    """Regression: a real $0-paid-so-far total must not look identical to
+    'no payment data exists', or an admin reads a healthy pipeline as broken."""
+    opp_no_data = _make_opp(1)  # no PulseWork rows at all
+    opp_zero_paid = _make_opp(2)
+    _make_work(2, worker="a", paid=True, created=timezone.now())
+    PulseWork.objects.filter(opportunity_id=2).update(usd_to_worker=0)  # a real $0
+
+    rows = {r["opportunity_id"]: r for r in ot.opportunity_detail_rows([opp_no_data, opp_zero_paid])}
+    assert rows[1]["has_payment_data"] is False
+    assert rows[2]["has_payment_data"] is True
+    assert rows[2]["amount_paid"] == 0.0
 
 
 def test_detail_rows_status_filter(db):
@@ -367,3 +382,18 @@ def test_opportunity_tracker_filter_by_delivery_type_narrows_both_panels(client,
     # 999 only exists on the excluded KMC opportunity -- if the pivot ignored
     # the delivery_type filter (the original bug) this would appear on screen.
     assert b"999" not in resp.content
+
+
+@override_settings(**LABS_SETTINGS)
+def test_opportunity_tracker_other_tab_forms_preserve_status_and_country(client, dimagi_user, db):
+    """Regression: the Visit Stats / Visits-by-Country forms don't filter on
+    Status or Country themselves, but must still round-trip those values via
+    hidden fields so switching tabs and submitting doesn't reset the
+    Opportunities tab's own selection."""
+    _make_opp(1, country="NG")
+    client.force_login(dimagi_user)
+
+    resp = client.get(reverse("labs_admin:opportunity_tracker"), {"country": "NG", "status": "Active", "tab": "stats"})
+    assert resp.status_code == 200
+    assert b'<input type="hidden" name="status" value="Active">' in resp.content
+    assert b'<input type="hidden" name="country" value="NG">' in resp.content

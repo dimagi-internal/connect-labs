@@ -122,8 +122,13 @@ class OpportunityTrackerView(AdminRequiredMixin, TemplateView):
                 "dailyVisitsUsers": daily_visits_and_users(opp_ids),
                 "countryBars": monthly_visits_by_country(country_scope_opps),
             }
-        except Exception as e:
-            logger.error(f"[OpportunityTracker] Failed to build report: {e}")
+        except Exception:
+            # logger.exception (not .error) so the full traceback lands in
+            # server logs -- the user-facing message stays generic on purpose
+            # (see the earlier fix in this file's history for why raw
+            # exception text shouldn't reach the page), so the traceback is
+            # the only way to diagnose which of the calls above failed.
+            logger.exception("[OpportunityTracker] Failed to build report")
             messages.error(request, "Failed to load Opportunity Tracker data. Check the server logs for details.")
 
         return context
