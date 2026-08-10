@@ -24,7 +24,7 @@ filters as the detail table beside it, instead of drifting out of sync.
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import date, timedelta
 
 from django.conf import settings
 from django.db.models import Count, Min, Sum
@@ -41,6 +41,7 @@ def country_label(code: str) -> str:
     hasn't named (never invents a label the way an unconfirmed service slug
     would)."""
     return COUNTRY_NAMES.get(code, code) if code else ""
+
 
 # Ported verbatim from the Superset SQL's CASE statement that drives the real
 # "Funder" column. The substring matches are intentionally broad (e.g. "gw",
@@ -131,9 +132,7 @@ def opportunity_detail_rows(opportunities: list[PulseOpportunity]) -> list[dict]
     }
 
     rollup_totals = (
-        PulseRollup.objects.filter(opportunity_id__in=opp_ids)
-        .values("opportunity_id", "status")
-        .annotate(n=Sum("n"))
+        PulseRollup.objects.filter(opportunity_id__in=opp_ids).values("opportunity_id", "status").annotate(n=Sum("n"))
     )
     claimed, approved, pending = {}, {}, {}
     for row in rollup_totals:
@@ -382,9 +381,7 @@ def daily_visits_and_users(opp_ids: list[int]) -> list[dict]:
     # yet (still pending review) must still appear, with approved_visits=0,
     # rather than being dropped from the series entirely.
     all_days = sorted(set(daily_visits) | set(daily_users))
-    return [
-        {"t": d, "approved_visits": daily_visits.get(d, 0), "unique_users": daily_users.get(d)} for d in all_days
-    ]
+    return [{"t": d, "approved_visits": daily_visits.get(d, 0), "unique_users": daily_users.get(d)} for d in all_days]
 
 
 def monthly_visits_by_country(opportunities: list[PulseOpportunity], *, top_n=6) -> dict:
@@ -414,8 +411,27 @@ def monthly_visits_by_country(opportunities: list[PulseOpportunity], *, top_n=6)
 
     top_countries = [c for c, _ in sorted(totals_by_country.items(), key=lambda kv: -kv[1])[:top_n]]
     series = []
-    for m in sorted(monthly):
-        values = {c: monthly[m].get(c, 0) for c in top_countries}
-        values["Other"] = sum(v for c, v in monthly[m].items() if c not in top_countries)
+    # Every month from first to last observed, not just months that happen to
+    # have an approved visit -- the chart positions bars by index, not by
+    # date, so a skipped month would silently sit its neighbours right next
+    # to each other and read as continuous activity across a gap.
+    for m in _month_range(monthly):
+        month_values = monthly.get(m, {})
+        values = {c: month_values.get(c, 0) for c in top_countries}
+        values["Other"] = sum(v for c, v in month_values.items() if c not in top_countries)
         series.append({"month": m, "values": values})
-    return {"countries": top_countries + ["Other"], "series": series}
+    return {"countries": [*top_countries, "Other"], "series": series}
+
+
+def _month_range(monthly: dict[str, dict[str, int]]) -> list[str]:
+    """Every month from the first to the last observed, including empty ones."""
+    if not monthly:
+        return []
+    keys = sorted(monthly)
+    start = date.fromisoformat(keys[0])
+    end = date.fromisoformat(keys[-1])
+    months, cur = [], start
+    while cur <= end:
+        months.append(cur.isoformat())
+        cur = date(cur.year + (cur.month == 12), cur.month % 12 + 1, 1)
+    return months

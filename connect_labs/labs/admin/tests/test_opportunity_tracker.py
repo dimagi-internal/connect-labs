@@ -326,6 +326,24 @@ def test_monthly_visits_by_country_folds_long_tail_into_other(db):
     assert month["values"]["Other"] == 5  # Uganda folded in, not given its own slot
 
 
+def test_monthly_visits_by_country_fills_a_month_with_no_approved_visits(db):
+    """Regression: the chart positions bars by index, not by date -- a month
+    with zero approved visits must still get its own zero-valued slot, or its
+    neighbours silently sit next to each other and read as continuous activity
+    across the gap."""
+    opp = _make_opp(1, country="NG")
+    two_months_ago = timezone.now() - timedelta(days=62)
+    this_month = timezone.now()
+    PulseRollup.objects.create(bucket_hour=two_months_ago, opportunity_id=1, status="approved", n=10)
+    PulseRollup.objects.create(bucket_hour=this_month, opportunity_id=1, status="approved", n=20)
+
+    result = ot.monthly_visits_by_country([opp], top_n=6)
+    months = [row["month"] for row in result["series"]]
+    assert len(months) == 3  # the middle month, with nothing approved, must still appear
+    middle = result["series"][1]
+    assert middle["values"]["Nigeria"] == 0
+
+
 # ---------------------------------------------------------------------------
 # Access gating + page load
 # ---------------------------------------------------------------------------
@@ -414,16 +432,20 @@ def test_opportunity_tracker_filter_by_delivery_type_narrows_both_panels(client,
     _make_opp(1, name="CHC Opp", service_slug="chc", country="NG")
     _make_opp(2, name="KMC Opp", service_slug="kmc", country="NG", is_active=False, end_date=None)
     _make_rollup(1, status="approved", n=10)
-    _make_rollup(2, status="approved", n=999)
+    # A deliberately unusual, long sentinel -- "999" is common enough (e.g. in
+    # a randomly-generated CSRF token) to produce a flaky false-positive match
+    # completely unrelated to the KMC opportunity this is meant to check.
+    _make_rollup(2, status="approved", n=847113)
     client.force_login(dimagi_user)
 
     resp = client.get(reverse("labs_admin:opportunity_tracker"), {"delivery_type": "chc", "status": "all"})
     assert resp.status_code == 200
     assert b"CHC Opp" in resp.content
     assert b"KMC Opp" not in resp.content
-    # 999 only exists on the excluded KMC opportunity -- if the pivot ignored
-    # the delivery_type filter (the original bug) this would appear on screen.
-    assert b"999" not in resp.content
+    # 847113 only exists on the excluded KMC opportunity -- if the pivot
+    # ignored the delivery_type filter (the original bug) this would appear.
+    assert b"847113" not in resp.content
+    assert b"847,113" not in resp.content
 
 
 @override_settings(**LABS_SETTINGS)

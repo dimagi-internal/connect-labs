@@ -15,11 +15,21 @@
   .ot-fg-title { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; font-weight: 700; color: #9ca3af; padding: 0 4px 8px; }
   .ot-field { margin: 0 4px 10px; }
   .ot-field label { display:block; font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 4px; }
-  .ot-field select { width: 100%; font-size: 12.5px; border: 1px solid #d1d5db; border-radius: 6px; padding: 6px 8px; background: #f9fafb; color: #111827; }
+  /* The select is now nested inside <label> (for accessible association)
+     rather than a sibling -- display:block puts it on its own line below the
+     label's text instead of flowing inline right after it, and margin-top
+     restores the same visual gap the old margin-bottom on <label> gave. */
+  .ot-field select { display: block; width: 100%; margin-top: 4px; font-size: 12.5px; border: 1px solid #d1d5db; border-radius: 6px; padding: 6px 8px; background: #f9fafb; color: #111827; }
 
   .ot-tabbar { display: flex; gap: 4px; background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 4px; box-shadow: 0 1px 2px rgb(0 0 0 / 0.04); width: fit-content; margin-bottom: 14px; }
   .ot-tab-label { font-size: 13px; font-weight: 600; padding: 7px 15px; border-radius: 7px; color: #6b7280; cursor: pointer; user-select: none; }
-  .ot-tab-input { display: none; }
+  /* Visually hidden, not display:none -- display:none drops the radio from
+     the tab order and the accessibility tree, leaving keyboard/screen-reader
+     users unable to reach any tab but whichever one the server pre-checked. */
+  .ot-tab-input { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; clip: rect(0 0 0 0); clip-path: inset(50%); overflow: hidden; white-space: nowrap; }
+  .ot-tab-input:focus-visible ~ .ot-workspace .ot-tabbar label[for="ot-tab-opps"],
+  .ot-tab-input:focus-visible ~ .ot-workspace .ot-tabbar label[for="ot-tab-stats"],
+  .ot-tab-input:focus-visible ~ .ot-workspace .ot-tabbar label[for="ot-tab-country"] { outline: 2px solid #2563eb; outline-offset: 2px; }
   .ot-tab-panel { display: none; }
   /* .ot-tabbar and .ot-panels are NOT direct siblings of the radios -- they're
      nested inside .ot-workspace's second column div. The general-sibling `~`
@@ -113,31 +123,31 @@
       <form method="get" class="ot-fg {% if active_tab == 'opps' %}active{% endif %}">
         <input type="hidden" name="tab" value="opps">
         <div class="ot-fg-title">Opportunities tab</div>
-        <div class="ot-field"><label>Status</label>
+        <div class="ot-field"><label>Status
           <select name="status" onchange="this.form.submit()">
             <option value="all" {% if filters.status == "all" %}selected{% endif %}>All</option>
             <option value="Active" {% if filters.status == "Active" %}selected{% endif %}>Active</option>
             <option value="Inactive" {% if filters.status == "Inactive" %}selected{% endif %}>Inactive</option>
           </select>
-        </div>
-        <div class="ot-field"><label>Delivery Type</label>
+        </label></div>
+        <div class="ot-field"><label>Delivery Type
           <select name="delivery_type" onchange="this.form.submit()">
             <option value="">All types</option>
             {% for dt in filter_choices.delivery_types %}<option value="{{ dt.slug }}" {% if filters.delivery_type == dt.slug %}selected{% endif %}>{{ dt.label }}</option>{% endfor %}
           </select>
-        </div>
-        <div class="ot-field"><label>Country</label>
+        </label></div>
+        <div class="ot-field"><label>Country
           <select name="country" onchange="this.form.submit()">
             <option value="">All countries</option>
             {% for c in filter_choices.countries %}<option value="{{ c.code }}" {% if filters.country == c.code %}selected{% endif %}>{{ c.label }}</option>{% endfor %}
           </select>
-        </div>
-        <div class="ot-field"><label>Funder</label>
+        </label></div>
+        <div class="ot-field"><label>Funder
           <select name="funder" onchange="this.form.submit()">
             <option value="">All funders</option>
             {% for f in filter_choices.funders %}<option value="{{ f }}" {% if filters.funder == f %}selected{% endif %}>{{ f }}</option>{% endfor %}
           </select>
-        </div>
+        </label></div>
       </form>
 
       <form method="get" class="ot-fg {% if active_tab == 'stats' %}active{% endif %}">
@@ -148,24 +158,24 @@
              are all-time/cumulative and never filtered by it themselves. -->
         <input type="hidden" name="status" value="{{ filters.status }}">
         <div class="ot-fg-title">Visit stats tab</div>
-        <div class="ot-field"><label>Delivery Type</label>
+        <div class="ot-field"><label>Delivery Type
           <select name="delivery_type" onchange="this.form.submit()">
             <option value="">All types</option>
             {% for dt in filter_choices.delivery_types %}<option value="{{ dt.slug }}" {% if filters.delivery_type == dt.slug %}selected{% endif %}>{{ dt.label }}</option>{% endfor %}
           </select>
-        </div>
-        <div class="ot-field"><label>Country</label>
+        </label></div>
+        <div class="ot-field"><label>Country
           <select name="country" onchange="this.form.submit()">
             <option value="">All countries</option>
             {% for c in filter_choices.countries %}<option value="{{ c.code }}" {% if filters.country == c.code %}selected{% endif %}>{{ c.label }}</option>{% endfor %}
           </select>
-        </div>
-        <div class="ot-field"><label>Funder</label>
+        </label></div>
+        <div class="ot-field"><label>Funder
           <select name="funder" onchange="this.form.submit()">
             <option value="">All funders</option>
             {% for f in filter_choices.funders %}<option value="{{ f }}" {% if filters.funder == f %}selected{% endif %}>{{ f }}</option>{% endfor %}
           </select>
-        </div>
+        </label></div>
       </form>
 
       <form method="get" class="ot-fg {% if active_tab == 'country' %}active{% endif %}">
@@ -177,18 +187,18 @@
         <input type="hidden" name="status" value="{{ filters.status }}">
         <input type="hidden" name="country" value="{{ filters.country }}">
         <div class="ot-fg-title">Visits by country tab</div>
-        <div class="ot-field"><label>Delivery Type</label>
+        <div class="ot-field"><label>Delivery Type
           <select name="delivery_type" onchange="this.form.submit()">
             <option value="">All types</option>
             {% for dt in filter_choices.delivery_types %}<option value="{{ dt.slug }}" {% if filters.delivery_type == dt.slug %}selected{% endif %}>{{ dt.label }}</option>{% endfor %}
           </select>
-        </div>
-        <div class="ot-field"><label>Funder</label>
+        </label></div>
+        <div class="ot-field"><label>Funder
           <select name="funder" onchange="this.form.submit()">
             <option value="">All funders</option>
             {% for f in filter_choices.funders %}<option value="{{ f }}" {% if filters.funder == f %}selected{% endif %}>{{ f }}</option>{% endfor %}
           </select>
-        </div>
+        </label></div>
       </form>
     </aside>
 
