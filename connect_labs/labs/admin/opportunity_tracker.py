@@ -62,6 +62,12 @@ def status_for(opp: PulseOpportunity) -> str:
     Mirrors the real SQL's ``active=true AND end_date >= today`` rather than
     passing through ``PulseOpportunity.is_active`` alone, which can stay True
     past an opportunity's own end date.
+
+    NOTE: the same rule is reimplemented separately in
+    ``AppDownloaderDataAccess.get_active_opportunities`` (app_data_access.py)
+    against the raw API dict shape rather than this model. Known duplication,
+    not unified here to avoid touching an unrelated data path under this
+    change -- if "active" ever grows a grace period or similar, update both.
     """
     today = timezone.now().date()
     return "Active" if (opp.is_active and opp.end_date and opp.end_date >= today) else "Inactive"

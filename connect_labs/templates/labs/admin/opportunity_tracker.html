@@ -137,7 +137,8 @@
 
       <form method="get" class="ot-fg {% if active_tab == 'stats' %}active{% endif %}">
         <input type="hidden" name="tab" value="stats">
-        <input type="hidden" name="status" value="{{ filters.status }}">
+        <!-- No status field here: these are all-time/cumulative charts, and
+             an opportunity that's since gone Inactive still did that history. -->
         <div class="ot-fg-title">Visit stats tab</div>
         <div class="ot-field"><label>Delivery Type</label>
           <select name="delivery_type" onchange="this.form.submit()">
@@ -161,8 +162,8 @@
 
       <form method="get" class="ot-fg {% if active_tab == 'country' %}active{% endif %}">
         <input type="hidden" name="tab" value="country">
-        <input type="hidden" name="status" value="{{ filters.status }}">
-        <input type="hidden" name="country" value="{{ filters.country }}">
+        <!-- No status or country field here: country is this chart's own
+             axis, not a filter -- selecting one would collapse it to a single bar. -->
         <div class="ot-fg-title">Visits by country tab</div>
         <div class="ot-field"><label>Delivery Type</label>
           <select name="delivery_type" onchange="this.form.submit()">
@@ -316,7 +317,7 @@
   </div>
 </div>
 
-{{ chart_data_json|json_script:"ot-chart-data" }}
+{{ chart_data|json_script:"ot-chart-data" }}
 <script>
 (function(){
   const dataEl = document.getElementById('ot-chart-data');

@@ -7,7 +7,6 @@ import logging
 from collections.abc import Generator
 
 from django.contrib import messages
-from django.core.serializers.json import DjangoJSONEncoder
 from django.db import connection, transaction
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
@@ -85,7 +84,7 @@ class OpportunityTrackerView(AdminRequiredMixin, TemplateView):
         context["filter_choices"] = {"delivery_types": [], "countries": [], "funders": FUNDER_CHOICES}
         context["detail_rows"] = []
         context["pivot"] = None
-        context["chart_data_json"] = "{}"
+        context["chart_data"] = {}
 
         try:
             context["filter_choices"] = opportunity_filter_choices()
@@ -93,25 +92,36 @@ class OpportunityTrackerView(AdminRequiredMixin, TemplateView):
             # The Opportunities and Visit Stats tabs share one filter set
             # (delivery_type/country/funder) -- compute the matching opportunity
             # list once and reuse it, rather than re-querying + re-scanning
-            # funder_for() once per section. The detail table and cohort pivot
-            # additionally apply the Status filter, so they share that
-            # narrowed-further list between themselves too, which keeps the two
-            # panels on the same tab in agreement.
+            # funder_for() once per section.
+            #
+            # Status is deliberately NOT applied to the Visit Stats charts: they
+            # are all-time/cumulative views, and an opportunity that has since
+            # gone Inactive still really did that historical work. It only
+            # narrows the Opportunities tab's own table + pivot (which share
+            # that further-narrowed list between themselves, so those two
+            # panels can't disagree with each other).
             opps = filtered_opportunities(delivery_type=delivery_type, country=country, funder=funder)
-            opps_tab_opps = [o for o in opps if status in (None, "all") or status_for(o) == status]
+            opps_tab_opps = [o for o in opps if not status or status == "all" or status_for(o) == status]
             opp_ids = [o.opportunity_id for o in opps]
 
             context["detail_rows"] = opportunity_detail_rows(opps_tab_opps)
             context["pivot"] = cohort_pivot(opps_tab_opps)
-            chart_data = {
+            # Country is likewise not applied here: it's the chart's own axis,
+            # not a filter dimension, so a country selected on another tab must
+            # not collapse this breakdown to a single bar. Reuse `opps` when
+            # there's no country filter to avoid a redundant identical query.
+            country_scope_opps = opps if not country else filtered_opportunities(delivery_type=delivery_type, funder=funder)
+            # A plain dict, not a pre-serialized JSON string: the template's
+            # `|json_script` filter does its own json.dumps (via
+            # DjangoJSONEncoder) -- serializing here first would make it
+            # double-encode, and the JS would parse a JSON *string* back out
+            # instead of the actual object.
+            context["chart_data"] = {
                 "runningVisits": running_visit_total(opp_ids),
                 "runningUsers": running_user_total(opp_ids),
                 "dailyVisitsUsers": daily_visits_and_users(opp_ids),
-                "countryBars": monthly_visits_by_country(
-                    filtered_opportunities(delivery_type=delivery_type, funder=funder)
-                ),
+                "countryBars": monthly_visits_by_country(country_scope_opps),
             }
-            context["chart_data_json"] = json.dumps(chart_data, cls=DjangoJSONEncoder)
         except Exception as e:
             logger.error(f"[OpportunityTracker] Failed to build report: {e}")
             messages.error(request, "Failed to load Opportunity Tracker data. Check the server logs for details.")
