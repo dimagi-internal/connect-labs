@@ -394,8 +394,15 @@ def daily_visits_and_users(opp_ids: list[int]) -> list[dict]:
 
 def monthly_visits_by_country(opportunities: list[PulseOpportunity], *, top_n=6) -> dict:
     """Monthly stacked totals; the long tail folds into "Other" rather than
-    each country competing for a low-contrast hue."""
-    country_of = {o.opportunity_id: country_label(o.country) for o in opportunities}
+    each country competing for a low-contrast hue.
+
+    An opportunity with no country set is bucketed as "Unknown" rather than
+    dropped -- the same choice cohort_pivot() makes, and for the same reason:
+    silently excluding it would make this chart's totals undercount relative
+    to the Cohort Pivot's grand total and the detail table's own sum for the
+    identical filtered set.
+    """
+    country_of = {o.opportunity_id: country_label(o.country) or "Unknown" for o in opportunities}
     opp_ids = list(country_of)
 
     rows = (
@@ -408,7 +415,7 @@ def monthly_visits_by_country(opportunities: list[PulseOpportunity], *, top_n=6)
     totals_by_country: dict[str, int] = {}
     monthly: dict[str, dict[str, int]] = {}
     for row in rows:
-        country = country_of.get(row["opportunity_id"]) or ""
+        country = country_of.get(row["opportunity_id"])
         if not country:
             continue
         n = row["n"] or 0
