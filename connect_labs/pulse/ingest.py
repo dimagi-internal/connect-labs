@@ -87,6 +87,41 @@ SCALAR_OFF_MAP = "off_map_points"
 # ---------------------------------------------------------------------------
 
 
+def _mirror(model, key: str, rows: list) -> int:
+    """Write only the rows that actually differ, and say how many did.
+
+    ``update_or_create`` writes unconditionally, and every mirrored model here
+    carries ``updated_at = auto_now``, so a steady state still rewrote all ~690
+    orgs, programmes and opportunities every five minutes -- ~199,000 row
+    writes a day to change nothing, plus the dead-tuple and autovacuum churn
+    behind them.
+
+    Comparing first turns the whole sync into one SELECT, one bulk_create and
+    one bulk_update, and in a quiet period into a single SELECT.
+    """
+    if not rows:
+        return 0
+    fields = [f for f in rows[0] if f != key]
+    existing = {getattr(o, key): o for o in model.objects.filter(**{f"{key}__in": [r[key] for r in rows]})}
+
+    create, update = [], []
+    for row in rows:
+        current = existing.get(row[key])
+        if current is None:
+            create.append(model(**row))
+            continue
+        if any(getattr(current, f) != row[f] for f in fields):
+            for f in fields:
+                setattr(current, f, row[f])
+            update.append(current)
+
+    if create:
+        model.objects.bulk_create(create, ignore_conflicts=True)
+    if update:
+        model.objects.bulk_update(update, fields, batch_size=500)
+    return len(create) + len(update)
+
+
 def refresh_opportunities(client) -> dict:
     """Sync every visible opportunity from ``opp_org_program_list``.
 
@@ -105,22 +140,25 @@ def refresh_opportunities(client) -> dict:
     # Mirror the partners themselves. This payload has always carried
     # ["id", "slug", "name", "funder"] per org and only its length was read, so
     # the sole org identity downstream was a slug -- see PulseOrganization.
-    for o in orgs:
-        slug = (o.get("slug") or "").strip()
-        if not slug:
-            continue
-        PulseOrganization.objects.update_or_create(
-            slug=slug[:120],
-            defaults={
+    _mirror(
+        PulseOrganization,
+        "slug",
+        [
+            {
+                "slug": (o.get("slug") or "").strip()[:120],
                 "name": (o.get("name") or "")[:300],
                 "funder_slug": (o.get("funder") or "")[:120],
-            },
-        )
+            }
+            for o in orgs
+            if (o.get("slug") or "").strip()
+        ],
+    )
 
     # Mirror the programmes themselves. Previously this payload was read only
     # for org slugs, and its `name` and `delivery_type` were dropped -- which is
     # why service categorisation was a regex over opportunity names.
     program_delivery: dict[int, str] = {}
+    program_rows: list[dict] = []
     for p in programs:
         pid = p.get("id")
         if pid is None:
@@ -128,18 +166,19 @@ def refresh_opportunities(client) -> dict:
         delivery = (p.get("delivery_type") or "").strip()
         program_delivery[pid] = delivery
         pname = p.get("name") or ""
-        PulseProgram.objects.update_or_create(
-            program_id=pid,
-            defaults={
+        program_rows.append(
+            {
+                "program_id": pid,
                 "name": pname[:300],
                 "delivery_type": delivery[:48],
                 "org_slug": (p.get("organization") or "")[:120],
                 "currency": (p.get("currency") or "")[:8],
                 "is_test": looks_like_test(pname),
-            },
+            }
         )
 
     seen = 0
+    opp_rows: list[dict] = []
     for row in opps:
         opp_id = row.get("id")
         if opp_id is None:
@@ -148,9 +187,9 @@ def refresh_opportunities(client) -> dict:
         # Connect's own delivery_type wins; the name regex is the fallback for
         # an opportunity whose programme has none set.
         delivery = program_delivery.get(row.get("program")) or ""
-        PulseOpportunity.objects.update_or_create(
-            opportunity_id=opp_id,
-            defaults={
+        opp_rows.append(
+            {
+                "opportunity_id": opp_id,
                 "name": name[:300],
                 "org_slug": (row.get("organization") or program_org.get(row.get("program"), ""))[:120],
                 "program_id": row.get("program"),
@@ -158,9 +197,12 @@ def refresh_opportunities(client) -> dict:
                 "end_date": row.get("end_date") or None,
                 "lifetime_visit_count": row.get("visit_count") or 0,
                 "service_slug": delivery[:48] or service_slug_for(name),
-            },
+            }
         )
         seen += 1
+
+    _mirror(PulseProgram, "program_id", program_rows)
+    _mirror(PulseOpportunity, "opportunity_id", opp_rows)
 
     scope = {
         "orgs": len(orgs),
@@ -169,7 +211,15 @@ def refresh_opportunities(client) -> dict:
         "active_opportunities": sum(1 for o in opps if o.get("is_active")),
         "lifetime_visits": sum(o.get("visit_count") or 0 for o in opps),
     }
-    PulseScalar.objects.update_or_create(key=SCALAR_SCOPE, defaults={"value": scope})
+    # Same rule as the mirrored rows: only write when it actually moved.
+    # `update_or_create` would rewrite this every five minutes, and PulseScalar
+    # carries auto_now too.
+    current = PulseScalar.objects.filter(key=SCALAR_SCOPE).first()
+    if current is None:
+        PulseScalar.objects.create(key=SCALAR_SCOPE, value=scope)
+    elif current.value != scope:
+        current.value = scope
+        current.save(update_fields=["value", "updated_at"])
     logger.info("[pulse] refreshed %s opportunities; scope=%s", seen, scope)
     return scope
 

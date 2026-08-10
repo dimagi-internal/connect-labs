@@ -630,6 +630,13 @@ CELERY_BEAT_SCHEDULE = {
         "task": "connect_labs.pulse.tasks.poll_cheap_tier",
         "schedule": crontab(minute="*/5"),
     },
+    # Rates, derived country and the delivery-type resync. Hourly, not every
+    # five minutes: their inputs move in hours, and each costs one query per
+    # opportunity against a million-row table whether or not anything differs.
+    "pulse-slow-maintenance": {
+        "task": "connect_labs.pulse.tasks.poll_slow_maintenance",
+        "schedule": crontab(minute=7),
+    },
     "pulse-visit-tail": {
         "task": "connect_labs.pulse.tasks.poll_visit_tail",
         "schedule": crontab(minute="*"),
