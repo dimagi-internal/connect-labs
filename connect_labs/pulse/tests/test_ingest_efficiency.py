@@ -182,3 +182,36 @@ class TestTheSlowSweepsAreNotOnTheFastPath:
         from django.conf import settings
 
         assert settings.CELERY_BEAT_SCHEDULE["pulse-visit-tail"]["schedule"].minute == set(range(60))
+
+
+class TestTheSlowUpstreamCallIsNotOnAFastCadence:
+    """The cheap tier's cost is one request, not its local work.
+
+    Measured on prod after the write-elimination above: the task still took
+    ~16s, and with the sweeps gone that is essentially all a single call to
+    ``opp_org_program_list`` — which makes Connect aggregate a visit_count for
+    every one of 507 opportunities across 1.65M visits. The tails' calls are
+    0.2-0.5s each by comparison.
+
+    So the lever is cadence, not efficiency: at every five minutes it was 77
+    minutes a day of worker time waiting on a list that changes on the order of
+    days.
+    """
+
+    def test_the_cheap_tier_is_not_on_a_five_minute_cadence(self):
+        from django.conf import settings
+
+        minutes = settings.CELERY_BEAT_SCHEDULE["pulse-cheap-tier"]["schedule"].minute
+        assert len(minutes) <= 4, (
+            f"cheap tier runs {len(minutes)} times an hour. Each run is ~16s of waiting on one "
+            "slow upstream aggregate; the data behind it changes on the order of days."
+        )
+
+    def test_the_tails_that_carry_freshness_are_still_fast(self):
+        """The trade only works because nothing a viewer watches depends on the
+        cheap tier's cadence."""
+        from django.conf import settings
+
+        sched = settings.CELERY_BEAT_SCHEDULE
+        assert sched["pulse-visit-tail"]["schedule"].minute == set(range(60))
+        assert len(sched["pulse-works"]["schedule"].minute) >= 30
