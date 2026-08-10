@@ -370,6 +370,27 @@ def test_opportunity_tracker_empty_status_param_shows_all_not_nothing(client, di
 
 
 @override_settings(**LABS_SETTINGS)
+def test_opportunity_tracker_unrecognized_status_param_falls_back_to_active(client, dimagi_user, db):
+    """Regression: a typo'd/garbage ?status= (e.g. wrong case from a stale
+    link) must not silently match zero opportunities while the <select>
+    shows no option selected -- fall back to the real default instead."""
+    today = timezone.now().date()
+    active = _make_opp(1, name="Active Opp", is_active=True, end_date=today + timedelta(days=10))
+    _make_opp(2, name="Inactive Opp", is_active=False, end_date=today + timedelta(days=10))
+    client.force_login(dimagi_user)
+
+    resp = client.get(reverse("labs_admin:opportunity_tracker"), {"status": "active"})  # wrong case
+    assert resp.status_code == 200
+    assert b"Active Opp" in resp.content
+    assert b"Inactive Opp" not in resp.content
+    # The Status <select> must show "Active" selected, matching what the
+    # server actually filtered on -- not silently fall back to filtering on
+    # the bogus value while the <select> shows no option selected.
+    assert b'<option value="Active" selected>Active</option>' in resp.content
+    assert active.opportunity_id  # sanity: fixture created successfully
+
+
+@override_settings(**LABS_SETTINGS)
 def test_opportunity_tracker_country_filter_does_not_collapse_the_country_chart(client, dimagi_user, db):
     """Regression: Country is a filter on the Opportunities/Visit Stats tabs,
     but it's the Visits-by-Country chart's own axis -- selecting NG elsewhere
