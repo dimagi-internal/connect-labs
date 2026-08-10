@@ -124,7 +124,7 @@
         <div class="ot-field"><label>Country</label>
           <select name="country" onchange="this.form.submit()">
             <option value="">All countries</option>
-            {% for c in filter_choices.countries %}<option value="{{ c }}" {% if filters.country == c %}selected{% endif %}>{{ c }}</option>{% endfor %}
+            {% for c in filter_choices.countries %}<option value="{{ c.code }}" {% if filters.country == c.code %}selected{% endif %}>{{ c.label }}</option>{% endfor %}
           </select>
         </div>
         <div class="ot-field"><label>Funder</label>
@@ -152,7 +152,7 @@
         <div class="ot-field"><label>Country</label>
           <select name="country" onchange="this.form.submit()">
             <option value="">All countries</option>
-            {% for c in filter_choices.countries %}<option value="{{ c }}" {% if filters.country == c %}selected{% endif %}>{{ c }}</option>{% endfor %}
+            {% for c in filter_choices.countries %}<option value="{{ c.code }}" {% if filters.country == c.code %}selected{% endif %}>{{ c.label }}</option>{% endfor %}
           </select>
         </div>
         <div class="ot-field"><label>Funder</label>
