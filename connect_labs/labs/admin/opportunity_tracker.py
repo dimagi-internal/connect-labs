@@ -203,11 +203,15 @@ def cohort_pivot(opportunities: list[PulseOpportunity]) -> dict:
     Takes the SAME already-filtered opportunity list as opportunity_detail_rows
     for whatever's on screen next to it -- otherwise the two panels can show
     different scopes (e.g. the pivot including Inactive opportunities the
-    detail table has already filtered out).
+    detail table has already filtered out). That includes opportunities with
+    no country or no delivery type set: the detail table already shows those
+    (as "—" / "Unclassified"), so excluding them here instead of giving them
+    a same-named row/column would silently undercount this pivot's grand
+    total relative to the detail table's own sum for the identical scope.
     """
-    opps = [o for o in opportunities if o.country and o.service_slug]
+    opps = list(opportunities)
     opp_ids = [o.opportunity_id for o in opps]
-    country_of = {o.opportunity_id: country_label(o.country) for o in opps}
+    country_of = {o.opportunity_id: country_label(o.country) or "Unknown" for o in opps}
     service_of = {o.opportunity_id: o.service_slug for o in opps}
     org_of = {o.opportunity_id: o.org_slug for o in opps}
 

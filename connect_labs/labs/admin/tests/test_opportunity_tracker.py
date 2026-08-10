@@ -270,6 +270,22 @@ def test_cohort_pivot_honors_the_same_status_filter_as_the_detail_table(db):
     assert active_only_pivot["grand_total"]["visits"] == 10  # inactive opp's 999 excluded
 
 
+def test_cohort_pivot_still_counts_opportunities_missing_country_or_delivery_type(db):
+    """Regression: the pivot must cover the SAME scope as the detail table
+    beside it -- an opportunity with no country or no service_slug still
+    shows up there (as em-dash/Unclassified), so silently dropping it from
+    the pivot's grid would make the two panels' totals disagree."""
+    no_country = _make_opp(1, country="", service_slug="chc")
+    no_type = _make_opp(2, country="NG", service_slug="")
+    _make_rollup(1, status="approved", n=7)
+    _make_rollup(2, status="approved", n=3)
+
+    pivot = ot.cohort_pivot([no_country, no_type])
+    assert pivot["grand_total"]["visits"] == 10  # both opps counted, not silently dropped
+    assert "Unknown" in [row["country"] for row in pivot["rows"]]
+    assert "" in [s["slug"] for s in pivot["services"]]  # service_label("") -> "Unclassified"
+
+
 # ---------------------------------------------------------------------------
 # Time series
 # ---------------------------------------------------------------------------
