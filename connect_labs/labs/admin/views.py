@@ -20,13 +20,16 @@ from connect_labs.labs.admin.analysis_config import VISIT_INSPECTOR_CONFIG
 from connect_labs.labs.admin.data_access import RecordExplorerDataAccess
 from connect_labs.labs.admin.forms import RecordEditForm, RecordFilterForm, RecordUploadForm, VisitInspectorFilterForm
 from connect_labs.labs.admin.opportunity_tracker import (
+    FUNDER_CHOICES,
     cohort_pivot,
     daily_visits_and_users,
+    filtered_opportunities,
     monthly_visits_by_country,
     opportunity_detail_rows,
     opportunity_filter_choices,
     running_user_total,
     running_visit_total,
+    status_for,
 )
 from connect_labs.labs.admin.sql_validator import build_safe_query
 from connect_labs.labs.admin.tables import LabsRecordTable
@@ -77,28 +80,41 @@ class OpportunityTrackerView(AdminRequiredMixin, TemplateView):
             "country": country or "",
             "funder": funder or "",
         }
-        context["filter_choices"] = opportunity_filter_choices()
+        # Safe defaults so a failure below still renders a usable (if partly
+        # empty) page rather than a 500.
+        context["filter_choices"] = {"delivery_types": [], "countries": [], "funders": FUNDER_CHOICES}
+        context["detail_rows"] = []
+        context["pivot"] = None
+        context["chart_data_json"] = "{}"
 
         try:
-            context["detail_rows"] = opportunity_detail_rows(
-                status=status, delivery_type=delivery_type, country=country, funder=funder
-            )
-            context["pivot"] = cohort_pivot(funder=funder)
+            context["filter_choices"] = opportunity_filter_choices()
+
+            # The Opportunities and Visit Stats tabs share one filter set
+            # (delivery_type/country/funder) -- compute the matching opportunity
+            # list once and reuse it, rather than re-querying + re-scanning
+            # funder_for() once per section. The detail table and cohort pivot
+            # additionally apply the Status filter, so they share that
+            # narrowed-further list between themselves too, which keeps the two
+            # panels on the same tab in agreement.
+            opps = filtered_opportunities(delivery_type=delivery_type, country=country, funder=funder)
+            opps_tab_opps = [o for o in opps if status in (None, "all") or status_for(o) == status]
+            opp_ids = [o.opportunity_id for o in opps]
+
+            context["detail_rows"] = opportunity_detail_rows(opps_tab_opps)
+            context["pivot"] = cohort_pivot(opps_tab_opps)
             chart_data = {
-                "runningVisits": running_visit_total(delivery_type=delivery_type, country=country, funder=funder),
-                "runningUsers": running_user_total(delivery_type=delivery_type, country=country, funder=funder),
-                "dailyVisitsUsers": daily_visits_and_users(
-                    delivery_type=delivery_type, country=country, funder=funder
+                "runningVisits": running_visit_total(opp_ids),
+                "runningUsers": running_user_total(opp_ids),
+                "dailyVisitsUsers": daily_visits_and_users(opp_ids),
+                "countryBars": monthly_visits_by_country(
+                    filtered_opportunities(delivery_type=delivery_type, funder=funder)
                 ),
-                "countryBars": monthly_visits_by_country(delivery_type=delivery_type, funder=funder),
             }
             context["chart_data_json"] = json.dumps(chart_data, cls=DjangoJSONEncoder)
         except Exception as e:
             logger.error(f"[OpportunityTracker] Failed to build report: {e}")
-            messages.error(request, f"Failed to load Opportunity Tracker data: {e}")
-            context["detail_rows"] = []
-            context["pivot"] = None
-            context["chart_data_json"] = "{}"
+            messages.error(request, "Failed to load Opportunity Tracker data. Check the server logs for details.")
 
         return context
 

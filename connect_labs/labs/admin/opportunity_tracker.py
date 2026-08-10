@@ -12,6 +12,14 @@ Visits-by-Country charts) are deliberately sourced from ``PulseRollup``, not
 undercounts real visits for programmes like KMC (works-per-visit ratio ~0.23
 per Pulse's own design doc). Rollups are visit-derived and never pruned, so
 they carry full history the way raw ``PulseEvent`` does not.
+
+Callers filter once via ``filtered_opportunities()`` and pass the resulting
+opportunities (or their ids) into the functions below, rather than each
+function re-deriving its own filtered set. Two tabs on the page (Opportunities
+and Visit Stats) share the same delivery_type/country/funder filter set, so
+computing it once avoids repeating the same query and the same funder_for()
+name-scan per section -- and it's what makes the Cohort Pivot honor the same
+filters as the detail table beside it, instead of drifting out of sync.
 """
 
 from __future__ import annotations
@@ -74,7 +82,14 @@ def opportunity_filter_choices() -> dict:
     }
 
 
-def _filtered_opportunities(*, delivery_type=None, country=None, funder=None):
+def filtered_opportunities(*, delivery_type=None, country=None, funder=None) -> list[PulseOpportunity]:
+    """The one place delivery_type/country/funder filtering happens.
+
+    Call once per distinct filter combination and pass the result into the
+    functions below -- they take opportunities/ids directly rather than
+    filter kwargs, so nothing re-queries or re-scans funder_for() a second time
+    for the same combination.
+    """
     qs = PulseOpportunity.objects.all()
     if delivery_type:
         qs = qs.filter(service_slug=delivery_type)
@@ -86,14 +101,9 @@ def _filtered_opportunities(*, delivery_type=None, country=None, funder=None):
     return opps
 
 
-def _filtered_opp_ids(**filters) -> list[int]:
-    return [o.opportunity_id for o in _filtered_opportunities(**filters)]
-
-
-def opportunity_detail_rows(*, status=None, delivery_type=None, country=None, funder=None) -> list[dict]:
+def opportunity_detail_rows(opportunities: list[PulseOpportunity]) -> list[dict]:
     """One row per opportunity -- the "Opportunity Info Detailed" table."""
-    opps = _filtered_opportunities(delivery_type=delivery_type, country=country, funder=funder)
-    opp_ids = [o.opportunity_id for o in opps]
+    opp_ids = [o.opportunity_id for o in opportunities]
 
     org_names = dict(PulseOrganization.objects.values_list("slug", "name"))
 
@@ -137,39 +147,39 @@ def opportunity_detail_rows(*, status=None, delivery_type=None, country=None, fu
         .annotate(usd=Sum("usd_to_worker"))
     }
 
-    rows = []
-    for opp in opps:
-        row_status = status_for(opp)
-        if status and status != "all" and row_status != status:
-            continue
-        rows.append(
-            {
-                "opportunity_id": opp.opportunity_id,
-                "country": opp.country,
-                "funder": funder_for(opp.name),
-                "delivery_type": service_label(opp.service_slug),
-                "llo": org_names.get(opp.org_slug) or opp.org_slug,
-                "name": opp.name,
-                "status": row_status,
-                "start_date": None,  # not ingested -- see plan's "Known gaps"
-                "end_date": opp.end_date,
-                "flws": flw_counts.get(opp.opportunity_id, 0),
-                "visits_claimed": claimed.get(opp.opportunity_id, 0),
-                "visits_approved": approved.get(opp.opportunity_id, 0),
-                "approved_7d": approved_7d.get(opp.opportunity_id, 0),
-                "visits_pending": pending.get(opp.opportunity_id, 0),
-                "amount_paid": float(paid.get(opp.opportunity_id) or 0),
-            }
-        )
+    rows = [
+        {
+            "opportunity_id": opp.opportunity_id,
+            "country": opp.country,
+            "funder": funder_for(opp.name),
+            "delivery_type": service_label(opp.service_slug),
+            "llo": org_names.get(opp.org_slug) or opp.org_slug,
+            "name": opp.name,
+            "status": status_for(opp),
+            "start_date": None,  # not ingested -- see plan's "Known gaps"
+            "end_date": opp.end_date,
+            "flws": flw_counts.get(opp.opportunity_id, 0),
+            "visits_claimed": claimed.get(opp.opportunity_id, 0),
+            "visits_approved": approved.get(opp.opportunity_id, 0),
+            "approved_7d": approved_7d.get(opp.opportunity_id, 0),
+            "visits_pending": pending.get(opp.opportunity_id, 0),
+            "amount_paid": float(paid.get(opp.opportunity_id) or 0),
+        }
+        for opp in opportunities
+    ]
     rows.sort(key=lambda r: -r["approved_7d"])
     return rows
 
 
-def cohort_pivot(*, funder=None) -> dict:
-    """Delivery Type × Country pivot: Visits / Visits Last 7 Days / Orgs bands."""
-    opps = [o for o in PulseOpportunity.objects.exclude(country="").exclude(service_slug="")]
-    if funder:
-        opps = [o for o in opps if funder_for(o.name) == funder]
+def cohort_pivot(opportunities: list[PulseOpportunity]) -> dict:
+    """Delivery Type × Country pivot: Visits / Visits Last 7 Days / Orgs bands.
+
+    Takes the SAME already-filtered opportunity list as opportunity_detail_rows
+    for whatever's on screen next to it -- otherwise the two panels can show
+    different scopes (e.g. the pivot including Inactive opportunities the
+    detail table has already filtered out).
+    """
+    opps = [o for o in opportunities if o.country and o.service_slug]
     opp_ids = [o.opportunity_id for o in opps]
     country_of = {o.opportunity_id: o.country for o in opps}
     service_of = {o.opportunity_id: o.service_slug for o in opps}
@@ -209,8 +219,11 @@ def cohort_pivot(*, funder=None) -> dict:
 
     countries = sorted({k[0] for k in cells})
     services = sorted({k[1] for k in cells})
-    empty = lambda: {"visits": 0, "visits_7d": 0, "orgs": set()}  # noqa: E731
-    grid = {c: {s: cells.get((c, s), empty()) for s in services} for c in countries}
+
+    def empty_cell():
+        return {"visits": 0, "visits_7d": 0, "orgs": set()}
+
+    grid = {c: {s: cells.get((c, s), empty_cell()) for s in services} for c in countries}
 
     def orgs_union(cell_list):
         u: set = set()
@@ -268,9 +281,8 @@ def cohort_pivot(*, funder=None) -> dict:
     }
 
 
-def running_visit_total(**filters) -> list[dict]:
+def running_visit_total(opp_ids: list[int]) -> list[dict]:
     """Cumulative approved visits over all time -- exact, PulseRollup never prunes."""
-    opp_ids = _filtered_opp_ids(**filters)
     daily = (
         PulseRollup.objects.filter(status="approved", opportunity_id__in=opp_ids)
         .annotate(day=TruncDate("bucket_hour"))
@@ -285,13 +297,12 @@ def running_visit_total(**filters) -> list[dict]:
     return points
 
 
-def running_user_total(**filters) -> list[dict]:
+def running_user_total(opp_ids: list[int]) -> list[dict]:
     """Cumulative distinct-FLW roster growth, by first-seen date in PulseWork.
 
     Exact and full-history, unlike daily active users below (which needs
     visit-level data that's pruned after PULSE_EVENT_RETENTION_DAYS).
     """
-    opp_ids = _filtered_opp_ids(**filters)
     first_seen = (
         PulseWork.objects.filter(opportunity_id__in=opp_ids)
         .exclude(worker_hash="")
@@ -309,14 +320,13 @@ def running_user_total(**filters) -> list[dict]:
     return points
 
 
-def daily_visits_and_users(**filters) -> list[dict]:
+def daily_visits_and_users(opp_ids: list[int]) -> list[dict]:
     """Daily approved visits (full history) + daily unique FLWs (last ~30d only).
 
     The users line can't extend further back without visit-level PulseEvent
     rows, which are pruned -- callers must render missing days as absent, not
     zero, per Pulse's own "no data != zero" rule for money.
     """
-    opp_ids = _filtered_opp_ids(**filters)
     daily_visits = {
         row["day"].isoformat(): row["n"] or 0
         for row in PulseRollup.objects.filter(status="approved", opportunity_id__in=opp_ids)
@@ -334,17 +344,20 @@ def daily_visits_and_users(**filters) -> list[dict]:
         .values("day")
         .annotate(n=Count("worker_hash", distinct=True))
     }
+    # Union of both key sets: a day with FLW activity but no *approved* visit
+    # yet (still pending review) must still appear, with approved_visits=0,
+    # rather than being dropped from the series entirely.
+    all_days = sorted(set(daily_visits) | set(daily_users))
     return [
-        {"t": d, "approved_visits": daily_visits.get(d, 0), "unique_users": daily_users.get(d)}
-        for d in sorted(daily_visits)
+        {"t": d, "approved_visits": daily_visits.get(d, 0), "unique_users": daily_users.get(d)} for d in all_days
     ]
 
 
-def monthly_visits_by_country(*, top_n=6, **filters) -> dict:
+def monthly_visits_by_country(opportunities: list[PulseOpportunity], *, top_n=6) -> dict:
     """Monthly stacked totals; the long tail folds into "Other" rather than
     each country competing for a low-contrast hue."""
-    opp_ids = _filtered_opp_ids(**filters)
-    country_of = dict(PulseOpportunity.objects.filter(opportunity_id__in=opp_ids).values_list("opportunity_id", "country"))
+    country_of = {o.opportunity_id: o.country for o in opportunities}
+    opp_ids = list(country_of)
 
     rows = (
         PulseRollup.objects.filter(status="approved", opportunity_id__in=opp_ids)
