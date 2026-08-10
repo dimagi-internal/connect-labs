@@ -7,6 +7,7 @@ import logging
 from collections.abc import Generator
 
 from django.contrib import messages
+from django.core.serializers.json import DjangoJSONEncoder
 from django.db import connection, transaction
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
@@ -18,6 +19,15 @@ from django_tables2 import SingleTableView
 from connect_labs.labs.admin.analysis_config import VISIT_INSPECTOR_CONFIG
 from connect_labs.labs.admin.data_access import RecordExplorerDataAccess
 from connect_labs.labs.admin.forms import RecordEditForm, RecordFilterForm, RecordUploadForm, VisitInspectorFilterForm
+from connect_labs.labs.admin.opportunity_tracker import (
+    cohort_pivot,
+    daily_visits_and_users,
+    monthly_visits_by_country,
+    opportunity_detail_rows,
+    opportunity_filter_choices,
+    running_user_total,
+    running_visit_total,
+)
 from connect_labs.labs.admin.sql_validator import build_safe_query
 from connect_labs.labs.admin.tables import LabsRecordTable
 from connect_labs.labs.admin.utils import (
@@ -39,6 +49,58 @@ class AdminIndexView(AdminRequiredMixin, TemplateView):
     """Landing page for Labs Admin — grouped cards for data, ops, and asset tools."""
 
     template_name = "labs/admin/index.html"
+
+
+class OpportunityTrackerView(AdminRequiredMixin, TemplateView):
+    """Cross-workspace opportunity dashboard, reading Pulse's local mirror.
+
+    Not scoped by labs_context — deliberately shows data across every org the
+    Pulse poller account can see, which is why it's gated to Dimagi staff via
+    AdminRequiredMixin rather than plain LoginRequiredMixin.
+    """
+
+    template_name = "labs/admin/opportunity_tracker.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        request = self.request
+
+        status = request.GET.get("status", "Active")
+        delivery_type = request.GET.get("delivery_type") or None
+        country = request.GET.get("country") or None
+        funder = request.GET.get("funder") or None
+
+        context["active_tab"] = request.GET.get("tab", "opps")
+        context["filters"] = {
+            "status": status,
+            "delivery_type": delivery_type or "",
+            "country": country or "",
+            "funder": funder or "",
+        }
+        context["filter_choices"] = opportunity_filter_choices()
+
+        try:
+            context["detail_rows"] = opportunity_detail_rows(
+                status=status, delivery_type=delivery_type, country=country, funder=funder
+            )
+            context["pivot"] = cohort_pivot(funder=funder)
+            chart_data = {
+                "runningVisits": running_visit_total(delivery_type=delivery_type, country=country, funder=funder),
+                "runningUsers": running_user_total(delivery_type=delivery_type, country=country, funder=funder),
+                "dailyVisitsUsers": daily_visits_and_users(
+                    delivery_type=delivery_type, country=country, funder=funder
+                ),
+                "countryBars": monthly_visits_by_country(delivery_type=delivery_type, funder=funder),
+            }
+            context["chart_data_json"] = json.dumps(chart_data, cls=DjangoJSONEncoder)
+        except Exception as e:
+            logger.error(f"[OpportunityTracker] Failed to build report: {e}")
+            messages.error(request, f"Failed to load Opportunity Tracker data: {e}")
+            context["detail_rows"] = []
+            context["pivot"] = None
+            context["chart_data_json"] = "{}"
+
+        return context
 
 
 class RecordListView(AdminRequiredMixin, SingleTableView):
