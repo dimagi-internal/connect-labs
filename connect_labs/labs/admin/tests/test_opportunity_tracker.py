@@ -322,6 +322,36 @@ def test_admin_index_lists_opportunity_tracker_tile(client, dimagi_user, db):
 
 
 @override_settings(**LABS_SETTINGS)
+def test_opportunity_tracker_empty_status_param_shows_all_not_nothing(client, dimagi_user, db):
+    """Regression: ?status= (empty, e.g. from a bookmarked/stale link) must
+    behave like no filter, not silently match zero opportunities."""
+    _make_opp(1, name="Some Opp")
+    client.force_login(dimagi_user)
+
+    resp = client.get(reverse("labs_admin:opportunity_tracker"), {"status": ""})
+    assert resp.status_code == 200
+    assert b"Some Opp" in resp.content
+
+
+@override_settings(**LABS_SETTINGS)
+def test_opportunity_tracker_country_filter_does_not_collapse_the_country_chart(client, dimagi_user, db):
+    """Regression: Country is a filter on the Opportunities/Visit Stats tabs,
+    but it's the Visits-by-Country chart's own axis -- selecting NG elsewhere
+    must not reduce that chart to a single country's bars."""
+    _make_opp(1, country="NG")
+    _make_opp(2, country="KE")
+    _make_rollup(1, status="approved", n=10)
+    _make_rollup(2, status="approved", n=7)
+    client.force_login(dimagi_user)
+
+    resp = client.get(reverse("labs_admin:opportunity_tracker"), {"country": "NG", "tab": "country"})
+    assert resp.status_code == 200
+    # The chart's own data (embedded via json_script) must still carry both
+    # countries -- if the country filter leaked in, only "NG" would appear.
+    assert b'"countries": ["NG", "KE"' in resp.content
+
+
+@override_settings(**LABS_SETTINGS)
 def test_opportunity_tracker_filter_by_delivery_type_narrows_both_panels(client, dimagi_user, db):
     """Regression: detail table and cohort pivot must agree on the same tab."""
     _make_opp(1, name="CHC Opp", service_slug="chc", country="NG")
