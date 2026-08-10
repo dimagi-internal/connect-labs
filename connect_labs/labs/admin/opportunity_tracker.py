@@ -155,6 +155,13 @@ def opportunity_detail_rows(opportunities: list[PulseOpportunity]) -> list[dict]
     # "Paid" here is accrued-to-worker (PulseWork.usd_to_worker with a payment
     # date recorded), not a real opportunity_payment disbursement sum -- see
     # the Known-gaps note in the plan. Flagged in the template, not hidden.
+    #
+    # Known narrow edge case, not handled: usd_to_worker and payment_date are
+    # independently nullable, so a row could have a payment_date but no
+    # dollar figure recorded. Sum() over an all-such group returns None,
+    # which reads as a real $0 below rather than "amount unknown" -- in
+    # practice every payment-dated row also carries an amount, so this is
+    # deliberately not special-cased further.
     paid = {
         row["opportunity_id"]: row["usd"]
         for row in PulseWork.objects.filter(opportunity_id__in=opp_ids, payment_date__isnull=False)
@@ -223,14 +230,21 @@ def cohort_pivot(opportunities: list[PulseOpportunity]) -> dict:
         key = (country_of[oid], service_of[oid])
         return cells.setdefault(key, {"visits": 0, "visits_7d": 0, "orgs": set()})
 
+    # Seed a cell for every in-scope opportunity FIRST, regardless of whether
+    # it has any approved-visit rollup yet -- otherwise a newly-onboarded org
+    # whose opportunity hasn't had a visit approved yet is correctly visible
+    # in the detail table beside this pivot, but silently missing from the
+    # Orgs column here.
+    for oid in opp_ids:
+        c = cell(oid)
+        if org_of.get(oid):
+            c["orgs"].add(org_of[oid])
+
     for row in visits_rows:
         oid = row["opportunity_id"]
         if oid not in country_of:
             continue
-        c = cell(oid)
-        c["visits"] += row["n"] or 0
-        if org_of.get(oid):
-            c["orgs"].add(org_of[oid])
+        cell(oid)["visits"] += row["n"] or 0
     for row in visits_7d_rows:
         oid = row["opportunity_id"]
         if oid not in country_of:

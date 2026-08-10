@@ -243,6 +243,20 @@ def test_cohort_pivot_subtotals_and_grand_total_reconcile(db):
     assert chc_col_total["orgs"] == 1  # org-a, deduped across NG and KE
 
 
+def test_cohort_pivot_counts_an_org_with_zero_approved_visits_yet(db):
+    """Regression: an in-scope opportunity with no approved rollup row at all
+    (e.g. newly onboarded, everything still pending) must still count its org
+    in the Orgs column, not vanish because it never appeared in visits_rows."""
+    opp = _make_opp(1, country="NG", service_slug="chc", org_slug="new-org")
+    # No _make_rollup() call at all -- nothing approved for this opp yet.
+
+    pivot = ot.cohort_pivot([opp])
+    ng_row = next(r for r in pivot["rows"] if r["country"] == "Nigeria")
+    assert ng_row["cells"][0]["orgs_count"] == 1
+    assert ng_row["subtotal"]["orgs"] == 1
+    assert pivot["grand_total"]["orgs"] == 1
+
+
 def test_cohort_pivot_honors_the_same_status_filter_as_the_detail_table(db):
     """Regression: the pivot must reflect whatever's already filtered out of
     the opportunity list beside it, not re-query the whole unfiltered table."""
@@ -389,6 +403,19 @@ def test_opportunity_tracker_filter_by_delivery_type_narrows_both_panels(client,
     # 999 only exists on the excluded KMC opportunity -- if the pivot ignored
     # the delivery_type filter (the original bug) this would appear on screen.
     assert b"999" not in resp.content
+
+
+@override_settings(**LABS_SETTINGS)
+def test_opportunity_tracker_unknown_tab_param_falls_back_to_opportunities(client, dimagi_user, db):
+    """Regression: an unrecognized ?tab= (stale bookmark, typo, future link)
+    must not leave every tab radio unchecked and the whole page blank."""
+    _make_opp(1, name="Some Opp")
+    client.force_login(dimagi_user)
+
+    resp = client.get(reverse("labs_admin:opportunity_tracker"), {"tab": "visits"})
+    assert resp.status_code == 200
+    assert b'id="ot-tab-opps" class="ot-tab-input" checked' in resp.content
+    assert b"Some Opp" in resp.content
 
 
 @override_settings(**LABS_SETTINGS)
