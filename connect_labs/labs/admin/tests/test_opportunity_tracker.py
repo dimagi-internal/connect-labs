@@ -588,3 +588,25 @@ def test_monthly_visits_by_country_buckets_blank_country_as_unknown(db):
     result = ot.monthly_visits_by_country([opp])
     assert result["countries"] == ["Unknown"]
     assert result["series"][0]["values"]["Unknown"] == 9  # not silently dropped
+
+
+@override_settings(**LABS_SETTINGS)
+def test_opportunity_tracker_detail_table_failure_does_not_blank_the_charts(client, dimagi_user, db, monkeypatch):
+    """Regression: the Opportunities tab's own table/pivot failing must not
+    blank the Visit Stats / Visits-by-Country tabs, which read entirely
+    different data and have nothing to do with that failure."""
+    from connect_labs.labs.admin import views as admin_views
+
+    _make_opp(1, country="NG")
+    _make_rollup(1, status="approved", n=5)
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("simulated failure building the detail table")
+
+    monkeypatch.setattr(admin_views, "opportunity_detail_rows", _boom)
+    client.force_login(dimagi_user)
+
+    resp = client.get(reverse("labs_admin:opportunity_tracker"))
+    assert resp.status_code == 200
+    assert resp.context["detail_rows"] == []  # this tab's own safe default
+    assert resp.context["chart_data"]["runningVisits"]  # unrelated tabs still rendered

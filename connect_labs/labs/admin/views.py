@@ -144,8 +144,16 @@ class OpportunityTrackerView(AdminRequiredMixin, TemplateView):
             opps_tab_opps = [o for o in opps if status == "all" or status_for(o) == status]
             opp_ids = [o.opportunity_id for o in opps]
 
-            context["detail_rows"] = opportunity_detail_rows(opps_tab_opps)
-            context["pivot"] = cohort_pivot(opps_tab_opps)
+            # Isolated from the chart-building below the same way the four
+            # charts are isolated from each other: the Opportunities tab's
+            # own table + pivot failing shouldn't blank the Visit Stats /
+            # Visits-by-Country tabs, which read entirely different data.
+            try:
+                context["detail_rows"] = opportunity_detail_rows(opps_tab_opps)
+                context["pivot"] = cohort_pivot(opps_tab_opps)
+            except Exception:
+                logger.exception("[OpportunityTracker] Failed to build Opportunities tab")
+                messages.error(request, "Failed to load the Opportunities tab. Check the server logs for details.")
 
             def _country_bars():
                 # Country is likewise not applied here: it's the chart's own
