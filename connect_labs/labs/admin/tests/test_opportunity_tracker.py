@@ -110,6 +110,13 @@ def test_funder_for_matches_sql_case_examples(name, expected):
     assert ot.funder_for(name) == expected
 
 
+@pytest.mark.parametrize("code,expected", [("NG", "Nigeria"), ("KE", "Kenya"), ("", ""), ("ZZ", "ZZ")])
+def test_country_label_falls_back_to_the_code_when_unnamed(code, expected):
+    """Never invents a label -- an unmapped code renders as itself, same
+    fallback philosophy as service_label() for delivery types."""
+    assert ot.country_label(code) == expected
+
+
 def test_status_for_requires_both_active_flag_and_future_end_date(db):
     today = timezone.now().date()
     still_running = _make_opp(1, is_active=True, end_date=today + timedelta(days=1))
@@ -222,8 +229,8 @@ def test_cohort_pivot_subtotals_and_grand_total_reconcile(db):
 
     pivot = ot.cohort_pivot([opp1, opp2, opp3])
     services = [s["slug"] for s in pivot["services"]]
-    ng_row = next(r for r in pivot["rows"] if r["country"] == "NG")
-    ke_row = next(r for r in pivot["rows"] if r["country"] == "KE")
+    ng_row = next(r for r in pivot["rows"] if r["country"] == "Nigeria")
+    ke_row = next(r for r in pivot["rows"] if r["country"] == "Kenya")
 
     assert ng_row["subtotal"]["visits"] == 30
     assert ke_row["subtotal"]["visits"] == 5
@@ -298,11 +305,11 @@ def test_monthly_visits_by_country_folds_long_tail_into_other(db):
     _make_rollup(3, status="approved", n=5)
 
     result = ot.monthly_visits_by_country([opp_ng, opp_ke, opp_ug], top_n=2)
-    assert result["countries"] == ["NG", "KE", "Other"]
+    assert result["countries"] == ["Nigeria", "Kenya", "Other"]
     month = result["series"][0]
-    assert month["values"]["NG"] == 100
-    assert month["values"]["KE"] == 50
-    assert month["values"]["Other"] == 5  # UG folded in, not given its own slot
+    assert month["values"]["Nigeria"] == 100
+    assert month["values"]["Kenya"] == 50
+    assert month["values"]["Other"] == 5  # Uganda folded in, not given its own slot
 
 
 # ---------------------------------------------------------------------------
@@ -362,8 +369,8 @@ def test_opportunity_tracker_country_filter_does_not_collapse_the_country_chart(
     resp = client.get(reverse("labs_admin:opportunity_tracker"), {"country": "NG", "tab": "country"})
     assert resp.status_code == 200
     # The chart's own data (embedded via json_script) must still carry both
-    # countries -- if the country filter leaked in, only "NG" would appear.
-    assert b'"countries": ["NG", "KE"' in resp.content
+    # countries -- if the country filter leaked in, only Nigeria would appear.
+    assert b'"countries": ["Nigeria", "Kenya"' in resp.content
 
 
 @override_settings(**LABS_SETTINGS)

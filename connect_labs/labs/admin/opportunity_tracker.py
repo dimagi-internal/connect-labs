@@ -32,7 +32,15 @@ from django.db.models.functions import TruncDate, TruncMonth
 from django.utils import timezone
 
 from connect_labs.pulse.models import PulseEvent, PulseOpportunity, PulseOrganization, PulseRollup, PulseWork
-from connect_labs.pulse.normalize import service_label
+from connect_labs.pulse.normalize import COUNTRY_NAMES, service_label
+
+
+def country_label(code: str) -> str:
+    """Display name for a country code, matching connect_labs/pulse/api.py's
+    own country menus/labels -- falls back to the code itself for one Pulse
+    hasn't named (never invents a label the way an unconfirmed service slug
+    would)."""
+    return COUNTRY_NAMES.get(code, code) if code else ""
 
 # Ported verbatim from the Superset SQL's CASE statement that drives the real
 # "Funder" column. The substring matches are intentionally broad (e.g. "gw",
@@ -83,7 +91,7 @@ def opportunity_filter_choices() -> dict:
     countries = sorted(PulseOpportunity.objects.exclude(country="").values_list("country", flat=True).distinct())
     return {
         "delivery_types": [{"slug": s, "label": service_label(s)} for s in delivery_types],
-        "countries": countries,
+        "countries": [{"code": c, "label": country_label(c)} for c in countries],
         "funders": FUNDER_CHOICES,
     }
 
@@ -111,7 +119,8 @@ def opportunity_detail_rows(opportunities: list[PulseOpportunity]) -> list[dict]
     """One row per opportunity -- the "Opportunity Info Detailed" table."""
     opp_ids = [o.opportunity_id for o in opportunities]
 
-    org_names = dict(PulseOrganization.objects.values_list("slug", "name"))
+    org_slugs = {o.org_slug for o in opportunities if o.org_slug}
+    org_names = dict(PulseOrganization.objects.filter(slug__in=org_slugs).values_list("slug", "name"))
 
     flw_counts = {
         row["opportunity_id"]: row["n"]
@@ -156,7 +165,7 @@ def opportunity_detail_rows(opportunities: list[PulseOpportunity]) -> list[dict]
     rows = [
         {
             "opportunity_id": opp.opportunity_id,
-            "country": opp.country,
+            "country": country_label(opp.country),
             "funder": funder_for(opp.name),
             "delivery_type": service_label(opp.service_slug),
             "llo": org_names.get(opp.org_slug) or opp.org_slug,
@@ -192,7 +201,7 @@ def cohort_pivot(opportunities: list[PulseOpportunity]) -> dict:
     """
     opps = [o for o in opportunities if o.country and o.service_slug]
     opp_ids = [o.opportunity_id for o in opps]
-    country_of = {o.opportunity_id: o.country for o in opps}
+    country_of = {o.opportunity_id: country_label(o.country) for o in opps}
     service_of = {o.opportunity_id: o.service_slug for o in opps}
     org_of = {o.opportunity_id: o.org_slug for o in opps}
 
@@ -367,7 +376,7 @@ def daily_visits_and_users(opp_ids: list[int]) -> list[dict]:
 def monthly_visits_by_country(opportunities: list[PulseOpportunity], *, top_n=6) -> dict:
     """Monthly stacked totals; the long tail folds into "Other" rather than
     each country competing for a low-contrast hue."""
-    country_of = {o.opportunity_id: o.country for o in opportunities}
+    country_of = {o.opportunity_id: country_label(o.country) for o in opportunities}
     opp_ids = list(country_of)
 
     rows = (
