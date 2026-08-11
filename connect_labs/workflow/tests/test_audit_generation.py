@@ -33,13 +33,19 @@ def _run(run_id, window_start):
     return r
 
 
-def _creator_def(opp_id=1973, def_id=42):
-    """A `weekly_dual_track_audit` creator definition (mock proxy)."""
+def _creator_def(opp_id=1973, def_id=42, program_id=None):
+    """A `weekly_dual_track_audit` creator definition (mock proxy).
+
+    ``program_id`` defaults to None (opp-owned) and must be set explicitly —
+    a bare `mock.Mock()` attribute is truthy, so leaving it unset would make
+    every opp-owned test silently look program-owned to `program_id_of`.
+    """
     d = mock.Mock()
     d.template_type = "weekly_dual_track_audit"
     d.id = def_id
     d.opportunity_id = opp_id
     d.opportunity_ids = [opp_id]
+    d.program_id = program_id
     d.data = {
         "config": {
             "templateType": "weekly_dual_track_audit",
@@ -146,6 +152,65 @@ def test_dispatch_batch_delays_and_returns_task_id(monkeypatch):
     wda.create_run.assert_called_once()
     fake_job.delay.assert_called_once()  # async dispatch, not eager .apply()
     fake_job.apply.assert_not_called()
+
+
+def test_creator_run_default_scopes_program_owned_definition_by_program(monkeypatch):
+    """A program-owned multi-opp instance (scheduled directly, not via the
+    program creator's per-opp fan-out) must get a program-scoped
+    WorkflowDataAccess and a program-owned run — not opportunity_ids[0]
+    guessed as a stand-in opp. Regression for the bug where a scheduled
+    program-owned weekly_dual_track_audit run silently created an opp-owned
+    run instead, which then 404'd the job handler's own get_definition() and
+    was invisible to the program-scoped "Open" link afterward."""
+    from connect_labs.workflow import audit_generation as g
+    from connect_labs.workflow.templates import run_default_for_definition
+
+    wda = mock.Mock()
+    wda.list_runs.return_value = []
+    wda.create_run.return_value = _run(9001, None)
+    wda_factory = mock.Mock(return_value=wda)
+    monkeypatch.setattr(g, "WorkflowDataAccess", wda_factory)
+    fake_job = mock.Mock()
+    fake_job.apply.return_value.result = {"sessions_created": 3}
+    fake_job.apply.return_value.successful.return_value = True
+    monkeypatch.setattr(g, "run_workflow_job", fake_job)
+
+    run_default_for_definition(_creator_def(program_id=217), access_token="t", window=("2026-06-21", "2026-06-27"))
+
+    # WorkflowDataAccess (both the run-creation client and run_workflow_job's
+    # own scope) is program-scoped, not guessed from opportunity_ids[0].
+    assert wda_factory.call_args.kwargs.get("program_id") == 217
+    assert "opportunity_id" not in wda_factory.call_args.kwargs
+
+    assert wda.create_run.call_args.kwargs.get("program_id") == 217
+    assert "opportunity_id" not in wda.create_run.call_args.kwargs
+
+    kw = fake_job.apply.call_args.kwargs["kwargs"]
+    assert kw.get("program_id") == 217
+    assert "opportunity_id" not in kw
+    assert kw["job_config"]["program_id"] == 217
+    assert "opportunity_id" not in kw["job_config"]
+
+
+def test_dispatch_batch_scopes_program_owned_definition_by_program(monkeypatch):
+    """Same program-scoping fix applies to the async dispatch path used by
+    the program creator's fan-out and any future direct caller."""
+    from connect_labs.workflow import audit_generation as g
+
+    wda = mock.Mock()
+    wda.create_run.return_value = _run(321, None)
+    wda_factory = mock.Mock(return_value=wda)
+    monkeypatch.setattr(g, "WorkflowDataAccess", wda_factory)
+    fake_job = mock.Mock()
+    fake_job.delay.return_value.id = "celery-task-def"
+    monkeypatch.setattr(g, "run_workflow_job", fake_job)
+
+    result = g.dispatch_batch(_creator_def(program_id=217), "2026-06-21", "2026-06-27", access_token="t")
+
+    assert result == {"run_id": 321, "task_id": "celery-task-def", "status": "running"}
+    assert wda_factory.call_args.kwargs.get("program_id") == 217
+    assert fake_job.delay.call_args.kwargs.get("program_id") == 217
+    assert "opportunity_id" not in fake_job.delay.call_args.kwargs
 
 
 def test_creator_run_default_reports_failed_status(monkeypatch):

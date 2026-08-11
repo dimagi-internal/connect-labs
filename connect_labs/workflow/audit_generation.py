@@ -44,6 +44,7 @@ from datetime import date, timedelta
 
 from connect_labs.workflow import schedules
 from connect_labs.workflow.data_access import WorkflowDataAccess
+from connect_labs.workflow.program_view import program_id_of
 from connect_labs.workflow.tasks import run_workflow_job
 
 logger = logging.getLogger(__name__)
@@ -165,10 +166,23 @@ def clustering_overrides_for(definition):
 def create_batch_run(
     definition, window_start, window_end, *, access_token, sample_overrides=None, criteria_overrides=None
 ):
-    """Create ONE fresh audit-batch run for ``definition``'s opportunity and build
-    the ``weekly_dual_track_audit_create`` job_config. Returns ``(opp_id, run,
-    job_config)``. Shared by the eager (cron) path and the in-process, progress-
-    relayed fan-out (program creator).
+    """Create ONE fresh audit-batch run for ``definition``'s owner and build
+    the ``weekly_dual_track_audit_create`` job_config. Returns ``(owner_kwargs,
+    run, job_config)`` where ``owner_kwargs`` is exactly one of
+    ``{"opportunity_id": ...}`` / ``{"program_id": ...}``. Shared by the eager
+    (cron) path and the in-process, progress-relayed fan-out (program creator).
+
+    Ownership follows the definition's own record FK (``program_id_of``, same
+    helper ``program_audit_creator``'s ``_program_owner`` uses) — NOT a guess
+    at ``opportunity_ids[0]``. A program-owned multi-opp instance (e.g. a
+    program-level Weekly Dual-Track Image Audit, scheduled directly rather
+    than via the program creator's per-opp fan-out) must get a program-scoped
+    ``WorkflowDataAccess`` and a program-owned run: scoping it to
+    ``opportunity_ids[0]`` instead sends the job handler's own
+    ``get_definition()`` looking for a program-owned definition through an
+    opp-scoped client (404 → job fails), creates the run as opp-owned instead
+    of program-owned, and leaves it invisible to a program-scoped "Open" link
+    (and to an opp-scoped one, since it isn't actually that opp's run either).
 
     ``criteria_overrides`` (optional dict) rides through job_config to the
     ``weekly_dual_track_audit_create`` handler as-is. Originally
@@ -179,18 +193,24 @@ def create_batch_run(
     settings, since the handler already reads all of these keys straight off
     ``job_config`` with a ``state`` fallback.
     """
-    opp_id = definition.opportunity_id or definition.opportunity_ids[0]
     def_id = definition.id
+    program_id = program_id_of(definition)
+    owner_kwargs = (
+        {"program_id": program_id}
+        if program_id is not None
+        else {"opportunity_id": definition.opportunity_id or definition.opportunity_ids[0]}
+    )
 
-    # Opp-scoped client — never an unscoped read (Global Constraint).
-    wda = WorkflowDataAccess(access_token=access_token, opportunity_id=opp_id)
+    # Scoped client matching the definition's actual owner — never an
+    # unscoped read (Global Constraint).
+    wda = WorkflowDataAccess(access_token=access_token, **owner_kwargs)
     try:
         run = wda.create_run(
             def_id,
-            opportunity_id=opp_id,
             period_start=window_start,
             period_end=window_end,
             initial_state={"window_start": window_start, "window_end": window_end},
+            **owner_kwargs,
         )
     finally:
         wda.close()
@@ -198,9 +218,9 @@ def create_batch_run(
     job_config = {
         "job_type": JOB_TYPE,
         "run_id": run.id,
-        "opportunity_id": opp_id,
         "window_start": window_start,
         "window_end": window_end,
+        **owner_kwargs,
     }
     if sample_overrides:
         # {muac_sample_percentage, other_sample_percentage}
@@ -208,7 +228,7 @@ def create_batch_run(
     if criteria_overrides:
         # see create_batch_run's docstring above for what this carries
         job_config.update(criteria_overrides)
-    return opp_id, run, job_config
+    return owner_kwargs, run, job_config
 
 
 def run_this_week_batch(
@@ -220,7 +240,7 @@ def run_this_week_batch(
     ``{"run_id", "sessions_created", "status"}`` (``status`` is ``"failed"`` if the
     batch errored). NOT idempotent — every call creates + fires a new run.
     """
-    opp_id, run, job_config = create_batch_run(
+    owner_kwargs, run, job_config = create_batch_run(
         definition,
         window_start,
         window_end,
@@ -230,7 +250,7 @@ def run_this_week_batch(
     )
     # bind=True Celery task; run synchronously in-process via .apply().
     eager = run_workflow_job.apply(
-        kwargs={"job_config": job_config, "access_token": access_token, "run_id": run.id, "opportunity_id": opp_id}
+        kwargs={"job_config": job_config, "access_token": access_token, "run_id": run.id, **owner_kwargs}
     )
     succeeded = eager.successful()
     res = eager.result if (succeeded and isinstance(eager.result, dict)) else {}
@@ -253,7 +273,7 @@ def dispatch_batch(
     opportunities run and glide in PARALLEL (governed by the worker pool). Returns
     ``{"run_id", "task_id", "status": "running"}``.
     """
-    opp_id, run, job_config = create_batch_run(
+    owner_kwargs, run, job_config = create_batch_run(
         definition,
         window_start,
         window_end,
@@ -261,7 +281,5 @@ def dispatch_batch(
         sample_overrides=sample_overrides,
         criteria_overrides=criteria_overrides,
     )
-    task = run_workflow_job.delay(
-        job_config=job_config, access_token=access_token, run_id=run.id, opportunity_id=opp_id
-    )
+    task = run_workflow_job.delay(job_config=job_config, access_token=access_token, run_id=run.id, **owner_kwargs)
     return {"run_id": run.id, "task_id": task.id, "status": "running"}
