@@ -320,6 +320,9 @@
     padding:.25rem .9rem; font-size:.78rem; box-shadow:none;
   }
   .mp-play:disabled{opacity:0; pointer-events:none}
+  /* Keep the focus ring findable: a keyboard user who starts the animation
+     would otherwise hold focus on a fully transparent control for ~5s. */
+  .mp-play:disabled:focus-visible{opacity:.45}
   .mp-play.done:disabled{opacity:.4; pointer-events:none}
 
   .mp-steps{display:flex; gap:.35rem; margin-top:.9rem; justify-content:center; flex-wrap:wrap}
@@ -379,8 +382,9 @@
   .aw-dist.shown{opacity:1}
   .aw-dist.win{fill:var(--accent); font-weight:700}
 
-  /* The page-level reduced-motion rule kills transitions; the scripts also
-     collapse their timers, so each diagram lands on its final frame at once. */
+  /* The page-level reduced-motion rule kills transitions; the scripts also run
+     their choreography synchronously, so each diagram lands on its final
+     frame at once. */
   @media (max-width:600px){ .mp-anim{padding:.75rem .6rem} }
 </style>
 
@@ -1708,7 +1712,12 @@ flowchart TD
   var timers = [];
   var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  function later(fn, ms){ timers.push(setTimeout(fn, reduced ? 0 : ms)); }
+  // Reduced motion runs the choreography synchronously rather than on 0 ms
+  // timers: a 0 ms timer still defers to a later macrotask, so a stage that
+  // spawns nested steps has them run after every later stage. In the Auto-WAG
+  // diagram that let stage 3 clear the north-west lines before stage 2 drew
+  // them, leaving them on the final frame.
+  function later(fn, ms){ if(reduced){ fn(); return; } timers.push(setTimeout(fn, ms)); }
   function markStep(n){ stepChips.forEach(function(s){ s.classList.toggle('on', +s.dataset.s === n); }); }
 
   function resetAnim(){
@@ -1853,7 +1862,12 @@ flowchart TD
   var chips = Array.prototype.slice.call(document.querySelectorAll('#awsteps span'));
   var timers = [];
   var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  function later(fn, ms){ timers.push(setTimeout(fn, reduced ? 0 : ms)); }
+  // Reduced motion runs the choreography synchronously rather than on 0 ms
+  // timers: a 0 ms timer still defers to a later macrotask, so a stage that
+  // spawns nested steps has them run after every later stage. In the Auto-WAG
+  // diagram that let stage 3 clear the north-west lines before stage 2 drew
+  // them, leaving them on the final frame.
+  function later(fn, ms){ if(reduced){ fn(); return; } timers.push(setTimeout(fn, ms)); }
   function markStep(n){ chips.forEach(function(s){ s.classList.toggle('on', +s.dataset.s === n); }); }
 
   function reset(){

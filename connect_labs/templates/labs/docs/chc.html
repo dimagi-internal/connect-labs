@@ -491,6 +491,8 @@
     var code = e.target.closest && e.target.closest("#docs-body code.copyable");
     if (!code) return;
     e.preventDefault();
+    // Held keys autorepeat; one copy per press, not one per repeat.
+    if (e.repeat) return;
     copyText(code.dataset.copy || code.textContent, code);
   });
 })();
