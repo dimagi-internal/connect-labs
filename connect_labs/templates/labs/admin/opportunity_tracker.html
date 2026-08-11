@@ -21,6 +21,13 @@
      restores the same visual gap the old margin-bottom on <label> gave. */
   .ot-field select { display: block; width: 100%; margin-top: 4px; font-size: 12.5px; border: 1px solid #d1d5db; border-radius: 6px; padding: 6px 8px; background: #f9fafb; color: #111827; }
 
+  .ot-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
+  @media (max-width: 700px) { .ot-metrics { grid-template-columns: 1fr; } }
+  .ot-metric-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; box-shadow: 0 1px 2px rgb(0 0 0 / 0.04); padding: 14px 16px; display: flex; align-items: center; gap: 12px; border-left: 3px solid var(--metric-accent, #2563eb); }
+  .ot-metric-icon { width: 34px; height: 34px; border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 14px; background: var(--metric-accent-bg, #eff6ff); color: var(--metric-accent, #2563eb); flex-shrink: 0; }
+  .ot-metric-value { font-size: 22px; font-weight: 800; color: #111827; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .ot-metric-label { font-size: 11.5px; color: #6b7280; font-weight: 600; margin-top: 1px; }
+
   .ot-tabbar { display: flex; gap: 4px; background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 4px; box-shadow: 0 1px 2px rgb(0 0 0 / 0.04); width: fit-content; margin-bottom: 14px; }
   .ot-tab-label { font-size: 13px; font-weight: 600; padding: 7px 15px; border-radius: 7px; color: #6b7280; cursor: pointer; user-select: none; }
   /* Visually hidden, not display:none -- display:none drops the radio from
@@ -52,15 +59,38 @@
   .ot-panel-head h2 { font-size: 14.5px; font-weight: 700; margin: 0; color: #111827; }
   .ot-panel-head .meta { font-size: 11.5px; color: #9ca3af; }
   .ot-scroller { overflow-x: auto; border-top: 1px solid #eef0f2; }
+  /* Vertical scroll, ~15 data rows, so a several-hundred-opportunity result
+     set doesn't push the Cohort Pivot (and everything below it) far down the
+     page -- the sticky header below stays pinned to the top of THIS SCROLL
+     CONTAINER (not the viewport), which is exactly what `position: sticky;
+     top: 0` already does once its nearest scrolling ancestor has a bounded
+     height, no extra JS required. */
+  .ot-detail-scroller { max-height: 520px; overflow-y: auto; }
   .ot-table { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 12.5px; white-space: nowrap; }
   .ot-table thead th { position: sticky; top: 0; background: #f9fafb; color: #6b7280; font-weight: 600; text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; padding: 8px 10px; border-bottom: 1px solid #e5e7eb; z-index: 2; }
   .ot-table th.num, .ot-table td.num { text-align: right; font-variant-numeric: tabular-nums; font-family: ui-monospace, Consolas, monospace; }
-  .ot-table tbody td { padding: 7px 10px; border-bottom: 1px solid #f1f2f4; color: #111827; }
+  .ot-table tbody td { padding: 6px 9px; border-bottom: 1px solid #f1f2f4; color: #111827; }
+  .ot-detail tbody tr:nth-child(even) td { background: #fbfbfc; }
   .ot-table tbody tr:hover td { background: #f9fafb; }
+  /* table-layout: fixed makes the <colgroup> widths in the markup below
+     authoritative instead of advisory -- without it, "auto" layout expands
+     every column to fit its longest cell and the whole table overflows past
+     the container no matter how narrow the <col> widths say to be, forcing a
+     horizontal scrollbar this table specifically shouldn't need at normal
+     zoom. Scoped to .ot-detail only: the Cohort Pivot keeps auto sizing plus
+     its own horizontal scroll, since its column count grows with the data. */
+  .ot-detail { table-layout: fixed; }
+  /* tbody td only, NOT th -- three header cells (Start Date/FLWs/Amount Paid)
+     carry a .ot-note/.pop hover+focus tooltip, positioned absolutely relative
+     to a `position: relative` span inside the th. overflow: hidden on an
+     ancestor clips ALL of its overflowing descendants regardless of their own
+     position property, so applying this to th as well silently clipped those
+     three existing tooltips into invisibility. */
+  .ot-detail tbody td { overflow: hidden; text-overflow: ellipsis; }
   .ot-detail th:first-child, .ot-detail td:first-child { position: sticky; left: 0; background: #fff; box-shadow: 1px 0 0 #e5e7eb; z-index: 1; }
   .ot-detail thead th:first-child { background: #f9fafb; z-index: 3; }
   .ot-muted { color: #9ca3af; }
-  .ot-pill { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
+  .ot-pill { display: inline-flex; max-width: 100%; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; box-sizing: border-box; }
   .ot-pill.active { background: #e3f4ec; color: #1f8a5f; }
   .ot-pill.inactive { background: #f1f2f4; color: #9ca3af; }
   .ot-pill.funder { background: #f1f2f4; color: #4b5563; }
@@ -108,7 +138,26 @@
     </div>
   </div>
   <h1 class="text-xl font-bold text-gray-900 mt-1">Opportunity Tracker</h1>
-  <p class="text-sm text-gray-500 mt-1 mb-4 max-w-3xl">A cross-workspace view of every opportunity Pulse already sees — reads Pulse's local mirror, so it isn't limited to opportunities you personally have membership on.</p>
+  <p class="text-sm text-gray-500 mt-1 mb-4 max-w-3xl">A cross-workspace view of every opportunity Pulse already sees — reads Pulse's local mirror, so it isn't limited to opportunities you personally have membership on. Test/demo opportunities are excluded throughout.</p>
+
+  <!-- Visible on every tab (not swapped by the tab CSS below) -- these three
+       reflect the Delivery Type/Country/Funder sidebar filters but, like the
+       Visit Stats charts, are NOT narrowed by the Opportunities tab's own
+       Status filter. -->
+  <div class="ot-metrics">
+    <div class="ot-metric-card" style="--metric-accent:#2563eb;--metric-accent-bg:#eff6ff;">
+      <div class="ot-metric-icon"><i class="fa-solid fa-diagram-project"></i></div>
+      <div><div class="ot-metric-value">{{ metrics.active_opps }}</div><div class="ot-metric-label">Active Opportunities</div></div>
+    </div>
+    <div class="ot-metric-card" style="--metric-accent:#1baf7a;--metric-accent-bg:#e3f4ec;">
+      <div class="ot-metric-icon"><i class="fa-solid fa-clipboard-check"></i></div>
+      <div><div class="ot-metric-value">{{ metrics.visits_7d }}</div><div class="ot-metric-label">Visits, Last 7 Days</div></div>
+    </div>
+    <div class="ot-metric-card" style="--metric-accent:#eda100;--metric-accent-bg:#fef3e2;">
+      <div class="ot-metric-icon"><i class="fa-solid fa-earth-africa"></i></div>
+      <div><div class="ot-metric-value">{{ metrics.active_countries }}</div><div class="ot-metric-label">Active Countries</div></div>
+    </div>
+  </div>
 
   {% if messages %}
   <div class="mb-4 space-y-2">
@@ -217,9 +266,14 @@
         <!-- ================= TAB 1: OPPORTUNITIES ================= -->
         <section class="ot-tab-panel" id="ot-panel-opps">
           <div class="ot-panel">
-            <div class="ot-panel-head"><h2>Opportunity Info Detailed</h2><span class="meta">{{ detail_rows|length }} opportunities · sourced from PulseRollup + PulseWork</span></div>
-            <div class="ot-scroller">
+            <div class="ot-panel-head"><h2>Opportunity Info Detailed</h2><span class="meta">{{ detail_rows|length }} opportunities (test/demo excluded) · sourced from PulseRollup + PulseWork</span></div>
+            <div class="ot-scroller ot-detail-scroller">
               <table class="ot-table ot-detail">
+                <colgroup>
+                  <col style="width:4%"><col style="width:6%"><col style="width:7%"><col style="width:8%"><col style="width:9%">
+                  <col style="width:15%"><col style="width:6%"><col style="width:6%"><col style="width:6%"><col style="width:4%">
+                  <col style="width:6%"><col style="width:6%"><col style="width:6%"><col style="width:5%"><col style="width:6%">
+                </colgroup>
                 <thead><tr>
                   <th>Opp ID</th><th>Country</th><th>Funder</th><th>Delivery Type</th><th>LLO</th><th>Opp Name</th><th>Status</th>
                   <th><span class="ot-note" tabindex="0">Start Date<span class="pop">Not currently ingested — needs a spike to confirm the field exists upstream.</span></span></th>
@@ -232,11 +286,11 @@
                   {% for row in detail_rows %}
                   <tr>
                     <td class="ot-muted">{{ row.opportunity_id }}</td>
-                    <td>{{ row.country|default:"—" }}</td>
-                    <td><span class="ot-pill funder">{{ row.funder }}</span></td>
-                    <td>{{ row.delivery_type }}</td>
-                    <td>{{ row.llo|default:"—" }}</td>
-                    <td class="font-semibold">{{ row.name }}</td>
+                    <td title="{{ row.country }}">{{ row.country|default:"—" }}</td>
+                    <td><span class="ot-pill funder" title="{{ row.funder }}">{{ row.funder }}</span></td>
+                    <td title="{{ row.delivery_type }}">{{ row.delivery_type }}</td>
+                    <td title="{{ row.llo }}">{{ row.llo|default:"—" }}</td>
+                    <td class="font-semibold" title="{{ row.name }}">{{ row.name }}</td>
                     <td>{% if row.status == "Active" %}<span class="ot-pill active">Active</span>{% else %}<span class="ot-pill inactive">Inactive</span>{% endif %}</td>
                     <td class="ot-muted">{{ row.start_date|default:"—" }}</td>
                     <td>{{ row.end_date|default:"—" }}</td>
