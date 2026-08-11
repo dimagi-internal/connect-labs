@@ -42,7 +42,13 @@ def _audited(action):
 
         @functools.wraps(fn)
         def wrapper(self, *args, **kwargs):
-            def emit(result=None, outcome=_AuditOutcome.SUCCESS, error: str | None = None):
+            def emit(
+                result=None,
+                outcome=_AuditOutcome.SUCCESS,
+                error: str | None = None,
+                upstream_status: int | None = None,
+                upstream_error: str | None = None,
+            ):
                 try:
                     try:
                         bound = sig.bind(self, *args, **kwargs)
@@ -68,6 +74,13 @@ def _audited(action):
                         metadata["record_ids"] = list(record_ids)[:100]
                     if error:
                         metadata["error"] = error
+                    # The upstream HTTP status and the httpx failure class, never
+                    # the response body: this stream is the HIPAA audit trail and
+                    # a Connect error body can quote record content.
+                    if upstream_status is not None:
+                        metadata["upstream_status"] = upstream_status
+                    if upstream_error:
+                        metadata["upstream_error"] = upstream_error
                     program_id = params.get("program_id") or self.program_id
                     _audit_service.record(
                         action,
@@ -87,7 +100,12 @@ def _audited(action):
             try:
                 result = fn(self, *args, **kwargs)
             except Exception as exc:
-                emit(outcome=_AuditOutcome.FAILURE, error=type(exc).__name__)
+                emit(
+                    outcome=_AuditOutcome.FAILURE,
+                    error=type(exc).__name__,
+                    upstream_status=getattr(exc, "status_code", None),
+                    upstream_error=getattr(exc, "upstream_error", None),
+                )
                 raise
             emit(result=result)
             return result
@@ -105,17 +123,33 @@ class LabsAPIError(Exception):
     access. For pure network errors, both are ``None``.
     """
 
-    def __init__(self, message: str, status_code: int | None = None, body: str | None = None):
+    def __init__(
+        self,
+        message: str,
+        status_code: int | None = None,
+        body: str | None = None,
+        upstream_error: str | None = None,
+    ):
         super().__init__(message)
         self.status_code = status_code
         self.body = body[:_BODY_TRUNCATION] if body is not None else None
+        # httpx class that actually failed (ReadTimeout, ConnectError,
+        # HTTPStatusError...). Without it a timeout and a 502 are the same
+        # string downstream, which is what made 2177 recorded failures
+        # untriageable in the 2026-08-11 telemetry review.
+        self.upstream_error = upstream_error
 
 
 def _wrap_http_error(message: str, exc: httpx.HTTPError) -> LabsAPIError:
     response = getattr(exc, "response", None)
     status_code = response.status_code if response is not None else None
     body = response.text if response is not None else None
-    return LabsAPIError(message, status_code=status_code, body=body)
+    return LabsAPIError(
+        message,
+        status_code=status_code,
+        body=body,
+        upstream_error=type(exc).__name__,
+    )
 
 
 class LabsRecordAPIClient:
