@@ -1204,7 +1204,7 @@ class TaskManagerView(AdminRequiredMixin, TemplateView):
                     WHERE data->'state'->'active_job'->>'job_id' IS NOT NULL
                     ORDER BY (data->'state'->'active_job'->>'started_at')::timestamp DESC NULLS LAST
                     LIMIT 50
-                """)
+                    """)
 
                 columns = [col[0] for col in cursor.description]
                 for row in cursor.fetchall():
