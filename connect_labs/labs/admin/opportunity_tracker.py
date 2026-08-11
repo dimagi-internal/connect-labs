@@ -228,10 +228,16 @@ def cohort_pivot(opportunities: list[PulseOpportunity]) -> dict:
     # One grouped scan with a conditional Sum for the 7-day figure, instead
     # of two separate queries differing only by that date cutoff.
     since_7d = timezone.now() - timedelta(days=7)
+    # Annotation names must differ from the source field "n" -- naming one
+    # of them "n" made Django's alias resolution treat the second Sum("n")
+    # in the same annotate() call as aggregating over the just-created
+    # annotation instead of the model field ("Cannot compute Sum('n'): 'n'
+    # is an aggregate"), a real runtime error `ast.parse`-only local
+    # syntax-checking could never have caught without a working test DB.
     visits_rows = (
         PulseRollup.objects.filter(status="approved", opportunity_id__in=opp_ids)
         .values("opportunity_id")
-        .annotate(n=Sum("n"), n_7d=Sum("n", filter=Q(bucket_hour__gte=since_7d)))
+        .annotate(total=Sum("n"), total_7d=Sum("n", filter=Q(bucket_hour__gte=since_7d)))
     )
 
     cells: dict[tuple[str, str], dict] = {}
@@ -255,8 +261,8 @@ def cohort_pivot(opportunities: list[PulseOpportunity]) -> dict:
         if oid not in country_of:
             continue
         c = cell(oid)
-        c["visits"] += row["n"] or 0
-        c["visits_7d"] += row["n_7d"] or 0
+        c["visits"] += row["total"] or 0
+        c["visits_7d"] += row["total_7d"] or 0
 
     countries = sorted({k[0] for k in cells})
     services = sorted({k[1] for k in cells})
