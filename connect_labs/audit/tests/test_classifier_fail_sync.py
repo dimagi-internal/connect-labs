@@ -93,3 +93,32 @@ def test_sync_skipped_when_nothing_was_ever_flagged(monkeypatch):
     classifier_fail_sync.sync_after_save(session, _FakeRequest(), _FakeDataAccess())
 
     assert "args" not in called
+
+
+def test_sync_still_records_human_review_when_url_resolution_raises(monkeypatch):
+    """Regression: if resolving classifier-fail URLs raises (e.g. a Connect
+    API error), the reviewer's real, already-saved verdict
+    (human_result_by_blob/human_notes_by_blob) must still reach
+    sync_classifier_fail_outcomes -- a failure in this best-effort URL
+    backfill must never discard the actual human review sync."""
+    session = _FakeSession({"100": {"assessments": {"blobA": _assessment()}}})
+
+    def _boom(**kwargs):
+        raise RuntimeError("Connect API down")
+
+    monkeypatch.setattr(classifier_fail_sync, "resolve_urls_by_blob", _boom)
+
+    called = {}
+    monkeypatch.setattr(
+        classifier_fail_sync.s3_export,
+        "sync_classifier_fail_outcomes",
+        lambda *a, **kw: called.setdefault("args", (a, kw)),
+    )
+
+    classifier_fail_sync.sync_after_save(session, _FakeRequest(), _FakeDataAccess())
+
+    assert "args" in called
+    args, _kwargs = called["args"]
+    assert args[1] == {"blobA": "fail"}  # human_result_by_blob, unaffected
+    assert args[2] == {"blobA": "confirmed"}  # human_notes_by_blob, unaffected
+    assert args[3] == {}  # url_by_blob falls back to empty, not raised

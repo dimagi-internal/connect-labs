@@ -178,6 +178,45 @@ def test_resolve_urls_by_blob_groups_by_each_images_own_opportunity(monkeypatch)
     assert urls["blobB"]["connect_url"].startswith("https://connect.dimagi.com/a/org-b/opportunity/777/")
 
 
+def test_resolve_urls_by_blob_one_groups_failure_does_not_discard_another_groups_success(monkeypatch):
+    """Regression: each opportunity group is resolved in its own try/except --
+    a failure processing one group (here, opportunity 777) must not wipe out
+    URLs a PRIOR group (opportunity 555) in the same call already resolved."""
+
+    def _hq_base(access_token, opp_id):
+        if opp_id == 777:
+            raise RuntimeError("HQ metadata service down")
+        return "https://hq-a/forms"
+
+    monkeypatch.setattr(link_helpers, "resolve_hq_link_base", _hq_base)
+    monkeypatch.setattr(link_helpers, "resolve_org_slug", lambda access_token, opp_id, request=None: "acme")
+
+    class _MultiOppDataAccess:
+        access_token = "tok"
+
+        def get_visits_batch(self, visit_ids, opportunity_id):
+            return [{"id": vid, "xform_id": f"xf{vid}", "user_id": 7, "user_visit_id": 99} for vid in visit_ids]
+
+    visit_images = {
+        "1": [{"blob_id": "blobA", "opportunity_id": 555}],
+        "2": [{"blob_id": "blobB", "opportunity_id": 777}],
+    }
+
+    urls = link_helpers.resolve_urls_by_blob(
+        data_access=_MultiOppDataAccess(),
+        access_token="tok",
+        opportunity_id=1,
+        visit_ids=[1, 2],
+        visit_images=visit_images,
+    )
+
+    # blobA's opportunity (555) resolved fine and must still be present, even
+    # though blobB's opportunity (777) raised while resolving HQ metadata --
+    # NOT expected to raise, and blobA must not have been discarded.
+    assert urls["blobA"]["form_url"] == "https://hq-a/forms/xf1/"
+    assert "blobB" not in urls
+
+
 def test_resolve_urls_by_blob_falls_back_to_default_opportunity_when_image_has_none(monkeypatch):
     """An image without its own opportunity_id uses the passed-in default --
     the common (single-opportunity session) case, unchanged from before."""

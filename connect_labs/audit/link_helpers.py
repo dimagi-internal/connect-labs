@@ -139,8 +139,10 @@ def resolve_urls_by_blob(
         visit_images: {visit_id_str: [image_dict, ...]} (session.data["visit_images"] shape).
         request: Live HttpRequest if available; None in background contexts.
 
-    Returns {} if visit_ids is empty, or a partial mapping if one opportunity's
-    visit-batch fetch fails while another's succeeds (failures are logged, not raised).
+    Returns {} if visit_ids is empty, or a partial mapping if resolving one
+    opportunity's group fails while another's succeeds -- each group is
+    isolated in its own try/except, so a failure never discards URLs a prior
+    group in the same call already resolved (failures are logged, not raised).
     """
     if not visit_ids:
         return {}
@@ -156,33 +158,39 @@ def resolve_urls_by_blob(
 
     urls_by_blob: dict[str, dict] = {}
     for opp_for_group, grouped_visit_images in visit_images_by_opp.items():
-        visit_ids_for_group = [int(vid) for vid in grouped_visit_images]
+        # The WHOLE group is inside one try/except -- not just get_visits_batch
+        # -- so a failure resolving one opportunity's URLs (e.g. reverse()
+        # raising on a malformed opp_for_group) can't wipe out urls_by_blob
+        # entries a PRIOR group in this same call already resolved successfully.
         try:
+            visit_ids_for_group = [int(vid) for vid in grouped_visit_images]
             visits = data_access.get_visits_batch(visit_ids_for_group, opp_for_group)
-        except Exception:
-            logger.exception("[Audit] Failed to fetch visit batch for opportunity %s", opp_for_group)
-            continue
 
-        xform_id_by_visit = {str(v["id"]): v.get("xform_id") for v in visits}
-        link_id_by_visit = {str(v["id"]): (v.get("user_id"), v.get("user_visit_id")) for v in visits}
+            xform_id_by_visit = {str(v["id"]): v.get("xform_id") for v in visits}
+            link_id_by_visit = {str(v["id"]): (v.get("user_id"), v.get("user_visit_id")) for v in visits}
 
-        hq_link_base = resolve_hq_link_base(access_token, opp_for_group)
-        org_slug = resolve_org_slug(access_token, opp_for_group, request=request)
+            hq_link_base = resolve_hq_link_base(access_token, opp_for_group)
+            org_slug = resolve_org_slug(access_token, opp_for_group, request=request)
 
-        for visit_id_str, images in grouped_visit_images.items():
-            form_url = build_hq_form_url(hq_link_base, xform_id_by_visit.get(visit_id_str))
-            user_id, user_visit_id = link_id_by_visit.get(visit_id_str, (None, None))
-            connect_visit_url = build_connect_visit_url(connect_url, org_slug, opp_for_group, user_id, user_visit_id)
-            for image in images:
-                blob_id = image.get("blob_id")
-                if not blob_id:
-                    continue
-                image_path = reverse(
-                    "audit:audit_image_connect", kwargs={"opp_id": opp_for_group, "blob_id": blob_id}
+            for visit_id_str, images in grouped_visit_images.items():
+                form_url = build_hq_form_url(hq_link_base, xform_id_by_visit.get(visit_id_str))
+                user_id, user_visit_id = link_id_by_visit.get(visit_id_str, (None, None))
+                connect_visit_url = build_connect_visit_url(
+                    connect_url, org_slug, opp_for_group, user_id, user_visit_id
                 )
-                urls_by_blob[blob_id] = {
-                    "image_url": build_absolute_url(image_path, request=request),
-                    "form_url": form_url,
-                    "connect_url": connect_visit_url,
-                }
+                for image in images:
+                    blob_id = image.get("blob_id")
+                    if not blob_id:
+                        continue
+                    image_path = reverse(
+                        "audit:audit_image_connect", kwargs={"opp_id": opp_for_group, "blob_id": blob_id}
+                    )
+                    urls_by_blob[blob_id] = {
+                        "image_url": build_absolute_url(image_path, request=request),
+                        "form_url": form_url,
+                        "connect_url": connect_visit_url,
+                    }
+        except Exception:
+            logger.exception("[Audit] Failed to resolve URLs for opportunity %s", opp_for_group)
+            continue
     return urls_by_blob
