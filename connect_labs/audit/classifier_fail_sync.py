@@ -54,7 +54,18 @@ def _sync_after_save(session, request, data_access) -> None:
         return
 
     opportunity_id = session.opportunity_id
-    url_by_blob = _resolve_urls(session, request, data_access, opportunity_id) if opportunity_id else {}
+    url_by_blob = {}
+    if opportunity_id:
+        # Never let a URL-resolution failure here prevent the sync below --
+        # human_result_by_blob/human_notes_by_blob are the reviewer's real,
+        # already-saved verdict and must still reach classifier_fails.csv even
+        # if the best-effort URL backfill fails (see the identical pattern
+        # applied to the AI-review/duplicate-detection producers in
+        # commit 4d6c87c6, which this fourth call site was missed from).
+        try:
+            url_by_blob = _resolve_urls(session, request, data_access, opportunity_id)
+        except Exception:
+            logger.exception("[Audit] Failed to resolve classifier-fail URLs for session %s", session.id)
 
     reviewed_by = getattr(request.user, "username", "") or ""
     s3_export.sync_classifier_fail_outcomes(
