@@ -295,14 +295,24 @@ def run_grouping_duplicate_detection(
                     )
 
             if target_classifier_fail_rows:
-                access_token = data_access.access_token
-                urls_by_blob = resolve_urls_by_blob(
-                    data_access=data_access,
-                    access_token=access_token,
-                    opportunity_id=opp_id,
-                    visit_ids=session.visit_ids or [],
-                    visit_images=session.data.get("visit_images", {}),
-                )
+                # Never let a failure here propagate: this runs inside the
+                # `for target in targets` loop with no per-target try/except,
+                # so an uncaught exception would abort every REMAINING
+                # target too, not just lose this one's training-data URLs.
+                try:
+                    access_token = data_access.access_token
+                    urls_by_blob = resolve_urls_by_blob(
+                        data_access=data_access,
+                        access_token=access_token,
+                        opportunity_id=opp_id,
+                        visit_ids=session.visit_ids or [],
+                        visit_images=session.data.get("visit_images", {}),
+                    )
+                except Exception:
+                    logger.exception(
+                        "[DuplicateDetection] Failed to resolve classifier-fail URLs for session %s", session.id
+                    )
+                    urls_by_blob = {}
                 for row in target_classifier_fail_rows:
                     row.update(urls_by_blob.get(row["blob_id"], {}))
                 classifier_fail_rows.extend(target_classifier_fail_rows)

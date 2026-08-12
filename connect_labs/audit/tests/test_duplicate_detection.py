@@ -669,6 +669,29 @@ def test_run_resolves_urls_before_human_review_when_data_access_given(monkeypatc
 
 
 @override_settings(SCALE_VALIDATION_API_KEY="k")
+def test_run_completes_normally_when_url_resolution_raises(monkeypatch):
+    """Regression: if resolve_urls_by_blob raises, run_duplicate_detection must
+    not propagate -- its caller still needs to call save_audit_session for the
+    duplicate flags already applied to `session` in memory, and an uncaught
+    exception here would prevent that entirely."""
+    session = _session({"100": [_img("a")]})
+    monkeypatch.setattr("connect_labs.audit.duplicate_detection.get_signed_url", lambda opp, blob, tok: "https://s")
+    monkeypatch.setattr(DuplicateDetectionClient, "detect", lambda self, manifest: [["a", "b"]])
+    session.data["visit_images"]["101"] = [_img("b")]
+
+    def _boom(**kwargs):
+        raise RuntimeError("Connect API down")
+
+    monkeypatch.setattr("connect_labs.audit.duplicate_detection.resolve_urls_by_blob", _boom)
+    monkeypatch.setattr("connect_labs.audit.duplicate_detection.s3_export.record_classifier_fails", lambda rows: None)
+
+    summary = run_duplicate_detection(session, access_token="tok", data_access=object())
+
+    assert summary["images_flagged"] == 2  # the actual duplicate-flagging work, unaffected
+    assert session.get_assessments(100)["a"]["duplicate_group"] == 0  # flag still applied in memory
+
+
+@override_settings(SCALE_VALIDATION_API_KEY="k")
 def test_run_stamps_each_row_with_its_own_image_opportunity_in_multi_opp_session(monkeypatch):
     """Regression: a multi-opp session (e.g. muac_picture_audit) can flag
     images belonging to DIFFERENT opportunities in the same duplicate group.

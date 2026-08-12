@@ -545,13 +545,23 @@ def run_duplicate_detection(
             # opportunity_id (falling back to the one passed here) -- a
             # multi-opp session (e.g. muac_picture_audit) can flag images
             # sourced from a different opportunity than session.opportunity_id.
-            urls_by_blob = resolve_urls_by_blob(
-                data_access=data_access,
-                access_token=access_token,
-                opportunity_id=session.opportunity_id,
-                visit_ids=session.visit_ids or [],
-                visit_images=session.data.get("visit_images", {}),
-            )
+            # Never let a failure here propagate: this function's caller
+            # (_run_duplicate_detection_on_sessions) still needs to save every
+            # duplicate flag already applied to `session` in memory above, and
+            # an uncaught exception here would lose all of it.
+            try:
+                urls_by_blob = resolve_urls_by_blob(
+                    data_access=data_access,
+                    access_token=access_token,
+                    opportunity_id=session.opportunity_id,
+                    visit_ids=session.visit_ids or [],
+                    visit_images=session.data.get("visit_images", {}),
+                )
+            except Exception:
+                logger.exception(
+                    "[DuplicateDetection] Failed to resolve classifier-fail URLs for session %s", session.id
+                )
+                urls_by_blob = {}
             for row in classifier_fail_rows:
                 row.update(urls_by_blob.get(row["blob_id"], {}))
         s3_export.record_classifier_fails(classifier_fail_rows)

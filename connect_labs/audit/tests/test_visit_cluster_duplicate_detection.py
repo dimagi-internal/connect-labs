@@ -229,6 +229,54 @@ def test_calls_api_once_per_grouping_and_flags_returned_ids():
     data_access.save_audit_session.assert_called_once_with(session)
 
 
+def test_url_resolution_failure_on_one_target_does_not_abort_remaining_targets(monkeypatch):
+    """Regression: this runs inside a `for target in targets` loop with no
+    per-target try/except elsewhere -- if resolve_urls_by_blob raised
+    uncaught, it would abort every REMAINING target too (e.g. every other
+    FLW's session in the same weekly_dual_track_audit run), not just lose
+    the failing target's training-data URLs."""
+    session1 = _session(opportunity_id=100)
+    session2 = _session(opportunity_id=200)
+    clusters = [{"group_id": "g1", "visit_ids": [111, 112], "image_count": 2, "image_ids": ["a", "b"]}]
+    blob_meta = {
+        "a": {"visit_id": 111, "question_id": "form/muac"},
+        "b": {"visit_id": 112, "question_id": "form/muac"},
+    }
+    client = Mock()
+    client.detect.return_value = [["a", "b"]]
+
+    data_access1 = Mock()
+    data_access2 = Mock()
+
+    def _resolve_urls_by_blob(**kwargs):
+        if kwargs["opportunity_id"] == 100:
+            raise RuntimeError("Connect API down")
+        return {}
+
+    monkeypatch.setattr(
+        "connect_labs.audit.visit_cluster_duplicate_detection.resolve_urls_by_blob", _resolve_urls_by_blob
+    )
+    monkeypatch.setattr(
+        "connect_labs.audit.visit_cluster_duplicate_detection.s3_export.record_classifier_fails", lambda rows: None
+    )
+
+    run_grouping_duplicate_detection(
+        [
+            _target(session1, clusters, blob_meta, opp_id=100, data_access=data_access1),
+            _target(session2, clusters, blob_meta, opp_id=200, data_access=data_access2),
+        ],
+        get_signed_url=lambda bid, oid: f"https://x/{bid}",
+        client=client,
+    )
+
+    # Both targets' duplicate flags were applied and saved -- target 1's
+    # URL-resolution failure didn't abort target 2's processing.
+    assert session1.data["visit_results"]["111"]["assessments"]["a"]["duplicate_group"] == 0
+    assert session2.data["visit_results"]["111"]["assessments"]["a"]["duplicate_group"] == 0
+    data_access1.save_audit_session.assert_called_once_with(session1)
+    data_access2.save_audit_session.assert_called_once_with(session2)
+
+
 def test_classifier_fail_row_ai_implied_result_is_always_none(monkeypatch):
     """The duplicate detector is flag-only -- its classifier-fail row's
     ai_implied_result must always be None, even when the flagged assessment
