@@ -186,9 +186,9 @@ class AuditCriteria:
     # Filter to specific deliver unit type(s) — derived from form.@name in form_json,
     # since Connect never exposes a deliver-unit name, only the numeric FK id.
     deliver_unit_types: list[str] | None = None
-    visit_statuses: list[
-        str
-    ] | None = None  # Filter to specific visit status(es): pending/approved/rejected/over_limit
+    visit_statuses: list[str] | None = (
+        None  # Filter to specific visit status(es): pending/approved/rejected/over_limit
+    )
     related_fields: list[dict] | None = None  # List of {image_path, field_path, label}
     exclude_prior_audited: bool = False  # Drop images already audited in a completed session
     # Restrict date_range audits to visits falling on these ISO weekdays (1=Monday..7=Sunday).
@@ -1238,9 +1238,15 @@ class AuditDataAccess(BaseDataAccess):
         """
         cache_key = _session_opp_cache_key(session_id)
         remembered_opp_id = cache.get(cache_key)
+        # Whether any rung failed rather than genuinely missing. A miss is memoised
+        # for the TTL, so recording one off the back of an upstream blip would turn a
+        # transient error into a sticky "session not found" for a session that exists
+        # -- a worse bug than the 500 this method is being taught to survive.
+        errored = False
 
         if remembered_opp_id is not None:
-            session = self._fetch_session(session_id, opportunity_id=remembered_opp_id)
+            session, failed = self._try_fetch_session(session_id, opportunity_id=remembered_opp_id)
+            errored |= failed
             if session:
                 return session
             # Fall through to a re-resolve, but do NOT evict the memo here. This
@@ -1252,7 +1258,8 @@ class AuditDataAccess(BaseDataAccess):
             # A genuine relocation still self-heals: a successful resolve below
             # overwrites the entry, and it expires on its own regardless.
 
-        session = self._fetch_session(session_id)
+        session, failed = self._try_fetch_session(session_id)
+        errored |= failed
         if session:
             self._remember_session_location(session_id, session)
             return session
@@ -1270,9 +1277,42 @@ class AuditDataAccess(BaseDataAccess):
             logger.debug("Cross-opportunity session search failed for session %s", session_id, exc_info=True)
             return None
 
-        if found is None:
+        if found is None and not errored:
             cache.set(miss_key, True, _SESSION_MISS_CACHE_TTL)
         return found
+
+    def _try_fetch_session(
+        self, session_id: int, opportunity_id: int | None = None
+    ) -> tuple[AuditSessionRecord | None, bool]:
+        """A rung of the resolution ladder: upstream trouble means "not here", not 500.
+
+        The ladder's whole design is "try the cheap scope, fall through to the next" —
+        but only the sweep at the bottom was wrapped, so an upstream error on either
+        of the first two rungs escaped and 500'd the request instead of trying the
+        remaining rungs. That is not theoretical: on 2026-08-08 one auditor took
+        **1807 consecutive 500s over 26 hours** on /audit/api/12296/save/, every one a
+        LabsAPIError from this lookup, while the sweep that might have located the
+        session never got to run.
+
+        A raise here and a `None` here mean the same thing to the caller — this scope
+        did not yield the session — so they take the same branch. Logged at WARNING
+        rather than swallowed: a rung failing is worth seeing even when the ladder
+        recovers, and it is the only trace left once the request succeeds.
+
+        Returns ``(session, errored)``. The caller needs the two apart even though it
+        treats them alike here, because a genuine miss is memoised and an error must
+        not be.
+        """
+        try:
+            return self._fetch_session(session_id, opportunity_id=opportunity_id), False
+        except Exception:
+            logger.warning(
+                "Session lookup failed for session %s under opportunity %s; trying the next scope",
+                session_id,
+                opportunity_id if opportunity_id is not None else "ambient",
+                exc_info=True,
+            )
+            return None, True
 
     def _fetch_session(self, session_id: int, opportunity_id: int | None = None) -> AuditSessionRecord | None:
         """One round-trip for a session by id, optionally under an explicit scope."""
