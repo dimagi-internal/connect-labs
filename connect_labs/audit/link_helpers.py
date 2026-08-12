@@ -18,6 +18,7 @@ from django.urls import reverse
 from connect_labs.labs.analysis.data_access import fetch_opportunity_metadata
 from connect_labs.labs.context import get_org_data
 from connect_labs.labs.integrations.connect.oauth import fetch_user_organization_data
+from connect_labs.utils.urls import build_absolute_url as _build_absolute_url_no_request
 
 logger = logging.getLogger(__name__)
 
@@ -90,19 +91,13 @@ def resolve_org_slug(access_token: str, opportunity_id, request=None) -> str:
 def build_absolute_url(path: str, request=None) -> str:
     """Return an absolute URL for `path`, with or without a live request.
 
-    Mirrors connect_labs/program/tasks.py's _build_absolute_uri fallback (the
-    django.contrib.sites-based pattern already used for Celery-task emails) for the
-    request-less case.
+    request=None uses connect_labs.utils.urls.build_absolute_url -- the same
+    shared Site-based fallback connect_labs/program/tasks.py and
+    connect_labs/utils/sms.py use for their own request-less contexts.
     """
     if request is not None:
         return request.build_absolute_uri(path)
-    try:
-        from django.contrib.sites.models import Site
-
-        domain = Site.objects.get_current().domain
-    except Exception:
-        domain = "localhost"
-    return f"https://{domain}{path}"
+    return _build_absolute_url_no_request(path)
 
 
 def resolve_urls_by_blob(
