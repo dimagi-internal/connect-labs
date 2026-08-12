@@ -6,7 +6,14 @@ time (no live HTTP request) as well as at the human save/complete time (a live
 request, session-cached org data) -- see classifier_fail_sync.py and tasks.py.
 """
 
+from django.test import override_settings
+
 from connect_labs.audit import link_helpers
+
+# Forces a real, isolated cache backend for the caching test below -- without
+# this, the project's configured default CACHES backend may not actually
+# cache (e.g. DummyCache) or may not be process-isolated between test runs.
+_LOCMEM = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
 
 
 class _FakeRequest:
@@ -33,6 +40,7 @@ def test_resolve_org_slug_uses_session_cached_data_when_request_given(monkeypatc
     assert link_helpers.resolve_org_slug("tok", 42, request=request) == "acme-health"
 
 
+@override_settings(CACHES=_LOCMEM)
 def test_resolve_org_slug_falls_back_to_live_api_call_without_request(monkeypatch):
     """Without a request (background/Celery context), fetch_user_organization_data
     is called directly with the access token."""
@@ -44,13 +52,37 @@ def test_resolve_org_slug_falls_back_to_live_api_call_without_request(monkeypatc
 
     monkeypatch.setattr(link_helpers, "fetch_user_organization_data", _fake_fetch)
 
-    assert link_helpers.resolve_org_slug("tok", 42, request=None) == "acme-health"
-    assert captured["access_token"] == "tok"
+    # Distinct access_token from the other resolve_org_slug tests below --
+    # resolve_org_slug caches its result keyed by a hash of the token
+    # (_ORG_DATA_CACHE_TTL), so reusing the same literal token across tests
+    # would let one test's cached result leak into another's assertions.
+    assert link_helpers.resolve_org_slug("tok-fallback", 42, request=None) == "acme-health"
+    assert captured["access_token"] == "tok-fallback"
 
 
+@override_settings(CACHES=_LOCMEM)
 def test_resolve_org_slug_returns_empty_when_opportunity_not_found(monkeypatch):
     monkeypatch.setattr(link_helpers, "fetch_user_organization_data", lambda access_token: {"opportunities": []})
-    assert link_helpers.resolve_org_slug("tok", 42, request=None) == ""
+    assert link_helpers.resolve_org_slug("tok-not-found", 42, request=None) == ""
+
+
+@override_settings(CACHES=_LOCMEM)
+def test_resolve_org_slug_caches_the_live_api_call_per_token(monkeypatch):
+    """A second call with the SAME token, in the same short window, must not
+    re-fetch -- this is what lets a batch run resolve URLs for many sessions
+    of one user without repeating the org-data call once per session."""
+    call_count = {"n": 0}
+
+    def _fake_fetch(access_token):
+        call_count["n"] += 1
+        return {"opportunities": [{"id": 42, "organization": "acme-health"}]}
+
+    monkeypatch.setattr(link_helpers, "fetch_user_organization_data", _fake_fetch)
+
+    token = "tok-cache-dedup"
+    assert link_helpers.resolve_org_slug(token, 42, request=None) == "acme-health"
+    assert link_helpers.resolve_org_slug(token, 42, request=None) == "acme-health"
+    assert call_count["n"] == 1
 
 
 # ── build_absolute_url ───────────────────────────────────────────────────────────

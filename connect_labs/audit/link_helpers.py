@@ -8,9 +8,11 @@ training-data export (connect_labs/audit/classifier_fail_sync.py) can build the
 same links without duplicating the logic.
 """
 
+import hashlib
 import logging
 
 from django.conf import settings
+from django.core.cache import cache
 from django.urls import reverse
 
 from connect_labs.labs.analysis.data_access import fetch_opportunity_metadata
@@ -18,6 +20,11 @@ from connect_labs.labs.context import get_org_data
 from connect_labs.labs.integrations.connect.oauth import fetch_user_organization_data
 
 logger = logging.getLogger(__name__)
+
+# Short TTL: this only exists to de-dupe the N-sessions-in-one-batch-run case
+# (AI review / duplicate detection resolving URLs once per session, all for
+# the same user/token) -- not meant to serve stale org data for long.
+_ORG_DATA_CACHE_TTL = 300
 
 
 def resolve_hq_link_base(access_token: str, opportunity_id: int) -> str | None:
@@ -63,11 +70,17 @@ def resolve_org_slug(access_token: str, opportunity_id, request=None) -> str:
     (get_org_data) -- no extra API call. Otherwise (background/Celery contexts, e.g.
     AI review or duplicate detection, which have no request) fall back to a live
     fetch_user_organization_data call -- the same /export/opp_org_program_list/ the
-    OAuth login flow already makes, just uncached here.
+    OAuth login flow already makes -- cached briefly (_ORG_DATA_CACHE_TTL) so a
+    batch run resolving URLs for many sessions of the same user doesn't repeat
+    this call once per session.
     """
     org_data = get_org_data(request) if request is not None else None
     if not org_data:
-        org_data = fetch_user_organization_data(access_token) or {}
+        cache_key = f"link_helpers:org_data:{hashlib.sha256(access_token.encode()).hexdigest()}"
+        org_data = cache.get(cache_key)
+        if org_data is None:
+            org_data = fetch_user_organization_data(access_token) or {}
+            cache.set(cache_key, org_data, _ORG_DATA_CACHE_TTL)
     for opp in org_data.get("opportunities", []):
         if opp.get("id") == opportunity_id:
             return opp.get("organization", "")
