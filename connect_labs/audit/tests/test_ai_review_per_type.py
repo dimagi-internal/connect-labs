@@ -9,9 +9,18 @@ _LOCMEM = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache
 
 
 class _FakeSession:
-    def __init__(self, data):
+    def __init__(self, data, id=1, workflow_run_id=None, opportunity_id=42, opportunity_name="Test Opp"):
         self.data = data
         self.assessments = []  # (visit_id, blob_id, question_id, result, ai_result, ai_notes, ai_confidence)
+        # Only needed by the classifier_fail_rows path (session.id/etc. -- see
+        # tasks.py's fail_verdicts loop) -- other tests in this file don't
+        # exercise that path far enough to touch these, but a fail-producing
+        # test needs real values rather than a crash-and-swallow AttributeError.
+        self.id = id
+        self.workflow_run_id = workflow_run_id
+        self.opportunity_id = opportunity_id
+        self.opportunity_name = opportunity_name
+        self.visit_ids = list(data.get("visit_images", {}).keys())
 
     def set_assessment(
         self, visit_id, blob_id, question_id, result, notes, ai_result=None, ai_notes=None, ai_confidence=None
@@ -190,6 +199,51 @@ def test_two_independent_reviewers_on_one_path_both_run_and_fail_wins(patched_re
     assert ai_result == "no_match"
     assert ai_notes == "Distinctly Failed"
     assert result == "fail"
+
+
+def test_classifier_fail_rows_get_urls_resolved_before_human_review(patched_registry, monkeypatch):
+    """A freshly-recorded classifier-fail row should carry image/form/connect
+    URLs resolved right now (once per session), not wait for a human to
+    save/complete the session (see connect_labs/audit/classifier_fail_sync.py
+    for the pre-existing post-review-only path this feature no longer depends
+    on exclusively)."""
+    session = _FakeSession(
+        {
+            "visit_images": {
+                "1": [{"blob_id": "blobA", "question_id": "form/photo_a", "related_fields": []}],
+            }
+        }
+    )
+    data_access = _FakeDataAccess(session)
+    ai_reviewers = {"form/photo_a": [{"agent_id": "agent_fail", "auto_apply_actions": ["nope"]}]}
+
+    captured_resolve_kwargs = {}
+
+    def _fake_resolve_urls_by_blob(**kwargs):
+        captured_resolve_kwargs.update(kwargs)
+        return {"blobA": {"image_url": "https://labs/image/blobA", "form_url": "https://hq/blobA"}}
+
+    captured_rows = {}
+    monkeypatch.setattr("connect_labs.audit.tasks.resolve_urls_by_blob", _fake_resolve_urls_by_blob)
+    monkeypatch.setattr(
+        "connect_labs.audit.tasks.s3_export.record_classifier_fails",
+        lambda rows: captured_rows.setdefault("rows", rows),
+    )
+
+    tasks._run_ai_review_on_sessions(
+        data_access=data_access,
+        session_ids=[10],
+        access_token="tok",
+        opp_id=42,
+        ai_reviewers=ai_reviewers,
+    )
+
+    assert captured_resolve_kwargs["data_access"] is data_access
+    assert captured_resolve_kwargs["access_token"] == "tok"
+    assert captured_resolve_kwargs["opportunity_id"] == 42
+    assert len(captured_rows["rows"]) == 1
+    assert captured_rows["rows"][0]["image_url"] == "https://labs/image/blobA"
+    assert captured_rows["rows"][0]["form_url"] == "https://hq/blobA"
 
 
 def test_two_reviewers_on_one_image_run_concurrently_not_sequentially(patched_registry, monkeypatch):

@@ -19,6 +19,7 @@ from connect_labs.audit.data_access import (
     create_mock_request,
     is_audit_creation_cancelled,
 )
+from connect_labs.audit.link_helpers import resolve_urls_by_blob
 from connect_labs.audit.models import AI_NOTES_JOIN_SEP
 from connect_labs.audit.visit_cluster_duplicate_detection import run_grouping_duplicate_detection
 from connect_labs.audit.visit_clustering import build_flw_visit_clusters
@@ -433,6 +434,11 @@ def _run_ai_review_on_sessions(
             # Track if we made any updates to this session
             session_updated = False
 
+            # Rows this session contributes to classifier_fail_rows -- kept separate
+            # from that run-level list so the URL resolution below (once per session,
+            # not once per run) only has to touch this session's own new rows.
+            session_classifier_fail_rows: list[dict] = []
+
             # Phase 1: collect reviewable work items, skip the rest.
             # Each item: (visit_id_str, blob_id, reading_by_field, question_id, image_qid)
             #   image_qid -> the image's own question path, used to resolve its reviewer(s)
@@ -642,7 +648,7 @@ def _run_ai_review_on_sessions(
                         # independent reviewers (e.g. MUAC OverZoom + MUAC Match)
                         # can each fail the same image, and each is its own row.
                         for verdict in outcome.fail_verdicts:
-                            classifier_fail_rows.append(
+                            session_classifier_fail_rows.append(
                                 {
                                     "session_id": session.id,
                                     "workflow_run_id": session.workflow_run_id,
@@ -676,6 +682,23 @@ def _run_ai_review_on_sessions(
                             pending_fut.cancel()
                         logger.info(f"[AIReview] Cancelled mid-session {session_id} — stopping remaining images")
                         break
+
+            # Resolve image/form/Connect URLs for this session's new classifier-fail
+            # rows now, rather than waiting on a human to save/complete the session
+            # (see classifier_fail_sync.py, which still backfills these as a safety
+            # net if resolution fails here). One resolve call per session, not per
+            # row -- matches resolve_urls_by_blob's own batching.
+            if session_classifier_fail_rows:
+                urls_by_blob = resolve_urls_by_blob(
+                    data_access=data_access,
+                    access_token=access_token,
+                    opportunity_id=opp_id,
+                    visit_ids=session.visit_ids or [],
+                    visit_images=session.data.get("visit_images", {}),
+                )
+                for row in session_classifier_fail_rows:
+                    row.update(urls_by_blob.get(row["blob_id"], {}))
+                classifier_fail_rows.extend(session_classifier_fail_rows)
 
             # Save session if we made any updates
             if session_updated:
@@ -791,7 +814,9 @@ def _run_duplicate_detection_on_sessions(
                 if progress_callback:
                     progress_callback(_idx, total, m)
 
-            summary = run_duplicate_detection(session, access_token, progress_callback=_cb, cancel_key=cancel_key)
+            summary = run_duplicate_detection(
+                session, access_token, progress_callback=_cb, cancel_key=cancel_key, data_access=data_access
+            )
             if summary.get("batches_processed"):
                 data_access.save_audit_session(session)
             for key in (

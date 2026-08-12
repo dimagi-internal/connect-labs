@@ -626,6 +626,73 @@ def test_run_counts_detect_failure(monkeypatch):
     assert "u1|form/muac_photo|2026-07-30" not in session.data.get("duplicate_detection", {})
 
 
+@override_settings(SCALE_VALIDATION_API_KEY="k")
+def test_run_resolves_urls_before_human_review_when_data_access_given(monkeypatch):
+    """classifier_fail_rows should carry image/form/connect URLs resolved right
+    now (via data_access), not wait for a human to save/complete the session."""
+    session = _session({"100": [_img("a")]})
+    monkeypatch.setattr("connect_labs.audit.duplicate_detection.get_signed_url", lambda opp, blob, tok: "https://s")
+    monkeypatch.setattr(DuplicateDetectionClient, "detect", lambda self, manifest: [["a", "b"]])
+    session.data["visit_images"]["101"] = [_img("b")]
+
+    fake_data_access = object()
+    captured_resolve_kwargs = {}
+
+    def _fake_resolve_urls_by_blob(**kwargs):
+        captured_resolve_kwargs.update(kwargs)
+        return {
+            "a": {"image_url": "https://labs/image/a", "form_url": "https://hq/a", "connect_url": "https://cx/a"},
+            "b": {"image_url": "https://labs/image/b", "form_url": "https://hq/b", "connect_url": "https://cx/b"},
+        }
+
+    captured_rows = {}
+
+    def _fake_record_classifier_fails(rows):
+        captured_rows["rows"] = rows
+
+    monkeypatch.setattr(
+        "connect_labs.audit.duplicate_detection.resolve_urls_by_blob", _fake_resolve_urls_by_blob
+    )
+    monkeypatch.setattr(
+        "connect_labs.audit.duplicate_detection.s3_export.record_classifier_fails", _fake_record_classifier_fails
+    )
+
+    run_duplicate_detection(session, access_token="tok", data_access=fake_data_access)
+
+    assert captured_resolve_kwargs["data_access"] is fake_data_access
+    assert captured_resolve_kwargs["access_token"] == "tok"
+    assert captured_resolve_kwargs["opportunity_id"] == session.opportunity_id
+
+    rows_by_blob = {row["blob_id"]: row for row in captured_rows["rows"]}
+    assert rows_by_blob["a"]["image_url"] == "https://labs/image/a"
+    assert rows_by_blob["b"]["form_url"] == "https://hq/b"
+
+
+@override_settings(SCALE_VALIDATION_API_KEY="k")
+def test_run_skips_url_resolution_without_data_access(monkeypatch):
+    """Without a data_access (e.g. an older caller/test), resolution is skipped
+    entirely -- rows go through with no image_url/form_url/connect_url keys,
+    same behavior as before this feature."""
+    session = _session({"100": [_img("a")]})
+    monkeypatch.setattr("connect_labs.audit.duplicate_detection.get_signed_url", lambda opp, blob, tok: "https://s")
+    monkeypatch.setattr(DuplicateDetectionClient, "detect", lambda self, manifest: [["a", "b"]])
+    session.data["visit_images"]["101"] = [_img("b")]
+
+    def _boom(**kwargs):
+        raise AssertionError("resolve_urls_by_blob should not be called without data_access")
+
+    captured_rows = {}
+    monkeypatch.setattr("connect_labs.audit.duplicate_detection.resolve_urls_by_blob", _boom)
+    monkeypatch.setattr(
+        "connect_labs.audit.duplicate_detection.s3_export.record_classifier_fails",
+        lambda rows: captured_rows.setdefault("rows", rows),
+    )
+
+    run_duplicate_detection(session, access_token="tok")
+
+    assert "image_url" not in captured_rows["rows"][0]
+
+
 # --------------------------------------------------------------------------- #
 # build_duplicate_warnings
 # --------------------------------------------------------------------------- #

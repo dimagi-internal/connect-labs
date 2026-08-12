@@ -253,13 +253,21 @@ def record_classifier_fails(rows: list[dict]) -> None:
     Each item in ``rows`` must have: session_id, visit_id, blob_id, classifier_id,
     and should have workflow_run_id, opportunity_id, opportunity_name, question_id,
     classifier_label, ai_confidence, ai_implied_result (the auto-applied human_result
-    at flag time, or None for a flag-only classifier like the duplicate detector).
+    at flag time, or None for a flag-only classifier like the duplicate detector),
+    and optionally image_url/form_url/connect_url (resolved by the caller via
+    connect_labs.audit.link_helpers.resolve_urls_by_blob at record time, so the
+    training-data export doesn't have to wait for a human review to link back to
+    the source image/form/visit -- see connect_labs/audit/classifier_fail_sync.py
+    for the fallback path that still backfills these post-review if a caller
+    couldn't resolve them here).
 
     Re-running AI review or duplicate detection on an already-reviewed session must
     not clobber human review data recorded by sync_classifier_fail_outcomes -- when a
     row already exists, only its AI-facts fields (label/confidence/implied result) are
-    refreshed; human_result/human_notes/was_overridden/overridden_at/reviewed_by/URLs
-    are left untouched.
+    refreshed; human_result/human_notes/was_overridden/overridden_at/reviewed_by are
+    left untouched. URLs are the exception: a non-empty incoming URL always overwrites
+    (it's a freshly-resolved link, not human-authored data), but an empty/missing
+    incoming URL never clobbers an already-populated one.
 
     One S3 read-modify-write for the whole batch -- callers should collect every fail
     for a run and call this once, not once per row.
@@ -307,6 +315,10 @@ def record_classifier_fails(rows: list[dict]) -> None:
                     "ai_implied_result": ai_implied_result,
                 }
             )
+            for url_field in ("image_url", "form_url", "connect_url"):
+                value = item.get(url_field)
+                if value:
+                    row[url_field] = value
             existing[row_id] = row
 
         _write_rows(s3, bucket, CLASSIFIER_FAILS_KEY, existing, CLASSIFIER_FAIL_FIELDS)
