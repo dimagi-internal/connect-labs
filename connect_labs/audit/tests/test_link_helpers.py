@@ -85,6 +85,46 @@ def test_resolve_org_slug_caches_the_live_api_call_per_token(monkeypatch):
     assert call_count["n"] == 1
 
 
+@override_settings(CACHES=_LOCMEM)
+def test_resolve_org_slug_does_not_cache_a_transient_fetch_failure(monkeypatch):
+    """Regression: a failed fetch_user_organization_data call (returns None,
+    coerced to a blank result) must not be cached -- otherwise a transient
+    failure gets "stuck" returning a blank org_slug for the rest of the TTL
+    window instead of retrying on the next call."""
+    call_count = {"n": 0}
+
+    def _flaky_fetch(access_token):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            return None  # simulates fetch_user_organization_data's own failure path
+        return {"opportunities": [{"id": 42, "organization": "acme-health"}]}
+
+    monkeypatch.setattr(link_helpers, "fetch_user_organization_data", _flaky_fetch)
+
+    token = "tok-flaky"
+    assert link_helpers.resolve_org_slug(token, 42, request=None) == ""
+    assert link_helpers.resolve_org_slug(token, 42, request=None) == "acme-health"
+    assert call_count["n"] == 2  # the failed first call was NOT cached, so the second call retried
+
+
+@override_settings(CACHES=_LOCMEM)
+def test_resolve_org_slug_falls_back_to_live_fetch_when_request_data_lacks_the_opportunity(monkeypatch):
+    """Regression: when a live request's session-cached org data doesn't list
+    the requested opportunity at all (e.g. access was granted after login),
+    fall back to a live fetch instead of returning "" -- otherwise the same
+    opportunity resolves inconsistently depending on which code path touches
+    it first (a background AI-review run would have resolved it correctly)."""
+    monkeypatch.setattr(
+        link_helpers,
+        "fetch_user_organization_data",
+        lambda access_token: {"opportunities": [{"id": 99, "organization": "acme-health"}]},
+    )
+
+    # Session data only knows about opportunity 42, not 99.
+    request = _FakeRequest({"opportunities": [{"id": 42, "organization": "other-org"}]})
+    assert link_helpers.resolve_org_slug("tok-request-fallback", 99, request=request) == "acme-health"
+
+
 # ── build_absolute_url ───────────────────────────────────────────────────────────
 
 
