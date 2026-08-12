@@ -1,0 +1,543 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block css %}
+{{ block.super }}
+<style>
+  :root {
+    --c1:#2a78d6; --c2:#eb6834; --c3:#1baf7a; --c4:#eda100; --c5:#e87ba4; --c6:#008300; --c7:#4a3aa7; --c-other:#9aa3a8;
+  }
+  .ot-workspace { display: grid; grid-template-columns: 240px 1fr; gap: 16px; align-items: start; }
+  @media (max-width: 980px) { .ot-workspace { grid-template-columns: 1fr; } }
+  .ot-sidebar { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 14px; position: sticky; top: 16px; box-shadow: 0 1px 2px rgb(0 0 0 / 0.04); }
+  .ot-fg { border-radius: 8px; padding: 10px 8px 4px; margin-bottom: 4px; border-left: 2px solid transparent; }
+  .ot-fg.active { border-left-color: #2563eb; background: #eff6ff; }
+  .ot-fg-title { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; font-weight: 700; color: #9ca3af; padding: 0 4px 8px; }
+  .ot-field { margin: 0 4px 10px; }
+  .ot-field label { display:block; font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 4px; }
+  /* The select is now nested inside <label> (for accessible association)
+     rather than a sibling -- display:block puts it on its own line below the
+     label's text instead of flowing inline right after it, and margin-top
+     restores the same visual gap the old margin-bottom on <label> gave. */
+  .ot-field select { display: block; width: 100%; margin-top: 4px; font-size: 12.5px; border: 1px solid #d1d5db; border-radius: 6px; padding: 6px 8px; background: #f9fafb; color: #111827; }
+
+  .ot-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
+  @media (max-width: 700px) { .ot-metrics { grid-template-columns: 1fr; } }
+  .ot-metric-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; box-shadow: 0 1px 2px rgb(0 0 0 / 0.04); padding: 14px 16px; display: flex; align-items: center; gap: 12px; border-left: 3px solid var(--metric-accent, #2563eb); }
+  .ot-metric-icon { width: 34px; height: 34px; border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 14px; background: var(--metric-accent-bg, #eff6ff); color: var(--metric-accent, #2563eb); flex-shrink: 0; }
+  .ot-metric-value { font-size: 22px; font-weight: 800; color: #111827; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .ot-metric-label { font-size: 11.5px; color: #6b7280; font-weight: 600; margin-top: 1px; }
+
+  .ot-tabbar { display: flex; gap: 4px; background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 4px; box-shadow: 0 1px 2px rgb(0 0 0 / 0.04); width: fit-content; margin-bottom: 14px; }
+  .ot-tab-label { font-size: 13px; font-weight: 600; padding: 7px 15px; border-radius: 7px; color: #6b7280; cursor: pointer; user-select: none; }
+  /* Visually hidden, not display:none -- display:none drops the radio from
+     the tab order and the accessibility tree, leaving keyboard/screen-reader
+     users unable to reach any tab but whichever one the server pre-checked. */
+  .ot-tab-input { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; clip: rect(0 0 0 0); clip-path: inset(50%); overflow: hidden; white-space: nowrap; }
+  /* Specific IDs, not the shared .ot-tab-input class -- like the :checked
+     rule below, so focusing one radio doesn't outline all three labels at
+     once (the class-based selector would match whichever radio has focus
+     without checking it's the one paired with that particular label). */
+  #ot-tab-opps:focus-visible ~ .ot-workspace .ot-tabbar label[for="ot-tab-opps"],
+  #ot-tab-stats:focus-visible ~ .ot-workspace .ot-tabbar label[for="ot-tab-stats"],
+  #ot-tab-country:focus-visible ~ .ot-workspace .ot-tabbar label[for="ot-tab-country"] { outline: 2px solid #2563eb; outline-offset: 2px; }
+  .ot-tab-panel { display: none; }
+  /* .ot-tabbar and .ot-panels are NOT direct siblings of the radios -- they're
+     nested inside .ot-workspace's second column div. The general-sibling `~`
+     combinator only matches same-parent siblings, so it has to pivot through
+     .ot-workspace (which genuinely IS the sibling) and then descend into it;
+     dropping that pivot silently made every rule below a no-op. */
+  #ot-tab-opps:checked ~ .ot-workspace .ot-tabbar label[for="ot-tab-opps"],
+  #ot-tab-stats:checked ~ .ot-workspace .ot-tabbar label[for="ot-tab-stats"],
+  #ot-tab-country:checked ~ .ot-workspace .ot-tabbar label[for="ot-tab-country"] { background: #2563eb; color: #fff; }
+  #ot-tab-opps:checked ~ .ot-workspace .ot-panels #ot-panel-opps,
+  #ot-tab-stats:checked ~ .ot-workspace .ot-panels #ot-panel-stats,
+  #ot-tab-country:checked ~ .ot-workspace .ot-panels #ot-panel-country { display: block; }
+
+  .ot-panel { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; box-shadow: 0 1px 2px rgb(0 0 0 / 0.04); overflow: hidden; margin-bottom: 14px; }
+  .ot-panel-head { padding: 13px 16px 9px; display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+  .ot-panel-head h2 { font-size: 14.5px; font-weight: 700; margin: 0; color: #111827; }
+  .ot-panel-head .meta { font-size: 11.5px; color: #9ca3af; }
+  .ot-scroller { overflow-x: auto; border-top: 1px solid #eef0f2; }
+  /* Vertical scroll, ~15 data rows, so a several-hundred-opportunity result
+     set doesn't push the Cohort Pivot (and everything below it) far down the
+     page -- the sticky header below stays pinned to the top of THIS SCROLL
+     CONTAINER (not the viewport), which is exactly what `position: sticky;
+     top: 0` already does once its nearest scrolling ancestor has a bounded
+     height, no extra JS required. */
+  .ot-detail-scroller { max-height: 520px; overflow-y: auto; }
+  .ot-table { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 12.5px; white-space: nowrap; }
+  .ot-table thead th { position: sticky; top: 0; background: #f9fafb; color: #6b7280; font-weight: 600; text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; padding: 8px 10px; border-bottom: 1px solid #e5e7eb; z-index: 2; }
+  .ot-table th.num, .ot-table td.num { text-align: right; font-variant-numeric: tabular-nums; font-family: ui-monospace, Consolas, monospace; }
+  .ot-table tbody td { padding: 6px 9px; border-bottom: 1px solid #f1f2f4; color: #111827; }
+  .ot-detail tbody tr:nth-child(even) td { background: #fbfbfc; }
+  .ot-table tbody tr:hover td { background: #f9fafb; }
+  /* table-layout: fixed makes the <colgroup> widths in the markup below
+     authoritative instead of advisory -- without it, "auto" layout expands
+     every column to fit its longest cell and the whole table overflows past
+     the container no matter how narrow the <col> widths say to be, forcing a
+     horizontal scrollbar this table specifically shouldn't need at normal
+     zoom. Scoped to .ot-detail only: the Cohort Pivot keeps auto sizing plus
+     its own horizontal scroll, since its column count grows with the data. */
+  .ot-detail { table-layout: fixed; }
+  /* tbody td only, NOT th -- three header cells (Start Date/FLWs/Amount Paid)
+     carry a .ot-note/.pop hover+focus tooltip, positioned absolutely relative
+     to a `position: relative` span inside the th. overflow: hidden on an
+     ancestor clips ALL of its overflowing descendants regardless of their own
+     position property, so applying this to th as well silently clipped those
+     three existing tooltips into invisibility. */
+  .ot-detail tbody td { overflow: hidden; text-overflow: ellipsis; }
+  .ot-detail th:first-child, .ot-detail td:first-child { position: sticky; left: 0; background: #fff; box-shadow: 1px 0 0 #e5e7eb; z-index: 1; }
+  .ot-detail thead th:first-child { background: #f9fafb; z-index: 3; }
+  .ot-muted { color: #9ca3af; }
+  .ot-pill { display: inline-flex; max-width: 100%; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; box-sizing: border-box; }
+  .ot-pill.active { background: #e3f4ec; color: #1f8a5f; }
+  .ot-pill.inactive { background: #f1f2f4; color: #9ca3af; }
+  .ot-pill.funder { background: #f1f2f4; color: #4b5563; }
+  .ot-note { border-bottom: 1.5px dotted #b45309; cursor: help; position: relative; }
+  .ot-note .pop { position:absolute; bottom: calc(100% + 6px); left:0; width:220px; background:#111827; color:#f9fafb; font-size:11px; font-weight:400; line-height:1.4; padding:8px 10px; border-radius:7px; text-transform:none; letter-spacing:normal; opacity:0; pointer-events:none; transition:opacity .1s; z-index:20; }
+  .ot-note:hover .pop, .ot-note:focus .pop { opacity:1; }
+  .ot-pivot .grp { text-align:center; font-size:10.5px; border-bottom:1px solid #e5e7eb; }
+  .ot-pivot .grp-visits { background:#eff6ff; color:#2563eb; }
+  .ot-pivot .grp-visits7 { background:#e3f4ec; color:#1f8a5f; }
+  .ot-pivot .grp-orgs { background:#f1f2f4; color:#6b7280; }
+  .ot-pivot .subtotal { font-weight:700; background:#f9fafb; }
+  .ot-pivot .country-cell { position:sticky; left:0; background:#fff; font-weight:600; box-shadow:1px 0 0 #e5e7eb; }
+  .ot-pivot thead th.country-cell { background:#f9fafb; z-index:3; }
+  .ot-pivot tfoot td { font-weight:700; border-top:1.5px solid #d1d5db; background:#f9fafb; }
+
+  .ot-chart-row { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
+  @media (max-width: 1180px) { .ot-chart-row { grid-template-columns:1fr; } }
+  .ot-chart-card { background:#fff; border:1px solid #e5e7eb; border-radius:12px; box-shadow:0 1px 2px rgb(0 0 0/0.04); padding:14px 14px 6px; }
+  .ot-chart-card h3 { font-size:13px; font-weight:700; margin:0 0 6px; color:#111827; }
+  .ot-legend { display:flex; gap:12px; font-size:11.5px; color:#6b7280; flex-wrap:wrap; margin-bottom:6px; }
+  .ot-legend .li { display:inline-flex; align-items:center; gap:6px; }
+  .ot-lg-line { width:14px; height:2px; border-radius:2px; }
+  .ot-lg-line.dashed { background: repeating-linear-gradient(to right, currentColor 0 4px, transparent 4px 7px); color:inherit; }
+  .ot-chart-wrap { position:relative; width:100%; }
+  .ot-chart-wrap svg { width:100%; height:auto; display:block; overflow:visible; }
+  .ot-caption { font-size:11px; color:#9ca3af; line-height:1.4; margin-top:4px; }
+  .ot-tooltip { position:absolute; pointer-events:none; background:#111827; color:#f9fafb; font-size:11.5px; line-height:1.4; padding:7px 10px; border-radius:7px; opacity:0; transform:translate(-50%,-100%); transition:opacity .08s; white-space:nowrap; z-index:30; }
+  .ot-tooltip .row { display:flex; align-items:center; gap:6px; }
+  .ot-tooltip .sw { width:8px; height:8px; border-radius:2px; }
+  .ot-bar-seg:hover { opacity:.8; }
+</style>
+{% endblock css %}
+
+{% block content %}
+<div class="max-w-[1500px] mx-auto px-4 py-6">
+
+  <div class="flex items-center justify-between gap-4 flex-wrap mb-2">
+    <div class="text-sm text-gray-500">
+      <a href="{% url 'labs_admin:index' %}" class="text-blue-600 hover:underline">Labs Admin</a>
+      <span class="text-gray-300 mx-1">/</span>Data Exploration<span class="text-gray-300 mx-1">/</span>
+      <span class="font-semibold text-gray-900">Opportunity Tracker</span>
+      <span class="ml-2 inline-flex items-center gap-1 text-[11px] text-gray-400 border border-gray-200 rounded-full px-2 py-0.5 bg-gray-50">
+        <i class="fa-solid fa-lock"></i> Dimagi staff only
+      </span>
+    </div>
+  </div>
+  <h1 class="text-xl font-bold text-gray-900 mt-1">Opportunity Tracker</h1>
+  <p class="text-sm text-gray-500 mt-1 mb-4 max-w-3xl">A cross-workspace view of every opportunity Pulse already sees — reads Pulse's local mirror, so it isn't limited to opportunities you personally have membership on. Test/demo opportunities are excluded throughout.</p>
+
+  <!-- Visible on every tab (not swapped by the tab CSS below) -- these three
+       reflect the Delivery Type/Country/Funder sidebar filters but, like the
+       Visit Stats charts, are NOT narrowed by the Opportunities tab's own
+       Status filter. -->
+  <div class="ot-metrics">
+    <div class="ot-metric-card" style="--metric-accent:#2563eb;--metric-accent-bg:#eff6ff;">
+      <div class="ot-metric-icon"><i class="fa-solid fa-diagram-project"></i></div>
+      <div><div class="ot-metric-value">{{ metrics.active_opps }}</div><div class="ot-metric-label">Active Opportunities</div></div>
+    </div>
+    <div class="ot-metric-card" style="--metric-accent:#1baf7a;--metric-accent-bg:#e3f4ec;">
+      <div class="ot-metric-icon"><i class="fa-solid fa-clipboard-check"></i></div>
+      <div><div class="ot-metric-value">{{ metrics.visits_7d }}</div><div class="ot-metric-label">Visits, Last 7 Days</div></div>
+    </div>
+    <div class="ot-metric-card" style="--metric-accent:#eda100;--metric-accent-bg:#fef3e2;">
+      <div class="ot-metric-icon"><i class="fa-solid fa-earth-africa"></i></div>
+      <div><div class="ot-metric-value">{{ metrics.active_countries }}</div><div class="ot-metric-label">Active Countries</div></div>
+    </div>
+  </div>
+
+  {% if messages %}
+  <div class="mb-4 space-y-2">
+    {% for message in messages %}<div class="alert alert-{{ message.tags }}">{{ message }}</div>{% endfor %}
+  </div>
+  {% endif %}
+
+  <input type="radio" name="ot-tabs" id="ot-tab-opps" class="ot-tab-input" {% if active_tab == "opps" %}checked{% endif %}>
+  <input type="radio" name="ot-tabs" id="ot-tab-stats" class="ot-tab-input" {% if active_tab == "stats" %}checked{% endif %}>
+  <input type="radio" name="ot-tabs" id="ot-tab-country" class="ot-tab-input" {% if active_tab == "country" %}checked{% endif %}>
+
+  <div class="ot-workspace">
+    <aside class="ot-sidebar">
+      <div class="text-[13px] font-bold text-gray-900 mb-2 pb-2 border-b border-gray-100">Filters</div>
+
+      <form method="get" class="ot-fg {% if active_tab == 'opps' %}active{% endif %}">
+        <input type="hidden" name="tab" value="opps">
+        <div class="ot-fg-title">Opportunities tab</div>
+        <div class="ot-field"><label>Status
+          <select name="status" onchange="this.form.submit()">
+            <option value="all" {% if filters.status == "all" %}selected{% endif %}>All</option>
+            <option value="Active" {% if filters.status == "Active" %}selected{% endif %}>Active</option>
+            <option value="Inactive" {% if filters.status == "Inactive" %}selected{% endif %}>Inactive</option>
+          </select>
+        </label></div>
+        <div class="ot-field"><label>Delivery Type
+          <select name="delivery_type" onchange="this.form.submit()">
+            <option value="">All types</option>
+            {% for dt in filter_choices.delivery_types %}<option value="{{ dt.slug }}" {% if filters.delivery_type == dt.slug %}selected{% endif %}>{{ dt.label }}</option>{% endfor %}
+          </select>
+        </label></div>
+        <div class="ot-field"><label>Country
+          <select name="country" onchange="this.form.submit()">
+            <option value="">All countries</option>
+            {% for c in filter_choices.countries %}<option value="{{ c.code }}" {% if filters.country == c.code %}selected{% endif %}>{{ c.label }}</option>{% endfor %}
+          </select>
+        </label></div>
+        <div class="ot-field"><label>Funder
+          <select name="funder" onchange="this.form.submit()">
+            <option value="">All funders</option>
+            {% for f in filter_choices.funders %}<option value="{{ f }}" {% if filters.funder == f %}selected{% endif %}>{{ f }}</option>{% endfor %}
+          </select>
+        </label></div>
+      </form>
+
+      <form method="get" class="ot-fg {% if active_tab == 'stats' %}active{% endif %}">
+        <input type="hidden" name="tab" value="stats">
+        <!-- Carries the Status value forward so switching to this tab and
+             submitting a change here doesn't reset it on the Opportunities
+             tab -- Status has no visible control here because these charts
+             are all-time/cumulative and never filtered by it themselves. -->
+        <input type="hidden" name="status" value="{{ filters.status }}">
+        <div class="ot-fg-title">Visit stats tab</div>
+        <div class="ot-field"><label>Delivery Type
+          <select name="delivery_type" onchange="this.form.submit()">
+            <option value="">All types</option>
+            {% for dt in filter_choices.delivery_types %}<option value="{{ dt.slug }}" {% if filters.delivery_type == dt.slug %}selected{% endif %}>{{ dt.label }}</option>{% endfor %}
+          </select>
+        </label></div>
+        <div class="ot-field"><label>Country
+          <select name="country" onchange="this.form.submit()">
+            <option value="">All countries</option>
+            {% for c in filter_choices.countries %}<option value="{{ c.code }}" {% if filters.country == c.code %}selected{% endif %}>{{ c.label }}</option>{% endfor %}
+          </select>
+        </label></div>
+        <div class="ot-field"><label>Funder
+          <select name="funder" onchange="this.form.submit()">
+            <option value="">All funders</option>
+            {% for f in filter_choices.funders %}<option value="{{ f }}" {% if filters.funder == f %}selected{% endif %}>{{ f }}</option>{% endfor %}
+          </select>
+        </label></div>
+      </form>
+
+      <form method="get" class="ot-fg {% if active_tab == 'country' %}active{% endif %}">
+        <input type="hidden" name="tab" value="country">
+        <!-- Carries Status and Country forward for the SAME cross-tab-state
+             reason as above. Neither has a visible control on this tab:
+             Status doesn't apply to an all-time chart, and Country is this
+             chart's own axis -- selecting one would collapse it to one bar. -->
+        <input type="hidden" name="status" value="{{ filters.status }}">
+        <input type="hidden" name="country" value="{{ filters.country }}">
+        <div class="ot-fg-title">Visits by country tab</div>
+        <div class="ot-field"><label>Delivery Type
+          <select name="delivery_type" onchange="this.form.submit()">
+            <option value="">All types</option>
+            {% for dt in filter_choices.delivery_types %}<option value="{{ dt.slug }}" {% if filters.delivery_type == dt.slug %}selected{% endif %}>{{ dt.label }}</option>{% endfor %}
+          </select>
+        </label></div>
+        <div class="ot-field"><label>Funder
+          <select name="funder" onchange="this.form.submit()">
+            <option value="">All funders</option>
+            {% for f in filter_choices.funders %}<option value="{{ f }}" {% if filters.funder == f %}selected{% endif %}>{{ f }}</option>{% endfor %}
+          </select>
+        </label></div>
+      </form>
+    </aside>
+
+    <div>
+      <nav class="ot-tabbar">
+        <label class="ot-tab-label" for="ot-tab-opps">Opportunities</label>
+        <label class="ot-tab-label" for="ot-tab-stats">Visit Stats</label>
+        <label class="ot-tab-label" for="ot-tab-country">Visits by Country</label>
+      </nav>
+
+      <div class="ot-panels">
+        <!-- ================= TAB 1: OPPORTUNITIES ================= -->
+        <section class="ot-tab-panel" id="ot-panel-opps">
+          <div class="ot-panel">
+            <div class="ot-panel-head"><h2>Opportunity Info Detailed</h2><span class="meta">{{ detail_rows|length }} opportunities (test/demo excluded) · sourced from PulseRollup + PulseWork</span></div>
+            <div class="ot-scroller ot-detail-scroller">
+              <table class="ot-table ot-detail">
+                <colgroup>
+                  <col style="width:4%"><col style="width:6%"><col style="width:7%"><col style="width:8%"><col style="width:9%">
+                  <col style="width:15%"><col style="width:6%"><col style="width:6%"><col style="width:6%"><col style="width:4%">
+                  <col style="width:6%"><col style="width:6%"><col style="width:6%"><col style="width:5%"><col style="width:6%">
+                </colgroup>
+                <thead><tr>
+                  <th>Opp ID</th><th>Country</th><th>Funder</th><th>Delivery Type</th><th>LLO</th><th>Opp Name</th><th>Status</th>
+                  <th><span class="ot-note" tabindex="0">Start Date<span class="pop">Not currently ingested — needs a spike to confirm the field exists upstream.</span></span></th>
+                  <th>End Date</th>
+                  <th class="num"><span class="ot-note" tabindex="0">FLWs<span class="pop">Distinct workers with recorded work — undercounts vs. a roster-access count, since Pulse doesn't ingest opportunity access records.</span></span></th>
+                  <th class="num">Claimed</th><th class="num">Approved</th><th class="num">Approved 7d</th><th class="num">Pending</th>
+                  <th class="num"><span class="ot-note" tabindex="0">Amount Paid<span class="pop">Accrued-to-worker, not the opportunity_payment disbursement sum — different concept, needs new ingest to close exactly.</span></span></th>
+                </tr></thead>
+                <tbody>
+                  {% for row in detail_rows %}
+                  <tr>
+                    <td class="ot-muted">{{ row.opportunity_id }}</td>
+                    <td title="{{ row.country }}">{{ row.country|default:"—" }}</td>
+                    <td><span class="ot-pill funder" title="{{ row.funder }}">{{ row.funder }}</span></td>
+                    <td title="{{ row.delivery_type }}">{{ row.delivery_type }}</td>
+                    <td title="{{ row.llo }}">{{ row.llo|default:"—" }}</td>
+                    <td class="font-semibold" title="{{ row.name }}">{{ row.name }}</td>
+                    <td>{% if row.status == "Active" %}<span class="ot-pill active">Active</span>{% else %}<span class="ot-pill inactive">Inactive</span>{% endif %}</td>
+                    <td class="ot-muted">{{ row.start_date|default:"—" }}</td>
+                    <td>{{ row.end_date|default:"—" }}</td>
+                    <td class="num">{{ row.flws }}</td>
+                    <td class="num">{{ row.visits_claimed }}</td>
+                    <td class="num">{{ row.visits_approved }}</td>
+                    <td class="num">{{ row.approved_7d }}</td>
+                    <td class="num">{{ row.visits_pending }}</td>
+                    <td class="num">{% if row.has_payment_data %}${{ row.amount_paid|floatformat:0 }}{% else %}<span class="ot-muted">n/a</span>{% endif %}</td>
+                  </tr>
+                  {% empty %}
+                  <tr><td colspan="15" class="text-center text-gray-400 py-6">No opportunities match these filters.</td></tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {% if pivot %}
+          <div class="ot-panel">
+            <div class="ot-panel-head"><h2>Cohort Pivot — Delivery Type × Country</h2><span class="meta">Visits / Visits Last 7 Days / Orgs, each with a Subtotal</span></div>
+            <div class="ot-scroller">
+              <table class="ot-table ot-pivot">
+                <thead>
+                  <tr>
+                    <th class="country-cell" rowspan="2"></th>
+                    <th class="grp grp-visits" colspan="{{ pivot.services|length|add:1 }}">Visits</th>
+                    <th class="grp grp-visits7" colspan="{{ pivot.services|length|add:1 }}">Visits, Last 7 Days</th>
+                    <th class="grp grp-orgs" colspan="{{ pivot.services|length|add:1 }}">Orgs</th>
+                  </tr>
+                  <tr>
+                    {% for s in pivot.services %}<th class="num grp-visits">{{ s.label }}</th>{% endfor %}<th class="num subtotal grp-visits">Subtotal</th>
+                    {% for s in pivot.services %}<th class="num grp-visits7">{{ s.label }}</th>{% endfor %}<th class="num subtotal grp-visits7">Subtotal</th>
+                    {% for s in pivot.services %}<th class="num grp-orgs">{{ s.label }}</th>{% endfor %}<th class="num subtotal grp-orgs">Subtotal</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for row in pivot.rows %}
+                  <tr>
+                    <td class="country-cell">{{ row.country }}</td>
+                    {% for cell in row.cells %}<td class="num">{{ cell.visits }}</td>{% endfor %}
+                    <td class="num subtotal">{{ row.subtotal.visits }}</td>
+                    {% for cell in row.cells %}<td class="num">{{ cell.visits_7d }}</td>{% endfor %}
+                    <td class="num subtotal">{{ row.subtotal.visits_7d }}</td>
+                    {% for cell in row.cells %}<td class="num">{{ cell.orgs_count }}</td>{% endfor %}
+                    <td class="num subtotal">{{ row.subtotal.orgs }}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td class="country-cell">Total</td>
+                    {% for ct in pivot.col_totals %}<td class="num">{{ ct.visits }}</td>{% endfor %}
+                    <td class="num subtotal">{{ pivot.grand_total.visits }}</td>
+                    {% for ct in pivot.col_totals %}<td class="num">{{ ct.visits_7d }}</td>{% endfor %}
+                    <td class="num subtotal">{{ pivot.grand_total.visits_7d }}</td>
+                    {% for ct in pivot.col_totals %}<td class="num">{{ ct.orgs }}</td>{% endfor %}
+                    <td class="num subtotal">{{ pivot.grand_total.orgs }}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+          {% endif %}
+        </section>
+
+        <!-- ================= TAB 2: VISIT STATS ================= -->
+        <section class="ot-tab-panel" id="ot-panel-stats">
+          <div class="ot-chart-row">
+            <div class="ot-chart-card">
+              <h3>Running Visit Total</h3>
+              <div class="ot-legend"><span class="li"><span class="ot-lg-line" style="background:var(--c1)"></span>Approved visits, cumulative</span></div>
+              <div class="ot-chart-wrap" id="ot-chart-running-visits"></div>
+              <div class="ot-caption">Source: PulseRollup, full history — exact.</div>
+            </div>
+            <div class="ot-chart-card">
+              <h3>Daily Visits and Users</h3>
+              <div class="ot-legend">
+                <span class="li"><span class="ot-lg-line" style="background:var(--c1)"></span>Approved visits</span>
+                <span class="li"><span class="ot-lg-line dashed" style="color:var(--c7)"></span>Unique FLWs · last ~30d only</span>
+              </div>
+              <div class="ot-chart-wrap" id="ot-chart-daily"></div>
+              <div class="ot-caption">Users line only covers the retained visit-event window — older days are absent, not zero.</div>
+            </div>
+            <div class="ot-chart-card">
+              <h3>Running User Total</h3>
+              <div class="ot-legend"><span class="li"><span class="ot-lg-line" style="background:var(--c7)"></span>Unique FLWs, cumulative first-seen</span></div>
+              <div class="ot-chart-wrap" id="ot-chart-running-users"></div>
+              <div class="ot-caption">Source: PulseWork, full history — exact roster growth.</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ================= TAB 3: VISITS BY COUNTRY ================= -->
+        <section class="ot-tab-panel" id="ot-panel-country">
+          <div class="ot-panel" style="padding:14px 16px 8px;">
+            <div class="ot-panel-head" style="padding:0 0 8px;"><h2>Monthly Visits by Country</h2><span class="meta">Top 6 countries by volume; the rest fold into “Other”.</span></div>
+            <div class="ot-legend" id="ot-country-legend"></div>
+            <div class="ot-chart-wrap" id="ot-chart-country-bars"></div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+</div>
+
+{{ chart_data|json_script:"ot-chart-data" }}
+<script>
+(function(){
+  // Tab switching itself is pure client-side CSS (:checked radios, no page
+  // reload), but the sidebar's .ot-fg.active highlight was only ever
+  // computed server-side from active_tab -- so it went stale the moment
+  // someone clicked a different tab without submitting a filter. Keep it in
+  // sync directly.
+  const radios = document.querySelectorAll('.ot-tab-input');
+  const groups = document.querySelectorAll('.ot-fg');
+  function syncActiveFilterGroup(){
+    const checked = document.querySelector('.ot-tab-input:checked');
+    if (!checked) return;
+    const tab = checked.id.replace('ot-tab-', '');
+    groups.forEach(g => {
+      const tabField = g.querySelector('input[name="tab"]');
+      g.classList.toggle('active', !!tabField && tabField.value === tab);
+    });
+  }
+  radios.forEach(r => r.addEventListener('change', syncActiveFilterGroup));
+})();
+</script>
+
+<script>
+(function(){
+  const dataEl = document.getElementById('ot-chart-data');
+  if (!dataEl) return;
+  const DATA = JSON.parse(dataEl.textContent);
+  const cssv = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+  function fmtK(v){
+    v = v || 0;
+    if (v>=1e6) return (v/1e6).toFixed(v>=1e7?0:1)+'M';
+    if (v>=1e3) return (v/1e3).toFixed(v>=1e4?0:1)+'k';
+    return String(Math.round(v));
+  }
+  function fmtDateShort(iso){ const d=new Date(iso+'T00:00:00'); return d.toLocaleDateString('en-US',{month:'short', year: d.getMonth()===0?'2-digit':undefined}); }
+  function fmtDateFull(iso){ const d=new Date(iso+'T00:00:00'); return d.toLocaleDateString('en-US',{month:'short', day:'numeric', year:'numeric'}); }
+
+  function lineChart(containerId, dates, series){
+    const el = document.getElementById(containerId);
+    if (!el || !dates.length) { if (el) el.innerHTML = '<p style="color:#9ca3af;font-size:12.5px;padding:20px 0;">No data for this selection.</p>'; return; }
+    const W=460,H=210,PAD={t:10,r:10,b:24,l:44};
+    const plotW=W-PAD.l-PAD.r, plotH=H-PAD.t-PAD.b;
+    const n=dates.length;
+    const allVals = series.flatMap(s=>s.data.filter(v=>v!==null&&v!==undefined));
+    const maxY = Math.max(...allVals, 1);
+    const x = i => PAD.l + (n<=1?0:(i/(n-1))*plotW);
+    const y = v => PAD.t + plotH - (v/maxY)*plotH;
+    function pathFor(data){ let d='',started=false; data.forEach((v,i)=>{ if(v===null||v===undefined){started=false;return;} d+=(started?'L':'M')+x(i).toFixed(1)+','+y(v).toFixed(1)+' '; started=true; }); return d.trim(); }
+    let grid='',axisLabels='';
+    for(let g=0;g<=4;g++){ const gv=maxY*g/4, gy=y(gv); grid+=`<line x1="${PAD.l}" x2="${W-PAD.r}" y1="${gy.toFixed(1)}" y2="${gy.toFixed(1)}" stroke="#eef0f2" stroke-width="1"/>`; axisLabels+=`<text x="${PAD.l-8}" y="${(gy+3).toFixed(1)}" text-anchor="end" font-size="10" fill="#9ca3af">${fmtK(gv)}</text>`; }
+    let xLabels='';
+    // Dedupe via a Set: with n===1 (a single data point), every tick index
+    // computes to 0 regardless of t, which would otherwise stack the same
+    // date label on top of itself instead of rendering it once.
+    const ticks=Math.min(6,n);
+    const tickIndices = new Set();
+    for(let t=0;t<=ticks;t++){ tickIndices.add(Math.round((t/ticks)*(n-1))); }
+    tickIndices.forEach(i => { xLabels+=`<text x="${x(i).toFixed(1)}" y="${H-8}" text-anchor="middle" font-size="10" fill="#9ca3af">${fmtDateShort(dates[i])}</text>`; });
+    let paths='';
+    series.forEach(s=>{
+      const dash = s.dashed ? 'stroke-dasharray="1,4" stroke-linecap="round"' : '';
+      paths += `<path d="${pathFor(s.data)}" fill="none" stroke="${s.color}" stroke-width="2" ${dash} stroke-linejoin="round"/>`;
+      for(let i=s.data.length-1;i>=0;i--){ if(s.data[i]!==null&&s.data[i]!==undefined){ paths+=`<circle cx="${x(i).toFixed(1)}" cy="${y(s.data[i]).toFixed(1)}" r="3.5" fill="${s.color}" stroke="#fff" stroke-width="1.5"/>`; break; } }
+    });
+    el.innerHTML = `<svg viewBox="0 0 ${W} ${H}"><rect width="${W}" height="${H}" fill="#fcfcfb" rx="6"/>${grid}${axisLabels}${xLabels}${paths}
+      <line id="${containerId}-cross" x1="0" x2="0" y1="${PAD.t}" y2="${PAD.t+plotH}" stroke="#c3c2b7" stroke-width="1" style="opacity:0"/>
+      <rect id="${containerId}-hit" x="${PAD.l}" y="${PAD.t}" width="${plotW}" height="${plotH}" fill="transparent"/></svg>`;
+    const tip=document.createElement('div'); tip.className='ot-tooltip'; el.style.position='relative'; el.appendChild(tip);
+    const svgEl=el.querySelector('svg'), hit=el.querySelector('#'+containerId+'-hit'), cross=el.querySelector('#'+containerId+'-cross');
+    hit.addEventListener('mousemove', ev=>{
+      const rect=svgEl.getBoundingClientRect(); const scaleX=W/rect.width;
+      const mx=(ev.clientX-rect.left)*scaleX;
+      let i=Math.round(((mx-PAD.l)/plotW)*(n-1)); i=Math.max(0,Math.min(n-1,i));
+      cross.setAttribute('x1',x(i)); cross.setAttribute('x2',x(i)); cross.style.opacity=1;
+      let rows='';
+      series.forEach(s=>{ const v=s.data[i]; if(v===null||v===undefined) return; rows+=`<div class="row"><span class="sw" style="background:${s.color}"></span>${s.label}: <b>${fmtK(v)}</b></div>`; });
+      if(!rows){ tip.style.opacity=0; return; }
+      tip.innerHTML = `<div style="margin-bottom:3px;font-weight:700;">${fmtDateFull(dates[i])}</div>${rows}`;
+      const scaleRectX=rect.width/W, scaleRectY=rect.height/H;
+      tip.style.left=(x(i)*scaleRectX)+'px'; tip.style.top=((PAD.t+8)*scaleRectY)+'px'; tip.style.opacity=1;
+    });
+    hit.addEventListener('mouseleave', ()=>{ cross.style.opacity=0; tip.style.opacity=0; });
+  }
+
+  // Running Visit Total
+  lineChart('ot-chart-running-visits', (DATA.runningVisits||[]).map(p=>p.t), [
+    {data:(DATA.runningVisits||[]).map(p=>p.value), color:cssv('--c1'), label:'Approved visits'},
+  ]);
+  // Running User Total
+  lineChart('ot-chart-running-users', (DATA.runningUsers||[]).map(p=>p.t), [
+    {data:(DATA.runningUsers||[]).map(p=>p.value), color:cssv('--c7'), label:'Unique FLWs'},
+  ]);
+  // Daily Visits and Users
+  lineChart('ot-chart-daily', (DATA.dailyVisitsUsers||[]).map(p=>p.t), [
+    {data:(DATA.dailyVisitsUsers||[]).map(p=>p.approved_visits), color:cssv('--c1'), label:'Approved visits'},
+    {data:(DATA.dailyVisitsUsers||[]).map(p=>p.unique_users), color:cssv('--c7'), label:'Unique FLWs', dashed:true},
+  ]);
+
+  // Visits by Country stacked bars
+  (function(){
+    const bars = DATA.countryBars || {countries:[], series:[]};
+    const el = document.getElementById('ot-chart-country-bars');
+    const legendEl = document.getElementById('ot-country-legend');
+    if (!bars.series.length) { el.innerHTML='<p style="color:#9ca3af;font-size:12.5px;padding:20px 0;">No data for this selection.</p>'; return; }
+    const palette = [cssv('--c1'),cssv('--c2'),cssv('--c3'),cssv('--c4'),cssv('--c5'),cssv('--c6'),cssv('--c-other')];
+    const colorFor = {}; bars.countries.forEach((c,i)=>{ colorFor[c] = c==='Other' ? cssv('--c-other') : palette[i % (palette.length-1)]; });
+
+    const W=1160,H=320,PAD={t:10,r:14,b:28,l:52};
+    const plotW=W-PAD.l-PAD.r, plotH=H-PAD.t-PAD.b;
+    const totals = bars.series.map(r => bars.countries.reduce((s,c)=>s+(r.values[c]||0),0));
+    const maxY = Math.max(...totals,1)*1.08;
+    const gap = plotW/bars.series.length, bw = gap*0.62;
+    const y = v => PAD.t + plotH - (v/maxY)*plotH;
+    let grid='',axisLabels='';
+    for(let g=0;g<=5;g++){ const gv=maxY*g/5, gy=y(gv); grid+=`<line x1="${PAD.l}" x2="${W-PAD.r}" y1="${gy.toFixed(1)}" y2="${gy.toFixed(1)}" stroke="#eef0f2" stroke-width="1"/>`; axisLabels+=`<text x="${PAD.l-8}" y="${(gy+3).toFixed(1)}" text-anchor="end" font-size="10.5" fill="#9ca3af">${fmtK(gv)}</text>`; }
+    let xLabels='';
+    bars.series.forEach((r,i)=>{ if(i%2!==0) return; const cx=PAD.l+gap*i+gap/2; xLabels+=`<text x="${cx.toFixed(1)}" y="${H-10}" text-anchor="middle" font-size="10.5" fill="#9ca3af">${fmtDateShort(r.month)}</text>`; });
+    let rects='';
+    bars.series.forEach((r,i)=>{
+      const cx = PAD.l+gap*i+gap/2-bw/2; let cursor=0;
+      bars.countries.forEach(c=>{ const v=r.values[c]||0; const y0=y(cursor), y1=y(cursor+v); const h=Math.max(0,y0-y1);
+        rects += `<rect class="ot-bar-seg" data-i="${i}" x="${cx.toFixed(1)}" y="${y1.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" fill="${colorFor[c]}"/>`; cursor+=v; });
+    });
+    el.innerHTML = `<svg viewBox="0 0 ${W} ${H}"><rect width="${W}" height="${H}" fill="#fcfcfb" rx="6"/>${grid}${axisLabels}${xLabels}${rects}</svg>`;
+    const tip=document.createElement('div'); tip.className='ot-tooltip'; el.style.position='relative'; el.appendChild(tip);
+    const svgEl = el.querySelector('svg');
+    el.querySelectorAll('.ot-bar-seg').forEach(seg=>{
+      seg.addEventListener('mousemove', ev=>{
+        const i=+seg.getAttribute('data-i'); const rect=svgEl.getBoundingClientRect(); const r=bars.series[i];
+        const total = bars.countries.reduce((s,c)=>s+(r.values[c]||0),0);
+        let rows = bars.countries.map(c=>`<div class="row"><span class="sw" style="background:${colorFor[c]}"></span>${c}: <b>${fmtK(r.values[c]||0)}</b></div>`).join('');
+        tip.innerHTML = `<div style="margin-bottom:3px;font-weight:700;">${fmtDateFull(r.month)} — ${fmtK(total)} total</div>${rows}`;
+        const scaleX = rect.width/W; const cx=(PAD.l+gap*i+gap/2)*scaleX;
+        tip.style.left=cx+'px'; tip.style.top='4px'; tip.style.opacity=1;
+      });
+      seg.addEventListener('mouseleave', ()=>{ tip.style.opacity=0; });
+    });
+    legendEl.innerHTML = bars.countries.map(c=>`<span class="li"><span style="width:10px;height:10px;border-radius:3px;background:${colorFor[c]};display:inline-block;"></span>${c}</span>`).join('');
+  })();
+})();
+</script>
+{% endblock content %}

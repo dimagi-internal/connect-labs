@@ -9,10 +9,17 @@ branch.
 
 ```bash
 python3 tools/perf_triage.py --hours 3          # add --json for machine output
+python3 tools/perf_triage.py --hours 168        # the weekly telemetry-review pass
 ```
 
 Run that first. The sections below are the manual fallback and the reasoning
 behind each threshold.
+
+Any window works; the metric period widens automatically past 120h to stay under
+CloudWatch's 1440-datapoint cap, and the verdict header prints the period it used.
+A wider period averages short spikes away, so **widen to find an incident, then
+re-run narrow around it to size it** — a 10-minute saturation that is obvious at
+`--hours 3` can read as calm at `--hours 168`.
 
 ---
 
@@ -100,10 +107,25 @@ Emitted by `connect_labs/utils/request_telemetry.py` for any request over ~3s,
 | --- | --- | --- |
 | `outbound_fanout` | one request made N remote calls — **the 2026-07-29 bug** | memoise the resolution, batch into one call, or move off the request path |
 | `db_fanout` | N+1 in the ORM | `select_related` / `prefetch_related` |
-| `slow` alone | heavy computation or a slow dependency | profile the view; check `outbound_by_host` for who is slow |
+| `slow` alone | heavy computation or a slow dependency | read the `*_ms` split below before profiling anything |
 
 `outbound_by_host` names the victim. A single request showing
 `{"connect.dimagi.com": 139}` **is** a fan-out — no further proof needed.
+
+**For `slow` alone, the counts cannot answer it — the split can.** Every line
+carries `outbound_ms`, `db_ms` and `self_ms` (whatever is left after both waits):
+
+| Dominant term | Conclusion | Fix shape |
+| --- | --- | --- |
+| `outbound_ms` | we are waiting on an upstream, usually Connect | cache/batch the call, or move it off the request path; if Connect itself is slow, that is a Connect bug — file it there |
+| `db_ms` | a genuinely expensive query, not an N+1 (the count would be low) | read the plan; index or narrow it |
+| `self_ms` | our own Python | profile the view |
+
+This split exists because 2026-08-11 hit a shape the counts alone could not
+resolve: `/audit/api/<id>/bulk-data/` at 9–87s on **2** outbound calls and ~16
+queries. Too few calls for `outbound_fanout`, too few queries for `db_fanout`,
+and nothing recorded said where the seconds went. Read these three before
+forming a hypothesis; they are cheaper than being wrong.
 
 **If that returns nothing**, the app was too saturated to log, or the telemetry
 predates the request. Fall back to ALB access logs, recorded outside the process:

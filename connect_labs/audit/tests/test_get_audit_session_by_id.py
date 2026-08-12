@@ -277,3 +277,87 @@ class TestSweepDoesNotRepeatOnMiss:
 
         assert da.get_audit_session(9) is found
         assert cache.get(_session_opp_cache_key(9)) == 1976, "the memo should re-point to the new home"
+
+
+class TestUpstreamErrorsDoNotAbortTheLadder:
+    """The 2026-08-08 shape: 1807 consecutive 500s over 26 hours on one session.
+
+    Every rung of this ladder exists so the next one gets a turn, but only the
+    sweep was wrapped -- an upstream error on the remembered or ambient rung
+    escaped as a 500 and the sweep that could have located the session never
+    ran. A rung that errors must mean "not here", exactly like a rung that
+    misses.
+    """
+
+    def test_error_on_ambient_scope_still_falls_through_to_the_sweep(self):
+        found = FakeSession(id=9, opportunity_id=1976)
+        main_client = MagicMock()
+
+        def flaky(sid, **kw):
+            if kw.get("opportunity_id") is None:
+                raise RuntimeError("connect returned 502")
+            return found if kw.get("opportunity_id") == 1976 else None
+
+        main_client.get_record_by_id.side_effect = flaky
+        da = _data_access(main_client)
+        da.search_opportunities = MagicMock(return_value=[{"id": 1976}])
+
+        # Previously this raised, and the user got a 500.
+        assert da.get_audit_session(9).id == 9
+
+    def test_error_on_the_remembered_scope_still_falls_through(self):
+        from django.core.cache import cache
+
+        from connect_labs.audit.data_access import _session_opp_cache_key
+
+        found = FakeSession(id=11, opportunity_id=1973)
+        cache.set(_session_opp_cache_key(11), 4242)
+
+        main_client = MagicMock()
+
+        def flaky(sid, **kw):
+            if kw.get("opportunity_id") == 4242:
+                raise RuntimeError("connect returned 502")
+            return found
+
+        main_client.get_record_by_id.side_effect = flaky
+        da = _data_access(main_client)
+
+        assert da.get_audit_session(11).id == 11
+
+    def test_a_total_upstream_outage_is_not_memoised_as_not_found(self):
+        """The dangerous half of this fix.
+
+        Treating an error as a miss is only safe if the miss is not remembered:
+        caching one would turn a transient blip into a sticky "session not
+        found" for a session that exists, which is worse than the 500.
+        """
+        main_client = MagicMock()
+        main_client.get_record_by_id.side_effect = RuntimeError("connect is down")
+
+        da = _data_access(main_client)
+        da.search_opportunities = MagicMock(return_value=[{"id": 1976}])
+
+        assert da.get_audit_session(12) is None
+
+        # Upstream recovers; the very next call must go back to the network
+        # rather than serve a memoised miss.
+        recovered = FakeSession(id=12, opportunity_id=1973)
+        main_client.get_record_by_id.side_effect = None
+        main_client.get_record_by_id.return_value = recovered
+
+        assert da.get_audit_session(12).id == 12
+
+    def test_a_genuine_miss_is_still_memoised(self):
+        """The optimisation #1060 added must survive the error handling."""
+        main_client = MagicMock()
+        main_client.get_record_by_id.return_value = None
+
+        da = _data_access(main_client)
+        da.search_opportunities = MagicMock(return_value=[{"id": i} for i in range(100, 140)])
+
+        assert da.get_audit_session(13) is None
+        da.search_opportunities.reset_mock()
+
+        assert da.get_audit_session(13) is None
+        da.search_opportunities.assert_not_called()

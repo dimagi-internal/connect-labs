@@ -18,6 +18,13 @@ WORKERS=${WEB_CONCURRENCY:-3}
 # can't create the socket and logs `Control server error: [Errno 13] Permission
 # denied` on every startup/worker-recycle. Serving is unaffected, but the noise
 # is misleading — disabling the feature we don't use removes it cleanly.
+#
+# The worker class is our own LabsUvicornWorker rather than uvicorn's, purely so
+# uvicorn's `limit_concurrency` can be set from the environment: gunicorn has no
+# flag for it, it is only reachable via the worker class's CONFIG_KWARGS. The
+# valve is OFF unless WEB_LIMIT_CONCURRENCY is set, so this is behaviour-neutral
+# by default — see config/uvicorn_worker.py for why the value is a deployment
+# decision (#1152) and what it does not bound.
 gunicorn config.asgi:application --bind 0.0.0.0:8000 --chdir=/app --timeout 600 \
     --no-control-socket \
-    -k uvicorn.workers.UvicornWorker -w "$WORKERS"
+    -k config.uvicorn_worker.LabsUvicornWorker -w "$WORKERS"

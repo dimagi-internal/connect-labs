@@ -118,9 +118,83 @@ def _ward_prefix(ward: str | None) -> str:
     group-name prefix (e.g. "Kano North" -> "KAN"). Punctuation/spaces are
     dropped before taking the first 3 so short or oddly-formatted names still
     yield a usable prefix. Empty/missing ward -> "" (caller falls back to the
-    plain, unprefixed label)."""
+    plain, unprefixed label).
+
+    NOT collision-safe on its own — two different wards can share the same
+    first 3 letters (e.g. "Doka" and "Doka Dawa" both -> "DOK"). Labeling a
+    batch of multiple wards should go through ``_disambiguated_ward_prefixes``
+    instead, which calls this for the natural/preferred prefix and only grows
+    it when a real collision would occur."""
     letters = "".join(ch for ch in (ward or "") if ch.isalnum())
     return letters[:3].upper()
+
+
+def _disambiguated_ward_prefixes(
+    wards, ward_lga: dict[str, str] | None = None, preclaimed: set[str] | None = None
+) -> dict[str, str]:
+    """Map each distinct ward name in ``wards`` to a short, UNIQUE uppercase
+    prefix, so two different wards never collide into the same group-name
+    prefix — confirmed in real production data: "Doka" and "Doka Dawa" both
+    naturally truncate to "DOK", which silently merged their groups' stats
+    together downstream (two unrelated ~15km-apart wards' cells sharing one
+    label, wildly inflating that "group"'s building count and spread).
+
+    Every ward starts from its natural 3-letter ``_ward_prefix``. Wards are
+    considered alphabetically (not first-seen/cluster order, which is an
+    arbitrary implementation detail) so which of two colliding names keeps
+    the short prefix is stable and predictable. The first ward to claim a
+    given prefix keeps it; a LATER ward whose natural prefix is already
+    claimed disambiguates in order:
+
+      1. Its own prefix + the first 2 letters of its LGA (``ward_lga``), e.g.
+         "Doka Dawa" in Rimin Gado -> "DOKRI" — more meaningful than an
+         arbitrary extra letter, since it tells you WHY it's different, not
+         just THAT it is. Skipped if ``ward_lga`` wasn't passed, or this
+         ward's LGA is empty/has no letters, or that combination is ALSO
+         already claimed (e.g. two same-prefix wards in the same LGA).
+      2. Growing its own name one letter at a time (e.g. "Doka Dawa" ->
+         "DOKA") until unique.
+      3. A numeric suffix, once the ward's own full name is exhausted and it
+         STILL collides (only possible for genuinely identical letters after
+         stripping punctuation) — the last-resort guarantee.
+
+    Empty/missing ward names are skipped entirely — the caller's ``.get(ward,
+    "")`` falls back to no prefix, matching ``_ward_prefix``'s own behaviour.
+
+    ``preclaimed`` seeds already-taken codes (e.g. from a precomputed
+    nationwide lookup table the caller checked first — see
+    ``core.ward_codes.lookup_ward_code``) so this runtime fallback never
+    picks a prefix that collides with one of those either."""
+    claimed: dict[str, str] = {code: "<preclaimed>" for code in (preclaimed or ())}
+    assigned: dict[str, str] = {}
+    for ward in sorted({w for w in wards if w}):
+        letters = "".join(ch for ch in ward if ch.isalnum()).upper()
+        if not letters:
+            continue
+        prefix = letters[:3]
+        if prefix in claimed:
+            lga = (ward_lga or {}).get(ward, "")
+            lga_letters = "".join(ch for ch in lga if ch.isalnum()).upper()
+            lga_candidate = prefix + lga_letters[:2] if lga_letters else None
+            if lga_candidate and lga_candidate not in claimed:
+                prefix = lga_candidate
+            else:
+                length = 4
+                prefix = letters[:length]
+                while prefix in claimed:
+                    length += 1
+                    if length > len(letters):
+                        suffix = 2
+                        candidate = f"{letters}{suffix}"
+                        while candidate in claimed:
+                            suffix += 1
+                            candidate = f"{letters}{suffix}"
+                        prefix = candidate
+                        break
+                    prefix = letters[:length]
+        claimed[prefix] = ward
+        assigned[ward] = prefix
+    return assigned
 
 
 def _group_label(ward: str | None, n) -> str:
@@ -230,22 +304,65 @@ def _bbox_bucket(work_areas: list[dict], target_size: int) -> list[dict]:
     lon_span = max(lon_max - lon_min, 1e-9)
     lat_span = max(lat_max - lat_min, 1e-9)
     bucket_keys = []
+    ward_lga: dict[str, str] = {}
+    ward_state: dict[str, str] = {}
     for w, (lon, lat) in zip(work_areas, centroids):
         i = min(grid_n - 1, int((lat - lat_min) / lat_span * grid_n))
         j = min(grid_n - 1, int((lon - lon_min) / lon_span * grid_n))
-        ward = (w.get("properties") or {}).get("ward") or ""
+        props = w.get("properties") or {}
+        ward = props.get("ward") or ""
+        if ward and ward not in ward_lga:
+            ward_lga[ward] = props.get("lga") or ""
+            ward_state[ward] = props.get("state") or ""
         bucket_keys.append((ward, i * grid_n + j))
-    labels = _ward_numbered_labels(bucket_keys)
+    labels = _ward_numbered_labels(bucket_keys, ward_lga, ward_state)
     for w, key in zip(work_areas, bucket_keys):
         w["work_area_group"] = labels[key]
     return work_areas
 
 
-def _ward_numbered_labels(keys: list[tuple[str, object]]) -> dict[tuple[str, object], str]:
+def _ward_numbered_labels(
+    keys: list[tuple[str, object]],
+    ward_lga: dict[str, str] | None = None,
+    ward_state: dict[str, str] | None = None,
+) -> dict[tuple[str, object], str]:
     """Assign each distinct ``(ward, bucket)`` key a label ``{WARD-}group-N``, where
     ``N`` restarts at 1 for every distinct ward (first-seen order) — so two wards'
     groups don't share a running count (``KAN-group-1, KAN-group-2, MAD-group-1``,
-    not ``..., MAD-group-3``)."""
+    not ``..., MAD-group-3``).
+
+    Ward PREFIXES are resolved once up front, per distinct ward in ``keys``:
+    first a lookup against the precomputed nationwide ``core.ward_codes``
+    table (when ``ward_state`` is passed, so state+LGA+ward can be matched)
+    — a hit is guaranteed unique nationally, not just within this batch, so
+    it's used as-is. Any ward that misses the table (not in the reference
+    data, or the plan's own recorded ward/LGA spelling doesn't match GRID3's
+    canonical one — e.g. a local annotation like "Galinja (non-RCT)") falls
+    back to ``_disambiguated_ward_prefixes`` over the miss-ward set,
+    seeded with every code the table lookups already claimed so the runtime
+    fallback can't collide with those either. Without ``ward_state`` (or for
+    every miss), this is exactly the prior behaviour — two different wards
+    whose names happen to share the same first 3 letters (e.g. "Doka" /
+    "Doka Dawa", both naturally "DOK") never end up with colliding label
+    strings; ``ward_lga`` lets a real collision disambiguate via the LGA
+    first (more meaningful than an arbitrary extra letter) before falling
+    back to growing the ward's own name."""
+    from connect_labs.microplans.core.ward_codes import lookup_ward_code
+
+    distinct_wards = {key[0] for key in keys if key[0]}
+    prefixes: dict[str, str] = {}
+    preclaimed: set[str] = set()
+    misses = []
+    for ward in distinct_wards:
+        state = (ward_state or {}).get(ward, "")
+        code = lookup_ward_code(state, (ward_lga or {}).get(ward, ""), ward) if state else None
+        if code:
+            prefixes[ward] = code
+            preclaimed.add(code)
+        else:
+            misses.append(ward)
+    if misses:
+        prefixes.update(_disambiguated_ward_prefixes(misses, ward_lga, preclaimed))
     counters: dict[str, int] = {}
     labels: dict[tuple[str, object], str] = {}
     for key in keys:
@@ -253,7 +370,9 @@ def _ward_numbered_labels(keys: list[tuple[str, object]]) -> dict[tuple[str, obj
             continue
         ward = key[0]
         counters[ward] = counters.get(ward, 0) + 1
-        labels[key] = _group_label(ward, counters[ward])
+        prefix = prefixes.get(ward, "")
+        n = counters[ward]
+        labels[key] = f"{prefix}-group-{n}" if prefix else f"group-{n}"
     return labels
 
 
@@ -435,7 +554,7 @@ def _bfs_adjacency(
         before = frozenset(frozenset(cells) for _seed, cells in clusters_with_seed)
         clusters_with_seed = _absorb_enclosed_clusters(clusters_with_seed, adjacency, geoms_3857)
         clusters_with_seed = _reassign_isolated_pieces_touching_other_wags(
-            clusters_with_seed, geoms_3857, wa_ids, tree, barriers_3857
+            clusters_with_seed, by_id, geoms_3857, wa_ids, tree, resolved_max, barriers_3857
         )
         clusters_with_seed = _reassign_dominated_cells(
             clusters_with_seed, by_id, geoms_3857, wa_ids, tree, resolved_max, barriers_3857
@@ -476,11 +595,17 @@ def _bfs_adjacency(
     # the top-up pass above) — one label per cluster (mirrors Connect's own
     # WorkAreaGroup.ward, which is stamped from the first row seen with a given group
     # name; see CONNECT_IMPORT_CONTRACT.md) ----
-    cluster_keys = [
-        ((by_id[seed].get("properties") or {}).get("ward") or "", i)
-        for i, (seed, _cells) in enumerate(clusters_with_seed)
-    ]
-    labels = _ward_numbered_labels(cluster_keys)
+    cluster_keys = []
+    ward_lga: dict[str, str] = {}
+    ward_state: dict[str, str] = {}
+    for i, (seed, _cells) in enumerate(clusters_with_seed):
+        props = by_id[seed].get("properties") or {}
+        ward = props.get("ward") or ""
+        if ward and ward not in ward_lga:
+            ward_lga[ward] = props.get("lga") or ""
+            ward_state[ward] = props.get("state") or ""
+        cluster_keys.append((ward, i))
+    labels = _ward_numbered_labels(cluster_keys, ward_lga, ward_state)
     for key, (_seed, cells) in zip(cluster_keys, clusters_with_seed):
         label = labels[key]
         for wid in cells:
@@ -957,9 +1082,11 @@ def _reassign_dominated_cells(
 
 def _reassign_isolated_pieces_touching_other_wags(
     clusters_with_seed: list[tuple[str, list[str]]],
+    by_id: dict[str, dict],
     geoms_3857: dict[str, object],
     wa_ids: list[str],
     tree,
+    max_buildings: int,
     barriers_3857=None,
 ) -> list[tuple[str, list[str]]]:
     """Within each WAG, split its cells into connected pieces (linked by
@@ -975,12 +1102,22 @@ def _reassign_isolated_pieces_touching_other_wags(
     group while sitting right against (or diagonally against) another group's
     territory reads as "this actually belongs to whichever WAG it's touching."
     Move the whole piece there (the foreign WAG it touches the most cells of,
-    ties broken by cluster id).
+    ties broken by cluster id) — UNLESS that would push the receiving WAG over
+    ``max_buildings``, in which case the piece is promoted to its own new,
+    standalone WAG instead (its own seed, own label) rather than force-merged.
 
-    Overrides max_buildings, like ``_absorb_enclosed_clusters``: a piece
-    stranded next to a different WAG is a worse outcome than a modest
-    overshoot — matching the priority that walkability/non-fragmentation
-    outranks hitting the building target exactly.
+    A small piece overshooting the receiving WAG's ceiling a little is the
+    same "modest overshoot beats a stranded piece" trade this whole loop is
+    built on — but nothing here previously bounded HOW large a "piece" can
+    be, and a real ward's phase-1/top-up output can leave a piece of dozens
+    of cells and 100+ buildings disconnected from its main body. Force-merging
+    THAT into a neighbour isn't a modest overshoot, it can nearly double the
+    receiving WAG's size (confirmed against real production data: a 106-cell,
+    322-building piece merged into a already-substantial neighbour, blowing
+    past a max_buildings of 180). Standing the piece up as its own WAG fixes
+    the disconnection (the actual problem this pass exists to solve) without
+    that blowout; if the new WAG ends up small, the later tiny-WAG mop-up
+    (which DOES respect max_buildings) gets a fair shot at placing it well.
 
     Runs unconditionally, iterated together with the other shape-sanity
     passes (see the loop in ``_bfs_adjacency``) — resolving one piece can
@@ -989,6 +1126,9 @@ def _reassign_isolated_pieces_touching_other_wags(
         return clusters_with_seed
 
     from shapely.geometry import LineString
+
+    def building_count(wid: str) -> int:
+        return int(by_id[wid].get("building_count", 0))
 
     def crosses_barrier(a: str, b: str) -> bool:
         if barriers_3857 is None:
@@ -1016,6 +1156,10 @@ def _reassign_isolated_pieces_touching_other_wags(
         seeds[cid] = seed
         for w in cells:
             cell_owner[w] = cid
+    next_cid = len(clusters_with_seed)  # fresh ids for pieces promoted standalone
+
+    def total(cid: int) -> int:
+        return sum(building_count(w) for w in active[cid])
 
     def connected_pieces(cid: int) -> list[list[str]]:
         # Iterate candidate start cells in SORTED (not raw set/hash) order so the
@@ -1064,11 +1208,22 @@ def _reassign_isolated_pieces_touching_other_wags(
                 if not tally:
                     continue  # touches only open terrain — stays part of cid
                 best_cid = max(tally.items(), key=lambda kv: (kv[1], -kv[0]))[0]
+                piece_total = sum(building_count(w) for w in piece)
                 for w in piece:
                     active[cid].remove(w)
-                active[best_cid].extend(piece)
-                for w in piece:
-                    cell_owner[w] = best_cid
+                if total(best_cid) + piece_total <= max_buildings:
+                    active[best_cid].extend(piece)
+                    for w in piece:
+                        cell_owner[w] = best_cid
+                else:
+                    # Merging would push the receiving WAG well past its ceiling —
+                    # stand the piece up as its own WAG instead of force-merging it.
+                    new_cid = next_cid
+                    next_cid += 1
+                    active[new_cid] = sorted(piece)
+                    seeds[new_cid] = min(piece)
+                    for w in piece:
+                        cell_owner[w] = new_cid
                 if seeds[cid] in piece:
                     seeds[cid] = active[cid][0] if active[cid] else None
                 changed = True

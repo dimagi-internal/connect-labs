@@ -314,7 +314,19 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
     // ── Config from the DEFINITION (pinned at create time, read-only here) ────
     const batch = (definition.config && definition.config.audit_batch) || {};
     const perOpp = batch.per_opp || {};
-    const oppNames = batch.opp_names || {};
+    // Names come from the #user-opportunities blob the base template embeds for
+    // any multi_opp workflow (real LLO names, e.g. "CHC PRE-RCT (Nigeria) - EHA") —
+    // same convention as flw_audit_trend_dashboard.py. batch.opp_names can still
+    // override a specific id if ever manually seeded.
+    const oppNamesFromPage = React.useMemo(() => {
+        const m = {};
+        try {
+            const el = document.getElementById('user-opportunities');
+            if (el) JSON.parse(el.textContent).forEach(o => { m[o.id] = o.name; });
+        } catch (e) { console.error('Weekly dual-track audit: failed to parse user-opportunities', e); }
+        return m;
+    }, []);
+    const oppNames = Object.assign({}, oppNamesFromPage, batch.opp_names || {});
     const trackA = batch.track_a || {};
     const trackB = batch.track_b || {};
     const oppIds = (instance.opportunity_ids && instance.opportunity_ids.length)
@@ -407,6 +419,69 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                 });
         });
     }, [oppIds.join(',')]);
+
+    // ── Auto-select MUAC path when newly discovered (e.g. an opp with no app
+    // submitting image data yet) ────────────────────────────────────────────
+    // Mirrors the classifier auto-default behavior (defaultClassifiersForPath):
+    // an opp with ZERO saved Track A paths gets any muac-matching discovered
+    // path auto-selected AND auto-saved, so the unattended daily/weekly
+    // schedule (which reads the pinned DEFINITION, not this browser session)
+    // picks it up the next time anyone opens this page after that opp's app
+    // starts submitting image data -- no manual re-select + Save required.
+    // Re-fires any time Track A is empty and a muac path is discoverable, so
+    // deliberately leaving Track A empty for an opp that already HAS a muac
+    // path won't stick across reloads -- accepted tradeoff for this template.
+    const autoAppliedRef = React.useRef(new Set());
+    React.useEffect(() => {
+        const newlySelected = {};
+        oppIds.forEach(oid => {
+            const key = String(oid);
+            const iq = imageQuestionsByOpp[key];
+            if (!iq || iq.loading || iq.error) return;
+            if (autoAppliedRef.current.has(key)) return;
+            const sel = selectedPathsByOpp[key] || { trackA: [], trackB: [] };
+            if (sel.trackA && sel.trackA.length > 0) return;
+            const muacPaths = iq.questions.filter(q => /muac/i.test(q.path || '')).map(q => q.path);
+            if (!muacPaths.length) return;
+            autoAppliedRef.current.add(key);
+            newlySelected[key] = muacPaths;
+        });
+        if (Object.keys(newlySelected).length === 0) return;
+
+        setSelectedPathsByOpp(prev => {
+            const next = { ...prev };
+            Object.keys(newlySelected).forEach(key => {
+                next[key] = { ...(next[key] || { trackB: [] }), trackA: newlySelected[key] };
+            });
+            return next;
+        });
+
+        // Auto-save: build the SAME per_opp payload handleSaveConfig would,
+        // using current state plus these overrides (state hasn't re-rendered
+        // yet, so selectedPathsByOpp here is still the pre-update snapshot).
+        (async () => {
+            const per_opp = {};
+            oppIds.forEach(oid => {
+                const key = String(oid);
+                const sel = newlySelected[key]
+                    ? { trackA: newlySelected[key], trackB: (selectedPathsByOpp[key] || {}).trackB || [] }
+                    : (selectedPathsByOpp[key] || { trackA: [], trackB: [] });
+                const selectedPaths = Array.from(new Set([...(sel.trackA || []), ...(sel.trackB || [])]));
+                const classifiers = {};
+                selectedPaths.forEach(path => { classifiers[path] = effectiveClassifiers(key, path); });
+                per_opp[key] = { muac_image_paths: sel.trackA || [], rest_image_paths: sel.trackB || [], classifiers };
+            });
+            try {
+                await fetch('/labs/workflow/api/' + instance.definition_id + '/audit-batch-config/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+                    body: JSON.stringify({ track_a_name: trackAName, track_b_name: trackBName, per_opp: per_opp }),
+                });
+            } catch (e) {
+                console.error('Auto-save of newly-discovered MUAC path failed:', e);
+            }
+        })();
+    }, [imageQuestionsByOpp, oppIds.join(',')]);
 
     const setTrackPaths = (oppKey, trackKey, updater) => {
         setSelectedPathsByOpp(prev => {
@@ -835,7 +910,12 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                     <React.Fragment>
                         <p className="text-xs text-gray-500 mb-4">
                             Pick which image path(s) each track audits, per opportunity. Track A is
-                            required — at least one path must be selected for every opportunity below.
+                            required for opportunities with discovered image questions — at least one
+                            path must be selected there. Opportunities with no image questions yet (the
+                            app hasn't started submitting that data) are saved with no paths and simply
+                            skipped when audits are created — once questions appear, this page
+                            auto-selects and auto-saves any muac-matching path the next time it's
+                            opened, so nobody has to remember to come back and configure it manually.
                             Track B is optional; leave it empty to skip it for an opportunity. Each
                             selected path can independently opt into AI classifiers below — greyed-out
                             classifiers don't apply to that path's image type.
@@ -942,10 +1022,18 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                                                 </div>
                                             );
                                         })()}
-                                        {sel.trackA.length === 0 && (
+                                        {sel.trackA.length === 0 && iq.questions.length > 0 && (
                                             <div className="mt-2 text-xs text-amber-600">
                                                 <i className="fa-solid fa-triangle-exclamation mr-1"></i>
                                                 {trackAName} requires at least one selected path for this opportunity.
+                                            </div>
+                                        )}
+                                        {sel.trackA.length === 0 && iq.questions.length === 0 && !iq.loading && !iq.error && (
+                                            <div className="mt-2 text-xs text-gray-500">
+                                                <i className="fa-solid fa-circle-info mr-1"></i>
+                                                No image questions found yet for this opportunity — it will be skipped
+                                                from {trackAName} audits until questions become available. Come back
+                                                and select paths once its app is submitting image data.
                                             </div>
                                         )}
                                     </div>
@@ -955,7 +1043,17 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
                         <div className="mt-4 flex items-center gap-3">
                             <button onClick={handleSaveConfig}
                                 disabled={savingConfig || isRunning || instance.status === 'completed'
-                                    || oppIds.some(oid => !(selectedPathsByOpp[String(oid)] || {}).trackA || (selectedPathsByOpp[String(oid)] || {}).trackA.length === 0)}
+                                    || oppIds.some(oid => {
+                                        const key = String(oid);
+                                        const iqForOpp = imageQuestionsByOpp[key] || { questions: [] };
+                                        const selForOpp = selectedPathsByOpp[key] || { trackA: [] };
+                                        // Only block Save for opps that actually HAVE discovered image
+                                        // questions but no Track A path chosen yet. An opp with zero
+                                        // discovered questions (app not submitting that data yet) is
+                                        // saved with empty paths and skipped at creation time instead
+                                        // of blocking the whole multi-opp config from saving.
+                                        return iqForOpp.questions.length > 0 && (!selForOpp.trackA || selForOpp.trackA.length === 0);
+                                    })}
                                 className="inline-flex items-center px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-900 disabled:bg-gray-400 text-sm font-medium">
                                 {savingConfig
                                     ? <span><i className="fa-solid fa-spinner fa-spin mr-2"></i>Saving…</span>

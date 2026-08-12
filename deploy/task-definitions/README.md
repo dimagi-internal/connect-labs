@@ -26,6 +26,24 @@ and `MAPBOX_TOKEN` (a public `pk.*` token that already ships in the frontend JS)
 **Rule:** never put a secret value in `environment[]`. If you need a new secret,
 create it in Secrets Manager and add a `secrets[]` entry pointing at its ARN.
 
+## `WEB_LIMIT_CONCURRENCY` — the web-tier overload valve (ships off)
+
+`web.json` carries `WEB_LIMIT_CONCURRENCY: "0"`, which means **off** — the
+pre-existing, unbounded behaviour. Set it to a positive integer and each uvicorn
+worker answers 503 once it is at the limit, instead of accepting work the tier
+cannot serve. There are `WEB_CONCURRENCY` worker processes, so the tier-wide
+ceiling is the product of the two.
+
+It is deliberately kept in the file at `0` rather than omitted, so the knob is
+discoverable and enabling it is a one-value diff.
+
+Before picking a number, read the docstring in `config/uvicorn_worker.py`. The
+short version: uvicorn trips on `max(open sockets, in-flight requests)`, and
+under keep-alive "open sockets" includes idle ones — so this is a blunt overload
+valve, **not** a DB-connection governor, and a value tight enough to bound RDS
+connections would 503 real users. Context and the open policy decision are in
+#1152; the incident that motivated it is #1060.
+
 ## Why version-control them
 
 Drift. The container command used to live only in the AWS console. When

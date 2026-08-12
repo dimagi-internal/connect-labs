@@ -31,6 +31,7 @@ def external_user(db):
     [
         "labs_admin:index",
         "labs_admin:list",
+        "labs_admin:opportunity_tracker",
         "labs_admin:visit_inspector",
         "labs_admin:cache_manager",
         "labs_admin:task_manager",
