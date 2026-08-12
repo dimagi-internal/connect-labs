@@ -160,7 +160,8 @@ class FetchReviewOutcome(NamedTuple):
     ai_confidence: float | None
     human_result: str | None
     skipped: bool
-    # Individual no_match/error ReviewerVerdicts for this image, BEFORE
+    # Individual no_match ReviewerVerdicts for this image (error verdicts are
+    # deliberately excluded -- see the fail_verdicts filter below), BEFORE
     # _combine_reviewer_results collapses them into the single winning verdict
     # above. Two independent reviewers (e.g. MUAC OverZoom + MUAC Match) can
     # each fail the same image -- this is what lets the classifier-fail export
