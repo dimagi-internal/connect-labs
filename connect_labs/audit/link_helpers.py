@@ -118,50 +118,76 @@ def resolve_urls_by_blob(
 
     Consolidates the batching approach classifier_fail_sync.py and
     views.py::_resolve_visit_cluster_group each used inline: one get_visits_batch call,
-    one HQ-metadata fetch, one org-slug lookup -- regardless of how many images are in
-    visit_images. Works identically with or without a live `request` (see
-    resolve_org_slug / build_absolute_url), so the same function serves both the
-    human save/complete path and the request-less AI-review/duplicate-detection paths.
+    one HQ-metadata fetch, one org-slug lookup PER DISTINCT OPPORTUNITY represented --
+    regardless of how many images are in visit_images. Works identically with or
+    without a live `request` (see resolve_org_slug / build_absolute_url), so the same
+    function serves both the human save/complete path and the request-less
+    AI-review/duplicate-detection paths.
+
+    Groups images by their OWN `opportunity_id` when present (falling back to the
+    `opportunity_id` param otherwise) rather than assuming every image in
+    `visit_images` belongs to a single opportunity -- a multi-opp session (e.g.
+    muac_picture_audit, weekly_dual_track_audit) can flag images sourced from a
+    different opportunity than the session's own. Callers don't need to pre-group
+    or make one call per opportunity themselves; this handles the common
+    single-opportunity case (no image carries its own "opportunity_id") with
+    exactly the one get_visits_batch/HQ/org-slug round trip it always did.
 
     Args:
         data_access: AuditDataAccess instance (needs get_visits_batch).
         access_token: OAuth token for the HQ-metadata and org-slug lookups.
-        opportunity_id: Opportunity these visits/images belong to.
-        visit_ids: Visit ids to batch-resolve xform_id/user_id/user_visit_id for.
+        opportunity_id: Default/primary opportunity for images that don't carry
+            their own "opportunity_id" key.
+        visit_ids: Visit ids scoping the session -- only used to short-circuit
+            when the session has none; per-opportunity visit ids are derived
+            from visit_images itself (see grouping above).
         visit_images: {visit_id_str: [image_dict, ...]} (session.data["visit_images"] shape).
         request: Live HttpRequest if available; None in background contexts.
 
-    Returns {} if visit_ids is empty or the visit batch fetch fails.
+    Returns {} if visit_ids is empty, or a partial mapping if one opportunity's
+    visit-batch fetch fails while another's succeeds (failures are logged, not raised).
     """
     if not visit_ids:
         return {}
 
-    try:
-        visits = data_access.get_visits_batch(visit_ids, opportunity_id)
-    except Exception:
-        logger.exception("[Audit] Failed to fetch visit batch for opportunity %s", opportunity_id)
-        return {}
+    # {opportunity_id: {visit_id_str: [image_dict, ...]}}
+    visit_images_by_opp: dict = {}
+    for visit_id_str, images in visit_images.items():
+        for image in images:
+            opp_for_image = image.get("opportunity_id") or opportunity_id
+            visit_images_by_opp.setdefault(opp_for_image, {}).setdefault(visit_id_str, []).append(image)
 
-    xform_id_by_visit = {str(v["id"]): v.get("xform_id") for v in visits}
-    link_id_by_visit = {str(v["id"]): (v.get("user_id"), v.get("user_visit_id")) for v in visits}
-
-    hq_link_base = resolve_hq_link_base(access_token, opportunity_id)
-    org_slug = resolve_org_slug(access_token, opportunity_id, request=request)
     connect_url = getattr(settings, "CONNECT_PRODUCTION_URL", "https://connect.dimagi.com").rstrip("/")
 
     urls_by_blob: dict[str, dict] = {}
-    for visit_id_str, images in visit_images.items():
-        form_url = build_hq_form_url(hq_link_base, xform_id_by_visit.get(visit_id_str))
-        user_id, user_visit_id = link_id_by_visit.get(visit_id_str, (None, None))
-        connect_visit_url = build_connect_visit_url(connect_url, org_slug, opportunity_id, user_id, user_visit_id)
-        for image in images:
-            blob_id = image.get("blob_id")
-            if not blob_id:
-                continue
-            image_path = reverse("audit:audit_image_connect", kwargs={"opp_id": opportunity_id, "blob_id": blob_id})
-            urls_by_blob[blob_id] = {
-                "image_url": build_absolute_url(image_path, request=request),
-                "form_url": form_url,
-                "connect_url": connect_visit_url,
-            }
+    for opp_for_group, grouped_visit_images in visit_images_by_opp.items():
+        visit_ids_for_group = [int(vid) for vid in grouped_visit_images]
+        try:
+            visits = data_access.get_visits_batch(visit_ids_for_group, opp_for_group)
+        except Exception:
+            logger.exception("[Audit] Failed to fetch visit batch for opportunity %s", opp_for_group)
+            continue
+
+        xform_id_by_visit = {str(v["id"]): v.get("xform_id") for v in visits}
+        link_id_by_visit = {str(v["id"]): (v.get("user_id"), v.get("user_visit_id")) for v in visits}
+
+        hq_link_base = resolve_hq_link_base(access_token, opp_for_group)
+        org_slug = resolve_org_slug(access_token, opp_for_group, request=request)
+
+        for visit_id_str, images in grouped_visit_images.items():
+            form_url = build_hq_form_url(hq_link_base, xform_id_by_visit.get(visit_id_str))
+            user_id, user_visit_id = link_id_by_visit.get(visit_id_str, (None, None))
+            connect_visit_url = build_connect_visit_url(connect_url, org_slug, opp_for_group, user_id, user_visit_id)
+            for image in images:
+                blob_id = image.get("blob_id")
+                if not blob_id:
+                    continue
+                image_path = reverse(
+                    "audit:audit_image_connect", kwargs={"opp_id": opp_for_group, "blob_id": blob_id}
+                )
+                urls_by_blob[blob_id] = {
+                    "image_url": build_absolute_url(image_path, request=request),
+                    "form_url": form_url,
+                    "connect_url": connect_visit_url,
+                }
     return urls_by_blob

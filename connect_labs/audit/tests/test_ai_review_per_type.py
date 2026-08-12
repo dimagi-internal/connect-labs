@@ -270,6 +270,47 @@ def test_classifier_fail_rows_get_urls_resolved_before_human_review(patched_regi
     assert captured_rows["rows"][0]["form_url"] == "https://hq/blobA"
 
 
+def test_classifier_fail_row_uses_its_own_image_opportunity_id(patched_registry, monkeypatch):
+    """Regression: a multi-opp combined session (e.g. muac_picture_audit) can
+    flag images sourced from different opportunities -- each row's stored
+    opportunity_id must be that image's own, not session.opportunity_id."""
+    session = _FakeSession(
+        {
+            "visit_images": {
+                "1": [
+                    {"blob_id": "blobA", "question_id": "form/photo_a", "related_fields": [], "opportunity_id": 555},
+                    {"blob_id": "blobB", "question_id": "form/photo_b", "related_fields": [], "opportunity_id": 777},
+                ],
+            }
+        },
+        opportunity_id=1,
+    )
+    data_access = _FakeDataAccess(session)
+    ai_reviewers = {
+        "form/photo_a": [{"agent_id": "agent_fail", "auto_apply_actions": ["nope"]}],
+        "form/photo_b": [{"agent_id": "agent_fail", "auto_apply_actions": ["nope"]}],
+    }
+
+    captured_rows = {}
+    monkeypatch.setattr("connect_labs.audit.tasks.resolve_urls_by_blob", lambda **kwargs: {})
+    monkeypatch.setattr(
+        "connect_labs.audit.tasks.s3_export.record_classifier_fails",
+        lambda rows: captured_rows.setdefault("rows", rows),
+    )
+
+    tasks._run_ai_review_on_sessions(
+        data_access=data_access,
+        session_ids=[10],
+        access_token="tok",
+        opp_id=1,
+        ai_reviewers=ai_reviewers,
+    )
+
+    rows_by_blob = {row["blob_id"]: row for row in captured_rows["rows"]}
+    assert rows_by_blob["blobA"]["opportunity_id"] == 555
+    assert rows_by_blob["blobB"]["opportunity_id"] == 777
+
+
 def test_classifier_fail_row_uses_its_own_verdicts_implied_result_not_combined(patched_registry, monkeypatch):
     """When a co-occurring reviewer errors on the same image, the combine step
     lets the error win and outcome.human_result comes back None -- but the
