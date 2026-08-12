@@ -10,12 +10,8 @@ it can never break the actual save/complete flow the user is waiting on.
 
 import logging
 
-from django.conf import settings
-from django.urls import reverse
-
-from connect_labs.audit.link_helpers import build_connect_visit_url, build_hq_form_url, resolve_hq_link_base
+from connect_labs.audit.link_helpers import resolve_urls_by_blob
 from connect_labs.labs import s3_export
-from connect_labs.labs.context import get_org_data
 
 logger = logging.getLogger(__name__)
 
@@ -64,47 +60,14 @@ def _sync_after_save(session, request, data_access) -> None:
 
 def _resolve_urls(session, request, data_access, opportunity_id) -> dict[str, dict]:
     """Build {blob_id: {"image_url", "form_url", "connect_url"}} for every image
-    in the session, batching the HQ/Connect lookups once per session rather than
-    once per image (same approach as ExperimentBulkAssessmentDataView.get and
-    _resolve_visit_cluster_group in views.py)."""
-    visit_ids = session.visit_ids or []
-    if not visit_ids:
-        return {}
-
-    try:
-        visits = data_access.get_visits_batch(visit_ids, opportunity_id)
-    except Exception:
-        logger.exception("[Audit] Failed to fetch visit batch for opportunity %s", opportunity_id)
-        return {}
-
-    xform_id_by_visit = {str(v["id"]): v.get("xform_id") for v in visits}
-    link_id_by_visit = {str(v["id"]): (v.get("user_id"), v.get("user_visit_id")) for v in visits}
-
-    hq_link_base = resolve_hq_link_base(data_access.access_token, opportunity_id)
-
-    org_slug = ""
-    org_data = get_org_data(request)
-    for opp in org_data.get("opportunities", []):
-        if opp.get("id") == opportunity_id:
-            org_slug = opp.get("organization", "")
-            break
-    connect_url = getattr(settings, "CONNECT_PRODUCTION_URL", "https://connect.dimagi.com").rstrip("/")
-
-    urls_by_blob: dict[str, dict] = {}
-    for visit_id_str, images in session.data.get("visit_images", {}).items():
-        form_url = build_hq_form_url(hq_link_base, xform_id_by_visit.get(visit_id_str))
-        user_id, user_visit_id = link_id_by_visit.get(visit_id_str, (None, None))
-        connect_visit_url = build_connect_visit_url(connect_url, org_slug, opportunity_id, user_id, user_visit_id)
-        for image in images:
-            blob_id = image.get("blob_id")
-            if not blob_id:
-                continue
-            image_url = request.build_absolute_uri(
-                reverse("audit:audit_image_connect", kwargs={"opp_id": opportunity_id, "blob_id": blob_id})
-            )
-            urls_by_blob[blob_id] = {
-                "image_url": image_url,
-                "form_url": form_url,
-                "connect_url": connect_visit_url,
-            }
-    return urls_by_blob
+    in the session. Thin wrapper over link_helpers.resolve_urls_by_blob (shared with
+    the AI-review/duplicate-detection producers, which resolve the same URLs eagerly
+    at record time rather than waiting for this save/complete path)."""
+    return resolve_urls_by_blob(
+        data_access=data_access,
+        access_token=data_access.access_token,
+        opportunity_id=opportunity_id,
+        visit_ids=session.visit_ids or [],
+        visit_images=session.data.get("visit_images", {}),
+        request=request,
+    )

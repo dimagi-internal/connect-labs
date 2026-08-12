@@ -37,6 +37,7 @@ from connect_labs.audit.duplicate_detection import (
     _counterpart_visit_ids,
     assign_group_ids,
 )
+from connect_labs.audit.link_helpers import resolve_urls_by_blob
 from connect_labs.labs import s3_export
 
 logger = logging.getLogger(__name__)
@@ -172,6 +173,10 @@ def run_grouping_duplicate_detection(
             opp_id = target["opp_id"]
             blob_meta_by_id = target["blob_meta_by_id"]
             session_updated = False
+            # Rows from THIS target/session only -- resolved and merged into
+            # classifier_fail_rows once the cluster loop below finishes, so the
+            # URL lookup (one per session) doesn't run once per flagged image.
+            target_classifier_fail_rows: list[dict] = []
             # Raw /detect_duplicates responses, keyed by this grouping's own
             # group_id -- mirrors duplicate_detection.py's raw_groups_store
             # (keyed by username|question_id|day there). Named distinctly from
@@ -249,7 +254,7 @@ def run_grouping_duplicate_detection(
                         images_flagged += 1
                         session_updated = True
                         meta = blob_meta_by_id.get(blob_id, {})
-                        classifier_fail_rows.append(
+                        target_classifier_fail_rows.append(
                             {
                                 "session_id": session.id,
                                 "workflow_run_id": session.workflow_run_id,
@@ -274,6 +279,19 @@ def run_grouping_duplicate_detection(
                     progress_callback(
                         processed, total_groupings, f"Checked {processed}/{total_groupings} groupings for duplicates"
                     )
+
+            if target_classifier_fail_rows:
+                access_token = data_access.access_token
+                urls_by_blob = resolve_urls_by_blob(
+                    data_access=data_access,
+                    access_token=access_token,
+                    opportunity_id=opp_id,
+                    visit_ids=session.visit_ids or [],
+                    visit_images=session.data.get("visit_images", {}),
+                )
+                for row in target_classifier_fail_rows:
+                    row.update(urls_by_blob.get(row["blob_id"], {}))
+                classifier_fail_rows.extend(target_classifier_fail_rows)
 
             if session_updated:
                 try:
