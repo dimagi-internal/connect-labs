@@ -669,6 +669,50 @@ def test_run_resolves_urls_before_human_review_when_data_access_given(monkeypatc
 
 
 @override_settings(SCALE_VALIDATION_API_KEY="k")
+def test_run_resolves_urls_per_image_opportunity_in_multi_opp_session(monkeypatch):
+    """Regression: a multi-opp session (e.g. muac_picture_audit) can flag
+    images belonging to DIFFERENT opportunities in the same duplicate group.
+    Each row must be stamped with (and have its URLs resolved against) its
+    OWN image's opportunity_id, not the session's primary opportunity_id."""
+    session = _session({"100": [_img("a", opportunity_id=555)]}, opportunity_id=1)
+    session.data["visit_images"]["101"] = [_img("b", opportunity_id=777)]
+    monkeypatch.setattr("connect_labs.audit.duplicate_detection.get_signed_url", lambda opp, blob, tok: "https://s")
+    monkeypatch.setattr(DuplicateDetectionClient, "detect", lambda self, manifest: [["a", "b"]])
+
+    fake_data_access = object()
+    resolve_calls = []
+
+    def _fake_resolve_urls_by_blob(**kwargs):
+        resolve_calls.append(kwargs)
+        if kwargs["opportunity_id"] == 555:
+            return {"a": {"image_url": "https://labs/image/a-opp555"}}
+        if kwargs["opportunity_id"] == 777:
+            return {"b": {"image_url": "https://labs/image/b-opp777"}}
+        raise AssertionError(f"Unexpected opportunity_id: {kwargs['opportunity_id']}")
+
+    captured_rows = {}
+    monkeypatch.setattr(
+        "connect_labs.audit.duplicate_detection.resolve_urls_by_blob", _fake_resolve_urls_by_blob
+    )
+    monkeypatch.setattr(
+        "connect_labs.audit.duplicate_detection.s3_export.record_classifier_fails",
+        lambda rows: captured_rows.setdefault("rows", rows),
+    )
+
+    run_duplicate_detection(session, access_token="tok", data_access=fake_data_access)
+
+    # One resolve_urls_by_blob call per distinct opportunity_id, not one for
+    # the whole session.
+    assert {c["opportunity_id"] for c in resolve_calls} == {555, 777}
+
+    rows_by_blob = {row["blob_id"]: row for row in captured_rows["rows"]}
+    assert rows_by_blob["a"]["opportunity_id"] == 555
+    assert rows_by_blob["a"]["image_url"] == "https://labs/image/a-opp555"
+    assert rows_by_blob["b"]["opportunity_id"] == 777
+    assert rows_by_blob["b"]["image_url"] == "https://labs/image/b-opp777"
+
+
+@override_settings(SCALE_VALIDATION_API_KEY="k")
 def test_run_skips_url_resolution_without_data_access(monkeypatch):
     """Without a data_access (e.g. an older caller/test), resolution is skipped
     entirely -- rows go through with no image_url/form_url/connect_url keys,
