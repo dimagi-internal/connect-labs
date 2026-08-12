@@ -198,6 +198,108 @@ def test_generate_opps_bulk_gdrive(settings, monkeypatch):
     assert SyntheticOpportunity.objects.filter(cloned_from_opportunity_id=524).exists()
 
 
+def test_generate_opps_bulk_scope_filter(tmp_path, settings, monkeypatch):
+    """only_source_ids bounds the run: bundles under the root for other sources
+    are left untouched (#1166 — a shared bundle_root + fresh=True regenerated
+    opps the caller never named)."""
+    settings.LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID = "parent"
+    monkeypatch.setattr(clone_from_prod, "_fetch_endpoint", lambda *a, **k: None)
+
+    bundle_root = tmp_path / "bundles"
+    bundle_root.mkdir()
+    for oid in (523, 524):
+        write_bundle(
+            bundle_root,
+            oid,
+            manifest_yaml=_manifest(oid),
+            app_structure={"learn_app": None, "deliver_app": {"modules": []}},
+            opportunity={"id": oid, "name": f"KMC-{oid}"},
+        )
+
+    results = clone_from_prod.generate_opps_bulk(
+        bundle_root,
+        drive=_FakeDrive(),
+        only_source_ids=[523],
+    )
+
+    assert [r.source_opportunity_id for r in results] == [523]
+    assert SyntheticOpportunity.objects.filter(cloned_from_opportunity_id=523).exists()
+    assert not SyntheticOpportunity.objects.filter(cloned_from_opportunity_id=524).exists()
+
+
+def test_generate_cohort_honors_spec_opportunity_ids(settings, monkeypatch):
+    """generate_cohort passes spec.opportunity_ids as the generation scope — a
+    bundle root shared with another cohort no longer means that cohort's opps
+    get regenerated (#1166)."""
+    from connect_labs.labs.synthetic.bundle import GDriveBundleStore
+    from connect_labs.labs.synthetic.cohort import CohortSpec
+    from connect_labs.labs.synthetic.tests.test_bundle import _FakeDrive as _FakeGDrive
+
+    settings.LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID = "parent"
+    monkeypatch.setattr(clone_from_prod, "_fetch_endpoint", lambda *a, **k: None)
+
+    drive = _FakeGDrive()
+    run_folder = drive.create_folder("run", "parent")
+    store = GDriveBundleStore(drive, run_folder)
+    for oid in (523, 524):
+        store.write(
+            oid,
+            manifest_yaml=_manifest(oid),
+            app_structure={"learn_app": None, "deliver_app": {"modules": []}},
+            opportunity={"id": oid, "name": f"KMC-{oid}"},
+        )
+
+    spec = CohortSpec(
+        opportunity_ids=[523],
+        program_id=10010,
+        program_name="KMC (Synthetic)",
+        org_name="Dimagi-KMC (Synthetic)",
+        bundle_root=f"gdrive:{run_folder}",
+    )
+    _, results = clone_from_prod.generate_cohort(spec, drive=drive, fresh=True)
+
+    assert [r.source_opportunity_id for r in results] == [523]
+    assert not SyntheticOpportunity.objects.filter(cloned_from_opportunity_id=524).exists()
+
+
+def test_generate_target_opportunity_id_leaves_existing_twin_untouched(tmp_path, settings, monkeypatch):
+    """target_opportunity_id registers onto the named opp and never touches the
+    source's existing twin — the second-twin path for a source whose twin is
+    claimed by an env-owned opp (#1166)."""
+    settings.LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID = "parent"
+    bundle = _bundle(tmp_path)
+    monkeypatch.setattr(clone_from_prod, "_fetch_endpoint", lambda *a, **k: None)
+
+    # An existing twin for source 523, as an env-owned opp would hold it.
+    SyntheticOpportunity.objects.create(
+        opportunity_id=10012,
+        label="Eastern Cluster",
+        labs_only=True,
+        enabled=True,
+        gdrive_folder_id="env-folder",
+        program_id=10110,
+        cloned_from_opportunity_id=523,
+    )
+
+    result = clone_from_prod.generate_opp_from_bundle(
+        bundle,
+        drive=_FakeDrive(),
+        program_id=10000,
+        program_name="KMC (Synthetic)",
+        org_name="Dimagi-KMC (Synthetic)",
+        target_opportunity_id=10077,
+    )
+
+    assert result.skipped is False
+    assert result.opportunity_id == 10077
+    new_row = SyntheticOpportunity.objects.get(opportunity_id=10077)
+    assert new_row.cloned_from_opportunity_id == 523
+    untouched = SyntheticOpportunity.objects.get(opportunity_id=10012)
+    assert untouched.label == "Eastern Cluster"
+    assert untouched.gdrive_folder_id == "env-folder"
+    assert untouched.program_id == 10110
+
+
 def test_generate_cohort_uses_spec_program_id(settings, monkeypatch):
     """generate_cohort registers all opps under the spec's program_id (not auto-allocated)."""
     from connect_labs.labs.synthetic.bundle import GDriveBundleStore
