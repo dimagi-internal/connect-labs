@@ -31,7 +31,12 @@ from django_tables2 import SingleTableView
 from connect_labs.audit.analysis_config import extract_additional_case_info, extract_images_with_question_ids
 from connect_labs.audit.classifier_fail_sync import sync_after_save
 from connect_labs.audit.data_access import AuditDataAccess, ImageDownloadError
-from connect_labs.audit.link_helpers import build_connect_visit_url, build_hq_form_url, resolve_hq_link_base
+from connect_labs.audit.link_helpers import (
+    build_connect_visit_url,
+    build_hq_form_url,
+    resolve_hq_link_base,
+    resolve_org_slug,
+)
 from connect_labs.audit.models import AI_NOTES_JOIN_SEP, AuditSessionRecord
 from connect_labs.audit.tables import AuditTable
 from connect_labs.labs import s3_export
@@ -1053,13 +1058,7 @@ def _resolve_visit_cluster_group(data_access, request, session_id, group_id):
     opportunity_id = session.opportunity_id
     visit_images = session.data.get("visit_images", {})
 
-    org_slug = ""
-    if opportunity_id:
-        org_data = get_org_data(request)
-        for opp in org_data.get("opportunities", []):
-            if opp.get("id") == opportunity_id:
-                org_slug = opp.get("organization", "")
-                break
+    org_slug = resolve_org_slug(data_access.access_token, opportunity_id, request=request) if opportunity_id else ""
 
     connect_url = getattr(settings, "CONNECT_PRODUCTION_URL", "https://connect.dimagi.com").rstrip("/")
 
