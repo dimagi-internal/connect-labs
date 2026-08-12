@@ -660,7 +660,13 @@ def _run_ai_review_on_sessions(
                                     "classifier_id": verdict.agent_id,
                                     "classifier_label": verdict.ai_notes,
                                     "ai_confidence": verdict.ai_confidence,
-                                    "ai_implied_result": outcome.human_result,
+                                    # This verdict's OWN implied result, not the
+                                    # combined outcome.human_result -- if another
+                                    # reviewer on this image errored, the combine
+                                    # step lets that error win and human_result
+                                    # comes back None even though THIS reviewer's
+                                    # own no_match verdict has a real implied fail.
+                                    "ai_implied_result": verdict.ai_to_human_map.get(verdict.ai_result),
                                 }
                             )
 
@@ -689,10 +695,15 @@ def _run_ai_review_on_sessions(
             # net if resolution fails here). One resolve call per session, not per
             # row -- matches resolve_urls_by_blob's own batching.
             if session_classifier_fail_rows:
+                # session.opportunity_id, NOT the batch-level opp_id -- in a
+                # per-FLW multi-opportunity run, a session's real opportunity
+                # can differ from the primary opp_id this function was called
+                # with (see is_multi_opp_per_flw), and get_visits_batch must be
+                # scoped to the opportunity that actually owns these visits.
                 urls_by_blob = resolve_urls_by_blob(
                     data_access=data_access,
                     access_token=access_token,
-                    opportunity_id=opp_id,
+                    opportunity_id=session.opportunity_id,
                     visit_ids=session.visit_ids or [],
                     visit_images=session.data.get("visit_images", {}),
                 )

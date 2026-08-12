@@ -335,8 +335,11 @@ def sync_classifier_fail_outcomes(
     reviewed_by: str = "",
 ) -> None:
     """Update classifier_fails.csv rows for one session with the human's current
-    verdict/notes, flagging an override when the result differs from what's on
-    record. Also backfills image/form/Connect URLs the first time they're
+    verdict/notes, flagging an override when the result differs from a PRIOR
+    non-empty verdict on record -- a flag-only classifier (e.g. the duplicate
+    detector) seeds human_result as "" (no AI-implied verdict), so the human's
+    very first answer on that row is recorded but never counted as an
+    override. Also backfills image/form/Connect URLs the first time they're
     available (each field is filled once and left alone after).
 
     Args:
@@ -369,12 +372,20 @@ def sync_classifier_fail_outcomes(
             blob_id = row.get("blob_id")
 
             new_result = human_result_by_blob.get(blob_id)
-            if new_result and new_result != row.get("human_result"):
+            prior_result = row.get("human_result")
+            if new_result and new_result != prior_result:
                 row["human_result"] = new_result
-                row["was_overridden"] = "true"
-                row["overridden_at"] = now
-                if reviewed_by:
-                    row["reviewed_by"] = reviewed_by
+                # A flag-only classifier (e.g. the duplicate detector) seeds
+                # human_result as "" (no AI-implied verdict) -- the human's
+                # very FIRST verdict on that row is an initial assessment, not
+                # an override, and must not be flagged as one. Only a result
+                # that actually replaces a prior (AI-implied or human-set)
+                # verdict counts as an override.
+                if prior_result:
+                    row["was_overridden"] = "true"
+                    row["overridden_at"] = now
+                    if reviewed_by:
+                        row["reviewed_by"] = reviewed_by
                 changed = True
 
             new_notes = human_notes_by_blob.get(blob_id, "")
