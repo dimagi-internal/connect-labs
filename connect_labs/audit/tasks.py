@@ -606,6 +606,53 @@ def _run_ai_review_on_sessions(
                     v_id, b_id, q_id, img_qid, ai_result, ai_notes, ai_confidence, human_result, False, fail_verdicts
                 )
 
+            def _persist_outcome(outcome):
+                # Persist the combined AI result so the classification label is
+                # always available to display in the tile footer. human_result is
+                # None unless some resolved reviewer's verdict was opted into
+                # auto-apply for this image type.
+                session.set_assessment(
+                    visit_id=int(outcome.visit_id_str),
+                    blob_id=outcome.blob_id,
+                    question_id=outcome.question_id,
+                    result=outcome.human_result,
+                    notes="",
+                    ai_result=outcome.ai_result,
+                    ai_notes=outcome.ai_notes,
+                    ai_confidence=outcome.ai_confidence,
+                )
+
+            def _classifier_fail_rows_for(outcome):
+                # One training-data row per failing classifier -- two
+                # independent reviewers (e.g. MUAC OverZoom + MUAC Match)
+                # can each fail the same image, and each is its own row.
+                return [
+                    {
+                        "session_id": session.id,
+                        "workflow_run_id": session.workflow_run_id,
+                        "opportunity_id": session.opportunity_id,
+                        "opportunity_name": session.opportunity_name,
+                        "visit_id": int(outcome.visit_id_str),
+                        "blob_id": outcome.blob_id,
+                        "question_id": outcome.question_id,
+                        "classifier_id": verdict.agent_id,
+                        "classifier_label": verdict.ai_notes,
+                        "ai_confidence": verdict.ai_confidence,
+                        "ai_implied_result": outcome.human_result,
+                    }
+                    for verdict in outcome.fail_verdicts
+                ]
+
+            # Images that end this session's first pass with ai_result="error" (a
+            # gateway hiccup post_with_retry's own retries didn't clear -- see
+            # base.py) get exactly one more attempt after the rest of the batch
+            # has run, rather than being a dead end until a human intervenes.
+            # Not unbounded: the time already spent on the rest of this
+            # session's (and prior sessions') images gives a transient outage
+            # room to clear, and a persistent outage shouldn't loop or block
+            # the batch -- see the retry sweep below.
+            retry_candidates = []
+
             with ThreadPoolExecutor(max_workers=_MAX_CONCURRENT_IMAGES_PER_SESSION) as pool:
                 fut_map = {pool.submit(_fetch_and_review, item): item for item in work_items}
                 for fut in as_completed(fut_map):
@@ -634,41 +681,12 @@ def _run_ai_review_on_sessions(
                             total_errors += 1
                             logger.error(f"[AIReview] ERROR: blob={outcome.blob_id}, reason={outcome.ai_notes!r}")
 
-                        # Persist the combined AI result so the classification label is
-                        # always available to display in the tile footer. human_result is
-                        # None unless some resolved reviewer's verdict was opted into
-                        # auto-apply for this image type.
-                        session.set_assessment(
-                            visit_id=int(outcome.visit_id_str),
-                            blob_id=outcome.blob_id,
-                            question_id=outcome.question_id,
-                            result=outcome.human_result,
-                            notes="",
-                            ai_result=outcome.ai_result,
-                            ai_notes=outcome.ai_notes,
-                            ai_confidence=outcome.ai_confidence,
-                        )
+                        _persist_outcome(outcome)
                         session_updated = True
+                        classifier_fail_rows.extend(_classifier_fail_rows_for(outcome))
 
-                        # One training-data row per failing classifier -- two
-                        # independent reviewers (e.g. MUAC OverZoom + MUAC Match)
-                        # can each fail the same image, and each is its own row.
-                        for verdict in outcome.fail_verdicts:
-                            classifier_fail_rows.append(
-                                {
-                                    "session_id": session.id,
-                                    "workflow_run_id": session.workflow_run_id,
-                                    "opportunity_id": session.opportunity_id,
-                                    "opportunity_name": session.opportunity_name,
-                                    "visit_id": int(outcome.visit_id_str),
-                                    "blob_id": outcome.blob_id,
-                                    "question_id": outcome.question_id,
-                                    "classifier_id": verdict.agent_id,
-                                    "classifier_label": verdict.ai_notes,
-                                    "ai_confidence": verdict.ai_confidence,
-                                    "ai_implied_result": outcome.human_result,
-                                }
-                            )
+                        if outcome.ai_result == "error":
+                            retry_candidates.append(fut_map[fut])
 
                     if progress_callback:
                         progress_callback(
@@ -688,6 +706,51 @@ def _run_ai_review_on_sessions(
                             pending_fut.cancel()
                         logger.info(f"[AIReview] Cancelled mid-session {session_id} — stopping remaining images")
                         break
+
+            if retry_candidates and not cancelled:
+                logger.info(
+                    f"[AIReview] Retry sweep: re-attempting {len(retry_candidates)} "
+                    f"errored image(s) in session {session_id}"
+                )
+                with ThreadPoolExecutor(
+                    max_workers=min(len(retry_candidates), _MAX_CONCURRENT_IMAGES_PER_SESSION)
+                ) as retry_pool:
+                    retry_fut_map = {retry_pool.submit(_fetch_and_review, item): item for item in retry_candidates}
+                    for fut in as_completed(retry_fut_map):
+                        try:
+                            outcome = fut.result()
+                        except Exception as exc:
+                            failed_item = retry_fut_map.get(fut)
+                            blob_hint = failed_item[1] if failed_item else "unknown"
+                            logger.warning(
+                                f"[AIReview] Retry sweep: unexpected error reviewing image {blob_hint}: {exc}"
+                            )
+                            continue
+
+                        if outcome.skipped:
+                            continue
+
+                        if outcome.ai_result == "error":
+                            # Still an error after the extra attempt -- leave the counts
+                            # and persisted message as the first pass left them, so a
+                            # persistent outage stays visible instead of being retried
+                            # forever.
+                            logger.warning(
+                                f"[AIReview] Retry sweep: blob={outcome.blob_id} still errored: "
+                                f"{outcome.ai_notes!r}"
+                            )
+                            continue
+
+                        total_errors -= 1
+                        if outcome.ai_result == "match":
+                            total_passed += 1
+                        elif outcome.ai_result == "no_match":
+                            total_failed += 1
+                        logger.info(
+                            f"[AIReview] Retry sweep recovered blob={outcome.blob_id}: now {outcome.ai_result}"
+                        )
+                        _persist_outcome(outcome)
+                        classifier_fail_rows.extend(_classifier_fail_rows_for(outcome))
 
             # Save when there are assessments to write OR when the session ran
             # to completion (not cancelled) so a restart skips it entirely.

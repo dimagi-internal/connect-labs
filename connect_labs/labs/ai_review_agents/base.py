@@ -11,6 +11,7 @@ import random
 import time
 from abc import ABC, abstractmethod
 
+import httpx
 from django.conf import settings
 
 from connect_labs.labs.ai_review_agents.types import ReviewContext, ReviewResult
@@ -42,30 +43,58 @@ GATEWAY_NOT_CONFIGURED_MESSAGE = "AI classifier service is not configured. Conta
 
 
 def post_with_retry(client, url, *, json, max_retries=3, backoff_seconds=2.0, logger=None):
-    """POST with retry-on-429 (linear backoff: ~2s, ~4s, ~6s by default).
+    """POST with retry-on-429 and retry-on-transport-error (linear backoff:
+    ~2s, ~4s, ~6s by default).
 
-    The MUAC OverZoom / MUAC Match / Scale Validation classifiers share one
-    gateway that returns 429 both when genuinely busy and during a cold
-    start -- both conditions typically clear within seconds, so a short
-    retry recovers automatically instead of permanently erroring the image
-    (previously: a single 429 was treated as terminal, with no retry at all).
+    The MUAC OverZoom / MUAC Match / Scale Validation / Scale Dial
+    classifiers share one gateway that returns 429 both when genuinely busy
+    and during a cold start -- both conditions typically clear within
+    seconds, so a short retry recovers automatically instead of permanently
+    erroring the image (previously: a single 429 was treated as terminal,
+    with no retry at all).
+
+    A connection-level failure (timeout, DNS, connection refused --
+    httpx.TransportError, the base of ConnectError/ConnectTimeout/
+    ReadTimeout/PoolTimeout) gets the same retry treatment: it's often the
+    same cold-start/overload condition manifesting as a dropped connection
+    instead of a 429 response, and previously bypassed this helper's retry
+    loop entirely, raising straight out to the caller's generic
+    ``except httpx.HTTPError`` on the very first attempt.
 
     Real production usage calls this from up to ~10 concurrently-reviewed
     images x up to ~4 reviewers per image (see tasks.py's
     _MAX_CONCURRENT_IMAGES_PER_SESSION / _MAX_REVIEWERS_PER_IMAGE) -- if the
-    gateway is genuinely saturated, every one of those callers hits 429 at
-    roughly the same moment. Two things keep the retry from making that
-    worse: honoring the gateway's own ``Retry-After`` header when present
-    (it knows its load better than a fixed guess), and jittering whichever
-    wait is used so concurrent callers don't all wake and retry in lockstep.
+    gateway is genuinely saturated, every one of those callers hits 429 (or
+    a transport error) at roughly the same moment. Two things keep the
+    retry from making that worse: honoring the gateway's own
+    ``Retry-After`` header when present for 429s (it knows its load better
+    than a fixed guess -- there's no equivalent header for a transport
+    error, so those always use the computed backoff), and jittering
+    whichever wait is used so concurrent callers don't all wake and retry
+    in lockstep.
 
     Returns the last response received, which may still be a 429 if every
     retry was exhausted -- callers check response.status_code exactly as
-    they did before this helper existed.
+    they did before this helper existed. Re-raises the transport error if
+    every retry was exhausted on that path instead, since there's no
+    response object to return.
     """
     response = None
     for attempt in range(max_retries + 1):
-        response = client.post(url, json=json)
+        try:
+            response = client.post(url, json=json)
+        except httpx.TransportError as exc:
+            if attempt >= max_retries:
+                raise
+            wait = backoff_seconds * (attempt + 1)
+            wait *= random.uniform(0.75, 1.25)
+            if logger:
+                logger.warning(
+                    f"Transport error ({exc!r}) on attempt {attempt + 1}/{max_retries + 1}, "
+                    f"retrying in {wait:.1f}s"
+                )
+            time.sleep(wait)
+            continue
         if response.status_code != 429:
             return response
         if attempt < max_retries:
