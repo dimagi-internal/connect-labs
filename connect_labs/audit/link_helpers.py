@@ -64,28 +64,44 @@ def build_connect_visit_url(connect_url: str, org_slug: str, opportunity_id, use
     )
 
 
+def _find_org_slug(org_data: dict | None, opportunity_id) -> str | None:
+    """Return the org slug for opportunity_id within org_data, or None if
+    org_data is empty/doesn't list that opportunity at all -- distinct from a
+    "" slug, which means the opportunity WAS found but its slug is blank."""
+    if not org_data:
+        return None
+    for opp in org_data.get("opportunities", []):
+        if opp.get("id") == opportunity_id:
+            return opp.get("organization", "")
+    return None
+
+
 def resolve_org_slug(access_token: str, opportunity_id, request=None) -> str:
     """Return the organization slug for an opportunity (needed by build_connect_visit_url).
 
     When a live request is available, reuse its session-cached org/opportunity list
-    (get_org_data) -- no extra API call. Otherwise (background/Celery contexts, e.g.
-    AI review or duplicate detection, which have no request) fall back to a live
-    fetch_user_organization_data call -- the same /export/opp_org_program_list/ the
-    OAuth login flow already makes -- cached briefly (_ORG_DATA_CACHE_TTL) so a
-    batch run resolving URLs for many sessions of the same user doesn't repeat
-    this call once per session.
+    (get_org_data) first -- no extra API call. If that doesn't list the requested
+    opportunity (e.g. access was granted after login), or there's no request at all
+    (background/Celery contexts, e.g. AI review or duplicate detection), fall back to
+    a live fetch_user_organization_data call -- the same /export/opp_org_program_list/
+    the OAuth login flow already makes -- cached briefly (_ORG_DATA_CACHE_TTL) so a
+    batch run resolving URLs for many sessions of the same user doesn't repeat this
+    call once per session. Only a genuinely successful fetch is cached -- a transient
+    failure (coerced to {}) is never cached, so it doesn't get "stuck" returning a
+    blank org_slug for the rest of the TTL window instead of retrying.
     """
-    org_data = get_org_data(request) if request is not None else None
-    if not org_data:
-        cache_key = f"link_helpers:org_data:{hashlib.sha256(access_token.encode()).hexdigest()}"
-        org_data = cache.get(cache_key)
-        if org_data is None:
-            org_data = fetch_user_organization_data(access_token) or {}
+    if request is not None:
+        slug = _find_org_slug(get_org_data(request), opportunity_id)
+        if slug is not None:
+            return slug
+
+    cache_key = f"link_helpers:org_data:{hashlib.sha256(access_token.encode()).hexdigest()}"
+    org_data = cache.get(cache_key)
+    if org_data is None:
+        org_data = fetch_user_organization_data(access_token)
+        if org_data:
             cache.set(cache_key, org_data, _ORG_DATA_CACHE_TTL)
-    for opp in org_data.get("opportunities", []):
-        if opp.get("id") == opportunity_id:
-            return opp.get("organization", "")
-    return ""
+    return _find_org_slug(org_data, opportunity_id) or ""
 
 
 def build_absolute_url(path: str, request=None) -> str:
