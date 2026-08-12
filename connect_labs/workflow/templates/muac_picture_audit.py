@@ -49,7 +49,19 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
     }
 
     // ── Fixed opportunity set (this workflow's whole multi_opp span) ──────────
-    const oppNames = (definition.config && definition.config.opp_names) || {};
+    // Names come from the #user-opportunities blob the base template embeds for
+    // any multi_opp workflow (real LLO names, e.g. "CHC PRE-RCT (Nigeria) - EHA") —
+    // same convention as flw_audit_trend_dashboard.py. definition.config.opp_names
+    // can still override a specific id if ever manually seeded.
+    const oppNamesFromPage = React.useMemo(() => {
+        const m = {};
+        try {
+            const el = document.getElementById('user-opportunities');
+            if (el) JSON.parse(el.textContent).forEach(o => { m[o.id] = o.name; });
+        } catch (e) { console.error('Muac picture audit: failed to parse user-opportunities', e); }
+        return m;
+    }, []);
+    const oppNames = Object.assign({}, oppNamesFromPage, (definition.config && definition.config.opp_names) || {});
     const allOppIds = (instance.opportunity_ids && instance.opportunity_ids.length)
         ? instance.opportunity_ids
         : (instance.opportunity_id ? [instance.opportunity_id] : []);
