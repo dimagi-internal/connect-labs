@@ -138,6 +138,63 @@ def test_resolve_urls_by_blob_builds_all_three_urls_per_image(monkeypatch):
     assert "blobA" in urls["blobA"]["image_url"]
 
 
+def test_resolve_urls_by_blob_groups_by_each_images_own_opportunity(monkeypatch):
+    """A session's visit_images can carry images sourced from more than one
+    opportunity (e.g. a multi-opp combined session, muac_picture_audit /
+    weekly_dual_track_audit) -- each group must be resolved against ITS OWN
+    opportunity (its own get_visits_batch/HQ-metadata/org-slug lookups), not
+    a single opportunity_id assumed for the whole batch."""
+    hq_bases = {555: "https://hq-a/forms", 777: "https://hq-b/forms"}
+    org_slugs = {555: "org-a", 777: "org-b"}
+    monkeypatch.setattr(link_helpers, "resolve_hq_link_base", lambda access_token, opp_id: hq_bases[opp_id])
+    monkeypatch.setattr(link_helpers, "resolve_org_slug", lambda access_token, opp_id, request=None: org_slugs[opp_id])
+
+    class _MultiOppDataAccess:
+        access_token = "tok"
+
+        def get_visits_batch(self, visit_ids, opportunity_id):
+            if opportunity_id == 555:
+                return [{"id": 1, "xform_id": "xf1", "user_id": 7, "user_visit_id": 99}]
+            if opportunity_id == 777:
+                return [{"id": 2, "xform_id": "xf2", "user_id": 8, "user_visit_id": 100}]
+            raise AssertionError(f"Unexpected opportunity_id: {opportunity_id}")
+
+    visit_images = {
+        "1": [{"blob_id": "blobA", "opportunity_id": 555}],
+        "2": [{"blob_id": "blobB", "opportunity_id": 777}],
+    }
+
+    urls = link_helpers.resolve_urls_by_blob(
+        data_access=_MultiOppDataAccess(),
+        access_token="tok",
+        opportunity_id=1,  # neither image's real opportunity -- fallback only
+        visit_ids=[1, 2],
+        visit_images=visit_images,
+    )
+
+    assert urls["blobA"]["form_url"] == "https://hq-a/forms/xf1/"
+    assert urls["blobA"]["connect_url"].startswith("https://connect.dimagi.com/a/org-a/opportunity/555/")
+    assert urls["blobB"]["form_url"] == "https://hq-b/forms/xf2/"
+    assert urls["blobB"]["connect_url"].startswith("https://connect.dimagi.com/a/org-b/opportunity/777/")
+
+
+def test_resolve_urls_by_blob_falls_back_to_default_opportunity_when_image_has_none(monkeypatch):
+    """An image without its own opportunity_id uses the passed-in default --
+    the common (single-opportunity session) case, unchanged from before."""
+    monkeypatch.setattr(link_helpers, "resolve_hq_link_base", lambda access_token, opp_id: f"https://hq/{opp_id}")
+    monkeypatch.setattr(link_helpers, "resolve_org_slug", lambda access_token, opp_id, request=None: "acme")
+
+    data_access = _FakeDataAccess(visits=[{"id": 1, "xform_id": "xf1", "user_id": 7, "user_visit_id": 99}])
+    urls = link_helpers.resolve_urls_by_blob(
+        data_access=data_access,
+        access_token="tok",
+        opportunity_id=42,
+        visit_ids=[1],
+        visit_images={"1": [{"blob_id": "blobA"}]},  # no "opportunity_id" key on the image
+    )
+    assert urls["blobA"]["form_url"] == "https://hq/42/xf1/"
+
+
 def test_resolve_urls_by_blob_empty_visit_ids_returns_empty_dict():
     data_access = _FakeDataAccess(visits=[])
     assert link_helpers.resolve_urls_by_blob(

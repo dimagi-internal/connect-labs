@@ -439,6 +439,18 @@ def _run_ai_review_on_sessions(
             # not once per run) only has to touch this session's own new rows.
             session_classifier_fail_rows: list[dict] = []
 
+            # blob_id -> that image's OWN opportunity_id, when it carries one --
+            # a multi-opp session (e.g. muac_picture_audit) can flag images
+            # sourced from a different opportunity than session.opportunity_id
+            # (same fallback duplicate_detection.py's img.get("opportunity_id")
+            # already uses for the identical shape of data).
+            blob_opportunity_id = {
+                image.get("blob_id"): image.get("opportunity_id")
+                for images in visit_images.values()
+                for image in images
+                if image.get("blob_id")
+            }
+
             # Phase 1: collect reviewable work items, skip the rest.
             # Each item: (visit_id_str, blob_id, reading_by_field, question_id, image_qid)
             #   image_qid -> the image's own question path, used to resolve its reviewer(s)
@@ -648,12 +660,20 @@ def _run_ai_review_on_sessions(
                         # independent reviewers (e.g. MUAC OverZoom + MUAC Match)
                         # can each fail the same image, and each is its own row.
                         for verdict in outcome.fail_verdicts:
+                            opp_for_row = blob_opportunity_id.get(outcome.blob_id) or session.opportunity_id
                             session_classifier_fail_rows.append(
                                 {
                                     "session_id": session.id,
                                     "workflow_run_id": session.workflow_run_id,
-                                    "opportunity_id": session.opportunity_id,
-                                    "opportunity_name": session.opportunity_name,
+                                    "opportunity_id": opp_for_row,
+                                    # session.opportunity_name only actually names
+                                    # opp_for_row when they're the same opportunity --
+                                    # no per-opportunity name lookup is available
+                                    # here, so leave it blank rather than mislabel a
+                                    # different opportunity with this one's name.
+                                    "opportunity_name": (
+                                        session.opportunity_name if opp_for_row == session.opportunity_id else ""
+                                    ),
                                     "visit_id": int(outcome.visit_id_str),
                                     "blob_id": outcome.blob_id,
                                     "question_id": outcome.question_id,
@@ -695,11 +715,14 @@ def _run_ai_review_on_sessions(
             # net if resolution fails here). One resolve call per session, not per
             # row -- matches resolve_urls_by_blob's own batching.
             if session_classifier_fail_rows:
-                # session.opportunity_id, NOT the batch-level opp_id -- in a
+                # session.opportunity_id (NOT the batch-level opp_id -- in a
                 # per-FLW multi-opportunity run, a session's real opportunity
                 # can differ from the primary opp_id this function was called
-                # with (see is_multi_opp_per_flw), and get_visits_batch must be
-                # scoped to the opportunity that actually owns these visits.
+                # with, see is_multi_opp_per_flw) is passed as the DEFAULT;
+                # resolve_urls_by_blob itself groups by each image's own
+                # opportunity_id when present (a multi-opp combined session's
+                # images can carry one), same fallback as blob_opportunity_id
+                # above.
                 urls_by_blob = resolve_urls_by_blob(
                     data_access=data_access,
                     access_token=access_token,

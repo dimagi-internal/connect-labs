@@ -502,17 +502,21 @@ def run_duplicate_detection(
                     duplicate_of_visit_ids=duplicate_of_visit_ids,
                 )
                 summary["images_flagged"] += 1
+                # This image's OWN opportunity (same fallback as the presign
+                # step above), not session.opportunity_id -- a multi-opp
+                # session (e.g. muac_picture_audit) can flag images belonging
+                # to a different opportunity than the session's primary one.
+                opp_for_row = img.get("opportunity_id") or session.opportunity_id
                 classifier_fail_rows.append(
                     {
                         "session_id": session.id,
                         "workflow_run_id": session.workflow_run_id,
-                        # This image's OWN opportunity (same fallback as the
-                        # presign step above), not session.opportunity_id -- a
-                        # multi-opp session (e.g. muac_picture_audit) can flag
-                        # images belonging to a different opportunity than the
-                        # session's primary one.
-                        "opportunity_id": img.get("opportunity_id") or session.opportunity_id,
-                        "opportunity_name": session.opportunity_name,
+                        "opportunity_id": opp_for_row,
+                        # session.opportunity_name only actually names opp_for_row
+                        # when they're the same opportunity -- no per-opportunity
+                        # name lookup is available here, so leave it blank rather
+                        # than mislabel a different opportunity with this one's name.
+                        "opportunity_name": session.opportunity_name if opp_for_row == session.opportunity_id else "",
                         "visit_id": int(img["visit_id"]),
                         "blob_id": blob_id,
                         "question_id": question_id,
@@ -537,30 +541,19 @@ def run_duplicate_detection(
 
     if classifier_fail_rows:
         if data_access is not None:
-            # Rows can span more than one opportunity (a multi-opp session,
-            # e.g. muac_picture_audit) -- resolve once per distinct
-            # opportunity_id actually represented among these rows, rather
-            # than assuming every row belongs to session.opportunity_id.
-            rows_by_opp: dict = {}
+            # resolve_urls_by_blob groups internally by each image's own
+            # opportunity_id (falling back to the one passed here) -- a
+            # multi-opp session (e.g. muac_picture_audit) can flag images
+            # sourced from a different opportunity than session.opportunity_id.
+            urls_by_blob = resolve_urls_by_blob(
+                data_access=data_access,
+                access_token=access_token,
+                opportunity_id=session.opportunity_id,
+                visit_ids=session.visit_ids or [],
+                visit_images=session.data.get("visit_images", {}),
+            )
             for row in classifier_fail_rows:
-                rows_by_opp.setdefault(row["opportunity_id"], []).append(row)
-
-            visit_images = session.data.get("visit_images", {})
-            for opp_id_for_rows, rows in rows_by_opp.items():
-                visit_ids_for_rows = {row["visit_id"] for row in rows}
-                urls_by_blob = resolve_urls_by_blob(
-                    data_access=data_access,
-                    access_token=access_token,
-                    opportunity_id=opp_id_for_rows,
-                    visit_ids=list(visit_ids_for_rows),
-                    visit_images={
-                        visit_id_str: imgs
-                        for visit_id_str, imgs in visit_images.items()
-                        if int(visit_id_str) in visit_ids_for_rows
-                    },
-                )
-                for row in rows:
-                    row.update(urls_by_blob.get(row["blob_id"], {}))
+                row.update(urls_by_blob.get(row["blob_id"], {}))
         s3_export.record_classifier_fails(classifier_fail_rows)
 
     # Stash a per-session summary + human note on the session so the bulk
