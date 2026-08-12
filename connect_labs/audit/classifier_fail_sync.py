@@ -31,7 +31,15 @@ def _sync_after_save(session, request, data_access) -> None:
 
     for visit_result in session.data.get("visit_results", {}).values():
         for blob_id, assessment in visit_result.get("assessments", {}).items():
-            if assessment.get("ai_result") == "no_match" or assessment.get("duplicate_group") is not None:
+            # "error" is included alongside "no_match": when two independent
+            # reviewers watch one image and one errors while another
+            # genuinely fails, _combine_reviewer_results lets the error win,
+            # so the assessment's own combined ai_result is "error" even
+            # though a real classifier-fail row (from the failing reviewer's
+            # own verdict) exists in classifier_fails.csv for this image. Without
+            # this, has_ai_flag can stay False for the whole session and skip
+            # syncing a human review that genuinely happened.
+            if assessment.get("ai_result") in ("no_match", "error") or assessment.get("duplicate_group") is not None:
                 has_ai_flag = True
             result = assessment.get("result")
             if result:
