@@ -402,3 +402,78 @@ def test_record_classifier_fails_backfills_blank_url_on_existing_row(mock_boto3,
     reader = list(csv.DictReader(io.StringIO(body)))
     assert reader[0]["image_url"] == "https://labs/image/blob1"
     assert reader[0]["form_url"] == "https://hq/form/x"
+
+
+# ── sync_classifier_fail_outcomes ───────────────────────────────────────────────
+
+
+def _existing_classifier_fail_row(**overrides):
+    row = {f: "" for f in s3_export.CLASSIFIER_FAIL_FIELDS}
+    row.update(
+        {
+            "row_id": "5:blob1:duplicate_detector",
+            "session_id": "5",
+            "blob_id": "blob1",
+            "classifier_id": "duplicate_detector",
+            "human_result": "",
+            "was_overridden": "false",
+        }
+    )
+    row.update(overrides)
+    return row
+
+
+@patch("connect_labs.labs.s3_export.boto3")
+def test_sync_first_human_verdict_on_flag_only_row_is_not_an_override(mock_boto3, settings):
+    """A flag-only classifier (e.g. duplicate detector) seeds human_result as
+    "" -- the human's very first answer must be recorded, not flagged as an
+    override of a verdict that never existed."""
+    settings.LABS_EXPORTS_BUCKET = "test-bucket"
+    existing_row = _existing_classifier_fail_row()  # human_result == "" (no prior verdict)
+
+    mock_s3 = MagicMock()
+    mock_boto3.client.return_value = mock_s3
+    mock_s3.get_object.return_value = {
+        "Body": MagicMock(read=lambda: _csv_body([existing_row], s3_export.CLASSIFIER_FAIL_FIELDS))
+    }
+
+    s3_export.sync_classifier_fail_outcomes(
+        session_id=5,
+        human_result_by_blob={"blob1": "duplicate_fake"},
+        human_notes_by_blob={},
+        reviewed_by="reviewer1",
+    )
+
+    body = mock_s3.put_object.call_args[1]["Body"].decode("utf-8")
+    reader = list(csv.DictReader(io.StringIO(body)))
+    assert reader[0]["human_result"] == "duplicate_fake"
+    assert reader[0]["was_overridden"] == "false"
+    assert reader[0]["overridden_at"] == ""
+    assert reader[0]["reviewed_by"] == ""
+
+
+@patch("connect_labs.labs.s3_export.boto3")
+def test_sync_changing_a_prior_verdict_is_still_flagged_as_override(mock_boto3, settings):
+    """Once a row has a real prior verdict (AI-implied or previously
+    human-set), changing it away from that value is still a genuine override."""
+    settings.LABS_EXPORTS_BUCKET = "test-bucket"
+    existing_row = _existing_classifier_fail_row(human_result="fail")  # a real prior verdict
+
+    mock_s3 = MagicMock()
+    mock_boto3.client.return_value = mock_s3
+    mock_s3.get_object.return_value = {
+        "Body": MagicMock(read=lambda: _csv_body([existing_row], s3_export.CLASSIFIER_FAIL_FIELDS))
+    }
+
+    s3_export.sync_classifier_fail_outcomes(
+        session_id=5,
+        human_result_by_blob={"blob1": "pass"},
+        human_notes_by_blob={},
+        reviewed_by="reviewer1",
+    )
+
+    body = mock_s3.put_object.call_args[1]["Body"].decode("utf-8")
+    reader = list(csv.DictReader(io.StringIO(body)))
+    assert reader[0]["human_result"] == "pass"
+    assert reader[0]["was_overridden"] == "true"
+    assert reader[0]["reviewed_by"] == "reviewer1"
