@@ -266,12 +266,18 @@ def run_grouping_duplicate_detection(
                                 "classifier_id": DUPLICATE_CLASSIFIER_ID,
                                 "classifier_label": DUPLICATE_FLAG_LABEL,
                                 "ai_confidence": None,
-                                # flag_potential_duplicate_and_tag auto-tags `result` as
-                                # "duplicate_fake" only when the assessment was untouched --
-                                # read back what actually landed rather than assuming it.
-                                "ai_implied_result": session.get_assessments(meta.get("visit_id"))
-                                .get(blob_id, {})
-                                .get("result"),
+                                # Duplicate flagging never auto-tags `result` itself --
+                                # flag_potential_duplicate_and_tag's own "duplicate_fake"
+                                # auto-tag only fires when the assessment was untouched, and
+                                # even then it isn't THIS classifier's implied verdict, just a
+                                # side effect. Reading back assessment["result"] here would
+                                # capture whatever a DIFFERENT, earlier classifier (e.g. an
+                                # AI-review reviewer that already ran on this image) wrote,
+                                # misattributing its verdict to duplicate_detector -- always
+                                # None here, matching the sibling duplicate_detection.py
+                                # module and s3_export.py's documented contract for flag-only
+                                # classifiers.
+                                "ai_implied_result": None,
                             }
                         )
 

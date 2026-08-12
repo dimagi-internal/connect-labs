@@ -229,6 +229,59 @@ def test_calls_api_once_per_grouping_and_flags_returned_ids():
     data_access.save_audit_session.assert_called_once_with(session)
 
 
+def test_classifier_fail_row_ai_implied_result_is_always_none(monkeypatch):
+    """The duplicate detector is flag-only -- its classifier-fail row's
+    ai_implied_result must always be None, even when the flagged assessment
+    already carries an UNRELATED prior verdict (e.g. a real AI-review
+    classifier fail that flag_potential_duplicate_and_tag correctly leaves
+    untouched). Regression: this used to read back assessment["result"] and
+    misattribute that other classifier's verdict to duplicate_detector."""
+    session = _session(
+        {
+            "111": {
+                "assessments": {
+                    "a": {
+                        "question_id": "form/muac",
+                        "result": "fail",
+                        "notes": "",
+                        "ai_result": "no_match",
+                        "ai_notes": "MUAC Mismatch (strict tolerance)",
+                    }
+                }
+            }
+        }
+    )
+    clusters = [{"group_id": "g1", "visit_ids": [111, 112], "image_count": 2, "image_ids": ["a", "b"]}]
+    blob_meta = {
+        "a": {"visit_id": 111, "question_id": "form/muac"},
+        "b": {"visit_id": 112, "question_id": "form/muac"},
+    }
+    client = Mock()
+    client.detect.return_value = [["a", "b"]]
+    data_access = Mock()
+
+    captured_rows = {}
+    monkeypatch.setattr("connect_labs.audit.visit_cluster_duplicate_detection.resolve_urls_by_blob", lambda **k: {})
+    monkeypatch.setattr(
+        "connect_labs.audit.visit_cluster_duplicate_detection.s3_export.record_classifier_fails",
+        lambda rows: captured_rows.setdefault("rows", rows),
+    )
+
+    run_grouping_duplicate_detection(
+        [_target(session, clusters, blob_meta, data_access=data_access)],
+        get_signed_url=lambda bid, oid: f"https://x/{bid}",
+        client=client,
+    )
+
+    # "a" keeps its real prior result "fail" (unchanged, per
+    # test_mark_duplicate_preserves_a_real_classifier_fail_but_still_records_the_group)
+    # -- but the exported row must not claim THAT verdict as its own.
+    assert session.data["visit_results"]["111"]["assessments"]["a"]["result"] == "fail"
+    rows_by_blob = {r["blob_id"]: r for r in captured_rows["rows"]}
+    assert rows_by_blob["a"]["ai_implied_result"] is None
+    assert rows_by_blob["b"]["ai_implied_result"] is None
+
+
 def test_flagged_images_record_which_other_visit_they_duplicate():
     """Each flagged blob's assessment gets duplicate_of_visit_ids -- the OTHER
     visit(s) in its connected component -- so the review UI can say "this
