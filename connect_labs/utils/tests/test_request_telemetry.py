@@ -10,6 +10,7 @@ A clean request must stay completely silent — this runs on every request, so
 
 import json
 import logging
+import time
 from unittest.mock import MagicMock
 
 import pytest
@@ -213,5 +214,115 @@ class TestHttpxIntegration:
         try:
             on_response(Broken())  # must not raise
             assert current_stats().outbound_calls == 0
+        finally:
+            request_telemetry._stats.reset(token)
+
+
+class TestDurationAttribution:
+    """The 2026-08-11 signature: slow with only 2 calls and ~16 queries.
+
+    A count-only line cannot say whether such a request was waiting on Connect
+    or burning local CPU, and that ambiguity is what dead-ended the review.
+    These pin the split, not just the totals.
+
+    Note what is deliberately NOT added: outbound_ms is not its own trigger. A
+    request that waits 14s on Connect has a 14s wall-clock duration and already
+    trips ``slow``; a second threshold on the same seconds would only double-report
+    it. The timing changes what a logged line can TELL you, not which lines log.
+    """
+
+    @pytest.fixture
+    def always_log(self, monkeypatch):
+        """Force the slow threshold: these assert on the payload, not the trigger."""
+        monkeypatch.setattr(request_telemetry, "SLOW_REQUEST_MS", 0)
+
+    def test_time_waiting_on_an_upstream_is_attributed_to_it(self, request_obj, caplog, always_log):
+        def slow_upstream(r):
+            record_outbound_call("connect.dimagi.com", elapsed_ms=8000)
+            record_outbound_call("connect.dimagi.com", elapsed_ms=6000)
+            return "ok"
+
+        caplog.set_level("WARNING")
+        _middleware(slow_upstream)(request_obj)
+
+        (line,) = _lines(caplog)
+        assert line["outbound_calls"] == 2
+        assert line["outbound_ms"] == 14000
+        # Two calls is far below the fan-out limit, so the ONLY thing that can
+        # explain this request is the time -- which is the point.
+        assert "outbound_fanout" not in line["reason"]
+
+    def test_local_cpu_is_not_blamed_on_the_upstream(self, request_obj, caplog, always_log):
+        """A slow request making one fast call must show the time as self_ms.
+
+        This is the discrimination the review actually needed: same small call
+        count as a Connect stall, but the seconds belong to us.
+        """
+
+        def local_burn(r):
+            record_outbound_call("connect.dimagi.com", elapsed_ms=1)
+            time.sleep(0.05)
+            return "ok"
+
+        caplog.set_level("WARNING")
+        _middleware(local_burn)(request_obj)
+
+        (line,) = _lines(caplog)
+        assert line["outbound_ms"] == 1
+        assert line["duration_ms"] >= 50
+        # Nearly all of it is ours, and the split says so rather than leaving a
+        # reader to guess from a call count.
+        assert line["self_ms"] >= 40
+        assert line["self_ms"] == line["duration_ms"] - line["outbound_ms"] - line["db_ms"]
+
+    def test_self_ms_never_goes_negative(self, request_obj, caplog, always_log):
+        """Overlapping waits must not produce a nonsense negative remainder."""
+
+        def overreporting(r):
+            record_outbound_call("connect.dimagi.com", elapsed_ms=999_999)
+            return "ok"
+
+        caplog.set_level("WARNING")
+        _middleware(overreporting)(request_obj)
+
+        (line,) = _lines(caplog)
+        assert line["self_ms"] == 0
+
+    def test_request_hook_stamps_a_start_time(self):
+        hooks = request_telemetry.httpx_event_hooks()
+        (on_request,) = hooks["request"]
+        (on_response,) = hooks["response"]
+
+        class Req:
+            pass
+
+        req = Req()
+        req.url = MagicMock()
+        req.url.host = "connect.dimagi.com"
+
+        token = request_telemetry._stats.set(RequestStats())
+        try:
+            on_request(req)
+            response = MagicMock()
+            response.request = req
+            on_response(response)
+            assert current_stats().outbound_calls == 1
+            assert current_stats().outbound_ms > 0
+        finally:
+            request_telemetry._stats.reset(token)
+
+    def test_unstamped_request_still_counts_the_call(self):
+        """Timing is best-effort; the COUNT is the load-bearing signal."""
+        hooks = request_telemetry.httpx_event_hooks()
+        (on_response,) = hooks["response"]
+
+        response = MagicMock()  # .request has no start stamp
+        response.request.url.host = "connect.dimagi.com"
+
+        token = request_telemetry._stats.set(RequestStats())
+        try:
+            on_response(response)
+            assert current_stats().outbound_calls == 1
+            assert current_stats().outbound_ms == 0.0
         finally:
             request_telemetry._stats.reset(token)

@@ -21,12 +21,27 @@ Reading it
 Every line is a single JSON object on the ``connect_labs.telemetry.request``
 logger, so CloudWatch Logs Insights can parse it directly::
 
-    fields @timestamp, path, duration_ms, outbound_calls, db_queries, reason
+    fields @timestamp, path, duration_ms, outbound_ms, db_ms, self_ms,
+           outbound_calls, db_queries, reason
     | filter ispresent(outbound_calls)
     | sort duration_ms desc
 
 The fan-out that caused the incident would surface immediately as
 ``outbound_calls: 139`` on a single request — no archaeology.
+
+Counts alone answer only the fan-out question
+---------------------------------------------
+The original version recorded how MANY outbound calls and queries a request made
+but not how LONG they took, which is only enough to diagnose an incident shaped
+like #1037. The 2026-08-11 review hit the other shape: ``/audit/api/<id>/bulk-data/``
+taking 9–87 seconds on **2** outbound calls and ~16 queries. Nothing recorded could
+say whether those seconds were spent waiting on Connect or burning local CPU, so
+the runbook's own "slow_no_saturation → check outbound_by_host" branch dead-ended.
+
+``outbound_ms``, ``db_ms`` and ``self_ms`` split the duration three ways so that
+question is answerable from the log line. They are wall-clock waits and can
+overlap slightly with each other under concurrency; treat them as attribution,
+not as an exact budget that must sum to ``duration_ms``.
 """
 
 from __future__ import annotations
@@ -57,7 +72,9 @@ class RequestStats:
 
     outbound_calls: int = 0
     outbound_by_host: Counter = field(default_factory=Counter)
+    outbound_ms: float = 0.0
     db_queries: int = 0
+    db_ms: float = 0.0
 
     def top_outbound(self, n: int = 3) -> dict[str, int]:
         return dict(self.outbound_by_host.most_common(n))
@@ -74,18 +91,38 @@ def current_stats() -> RequestStats | None:
     return _stats.get()
 
 
-def record_outbound_call(host: str) -> None:
+def record_outbound_call(host: str, elapsed_ms: float = 0.0) -> None:
     """Count one outbound HTTP call against the in-flight request. No-op outside one."""
     stats = _stats.get()
     if stats is None:
         return
     stats.outbound_calls += 1
     stats.outbound_by_host[host] += 1
+    stats.outbound_ms += elapsed_ms
+
+
+# Where the start time is stashed between the request and response hooks. An
+# attribute on the Request object rather than a ContextVar: with HTTP keep-alive
+# and connection pooling several calls can be in flight, and a single shared
+# "started" value would attribute the wrong span to each of them.
+_STARTED_ATTR = "_labs_telemetry_started"
+
+
+def _on_request(request) -> None:
+    try:
+        setattr(request, _STARTED_ATTR, time.perf_counter())
+    except Exception:  # telemetry must never break the call it is measuring
+        pass
 
 
 def _on_response(response) -> None:
     try:
-        record_outbound_call(response.request.url.host)
+        started = getattr(response.request, _STARTED_ATTR, None)
+        # isinstance, not truthiness: a client whose request hook never ran (or a
+        # test double) yields a non-numeric value that would otherwise poison the
+        # arithmetic and cost the call its COUNT as well as its timing.
+        elapsed_ms = (time.perf_counter() - started) * 1000 if isinstance(started, float) else 0.0
+        record_outbound_call(response.request.url.host, elapsed_ms)
     except Exception:  # telemetry must never break the call it is measuring
         pass
 
@@ -95,8 +132,12 @@ def httpx_event_hooks() -> dict[str, list]:
 
     A first-class httpx feature, not a monkeypatch — every client that opts in
     gets counted, and one that doesn't simply isn't measured.
+
+    Timing is to response HEADERS, not through the body download, because that is
+    where the response hook fires. For the calls that matter here — a slow
+    upstream sitting on a query — that is the number you want anyway.
     """
-    return {"response": [_on_response]}
+    return {"request": [_on_request], "response": [_on_response]}
 
 
 class RequestTelemetryMiddleware:
@@ -117,7 +158,11 @@ class RequestTelemetryMiddleware:
 
         def count_queries(execute, sql, params, many, context):
             stats.db_queries += 1
-            return execute(sql, params, many, context)
+            q_started = time.perf_counter()
+            try:
+                return execute(sql, params, many, context)
+            finally:
+                stats.db_ms += (time.perf_counter() - q_started) * 1000
 
         try:
             # execute_wrapper is the supported hook and, unlike connection.queries,
@@ -153,8 +198,14 @@ class RequestTelemetryMiddleware:
             "path": request.path,
             "duration_ms": duration_ms,
             "outbound_calls": stats.outbound_calls,
+            "outbound_ms": int(stats.outbound_ms),
             "outbound_by_host": stats.top_outbound(),
             "db_queries": stats.db_queries,
+            "db_ms": int(stats.db_ms),
+            # What is left after waiting on Postgres and on upstream HTTP. A large
+            # remainder means the time is in our own Python, and neither of the
+            # other two numbers will lead you to it.
+            "self_ms": max(0, duration_ms - int(stats.outbound_ms) - int(stats.db_ms)),
             "username": getattr(user, "username", None) if user and user.is_authenticated else None,
         }
         # Never log the query string: labs URLs carry opportunity and record ids

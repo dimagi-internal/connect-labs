@@ -3,6 +3,7 @@
 Uses the labs-only (local backend) dispatch path so no HTTP mocking is
 needed — the audit decorator wraps both paths identically.
 """
+
 import pytest
 
 from connect_labs.audit_trail.models import Action, AuditEvent, Outcome
@@ -201,3 +202,57 @@ def test_full_read_with_partial_ok_is_not_tagged_early(monkeypatch, db):
     assert event.outcome == Outcome.SUCCESS
     assert "terminated" not in event.metadata
     assert event.record_count == 3
+
+
+@pytest.mark.django_db
+def test_upstream_status_is_recorded_on_http_failure(monkeypatch, db):
+    """A recorded failure must say WHY, not just that a wrapper class was raised.
+
+    The 2026-08-11 review found 2177 web-side failures all stamped
+    ``{"error": "LabsAPIError"}`` and nothing else. A read timeout, a Connect
+    502 and a 404 are the same string there, so the trail could prove an
+    endpoint was broken for days but not what to fix. The status and the httpx
+    class come along now; the response BODY deliberately does not, because this
+    is the HIPAA trail.
+    """
+    import httpx
+
+    client = LabsRecordAPIClient(access_token="t", opportunity_id=765)
+
+    request = httpx.Request("GET", "https://connect.example.invalid/export/labs_record/")
+    response = httpx.Response(502, text="upstream exploded", request=request)
+
+    def boom(*args, **kwargs):
+        raise httpx.HTTPStatusError("502", request=request, response=response)
+
+    monkeypatch.setattr(client.http_client, "get", boom)
+
+    with pytest.raises(Exception):
+        client.get_record_by_id(4321, experiment="audit")
+
+    event = AuditEvent.objects.filter(outcome=Outcome.FAILURE).get()
+    assert event.metadata["error"] == "LabsAPIError"
+    assert event.metadata["upstream_status"] == 502
+    assert event.metadata["upstream_error"] == "HTTPStatusError"
+    assert "upstream exploded" not in str(event.metadata)
+
+
+@pytest.mark.django_db
+def test_timeout_is_distinguishable_from_an_http_status(monkeypatch, db):
+    """A transport timeout has no status code and must still be identifiable."""
+    import httpx
+
+    client = LabsRecordAPIClient(access_token="t", opportunity_id=765)
+    request = httpx.Request("GET", "https://connect.example.invalid/export/labs_record/")
+
+    def boom(*args, **kwargs):
+        raise httpx.ReadTimeout("timed out", request=request)
+
+    monkeypatch.setattr(client.http_client, "get", boom)
+
+    with pytest.raises(Exception):
+        client.get_record_by_id(4321, experiment="audit")
+
+    event = AuditEvent.objects.filter(outcome=Outcome.FAILURE).get()
+    assert event.metadata["upstream_error"] == "ReadTimeout"
+    assert "upstream_status" not in event.metadata

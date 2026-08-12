@@ -27,43 +27,23 @@ TIER_WORKS = "works"
 
 
 @celery_app.task(name="connect_labs.pulse.tasks.poll_cheap_tier")
-def poll_cheap_tier(rate_sample_limit: int = 25) -> dict:
-    """Refresh opportunity metadata, scope scalars and per-service rates.
+def poll_cheap_tier() -> dict:
+    """Refresh opportunity metadata and the scope scalars. One request.
 
-    Cheap enough to cover every opportunity: one request for the whole list,
-    then ``completed_works`` (561 B/row) for the opps most likely to have moved.
+    Everything whose inputs move on the order of hours -- per-service rates, the
+    derived country, the denormalised delivery type -- lives in
+    ``poll_slow_maintenance`` instead. They were on this five-minute path, and
+    measured on prod the task took 17.8s on average (44.6s at worst) to change
+    ten rows, because the two backfills issue one UPDATE per opportunity against
+    a million-row table whether or not anything disagrees.
     """
     try:
         with get_client() as client:
             scope = ingest.refresh_opportunities(client)
             ingest.ensure_cursors()
 
-            # Rates change slowly; refresh the active opps, most stale first.
-            active = PulseOpportunity.objects.filter(is_active=True).order_by("updated_at")[:rate_sample_limit]
-            rated = 0
-            for opp in active:
-                try:
-                    if ingest.refresh_rate(client, opp) is not None:
-                        rated += 1
-                except Exception as exc:  # one bad opp must not kill the sweep
-                    logger.warning("[pulse] rate refresh failed for opp %s: %s", opp.opportunity_id, exc)
-
-        # Country comes from visit GPS, not from the opportunity record, so it
-        # has to be derived after events land rather than during the sync.
-        countries = ingest.refresh_opportunity_countries()
-
-        # Delivery type is denormalised onto stored rows, so a change in how it
-        # is derived has to be pushed to history as well as applied going
-        # forward. No-ops once everything agrees.
-        services = ingest.resync_service_slugs()
-
         ingest.record_success(TIER_CHEAP)
-        return {
-            "scope": scope,
-            "rates_refreshed": rated,
-            "countries_set": countries,
-            "services_resynced": services,
-        }
+        return {"scope": scope}
     except PulseAuthError as exc:
         # The expired-refresh-token case. Must be loud: this is the failure that
         # otherwise looks exactly like "no new data".
@@ -71,6 +51,42 @@ def poll_cheap_tier(rate_sample_limit: int = 25) -> dict:
         raise
     except Exception as exc:
         ingest.record_failure(TIER_CHEAP, str(exc))
+        raise
+
+
+@celery_app.task(name="connect_labs.pulse.tasks.poll_slow_maintenance")
+def poll_slow_maintenance(rate_sample_limit: int = 25) -> dict:
+    """The sweeps whose inputs move in hours, not minutes.
+
+    Split off the cheap tier, which runs every five minutes. None of this is
+    time-critical:
+
+    * per-service rates are measured payouts that change when a programme
+      renegotiates, not between polls;
+    * an opportunity's country is derived from the modal country of its visits,
+      so it only moves when a genuinely new opportunity starts delivering;
+    * the delivery-type resync exists to push a *definition* change onto
+      history, which happens when the code changes, not when data arrives.
+
+    Each also costs one query per opportunity against ``PulseWork`` (1M rows)
+    regardless of whether anything differs, so the cadence is what matters.
+    """
+    rated = 0
+    try:
+        with get_client() as client:
+            active = PulseOpportunity.objects.filter(is_active=True).order_by("updated_at")[:rate_sample_limit]
+            for opp in active:
+                try:
+                    if ingest.refresh_rate(client, opp) is not None:
+                        rated += 1
+                except Exception as exc:  # one bad opp must not kill the sweep
+                    logger.warning("[pulse] rate refresh failed for opp %s: %s", opp.opportunity_id, exc)
+
+        countries = ingest.refresh_opportunity_countries()
+        services = ingest.resync_service_slugs()
+        return {"rates_refreshed": rated, "countries_set": countries, "services_resynced": services}
+    except PulseAuthError as exc:
+        ingest.record_failure(TIER_CHEAP, f"auth: {exc}")
         raise
 
 

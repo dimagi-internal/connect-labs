@@ -626,9 +626,27 @@ CELERY_BEAT_SCHEDULE = {
     # (99% discarded form_json) while the metadata endpoints cost ~560B/row —
     # see connect_labs/pulse/ingest.py. Backfill is deliberately NOT on beat:
     # it is a slow manual one-shot that must never stall the live tail.
+    # Every 15 min, not every 5. Measured on prod: this task is ~16s of wall
+    # clock and essentially all of it is ONE upstream request --
+    # opp_org_program_list makes Connect aggregate a visit_count for all 507
+    # opportunities across 1.65M visits. The tails' calls are 0.2-0.5s each by
+    # comparison. At */5 that was 77 min/day of worker time spent waiting on a
+    # list whose contents change on the order of days.
+    #
+    # Nothing a viewer sees gets staler: the headline counts live events on top
+    # of this baseline and the tails run every minute, so the baseline being 15
+    # minutes old is invisible. The menus it feeds change when an opportunity is
+    # created, not between polls.
     "pulse-cheap-tier": {
         "task": "connect_labs.pulse.tasks.poll_cheap_tier",
-        "schedule": crontab(minute="*/5"),
+        "schedule": crontab(minute="*/15"),
+    },
+    # Rates, derived country and the delivery-type resync. Hourly, not every
+    # five minutes: their inputs move in hours, and each costs one query per
+    # opportunity against a million-row table whether or not anything differs.
+    "pulse-slow-maintenance": {
+        "task": "connect_labs.pulse.tasks.poll_slow_maintenance",
+        "schedule": crontab(minute=7),
     },
     "pulse-visit-tail": {
         "task": "connect_labs.pulse.tasks.poll_visit_tail",

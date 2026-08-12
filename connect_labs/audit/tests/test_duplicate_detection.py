@@ -762,6 +762,147 @@ def test_run_skips_url_resolution_without_data_access(monkeypatch):
 
 
 # --------------------------------------------------------------------------- #
+# save_callback — per-bucket incremental persistence
+# --------------------------------------------------------------------------- #
+
+
+@override_settings(SCALE_VALIDATION_API_KEY="k")
+def test_save_callback_called_after_each_successful_bucket(monkeypatch):
+    """save_callback is invoked once per successfully-processed bucket so a
+    crash loses at most the in-flight bucket's work, not the whole session."""
+    session = _session(
+        {
+            "100": [_img("a", username="flwA")],
+            "101": [_img("b", username="flwB")],
+        }
+    )
+    monkeypatch.setattr("connect_labs.audit.duplicate_detection.get_signed_url", lambda opp, blob, tok: "https://s")
+    monkeypatch.setattr(DuplicateDetectionClient, "detect", lambda self, manifest: [])
+
+    saves = []
+    run_duplicate_detection(session, access_token="tok", save_callback=lambda: saves.append(1))
+
+    # Two FLW buckets -> two successful detects -> two saves.
+    assert len(saves) == 2
+
+
+@override_settings(SCALE_VALIDATION_API_KEY="k")
+def test_save_callback_not_called_for_failed_bucket(monkeypatch):
+    """A bucket whose /detect_duplicates call fails is skipped entirely;
+    save_callback must NOT fire for it (nothing was written to the session)."""
+    session = _session({"100": [_img("a")]})
+    monkeypatch.setattr("connect_labs.audit.duplicate_detection.get_signed_url", lambda opp, blob, tok: "https://s")
+
+    def _raise(self, manifest):
+        raise DuplicateDetectionError("boom")
+
+    monkeypatch.setattr(DuplicateDetectionClient, "detect", _raise)
+
+    saves = []
+    run_duplicate_detection(session, access_token="tok", save_callback=lambda: saves.append(1))
+
+    assert saves == []
+
+
+@override_settings(SCALE_VALIDATION_API_KEY="k")
+def test_save_callback_exception_does_not_abort_remaining_buckets(monkeypatch):
+    """A failing save_callback must be swallowed so the detection loop
+    continues processing remaining buckets rather than propagating the
+    save error and aborting the whole session."""
+    session = _session(
+        {
+            "100": [_img("a", username="flwA")],
+            "101": [_img("b", username="flwB")],
+        }
+    )
+    monkeypatch.setattr("connect_labs.audit.duplicate_detection.get_signed_url", lambda opp, blob, tok: "https://s")
+    monkeypatch.setattr(DuplicateDetectionClient, "detect", lambda self, manifest: [])
+
+    attempts = []
+
+    def _exploding_save():
+        attempts.append(1)
+        raise RuntimeError("save failed")
+
+    summary = run_duplicate_detection(session, access_token="tok", save_callback=_exploding_save)
+
+    # Both buckets ran despite save failures.
+    assert summary["batches_processed"] == 2
+    assert len(attempts) == 2
+
+
+# --------------------------------------------------------------------------- #
+# _run_duplicate_detection_on_sessions — completion-flag skip
+# --------------------------------------------------------------------------- #
+
+
+def test_session_with_dup_detection_complete_is_skipped(monkeypatch):
+    """A session flagged dup_detection_complete must be skipped entirely so
+    a worker-restart replay does not redo already-finished sessions."""
+    from connect_labs.audit import tasks
+
+    completed_session = AuditSessionRecord(
+        {
+            "id": 1,
+            "experiment": "audit",
+            "type": "AuditSession",
+            "opportunity_id": 1,
+            "data": {"dup_detection_complete": True},
+        }
+    )
+    da = _FakeDataAccess()
+    da.get_audit_session = lambda sid: completed_session
+
+    calls = []
+
+    def _fake_run(session, access_token, progress_callback=None, cancel_key=None, save_callback=None):
+        calls.append(session)
+        return {
+            "groups_detected": 0,
+            "images_flagged": 0,
+            "batches_processed": 0,
+            "skipped_over_limit": 0,
+            "skipped_presign": 0,
+            "detect_failures": 0,
+        }
+
+    monkeypatch.setattr("connect_labs.audit.duplicate_detection.run_duplicate_detection", _fake_run)
+
+    totals = tasks._run_duplicate_detection_on_sessions(da, [1], "tok")
+
+    assert calls == []  # run_duplicate_detection never invoked for the completed session
+    assert totals["sessions_processed"] == 1  # still counted as processed
+
+
+def test_dup_detection_complete_flag_set_after_successful_session(monkeypatch):
+    """After a session's detection completes, dup_detection_complete is written
+    so a subsequent restart skips it."""
+    from connect_labs.audit import tasks
+
+    saved = []
+
+    class _TrackingSave(_FakeDataAccess):
+        def save_audit_session(self, session):
+            saved.append(dict(session.data))
+
+    def _fake_run(session, access_token, progress_callback=None, cancel_key=None, save_callback=None):
+        return {
+            "groups_detected": 0,
+            "images_flagged": 0,
+            "batches_processed": 1,
+            "skipped_over_limit": 0,
+            "skipped_presign": 0,
+            "detect_failures": 0,
+        }
+
+    monkeypatch.setattr("connect_labs.audit.duplicate_detection.run_duplicate_detection", _fake_run)
+
+    tasks._run_duplicate_detection_on_sessions(_TrackingSave(), [1], "tok")
+
+    assert saved[-1].get("dup_detection_complete") is True
+
+
+# --------------------------------------------------------------------------- #
 # build_duplicate_warnings
 # --------------------------------------------------------------------------- #
 
@@ -787,7 +928,9 @@ def test_build_duplicate_warnings_all_kinds():
 
 class _FakeDataAccess:
     def get_audit_session(self, sid):
-        return {"id": sid}
+        return AuditSessionRecord(
+            {"id": sid, "experiment": "audit", "type": "AuditSession", "opportunity_id": 1, "data": {}}
+        )
 
     def save_audit_session(self, session):
         pass
@@ -796,7 +939,7 @@ class _FakeDataAccess:
 def test_run_summary_note_lists_every_failure_kind(monkeypatch):
     from connect_labs.audit import tasks
 
-    def _fake_run(session, access_token, progress_callback=None, cancel_key=None):
+    def _fake_run(session, access_token, progress_callback=None, cancel_key=None, save_callback=None):
         return {
             "groups_detected": 0,
             "images_flagged": 0,
@@ -822,7 +965,7 @@ def test_run_summary_note_lists_every_failure_kind(monkeypatch):
 def test_run_summary_note_counts_session_errors(monkeypatch):
     from connect_labs.audit import tasks
 
-    def _boom(session, access_token, progress_callback=None, cancel_key=None):
+    def _boom(session, access_token, progress_callback=None, cancel_key=None, save_callback=None):
         raise RuntimeError("kaboom")
 
     monkeypatch.setattr("connect_labs.audit.duplicate_detection.run_duplicate_detection", _boom)
@@ -836,7 +979,7 @@ def test_run_summary_note_counts_session_errors(monkeypatch):
 def test_run_summary_note_empty_on_clean_run(monkeypatch):
     from connect_labs.audit import tasks
 
-    def _clean(session, access_token, progress_callback=None, cancel_key=None):
+    def _clean(session, access_token, progress_callback=None, cancel_key=None, save_callback=None):
         return {
             "groups_detected": 1,
             "images_flagged": 2,
@@ -862,7 +1005,7 @@ def test_run_stops_between_sessions_when_cancelled(monkeypatch):
 
     calls = []
 
-    def _fake_run(session, access_token, progress_callback=None, cancel_key=None):
+    def _fake_run(session, access_token, progress_callback=None, cancel_key=None, save_callback=None):
         calls.append(session)
         return {
             "groups_detected": 0,

@@ -5,10 +5,12 @@ from __future__ import annotations
 from connect_labs.microplans.core.grouping import (
     GroupingConfig,
     _absorb_enclosed_clusters,
+    _disambiguated_ward_prefixes,
     _merge_tiny_wags_into_nearest_wag,
     _reassign_dominated_cells,
     _reassign_isolated_pieces_touching_other_wags,
     _reassign_isolated_wa_to_nearest_wag,
+    _ward_numbered_labels,
     group_work_areas,
 )
 
@@ -99,6 +101,151 @@ class TestBboxBucket:
         # Kano North's running count.
         assert m_nums == list(range(1, len(m_nums) + 1))
         assert m_nums[0] == 1
+
+
+class TestDisambiguatedWardPrefixes:
+    """Two different wards whose names share the same natural 3-letter
+    prefix must never end up with the same group-label prefix — confirmed in
+    real production data: "Doka" and "Doka Dawa" both naturally truncate to
+    "DOK", silently merging two unrelated ~15km-apart wards' group stats
+    together downstream."""
+
+    def test_no_collision_keeps_the_short_prefix(self):
+        # No collision at all — behaviour must be unchanged from the plain
+        # 3-letter _ward_prefix.
+        prefixes = _disambiguated_ward_prefixes(["Kano North", "Madobi"])
+        assert prefixes == {"Kano North": "KAN", "Madobi": "MAD"}
+
+    def test_colliding_wards_get_unique_prefixes(self):
+        # No ward_lga passed — falls straight to growing the ward's own name.
+        prefixes = _disambiguated_ward_prefixes(["Doka", "Doka Dawa"])
+        assert len(set(prefixes.values())) == 2
+        # Alphabetically-first ward keeps the short, natural prefix; the
+        # other grows just enough of its OWN name to become unique.
+        assert prefixes["Doka"] == "DOK"
+        assert prefixes["Doka Dawa"] == "DOKA"
+
+    def test_colliding_wards_disambiguate_via_lga_when_available(self):
+        # The actual real-world case (Doka, LGA Tofa; Doka Dawa, LGA Rimin
+        # Gado) — with ward_lga supplied, the collision resolves via the
+        # LGA's first 2 letters instead of an arbitrary extra letter from the
+        # ward's own name, since that's more meaningful to a reader ("this
+        # one's the Rimin Gado Doka") than "DOKA" on its own.
+        prefixes = _disambiguated_ward_prefixes(
+            ["Doka", "Doka Dawa"], ward_lga={"Doka": "Tofa", "Doka Dawa": "Rimin Gado"}
+        )
+        assert prefixes == {"Doka": "DOK", "Doka Dawa": "DOKRI"}
+
+    def test_lga_disambiguation_falls_back_when_lga_candidate_also_collides(self):
+        # THREE colliding wards, all in the same LGA "Tofa": "Doka" claims the
+        # natural "DOK". "Doka Dawa" collides, disambiguates via LGA to
+        # "DOKTO", and claims it. "Doka East" ALSO collides on "DOK" and ALSO
+        # tries the same LGA candidate "DOKTO" — but that's now taken by
+        # "Doka Dawa", so it falls through to growing its OWN name instead.
+        prefixes = _disambiguated_ward_prefixes(
+            ["Doka", "Doka Dawa", "Doka East"],
+            ward_lga={"Doka": "Tofa", "Doka Dawa": "Tofa", "Doka East": "Tofa"},
+        )
+        assert prefixes == {"Doka": "DOK", "Doka Dawa": "DOKTO", "Doka East": "DOKA"}
+        assert len(set(prefixes.values())) == 3
+
+    def test_lga_disambiguation_skipped_when_lga_missing_for_that_ward(self):
+        # ward_lga provided for the OTHER ward but not this one — falls back
+        # to growing the ward's own name, same as no ward_lga at all.
+        prefixes = _disambiguated_ward_prefixes(["Doka", "Doka Dawa"], ward_lga={"Doka": "Tofa"})
+        assert prefixes["Doka"] == "DOK"
+        assert prefixes["Doka Dawa"] == "DOKA"
+
+    def test_three_way_collision_all_resolve_uniquely(self):
+        # "Dan Kadai", "Dan Kama", "Dan Koro" all naturally truncate to "DAN".
+        prefixes = _disambiguated_ward_prefixes(["Dan Kadai", "Dan Kama", "Dan Koro"])
+        assert len(set(prefixes.values())) == 3
+
+    def test_exhausted_name_falls_back_to_a_numeric_suffix(self):
+        # A ward whose ENTIRE name is used up and still collides has nothing
+        # left to disambiguate with — a numeric suffix is the last resort.
+        # "Do-Ka" (-> "DOKA") sorts first alphabetically and claims "DOK".
+        # "Dok" (-> "DOK", only 3 letters total) collides and can't grow past
+        # its own 3-letter name, so it falls back to "DOK2". "Doka" (->
+        # "DOKA") collides too but CAN grow one more letter, landing on
+        # "DOKA" — no fallback needed for it.
+        prefixes = _disambiguated_ward_prefixes(["Do-Ka", "Dok", "Doka"])
+        assert prefixes == {"Do-Ka": "DOK", "Dok": "DOK2", "Doka": "DOKA"}
+        assert len(set(prefixes.values())) == 3
+
+    def test_empty_and_missing_wards_get_no_prefix(self):
+        prefixes = _disambiguated_ward_prefixes(["Kano North", "", "!!!"])
+        assert prefixes.get("") in (None, "")
+        assert prefixes.get("!!!") in (None, "")  # no alnum characters at all
+
+    def test_ward_numbered_labels_never_collide_across_wards(self):
+        # Integration-level: feed keys from two colliding wards through the
+        # actual labeling function used by both bbox and bfs_adjacency.
+        keys = [("Doka", i) for i in range(5)] + [("Doka Dawa", i) for i in range(5)]
+        labels = _ward_numbered_labels(keys)
+        doka_labels = {labels[k] for k in keys if k[0] == "Doka"}
+        doka_dawa_labels = {labels[k] for k in keys if k[0] == "Doka Dawa"}
+        assert doka_labels.isdisjoint(doka_dawa_labels)
+        assert doka_labels == {f"DOK-group-{n}" for n in range(1, 6)}
+        assert doka_dawa_labels == {f"DOKA-group-{n}" for n in range(1, 6)}
+
+    def test_ward_numbered_labels_uses_lga_when_provided(self):
+        # Same colliding pair, but with ward_lga passed through (mirrors
+        # _bbox_bucket/_bfs_adjacency's real call sites) — resolves via LGA
+        # ("Tofa"/"Rimin Gado") instead of an arbitrary extra letter.
+        keys = [("Doka", i) for i in range(3)] + [("Doka Dawa", i) for i in range(3)]
+        labels = _ward_numbered_labels(keys, ward_lga={"Doka": "Tofa", "Doka Dawa": "Rimin Gado"})
+        doka_labels = {labels[k] for k in keys if k[0] == "Doka"}
+        doka_dawa_labels = {labels[k] for k in keys if k[0] == "Doka Dawa"}
+        assert doka_labels == {f"DOK-group-{n}" for n in range(1, 4)}
+        assert doka_dawa_labels == {f"DOKRI-group-{n}" for n in range(1, 4)}
+
+    def test_ward_numbered_labels_uses_table_lookup_when_available(self, monkeypatch):
+        # A table hit is used as-is (mocked here rather than depending on the
+        # real 5872-row table's exact codes, which could change on a future
+        # regeneration) — takes priority over the runtime fallback entirely.
+        from connect_labs.microplans.core import ward_codes as WC
+
+        def fake_lookup(state, lga, ward):
+            return {"Doka": "DOKTO", "Doka Dawa": "DOKRI"}.get(ward)
+
+        monkeypatch.setattr(WC, "lookup_ward_code", fake_lookup)
+        keys = [("Doka", i) for i in range(3)] + [("Doka Dawa", i) for i in range(3)]
+        labels = _ward_numbered_labels(
+            keys,
+            ward_lga={"Doka": "Tofa", "Doka Dawa": "Rimin Gado"},
+            ward_state={"Doka": "Kano", "Doka Dawa": "Kano"},
+        )
+        doka_labels = {labels[k] for k in keys if k[0] == "Doka"}
+        doka_dawa_labels = {labels[k] for k in keys if k[0] == "Doka Dawa"}
+        assert doka_labels == {f"DOKTO-group-{n}" for n in range(1, 4)}
+        assert doka_dawa_labels == {f"DOKRI-group-{n}" for n in range(1, 4)}
+
+    def test_ward_numbered_labels_falls_back_without_colliding_table_hits(self, monkeypatch):
+        # "Doka" hits the table ("DOKTO"); "Doka Dawa" misses (e.g. not in
+        # the reference data) and falls back to the runtime scheme — which
+        # must not land on "DOKTO" even though that's a plausible-looking
+        # candidate, since the table already claimed it.
+        from connect_labs.microplans.core import ward_codes as WC
+
+        monkeypatch.setattr(WC, "lookup_ward_code", lambda state, lga, ward: "DOKTO" if ward == "Doka" else None)
+        keys = [("Doka", 0), ("Doka Dawa", 0)]
+        labels = _ward_numbered_labels(
+            keys, ward_lga={"Doka Dawa": "Rimin Gado"}, ward_state={"Doka": "Kano", "Doka Dawa": "Kano"}
+        )
+        assert labels[("Doka", 0)] == "DOKTO-group-1"
+        assert labels[("Doka Dawa", 0)].split("-group-")[0] != "DOKTO"
+
+    def test_ward_numbered_labels_skips_table_lookup_without_ward_state(self):
+        # No ward_state passed at all -> table lookup is never attempted
+        # (short-circuited before any lookup call), pure runtime fallback —
+        # identical to behaviour before the table existed.
+        keys = [("Doka", i) for i in range(3)] + [("Doka Dawa", i) for i in range(3)]
+        labels = _ward_numbered_labels(keys, ward_lga={"Doka Dawa": "Rimin Gado"})
+        doka_labels = {labels[k] for k in keys if k[0] == "Doka"}
+        doka_dawa_labels = {labels[k] for k in keys if k[0] == "Doka Dawa"}
+        assert doka_labels == {f"DOK-group-{n}" for n in range(1, 4)}
+        assert doka_dawa_labels == {f"DOKRI-group-{n}" for n in range(1, 4)}
 
 
 class TestBfsAdjacency:
@@ -876,7 +1023,9 @@ class TestReassignIsolatedPiecesTouchingOtherWags:
     """A disconnected piece within a WAG (cells only attached to EACH OTHER,
     cut off from the WAG's main body) is fine to keep its label if it only
     touches open terrain — but if it ALSO touches a different WAG (edge or
-    corner), the whole piece must move there."""
+    corner), the whole piece must move there UNLESS that would push the
+    receiving WAG over max_buildings, in which case the piece is promoted to
+    its own standalone WAG instead of force-merged."""
 
     def test_disconnected_pair_touching_foreign_wag_moves_together(self):
         from shapely.geometry import box
@@ -894,11 +1043,14 @@ class TestReassignIsolatedPiecesTouchingOtherWags:
         }
         wa_ids = list(geoms.keys())
         tree = STRtree([geoms[w] for w in wa_ids])
+        by_id = {w: {"building_count": 10} for w in wa_ids}
         clusters_with_seed = [
             ("O1", ["O1", "O2", "O3", "O4", "O5", "OX1", "OX2"]),
             ("RED1", ["RED1"]),
         ]
-        result = _reassign_isolated_pieces_touching_other_wags(clusters_with_seed, geoms, wa_ids, tree, None)
+        result = _reassign_isolated_pieces_touching_other_wags(
+            clusters_with_seed, by_id, geoms, wa_ids, tree, 1000, None
+        )
         groups = {frozenset(cells) for _seed, cells in result}
         assert groups == {frozenset(["O1", "O2", "O3", "O4", "O5"]), frozenset(["OX1", "OX2", "RED1"])}
 
@@ -921,8 +1073,11 @@ class TestReassignIsolatedPiecesTouchingOtherWags:
         }
         wa_ids = list(geoms.keys())
         tree = STRtree([geoms[w] for w in wa_ids])
+        by_id = {w: {"building_count": 10} for w in wa_ids}
         clusters_with_seed = [("O1", ["O1", "O2", "O3", "O4", "O5", "OX1", "OX2"])]
-        result = _reassign_isolated_pieces_touching_other_wags(clusters_with_seed, geoms, wa_ids, tree, None)
+        result = _reassign_isolated_pieces_touching_other_wags(
+            clusters_with_seed, by_id, geoms, wa_ids, tree, 1000, None
+        )
         assert len(result) == 1
         assert set(result[0][1]) == {"O1", "O2", "O3", "O4", "O5", "OX1", "OX2"}
 
@@ -940,8 +1095,11 @@ class TestReassignIsolatedPiecesTouchingOtherWags:
         }
         wa_ids = list(geoms.keys())
         tree = STRtree([geoms[w] for w in wa_ids])
+        by_id = {w: {"building_count": 10} for w in wa_ids}
         clusters_with_seed = [("O1", ["O1", "OX"]), ("RED", ["RED"])]
-        result = _reassign_isolated_pieces_touching_other_wags(clusters_with_seed, geoms, wa_ids, tree, None)
+        result = _reassign_isolated_pieces_touching_other_wags(
+            clusters_with_seed, by_id, geoms, wa_ids, tree, 1000, None
+        )
         groups = {frozenset(cells) for _seed, cells in result}
         assert groups == {frozenset(["O1"]), frozenset(["OX", "RED"])}
 
@@ -959,14 +1117,18 @@ class TestReassignIsolatedPiecesTouchingOtherWags:
         }
         wa_ids = list(geoms.keys())
         tree = STRtree([geoms[w] for w in wa_ids])
+        by_id = {w: {"building_count": 10} for w in wa_ids}
         clusters_with_seed = [("O1", ["O1", "O2"]), ("RED", ["RED"])]
-        result = _reassign_isolated_pieces_touching_other_wags(clusters_with_seed, geoms, wa_ids, tree, None)
+        result = _reassign_isolated_pieces_touching_other_wags(
+            clusters_with_seed, by_id, geoms, wa_ids, tree, 1000, None
+        )
         groups = {frozenset(cells) for _seed, cells in result}
         assert groups == {frozenset(["O1", "O2"]), frozenset(["RED"])}
 
-    def test_overrides_max_buildings_unlike_dominated_cells(self):
-        # A stray piece must move even when the receiving WAG is already huge
-        # — unlike _reassign_dominated_cells, there's no ceiling here.
+    def test_still_merges_when_it_fits_under_max_buildings(self):
+        # A stray piece moves into the foreign WAG as long as doing so still
+        # fits under max_buildings — the common case (a small piece, plenty
+        # of headroom).
         from shapely.geometry import box
         from shapely.strtree import STRtree
 
@@ -978,10 +1140,44 @@ class TestReassignIsolatedPiecesTouchingOtherWags:
         }
         wa_ids = list(geoms.keys())
         tree = STRtree([geoms[w] for w in wa_ids])
+        by_id = {w: {"building_count": 10} for w in wa_ids}
+        by_id["OX"] = {"building_count": 20}
+        by_id["RED"] = {"building_count": 20}
         clusters_with_seed = [("O1", ["O1", "O2", "OX"]), ("RED", ["RED"])]
-        result = _reassign_isolated_pieces_touching_other_wags(clusters_with_seed, geoms, wa_ids, tree, None)
+        # RED(20) + OX(20) = 40, comfortably under max_buildings=150.
+        result = _reassign_isolated_pieces_touching_other_wags(
+            clusters_with_seed, by_id, geoms, wa_ids, tree, 150, None
+        )
         groups = {frozenset(cells) for _seed, cells in result}
         assert groups == {frozenset(["O1", "O2"]), frozenset(["OX", "RED"])}
+
+    def test_promotes_to_standalone_wag_when_merge_would_breach_max_buildings(self):
+        # Real screenshot/CSV from production: a 106-cell, 322-building piece
+        # merged wholesale into an already-substantial neighbour, nearly
+        # doubling max_buildings=180. Reproduced at small scale here: merging
+        # the stray piece into RED would push it well past the ceiling, so
+        # the piece is stood up as its OWN new WAG instead of force-merged.
+        from shapely.geometry import box
+        from shapely.strtree import STRtree
+
+        geoms = {
+            "O1": box(0, 0, 1, 1),
+            "O2": box(1, 0, 2, 1),
+            "OX": box(10, 10, 11, 11),
+            "RED": box(11, 10, 12, 11),
+        }
+        wa_ids = list(geoms.keys())
+        tree = STRtree([geoms[w] for w in wa_ids])
+        by_id = {w: {"building_count": 10} for w in wa_ids}
+        by_id["OX"] = {"building_count": 100}
+        by_id["RED"] = {"building_count": 100}
+        clusters_with_seed = [("O1", ["O1", "O2", "OX"]), ("RED", ["RED"])]
+        # RED(100) + OX(100) = 200 > max_buildings=150 — must not merge.
+        result = _reassign_isolated_pieces_touching_other_wags(
+            clusters_with_seed, by_id, geoms, wa_ids, tree, 150, None
+        )
+        groups = {frozenset(cells) for _seed, cells in result}
+        assert groups == {frozenset(["O1", "O2"]), frozenset(["RED"]), frozenset(["OX"])}
 
     def test_barrier_blocks_reassignment(self):
         from shapely.geometry import LineString, box
@@ -995,9 +1191,12 @@ class TestReassignIsolatedPiecesTouchingOtherWags:
         }
         wa_ids = list(geoms.keys())
         tree = STRtree([geoms[w] for w in wa_ids])
+        by_id = {w: {"building_count": 10} for w in wa_ids}
         clusters_with_seed = [("O1", ["O1", "OX"]), ("RED", ["RED"])]
         barrier = prep(LineString([(10.5, -5), (10.5, 20)]))  # runs right between OX and RED
-        result = _reassign_isolated_pieces_touching_other_wags(clusters_with_seed, geoms, wa_ids, tree, barrier)
+        result = _reassign_isolated_pieces_touching_other_wags(
+            clusters_with_seed, by_id, geoms, wa_ids, tree, 1000, barrier
+        )
         groups = {frozenset(cells) for _seed, cells in result}
         assert groups == {frozenset(["O1", "OX"]), frozenset(["RED"])}
 

@@ -18,6 +18,19 @@ from django_tables2 import SingleTableView
 from connect_labs.labs.admin.analysis_config import VISIT_INSPECTOR_CONFIG
 from connect_labs.labs.admin.data_access import RecordExplorerDataAccess
 from connect_labs.labs.admin.forms import RecordEditForm, RecordFilterForm, RecordUploadForm, VisitInspectorFilterForm
+from connect_labs.labs.admin.opportunity_tracker import (
+    FUNDER_CHOICES,
+    cohort_pivot,
+    daily_visits_and_users,
+    filtered_opportunities,
+    monthly_visits_by_country,
+    opportunity_detail_rows,
+    opportunity_filter_choices,
+    running_user_total,
+    running_visit_total,
+    status_for,
+    top_level_metrics,
+)
 from connect_labs.labs.admin.sql_validator import build_safe_query
 from connect_labs.labs.admin.tables import LabsRecordTable
 from connect_labs.labs.admin.utils import (
@@ -39,6 +52,168 @@ class AdminIndexView(AdminRequiredMixin, TemplateView):
     """Landing page for Labs Admin — grouped cards for data, ops, and asset tools."""
 
     template_name = "labs/admin/index.html"
+
+
+class OpportunityTrackerView(AdminRequiredMixin, TemplateView):
+    """Cross-workspace opportunity dashboard, reading Pulse's local mirror.
+
+    Not scoped by labs_context — deliberately shows data across every org the
+    Pulse poller account can see, which is why it's gated to Dimagi staff via
+    AdminRequiredMixin rather than plain LoginRequiredMixin.
+    """
+
+    template_name = "labs/admin/opportunity_tracker.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        request = self.request
+
+        # Same "don't trust an unrecognized param" rule as `tab` below: a
+        # typo'd or stale-bookmarked value (e.g. ?status=active, lowercase)
+        # would otherwise silently match zero opportunities while the <select>
+        # renders with no option selected. Empty/missing means "all" (same
+        # empty-string-is-unfiltered convention as delivery_type/country/
+        # funder just below); anything else unrecognized falls back to the
+        # real default rather than either extreme.
+        requested_status = request.GET.get("status", "Active")
+        if requested_status in ("", "all"):
+            status = "all"
+        elif requested_status in ("Active", "Inactive"):
+            status = requested_status
+        else:
+            status = "Active"
+        # Raw values; validated against the actual choice lists just below,
+        # once filter_choices() is available -- an unrecognized delivery_type/
+        # country/funder (stale bookmark, renamed slug, typo) would otherwise
+        # silently match zero opportunities while every <select> defaults to
+        # "All", exactly the failure mode already guarded against for status
+        # and tab above.
+        delivery_type = request.GET.get("delivery_type") or None
+        country = request.GET.get("country") or None
+        funder = request.GET.get("funder") or None
+
+        # An unrecognized value would leave every tab radio unchecked and the
+        # CSS :checked selectors that show/hide .ot-tab-panel would all fail,
+        # rendering a blank page -- fall back to "opps" rather than trust the
+        # param (a stale bookmark or a future link using a different name).
+        requested_tab = request.GET.get("tab", "opps")
+        context["active_tab"] = requested_tab if requested_tab in ("opps", "stats", "country") else "opps"
+        # Safe defaults so a failure below still renders a usable (if partly
+        # empty) page rather than a 500. filters gets corrected values (if
+        # validation runs) or these raw ones if it never gets that far.
+        context["filters"] = {
+            "status": status,
+            "delivery_type": delivery_type or "",
+            "country": country or "",
+            "funder": funder or "",
+        }
+        context["filter_choices"] = {"delivery_types": [], "countries": [], "funders": FUNDER_CHOICES}
+        context["detail_rows"] = []
+        context["pivot"] = None
+        context["chart_data"] = {}
+        context["metrics"] = {"active_opps": 0, "visits_7d": 0, "active_countries": 0}
+
+        try:
+            filter_choices = opportunity_filter_choices()
+            context["filter_choices"] = filter_choices
+
+            def _validated(value, valid_values):
+                return value if value in valid_values else None
+
+            delivery_type = _validated(delivery_type, {d["slug"] for d in filter_choices["delivery_types"]})
+            country = _validated(country, {c["code"] for c in filter_choices["countries"]})
+            funder = _validated(funder, set(filter_choices["funders"]))
+            context["filters"].update(
+                {
+                    "delivery_type": delivery_type or "",
+                    "country": country or "",
+                    "funder": funder or "",
+                }
+            )
+
+            # The Opportunities and Visit Stats tabs share one filter set
+            # (delivery_type/country/funder) -- compute the matching opportunity
+            # list once and reuse it, rather than re-querying + re-scanning
+            # funder_for() once per section.
+            #
+            # Status is deliberately NOT applied to the Visit Stats charts: they
+            # are all-time/cumulative views, and an opportunity that has since
+            # gone Inactive still really did that historical work. It only
+            # narrows the Opportunities tab's own table + pivot (which share
+            # that further-narrowed list between themselves, so those two
+            # panels can't disagree with each other).
+            opps = filtered_opportunities(delivery_type=delivery_type, country=country, funder=funder)
+            opps_tab_opps = [o for o in opps if status == "all" or status_for(o) == status]
+            opp_ids = [o.opportunity_id for o in opps]
+
+            # Isolated the same way the tables/charts below are: the headline
+            # strip failing shouldn't blank the rest of an otherwise-working page.
+            try:
+                context["metrics"] = top_level_metrics(opps)
+            except Exception:
+                logger.exception("[OpportunityTracker] Failed to build top-level metrics")
+
+            # Isolated from the chart-building below the same way the four
+            # charts are isolated from each other: the Opportunities tab's
+            # own table + pivot failing shouldn't blank the Visit Stats /
+            # Visits-by-Country tabs, which read entirely different data.
+            try:
+                context["detail_rows"] = opportunity_detail_rows(opps_tab_opps)
+                context["pivot"] = cohort_pivot(opps_tab_opps)
+            except Exception:
+                logger.exception("[OpportunityTracker] Failed to build Opportunities tab")
+                messages.error(request, "Failed to load the Opportunities tab. Check the server logs for details.")
+
+            def _country_bars():
+                # Country is likewise not applied here: it's the chart's own
+                # axis, not a filter dimension, so a country selected on
+                # another tab must not collapse this breakdown to a single
+                # bar. Reuse `opps` when there's no country filter to avoid a
+                # redundant identical query. This whole thunk runs inside
+                # _safe_chart below, so a failure in the re-query itself
+                # (not just in monthly_visits_by_country) doesn't blank the
+                # other three charts either.
+                scope = opps if not country else filtered_opportunities(delivery_type=delivery_type, funder=funder)
+                return monthly_visits_by_country(scope)
+
+            # Each chart is computed and assigned independently -- building
+            # these as one dict literal meant a single failing call (e.g. the
+            # last one) discarded every already-successful result along with
+            # it, since the whole literal has to finish before context gets
+            # updated. A plain dict, not a pre-serialized JSON string: the
+            # template's `|json_script` filter does its own json.dumps (via
+            # DjangoJSONEncoder) -- serializing here first would double-encode,
+            # and the JS would parse a JSON *string* back out instead of the
+            # actual object.
+            chart_data = {}
+            chart_data["runningVisits"] = self._safe_chart("runningVisits", running_visit_total, opp_ids, default=[])
+            chart_data["runningUsers"] = self._safe_chart("runningUsers", running_user_total, opp_ids, default=[])
+            chart_data["dailyVisitsUsers"] = self._safe_chart(
+                "dailyVisitsUsers", daily_visits_and_users, opp_ids, default=[]
+            )
+            chart_data["countryBars"] = self._safe_chart(
+                "countryBars", _country_bars, default={"countries": [], "series": []}
+            )
+            context["chart_data"] = chart_data
+        except Exception:
+            # logger.exception (not .error) so the full traceback lands in
+            # server logs -- the user-facing message stays generic on purpose
+            # (see the earlier fix in this file's history for why raw
+            # exception text shouldn't reach the page), so the traceback is
+            # the only way to diagnose which of the calls above failed.
+            logger.exception("[OpportunityTracker] Failed to build report")
+            messages.error(request, "Failed to load Opportunity Tracker data. Check the server logs for details.")
+
+        return context
+
+    def _safe_chart(self, name, fn, *args, default):
+        """Compute one chart's data in isolation, so a failure here doesn't
+        discard the other three charts' already-successful results."""
+        try:
+            return fn(*args)
+        except Exception:
+            logger.exception(f"[OpportunityTracker] Failed to build chart data: {name}")
+            return default
 
 
 class RecordListView(AdminRequiredMixin, SingleTableView):
@@ -1039,7 +1214,7 @@ class TaskManagerView(AdminRequiredMixin, TemplateView):
                     WHERE data->'state'->'active_job'->>'job_id' IS NOT NULL
                     ORDER BY (data->'state'->'active_job'->>'started_at')::timestamp DESC NULLS LAST
                     LIMIT 50
-                """
+                    """
                 )
 
                 columns = [col[0] for col in cursor.description]

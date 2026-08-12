@@ -22,6 +22,8 @@ urlpatterns = [
     path("records/download/", views.DownloadRecordsView.as_view(), name="download"),
     path("records/upload/", views.UploadRecordsView.as_view(), name="upload"),
     path("records/delete/", views.DeleteRecordsView.as_view(), name="delete"),
+    # Opportunity Tracker
+    path("opportunity-tracker/", views.OpportunityTrackerView.as_view(), name="opportunity_tracker"),
     # Visit Inspector
     path("visit-inspector/", views.VisitInspectorView.as_view(), name="visit_inspector"),
     path("visit-inspector/stream/", views.VisitInspectorStreamView.as_view(), name="visit_inspector_stream"),

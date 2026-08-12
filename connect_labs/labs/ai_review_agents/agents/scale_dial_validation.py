@@ -1,15 +1,19 @@
 """
-Scale Image Validation Agent.
+Scale [Dial] Image Validation Agent.
 
-Validates weight readings against scale images using ML vision.
-Used for KMC (Kangaroo Mother Care) to verify that user-entered weight
-readings match what's shown on digital scale photos.
+Validates that a user-entered weight reading matches what's shown on an
+*analog dial* scale photo, using ML vision. This is the dial-scale
+counterpart to the digital Scale Image Validation agent: dial faces need a
+different reading model, so this agent posts to the shared classifier's
+``/interpret`` endpoint (the same one MUAC Reading Match uses) with the
+``scale_dial_read`` task instead of the digital ``/predict`` path.
 
 API Details:
-- Endpoint: https://image-pipeline-scale-gw-4pc8jsfa.uc.gateway.dev/predict
-- Auth: API key in x-api-key header
-- Request: {"image": "<base64>", "reading": "XXXX"}
-- Response: {"match": true/false}
+- Endpoint: https://image-pipeline-scale-gw-4pc8jsfa.uc.gateway.dev/interpret
+- Auth: API key in x-api-key header (same key as scale validation service)
+- Request: {"image": "<base64>", "task": "scale_dial_read", "reading": "1535", "tolerance": "strict"}
+- Response: {"match": true/false, "processing_factor": <int>}
+- tolerance: "strict" (default), "loose", or "wide".
 """
 
 import base64
@@ -30,26 +34,27 @@ from connect_labs.labs.ai_review_agents.registry import register
 from connect_labs.labs.ai_review_agents.types import ReviewContext, ReviewResult
 
 
-class ScaleValidationError(AIReviewAgentError):
-    """Exception raised for Scale Validation API errors."""
+class ScaleDialValidationError(AIReviewAgentError):
+    """Exception raised for Scale Dial Validation API errors."""
 
     pass
 
 
 @register
-class ScaleValidationAgent(BaseAIReviewAgent):
+class ScaleDialValidationAgent(BaseAIReviewAgent):
     """
-    AI Review Agent for scale image validation.
+    AI Review Agent for analog dial scale image validation.
 
-    Validates that a user-entered weight reading matches what's shown
-    in a scale image using ML vision analysis.
+    Validates that a user-entered weight reading matches what's shown on a
+    dial-scale photo using ML vision analysis, via the shared classifier's
+    ``scale_dial_read`` task.
 
     Required context:
-        - images["scale"]: Raw image bytes (JPEG/PNG) of the scale
-        - form_data["reading"]: 4-digit weight reading string (e.g., "1535")
+        - images["scale"]: Raw image bytes (JPEG/PNG) of the dial scale
+        - form_data["reading"]: weight reading string (e.g., "1535")
 
     Example:
-        agent = ScaleValidationAgent()
+        agent = ScaleDialValidationAgent()
         context = ReviewContext(
             images={"scale": image_bytes},
             form_data={"reading": "1535"}
@@ -59,9 +64,9 @@ class ScaleValidationAgent(BaseAIReviewAgent):
             print("Weight matches!")
     """
 
-    agent_id = "scale_validation"
-    name = "Scale [Digital] Image Validation"
-    description = "Validates weight readings against scale images using ML vision"
+    agent_id = "scale_dial_read"
+    name = "Scale [Dial] Image Validation"
+    description = "Validates weight readings against analog dial scale images using ML vision"
     result_actions = {
         "pass_matched": {
             "ai_result": "match",
@@ -80,12 +85,14 @@ class ScaleValidationAgent(BaseAIReviewAgent):
             "label": "Manual Scale Value",
             "type": "form_field",
             "required": True,
-            "help": "Form field whose value is compared against the scale photo",
+            "help": "Form field whose value is compared against the dial scale photo",
         }
     ]
 
     DEFAULT_API_URL = "https://image-pipeline-scale-gw-4pc8jsfa.uc.gateway.dev"
     DEFAULT_TIMEOUT = 60.0
+    DEFAULT_TOLERANCE = "strict"
+    TASK = "scale_dial_read"
 
     def __init__(self):
         super().__init__()
@@ -93,13 +100,18 @@ class ScaleValidationAgent(BaseAIReviewAgent):
 
     @property
     def api_key(self) -> str:
-        """Get API key from settings."""
+        """Get API key from settings — shared with scale validation service."""
         return getattr(settings, "SCALE_VALIDATION_API_KEY", "")
 
     @property
     def api_url(self) -> str:
         """Get API URL from settings."""
         return getattr(settings, "SCALE_VALIDATION_API_URL", self.DEFAULT_API_URL).rstrip("/")
+
+    @property
+    def tolerance(self) -> str:
+        """How close a reading must be to be considered a match: strict, loose, wide."""
+        return self.get_config("SCALE_DIAL_TOLERANCE", self.DEFAULT_TOLERANCE)
 
     @property
     def http_client(self) -> httpx.Client:
@@ -121,11 +133,9 @@ class ScaleValidationAgent(BaseAIReviewAgent):
             self._client = None
 
     def __enter__(self):
-        """Context manager entry."""
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """Context manager exit - close client."""
         self.close()
 
     def validate_context(self, context: ReviewContext) -> list[str]:
@@ -142,7 +152,7 @@ class ScaleValidationAgent(BaseAIReviewAgent):
 
     def review(self, context: ReviewContext) -> ReviewResult:
         """
-        Validate a scale reading against an image.
+        Validate a dial scale reading against an image.
 
         Args:
             context: ReviewContext with scale image and reading
@@ -150,12 +160,10 @@ class ScaleValidationAgent(BaseAIReviewAgent):
         Returns:
             ReviewResult with match status
         """
-        # Validate context
         validation_errors = self.validate_context(context)
         if validation_errors:
             return ReviewResult.error("; ".join(validation_errors))
 
-        # Check API key
         if not self.api_key:
             return ReviewResult.error(GATEWAY_NOT_CONFIGURED_MESSAGE)
 
@@ -165,16 +173,19 @@ class ScaleValidationAgent(BaseAIReviewAgent):
             image_bytes = next(iter(context.images.values()))
 
         reading = context.get_field("reading", "")
+        tolerance = self.tolerance
 
-        self.logger.debug(f"Validating scale reading: {reading} (image size: {len(image_bytes)} bytes)")
+        self.logger.debug(
+            f"Validating dial scale reading: {reading} (tolerance={tolerance}, image size: {len(image_bytes)} bytes)"
+        )
 
         try:
             encoded_image = base64.b64encode(image_bytes).decode("utf-8")
 
             response = post_with_retry(
                 self.http_client,
-                f"{self.api_url}/predict",
-                json={"image": encoded_image, "reading": reading},
+                f"{self.api_url}/interpret",
+                json={"image": encoded_image, "task": self.TASK, "reading": reading, "tolerance": tolerance},
                 logger=self.logger,
             )
 
@@ -185,12 +196,30 @@ class ScaleValidationAgent(BaseAIReviewAgent):
             result = response.json()
 
             match = result.get("match", False)
-            self.logger.debug(f"Scale validation result: match={match}")
+            processing_factor = result.get("processing_factor")
+            self.logger.debug(f"Scale dial result: match={match}, processing_factor={processing_factor}")
 
             if match:
-                return ReviewResult.success(match=True, api_response=result)
+                return ReviewResult.success(
+                    pass_label=f"Scale Match ({tolerance} tolerance)",
+                    reading=reading,
+                    tolerance=tolerance,
+                    processing_factor=processing_factor,
+                    api_response=result,
+                )
             else:
-                return ReviewResult.failure(match=False, api_response=result)
+                return ReviewResult.failure(
+                    # Classifier-level (not per-visit) so
+                    # AuditSessionRecord.get_assessment_stats() can tally
+                    # ai_flags_by_label by this label — embedding the per-visit
+                    # reading here would make every failing image unique. Same
+                    # rationale as MUAC Reading Match; see muac_match.py.
+                    badge_label=f"Scale Mismatch ({tolerance} tolerance)",
+                    reading=reading,
+                    tolerance=tolerance,
+                    processing_factor=processing_factor,
+                    api_response=result,
+                )
 
         except httpx.HTTPStatusError as e:
             error_detail = ""
@@ -199,56 +228,9 @@ class ScaleValidationAgent(BaseAIReviewAgent):
                 error_detail = error_data.get("details", str(error_data))
             except Exception:
                 error_detail = e.response.text
-            self.logger.error(f"Scale validation API error: {error_detail}")
+            self.logger.error(f"Scale dial API error: {error_detail}")
             return ReviewResult.error(GATEWAY_ERROR_MESSAGE)
 
         except httpx.HTTPError as e:
-            self.logger.error(f"Scale validation connection error: {e}")
+            self.logger.error(f"Scale dial connection error: {e}")
             return ReviewResult.error(GATEWAY_UNREACHABLE_MESSAGE)
-
-    def validate_reading(self, image_bytes: bytes, reading: str) -> dict:
-        """
-        Validate a scale reading against an image (legacy method).
-
-        This method provides backward compatibility with the old
-        ScaleValidationClient interface.
-
-        Args:
-            image_bytes: Raw image bytes (JPEG/PNG)
-            reading: 4-digit weight reading string (e.g., "1535")
-
-        Returns:
-            {"match": True/False}
-
-        Raises:
-            ScaleValidationError: On API errors or rate limiting
-        """
-        context = ReviewContext(
-            images={"scale": image_bytes},
-            form_data={"reading": reading},
-        )
-
-        result = self.review(context)
-
-        if result.status.value == "error":
-            raise ScaleValidationError(result.errors[0] if result.errors else "Unknown error")
-
-        return {"match": result.passed}
-
-    def validate_reading_from_base64(self, base64_image: str, reading: str) -> dict:
-        """
-        Validate a scale reading from a base64-encoded image string (legacy method).
-
-        Args:
-            base64_image: Base64-encoded image string
-            reading: 4-digit weight reading string
-
-        Returns:
-            {"match": True/False}
-        """
-        image_bytes = base64.b64decode(base64_image)
-        return self.validate_reading(image_bytes, reading)
-
-
-# Convenience aliases for backward compatibility
-ScaleValidationClient = ScaleValidationAgent

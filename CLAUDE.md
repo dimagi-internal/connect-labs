@@ -174,10 +174,21 @@ The `## Product Description` section drives automated documentation updates and 
 ## Git Worktrees and Virtualenv
 
 This repo uses emdash which manages git worktrees. In a worktree, the virtualenv
-lives in the **main repo** at `~/emdash-projects/connect-labs/.venv`, NOT in the
-worktree directory. Pre-commit hooks will fail if the virtualenv is not on PATH.
+lives in the **main repo** (commonly `~/emdash-projects/connect-labs/.venv`, but
+the parent directory varies by machine — `~/emdash/repositories/connect-labs` is
+also in use), NOT in the worktree directory. Pre-commit hooks will fail if the
+virtualenv is not on PATH.
 
-To commit from a worktree, either activate the venv first or prepend it to PATH:
+**Use the Makefile targets — they locate the main checkout by asking git
+(`--git-common-dir`), so they work from any worktree on any layout:**
+
+```bash
+make commit                          # git commit with the venv on PATH
+make test                            # pytest, with everything a worktree lacks
+make test ARGS="connect_labs/audit -q"
+```
+
+Or do it by hand, substituting your own main-checkout path:
 
 ```bash
 # Option 1: activate the main repo's venv
@@ -185,10 +196,26 @@ To commit from a worktree, either activate the venv first or prepend it to PATH:
 
 # Option 2: prepend PATH inline for a single commit
 PATH="$HOME/emdash-projects/connect-labs/.venv/bin:$PATH" git commit
-
-# Option 3: use the Makefile target (works from any worktree)
-make commit
 ```
+
+### Why `make test` exists
+
+A worktree is missing all three things pytest needs, and each fails in a way that
+does not name the real cause:
+
+| Missing | Symptom |
+|---|---|
+| the venv (lives in the main checkout) | `pytest: command not found`, or the system python with nothing installed |
+| `.env` (untracked, so it does not exist here; settings read it from `BASE_DIR`, which is *this* worktree) | `ImproperlyConfigured` on whatever setting is read first |
+| `GDAL_LIBRARY_PATH` / `GEOS_LIBRARY_PATH` on macOS (read by `config/settings/test.py` for Darwin, and **not** in `.env`) | `Set the GDAL_LIBRARY_PATH environment variable` |
+
+`make test` resolves all three (linking `.env` from the main checkout rather than
+copying it, so it cannot go stale) and then runs pytest exactly as CI does.
+
+Note that `--reuse-db` is on by default (`pyproject.toml`), so a few tests that
+depend on migration-seeded or fixture-created tables can fail locally while
+passing in CI, which builds a fresh database. Before assuming a failure is yours,
+reproduce it on a clean `origin/main` worktree.
 
 ## Key Commands
 
@@ -197,7 +224,8 @@ inv up                              # Start docker services (postgres, redis)
 npm ci && inv build-js              # Install JS deps and build frontend
 inv build-js -w                     # Build with watch mode (rebuilds on change)
 python manage.py runserver          # Django dev server (uses config.settings.local)
-pytest                              # Run tests
+make test                           # Run tests (works from any worktree — preferred)
+pytest                              # Run tests (needs venv + .env + GDAL vars already set)
 pytest connect_labs/audit/      # Run tests for one app
 celery -A config.celery_app worker -l info   # Celery worker (async audit creation, AI tasks)
 pre-commit run --all-files          # Run linters/formatters

@@ -13,8 +13,15 @@ WRONG answer rather than an error --
   2. Averages hide outages. ALB Average latency stayed unremarkable through 54
      minutes of total saturation; only p95 showed it.
   3. filter-log-events paginates, so a truncated read looks like a quiet system.
+  4. GetMetricStatistics caps a response at 1440 datapoints, so a fixed 5-minute
+     period hard-fails above 120h -- including the --hours 168 that the weekly
+     telemetry review asks for. The period is derived from the window instead.
 
 Each is absorbed here so the answer is not a function of who ran it.
+
+One property a wider window CANNOT preserve: a longer period averages a short
+spike away, so a 10-minute saturation visible at --hours 3 can read as calm at
+--hours 168. Widen to FIND an incident, then re-run narrow around it to size it.
 
 The verdict names the TIER, because that is the fork that matters: web-vs-worker
 CPU resolves "request path or background job" in one comparison, and starting at
@@ -71,6 +78,26 @@ def _window(hours: int) -> tuple[str, str]:
     return start.strftime(fmt), end.strftime(fmt)
 
 
+# CloudWatch returns at most 1440 datapoints per GetMetricStatistics call and
+# rejects the request outright above that -- it does not downsample for you.
+MAX_DATAPOINTS = 1440
+PERIOD_LADDER = (300, 600, 900, 1800, 3600, 10800, 21600)
+
+
+def _period_for(hours: int) -> int:
+    """Smallest period on the ladder that keeps the window under the datapoint cap.
+
+    Kept as coarse steps rather than an exact divisor so the same window always
+    yields the same period -- a verdict that shifted with the minute you ran it
+    would not be comparable across runs.
+    """
+    seconds = hours * 3600
+    for period in PERIOD_LADDER:
+        if seconds / period <= MAX_DATAPOINTS:
+            return period
+    return PERIOD_LADDER[-1]
+
+
 def _metric(namespace, name, dimensions, start, end, period=300, stats=None, ext=None):
     args = [
         "cloudwatch",
@@ -111,12 +138,20 @@ def _peak_ext(points, stat):
     return max(vals) if vals else None
 
 
-def _sustained(points, threshold, consecutive=3, key="Average"):
-    """Longest run of consecutive periods at/above threshold.
+SUSTAINED_MINUTES = 15
+
+
+def _sustained(points, threshold, period, min_minutes=SUSTAINED_MINUTES, key="Average"):
+    """Longest run of consecutive periods at/above threshold, in PERIODS.
 
     Sustained runs, not peaks: a single spike is a deploy or a cron tick, while
     a run of periods is the outage as a user experienced it. This is the same
     reason the audit-trail review ranks failure STREAKS over failure rates.
+
+    The floor is expressed in MINUTES, not in periods, so "sustained" means the
+    same duration at every window size. Counting periods instead would silently
+    redefine the word: three periods is 15 minutes at --hours 3 and three hours
+    at --hours 168.
     """
     run = best = 0
     for p in points:
@@ -125,22 +160,24 @@ def _sustained(points, threshold, consecutive=3, key="Average"):
             best = max(best, run)
         else:
             run = 0
-    return best if best >= consecutive else 0
+    return best if best * period >= min_minutes * 60 else 0
 
 
 def collect(hours: int) -> dict:
     start, end = _window(hours)
+    period = _period_for(hours)
     ecs_dims = lambda svc: {"ClusterName": CLUSTER, "ServiceName": svc}  # noqa: E731
 
-    web_cpu = _metric("AWS/ECS", "CPUUtilization", ecs_dims(WEB_SERVICE), start, end)
-    worker_cpu = _metric("AWS/ECS", "CPUUtilization", ecs_dims(WORKER_SERVICE), start, end)
-    db_cpu = _metric("AWS/RDS", "CPUUtilization", {"DBInstanceIdentifier": DB_INSTANCE}, start, end)
+    web_cpu = _metric("AWS/ECS", "CPUUtilization", ecs_dims(WEB_SERVICE), start, end, period)
+    worker_cpu = _metric("AWS/ECS", "CPUUtilization", ecs_dims(WORKER_SERVICE), start, end, period)
+    db_cpu = _metric("AWS/RDS", "CPUUtilization", {"DBInstanceIdentifier": DB_INSTANCE}, start, end, period)
     db_conns = _metric(
         "AWS/RDS",
         "DatabaseConnections",
         {"DBInstanceIdentifier": DB_INSTANCE},
         start,
         end,
+        period,
         stats=["Average", "Maximum"],
     )
     alb_p95 = _metric(
@@ -149,6 +186,7 @@ def collect(hours: int) -> dict:
         {"LoadBalancer": ALB_DIMENSION},
         start,
         end,
+        period,
         ext=["p95"],
     )
     elb_5xx = _metric(
@@ -157,6 +195,7 @@ def collect(hours: int) -> dict:
         {"LoadBalancer": ALB_DIMENSION},
         start,
         end,
+        period,
         stats=["Sum"],
     )
 
@@ -184,10 +223,10 @@ def collect(hours: int) -> dict:
     ]
 
     return {
-        "window": {"start": start, "end": end, "hours": hours},
+        "window": {"start": start, "end": end, "hours": hours, "period_s": period},
         "empty_metrics": empty,
         "web_cpu_peak_pct": _peak(web_cpu),
-        "web_cpu_saturated_periods": _sustained(web_cpu, WEB_CPU_SATURATED),
+        "web_cpu_saturated_periods": _sustained(web_cpu, WEB_CPU_SATURATED, period),
         "worker_cpu_peak_pct": _peak(worker_cpu),
         "db_cpu_peak_pct": _peak(db_cpu),
         "db_connections_peak": _peak(db_conns, "Maximum"),
@@ -209,6 +248,7 @@ def judge(d: dict) -> dict:
     findings, verdict, next_step = [], "healthy", None
     web = d["web_cpu_peak_pct"] or 0
     worker = d["worker_cpu_peak_pct"] or 0
+    period_min = d["window"].get("period_s", 300) // 60
 
     if d["empty_metrics"]:
         return {
@@ -226,7 +266,7 @@ def judge(d: dict) -> dict:
         }
 
     if d["web_cpu_saturated_periods"]:
-        mins = d["web_cpu_saturated_periods"] * 5
+        mins = d["web_cpu_saturated_periods"] * period_min
         findings.append(
             f"WEB TIER SATURATED: >={WEB_CPU_SATURATED}% CPU for >={mins} consecutive minutes "
             f"(peak {web:.1f}%). Worker peaked at {worker:.1f}% -- "
@@ -298,7 +338,7 @@ def judge(d: dict) -> dict:
         # of periods is an outage. Reporting the bare peak next to "no
         # saturation" reads as a contradiction and invites the wrong conclusion.
         peak_note = (
-            f"Web CPU peaked at {web:.1f}% but never for {3 * 5} consecutive minutes "
+            f"Web CPU peaked at {web:.1f}% but never for {SUSTAINED_MINUTES} consecutive minutes "
             f"(transient -- task start, deploy, or a single heavy request)"
             if web >= WEB_CPU_SATURATED
             else f"Web CPU peak {web:.1f}% (median baseline {BASELINE['web_cpu_median_pct']}%)"
@@ -340,7 +380,8 @@ def main() -> int:
         print(json.dumps({**result, "evidence": data}, indent=2, default=str))
         return 0
 
-    print(f"\nVERDICT: {result['verdict']}   (window: last {args.hours}h, UTC)\n")
+    period_min = data["window"]["period_s"] // 60
+    print(f"\nVERDICT: {result['verdict']}   (window: last {args.hours}h, UTC, {period_min}-min periods)\n")
     for f in result["findings"]:
         print(f"  - {f}")
     print(f"\nNEXT: {result['next_step']}\n")
