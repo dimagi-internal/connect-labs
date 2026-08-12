@@ -723,13 +723,25 @@ def _run_ai_review_on_sessions(
                 # opportunity_id when present (a multi-opp combined session's
                 # images can carry one), same fallback as blob_opportunity_id
                 # above.
-                urls_by_blob = resolve_urls_by_blob(
-                    data_access=data_access,
-                    access_token=access_token,
-                    opportunity_id=session.opportunity_id,
-                    visit_ids=session.visit_ids or [],
-                    visit_images=session.data.get("visit_images", {}),
-                )
+                # Never let a failure resolving these best-effort training-data
+                # URLs prevent the (already-computed, expensive) AI review
+                # results below from being saved -- this must not be able to
+                # throw out of the try/except this whole session's processing
+                # is already wrapped in, or session_updated's save gets skipped
+                # even though the actual review succeeded.
+                try:
+                    urls_by_blob = resolve_urls_by_blob(
+                        data_access=data_access,
+                        access_token=access_token,
+                        opportunity_id=session.opportunity_id,
+                        visit_ids=session.visit_ids or [],
+                        visit_images=session.data.get("visit_images", {}),
+                    )
+                except Exception:
+                    logger.exception(
+                        f"[AIReview] Failed to resolve classifier-fail URLs for session {session_id}"
+                    )
+                    urls_by_blob = {}
                 for row in session_classifier_fail_rows:
                     row.update(urls_by_blob.get(row["blob_id"], {}))
                 classifier_fail_rows.extend(session_classifier_fail_rows)

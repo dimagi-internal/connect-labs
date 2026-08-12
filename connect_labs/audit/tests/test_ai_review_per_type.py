@@ -219,6 +219,42 @@ def test_two_independent_reviewers_on_one_path_both_run_and_fail_wins(patched_re
     assert result == "fail"
 
 
+def test_session_still_saved_when_url_resolution_raises(patched_registry, monkeypatch):
+    """Regression: if resolve_urls_by_blob raises (e.g. a malformed visit_id,
+    or a Connect API error), the already-computed AI review results for this
+    session must still be saved -- a failure in this best-effort training-data
+    feature must never discard real review work."""
+    session = _FakeSession(
+        {
+            "visit_images": {
+                "1": [{"blob_id": "blobA", "question_id": "form/photo_a", "related_fields": []}],
+            }
+        }
+    )
+    data_access = _FakeDataAccess(session)
+    ai_reviewers = {"form/photo_a": [{"agent_id": "agent_fail", "auto_apply_actions": ["nope"]}]}
+
+    save_calls = []
+    data_access.save_audit_session = lambda s: save_calls.append(s)
+
+    def _boom(**kwargs):
+        raise RuntimeError("Connect API down")
+
+    monkeypatch.setattr("connect_labs.audit.tasks.resolve_urls_by_blob", _boom)
+    monkeypatch.setattr("connect_labs.audit.tasks.s3_export.record_classifier_fails", lambda rows: None)
+
+    tasks._run_ai_review_on_sessions(
+        data_access=data_access,
+        session_ids=[10],
+        access_token="tok",
+        opp_id=42,
+        ai_reviewers=ai_reviewers,
+    )
+
+    assert len(save_calls) == 1
+    assert len(session.assessments) == 1  # the actual review result, unaffected
+
+
 def test_classifier_fail_rows_get_urls_resolved_before_human_review(patched_registry, monkeypatch):
     """A freshly-recorded classifier-fail row should carry image/form/connect
     URLs resolved right now (once per session), not wait for a human to
