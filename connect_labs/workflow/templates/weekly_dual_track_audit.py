@@ -314,7 +314,19 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, actions, onUpdateS
     // ── Config from the DEFINITION (pinned at create time, read-only here) ────
     const batch = (definition.config && definition.config.audit_batch) || {};
     const perOpp = batch.per_opp || {};
-    const oppNames = batch.opp_names || {};
+    // Names come from the #user-opportunities blob the base template embeds for
+    // any multi_opp workflow (real LLO names, e.g. "CHC PRE-RCT (Nigeria) - EHA") —
+    // same convention as flw_audit_trend_dashboard.py. batch.opp_names can still
+    // override a specific id if ever manually seeded.
+    const oppNamesFromPage = React.useMemo(() => {
+        const m = {};
+        try {
+            const el = document.getElementById('user-opportunities');
+            if (el) JSON.parse(el.textContent).forEach(o => { m[o.id] = o.name; });
+        } catch (e) { console.error('Weekly dual-track audit: failed to parse user-opportunities', e); }
+        return m;
+    }, []);
+    const oppNames = Object.assign({}, oppNamesFromPage, batch.opp_names || {});
     const trackA = batch.track_a || {};
     const trackB = batch.track_b || {};
     const oppIds = (instance.opportunity_ids && instance.opportunity_ids.length)
