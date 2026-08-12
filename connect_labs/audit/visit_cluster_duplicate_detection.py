@@ -254,12 +254,20 @@ def run_grouping_duplicate_detection(
                         images_flagged += 1
                         session_updated = True
                         meta = blob_meta_by_id.get(blob_id, {})
+                        # blob_meta_by_id doesn't carry a per-image opportunity_id
+                        # today (unlike duplicate_detection.py's img dicts), so
+                        # this always falls back to opp_id -- kept consistent
+                        # with the sibling producers' pattern (and this
+                        # module's own resolve_urls_by_blob call below) so a
+                        # future per-image opportunity_id here doesn't silently
+                        # mis-stamp rows the way the sibling modules did.
+                        opp_for_row = meta.get("opportunity_id") or opp_id
                         target_classifier_fail_rows.append(
                             {
                                 "session_id": session.id,
                                 "workflow_run_id": session.workflow_run_id,
-                                "opportunity_id": session.opportunity_id,
-                                "opportunity_name": session.opportunity_name,
+                                "opportunity_id": opp_for_row,
+                                "opportunity_name": session.opportunity_name if opp_for_row == opp_id else "",
                                 "visit_id": meta.get("visit_id"),
                                 "blob_id": blob_id,
                                 "question_id": meta.get("question_id", ""),
