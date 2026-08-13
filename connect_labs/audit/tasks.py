@@ -674,7 +674,9 @@ def _run_ai_review_on_sessions(
                         # can each fail the same image, and each is its own row.
                         for verdict in outcome.fail_verdicts:
                             opp_for_row, opp_name_for_row = resolve_opportunity_attribution(
-                                blob_opportunity_id.get(outcome.blob_id), session.opportunity_id, session.opportunity_name
+                                blob_opportunity_id.get(outcome.blob_id),
+                                session.opportunity_id,
+                                session.opportunity_name,
                             )
                             session_classifier_fail_rows.append(
                                 {
@@ -745,9 +747,7 @@ def _run_ai_review_on_sessions(
                         visit_images=session.data.get("visit_images", {}),
                     )
                 except Exception:
-                    logger.exception(
-                        f"[AIReview] Failed to resolve classifier-fail URLs for session {session_id}"
-                    )
+                    logger.exception(f"[AIReview] Failed to resolve classifier-fail URLs for session {session_id}")
                     urls_by_blob = {}
                 for row in session_classifier_fail_rows:
                     row.update(urls_by_blob.get(row["blob_id"], {}))

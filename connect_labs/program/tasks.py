@@ -3,9 +3,6 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.translation import gettext as _
 
-from connect_labs.utils.urls import build_absolute_url as _build_absolute_uri
-
-
 from config import celery_app  # noqa: E402
 from connect_labs.opportunity.models import (  # noqa: E402
     CompletedWork,
@@ -17,6 +14,7 @@ from connect_labs.opportunity.models import (  # noqa: E402
 from connect_labs.organization.models import Organization, UserOrganizationMembership  # noqa: E402
 from connect_labs.program.models import ManagedOpportunity, ProgramApplication  # noqa: E402
 from connect_labs.utils.tasks import send_mail_async  # noqa: E402
+from connect_labs.utils.urls import build_absolute_url as _build_absolute_uri
 
 
 def send_program_invite_applied_email(application_id):
