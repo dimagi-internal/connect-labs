@@ -160,6 +160,15 @@ def _program_scope(request):
     that partner, and a programme filter on top narrows to their work on that
     programme. Making one silently clear the other would let the two controls
     disagree about what the screen is showing.
+
+    ``?from=`` / ``?to=`` (ISO dates) narrow to a reporting window and compose
+    with the rest. Both default to absent, so every existing caller -- the live
+    displays, which are about *now* and not about a period -- is unchanged.
+    The window is applied on ``field_ts`` for events (when the service actually
+    happened, which is what a funder's "response window" means) and on
+    ``created_ts`` for works. Opportunities are configuration, not occurrences,
+    so they are never windowed: narrowing them would drop the rate metadata the
+    windowed rows are priced against.
     """
     raw = (request.GET.get("program") or "").strip()
     program = None
@@ -196,11 +205,28 @@ def _program_scope(request):
     if opp_raw.isdigit():
         opportunity = PulseOpportunity.objects.filter(opportunity_id=int(opp_raw)).first()
 
+    window_from = _parse_window_date(request.GET.get("from"))
+    # An end date names a whole day, so it is exclusive of the following
+    # midnight rather than inclusive of 00:00:00 -- otherwise a report titled
+    # "25 June - 31 July" silently drops every service delivered on 31 July.
+    window_to = _parse_window_date(request.GET.get("to"))
+    if window_to is not None:
+        window_to = window_to + timedelta(days=1)
+
     events = PulseEvent.objects.all()
     works = PulseWork.objects.all()
     opps = PulseOpportunity.objects.all()
     rollups = PulseRollup.objects.all()
     grid_service = None
+
+    if window_from is not None:
+        events = events.filter(field_ts__gte=window_from)
+        works = works.filter(created_ts__gte=window_from)
+        rollups = rollups.filter(bucket_hour__gte=window_from)
+    if window_to is not None:
+        events = events.filter(field_ts__lt=window_to)
+        works = works.filter(created_ts__lt=window_to)
+        rollups = rollups.filter(bucket_hour__lt=window_to)
 
     if org is not None:
         # org_slug is denormalised onto all three spines at ingest, so the
@@ -252,7 +278,26 @@ def _program_scope(request):
         "opps": opps,
         "rollups": rollups,
         "grid_service": grid_service,
+        "window_from": window_from,
+        "window_to": window_to,
     }
+
+
+def _parse_window_date(raw) -> datetime | None:
+    """``YYYY-MM-DD`` -> an aware midnight, or None.
+
+    Returns None for anything unparseable rather than raising: a mistyped date
+    in a URL should widen the window back to everything, which is visibly wrong
+    on screen, rather than 500 a display that is otherwise fine.
+    """
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = datetime.strptime(raw, "%Y-%m-%d")
+    except ValueError:
+        return None
+    return parsed.replace(tzinfo=dt_timezone.utc)
 
 
 def _scope_for(sc):

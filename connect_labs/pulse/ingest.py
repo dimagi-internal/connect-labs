@@ -732,8 +732,12 @@ def fold_events_to_grid(before=None, batch: int = 5000) -> dict:
 
     folded = deleted = 0
     while True:
+        # `folded_at__isnull=True` is load-bearing twice over: it stops a second
+        # pass from adding the same point to a cell again, and it is what lets
+        # this loop terminate at all now that folding no longer removes rows --
+        # without it the same batch is re-read forever.
         rows = list(
-            PulseEvent.objects.filter(field_ts__lt=cutoff).values(
+            PulseEvent.objects.filter(field_ts__lt=cutoff, folded_at__isnull=True).values(
                 "id", "lat", "lon", "country", "field_ts", "service_slug", "status", "flagged", "program_id"
             )[:batch]
         )
@@ -803,14 +807,46 @@ def fold_events_to_grid(before=None, batch: int = 5000) -> dict:
                     existing.save(update_fields=["n", "approved_n", "flagged_n", "first_ts", "last_ts"])
                 folded += data["n"]
 
-            deleted += PulseEvent.objects.filter(id__in=[r["id"] for r in rows]).delete()[0]
+            # Mark, don't delete. Idempotency is preserved because the mark is
+            # written in the same transaction as the cell updates and the
+            # selection below excludes already-folded rows -- exactly the
+            # guarantee deleting used to provide. Deletion is now a separate
+            # step (`prune_folded_events`) so the rows can be retained as a
+            # local fact store without the map double-counting them.
+            marked = PulseEvent.objects.filter(id__in=[r["id"] for r in rows]).update(folded_at=timezone.now())
+            deleted += marked
 
         if len(rows) < batch:
             break
 
-    if folded or deleted:
-        logger.info("[pulse] folded %s points into grid, dropped %s events", folded, deleted)
-    return {"folded": folded, "deleted": deleted, "cutoff": cutoff.isoformat()}
+    if folded:
+        logger.info("[pulse] folded %s points into grid across %s events", folded, deleted)
+    return {"folded": folded, "marked": deleted, "deleted": 0, "cutoff": cutoff.isoformat()}
+
+
+def prune_folded_events(retention_days=None) -> int:
+    """Delete events already folded into the grid, if retention says to.
+
+    Split out of the fold so that "the map has this point" and "we still hold
+    the visit row" are independent decisions. Returning 0 when retention is
+    disabled is the point: an operator can keep the rows as a re-derivable fact
+    store, and turn deletion back on later without touching the fold.
+    """
+    from django.conf import settings
+
+    if retention_days is None:
+        retention_days = getattr(settings, "PULSE_EVENT_RETENTION_DAYS", 30)
+    # None / 0 means retain indefinitely. Written as an explicit check rather
+    # than a falsy test so that a misconfigured empty string cannot silently
+    # become "delete everything older than now".
+    if retention_days in (None, 0, ""):
+        return 0
+
+    cutoff = timezone.now() - timedelta(days=int(retention_days))
+    deleted = PulseEvent.objects.filter(folded_at__isnull=False, field_ts__lt=cutoff).delete()[0]
+    if deleted:
+        logger.info("[pulse] pruned %s folded events older than %s days", deleted, retention_days)
+    return deleted
 
 
 def rebuild_rollups(since=None) -> int:

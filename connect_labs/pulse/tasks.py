@@ -244,9 +244,14 @@ def poll_works(limit: int = 40) -> dict:
 
 @celery_app.task(name="connect_labs.pulse.tasks.fold_events_to_grid")
 def fold_events_to_grid() -> dict:
-    """Age out visit-level rows into the anonymous grid.
+    """Age out visit-level rows into the anonymous grid, then apply retention.
 
-    Runs nightly. The map keeps getting denser; labs stops holding the records
-    that made it dense.
+    Runs nightly. Two steps, deliberately separate: folding makes the map
+    denser and is always safe to run, while pruning is the destructive half and
+    obeys ``PULSE_EVENT_RETENTION_DAYS``. Setting that to ``None`` keeps the
+    visit rows as a local, re-derivable fact store -- the map is unaffected
+    either way, because it reads the grid.
     """
-    return ingest.fold_events_to_grid()
+    result = ingest.fold_events_to_grid()
+    result["deleted"] = ingest.prune_folded_events()
+    return result
