@@ -64,6 +64,20 @@ def build_connect_visit_url(connect_url: str, org_slug: str, opportunity_id, use
     )
 
 
+def _coerce_opportunity_id(value):
+    """Best-effort int coercion for an opportunity id, which reaches us as int
+    or str depending on its source (raw session/image JSON vs. typed record
+    properties) -- keeps resolve_urls_by_blob's per-opportunity grouping from
+    silently splitting one opportunity into two groups over a type mismatch.
+    Falsy/unparseable input (None, "", non-numeric) returns None unchanged."""
+    if not value:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return value
+
+
 def _find_org_slug(org_data: dict | None, opportunity_id) -> str | None:
     """Return the org slug for opportunity_id within org_data, or None if
     org_data is empty/doesn't list that opportunity at all -- distinct from a
@@ -167,11 +181,18 @@ def resolve_urls_by_blob(
     if not visit_images:
         return {}
 
-    # {opportunity_id: {visit_id_str: [image_dict, ...]}}
+    # Normalize the default too, so it groups consistently with the same
+    # coercion applied to each image's own opportunity_id below.
+    opportunity_id = _coerce_opportunity_id(opportunity_id) or opportunity_id
+
+    # {opportunity_id: {visit_id_str: [image_dict, ...]}}. Coerced to int so an
+    # opportunity_id reaching us as a string (e.g. from raw session/image JSON)
+    # groups with the same opportunity's int id instead of silently splitting
+    # into two independently-resolved groups for what's really one opportunity.
     visit_images_by_opp: dict = {}
     for visit_id_str, images in visit_images.items():
         for image in images:
-            opp_for_image = image.get("opportunity_id") or opportunity_id
+            opp_for_image = _coerce_opportunity_id(image.get("opportunity_id")) or opportunity_id
             visit_images_by_opp.setdefault(opp_for_image, {}).setdefault(visit_id_str, []).append(image)
 
     connect_url = getattr(settings, "CONNECT_PRODUCTION_URL", "https://connect.dimagi.com").rstrip("/")
