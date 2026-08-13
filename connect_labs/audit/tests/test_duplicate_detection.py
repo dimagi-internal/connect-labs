@@ -853,7 +853,7 @@ def test_session_with_dup_detection_complete_is_skipped(monkeypatch):
 
     calls = []
 
-    def _fake_run(session, access_token, progress_callback=None, cancel_key=None, save_callback=None):
+    def _fake_run(session, access_token, progress_callback=None, cancel_key=None, data_access=None, save_callback=None):
         calls.append(session)
         return {
             "groups_detected": 0,
@@ -883,7 +883,7 @@ def test_dup_detection_complete_flag_set_after_successful_session(monkeypatch):
         def save_audit_session(self, session):
             saved.append(dict(session.data))
 
-    def _fake_run(session, access_token, progress_callback=None, cancel_key=None, save_callback=None):
+    def _fake_run(session, access_token, progress_callback=None, cancel_key=None, data_access=None, save_callback=None):
         return {
             "groups_detected": 0,
             "images_flagged": 0,
@@ -937,7 +937,7 @@ class _FakeDataAccess:
 def test_run_summary_note_lists_every_failure_kind(monkeypatch):
     from connect_labs.audit import tasks
 
-    def _fake_run(session, access_token, progress_callback=None, cancel_key=None, save_callback=None):
+    def _fake_run(session, access_token, progress_callback=None, cancel_key=None, data_access=None, save_callback=None):
         return {
             "groups_detected": 0,
             "images_flagged": 0,
@@ -963,7 +963,7 @@ def test_run_summary_note_lists_every_failure_kind(monkeypatch):
 def test_run_summary_note_counts_session_errors(monkeypatch):
     from connect_labs.audit import tasks
 
-    def _boom(session, access_token, progress_callback=None, cancel_key=None, save_callback=None):
+    def _boom(session, access_token, progress_callback=None, cancel_key=None, data_access=None, save_callback=None):
         raise RuntimeError("kaboom")
 
     monkeypatch.setattr("connect_labs.audit.duplicate_detection.run_duplicate_detection", _boom)
@@ -977,7 +977,7 @@ def test_run_summary_note_counts_session_errors(monkeypatch):
 def test_run_summary_note_empty_on_clean_run(monkeypatch):
     from connect_labs.audit import tasks
 
-    def _clean(session, access_token, progress_callback=None, cancel_key=None, save_callback=None):
+    def _clean(session, access_token, progress_callback=None, cancel_key=None, data_access=None, save_callback=None):
         return {
             "groups_detected": 1,
             "images_flagged": 2,
@@ -1003,7 +1003,7 @@ def test_run_stops_between_sessions_when_cancelled(monkeypatch):
 
     calls = []
 
-    def _fake_run(session, access_token, progress_callback=None, cancel_key=None, save_callback=None):
+    def _fake_run(session, access_token, progress_callback=None, cancel_key=None, data_access=None, save_callback=None):
         calls.append(session)
         return {
             "groups_detected": 0,
