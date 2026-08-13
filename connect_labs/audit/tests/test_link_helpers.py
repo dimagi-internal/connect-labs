@@ -107,22 +107,22 @@ def test_resolve_org_slug_does_not_cache_a_transient_fetch_failure(monkeypatch):
     assert call_count["n"] == 2  # the failed first call was NOT cached, so the second call retried
 
 
-@override_settings(CACHES=_LOCMEM)
-def test_resolve_org_slug_falls_back_to_live_fetch_when_request_data_lacks_the_opportunity(monkeypatch):
-    """Regression: when a live request's session-cached org data doesn't list
-    the requested opportunity at all (e.g. access was granted after login),
-    fall back to a live fetch instead of returning "" -- otherwise the same
-    opportunity resolves inconsistently depending on which code path touches
-    it first (a background AI-review run would have resolved it correctly)."""
-    monkeypatch.setattr(
-        link_helpers,
-        "fetch_user_organization_data",
-        lambda access_token: {"opportunities": [{"id": 99, "organization": "acme-health"}]},
-    )
+def test_resolve_org_slug_never_falls_back_to_a_live_fetch_when_request_is_given(monkeypatch):
+    """Regression: a request means we're on an interactive path (Save/Complete,
+    a CSV export GET) -- resolve_org_slug must NEVER fall back to a live,
+    ~30s-timeout fetch there even when the session's cached org data doesn't
+    list the requested opportunity, or a reviewer's save/export request could
+    hang for up to 30s. Returning "" in that case is the accepted trade-off;
+    only the request-less (background/Celery) path may make a live call."""
+
+    def _boom(access_token):
+        raise AssertionError("fetch_user_organization_data must not be called when a request is given")
+
+    monkeypatch.setattr(link_helpers, "fetch_user_organization_data", _boom)
 
     # Session data only knows about opportunity 42, not 99.
     request = _FakeRequest({"opportunities": [{"id": 42, "organization": "other-org"}]})
-    assert link_helpers.resolve_org_slug("tok-request-fallback", 99, request=request) == "acme-health"
+    assert link_helpers.resolve_org_slug("tok-request-no-fallback", 99, request=request) == ""
 
 
 # ── build_absolute_url ───────────────────────────────────────────────────────────
