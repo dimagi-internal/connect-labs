@@ -61,7 +61,21 @@ def _ingest_state() -> dict:
     elif last_success is None:
         message = "Ingest has never succeeded — check the poller's Connect token."
     else:
-        message = f"No successful ingest for {staleness // 60} minutes — showing stored data, not live."
+        # Name the tier that is actually stale, and report ITS age.
+        #
+        # This used to quote `staleness`, which is the age of the NEWEST success
+        # across all tiers -- so when one tier fell behind it complained about a
+        # different tier's freshness and rendered "No successful ingest for 0
+        # minutes", which is both alarming and self-contradicting. Whoever read
+        # it could not tell which stream had stopped.
+        stale = [r for r in rows if not r.is_healthy]
+        worst = min(stale, key=lambda r: r.last_success_at or timezone.now()) if stale else None
+        if worst is not None and worst.last_success_at is not None:
+            mins = int((timezone.now() - worst.last_success_at).total_seconds()) // 60
+            age = f"{mins} minutes" if mins else "under a minute"
+            message = f"The {worst.tier} stream has not succeeded for {age} — showing stored data, not live."
+        else:
+            message = "An ingest stream has never succeeded — showing stored data, not live."
 
     # Surface WHO we poll as. Scope follows that account's org membership, so a
     # wrong poller silently rescales every figure on the screen -- it happened
