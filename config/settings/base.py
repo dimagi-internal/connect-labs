@@ -626,12 +626,27 @@ CELERY_BEAT_SCHEDULE = {
     # (99% discarded form_json) while the metadata endpoints cost ~560B/row —
     # see connect_labs/pulse/ingest.py. Backfill is deliberately NOT on beat:
     # it is a slow manual one-shot that must never stall the live tail.
-    # Every 15 min, not every 5. Measured on prod: this task is ~16s of wall
-    # clock and essentially all of it is ONE upstream request --
-    # opp_org_program_list makes Connect aggregate a visit_count for all 507
-    # opportunities across 1.65M visits. The tails' calls are 0.2-0.5s each by
-    # comparison. At */5 that was 77 min/day of worker time spent waiting on a
-    # list whose contents change on the order of days.
+    # Every 15 min, not every 5. Timed inside the running worker rather than
+    # inferred from task duration, because the first attempt at this note got it
+    # wrong twice:
+    #
+    #   opp_org_program_list   4.0-5.1s   (four samples, consistent)
+    #   a user_visits tail     0.091s     same client, same network
+    #   token refresh          0.004s     cached, not a per-task cost
+    #   mirroring 510 opps     0.791s     509 of them genuinely change each poll
+    #   whole task, called     5.2-7.6s
+    #   whole task, per Celery 8.3-14.1s
+    #
+    # So the list call is ~4.5s and NOT the 16s the task reports; the difference
+    # between calling the task directly and Celery's own timing is dispatch
+    # overhead, which for a task this short is comparable to the work itself.
+    # At */5 this was ~40 min/day of worker time on a list whose contents change
+    # on the order of days.
+    #
+    # The wider point for anyone tuning this: Pulse's remaining worker cost is
+    # dominated by the NUMBER of task invocations, not by what any one of them
+    # does. The tails fire 90 times in 90 minutes and each pays that same
+    # few-second overhead.
     #
     # Nothing a viewer sees gets staler: the headline counts live events on top
     # of this baseline and the tails run every minute, so the baseline being 15
