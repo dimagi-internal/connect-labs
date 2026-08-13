@@ -309,7 +309,11 @@ def test_classifier_fail_rows_get_urls_resolved_before_human_review(patched_regi
 def test_classifier_fail_row_uses_its_own_image_opportunity_id(patched_registry, monkeypatch):
     """Regression: a multi-opp combined session (e.g. muac_picture_audit) can
     flag images sourced from different opportunities -- each row's stored
-    opportunity_id must be that image's own, not session.opportunity_id."""
+    opportunity_id must be that image's own, not session.opportunity_id. The
+    actual image download/review must use that same per-image opportunity
+    too, not just the exported row -- a prior bug used session's default
+    opp_id for download_image_from_connect and ReviewContext.metadata even
+    though the per-image opportunity_id was already available."""
     session = _FakeSession(
         {
             "visit_images": {
@@ -321,7 +325,17 @@ def test_classifier_fail_row_uses_its_own_image_opportunity_id(patched_registry,
         },
         opportunity_id=1,
     )
-    data_access = _FakeDataAccess(session)
+
+    class _TrackingDataAccess(_FakeDataAccess):
+        def __init__(self, session):
+            super().__init__(session)
+            self.download_calls = []
+
+        def download_image_from_connect(self, blob_id, opp_id):
+            self.download_calls.append((blob_id, opp_id))
+            return super().download_image_from_connect(blob_id, opp_id)
+
+    data_access = _TrackingDataAccess(session)
     ai_reviewers = {
         "form/photo_a": [{"agent_id": "agent_fail", "auto_apply_actions": ["nope"]}],
         "form/photo_b": [{"agent_id": "agent_fail", "auto_apply_actions": ["nope"]}],
@@ -345,6 +359,10 @@ def test_classifier_fail_row_uses_its_own_image_opportunity_id(patched_registry,
     rows_by_blob = {row["blob_id"]: row for row in captured_rows["rows"]}
     assert rows_by_blob["blobA"]["opportunity_id"] == 555
     assert rows_by_blob["blobB"]["opportunity_id"] == 777
+
+    downloads_by_blob = dict(data_access.download_calls)
+    assert downloads_by_blob["blobA"] == 555
+    assert downloads_by_blob["blobB"] == 777
 
 
 def test_classifier_fail_row_uses_its_own_verdicts_implied_result_not_combined(patched_registry, monkeypatch):
