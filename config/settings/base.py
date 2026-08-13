@@ -667,6 +667,13 @@ CELERY_BEAT_SCHEDULE = {
     },
 }
 
+# Seconds to wait between pages of a history backfill. A full walk is ~1.6M rows
+# off a production export endpoint that serialises every visit's form JSON, so
+# the point is to be a steady trickle rather than to finish quickly. At the
+# measured ~330 rows/sec and a 100-row page, 0.25s roughly halves the request
+# rate; raise it if prod is under load, set 0 only for a one-opportunity catch-up.
+PULSE_BACKFILL_PAGE_PAUSE = env.float("PULSE_BACKFILL_PAGE_PAUSE", default=0.25)
+
 # How long visit-level rows survive AFTER being folded into the anonymous grid.
 # Visits are the finest-grained records Pulse holds -- they carry no names or
 # phone numbers (see pulse/models.py) but do carry per-visit GPS, timestamp and
