@@ -277,13 +277,16 @@ def test_url_resolution_failure_on_one_target_does_not_abort_remaining_targets(m
     data_access2.save_audit_session.assert_called_once_with(session2)
 
 
-def test_classifier_fail_row_ai_implied_result_is_always_none(monkeypatch):
-    """The duplicate detector is flag-only -- its classifier-fail row's
-    ai_implied_result must always be None, even when the flagged assessment
-    already carries an UNRELATED prior verdict (e.g. a real AI-review
-    classifier fail that flag_potential_duplicate_and_tag correctly leaves
-    untouched). Regression: this used to read back assessment["result"] and
-    misattribute that other classifier's verdict to duplicate_detector."""
+def test_classifier_fail_row_ai_implied_result_reflects_only_this_classifiers_own_auto_tag(monkeypatch):
+    """ai_implied_result must show "duplicate_fake" when
+    flag_potential_duplicate_and_tag genuinely auto-tagged an untouched
+    assessment (this classifier's own implied verdict) -- but stay None when
+    the assessment already carried an UNRELATED prior verdict (e.g. a real
+    AI-review classifier fail) that flag_potential_duplicate_and_tag
+    correctly left untouched. Regression (in both directions): this used to
+    either always read back assessment["result"] (misattributing a
+    DIFFERENT classifier's verdict) or always report None (losing this
+    classifier's own genuine auto-tag)."""
     session = _session(
         {
             "111": {
@@ -323,11 +326,15 @@ def test_classifier_fail_row_ai_implied_result_is_always_none(monkeypatch):
 
     # "a" keeps its real prior result "fail" (unchanged, per
     # test_mark_duplicate_preserves_a_real_classifier_fail_but_still_records_the_group)
-    # -- but the exported row must not claim THAT verdict as its own.
+    # -- the exported row must not claim THAT verdict as its own.
     assert session.data["visit_results"]["111"]["assessments"]["a"]["result"] == "fail"
+    # "b" had no prior assessment, so flag_potential_duplicate_and_tag auto-tagged
+    # it "duplicate_fake" -- that IS this classifier's own genuine implied verdict.
+    assert session.data["visit_results"]["112"]["assessments"]["b"]["result"] == "duplicate_fake"
+
     rows_by_blob = {r["blob_id"]: r for r in captured_rows["rows"]}
     assert rows_by_blob["a"]["ai_implied_result"] is None
-    assert rows_by_blob["b"]["ai_implied_result"] is None
+    assert rows_by_blob["b"]["ai_implied_result"] == "duplicate_fake"
 
 
 def test_flagged_images_record_which_other_visit_they_duplicate():

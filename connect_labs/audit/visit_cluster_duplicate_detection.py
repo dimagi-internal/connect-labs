@@ -254,6 +254,15 @@ def run_grouping_duplicate_detection(
                     if _mark_duplicate(session, blob_meta_by_id, blob_id, group_id, duplicate_of_visit_ids):
                         images_flagged += 1
                         meta = blob_meta_by_id.get(blob_id, {})
+                        # flag_potential_duplicate_and_tag sets result exactly
+                        # to "duplicate_fake" only when it just auto-tagged an
+                        # untouched assessment (its own implied verdict) --
+                        # never overwrites an existing manual/AI verdict, and
+                        # no other code path ever writes this exact string, so
+                        # this check is an unambiguous signal that the value
+                        # is this classifier's own, not a misattributed
+                        # earlier reviewer's result.
+                        current_result = session.get_assessments(meta.get("visit_id")).get(blob_id, {}).get("result")
                         # blob_meta_by_id doesn't carry a per-image opportunity_id
                         # today (unlike duplicate_detection.py's img dicts), so
                         # this always falls back to opp_id -- kept consistent
@@ -274,18 +283,16 @@ def run_grouping_duplicate_detection(
                                 "classifier_id": DUPLICATE_CLASSIFIER_ID,
                                 "classifier_label": DUPLICATE_FLAG_LABEL,
                                 "ai_confidence": None,
-                                # Duplicate flagging never auto-tags `result` itself --
-                                # flag_potential_duplicate_and_tag's own "duplicate_fake"
-                                # auto-tag only fires when the assessment was untouched, and
-                                # even then it isn't THIS classifier's implied verdict, just a
-                                # side effect. Reading back assessment["result"] here would
-                                # capture whatever a DIFFERENT, earlier classifier (e.g. an
-                                # AI-review reviewer that already ran on this image) wrote,
-                                # misattributing its verdict to duplicate_detector -- always
-                                # None here, matching the sibling duplicate_detection.py
-                                # module and s3_export.py's documented contract for flag-only
-                                # classifiers.
-                                "ai_implied_result": None,
+                                # "duplicate_fake" (see current_result above) is this
+                                # classifier's own genuinely-auto-applied verdict; any
+                                # OTHER value means the assessment already had a real
+                                # prior verdict (from a different classifier or a human)
+                                # that flag_potential_duplicate_and_tag correctly left
+                                # untouched -- reporting THAT here would misattribute a
+                                # different reviewer's result to duplicate_detector, so
+                                # it's None in that case, matching the sibling
+                                # duplicate_detection.py module's flag-only contract.
+                                "ai_implied_result": current_result if current_result == "duplicate_fake" else None,
                             }
                         )
 
