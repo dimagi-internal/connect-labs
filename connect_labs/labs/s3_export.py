@@ -384,8 +384,8 @@ def sync_classifier_fail_outcomes(
                 if prior_result:
                     row["was_overridden"] = "true"
                     row["overridden_at"] = now
-                    if reviewed_by:
-                        row["reviewed_by"] = reviewed_by
+                if reviewed_by:
+                    row["reviewed_by"] = reviewed_by
                 changed = True
 
             new_notes = human_notes_by_blob.get(blob_id, "")

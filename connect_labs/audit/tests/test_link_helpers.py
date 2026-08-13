@@ -343,3 +343,45 @@ def test_resolve_urls_by_blob_returns_empty_dict_when_visit_batch_fetch_fails():
         visit_images={"1": [{"blob_id": "blobA"}]},
     )
     assert urls == {}
+
+
+# ── _coerce_opportunity_id / resolve_opportunity_attribution ────────────────────
+
+
+def test_coerce_opportunity_id_returns_none_on_unparseable_input():
+    """Regression: the fallback pattern `_coerce_opportunity_id(x) or default`
+    only works if a failed coercion returns None -- returning the original,
+    unparseable value would make it look "truthy" and skip the fallback."""
+    assert link_helpers._coerce_opportunity_id("not-a-number") is None
+    assert link_helpers._coerce_opportunity_id(None) is None
+    assert link_helpers._coerce_opportunity_id("") is None
+
+
+def test_coerce_opportunity_id_coerces_numeric_strings_and_ints():
+    assert link_helpers._coerce_opportunity_id("555") == 555
+    assert link_helpers._coerce_opportunity_id(555) == 555
+
+
+def test_resolve_opportunity_attribution_same_opportunity_across_types_keeps_name():
+    """Regression: a row's opportunity_id reaching us as a string must still
+    compare equal to an int default for the SAME opportunity, so the row's
+    opportunity_name isn't wrongly blanked."""
+    opp_id, opp_name = link_helpers.resolve_opportunity_attribution("555", 555, "Acme Program")
+    assert opp_id == 555
+    assert opp_name == "Acme Program"
+
+
+def test_resolve_opportunity_attribution_different_opportunity_blanks_name():
+    opp_id, opp_name = link_helpers.resolve_opportunity_attribution(777, 555, "Acme Program")
+    assert opp_id == 777
+    assert opp_name == ""
+
+
+def test_resolve_opportunity_attribution_falls_back_when_raw_is_missing_or_unparseable():
+    opp_id, opp_name = link_helpers.resolve_opportunity_attribution(None, 555, "Acme Program")
+    assert opp_id == 555
+    assert opp_name == "Acme Program"
+
+    opp_id, opp_name = link_helpers.resolve_opportunity_attribution("garbage", 555, "Acme Program")
+    assert opp_id == 555
+    assert opp_name == "Acme Program"

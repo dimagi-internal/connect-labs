@@ -19,7 +19,7 @@ from connect_labs.audit.data_access import (
     create_mock_request,
     is_audit_creation_cancelled,
 )
-from connect_labs.audit.link_helpers import resolve_urls_by_blob
+from connect_labs.audit.link_helpers import resolve_opportunity_attribution, resolve_urls_by_blob
 from connect_labs.audit.models import AI_NOTES_JOIN_SEP
 from connect_labs.audit.visit_cluster_duplicate_detection import run_grouping_duplicate_detection
 from connect_labs.audit.visit_clustering import build_flw_visit_clusters
@@ -673,20 +673,15 @@ def _run_ai_review_on_sessions(
                         # independent reviewers (e.g. MUAC OverZoom + MUAC Match)
                         # can each fail the same image, and each is its own row.
                         for verdict in outcome.fail_verdicts:
-                            opp_for_row = blob_opportunity_id.get(outcome.blob_id) or session.opportunity_id
+                            opp_for_row, opp_name_for_row = resolve_opportunity_attribution(
+                                blob_opportunity_id.get(outcome.blob_id), session.opportunity_id, session.opportunity_name
+                            )
                             session_classifier_fail_rows.append(
                                 {
                                     "session_id": session.id,
                                     "workflow_run_id": session.workflow_run_id,
                                     "opportunity_id": opp_for_row,
-                                    # session.opportunity_name only actually names
-                                    # opp_for_row when they're the same opportunity --
-                                    # no per-opportunity name lookup is available
-                                    # here, so leave it blank rather than mislabel a
-                                    # different opportunity with this one's name.
-                                    "opportunity_name": (
-                                        session.opportunity_name if opp_for_row == session.opportunity_id else ""
-                                    ),
+                                    "opportunity_name": opp_name_for_row,
                                     "visit_id": int(outcome.visit_id_str),
                                     "blob_id": outcome.blob_id,
                                     "question_id": outcome.question_id,

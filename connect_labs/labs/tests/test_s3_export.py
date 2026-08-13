@@ -427,7 +427,8 @@ def _existing_classifier_fail_row(**overrides):
 def test_sync_first_human_verdict_on_flag_only_row_is_not_an_override(mock_boto3, settings):
     """A flag-only classifier (e.g. duplicate detector) seeds human_result as
     "" -- the human's very first answer must be recorded, not flagged as an
-    override of a verdict that never existed."""
+    override of a verdict that never existed. reviewed_by IS stamped though --
+    it tracks who last touched the row's human_result, override or not."""
     settings.LABS_EXPORTS_BUCKET = "test-bucket"
     existing_row = _existing_classifier_fail_row()  # human_result == "" (no prior verdict)
 
@@ -449,7 +450,7 @@ def test_sync_first_human_verdict_on_flag_only_row_is_not_an_override(mock_boto3
     assert reader[0]["human_result"] == "duplicate_fake"
     assert reader[0]["was_overridden"] == "false"
     assert reader[0]["overridden_at"] == ""
-    assert reader[0]["reviewed_by"] == ""
+    assert reader[0]["reviewed_by"] == "reviewer1"
 
 
 @patch("connect_labs.labs.s3_export.boto3")
