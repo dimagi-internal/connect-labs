@@ -46,6 +46,16 @@ TIER_CHOICES = [
     (TIER_DORMANT, "Dormant — nothing recent"),
 ]
 
+# How often each INGEST tier's beat actually fires. Distinct from
+# TIER_INTERVALS_SECONDS below, which is the per-opportunity CURSOR cadence --
+# they were conflated, and health was judged against the wrong one.
+# Keep in step with CELERY_BEAT_SCHEDULE.
+TIER_CADENCE_SECONDS = {
+    "tail": 60,
+    "works": 2 * 60,
+    "cheap": 15 * 60,
+}
+
 TIER_INTERVALS_SECONDS = {
     TIER_HOT: 60,
     TIER_WARM: 15 * 60,
@@ -430,17 +440,31 @@ class PulseIngestHealth(models.Model):
         return f"{self.tier}: {'ok' if self.is_healthy else 'UNHEALTHY'}"
 
     @property
-    def is_healthy(self) -> bool:
-        """Healthy = a success recently enough to trust what's on screen.
+    def stale_after_seconds(self) -> int:
+        """How old a success may get on THIS tier before it means anything.
 
-        Deliberately generous (6x the hot interval) so a single transient
-        failure doesn't red-flag a wall display, but bounded so a dead token
-        can't masquerade as live for a whole afternoon.
+        Each ingest tier runs on its own beat, so one shared threshold is only
+        ever right for the fastest of them. It used to be 6x the hot interval --
+        six minutes -- which held while every tier ran at least every five. When
+        the cheap tier moved to every fifteen (it is one ~4.5s upstream call
+        against a list that changes daily), it spent nine minutes out of every
+        fifteen looking dead, and the whole display said "Data is not live" over
+        data that was thirty seconds old.
+
+        Six times the tier's OWN cadence keeps the original intent: generous
+        enough that one transient failure does not red-flag a wall display,
+        bounded enough that a dead token cannot masquerade as live all
+        afternoon.
         """
+        return 6 * TIER_CADENCE_SECONDS.get(self.tier, TIER_INTERVALS_SECONDS[TIER_HOT])
+
+    @property
+    def is_healthy(self) -> bool:
+        """Healthy = a success recently enough to trust what's on screen."""
         if self.last_success_at is None:
             return False
         age = (timezone.now() - self.last_success_at).total_seconds()
-        return age < 6 * TIER_INTERVALS_SECONDS[TIER_HOT] and self.consecutive_failures < 5
+        return age < self.stale_after_seconds and self.consecutive_failures < 5
 
 
 class PulsePublicToken(models.Model):
