@@ -79,21 +79,25 @@ def _find_org_slug(org_data: dict | None, opportunity_id) -> str | None:
 def resolve_org_slug(access_token: str, opportunity_id, request=None) -> str:
     """Return the organization slug for an opportunity (needed by build_connect_visit_url).
 
-    When a live request is available, reuse its session-cached org/opportunity list
-    (get_org_data) first -- no extra API call. If that doesn't list the requested
-    opportunity (e.g. access was granted after login), or there's no request at all
-    (background/Celery contexts, e.g. AI review or duplicate detection), fall back to
-    a live fetch_user_organization_data call -- the same /export/opp_org_program_list/
-    the OAuth login flow already makes -- cached briefly (_ORG_DATA_CACHE_TTL) so a
-    batch run resolving URLs for many sessions of the same user doesn't repeat this
-    call once per session. Only a genuinely successful fetch is cached -- a transient
-    failure (coerced to {}) is never cached, so it doesn't get "stuck" returning a
-    blank org_slug for the rest of the TTL window instead of retrying.
+    When a live request is available, use its session-cached org/opportunity list
+    (get_org_data) ONLY -- no extra API call, and no live-fetch fallback even if
+    that data doesn't list the requested opportunity (returns "" in that case).
+    This is deliberate: a request means we're on an interactive path (Save/Complete,
+    a CSV export GET) that must not block on a synchronous, ~30s-timeout Connect
+    API call -- an earlier version of this function fell back to a live fetch here
+    too, which could stall the exact user-facing request classifier_fail_sync.py's
+    own module docstring promises never to slow down. Only the request-less path
+    (background/Celery contexts, e.g. AI review or duplicate detection, where a
+    30s call is an acceptable cost) falls back to a live fetch_user_organization_data
+    call -- the same /export/opp_org_program_list/ the OAuth login flow already
+    makes -- cached briefly (_ORG_DATA_CACHE_TTL) so a batch run resolving URLs for
+    many sessions of the same user doesn't repeat this call once per session. Only
+    a genuinely successful fetch is cached -- a transient failure (coerced to {})
+    is never cached, so it doesn't get "stuck" returning a blank org_slug for the
+    rest of the TTL window instead of retrying.
     """
     if request is not None:
-        slug = _find_org_slug(get_org_data(request), opportunity_id)
-        if slug is not None:
-            return slug
+        return _find_org_slug(get_org_data(request), opportunity_id) or ""
 
     cache_key = f"link_helpers:org_data:{hashlib.sha256(access_token.encode()).hexdigest()}"
     org_data = cache.get(cache_key)
