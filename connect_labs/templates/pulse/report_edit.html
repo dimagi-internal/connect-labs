@@ -1,0 +1,288 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{# The editor's job is to make the boundary obvious: figures Pulse derives are #}
+{# read-only and carry their provenance, and everything typed is visibly a     #}
+{# human claim. A donor report that blurs the two is the failure mode worth    #}
+{# designing against -- the reader cannot tell which numbers the platform      #}
+{# stands behind, so neither can the author.                                   #}
+
+{% block content %}
+<div class="max-w-screen-xl mx-auto px-4 py-8">
+
+  <div class="flex items-start justify-between mb-6">
+    <div>
+      <h1 class="text-2xl font-semibold text-brand-deep-purple">{{ report.title|default:"Untitled report" }}</h1>
+      <p class="text-sm text-gray-500 mt-1">Donor stewardship report</p>
+    </div>
+    <div class="flex gap-2">
+      <a href="{% url 'pulse:report' slug=report.slug %}"
+         class="text-sm px-3 py-2 rounded border border-gray-300 bg-white">Preview &amp; print</a>
+      <a href="{% url 'pulse:report_list' %}"
+         class="text-sm px-3 py-2 rounded border border-gray-300 bg-white">All reports</a>
+    </div>
+  </div>
+
+  {% if messages %}
+    {% for m in messages %}
+      <div class="mb-4 text-sm px-3 py-2 rounded bg-blue-50 text-blue-900">{{ m }}</div>
+    {% endfor %}
+  {% endif %}
+
+  {# The single most important thing on this page: whether the chosen window
+     can actually be reported on. Verified delivery counts come from rollups,
+     which only reach as far back as Pulse has ever rolled up -- so a window
+     outside that must be called out here, at authoring time, rather than
+     silently producing a smaller number on the printed page. #}
+  {% if not metrics.services_are_visits %}
+    <div class="mb-5 border-l-4 border-amber-500 bg-amber-50 px-4 py-3 text-sm">
+      <p class="font-medium text-amber-900">Counting payment units, not individual services.</p>
+      <p class="text-amber-800 mt-1">
+        Verified service counts come from visit rollups, which don't cover this window.
+        The report will count approved payment units instead &mdash; for a programme where one
+        payment covers several visits, that is a lower number than the services actually delivered.
+        Choose a more recent window to report service deliveries directly.
+      </p>
+    </div>
+  {% endif %}
+
+  <form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+
+    <div class="grid grid-cols-3 gap-6">
+      <div class="col-span-2 space-y-6">
+
+        <section class="bg-white rounded-lg shadow-sm p-4">
+          <h2 class="text-xs text-gray-500 uppercase tracking-wider mb-3">Heading</h2>
+          <div class="grid grid-cols-2 gap-3">
+            <label class="block text-sm">
+              <span class="text-gray-600">Eyebrow</span>
+              <input name="eyebrow" value="{{ report.eyebrow }}" class="mt-1 w-full border rounded px-2 py-1.5">
+            </label>
+            <label class="block text-sm">
+              <span class="text-gray-600">Prepared for</span>
+              <input name="prepared_for" value="{{ report.prepared_for }}"
+                     placeholder="Jacob and Annie Ma-Weaver" class="mt-1 w-full border rounded px-2 py-1.5">
+            </label>
+            <label class="block text-sm col-span-2">
+              <span class="text-gray-600">Title</span>
+              <input name="title" value="{{ report.title }}"
+                     placeholder="Emergency Cholera Response in Borno State"
+                     class="mt-1 w-full border rounded px-2 py-1.5">
+            </label>
+            <label class="block text-sm col-span-2">
+              <span class="text-gray-600">Gift line</span>
+              <input name="gift_line" value="{{ report.gift_line }}"
+                     placeholder="Your $20,000 gift funded the results shown in this report."
+                     class="mt-1 w-full border rounded px-2 py-1.5">
+              <span class="text-xs text-gray-500">Connect never sees the gift amount &mdash; this is yours to state.</span>
+            </label>
+          </div>
+        </section>
+
+        <section class="bg-white rounded-lg shadow-sm p-4">
+          <h2 class="text-xs text-gray-500 uppercase tracking-wider mb-3">Narrative</h2>
+          <div class="space-y-3">
+            <label class="block text-sm">
+              <span class="text-gray-600">Introduction</span>
+              <textarea name="intro" rows="3" class="mt-1 w-full border rounded px-2 py-1.5">{{ report.intro }}</textarea>
+            </label>
+            <label class="block text-sm">
+              <span class="text-gray-600">Where we worked <em class="text-gray-400">(blank = describe it from the map)</em></span>
+              <textarea name="where_we_worked" rows="2" class="mt-1 w-full border rounded px-2 py-1.5">{{ report.where_we_worked }}</textarea>
+            </label>
+            <label class="block text-sm">
+              <span class="text-gray-600">Partner &amp; funding <em class="text-gray-400">(blank = generate it)</em></span>
+              <textarea name="partner_funding" rows="2" class="mt-1 w-full border rounded px-2 py-1.5">{{ report.partner_funding }}</textarea>
+            </label>
+            <label class="block text-sm">
+              <span class="text-gray-600">Methodology footnote <em class="text-gray-400">(blank = generate it)</em></span>
+              <textarea name="footnote" rows="2" class="mt-1 w-full border rounded px-2 py-1.5">{{ report.footnote }}</textarea>
+            </label>
+            <label class="block text-sm">
+              <span class="text-gray-600">Sites &amp; facilities <em class="text-gray-400">(comma separated)</em></span>
+              <input name="site_chips" value="{{ report.site_chips|join:', ' }}"
+                     class="mt-1 w-full border rounded px-2 py-1.5">
+            </label>
+          </div>
+        </section>
+
+        <section class="bg-white rounded-lg shadow-sm p-4">
+          <div class="flex items-baseline justify-between mb-1">
+            <h2 class="text-xs text-gray-500 uppercase tracking-wider">What we delivered</h2>
+            <button type="button" onclick="addRow()" class="text-xs px-2 py-1 border rounded">Add line</button>
+          </div>
+          <p class="text-xs text-gray-500 mb-3">
+            Each line ties a quantity to verified delivery. <strong>Basis &times; multiplier</strong> is computed
+            from Pulse; the protocol behind the multiplier (&ldquo;two co-packs per delivery&rdquo;) is your
+            knowledge, not Connect&rsquo;s. Enter an override to state a figure by hand &mdash; it will be
+            marked as human-entered.
+          </p>
+
+          <table class="w-full text-sm" id="rows">
+            <thead>
+              <tr class="text-xs text-gray-500 uppercase tracking-wider text-left">
+                <th class="pb-2">Label</th>
+                <th class="pb-2">Description</th>
+                <th class="pb-2 w-40">Basis</th>
+                <th class="pb-2 w-20">&times;</th>
+                <th class="pb-2 w-24">Override</th>
+                <th class="pb-2 w-24 text-right">Result</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for d in deliverables %}
+                <tr class="border-t">
+                  <td class="py-1.5 pr-2"><input name="d_label" value="{{ d.label }}" class="w-full border rounded px-2 py-1"></td>
+                  <td class="py-1.5 pr-2"><input name="d_description" value="{{ d.description }}" class="w-full border rounded px-2 py-1"></td>
+                  <td class="py-1.5 pr-2">
+                    <select name="d_basis" class="w-full border rounded px-2 py-1">
+                      {% for slug, label in basis_choices %}
+                        <option value="{{ slug }}" {% if d.basis == slug %}selected{% endif %}>{{ label }}</option>
+                      {% endfor %}
+                    </select>
+                  </td>
+                  <td class="py-1.5 pr-2"><input name="d_multiplier" value="{{ d.multiplier }}" class="w-full border rounded px-2 py-1"></td>
+                  <td class="py-1.5 pr-2"><input name="d_override" value="{% if d.is_manual and d.value != None %}{{ d.value|floatformat:'-0' }}{% endif %}" class="w-full border rounded px-2 py-1"></td>
+                  <td class="py-1.5 text-right tabular-nums">
+                    {% if d.value != None %}{{ d.value|floatformat:"-0"|intcomma }}{% else %}&mdash;{% endif %}
+                    {% if d.is_manual %}<span class="ml-1 text-xs text-amber-700">typed</span>{% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </section>
+
+        <section class="bg-white rounded-lg shadow-sm p-4">
+          <h2 class="text-xs text-gray-500 uppercase tracking-wider mb-3">Photograph</h2>
+          <input type="file" name="photo" accept="image/*" class="text-sm">
+          {% if report.photo %}<p class="text-xs text-gray-500 mt-1">Current: {{ report.photo.name }}</p>{% endif %}
+          <label class="block text-sm mt-3">
+            <span class="text-gray-600">Caption</span>
+            <textarea name="photo_caption" rows="2" class="mt-1 w-full border rounded px-2 py-1.5">{{ report.photo_caption }}</textarea>
+          </label>
+          <p class="text-xs text-amber-700 mt-2">
+            Pulse holds no beneficiary identities. A photograph and its caption are the one place
+            this report can carry them &mdash; check you have consent to use it.
+          </p>
+        </section>
+      </div>
+
+      <div class="space-y-6">
+        <section class="bg-white rounded-lg shadow-sm p-4">
+          <h2 class="text-xs text-gray-500 uppercase tracking-wider mb-3">Scope &amp; window</h2>
+          <label class="block text-sm mb-3">
+            <span class="text-gray-600">Programme</span>
+            <select name="program_id" class="mt-1 w-full border rounded px-2 py-1.5">
+              <option value="">All programmes</option>
+              {% for p in programs %}
+                <option value="{{ p.id }}" {% if report.program_id == p.id %}selected{% endif %}>{{ p.name }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <div class="grid grid-cols-2 gap-2">
+            <label class="block text-sm">
+              <span class="text-gray-600">From</span>
+              <input type="date" name="window_start" value="{{ report.window_start|date:'Y-m-d' }}"
+                     class="mt-1 w-full border rounded px-2 py-1.5">
+            </label>
+            <label class="block text-sm">
+              <span class="text-gray-600">To</span>
+              <input type="date" name="window_end" value="{{ report.window_end|date:'Y-m-d' }}"
+                     class="mt-1 w-full border rounded px-2 py-1.5">
+            </label>
+          </div>
+          <label class="block text-sm mt-3">
+            <span class="text-gray-600">Partner slug <em class="text-gray-400">(optional)</em></span>
+            <input name="org_slug" value="{{ report.org_slug }}" class="mt-1 w-full border rounded px-2 py-1.5">
+          </label>
+          <label class="flex items-center gap-2 text-sm mt-3">
+            <input type="checkbox" name="show_partner_names" {% if report.show_partner_names %}checked{% endif %}>
+            <span>Name the delivery partner</span>
+          </label>
+        </section>
+
+        <section class="bg-white rounded-lg shadow-sm p-4">
+          <h2 class="text-xs text-gray-500 uppercase tracking-wider mb-3">Derived from Pulse</h2>
+          <dl class="text-sm space-y-2">
+            <div class="flex justify-between">
+              <dt class="text-gray-600">
+                {% if metrics.services_are_visits %}Verified deliveries{% else %}Verified units{% endif %}
+              </dt>
+              <dd class="font-medium tabular-nums">{{ metrics.services|intcomma }}</dd>
+            </div>
+            <div class="flex justify-between">
+              <dt class="text-gray-600">Care episodes</dt>
+              <dd class="font-medium tabular-nums">{{ metrics.episodes|intcomma }}</dd>
+            </div>
+            <div class="flex justify-between">
+              <dt class="text-gray-600">Frontline workers</dt>
+              <dd class="font-medium tabular-nums">{{ metrics.workers|intcomma }}</dd>
+            </div>
+            <div class="flex justify-between">
+              <dt class="text-gray-600">Verification rate</dt>
+              <dd class="font-medium tabular-nums">
+                {% if metrics.verification.headline_rate_pct %}
+                  {{ metrics.verification.headline_rate_pct|floatformat:1 }}%
+                {% else %}&mdash;{% endif %}
+              </dd>
+            </div>
+            <div class="flex justify-between">
+              <dt class="text-gray-600">Total disbursed</dt>
+              <dd class="font-medium tabular-nums">${{ metrics.total_paid|floatformat:0|intcomma }}</dd>
+            </div>
+            <div class="flex justify-between">
+              <dt class="text-gray-600">Cost per delivery</dt>
+              <dd class="font-medium tabular-nums">
+                {% if metrics.cost_per_service %}${{ metrics.cost_per_service|floatformat:2 }}{% else %}&mdash;{% endif %}
+              </dd>
+            </div>
+          </dl>
+          <p class="text-xs text-gray-500 mt-3">
+            Recomputed on every view, so a report reopened later reflects corrected data
+            rather than figures frozen the day it was written.
+          </p>
+        </section>
+
+        <section class="bg-white rounded-lg shadow-sm p-4">
+          <h2 class="text-xs text-gray-500 uppercase tracking-wider mb-3">Geography</h2>
+          {% if geography.districts %}
+            <p class="text-sm">{{ geography.districts|length }} district{{ geography.districts|pluralize }} across
+              {% for c in geography.country_names %}{{ c }}{% if not forloop.last %}, {% endif %}{% endfor %}</p>
+            <p class="text-xs text-gray-500 mt-1">
+              Resolved from {{ geography.point_count|intcomma }} located services
+              ({{ geography.source }}).
+              {% if geography.is_all_time %}Coverage is all-time, not window-limited.{% endif %}
+            </p>
+          {% elif geography.missing_boundaries %}
+            <p class="text-sm text-amber-700">No admin boundaries loaded for this country &mdash;
+              the map will plot points without outlines.</p>
+          {% else %}
+            <p class="text-sm text-gray-500">No located services in scope.</p>
+          {% endif %}
+        </section>
+
+        <div class="flex gap-2">
+          <button class="flex-1 text-sm px-3 py-2 rounded bg-brand-deep-purple text-white">Save</button>
+          <button name="action" value="revoke"
+                  onclick="return confirm('Revoke this report? Its share link will 404.')"
+                  class="text-sm px-3 py-2 rounded border border-red-300 text-red-700 bg-white">Revoke</button>
+        </div>
+      </div>
+    </div>
+  </form>
+</div>
+
+<script>
+  function addRow() {
+    const body = document.querySelector('#rows tbody');
+    const first = body.rows[0];
+    if (!first) return;
+    const row = first.cloneNode(true);
+    row.querySelectorAll('input').forEach(i => { i.value = ''; });
+    row.querySelector('td:last-child').textContent = '—';
+    body.appendChild(row);
+  }
+</script>
+{% endblock %}

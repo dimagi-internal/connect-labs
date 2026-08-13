@@ -682,10 +682,24 @@ CELERY_BEAT_SCHEDULE = {
     },
 }
 
-# How long visit-level rows survive before being folded into the anonymous
-# grid and deleted. Visits are the only beneficiary-level records Pulse holds,
-# and they exist only to make the map and ticker live -- scale and money come
-# from summary endpoints that carry no beneficiary data at all.
+# Seconds to wait between pages of a history backfill. A full walk is ~1.6M rows
+# off a production export endpoint that serialises every visit's form JSON, so
+# the point is to be a steady trickle rather than to finish quickly. At the
+# measured ~330 rows/sec and a 100-row page, 0.25s roughly halves the request
+# rate; raise it if prod is under load, set 0 only for a one-opportunity catch-up.
+PULSE_BACKFILL_PAGE_PAUSE = env.float("PULSE_BACKFILL_PAGE_PAUSE", default=0.25)
+
+# How long visit-level rows survive AFTER being folded into the anonymous grid.
+# Visits are the finest-grained records Pulse holds -- they carry no names or
+# phone numbers (see pulse/models.py) but do carry per-visit GPS, timestamp and
+# a worker hash, which is more resolvable than the ~1 km grid the map reads.
+#
+# Set to 0 to retain them indefinitely, which turns the table into a local fact
+# store: any NEW aggregate becomes a query over local rows instead of a fresh
+# ~1.6M-row pull over an API that ships each visit's full form JSON (~1 hour,
+# ~2 GB). Storage is not the constraint -- no form_json is stored, so all
+# history is roughly 300 MB. The trade is purely how much a compromise of the
+# labs database would expose.
 PULSE_EVENT_RETENTION_DAYS = env.int("PULSE_EVENT_RETENTION_DAYS", default=30)
 
 # The Connect user Pulse polls as; their org membership defines what the
