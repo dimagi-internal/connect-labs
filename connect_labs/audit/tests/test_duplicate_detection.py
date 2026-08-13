@@ -650,9 +650,7 @@ def test_run_resolves_urls_before_human_review_when_data_access_given(monkeypatc
     def _fake_record_classifier_fails(rows):
         captured_rows["rows"] = rows
 
-    monkeypatch.setattr(
-        "connect_labs.audit.duplicate_detection.resolve_urls_by_blob", _fake_resolve_urls_by_blob
-    )
+    monkeypatch.setattr("connect_labs.audit.duplicate_detection.resolve_urls_by_blob", _fake_resolve_urls_by_blob)
     monkeypatch.setattr(
         "connect_labs.audit.duplicate_detection.s3_export.record_classifier_fails", _fake_record_classifier_fails
     )
