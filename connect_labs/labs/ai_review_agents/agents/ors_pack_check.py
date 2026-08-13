@@ -24,7 +24,13 @@ API Details:
 import base64
 import json
 
-from connect_labs.labs.ai_review_agents.base import AIReviewAgentError, BaseAIReviewAgent
+from connect_labs.labs.ai_review_agents.base import (
+    ERROR_KIND_AGENT_EXCEPTION,
+    ERROR_KIND_INVALID_CONTEXT,
+    ERROR_KIND_UNEXPECTED_RESPONSE,
+    AIReviewAgentError,
+    BaseAIReviewAgent,
+)
 from connect_labs.labs.ai_review_agents.registry import register
 from connect_labs.labs.ai_review_agents.types import ReviewContext, ReviewResult
 
@@ -147,7 +153,7 @@ class ORSPackCheckAgent(BaseAIReviewAgent):
         """
         validation_errors = self.validate_context(context)
         if validation_errors:
-            return ReviewResult.error("; ".join(validation_errors))
+            return ReviewResult.error("; ".join(validation_errors), error_kind=ERROR_KIND_INVALID_CONTEXT)
 
         # Get image -- prefer "photo" key, fall back to first available
         image_bytes = context.get_image("photo")
@@ -216,10 +222,12 @@ class ORSPackCheckAgent(BaseAIReviewAgent):
 
         except json.JSONDecodeError as e:
             self.logger.error(f"ORS pack check: failed to parse model response: {e}")
-            return ReviewResult.error(f"Could not parse model response: {e}")
+            return ReviewResult.error(
+                f"Could not parse model response: {e}", error_kind=ERROR_KIND_UNEXPECTED_RESPONSE
+            )
         except Exception as e:
-            self.logger.error(f"ORS pack check API error: {e}")
-            return ReviewResult.error(f"API error: {e}")
+            self.logger.error(f"ORS pack check API error: {type(e).__name__}: {e}")
+            return ReviewResult.error(f"API error: {e}", error_kind=ERROR_KIND_AGENT_EXCEPTION)
 
     @staticmethod
     def _parse_response(raw_text: str) -> dict:

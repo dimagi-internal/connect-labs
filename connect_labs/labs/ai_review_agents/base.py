@@ -10,6 +10,7 @@ import math
 import random
 import time
 from abc import ABC, abstractmethod
+from urllib.parse import urlparse
 
 from django.conf import settings
 
@@ -34,14 +35,83 @@ class AIReviewAgentError(Exception):
 # and reveals nothing internal, so it stays specific.
 GATEWAY_RATE_LIMITED_MESSAGE = "Rate limited - service busy or starting up. Retried, still unavailable."
 GATEWAY_UNREACHABLE_MESSAGE = "Could not reach the AI classifier service. Try again."
+# Split out of GATEWAY_UNREACHABLE_MESSAGE: a read timeout is not "could not
+# reach" -- the request was accepted and the gateway simply never answered
+# within DEFAULT_TIMEOUT. That distinction is the difference between "the
+# service is down" and "the service is overloaded/slow", and it is by far the
+# most common classifier failure in production, so it gets its own vocabulary
+# instead of being filed under an inaccurate one. Like the rate-limit message
+# it is actionable and leaks nothing internal.
+GATEWAY_TIMEOUT_MESSAGE = "AI classifier service timed out. Try again."
 GATEWAY_ERROR_MESSAGE = (
     "AI classifier service returned an error. Try again, or contact an administrator if this persists."
 )
 GATEWAY_UNEXPECTED_RESPONSE_MESSAGE = "AI classifier service returned an unexpected response."
 GATEWAY_NOT_CONFIGURED_MESSAGE = "AI classifier service is not configured. Contact an administrator."
 
+# Machine-readable cause for an "error" ReviewResult, carried in
+# ReviewResult.details["error_kind"].
+#
+# The user-facing GATEWAY_* strings above are deliberately generic, which makes
+# them useless for triage: "errors=160" in a run summary could be 160 dead
+# backends, 160 timeouts, or 160 misconfigurations, and telling them apart used
+# to mean cross-referencing separate per-agent log lines that carry no blob or
+# session id. These kinds are tallied per run (see _run_ai_review_on_sessions)
+# so the summary line itself says which failure happened and how often.
+ERROR_KIND_TIMEOUT = "timeout"
+ERROR_KIND_UNREACHABLE = "unreachable"
+ERROR_KIND_GATEWAY_ERROR = "gateway_error"
+ERROR_KIND_UNEXPECTED_RESPONSE = "unexpected_response"
+ERROR_KIND_RATE_LIMITED = "rate_limited"
+ERROR_KIND_NOT_CONFIGURED = "not_configured"
+ERROR_KIND_INVALID_CONTEXT = "invalid_context"
+ERROR_KIND_AGENT_EXCEPTION = "agent_exception"
+ERROR_KIND_UNKNOWN = "unknown"
 
-def post_with_retry(client, url, *, json, max_retries=3, backoff_seconds=2.0, logger=None):
+
+def _is_timeout(exc) -> bool:
+    """Whether a transport exception is a timeout rather than a genuine
+    can't-connect.
+
+    Primarily an isinstance check on httpx.TimeoutException. The string fallback
+    covers the case the production logs actually show -- "The read operation
+    timed out", which originates in the socket/ssl layer and can surface wrapped
+    in a non-httpx exception type depending on where it is raised.
+    """
+    import httpx
+
+    if isinstance(exc, httpx.TimeoutException):
+        return True
+    return "timed out" in str(exc).lower()
+
+
+def _log_classifier_call(logger, agent_id, url, *, outcome, status, attempts, elapsed_ms, attempt_ms, detail=""):
+    """Emit the one-line-per-classifier-call record.
+
+    This is the only place any classifier call latency is recorded. Without it
+    per-call latency is unobservable: the pool width is known but the time each
+    call actually takes is not, so "the run was slow" can only be divided by an
+    assumed concurrency rather than measured. Fields are `key=value` so a log
+    query can average `elapsed_ms` or group by `outcome` without regex-parsing
+    prose.
+    """
+    if logger is None:
+        return
+    endpoint = urlparse(url).path or url
+    logger.info(
+        "[classifier] agent=%s endpoint=%s outcome=%s status=%s attempts=%d elapsed_ms=%d attempt_ms=%d%s",
+        agent_id or "unknown",
+        endpoint,
+        outcome,
+        status,
+        attempts,
+        elapsed_ms,
+        attempt_ms,
+        f" detail={detail}" if detail else "",
+    )
+
+
+def post_with_retry(client, url, *, json, max_retries=3, backoff_seconds=2.0, logger=None, agent_id=""):
     """POST with retry-on-429 (linear backoff: ~2s, ~4s, ~6s by default).
 
     The MUAC OverZoom / MUAC Match / Scale Validation classifiers share one
@@ -62,11 +132,53 @@ def post_with_retry(client, url, *, json, max_retries=3, backoff_seconds=2.0, lo
     Returns the last response received, which may still be a 429 if every
     retry was exhausted -- callers check response.status_code exactly as
     they did before this helper existed.
+
+    Every call is timed and logged exactly once via _log_classifier_call --
+    including the failure paths, which re-raise afterwards so each agent's own
+    except blocks behave exactly as before. This is the single choke point all
+    four gateway agents share, so instrumenting it here covers all of them
+    without four copies of the same timing code.
     """
     response = None
+    started = time.monotonic()
+    attempt_started = started
     for attempt in range(max_retries + 1):
-        response = client.post(url, json=json)
+        attempt_started = time.monotonic()
+        try:
+            response = client.post(url, json=json)
+        except Exception as exc:
+            now = time.monotonic()
+            # A timeout is the dominant real-world failure and costs a full
+            # client timeout of wall-clock per image -- naming it in the log
+            # (rather than lumping every transport fault under one label) is
+            # what makes "the run was slow because calls hung" visible.
+            outcome = ERROR_KIND_TIMEOUT if _is_timeout(exc) else ERROR_KIND_UNREACHABLE
+            _log_classifier_call(
+                logger,
+                agent_id,
+                url,
+                outcome=outcome,
+                status="-",
+                attempts=attempt + 1,
+                elapsed_ms=int((now - started) * 1000),
+                attempt_ms=int((now - attempt_started) * 1000),
+                detail=type(exc).__name__,
+            )
+            raise
         if response.status_code != 429:
+            now = time.monotonic()
+            status = response.status_code
+            outcome = "ok" if 200 <= status < 300 else ERROR_KIND_GATEWAY_ERROR
+            _log_classifier_call(
+                logger,
+                agent_id,
+                url,
+                outcome=outcome,
+                status=status,
+                attempts=attempt + 1,
+                elapsed_ms=int((now - started) * 1000),
+                attempt_ms=int((now - attempt_started) * 1000),
+            )
             return response
         if attempt < max_retries:
             retry_after = response.headers.get("Retry-After")
@@ -91,6 +203,18 @@ def post_with_retry(client, url, *, json, max_retries=3, backoff_seconds=2.0, lo
                     f"Rate limited (429) on attempt {attempt + 1}/{max_retries + 1}, retrying in {wait:.1f}s"
                 )
             time.sleep(wait)
+    # Every retry exhausted and still 429.
+    now = time.monotonic()
+    _log_classifier_call(
+        logger,
+        agent_id,
+        url,
+        outcome=ERROR_KIND_RATE_LIMITED,
+        status=429,
+        attempts=max_retries + 1,
+        elapsed_ms=int((now - started) * 1000),
+        attempt_ms=int((now - attempt_started) * 1000),
+    )
     return response
 
 
