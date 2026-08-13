@@ -57,7 +57,11 @@ TIER_CADENCE_SECONDS = {
 }
 
 TIER_INTERVALS_SECONDS = {
-    TIER_HOT: 60,
+    # 15s, not 60. This is the floor on how fresh the live view can be: a hot
+    # opportunity is only re-polled once its cursor is due, so at 60 a visit
+    # could sit for a minute before the map knew about it. The live view's whole
+    # claim is that it is happening now.
+    TIER_HOT: 15,
     TIER_WARM: 15 * 60,
     TIER_COLD: 24 * 60 * 60,
     TIER_DORMANT: 7 * 24 * 60 * 60,
