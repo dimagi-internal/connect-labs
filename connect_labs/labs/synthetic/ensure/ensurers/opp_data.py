@@ -53,6 +53,13 @@ def ensure_opp_data(resource, ctx) -> dict:
         # No GDrive fixtures back a PAR opp (manifest-only); the column is
         # NOT NULL, so default it empty rather than leaving it unset.
         "gdrive_folder_id": "",
+        # An env-owned opp is authored data, never a clone twin. Clearing the
+        # clone-registry claim here is what stops a later `synthetic_clone_generate`
+        # from finding this opp via cloned_from and regenerating over the env's
+        # data (#1166 — the KMC clone cohort trampled nutrition-demo's Eastern
+        # Cluster exactly this way). It also makes env ensure the one-call
+        # restore path after such a trample.
+        "cloned_from_opportunity_id": None,
     }
     # File the opp under a program when the env declares one — this is what makes
     # is_labs_only_program_id(program_id) True, so a PROGRAM-owned cross-opp rollup
