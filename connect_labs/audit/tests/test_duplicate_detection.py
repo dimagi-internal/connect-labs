@@ -969,9 +969,7 @@ def test_run_summary_note_lists_every_failure_kind(monkeypatch):
 def test_run_summary_note_counts_session_errors(monkeypatch):
     from connect_labs.audit import tasks
 
-    def _boom(
-        session, access_token, progress_callback=None, cancel_key=None, data_access=None, save_callback=None
-    ):
+    def _boom(session, access_token, progress_callback=None, cancel_key=None, data_access=None, save_callback=None):
         raise RuntimeError("kaboom")
 
     monkeypatch.setattr("connect_labs.audit.duplicate_detection.run_duplicate_detection", _boom)
@@ -985,9 +983,7 @@ def test_run_summary_note_counts_session_errors(monkeypatch):
 def test_run_summary_note_empty_on_clean_run(monkeypatch):
     from connect_labs.audit import tasks
 
-    def _clean(
-        session, access_token, progress_callback=None, cancel_key=None, data_access=None, save_callback=None
-    ):
+    def _clean(session, access_token, progress_callback=None, cancel_key=None, data_access=None, save_callback=None):
         return {
             "groups_detected": 1,
             "images_flagged": 2,
