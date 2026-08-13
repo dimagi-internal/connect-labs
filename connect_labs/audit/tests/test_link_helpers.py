@@ -216,6 +216,47 @@ def test_resolve_urls_by_blob_groups_by_each_images_own_opportunity(monkeypatch)
     assert urls["blobB"]["connect_url"].startswith("https://connect.dimagi.com/a/org-b/opportunity/777/")
 
 
+def test_resolve_urls_by_blob_coerces_opportunity_id_type_before_grouping(monkeypatch):
+    """Regression: an image's own opportunity_id can reach us as a string
+    (raw JSON) while the session's default is an int (or vice versa) -- for
+    the SAME opportunity, these must group together into ONE resolved group,
+    not silently split into two independently-resolved (and independently
+    failing) groups."""
+    monkeypatch.setattr(link_helpers, "resolve_hq_link_base", lambda access_token, opp_id: "https://hq/forms")
+    monkeypatch.setattr(link_helpers, "resolve_org_slug", lambda access_token, opp_id, request=None: "acme")
+
+    calls = []
+
+    class _DataAccess:
+        access_token = "tok"
+
+        def get_visits_batch(self, visit_ids, opportunity_id):
+            calls.append(opportunity_id)
+            return [
+                {"id": 1, "xform_id": "xf1", "user_id": 7, "user_visit_id": 99},
+                {"id": 2, "xform_id": "xf2", "user_id": 8, "user_visit_id": 100},
+            ]
+
+    # blobA's own opportunity_id is the STRING "555"; blobB has none, so it
+    # falls back to the int default 555 -- both are really opportunity 555.
+    visit_images = {
+        "1": [{"blob_id": "blobA", "opportunity_id": "555"}],
+        "2": [{"blob_id": "blobB"}],
+    }
+
+    urls = link_helpers.resolve_urls_by_blob(
+        data_access=_DataAccess(),
+        access_token="tok",
+        opportunity_id=555,
+        visit_images=visit_images,
+    )
+
+    # One group, one get_visits_batch call -- not two.
+    assert len(calls) == 1
+    assert urls["blobA"]["form_url"] == "https://hq/forms/xf1/"
+    assert urls["blobB"]["form_url"] == "https://hq/forms/xf2/"
+
+
 def test_resolve_urls_by_blob_one_groups_failure_does_not_discard_another_groups_success(monkeypatch):
     """Regression: each opportunity group is resolved in its own try/except --
     a failure processing one group (here, opportunity 777) must not wipe out
